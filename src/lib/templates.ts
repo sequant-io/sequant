@@ -128,6 +128,9 @@ export async function copyTemplates(stack: string): Promise<void> {
   // Copy memory (constitution, etc.)
   await copyDir(join(templatesDir, "memory"), ".claude/memory");
 
+  // Copy scripts (worktree helpers, etc.)
+  await copyDir(join(templatesDir, "scripts"), "scripts/dev");
+
   // Copy settings.json
   const settingsPath = join(templatesDir, "settings.json");
   if (await fileExists(settingsPath)) {

@@ -94,6 +94,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
   console.log(chalk.gray("  ├── memory/         (constitution & context)"));
   console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
+  console.log(chalk.gray("  scripts/dev/"));
+  console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
 
   if (!options.yes) {
     const { confirm } = await inquirer.prompt([
@@ -115,6 +117,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await ensureDir(".claude/skills");
   await ensureDir(".claude/hooks");
   await ensureDir(".claude/memory");
+  await ensureDir("scripts/dev");
 
   // Copy templates
   console.log(chalk.blue("📄 Copying templates..."));
