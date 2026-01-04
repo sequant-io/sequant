@@ -1,0 +1,28 @@
+name: nextjs
+displayName: Next.js
+description: React framework for production
+
+detection:
+  files:
+    - next.config.js
+    - next.config.mjs
+    - next.config.ts
+  packageDeps:
+    - next
+
+commands:
+  test: npm test
+  build: npm run build
+  lint: npm run lint
+  dev: npm run dev
+
+variables:
+  TEST_COMMAND: npm test
+  BUILD_COMMAND: npm run build
+  LINT_COMMAND: npm run lint
+
+patterns:
+  components: components/**/*.tsx
+  pages: app/**/*.tsx
+  api: app/api/**/*.ts
+  tests: __tests__/**/*.test.{ts,tsx}

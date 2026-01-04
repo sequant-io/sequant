@@ -1,0 +1,23 @@
+name: rust
+displayName: Rust
+description: Systems programming language
+
+detection:
+  files:
+    - Cargo.toml
+
+commands:
+  test: cargo test
+  build: cargo build --release
+  lint: cargo clippy
+  check: cargo check
+
+variables:
+  TEST_COMMAND: cargo test
+  BUILD_COMMAND: cargo build --release
+  LINT_COMMAND: cargo clippy
+
+patterns:
+  src: src/**/*.rs
+  tests: tests/**/*.rs
+  benches: benches/**/*.rs
