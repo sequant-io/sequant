@@ -1,0 +1,24 @@
+name: python
+displayName: Python
+description: General-purpose programming language
+
+detection:
+  files:
+    - pyproject.toml
+    - setup.py
+    - requirements.txt
+
+commands:
+  test: pytest
+  build: python -m build
+  lint: ruff check .
+  format: ruff format .
+
+variables:
+  TEST_COMMAND: pytest
+  BUILD_COMMAND: python -m build
+  LINT_COMMAND: ruff check .
+
+patterns:
+  src: src/**/*.py
+  tests: tests/**/*.py

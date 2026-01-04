@@ -1,0 +1,22 @@
+name: go
+displayName: Go
+description: Statically typed, compiled programming language
+
+detection:
+  files:
+    - go.mod
+
+commands:
+  test: go test ./...
+  build: go build ./...
+  lint: golangci-lint run
+  fmt: go fmt ./...
+
+variables:
+  TEST_COMMAND: go test ./...
+  BUILD_COMMAND: go build ./...
+  LINT_COMMAND: golangci-lint run
+
+patterns:
+  src: "**/*.go"
+  tests: "**/*_test.go"
