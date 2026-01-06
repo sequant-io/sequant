@@ -11,13 +11,11 @@ import { getStackConfig } from "./stacks.js";
 // Get the package templates directory
 function getTemplatesDir(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
-  // In development: ../../templates
-  // In published: ../templates (from dist/)
-  const devPath = join(__dirname, "..", "..", "templates");
-  const prodPath = join(__dirname, "..", "templates");
+  // Compiled structure: dist/src/lib/templates.js
+  // So we need ../../../templates to reach project root templates/
+  const devPath = join(__dirname, "..", "..", "..", "templates");
 
-  // Check which exists (prefer dev for local development)
-  return devPath; // TODO: Add proper detection
+  return devPath;
 }
 
 /**
