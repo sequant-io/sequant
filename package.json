@@ -22,7 +22,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx bin/cli.ts",
-    "test": "echo \"No tests yet\" && exit 0",
+    "test": "vitest run",
     "lint": "echo \"No linter configured yet\" && exit 0",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
     "prepublishOnly": "npm run build"
@@ -64,6 +64,7 @@
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.10.5",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
   }
 }
