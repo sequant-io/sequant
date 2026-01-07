@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING:** Removed all project-specific content from skill templates
+  - Replaced shop/supabase examples with generic item/database terminology
+  - Skills now portable for any project type
+- Made MCP tools optional across all skills
+  - Context7 and Sequential Thinking documented as optional enhancements
+  - Skills work without any MCP servers configured
+- Rewrote `/solve` skill to be advisory-only (no script generation)
+- Replaced hardcoded URLs with `{{DEV_URL}}` token placeholder
+
+### Removed
+- Supabase MCP tool requirements from all skills
+- Dead code: `workflow-queries.ts` (Supabase-only)
+- Project-specific examples (shops, pending_shops, content_ideas)
+
 ### Added
 - `sequant run` command for batch issue execution (AC-10)
   - Sequential and parallel execution modes

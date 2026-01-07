@@ -60,11 +60,10 @@ Task(subagent_type="schema-inspector", model="haiku",
 
 **Important:** Spawn all agents in a SINGLE message for parallel execution.
 
-### Using MCP Tools
+### Using MCP Tools (Optional)
 
 - **Sequential Thinking:** For complex analysis with multiple dependencies
 - **Context7:** For understanding existing patterns and architecture
-- **Supabase MCP:** For database changes, queries, or data modeling
 
 ## Context Gathering Strategy
 
@@ -83,7 +82,7 @@ Task(subagent_type="schema-inspector", model="haiku",
    - Prefer existing dependencies over new ones
 
 4. **For database-heavy features**
-   - Use Supabase MCP to verify table schemas
+   - Verify table schemas against TypeScript types
    - Check proposed types match database columns
 
 5. **For complex features (>5 AC items)**

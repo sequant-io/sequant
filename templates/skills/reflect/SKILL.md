@@ -10,7 +10,6 @@ allowed-tools:
   - Write
   - Glob
   - Grep
-  - mcp__supabase__execute_sql
 ---
 
 # Reflection Agent
@@ -137,7 +136,10 @@ Generate a checklist:
 
 ## Workflow Analytics
 
-For `/reflect workflow`, use the SQL queries in [workflow-queries.ts](scripts/workflow-queries.ts) to analyze historical data.
+For `/reflect workflow`, analyze:
+- Log files in `/tmp/claude-issue-*.log`
+- Git history and commit patterns
+- Issue comments and PR history
 
 See [phase-reflection.md](references/phase-reflection.md) for phase-specific guidance.
 
