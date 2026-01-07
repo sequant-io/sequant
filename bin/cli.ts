@@ -15,12 +15,18 @@ import { runCommand } from "../src/commands/run.js";
 
 const program = new Command();
 
+// Handle --no-color before parsing
+if (process.argv.includes("--no-color")) {
+  process.env.FORCE_COLOR = "0";
+}
+
 program
   .name("sequant")
   .description(
     "Quantize your development workflow - Sequential AI phases with quality gates",
   )
-  .version("0.1.0");
+  .version("0.1.0")
+  .option("--no-color", "Disable colored output");
 
 program
   .command("init")
