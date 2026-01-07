@@ -11,6 +11,7 @@ import { initCommand } from "../src/commands/init.js";
 import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
+import { runCommand } from "../src/commands/run.js";
 
 const program = new Command();
 
@@ -46,6 +47,17 @@ program
   .command("status")
   .description("Show Sequant version and configuration status")
   .action(statusCommand);
+
+program
+  .command("run")
+  .description("Execute workflow for GitHub issues")
+  .argument("<issues...>", "Issue numbers to process")
+  .option("--phases <list>", "Phases to run (default: spec,exec,qa)")
+  .option("--sequential", "Run issues sequentially")
+  .option("-d, --dry-run", "Preview without execution")
+  .option("-v, --verbose", "Verbose output")
+  .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
+  .action(runCommand);
 
 // Parse and execute
 program.parse();
