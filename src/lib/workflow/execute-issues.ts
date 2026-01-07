@@ -474,9 +474,7 @@ async function main() {
 
   // Warn if database logging is disabled
   if (!canLogToSupabase()) {
-    log.warn(
-      "⚠️ Database logging disabled (missing SUPABASE_SERVICE_ROLE_KEY)",
-    );
+    log.warn("⚠️ Database logging disabled (missing database credentials)");
     console.log("");
   }
 

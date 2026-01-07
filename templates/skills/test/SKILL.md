@@ -91,10 +91,10 @@ find components -name "*<FeatureName>*" -type f
 
 Check for test data requirements:
 
-1. Look for seed script: `scripts/seed-test-*.ts`
+1. Look for seed script or test fixtures in the project
 2. If seed script exists, offer to run it:
    ```bash
-   npx tsx --env-file=.env.local scripts/seed-test-<feature>.ts
+   npx tsx scripts/seed-test-<feature>.ts
    ```
 3. If no seed script exists, check Issue for SQL statements or manual setup steps
 4. Execute setup or provide clear instructions to user
@@ -184,7 +184,7 @@ Use Chrome DevTools MCP for browser-based tests:
 
 ```javascript
 // Navigate to feature
-mcp__chrome-devtools__navigate_page({url: "http://localhost:3000/..."})
+mcp__chrome-devtools__navigate_page({url: "{{DEV_URL}}/..."})
 
 // Get page structure
 mcp__chrome-devtools__take_snapshot()
@@ -446,7 +446,8 @@ After testing completes, ask user if test data should be cleaned up:
 
 **Option 1: Delete test data**
 ```sql
-DELETE FROM pending_shops WHERE name LIKE 'Test Cafe%';
+-- Clean up test records created during testing
+DELETE FROM <table> WHERE name LIKE 'Test %';
 ```
 
 **Option 2: Keep for future testing**
@@ -473,7 +474,7 @@ Testing session is complete when:
 **Expected workflow:**
 1. Fetch Issue #151
 2. Detect 10 test cases in Issue body
-3. Check for seed script: `scripts/seed-test-bulk-edit.ts`
+3. Check for seed script or test fixtures
 4. Start dev server if needed
 5. Execute tests 1-10 using Chrome DevTools MCP
 6. Generate test summary with PASS/FAIL/BLOCKED status

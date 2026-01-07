@@ -180,17 +180,6 @@ elif [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
     fi
 fi
 
-# === LOG SUPABASE QUERIES ===
-if [[ "$TOOL_NAME" == "mcp__supabase__execute_sql" ]]; then
-    # Extract SQL query with jq or fallback
-    if command -v jq &>/dev/null; then
-        QUERY=$(echo "$TOOL_INPUT" | jq -r '.query // empty' 2>/dev/null | head -c 200)
-    else
-        QUERY=$(echo "$TOOL_INPUT" | head -c 200)
-    fi
-    echo "$(date +%H:%M:%S) SQL: $QUERY" >> "$QUALITY_LOG"
-fi
-
 # === TRACK GIT OPERATIONS ===
 if [[ "$TOOL_NAME" == "Bash" ]]; then
     if echo "$TOOL_INPUT" | grep -qE 'git (commit|push|pr create)'; then

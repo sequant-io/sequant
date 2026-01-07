@@ -21,7 +21,7 @@ git diff main...HEAD --name-only | grep "^scripts/"
 
 ### 2. Pattern Compliance
 Do new scripts follow existing patterns?
-- Scripts: Inline Supabase client, env validation, CLI flags (`--dry-run`, `--limit`)
+- Scripts: Database client setup, env validation, CLI flags (`--dry-run`, `--limit`)
 - Components: Follow established admin patterns (List + Card + Modal)
 - Compare with similar files: `ls scripts/fix/` or `ls components/admin/`
 
@@ -42,23 +42,12 @@ If adding new scripts/commands, should they be documented?
 
 Skip trivial formatting if the repo already has automated formatting tools.
 
-## RLS-Protected Table Access Check
+## Database Access Check
 
-Admin pages must use `supabaseAdmin`:
-
-```bash
-rls_tables="content_updates|content_ideas|fact_check_logs"
-admin_files=$(git diff main...HEAD --name-only | grep -E "^app/admin/")
-if [[ -n "$admin_files" ]]; then
-  for file in $admin_files; do
-    if [[ -f "$file" ]]; then
-      if grep -q "from '@/lib/supabase'" "$file" && grep -qE "\.from\(['\"]($rls_tables)['\"]" "$file"; then
-        echo "❌ BLOCKER: $file uses anon client for RLS-protected table"
-      fi
-    fi
-  done
-fi
-```
+If project uses a database with access controls:
+- Verify admin pages use admin/service client (not anonymous client)
+- Check that sensitive tables are accessed with proper permissions
+- Review any new database queries for proper authorization
 
 ## Integration Check
 

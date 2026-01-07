@@ -59,7 +59,7 @@ These files are always safe to archive - they're historical artifacts:
 ### Category 2: Review Before Archiving
 
 These need a quick check - might still be referenced:
-- Files in `migrations/` (check if applied to Supabase)
+- Files in `migrations/` (check if applied to database)
 - `context/` directory contents
 - Any `APPLY_*.md` or `apply-*.sh` files
 
@@ -78,7 +78,7 @@ Never archive these:
 ```
 scripts/archive/
 ├── one-off-migrations/    # Shell scripts for one-time tasks
-├── adhoc-migrations/      # SQL files applied manually (not via Supabase CLI)
+├── adhoc-migrations/      # SQL files applied manually (not via migrations tool)
 └── deprecated/            # Old/replaced scripts
 
 docs/archive/

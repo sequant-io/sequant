@@ -1,6 +1,6 @@
 #!/bin/bash
 # Pre-tool hook for Claude Code
-# - Security guardrails for execute-issues.ts (blocks catastrophic commands)
+# - Security guardrails (blocks catastrophic commands)
 # - Timing instrumentation for performance analysis
 # Exit 0 = allow, Exit 2 = block (Exit 1 = non-blocking error, logged but not blocked)
 
@@ -346,5 +346,5 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
 fi
 
 # === ALLOW EVERYTHING ELSE ===
-# Slash commands need: git, npm, file edits, gh pr/issue, supabase queries
+# Slash commands need: git, npm, file edits, gh pr/issue, MCP tools
 exit 0
