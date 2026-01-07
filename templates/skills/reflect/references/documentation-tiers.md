@@ -25,9 +25,9 @@ Organize information by access frequency:
 - Review quarterly
 
 **Current specialized docs:**
-- `CITY_COVERAGE.md` - Coverage analysis workflow
-- `SHOP_DISCOVERY.md` - Discovery & enrichment pipeline
-- `TESTING.md` - UI testing patterns
+- `ARCHITECTURE.md` - System architecture overview
+- `DATA_PIPELINE.md` - Data processing workflows
+- `TESTING.md` - Testing patterns and strategies
 - `ADMIN_CMS_ARCHITECTURE.md` - Full CMS architecture
 
 ## Tier 3: Archive (docs/archive/)

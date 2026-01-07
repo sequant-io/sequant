@@ -145,7 +145,7 @@ function formatMessage(
  *
  * // Child logger with prefix
  * const childLog = log.child('discovery')
- * childLog.info('Finding shops') // ℹ️ [discovery] Finding shops
+ * childLog.info('Finding items') // ℹ️ [discovery] Finding items
  * ```
  */
 export function createLogger(options: LoggerOptions = {}): Logger {
@@ -301,8 +301,8 @@ export function logStep(step: number, total: number, message: string): void {
  *
  * @example
  * ```typescript
- * logProgress(5, 10, 'Processing shops')
- * // Output:   → 5/10 Processing shops
+ * logProgress(5, 10, 'Processing items')
+ * // Output:   → 5/10 Processing items
  * ```
  */
 export function logProgress(

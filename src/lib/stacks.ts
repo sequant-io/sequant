@@ -91,6 +91,26 @@ export const STACKS: Record<string, StackConfig> = {
       LINT_COMMAND: "golangci-lint run",
     },
   },
+  astro: {
+    name: "astro",
+    displayName: "Astro",
+    detection: {
+      files: ["astro.config.mjs", "astro.config.js", "astro.config.ts"],
+      packageDeps: ["astro"],
+    },
+    commands: {
+      // Note: Astro projects may not have test/lint configured by default
+      test: "npm test",
+      build: "npm run build",
+      lint: "npm run lint",
+      dev: "npm run dev",
+    },
+    variables: {
+      TEST_COMMAND: "npm test",
+      BUILD_COMMAND: "npm run build",
+      LINT_COMMAND: "npm run lint",
+    },
+  },
   generic: {
     name: "generic",
     displayName: "Generic",
@@ -123,6 +143,26 @@ export async function detectStack(): Promise<string | null> {
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
       if (deps.next) {
         return "nextjs";
+      }
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // Check for Astro
+  for (const file of STACKS.astro.detection.files || []) {
+    if (await fileExists(file)) {
+      return "astro";
+    }
+  }
+
+  // Check package.json for Astro dependency
+  if (await fileExists("package.json")) {
+    try {
+      const pkg = JSON.parse(await readFile("package.json"));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (deps.astro) {
+        return "astro";
       }
     } catch {
       // Ignore parse errors

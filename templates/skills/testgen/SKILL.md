@@ -17,7 +17,6 @@ allowed-tools:
   - Bash(git worktree list:*)
   - Bash(ls:*)
   - Bash(mkdir:*)
-  - mcp__supabase__*
 ---
 
 # Test Generation Command

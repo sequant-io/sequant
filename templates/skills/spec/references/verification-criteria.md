@@ -14,7 +14,7 @@ Verification criteria force you to:
 | Method | Use When | Example |
 |--------|----------|---------|
 | **Unit Test** | Pure logic, utilities, helpers | `formatCurrency()`, `validateEmail()` |
-| **Integration Test** | External APIs, database, file system | Hook scripts, Supabase queries |
+| **Integration Test** | External APIs, database, file system | Hook scripts, database queries |
 | **Browser Test** | UI interactions, forms, modals | Admin dashboard, form validation |
 | **Manual Test** | One-time setup, visual verification | Deployment checks, design review |
 | **N/A - Trivial** | Config changes, simple renames | Env var addition, label change |

@@ -42,7 +42,7 @@ Use `/verify` for:
 
 ```bash
 # With explicit command
-/verify 559 --command "npx tsx scripts/dev/execute-issues.ts 535 --phases spec"
+/verify 559 --command "npx tsx scripts/migrate.ts --dry-run"
 
 # With issue only (will prompt for command)
 /verify 559
@@ -200,14 +200,14 @@ To prevent oversized GitHub comments (64KB limit):
 ### Example 1: Successful Verification
 
 ```bash
-/verify 558 --command "npx tsx scripts/dev/execute-issues.ts 535 --phases spec --dry-run"
+/verify 558 --command "npx tsx scripts/migrate.ts --dry-run"
 ```
 
 Output:
 ```
-Starting execution for issues: 535
-Phase: spec
-Dry run mode: enabled
+Starting migration (dry run)...
+Checking tables...
+Migration plan: 3 tables, 5 columns
 ...
 Completed successfully
 ```

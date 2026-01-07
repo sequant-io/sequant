@@ -51,7 +51,7 @@ Include a `[model: haiku]` or `[model: sonnet]` annotation at the end of each ta
 - [ ] Refactor `lib/hooks/useMetrics.ts` to use new service [model: sonnet]
 
 ### Sequential (depends on Group 2)
-- [ ] Integrate into `app/shops/[slug]/page.tsx`
+- [ ] Integrate into main feature page
 - [ ] Add tests in `__tests__/metrics.test.ts`
 ```
 

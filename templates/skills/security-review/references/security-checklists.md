@@ -151,8 +151,8 @@ if (user.role !== 'admin') throw new ForbiddenError()
 
 **Bad:**
 ```typescript
-const shop = await db.shops.findUnique({ where: { id: shopId } })
-// Missing: .eq('owner_id', user.id)
+const item = await db.items.findUnique({ where: { id: itemId } })
+// Missing: ownership verification (e.g., where: { id: itemId, owner_id: user.id })
 ```
 
 ### AUTHZ-4: Horizontal Privilege Escalation
@@ -174,12 +174,12 @@ const shop = await db.shops.findUnique({ where: { id: shopId } })
 
 **How to Verify:**
 ```bash
-grep -r "audit\|logAction\|shop_enrichment_log" lib/ app/admin/
+grep -r "audit\|logAction\|createAuditLog" lib/ app/admin/
 ```
 
 **Good:**
 ```typescript
-await logAuditEvent({ action: 'approve_shop', actor: userId, target: shopId })
+await logAuditEvent({ action: 'approve_item', actor: userId, target: itemId })
 ```
 
 ---
@@ -217,18 +217,20 @@ const { name } = req.body // No validation
 
 **How to Verify:**
 ```bash
-grep -r "\.from\(" lib/ app/ | grep -v "supabase"
 grep -r "raw\|execute\|query" lib/ app/
 ```
 
 **Good:**
 ```typescript
-supabase.from('shops').select('*').eq('id', shopId)
+// Using ORM with parameterized queries
+db.items.findUnique({ where: { id: itemId } })
+// Or query builder with parameters
+db.from('items').select('*').eq('id', itemId)
 ```
 
 **Bad:**
 ```typescript
-db.query(`SELECT * FROM shops WHERE id = ${shopId}`)
+db.query(`SELECT * FROM items WHERE id = ${itemId}`)
 ```
 
 ### API-4: Rate Limiting
@@ -290,7 +292,7 @@ if (file.size > 5 * 1024 * 1024) throw Error
 **Requirement:** Sensitive data must be encrypted in database.
 
 **How to Verify:**
-- Supabase uses encryption by default
+- Verify database uses encryption at rest (most cloud providers enable by default)
 - Check for additional encryption on highly sensitive fields
 
 ### DATA-2: Encryption in Transit
