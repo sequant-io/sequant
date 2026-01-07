@@ -45,26 +45,13 @@ else
   echo "❌ Size: Very large (>500 net LOC) - may indicate scope creep"
 fi
 
-# 6. RLS-protected table access check (admin pages must use supabaseAdmin)
+# 6. Database access check (admin pages should use proper access controls)
 echo ""
-echo "🔒 Checking RLS-protected table access..."
-rls_tables="content_updates|content_ideas|fact_check_logs"
+echo "🔒 Checking database access patterns..."
 admin_files=$(git diff main...HEAD --name-only | grep -E "^app/admin/" || true)
 if [[ -n "$admin_files" ]]; then
-  rls_violations=0
-  for file in $admin_files; do
-    if [[ -f "$file" ]]; then
-      # Check if file imports anon client and queries RLS-protected tables
-      if grep -q "from '@/lib/supabase'" "$file" && grep -qE "\.from\(['\"]($rls_tables)['\"]" "$file"; then
-        echo "❌ BLOCKER: $file uses anon client for RLS-protected table"
-        echo "   Fix: Use supabaseAdmin from '@/lib/supabase-admin' instead"
-        rls_violations=$((rls_violations + 1))
-      fi
-    fi
-  done
-  if [[ $rls_violations -eq 0 ]]; then
-    echo "✅ RLS access: No violations found in admin files"
-  fi
+  echo "   Admin files modified - manually verify proper database access controls"
+  echo "   (admin pages should use service/admin clients, not anonymous clients)"
 else
   echo "   No admin files modified"
 fi

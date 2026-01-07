@@ -2,7 +2,7 @@
 
 # Clean up a worktree after PR is merged
 # Usage: ./scripts/cleanup-worktree.sh <branch-name>
-# Example: ./scripts/cleanup-worktree.sh feature/4-build-shop-detail-pages
+# Example: ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
 
 set -e
 

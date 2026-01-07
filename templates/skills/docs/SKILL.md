@@ -124,7 +124,7 @@ Generate documentation using this template:
 
 ## Common Workflows
 
-### [Workflow 1: e.g., "Review and Approve Shops"]
+### [Workflow 1: e.g., "Review and Approve Items"]
 
 1. [Step 1]
 2. [Step 2]
@@ -158,15 +158,15 @@ Generate documentation using this template:
 
 **Focus on operational usage, not technical implementation:**
 
-- "Click the 'Approve' button to publish the shop"
-- NOT: "The `approveShop` function updates the database"
+- "Click the 'Approve' button to publish the item"
+- NOT: "The `approveItem` function updates the database"
 
 - "Wait for the green success message"
 - NOT: "The API returns a 200 status code"
 
 **Be specific and actionable:**
 
-- "Navigate to Admin → Shops → Review Queue"
+- "Navigate to Admin → Items → Review Queue"
 - NOT: "Go to the review page"
 
 **Include visual cues when relevant:**
@@ -176,8 +176,8 @@ Generate documentation using this template:
 
 **Document common workflows end-to-end:**
 
-- "To approve a shop: 1. Open Review Queue, 2. Click shop name, 3. Review details in each tab, 4. Click Approve"
-- NOT: "Use the approve button to approve shops"
+- "To approve an item: 1. Open Review Queue, 2. Click item name, 3. Review details, 4. Click Approve"
+- NOT: "Use the approve button"
 
 ### 5. File Naming Convention
 
@@ -187,10 +187,10 @@ Generate filename from feature name:
 - Match the primary feature purpose
 
 Examples:
-- `shop-review-queue.md` - For shop review admin page
+- `review-queue.md` - For review admin page
 - `bulk-edit-operations.md` - For bulk editing feature
-- `city-configuration.md` - For city config admin
-- `feature-gallery.md` - For maps gallery feature
+- `settings-configuration.md` - For settings admin
+- `feature-gallery.md` - For gallery feature
 
 ### 6. Output and Summary
 
@@ -272,22 +272,21 @@ For Issue #180 (City Configuration UI):
 
 ## Usage
 
-### Adding a New City
+### Adding a New Item
 
-1. Navigate to Admin → Cities
-2. Click the "Add City" button (top right)
-3. Complete the 4-step wizard:
-   - **Step 1 - Basic Info:** Enter city name, state, and select status
-   - **Step 2 - Geography:** Set center coordinates and map bounds
-   - **Step 3 - Discovery:** Configure shop discovery settings
-   - **Step 4 - Review:** Confirm all settings
-4. Click "Create City" to save
+1. Navigate to Admin → Items
+2. Click the "Add Item" button (top right)
+3. Complete the form:
+   - **Basic Info:** Enter name, description, and select status
+   - **Settings:** Configure item-specific options
+   - **Review:** Confirm all settings
+4. Click "Create" to save
 
-### Editing an Existing City
+### Editing an Existing Item
 
-1. Navigate to Admin → Cities
-2. Click on the city card to open details
-3. Click "Edit" in the Config tab
+1. Navigate to Admin → Items
+2. Click on the item to open details
+3. Click "Edit" in the details panel
 4. Update settings as needed
 5. Click "Save Changes"
 
@@ -295,27 +294,26 @@ For Issue #180 (City Configuration UI):
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| Status | City visibility (active, in_development, coming_soon) | in_development |
-| Timezone | City timezone for hours display | America/New_York |
-| Map Bounds | Visible area on city map | Auto-calculated |
+| Status | Item visibility (active, draft, archived) | draft |
+| Category | Item categorization | None |
+| Priority | Display order priority | Normal |
 
 ## Common Workflows
 
-### Launch a New City
+### Publish an Item
 
-1. Add city via wizard (status: in_development)
-2. Run shop discovery scripts
-3. Review and approve shops in Review Queue
-4. Change city status to "active"
-5. City appears on homepage
+1. Add item via form (status: draft)
+2. Review and approve in Review Queue
+3. Change status to "active"
+4. Item appears on public pages
 
 ## Troubleshooting
 
-### City doesn't appear on homepage
+### Item doesn't appear on page
 
-**Symptoms:** City was added but doesn't show in city selector
+**Symptoms:** Item was added but doesn't show
 
-**Solution:** Check city status is set to "active" in Admin → Cities → [City] → Config
+**Solution:** Check item status is set to "active" in Admin → Items → [Item] → Settings
 
 ---
 

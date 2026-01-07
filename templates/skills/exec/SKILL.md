@@ -33,12 +33,8 @@ allowed-tools:
   - Bash(gh issue edit:*)
   - Bash(gh pr create:*)
   - Bash(gh pr view:*)
-  # MCP tools for implementation
-  - mcp__supabase__list_tables
-  - mcp__supabase__execute_sql
-  - mcp__supabase__apply_migration
-  - mcp__context7__resolve-library-id
-  - mcp__context7__query-docs
+  # Optional MCP tools (enhanced functionality if available)
+  # - mcp__context7__* (library documentation lookup)
   # Task management
   - Task
   - TodoWrite
@@ -122,7 +118,7 @@ Invocation:
      - Create branch: `feature/<issue-number>-<issue-title-slug>`
      - Create worktree in: `../worktrees/feature/<branch-name>/`
      - Install dependencies
-     - Copy `.env.local` if it exists
+     - Copy environment files if they exist
    - Navigate to the worktree directory: `cd ../worktrees/feature/<branch-name>/`
 
 3. **Work in the worktree:**
@@ -151,32 +147,28 @@ Invocation:
 - If it needs modification, extend it rather than creating a new one
 - Document why existing utilities don't meet requirements before creating new ones
 
-### Using Sequential Thinking, Context7, or Supabase MCP
+### Using Optional MCP Tools
 
-Use these specialized tools when appropriate:
+If available, these MCP tools can enhance implementation:
 
-**Sequential Thinking** - For complex problem-solving requiring multi-step reasoning:
+**Context7** (mcp__context7__*) - For understanding external libraries:
+- Learning unfamiliar npm package APIs
+- Understanding third-party library patterns
+- Resolving library-specific type issues
+- **NOT for:** Project's own codebase (use Glob/Grep instead)
+
+**Sequential Thinking** (mcp__sequential-thinking__*) - For complex reasoning:
 - Novel algorithms or data structures
 - Ambiguous requirements needing exploration
 - Complex business logic with multiple edge cases
-- Multi-step reasoning with dependencies
-- **NOT for:** Standard CRUD operations, UI implementation following existing patterns, straightforward feature additions
+- **NOT for:** Standard CRUD operations, straightforward feature additions
 
-**Context7** - For understanding external libraries and packages:
-- Learning unfamiliar npm package APIs (react-query, zod, framer-motion, etc.)
-- Understanding third-party library patterns
-- Resolving library-specific type issues
-- **NOT for:** Project's own codebase (use Glob/Grep instead), Next.js patterns (documented in CLAUDE.md)
-
-**Supabase MCP** - For any database-related implementation:
-- **ALWAYS USE** before writing database queries or migrations
-- Verify table schemas and column types
-- Check RLS policies before data access code
-- Understand table relationships
+**Database MCP tools** - If your project uses a database MCP:
+- Verify table schemas before writing queries
+- Check access policies before data access code
 - Validate data models match TypeScript types
-- **USE for:** Every feature touching `content_updates`, `shops`, `pending_shops`, etc.
 
-**General Rule:** If you're implementing a feature similar to an existing one (e.g., new admin card component, new validation function), use Glob/Grep to find patterns rather than Sequential Thinking.
+**General Rule:** If implementing a feature similar to an existing one, use Glob/Grep to find patterns in the codebase first.
 
 ### 3. Checks-first Mindset
 

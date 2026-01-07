@@ -13,8 +13,8 @@ allowed-tools:
   - Grep
   - Bash
   - TodoWrite
-  - mcp__chrome-devtools__*
-  - mcp__supabase__*
+  # Optional MCP tools (enhanced functionality if available)
+  # - mcp__chrome-devtools__* (browser testing)
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
   - Bash(npm test:*)
@@ -212,10 +212,13 @@ For each iteration, output:
 /qa 218            # Final QA - READY_FOR_MERGE
 ```
 
-**Automated usage (execute-issues.ts):**
+**Automated workflow:**
 ```bash
-QUALITY_LOOP=true npx tsx --env-file=.env.local scripts/dev/execute-issues.ts 218
-# Phases: spec → testgen → exec → test → (loop if needed) → qa → (loop if needed)
+/spec 218          # Plan
+/exec 218          # Implement
+/test 218          # Test - finds issues
+/loop 218          # Fix issues, re-test
+/qa 218            # Final QA
 ```
 
 ## Example Log Parsing

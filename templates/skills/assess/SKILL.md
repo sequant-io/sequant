@@ -294,18 +294,18 @@ RECOMMENDATION: Gather more information
 Provide relevant context to help the next command:
 
 **Key Files to Review:**
-- `components/admin/FactCheckQueue.tsx` - Main component
-- `lib/queries/fact-checks.ts` - Data layer
-- `docs/ADMIN_ARCHITECTURE.md` - Related architecture
+- List the main components/files involved
+- Point to relevant data layer code
+- Reference architecture documentation if exists
 
 **Similar Patterns:**
-- See `components/admin/news/ContentUpdatesList.tsx` for list pattern
-- See `components/admin/shops/ApprovalQueue.tsx` for approval flow
+- Reference similar features in the codebase
+- Point to reusable patterns
 
 **Potential Risks:**
-- No error handling for failed approvals
-- Email service integration not yet tested
-- Database migration for `fact_checks` table may be needed
+- Identify any error handling gaps
+- Note external integrations not yet tested
+- Flag potential database migrations needed
 
 ## Examples
 
@@ -343,22 +343,22 @@ RECOMMENDATION: Run `/spec 147`
 
 ```
 Issue Summary
-- Issue: #145 - Fix neighborhood extraction for Atlanta
+- Issue: #145 - Fix data validation edge cases
 - Status: Open | in-progress, bug
 - Last Activity: 10 days ago
 - Phase: Implementation (Stale)
 
 Acceptance Criteria
-- AC-1: Extract neighborhoods via ZIP mapping - MET
-- AC-2: Handle edge cases (no ZIP, multiple ZIPs) - IN_PROGRESS
-- AC-3: Backfill existing Atlanta shops - NOT_STARTED
+- AC-1: Handle basic validation - MET
+- AC-2: Handle edge cases (empty, null, special chars) - IN_PROGRESS
+- AC-3: Add validation tests - NOT_STARTED
 Coverage: 1/3 complete
 
 Artifacts Found
 Implementation:
-- [x] Branch: feature/145-atlanta-neighborhoods (3 commits)
-- [x] Worktree: ../worktrees/feature/145-atlanta-neighborhoods/
-- [x] Modified: lib/utils/neighborhood-extraction.ts
+- [x] Branch: feature/145-validation-fixes (3 commits)
+- [x] Worktree: ../worktrees/feature/145-validation-fixes/
+- [x] Modified: lib/utils/validation.ts
 - [ ] Tests not found
 
 Blockers & Issues
@@ -370,7 +370,7 @@ Recommendation
 RECOMMENDATION: Resume `/exec 145`
 - Implementation is 1/3 complete but stale
 - Worktree still exists, resume work there
-- Focus on AC-2 (edge cases) and AC-3 (backfill)
+- Focus on AC-2 (edge cases) and AC-3 (tests)
 - Add tests before considering complete
 ```
 

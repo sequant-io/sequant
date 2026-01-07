@@ -14,10 +14,10 @@ allowed-tools:
   - Bash
   - TodoWrite
   - Task
-  - mcp__chrome-devtools__*
-  - mcp__supabase__*
-  - mcp__sequential-thinking__sequentialthinking
-  - mcp__context7__*
+  # Optional MCP tools (enhanced functionality if available)
+  # - mcp__chrome-devtools__* (browser testing)
+  # - mcp__sequential-thinking__* (complex reasoning)
+  # - mcp__context7__* (library documentation)
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
   - Bash(gh issue edit:*)
@@ -468,12 +468,15 @@ npx tsx scripts/dev/analyze-hook-logs.ts --tests
 /fullsolve 218 --max-iterations 5
 ```
 
-## Integration with Batch Automation
+## Batch Processing
 
-For batch automation, `execute-issues.ts` can use fullsolve mode:
+For multiple issues, run `/fullsolve` on each sequentially:
 
 ```bash
-FULLSOLVE=true npx tsx --env-file=.env.local scripts/dev/execute-issues.ts 218 219 220
+# Process multiple issues one at a time
+/fullsolve 218
+/fullsolve 219
+/fullsolve 220
 ```
 
-This runs `/fullsolve` for each issue with integrated quality loops.
+Each issue gets its own worktree, PR, and quality validation.

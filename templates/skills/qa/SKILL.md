@@ -119,11 +119,10 @@ admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
 
-### Using MCP Tools
+### Using MCP Tools (Optional)
 
 - **Sequential Thinking:** For complex multi-step analysis
-- **Context7:** For broader pattern context
-- **Supabase MCP:** For database-related code verification
+- **Context7:** For broader pattern context and library documentation
 
 ### 1. Context and AC Alignment
 
@@ -252,7 +251,7 @@ fi
 # QA detects scripts/ changes
 # -> Prompt: "Run /verify before READY_FOR_MERGE"
 
-/verify 558 --command "npx tsx scripts/dev/execute-issues.ts 535 --phases spec"
+/verify 558 --command "npx tsx scripts/migrate.ts --dry-run"
 
 # Human confirms output looks correct
 # -> /verify posts evidence to issue

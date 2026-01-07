@@ -121,11 +121,13 @@ git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME"
 # Navigate to worktree
 cd "$WORKTREE_DIR"
 
-# Copy .env.local if it exists (use absolute path from main repo)
-if [ -f "${MAIN_REPO_DIR}/.env.local" ]; then
-    echo -e "${BLUE}📋 Copying .env.local...${NC}"
-    cp "${MAIN_REPO_DIR}/.env.local" .env.local
-fi
+# Copy environment files if they exist (use absolute path from main repo)
+for ENV_FILE in .env .env.local .env.development; do
+    if [ -f "${MAIN_REPO_DIR}/${ENV_FILE}" ]; then
+        echo -e "${BLUE}📋 Copying ${ENV_FILE}...${NC}"
+        cp "${MAIN_REPO_DIR}/${ENV_FILE}" "${ENV_FILE}"
+    fi
+done
 
 # Copy .claude/settings.local.json for auto-approved permissions
 if [ -f "${MAIN_REPO_DIR}/.claude/settings.local.json" ]; then
