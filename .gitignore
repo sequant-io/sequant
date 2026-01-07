@@ -34,3 +34,6 @@ pnpm-lock.yaml
 .claude/
 .sequant-manifest.json
 scripts/dev/
+
+# Test projects
+sequant/
