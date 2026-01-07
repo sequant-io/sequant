@@ -3,7 +3,7 @@ name: docs
 description: "Phase 4 - Generate admin-facing documentation for implemented features before merging."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read
@@ -44,18 +44,18 @@ Invocation:
 
 **Step 1:** Read the GitHub issue and comments for feature context:
 ```bash
-gh issue view <issue-number> --json title,body,labels --repo admarble/matcha-maps
+gh issue view <issue-number> --json title,body,labels 
 ```
 
 **Step 2:** Check for existing PR:
 ```bash
-gh pr list --search "head:feature/<issue-number>" --json number,headRefName --repo admarble/matcha-maps
+gh pr list --search "head:feature/<issue-number>" --json number,headRefName 
 ```
 
 **Step 3:** Analyze the implementation diff:
 ```bash
 # If PR exists:
-gh pr diff <pr-number> --repo admarble/matcha-maps
+gh pr diff <pr-number> 
 
 # If no PR, use git diff from feature branch:
 git diff main...HEAD --name-only
@@ -190,7 +190,7 @@ Examples:
 - `shop-review-queue.md` - For shop review admin page
 - `bulk-edit-operations.md` - For bulk editing feature
 - `city-configuration.md` - For city config admin
-- `matcha-maps-gallery.md` - For maps gallery feature
+- `feature-gallery.md` - For maps gallery feature
 
 ### 6. Output and Summary
 

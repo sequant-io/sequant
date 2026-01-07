@@ -3,7 +3,7 @@ name: clean
 description: "Repository Cleanup Command"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Bash(git branch:*)

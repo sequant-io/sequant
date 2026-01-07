@@ -3,7 +3,7 @@ name: assess
 description: "Issue triage and status assessment - analyze current state and recommend next workflow phase."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

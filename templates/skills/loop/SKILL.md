@@ -3,7 +3,7 @@ name: loop
 description: "Quality loop - Parse test/QA findings and iterate until quality gates pass"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

@@ -2,7 +2,7 @@
 
 ## ✅ Good Example: Content Ideas Queue (Issue #146)
 
-**Reference:** Commit `a9c3dbf` - [Issue #146](https://github.com/admarble/matcha-maps/issues/146)
+
 
 **AC:** Content Ideas Queue with filtering, pagination, bulk actions, and scoring (17 AC items)
 

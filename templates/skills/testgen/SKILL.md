@@ -3,7 +3,7 @@ name: testgen
 description: "Generate test stubs from /spec verification criteria"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read
@@ -194,7 +194,7 @@ describe('<Feature Name> - Integration', () => {
   // === SANDBOX ISOLATION ===
   // Each test run gets a unique temp directory to prevent test pollution
   // and support parallel test execution.
-  const TEST_DIR = `/tmp/matcha-maps-test-${process.pid}-${Date.now()}`;
+  const TEST_DIR = `/tmp/sequant-test-${process.pid}-${Date.now()}`;
 
   // Integration Points:
   // - <integration point 1>

@@ -3,7 +3,7 @@ name: verify
 description: Execution verification for CLI/script features — runs commands and captures output for human review. Use after /exec for script changes.
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Bash(*)

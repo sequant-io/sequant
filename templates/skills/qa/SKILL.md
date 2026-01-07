@@ -3,7 +3,7 @@ name: qa
 description: "Code review + QA vs Acceptance Criteria, including A+ status suggestions and review comment draft."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Bash(npm test:*)

@@ -3,7 +3,7 @@ name: test
 description: "Execute structured browser-based testing for admin features"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

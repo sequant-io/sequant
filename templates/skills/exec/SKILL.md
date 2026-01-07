@@ -3,7 +3,7 @@ name: exec
 description: "Phase 2 - Implementation loop for a single GitHub issue until Acceptance Criteria are satisfied (or as close as practical)."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   # File operations (required for implementation)

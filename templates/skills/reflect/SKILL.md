@@ -3,7 +3,7 @@ name: reflect
 description: "Strategic reflection on workflow effectiveness and continuous improvement"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

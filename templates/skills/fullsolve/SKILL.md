@@ -3,7 +3,7 @@ name: fullsolve
 description: "Complete issue resolution with integrated quality loops - spec → exec → test → qa with auto-fix iterations"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

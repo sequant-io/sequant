@@ -3,7 +3,7 @@ name: security-review
 description: "Deep security analysis for sensitive features (auth, payments, admin, API routes, file operations)."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Read

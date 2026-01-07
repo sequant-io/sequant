@@ -233,13 +233,13 @@ export function isHelpRequested(argv: string[]): boolean {
  * @example
  * ```typescript
  * if (isHelpRequested(process.argv)) {
- *   printUsage('discover-shops', 'Discover matcha shops for a city', {
+ *   printUsage('example-command', 'Example command description', {
  *     '--city <slug>': 'City slug (required)',
  *     '--limit <n>': 'Limit API calls',
  *     '--dry-run': 'Preview mode, no database writes',
  *   }, [
- *     'npx tsx scripts/discover-shops.ts --city nashville',
- *     'npx tsx scripts/discover-shops.ts --city nashville --limit 5',
+ *     'npx tsx scripts/example-command.ts --city nashville',
+ *     'npx tsx scripts/example-command.ts --city nashville --limit 5',
  *   ])
  *   process.exit(0)
  * }

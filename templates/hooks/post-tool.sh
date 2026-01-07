@@ -226,7 +226,7 @@ if [[ "${CLAUDE_HOOKS_SMART_TESTS:-}" == "true" ]]; then
             FILENAME=$(basename "$FILE_PATH" | sed -E 's/\.(ts|tsx)$//')
 
             # Find related test file in __tests__/ directory
-            # Matcha Maps uses centralized tests, not co-located
+            # This project uses centralized tests, not co-located
             PROJECT_ROOT="${FILE_PATH%%/lib/*}"
             if [[ "$PROJECT_ROOT" == "$FILE_PATH" ]]; then
                 PROJECT_ROOT="${FILE_PATH%%/components/*}"

@@ -3,7 +3,7 @@ name: solve
 description: "Generate the proper execute-issues.ts command for one or more GitHub issues"
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Bash(gh issue view:*)

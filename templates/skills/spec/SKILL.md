@@ -3,7 +3,7 @@ name: spec
 description: "Plan review vs Acceptance Criteria for a single GitHub issue, plus issue comment draft."
 license: MIT
 metadata:
-  author: matcha-maps
+  author: sequant
   version: "1.0"
 allowed-tools:
   - Bash(npm test:*)
