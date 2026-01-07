@@ -96,6 +96,14 @@ For comprehensive quality with automatic fix iterations:
 /fullsolve 152
 ```
 
+### Batch Execution (CLI)
+
+For running multiple issues from the terminal:
+```bash
+sequant run 152 153 --phases spec,exec,qa
+sequant run 152 --sequential
+```
+
 ### Notes
 - Issue #152 requires UI testing due to `ui` label
 - Issue #153 is a bug fix - simpler workflow recommended
@@ -135,6 +143,27 @@ Runs complete workflow with automatic fix iterations.
 | Bug Fix | bug, fix | exec → qa (or full if complex) |
 | Complex Feature | complex, refactor | fullsolve |
 | Documentation | docs | exec → qa |
+
+## CLI Alternative
+
+Use `sequant run` for batch execution from the command line:
+
+```bash
+# Run workflow for single issue
+sequant run 152
+
+# Multiple issues in parallel
+sequant run 152 153 154
+
+# Sequential execution (respects dependencies)
+sequant run 152 153 --sequential
+
+# Custom phases
+sequant run 152 --phases spec,exec,qa
+
+# Dry run (shows what would execute)
+sequant run 152 --dry-run
+```
 
 ## Edge Cases
 
