@@ -3,7 +3,7 @@
  */
 
 import { readdir, copyFile, chmod } from "fs/promises";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 import { readFile, writeFile, ensureDir, fileExists } from "./fs.js";
 import { getStackConfig } from "./stacks.js";
@@ -82,7 +82,7 @@ export async function copyTemplates(stack: string): Promise<void> {
   const stackConfig = getStackConfig(stack);
   const variables = {
     ...stackConfig.variables,
-    PROJECT_NAME: process.cwd().split("/").pop() || "project",
+    PROJECT_NAME: basename(process.cwd()) || "project",
     STACK: stack,
   };
 

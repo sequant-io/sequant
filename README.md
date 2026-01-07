@@ -55,10 +55,21 @@ npx sequant init
 ### CLI Commands
 
 ```bash
-sequant init      # Initialize in your project
-sequant update    # Update templates from package
-sequant doctor    # Check installation health
-sequant status    # Show version and config
+sequant init              # Initialize in your project
+sequant update            # Update templates from package
+sequant doctor            # Check installation health
+sequant status            # Show version and config
+sequant run <issues...>   # Execute workflow for issues
+```
+
+#### Run Command Options
+
+```bash
+sequant run 123                    # Single issue
+sequant run 1 2 3                  # Multiple issues in parallel
+sequant run 1 2 3 --sequential     # Run in order
+sequant run 123 --phases spec,qa   # Custom phases
+sequant run 123 --dry-run          # Preview without execution
 ```
 
 ### Workflow Commands (in Claude Code)
@@ -74,6 +85,30 @@ sequant status    # Show version and config
 | `/docs` | 4 | Generate feature documentation |
 | `/loop` | * | Fix iteration when tests fail |
 | `/fullsolve` | 1-4 | Complete pipeline in one command |
+
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| macOS | ✅ Tested | Full support with Claude Code, Cursor, VS Code |
+| Linux | ✅ Supported | Bash required for shell scripts |
+| Windows WSL | ✅ Supported | Use WSL2 with bash |
+| Windows Native | ⚠️ Limited | CLI works, but shell scripts require WSL |
+
+### Requirements
+
+- **Node.js** 18.0.0 or higher
+- **Git** for worktree support
+- **GitHub CLI** (`gh`) for issue integration
+- **Bash** for shell scripts (included in macOS/Linux, use WSL on Windows)
+
+### IDE Compatibility
+
+| IDE | Status |
+|-----|--------|
+| Claude Code | ✅ Full support |
+| Cursor | ✅ Supported |
+| VS Code + Copilot | ✅ Supported |
 
 ## Stack Support
 
