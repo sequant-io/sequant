@@ -25,7 +25,7 @@ program
   .description(
     "Quantize your development workflow - Sequential AI phases with quality gates",
   )
-  .version("0.1.0")
+  .version("1.0.0")
   .option("--no-color", "Disable colored output");
 
 program
