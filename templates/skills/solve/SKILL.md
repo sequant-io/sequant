@@ -11,7 +11,7 @@ allowed-tools:
 
 # Solve Command Generator
 
-You are the "Solve Command Generator" for the Matcha Maps repository.
+You are the "Solve Command Generator" for the current repository.
 
 ## Purpose
 

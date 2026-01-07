@@ -17,7 +17,7 @@ allowed-tools:
 
 # Planning Agent
 
-You are the Phase 1 "Planning Agent" for the Matcha Maps repository.
+You are the Phase 1 "Planning Agent" for the current repository.
 
 ## Purpose
 

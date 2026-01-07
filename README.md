@@ -1,13 +1,22 @@
 # Sequant
 
-**Quantize your development workflow.**
+**Structured AI workflow for GitHub issues.**
 
-Sequential AI phases with quality gates for any codebase.
+Turn GitHub issues into working code through sequential AI-assisted phases with quality gates.
 
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-## The Sequant Method
+## Why Sequant?
+
+When using AI coding assistants, work can become scattered and quality inconsistent. Sequant solves this by:
+
+- **Consistent quality** — Every issue goes through the same review gates
+- **Traceable decisions** — Plans and progress documented in GitHub issues
+- **Isolated work** — Git worktrees prevent half-finished features from polluting main
+- **AI-assisted** — Claude Code handles implementation while you review and approve
+
+## How It Works
 
 ```
 ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
@@ -15,29 +24,53 @@ Sequential AI phases with quality gates for any codebase.
 └─────────┘    └─────────┘    └─────────┘    └─────────┘
      │              │              │              │
      ▼              ▼              ▼              ▼
-   Plan          Build          Verify        Quality
-  Approval     Implementation   (Optional)      Gate
+   Plan          Build          Verify        Review
+  (drafts AC)   (worktree)    (optional)    (vs criteria)
 ```
 
-Work is "quantized" into atomic units—each GitHub issue becomes a discrete quantum of work, processed through sequential phases with quality gates.
+1. **`/spec`** — Reads issue, drafts implementation plan, posts to GitHub for your approval
+2. **`/exec`** — Creates isolated git worktree, implements changes, runs tests
+3. **`/test`** — Optional browser/CLI verification
+4. **`/qa`** — Reviews code against acceptance criteria, suggests fixes
 
 ## Quick Start
 
+### Prerequisites
+
+| Requirement | Check Command |
+|------------|---------------|
+| [Claude Code](https://claude.ai/code) | `claude --version` |
+| [GitHub CLI](https://cli.github.com/) | `gh auth status` |
+| Node.js 18+ | `node --version` |
+| Git | `git --version` |
+
+### Setup
+
 ```bash
-# Initialize in your project
+# Install and initialize in your project
 npx sequant init
 
-# Start using in Claude Code
-/spec 123    # Plan implementation for issue #123
-/exec 123    # Implement the feature
-/qa 123      # Quality review
+# Verify installation
+npx sequant doctor
 ```
+
+### First Workflow
+
+Open Claude Code in your project, then:
+
+```bash
+/spec 123    # Plan implementation for GitHub issue #123
+/exec 123    # Implement the feature in a worktree
+/qa 123      # Quality review before merge
+```
+
+> Replace `123` with an actual GitHub issue number from your repository.
 
 ## Installation
 
 ```bash
 npm install -g sequant
-# or
+# or use npx
 npx sequant init
 ```
 
@@ -175,32 +208,30 @@ After `sequant init`:
 .sequant-manifest.json   # Version tracking
 ```
 
+## Documentation
+
+- [Run Command](docs/run-command.md) — Batch execution options
+- [Customization Guide](docs/customization.md) — Override templates safely
+- [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
+- [Testing Guide](docs/testing.md) — Cross-platform testing matrix
+- Stack Guides: [Next.js](docs/stacks/nextjs.md) | [Rust](docs/stacks/rust.md) | [Python](docs/stacks/python.md) | [Go](docs/stacks/go.md)
+
 ## Philosophy
 
 Sequant is built on these principles:
 
-1. **Explicit over implicit** - Every phase has clear inputs and outputs
-2. **Quality gates** - No phase completes without validation
-3. **Isolation** - Work happens in dedicated worktrees
-4. **Traceability** - All decisions recorded in GitHub issues
-5. **Composability** - Use phases individually or combine them
+1. **Explicit over implicit** — Every phase has clear inputs and outputs
+2. **Quality gates** — No phase completes without validation
+3. **Isolation** — Work happens in dedicated worktrees
+4. **Traceability** — All decisions recorded in GitHub issues
+5. **Composability** — Use phases individually or combine them
 
-## Based On
+## Acknowledgments
 
-Sequant extracts and generalizes the workflow system developed for [Matcha Maps](https://github.com/admarble/matcha-maps).
-
-Planning issue: https://github.com/admarble/matcha-maps/issues/498
-
-Research sources:
-- [Agent Skills](https://agentskills.io) - Open standard for cross-platform skills
-- [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) - Update-safe directories
-- [Spec Kit](https://github.com/github/spec-kit) - Constitution pattern
-- [SuperClaude](https://github.com/SuperClaude-Org/SuperClaude_Framework) - Doctor command
+Built on ideas from:
+- [Agent Skills](https://agentskills.io) — Open standard for cross-platform skills
+- [BMAD Method](https://github.com/bmad-code-org/BMAD-METHOD) — Update-safe directories
 
 ## License
 
-MIT © [Matcha Maps](https://getmatchamaps.com)
-
----
-
-Built with 🍵 by the Matcha Maps team
+MIT

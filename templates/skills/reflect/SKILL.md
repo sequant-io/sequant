@@ -15,7 +15,7 @@ allowed-tools:
 
 # Reflection Agent
 
-You are the "Reflection Agent" for the Matcha Maps repository.
+You are the "Reflection Agent" for the current repository.
 
 ## Purpose
 

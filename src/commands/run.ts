@@ -5,8 +5,19 @@
  */
 
 import chalk from "chalk";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { getManifest } from "../lib/manifest.js";
+
+/**
+ * Check if claude CLI is available
+ */
+function checkClaudeCli(): boolean {
+  const result = spawnSync("claude", ["--version"], {
+    stdio: "pipe",
+    shell: true,
+  });
+  return result.status === 0;
+}
 import {
   Phase,
   DEFAULT_PHASES,
@@ -182,6 +193,17 @@ export async function runCommand(
     return;
   }
 
+  // Check if claude CLI is available (skip for dry-run)
+  if (!options.dryRun && !checkClaudeCli()) {
+    console.log(
+      chalk.red(
+        "❌ Claude CLI not found. Install it from https://claude.ai/code",
+      ),
+    );
+    console.log(chalk.gray("  Or use --dry-run to preview without execution."));
+    return;
+  }
+
   // Parse issue numbers
   const issueNumbers = issues
     .map((i) => parseInt(i, 10))
@@ -209,11 +231,15 @@ export async function runCommand(
   // Display configuration
   console.log(chalk.gray(`  Stack: ${manifest.stack}`));
   console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
-  console.log(chalk.gray(`  Mode: ${config.sequential ? "sequential" : "parallel"}`));
+  console.log(
+    chalk.gray(`  Mode: ${config.sequential ? "sequential" : "parallel"}`),
+  );
   if (config.dryRun) {
     console.log(chalk.yellow(`  ⚠️  DRY RUN - no actual execution`));
   }
-  console.log(chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`));
+  console.log(
+    chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
+  );
 
   // Execute
   const results: IssueResult[] = [];
@@ -251,7 +277,9 @@ export async function runCommand(
   const failed = results.filter((r) => !r.success).length;
 
   console.log(
-    chalk.gray(`\n  Results: ${chalk.green(`${passed} passed`)}, ${chalk.red(`${failed} failed`)}`),
+    chalk.gray(
+      `\n  Results: ${chalk.green(`${passed} passed`)}, ${chalk.red(`${failed} failed`)}`,
+    ),
   );
 
   for (const result of results) {
@@ -269,7 +297,9 @@ export async function runCommand(
 
   if (config.dryRun) {
     console.log(
-      chalk.yellow("  ℹ️  This was a dry run. Use without --dry-run to execute."),
+      chalk.yellow(
+        "  ℹ️  This was a dry run. Use without --dry-run to execute.",
+      ),
     );
     console.log("");
   }

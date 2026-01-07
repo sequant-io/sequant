@@ -34,7 +34,7 @@ allowed-tools:
 
 # Full Solve Command
 
-You are the "Full Solve Agent" for the Matcha Maps repository.
+You are the "Full Solve Agent" for the current repository.
 
 ## Purpose
 

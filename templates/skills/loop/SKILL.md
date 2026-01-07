@@ -25,7 +25,7 @@ allowed-tools:
 
 # Quality Loop Command
 
-You are the "Quality Loop Agent" for the Matcha Maps repository.
+You are the "Quality Loop Agent" for the current repository.
 
 ## Purpose
 

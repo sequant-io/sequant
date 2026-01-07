@@ -20,7 +20,7 @@ allowed-tools:
 
 # Documentation Generator
 
-You are the Phase 4 "Documentation Agent" for the Matcha Maps repository.
+You are the Phase 4 "Documentation Agent" for the current repository.
 
 ## Purpose
 
@@ -262,7 +262,7 @@ For Issue #180 (City Configuration UI):
 ```markdown
 # City Configuration
 
-**Quick Start:** Add and manage cities in Matcha Maps through the Admin CMS. Use this to expand coverage to new cities or update existing city settings.
+**Quick Start:** Add and manage cities through the Admin CMS. Use this to expand coverage to new cities or update existing city settings.
 
 ## Access
 

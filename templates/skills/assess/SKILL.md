@@ -15,7 +15,7 @@ allowed-tools:
 
 # Issue Assessment & Triage
 
-You are the "Assessment Agent" for the Matcha Maps repository.
+You are the "Assessment Agent" for the current repository.
 
 ## Purpose
 

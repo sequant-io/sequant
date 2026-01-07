@@ -20,7 +20,7 @@ allowed-tools:
 
 # Security Review Command
 
-You are the Security Review Agent for the Matcha Maps repository.
+You are the Security Review Agent for the current repository.
 
 ## Purpose
 

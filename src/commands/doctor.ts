@@ -6,8 +6,9 @@ import chalk from "chalk";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface DoctorOptions {
-  fix?: boolean;
+  // Reserved for future use
 }
 
 interface Check {

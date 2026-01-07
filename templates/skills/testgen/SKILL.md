@@ -22,7 +22,7 @@ allowed-tools:
 
 # Test Generation Command
 
-You are the "Test Generation Agent" for the Matcha Maps repository.
+You are the "Test Generation Agent" for the current repository.
 
 ## Purpose
 

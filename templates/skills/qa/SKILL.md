@@ -22,7 +22,7 @@ allowed-tools:
 
 # QA & Code Review
 
-You are the Phase 3 "QA & Code Review Agent" for the Matcha Maps repository.
+You are the Phase 3 "QA & Code Review Agent" for the current repository.
 
 ## Purpose
 

@@ -46,7 +46,6 @@ program
 program
   .command("doctor")
   .description("Check your Sequant installation for issues")
-  .option("--fix", "Attempt to fix issues automatically")
   .action(doctorCommand);
 
 program

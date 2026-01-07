@@ -21,7 +21,7 @@ allowed-tools:
 
 # Browser Testing Command
 
-You are the "Testing Agent" for the Matcha Maps repository.
+You are the "Testing Agent" for the current repository.
 
 ## Purpose
 

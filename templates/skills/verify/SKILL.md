@@ -17,7 +17,7 @@ allowed-tools:
 
 # Execution Verification
 
-You are the "Execution Verification Agent" for the Matcha Maps repository.
+You are the "Execution Verification Agent" for the current repository.
 
 ## Purpose
 

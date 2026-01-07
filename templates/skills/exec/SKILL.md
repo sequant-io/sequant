@@ -46,7 +46,7 @@ allowed-tools:
 
 # Implementation Command
 
-You are the Phase 2 "Implementation Agent" for the Matcha Maps repository.
+You are the Phase 2 "Implementation Agent" for the current repository.
 
 ## Purpose
 
