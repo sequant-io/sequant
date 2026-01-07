@@ -72,6 +72,29 @@ Invocation:
 
 **Important:** Review the actual implementation in the worktree, not the main branch.
 
+### No Worktree Found
+
+If no feature worktree exists (work was done directly on main):
+
+1. **Identify relevant commits:**
+   ```bash
+   git log --oneline -10
+   ```
+
+2. **Find the base commit** (before the implementation started):
+   ```bash
+   # Look for the last commit before the feature work
+   git log --oneline --before="<date>" -1
+   ```
+
+3. **Review changes from base:**
+   ```bash
+   git diff <base-commit>...HEAD --name-only
+   git diff <base-commit>...HEAD
+   ```
+
+4. **Run quality checks** on the current branch instead of comparing to a worktree.
+
 ### Parallel Quality Checks (Multi-Agent)
 
 Before detailed manual review, run quality checks in parallel using specialized agents.

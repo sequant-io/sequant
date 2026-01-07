@@ -234,6 +234,37 @@ Common issues and solutions when using Sequant.
 
 3. Check your lint configuration is correct for your stack.
 
+## Git Issues
+
+### GPG signing failed
+
+**Problem:** Commits fail with "gpg failed to sign the data" or "No pinentry".
+
+**Solutions:**
+
+1. Commit without GPG signing (if allowed):
+   ```bash
+   git commit --no-gpg-sign -m "message"
+   ```
+
+2. Fix GPG agent:
+   ```bash
+   gpgconf --kill gpg-agent
+   gpg-agent --daemon
+   ```
+
+3. Configure Git to skip signing:
+   ```bash
+   git config --global commit.gpgsign false
+   ```
+
+4. Fix pinentry (macOS):
+   ```bash
+   brew install pinentry-mac
+   echo "pinentry-program $(which pinentry-mac)" >> ~/.gnupg/gpg-agent.conf
+   gpgconf --kill gpg-agent
+   ```
+
 ## Common Error Messages
 
 ### "Sequant is not initialized"
