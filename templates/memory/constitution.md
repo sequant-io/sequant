@@ -54,6 +54,14 @@ This document defines the core principles and patterns for AI-assisted developme
 | `/loop` | Fix iteration when tests fail |
 | `/docs` | Generate feature documentation |
 
+## Stack-Specific Notes
+
+### Astro Projects
+- Astro projects may not have `test` or `lint` scripts configured by default
+- If tests are needed, consider adding Vitest (`npm install -D vitest`)
+- For linting, consider ESLint with the Astro plugin (`npm install -D eslint eslint-plugin-astro`)
+- Build output goes to `dist/` by default
+
 ## Project-Specific Notes
 
 <!-- Add your project-specific guidelines below -->
