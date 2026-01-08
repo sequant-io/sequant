@@ -21,7 +21,7 @@ function getTemplatesDir(): string {
 /**
  * Process template variables in content
  */
-function processTemplate(
+export function processTemplate(
   content: string,
   variables: Record<string, string>,
 ): string {
@@ -77,11 +77,15 @@ export async function getTemplateContent(
 /**
  * Copy all templates to .claude/ directory
  */
-export async function copyTemplates(stack: string): Promise<void> {
+export async function copyTemplates(
+  stack: string,
+  tokens?: Record<string, string>,
+): Promise<void> {
   const templatesDir = getTemplatesDir();
   const stackConfig = getStackConfig(stack);
   const variables = {
     ...stackConfig.variables,
+    ...tokens,
     PROJECT_NAME: basename(process.cwd()) || "project",
     STACK: stack,
   };

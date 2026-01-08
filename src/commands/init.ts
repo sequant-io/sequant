@@ -4,9 +4,10 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { detectStack } from "../lib/stacks.js";
+import { detectStack, getStackConfig } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
+import { saveConfig } from "../lib/config.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
 import {
   commandExists,
@@ -135,6 +136,25 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   console.log(chalk.blue(`\n📋 Stack: ${stack}`));
 
+  // Get stack config for default dev URL
+  const stackConfig = getStackConfig(stack!);
+  let devUrl = stackConfig.devUrl;
+
+  // Prompt for dev URL
+  if (options.yes) {
+    console.log(chalk.blue(`🌐 Dev URL: ${devUrl} (default)`));
+  } else {
+    const { inputDevUrl } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "inputDevUrl",
+        message: "Development server URL:",
+        default: devUrl,
+      },
+    ]);
+    devUrl = inputDevUrl;
+  }
+
   // Show what will be created
   console.log(chalk.gray("\nWill create:"));
   console.log(chalk.gray("  .claude/"));
@@ -165,11 +185,21 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await ensureDir(".claude/skills");
   await ensureDir(".claude/hooks");
   await ensureDir(".claude/memory");
+  await ensureDir(".claude/.sequant");
   await ensureDir("scripts/dev");
+
+  // Save config with tokens
+  console.log(chalk.blue("💾 Saving configuration..."));
+  const tokens = { DEV_URL: devUrl };
+  await saveConfig({
+    tokens,
+    stack: stack!,
+    initialized: new Date().toISOString(),
+  });
 
   // Copy templates
   console.log(chalk.blue("📄 Copying templates..."));
-  await copyTemplates(stack!);
+  await copyTemplates(stack!, tokens);
 
   // Create manifest
   console.log(chalk.blue("📋 Creating manifest..."));
