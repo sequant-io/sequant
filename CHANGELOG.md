@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2025-01-08
+
+### Added
+- Structured JSON logging for `sequant run` with Zod schema validation
+  - `--log-json` flag to enable JSON log output
+  - `--log-path` option to specify custom log directory
+  - Logs include run metadata, phase timing, issue status, and summary stats
+- `sequant logs` command to view and analyze run history
+  - List recent runs with `sequant logs`
+  - View specific run with `sequant logs <run-id>`
+  - Filter by issue with `--issue <number>`
+- Pre-flight git state checks in `/fullsolve` and `/exec` skills
+  - Prevents duplicate work after context restoration
+  - Verifies recent commits, existing PRs/branches before starting
+- Output verification checklists to all 14 skills
+- Unit tests for run-log-schema (58 tests) and LogWriter (41 tests)
+
+### Changed
+- `sequant update` now auto-runs `npm install` when package.json changes
+
+### Fixed
+- Pre-tool hook now correctly detects git status in worktree directories
+  - Fixes false "no changes to commit" errors when committing from worktrees
+
 ## [1.1.1] - 2025-01-08
 
 ### Changed
@@ -99,5 +123,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/admarble/sequant/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/admarble/sequant/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/admarble/sequant/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/admarble/sequant/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/admarble/sequant/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/admarble/sequant/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/admarble/sequant/releases/tag/v0.1.0
