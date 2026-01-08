@@ -68,11 +68,33 @@ git push origin --delete "$BRANCH_NAME" 2>/dev/null || true
 # Update main
 echo -e "${BLUE}📥 Updating main branch...${NC}"
 git checkout main
-git pull origin main
+git fetch origin main
+
+# Handle divergent branches gracefully
+if ! git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+    # Local is behind or diverged - fast-forward or rebase
+    if git merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
+        # Local is ahead - nothing to do
+        echo -e "${BLUE}   Local main is ahead of origin${NC}"
+    else
+        # Diverged or behind - try fast-forward first
+        if ! git pull --ff-only origin main 2>/dev/null; then
+            echo -e "${YELLOW}   Divergent branches detected, rebasing...${NC}"
+            git rebase origin/main
+        fi
+    fi
+else
+    git pull --ff-only origin main 2>/dev/null || true
+fi
 
 echo ""
 echo -e "${GREEN}✅ Cleanup complete!${NC}"
 echo ""
+
+# Reminder for new dependencies
+echo -e "${YELLOW}💡 Tip: If new dependencies were added, run: npm install${NC}"
+echo ""
+
 echo -e "${BLUE}🗂️  Remaining worktrees:${NC}"
 git worktree list
 echo ""
