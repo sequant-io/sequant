@@ -37,12 +37,13 @@ When using AI coding assistants, work can become scattered and quality inconsist
 
 ### Prerequisites
 
-| Requirement | Check Command |
-|------------|---------------|
-| [Claude Code](https://claude.ai/code) | `claude --version` |
-| [GitHub CLI](https://cli.github.com/) | `gh auth status` |
-| Node.js 18+ | `node --version` |
-| Git | `git --version` |
+| Requirement | Check Command | Notes |
+|------------|---------------|-------|
+| [Claude Code](https://claude.ai/code) | `claude --version` | Required |
+| [GitHub CLI](https://cli.github.com/) | `gh auth status` | Required, must be authenticated |
+| Node.js 18+ | `node --version` | Required |
+| Git | `git --version` | Required |
+| [jq](https://jqlang.github.io/jq/) | `jq --version` | Optional, improves hook performance |
 
 ### Setup
 
@@ -50,9 +51,11 @@ When using AI coding assistants, work can become scattered and quality inconsist
 # Install and initialize in your project
 npx sequant init
 
-# Verify installation
+# Verify installation and prerequisites
 npx sequant doctor
 ```
+
+The `doctor` command checks all prerequisites including GitHub CLI authentication.
 
 ### First Workflow
 
@@ -132,8 +135,9 @@ sequant run 123 --dry-run          # Preview without execution
 
 - **Node.js** 18.0.0 or higher
 - **Git** for worktree support
-- **GitHub CLI** (`gh`) for issue integration
+- **GitHub CLI** (`gh`) for issue integration — must be authenticated via `gh auth login`
 - **Bash** for shell scripts (included in macOS/Linux, use WSL on Windows)
+- **jq** (optional) for faster JSON parsing in hooks — falls back to grep if not installed
 
 ### IDE Compatibility
 
