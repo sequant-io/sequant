@@ -56,15 +56,30 @@ program
 
 program
   .command("run")
-  .description("Execute workflow for GitHub issues")
-  .argument("<issues...>", "Issue numbers to process")
+  .description("Execute workflow for GitHub issues using Claude Agent SDK")
+  .argument("[issues...]", "Issue numbers to process")
   .option("--phases <list>", "Phases to run (default: spec,exec,qa)")
   .option("--sequential", "Run issues sequentially")
   .option("-d, --dry-run", "Preview without execution")
-  .option("-v, --verbose", "Verbose output")
+  .option("-v, --verbose", "Verbose output with streaming")
   .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
   .option("--log-json", "Enable structured JSON logging")
   .option("--log-path <path>", "Custom log directory path")
+  .option("-q, --quality-loop", "Enable quality loop with auto-retry")
+  .option(
+    "--max-iterations <n>",
+    "Max iterations for quality loop (default: 3)",
+    parseInt,
+  )
+  .option(
+    "--batch <issues>",
+    'Group of issues to run together (e.g., --batch "1 2" --batch "3")',
+    (value: string, prev: string[]) => prev.concat([value]),
+    [],
+  )
+  .option("--smart-tests", "Enable smart test detection (default)")
+  .option("--no-smart-tests", "Disable smart test detection")
+  .option("--testgen", "Run testgen phase after spec")
   .action(runCommand);
 
 program
