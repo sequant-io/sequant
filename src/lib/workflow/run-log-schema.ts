@@ -264,8 +264,12 @@ export function finalizeRunLog(runLog: Omit<RunLog, "endTime">): RunLog {
   const startTime = new Date(runLog.startTime);
   const totalDurationSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
 
-  const passed = runLog.issues.filter((i) => i.status === "success").length;
-  const failed = runLog.issues.filter((i) => i.status === "failure").length;
+  const passed = runLog.issues.filter(
+    (i: IssueLog) => i.status === "success",
+  ).length;
+  const failed = runLog.issues.filter(
+    (i: IssueLog) => i.status === "failure",
+  ).length;
 
   return {
     ...runLog,

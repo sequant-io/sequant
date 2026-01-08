@@ -169,7 +169,9 @@ function filterLogs(
   // Filter by issue number
   if (options.issue !== undefined) {
     filtered = filtered.filter(({ log }) =>
-      log.issues.some((i) => i.issueNumber === options.issue),
+      log.issues.some(
+        (i: { issueNumber: number }) => i.issueNumber === options.issue,
+      ),
     );
   }
 
