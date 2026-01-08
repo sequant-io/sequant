@@ -290,20 +290,19 @@ Post completion comment to issue with:
 
 ### 5.3 Merge Workflow (Correct Order)
 
-**IMPORTANT:** Clean up worktree BEFORE merging to avoid "branch used by worktree" error.
+**IMPORTANT:** Merge the PR first, then clean up the worktree.
 
 ```bash
-# 1. Clean up worktree FIRST (removes worktree + local branch)
-./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
-
-# 2. THEN merge (--delete-branch now works since local branch is gone)
+# 1. Merge PR (--delete-branch deletes remote; local deletion will fail but that's OK)
 gh pr merge <N> --squash --delete-branch
 
-# 3. Close issue (if not auto-closed by "Fixes #N" in commit)
-gh issue close <issue-number>
+# 2. Clean up worktree (removes local worktree + branch)
+./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
+
+# 3. Issue auto-closes if commit message contains "Fixes #N"
 ```
 
-**Why this order matters:** `gh pr merge --delete-branch` tries to delete the local branch, which fails if a worktree is still using it. Always clean up the worktree first.
+**Why this order matters:** The cleanup script checks if the PR is merged before proceeding. The `--delete-branch` flag will fail to delete the local branch (worktree conflict) but successfully deletes the remote branch. The cleanup script then handles the local branch removal.
 
 ## Iteration Tracking
 
