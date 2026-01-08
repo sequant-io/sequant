@@ -199,8 +199,20 @@ fi
 # Skips for --amend since amending doesn't require new changes
 if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     if ! echo "$TOOL_INPUT" | grep -qE -- '--amend|--allow-empty'; then
-        # Check for changes (staged or unstaged)
-        CHANGES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        # Extract target directory from cd command if present (for worktree commits)
+        # Handles: "cd /path && git commit" or "cd /path; git commit"
+        TARGET_DIR=""
+        if echo "$TOOL_INPUT" | grep -qE '^cd [^;&|]+'; then
+            TARGET_DIR=$(echo "$TOOL_INPUT" | grep -oE '^cd [^;&|]+' | head -1 | sed 's/^cd //' | tr -d ' ')
+        fi
+
+        # Check for changes in the target directory (or current if no cd)
+        if [[ -n "$TARGET_DIR" && -d "$TARGET_DIR" ]]; then
+            CHANGES=$(cd "$TARGET_DIR" && git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        else
+            CHANGES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        fi
+
         if [[ "$CHANGES" -eq 0 ]]; then
             echo "HOOK_BLOCKED: No changes to commit. Stage files with 'git add' first." | tee -a /tmp/claude-hook.log >&2
             exit 2

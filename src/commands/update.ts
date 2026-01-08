@@ -5,6 +5,7 @@
 import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
+import { spawnSync } from "child_process";
 import { getManifest, updateManifest } from "../lib/manifest.js";
 import { getTemplateContent, listTemplateFiles } from "../lib/templates.js";
 import { readFile, writeFile, fileExists } from "../lib/fs.js";
@@ -154,4 +155,24 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   await updateManifest();
 
   console.log(chalk.green(`\n✅ Updated ${updated} files`));
+
+  // Check if package.json was updated and run npm install
+  const packageJsonUpdated = [...newFiles, ...modifiedFiles].some(
+    (f) => f.path === "package.json" || f.path.endsWith("/package.json"),
+  );
+
+  if (packageJsonUpdated) {
+    console.log(
+      chalk.blue("\n📦 package.json updated, running npm install..."),
+    );
+    const result = spawnSync("npm", ["install"], {
+      stdio: "inherit",
+      shell: true,
+    });
+    if (result.status === 0) {
+      console.log(chalk.green("✅ Dependencies installed"));
+    } else {
+      console.log(chalk.yellow("⚠️  npm install failed - run manually"));
+    }
+  }
 }
