@@ -90,6 +90,32 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 /fullsolve 218 --max-iterations 5 # Override max fix iterations
 ```
 
+## Phase 0: Pre-flight Checks
+
+**CRITICAL after context restoration:** Before starting any work, verify the current git state to avoid duplicate work.
+
+### 0.1 Git State Verification
+
+```bash
+# Check current branch and recent commits
+git log --oneline -5 --stat
+
+# Check for any existing work on this issue
+git branch -a | grep -i "<issue-number>"
+gh pr list --search "<issue-number>"
+```
+
+**Why this matters:** After context restoration from a summarized conversation, the git state may have changed (PRs merged, rebases, etc.). Always verify what's already been done before creating files or making changes.
+
+### 0.2 Existing Work Detection
+
+Before creating any files, check if they already exist:
+- Look for test files: `ls -la src/**/*.test.ts`
+- Check recent commits for relevant changes
+- Verify PR status if one was mentioned in context
+
+**If work already exists:** Skip to the appropriate phase (e.g., if implementation is done, go to Phase 3 or 4).
+
 ## Phase 1: Planning (SPEC)
 
 Execute the planning phase inline (not as separate command):

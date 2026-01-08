@@ -65,6 +65,24 @@ Invocation:
 - `/exec <freeform description>`:
   - Treat the text as a lightweight description + AC if no issue context is available.
 
+### 0. Pre-flight Check (After Context Restoration)
+
+**CRITICAL:** If continuing from a restored/summarized conversation, verify git state first:
+
+```bash
+# Check current state - are we in a worktree or main repo?
+pwd
+git log --oneline -3 --stat
+
+# Check for existing PRs or branches for this issue
+gh pr list --search "<issue-number>"
+git branch -a | grep -i "<issue-number>"
+```
+
+**Why this matters:** After context restoration, PRs may have merged, branches may have changed, or work may already be complete. Always verify before creating duplicate work.
+
+**If PR already merged:** The issue may be complete - verify and close if so.
+
 ### 1. Check Implementation Readiness
 
 **FIRST STEP:** Review the issue readiness and proceed with implementation.
