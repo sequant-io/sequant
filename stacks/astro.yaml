@@ -1,0 +1,35 @@
+name: astro
+displayName: Astro
+description: The web framework for content-driven websites
+
+detection:
+  files:
+    - astro.config.mjs
+    - astro.config.js
+    - astro.config.ts
+  packageDeps:
+    - astro
+
+commands:
+  test: npm test
+  build: npm run build
+  lint: npm run lint
+  dev: npm run dev
+
+variables:
+  TEST_COMMAND: npm test
+  BUILD_COMMAND: npm run build
+  LINT_COMMAND: npm run lint
+
+patterns:
+  pages: src/pages/**/*.astro
+  components: src/components/**/*.astro
+  layouts: src/layouts/**/*.astro
+  content: src/content/**/*.{md,mdx}
+
+notes: |
+  Astro projects may not have test or lint scripts by default.
+  Recommended setup:
+  - Testing: npm install -D vitest
+  - Linting: npm install -D eslint eslint-plugin-astro
+  Build output defaults to dist/

@@ -41,6 +41,25 @@ Invocation:
 - `/qa 123`: Treat `123` as the GitHub issue/PR identifier in context.
 - `/qa <freeform description>`: Treat the text as context about the change to review.
 
+### Pre-flight Sync Check
+
+Before starting QA, verify the local branch is in sync with remote:
+
+```bash
+git fetch origin 2>/dev/null || echo "Network unavailable - proceeding with local state"
+git status -sb | head -1  # Shows ahead/behind status
+```
+
+**Status interpretation:**
+- `[ahead N]` - Local has commits not on remote (OK to proceed)
+- `[behind N]` - Remote has commits not pulled locally (recommend sync first)
+- `[ahead N, behind M]` - Branches diverged (recommend sync before QA)
+
+If diverged, recommend:
+```bash
+git pull origin main  # Or merge origin/main if pull fails
+```
+
 ### Feature Worktree Workflow
 
 **QA Phase:** Review code in the feature worktree.
