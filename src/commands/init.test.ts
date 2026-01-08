@@ -9,6 +9,21 @@ vi.mock("../lib/fs.js", () => ({
 // Mock stacks
 vi.mock("../lib/stacks.js", () => ({
   detectStack: vi.fn(),
+  getStackConfig: vi.fn(() => ({
+    name: "generic",
+    displayName: "Generic",
+    devUrl: "http://localhost:3000",
+    variables: {
+      TEST_COMMAND: "npm test",
+      BUILD_COMMAND: "npm run build",
+      LINT_COMMAND: "npm run lint",
+    },
+  })),
+}));
+
+// Mock config
+vi.mock("../lib/config.js", () => ({
+  saveConfig: vi.fn(),
 }));
 
 // Mock templates
@@ -44,6 +59,7 @@ import { fileExists, ensureDir } from "../lib/fs.js";
 import { detectStack } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
+import { saveConfig } from "../lib/config.js";
 import { commandExists, isGhAuthenticated } from "../lib/system.js";
 
 const mockFileExists = vi.mocked(fileExists);
@@ -51,6 +67,7 @@ const mockEnsureDir = vi.mocked(ensureDir);
 const mockDetectStack = vi.mocked(detectStack);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockCreateManifest = vi.mocked(createManifest);
+const mockSaveConfig = vi.mocked(saveConfig);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 
@@ -67,6 +84,7 @@ describe("init command", () => {
     mockDetectStack.mockResolvedValue(null);
     mockCopyTemplates.mockResolvedValue(undefined);
     mockCreateManifest.mockResolvedValue(undefined);
+    mockSaveConfig.mockResolvedValue(undefined);
     mockCommandExists.mockReturnValue(true);
     mockIsGhAuthenticated.mockReturnValue(true);
   });
@@ -162,8 +180,17 @@ describe("init command", () => {
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/skills");
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/hooks");
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/memory");
+      expect(mockEnsureDir).toHaveBeenCalledWith(".claude/.sequant");
       expect(mockEnsureDir).toHaveBeenCalledWith("scripts/dev");
-      expect(mockCopyTemplates).toHaveBeenCalledWith("nextjs");
+      expect(mockSaveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tokens: { DEV_URL: "http://localhost:3000" },
+          stack: "nextjs",
+        }),
+      );
+      expect(mockCopyTemplates).toHaveBeenCalledWith("nextjs", {
+        DEV_URL: "http://localhost:3000",
+      });
       expect(mockCreateManifest).toHaveBeenCalledWith("nextjs");
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");

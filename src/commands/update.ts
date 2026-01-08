@@ -7,7 +7,13 @@ import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { spawnSync } from "child_process";
 import { getManifest, updateManifest } from "../lib/manifest.js";
-import { getTemplateContent, listTemplateFiles } from "../lib/templates.js";
+import {
+  getTemplateContent,
+  listTemplateFiles,
+  processTemplate,
+} from "../lib/templates.js";
+import { getConfig, saveConfig } from "../lib/config.js";
+import { getStackConfig } from "../lib/stacks.js";
 import { readFile, writeFile, fileExists } from "../lib/fs.js";
 
 interface UpdateOptions {
@@ -35,6 +41,49 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
   console.log(chalk.gray(`Current version: ${manifest.version}`));
   console.log(chalk.gray(`Stack: ${manifest.stack}\n`));
+
+  // Get config with tokens (or migrate legacy installs)
+  let config = await getConfig();
+  let tokens: Record<string, string>;
+
+  if (config) {
+    tokens = config.tokens;
+    console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
+  } else {
+    // Legacy install - migrate by prompting for tokens
+    console.log(
+      chalk.yellow(
+        "⚠️  No configuration found - migrating from legacy install\n",
+      ),
+    );
+
+    const stackConfig = getStackConfig(manifest.stack);
+    const defaultDevUrl = stackConfig.devUrl;
+
+    if (options.force) {
+      tokens = { DEV_URL: defaultDevUrl };
+      console.log(chalk.blue(`🌐 Using default dev URL: ${defaultDevUrl}`));
+    } else {
+      const { inputDevUrl } = await inquirer.prompt([
+        {
+          type: "input",
+          name: "inputDevUrl",
+          message: "Development server URL:",
+          default: defaultDevUrl,
+        },
+      ]);
+      tokens = { DEV_URL: inputDevUrl };
+    }
+
+    // Save the new config
+    config = {
+      tokens,
+      stack: manifest.stack,
+      initialized: manifest.installedAt,
+    };
+    await saveConfig(config);
+    console.log(chalk.green("✅ Configuration saved\n"));
+  }
 
   // Get list of template files
   const templateFiles = await listTemplateFiles();
@@ -144,9 +193,20 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.blue("\n📥 Applying updates..."));
   let updated = 0;
 
+  // Build complete variables for template processing
+  const stackConfig = getStackConfig(manifest.stack);
+  const variables = {
+    ...stackConfig.variables,
+    ...tokens,
+    PROJECT_NAME: process.cwd().split("/").pop() || "project",
+    STACK: manifest.stack,
+  };
+
   for (const file of [...newFiles, ...modifiedFiles]) {
     const templatePath = file.path.replace(".claude/", "templates/");
-    const content = await getTemplateContent(templatePath);
+    let content = await getTemplateContent(templatePath);
+    // Process templates with tokens to replace {{DEV_URL}} etc.
+    content = processTemplate(content, variables);
     await writeFile(file.path, content);
     updated++;
   }
