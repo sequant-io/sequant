@@ -10,6 +10,15 @@ DATE=$(date +%Y-%m-%d)
 REMOTE="origin"
 MAIN_BRANCH="main"
 
+# Detect GitHub repo from git remote (supports both HTTPS and SSH URLs)
+REMOTE_URL=$(git remote get-url "$REMOTE" 2>/dev/null || echo "")
+if [[ "$REMOTE_URL" =~ github\.com[:/]([^/]+/[^/.]+)(\.git)?$ ]]; then
+  GITHUB_REPO="${BASH_REMATCH[1]}"
+else
+  echo "Warning: Could not detect GitHub repo from remote URL"
+  GITHUB_REPO="OWNER/REPO"
+fi
+
 if [[ -z "$VERSION" ]]; then
   echo "Usage: ./scripts/release.sh <version>"
   echo "Example: ./scripts/release.sh 1.1.0"
@@ -59,7 +68,7 @@ if grep -q "## \[Unreleased\]" CHANGELOG.md; then
     # Get previous version from changelog
     PREV_VERSION=$(grep -oE '\[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | head -2 | tail -1 | tr -d '[]')
     if [[ -n "$PREV_VERSION" ]]; then
-      sed -i '' "s|\[Unreleased\]:.*|[Unreleased]: https://github.com/admarble/sequant/compare/v$VERSION...HEAD\n[$VERSION]: https://github.com/admarble/sequant/compare/v$PREV_VERSION...v$VERSION|" CHANGELOG.md
+      sed -i '' "s|\[Unreleased\]:.*|[Unreleased]: https://github.com/$GITHUB_REPO/compare/v$VERSION...HEAD\n[$VERSION]: https://github.com/$GITHUB_REPO/compare/v$PREV_VERSION...v$VERSION|" CHANGELOG.md
     fi
   fi
 else
@@ -109,6 +118,6 @@ echo ""
 echo "✅ Released sequant v$VERSION"
 echo ""
 echo "Next steps:"
-echo "  - Verify GitHub release: https://github.com/admarble/sequant/releases/tag/v$VERSION"
+echo "  - Verify GitHub release: https://github.com/$GITHUB_REPO/releases/tag/v$VERSION"
 echo "  - Verify npm package: https://www.npmjs.com/package/sequant"
 echo "  - Announce release (if applicable)"
