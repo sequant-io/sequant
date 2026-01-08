@@ -3,11 +3,64 @@
  */
 
 import chalk from "chalk";
+import { execSync } from "child_process";
 import inquirer from "inquirer";
 import { detectStack } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
+
+/**
+ * Check if a command exists on the system
+ */
+function commandExists(cmd: string): boolean {
+  try {
+    execSync(`command -v ${cmd}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if gh CLI is authenticated
+ */
+function isGhAuthenticated(): boolean {
+  try {
+    execSync("gh auth status", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check prerequisites and display warnings
+ */
+function checkPrerequisites(): { warnings: string[]; suggestions: string[] } {
+  const warnings: string[] = [];
+  const suggestions: string[] = [];
+
+  // Check for gh CLI
+  if (!commandExists("gh")) {
+    warnings.push(
+      "GitHub CLI (gh) is not installed. Required for issue workflows.",
+    );
+    suggestions.push("Install from: https://cli.github.com");
+  } else if (!isGhAuthenticated()) {
+    warnings.push("GitHub CLI is not authenticated.");
+    suggestions.push("Run: gh auth login");
+  }
+
+  // Check for jq (optional)
+  if (!commandExists("jq")) {
+    suggestions.push(
+      "Optional: Install jq for faster JSON parsing in hooks (brew install jq)",
+    );
+  }
+
+  return { warnings, suggestions };
+}
 
 interface InitOptions {
   stack?: string;
@@ -17,6 +70,21 @@ interface InitOptions {
 
 export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.green("\n🚀 Initializing Sequant...\n"));
+
+  // Check prerequisites and display warnings
+  const { warnings, suggestions } = checkPrerequisites();
+  if (warnings.length > 0) {
+    console.log(chalk.yellow("⚠️  Prerequisites:\n"));
+    for (const warning of warnings) {
+      console.log(chalk.yellow(`   • ${warning}`));
+    }
+    for (const suggestion of suggestions.filter(
+      (s) => !s.startsWith("Optional"),
+    )) {
+      console.log(chalk.gray(`     ${suggestion}`));
+    }
+    console.log();
+  }
 
   // Check if already initialized
   const configExists = await fileExists(".claude/settings.json");
@@ -127,11 +195,26 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.blue("📋 Creating manifest..."));
   await createManifest(stack!);
 
+  // Build optional suggestions section
+  const optionalSuggestions = suggestions.filter((s) =>
+    s.startsWith("Optional"),
+  );
+  const optionalSection =
+    optionalSuggestions.length > 0
+      ? `\n${chalk.bold("Optional improvements:")}\n${optionalSuggestions.map((s) => `  • ${s.replace("Optional: ", "")}`).join("\n")}\n`
+      : "";
+
+  // Build prerequisites reminder if there were warnings
+  const prereqReminder =
+    warnings.length > 0
+      ? `\n${chalk.yellow("⚠️  Remember to address prerequisites above before using issue workflows.")}\n`
+      : "";
+
   // Success message
   console.log(
     chalk.green(`
 ✅ Sequant initialized successfully!
-
+${prereqReminder}
 ${chalk.bold("Next steps:")}
   1. Review .claude/memory/constitution.md and customize for your project
   2. Start using workflow commands in Claude Code:
@@ -139,7 +222,7 @@ ${chalk.bold("Next steps:")}
      ${chalk.cyan("/spec 123")}    - Plan implementation for issue #123
      ${chalk.cyan("/exec 123")}    - Implement the feature
      ${chalk.cyan("/qa 123")}      - Quality review
-
+${optionalSection}
 ${chalk.bold("Documentation:")}
   https://github.com/admarble/sequant#readme
 `),

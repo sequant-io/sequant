@@ -3,8 +3,33 @@
  */
 
 import chalk from "chalk";
+import { execSync } from "child_process";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
+
+/**
+ * Check if a command exists on the system
+ */
+function commandExists(cmd: string): boolean {
+  try {
+    execSync(`command -v ${cmd}`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if gh CLI is authenticated
+ */
+function isGhAuthenticated(): boolean {
+  try {
+    execSync("gh auth status", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface DoctorOptions {
@@ -141,6 +166,51 @@ export async function doctorCommand(options: DoctorOptions): Promise<void> {
       name: "Git Repository",
       status: "warn",
       message: "Not a git repository (worktree features won't work)",
+    });
+  }
+
+  // Check 8: GitHub CLI installed
+  if (commandExists("gh")) {
+    checks.push({
+      name: "GitHub CLI",
+      status: "pass",
+      message: "gh CLI is installed",
+    });
+
+    // Check 9: GitHub CLI authenticated (only if gh exists)
+    if (isGhAuthenticated()) {
+      checks.push({
+        name: "GitHub Auth",
+        status: "pass",
+        message: "gh CLI is authenticated",
+      });
+    } else {
+      checks.push({
+        name: "GitHub Auth",
+        status: "fail",
+        message: "gh CLI not authenticated - run: gh auth login",
+      });
+    }
+  } else {
+    checks.push({
+      name: "GitHub CLI",
+      status: "fail",
+      message: "gh CLI not installed - see: https://cli.github.com",
+    });
+  }
+
+  // Check 10: jq installed (optional but recommended)
+  if (commandExists("jq")) {
+    checks.push({
+      name: "jq",
+      status: "pass",
+      message: "jq is installed (faster JSON parsing in hooks)",
+    });
+  } else {
+    checks.push({
+      name: "jq",
+      status: "warn",
+      message: "jq not installed (optional, hooks will use grep fallback)",
     });
   }
 
