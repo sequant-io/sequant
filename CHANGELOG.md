@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-01-08
+
+### Added
+- Prerequisite checks in `sequant doctor` for gh CLI, authentication, and jq
+- Prerequisite warnings in `sequant init` for missing dependencies
+- Optional jq suggestion in init success message
+- Unit tests for doctor and init prerequisite checks
+
+### Changed
+- `release.sh` now dynamically detects GitHub repo from git remote
+- README updated with prerequisite information and jq as optional dependency
+
+### Fixed
+- TypeScript errors in doctor.test.ts mock types
+
+## [1.0.0] - 2025-01-07
+
 ### Changed
 - **BREAKING:** Removed all project-specific content from skill templates
   - Replaced shop/supabase examples with generic item/database terminology
