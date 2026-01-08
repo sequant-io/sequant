@@ -558,3 +558,18 @@ For Issue #452 (hooks):
 ---
 Generated with [Claude Code](https://claude.com/claude-code)
 ```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **AC Parsing** - Each AC identified with verification method
+- [ ] **Test Stubs Generated** - Files created for Unit/Integration tests
+- [ ] **Browser/Manual Scenarios** - Written for applicable AC items
+- [ ] **Failure Paths** - Error handling stubs for each AC
+- [ ] **Summary Table** - AC count, happy path count, failure path count
+- [ ] **GitHub Comment** - Summary posted to issue
+
+**DO NOT respond until all items are verified.**

@@ -194,3 +194,18 @@ Next cleanup recommended: [date + 30 days]
 ## BEGIN EXECUTION
 
 Execute the cleanup following the steps above. Be thorough but safe - when in doubt, skip a file rather than risk breaking something.
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Pre-flight Results** - Branch check, build verification passed
+- [ ] **Cleanup Manifest** - List of files to be archived/removed
+- [ ] **Archive Summary** - Count of files archived by category
+- [ ] **Build Verification** - Post-cleanup build/lint passed
+- [ ] **Commit Details** - Commit hash and push confirmation
+- [ ] **Next Cleanup Date** - Recommended date for next cleanup
+
+**DO NOT respond until all items are verified.**

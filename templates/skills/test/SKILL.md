@@ -507,3 +507,17 @@ Testing session is complete when:
 Both can be used together:
 1. `/test` → Verify feature works for users
 2. `/qa` → Verify code quality and completeness
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Test Summary** - X/Y tests passed
+- [ ] **Test Results Table** - Each test marked PASS, FAIL, or BLOCKED
+- [ ] **Bugs Found** - List of bugs with file:line locations (if any)
+- [ ] **Coverage** - Completed, failed, blocked, remaining counts
+- [ ] **Recommendations** - Next steps for failures or follow-up
+
+**DO NOT respond until all items are verified.**

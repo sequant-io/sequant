@@ -426,3 +426,18 @@ After providing the assessment, briefly note:
 - Keep the assessment concise - aim for clarity, not exhaustiveness
 - When in doubt about phase, say so - better to acknowledge uncertainty
 - Use this to orient yourself, then proceed with the appropriate workflow command
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Issue Summary** - Issue number, title, status, last activity, phase
+- [ ] **AC Coverage** - Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR
+- [ ] **Artifacts Found** - Planning, implementation, and QA artifacts listed
+- [ ] **Blockers & Issues** - Any blockers or staleness identified
+- [ ] **Recommendation** - Specific next command to run with rationale
+- [ ] **Confidence Level** - High/Medium/Low with information gaps noted
+
+**DO NOT respond until all items are verified.**

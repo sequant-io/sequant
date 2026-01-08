@@ -7,6 +7,11 @@
 import chalk from "chalk";
 import { spawn, spawnSync } from "child_process";
 import { getManifest } from "../lib/manifest.js";
+import {
+  LogWriter,
+  createPhaseLogFromTiming,
+} from "../lib/workflow/log-writer.js";
+import type { RunConfig } from "../lib/workflow/run-log-schema.js";
 
 /**
  * Check if claude CLI is available
@@ -33,6 +38,8 @@ interface RunOptions {
   dryRun?: boolean;
   verbose?: boolean;
   timeout?: number;
+  logJson?: boolean;
+  logPath?: string;
 }
 
 /**
@@ -135,44 +142,39 @@ async function executePhase(
 }
 
 /**
- * Execute all phases for a single issue
+ * Fetch issue info from GitHub
  */
-async function runIssue(
+async function getIssueInfo(
   issueNumber: number,
-  config: ExecutionConfig,
-): Promise<IssueResult> {
-  const startTime = Date.now();
-  const phaseResults: PhaseResult[] = [];
+): Promise<{ title: string; labels: string[] }> {
+  try {
+    const result = spawnSync(
+      "gh",
+      [
+        "issue",
+        "view",
+        String(issueNumber),
+        "--json",
+        "title,labels",
+        "--jq",
+        '"\(.title)|\(.labels | map(.name) | join(","))"',
+      ],
+      { stdio: "pipe", shell: true },
+    );
 
-  console.log(chalk.blue(`\n  Issue #${issueNumber}`));
-
-  for (const phase of config.phases) {
-    console.log(chalk.gray(`    ⏳ ${phase}...`));
-
-    const result = await executePhase(issueNumber, phase, config);
-    phaseResults.push(result);
-
-    if (result.success) {
-      const duration = result.durationSeconds
-        ? ` (${formatDuration(result.durationSeconds)})`
-        : "";
-      console.log(chalk.green(`    ✓ ${phase}${duration}`));
-    } else {
-      console.log(chalk.red(`    ✗ ${phase}: ${result.error}`));
-      // Stop on first failure
-      break;
+    if (result.status === 0) {
+      const output = result.stdout.toString().trim().replace(/^"|"$/g, "");
+      const [title, labelsStr] = output.split("|");
+      return {
+        title: title || `Issue #${issueNumber}`,
+        labels: labelsStr ? labelsStr.split(",").filter(Boolean) : [],
+      };
     }
+  } catch {
+    // Ignore errors, use defaults
   }
 
-  const durationSeconds = (Date.now() - startTime) / 1000;
-  const success = phaseResults.every((r) => r.success);
-
-  return {
-    issueNumber,
-    success,
-    phaseResults,
-    durationSeconds,
-  };
+  return { title: `Issue #${issueNumber}`, labels: [] };
 }
 
 /**
@@ -228,6 +230,23 @@ export async function runCommand(
     phaseTimeout: options.timeout ?? DEFAULT_CONFIG.phaseTimeout,
   };
 
+  // Initialize log writer if JSON logging enabled
+  let logWriter: LogWriter | null = null;
+  if (options.logJson && !config.dryRun) {
+    const runConfig: RunConfig = {
+      phases: config.phases,
+      sequential: config.sequential,
+      qualityLoop: config.qualityLoop,
+      maxIterations: config.maxIterations,
+    };
+
+    logWriter = new LogWriter({
+      logPath: options.logPath,
+      verbose: config.verbose,
+    });
+    await logWriter.initialize(runConfig);
+  }
+
   // Display configuration
   console.log(chalk.gray(`  Stack: ${manifest.stack}`));
   console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
@@ -236,6 +255,13 @@ export async function runCommand(
   );
   if (config.dryRun) {
     console.log(chalk.yellow(`  ⚠️  DRY RUN - no actual execution`));
+  }
+  if (logWriter) {
+    console.log(
+      chalk.gray(
+        `  Logging: JSON (run ${logWriter.getRunId()?.slice(0, 8)}...)`,
+      ),
+    );
   }
   console.log(
     chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
@@ -247,8 +273,19 @@ export async function runCommand(
   if (config.sequential) {
     // Sequential execution
     for (const issueNumber of issueNumbers) {
-      const result = await runIssue(issueNumber, config);
+      // Start issue logging
+      if (logWriter) {
+        const issueInfo = await getIssueInfo(issueNumber);
+        logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
+      }
+
+      const result = await runIssueWithLogging(issueNumber, config, logWriter);
       results.push(result);
+
+      // Complete issue logging
+      if (logWriter) {
+        logWriter.completeIssue();
+      }
 
       if (!result.success) {
         console.log(
@@ -263,9 +300,26 @@ export async function runCommand(
     // Parallel execution (for now, just run sequentially but don't stop on failure)
     // TODO: Add proper parallel execution with listr2
     for (const issueNumber of issueNumbers) {
-      const result = await runIssue(issueNumber, config);
+      // Start issue logging
+      if (logWriter) {
+        const issueInfo = await getIssueInfo(issueNumber);
+        logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
+      }
+
+      const result = await runIssueWithLogging(issueNumber, config, logWriter);
       results.push(result);
+
+      // Complete issue logging
+      if (logWriter) {
+        logWriter.completeIssue();
+      }
     }
+  }
+
+  // Finalize log
+  let logPath: string | null = null;
+  if (logWriter) {
+    logPath = await logWriter.finalize();
   }
 
   // Summary
@@ -295,6 +349,11 @@ export async function runCommand(
 
   console.log("");
 
+  if (logPath) {
+    console.log(chalk.gray(`  📝 Log: ${logPath}`));
+    console.log("");
+  }
+
   if (config.dryRun) {
     console.log(
       chalk.yellow(
@@ -308,4 +367,65 @@ export async function runCommand(
   if (failed > 0 && !config.dryRun) {
     process.exit(1);
   }
+}
+
+/**
+ * Execute all phases for a single issue with logging
+ */
+async function runIssueWithLogging(
+  issueNumber: number,
+  config: ExecutionConfig,
+  logWriter: LogWriter | null,
+): Promise<IssueResult> {
+  const startTime = Date.now();
+  const phaseResults: PhaseResult[] = [];
+
+  console.log(chalk.blue(`\n  Issue #${issueNumber}`));
+
+  for (const phase of config.phases) {
+    console.log(chalk.gray(`    ⏳ ${phase}...`));
+
+    const phaseStartTime = new Date();
+    const result = await executePhase(issueNumber, phase, config);
+    const phaseEndTime = new Date();
+    phaseResults.push(result);
+
+    // Log phase result
+    if (logWriter) {
+      const phaseLog = createPhaseLogFromTiming(
+        phase,
+        issueNumber,
+        phaseStartTime,
+        phaseEndTime,
+        result.success
+          ? "success"
+          : result.error?.includes("Timeout")
+            ? "timeout"
+            : "failure",
+        { error: result.error },
+      );
+      logWriter.logPhase(phaseLog);
+    }
+
+    if (result.success) {
+      const duration = result.durationSeconds
+        ? ` (${formatDuration(result.durationSeconds)})`
+        : "";
+      console.log(chalk.green(`    ✓ ${phase}${duration}`));
+    } else {
+      console.log(chalk.red(`    ✗ ${phase}: ${result.error}`));
+      // Stop on first failure
+      break;
+    }
+  }
+
+  const durationSeconds = (Date.now() - startTime) / 1000;
+  const success = phaseResults.every((r) => r.success);
+
+  return {
+    issueNumber,
+    success,
+    phaseResults,
+    durationSeconds,
+  };
 }

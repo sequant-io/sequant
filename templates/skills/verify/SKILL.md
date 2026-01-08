@@ -264,3 +264,18 @@ If verification fails due to infrastructure issues:
 4. **File not found:** Verify worktree is correct, check file paths
 
 Report infrastructure issues separately from feature issues.
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Command Executed** - The exact command that was run
+- [ ] **Exit Code** - Success (0) or error code
+- [ ] **Duration** - How long the command took
+- [ ] **Output Sample** - Captured stdout/stderr (truncated if needed)
+- [ ] **Human Confirmation** - User's verification response recorded
+- [ ] **GitHub Comment** - Verification evidence posted to issue
+
+**DO NOT respond until all items are verified.**

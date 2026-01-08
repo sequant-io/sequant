@@ -159,3 +159,17 @@ At the end of reflection, ask:
 - Did I identify root causes or just symptoms?
 - Will these changes be maintainable long-term?
 - Am I in the right workflow phase for this reflection focus?
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Session Summary** - What was accomplished, what went well, friction points
+- [ ] **Effectiveness Analysis** - Token efficiency, context gathering, pattern reuse
+- [ ] **Proposed Changes** - Specific changes with target files and rationale
+- [ ] **Documentation Health** - Line count, bloat assessment, recommendations
+- [ ] **Action Items** - Checklist of concrete next steps
+
+**DO NOT respond until all items are verified.**

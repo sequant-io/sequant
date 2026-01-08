@@ -166,3 +166,62 @@ Post the draft comment to GitHub:
 gh issue comment <issue-number> --body "..."
 gh issue edit <issue-number> --add-label "planned"
 ```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
+- [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
+- [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
+- [ ] **Open Questions** - Any ambiguities with recommended defaults
+- [ ] **Issue Comment Draft** - Formatted for GitHub posting
+
+**DO NOT respond until all items are verified.**
+
+## Output Template
+
+You MUST include these sections in order:
+
+```markdown
+## Acceptance Criteria
+
+### AC-1: [Description]
+
+**Verification Method:** [Unit Test | Integration Test | Browser Test | Manual Test]
+
+**Test Scenario:**
+- Given: [Initial state]
+- When: [Action]
+- Then: [Expected outcome]
+
+### AC-2: [Description]
+<!-- Continue for all AC items -->
+
+---
+
+## Implementation Plan
+
+### Phase 1: [Phase Name]
+1. [Step with specific file/component references]
+2. [Step]
+
+### Phase 2: [Phase Name]
+<!-- Continue for all phases -->
+
+---
+
+## Open Questions
+
+1. **[Question]**
+   - Recommendation: [Default choice]
+   - Impact: [What happens if wrong]
+
+---
+
+--- DRAFT GITHUB ISSUE COMMENT (PLAN) ---
+
+[Complete formatted comment for GitHub]
+```

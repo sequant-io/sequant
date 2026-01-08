@@ -12,6 +12,7 @@ import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
 import { runCommand } from "../src/commands/run.js";
+import { logsCommand } from "../src/commands/logs.js";
 
 const program = new Command();
 
@@ -62,7 +63,19 @@ program
   .option("-d, --dry-run", "Preview without execution")
   .option("-v, --verbose", "Verbose output")
   .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
+  .option("--log-json", "Enable structured JSON logging")
+  .option("--log-path <path>", "Custom log directory path")
   .action(runCommand);
+
+program
+  .command("logs")
+  .description("View and analyze workflow run logs")
+  .option("-p, --path <path>", "Custom log directory path")
+  .option("-n, --last <n>", "Show last N runs", parseInt)
+  .option("--json", "Output as JSON")
+  .option("-i, --issue <number>", "Filter by issue number", parseInt)
+  .option("--failed", "Show only failed runs")
+  .action(logsCommand);
 
 // Parse and execute
 program.parse();

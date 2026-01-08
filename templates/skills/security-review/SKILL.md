@@ -342,3 +342,18 @@ EOF
 - Trace session lifecycle
 - Review token handling
 - Check for timing vulnerabilities
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Security Domain** - Identified domains (Auth, API, Admin, Data, Infra)
+- [ ] **Threat Model Summary** - Attack surface, threat actors, attack vectors
+- [ ] **Findings by Severity** - Critical, High, Medium, Low/Informational
+- [ ] **Checklist Status Table** - Passed/Failed/Manual counts per domain
+- [ ] **Verdict** - SECURE, WARNINGS, or ISSUES_FOUND
+- [ ] **GitHub Comment** - Security review posted to issue
+
+**DO NOT respond until all items are verified.**

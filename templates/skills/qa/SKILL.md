@@ -277,3 +277,70 @@ fi
 
 /qa 558  # Re-run, now sees verification, can give READY_FOR_MERGE
 ```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, or NOT_MET
+- [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
+- [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
+- [ ] **Code Review Findings** - Strengths, issues, suggestions
+- [ ] **Next Steps** - Clear, actionable recommendations
+
+**DO NOT respond until all items are verified.**
+
+## Output Template
+
+You MUST include these sections:
+
+```markdown
+## QA Review for Issue #<N>
+
+### AC Coverage
+
+| AC | Description | Status | Notes |
+|----|-------------|--------|-------|
+| AC-1 | [description] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
+| AC-2 | [description] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
+
+**Coverage:** X/Y AC items fully met
+
+---
+
+### Quality Metrics
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Type issues (`any`) | X | OK/WARN |
+| Deleted tests | X | OK/WARN |
+| Files changed | X | OK/WARN |
+| Lines added | +X | - |
+| Lines deleted | -X | - |
+
+---
+
+### Code Review
+
+**Strengths:**
+- [Positive findings]
+
+**Issues:**
+- [Problems found]
+
+**Suggestions:**
+- [Improvements recommended]
+
+---
+
+### Verdict: [READY_FOR_MERGE | AC_MET_BUT_NOT_A_PLUS | AC_NOT_MET]
+
+[Explanation of verdict]
+
+### Next Steps
+
+1. [Action item 1]
+2. [Action item 2]
+```

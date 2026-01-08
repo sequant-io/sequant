@@ -311,3 +311,17 @@ Please run /exec <N> first to create the worktree.
 **Max iterations:** 3 (prevents infinite loops)
 **Re-validation after each fix:** Required
 **GitHub comment:** Posted after loop completion
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Iteration Progress** - Current iteration X/3
+- [ ] **Issues from Previous Phase** - List of issues being fixed
+- [ ] **Fixes Applied** - Each fix with file:line location
+- [ ] **Re-validation Results** - Tests/build/AC status after fixes
+- [ ] **Final Status** - FIXED, NEEDS_MORE_WORK, or MAX_ITERATIONS_REACHED
+
+**DO NOT respond until all items are verified.**

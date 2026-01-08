@@ -416,3 +416,17 @@ At the end of a session:
      ```
 
 You may be invoked multiple times for the same issue. Each time, re-establish context, ensure you're in the correct worktree, and continue iterating until we are as close as practical to meeting the AC.
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
+- [ ] **Files Changed** - List of key files modified
+- [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
+- [ ] **Progress Update Draft** - Formatted comment for GitHub issue
+- [ ] **Next Steps** - Clear guidance on remaining work
+
+**DO NOT respond until all items are verified.**

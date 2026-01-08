@@ -479,3 +479,19 @@ For multiple issues, run `/fullsolve` on each sequentially:
 ```
 
 Each issue gets its own worktree, PR, and quality validation.
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Progress Table** - Phase, iterations, and status for each phase
+- [ ] **AC Coverage** - Each AC marked MET/PARTIALLY_MET/NOT_MET
+- [ ] **Quality Metrics** - Tests passed, build status, type issues
+- [ ] **Iteration Summary** - Test loop and QA loop iteration counts
+- [ ] **Final Verdict** - READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
+- [ ] **PR Link** - Pull request URL (if created)
+- [ ] **Final GitHub Comment** - Summary posted to issue
+
+**DO NOT respond until all items are verified.**

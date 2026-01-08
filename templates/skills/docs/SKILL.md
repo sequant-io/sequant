@@ -319,3 +319,19 @@ For Issue #180 (City Configuration UI):
 
 *Generated for Issue #180 on 2025-11-25*
 ```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Documentation File** - Created in correct directory (docs/admin/ or docs/features/)
+- [ ] **Quick Start Section** - 1-2 sentence summary
+- [ ] **Access Section** - URL, menu path, permissions
+- [ ] **Usage Section** - Step-by-step workflows
+- [ ] **Options Table** - Settings with descriptions and defaults
+- [ ] **Troubleshooting** - At least 1-2 common issues
+- [ ] **GitHub Comment** - Summary posted to issue
+
+**DO NOT respond until all items are verified.**

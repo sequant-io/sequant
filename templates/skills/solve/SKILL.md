@@ -194,3 +194,47 @@ If issues depend on each other:
 2. (Wait for PR merge)
 3. /fullsolve 154
 ```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Issue Summary Table** - Table with Issue, Title, Labels, Workflow columns
+- [ ] **Recommended Workflow** - Slash commands in order for each issue
+- [ ] **CLI Command** - `sequant run <issue-numbers>` command (REQUIRED)
+- [ ] **Explanation** - Brief notes explaining workflow choices
+
+**DO NOT respond until all items are verified.**
+
+## Output Template
+
+You MUST use this exact structure:
+
+```markdown
+## Solve Workflow for Issues: <ISSUE_NUMBERS>
+
+### Issue Analysis
+
+| Issue | Title | Labels | Workflow |
+|-------|-------|--------|----------|
+<!-- FILL: one row per issue -->
+
+### Recommended Workflow
+
+**For #<N> (<type>):**
+\`\`\`bash
+<!-- FILL: slash commands in order -->
+\`\`\`
+
+### CLI Command
+
+Run from terminal (useful for automation/CI):
+\`\`\`bash
+sequant run <ISSUE_NUMBERS>
+\`\`\`
+
+### Notes
+<!-- FILL: explanation of workflow choices -->
+```
