@@ -58,7 +58,9 @@ Provide a clear, actionable response with:
 
 2. **Recommended Commands** in order
 
-3. **Explanation** of why this workflow was chosen
+3. **CLI Command** - ALWAYS include `sequant run <issue>` for terminal/CI usage
+
+4. **Explanation** of why this workflow was chosen
 
 ### Example Output
 
@@ -96,12 +98,12 @@ For comprehensive quality with automatic fix iterations:
 /fullsolve 152
 ```
 
-### Batch Execution (CLI)
+### CLI Command
 
-For running multiple issues from the terminal:
+Run from terminal (useful for automation/CI):
 ```bash
-sequant run 152 153 --phases spec,exec,qa
-sequant run 152 --sequential
+sequant run 152        # Single issue
+sequant run 152 153    # Multiple issues
 ```
 
 ### Notes
