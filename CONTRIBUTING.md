@@ -59,6 +59,7 @@ sequant/
 │   │   ├── fs.ts           # File system helpers
 │   │   ├── manifest.ts     # Manifest management
 │   │   ├── stacks.ts       # Stack detection
+│   │   ├── system.ts       # System checks (gh, jq)
 │   │   ├── templates.ts    # Template processing
 │   │   └── workflow/       # Workflow execution
 │   └── index.ts            # Public exports
@@ -220,6 +221,52 @@ Before submitting a PR, ensure:
 npm run lint        # No lint errors
 npm run build       # Build succeeds
 npm run validate:skills  # All skills valid
+```
+
+## Publishing to npm (Maintainers)
+
+### Setup
+
+npm requires 2FA for publishing. You have two options:
+
+**Option 1: OTP Code (Interactive)**
+```bash
+npm publish --otp=YOUR_CODE
+```
+
+**Option 2: Automation Token (CI/Scripts)**
+
+1. Go to https://www.npmjs.com/settings/~/tokens/granular-access-tokens/new
+2. Create token with:
+   - **Packages**: Select `sequant`
+   - **Permissions**: Read and Write
+   - **Bypass 2FA**: ✅ Enabled (required for automation)
+3. Configure:
+   ```bash
+   npm config set //registry.npmjs.org/:_authToken=npm_YOUR_TOKEN
+   ```
+
+### Release Process
+
+```bash
+# 1. Update version and changelog
+npm version 1.x.x --no-git-tag-version
+# Edit CHANGELOG.md
+
+# 2. Commit and tag
+git add -A
+git commit -m "chore: release v1.x.x"
+git tag -a v1.x.x -m "Release v1.x.x"
+
+# 3. Push
+git push origin main
+git push origin v1.x.x
+
+# 4. Create GitHub release
+gh release create v1.x.x --title "v1.x.x" --notes "Release notes..."
+
+# 5. Publish to npm
+npm publish
 ```
 
 ## Pull Requests

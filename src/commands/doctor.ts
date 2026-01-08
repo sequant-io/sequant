@@ -3,33 +3,9 @@
  */
 
 import chalk from "chalk";
-import { execSync } from "child_process";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
-
-/**
- * Check if a command exists on the system
- */
-function commandExists(cmd: string): boolean {
-  try {
-    execSync(`command -v ${cmd}`, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if gh CLI is authenticated
- */
-function isGhAuthenticated(): boolean {
-  try {
-    execSync("gh auth status", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { commandExists, isGhAuthenticated } from "../lib/system.js";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface DoctorOptions {

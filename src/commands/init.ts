@@ -3,36 +3,16 @@
  */
 
 import chalk from "chalk";
-import { execSync } from "child_process";
 import inquirer from "inquirer";
 import { detectStack } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
-
-/**
- * Check if a command exists on the system
- */
-function commandExists(cmd: string): boolean {
-  try {
-    execSync(`command -v ${cmd}`, { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if gh CLI is authenticated
- */
-function isGhAuthenticated(): boolean {
-  try {
-    execSync("gh auth status", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import {
+  commandExists,
+  isGhAuthenticated,
+  getInstallHint,
+} from "../lib/system.js";
 
 /**
  * Check prerequisites and display warnings
@@ -46,7 +26,7 @@ function checkPrerequisites(): { warnings: string[]; suggestions: string[] } {
     warnings.push(
       "GitHub CLI (gh) is not installed. Required for issue workflows.",
     );
-    suggestions.push("Install from: https://cli.github.com");
+    suggestions.push(`Install: ${getInstallHint("gh")}`);
   } else if (!isGhAuthenticated()) {
     warnings.push("GitHub CLI is not authenticated.");
     suggestions.push("Run: gh auth login");
@@ -55,7 +35,7 @@ function checkPrerequisites(): { warnings: string[]; suggestions: string[] } {
   // Check for jq (optional)
   if (!commandExists("jq")) {
     suggestions.push(
-      "Optional: Install jq for faster JSON parsing in hooks (brew install jq)",
+      `Optional: Install jq for faster JSON parsing (${getInstallHint("jq")})`,
     );
   }
 

@@ -1,10 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { execSync } from "child_process";
-
-// Mock child_process
-vi.mock("child_process", () => ({
-  execSync: vi.fn(),
-}));
 
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
@@ -17,14 +11,22 @@ vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
 }));
 
+// Mock system functions
+vi.mock("../lib/system.js", () => ({
+  commandExists: vi.fn(),
+  isGhAuthenticated: vi.fn(),
+}));
+
 import { doctorCommand } from "./doctor.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
+import { commandExists, isGhAuthenticated } from "../lib/system.js";
 
-const mockExecSync = vi.mocked(execSync);
 const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
 const mockGetManifest = vi.mocked(getManifest);
+const mockCommandExists = vi.mocked(commandExists);
+const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -47,7 +49,8 @@ describe("doctor command", () => {
       installedAt: "2024-01-01T00:00:00.000Z",
       files: {},
     });
-    mockExecSync.mockImplementation(() => Buffer.from(""));
+    mockCommandExists.mockReturnValue(true);
+    mockIsGhAuthenticated.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -57,12 +60,8 @@ describe("doctor command", () => {
 
   describe("GitHub CLI checks", () => {
     it("passes when gh CLI is installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 
@@ -72,13 +71,8 @@ describe("doctor command", () => {
     });
 
     it("fails when gh CLI is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockIsGhAuthenticated.mockReturnValue(false);
 
       await doctorCommand({});
 
@@ -89,12 +83,8 @@ describe("doctor command", () => {
     });
 
     it("passes when gh CLI is authenticated", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 
@@ -104,14 +94,8 @@ describe("doctor command", () => {
     });
 
     it("fails when gh CLI is not authenticated", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") {
-          throw new Error("not authenticated");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(false);
 
       await doctorCommand({});
 
@@ -122,13 +106,7 @@ describe("doctor command", () => {
     });
 
     it("skips auth check when gh CLI is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
       await doctorCommand({});
 
@@ -140,12 +118,8 @@ describe("doctor command", () => {
 
   describe("jq checks", () => {
     it("passes when jq is installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 
@@ -155,14 +129,8 @@ describe("doctor command", () => {
     });
 
     it("warns when jq is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") {
-          throw new Error("command not found");
-        }
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "jq");
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 
@@ -177,12 +145,8 @@ describe("doctor command", () => {
 
   describe("combined scenarios", () => {
     it("all checks pass when everything is installed and configured", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 
@@ -192,13 +156,7 @@ describe("doctor command", () => {
     });
 
     it("exits with failure when gh is missing even if jq is present", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
       await doctorCommand({});
 
@@ -206,14 +164,8 @@ describe("doctor command", () => {
     });
 
     it("shows only warnings (no failure) when only jq is missing", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") {
-          throw new Error("command not found");
-        }
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "jq");
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await doctorCommand({});
 

@@ -1,10 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { execSync } from "child_process";
-
-// Mock child_process
-vi.mock("child_process", () => ({
-  execSync: vi.fn(),
-}));
 
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
@@ -27,6 +21,17 @@ vi.mock("../lib/manifest.js", () => ({
   createManifest: vi.fn(),
 }));
 
+// Mock system functions
+vi.mock("../lib/system.js", () => ({
+  commandExists: vi.fn(),
+  isGhAuthenticated: vi.fn(),
+  getInstallHint: vi.fn((pkg: string) => {
+    if (pkg === "gh") return "brew install gh";
+    if (pkg === "jq") return "brew install jq";
+    return `Install ${pkg}`;
+  }),
+}));
+
 // Mock inquirer
 vi.mock("inquirer", () => ({
   default: {
@@ -39,13 +44,15 @@ import { fileExists, ensureDir } from "../lib/fs.js";
 import { detectStack } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
+import { commandExists, isGhAuthenticated } from "../lib/system.js";
 
-const mockExecSync = vi.mocked(execSync);
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
 const mockDetectStack = vi.mocked(detectStack);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockCreateManifest = vi.mocked(createManifest);
+const mockCommandExists = vi.mocked(commandExists);
+const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 
 describe("init command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -60,7 +67,8 @@ describe("init command", () => {
     mockDetectStack.mockResolvedValue(null);
     mockCopyTemplates.mockResolvedValue(undefined);
     mockCreateManifest.mockResolvedValue(undefined);
-    mockExecSync.mockImplementation(() => Buffer.from(""));
+    mockCommandExists.mockReturnValue(true);
+    mockIsGhAuthenticated.mockReturnValue(true);
   });
 
   afterEach(() => {
@@ -69,12 +77,8 @@ describe("init command", () => {
 
   describe("prerequisite checks", () => {
     it("shows no warnings when all prerequisites are met", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await initCommand({ yes: true, stack: "generic" });
 
@@ -86,32 +90,20 @@ describe("init command", () => {
     });
 
     it("warns when gh CLI is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockIsGhAuthenticated.mockReturnValue(false);
 
       await initCommand({ yes: true, stack: "generic" });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Prerequisites:");
       expect(output).toContain("GitHub CLI (gh) is not installed");
-      expect(output).toContain("https://cli.github.com");
       expect(output).toContain("Remember to address prerequisites");
     });
 
     it("warns when gh CLI is not authenticated", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") {
-          throw new Error("not authenticated");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(false);
 
       await initCommand({ yes: true, stack: "generic" });
 
@@ -123,14 +115,8 @@ describe("init command", () => {
     });
 
     it("shows optional jq suggestion when jq is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") {
-          throw new Error("command not found");
-        }
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "jq");
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await initCommand({ yes: true, stack: "generic" });
 
@@ -142,15 +128,8 @@ describe("init command", () => {
     });
 
     it("shows both gh warning and jq suggestion when both are missing", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "command -v jq") {
-          throw new Error("command not found");
-        }
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(false);
+      mockIsGhAuthenticated.mockReturnValue(false);
 
       await initCommand({ yes: true, stack: "generic" });
 
@@ -162,16 +141,7 @@ describe("init command", () => {
     });
 
     it("skips auth check when gh is not installed", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") {
-          throw new Error("command not found");
-        }
-        if (cmd === "gh auth status") {
-          throw new Error("should not be called");
-        }
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
       await initCommand({ yes: true, stack: "generic" });
 
@@ -184,12 +154,8 @@ describe("init command", () => {
 
   describe("initialization flow", () => {
     it("completes successfully with --yes and --stack flags", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd === "command -v gh") return Buffer.from("/usr/local/bin/gh");
-        if (cmd === "gh auth status") return Buffer.from("");
-        if (cmd === "command -v jq") return Buffer.from("/usr/local/bin/jq");
-        return Buffer.from("");
-      });
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await initCommand({ yes: true, stack: "nextjs" });
 
@@ -208,7 +174,8 @@ describe("init command", () => {
       mockFileExists.mockImplementation(async (path: string) => {
         return path === ".claude/settings.json";
       });
-      mockExecSync.mockImplementation(() => Buffer.from(""));
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
 
       await initCommand({ yes: true, stack: "generic" });
 
