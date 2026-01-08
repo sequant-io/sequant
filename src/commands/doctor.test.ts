@@ -28,19 +28,25 @@ const mockGetManifest = vi.mocked(getManifest);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let processExitSpy: ReturnType<typeof vi.spyOn>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let processExitSpy: any;
 
   beforeEach(() => {
     vi.resetAllMocks();
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     processExitSpy = vi
       .spyOn(process, "exit")
-      .mockImplementation(() => undefined as never);
+      .mockImplementation((() => undefined) as never);
 
     // Default: all files exist, all commands work
     mockFileExists.mockResolvedValue(true);
     mockIsExecutable.mockResolvedValue(true);
-    mockGetManifest.mockResolvedValue({ version: "0.1.0", stack: "nextjs" });
+    mockGetManifest.mockResolvedValue({
+      version: "0.1.0",
+      stack: "nextjs",
+      installedAt: "2024-01-01T00:00:00.000Z",
+      files: {},
+    });
     mockExecSync.mockImplementation(() => Buffer.from(""));
   });
 
