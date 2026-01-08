@@ -18,6 +18,7 @@ export interface StackConfig {
     dev?: string;
   };
   variables: Record<string, string>;
+  devUrl: string;
 }
 
 export const STACKS: Record<string, StackConfig> = {
@@ -39,6 +40,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "npm run build",
       LINT_COMMAND: "npm run lint",
     },
+    devUrl: "http://localhost:3000",
   },
   rust: {
     name: "rust",
@@ -56,6 +58,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "cargo build --release",
       LINT_COMMAND: "cargo clippy",
     },
+    devUrl: "http://localhost:8080",
   },
   python: {
     name: "python",
@@ -73,6 +76,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "python -m build",
       LINT_COMMAND: "ruff check .",
     },
+    devUrl: "http://localhost:5000",
   },
   go: {
     name: "go",
@@ -90,6 +94,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "go build ./...",
       LINT_COMMAND: "golangci-lint run",
     },
+    devUrl: "http://localhost:8080",
   },
   astro: {
     name: "astro",
@@ -110,6 +115,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "npm run build",
       LINT_COMMAND: "npm run lint",
     },
+    devUrl: "http://localhost:4321",
   },
   generic: {
     name: "generic",
@@ -125,6 +131,7 @@ export const STACKS: Record<string, StackConfig> = {
       BUILD_COMMAND: "npm run build",
       LINT_COMMAND: "npm run lint",
     },
+    devUrl: "http://localhost:3000",
   },
 };
 

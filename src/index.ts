@@ -11,11 +11,14 @@ export { statusCommand } from "./commands/status.js";
 
 export { detectStack, getStackConfig, STACKS } from "./lib/stacks.js";
 export { getManifest, createManifest, updateManifest } from "./lib/manifest.js";
+export { getConfig, saveConfig } from "./lib/config.js";
 export {
   copyTemplates,
   listTemplateFiles,
   getTemplateContent,
+  processTemplate,
 } from "./lib/templates.js";
 
 export type { StackConfig } from "./lib/stacks.js";
 export type { Manifest } from "./lib/manifest.js";
+export type { SequantConfig } from "./lib/config.js";
