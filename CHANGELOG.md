@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2025-01-09
+
+### Added
+- Settings file (`.sequant/settings.json`) for persistent run preferences
+  - Created during `sequant init`
+  - Preserved across `sequant update`
+- Spec-driven phase detection for intelligent workflow selection
+  - `/spec` now outputs `## Recommended Workflow` section
+  - `sequant run` parses spec output to determine subsequent phases
+  - Bug fixes (labels: `bug`, `fix`) skip spec and run `exec → qa` directly
+- `--no-log` flag to disable JSON logging for a single run
+
+### Changed
+- JSON logging now enabled by default (`logJson: true` in settings)
+- Replaced static `phases` setting with `autoDetectPhases: true`
+- Updated `/solve` skill to use `npx sequant` as primary CLI command
+- Added global install tip for frequent users
+- Changed CLI run emoji to 🌐
+
+### Fixed
+- CLI now works correctly with local install via `npx sequant`
+
 ## [1.1.2] - 2025-01-08
 
 ### Added
@@ -123,7 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/admarble/sequant/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/admarble/sequant/compare/v1.1.3...HEAD
+[1.1.3]: https://github.com/admarble/sequant/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/admarble/sequant/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/admarble/sequant/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/admarble/sequant/compare/v1.0.0...v1.1.0
