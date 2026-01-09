@@ -8,6 +8,7 @@ import { detectStack, getStackConfig } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
+import { createDefaultSettings, SETTINGS_PATH } from "../lib/settings.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
 import {
   commandExists,
@@ -162,6 +163,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.gray("  ├── hooks/          (pre/post tool hooks)"));
   console.log(chalk.gray("  ├── memory/         (constitution & context)"));
   console.log(chalk.gray("  └── settings.json   (hooks configuration)"));
+  console.log(chalk.gray("  .sequant/"));
+  console.log(chalk.gray("  ├── settings.json   (run preferences)"));
+  console.log(chalk.gray("  └── logs/           (workflow run logs)"));
   console.log(chalk.gray("  scripts/dev/"));
   console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
 
@@ -186,6 +190,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await ensureDir(".claude/hooks");
   await ensureDir(".claude/memory");
   await ensureDir(".claude/.sequant");
+  await ensureDir(".sequant/logs");
   await ensureDir("scripts/dev");
 
   // Save config with tokens
@@ -196,6 +201,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
     stack: stack!,
     initialized: new Date().toISOString(),
   });
+
+  // Create default settings
+  console.log(chalk.blue("⚙️  Creating default settings..."));
+  await createDefaultSettings();
 
   // Copy templates
   console.log(chalk.blue("📄 Copying templates..."));

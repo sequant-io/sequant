@@ -63,7 +63,8 @@ program
   .option("-d, --dry-run", "Preview without execution")
   .option("-v, --verbose", "Verbose output with streaming")
   .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
-  .option("--log-json", "Enable structured JSON logging")
+  .option("--log-json", "Enable structured JSON logging (default: true)")
+  .option("--no-log", "Disable JSON logging for this run")
   .option("--log-path <path>", "Custom log directory path")
   .option("-q, --quality-loop", "Enable quality loop with auto-retry")
   .option(
