@@ -28,8 +28,8 @@ export interface RunSettings {
   logJson: boolean;
   /** Path to log directory */
   logPath: string;
-  /** Default phases to run */
-  phases: string[];
+  /** Auto-detect phases from GitHub issue labels (default: true) */
+  autoDetectPhases: boolean;
   /** Default timeout per phase in seconds */
   timeout: number;
   /** Run issues sequentially by default */
@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
   run: {
     logJson: true,
     logPath: ".sequant/logs",
-    phases: ["spec", "exec", "qa"],
+    autoDetectPhases: true,
     timeout: 300,
     sequential: false,
     qualityLoop: false,

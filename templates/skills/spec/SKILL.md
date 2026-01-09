@@ -143,7 +143,26 @@ Ask the user to confirm or adjust:
 
 **Do NOT start implementation** - this is planning-only.
 
-### 4. Issue Comment Draft
+### 4. Recommended Workflow
+
+Analyze the issue and recommend the optimal workflow phases:
+
+```markdown
+## Recommended Workflow
+
+**Phases:** spec → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** [Brief explanation of why these phases were chosen]
+```
+
+**Phase Selection Logic:**
+- **UI/Frontend changes** → Add `test` phase (browser testing)
+- **Bug fixes** → Skip `spec` if already well-defined
+- **Complex refactors** → Enable quality loop
+- **Security-sensitive** → Add `security-review` phase
+- **Documentation only** → Skip `spec`, just `exec → qa`
+
+### 5. Issue Comment Draft
 
 Generate a Markdown snippet with:
 - AC checklist with verification criteria
@@ -159,7 +178,7 @@ Label clearly as:
 --- DRAFT GITHUB ISSUE COMMENT (PLAN) ---
 ```
 
-### 5. Update GitHub Issue
+### 6. Update GitHub Issue
 
 Post the draft comment to GitHub:
 ```bash
@@ -176,6 +195,7 @@ gh issue edit <issue-number> --add-label "planned"
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
+- [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
 - [ ] **Open Questions** - Any ambiguities with recommended defaults
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
 
@@ -218,6 +238,14 @@ You MUST include these sections in order:
 1. **[Question]**
    - Recommendation: [Default choice]
    - Impact: [What happens if wrong]
+
+---
+
+## Recommended Workflow
+
+**Phases:** exec → qa
+**Quality Loop:** disabled
+**Reasoning:** [Why these phases based on issue analysis]
 
 ---
 

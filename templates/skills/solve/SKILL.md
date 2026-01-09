@@ -116,6 +116,16 @@ npx sequant run 152 153    # Multiple issues
 
 ## Workflow Selection Logic
 
+**Note:** `npx sequant run` now uses **spec-driven phase detection**. It runs `/spec` first, which analyzes the issue and outputs a `## Recommended Workflow` section. The CLI then parses this to determine subsequent phases.
+
+### How It Works
+
+1. **Bug fixes** (labels: `bug`, `fix`) → Skip spec, run `exec → qa` directly
+2. **All other issues** → Run `/spec` first, which recommends phases based on:
+   - UI/frontend changes → Add `test` phase
+   - Complex refactors → Enable quality loop
+   - Security-sensitive → Add `security-review` phase
+
 ### Standard Workflow (Most Issues)
 ```
 /spec → /exec → /qa

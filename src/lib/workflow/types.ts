@@ -62,6 +62,8 @@ export interface PhaseResult {
   success: boolean;
   durationSeconds?: number;
   error?: string;
+  /** Captured output from the phase (used for parsing spec recommendations) */
+  output?: string;
 }
 
 /**

@@ -44,6 +44,118 @@ const PHASE_PROMPTS: Record<Phase, string> = {
  */
 const UI_LABELS = ["ui", "frontend", "admin", "web", "browser"];
 
+/**
+ * Bug-related labels that skip spec phase
+ */
+const BUG_LABELS = ["bug", "fix", "hotfix", "patch"];
+
+/**
+ * Documentation labels that skip spec phase
+ */
+const DOCS_LABELS = ["docs", "documentation", "readme"];
+
+/**
+ * Complex labels that enable quality loop
+ */
+const COMPLEX_LABELS = ["complex", "refactor", "breaking", "major"];
+
+/**
+ * Detect phases based on issue labels (like /solve logic)
+ */
+function detectPhasesFromLabels(labels: string[]): {
+  phases: Phase[];
+  qualityLoop: boolean;
+} {
+  const lowerLabels = labels.map((l) => l.toLowerCase());
+
+  // Check for bug/fix labels → exec → qa (skip spec)
+  const isBugFix = lowerLabels.some((label) =>
+    BUG_LABELS.some((bugLabel) => label.includes(bugLabel)),
+  );
+
+  // Check for docs labels → exec → qa (skip spec)
+  const isDocs = lowerLabels.some((label) =>
+    DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+  );
+
+  // Check for UI labels → add test phase
+  const isUI = lowerLabels.some((label) =>
+    UI_LABELS.some((uiLabel) => label.includes(uiLabel)),
+  );
+
+  // Check for complex labels → enable quality loop
+  const isComplex = lowerLabels.some((label) =>
+    COMPLEX_LABELS.some((complexLabel) => label.includes(complexLabel)),
+  );
+
+  // Build phase list
+  let phases: Phase[];
+
+  if (isBugFix || isDocs) {
+    // Simple workflow: exec → qa
+    phases = ["exec", "qa"];
+  } else if (isUI) {
+    // UI workflow: spec → exec → test → qa
+    phases = ["spec", "exec", "test", "qa"];
+  } else {
+    // Standard workflow: spec → exec → qa
+    phases = ["spec", "exec", "qa"];
+  }
+
+  return { phases, qualityLoop: isComplex };
+}
+
+/**
+ * Parse recommended workflow from /spec output
+ *
+ * Looks for:
+ * ## Recommended Workflow
+ * **Phases:** exec → qa
+ * **Quality Loop:** enabled|disabled
+ */
+function parseRecommendedWorkflow(output: string): {
+  phases: Phase[];
+  qualityLoop: boolean;
+} | null {
+  // Find the Recommended Workflow section
+  const workflowMatch = output.match(
+    /## Recommended Workflow[\s\S]*?\*\*Phases:\*\*\s*([^\n]+)/i,
+  );
+
+  if (!workflowMatch) {
+    return null;
+  }
+
+  // Parse phases from "exec → qa" or "spec → exec → test → qa" format
+  const phasesStr = workflowMatch[1].trim();
+  const phaseNames = phasesStr
+    .split(/\s*→\s*|\s*->\s*|\s*,\s*/)
+    .map((p) => p.trim().toLowerCase())
+    .filter((p) => p.length > 0);
+
+  // Validate and convert to Phase type
+  const validPhases: Phase[] = [];
+  for (const name of phaseNames) {
+    if (["spec", "testgen", "exec", "test", "qa", "loop"].includes(name)) {
+      validPhases.push(name as Phase);
+    }
+  }
+
+  if (validPhases.length === 0) {
+    return null;
+  }
+
+  // Parse quality loop setting
+  const qualityLoopMatch = output.match(
+    /\*\*Quality Loop:\*\*\s*(enabled|disabled|true|false|yes|no)/i,
+  );
+  const qualityLoop = qualityLoopMatch
+    ? ["enabled", "true", "yes"].includes(qualityLoopMatch[1].toLowerCase())
+    : false;
+
+  return { phases: validPhases, qualityLoop };
+}
+
 interface RunOptions {
   phases?: string;
   sequential?: boolean;
@@ -59,6 +171,7 @@ interface RunOptions {
   smartTests?: boolean;
   noSmartTests?: boolean;
   testgen?: boolean;
+  autoDetectPhases?: boolean;
 }
 
 /**
@@ -119,6 +232,7 @@ async function executePhase(
     let resultSessionId: string | undefined;
     let resultMessage: SDKResultMessage | undefined;
     let lastError: string | undefined;
+    let capturedOutput = "";
 
     // Execute using Claude Agent SDK
     const queryInstance = query({
@@ -151,8 +265,8 @@ async function executePhase(
         resultSessionId = message.session_id;
       }
 
-      // Show streaming output in verbose mode
-      if (config.verbose && message.type === "assistant") {
+      // Capture output from assistant messages
+      if (message.type === "assistant") {
         // Extract text content from the message
         const content = message.message.content as Array<{
           type: string;
@@ -163,7 +277,11 @@ async function executePhase(
           .map((c) => c.text)
           .join("");
         if (textContent) {
-          process.stdout.write(chalk.gray(textContent));
+          capturedOutput += textContent;
+          // Show streaming output in verbose mode
+          if (config.verbose) {
+            process.stdout.write(chalk.gray(textContent));
+          }
         }
       }
 
@@ -185,6 +303,7 @@ async function executePhase(
           success: true,
           durationSeconds,
           sessionId: resultSessionId,
+          output: capturedOutput,
         };
       } else {
         // Handle error subtypes
@@ -365,7 +484,7 @@ export async function runCommand(
   issues: string[],
   options: RunOptions,
 ): Promise<void> {
-  console.log(chalk.blue("\n🚀 Sequant Workflow Execution\n"));
+  console.log(chalk.blue("\n🌐 Sequant Workflow Execution\n"));
 
   // Check if initialized
   const manifest = await getManifest();
@@ -381,9 +500,9 @@ export async function runCommand(
   const envConfig = getEnvConfig();
 
   // Settings provide defaults, env overrides settings, CLI overrides all
+  // Note: phases are auto-detected per-issue unless --phases is explicitly set
   const mergedOptions: RunOptions = {
-    // Settings defaults
-    phases: options.phases ?? settings.run.phases.join(","),
+    // Settings defaults (phases removed - now auto-detected)
     sequential: options.sequential ?? settings.run.sequential,
     timeout: options.timeout ?? settings.run.timeout,
     logPath: options.logPath ?? settings.run.logPath,
@@ -395,6 +514,10 @@ export async function runCommand(
     // CLI explicit options override all
     ...options,
   };
+
+  // Determine if we should auto-detect phases from labels
+  const autoDetectPhases = !options.phases && settings.run.autoDetectPhases;
+  mergedOptions.autoDetectPhases = autoDetectPhases;
 
   // Parse issue numbers (or use batch mode)
   let issueNumbers: number[];
@@ -423,11 +546,14 @@ export async function runCommand(
   }
 
   // Build config
+  // Note: config.phases is only used when --phases is explicitly set or autoDetect fails
+  const explicitPhases = mergedOptions.phases
+    ? (mergedOptions.phases.split(",").map((p) => p.trim()) as Phase[])
+    : null;
+
   const config: ExecutionConfig = {
     ...DEFAULT_CONFIG,
-    phases: mergedOptions.phases
-      ? (mergedOptions.phases.split(",").map((p) => p.trim()) as Phase[])
-      : DEFAULT_PHASES,
+    phases: explicitPhases ?? DEFAULT_PHASES,
     sequential: mergedOptions.sequential ?? false,
     dryRun: mergedOptions.dryRun ?? false,
     verbose: mergedOptions.verbose ?? false,
@@ -462,7 +588,11 @@ export async function runCommand(
 
   // Display configuration
   console.log(chalk.gray(`  Stack: ${manifest.stack}`));
-  console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
+  if (autoDetectPhases) {
+    console.log(chalk.gray(`  Phases: auto-detect from labels`));
+  } else {
+    console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
+  }
   console.log(
     chalk.gray(`  Mode: ${config.sequential ? "sequential" : "parallel"}`),
   );
@@ -696,18 +826,136 @@ async function runIssueWithLogging(
   console.log(chalk.blue(`\n  Issue #${issueNumber}`));
 
   // Determine phases for this specific issue
-  const phases = determinePhasesForIssue(config.phases, labels, options);
-  if (phases.length !== config.phases.length) {
-    console.log(chalk.gray(`    Phases adjusted: ${phases.join(" → ")}`));
+  let phases: Phase[];
+  let detectedQualityLoop = false;
+  let specAlreadyRan = false;
+
+  if (options.autoDetectPhases) {
+    // Check if labels indicate a simple bug/fix (skip spec entirely)
+    const lowerLabels = labels.map((l) => l.toLowerCase());
+    const isSimpleBugFix = lowerLabels.some((label) =>
+      BUG_LABELS.some((bugLabel) => label.includes(bugLabel)),
+    );
+
+    if (isSimpleBugFix) {
+      // Simple bug fix: skip spec, go straight to exec → qa
+      phases = ["exec", "qa"];
+      console.log(chalk.gray(`    Bug fix detected: ${phases.join(" → ")}`));
+    } else {
+      // Run spec first to get recommended workflow
+      console.log(chalk.gray(`    Running spec to determine workflow...`));
+      console.log(chalk.gray(`    ⏳ spec...`));
+
+      const specStartTime = new Date();
+      const specResult = await executePhase(
+        issueNumber,
+        "spec",
+        config,
+        sessionId,
+      );
+      const specEndTime = new Date();
+
+      if (specResult.sessionId) {
+        sessionId = specResult.sessionId;
+      }
+
+      phaseResults.push(specResult);
+      specAlreadyRan = true;
+
+      // Log spec phase result
+      if (logWriter) {
+        const phaseLog = createPhaseLogFromTiming(
+          "spec",
+          issueNumber,
+          specStartTime,
+          specEndTime,
+          specResult.success
+            ? "success"
+            : specResult.error?.includes("Timeout")
+              ? "timeout"
+              : "failure",
+          { error: specResult.error },
+        );
+        logWriter.logPhase(phaseLog);
+      }
+
+      if (!specResult.success) {
+        console.log(chalk.red(`    ✗ spec: ${specResult.error}`));
+        const durationSeconds = (Date.now() - startTime) / 1000;
+        return {
+          issueNumber,
+          success: false,
+          phaseResults,
+          durationSeconds,
+          loopTriggered: false,
+        };
+      }
+
+      const duration = specResult.durationSeconds
+        ? ` (${formatDuration(specResult.durationSeconds)})`
+        : "";
+      console.log(chalk.green(`    ✓ spec${duration}`));
+
+      // Parse recommended workflow from spec output
+      let parsedWorkflow = specResult.output
+        ? parseRecommendedWorkflow(specResult.output)
+        : null;
+
+      if (parsedWorkflow) {
+        // Remove spec from phases since we already ran it
+        phases = parsedWorkflow.phases.filter((p) => p !== "spec");
+        detectedQualityLoop = parsedWorkflow.qualityLoop;
+        console.log(
+          chalk.gray(
+            `    Spec recommends: ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
+          ),
+        );
+      } else {
+        // Fall back to label-based detection
+        console.log(
+          chalk.yellow(
+            `    Could not parse spec recommendation, using label-based detection`,
+          ),
+        );
+        const detected = detectPhasesFromLabels(labels);
+        phases = detected.phases.filter((p) => p !== "spec");
+        detectedQualityLoop = detected.qualityLoop;
+        console.log(chalk.gray(`    Fallback: ${phases.join(" → ")}`));
+      }
+    }
+  } else {
+    // Use explicit phases with adjustments
+    phases = determinePhasesForIssue(config.phases, labels, options);
+    if (phases.length !== config.phases.length) {
+      console.log(chalk.gray(`    Phases adjusted: ${phases.join(" → ")}`));
+    }
+  }
+
+  // Add testgen phase if requested (and spec was in the phases)
+  if (
+    options.testgen &&
+    (phases.includes("spec") || specAlreadyRan) &&
+    !phases.includes("testgen")
+  ) {
+    // Insert testgen at the beginning if spec already ran, otherwise after spec
+    if (specAlreadyRan) {
+      phases.unshift("testgen");
+    } else {
+      const specIndex = phases.indexOf("spec");
+      if (specIndex !== -1) {
+        phases.splice(specIndex + 1, 0, "testgen");
+      }
+    }
   }
 
   let iteration = 0;
-  const maxIterations = config.qualityLoop ? config.maxIterations : 1;
+  const useQualityLoop = config.qualityLoop || detectedQualityLoop;
+  const maxIterations = useQualityLoop ? config.maxIterations : 1;
 
   while (iteration < maxIterations) {
     iteration++;
 
-    if (config.qualityLoop && iteration > 1) {
+    if (useQualityLoop && iteration > 1) {
       console.log(
         chalk.yellow(
           `    Quality loop iteration ${iteration}/${maxIterations}`,
@@ -759,7 +1007,7 @@ async function runIssueWithLogging(
         phasesFailed = true;
 
         // If quality loop enabled, run loop phase to fix issues
-        if (config.qualityLoop && iteration < maxIterations) {
+        if (useQualityLoop && iteration < maxIterations) {
           console.log(chalk.yellow(`    Running /loop to fix issues...`));
 
           const loopResult = await executePhase(
