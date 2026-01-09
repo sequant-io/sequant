@@ -158,10 +158,10 @@ Override the default phase order in the run command:
 
 ```bash
 # Skip spec, only run exec and qa
-sequant run 123 --phases exec,qa
+npx sequant run 123 --phases exec,qa
 
 # Include test generation
-sequant run 123 --phases spec,testgen,exec,test,qa
+npx sequant run 123 --phases spec,testgen,exec,test,qa
 ```
 
 ### Quality Loop Settings
@@ -170,7 +170,7 @@ Configure automatic iteration:
 
 ```bash
 # Enable quality loop with max 5 iterations
-QUALITY_LOOP=true MAX_ITERATIONS=5 sequant run 123
+QUALITY_LOOP=true MAX_ITERATIONS=5 npx sequant run 123
 ```
 
 ## Stack Overrides

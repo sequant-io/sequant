@@ -537,10 +537,10 @@ export async function runCommand(
 
   if (issueNumbers.length === 0) {
     console.log(chalk.red("❌ No valid issue numbers provided."));
-    console.log(chalk.gray("\nUsage: sequant run <issues...> [options]"));
-    console.log(chalk.gray("Example: sequant run 1 2 3 --sequential"));
+    console.log(chalk.gray("\nUsage: npx sequant run <issues...> [options]"));
+    console.log(chalk.gray("Example: npx sequant run 1 2 3 --sequential"));
     console.log(
-      chalk.gray('Batch example: sequant run --batch "1 2" --batch "3"'),
+      chalk.gray('Batch example: npx sequant run --batch "1 2" --batch "3"'),
     );
     return;
   }
