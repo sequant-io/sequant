@@ -108,6 +108,51 @@ npx sequant run 123 --phases spec,qa   # Custom phases
 npx sequant run 123 --dry-run          # Preview without execution
 ```
 
+#### Phase Detection
+
+When you run `sequant run`, phases are determined automatically using a three-level detection system:
+
+1. **Explicit phases** — If you specify `--phases`, those are used
+2. **Spec-driven** — Otherwise, `/spec` runs first and outputs a recommended workflow
+3. **Label-based fallback** — If spec parsing fails, issue labels determine phases
+
+**Label-based detection:**
+
+| Labels | Phases | Notes |
+|--------|--------|-------|
+| `bug`, `fix`, `hotfix`, `patch` | `exec → qa` | Skip spec for simple fixes |
+| `docs`, `documentation`, `readme` | `exec → qa` | Skip spec for docs changes |
+| `ui`, `frontend`, `admin`, `web`, `browser` | `spec → exec → test → qa` | Add browser testing |
+| `complex`, `refactor`, `breaking`, `major` | (default phases) | Enable quality loop |
+
+**Spec-driven detection:**
+
+The `/spec` command outputs a recommended workflow that the CLI parses:
+
+```markdown
+## Recommended Workflow
+
+**Phases:** exec → test → qa
+**Quality Loop:** disabled
+**Reasoning:** UI changes detected, adding browser testing phase
+```
+
+**CLI examples:**
+
+```bash
+# Phases auto-detected (default)
+npx sequant run 123
+
+# Explicit phases (skip auto-detection)
+npx sequant run 123 --phases exec,qa
+
+# Disable logging for one run
+npx sequant run 123 --no-log
+
+# Enable quality loop for complex changes
+npx sequant run 123 --quality-loop
+```
+
 ### Workflow Commands (in Claude Code)
 
 | Command | Phase | Purpose |
@@ -190,6 +235,39 @@ Edit `.claude/memory/constitution.md` to define project-specific principles:
 - Utilities: camelCase
 - Constants: SCREAMING_SNAKE_CASE
 ```
+
+### Settings
+
+Configure `sequant run` defaults in `.sequant/settings.json`:
+
+```json
+{
+  "version": "1.0",
+  "run": {
+    "logJson": true,
+    "logPath": ".sequant/logs",
+    "autoDetectPhases": true,
+    "timeout": 300,
+    "sequential": false,
+    "qualityLoop": false,
+    "maxIterations": 3,
+    "smartTests": true
+  }
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `logJson` | `true` | Enable JSON logging for run sessions |
+| `logPath` | `.sequant/logs` | Directory for log files |
+| `autoDetectPhases` | `true` | Auto-detect phases from labels/spec output |
+| `timeout` | `300` | Timeout per phase in seconds |
+| `sequential` | `false` | Run issues sequentially (vs parallel) |
+| `qualityLoop` | `false` | Enable quality loop by default |
+| `maxIterations` | `3` | Max quality loop iterations |
+| `smartTests` | `true` | Auto-detect test commands |
+
+CLI flags override settings file values.
 
 ## Directory Structure
 
