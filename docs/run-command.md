@@ -4,7 +4,7 @@
 
 ## Access
 
-- **Command:** `sequant run <issues...> [options]`
+- **Command:** `npx sequant run <issues...> [options]`
 - **Requirements:**
   - Sequant initialized (`sequant init`)
   - Claude CLI installed and configured
@@ -15,7 +15,7 @@
 ### Running a Single Issue
 
 ```bash
-sequant run 123
+npx sequant run 123
 ```
 
 Executes the default workflow phases (spec → exec → qa) for issue #123.
@@ -23,7 +23,7 @@ Executes the default workflow phases (spec → exec → qa) for issue #123.
 ### Running Multiple Issues
 
 ```bash
-sequant run 100 101 102
+npx sequant run 100 101 102
 ```
 
 Processes issues #100, #101, and #102. By default, issues continue processing even if one fails.
@@ -31,7 +31,7 @@ Processes issues #100, #101, and #102. By default, issues continue processing ev
 ### Sequential Mode with Dependencies
 
 ```bash
-sequant run 100 101 102 --sequential
+npx sequant run 100 101 102 --sequential
 ```
 
 Processes issues in order, stopping if any issue fails. Use this when later issues depend on earlier ones.
@@ -39,7 +39,7 @@ Processes issues in order, stopping if any issue fails. Use this when later issu
 ### Preview with Dry Run
 
 ```bash
-sequant run 100 --dry-run
+npx sequant run 100 --dry-run
 ```
 
 Shows what would be executed without actually running any phases. Useful for verifying configuration.
@@ -72,7 +72,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 Run the default workflow for a single issue:
 
 ```bash
-sequant run 42
+npx sequant run 42
 ```
 
 **What happens:**
@@ -85,7 +85,7 @@ sequant run 42
 For simple fixes where planning isn't needed:
 
 ```bash
-sequant run 42 --phases exec,qa
+npx sequant run 42 --phases exec,qa
 ```
 
 ### Full Workflow with Tests
@@ -93,7 +93,7 @@ sequant run 42 --phases exec,qa
 Include test generation and execution:
 
 ```bash
-sequant run 42 --phases spec,testgen,exec,test,qa
+npx sequant run 42 --phases spec,testgen,exec,test,qa
 ```
 
 ### Batch Processing
@@ -101,7 +101,7 @@ sequant run 42 --phases spec,testgen,exec,test,qa
 Process a sprint's worth of issues:
 
 ```bash
-sequant run 100 101 102 103 104 --sequential
+npx sequant run 100 101 102 103 104 --sequential
 ```
 
 ### CI/Scripting Mode
@@ -109,7 +109,7 @@ sequant run 100 101 102 103 104 --sequential
 Run without colors for CI environments:
 
 ```bash
-sequant run 42 --no-color
+npx sequant run 42 --no-color
 ```
 
 ## Environment Variables
@@ -121,7 +121,7 @@ sequant run 42 --no-color
 
 Example:
 ```bash
-PHASE_TIMEOUT=3600 sequant run 42  # 1 hour timeout
+PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
 ```
 
 ## Output
@@ -186,7 +186,7 @@ sequant init
 
 **Solution:** Increase the timeout:
 ```bash
-sequant run 42 --timeout 3600  # 1 hour
+npx sequant run 42 --timeout 3600  # 1 hour
 ```
 
 ### Claude CLI not found

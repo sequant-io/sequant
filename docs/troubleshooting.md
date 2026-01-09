@@ -123,7 +123,7 @@ Common issues and solutions when using Sequant.
 
 ### `claude` command not found
 
-**Problem:** `sequant run` fails because `claude` CLI isn't available.
+**Problem:** `npx sequant run` fails because `claude` CLI isn't available.
 
 **Solutions:**
 
@@ -139,7 +139,7 @@ Common issues and solutions when using Sequant.
 
 3. Use dry-run to test without execution:
    ```bash
-   sequant run 123 --dry-run
+   npx sequant run 123 --dry-run
    ```
 
 ### Timeout errors
@@ -150,12 +150,12 @@ Common issues and solutions when using Sequant.
 
 1. Increase timeout:
    ```bash
-   sequant run 123 --timeout 3600  # 1 hour
+   npx sequant run 123 --timeout 3600  # 1 hour
    ```
 
 2. Or set via environment:
    ```bash
-   PHASE_TIMEOUT=3600 sequant run 123
+   PHASE_TIMEOUT=3600 npx sequant run 123
    ```
 
 ### GitHub CLI not authenticated
@@ -216,7 +216,7 @@ Common issues and solutions when using Sequant.
 
 3. Skip verification (not recommended):
    ```bash
-   SKIP_VERIFICATION=true sequant run 123
+   SKIP_VERIFICATION=true npx sequant run 123
    ```
 
 ### Lint errors blocking commit
@@ -275,7 +275,7 @@ Run `sequant init` in your project directory.
 
 Provide at least one issue number:
 ```bash
-sequant run 123
+npx sequant run 123
 ```
 
 ### "Manifest not found"

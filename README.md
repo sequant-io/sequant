@@ -91,21 +91,21 @@ npx sequant init
 ### CLI Commands
 
 ```bash
-sequant init              # Initialize in your project
-sequant update            # Update templates from package
-sequant doctor            # Check installation health
-sequant status            # Show version and config
-sequant run <issues...>   # Execute workflow for issues
+npx sequant init              # Initialize in your project
+npx sequant update            # Update templates from package
+npx sequant doctor            # Check installation health
+npx sequant status            # Show version and config
+npx sequant run <issues...>   # Execute workflow for issues
 ```
 
 #### Run Command Options
 
 ```bash
-sequant run 123                    # Single issue
-sequant run 1 2 3                  # Multiple issues in parallel
-sequant run 1 2 3 --sequential     # Run in order
-sequant run 123 --phases spec,qa   # Custom phases
-sequant run 123 --dry-run          # Preview without execution
+npx sequant run 123                    # Single issue
+npx sequant run 1 2 3                  # Multiple issues in parallel
+npx sequant run 1 2 3 --sequential     # Run in order
+npx sequant run 123 --phases spec,qa   # Custom phases
+npx sequant run 123 --dry-run          # Preview without execution
 ```
 
 ### Workflow Commands (in Claude Code)

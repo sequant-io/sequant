@@ -203,7 +203,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
   if (logFiles.length === 0) {
     console.log(chalk.yellow("\n  No logs found."));
     console.log(
-      chalk.gray("  Run `sequant run <issues> --log-json` to generate logs."),
+      chalk.gray("  Run `npx sequant run <issues>` to generate logs."),
     );
     console.log("");
     return;
