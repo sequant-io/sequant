@@ -318,6 +318,8 @@ After `sequant init`:
 - [Customization Guide](docs/customization.md) — Override templates safely
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
 - [Testing Guide](docs/testing.md) — Cross-platform testing matrix
+- [Git Patterns](docs/git-patterns.md) — Worktree and merge workflows
+- [Release Checklist](docs/release-checklist.md) — Pre-release verification
 - Stack Guides: [Next.js](docs/stacks/nextjs.md) | [Rust](docs/stacks/rust.md) | [Python](docs/stacks/python.md) | [Go](docs/stacks/go.md)
 
 ## Philosophy
