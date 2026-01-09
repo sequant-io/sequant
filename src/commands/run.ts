@@ -7,6 +7,8 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
+import { existsSync } from "fs";
+import path from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getManifest } from "../lib/manifest.js";
@@ -24,6 +26,276 @@ import {
   IssueResult,
   PhaseResult,
 } from "../lib/workflow/types.js";
+
+/**
+ * Worktree information for an issue
+ */
+interface WorktreeInfo {
+  issue: number;
+  path: string;
+  branch: string;
+  existed: boolean;
+}
+
+/**
+ * Slugify a title for branch naming
+ */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 50);
+}
+
+/**
+ * Get the git repository root directory
+ */
+function getGitRoot(): string | null {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    stdio: "pipe",
+  });
+  if (result.status === 0) {
+    return result.stdout.toString().trim();
+  }
+  return null;
+}
+
+/**
+ * Check if a worktree exists for a given branch
+ */
+function findExistingWorktree(branch: string): string | null {
+  const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
+    stdio: "pipe",
+  });
+  if (result.status !== 0) return null;
+
+  const output = result.stdout.toString();
+  const lines = output.split("\n");
+  let currentPath = "";
+
+  for (const line of lines) {
+    if (line.startsWith("worktree ")) {
+      currentPath = line.substring(9);
+    } else if (line.startsWith("branch refs/heads/") && line.includes(branch)) {
+      return currentPath;
+    }
+  }
+  return null;
+}
+
+/**
+ * List all active worktrees with their branches
+ */
+export function listWorktrees(): Array<{
+  path: string;
+  branch: string;
+  issue: number | null;
+}> {
+  const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
+    stdio: "pipe",
+  });
+  if (result.status !== 0) return [];
+
+  const output = result.stdout.toString();
+  const lines = output.split("\n");
+  const worktrees: Array<{
+    path: string;
+    branch: string;
+    issue: number | null;
+  }> = [];
+
+  let currentPath = "";
+  let currentBranch = "";
+
+  for (const line of lines) {
+    if (line.startsWith("worktree ")) {
+      currentPath = line.substring(9);
+    } else if (line.startsWith("branch refs/heads/")) {
+      currentBranch = line.substring(18);
+      // Extract issue number from branch name (e.g., feature/123-some-title)
+      const issueMatch = currentBranch.match(/feature\/(\d+)-/);
+      const issue = issueMatch ? parseInt(issueMatch[1], 10) : null;
+      worktrees.push({ path: currentPath, branch: currentBranch, issue });
+      currentPath = "";
+      currentBranch = "";
+    }
+  }
+
+  return worktrees;
+}
+
+/**
+ * Get changed files in a worktree compared to main
+ */
+export function getWorktreeChangedFiles(worktreePath: string): string[] {
+  const result = spawnSync(
+    "git",
+    ["-C", worktreePath, "diff", "--name-only", "main...HEAD"],
+    { stdio: "pipe" },
+  );
+  if (result.status !== 0) return [];
+  return result.stdout
+    .toString()
+    .trim()
+    .split("\n")
+    .filter((f) => f.length > 0);
+}
+
+/**
+ * Create or reuse a worktree for an issue
+ */
+async function ensureWorktree(
+  issueNumber: number,
+  title: string,
+  verbose: boolean,
+): Promise<WorktreeInfo | null> {
+  const gitRoot = getGitRoot();
+  if (!gitRoot) {
+    console.log(chalk.red("    ❌ Not in a git repository"));
+    return null;
+  }
+
+  const slug = slugify(title);
+  const branch = `feature/${issueNumber}-${slug}`;
+  const worktreesDir = path.join(path.dirname(gitRoot), "worktrees");
+  const worktreePath = path.join(worktreesDir, branch);
+
+  // Check if worktree already exists
+  const existingPath = findExistingWorktree(branch);
+  if (existingPath) {
+    if (verbose) {
+      console.log(
+        chalk.gray(`    📂 Reusing existing worktree: ${existingPath}`),
+      );
+    }
+    return {
+      issue: issueNumber,
+      path: existingPath,
+      branch,
+      existed: true,
+    };
+  }
+
+  // Check if branch exists (but no worktree)
+  const branchCheck = spawnSync(
+    "git",
+    ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+    { stdio: "pipe" },
+  );
+  const branchExists = branchCheck.status === 0;
+
+  if (verbose) {
+    console.log(chalk.gray(`    🌿 Creating worktree for #${issueNumber}...`));
+  }
+
+  // Ensure worktrees directory exists
+  if (!existsSync(worktreesDir)) {
+    spawnSync("mkdir", ["-p", worktreesDir], { stdio: "pipe" });
+  }
+
+  // Create the worktree
+  let createResult;
+  if (branchExists) {
+    // Use existing branch
+    createResult = spawnSync("git", ["worktree", "add", worktreePath, branch], {
+      stdio: "pipe",
+    });
+  } else {
+    // Create new branch from main
+    createResult = spawnSync(
+      "git",
+      ["worktree", "add", worktreePath, "-b", branch],
+      { stdio: "pipe" },
+    );
+  }
+
+  if (createResult.status !== 0) {
+    const error = createResult.stderr.toString();
+    console.log(chalk.red(`    ❌ Failed to create worktree: ${error}`));
+    return null;
+  }
+
+  // Copy .env.local if it exists
+  const envLocalSrc = path.join(gitRoot, ".env.local");
+  const envLocalDst = path.join(worktreePath, ".env.local");
+  if (existsSync(envLocalSrc) && !existsSync(envLocalDst)) {
+    spawnSync("cp", [envLocalSrc, envLocalDst], { stdio: "pipe" });
+  }
+
+  // Copy .claude/settings.local.json if it exists
+  const claudeSettingsSrc = path.join(
+    gitRoot,
+    ".claude",
+    "settings.local.json",
+  );
+  const claudeSettingsDst = path.join(
+    worktreePath,
+    ".claude",
+    "settings.local.json",
+  );
+  if (existsSync(claudeSettingsSrc) && !existsSync(claudeSettingsDst)) {
+    spawnSync("mkdir", ["-p", path.join(worktreePath, ".claude")], {
+      stdio: "pipe",
+    });
+    spawnSync("cp", [claudeSettingsSrc, claudeSettingsDst], { stdio: "pipe" });
+  }
+
+  // Install dependencies if needed
+  const nodeModulesPath = path.join(worktreePath, "node_modules");
+  if (!existsSync(nodeModulesPath)) {
+    if (verbose) {
+      console.log(chalk.gray(`    📦 Installing dependencies...`));
+    }
+    spawnSync("npm", ["install", "--silent"], {
+      cwd: worktreePath,
+      stdio: "pipe",
+    });
+  }
+
+  if (verbose) {
+    console.log(chalk.green(`    ✅ Worktree ready: ${worktreePath}`));
+  }
+
+  return {
+    issue: issueNumber,
+    path: worktreePath,
+    branch,
+    existed: false,
+  };
+}
+
+/**
+ * Ensure worktrees exist for all issues before execution
+ */
+async function ensureWorktrees(
+  issues: Array<{ number: number; title: string }>,
+  verbose: boolean,
+): Promise<Map<number, WorktreeInfo>> {
+  const worktrees = new Map<number, WorktreeInfo>();
+
+  console.log(chalk.blue("\n  📂 Preparing worktrees..."));
+
+  for (const issue of issues) {
+    const worktree = await ensureWorktree(issue.number, issue.title, verbose);
+    if (worktree) {
+      worktrees.set(issue.number, worktree);
+    }
+  }
+
+  const created = Array.from(worktrees.values()).filter(
+    (w) => !w.existed,
+  ).length;
+  const reused = Array.from(worktrees.values()).filter((w) => w.existed).length;
+
+  if (created > 0 || reused > 0) {
+    console.log(
+      chalk.gray(`  Worktrees: ${created} created, ${reused} reused`),
+    );
+  }
+
+  return worktrees;
+}
 
 /**
  * Natural language prompts for each phase
@@ -172,6 +444,10 @@ interface RunOptions {
   noSmartTests?: boolean;
   testgen?: boolean;
   autoDetectPhases?: boolean;
+  /** Enable automatic worktree creation for issue isolation */
+  worktreeIsolation?: boolean;
+  /** Reuse existing worktrees instead of creating new ones */
+  reuseWorktrees?: boolean;
 }
 
 /**
@@ -194,6 +470,12 @@ function getPhasePrompt(phase: Phase, issueNumber: number): string {
 }
 
 /**
+ * Phases that require worktree isolation (exec, test, qa)
+ * Spec runs in main repo since it's planning-only
+ */
+const ISOLATED_PHASES: Phase[] = ["exec", "test", "qa"];
+
+/**
  * Execute a single phase for an issue using Claude Agent SDK
  */
 async function executePhase(
@@ -201,6 +483,7 @@ async function executePhase(
   phase: Phase,
   config: ExecutionConfig,
   sessionId?: string,
+  worktreePath?: string,
 ): Promise<PhaseResult & { sessionId?: string }> {
   const startTime = Date.now();
 
@@ -220,7 +503,14 @@ async function executePhase(
 
   if (config.verbose) {
     console.log(chalk.gray(`    Prompt: ${prompt}`));
+    if (worktreePath && ISOLATED_PHASES.includes(phase)) {
+      console.log(chalk.gray(`    Worktree: ${worktreePath}`));
+    }
   }
+
+  // Determine working directory and environment
+  const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
+  const cwd = shouldUseWorktree ? worktreePath : process.cwd();
 
   try {
     // Create abort controller for timeout
@@ -234,12 +524,24 @@ async function executePhase(
     let lastError: string | undefined;
     let capturedOutput = "";
 
+    // Build environment with worktree isolation variables
+    const env: Record<string, string> = {
+      ...process.env,
+      CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
+    };
+
+    // Set worktree isolation environment variables
+    if (shouldUseWorktree) {
+      env.SEQUANT_WORKTREE = worktreePath;
+      env.SEQUANT_ISSUE = String(issueNumber);
+    }
+
     // Execute using Claude Agent SDK
     const queryInstance = query({
       prompt,
       options: {
         abortController,
-        cwd: process.cwd(),
+        cwd,
         // Load project settings including skills
         settingSources: ["project"],
         // Use Claude Code's system prompt and tools
@@ -250,11 +552,8 @@ async function executePhase(
         allowDangerouslySkipPermissions: true,
         // Resume from previous session if provided
         ...(sessionId ? { resume: sessionId } : {}),
-        // Configure smart tests via environment
-        env: {
-          ...process.env,
-          CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
-        },
+        // Configure smart tests and worktree isolation via environment
+        env,
       },
     });
 
@@ -394,6 +693,125 @@ async function getIssueInfo(
   }
 
   return { title: `Issue #${issueNumber}`, labels: [] };
+}
+
+/**
+ * Parse dependencies from issue body and labels
+ * Returns array of issue numbers this issue depends on
+ */
+function parseDependencies(issueNumber: number): number[] {
+  try {
+    const result = spawnSync(
+      "gh",
+      ["issue", "view", String(issueNumber), "--json", "body,labels"],
+      { stdio: "pipe" },
+    );
+
+    if (result.status !== 0) return [];
+
+    const data = JSON.parse(result.stdout.toString());
+    const dependencies: number[] = [];
+
+    // Parse from body: "Depends on: #123" or "**Depends on**: #123"
+    if (data.body) {
+      const bodyMatch = data.body.match(
+        /\*?\*?depends\s+on\*?\*?:?\s*#?(\d+)/gi,
+      );
+      if (bodyMatch) {
+        for (const match of bodyMatch) {
+          const numMatch = match.match(/(\d+)/);
+          if (numMatch) {
+            dependencies.push(parseInt(numMatch[1], 10));
+          }
+        }
+      }
+    }
+
+    // Parse from labels: "depends-on/123" or "depends-on-123"
+    if (data.labels && Array.isArray(data.labels)) {
+      for (const label of data.labels) {
+        const labelName = label.name || label;
+        const labelMatch = labelName.match(/depends-on[-/](\d+)/i);
+        if (labelMatch) {
+          dependencies.push(parseInt(labelMatch[1], 10));
+        }
+      }
+    }
+
+    return [...new Set(dependencies)]; // Remove duplicates
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Sort issues by dependencies (topological sort)
+ * Issues with no dependencies come first, then issues that depend on them
+ */
+function sortByDependencies(issueNumbers: number[]): number[] {
+  // Build dependency graph
+  const dependsOn = new Map<number, number[]>();
+  for (const issue of issueNumbers) {
+    const deps = parseDependencies(issue);
+    // Only include dependencies that are in our issue list
+    dependsOn.set(
+      issue,
+      deps.filter((d) => issueNumbers.includes(d)),
+    );
+  }
+
+  // Topological sort using Kahn's algorithm
+  const inDegree = new Map<number, number>();
+  for (const issue of issueNumbers) {
+    inDegree.set(issue, 0);
+  }
+  for (const deps of dependsOn.values()) {
+    for (const dep of deps) {
+      inDegree.set(dep, (inDegree.get(dep) || 0) + 1);
+    }
+  }
+
+  // Note: inDegree counts how many issues depend on each issue
+  // We want to process issues that nothing depends on last
+  // So we sort by: issues nothing depends on first, then dependent issues
+  const sorted: number[] = [];
+  const queue: number[] = [];
+
+  // Start with issues that have no dependencies
+  for (const issue of issueNumbers) {
+    const deps = dependsOn.get(issue) || [];
+    if (deps.length === 0) {
+      queue.push(issue);
+    }
+  }
+
+  const visited = new Set<number>();
+  while (queue.length > 0) {
+    const issue = queue.shift()!;
+    if (visited.has(issue)) continue;
+    visited.add(issue);
+    sorted.push(issue);
+
+    // Find issues that depend on this one
+    for (const [other, deps] of dependsOn.entries()) {
+      if (deps.includes(issue) && !visited.has(other)) {
+        // Check if all dependencies of 'other' are satisfied
+        const allDepsSatisfied = deps.every((d) => visited.has(d));
+        if (allDepsSatisfied) {
+          queue.push(other);
+        }
+      }
+    }
+  }
+
+  // Add any remaining issues (circular dependencies or unvisited)
+  for (const issue of issueNumbers) {
+    if (!visited.has(issue)) {
+      sorted.push(issue);
+    }
+  }
+
+  return sorted;
 }
 
 /**
@@ -545,6 +963,20 @@ export async function runCommand(
     return;
   }
 
+  // Sort issues by dependencies (if more than one issue)
+  if (issueNumbers.length > 1 && !batches) {
+    const originalOrder = [...issueNumbers];
+    issueNumbers = sortByDependencies(issueNumbers);
+    const orderChanged = !originalOrder.every((n, i) => n === issueNumbers[i]);
+    if (orderChanged) {
+      console.log(
+        chalk.gray(
+          `  Dependency order: ${issueNumbers.map((n) => `#${n}`).join(" → ")}`,
+        ),
+      );
+    }
+  }
+
   // Build config
   // Note: config.phases is only used when --phases is explicitly set or autoDetect fails
   const explicitPhases = mergedOptions.phases
@@ -623,6 +1055,30 @@ export async function runCommand(
     chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
   );
 
+  // Worktree isolation is enabled by default for multi-issue runs
+  const useWorktreeIsolation =
+    mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
+
+  if (useWorktreeIsolation) {
+    console.log(chalk.gray(`  Worktree isolation: enabled`));
+  }
+
+  // Fetch issue info for all issues first
+  const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
+  for (const issueNumber of issueNumbers) {
+    issueInfoMap.set(issueNumber, await getIssueInfo(issueNumber));
+  }
+
+  // Create worktrees for all issues before execution (if isolation enabled)
+  let worktreeMap: Map<number, WorktreeInfo> = new Map();
+  if (useWorktreeIsolation && !config.dryRun) {
+    const issueData = issueNumbers.map((num) => ({
+      number: num,
+      title: issueInfoMap.get(num)?.title || `Issue #${num}`,
+    }));
+    worktreeMap = await ensureWorktrees(issueData, config.verbose);
+  }
+
   // Execute
   const results: IssueResult[] = [];
 
@@ -641,6 +1097,8 @@ export async function runCommand(
         config,
         logWriter,
         mergedOptions,
+        issueInfoMap,
+        worktreeMap,
       );
       results.push(...batchResults);
 
@@ -658,7 +1116,11 @@ export async function runCommand(
   } else if (config.sequential) {
     // Sequential execution
     for (const issueNumber of issueNumbers) {
-      const issueInfo = await getIssueInfo(issueNumber);
+      const issueInfo = issueInfoMap.get(issueNumber) ?? {
+        title: `Issue #${issueNumber}`,
+        labels: [],
+      };
+      const worktreeInfo = worktreeMap.get(issueNumber);
 
       // Start issue logging
       if (logWriter) {
@@ -671,6 +1133,7 @@ export async function runCommand(
         logWriter,
         issueInfo.labels,
         mergedOptions,
+        worktreeInfo?.path,
       );
       results.push(result);
 
@@ -692,7 +1155,11 @@ export async function runCommand(
     // Parallel execution (for now, just run sequentially but don't stop on failure)
     // TODO: Add proper parallel execution with listr2
     for (const issueNumber of issueNumbers) {
-      const issueInfo = await getIssueInfo(issueNumber);
+      const issueInfo = issueInfoMap.get(issueNumber) ?? {
+        title: `Issue #${issueNumber}`,
+        labels: [],
+      };
+      const worktreeInfo = worktreeMap.get(issueNumber);
 
       // Start issue logging
       if (logWriter) {
@@ -705,6 +1172,7 @@ export async function runCommand(
         logWriter,
         issueInfo.labels,
         mergedOptions,
+        worktreeInfo?.path,
       );
       results.push(result);
 
@@ -779,11 +1247,17 @@ async function executeBatch(
   config: ExecutionConfig,
   logWriter: LogWriter | null,
   options: RunOptions,
+  issueInfoMap: Map<number, { title: string; labels: string[] }>,
+  worktreeMap: Map<number, WorktreeInfo>,
 ): Promise<IssueResult[]> {
   const results: IssueResult[] = [];
 
   for (const issueNumber of issueNumbers) {
-    const issueInfo = await getIssueInfo(issueNumber);
+    const issueInfo = issueInfoMap.get(issueNumber) ?? {
+      title: `Issue #${issueNumber}`,
+      labels: [],
+    };
+    const worktreeInfo = worktreeMap.get(issueNumber);
 
     // Start issue logging
     if (logWriter) {
@@ -796,6 +1270,7 @@ async function executeBatch(
       logWriter,
       issueInfo.labels,
       options,
+      worktreeInfo?.path,
     );
     results.push(result);
 
@@ -817,6 +1292,7 @@ async function runIssueWithLogging(
   logWriter: LogWriter | null,
   labels: string[],
   options: RunOptions,
+  worktreePath?: string,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -824,6 +1300,9 @@ async function runIssueWithLogging(
   let sessionId: string | undefined;
 
   console.log(chalk.blue(`\n  Issue #${issueNumber}`));
+  if (worktreePath) {
+    console.log(chalk.gray(`    Worktree: ${worktreePath}`));
+  }
 
   // Determine phases for this specific issue
   let phases: Phase[];
@@ -847,11 +1326,13 @@ async function runIssueWithLogging(
       console.log(chalk.gray(`    ⏳ spec...`));
 
       const specStartTime = new Date();
+      // Note: spec runs in main repo (not worktree) for planning
       const specResult = await executePhase(
         issueNumber,
         "spec",
         config,
         sessionId,
+        worktreePath, // Will be ignored for spec (non-isolated phase)
       );
       const specEndTime = new Date();
 
@@ -970,7 +1451,13 @@ async function runIssueWithLogging(
       console.log(chalk.gray(`    ⏳ ${phase}...`));
 
       const phaseStartTime = new Date();
-      const result = await executePhase(issueNumber, phase, config, sessionId);
+      const result = await executePhase(
+        issueNumber,
+        phase,
+        config,
+        sessionId,
+        worktreePath,
+      );
       const phaseEndTime = new Date();
 
       // Capture session ID for subsequent phases
@@ -1015,6 +1502,7 @@ async function runIssueWithLogging(
             "loop",
             config,
             sessionId,
+            worktreePath,
           );
           phaseResults.push(loopResult);
 
