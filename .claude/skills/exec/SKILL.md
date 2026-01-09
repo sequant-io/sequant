@@ -224,6 +224,19 @@ If `gh pr view` fails after retry:
 - If it needs modification, extend it rather than creating a new one
 - Document why existing utilities don't meet requirements before creating new ones
 
+### Check Framework Gotchas on Runtime Errors
+
+**When encountering unexpected runtime errors or build failures:**
+
+1. Check `references/shared/framework-gotchas.md` for known framework-specific issues
+2. Common gotchas include:
+   - AG Grid v35+ module registration requirements
+   - React 19 concurrent mode behavior changes
+   - Next.js 15 caching and async API changes
+   - Tailwind v4 CSS-first configuration
+
+If you discover a new framework-specific issue that caused debugging time, add it to the gotchas file following the template.
+
 ### Using Optional MCP Tools
 
 If available, these MCP tools can enhance implementation:
