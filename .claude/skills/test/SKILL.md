@@ -359,6 +359,8 @@ If no explicit tests, use AC as test cases:
 
 ## Browser Testing Best Practices
 
+**Reference:** See [Browser Testing Patterns](references/browser-testing-patterns.md) for comprehensive patterns including forms, modals, grids, async content, and troubleshooting.
+
 ### Snapshots vs. Screenshots
 
 **Use `take_snapshot()` when:**
