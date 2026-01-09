@@ -668,24 +668,17 @@ async function getIssueInfo(
   try {
     const result = spawnSync(
       "gh",
-      [
-        "issue",
-        "view",
-        String(issueNumber),
-        "--json",
-        "title,labels",
-        "--jq",
-        '"\(.title)|\(.labels | map(.name) | join(","))"',
-      ],
-      { stdio: "pipe", shell: true },
+      ["issue", "view", String(issueNumber), "--json", "title,labels"],
+      { stdio: "pipe" },
     );
 
     if (result.status === 0) {
-      const output = result.stdout.toString().trim().replace(/^"|"$/g, "");
-      const [title, labelsStr] = output.split("|");
+      const data = JSON.parse(result.stdout.toString());
       return {
-        title: title || `Issue #${issueNumber}`,
-        labels: labelsStr ? labelsStr.split(",").filter(Boolean) : [],
+        title: data.title || `Issue #${issueNumber}`,
+        labels: Array.isArray(data.labels)
+          ? data.labels.map((l: { name: string }) => l.name)
+          : [],
       };
     }
   } catch {
