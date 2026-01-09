@@ -10,6 +10,7 @@ import { spawnSync } from "child_process";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getManifest } from "../lib/manifest.js";
+import { getSettings } from "../lib/settings.js";
 import {
   LogWriter,
   createPhaseLogFromTiming,
@@ -50,6 +51,7 @@ interface RunOptions {
   verbose?: boolean;
   timeout?: number;
   logJson?: boolean;
+  noLog?: boolean;
   logPath?: string;
   qualityLoop?: boolean;
   maxIterations?: number;
@@ -374,9 +376,25 @@ export async function runCommand(
     return;
   }
 
-  // Merge environment config with CLI options
+  // Load settings and merge with environment config and CLI options
+  const settings = await getSettings();
   const envConfig = getEnvConfig();
-  const mergedOptions = { ...envConfig, ...options };
+
+  // Settings provide defaults, env overrides settings, CLI overrides all
+  const mergedOptions: RunOptions = {
+    // Settings defaults
+    phases: options.phases ?? settings.run.phases.join(","),
+    sequential: options.sequential ?? settings.run.sequential,
+    timeout: options.timeout ?? settings.run.timeout,
+    logPath: options.logPath ?? settings.run.logPath,
+    qualityLoop: options.qualityLoop ?? settings.run.qualityLoop,
+    maxIterations: options.maxIterations ?? settings.run.maxIterations,
+    noSmartTests: options.noSmartTests ?? !settings.run.smartTests,
+    // Env overrides
+    ...envConfig,
+    // CLI explicit options override all
+    ...options,
+  };
 
   // Parse issue numbers (or use batch mode)
   let issueNumbers: number[];
@@ -420,8 +438,14 @@ export async function runCommand(
   };
 
   // Initialize log writer if JSON logging enabled
+  // Default: enabled via settings (logJson: true), can be disabled with --no-log
   let logWriter: LogWriter | null = null;
-  if (mergedOptions.logJson && !config.dryRun) {
+  const shouldLog =
+    !mergedOptions.noLog &&
+    !config.dryRun &&
+    (mergedOptions.logJson ?? settings.run.logJson);
+
+  if (shouldLog) {
     const runConfig: RunConfig = {
       phases: config.phases,
       sequential: config.sequential,
@@ -430,7 +454,7 @@ export async function runCommand(
     };
 
     logWriter = new LogWriter({
-      logPath: mergedOptions.logPath,
+      logPath: mergedOptions.logPath ?? settings.run.logPath,
       verbose: config.verbose,
     });
     await logWriter.initialize(runConfig);

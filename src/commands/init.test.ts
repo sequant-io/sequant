@@ -4,6 +4,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("../lib/fs.js", () => ({
   fileExists: vi.fn(),
   ensureDir: vi.fn(),
+  writeFile: vi.fn(),
+  readFile: vi.fn(),
+}));
+
+// Mock settings
+vi.mock("../lib/settings.js", () => ({
+  createDefaultSettings: vi.fn(),
+  SETTINGS_PATH: ".sequant/settings.json",
 }));
 
 // Mock stacks
@@ -60,6 +68,7 @@ import { detectStack } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
+import { createDefaultSettings } from "../lib/settings.js";
 import { commandExists, isGhAuthenticated } from "../lib/system.js";
 
 const mockFileExists = vi.mocked(fileExists);
@@ -68,6 +77,7 @@ const mockDetectStack = vi.mocked(detectStack);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockCreateManifest = vi.mocked(createManifest);
 const mockSaveConfig = vi.mocked(saveConfig);
+const mockCreateDefaultSettings = vi.mocked(createDefaultSettings);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 
@@ -85,6 +95,7 @@ describe("init command", () => {
     mockCopyTemplates.mockResolvedValue(undefined);
     mockCreateManifest.mockResolvedValue(undefined);
     mockSaveConfig.mockResolvedValue(undefined);
+    mockCreateDefaultSettings.mockResolvedValue(undefined);
     mockCommandExists.mockReturnValue(true);
     mockIsGhAuthenticated.mockReturnValue(true);
   });
@@ -181,7 +192,9 @@ describe("init command", () => {
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/hooks");
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/memory");
       expect(mockEnsureDir).toHaveBeenCalledWith(".claude/.sequant");
+      expect(mockEnsureDir).toHaveBeenCalledWith(".sequant/logs");
       expect(mockEnsureDir).toHaveBeenCalledWith("scripts/dev");
+      expect(mockCreateDefaultSettings).toHaveBeenCalled();
       expect(mockSaveConfig).toHaveBeenCalledWith(
         expect.objectContaining({
           tokens: { DEV_URL: "http://localhost:3000" },

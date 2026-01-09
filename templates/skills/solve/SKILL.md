@@ -58,7 +58,7 @@ Provide a clear, actionable response with:
 
 2. **Recommended Commands** in order
 
-3. **CLI Command** - ALWAYS include `sequant run <issue>` for terminal/CI usage
+3. **CLI Command** - ALWAYS include `npx sequant run <issue>` for terminal/CI usage
 
 4. **Explanation** of why this workflow was chosen
 
@@ -102,9 +102,11 @@ For comprehensive quality with automatic fix iterations:
 
 Run from terminal (useful for automation/CI):
 ```bash
-sequant run 152        # Single issue
-sequant run 152 153    # Multiple issues
+npx sequant run 152        # Single issue
+npx sequant run 152 153    # Multiple issues
 ```
+
+> **Tip:** For frequent use, install globally with `npm install -g sequant` to run `sequant` directly without `npx`.
 
 ### Notes
 - Issue #152 requires UI testing due to `ui` label
@@ -148,24 +150,26 @@ Runs complete workflow with automatic fix iterations.
 
 ## CLI Alternative
 
-Use `sequant run` for batch execution from the command line:
+Use `npx sequant run` for batch execution from the command line:
 
 ```bash
 # Run workflow for single issue
-sequant run 152
+npx sequant run 152
 
 # Multiple issues in parallel
-sequant run 152 153 154
+npx sequant run 152 153 154
 
 # Sequential execution (respects dependencies)
-sequant run 152 153 --sequential
+npx sequant run 152 153 --sequential
 
 # Custom phases
-sequant run 152 --phases spec,exec,qa
+npx sequant run 152 --phases spec,exec,qa
 
 # Dry run (shows what would execute)
-sequant run 152 --dry-run
+npx sequant run 152 --dry-run
 ```
+
+> **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
 
 ## Edge Cases
 
@@ -203,7 +207,7 @@ If issues depend on each other:
 
 - [ ] **Issue Summary Table** - Table with Issue, Title, Labels, Workflow columns
 - [ ] **Recommended Workflow** - Slash commands in order for each issue
-- [ ] **CLI Command** - `sequant run <issue-numbers>` command (REQUIRED)
+- [ ] **CLI Command** - `npx sequant run <issue-numbers>` command (REQUIRED)
 - [ ] **Explanation** - Brief notes explaining workflow choices
 
 **DO NOT respond until all items are verified.**
@@ -232,8 +236,10 @@ You MUST use this exact structure:
 
 Run from terminal (useful for automation/CI):
 \`\`\`bash
-sequant run <ISSUE_NUMBERS>
+npx sequant run <ISSUE_NUMBERS>
 \`\`\`
+
+> **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
 
 ### Notes
 <!-- FILL: explanation of workflow choices -->
