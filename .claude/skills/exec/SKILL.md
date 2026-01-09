@@ -151,6 +151,65 @@ git branch -a | grep -i "<issue-number>"
 
 **Important:** Always work in the worktree directory, not the main repository, once the worktree is created.
 
+### PR Creation and Verification
+
+After implementation is complete and all checks pass, create and verify the PR:
+
+1. **Push the branch:**
+   ```bash
+   git push -u origin <branch-name>
+   ```
+
+2. **Create the PR with HEREDOC formatting:**
+   ```bash
+   gh pr create --title "feat(#<issue>): <title>" --body "$(cat <<'EOF'
+   ## Summary
+   <1-3 bullet points>
+
+   ## Test plan
+   - [ ] Manual testing steps...
+
+   Closes #<issue>
+
+   🤖 Generated with [Claude Code](https://claude.com/claude-code)
+   EOF
+   )"
+   ```
+
+3. **Immediately verify PR was created:**
+   ```bash
+   # Verify PR exists - this MUST succeed
+   gh pr view --json number,url
+   ```
+
+4. **If verification fails, retry once:**
+   ```bash
+   # Wait 2 seconds and retry
+   sleep 2
+   gh pr view --json number,url || echo "ERROR: PR verification failed after retry"
+   ```
+
+5. **Capture PR URL for progress update:**
+   - If PR exists: Record the URL from `gh pr view` output
+   - If PR creation failed: Record the error and include manual creation instructions
+
+**PR Verification Failure Handling:**
+
+If `gh pr view` fails after retry:
+1. Log the error clearly: `"PR Creation: FAILED - [error message]"`
+2. Include manual creation instructions in progress update:
+   ```markdown
+   ### Manual PR Creation Required
+
+   PR creation failed. Create manually:
+   \`\`\`bash
+   gh pr create --title "feat(#<issue>): <title>" --body "..."
+   \`\`\`
+   ```
+3. Do NOT report the phase as fully successful - note the PR failure
+
+**Important:** The implementation is complete regardless of PR status, but the progress update MUST accurately reflect whether the PR was created.
+
 ### Check Patterns Catalog Before Implementing
 
 **IMPORTANT:** Before creating any new utility functions, components, or types:
@@ -407,6 +466,7 @@ At the end of a session:
    - Include:
      - AC coverage summary
      - Brief list of key files changed
+     - **PR Status** (Created with URL, or Failed with reason and manual instructions)
      - Any known gaps or open questions
 
    - Label it clearly as:
@@ -444,6 +504,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
 - [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
+- [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
 - [ ] **Next Steps** - Clear guidance on remaining work
 
