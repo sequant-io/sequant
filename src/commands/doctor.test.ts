@@ -15,18 +15,27 @@ vi.mock("../lib/manifest.js", () => ({
 vi.mock("../lib/system.js", () => ({
   commandExists: vi.fn(),
   isGhAuthenticated: vi.fn(),
+  isNativeWindows: vi.fn(),
+  isWSL: vi.fn(),
 }));
 
 import { doctorCommand } from "./doctor.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
-import { commandExists, isGhAuthenticated } from "../lib/system.js";
+import {
+  commandExists,
+  isGhAuthenticated,
+  isNativeWindows,
+  isWSL,
+} from "../lib/system.js";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
 const mockGetManifest = vi.mocked(getManifest);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
+const mockIsNativeWindows = vi.mocked(isNativeWindows);
+const mockIsWSL = vi.mocked(isWSL);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -51,6 +60,9 @@ describe("doctor command", () => {
     });
     mockCommandExists.mockReturnValue(true);
     mockIsGhAuthenticated.mockReturnValue(true);
+    // Default: not on Windows
+    mockIsNativeWindows.mockReturnValue(false);
+    mockIsWSL.mockReturnValue(false);
   });
 
   afterEach(() => {
@@ -140,6 +152,43 @@ describe("doctor command", () => {
       expect(output).toContain("Warnings: 1");
       // Should not exit with failure since jq is optional
       expect(processExitSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Windows platform checks", () => {
+    it("warns when running on native Windows", async () => {
+      mockIsNativeWindows.mockReturnValue(true);
+      mockIsWSL.mockReturnValue(false);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Platform");
+      expect(output).toContain("native Windows");
+      expect(output).toContain("WSL recommended");
+    });
+
+    it("passes when running in WSL", async () => {
+      mockIsNativeWindows.mockReturnValue(false);
+      mockIsWSL.mockReturnValue(true);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Platform");
+      expect(output).toContain("Running in WSL");
+      expect(output).toContain("full functionality");
+    });
+
+    it("does not show platform check on macOS/Linux", async () => {
+      mockIsNativeWindows.mockReturnValue(false);
+      mockIsWSL.mockReturnValue(false);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not contain Platform check on non-Windows systems
+      expect(output).not.toContain("Platform");
     });
   });
 

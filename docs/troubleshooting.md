@@ -234,6 +234,78 @@ Common issues and solutions when using Sequant.
 
 3. Check your lint configuration is correct for your stack.
 
+## Windows Issues
+
+### "bash: command not found" or scripts don't work
+
+**Problem:** Shell scripts (hooks, `new-feature.sh`) fail because bash isn't available.
+
+**Solution:** Install WSL (Windows Subsystem for Linux):
+
+1. Open PowerShell as Administrator
+2. Run: `wsl --install`
+3. Restart your computer
+4. Open Ubuntu from Start menu and complete setup
+5. Run Sequant commands from within WSL
+
+See the [README Windows Users section](../README.md#windows-users) for full setup instructions.
+
+### Line ending issues (CRLF vs LF)
+
+**Problem:** Git shows all files as modified, or scripts fail with "bad interpreter" errors.
+
+**Solution:** Configure Git to use LF line endings:
+
+```bash
+# Set global config
+git config --global core.autocrlf input
+
+# Fix existing repo
+git rm --cached -r .
+git reset --hard
+```
+
+If using VSCode, add to `.vscode/settings.json`:
+```json
+{
+  "files.eol": "\n"
+}
+```
+
+### Path issues between Windows and WSL
+
+**Problem:** Paths like `C:\Users\...` don't work in WSL, or vice versa.
+
+**Solutions:**
+
+1. **Access Windows files from WSL:**
+   ```bash
+   cd /mnt/c/Users/YourName/Projects
+   ```
+
+2. **Access WSL files from Windows:**
+   ```
+   \\wsl$\Ubuntu\home\username
+   ```
+
+3. **Best practice:** Keep your projects in the WSL filesystem (`~/projects/`) for better performance.
+
+### npm/node not found in WSL
+
+**Problem:** Node.js works in Windows but not in WSL.
+
+**Solution:** Install Node.js inside WSL (it's a separate environment):
+
+```bash
+# Using nvm (recommended)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+nvm install --lts
+
+# Or using NodeSource
+# See: https://github.com/nodesource/distributions
+```
+
 ## Git Issues
 
 ### GPG signing failed
