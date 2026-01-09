@@ -29,6 +29,32 @@ export function isGhAuthenticated(): boolean {
 }
 
 /**
+ * Check if running in Windows Subsystem for Linux (WSL)
+ */
+export function isWSL(): boolean {
+  if (process.platform !== "linux") {
+    return false;
+  }
+  try {
+    const fs = require("fs");
+    const procVersion = fs.readFileSync("/proc/version", "utf8");
+    return (
+      procVersion.toLowerCase().includes("microsoft") ||
+      procVersion.toLowerCase().includes("wsl")
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if running on native Windows (not WSL)
+ */
+export function isNativeWindows(): boolean {
+  return process.platform === "win32";
+}
+
+/**
  * Get platform-specific install hint for a package
  */
 export function getInstallHint(pkg: string): string {

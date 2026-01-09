@@ -176,6 +176,28 @@ npx sequant run 123 --quality-loop
 | Windows WSL | ✅ Supported | Use WSL2 with bash |
 | Windows Native | ⚠️ Limited | CLI works, but shell scripts require WSL |
 
+### Windows Users
+
+**WSL is recommended** for the full Sequant experience on Windows. Here's why:
+
+| Feature | Native Windows | Windows + WSL |
+|---------|----------------|---------------|
+| CLI commands (`init`, `doctor`, `status`) | ✅ Works | ✅ Works |
+| Workflow hooks (pre-tool, post-tool) | ❌ Requires bash | ✅ Works |
+| Shell scripts (`new-feature.sh`, etc.) | ❌ Requires bash | ✅ Works |
+| Git worktree workflows | ✅ Works | ✅ Works |
+
+**Quick WSL Setup:**
+
+1. Install WSL (run in PowerShell as Administrator): `wsl --install`
+2. Restart your computer when prompted
+3. Open Ubuntu from Start menu and complete setup
+4. Install Node.js: See [NodeSource distributions](https://github.com/nodesource/distributions)
+5. Install GitHub CLI: `apt install gh` then `gh auth login`
+6. Use Sequant: `npx sequant init`
+
+For detailed instructions, see [Microsoft's WSL documentation](https://learn.microsoft.com/en-us/windows/wsl/install).
+
 ### Requirements
 
 - **Node.js** 18.0.0 or higher

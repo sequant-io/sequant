@@ -5,7 +5,12 @@
 import chalk from "chalk";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
-import { commandExists, isGhAuthenticated } from "../lib/system.js";
+import {
+  commandExists,
+  isGhAuthenticated,
+  isNativeWindows,
+  isWSL,
+} from "../lib/system.js";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 interface DoctorOptions {
@@ -189,6 +194,23 @@ export async function doctorCommand(options: DoctorOptions): Promise<void> {
       message: "jq not installed (optional, hooks will use grep fallback)",
     });
   }
+
+  // Check 11: Windows platform detection
+  if (isNativeWindows()) {
+    checks.push({
+      name: "Platform",
+      status: "warn",
+      message:
+        "Running on native Windows - WSL recommended for full functionality (hooks, scripts)",
+    });
+  } else if (isWSL()) {
+    checks.push({
+      name: "Platform",
+      status: "pass",
+      message: "Running in WSL - full functionality available",
+    });
+  }
+  // On macOS/Linux, don't add a platform check (not relevant)
 
   // Display results
   let passCount = 0;
