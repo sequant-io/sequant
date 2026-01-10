@@ -4,9 +4,34 @@
 
 import { readFile, writeFile, fileExists } from "./fs.js";
 import type { PackageManager } from "./stacks.js";
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
+import { readFileSync } from "fs";
 
 const MANIFEST_PATH = ".sequant-manifest.json";
-const PACKAGE_VERSION = "0.1.0";
+
+// Get version from package.json dynamically
+// Works from both source (src/lib/) and compiled (dist/src/lib/) locations
+function findPackageJson(): string {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  let dir = __dirname;
+  while (dir !== dirname(dir)) {
+    const candidate = resolve(dir, "package.json");
+    try {
+      const content = readFileSync(candidate, "utf-8");
+      const pkg = JSON.parse(content);
+      if (pkg.name === "sequant") {
+        return content;
+      }
+    } catch {
+      // Not found, continue searching
+    }
+    dir = dirname(dir);
+  }
+  throw new Error("Could not find sequant package.json");
+}
+const pkg = JSON.parse(findPackageJson());
+const PACKAGE_VERSION = pkg.version as string;
 
 export interface Manifest {
   version: string;
