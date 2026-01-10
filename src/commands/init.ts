@@ -4,7 +4,13 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { detectStack, getStackConfig } from "../lib/stacks.js";
+import {
+  detectStack,
+  getStackConfig,
+  detectPackageManager,
+  getPackageManagerCommands,
+  type PackageManager,
+} from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
@@ -141,6 +147,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   console.log(chalk.blue(`\n📋 Stack: ${stack}`));
 
+  // Detect package manager
+  const packageManager = await detectPackageManager();
+  if (packageManager) {
+    console.log(chalk.blue(`📦 Package Manager: ${packageManager}`));
+  }
+
   // Get stack config for default dev URL
   const stackConfig = getStackConfig(stack!);
   let devUrl = stackConfig.devUrl;
@@ -216,7 +228,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Create manifest
   console.log(chalk.blue("📋 Creating manifest..."));
-  await createManifest(stack!);
+  await createManifest(stack!, packageManager ?? undefined);
 
   // Build optional suggestions section
   const optionalSuggestions = suggestions.filter((s) =>

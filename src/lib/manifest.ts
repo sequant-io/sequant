@@ -3,6 +3,7 @@
  */
 
 import { readFile, writeFile, fileExists } from "./fs.js";
+import type { PackageManager } from "./stacks.js";
 
 const MANIFEST_PATH = ".sequant-manifest.json";
 const PACKAGE_VERSION = "0.1.0";
@@ -10,6 +11,7 @@ const PACKAGE_VERSION = "0.1.0";
 export interface Manifest {
   version: string;
   stack: string;
+  packageManager?: PackageManager;
   installedAt: string;
   updatedAt?: string;
   files: Record<string, string>; // path -> hash
@@ -28,10 +30,14 @@ export async function getManifest(): Promise<Manifest | null> {
   }
 }
 
-export async function createManifest(stack: string): Promise<void> {
+export async function createManifest(
+  stack: string,
+  packageManager?: PackageManager,
+): Promise<void> {
   const manifest: Manifest = {
     version: PACKAGE_VERSION,
     stack,
+    ...(packageManager && { packageManager }),
     installedAt: new Date().toISOString(),
     files: {},
   };

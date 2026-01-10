@@ -13,6 +13,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getManifest } from "../lib/manifest.js";
 import { getSettings } from "../lib/settings.js";
+import { getPackageManagerCommands, PM_CONFIG } from "../lib/stacks.js";
 import {
   LogWriter,
   createPhaseLogFromTiming,
@@ -149,6 +150,7 @@ async function ensureWorktree(
   issueNumber: number,
   title: string,
   verbose: boolean,
+  packageManager?: string,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
@@ -247,7 +249,11 @@ async function ensureWorktree(
     if (verbose) {
       console.log(chalk.gray(`    📦 Installing dependencies...`));
     }
-    spawnSync("npm", ["install", "--silent"], {
+    // Use detected package manager or default to npm
+    const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
+    const pmConfig = PM_CONFIG[pm];
+    const [cmd, ...args] = pmConfig.installSilent.split(" ");
+    spawnSync(cmd, args, {
       cwd: worktreePath,
       stdio: "pipe",
     });
@@ -271,13 +277,19 @@ async function ensureWorktree(
 async function ensureWorktrees(
   issues: Array<{ number: number; title: string }>,
   verbose: boolean,
+  packageManager?: string,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
   console.log(chalk.blue("\n  📂 Preparing worktrees..."));
 
   for (const issue of issues) {
-    const worktree = await ensureWorktree(issue.number, issue.title, verbose);
+    const worktree = await ensureWorktree(
+      issue.number,
+      issue.title,
+      verbose,
+      packageManager,
+    );
     if (worktree) {
       worktrees.set(issue.number, worktree);
     }
@@ -1071,7 +1083,11 @@ export async function runCommand(
       number: num,
       title: issueInfoMap.get(num)?.title || `Issue #${num}`,
     }));
-    worktreeMap = await ensureWorktrees(issueData, config.verbose);
+    worktreeMap = await ensureWorktrees(
+      issueData,
+      config.verbose,
+      manifest.packageManager,
+    );
   }
 
   // Execute
