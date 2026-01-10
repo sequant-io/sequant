@@ -315,6 +315,8 @@ async function ensureWorktrees(
  */
 const PHASE_PROMPTS: Record<Phase, string> = {
   spec: "Review GitHub issue #{issue} and create an implementation plan with verification criteria. Run the /spec {issue} workflow.",
+  "security-review":
+    "Perform a deep security analysis for GitHub issue #{issue} focusing on auth, permissions, and sensitive operations. Run the /security-review {issue} workflow.",
   testgen:
     "Generate test stubs for GitHub issue #{issue} based on the specification. Run the /testgen {issue} workflow.",
   exec: "Implement the feature for GitHub issue #{issue} following the spec. Run the /exec {issue} workflow.",
@@ -344,9 +346,20 @@ const DOCS_LABELS = ["docs", "documentation", "readme"];
 const COMPLEX_LABELS = ["complex", "refactor", "breaking", "major"];
 
 /**
+ * Security-related labels that trigger security-review phase
+ */
+const SECURITY_LABELS = [
+  "security",
+  "auth",
+  "authentication",
+  "permissions",
+  "admin",
+];
+
+/**
  * Detect phases based on issue labels (like /solve logic)
  */
-function detectPhasesFromLabels(labels: string[]): {
+export function detectPhasesFromLabels(labels: string[]): {
   phases: Phase[];
   qualityLoop: boolean;
 } {
@@ -372,6 +385,11 @@ function detectPhasesFromLabels(labels: string[]): {
     COMPLEX_LABELS.some((complexLabel) => label.includes(complexLabel)),
   );
 
+  // Check for security labels → add security-review phase
+  const isSecurity = lowerLabels.some((label) =>
+    SECURITY_LABELS.some((secLabel) => label.includes(secLabel)),
+  );
+
   // Build phase list
   let phases: Phase[];
 
@@ -386,6 +404,12 @@ function detectPhasesFromLabels(labels: string[]): {
     phases = ["spec", "exec", "qa"];
   }
 
+  // Add security-review phase after spec if security labels detected
+  if (isSecurity && phases.includes("spec")) {
+    const specIndex = phases.indexOf("spec");
+    phases.splice(specIndex + 1, 0, "security-review");
+  }
+
   return { phases, qualityLoop: isComplex };
 }
 
@@ -397,7 +421,7 @@ function detectPhasesFromLabels(labels: string[]): {
  * **Phases:** exec → qa
  * **Quality Loop:** enabled|disabled
  */
-function parseRecommendedWorkflow(output: string): {
+export function parseRecommendedWorkflow(output: string): {
   phases: Phase[];
   qualityLoop: boolean;
 } | null {
@@ -420,7 +444,17 @@ function parseRecommendedWorkflow(output: string): {
   // Validate and convert to Phase type
   const validPhases: Phase[] = [];
   for (const name of phaseNames) {
-    if (["spec", "testgen", "exec", "test", "qa", "loop"].includes(name)) {
+    if (
+      [
+        "spec",
+        "security-review",
+        "testgen",
+        "exec",
+        "test",
+        "qa",
+        "loop",
+      ].includes(name)
+    ) {
       validPhases.push(name as Phase);
     }
   }

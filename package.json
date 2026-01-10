@@ -24,6 +24,7 @@
     "dev": "tsx bin/cli.ts",
     "test": "vitest run",
     "lint": "echo \"No linter configured yet\" && exit 0",
+    "sync:skills": "cp -r templates/skills/* .claude/skills/",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
     "prepublishOnly": "npm run build"
   },

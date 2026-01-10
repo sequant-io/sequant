@@ -23,6 +23,7 @@ import { z } from "zod";
  */
 export const PhaseSchema = z.enum([
   "spec",
+  "security-review",
   "testgen",
   "exec",
   "test",

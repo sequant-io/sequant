@@ -5,7 +5,14 @@
 /**
  * Available workflow phases
  */
-export type Phase = "spec" | "testgen" | "exec" | "test" | "qa" | "loop";
+export type Phase =
+  | "spec"
+  | "security-review"
+  | "testgen"
+  | "exec"
+  | "test"
+  | "qa"
+  | "loop";
 
 /**
  * Default phases for workflow execution
