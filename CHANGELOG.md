@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.3] - 2026-01-10
+## [1.2.4] - 2026-01-10
 
 ### Fixed
+- Fix CLI crash when running via npx - version reading now works from compiled dist
 - `sequant update` now shows correct version instead of hardcoded "0.1.0"
   - Version is read dynamically from package.json at runtime
   - Works from both source and compiled locations
