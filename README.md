@@ -86,6 +86,23 @@ npx sequant init
 - **📦 Stack Adapters** - Pre-configured for Next.js, Rust, Python, Go
 - **🔄 Update-Safe** - Customize without losing updates
 
+## Optional MCP Integrations
+
+Sequant works fully without any MCP servers, but these optional integrations enhance specific workflows:
+
+| MCP Server | Skills | Purpose | Install |
+|------------|--------|---------|---------|
+| [Chrome DevTools](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools) | `/test`, `/testgen`, `/loop` | Browser automation for UI testing | See [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools#setup) |
+| [Context7](https://github.com/upstash/context7) | `/exec`, `/fullsolve` | External library documentation lookup | `npx -y @anthropic/mcp-cli add upstash/context7` |
+| [Sequential Thinking](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking) | `/fullsolve` | Complex multi-step reasoning | See [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking#setup) |
+
+**What happens without MCPs:**
+- `/test` and `/testgen` fall back to manual testing instructions
+- `/exec` uses codebase search instead of library docs lookup
+- `/fullsolve` uses standard reasoning (no extended thinking)
+
+Run `sequant doctor` to check which optional MCPs are configured.
+
 ## Commands
 
 ### CLI Commands

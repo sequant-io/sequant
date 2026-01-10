@@ -17,6 +17,27 @@ vi.mock("../lib/system.js", () => ({
   isGhAuthenticated: vi.fn(),
   isNativeWindows: vi.fn(),
   isWSL: vi.fn(),
+  checkOptionalMcpServers: vi.fn(),
+  OPTIONAL_MCP_SERVERS: [
+    {
+      name: "chrome-devtools",
+      purpose: "Browser automation",
+      skills: ["/test", "/testgen"],
+      installUrl: "https://example.com/chrome-devtools",
+    },
+    {
+      name: "context7",
+      purpose: "Library docs",
+      skills: ["/exec"],
+      installUrl: "https://example.com/context7",
+    },
+    {
+      name: "sequential-thinking",
+      purpose: "Complex reasoning",
+      skills: ["/fullsolve"],
+      installUrl: "https://example.com/sequential-thinking",
+    },
+  ],
 }));
 
 import { doctorCommand } from "./doctor.js";
@@ -27,6 +48,7 @@ import {
   isGhAuthenticated,
   isNativeWindows,
   isWSL,
+  checkOptionalMcpServers,
 } from "../lib/system.js";
 
 const mockFileExists = vi.mocked(fileExists);
@@ -36,6 +58,7 @@ const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
 const mockIsWSL = vi.mocked(isWSL);
+const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -63,6 +86,12 @@ describe("doctor command", () => {
     // Default: not on Windows
     mockIsNativeWindows.mockReturnValue(false);
     mockIsWSL.mockReturnValue(false);
+    // Default: all MCPs configured
+    mockCheckOptionalMcpServers.mockReturnValue({
+      "chrome-devtools": true,
+      context7: true,
+      "sequential-thinking": true,
+    });
   });
 
   afterEach(() => {
@@ -262,6 +291,73 @@ describe("doctor command", () => {
       expect(output).toContain("Warnings:");
       expect(output).toContain("should work");
       expect(processExitSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("MCP server checks", () => {
+    it("passes when all optional MCPs are configured", async () => {
+      mockCheckOptionalMcpServers.mockReturnValue({
+        "chrome-devtools": true,
+        context7: true,
+        "sequential-thinking": true,
+      });
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("MCP Servers");
+      expect(output).toContain("All optional MCPs configured");
+    });
+
+    it("shows pass with configured MCPs and warns for missing ones", async () => {
+      mockCheckOptionalMcpServers.mockReturnValue({
+        "chrome-devtools": true,
+        context7: false,
+        "sequential-thinking": true,
+      });
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("MCP Servers");
+      expect(output).toContain("Some MCPs configured");
+      expect(output).toContain("MCP: context7");
+      expect(output).toContain("Not configured");
+      expect(output).toContain("/exec");
+      // Should not fail since MCPs are optional
+      expect(processExitSpy).not.toHaveBeenCalled();
+    });
+
+    it("warns when no optional MCPs are configured", async () => {
+      mockCheckOptionalMcpServers.mockReturnValue({
+        "chrome-devtools": false,
+        context7: false,
+        "sequential-thinking": false,
+      });
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("MCP Servers");
+      expect(output).toContain("No optional MCPs configured");
+      expect(output).toContain("works without them");
+      // Should not fail since MCPs are optional
+      expect(processExitSpy).not.toHaveBeenCalled();
+    });
+
+    it("does not fail when MCPs are missing (they are optional)", async () => {
+      mockCheckOptionalMcpServers.mockReturnValue({
+        "chrome-devtools": false,
+        context7: false,
+        "sequential-thinking": false,
+      });
+
+      await doctorCommand({});
+
+      // Should complete without failure
+      expect(processExitSpy).not.toHaveBeenCalled();
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("should work");
     });
   });
 });

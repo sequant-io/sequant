@@ -8,7 +8,6 @@ metadata:
 allowed-tools:
   - Read
   - Bash
-  - mcp__chrome-devtools__*
   - Glob
   - Grep
   - TodoWrite
@@ -17,6 +16,8 @@ allowed-tools:
   - Bash(npm run dev:*)
   - Bash(lsof:*)
   - Bash(npx tsx:*)
+  # Optional MCP tools (enhanced functionality if available)
+  # - mcp__chrome-devtools__* (browser automation)
 ---
 
 # Browser Testing Command
@@ -112,6 +113,44 @@ npm run dev
 ```
 
 Wait for server ready before proceeding.
+
+## MCP Availability Check
+
+Before executing browser tests, check if Chrome DevTools MCP is available:
+
+**If Chrome DevTools MCP is available (`mcp__chrome-devtools__*` tools exist):**
+- Use automated browser testing with snapshots and screenshots
+- Full test automation as described in Phase 2
+
+**If Chrome DevTools MCP is NOT available:**
+- Switch to manual testing mode
+- Generate a detailed test checklist for human execution
+- Provide step-by-step manual testing instructions
+- Include expected outcomes for each step
+- Use screenshots taken by the user when provided
+
+**Manual Testing Fallback Template:**
+```markdown
+## Manual Test Checklist
+
+### Test 1: [Test Name]
+**Steps:**
+1. Navigate to [URL]
+2. Click [element]
+3. Enter [value] in [field]
+4. Click [submit button]
+
+**Expected Result:**
+- [Expected behavior]
+- [Expected UI state]
+
+**Actual Result:** [ ] Pass [ ] Fail
+**Notes:** ___
+```
+
+Run `sequant doctor` to check MCP availability.
+
+---
 
 ## Decision Point: Feature Implemented or Not?
 

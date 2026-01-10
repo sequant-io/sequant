@@ -80,3 +80,95 @@ export function getInstallHint(pkg: string): string {
 
   return pkgHints[platform] || pkgHints["linux"] || `Install ${pkg}`;
 }
+
+/**
+ * MCP server information for Sequant integrations
+ */
+export interface McpServerInfo {
+  name: string;
+  purpose: string;
+  skills: string[];
+  installUrl: string;
+}
+
+/**
+ * Optional MCP servers that enhance Sequant functionality
+ */
+export const OPTIONAL_MCP_SERVERS: McpServerInfo[] = [
+  {
+    name: "chrome-devtools",
+    purpose: "Browser automation for UI testing",
+    skills: ["/test", "/testgen", "/loop"],
+    installUrl:
+      "https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools",
+  },
+  {
+    name: "context7",
+    purpose: "External library documentation lookup",
+    skills: ["/exec", "/fullsolve"],
+    installUrl: "https://github.com/upstash/context7",
+  },
+  {
+    name: "sequential-thinking",
+    purpose: "Complex multi-step reasoning",
+    skills: ["/fullsolve"],
+    installUrl:
+      "https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking",
+  },
+];
+
+/**
+ * Get the path to Claude Desktop config file
+ */
+export function getClaudeConfigPath(): string {
+  const platform = process.platform;
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+
+  if (platform === "darwin") {
+    return `${home}/Library/Application Support/Claude/claude_desktop_config.json`;
+  } else if (platform === "win32") {
+    return `${process.env.APPDATA}\\Claude\\claude_desktop_config.json`;
+  } else {
+    // Linux
+    return `${home}/.config/claude/claude_desktop_config.json`;
+  }
+}
+
+/**
+ * Read configured MCP servers from Claude Desktop config
+ */
+export function getConfiguredMcpServers(): string[] {
+  const fs = require("fs");
+  const configPath = getClaudeConfigPath();
+
+  try {
+    const content = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(content);
+    const servers = config.mcpServers || {};
+    return Object.keys(servers);
+  } catch {
+    // Config file doesn't exist or is invalid
+    return [];
+  }
+}
+
+/**
+ * Check which optional MCP servers are configured
+ * Returns an object with server names as keys and configured status as values
+ */
+export function checkOptionalMcpServers(): Record<string, boolean> {
+  const configuredServers = getConfiguredMcpServers();
+  const result: Record<string, boolean> = {};
+
+  for (const server of OPTIONAL_MCP_SERVERS) {
+    // Check for various naming conventions
+    const found = configuredServers.some(
+      (configured) =>
+        configured.toLowerCase().includes(server.name.toLowerCase()) ||
+        server.name.toLowerCase().includes(configured.toLowerCase()),
+    );
+    result[server.name] = found;
+  }
+
+  return result;
+}

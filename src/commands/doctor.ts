@@ -10,6 +10,8 @@ import {
   isGhAuthenticated,
   isNativeWindows,
   isWSL,
+  checkOptionalMcpServers,
+  OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
@@ -227,6 +229,41 @@ export async function doctorCommand(options: DoctorOptions): Promise<void> {
     });
   }
   // On macOS/Linux, don't add a platform check (not relevant)
+
+  // Check 12: Optional MCP servers
+  const mcpStatus = checkOptionalMcpServers();
+  const configuredMcps = OPTIONAL_MCP_SERVERS.filter(
+    (s) => mcpStatus[s.name],
+  ).map((s) => s.name);
+  const missingMcps = OPTIONAL_MCP_SERVERS.filter((s) => !mcpStatus[s.name]);
+
+  if (configuredMcps.length === OPTIONAL_MCP_SERVERS.length) {
+    checks.push({
+      name: "MCP Servers",
+      status: "pass",
+      message: `All optional MCPs configured (${configuredMcps.join(", ")})`,
+    });
+  } else if (configuredMcps.length > 0) {
+    checks.push({
+      name: "MCP Servers",
+      status: "pass",
+      message: `Some MCPs configured: ${configuredMcps.join(", ")}`,
+    });
+    for (const mcp of missingMcps) {
+      checks.push({
+        name: `MCP: ${mcp.name}`,
+        status: "warn",
+        message: `Not configured (optional, enhances ${mcp.skills.join(", ")})`,
+      });
+    }
+  } else {
+    checks.push({
+      name: "MCP Servers",
+      status: "warn",
+      message:
+        "No optional MCPs configured (Sequant works without them, but they enhance functionality)",
+    });
+  }
 
   // Display results
   let passCount = 0;
