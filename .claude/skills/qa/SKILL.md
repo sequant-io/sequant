@@ -34,6 +34,32 @@ When invoked as `/qa`, your job is to:
 4. Assess whether the change is "A+ status" or needs more work.
 5. Draft a GitHub review/QA comment summarizing findings and recommendations.
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `qa` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Skip pre-flight sync check** - Orchestrator has already synced
+2. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path directly
+3. **Skip issue fetch** - Use `SEQUANT_ISSUE`, orchestrator has context
+4. **Reduce GitHub comment frequency** - Defer updates to orchestrator
+5. **Trust git state** - Orchestrator verified branch status
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Perform pre-flight sync check
+- Locate worktree or work from main
+- Fetch fresh issue context from GitHub
+- Post QA comment directly to GitHub
+
 ## Behavior
 
 Invocation:
@@ -43,7 +69,9 @@ Invocation:
 
 ### Pre-flight Sync Check
 
-Before starting QA, verify the local branch is in sync with remote:
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator has already verified sync status.
+
+Before starting QA (standalone mode), verify the local branch is in sync with remote:
 
 ```bash
 git fetch origin 2>/dev/null || echo "Network unavailable - proceeding with local state"
@@ -63,6 +91,12 @@ git pull origin main  # Or merge origin/main if pull fails
 ### Feature Worktree Workflow
 
 **QA Phase:** Review code in the feature worktree.
+
+**If orchestrated (SEQUANT_WORKTREE is set):**
+- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
+- Skip step 1 below (worktree location provided by orchestrator)
+
+**If standalone:**
 
 1. **Locate the worktree:**
    - The worktree should already exist from the execution phase (`/exec`)
@@ -224,6 +258,13 @@ Produce a Markdown snippet for the PR/issue:
 - Clear, actionable next steps
 
 ### 7. Update GitHub Issue
+
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Skip posting GitHub comment (orchestrator handles aggregated summary)
+- Include verdict and AC coverage in output for orchestrator to capture
+- Let orchestrator update labels based on final workflow status
+
+**If standalone:**
 
 Post the draft comment to GitHub and update labels:
 - `AC_NOT_MET`: add `needs-work` label

@@ -65,9 +65,37 @@ Invocation:
 - `/exec <freeform description>`:
   - Treat the text as a lightweight description + AC if no issue context is available.
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `exec` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Skip pre-flight git checks** - The orchestrator has already verified git state
+2. **Skip worktree creation** - Orchestrator creates worktrees before invoking skills
+3. **Use provided worktree path** - Work in `SEQUANT_WORKTREE` instead of creating a new one
+4. **Reduce GitHub comment frequency** - Defer progress updates to the orchestrator
+5. **Trust issue context** - The orchestrator has already fetched and validated issue data
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Perform all pre-flight checks
+- Create worktree if needed
+- Post progress updates to GitHub
+- Fetch fresh issue context
+
 ### 0. Pre-flight Check (After Context Restoration)
 
-**CRITICAL:** If continuing from a restored/summarized conversation, verify git state first:
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator has already performed these checks.
+
+**CRITICAL:** If continuing from a restored/summarized conversation (standalone mode), verify git state first:
 
 ```bash
 # Check current state - are we in a worktree or main repo?
@@ -124,6 +152,13 @@ git branch -a | grep -i "<issue-number>"
 ### Feature Worktree Workflow
 
 **Execution Phase:** Create and work in a feature worktree.
+
+**If orchestrated (SEQUANT_WORKTREE is set):**
+- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
+- Skip steps 1-2 below (worktree already created by orchestrator)
+- Continue with step 3 (Work in the worktree)
+
+**If standalone:**
 
 1. **Check if worktree already exists:**
    - Check if you're already in a worktree: `git worktree list` or check if `../worktrees/` contains a directory for this issue
@@ -465,6 +500,13 @@ When in doubt, choose:
 The goal is to satisfy AC with the smallest, safest change possible.
 
 ### 5. Progress Summary and Draft Issue Update
+
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Skip posting progress comments to GitHub (orchestrator handles summary)
+- Still provide AC coverage summary in output for orchestrator to capture
+- Let orchestrator handle final GitHub update
+
+**If standalone:**
 
 At the end of a session:
 

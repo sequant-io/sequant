@@ -90,6 +90,31 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 /fullsolve 218 --max-iterations 5 # Override max fix iterations
 ```
 
+## Orchestration Context
+
+This skill acts as an **orchestrator** and sets environment variables for child skills to optimize their behavior:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | Identifies the orchestrator | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase being executed | `spec`, `exec`, `test`, `qa`, `loop` |
+| `SEQUANT_ISSUE` | Issue number being processed | `218` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/218-...` |
+
+**Benefits of orchestration context:**
+
+1. **Faster execution** - Child skills skip redundant pre-flight checks
+2. **Cleaner GitHub comments** - Only orchestrator posts progress updates
+3. **Better coordination** - Skills can trust worktree and issue context
+4. **Reduced API calls** - Issue fetch happens once, not per-phase
+
+**Child skills detect orchestration via `SEQUANT_ORCHESTRATOR` and adjust behavior:**
+- `/spec`: Runs normally (first phase, no prior context)
+- `/exec`: Skips worktree creation, uses provided path
+- `/test`: Skips issue fetch, trusts orchestrator context
+- `/qa`: Skips pre-flight sync, defers GitHub updates
+- `/loop`: Uses provided worktree, defers GitHub updates
+
 ## Phase 0: Pre-flight Checks
 
 **CRITICAL after context restoration:** Before starting any work, verify the current git state to avoid duplicate work.
