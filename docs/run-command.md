@@ -53,6 +53,10 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
 | `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
+| `-q, --quality-loop` | Enable auto-retry on failures | `false` |
+| `--max-iterations <n>` | Max iterations for quality loop | `3` |
+| `--testgen` | Run testgen phase after spec | `false` |
+| `--batch "<issues>"` | Group issues to run together | - |
 
 ### Available Phases
 
@@ -104,6 +108,27 @@ Process a sprint's worth of issues:
 npx sequant run 100 101 102 103 104 --sequential
 ```
 
+### Quality Loop Mode
+
+Enable automatic fix iterations when phases fail:
+
+```bash
+npx sequant run 42 --quality-loop
+```
+
+**What happens:**
+1. Runs phases normally (spec → exec → qa)
+2. If a phase fails, runs `/loop` to fix issues
+3. Re-runs failed phases after fixes
+4. Iterates up to 3 times (configurable with `--max-iterations`)
+
+This is useful for complex issues where initial implementation may need refinement.
+
+```bash
+# Quality loop with more iterations
+npx sequant run 42 --quality-loop --max-iterations 5
+```
+
 ### CI/Scripting Mode
 
 Run without colors for CI environments:
@@ -118,11 +143,42 @@ npx sequant run 42 --no-color
 |----------|-------------|---------|
 | `PHASE_TIMEOUT` | Override default timeout (seconds) | `1800` |
 | `PHASES` | Override default phases | `spec,exec,qa` |
+| `SEQUANT_QUALITY_LOOP` | Enable quality loop | `false` |
+| `SEQUANT_MAX_ITERATIONS` | Max quality loop iterations | `3` |
+| `SEQUANT_SMART_TESTS` | Enable smart test detection | `true` |
+| `SEQUANT_TESTGEN` | Enable testgen phase | `false` |
 
 Example:
 ```bash
 PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
+SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 ```
+
+## Settings File
+
+You can configure defaults in `.sequant/settings.json`:
+
+```json
+{
+  "version": "1.0",
+  "run": {
+    "logJson": true,
+    "logPath": ".sequant/logs",
+    "autoDetectPhases": true,
+    "timeout": 1800,
+    "sequential": false,
+    "qualityLoop": false,
+    "maxIterations": 3,
+    "smartTests": true
+  }
+}
+```
+
+Settings hierarchy (highest priority wins):
+1. CLI flags (`--quality-loop`)
+2. Environment variables (`SEQUANT_QUALITY_LOOP`)
+3. Project settings (`.sequant/settings.json`)
+4. Package defaults
 
 ## Output
 
