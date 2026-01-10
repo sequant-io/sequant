@@ -8,16 +8,15 @@ metadata:
 allowed-tools:
   - Read
   - Bash
+  - mcp__chrome-devtools__*  # Optional: falls back to manual checklist if unavailable
   - Glob
   - Grep
   - TodoWrite
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
-  - Bash(npm run dev:*)
+  - Bash({{PM_RUN}} dev:*)
   - Bash(lsof:*)
   - Bash(npx tsx:*)
-  # Optional MCP tools (enhanced functionality if available)
-  # - mcp__chrome-devtools__* (browser automation)
 ---
 
 # Browser Testing Command
@@ -134,55 +133,28 @@ Check for test data requirements:
 
 ### 1.4 Dev Server Check
 
-Check if dev server is running:
+**Extract port from DEV_URL configuration:**
+The dev server URL is configured in `.claude/.sequant/config.json` under `tokens.DEV_URL`. Extract the port for the `lsof` check:
+
 ```bash
-lsof -ti:3000
+# Get DEV_URL from config (default: {{DEV_URL}})
+# Extract port: http://localhost:PORT -> PORT
+DEV_PORT=$(echo "{{DEV_URL}}" | sed -E 's/.*:([0-9]+).*/\1/')
+
+# Check if dev server is running on configured port
+lsof -ti:$DEV_PORT
 ```
 
-If not running, start it:
+If not running, start it using the project's package manager:
 ```bash
-npm run dev
+{{PM_RUN}} dev
 ```
 
 Wait for server ready before proceeding.
 
-## MCP Availability Check
-
-Before executing browser tests, check if Chrome DevTools MCP is available:
-
-**If Chrome DevTools MCP is available (`mcp__chrome-devtools__*` tools exist):**
-- Use automated browser testing with snapshots and screenshots
-- Full test automation as described in Phase 2
-
-**If Chrome DevTools MCP is NOT available:**
-- Switch to manual testing mode
-- Generate a detailed test checklist for human execution
-- Provide step-by-step manual testing instructions
-- Include expected outcomes for each step
-- Use screenshots taken by the user when provided
-
-**Manual Testing Fallback Template:**
-```markdown
-## Manual Test Checklist
-
-### Test 1: [Test Name]
-**Steps:**
-1. Navigate to [URL]
-2. Click [element]
-3. Enter [value] in [field]
-4. Click [submit button]
-
-**Expected Result:**
-- [Expected behavior]
-- [Expected UI state]
-
-**Actual Result:** [ ] Pass [ ] Fail
-**Notes:** ___
-```
-
-Run `sequant doctor` to check MCP availability.
-
----
+**Note:** If `{{DEV_URL}}` or `{{PM_RUN}}` are not replaced with actual values, the defaults are:
+- DEV_URL: `http://localhost:3000` (Next.js), `http://localhost:4321` (Astro), `http://localhost:5173` (Vite-based)
+- PM_RUN: `npm run` (or `bun run`, `yarn`, `pnpm run` based on lockfile)
 
 ## Decision Point: Feature Implemented or Not?
 
@@ -310,6 +282,62 @@ When a bug is discovered during testing:
    - After fix, restart blocked test
    - Mark as PASS/FAIL based on fix
    - Continue with remaining tests
+
+### 2.4 MCP Availability Check (Graceful Fallback)
+
+**Before starting browser automation**, check if Chrome DevTools MCP is available:
+
+```
+Check if mcp__chrome-devtools__* tools are available in your current session.
+```
+
+**If MCP IS available:**
+- Proceed with automated browser testing (Phase 2.1-2.3)
+
+**If MCP is NOT available:**
+- Skip browser automation steps
+- Generate a **Manual Testing Checklist** instead
+
+**Manual Testing Checklist (No MCP Fallback):**
+
+When browser automation is unavailable, generate a structured manual testing guide:
+
+```markdown
+## Manual Testing Checklist for Issue #<N>
+
+**Pre-requisites:**
+- [ ] Dev server running at {{DEV_URL}}
+- [ ] Browser open with DevTools ready
+- [ ] Test data prepared (see section 1.3)
+
+### Test 1: [Description]
+**URL:** {{DEV_URL}}/path/to/feature
+**Steps:**
+1. Navigate to the URL above
+2. [Action to perform]
+3. [Expected result to verify]
+
+**Expected Result:** [What should happen]
+**Actual Result:** [ ] PASS / [ ] FAIL - Notes: ___
+
+### Test 2: [Description]
+**URL:** {{DEV_URL}}/path/to/feature
+**Steps:**
+1. [Step 1]
+2. [Step 2]
+
+**Expected Result:** [What should happen]
+**Actual Result:** [ ] PASS / [ ] FAIL - Notes: ___
+
+---
+**Summary:** Complete each test above and mark PASS/FAIL.
+Post results as a comment on this issue.
+```
+
+**Why this matters:**
+- `/test` skill remains useful even without Chrome DevTools MCP
+- Manual testers can follow the structured checklist
+- Test results format remains consistent for reporting
 
 ## Phase 3: Reporting
 
