@@ -13,7 +13,7 @@ import {
   processTemplate,
 } from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
-import { getStackConfig } from "../lib/stacks.js";
+import { getStackConfig, PM_CONFIG } from "../lib/stacks.js";
 import { readFile, writeFile, fileExists } from "../lib/fs.js";
 
 interface UpdateOptions {
@@ -50,12 +50,8 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     tokens = config.tokens;
     console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
   } else {
-    // Legacy install - migrate by prompting for tokens
-    console.log(
-      chalk.yellow(
-        "⚠️  No configuration found - migrating from legacy install\n",
-      ),
-    );
+    // First-time config setup
+    console.log(chalk.blue("📝 Setting up configuration (one-time setup)\n"));
 
     const stackConfig = getStackConfig(manifest.stack);
     const defaultDevUrl = stackConfig.devUrl;
@@ -216,23 +212,29 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
   console.log(chalk.green(`\n✅ Updated ${updated} files`));
 
-  // Check if package.json was updated and run npm install
+  // Check if package.json was updated and run install
   const packageJsonUpdated = [...newFiles, ...modifiedFiles].some(
     (f) => f.path === "package.json" || f.path.endsWith("/package.json"),
   );
 
   if (packageJsonUpdated) {
+    // Use detected package manager or default to npm
+    const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
+    const pmConfig = PM_CONFIG[pm];
     console.log(
-      chalk.blue("\n📦 package.json updated, running npm install..."),
+      chalk.blue(`\n📦 package.json updated, running ${pmConfig.install}...`),
     );
-    const result = spawnSync("npm", ["install"], {
+    const [cmd, ...args] = pmConfig.install.split(" ");
+    const result = spawnSync(cmd, args, {
       stdio: "inherit",
       shell: true,
     });
     if (result.status === 0) {
       console.log(chalk.green("✅ Dependencies installed"));
     } else {
-      console.log(chalk.yellow("⚠️  npm install failed - run manually"));
+      console.log(
+        chalk.yellow(`⚠️  ${pmConfig.install} failed - run manually`),
+      );
     }
   }
 }

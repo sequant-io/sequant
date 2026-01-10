@@ -24,9 +24,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 8 practical jq examples for log parsing
   - GitHub Actions and Slack integration examples
 
+## [1.2.5] - 2026-01-10
+
+### Added
+
+- `sequant init` now updates `.gitignore` with `.sequant/` entry
+- `/qa` skill includes "Documentation Check" in output verification
+- `/exec` skill includes "Documentation Reminder" in output verification
+
+### Fixed
+
+- `sequant update` config setup message is now friendlier ("one-time setup" instead of "legacy install" warning)
+
+## [1.2.4] - 2026-01-10
+
+### Fixed
+
+- Fix CLI crash when running via npx - version reading now works from compiled dist
+- `sequant update` now shows correct version instead of hardcoded "0.1.0"
+  - Version is read dynamically from package.json at runtime
+  - Works from both source and compiled locations
+
+## [1.2.2] - 2026-01-10
+
+### Added
+
+- **Quality loop documentation** - comprehensive docs for the `--quality-loop` feature
+  - New "Quality Loop" section in README with usage examples
+  - Added to `docs/run-command.md` options table and dedicated section
+  - Environment variables: `SEQUANT_QUALITY_LOOP`, `SEQUANT_MAX_ITERATIONS`
+  - Settings file documentation with full schema
+- **Smart defaults for quality loop** - auto-enables for complex issues
+  - Labels `complex`, `refactor`, `breaking`, `major` trigger quality loop
+  - `/solve` skill now recommends quality loop for complex issues
+  - Output shows when quality loop will auto-enable
+
+## [1.2.1] - 2026-01-10
+
+### Fixed
+
+- CLI `--version` now reads from package.json dynamically instead of hardcoded value
+
+## [1.2.0] - 2026-01-10
+
+### Added
+
+- **Non-interactive mode & TTY detection** (#8)
+  - Graceful fallback to defaults when stdin/stdout is not a TTY
+  - Detects 12 CI environments (GitHub Actions, GitLab CI, CircleCI, etc.)
+  - `--interactive` flag to force prompts in non-TTY environments
+  - Clear messaging about why non-interactive mode was detected
+- **Bun package manager support** (#6)
+  - Auto-detects `bun.lockb` during `sequant init`
+  - Uses `bun test`, `bun run build`, etc. for Bun projects
+- **New stack detection** (#11)
+  - SvelteKit (detects `svelte.config.js` + `@sveltejs/kit`)
+  - Remix (detects `remix.config.js` or `@remix-run/react`)
+  - Nuxt (detects `nuxt.config.ts` or `nuxt` dependency)
+- **Claude Code CLI check** in `sequant doctor` (#3)
+  - Verifies `claude` command is available
+  - Shows install instructions if missing
+- **PR verification** in `/exec` skill (#26)
+  - Checks for existing PRs before creating duplicates
+  - Validates branch state before pushing
+- **Worktree isolation** for multi-issue workflows (#31)
+  - Each issue gets isolated git worktree
+  - Prevents cross-contamination between parallel issues
+  - `scripts/dev/new-feature.sh` helper for worktree creation
+- **`--stash` flag** for `new-feature.sh` (#41)
+  - Automatically stashes uncommitted changes before creating worktree
+- **Reference documentation**
+  - MCP browser testing patterns (#39)
+  - Framework gotchas reference (#38)
+
+### Changed
+
+- Workflow skills updated for sequant automation patterns
+
+### Fixed
+
+- SDK session no longer incorrectly resumed when switching worktrees
+- Issue info JSON parsing no longer requires jq
+
 ## [1.1.3] - 2025-01-09
 
 ### Added
+
 - Settings file (`.sequant/settings.json`) for persistent run preferences
   - Created during `sequant init`
   - Preserved across `sequant update`
@@ -37,6 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--no-log` flag to disable JSON logging for a single run
 
 ### Changed
+
 - JSON logging now enabled by default (`logJson: true` in settings)
 - Replaced static `phases` setting with `autoDetectPhases: true`
 - Updated `/solve` skill to use `npx sequant` as primary CLI command
@@ -44,11 +128,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed CLI run emoji to 🌐
 
 ### Fixed
+
 - CLI now works correctly with local install via `npx sequant`
 
 ## [1.1.2] - 2025-01-08
 
 ### Added
+
 - Structured JSON logging for `sequant run` with Zod schema validation
   - `--log-json` flag to enable JSON log output
   - `--log-path` option to specify custom log directory
@@ -64,41 +150,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit tests for run-log-schema (58 tests) and LogWriter (41 tests)
 
 ### Changed
+
 - `sequant update` now auto-runs `npm install` when package.json changes
 
 ### Fixed
+
 - Pre-tool hook now correctly detects git status in worktree directories
   - Fixes false "no changes to commit" errors when committing from worktrees
 
 ## [1.1.1] - 2025-01-08
 
 ### Changed
+
 - Extracted `commandExists`, `isGhAuthenticated` to shared `src/lib/system.ts`
 - Platform-specific install hints (macOS/Linux/Windows) for gh and jq
 - Improved test mocking by using system.ts instead of child_process
 
 ### Added
+
 - `getInstallHint(pkg)` function for platform-aware install commands
 - npm 2FA publishing documentation in CONTRIBUTING.md
 
 ## [1.1.0] - 2025-01-08
 
 ### Added
+
 - Prerequisite checks in `sequant doctor` for gh CLI, authentication, and jq
 - Prerequisite warnings in `sequant init` for missing dependencies
 - Optional jq suggestion in init success message
 - Unit tests for doctor and init prerequisite checks
 
 ### Changed
+
 - `release.sh` now dynamically detects GitHub repo from git remote
 - README updated with prerequisite information and jq as optional dependency
 
 ### Fixed
+
 - TypeScript errors in doctor.test.ts mock types
 
 ## [1.0.0] - 2025-01-07
 
 ### Changed
+
 - **BREAKING:** Removed all project-specific content from skill templates
   - Replaced shop/supabase examples with generic item/database terminology
   - Skills now portable for any project type
@@ -109,11 +203,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced hardcoded URLs with `{{DEV_URL}}` token placeholder
 
 ### Removed
+
 - Supabase MCP tool requirements from all skills
 - Dead code: `workflow-queries.ts` (Supabase-only)
 - Project-specific examples (shops, pending_shops, content_ideas)
 
 ### Added
+
 - `sequant run` command for batch issue execution (AC-10)
   - Sequential and parallel execution modes
   - Custom phase selection (`--phases`)
@@ -139,15 +235,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - This CHANGELOG.md
 
 ### Changed
+
 - Updated README with platform support matrix
 - Updated README with run command documentation
 
 ### Fixed
+
 - Path handling in templates.ts for Windows compatibility
 
 ## [0.1.0] - 2025-01-03
 
 ### Added
+
 - Initial release
 - `sequant init` command with stack detection
 - `sequant update` command for template updates
@@ -162,7 +261,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/admarble/sequant/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/admarble/sequant/compare/v1.2.5...HEAD
+[1.2.5]: https://github.com/admarble/sequant/compare/v1.2.4...v1.2.5
+[1.2.4]: https://github.com/admarble/sequant/compare/v1.2.2...v1.2.4
+[1.2.2]: https://github.com/admarble/sequant/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/admarble/sequant/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/admarble/sequant/compare/v1.1.3...v1.2.0
 [1.1.3]: https://github.com/admarble/sequant/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/admarble/sequant/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/admarble/sequant/compare/v1.1.0...v1.1.1

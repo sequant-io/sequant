@@ -46,6 +46,10 @@ gh issue view <issue-number> --json labels --jq '.labels[].name'
 **Bug Fixes** (labels: `bug`, `fix`):
 - May need simpler workflow, possibly skip `/spec`
 
+**Complex Issues** (labels: `complex`, `refactor`, `breaking`, `major`):
+- Recommend `--quality-loop` flag for auto-retry on failures
+- Quality loop auto-enables for these labels in `sequant run`
+
 ## Output Format
 
 Provide a clear, actionable response with:
@@ -72,7 +76,7 @@ Provide a clear, actionable response with:
 | Issue | Title | Labels | Workflow |
 |-------|-------|--------|----------|
 | #152 | Add user dashboard | ui, enhancement | Full (with /test) |
-| #153 | Fix API validation | backend, bug | Standard |
+| #153 | Refactor auth module | backend, refactor | Standard + quality loop |
 
 ### Recommended Workflow
 
@@ -81,37 +85,36 @@ Provide a clear, actionable response with:
 /spec 152      # Plan the implementation
 /exec 152      # Implement the feature
 /test 152      # Browser-based UI testing
-/qa            # Quality review
+/qa 152        # Quality review
 ```
 
-**For #153 (Backend fix):**
+**For #153 (Backend refactor):**
 ```bash
-/spec 153      # Quick plan (bug fix)
-/exec 153      # Implement the fix
-/qa            # Quality review
+/spec 153      # Plan the refactor
+/exec 153      # Implement changes
+/qa 153        # Quality review
 ```
 
-### Full Workflow Option
-
-For comprehensive quality with automatic fix iterations:
-```bash
-/fullsolve 152
-```
+> **Note:** Issue #153 has `refactor` label. Quality loop will **auto-enable** when using `sequant run`, providing automatic fix iterations if phases fail.
 
 ### CLI Command
 
-Run from terminal (useful for automation/CI):
+Run from terminal:
 ```bash
-npx sequant run 152        # Single issue
-npx sequant run 152 153    # Multiple issues
+npx sequant run 152 153
 ```
 
-> **Tip:** For frequent use, install globally with `npm install -g sequant` to run `sequant` directly without `npx`.
+For issue #153 (or any complex work), quality loop is recommended:
+```bash
+npx sequant run 153 --quality-loop   # Explicit (auto-enabled for refactor label)
+```
+
+> **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
 
 ### Notes
 - Issue #152 requires UI testing due to `ui` label
-- Issue #153 is a bug fix - simpler workflow recommended
-- Run `/qa` after each issue before moving to next
+- Issue #153 will auto-enable quality loop due to `refactor` label
+- Quality loop: auto-retries failed phases up to 3 times
 ```
 
 ## Workflow Selection Logic
@@ -155,8 +158,12 @@ Runs complete workflow with automatic fix iterations.
 | UI Feature | ui, frontend, admin | spec → exec → test → qa |
 | Backend Feature | backend, api | spec → exec → qa |
 | Bug Fix | bug, fix | exec → qa (or full if complex) |
-| Complex Feature | complex, refactor | fullsolve |
+| Complex Feature | complex, refactor | `--quality-loop` or fullsolve |
 | Documentation | docs | exec → qa |
+
+**Quality Loop vs Fullsolve:**
+- `--quality-loop`: Enables auto-retry within `sequant run` (good for CI/automation)
+- `/fullsolve`: Interactive single-issue resolution with inline loops (good for manual work)
 
 ## CLI Alternative
 
@@ -174,6 +181,12 @@ npx sequant run 152 153 --sequential
 
 # Custom phases
 npx sequant run 152 --phases spec,exec,qa
+
+# Quality loop (auto-retry on failures, max 3 iterations)
+npx sequant run 152 --quality-loop
+
+# Quality loop with custom iterations
+npx sequant run 152 --quality-loop --max-iterations 5
 
 # Dry run (shows what would execute)
 npx sequant run 152 --dry-run
@@ -233,7 +246,7 @@ You MUST use this exact structure:
 
 | Issue | Title | Labels | Workflow |
 |-------|-------|--------|----------|
-<!-- FILL: one row per issue -->
+<!-- FILL: one row per issue. For complex/refactor/breaking/major labels, add "+ quality loop" to Workflow -->
 
 ### Recommended Workflow
 
@@ -242,15 +255,25 @@ You MUST use this exact structure:
 <!-- FILL: slash commands in order -->
 \`\`\`
 
+<!-- IF any issue has complex/refactor/breaking/major label, include this callout: -->
+> **Note:** Issue #<N> has `<label>` label. Quality loop will **auto-enable** when using `sequant run`, providing automatic fix iterations if phases fail.
+
 ### CLI Command
 
-Run from terminal (useful for automation/CI):
+Run from terminal:
 \`\`\`bash
 npx sequant run <ISSUE_NUMBERS>
+\`\`\`
+
+<!-- IF any issue has complex/refactor/breaking/major label, include: -->
+For complex issues, quality loop is recommended:
+\`\`\`bash
+npx sequant run <ISSUE_NUMBER> --quality-loop   # Explicit (auto-enabled for <label> label)
 \`\`\`
 
 > **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
 
 ### Notes
 <!-- FILL: explanation of workflow choices -->
+<!-- Include note about quality loop auto-enabling if applicable -->
 ```

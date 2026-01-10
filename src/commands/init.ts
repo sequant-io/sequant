@@ -4,17 +4,27 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
-import { detectStack, getStackConfig } from "../lib/stacks.js";
+import {
+  detectStack,
+  getStackConfig,
+  detectPackageManager,
+  getPackageManagerCommands,
+  type PackageManager,
+} from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings, SETTINGS_PATH } from "../lib/settings.js";
-import { fileExists, ensureDir } from "../lib/fs.js";
+import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import {
   commandExists,
   isGhAuthenticated,
   getInstallHint,
 } from "../lib/system.js";
+import {
+  shouldUseInteractiveMode,
+  getNonInteractiveReason,
+} from "../lib/tty.js";
 
 /**
  * Check prerequisites and display warnings
@@ -48,10 +58,69 @@ interface InitOptions {
   stack?: string;
   yes?: boolean;
   force?: boolean;
+  interactive?: boolean;
+}
+
+/**
+ * Entries to add to .gitignore
+ */
+const GITIGNORE_ENTRIES = [
+  "",
+  "# Sequant runtime data (logs, settings)",
+  ".sequant/",
+];
+
+/**
+ * Update .gitignore with Sequant entries
+ */
+async function updateGitignore(): Promise<boolean> {
+  const gitignorePath = ".gitignore";
+  let content = "";
+  let existed = false;
+
+  if (await fileExists(gitignorePath)) {
+    content = await readFile(gitignorePath);
+    existed = true;
+
+    // Check if already has .sequant/
+    if (content.includes(".sequant/")) {
+      return false; // Already configured
+    }
+  }
+
+  // Append entries
+  const newContent =
+    content.trimEnd() + "\n" + GITIGNORE_ENTRIES.join("\n") + "\n";
+  await writeFile(gitignorePath, newContent);
+  return true;
+}
+
+/**
+ * Log a default value being used in non-interactive mode
+ */
+function logDefault(label: string, value: string): void {
+  console.log(chalk.blue(`📦 ${label}: ${value} (default)`));
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.green("\n🚀 Initializing Sequant...\n"));
+
+  // Determine if we should use interactive mode
+  const useInteractive = shouldUseInteractiveMode(options.interactive);
+  const skipPrompts = options.yes || !useInteractive;
+
+  // Show non-interactive mode message if applicable
+  if (!useInteractive && !options.yes) {
+    const reason = getNonInteractiveReason();
+    console.log(
+      chalk.yellow(
+        `⚡ Non-interactive mode detected${reason ? ` (${reason})` : ""}`,
+      ),
+    );
+    console.log(
+      chalk.gray("   Using defaults. Use --interactive to force prompts.\n"),
+    );
+  }
 
   // Check prerequisites and display warnings
   const { warnings, suggestions } = checkPrerequisites();
@@ -78,7 +147,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     );
     console.log(chalk.gray("   Use --force to reinitialize\n"));
 
-    if (!options.yes) {
+    if (!skipPrompts) {
       const { proceed } = await inquirer.prompt([
         {
           type: "confirm",
@@ -98,10 +167,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
   let stack = options.stack;
   if (!stack) {
     const detected = await detectStack();
-    if (detected && options.yes) {
+    if (detected && skipPrompts) {
       stack = detected;
-      console.log(chalk.blue(`📦 Detected stack: ${stack}`));
-    } else if (detected) {
+      logDefault("Detected stack", stack);
+    } else if (detected && !skipPrompts) {
       const { confirmedStack } = await inquirer.prompt([
         {
           type: "list",
@@ -116,7 +185,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
       stack = confirmedStack;
     }
 
-    if (!stack) {
+    if (!stack && skipPrompts) {
+      // No detection and skipping prompts: use generic as default
+      stack = "generic";
+      logDefault("Using stack", stack);
+    } else if (!stack) {
       const { selectedStack } = await inquirer.prompt([
         {
           type: "list",
@@ -141,13 +214,19 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   console.log(chalk.blue(`\n📋 Stack: ${stack}`));
 
+  // Detect package manager
+  const packageManager = await detectPackageManager();
+  if (packageManager) {
+    console.log(chalk.blue(`📦 Package Manager: ${packageManager}`));
+  }
+
   // Get stack config for default dev URL
   const stackConfig = getStackConfig(stack!);
   let devUrl = stackConfig.devUrl;
 
   // Prompt for dev URL
-  if (options.yes) {
-    console.log(chalk.blue(`🌐 Dev URL: ${devUrl} (default)`));
+  if (skipPrompts) {
+    logDefault("Dev URL", devUrl);
   } else {
     const { inputDevUrl } = await inquirer.prompt([
       {
@@ -173,7 +252,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.gray("  scripts/dev/"));
   console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
 
-  if (!options.yes) {
+  if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([
       {
         type: "confirm",
@@ -197,6 +276,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await ensureDir(".sequant/logs");
   await ensureDir("scripts/dev");
 
+  // Update .gitignore
+  const gitignoreUpdated = await updateGitignore();
+  if (gitignoreUpdated) {
+    console.log(chalk.blue("📝 Updated .gitignore with Sequant entries"));
+  }
+
   // Save config with tokens
   console.log(chalk.blue("💾 Saving configuration..."));
   const tokens = { DEV_URL: devUrl };
@@ -216,7 +301,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Create manifest
   console.log(chalk.blue("📋 Creating manifest..."));
-  await createManifest(stack!);
+  await createManifest(stack!, packageManager ?? undefined);
 
   // Build optional suggestions section
   const optionalSuggestions = suggestions.filter((s) =>
