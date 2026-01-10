@@ -105,8 +105,26 @@ npx sequant run 123                    # Single issue
 npx sequant run 1 2 3                  # Multiple issues in parallel
 npx sequant run 1 2 3 --sequential     # Run in order
 npx sequant run 123 --phases spec,qa   # Custom phases
+npx sequant run 123 --quality-loop     # Auto-retry on failures
 npx sequant run 123 --dry-run          # Preview without execution
 ```
+
+#### Quality Loop
+
+Quality loop provides automatic fix iterations when phases fail:
+
+```bash
+npx sequant run 123 --quality-loop              # Enable for any issue
+npx sequant run 123 --quality-loop --max-iterations 5  # Custom limit
+```
+
+**How it works:**
+1. Runs phases normally (spec → exec → qa)
+2. If a phase fails, runs `/loop` to fix issues
+3. Re-runs failed phases after fixes
+4. Iterates up to 3 times (default)
+
+**Smart defaults:** Quality loop auto-enables for issues with `complex`, `refactor`, `breaking`, or `major` labels—no flag needed.
 
 #### Phase Detection
 

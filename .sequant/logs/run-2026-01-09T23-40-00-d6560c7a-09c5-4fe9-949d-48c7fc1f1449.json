@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "runId": "d6560c7a-09c5-4fe9-949d-48c7fc1f1449",
+  "startTime": "2026-01-09T23:40:00.471Z",
+  "config": {
+    "phases": [
+      "exec"
+    ],
+    "sequential": false,
+    "qualityLoop": false,
+    "maxIterations": 3
+  },
+  "issues": [
+    {
+      "issueNumber": 38,
+      "title": "feat: Create framework gotchas reference",
+      "labels": [
+        "documentation"
+      ],
+      "status": "success",
+      "phases": [
+        {
+          "phase": "exec",
+          "issueNumber": 38,
+          "startTime": "2026-01-09T23:40:00.983Z",
+          "endTime": "2026-01-09T23:40:41.149Z",
+          "durationSeconds": 40.166,
+          "status": "success"
+        }
+      ],
+      "totalDurationSeconds": 40.166
+    }
+  ],
+  "summary": {
+    "totalIssues": 1,
+    "passed": 1,
+    "failed": 0,
+    "totalDurationSeconds": 40.679
+  },
+  "endTime": "2026-01-09T23:40:41.150Z"
+}

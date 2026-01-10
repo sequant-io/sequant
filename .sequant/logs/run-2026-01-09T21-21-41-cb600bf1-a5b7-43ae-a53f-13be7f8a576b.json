@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "runId": "cb600bf1-a5b7-43ae-a53f-13be7f8a576b",
+  "startTime": "2026-01-09T21:21:41.480Z",
+  "config": {
+    "phases": [
+      "spec",
+      "exec",
+      "qa"
+    ],
+    "sequential": false,
+    "qualityLoop": false,
+    "maxIterations": 3
+  },
+  "issues": [
+    {
+      "issueNumber": 26,
+      "title": "exec skill: Verify PR creation and report failures",
+      "labels": [],
+      "status": "failure",
+      "phases": [
+        {
+          "phase": "spec",
+          "issueNumber": 26,
+          "startTime": "2026-01-09T21:21:43.844Z",
+          "endTime": "2026-01-09T21:24:32.945Z",
+          "durationSeconds": 169.101,
+          "status": "success"
+        },
+        {
+          "phase": "exec",
+          "issueNumber": 26,
+          "startTime": "2026-01-09T21:24:32.950Z",
+          "endTime": "2026-01-09T21:24:35.942Z",
+          "durationSeconds": 2.992,
+          "status": "failure",
+          "error": "Claude Code process exited with code 1"
+        }
+      ],
+      "totalDurationSeconds": 172.093
+    }
+  ],
+  "summary": {
+    "totalIssues": 1,
+    "passed": 0,
+    "failed": 1,
+    "totalDurationSeconds": 174.465
+  },
+  "endTime": "2026-01-09T21:24:35.945Z"
+}
