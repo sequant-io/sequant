@@ -117,6 +117,66 @@ export const STACKS: Record<string, StackConfig> = {
     },
     devUrl: "http://localhost:4321",
   },
+  sveltekit: {
+    name: "sveltekit",
+    displayName: "SvelteKit",
+    detection: {
+      files: ["svelte.config.js", "svelte.config.ts"],
+      packageDeps: ["@sveltejs/kit"],
+    },
+    commands: {
+      test: "npm test",
+      build: "npm run build",
+      lint: "npm run lint",
+      dev: "npm run dev",
+    },
+    variables: {
+      TEST_COMMAND: "npm test",
+      BUILD_COMMAND: "npm run build",
+      LINT_COMMAND: "npm run lint",
+    },
+    devUrl: "http://localhost:5173",
+  },
+  remix: {
+    name: "remix",
+    displayName: "Remix",
+    detection: {
+      files: ["remix.config.js", "remix.config.ts"],
+      packageDeps: ["@remix-run/react"],
+    },
+    commands: {
+      test: "npm test",
+      build: "npm run build",
+      lint: "npm run lint",
+      dev: "npm run dev",
+    },
+    variables: {
+      TEST_COMMAND: "npm test",
+      BUILD_COMMAND: "npm run build",
+      LINT_COMMAND: "npm run lint",
+    },
+    devUrl: "http://localhost:5173",
+  },
+  nuxt: {
+    name: "nuxt",
+    displayName: "Nuxt",
+    detection: {
+      files: ["nuxt.config.ts", "nuxt.config.js"],
+      packageDeps: ["nuxt"],
+    },
+    commands: {
+      test: "npm test",
+      build: "npm run build",
+      lint: "npm run lint",
+      dev: "npm run dev",
+    },
+    variables: {
+      TEST_COMMAND: "npm test",
+      BUILD_COMMAND: "npm run build",
+      LINT_COMMAND: "npm run lint",
+    },
+    devUrl: "http://localhost:3000",
+  },
   generic: {
     name: "generic",
     displayName: "Generic",
@@ -136,41 +196,52 @@ export const STACKS: Record<string, StackConfig> = {
 };
 
 export async function detectStack(): Promise<string | null> {
-  // Check for Next.js
+  // Check for Next.js config files
   for (const file of STACKS.nextjs.detection.files || []) {
     if (await fileExists(file)) {
       return "nextjs";
     }
   }
 
-  // Check package.json for Next.js dependency
-  if (await fileExists("package.json")) {
-    try {
-      const pkg = JSON.parse(await readFile("package.json"));
-      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      if (deps.next) {
-        return "nextjs";
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }
-
-  // Check for Astro
+  // Check for Astro config files
   for (const file of STACKS.astro.detection.files || []) {
     if (await fileExists(file)) {
       return "astro";
     }
   }
 
-  // Check package.json for Astro dependency
+  // Check for SvelteKit config files
+  for (const file of STACKS.sveltekit.detection.files || []) {
+    if (await fileExists(file)) {
+      return "sveltekit";
+    }
+  }
+
+  // Check for Remix config files
+  for (const file of STACKS.remix.detection.files || []) {
+    if (await fileExists(file)) {
+      return "remix";
+    }
+  }
+
+  // Check for Nuxt config files
+  for (const file of STACKS.nuxt.detection.files || []) {
+    if (await fileExists(file)) {
+      return "nuxt";
+    }
+  }
+
+  // Check package.json for all JS framework dependencies (read once)
+  // Priority order: Next.js > Astro > SvelteKit > Remix > Nuxt
   if (await fileExists("package.json")) {
     try {
       const pkg = JSON.parse(await readFile("package.json"));
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-      if (deps.astro) {
-        return "astro";
-      }
+      if (deps.next) return "nextjs";
+      if (deps.astro) return "astro";
+      if (deps["@sveltejs/kit"]) return "sveltekit";
+      if (deps["@remix-run/react"]) return "remix";
+      if (deps.nuxt) return "nuxt";
     } catch {
       // Ignore parse errors
     }

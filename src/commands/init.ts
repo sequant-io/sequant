@@ -124,6 +124,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
           message: "Select your project stack:",
           choices: [
             { name: "Next.js / React", value: "nextjs" },
+            { name: "Astro", value: "astro" },
+            { name: "SvelteKit", value: "sveltekit" },
+            { name: "Remix", value: "remix" },
+            { name: "Nuxt", value: "nuxt" },
             { name: "Rust", value: "rust" },
             { name: "Python", value: "python" },
             { name: "Go", value: "go" },
