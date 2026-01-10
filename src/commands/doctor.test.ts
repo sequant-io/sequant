@@ -128,6 +128,46 @@ describe("doctor command", () => {
     });
   });
 
+  describe("Claude Code CLI checks", () => {
+    it("passes when claude CLI is installed", async () => {
+      mockCommandExists.mockReturnValue(true);
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Claude Code CLI");
+      expect(output).toContain("claude CLI is installed");
+    });
+
+    it("fails when claude CLI is not installed", async () => {
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "claude");
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Claude Code CLI");
+      expect(output).toContain("claude CLI not installed");
+      expect(output).toContain(
+        "https://docs.anthropic.com/en/docs/claude-code",
+      );
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it("shows install link when claude CLI is missing", async () => {
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "claude");
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      await doctorCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain(
+        "https://docs.anthropic.com/en/docs/claude-code",
+      );
+    });
+  });
+
   describe("jq checks", () => {
     it("passes when jq is installed", async () => {
       mockCommandExists.mockReturnValue(true);
