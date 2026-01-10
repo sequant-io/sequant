@@ -11,11 +11,14 @@ import * as os from "os";
 import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
 import type { RunConfig, PhaseLog } from "./run-log-schema.js";
 
-// Mock fs module
+// Mock fs module - include all functions needed by log-rotation.ts
 vi.mock("fs", () => ({
   existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+  statSync: vi.fn(() => ({ mtime: new Date(), size: 1024 })),
+  unlinkSync: vi.fn(),
 }));
 
 // Mock crypto.randomUUID for deterministic tests

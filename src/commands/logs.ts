@@ -13,6 +13,12 @@ import {
   type RunLog,
   LOG_PATHS,
 } from "../lib/workflow/run-log-schema.js";
+import {
+  manualRotate,
+  getLogStats,
+  formatBytes,
+} from "../lib/workflow/log-rotation.js";
+import { getSettings } from "../lib/settings.js";
 
 interface LogsOptions {
   path?: string;
@@ -20,6 +26,8 @@ interface LogsOptions {
   json?: boolean;
   issue?: number;
   failed?: boolean;
+  rotate?: boolean;
+  dryRun?: boolean;
 }
 
 /**
@@ -189,10 +197,73 @@ function filterLogs(
 }
 
 /**
+ * Handle log rotation command
+ */
+async function handleRotation(logDir: string, dryRun: boolean): Promise<void> {
+  const settings = await getSettings();
+  const stats = getLogStats(logDir, settings.run.rotation);
+
+  console.log(chalk.blue("\n📝 Log Rotation\n"));
+  console.log(chalk.gray(`  Log directory: ${logDir}`));
+  console.log(
+    chalk.gray(
+      `  Current: ${stats.fileCount} files, ${formatBytes(stats.totalSizeBytes)}`,
+    ),
+  );
+  console.log(
+    chalk.gray(
+      `  Thresholds: ${settings.run.rotation.maxFiles} files, ${settings.run.rotation.maxSizeMB} MB`,
+    ),
+  );
+
+  if (!stats.exceedsSizeThreshold && !stats.exceedsCountThreshold) {
+    console.log(chalk.green("\n  ✓ No rotation needed - under thresholds\n"));
+    return;
+  }
+
+  const result = manualRotate(logDir, {
+    dryRun,
+    settings: settings.run.rotation,
+  });
+
+  if (result.deletedCount === 0) {
+    console.log(chalk.green("\n  ✓ No files to rotate\n"));
+    return;
+  }
+
+  if (dryRun) {
+    console.log(
+      chalk.yellow(
+        `\n  [DRY RUN] Would delete ${result.deletedCount} file(s):`,
+      ),
+    );
+  } else {
+    console.log(chalk.green(`\n  ✓ Deleted ${result.deletedCount} file(s):`));
+  }
+
+  for (const filename of result.deletedFiles) {
+    console.log(chalk.gray(`    - ${filename}`));
+  }
+
+  console.log(
+    chalk.gray(
+      `\n  Space ${dryRun ? "to be " : ""}reclaimed: ${formatBytes(result.bytesReclaimed)}`,
+    ),
+  );
+  console.log("");
+}
+
+/**
  * Main logs command
  */
 export async function logsCommand(options: LogsOptions): Promise<void> {
   const logDir = resolveLogPath(options.path);
+
+  // Handle rotation mode
+  if (options.rotate) {
+    await handleRotation(logDir, options.dryRun ?? false);
+    return;
+  }
 
   console.log(chalk.blue("\n📝 Sequant Run Logs\n"));
   console.log(chalk.gray(`  Log directory: ${logDir}`));

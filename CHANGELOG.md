@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Log rotation to prevent unbounded log growth (#28)
+  - Automatic rotation when logs exceed 10MB or 100 files
+  - `sequant logs --rotate` for manual rotation
+  - `--dry-run` flag to preview rotation
+  - Configurable via `rotation` settings in `.sequant/settings.json`
+- `sequant stats` command for aggregate run analysis (#28)
+  - Success/failure rates across all runs
+  - Average phase durations by phase type
+  - Common failure points identification
+  - `--csv` and `--json` export options
+- Comprehensive logging documentation in `docs/logging.md` (#28)
+  - JSON schema reference for external tooling
+  - 8 practical jq examples for log parsing
+  - GitHub Actions and Slack integration examples
+
 ## [1.2.5] - 2026-01-10
 
 ### Added

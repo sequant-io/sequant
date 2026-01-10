@@ -21,6 +21,18 @@ export const SETTINGS_PATH = ".sequant/settings.json";
 export const SETTINGS_VERSION = "1.0";
 
 /**
+ * Log rotation settings
+ */
+export interface RotationSettings {
+  /** Enable automatic log rotation (default: true) */
+  enabled: boolean;
+  /** Maximum total size in MB before rotation (default: 10) */
+  maxSizeMB: number;
+  /** Maximum file count before rotation (default: 100) */
+  maxFiles: number;
+}
+
+/**
  * Run command settings
  */
 export interface RunSettings {
@@ -40,6 +52,8 @@ export interface RunSettings {
   maxIterations: number;
   /** Enable smart test detection */
   smartTests: boolean;
+  /** Log rotation settings */
+  rotation: RotationSettings;
 }
 
 /**
@@ -51,6 +65,15 @@ export interface SequantSettings {
   /** Run command settings */
   run: RunSettings;
 }
+
+/**
+ * Default rotation settings
+ */
+export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
+  enabled: true,
+  maxSizeMB: 10,
+  maxFiles: 100,
+};
 
 /**
  * Default settings
@@ -66,6 +89,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     qualityLoop: false,
     maxIterations: 3,
     smartTests: true,
+    rotation: DEFAULT_ROTATION_SETTINGS,
   },
 };
 

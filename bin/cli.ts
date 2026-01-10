@@ -38,6 +38,7 @@ import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
 import { runCommand } from "../src/commands/run.js";
 import { logsCommand } from "../src/commands/logs.js";
+import { statsCommand } from "../src/commands/stats.js";
 
 const program = new Command();
 
@@ -120,7 +121,17 @@ program
   .option("--json", "Output as JSON")
   .option("-i, --issue <number>", "Filter by issue number", parseInt)
   .option("--failed", "Show only failed runs")
+  .option("--rotate", "Rotate logs (delete oldest to meet thresholds)")
+  .option("-d, --dry-run", "Show what would be rotated without deleting")
   .action(logsCommand);
+
+program
+  .command("stats")
+  .description("Show aggregate statistics for workflow runs")
+  .option("-p, --path <path>", "Custom log directory path")
+  .option("--csv", "Output as CSV")
+  .option("--json", "Output as JSON")
+  .action(statsCommand);
 
 // Parse and execute
 program.parse();
