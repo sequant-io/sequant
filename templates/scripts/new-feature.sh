@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # Create a new feature worktree from a GitHub issue
-# Usage: ./scripts/new-feature.sh <issue-number>
+# Usage: ./scripts/new-feature.sh <issue-number> [--stash]
 # Example: ./scripts/new-feature.sh 4
+# Example: ./scripts/new-feature.sh 4 --stash  # Auto-stash uncommitted changes
 
 set -e
 
@@ -13,15 +14,32 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Parse arguments (flexible position for --stash flag)
+STASH_FLAG=false
+ISSUE_NUMBER=""
+
+for arg in "$@"; do
+    case $arg in
+        --stash)
+            STASH_FLAG=true
+            ;;
+        *)
+            # First non-flag argument is the issue number
+            if [ -z "$ISSUE_NUMBER" ]; then
+                ISSUE_NUMBER=$arg
+            fi
+            ;;
+    esac
+done
+
 # Check if issue number is provided
-if [ -z "$1" ]; then
+if [ -z "$ISSUE_NUMBER" ]; then
     echo -e "${RED}❌ Error: Issue number required${NC}"
-    echo "Usage: ./scripts/new-feature.sh <issue-number>"
+    echo "Usage: ./scripts/new-feature.sh <issue-number> [--stash]"
     echo "Example: ./scripts/new-feature.sh 4"
+    echo "Example: ./scripts/new-feature.sh 4 --stash"
     exit 1
 fi
-
-ISSUE_NUMBER=$1
 
 # Check if gh CLI is installed
 if ! command -v gh &> /dev/null; then
@@ -82,10 +100,16 @@ echo ""
 
 # Check for uncommitted changes before switching branches
 if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-    echo -e "${RED}❌ Working tree has uncommitted changes${NC}"
-    echo -e "${YELLOW}   Commit or stash your changes first:${NC}"
-    echo -e "   git stash push -m 'WIP before issue #${ISSUE_NUMBER}'"
-    exit 1
+    if [ "$STASH_FLAG" = true ]; then
+        echo -e "${YELLOW}📦 Stashing uncommitted changes...${NC}"
+        git stash push --include-untracked -m "WIP before issue #${ISSUE_NUMBER}"
+        echo -e "${GREEN}   Changes stashed successfully${NC}"
+    else
+        echo -e "${RED}❌ Working tree has uncommitted changes${NC}"
+        echo -e "${YELLOW}   Use --stash to auto-stash, or manually:${NC}"
+        echo -e "   git stash push -m 'WIP before issue #${ISSUE_NUMBER}'"
+        exit 1
+    fi
 fi
 
 # Check if branch already exists
