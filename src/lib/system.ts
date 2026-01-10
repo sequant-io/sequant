@@ -3,6 +3,7 @@
  */
 
 import { execSync } from "child_process";
+import fs from "fs";
 
 /**
  * Check if a command exists on the system
@@ -36,7 +37,6 @@ export function isWSL(): boolean {
     return false;
   }
   try {
-    const fs = require("fs");
     const procVersion = fs.readFileSync("/proc/version", "utf8");
     return (
       procVersion.toLowerCase().includes("microsoft") ||
@@ -138,7 +138,6 @@ export function getClaudeConfigPath(): string {
  * Read configured MCP servers from Claude Desktop config
  */
 export function getConfiguredMcpServers(): string[] {
-  const fs = require("fs");
   const configPath = getClaudeConfigPath();
 
   try {
