@@ -29,6 +29,11 @@ import {
   generateLogFilename,
   LOG_PATHS,
 } from "./run-log-schema.js";
+import {
+  rotateIfNeeded,
+  type RotationSettings,
+  DEFAULT_ROTATION_SETTINGS,
+} from "./log-rotation.js";
 
 export interface LogWriterOptions {
   /** Path to log directory (default: .sequant/logs in current directory) */
@@ -37,6 +42,8 @@ export interface LogWriterOptions {
   writeToUserLogs?: boolean;
   /** Enable verbose logging */
   verbose?: boolean;
+  /** Log rotation settings */
+  rotation?: RotationSettings;
 }
 
 /**
@@ -48,11 +55,13 @@ export class LogWriter {
   private logPath: string;
   private writeToUserLogs: boolean;
   private verbose: boolean;
+  private rotation: RotationSettings;
 
   constructor(options: LogWriterOptions = {}) {
     this.logPath = options.logPath ?? LOG_PATHS.project;
     this.writeToUserLogs = options.writeToUserLogs ?? false;
     this.verbose = options.verbose ?? false;
+    this.rotation = options.rotation ?? DEFAULT_ROTATION_SETTINGS;
   }
 
   /**
@@ -168,6 +177,8 @@ export class LogWriter {
   /**
    * Finalize the run log and write to disk
    *
+   * Automatically rotates old logs if thresholds are exceeded.
+   *
    * @returns Path to the written log file
    */
   async finalize(): Promise<string> {
@@ -198,6 +209,16 @@ export class LogWriter {
 
     if (this.verbose) {
       console.log(`📝 Log written: ${projectPath}`);
+    }
+
+    // Auto-rotate if needed
+    if (this.rotation.enabled) {
+      const result = rotateIfNeeded(this.logPath, this.rotation);
+      if (result.rotated && this.verbose) {
+        console.log(
+          `📝 Rotated ${result.deletedCount} old log(s), reclaimed ${(result.bytesReclaimed / 1024).toFixed(1)} KB`,
+        );
+      }
     }
 
     return projectPath;
