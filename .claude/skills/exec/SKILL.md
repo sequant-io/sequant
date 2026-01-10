@@ -149,6 +149,42 @@ git branch -a | grep -i "<issue-number>"
 - If there is no plan:
   - Ask whether to quickly propose one (or suggest using `/spec` first).
 
+### 2.1a Smoke Test (Recommended for UI Issues)
+
+**Purpose:** Catch runtime failures that pass `npm test` and `npm run build` but crash at runtime (e.g., missing module registrations, framework version incompatibilities).
+
+**When to run:** Issues with `admin`, `ui`, or `frontend` labels.
+
+**Skip if:** Issue has none of these labels (backend-only, CLI, docs, etc.).
+
+**Quick verification (< 30 seconds):**
+
+1. Start dev server in background:
+   ```bash
+   npm run dev &
+   DEV_PID=$!
+   sleep 5  # Wait for server startup
+   ```
+
+2. Check for startup errors:
+   ```bash
+   # Verify server is running
+   curl -s http://localhost:3000 > /dev/null && echo "✓ Server responding" || echo "✗ Server not responding"
+   ```
+
+3. Kill the dev server:
+   ```bash
+   kill $DEV_PID 2>/dev/null
+   ```
+
+**What to look for:**
+- ✗ Server crash on startup → Check `framework-gotchas.md`
+- ✗ Blank white page → React hydration error or missing component
+- ✗ Module registration errors → AG Grid, chart libraries, etc.
+- ✗ Console errors on load → Missing imports, env vars
+
+**If issues found:** Fix before proceeding with new implementation. Reference `references/shared/framework-gotchas.md` for common solutions.
+
 ### Feature Worktree Workflow
 
 **Execution Phase:** Create and work in a feature worktree.
