@@ -7,12 +7,32 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
-import { createRequire } from "module";
+import { fileURLToPath } from "url";
+import { dirname, resolve } from "path";
+import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
 
-// Read version from package.json
-const require = createRequire(import.meta.url);
-const { version } = require("../package.json");
+// Read version from package.json dynamically
+// Works from both source (bin/) and compiled (dist/bin/) locations
+function getVersion(): string {
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  let dir = __dirname;
+  while (dir !== dirname(dir)) {
+    const candidate = resolve(dir, "package.json");
+    try {
+      const content = readFileSync(candidate, "utf-8");
+      const pkg = JSON.parse(content);
+      if (pkg.name === "sequant") {
+        return pkg.version;
+      }
+    } catch {
+      // Not found, continue searching
+    }
+    dir = dirname(dir);
+  }
+  return "0.0.0"; // Fallback
+}
+const version = getVersion();
 import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
