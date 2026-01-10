@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.7] - 2026-01-10
+
 ### Added
 
 - Log rotation to prevent unbounded log growth (#28)
@@ -23,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - JSON schema reference for external tooling
   - 8 practical jq examples for log parsing
   - GitHub Actions and Slack integration examples
+- Optional MCP server documentation and detection (#15)
+  - `sequant doctor` now checks for optional MCP servers (Chrome DevTools, Context7, Sequential Thinking)
+  - New "Optional MCP Integrations" section in README with install instructions
+  - New `docs/mcp-integrations.md` guide with detailed setup and troubleshooting
+  - `/test` skill gracefully falls back to manual testing when Chrome DevTools MCP unavailable
+
+### Fixed
+
+- `sequant doctor` MCP check now works correctly (fixed ESM import for fs module)
+- `sequant run` correctly determines success after quality loop recovery
 
 ## [1.2.5] - 2026-01-10
 
