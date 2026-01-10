@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-01-10
+
+### Added
+- **Non-interactive mode & TTY detection** (#8)
+  - Graceful fallback to defaults when stdin/stdout is not a TTY
+  - Detects 12 CI environments (GitHub Actions, GitLab CI, CircleCI, etc.)
+  - `--interactive` flag to force prompts in non-TTY environments
+  - Clear messaging about why non-interactive mode was detected
+- **Bun package manager support** (#6)
+  - Auto-detects `bun.lockb` during `sequant init`
+  - Uses `bun test`, `bun run build`, etc. for Bun projects
+- **New stack detection** (#11)
+  - SvelteKit (detects `svelte.config.js` + `@sveltejs/kit`)
+  - Remix (detects `remix.config.js` or `@remix-run/react`)
+  - Nuxt (detects `nuxt.config.ts` or `nuxt` dependency)
+- **Claude Code CLI check** in `sequant doctor` (#3)
+  - Verifies `claude` command is available
+  - Shows install instructions if missing
+- **PR verification** in `/exec` skill (#26)
+  - Checks for existing PRs before creating duplicates
+  - Validates branch state before pushing
+- **Worktree isolation** for multi-issue workflows (#31)
+  - Each issue gets isolated git worktree
+  - Prevents cross-contamination between parallel issues
+  - `scripts/dev/new-feature.sh` helper for worktree creation
+- **`--stash` flag** for `new-feature.sh` (#41)
+  - Automatically stashes uncommitted changes before creating worktree
+- **Reference documentation**
+  - MCP browser testing patterns (#39)
+  - Framework gotchas reference (#38)
+
+### Changed
+- Workflow skills updated for sequant automation patterns
+
+### Fixed
+- SDK session no longer incorrectly resumed when switching worktrees
+- Issue info JSON parsing no longer requires jq
+
 ## [1.1.3] - 2025-01-09
 
 ### Added
