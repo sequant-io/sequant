@@ -537,6 +537,8 @@ async function executePhase(
     }
 
     // Execute using Claude Agent SDK
+    // Note: Don't resume sessions when switching to worktree (different cwd breaks resume)
+    const canResume = sessionId && !shouldUseWorktree;
     const queryInstance = query({
       prompt,
       options: {
@@ -550,8 +552,8 @@ async function executePhase(
         // Bypass permissions for headless execution
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
-        // Resume from previous session if provided
-        ...(sessionId ? { resume: sessionId } : {}),
+        // Resume from previous session if provided (but not when switching directories)
+        ...(canResume ? { resume: sessionId } : {}),
         // Configure smart tests and worktree isolation via environment
         env,
       },
