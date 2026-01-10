@@ -180,7 +180,23 @@ export async function doctorCommand(options: DoctorOptions): Promise<void> {
     });
   }
 
-  // Check 10: jq installed (optional but recommended)
+  // Check 10: Claude Code CLI installed (critical)
+  if (commandExists("claude")) {
+    checks.push({
+      name: "Claude Code CLI",
+      status: "pass",
+      message: "claude CLI is installed",
+    });
+  } else {
+    checks.push({
+      name: "Claude Code CLI",
+      status: "fail",
+      message:
+        "claude CLI not installed - see: https://docs.anthropic.com/en/docs/claude-code",
+    });
+  }
+
+  // Check 12: jq installed (optional but recommended)
   if (commandExists("jq")) {
     checks.push({
       name: "jq",
@@ -195,7 +211,7 @@ export async function doctorCommand(options: DoctorOptions): Promise<void> {
     });
   }
 
-  // Check 11: Windows platform detection
+  // Check 13: Windows platform detection
   if (isNativeWindows()) {
     checks.push({
       name: "Platform",
