@@ -62,6 +62,12 @@ vi.mock("../lib/system.js", () => ({
   }),
 }));
 
+// Mock TTY functions
+vi.mock("../lib/tty.js", () => ({
+  shouldUseInteractiveMode: vi.fn(),
+  getNonInteractiveReason: vi.fn(),
+}));
+
 // Mock inquirer
 vi.mock("inquirer", () => ({
   default: {
@@ -77,6 +83,11 @@ import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings } from "../lib/settings.js";
 import { commandExists, isGhAuthenticated } from "../lib/system.js";
+import {
+  shouldUseInteractiveMode,
+  getNonInteractiveReason,
+} from "../lib/tty.js";
+import inquirer from "inquirer";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
@@ -87,6 +98,9 @@ const mockSaveConfig = vi.mocked(saveConfig);
 const mockCreateDefaultSettings = vi.mocked(createDefaultSettings);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
+const mockShouldUseInteractiveMode = vi.mocked(shouldUseInteractiveMode);
+const mockGetNonInteractiveReason = vi.mocked(getNonInteractiveReason);
+const mockInquirerPrompt = vi.mocked(inquirer.prompt);
 
 describe("init command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -105,6 +119,9 @@ describe("init command", () => {
     mockCreateDefaultSettings.mockResolvedValue(undefined);
     mockCommandExists.mockReturnValue(true);
     mockIsGhAuthenticated.mockReturnValue(true);
+    // Default: interactive mode enabled (TTY detected)
+    mockShouldUseInteractiveMode.mockReturnValue(true);
+    mockGetNonInteractiveReason.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -228,6 +245,120 @@ describe("init command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("already initialized");
+    });
+  });
+
+  describe("non-interactive mode (TTY detection)", () => {
+    it("shows non-interactive message when TTY is not available", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue(
+        "stdin is not a terminal (piped input detected)",
+      );
+
+      await initCommand({ stack: "generic" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Non-interactive mode detected");
+      expect(output).toContain("stdin is not a terminal");
+      expect(output).toContain("Use --interactive to force prompts");
+      expect(output).toContain("Sequant initialized successfully");
+    });
+
+    it("does not show non-interactive message when --yes is used", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI environment");
+
+      await initCommand({ yes: true, stack: "generic" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("Non-interactive mode detected");
+      expect(output).toContain("Sequant initialized successfully");
+    });
+
+    it("uses detected stack as default in non-interactive mode", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI environment");
+      mockDetectStack.mockResolvedValue("nextjs");
+
+      await initCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Detected stack: nextjs (default)");
+      expect(mockSaveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stack: "nextjs",
+        }),
+      );
+    });
+
+    it("uses generic stack when no detection in non-interactive mode", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI environment");
+      mockDetectStack.mockResolvedValue(null);
+
+      await initCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Using stack: generic (default)");
+      expect(mockSaveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          stack: "generic",
+        }),
+      );
+    });
+
+    it("skips all prompts in non-interactive mode", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue(
+        "running in CI environment (github actions)",
+      );
+
+      await initCommand({});
+
+      // Inquirer.prompt should never be called
+      expect(mockInquirerPrompt).not.toHaveBeenCalled();
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Sequant initialized successfully");
+    });
+
+    it("forces interactive mode with --interactive flag", async () => {
+      // When --interactive is passed, shouldUseInteractiveMode returns true
+      mockShouldUseInteractiveMode.mockReturnValue(true);
+
+      // Setup prompts to return values
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStack: "python" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:8000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      // shouldUseInteractiveMode should be called with the interactive flag
+      expect(mockShouldUseInteractiveMode).toHaveBeenCalledWith(true);
+      // Prompts should have been called
+      expect(mockInquirerPrompt).toHaveBeenCalled();
+    });
+
+    it("shows CI environment name in non-interactive message", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue(
+        "running in CI environment (github actions)",
+      );
+
+      await initCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("github actions");
+    });
+
+    it("uses default dev URL in non-interactive mode", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI environment");
+
+      await initCommand({});
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Dev URL: http://localhost:3000 (default)");
     });
   });
 });
