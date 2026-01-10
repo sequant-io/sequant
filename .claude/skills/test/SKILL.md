@@ -33,9 +33,41 @@ When invoked as `/test <issue-number>`, execute structured browser-based testing
 2. **Execution Phase:** Run tests systematically with browser automation
 3. **Reporting Phase:** Generate test results and GitHub comment
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `test` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Skip issue fetch** - Use `SEQUANT_ISSUE` directly, orchestrator has context
+2. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path
+3. **Reduce GitHub comment frequency** - Defer progress updates to orchestrator
+4. **Trust dev server status** - Orchestrator may have started it already
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Fetch fresh issue context from GitHub
+- Locate or prompt for worktree
+- Post progress updates to GitHub
+- Start dev server if needed
+
 ## Phase 1: Setup
 
 ### 1.1 Fetch Issue Context
+
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Use `SEQUANT_ISSUE` for the issue number
+- Skip fetching issue context (orchestrator has already done this)
+- Parse any context passed in the orchestrator's prompt
+
+**If standalone:**
 
 ```bash
 gh issue view <issue-number> --json title,body,labels
@@ -330,6 +362,13 @@ Create structured test results:
 ```
 
 ### 3.2 GitHub Comment
+
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Skip posting GitHub comment (orchestrator handles summary)
+- Include test summary in output for orchestrator to capture
+- Let orchestrator aggregate results across phases
+
+**If standalone:**
 
 Draft comment for Issue #<N>:
 

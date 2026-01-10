@@ -548,6 +548,11 @@ async function executePhase(
       env.SEQUANT_ISSUE = String(issueNumber);
     }
 
+    // Set orchestration context for skills to detect they're part of a workflow
+    // Skills can check these to skip redundant pre-flight checks
+    env.SEQUANT_ORCHESTRATOR = "sequant-run";
+    env.SEQUANT_PHASE = phase;
+
     // Execute using Claude Agent SDK
     // Note: Don't resume sessions when switching to worktree (different cwd breaks resume)
     const canResume = sessionId && !shouldUseWorktree;
