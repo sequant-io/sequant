@@ -35,6 +35,10 @@ program
   .option("-s, --stack <stack>", "Specify stack (nextjs, rust, python, go)")
   .option("-y, --yes", "Skip confirmation prompts")
   .option("-f, --force", "Overwrite existing configuration")
+  .option(
+    "-i, --interactive",
+    "Force interactive mode even in non-TTY environment",
+  )
   .action(initCommand);
 
 program
