@@ -50,12 +50,8 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     tokens = config.tokens;
     console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
   } else {
-    // Legacy install - migrate by prompting for tokens
-    console.log(
-      chalk.yellow(
-        "⚠️  No configuration found - migrating from legacy install\n",
-      ),
-    );
+    // First-time config setup
+    console.log(chalk.blue("📝 Setting up configuration (one-time setup)\n"));
 
     const stackConfig = getStackConfig(manifest.stack);
     const defaultDevUrl = stackConfig.devUrl;
