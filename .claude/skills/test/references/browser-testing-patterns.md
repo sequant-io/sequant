@@ -21,7 +21,7 @@ Standard pattern for testing forms (login, search, data entry):
 
 ```javascript
 // Step 1: Navigate and identify form fields
-navigate_page({url: "http://localhost:3000/login"})
+navigate_page({url: "{{DEV_URL}}/login"})
 take_snapshot()  // Find UIDs for form elements
 
 // Step 2: Fill form fields
@@ -108,7 +108,7 @@ Pattern for data grids (AG Grid, TanStack Table, custom tables):
 
 ```javascript
 // Step 1: Navigate to grid view
-navigate_page({url: "http://localhost:3000/admin/data"})
+navigate_page({url: "{{DEV_URL}}/admin/data"})
 take_snapshot()  // Identify cell UIDs
 
 // Step 2: Enter edit mode
@@ -325,7 +325,8 @@ wait_for({text: "partial match"})  // Use substring
 // Check if it's in an iframe or shadow DOM
 
 // 4. Server might be slow
-// Ensure dev server is running: lsof -ti:3000
+// Ensure dev server is running: lsof -ti:<PORT>
+// (extract port from DEV_URL in config.json)
 ```
 
 ### Dialog Handling

@@ -13,7 +13,11 @@ import {
   processTemplate,
 } from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
-import { getStackConfig, PM_CONFIG } from "../lib/stacks.js";
+import {
+  getStackConfig,
+  PM_CONFIG,
+  getPackageManagerCommands,
+} from "../lib/stacks.js";
 import { readFile, writeFile, fileExists } from "../lib/fs.js";
 
 interface UpdateOptions {
@@ -49,6 +53,16 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   if (config) {
     tokens = config.tokens;
     console.log(chalk.gray(`Dev URL: ${tokens.DEV_URL || "(not set)"}\n`));
+
+    // Add PM_RUN if missing (for existing installs before v1.3.0)
+    if (!tokens.PM_RUN) {
+      const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
+      const pmConfig = getPackageManagerCommands(pm);
+      tokens.PM_RUN = pmConfig.run;
+      config.tokens = tokens;
+      await saveConfig(config);
+      console.log(chalk.blue(`📝 Added PM_RUN token: ${tokens.PM_RUN}\n`));
+    }
   } else {
     // First-time config setup
     console.log(chalk.blue("📝 Setting up configuration (one-time setup)\n"));
@@ -56,8 +70,12 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     const stackConfig = getStackConfig(manifest.stack);
     const defaultDevUrl = stackConfig.devUrl;
 
+    // Get package manager run command
+    const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
+    const pmConfig = getPackageManagerCommands(pm);
+
     if (options.force) {
-      tokens = { DEV_URL: defaultDevUrl };
+      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
       console.log(chalk.blue(`🌐 Using default dev URL: ${defaultDevUrl}`));
     } else {
       const { inputDevUrl } = await inquirer.prompt([
@@ -68,7 +86,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
           default: defaultDevUrl,
         },
       ]);
-      tokens = { DEV_URL: inputDevUrl };
+      tokens = { DEV_URL: inputDevUrl, PM_RUN: pmConfig.run };
     }
 
     // Save the new config
