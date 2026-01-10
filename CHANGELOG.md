@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-01-10
+
+### Fixed
+- `sequant update` now shows correct version instead of hardcoded "0.1.0"
+  - Version is read dynamically from package.json at runtime
+  - Works from both source and compiled locations
+
 ## [1.2.2] - 2026-01-10
 
 ### Added
