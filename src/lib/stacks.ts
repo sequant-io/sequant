@@ -4,6 +4,93 @@
 
 import { fileExists, readFile } from "./fs.js";
 
+/**
+ * Supported package managers
+ */
+export type PackageManager = "npm" | "bun" | "yarn" | "pnpm";
+
+/**
+ * Package manager command configuration
+ */
+export interface PackageManagerConfig {
+  run: string; // e.g., "npm run", "bun run", "yarn"
+  exec: string; // e.g., "npx", "bunx", "yarn dlx"
+  install: string; // e.g., "npm install", "bun install"
+  installSilent: string; // e.g., "npm install --silent", "bun install --silent"
+}
+
+/**
+ * Package manager configurations
+ */
+export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
+  npm: {
+    run: "npm run",
+    exec: "npx",
+    install: "npm install",
+    installSilent: "npm install --silent",
+  },
+  bun: {
+    run: "bun run",
+    exec: "bunx",
+    install: "bun install",
+    installSilent: "bun install --silent",
+  },
+  yarn: {
+    run: "yarn",
+    exec: "yarn dlx",
+    install: "yarn install",
+    installSilent: "yarn install --silent",
+  },
+  pnpm: {
+    run: "pnpm run",
+    exec: "pnpm dlx",
+    install: "pnpm install",
+    installSilent: "pnpm install --silent",
+  },
+};
+
+/**
+ * Lockfile to package manager mapping (priority order: bun > yarn > pnpm > npm)
+ */
+const LOCKFILE_PRIORITY: Array<{ file: string; pm: PackageManager }> = [
+  { file: "bun.lockb", pm: "bun" },
+  { file: "bun.lock", pm: "bun" },
+  { file: "yarn.lock", pm: "yarn" },
+  { file: "pnpm-lock.yaml", pm: "pnpm" },
+  { file: "package-lock.json", pm: "npm" },
+];
+
+/**
+ * Detect package manager from lockfiles
+ * Priority: bun > yarn > pnpm > npm
+ * Falls back to npm if no lockfile found but package.json exists
+ */
+export async function detectPackageManager(): Promise<PackageManager | null> {
+  // Check lockfiles in priority order
+  for (const { file, pm } of LOCKFILE_PRIORITY) {
+    if (await fileExists(file)) {
+      return pm;
+    }
+  }
+
+  // Fallback to npm if package.json exists
+  if (await fileExists("package.json")) {
+    return "npm";
+  }
+
+  // Not a Node.js project
+  return null;
+}
+
+/**
+ * Get package manager command configuration
+ */
+export function getPackageManagerCommands(
+  pm: PackageManager,
+): PackageManagerConfig {
+  return PM_CONFIG[pm];
+}
+
 export interface StackConfig {
   name: string;
   displayName: string;

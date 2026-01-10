@@ -17,6 +17,13 @@ vi.mock("../lib/settings.js", () => ({
 // Mock stacks
 vi.mock("../lib/stacks.js", () => ({
   detectStack: vi.fn(),
+  detectPackageManager: vi.fn(() => Promise.resolve("npm")),
+  getPackageManagerCommands: vi.fn(() => ({
+    run: "npm run",
+    exec: "npx",
+    install: "npm install",
+    installSilent: "npm install --silent",
+  })),
   getStackConfig: vi.fn(() => ({
     name: "generic",
     displayName: "Generic",
@@ -204,7 +211,7 @@ describe("init command", () => {
       expect(mockCopyTemplates).toHaveBeenCalledWith("nextjs", {
         DEV_URL: "http://localhost:3000",
       });
-      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs");
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Sequant initialized successfully");

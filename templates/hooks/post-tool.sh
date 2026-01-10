@@ -190,14 +190,16 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
 fi
 
 # === DETECT TEST FAILURES ===
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm (test|run test)'; then
+# Supports: npm, bun, yarn, pnpm
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE '(npm (test|run test)|bun (test|run test)|yarn (test|run test)|pnpm (test|run test))'; then
     if echo "$TOOL_OUTPUT" | grep -qE '(FAIL|failed|Error:)'; then
         echo "$(date +%H:%M:%S) TEST_FAILURE detected" >> "$QUALITY_LOG"
     fi
 fi
 
 # === DETECT BUILD FAILURES ===
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm run build'; then
+# Supports: npm, bun, yarn, pnpm
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE '(npm run build|bun run build|yarn build|yarn run build|pnpm run build)'; then
     if echo "$TOOL_OUTPUT" | grep -qE '(error TS|Build failed|Error:)'; then
         echo "$(date +%H:%M:%S) BUILD_FAILURE detected" >> "$QUALITY_LOG"
     fi

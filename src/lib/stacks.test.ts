@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { detectStack, getStackConfig, STACKS } from "./stacks.js";
+import {
+  detectStack,
+  getStackConfig,
+  STACKS,
+  detectPackageManager,
+  getPackageManagerCommands,
+  PM_CONFIG,
+} from "./stacks.js";
 
 // Mock the fs module
 vi.mock("./fs.js", () => ({
@@ -465,5 +472,149 @@ describe("getStackConfig", () => {
   it("returns generic config for empty string", () => {
     const config = getStackConfig("");
     expect(config.name).toBe("generic");
+  });
+});
+
+describe("detectPackageManager", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockFileExists.mockResolvedValue(false);
+  });
+
+  describe("lockfile detection", () => {
+    it("detects bun.lockb", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "bun.lockb";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("bun");
+    });
+
+    it("detects bun.lock", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "bun.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("bun");
+    });
+
+    it("detects yarn.lock", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "yarn.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("yarn");
+    });
+
+    it("detects pnpm-lock.yaml", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "pnpm-lock.yaml";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("pnpm");
+    });
+
+    it("detects package-lock.json", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "package-lock.json";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("npm");
+    });
+  });
+
+  describe("priority", () => {
+    it("bun takes priority over yarn", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "bun.lockb" || path === "yarn.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("bun");
+    });
+
+    it("yarn takes priority over pnpm", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "yarn.lock" || path === "pnpm-lock.yaml";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("yarn");
+    });
+
+    it("pnpm takes priority over npm", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "pnpm-lock.yaml" || path === "package-lock.json";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("pnpm");
+    });
+  });
+
+  describe("fallback behavior", () => {
+    it("falls back to npm when only package.json exists", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "package.json";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("npm");
+    });
+
+    it("returns null when no package.json exists", async () => {
+      mockFileExists.mockResolvedValue(false);
+
+      const result = await detectPackageManager();
+      expect(result).toBeNull();
+    });
+  });
+});
+
+describe("getPackageManagerCommands", () => {
+  it("returns correct npm commands", () => {
+    const config = getPackageManagerCommands("npm");
+    expect(config.run).toBe("npm run");
+    expect(config.exec).toBe("npx");
+    expect(config.install).toBe("npm install");
+    expect(config.installSilent).toBe("npm install --silent");
+  });
+
+  it("returns correct bun commands", () => {
+    const config = getPackageManagerCommands("bun");
+    expect(config.run).toBe("bun run");
+    expect(config.exec).toBe("bunx");
+    expect(config.install).toBe("bun install");
+    expect(config.installSilent).toBe("bun install --silent");
+  });
+
+  it("returns correct yarn commands", () => {
+    const config = getPackageManagerCommands("yarn");
+    expect(config.run).toBe("yarn");
+    expect(config.exec).toBe("yarn dlx");
+    expect(config.install).toBe("yarn install");
+    expect(config.installSilent).toBe("yarn install --silent");
+  });
+
+  it("returns correct pnpm commands", () => {
+    const config = getPackageManagerCommands("pnpm");
+    expect(config.run).toBe("pnpm run");
+    expect(config.exec).toBe("pnpm dlx");
+    expect(config.install).toBe("pnpm install");
+    expect(config.installSilent).toBe("pnpm install --silent");
+  });
+});
+
+describe("PM_CONFIG", () => {
+  it("has all supported package managers", () => {
+    expect(PM_CONFIG).toHaveProperty("npm");
+    expect(PM_CONFIG).toHaveProperty("bun");
+    expect(PM_CONFIG).toHaveProperty("yarn");
+    expect(PM_CONFIG).toHaveProperty("pnpm");
   });
 });
