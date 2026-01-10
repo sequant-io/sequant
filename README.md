@@ -88,7 +88,7 @@ npx sequant init
 
 ## Optional MCP Integrations
 
-Sequant works fully without any MCP servers, but these optional integrations enhance specific workflows:
+Sequant works fully without any MCP servers, but these optional integrations enhance specific workflows. See the [MCP Integrations Guide](docs/mcp-integrations.md) for detailed setup and troubleshooting.
 
 | MCP Server | Skills | Purpose | Install |
 |------------|--------|---------|---------|
@@ -351,6 +351,7 @@ After `sequant init`:
 
 - [Run Command](docs/run-command.md) — Batch execution options
 - [Customization Guide](docs/customization.md) — Override templates safely
+- [MCP Integrations](docs/mcp-integrations.md) — Optional MCP server setup
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
 - [Testing Guide](docs/testing.md) — Cross-platform testing matrix
 - [Git Patterns](docs/git-patterns.md) — Worktree and merge workflows
