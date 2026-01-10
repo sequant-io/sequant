@@ -330,6 +330,23 @@ gh pr merge <N> --squash --delete-branch
 
 **Why this order matters:** The cleanup script checks if the PR is merged before proceeding. The `--delete-branch` flag will fail to delete the local branch (worktree conflict) but successfully deletes the remote branch. The cleanup script then handles the local branch removal.
 
+### 5.4 Post-Merge Verification
+
+**Recommended:** After merge, verify the build and CLI still work:
+
+```bash
+# Pull latest main
+git pull origin main
+
+# Rebuild and verify
+npm run build
+
+# Smoke test - verify CLI runs without errors
+npx sequant doctor
+```
+
+If any command fails, fix immediately on main before continuing. This catches issues like ESM compatibility bugs that unit tests may miss.
+
 ## Iteration Tracking
 
 Track iterations to prevent infinite loops:
