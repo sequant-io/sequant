@@ -37,6 +37,30 @@ When invoked as `/loop <issue-number>`, your job is to:
 4. Re-run validation until quality gates pass
 5. Exit when `READY_FOR_MERGE` or max iterations reached
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `loop` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path directly
+2. **Use `SEQUANT_ISSUE`** - Skip issue number parsing from invocation
+3. **Reduce GitHub comment frequency** - Defer updates to orchestrator
+4. **Trust issue context** - Orchestrator has already validated issue
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Locate worktree from issue number
+- Post progress comments to GitHub
+- Fetch issue context if needed
+
 ## Invocation
 
 - `/loop 123` - Parse log for issue #123, fix issues, re-validate
@@ -94,6 +118,12 @@ Extract:
 - Specific issues identified
 
 ### Step 4: Locate Feature Worktree
+
+**If orchestrated (SEQUANT_WORKTREE is set):**
+- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
+- Skip the lookup steps below
+
+**If standalone:**
 
 Find the worktree for this issue:
 ```bash
