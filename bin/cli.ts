@@ -7,7 +7,12 @@
 
 import { Command } from "commander";
 import chalk from "chalk";
+import { createRequire } from "module";
 import { initCommand } from "../src/commands/init.js";
+
+// Read version from package.json
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json");
 import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
@@ -26,7 +31,7 @@ program
   .description(
     "Quantize your development workflow - Sequential AI phases with quality gates",
   )
-  .version("1.0.0")
+  .version(version)
   .option("--no-color", "Disable colored output");
 
 program
