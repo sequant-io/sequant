@@ -1443,6 +1443,7 @@ async function runIssueWithLogging(
   let iteration = 0;
   const useQualityLoop = config.qualityLoop || detectedQualityLoop;
   const maxIterations = useQualityLoop ? config.maxIterations : 1;
+  let completedSuccessfully = false;
 
   while (iteration < maxIterations) {
     iteration++;
@@ -1537,6 +1538,7 @@ async function runIssueWithLogging(
 
     // If all phases passed, exit the loop
     if (!phasesFailed) {
+      completedSuccessfully = true;
       break;
     }
 
@@ -1547,8 +1549,9 @@ async function runIssueWithLogging(
   }
 
   const durationSeconds = (Date.now() - startTime) / 1000;
-  const success =
-    phaseResults.length > 0 && phaseResults.every((r) => r.success);
+  // Success is determined by whether all phases completed in any iteration,
+  // not whether all accumulated phase results passed (which would fail after loop recovery)
+  const success = completedSuccessfully;
 
   return {
     issueNumber,
