@@ -202,6 +202,77 @@ Or modify `.sequant-manifest.json`:
 
 4. **Test updates** - After running `sequant update`, verify your customizations still work.
 
+## Testing Configuration
+
+The `/test` skill uses configurable settings for dev server URL and package manager commands.
+
+### Default Values by Stack
+
+| Stack | Dev URL | Dev Command |
+|-------|---------|-------------|
+| Next.js | `http://localhost:3000` | `npm run dev` |
+| Astro | `http://localhost:4321` | `npm run dev` |
+| SvelteKit | `http://localhost:5173` | `npm run dev` |
+| Vite/Remix | `http://localhost:5173` | `npm run dev` |
+| Nuxt | `http://localhost:3000` | `npm run dev` |
+| Python | `http://localhost:5000` | - |
+| Rust | `http://localhost:8080` | - |
+| Go | `http://localhost:8080` | - |
+| Generic | `http://localhost:3000` | `npm run dev` |
+
+### Customizing Dev Server URL
+
+The dev server URL is set during `sequant init` and stored in `.claude/.sequant/config.json`:
+
+```json
+{
+  "tokens": {
+    "DEV_URL": "http://localhost:4321",
+    "PM_RUN": "npm run"
+  },
+  "stack": "astro",
+  "initialized": "2024-01-01T00:00:00.000Z"
+}
+```
+
+**To change the dev server URL:**
+
+1. Edit `.claude/.sequant/config.json` directly
+2. Update the `DEV_URL` value
+3. Run `sequant update` to refresh templates with the new value
+
+**Example for custom port:**
+```json
+{
+  "tokens": {
+    "DEV_URL": "http://localhost:8080",
+    "PM_RUN": "bun run"
+  }
+}
+```
+
+### Package Manager Detection
+
+Sequant automatically detects your package manager from lockfiles:
+
+| Lockfile | Package Manager | PM_RUN Value |
+|----------|-----------------|--------------|
+| `bun.lockb` or `bun.lock` | bun | `bun run` |
+| `yarn.lock` | yarn | `yarn` |
+| `pnpm-lock.yaml` | pnpm | `pnpm run` |
+| `package-lock.json` | npm | `npm run` |
+
+The `PM_RUN` token is used in skill templates to run scripts with the correct package manager.
+
+### Chrome DevTools MCP (Optional)
+
+The `/test` skill works best with the Chrome DevTools MCP for browser automation, but it's **optional**:
+
+**With MCP:** Automated browser testing with screenshots and element interaction
+**Without MCP:** Generates a manual testing checklist with URLs and steps
+
+To install Chrome DevTools MCP, see the [MCP documentation](https://github.com/anthropics/claude-code).
+
 ## See Also
 
 - [Stack Guides](stacks/)

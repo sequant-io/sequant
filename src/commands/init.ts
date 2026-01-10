@@ -284,7 +284,13 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Save config with tokens
   console.log(chalk.blue("💾 Saving configuration..."));
-  const tokens = { DEV_URL: devUrl };
+  const pmConfig = packageManager
+    ? getPackageManagerCommands(packageManager)
+    : getPackageManagerCommands("npm");
+  const tokens = {
+    DEV_URL: devUrl,
+    PM_RUN: pmConfig.run, // e.g., "npm run", "bun run", "yarn", "pnpm run"
+  };
   await saveConfig({
     tokens,
     stack: stack!,

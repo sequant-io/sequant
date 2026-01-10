@@ -221,12 +221,13 @@ describe("init command", () => {
       expect(mockCreateDefaultSettings).toHaveBeenCalled();
       expect(mockSaveConfig).toHaveBeenCalledWith(
         expect.objectContaining({
-          tokens: { DEV_URL: "http://localhost:3000" },
+          tokens: { DEV_URL: "http://localhost:3000", PM_RUN: "npm run" },
           stack: "nextjs",
         }),
       );
       expect(mockCopyTemplates).toHaveBeenCalledWith("nextjs", {
         DEV_URL: "http://localhost:3000",
+        PM_RUN: "npm run",
       });
       expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
 
