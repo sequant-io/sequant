@@ -288,6 +288,7 @@ fi
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
+- [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 
 **DO NOT respond until all items are verified.**
@@ -338,6 +339,13 @@ You MUST include these sections:
 ### Verdict: [READY_FOR_MERGE | AC_MET_BUT_NOT_A_PLUS | AC_NOT_MET]
 
 [Explanation of verdict]
+
+### Documentation
+
+- [ ] README updated (if new feature/flag)
+- [ ] docs/ updated (if behavior changed)
+- [ ] CHANGELOG entry added (for user-facing changes)
+- [ ] N/A - No documentation needed (bug fix, internal refactor)
 
 ### Next Steps
 

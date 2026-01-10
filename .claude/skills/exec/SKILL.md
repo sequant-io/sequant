@@ -519,6 +519,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
+- [ ] **Documentation Reminder** - Note if README/docs need updating (checked in /qa)
 - [ ] **Next Steps** - Clear guidance on remaining work
 
 **DO NOT respond until all items are verified.**

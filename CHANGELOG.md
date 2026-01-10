@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `sequant init` now updates `.gitignore` with `.sequant/` entry
+- `/qa` skill includes "Documentation Check" in output verification
+- `/exec` skill includes "Documentation Reminder" in output verification
+
 ## [1.2.4] - 2026-01-10
 
 ### Fixed

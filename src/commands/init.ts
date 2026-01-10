@@ -15,7 +15,7 @@ import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings, SETTINGS_PATH } from "../lib/settings.js";
-import { fileExists, ensureDir } from "../lib/fs.js";
+import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -59,6 +59,40 @@ interface InitOptions {
   yes?: boolean;
   force?: boolean;
   interactive?: boolean;
+}
+
+/**
+ * Entries to add to .gitignore
+ */
+const GITIGNORE_ENTRIES = [
+  "",
+  "# Sequant runtime data (logs, settings)",
+  ".sequant/",
+];
+
+/**
+ * Update .gitignore with Sequant entries
+ */
+async function updateGitignore(): Promise<boolean> {
+  const gitignorePath = ".gitignore";
+  let content = "";
+  let existed = false;
+
+  if (await fileExists(gitignorePath)) {
+    content = await readFile(gitignorePath);
+    existed = true;
+
+    // Check if already has .sequant/
+    if (content.includes(".sequant/")) {
+      return false; // Already configured
+    }
+  }
+
+  // Append entries
+  const newContent =
+    content.trimEnd() + "\n" + GITIGNORE_ENTRIES.join("\n") + "\n";
+  await writeFile(gitignorePath, newContent);
+  return true;
 }
 
 /**
@@ -241,6 +275,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
   await ensureDir(".claude/.sequant");
   await ensureDir(".sequant/logs");
   await ensureDir("scripts/dev");
+
+  // Update .gitignore
+  const gitignoreUpdated = await updateGitignore();
+  if (gitignoreUpdated) {
+    console.log(chalk.blue("📝 Updated .gitignore with Sequant entries"));
+  }
 
   // Save config with tokens
   console.log(chalk.blue("💾 Saving configuration..."));
