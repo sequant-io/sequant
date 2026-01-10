@@ -61,7 +61,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     logJson: true,
     logPath: ".sequant/logs",
     autoDetectPhases: true,
-    timeout: 300,
+    timeout: 1800,
     sequential: false,
     qualityLoop: false,
     maxIterations: 3,
