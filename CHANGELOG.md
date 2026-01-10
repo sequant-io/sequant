@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-01-10
+
+### Added
+
+- Orchestration context awareness for skills (#40)
+  - Skills detect when running under `sequant run` via `SEQUANT_ORCHESTRATOR` env var
+  - Orchestrated skills skip redundant pre-flight checks and reduce GitHub comment spam
+  - `SEQUANT_PHASE`, `SEQUANT_ISSUE`, `SEQUANT_WORKTREE` env vars available to skills
+- Smoke test step for UI issues in `/exec` skill (#37)
+  - Quick runtime verification before implementation for `admin`, `ui`, `frontend` labeled issues
+  - Catches module registration errors and framework incompatibilities that pass build
+- Security label detection in phase detection (#30)
+  - Issues with `security`, `auth`, `authentication`, `permissions`, `admin` labels trigger `security-review` phase
+  - `security-review` phase added to workflow type system
+- `npm run sync:skills` script to sync templates to `.claude/skills/` (#30)
+- `parseRecommendedWorkflow()` unit test coverage (#30)
+- `/spec` reference documentation for recommended workflow format (#30)
+- Configurable `/test` skill with framework-agnostic defaults (#17)
+  - `{{DEV_URL}}` token replaces hardcoded `localhost:3000`
+  - `{{PM_RUN}}` token for package manager-aware commands
+  - Graceful fallback to manual testing checklist when Chrome DevTools MCP unavailable
+  - `docs/customization.md` documents testing configuration
+
 ## [1.2.7] - 2026-01-10
 
 ### Added
