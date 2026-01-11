@@ -16,5 +16,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*", "bin/**/*"],
-  "exclude": ["node_modules", "dist", "templates", "src/lib/workflow/execute-issues.ts", "src/lib/workflow/cli-args.ts", "src/lib/workflow/logger.ts"]
+  "exclude": ["node_modules", "dist", "templates"]
 }
