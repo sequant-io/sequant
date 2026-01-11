@@ -204,7 +204,7 @@ describe("tty utilities", () => {
       expect(getNonInteractiveReason()).toBeNull();
     });
 
-    it("returns stdin reason when stdin is not TTY", () => {
+    it("returns stdin reason when stdin is not TTY and not in CI", () => {
       Object.defineProperty(process.stdin, "isTTY", {
         value: false,
         writable: true,
@@ -213,12 +213,13 @@ describe("tty utilities", () => {
         value: true,
         writable: true,
       });
+      // No CI env vars set (cleared in beforeEach)
       expect(getNonInteractiveReason()).toBe(
         "stdin is not a terminal (piped input detected)",
       );
     });
 
-    it("returns stdout reason when stdout is not TTY", () => {
+    it("returns stdout reason when stdout is not TTY and not in CI", () => {
       Object.defineProperty(process.stdin, "isTTY", {
         value: true,
         writable: true,
@@ -227,6 +228,7 @@ describe("tty utilities", () => {
         value: false,
         writable: true,
       });
+      // No CI env vars set (cleared in beforeEach)
       expect(getNonInteractiveReason()).toBe("stdout is not a terminal");
     });
 
@@ -257,6 +259,55 @@ describe("tty utilities", () => {
       process.env.GITLAB_CI = "true";
       expect(getNonInteractiveReason()).toBe(
         "running in CI environment (gitlab ci)",
+      );
+    });
+
+    // Tests for CI priority over TTY checks (issue #50)
+    it("returns CI reason when in GitHub Actions even if stdin is non-TTY", () => {
+      Object.defineProperty(process.stdin, "isTTY", {
+        value: false,
+        writable: true,
+      });
+      Object.defineProperty(process.stdout, "isTTY", {
+        value: true,
+        writable: true,
+      });
+      process.env.GITHUB_ACTIONS = "true";
+      // CI reason should take priority over stdin reason
+      expect(getNonInteractiveReason()).toBe(
+        "running in CI environment (github actions)",
+      );
+    });
+
+    it("returns CI reason when in GitLab CI even if stdout is non-TTY", () => {
+      Object.defineProperty(process.stdin, "isTTY", {
+        value: true,
+        writable: true,
+      });
+      Object.defineProperty(process.stdout, "isTTY", {
+        value: false,
+        writable: true,
+      });
+      process.env.GITLAB_CI = "true";
+      // CI reason should take priority over stdout reason
+      expect(getNonInteractiveReason()).toBe(
+        "running in CI environment (gitlab ci)",
+      );
+    });
+
+    it("returns CI reason when in CI even if both stdin and stdout are non-TTY", () => {
+      Object.defineProperty(process.stdin, "isTTY", {
+        value: false,
+        writable: true,
+      });
+      Object.defineProperty(process.stdout, "isTTY", {
+        value: false,
+        writable: true,
+      });
+      process.env.CIRCLECI = "true";
+      // CI reason should take priority over both TTY reasons
+      expect(getNonInteractiveReason()).toBe(
+        "running in CI environment (circleci)",
       );
     });
   });
