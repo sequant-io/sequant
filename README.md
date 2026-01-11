@@ -311,9 +311,15 @@ Configure `sequant run` defaults in `.sequant/settings.json`:
     "qualityLoop": false,
     "maxIterations": 3,
     "smartTests": true
+  },
+  "agents": {
+    "parallel": false,
+    "model": "haiku"
   }
 }
 ```
+
+#### Run Settings
 
 | Option | Default | Description |
 |--------|---------|-------------|
@@ -325,6 +331,29 @@ Configure `sequant run` defaults in `.sequant/settings.json`:
 | `qualityLoop` | `false` | Enable quality loop by default |
 | `maxIterations` | `3` | Max quality loop iterations |
 | `smartTests` | `true` | Auto-detect test commands |
+
+#### Agent Settings
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `parallel` | `false` | Run sub-agents in parallel (faster but higher token usage) |
+| `model` | `"haiku"` | Default model for sub-agents (`haiku`, `sonnet`, or `opus`) |
+
+##### Cost vs Speed Trade-offs
+
+Skills like `/qa`, `/merger`, and `/fullsolve` spawn sub-agents for quality checks. The `agents` settings control how these agents execute:
+
+| Mode | Token Usage | Speed | Best For |
+|------|-------------|-------|----------|
+| Sequential (`parallel: false`) | 1x (baseline) | Slower | Limited API plans, cost-conscious users |
+| Parallel (`parallel: true`) | ~2-3x | ~50% faster | Unlimited plans, batch operations |
+
+**Override per invocation:**
+
+```bash
+/qa 123 --parallel     # Force parallel (faster)
+/qa 123 --sequential   # Force sequential (cheaper)
+```
 
 CLI flags override settings file values.
 

@@ -88,7 +88,32 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 /fullsolve 218                    # Standard full solve
 /fullsolve 218 --skip-test        # Skip testing phase (backend issues)
 /fullsolve 218 --max-iterations 5 # Override max fix iterations
+/fullsolve 218 --parallel         # Force parallel agent execution (faster, higher token usage)
+/fullsolve 218 --sequential       # Force sequential agent execution (slower, lower token usage)
 ```
+
+## Agent Execution Mode
+
+When spawning sub-agents for quality checks, determine the execution mode:
+
+1. **Check for CLI flag override:**
+   - `--parallel` → Run sub-agents in parallel
+   - `--sequential` → Run sub-agents one at a time
+
+2. **If no flag, read project settings:**
+   ```bash
+   # Read agents.parallel from .sequant/settings.json
+   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   ```
+
+3. **Default:** Sequential (cost-optimized)
+
+| Mode | Token Usage | Speed | Best For |
+|------|-------------|-------|----------|
+| Sequential | 1x (baseline) | Slower | Limited API plans, single issues |
+| Parallel | ~2-3x | ~50% faster | Unlimited plans, batch operations |
+
+**Pass execution mode to child skills:** When invoking `/qa` or other skills that spawn agents, pass the `--parallel` or `--sequential` flag to maintain consistency.
 
 ## Orchestration Context
 
