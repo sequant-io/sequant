@@ -392,7 +392,8 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; 
 
         if [[ -n "$BRANCH_NAME" ]]; then
             # Check if a worktree exists for this branch
-            WORKTREE_PATH=$(git worktree list --porcelain 2>/dev/null | grep -B1 "branch refs/heads/$BRANCH_NAME" | grep "^worktree " | sed 's/^worktree //' || true)
+            # Note: worktree line is 2 lines before branch line in porcelain output
+            WORKTREE_PATH=$(git worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH_NAME" | grep "^worktree " | sed 's/^worktree //' || true)
 
             if [[ -n "$WORKTREE_PATH" && -d "$WORKTREE_PATH" ]]; then
                 # Remove the worktree before merge proceeds
