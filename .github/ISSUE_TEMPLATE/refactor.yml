@@ -1,0 +1,86 @@
+name: Refactor
+description: Propose code improvements or restructuring
+labels: ["refactor"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Propose a code improvement or restructuring.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the refactoring you want to propose
+      placeholder: This refactor will...
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this refactor needed?
+      placeholder: |
+        - Current code is...
+        - This causes problems like...
+        - After refactoring, we will...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: complexity
+    attributes:
+      label: Complexity
+      description: Estimate the complexity of this refactor (affects workflow selection)
+      options:
+        - simple
+        - complex (quality loop)
+        - refactor (quality loop)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: What area of the codebase does this affect?
+      options:
+        - ui
+        - backend
+        - cli
+        - docs
+      multiple: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: files-affected
+    attributes:
+      label: Files/Components Affected
+      description: List the main files or components that will be changed
+      placeholder: |
+        - src/lib/...
+        - components/...
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: List the specific criteria for this refactor to be considered complete
+      placeholder: |
+        - [ ] AC-1: ...
+        - [ ] AC-2: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other context or references
+      placeholder: Add any other context about the refactor here
+    validations:
+      required: false

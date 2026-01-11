@@ -227,6 +227,36 @@ Produce a structured assessment:
 - [x] Missing tests
 - [ ] Depends on issue #<other>
 
+### Label Review
+
+Analyze current labels vs issue content and suggest updates when mismatches are detected:
+
+**Current Labels:** `enhancement`, `admin`
+**Suggested Labels:** `enhancement`, `admin`, `refactor`
+**Reason:** Issue body mentions structural changes across multiple files
+**Quality Loop Impact:** Will auto-enable due to `refactor` label
+
+**Suggested Action:**
+```bash
+gh issue edit <N> --add-label refactor
+```
+
+**Label Detection Hints:**
+- `refactor` - Keywords: "refactor", "restructure", "reorganize", "cleanup", "migration"
+- `complex` - Keywords: "complex", "major", "large-scale", "breaking"
+- `ui`/`frontend` - Keywords: "component", "UI", "page", "form", "button", "modal"
+- `backend` - Keywords: "API", "database", "query", "server", "endpoint"
+- `cli` - Keywords: "command", "CLI", "script", "terminal"
+- `docs` - Keywords: "documentation", "README", "guide", "tutorial"
+- `security` - Keywords: "auth", "permission", "vulnerability", "secret", "token"
+- `bug` - Keywords: "fix", "broken", "error", "crash", "doesn't work"
+
+**When to Suggest Label Updates:**
+- Issue body contains keywords not reflected in current labels
+- Complexity dropdown selection doesn't match actual labels
+- Quality loop would benefit from additional labels (complex/refactor/breaking)
+- Area dropdown selection doesn't match current labels (ui/backend/cli/docs)
+
 ### Recommendation
 
 Based on the assessment, recommend one of:
@@ -437,6 +467,7 @@ After providing the assessment, briefly note:
 - [ ] **AC Coverage** - Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR
 - [ ] **Artifacts Found** - Planning, implementation, and QA artifacts listed
 - [ ] **Blockers & Issues** - Any blockers or staleness identified
+- [ ] **Label Review** - Current vs suggested labels based on issue content analysis
 - [ ] **Recommendation** - Specific next command to run with rationale
 - [ ] **Confidence Level** - High/Medium/Low with information gaps noted
 
