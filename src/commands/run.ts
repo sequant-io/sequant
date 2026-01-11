@@ -13,7 +13,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getManifest } from "../lib/manifest.js";
 import { getSettings } from "../lib/settings.js";
-import { getPackageManagerCommands, PM_CONFIG } from "../lib/stacks.js";
+import { PM_CONFIG } from "../lib/stacks.js";
 import {
   LogWriter,
   createPhaseLogFromTiming,
@@ -877,7 +877,7 @@ function determinePhasesForIssue(
   labels: string[],
   options: RunOptions,
 ): Phase[] {
-  let phases = [...basePhases];
+  const phases = [...basePhases];
 
   // Add testgen phase after spec if requested
   if (options.testgen && phases.includes("spec")) {
@@ -1428,7 +1428,7 @@ async function runIssueWithLogging(
       console.log(chalk.green(`    ✓ spec${duration}`));
 
       // Parse recommended workflow from spec output
-      let parsedWorkflow = specResult.output
+      const parsedWorkflow = specResult.output
         ? parseRecommendedWorkflow(specResult.output)
         : null;
 

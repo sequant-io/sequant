@@ -9,12 +9,11 @@ import {
   getStackConfig,
   detectPackageManager,
   getPackageManagerCommands,
-  type PackageManager,
 } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
-import { createDefaultSettings, SETTINGS_PATH } from "../lib/settings.js";
+import { createDefaultSettings } from "../lib/settings.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import {
   commandExists,
@@ -83,11 +82,9 @@ const GITIGNORE_ENTRIES = [
 async function updateGitignore(): Promise<boolean> {
   const gitignorePath = ".gitignore";
   let content = "";
-  let existed = false;
 
   if (await fileExists(gitignorePath)) {
     content = await readFile(gitignorePath);
-    existed = true;
 
     // Check if already has .sequant/
     if (content.includes(".sequant/")) {

@@ -104,7 +104,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("GitHub CLI");
@@ -115,7 +115,7 @@ describe("doctor command", () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
       mockIsGhAuthenticated.mockReturnValue(false);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("GitHub CLI");
@@ -127,7 +127,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("GitHub Auth");
@@ -138,7 +138,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(false);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("GitHub Auth");
@@ -149,7 +149,7 @@ describe("doctor command", () => {
     it("skips auth check when gh CLI is not installed", async () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       // Should not contain auth check result since gh is not installed
@@ -162,7 +162,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Claude Code CLI");
@@ -173,7 +173,7 @@ describe("doctor command", () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "claude");
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Claude Code CLI");
@@ -188,7 +188,7 @@ describe("doctor command", () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "claude");
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain(
@@ -202,7 +202,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("jq");
@@ -213,7 +213,7 @@ describe("doctor command", () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "jq");
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("jq");
@@ -229,7 +229,7 @@ describe("doctor command", () => {
       mockIsNativeWindows.mockReturnValue(true);
       mockIsWSL.mockReturnValue(false);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Platform");
@@ -241,7 +241,7 @@ describe("doctor command", () => {
       mockIsNativeWindows.mockReturnValue(false);
       mockIsWSL.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Platform");
@@ -253,7 +253,7 @@ describe("doctor command", () => {
       mockIsNativeWindows.mockReturnValue(false);
       mockIsWSL.mockReturnValue(false);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       // Should not contain Platform check on non-Windows systems
@@ -266,7 +266,7 @@ describe("doctor command", () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("All checks passed");
@@ -276,7 +276,7 @@ describe("doctor command", () => {
     it("exits with failure when gh is missing even if jq is present", async () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
-      await doctorCommand({});
+      await doctorCommand();
 
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
@@ -285,7 +285,7 @@ describe("doctor command", () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "jq");
       mockIsGhAuthenticated.mockReturnValue(true);
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Warnings:");
@@ -302,7 +302,7 @@ describe("doctor command", () => {
         "sequential-thinking": true,
       });
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("MCP Servers");
@@ -316,7 +316,7 @@ describe("doctor command", () => {
         "sequential-thinking": true,
       });
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("MCP Servers");
@@ -335,7 +335,7 @@ describe("doctor command", () => {
         "sequential-thinking": false,
       });
 
-      await doctorCommand({});
+      await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("MCP Servers");
@@ -352,7 +352,7 @@ describe("doctor command", () => {
         "sequential-thinking": false,
       });
 
-      await doctorCommand({});
+      await doctorCommand();
 
       // Should complete without failure
       expect(processExitSpy).not.toHaveBeenCalled();

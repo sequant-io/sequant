@@ -2,7 +2,7 @@
  * Template management - copy and process templates
  */
 
-import { readdir, copyFile, chmod } from "fs/promises";
+import { readdir, chmod } from "fs/promises";
 import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 import { readFile, writeFile, ensureDir, fileExists } from "./fs.js";

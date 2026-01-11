@@ -241,7 +241,6 @@ export function rotateIfNeeded(
     };
   }
 
-  const resolved = resolvePath(logDir);
   const toDelete = getFilesToDelete(logDir, settings);
 
   if (toDelete.length === 0) {
