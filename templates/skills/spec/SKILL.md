@@ -11,6 +11,8 @@ allowed-tools:
   - Bash(gh issue comment:*)
   - Bash(gh issue edit:*)
   - Bash(gh label:*)
+  - Bash(git worktree:*)
+  - Bash(git -C:*)
   - Task
   - AgentOutputTool
 ---
@@ -59,6 +61,56 @@ Task(subagent_type="schema-inspector", model="haiku",
 ```
 
 **Important:** Spawn all agents in a SINGLE message for parallel execution.
+
+### In-Flight Work Analysis (Conflict Detection)
+
+Before creating the implementation plan, scan for potential conflicts with in-flight work:
+
+1. **List open worktrees**:
+   ```bash
+   git worktree list --porcelain
+   ```
+
+2. **For each worktree, get changed files**:
+   ```bash
+   git -C <worktree-path> diff --name-only main...HEAD
+   ```
+
+3. **Analyze this issue's likely file touches** based on:
+   - Issue description and AC
+   - Similar past issues
+   - Codebase structure
+
+4. **If overlap detected**, include in plan output:
+   ```markdown
+   ## Conflict Risk Analysis
+
+   **In-flight work detected**: Issue #<N> (feature/<branch-name>)
+   **Overlapping files**:
+   - `<file-path>`
+
+   **Recommended approach**:
+   - [ ] Option A: Use alternative file/approach (no conflict)
+   - [ ] Option B: Wait for #<N> to merge, then rebase
+   - [ ] Option C: Coordinate unified implementation via /merger
+
+   **Selected**: [To be decided during spec review]
+   ```
+
+5. **Check for explicit dependencies**:
+   ```bash
+   # Look for "Depends on" or "depends-on" labels
+   gh issue view <issue> --json body,labels
+   ```
+
+   If dependencies found:
+   ```markdown
+   ## Dependencies
+
+   **Depends on**: #<N>
+   **Reason**: [Why this issue depends on the other]
+   **Status**: [Open/Merged/Closed]
+   ```
 
 ### Using MCP Tools (Optional)
 
@@ -162,7 +214,37 @@ Analyze the issue and recommend the optimal workflow phases:
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
 
-### 5. Issue Comment Draft
+### 5. Label Review
+
+Analyze current labels vs implementation plan and suggest updates:
+
+```markdown
+## Label Review
+
+**Current:** enhancement
+**Recommended:** enhancement, refactor
+**Reason:** Implementation plan involves structural changes to 5+ files
+**Quality Loop:** Will auto-enable due to `refactor` label
+
+→ `gh issue edit <N> --add-label refactor`
+```
+
+**Plan-Based Detection Logic:**
+- If plan has 5+ file changes → suggest `refactor`
+- If plan touches UI components → suggest `ui` or `frontend`
+- If plan has breaking API changes → suggest `breaking`
+- If plan involves database migrations → suggest `backend`, `complex`
+- If plan involves CLI/scripts → suggest `cli`
+- If plan is documentation-only → suggest `docs`
+- If recommended workflow includes quality loop → ensure matching label exists (`complex`, `refactor`, or `breaking`)
+
+**Label Inference from Plan Analysis:**
+- Count files in implementation plan steps
+- Identify component types being modified
+- Check if API contracts are changing
+- Match against quality loop trigger labels
+
+### 6. Issue Comment Draft
 
 Generate a Markdown snippet with:
 - AC checklist with verification criteria
@@ -178,7 +260,7 @@ Label clearly as:
 --- DRAFT GITHUB ISSUE COMMENT (PLAN) ---
 ```
 
-### 6. Update GitHub Issue
+### 7. Update GitHub Issue
 
 Post the draft comment to GitHub:
 ```bash
@@ -194,8 +276,10 @@ gh issue edit <issue-number> --add-label "planned"
 
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
+- [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
+- [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
 
@@ -246,6 +330,17 @@ You MUST include these sections in order:
 **Phases:** exec → qa
 **Quality Loop:** disabled
 **Reasoning:** [Why these phases based on issue analysis]
+
+---
+
+## Label Review
+
+**Current:** [current labels]
+**Recommended:** [recommended labels]
+**Reason:** [Why these labels based on plan analysis]
+**Quality Loop:** [Will/Won't auto-enable and why]
+
+→ `gh issue edit <N> --add-label [label]`
 
 ---
 
