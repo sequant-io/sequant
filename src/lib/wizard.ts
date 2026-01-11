@@ -206,14 +206,30 @@ export async function runSetupWizard(
   }
 
   // Ask if user wants to set up missing dependencies
-  const { setupDeps } = await inquirer.prompt([
-    {
-      type: "confirm",
-      name: "setupDeps",
-      message: "Would you like to set up missing dependencies?",
-      default: true,
-    },
-  ]);
+  let setupDeps = false;
+  try {
+    const response = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "setupDeps",
+        message: "Would you like to set up missing dependencies?",
+        default: true,
+      },
+    ]);
+    setupDeps = response.setupDeps;
+  } catch {
+    // If prompt fails (e.g., non-interactive), skip wizard
+    return {
+      skipped: true,
+      completed: false,
+      remainingIssues: missingDeps.map((d) => {
+        if (d.name === "gh" && d.installed && !d.authenticated) {
+          return `${d.displayName} not authenticated`;
+        }
+        return `${d.displayName} not installed`;
+      }),
+    };
+  }
 
   if (!setupDeps) {
     return {
@@ -240,17 +256,24 @@ export async function runSetupWizard(
     }
     console.log();
 
-    const { action } = await inquirer.prompt([
-      {
-        type: "list",
-        name: "action",
-        message: "What would you like to do?",
-        choices: [
-          { name: "I've installed it - verify now", value: "verify" },
-          { name: "Skip for now", value: "skip" },
-        ],
-      },
-    ]);
+    let action = "skip";
+    try {
+      const response = await inquirer.prompt([
+        {
+          type: "list",
+          name: "action",
+          message: "What would you like to do?",
+          choices: [
+            { name: "I've installed it - verify now", value: "verify" },
+            { name: "Skip for now", value: "skip" },
+          ],
+        },
+      ]);
+      action = response.action;
+    } catch {
+      // If prompt fails, skip this dependency
+      action = "skip";
+    }
 
     if (action === "verify") {
       // Re-check this dependency

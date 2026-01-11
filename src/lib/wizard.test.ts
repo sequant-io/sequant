@@ -298,6 +298,54 @@ describe("wizard", () => {
         "GitHub CLI (gh) not authenticated",
       );
     });
+
+    it("handles multiple missing dependencies in sequence", async () => {
+      // Both gh and claude are missing
+      mockCommandExists.mockReturnValue(false);
+      mockIsGhAuthenticated.mockReturnValue(false);
+
+      const depResult = checkAllDependencies();
+
+      // User accepts wizard, verifies gh (success), skips claude
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ setupDeps: true })
+        .mockResolvedValueOnce({ action: "verify" }) // gh
+        .mockResolvedValueOnce({ action: "skip" }); // claude
+
+      // After first verify, gh is now installed and authenticated
+      mockCommandExists.mockImplementation((cmd) => cmd === "gh");
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      const wizardResult = await runSetupWizard(depResult);
+
+      expect(wizardResult.completed).toBe(false);
+      expect(wizardResult.remainingIssues).toContain(
+        "Claude Code CLI not installed",
+      );
+      expect(wizardResult.remainingIssues).not.toContain("GitHub CLI");
+    });
+
+    it("records issue when verification fails after user claims installation", async () => {
+      mockCommandExists.mockImplementation((cmd) => cmd !== "claude");
+      mockIsGhAuthenticated.mockReturnValue(true);
+
+      const depResult = checkAllDependencies();
+
+      // User accepts and tries to verify, but it's still not installed
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ setupDeps: true })
+        .mockResolvedValueOnce({ action: "verify" });
+
+      // claude still not installed after "verification"
+      // (mockCommandExists already returns false for claude)
+
+      const wizardResult = await runSetupWizard(depResult);
+
+      expect(wizardResult.completed).toBe(false);
+      expect(wizardResult.remainingIssues).toContain(
+        "Claude Code CLI not installed",
+      );
+    });
   });
 
   describe("shouldRunSetupWizard", () => {

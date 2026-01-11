@@ -9,6 +9,10 @@ import fs from "fs";
  * Check if a command exists on the system
  */
 export function commandExists(cmd: string): boolean {
+  // Validate command name to prevent shell injection
+  if (!/^[a-zA-Z0-9_-]+$/.test(cmd)) {
+    return false;
+  }
   try {
     execSync(`command -v ${cmd}`, { stdio: "ignore" });
     return true;

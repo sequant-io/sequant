@@ -41,6 +41,29 @@ describe("system utilities", () => {
         stdio: "ignore",
       });
     });
+
+    it("returns false for invalid command names (injection prevention)", () => {
+      // Commands with shell metacharacters should be rejected
+      expect(commandExists("gh; echo test")).toBe(false);
+      expect(commandExists("gh && echo")).toBe(false);
+      expect(commandExists("gh$(echo)")).toBe(false);
+      expect(commandExists("")).toBe(false);
+      expect(commandExists("gh | cat")).toBe(false);
+      expect(commandExists("gh > file")).toBe(false);
+      expect(commandExists("gh < file")).toBe(false);
+      expect(commandExists("gh\necho")).toBe(false);
+
+      // execSync should NOT be called for invalid inputs
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
+
+    it("allows valid command names with hyphens and underscores", () => {
+      mockExecSync.mockReturnValue(Buffer.from("/usr/bin/my-command"));
+
+      expect(commandExists("my-command")).toBe(true);
+      expect(commandExists("my_command")).toBe(true);
+      expect(commandExists("command123")).toBe(true);
+    });
   });
 
   describe("isGhAuthenticated", () => {
