@@ -66,14 +66,12 @@ export function shouldUseInteractiveMode(forceInteractive?: boolean): boolean {
 
 /**
  * Get a human-readable reason for non-interactive mode
+ *
+ * Priority order: CI first (more informative), then TTY checks
  */
 export function getNonInteractiveReason(): string | null {
-  if (!isStdinTTY()) {
-    return "stdin is not a terminal (piped input detected)";
-  }
-  if (!isStdoutTTY()) {
-    return "stdout is not a terminal";
-  }
+  // Check CI first - more informative for users in CI environments
+  // (CI typically has non-TTY stdin, but the CI reason is more helpful)
   if (isCI()) {
     // Find which CI environment
     for (const envVar of CI_ENV_VARS) {
@@ -84,5 +82,14 @@ export function getNonInteractiveReason(): string | null {
     }
     return "running in CI environment";
   }
+
+  // Then check TTY
+  if (!isStdinTTY()) {
+    return "stdin is not a terminal (piped input detected)";
+  }
+  if (!isStdoutTTY()) {
+    return "stdout is not a terminal";
+  }
+
   return null;
 }
