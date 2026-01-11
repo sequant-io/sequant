@@ -1,0 +1,383 @@
+# Release Skill
+
+Automates the full release workflow: version bump, git tag, GitHub release, and npm publish.
+
+## Usage
+
+```
+/release [patch|minor|major] [--prerelease <tag>] [--dry-run]
+```
+
+- `/release` - Interactive, asks for version type
+- `/release patch` - Patch release (1.3.1 → 1.3.2)
+- `/release minor` - Minor release (1.3.1 → 1.4.0)
+- `/release major` - Major release (1.3.1 → 2.0.0)
+- `/release minor --prerelease beta` - Pre-release (1.3.1 → 1.4.0-beta.0)
+- `/release --dry-run` - Preview without publishing
+
+## Pre-flight Checks
+
+Run ALL checks before proceeding. **STOP if any fails.**
+
+### Git Checks
+
+```bash
+# 1. On main branch
+[ "$(git branch --show-current)" = "main" ] || { echo "Not on main"; exit 1; }
+
+# 2. Clean working tree
+[ -z "$(git status --porcelain)" ] || { echo "Uncommitted changes"; exit 1; }
+
+# 3. In sync with remote
+git fetch origin
+[ -z "$(git log HEAD..origin/main)" ] || { echo "Behind origin - pull first"; exit 1; }
+```
+
+### Quality Checks
+
+```bash
+# 4. Tests pass
+npm test
+
+# 5. Build works
+npm run build
+
+# 6. No security vulnerabilities (high/critical)
+npm audit --audit-level=high || echo "Warning: audit issues found"
+```
+
+### npm Checks
+
+```bash
+# 7. Logged into npm
+npm whoami || { echo "Not logged in - run: npm login"; exit 1; }
+
+# 8. Version doesn't already exist
+current=$(node -p "require('./package.json').version")
+npm view sequant@${current} version 2>/dev/null && { echo "Version already published"; exit 1; }
+
+# 9. Preview package contents
+npm pack --dry-run 2>&1 | tail -20
+```
+
+### GitHub Checks
+
+```bash
+# 10. Authenticated with GitHub
+gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
+```
+
+## Release Steps
+
+### Step 1: Determine Version
+
+If version type not provided as argument, ask the user:
+
+| Type | When to Use | Example |
+|------|-------------|---------|
+| `patch` | Bug fixes, maintenance, no new features | 1.3.1 → 1.3.2 |
+| `minor` | New features, backwards compatible | 1.3.1 → 1.4.0 |
+| `major` | Breaking changes | 1.3.1 → 2.0.0 |
+| `prerelease` | Alpha/beta/RC versions | 1.3.1 → 1.4.0-beta.0 |
+
+```bash
+current=$(node -p "require('./package.json').version")
+echo "Current version: ${current}"
+```
+
+### Step 2: Generate Release Notes
+
+Gather commits since last tag:
+```bash
+last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+if [ -n "$last_tag" ]; then
+  git log ${last_tag}..HEAD --oneline --no-merges
+fi
+```
+
+Categorize by conventional commit prefix:
+- `feat:` → **Features**
+- `fix:` → **Bug Fixes**
+- `perf:` → **Performance**
+- `docs:` → **Documentation**
+- `refactor:` → **Refactoring**
+- `chore:` → **Maintenance**
+- `BREAKING CHANGE:` → **Breaking Changes** (for major releases)
+
+**Release notes template:**
+```markdown
+## What's Changed
+
+### Features
+- Feature description (#PR)
+
+### Bug Fixes
+- Fix description (#PR)
+
+### Breaking Changes
+- Description of breaking change and migration path
+
+**Full Changelog**: https://github.com/admarble/sequant/compare/v{old}...v{new}
+```
+
+**Show draft to user for approval before proceeding.**
+
+### Step 3: Update CHANGELOG.md (if exists)
+
+If `CHANGELOG.md` exists, prepend new version section:
+
+```markdown
+## [1.4.0] - 2026-01-10
+
+### Added
+- New feature X
+
+### Fixed
+- Bug fix Y
+
+### Changed
+- Change Z
+```
+
+### Step 4: Bump Version
+
+```bash
+# For regular releases
+npm version {patch|minor|major} --no-git-tag-version
+
+# For pre-releases
+npm version prerelease --preid=beta --no-git-tag-version
+```
+
+### Step 5: Verify Package Size
+
+```bash
+# Check what will be published
+npm pack --dry-run
+
+# Verify size is reasonable (warn if > 500KB)
+size=$(npm pack --dry-run 2>&1 | grep "total files" -A1 | tail -1)
+echo "Package size: ${size}"
+```
+
+### Step 6: Commit and Push
+
+```bash
+new_version=$(node -p "require('./package.json').version")
+git add package.json package-lock.json CHANGELOG.md
+git commit -m "chore: release v${new_version}"
+git push origin main
+```
+
+### Step 7: Create and Push Tag
+
+```bash
+git tag -a "v${new_version}" -m "Release v${new_version}"
+git push origin "v${new_version}"
+```
+
+### Step 8: Create GitHub Release
+
+```bash
+# Regular release
+gh release create "v${new_version}" \
+  --title "v${new_version} - {title}" \
+  --notes "{release_notes}"
+
+# Pre-release (alpha/beta/rc)
+gh release create "v${new_version}" \
+  --title "v${new_version}" \
+  --notes "{release_notes}" \
+  --prerelease
+```
+
+For the title, use a short summary:
+- `v1.4.0 - New Feature Name`
+- `v1.3.2 - Bug Fix Release`
+- `v2.0.0 - Breaking Changes`
+
+### Step 9: Publish to npm
+
+```bash
+# Regular release
+npm publish
+
+# Pre-release with tag (prevents becoming "latest")
+npm publish --tag beta
+```
+
+**Note:** If 2FA is enabled, npm will prompt for OTP code.
+
+## Post-Release Verification
+
+Verify both platforms show the new version:
+
+```bash
+# npm verification (may take 1-2 minutes to propagate)
+sleep 5
+npm view sequant version
+npm view sequant dist-tags
+
+# GitHub verification
+gh release view "v${new_version}"
+
+# Test install
+npx sequant@${new_version} --version
+```
+
+## Output Summary
+
+```
+Release v{version} Complete
+
+  Version:  {old} → {new}
+  Commit:   {hash}
+  Tag:      v{new}
+
+  GitHub:   https://github.com/admarble/sequant/releases/tag/v{new}
+  npm:      https://www.npmjs.com/package/sequant/v/{new}
+
+  Install:  npm install sequant@{new}
+            npx sequant@{new}
+
+Verification:
+  [x] npm view shows correct version
+  [x] GitHub release created
+  [x] Tag pushed
+
+Next steps:
+  - Announce release (if major/minor)
+  - Update dependent projects
+  - Monitor for issues
+```
+
+## Dry Run Mode
+
+When `--dry-run` is specified:
+
+1. Run all pre-flight checks
+2. Show what version would be created
+3. Show draft release notes
+4. Show `npm pack --dry-run` output
+5. **Do NOT** execute any publish commands
+
+```
+Dry Run Summary
+
+  Would release: 1.3.1 → 1.4.0
+
+  Package contents:
+    - 176 files
+    - 195.9 kB packed
+
+  Release notes:
+    [draft notes here]
+
+  To execute: /release minor
+```
+
+## Rollback Procedures
+
+### Before npm publish
+
+```bash
+# Undo version bump (if not committed)
+git checkout -- package.json package-lock.json
+
+# Undo commit (if not pushed)
+git reset --soft HEAD~1
+
+# Delete local tag
+git tag -d v{version}
+```
+
+### After git push, before npm publish
+
+```bash
+# Delete remote tag
+git push origin :refs/tags/v{version}
+
+# Delete GitHub release
+gh release delete v{version} --yes
+
+# Revert commit
+git revert HEAD
+git push origin main
+```
+
+### After npm publish
+
+**Do NOT use `npm unpublish`** - it breaks dependent projects.
+
+Instead:
+1. Publish a patch fix: `npm version patch && npm publish`
+2. Deprecate bad version: `npm deprecate sequant@{bad} "Use {good} instead"`
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| "Not on main" | Wrong branch | `git checkout main` |
+| "Uncommitted changes" | Dirty working tree | `git stash` or commit |
+| "Behind origin" | Remote has new commits | `git pull origin main` |
+| "Tests failed" | Failing tests | Fix tests first |
+| "Version exists" | Already published | Choose different version |
+| "Not logged in (npm)" | npm auth expired | `npm login` |
+| "Not logged in (gh)" | GitHub auth expired | `gh auth login` |
+| "OTP required" | npm 2FA enabled | Enter code when prompted |
+| "Package too large" | Bloated package | Check `.npmignore` |
+
+## Best Practices
+
+### Versioning
+- Follow [Semantic Versioning](https://semver.org/)
+- Use pre-release tags for testing: `1.4.0-beta.1`
+- Major version 0.x.x indicates unstable API
+
+### Release Notes
+- Write for users, not developers
+- Highlight breaking changes prominently
+- Include migration guides for major releases
+- Link to relevant issues/PRs
+
+### npm
+- Keep package size small (< 500KB ideal)
+- Use `files` in package.json or `.npmignore`
+- Test with `npm pack` before publishing
+- Use `--tag` for pre-releases to avoid becoming "latest"
+
+### GitHub
+- Use pre-release flag for beta/RC versions
+- Attach relevant assets (if any)
+- Use consistent title format
+
+### Security
+- Run `npm audit` before releasing
+- Don't include sensitive files (check `npm pack --dry-run`)
+- Verify `npm whoami` shows correct account
+
+## Examples
+
+### Standard Patch Release
+```
+/release patch
+```
+
+### Minor Release with Custom Notes
+```
+/release minor
+# Review generated notes
+# Edit if needed
+# Approve to publish
+```
+
+### Beta Pre-release
+```
+/release minor --prerelease beta
+```
+Creates: `1.4.0-beta.0`
+
+### Preview Without Publishing
+```
+/release minor --dry-run
+```
