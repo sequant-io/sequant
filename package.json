@@ -23,7 +23,7 @@
     "build": "tsc",
     "dev": "tsx bin/cli.ts",
     "test": "vitest run",
-    "lint": "echo \"No linter configured yet\" && exit 0",
+    "lint": "eslint src/ bin/",
     "sync:skills": "cp -r templates/skills/* .claude/skills/",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
     "prepublishOnly": "npm run build"
@@ -63,11 +63,17 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/diff": "^7.0.0",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.10.5",
+    "@typescript-eslint/eslint-plugin": "^8.52.0",
+    "@typescript-eslint/parser": "^8.52.0",
+    "eslint": "^9.39.2",
+    "globals": "^17.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.52.0",
     "vitest": "^3.2.4"
   }
 }
