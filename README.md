@@ -45,6 +45,8 @@ When using AI coding assistants, work can become scattered and quality inconsist
 | Git | `git --version` | Required |
 | [jq](https://jqlang.github.io/jq/) | `jq --version` | Optional, improves hook performance |
 
+> **Note:** Sequant currently requires GitHub for issue tracking. GitLab and Bitbucket support is planned for a future release. See [Platform Requirements](docs/platform-requirements.md) for workarounds if you use a different platform.
+
 ### Setup
 
 ```bash
@@ -352,6 +354,7 @@ After `sequant init`:
 - [Run Command](docs/run-command.md) — Batch execution options
 - [Customization Guide](docs/customization.md) — Override templates safely
 - [MCP Integrations](docs/mcp-integrations.md) — Optional MCP server setup
+- [Platform Requirements](docs/platform-requirements.md) — GitHub dependency and workarounds
 - [Troubleshooting](docs/troubleshooting.md) — Common issues and solutions
 - [Testing Guide](docs/testing.md) — Cross-platform testing matrix
 - [Git Patterns](docs/git-patterns.md) — Worktree and merge workflows
