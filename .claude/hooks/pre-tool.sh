@@ -379,6 +379,30 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
     fi
 fi
 
+# === PRE-MERGE WORKTREE CLEANUP ===
+# Auto-remove worktree before `gh pr merge` to prevent --delete-branch failure
+# The worktree locks the branch, causing merge to partially fail
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; then
+    # Extract PR number from command
+    PR_NUM=$(echo "$TOOL_INPUT" | grep -oE 'gh pr merge [0-9]+' | grep -oE '[0-9]+')
+
+    if [[ -n "$PR_NUM" ]]; then
+        # Get the branch name for this PR
+        BRANCH_NAME=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
+
+        if [[ -n "$BRANCH_NAME" ]]; then
+            # Check if a worktree exists for this branch
+            WORKTREE_PATH=$(git worktree list --porcelain 2>/dev/null | grep -B1 "branch refs/heads/$BRANCH_NAME" | grep "^worktree " | sed 's/^worktree //' || true)
+
+            if [[ -n "$WORKTREE_PATH" && -d "$WORKTREE_PATH" ]]; then
+                # Remove the worktree before merge proceeds
+                git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+                echo "PRE-MERGE: Removed worktree $WORKTREE_PATH for branch $BRANCH_NAME" >> /tmp/claude-hook.log
+            fi
+        fi
+    fi
+fi
+
 # === ALLOW EVERYTHING ELSE ===
 # Slash commands need: git, npm, file edits, gh pr/issue, MCP tools
 exit 0
