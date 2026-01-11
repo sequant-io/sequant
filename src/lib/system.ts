@@ -71,6 +71,11 @@ export function getInstallHint(pkg: string): string {
       linux: "apt install gh  # see: https://cli.github.com",
       win32: "choco install gh  # or: winget install GitHub.cli",
     },
+    claude: {
+      darwin: "npm install -g @anthropic-ai/claude-code",
+      linux: "npm install -g @anthropic-ai/claude-code",
+      win32: "npm install -g @anthropic-ai/claude-code",
+    },
   };
 
   const pkgHints = hints[pkg];

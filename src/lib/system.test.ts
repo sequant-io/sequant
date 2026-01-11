@@ -100,5 +100,22 @@ describe("system utilities", () => {
     it("returns generic hint for unknown package", () => {
       expect(getInstallHint("unknown-package")).toBe("Install unknown-package");
     });
+
+    it("returns npm hint for claude on any platform", () => {
+      Object.defineProperty(process, "platform", { value: "darwin" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
+
+      Object.defineProperty(process, "platform", { value: "linux" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
+
+      Object.defineProperty(process, "platform", { value: "win32" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
+    });
   });
 });
