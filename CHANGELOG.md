@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-01-11
+
+### Added
+
+- Setup wizard for missing dependencies during `sequant init` (#9)
+  - Interactive dependency checking for gh, claude, and jq
+  - Platform-specific install instructions (brew/apt/choco)
+  - `--skip-setup` flag for CI/advanced users
+  - Auto-skips in CI environments
+  - Input validation to prevent shell injection in command checks
+- `/release` skill for automated version bumps, GitHub releases, and npm publishing
+- CI environment name shown in non-interactive mode messages (#50)
+- Platform requirements documentation with GitHub alternatives (#7)
+
+### Fixed
+
+- Merger skill pre-merge worktree cleanup to prevent branch deletion failures
+
+### Removed
+
+- Dead workflow code: `execute-issues.ts`, `cli-args.ts`, `logger.ts` (#12)
+- Supabase remnants from reflect skill scripts (#12)
+
 ## [1.3.0] - 2026-01-10
 
 ### Added
