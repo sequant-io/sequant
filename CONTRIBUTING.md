@@ -248,6 +248,23 @@ npm publish --otp=YOUR_CODE
 
 ### Release Process
 
+**Recommended: Use the `/release` skill** (requires Claude Code):
+
+```bash
+# Dry-run to preview
+/release --dry-run
+
+# Execute release
+/release patch   # Bug fixes (1.3.1 → 1.3.2)
+/release minor   # New features (1.3.1 → 1.4.0)
+/release major   # Breaking changes (1.3.1 → 2.0.0)
+```
+
+The `/release` skill automates all steps below with pre-flight checks.
+
+<details>
+<summary>Manual Release Process</summary>
+
 ```bash
 # 1. Update version and changelog
 npm version 1.x.x --no-git-tag-version
@@ -268,6 +285,8 @@ gh release create v1.x.x --title "v1.x.x" --notes "Release notes..."
 # 5. Publish to npm
 npm publish
 ```
+
+</details>
 
 ## Pull Requests
 
