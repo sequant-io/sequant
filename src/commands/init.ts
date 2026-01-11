@@ -25,6 +25,12 @@ import {
   shouldUseInteractiveMode,
   getNonInteractiveReason,
 } from "../lib/tty.js";
+import {
+  checkAllDependencies,
+  displayDependencyStatus,
+  runSetupWizard,
+  shouldRunSetupWizard,
+} from "../lib/wizard.js";
 
 /**
  * Check prerequisites and display warnings
@@ -59,6 +65,7 @@ interface InitOptions {
   yes?: boolean;
   force?: boolean;
   interactive?: boolean;
+  skipSetup?: boolean;
 }
 
 /**
@@ -122,19 +129,56 @@ export async function initCommand(options: InitOptions): Promise<void> {
     );
   }
 
-  // Check prerequisites and display warnings
+  // Check dependencies and run setup wizard if needed
+  const depCheckResult = checkAllDependencies();
+  let wizardRemainingIssues: string[] = [];
+
+  if (
+    shouldRunSetupWizard({ skipSetup: options.skipSetup, yes: options.yes })
+  ) {
+    // Display dependency status
+    displayDependencyStatus(depCheckResult);
+
+    // Run wizard if there are missing required dependencies
+    if (depCheckResult.hasMissing) {
+      const wizardResult = await runSetupWizard(depCheckResult, {
+        skipPrompts,
+      });
+      wizardRemainingIssues = wizardResult.remainingIssues;
+    }
+  } else if (options.skipSetup) {
+    // User explicitly skipped - show brief status
+    console.log(
+      chalk.gray("Skipping dependency setup wizard (--skip-setup)\n"),
+    );
+  }
+
+  // Fall back to legacy warning system for any remaining issues
   const { warnings, suggestions } = checkPrerequisites();
-  if (warnings.length > 0) {
-    console.log(chalk.yellow("⚠️  Prerequisites:\n"));
-    for (const warning of warnings) {
-      console.log(chalk.yellow(`   • ${warning}`));
+
+  // Only show warnings if wizard didn't already handle them or if there are remaining issues
+  if (
+    wizardRemainingIssues.length > 0 ||
+    (options.skipSetup && warnings.length > 0)
+  ) {
+    if (wizardRemainingIssues.length > 0) {
+      console.log(chalk.yellow("⚠️  Remaining setup issues:\n"));
+      for (const issue of wizardRemainingIssues) {
+        console.log(chalk.yellow(`   • ${issue}`));
+      }
+      console.log();
+    } else if (warnings.length > 0) {
+      console.log(chalk.yellow("⚠️  Prerequisites:\n"));
+      for (const warning of warnings) {
+        console.log(chalk.yellow(`   • ${warning}`));
+      }
+      for (const suggestion of suggestions.filter(
+        (s) => !s.startsWith("Optional"),
+      )) {
+        console.log(chalk.gray(`     ${suggestion}`));
+      }
+      console.log();
     }
-    for (const suggestion of suggestions.filter(
-      (s) => !s.startsWith("Optional"),
-    )) {
-      console.log(chalk.gray(`     ${suggestion}`));
-    }
-    console.log();
   }
 
   // Check if already initialized
@@ -318,11 +362,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
       ? `\n${chalk.bold("Optional improvements:")}\n${optionalSuggestions.map((s) => `  • ${s.replace("Optional: ", "")}`).join("\n")}\n`
       : "";
 
-  // Build prerequisites reminder if there were warnings
-  const prereqReminder =
-    warnings.length > 0
-      ? `\n${chalk.yellow("⚠️  Remember to address prerequisites above before using issue workflows.")}\n`
-      : "";
+  // Build prerequisites reminder if there were remaining issues from wizard or warnings
+  const hasRemainingIssues =
+    wizardRemainingIssues.length > 0 || warnings.length > 0;
+  const prereqReminder = hasRemainingIssues
+    ? `\n${chalk.yellow("⚠️  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
+    : "";
 
   // Success message
   console.log(

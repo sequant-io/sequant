@@ -65,6 +65,7 @@ program
     "-i, --interactive",
     "Force interactive mode even in non-TTY environment",
   )
+  .option("--skip-setup", "Skip the dependency setup wizard")
   .action(initCommand);
 
 program

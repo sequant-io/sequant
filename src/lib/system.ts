@@ -9,6 +9,10 @@ import fs from "fs";
  * Check if a command exists on the system
  */
 export function commandExists(cmd: string): boolean {
+  // Validate command name to prevent shell injection
+  if (!/^[a-zA-Z0-9_-]+$/.test(cmd)) {
+    return false;
+  }
   try {
     execSync(`command -v ${cmd}`, { stdio: "ignore" });
     return true;
@@ -70,6 +74,11 @@ export function getInstallHint(pkg: string): string {
       darwin: "brew install gh",
       linux: "apt install gh  # see: https://cli.github.com",
       win32: "choco install gh  # or: winget install GitHub.cli",
+    },
+    claude: {
+      darwin: "npm install -g @anthropic-ai/claude-code",
+      linux: "npm install -g @anthropic-ai/claude-code",
+      win32: "npm install -g @anthropic-ai/claude-code",
     },
   };
 

@@ -66,6 +66,25 @@ vi.mock("../lib/system.js", () => ({
 vi.mock("../lib/tty.js", () => ({
   shouldUseInteractiveMode: vi.fn(),
   getNonInteractiveReason: vi.fn(),
+  isCI: vi.fn(),
+}));
+
+// Mock wizard functions
+vi.mock("../lib/wizard.js", () => ({
+  checkAllDependencies: vi.fn(() => ({
+    dependencies: [],
+    allRequiredMet: true,
+    hasMissing: false,
+  })),
+  displayDependencyStatus: vi.fn(),
+  runSetupWizard: vi.fn(() =>
+    Promise.resolve({
+      skipped: false,
+      completed: true,
+      remainingIssues: [],
+    }),
+  ),
+  shouldRunSetupWizard: vi.fn(() => false),
 }));
 
 // Mock inquirer
@@ -142,29 +161,31 @@ describe("init command", () => {
       expect(output).toContain("Sequant initialized successfully");
     });
 
-    it("warns when gh CLI is not installed", async () => {
+    it("warns when gh CLI is not installed (with --skip-setup)", async () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
       mockIsGhAuthenticated.mockReturnValue(false);
 
-      await initCommand({ yes: true, stack: "generic" });
+      // Using skipSetup triggers legacy warning behavior
+      await initCommand({ yes: true, stack: "generic", skipSetup: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Prerequisites:");
       expect(output).toContain("GitHub CLI (gh) is not installed");
-      expect(output).toContain("Remember to address prerequisites");
+      expect(output).toContain("Remember to install missing dependencies");
     });
 
-    it("warns when gh CLI is not authenticated", async () => {
+    it("warns when gh CLI is not authenticated (with --skip-setup)", async () => {
       mockCommandExists.mockReturnValue(true);
       mockIsGhAuthenticated.mockReturnValue(false);
 
-      await initCommand({ yes: true, stack: "generic" });
+      // Using skipSetup triggers legacy warning behavior
+      await initCommand({ yes: true, stack: "generic", skipSetup: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Prerequisites:");
       expect(output).toContain("GitHub CLI is not authenticated");
       expect(output).toContain("gh auth login");
-      expect(output).toContain("Remember to address prerequisites");
+      expect(output).toContain("Remember to install missing dependencies");
     });
 
     it("shows optional jq suggestion when jq is not installed", async () => {
@@ -180,11 +201,12 @@ describe("init command", () => {
       expect(output).not.toContain("Prerequisites:");
     });
 
-    it("shows both gh warning and jq suggestion when both are missing", async () => {
+    it("shows both gh warning and jq suggestion when both are missing (with --skip-setup)", async () => {
       mockCommandExists.mockReturnValue(false);
       mockIsGhAuthenticated.mockReturnValue(false);
 
-      await initCommand({ yes: true, stack: "generic" });
+      // Using skipSetup triggers legacy warning behavior
+      await initCommand({ yes: true, stack: "generic", skipSetup: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Prerequisites:");
@@ -193,15 +215,23 @@ describe("init command", () => {
       expect(output).toContain("Install jq for faster JSON parsing");
     });
 
-    it("skips auth check when gh is not installed", async () => {
+    it("skips auth check when gh is not installed (with --skip-setup)", async () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
 
-      await initCommand({ yes: true, stack: "generic" });
+      // Using skipSetup triggers legacy warning behavior
+      await initCommand({ yes: true, stack: "generic", skipSetup: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       // Should only show "not installed", not "not authenticated"
       expect(output).toContain("GitHub CLI (gh) is not installed");
       expect(output).not.toContain("GitHub CLI is not authenticated");
+    });
+
+    it("shows skip-setup message when wizard is skipped", async () => {
+      await initCommand({ yes: true, stack: "generic", skipSetup: true });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Skipping dependency setup wizard");
     });
   });
 
