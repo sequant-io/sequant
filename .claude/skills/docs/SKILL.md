@@ -55,12 +55,62 @@ gh pr list --search "head:feature/<issue-number>" --json number,headRefName
 **Step 3:** Analyze the implementation diff:
 ```bash
 # If PR exists:
-gh pr diff <pr-number> 
+gh pr diff <pr-number>
 
 # If no PR, use git diff from feature branch:
 git diff main...HEAD --name-only
 git diff main...HEAD
 ```
+
+**Step 4:** Detect documentation-only changes:
+```bash
+# Count non-documentation files changed
+non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs)
+```
+
+**Decision Logic:**
+```
+IF non_doc_files == 0 THEN
+  # Documentation-only issue detected
+  # Skip template generation, post confirmation comment instead
+  # See Section 2a: Documentation-Only Early Exit
+ELSE
+  # Continue with normal documentation generation
+END IF
+```
+
+### 2a. Documentation-Only Early Exit
+
+When only documentation files (`.md`, `.mdx`, or files in `docs/`) were modified, skip template generation and post a confirmation comment instead.
+
+**Detection criteria - ALL of these must be true:**
+- `git diff main...HEAD --name-only` returns files
+- All changed files match: `*.md`, `*.mdx`, or `docs/*`
+
+**Early exit action:**
+
+1. **Post confirmation comment to GitHub issue:**
+   ```bash
+   gh issue comment <issue-number> --body "$(cat <<'EOF'
+   ## Documentation Review Complete
+
+   This issue contains **documentation-only changes**. No additional documentation generation required.
+
+   ### Files Modified:
+   [List of changed .md/.mdx/docs/ files]
+
+   ### Status:
+   ✅ Documentation changes are ready for review and merge.
+
+   ---
+   Ready to merge!
+   EOF
+   )"
+   ```
+
+2. **Exit without generating template documentation.**
+
+**Skip to end of workflow** - do not proceed to Section 2 (Auto-Detect Documentation Type) or beyond.
 
 ### 2. Auto-Detect Documentation Type
 
@@ -238,6 +288,8 @@ Before completing, verify:
 - [ ] Filename follows naming convention
 - [ ] Correct folder (`docs/admin/` vs `docs/features/`)
 - [ ] Summary comment posted to issue
+
+**Note:** For documentation-only issues (detected in Step 4), skip this checklist and use the simplified confirmation comment from Section 2a instead.
 
 ## Workflow Integration
 
