@@ -66,6 +66,29 @@ Invocation:
 
 - `/qa 123`: Treat `123` as the GitHub issue/PR identifier in context.
 - `/qa <freeform description>`: Treat the text as context about the change to review.
+- `/qa 123 --parallel`: Force parallel agent execution (faster, higher token usage).
+- `/qa 123 --sequential`: Force sequential agent execution (slower, lower token usage).
+
+### Agent Execution Mode
+
+Before spawning quality check agents, determine the execution mode:
+
+1. **Check for CLI flag override:**
+   - `--parallel` → Use parallel execution
+   - `--sequential` → Use sequential execution
+
+2. **If no flag, read project settings:**
+   ```bash
+   # Read agents.parallel from .sequant/settings.json
+   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   ```
+
+3. **Default:** Sequential (cost-optimized)
+
+| Mode | Token Usage | Speed | Best For |
+|------|-------------|-------|----------|
+| Sequential | 1x (baseline) | Slower | Limited API plans, single issues |
+| Parallel | ~2-3x | ~50% faster | Unlimited plans, batch operations |
 
 ### Pre-flight Sync Check
 
@@ -148,11 +171,15 @@ If no feature worktree exists (work was done directly on main):
 
 4. **Run quality checks** on the current branch instead of comparing to a worktree.
 
-### Parallel Quality Checks (Multi-Agent)
+### Quality Checks (Multi-Agent)
 
-Before detailed manual review, run quality checks in parallel using specialized agents.
+Before detailed manual review, run quality checks using specialized agents.
 
-**Spawn agents in a SINGLE message:**
+**Execution mode:** Respect the agent execution mode determined above (see "Agent Execution Mode" section).
+
+#### If parallel mode enabled:
+
+**Spawn all agents in a SINGLE message:**
 
 ```
 Task(subagent_type="quality-checker", model="haiku",
@@ -161,6 +188,24 @@ Task(subagent_type="quality-checker", model="haiku",
 Task(subagent_type="quality-checker", model="haiku",
      prompt="Run scope and size checks. Report: files count, diff size, size assessment.")
 
+Task(subagent_type="quality-checker", model="haiku",
+     prompt="Run security scan on changed files. Report: critical/warning/info counts, verdict.")
+```
+
+#### If sequential mode (default):
+
+**Run checks one at a time, waiting for each to complete:**
+
+```
+# First: Type safety check
+Task(subagent_type="quality-checker", model="haiku",
+     prompt="Run type safety and deleted tests checks. Report: type issues count, deleted tests, verdict.")
+
+# Wait for result, then: Scope check
+Task(subagent_type="quality-checker", model="haiku",
+     prompt="Run scope and size checks. Report: files count, diff size, size assessment.")
+
+# Wait for result, then: Security scan
 Task(subagent_type="quality-checker", model="haiku",
      prompt="Run security scan on changed files. Report: critical/warning/info counts, verdict.")
 ```

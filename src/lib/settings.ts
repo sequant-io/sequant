@@ -33,6 +33,27 @@ export interface RotationSettings {
 }
 
 /**
+ * Agent execution settings
+ *
+ * Controls how sub-agents are spawned in multi-issue skills.
+ * Affects token usage and execution speed.
+ */
+export interface AgentSettings {
+  /**
+   * Run agents in parallel (faster, higher token usage).
+   * When false, agents run sequentially (slower, lower token usage).
+   * Default: false (cost-optimized)
+   */
+  parallel: boolean;
+  /**
+   * Default model for sub-agents.
+   * Options: "haiku" (cheapest), "sonnet" (balanced), "opus" (most capable)
+   * Default: "haiku"
+   */
+  model: "haiku" | "sonnet" | "opus";
+}
+
+/**
  * Run command settings
  */
 export interface RunSettings {
@@ -64,6 +85,8 @@ export interface SequantSettings {
   version: string;
   /** Run command settings */
   run: RunSettings;
+  /** Agent execution settings */
+  agents: AgentSettings;
 }
 
 /**
@@ -73,6 +96,14 @@ export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
   enabled: true,
   maxSizeMB: 10,
   maxFiles: 100,
+};
+
+/**
+ * Default agent settings (cost-optimized)
+ */
+export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
+  parallel: false,
+  model: "haiku",
 };
 
 /**
@@ -91,6 +122,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     smartTests: true,
     rotation: DEFAULT_ROTATION_SETTINGS,
   },
+  agents: DEFAULT_AGENT_SETTINGS,
 };
 
 /**
@@ -113,6 +145,10 @@ export async function getSettings(): Promise<SequantSettings> {
       run: {
         ...DEFAULT_SETTINGS.run,
         ...parsed.run,
+      },
+      agents: {
+        ...DEFAULT_AGENT_SETTINGS,
+        ...parsed.agents,
       },
     };
   } catch {

@@ -45,7 +45,34 @@ When invoked as `/merger <issue-numbers>`, you:
 
 # Dry run - show what would happen
 /merger 10 12 --dry-run
+
+# Force parallel validation of multiple issues (faster, higher token usage)
+/merger 10 12 --parallel
+
+# Force sequential validation (slower, lower token usage)
+/merger 10 12 --sequential
 ```
+
+## Agent Execution Mode
+
+When processing multiple issues, determine the execution mode for validation checks:
+
+1. **Check for CLI flag override:**
+   - `--parallel` → Validate all issues in parallel (spawn agents simultaneously)
+   - `--sequential` → Validate issues one at a time
+
+2. **If no flag, read project settings:**
+   ```bash
+   # Read agents.parallel from .sequant/settings.json
+   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   ```
+
+3. **Default:** Sequential (cost-optimized)
+
+| Mode | Token Usage | Speed | Best For |
+|------|-------------|-------|----------|
+| Sequential | 1x (baseline) | Slower | Limited API plans, 1-2 issues |
+| Parallel | ~Nx (N=issues) | ~50% faster | Unlimited plans, batch merges |
 
 ## Workflow
 
