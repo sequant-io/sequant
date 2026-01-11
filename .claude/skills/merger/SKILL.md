@@ -114,11 +114,15 @@ If overlapping files found:
 #### For clean merges (no conflicts):
 
 ```bash
+# IMPORTANT: Remove worktree BEFORE merge (prevents --delete-branch failure)
+worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}')
+if [[ -n "$worktree_path" ]]; then
+  git worktree remove "$worktree_path" --force
+  git branch -D "feature/$ISSUE-"* 2>/dev/null || true
+fi
+
 # Merge PR using squash
 gh pr merge <PR_NUMBER> --squash --delete-branch
-
-# Clean up worktree
-./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
 ```
 
 #### For conflicting changes (integration branch):
@@ -146,16 +150,17 @@ npm run build
 gh pr create --title "feat: Integrate #<issue1> and #<issue2>" --body "..."
 ```
 
-### Step 6: Cleanup
+### Step 6: Post-Merge Verification
 
 After successful merge:
 
 ```bash
-# Remove worktree
-git worktree remove <worktree-path>
+# Pull merged changes to main
+git checkout main
+git pull origin main
 
-# Delete local branch (if not already deleted)
-git branch -D <branch-name>
+# Verify worktree was cleaned up
+git worktree list  # Should not show the merged feature branch
 
 # Remote branch is deleted by --delete-branch flag
 ```
