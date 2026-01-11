@@ -23,7 +23,7 @@
     "build": "tsc",
     "dev": "tsx bin/cli.ts",
     "test": "vitest run",
-    "lint": "eslint src/ bin/",
+    "lint": "eslint src/ bin/ --max-warnings 0",
     "sync:skills": "cp -r templates/skills/* .claude/skills/",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
     "prepublishOnly": "npm run build"

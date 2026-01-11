@@ -6,7 +6,6 @@ import {
   PhaseLogSchema,
   IssueLogSchema,
   RunConfigSchema,
-  RunSummarySchema,
   RunLogSchema,
   LOG_PATHS,
   generateLogFilename,
@@ -14,8 +13,6 @@ import {
   createPhaseLog,
   completePhaseLog,
   finalizeRunLog,
-  type Phase,
-  type PhaseStatus,
   type RunConfig,
   type PhaseLog,
   type IssueLog,
@@ -163,6 +160,7 @@ describe("Zod Schemas", () => {
     });
 
     it("rejects missing required fields", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { title, ...withoutTitle } = validIssueLog;
       expect(() => IssueLogSchema.parse(withoutTitle)).toThrow();
     });

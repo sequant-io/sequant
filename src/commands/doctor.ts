@@ -14,11 +14,6 @@ import {
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
 
-// eslint-disable-next-line @typescript-eslint/no-empty-interface
-interface DoctorOptions {
-  // Reserved for future use
-}
-
 interface Check {
   name: string;
   status: "pass" | "warn" | "fail";
@@ -26,7 +21,7 @@ interface Check {
   fix?: () => Promise<void>;
 }
 
-export async function doctorCommand(options: DoctorOptions): Promise<void> {
+export async function doctorCommand(): Promise<void> {
   console.log(chalk.blue("\n🔍 Running health checks...\n"));
 
   const checks: Check[] = [];
