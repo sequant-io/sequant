@@ -41,6 +41,29 @@ describe("system utilities", () => {
         stdio: "ignore",
       });
     });
+
+    it("returns false for invalid command names (injection prevention)", () => {
+      // Commands with shell metacharacters should be rejected
+      expect(commandExists("gh; echo test")).toBe(false);
+      expect(commandExists("gh && echo")).toBe(false);
+      expect(commandExists("gh$(echo)")).toBe(false);
+      expect(commandExists("")).toBe(false);
+      expect(commandExists("gh | cat")).toBe(false);
+      expect(commandExists("gh > file")).toBe(false);
+      expect(commandExists("gh < file")).toBe(false);
+      expect(commandExists("gh\necho")).toBe(false);
+
+      // execSync should NOT be called for invalid inputs
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
+
+    it("allows valid command names with hyphens and underscores", () => {
+      mockExecSync.mockReturnValue(Buffer.from("/usr/bin/my-command"));
+
+      expect(commandExists("my-command")).toBe(true);
+      expect(commandExists("my_command")).toBe(true);
+      expect(commandExists("command123")).toBe(true);
+    });
   });
 
   describe("isGhAuthenticated", () => {
@@ -99,6 +122,23 @@ describe("system utilities", () => {
 
     it("returns generic hint for unknown package", () => {
       expect(getInstallHint("unknown-package")).toBe("Install unknown-package");
+    });
+
+    it("returns npm hint for claude on any platform", () => {
+      Object.defineProperty(process, "platform", { value: "darwin" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
+
+      Object.defineProperty(process, "platform", { value: "linux" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
+
+      Object.defineProperty(process, "platform", { value: "win32" });
+      expect(getInstallHint("claude")).toContain(
+        "npm install -g @anthropic-ai/claude-code",
+      );
     });
   });
 });
