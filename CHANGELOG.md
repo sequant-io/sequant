@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-01-11
+
+### Added
+
+- Graceful shutdown for `sequant run` with proper signal handling (#74)
+- Context7 and Sequential Thinking MCP integration into skill workflows (#75)
+- Configurable parallel agent mode for cost-conscious users (#68)
+- Integration test for `sequant doctor` command (#60)
+- ESLint with rule to catch `require()` in ESM modules (#59)
+- Skip `/docs` generation for documentation-only issues (#66)
+- Standardized issue labeling with templates and AI suggestions (#51)
+
+### Fixed
+
+- Worktree lookup in pre-merge cleanup hook
+- Auto-cleanup worktree before `gh pr merge`
+
 ## [1.4.0] - 2026-01-11
 
 ### Added
