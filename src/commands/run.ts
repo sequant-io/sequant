@@ -27,6 +27,7 @@ import {
   IssueResult,
   PhaseResult,
 } from "../lib/workflow/types.js";
+import { ShutdownManager } from "../lib/shutdown.js";
 
 /**
  * Worktree information for an issue
@@ -530,6 +531,7 @@ async function executePhase(
   config: ExecutionConfig,
   sessionId?: string,
   worktreePath?: string,
+  shutdownManager?: ShutdownManager,
 ): Promise<PhaseResult & { sessionId?: string }> {
   const startTime = Date.now();
 
@@ -559,11 +561,26 @@ async function executePhase(
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
 
   try {
+    // Check if shutdown is in progress
+    if (shutdownManager?.shuttingDown) {
+      return {
+        phase,
+        success: false,
+        durationSeconds: 0,
+        error: "Shutdown in progress",
+      };
+    }
+
     // Create abort controller for timeout
     const abortController = new AbortController();
     const timeoutId = setTimeout(() => {
       abortController.abort();
     }, config.phaseTimeout * 1000);
+
+    // Register abort controller with shutdown manager for graceful shutdown
+    if (shutdownManager) {
+      shutdownManager.setAbortController(abortController);
+    }
 
     let resultSessionId: string | undefined;
     let resultMessage: SDKResultMessage | undefined;
@@ -644,6 +661,11 @@ async function executePhase(
     }
 
     clearTimeout(timeoutId);
+
+    // Clear abort controller from shutdown manager
+    if (shutdownManager) {
+      shutdownManager.clearAbortController();
+    }
 
     const durationSeconds = (Date.now() - startTime) / 1000;
 
@@ -1064,6 +1086,17 @@ export async function runCommand(
     await logWriter.initialize(runConfig);
   }
 
+  // Initialize shutdown manager for graceful interruption handling
+  const shutdown = new ShutdownManager();
+
+  // Register log writer finalization as cleanup task
+  if (logWriter) {
+    const writer = logWriter; // Capture for closure
+    shutdown.registerCleanup("Finalize run logs", async () => {
+      await writer.finalize();
+    });
+  }
+
   // Display configuration
   console.log(chalk.gray(`  Stack: ${manifest.stack}`));
   if (autoDetectPhases) {
@@ -1127,165 +1160,215 @@ export async function runCommand(
       config.verbose,
       manifest.packageManager,
     );
+
+    // Register cleanup tasks for newly created worktrees (not pre-existing ones)
+    for (const [issueNum, worktree] of worktreeMap.entries()) {
+      if (!worktree.existed) {
+        shutdown.registerCleanup(
+          `Cleanup worktree for #${issueNum}`,
+          async () => {
+            // Remove worktree (leaves branch intact for recovery)
+            const result = spawnSync(
+              "git",
+              ["worktree", "remove", "--force", worktree.path],
+              {
+                stdio: "pipe",
+              },
+            );
+            if (result.status !== 0 && config.verbose) {
+              console.log(
+                chalk.yellow(
+                  `    Warning: Could not remove worktree ${worktree.path}`,
+                ),
+              );
+            }
+          },
+        );
+      }
+    }
   }
 
-  // Execute
+  // Execute with graceful shutdown handling
   const results: IssueResult[] = [];
+  let exitCode = 0;
 
-  if (batches) {
-    // Batch execution: run batches sequentially, issues within batch based on mode
-    for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-      const batch = batches[batchIdx];
-      console.log(
-        chalk.blue(
-          `\n  Batch ${batchIdx + 1}/${batches.length}: Issues ${batch.map((n) => `#${n}`).join(", ")}`,
-        ),
-      );
-
-      const batchResults = await executeBatch(
-        batch,
-        config,
-        logWriter,
-        mergedOptions,
-        issueInfoMap,
-        worktreeMap,
-      );
-      results.push(...batchResults);
-
-      // Check if batch failed and we should stop
-      const batchFailed = batchResults.some((r) => !r.success);
-      if (batchFailed && config.sequential) {
+  try {
+    if (batches) {
+      // Batch execution: run batches sequentially, issues within batch based on mode
+      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        const batch = batches[batchIdx];
         console.log(
-          chalk.yellow(
-            `\n  ⚠️  Batch ${batchIdx + 1} failed, stopping batch execution`,
+          chalk.blue(
+            `\n  Batch ${batchIdx + 1}/${batches.length}: Issues ${batch.map((n) => `#${n}`).join(", ")}`,
           ),
         );
-        break;
-      }
-    }
-  } else if (config.sequential) {
-    // Sequential execution
-    for (const issueNumber of issueNumbers) {
-      const issueInfo = issueInfoMap.get(issueNumber) ?? {
-        title: `Issue #${issueNumber}`,
-        labels: [],
-      };
-      const worktreeInfo = worktreeMap.get(issueNumber);
 
-      // Start issue logging
-      if (logWriter) {
-        logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
-      }
-
-      const result = await runIssueWithLogging(
-        issueNumber,
-        config,
-        logWriter,
-        issueInfo.labels,
-        mergedOptions,
-        worktreeInfo?.path,
-      );
-      results.push(result);
-
-      // Complete issue logging
-      if (logWriter) {
-        logWriter.completeIssue();
-      }
-
-      if (!result.success) {
-        console.log(
-          chalk.yellow(
-            `\n  ⚠️  Issue #${issueNumber} failed, stopping sequential execution`,
-          ),
+        const batchResults = await executeBatch(
+          batch,
+          config,
+          logWriter,
+          mergedOptions,
+          issueInfoMap,
+          worktreeMap,
+          shutdown,
         );
-        break;
+        results.push(...batchResults);
+
+        // Check if batch failed and we should stop
+        const batchFailed = batchResults.some((r) => !r.success);
+        if (batchFailed && config.sequential) {
+          console.log(
+            chalk.yellow(
+              `\n  ⚠️  Batch ${batchIdx + 1} failed, stopping batch execution`,
+            ),
+          );
+          break;
+        }
+      }
+    } else if (config.sequential) {
+      // Sequential execution
+      for (const issueNumber of issueNumbers) {
+        const issueInfo = issueInfoMap.get(issueNumber) ?? {
+          title: `Issue #${issueNumber}`,
+          labels: [],
+        };
+        const worktreeInfo = worktreeMap.get(issueNumber);
+
+        // Start issue logging
+        if (logWriter) {
+          logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
+        }
+
+        const result = await runIssueWithLogging(
+          issueNumber,
+          config,
+          logWriter,
+          issueInfo.labels,
+          mergedOptions,
+          worktreeInfo?.path,
+          shutdown,
+        );
+        results.push(result);
+
+        // Complete issue logging
+        if (logWriter) {
+          logWriter.completeIssue();
+        }
+
+        // Check if shutdown was triggered
+        if (shutdown.shuttingDown) {
+          break;
+        }
+
+        if (!result.success) {
+          console.log(
+            chalk.yellow(
+              `\n  ⚠️  Issue #${issueNumber} failed, stopping sequential execution`,
+            ),
+          );
+          break;
+        }
+      }
+    } else {
+      // Parallel execution (for now, just run sequentially but don't stop on failure)
+      // TODO: Add proper parallel execution with listr2
+      for (const issueNumber of issueNumbers) {
+        // Check if shutdown was triggered
+        if (shutdown.shuttingDown) {
+          break;
+        }
+
+        const issueInfo = issueInfoMap.get(issueNumber) ?? {
+          title: `Issue #${issueNumber}`,
+          labels: [],
+        };
+        const worktreeInfo = worktreeMap.get(issueNumber);
+
+        // Start issue logging
+        if (logWriter) {
+          logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
+        }
+
+        const result = await runIssueWithLogging(
+          issueNumber,
+          config,
+          logWriter,
+          issueInfo.labels,
+          mergedOptions,
+          worktreeInfo?.path,
+          shutdown,
+        );
+        results.push(result);
+
+        // Complete issue logging
+        if (logWriter) {
+          logWriter.completeIssue();
+        }
       }
     }
-  } else {
-    // Parallel execution (for now, just run sequentially but don't stop on failure)
-    // TODO: Add proper parallel execution with listr2
-    for (const issueNumber of issueNumbers) {
-      const issueInfo = issueInfoMap.get(issueNumber) ?? {
-        title: `Issue #${issueNumber}`,
-        labels: [],
-      };
-      const worktreeInfo = worktreeMap.get(issueNumber);
 
-      // Start issue logging
-      if (logWriter) {
-        logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
-      }
-
-      const result = await runIssueWithLogging(
-        issueNumber,
-        config,
-        logWriter,
-        issueInfo.labels,
-        mergedOptions,
-        worktreeInfo?.path,
-      );
-      results.push(result);
-
-      // Complete issue logging
-      if (logWriter) {
-        logWriter.completeIssue();
-      }
+    // Finalize log
+    let logPath: string | null = null;
+    if (logWriter) {
+      logPath = await logWriter.finalize();
     }
-  }
 
-  // Finalize log
-  let logPath: string | null = null;
-  if (logWriter) {
-    logPath = await logWriter.finalize();
-  }
+    // Summary
+    console.log(chalk.blue("\n" + "━".repeat(50)));
+    console.log(chalk.blue("  Summary"));
+    console.log(chalk.blue("━".repeat(50)));
 
-  // Summary
-  console.log(chalk.blue("\n" + "━".repeat(50)));
-  console.log(chalk.blue("  Summary"));
-  console.log(chalk.blue("━".repeat(50)));
+    const passed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
 
-  const passed = results.filter((r) => r.success).length;
-  const failed = results.filter((r) => !r.success).length;
-
-  console.log(
-    chalk.gray(
-      `\n  Results: ${chalk.green(`${passed} passed`)}, ${chalk.red(`${failed} failed`)}`,
-    ),
-  );
-
-  for (const result of results) {
-    const status = result.success ? chalk.green("✓") : chalk.red("✗");
-    const duration = result.durationSeconds
-      ? chalk.gray(` (${formatDuration(result.durationSeconds)})`)
-      : "";
-    const phases = result.phaseResults
-      .map((p) => (p.success ? chalk.green(p.phase) : chalk.red(p.phase)))
-      .join(" → ");
-    const loopInfo = result.loopTriggered ? chalk.yellow(" [loop]") : "";
     console.log(
-      `  ${status} #${result.issueNumber}: ${phases}${loopInfo}${duration}`,
-    );
-  }
-
-  console.log("");
-
-  if (logPath) {
-    console.log(chalk.gray(`  📝 Log: ${logPath}`));
-    console.log("");
-  }
-
-  if (config.dryRun) {
-    console.log(
-      chalk.yellow(
-        "  ℹ️  This was a dry run. Use without --dry-run to execute.",
+      chalk.gray(
+        `\n  Results: ${chalk.green(`${passed} passed`)}, ${chalk.red(`${failed} failed`)}`,
       ),
     );
+
+    for (const result of results) {
+      const status = result.success ? chalk.green("✓") : chalk.red("✗");
+      const duration = result.durationSeconds
+        ? chalk.gray(` (${formatDuration(result.durationSeconds)})`)
+        : "";
+      const phases = result.phaseResults
+        .map((p) => (p.success ? chalk.green(p.phase) : chalk.red(p.phase)))
+        .join(" → ");
+      const loopInfo = result.loopTriggered ? chalk.yellow(" [loop]") : "";
+      console.log(
+        `  ${status} #${result.issueNumber}: ${phases}${loopInfo}${duration}`,
+      );
+    }
+
     console.log("");
+
+    if (logPath) {
+      console.log(chalk.gray(`  📝 Log: ${logPath}`));
+      console.log("");
+    }
+
+    if (config.dryRun) {
+      console.log(
+        chalk.yellow(
+          "  ℹ️  This was a dry run. Use without --dry-run to execute.",
+        ),
+      );
+      console.log("");
+    }
+
+    // Set exit code if any failed
+    if (failed > 0 && !config.dryRun) {
+      exitCode = 1;
+    }
+  } finally {
+    // Always dispose shutdown manager to clean up signal handlers
+    shutdown.dispose();
   }
 
-  // Exit with error if any failed
-  if (failed > 0 && !config.dryRun) {
-    process.exit(1);
+  // Exit with error if any failed (outside try/finally so dispose() runs first)
+  if (exitCode !== 0) {
+    process.exit(exitCode);
   }
 }
 
@@ -1299,10 +1382,16 @@ async function executeBatch(
   options: RunOptions,
   issueInfoMap: Map<number, { title: string; labels: string[] }>,
   worktreeMap: Map<number, WorktreeInfo>,
+  shutdownManager?: ShutdownManager,
 ): Promise<IssueResult[]> {
   const results: IssueResult[] = [];
 
   for (const issueNumber of issueNumbers) {
+    // Check if shutdown was triggered
+    if (shutdownManager?.shuttingDown) {
+      break;
+    }
+
     const issueInfo = issueInfoMap.get(issueNumber) ?? {
       title: `Issue #${issueNumber}`,
       labels: [],
@@ -1321,6 +1410,7 @@ async function executeBatch(
       issueInfo.labels,
       options,
       worktreeInfo?.path,
+      shutdownManager,
     );
     results.push(result);
 
@@ -1343,6 +1433,7 @@ async function runIssueWithLogging(
   labels: string[],
   options: RunOptions,
   worktreePath?: string,
+  shutdownManager?: ShutdownManager,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -1383,6 +1474,7 @@ async function runIssueWithLogging(
         config,
         sessionId,
         worktreePath, // Will be ignored for spec (non-isolated phase)
+        shutdownManager,
       );
       const specEndTime = new Date();
 
@@ -1508,6 +1600,7 @@ async function runIssueWithLogging(
         config,
         sessionId,
         worktreePath,
+        shutdownManager,
       );
       const phaseEndTime = new Date();
 
@@ -1554,6 +1647,7 @@ async function runIssueWithLogging(
             config,
             sessionId,
             worktreePath,
+            shutdownManager,
           );
           phaseResults.push(loopResult);
 
