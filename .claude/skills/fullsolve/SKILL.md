@@ -15,9 +15,9 @@ allowed-tools:
   - TodoWrite
   - Task
   # Optional MCP tools (enhanced functionality if available)
-  # - mcp__chrome-devtools__* (browser testing)
-  # - mcp__sequential-thinking__* (complex reasoning)
-  # - mcp__context7__* (library documentation)
+  - mcp__chrome-devtools__*  # Browser testing - falls back to manual checklist if unavailable
+  - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
+  - mcp__context7__*  # Library documentation - falls back to web search if unavailable
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
   - Bash(gh issue edit:*)
@@ -190,6 +190,28 @@ Parse issue body and comments to build AC checklist:
 - Identify complexity and risks
 - Post plan comment to issue
 
+**Use Sequential Thinking for Complex Planning:**
+
+If the issue involves architectural decisions or multiple valid approaches, use Sequential Thinking MCP:
+
+```javascript
+// For complex issues with multiple implementation paths
+mcp__sequential-thinking__sequentialthinking({
+  thought: "Analyzing implementation approaches for [feature]. Options: 1) [Approach A] - pros/cons. 2) [Approach B] - pros/cons. 3) [Approach C] - pros/cons...",
+  thoughtNumber: 1,
+  totalThoughts: 4,
+  nextThoughtNeeded: true
+})
+```
+
+**When to use Sequential Thinking in planning:**
+- Issue labeled `complex`, `refactor`, or `architecture`
+- 3+ valid implementation approaches exist
+- Unclear trade-offs between options
+- Previous implementation attempt failed
+
+**Fallback:** If Sequential Thinking unavailable, document pros/cons explicitly in the plan comment.
+
 ### 1.4 Create Feature Worktree
 
 ```bash
@@ -209,23 +231,52 @@ Parse issue body and comments to build AC checklist:
 cd ../worktrees/feature/<issue-number>-*/
 ```
 
-### 2.2 Implement Each AC Item
+### 2.2 MCP Availability Check (Optional Enhancement)
+
+Before implementation, check MCP tool availability for enhanced workflow:
+
+```markdown
+**Available MCPs:**
+- [ ] Context7 (`mcp__context7__*`) - For external library documentation
+- [ ] Sequential Thinking (`mcp__sequential-thinking__*`) - For complex decisions
+- [ ] Chrome DevTools (`mcp__chrome-devtools__*`) - For browser testing in Phase 3
+```
+
+**If MCPs unavailable:** Continue with standard implementation - fallback strategies documented in `/exec` skill.
+
+### 2.3 Implement Each AC Item
 
 For each AC item:
 1. Understand requirement
-2. Find similar patterns in codebase
-3. Implement minimal solution
-4. Run tests and build
-5. Mark AC as complete
+2. Find similar patterns in codebase (use Glob/Grep first)
+3. **If using unfamiliar library:** Use Context7 for documentation lookup
+4. **If facing complex decision:** Use Sequential Thinking to analyze approaches
+5. Implement minimal solution
+6. Run tests and build
+7. Mark AC as complete
 
-### 2.3 Quality Gates
+**MCP Usage in Implementation Loop:**
+
+```
+For each AC item:
+│
+├─ Need external library API? → Use Context7 (if available)
+│   └─ Fallback: WebSearch for documentation
+│
+├─ Multiple valid approaches? → Use Sequential Thinking (if available)
+│   └─ Fallback: Explicit pros/cons analysis in response
+│
+└─ Standard implementation → Use Glob/Grep for patterns
+```
+
+### 2.4 Quality Gates
 
 After implementation:
 - `npm test` - All tests pass
 - `npm run build` - Build succeeds
 - `git diff` - Changes are proportional
 
-### 2.4 Final Verification (CRITICAL)
+### 2.5 Final Verification (CRITICAL)
 
 **After ALL implementation changes are complete**, run verification one more time:
 

@@ -34,7 +34,8 @@ allowed-tools:
   - Bash(gh pr create:*)
   - Bash(gh pr view:*)
   # Optional MCP tools (enhanced functionality if available)
-  # - mcp__context7__* (library documentation lookup)
+  - mcp__context7__*  # Library documentation lookup - falls back to web search if unavailable
+  - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
   # Task management
   - Task
   - TodoWrite
@@ -308,28 +309,176 @@ If `gh pr view` fails after retry:
 
 If you discover a new framework-specific issue that caused debugging time, add it to the gotchas file following the template.
 
-### Using Optional MCP Tools
+### MCP Tools Integration
 
-If available, these MCP tools can enhance implementation:
+This section covers optional MCP tools that enhance implementation quality when available.
 
-**Context7** (mcp__context7__*) - For understanding external libraries:
-- Learning unfamiliar npm package APIs
-- Understanding third-party library patterns
-- Resolving library-specific type issues
-- **NOT for:** Project's own codebase (use Glob/Grep instead)
+#### MCP Availability Check
 
-**Sequential Thinking** (mcp__sequential-thinking__*) - For complex reasoning:
-- Novel algorithms or data structures
-- Ambiguous requirements needing exploration
-- Complex business logic with multiple edge cases
-- **NOT for:** Standard CRUD operations, straightforward feature additions
+**Before using MCP tools**, verify they are available in your session. If unavailable, use the documented fallback behavior.
 
-**Database MCP tools** - If your project uses a database MCP:
+```markdown
+**MCP Status Check (perform at session start):**
+- [ ] Context7: Try `mcp__context7__resolve-library-id` - if available, proceed
+- [ ] Sequential Thinking: Try `mcp__sequential-thinking__sequentialthinking` - if available, proceed
+- [ ] Chrome DevTools: Try `mcp__chrome-devtools__take_snapshot` - if available, proceed
+
+If any MCP is unavailable, use fallback strategies documented below.
+```
+
+---
+
+#### Context7 - Library Documentation Lookup
+
+**Tool Names:**
+- `mcp__context7__resolve-library-id` - Resolve package name to Context7 library ID
+- `mcp__context7__query-docs` - Query documentation for a specific library
+
+**When to Use Context7:**
+
+| Trigger | Example | Action |
+|---------|---------|--------|
+| Unfamiliar npm package API | First time using `ag-grid-react` | Use Context7 |
+| Library version upgrade | Migrating from v1 to v2 of a library | Use Context7 |
+| Type errors from third-party lib | `Property 'X' does not exist on type 'Y'` from library | Use Context7 |
+| Missing documentation in code | Library patterns not in codebase | Use Context7 |
+| **Skip** - Patterns in codebase | Similar usage exists in project | Use Grep/Glob first |
+| **Skip** - Standard Node/Browser APIs | `fs`, `path`, `fetch`, `Promise` | Skip Context7 |
+| **Skip** - Project's own code | Internal modules, utils, components | Use Grep/Glob |
+
+**How to Use Context7:**
+
+```javascript
+// Step 1: Resolve library name to Context7 ID
+mcp__context7__resolve-library-id({
+  libraryName: "ag-grid-react",
+  query: "How to configure column definitions in AG Grid React"
+})
+// Returns: { libraryId: "/ag-grid/ag-grid", ... }
+
+// Step 2: Query documentation with specific question
+mcp__context7__query-docs({
+  libraryId: "/ag-grid/ag-grid",
+  query: "column definitions with custom cell renderers"
+})
+// Returns: Relevant documentation and code examples
+```
+
+**Decision Flow:**
+
+```
+Need to use external library API?
+│
+├─ YES: Check codebase for existing patterns
+│       │
+│       ├─ Patterns found? → Use Glob/Grep (skip Context7)
+│       │
+│       └─ No patterns? → Use Context7 for documentation
+│
+└─ NO: Skip Context7 (internal code or standard APIs)
+```
+
+**Fallback (if Context7 unavailable):**
+1. Use WebSearch to find official documentation
+2. Search codebase with Grep for existing usage patterns
+3. Check library's GitHub README via WebFetch
+4. Search for `<library-name> example` or `<library-name> typescript`
+
+---
+
+#### Sequential Thinking - Complex Reasoning
+
+**Tool Name:** `mcp__sequential-thinking__sequentialthinking`
+
+**When to Use Sequential Thinking:**
+
+| Trigger | Example | Action |
+|---------|---------|--------|
+| 3+ valid architectural approaches | "Should we use Redux, Context, or Zustand?" | Use Sequential Thinking |
+| Complex debugging with multiple causes | "Tests fail intermittently" | Use Sequential Thinking |
+| Algorithm with edge cases | Implementing rate limiting, caching logic | Use Sequential Thinking |
+| Unclear refactoring boundaries | "How to split this 500-line component?" | Use Sequential Thinking |
+| Issue labeled `complex`, `refactor`, `architecture` | Check issue labels | Consider Sequential Thinking |
+| Previous attempt failed | Already tried one approach, it failed | Use Sequential Thinking to analyze |
+| **Skip** - Simple CRUD | Add/edit/delete with clear requirements | Skip |
+| **Skip** - Following existing patterns | Similar feature exists in codebase | Skip |
+| **Skip** - Clear, unambiguous requirements | "Add a button that calls X" | Skip |
+
+**How to Use Sequential Thinking:**
+
+```javascript
+// Start a thinking chain for complex decisions
+mcp__sequential-thinking__sequentialthinking({
+  thought: "Analyzing authentication flow options. We need to decide between JWT, session-based auth, or OAuth. Let me consider the trade-offs: 1) JWT - stateless, works for API-first, but token revocation is complex. 2) Session-based - simple, secure, but requires sticky sessions for scale. 3) OAuth - good for third-party login, but adds complexity...",
+  thoughtNumber: 1,
+  totalThoughts: 5,
+  nextThoughtNeeded: true
+})
+
+// Continue the chain
+mcp__sequential-thinking__sequentialthinking({
+  thought: "Based on the project requirements (admin dashboard, single tenant), session-based auth seems most appropriate. The trade-offs favor simplicity over scalability at this stage...",
+  thoughtNumber: 2,
+  totalThoughts: 5,
+  nextThoughtNeeded: true
+})
+
+// Conclude with a decision
+mcp__sequential-thinking__sequentialthinking({
+  thought: "Final decision: Implement session-based auth using the existing cookie library. This aligns with the admin-only use case and existing patterns in the codebase.",
+  thoughtNumber: 5,
+  totalThoughts: 5,
+  nextThoughtNeeded: false
+})
+```
+
+**Decision Flow:**
+
+```
+Facing implementation decision?
+│
+├─ Multiple valid approaches (3+)?
+│   │
+│   ├─ YES → Use Sequential Thinking
+│   │
+│   └─ NO → Standard implementation
+│
+├─ Complex algorithm or edge cases?
+│   │
+│   ├─ YES → Use Sequential Thinking
+│   │
+│   └─ NO → Standard implementation
+│
+└─ Previous attempt failed?
+    │
+    ├─ YES → Use Sequential Thinking to analyze
+    │
+    └─ NO → Standard implementation
+```
+
+**Fallback (if Sequential Thinking unavailable):**
+1. Use explicit step-by-step analysis in your response
+2. Create a pros/cons table for each approach
+3. Document trade-offs in issue comments before deciding
+4. Break complex decisions into smaller, sequential questions
+
+---
+
+#### Database MCP Tools
+
+If your project uses a database MCP (e.g., Supabase, Postgres):
 - Verify table schemas before writing queries
 - Check access policies before data access code
 - Validate data models match TypeScript types
 
-**General Rule:** If implementing a feature similar to an existing one, use Glob/Grep to find patterns in the codebase first.
+---
+
+#### General MCP Guidelines
+
+1. **Codebase First:** Always check for existing patterns with Glob/Grep before using MCPs
+2. **Minimal Usage:** Only invoke MCPs when they provide clear value
+3. **Graceful Degradation:** If an MCP is unavailable, use the fallback strategy
+4. **Document Decisions:** When using Sequential Thinking, summarize the conclusion
 
 ### 3. Checks-first Mindset
 

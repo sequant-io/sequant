@@ -14,7 +14,9 @@ allowed-tools:
   - Bash
   - TodoWrite
   # Optional MCP tools (enhanced functionality if available)
-  # - mcp__chrome-devtools__* (browser testing)
+  - mcp__chrome-devtools__*  # Browser testing - falls back to manual verification if unavailable
+  - mcp__sequential-thinking__*  # Complex debugging - falls back to standard analysis if unavailable
+  - mcp__context7__*  # Library documentation - falls back to web search if unavailable
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
   - Bash(npm test:*)
@@ -143,8 +145,51 @@ For each issue found in the log:
 
 1. **Understand the issue:** Read relevant code to understand the problem
 2. **Plan the fix:** Determine minimal change needed
-3. **Implement fix:** Make targeted changes
-4. **Verify locally:** Run `npm test` and `npm run build`
+3. **If complex issue:** Use Sequential Thinking to analyze root cause (see below)
+4. **If unfamiliar library:** Use Context7 for documentation lookup
+5. **Implement fix:** Make targeted changes
+6. **Verify locally:** Run `npm test` and `npm run build`
+
+**Using Sequential Thinking for Complex Debugging:**
+
+If the issue has multiple potential causes or requires deep analysis:
+
+```javascript
+mcp__sequential-thinking__sequentialthinking({
+  thought: "Analyzing test failure: [description]. Potential causes: 1) [Cause A] 2) [Cause B] 3) [Cause C]. Let me examine each...",
+  thoughtNumber: 1,
+  totalThoughts: 4,
+  nextThoughtNeeded: true
+})
+```
+
+**When to use Sequential Thinking in loop:**
+- Test failures with unclear root cause
+- Multiple potential fixes exist
+- Previous fix attempt failed
+- Issue spans multiple files/components
+
+**Fallback:** If Sequential Thinking unavailable, document analysis steps explicitly in your response.
+
+**Using Context7 for Library-Related Fixes:**
+
+If the issue involves third-party library behavior:
+
+```javascript
+// Resolve library to Context7 ID
+mcp__context7__resolve-library-id({
+  libraryName: "package-name",
+  query: "error message or behavior"
+})
+
+// Query for solution
+mcp__context7__query-docs({
+  libraryId: "/org/package",
+  query: "specific problem description"
+})
+```
+
+**Fallback:** If Context7 unavailable, use WebSearch for documentation.
 
 **Quality Standards (from /exec):**
 - Make minimal, focused changes
