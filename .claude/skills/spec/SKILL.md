@@ -45,22 +45,34 @@ When called like `/spec <freeform description>`:
 
 **Planning Phase:** No worktree needed. Planning happens in the main repository directory. The worktree will be created during the execution phase (`/exec`).
 
-### Parallel Context Gathering
+### Parallel Context Gathering — REQUIRED
 
-Before planning, gather context using parallel agents:
+**You MUST spawn sub-agents for context gathering.** Do NOT explore the codebase inline with Glob/Grep commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
 
-```
-Task(subagent_type="pattern-scout", model="haiku",
-     prompt="Find similar features. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")
-
-Task(subagent_type="Explore", model="haiku",
-     prompt="Explore [CODEBASE AREA]. Find: main components, data flow, key files. Report structure.")
-
-Task(subagent_type="schema-inspector", model="haiku",
-     prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")
+**Check agent execution mode first:**
+```bash
+parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
 ```
 
-**Important:** Spawn all agents in a SINGLE message for parallel execution.
+#### If parallel mode enabled:
+
+**Spawn ALL THREE agents in a SINGLE message:**
+
+1. `Task(subagent_type="pattern-scout", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+
+2. `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+
+3. `Task(subagent_type="schema-inspector", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+
+#### If sequential mode (default):
+
+**Spawn each agent ONE AT A TIME, waiting for each to complete:**
+
+1. **First:** `Task(subagent_type="pattern-scout", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+
+2. **After #1 completes:** `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+
+3. **After #2 completes:** `Task(subagent_type="schema-inspector", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
 
 ### In-Flight Work Analysis (Conflict Detection)
 

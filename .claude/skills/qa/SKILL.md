@@ -171,44 +171,31 @@ If no feature worktree exists (work was done directly on main):
 
 4. **Run quality checks** on the current branch instead of comparing to a worktree.
 
-### Quality Checks (Multi-Agent)
+### Quality Checks (Multi-Agent) — REQUIRED
 
-Before detailed manual review, run quality checks using specialized agents.
+**You MUST spawn sub-agents for quality checks.** Do NOT run these checks inline with bash commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
 
 **Execution mode:** Respect the agent execution mode determined above (see "Agent Execution Mode" section).
 
 #### If parallel mode enabled:
 
-**Spawn all agents in a SINGLE message:**
+**Spawn ALL THREE agents in a SINGLE message (one Tool call per agent, all in same response):**
 
-```
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run type safety and deleted tests checks. Report: type issues count, deleted tests, verdict.")
+1. `Task(subagent_type="quality-checker", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run scope and size checks. Report: files count, diff size, size assessment.")
+2. `Task(subagent_type="quality-checker", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run security scan on changed files. Report: critical/warning/info counts, verdict.")
-```
+3. `Task(subagent_type="quality-checker", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 #### If sequential mode (default):
 
-**Run checks one at a time, waiting for each to complete:**
+**Spawn each agent ONE AT A TIME, waiting for each to complete before the next:**
 
-```
-# First: Type safety check
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run type safety and deleted tests checks. Report: type issues count, deleted tests, verdict.")
+1. **First:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-# Wait for result, then: Scope check
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run scope and size checks. Report: files count, diff size, size assessment.")
+2. **After #1 completes:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-# Wait for result, then: Security scan
-Task(subagent_type="quality-checker", model="haiku",
-     prompt="Run security scan on changed files. Report: critical/warning/info counts, verdict.")
-```
+3. **After #2 completes:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 **Add RLS check if admin files modified:**
 ```bash
@@ -270,9 +257,9 @@ Provide an overall verdict:
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict criteria.
 
-## Automated Quality Checks
+## Automated Quality Checks (Reference)
 
-Run these before detailed review (or use parallel agents above):
+**Note:** These commands are what the sub-agents execute internally. You do NOT run these directly — the sub-agents spawned above handle this. This section is reference documentation only.
 
 ```bash
 # Type safety
