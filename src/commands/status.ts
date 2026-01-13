@@ -3,7 +3,7 @@
  */
 
 import chalk from "chalk";
-import { getManifest } from "../lib/manifest.js";
+import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { fileExists } from "../lib/fs.js";
 import { readdir } from "fs/promises";
 
@@ -11,7 +11,7 @@ export async function statusCommand(): Promise<void> {
   console.log(chalk.bold("\n📊 Sequant Status\n"));
 
   // Package version
-  console.log(chalk.gray("Package version: 0.1.0"));
+  console.log(chalk.gray(`Package version: ${getPackageVersion()}`));
 
   // Check initialization
   const manifest = await getManifest();

@@ -33,6 +33,10 @@ function findPackageJson(): string {
 const pkg = JSON.parse(findPackageJson());
 const PACKAGE_VERSION = pkg.version as string;
 
+export function getPackageVersion(): string {
+  return PACKAGE_VERSION;
+}
+
 export interface Manifest {
   version: string;
   stack: string;
