@@ -1,3 +1,33 @@
+---
+name: release
+description: "Automates the full release workflow: version bump, git tag, GitHub release, and npm publish."
+license: MIT
+metadata:
+  author: sequant
+  version: "1.0"
+allowed-tools:
+  - Read
+  - Bash(npm test:*)
+  - Bash(npm run build:*)
+  - Bash(npm version:*)
+  - Bash(npm pack:*)
+  - Bash(npm publish:*)
+  - Bash(npm whoami:*)
+  - Bash(npm view:*)
+  - Bash(npm audit:*)
+  - Bash(git status:*)
+  - Bash(git branch:*)
+  - Bash(git fetch:*)
+  - Bash(git log:*)
+  - Bash(git add:*)
+  - Bash(git commit:*)
+  - Bash(git tag:*)
+  - Bash(git push:*)
+  - Bash(gh auth status:*)
+  - Bash(gh release create:*)
+  - Bash(gh release view:*)
+---
+
 # Release Skill
 
 Automates the full release workflow: version bump, git tag, GitHub release, and npm publish.
