@@ -4,7 +4,7 @@
   "description": "Quantize your development workflow - Sequential AI phases with quality gates",
   "type": "module",
   "bin": {
-    "sequant": "./dist/bin/cli.js"
+    "sequant": "dist/bin/cli.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
