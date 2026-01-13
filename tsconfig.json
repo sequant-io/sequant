@@ -11,10 +11,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "declarationMap": false,
+    "sourceMap": false,
     "resolveJsonModule": true
   },
   "include": ["src/**/*", "bin/**/*"],
-  "exclude": ["node_modules", "dist", "templates"]
+  "exclude": ["node_modules", "dist", "templates", "**/*.test.ts"]
 }
