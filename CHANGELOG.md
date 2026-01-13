@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-01-13
+
+### Fixed
+
+- Clean bin script path in package.json (removes npm publish warning)
+
+## [1.5.1] - 2026-01-12
+
+### Changed
+
+- Reduced npm package size by excluding tests and source maps
+
 ## [1.5.0] - 2026-01-11
 
 ### Added
