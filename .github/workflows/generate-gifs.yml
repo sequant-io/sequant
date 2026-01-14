@@ -1,0 +1,29 @@
+# Automatically regenerate demo GIFs when .tape files change
+name: Generate Demo GIFs
+
+on:
+  push:
+    paths:
+      - 'docs/assets/*.tape'
+  pull_request:
+    paths:
+      - 'docs/assets/*.tape'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate GIFs with VHS
+        uses: charmbracelet/vhs-action@v2
+        with:
+          path: 'docs/assets/*.tape'
+
+      - name: Commit updated GIFs
+        if: github.event_name == 'push'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: 'docs: regenerate demo GIFs'
+          file_pattern: 'docs/assets/*.gif'
