@@ -193,6 +193,19 @@ async function ensureWorktree(
     console.log(chalk.gray(`    🌿 Creating worktree for #${issueNumber}...`));
   }
 
+  // Fetch latest main to ensure worktree starts from fresh baseline
+  if (verbose) {
+    console.log(chalk.gray(`    🔄 Fetching latest main...`));
+  }
+  const fetchResult = spawnSync("git", ["fetch", "origin", "main"], {
+    stdio: "pipe",
+  });
+  if (fetchResult.status !== 0 && verbose) {
+    console.log(
+      chalk.yellow(`    ⚠️  Could not fetch origin/main, using local state`),
+    );
+  }
+
   // Ensure worktrees directory exists
   if (!existsSync(worktreesDir)) {
     spawnSync("mkdir", ["-p", worktreesDir], { stdio: "pipe" });
@@ -206,10 +219,10 @@ async function ensureWorktree(
       stdio: "pipe",
     });
   } else {
-    // Create new branch from main
+    // Create new branch from origin/main (fresh baseline)
     createResult = spawnSync(
       "git",
-      ["worktree", "add", worktreePath, "-b", branch],
+      ["worktree", "add", worktreePath, "-b", branch, "origin/main"],
       { stdio: "pipe" },
     );
   }
