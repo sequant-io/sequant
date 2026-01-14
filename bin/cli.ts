@@ -112,6 +112,7 @@ program
   .option("--smart-tests", "Enable smart test detection (default)")
   .option("--no-smart-tests", "Disable smart test detection")
   .option("--testgen", "Run testgen phase after spec")
+  .option("--quiet", "Suppress version warnings and non-essential output")
   .action(runCommand);
 
 program

@@ -28,6 +28,7 @@ import {
   PhaseResult,
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
+import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
 
 /**
  * Worktree information for an issue
@@ -495,6 +496,8 @@ interface RunOptions {
   worktreeIsolation?: boolean;
   /** Reuse existing worktrees instead of creating new ones */
   reuseWorktrees?: boolean;
+  /** Suppress version warnings and non-essential output */
+  quiet?: boolean;
 }
 
 /**
@@ -971,6 +974,23 @@ export async function runCommand(
   options: RunOptions,
 ): Promise<void> {
   console.log(chalk.blue("\n🌐 Sequant Workflow Execution\n"));
+
+  // Version freshness check (cached, non-blocking, respects --quiet)
+  if (!options.quiet) {
+    try {
+      const versionResult = await checkVersionCached();
+      if (versionResult.isOutdated && versionResult.latestVersion) {
+        console.log(
+          chalk.yellow(
+            `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion)}`,
+          ),
+        );
+        console.log("");
+      }
+    } catch {
+      // Silent failure - version check is non-critical
+    }
+  }
 
   // Check if initialized
   const manifest = await getManifest();
