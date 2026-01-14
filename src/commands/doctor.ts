@@ -13,6 +13,10 @@ import {
   checkOptionalMcpServers,
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
+import {
+  checkVersionThorough,
+  getVersionWarning,
+} from "../lib/version-check.js";
 
 interface Check {
   name: string;
@@ -25,6 +29,38 @@ export async function doctorCommand(): Promise<void> {
   console.log(chalk.blue("\n🔍 Running health checks...\n"));
 
   const checks: Check[] = [];
+
+  // Check 0: Version freshness
+  const versionResult = await checkVersionThorough();
+  if (versionResult.latestVersion) {
+    if (versionResult.isOutdated) {
+      checks.push({
+        name: "Version",
+        status: "warn",
+        message: `Outdated: ${versionResult.currentVersion} → ${versionResult.latestVersion} available`,
+      });
+      // Show remediation steps
+      console.log(
+        chalk.yellow(
+          `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion)}`,
+        ),
+      );
+      console.log("");
+    } else {
+      checks.push({
+        name: "Version",
+        status: "pass",
+        message: `Up to date (${versionResult.currentVersion})`,
+      });
+    }
+  } else {
+    // Could not fetch version - skip this check silently (graceful degradation)
+    checks.push({
+      name: "Version",
+      status: "pass",
+      message: `${versionResult.currentVersion} (could not verify latest)`,
+    });
+  }
 
   // Check 1: Manifest exists
   const manifest = await getManifest();
