@@ -37,6 +37,22 @@ export function getPackageVersion(): string {
   return PACKAGE_VERSION;
 }
 
+/**
+ * Compare two semver versions.
+ * Returns: 1 if a > b, -1 if a < b, 0 if equal
+ */
+function compareVersions(a: string, b: string): number {
+  const partsA = a.split(".").map(Number);
+  const partsB = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const numA = partsA[i] || 0;
+    const numB = partsB[i] || 0;
+    if (numA > numB) return 1;
+    if (numA < numB) return -1;
+  }
+  return 0;
+}
+
 export interface Manifest {
   version: string;
   stack: string;
@@ -80,7 +96,11 @@ export async function updateManifest(): Promise<void> {
     return;
   }
 
-  manifest.version = PACKAGE_VERSION;
+  // Only update version if package version is >= manifest version
+  // This prevents older cached CLI versions from downgrading the manifest
+  if (compareVersions(PACKAGE_VERSION, manifest.version) >= 0) {
+    manifest.version = PACKAGE_VERSION;
+  }
   manifest.updatedAt = new Date().toISOString();
 
   await writeFile(MANIFEST_PATH, JSON.stringify(manifest, null, 2));
