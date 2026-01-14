@@ -7,6 +7,8 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
+![Sequant Demo](docs/assets/demo.gif)
+
 ## Quick Start
 
 ```bash
