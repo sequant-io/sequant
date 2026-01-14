@@ -225,6 +225,51 @@ Settings hierarchy (highest priority wins):
   ✗ #42: spec → exec (2m 30s)
 ```
 
+## Worktree Isolation
+
+By default, `sequant run` creates isolated git worktrees for each issue. This ensures:
+
+- **Clean separation**: Each issue's changes are isolated from others
+- **Parallel safety**: Multiple issues can be worked on simultaneously
+- **Easy cleanup**: Worktrees can be removed without affecting other work
+
+### Fresh Baseline
+
+When creating a new worktree, Sequant:
+
+1. **Fetches latest main**: Runs `git fetch origin main`
+2. **Branches from origin/main**: Creates the branch from `origin/main`
+
+This guarantees every new issue starts from the latest remote state.
+
+### Worktree Location
+
+Worktrees are created in a `worktrees/` directory alongside your repository:
+
+```text
+parent-directory/
+├── your-repo/           # Main repository
+└── worktrees/
+    ├── feature/123-add-login/
+    └── feature/124-fix-bug/
+```
+
+### Reusing Worktrees
+
+If a worktree already exists for an issue's branch, Sequant reuses it.
+This preserves any in-progress work.
+
+### Phase Isolation
+
+Not all phases run in the worktree:
+
+| Phase  | Location  | Reason                           |
+| ------ | --------- | -------------------------------- |
+| `spec` | Main repo | Planning only, no code changes   |
+| `exec` | Worktree  | Implementation happens here      |
+| `test` | Worktree  | Tests run against implementation |
+| `qa`   | Worktree  | Review happens in context        |
+
 ## Troubleshooting
 
 ### "Sequant is not initialized"
