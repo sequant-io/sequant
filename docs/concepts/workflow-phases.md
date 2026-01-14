@@ -10,8 +10,10 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 └─────────┘    └─────────┘    └─────────┘    └─────────┘
      │              │              │              │
      ▼              ▼              ▼              ▼
-   Plan          Build          Verify        Review
+   Plan          Build       Verify (UI)      Review
 ```
+
+> **Note:** `/test` is optional — used for UI features when Chrome DevTools MCP is available. Backend-only changes skip directly from `/exec` to `/qa`.
 
 ## Phase 1: Spec
 
