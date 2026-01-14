@@ -121,7 +121,6 @@ npx sequant run 123 --quality-loop
 |---------|---------|
 | `/assess` | Issue triage and status assessment |
 | `/docs` | Generate feature documentation |
-| `/release` | Automated release workflow |
 | `/clean` | Repository cleanup |
 | `/security-review` | Deep security analysis |
 | `/reflect` | Workflow improvement analysis |
