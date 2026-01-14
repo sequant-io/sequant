@@ -255,7 +255,7 @@ describe("version-check utilities", () => {
       mockFs.readFileSync.mockImplementation(
         (filePath: fs.PathOrFileDescriptor) => {
           if (String(filePath).includes("package.json")) {
-            return JSON.stringify({ version: "1.0.0" });
+            return JSON.stringify({ name: "sequant", version: "1.0.0" });
           }
           return "";
         },
@@ -305,7 +305,7 @@ describe("version-check utilities", () => {
       mockFs.readFileSync.mockImplementation(
         (filePath: fs.PathOrFileDescriptor) => {
           if (String(filePath).includes("package.json")) {
-            return JSON.stringify({ version: "1.0.0" });
+            return JSON.stringify({ name: "sequant", version: "1.0.0" });
           }
           return "";
         },
@@ -325,7 +325,7 @@ describe("version-check utilities", () => {
             return JSON.stringify(freshCache);
           }
           if (String(filePath).includes("package.json")) {
-            return JSON.stringify({ version: "1.0.0" });
+            return JSON.stringify({ name: "sequant", version: "1.0.0" });
           }
           return "";
         },
@@ -351,7 +351,7 @@ describe("version-check utilities", () => {
             return JSON.stringify(staleCache);
           }
           if (String(filePath).includes("package.json")) {
-            return JSON.stringify({ version: "1.0.0" });
+            return JSON.stringify({ name: "sequant", version: "1.0.0" });
           }
           return "";
         },
@@ -381,7 +381,7 @@ describe("version-check utilities", () => {
             return JSON.stringify(staleCache);
           }
           if (String(filePath).includes("package.json")) {
-            return JSON.stringify({ version: "1.0.0" });
+            return JSON.stringify({ name: "sequant", version: "1.0.0" });
           }
           return "";
         },

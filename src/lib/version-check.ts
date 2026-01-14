@@ -49,11 +49,23 @@ export function getCachePath(): string {
  */
 export function getCurrentVersion(): string {
   try {
-    // Navigate from dist/lib to package.json
-    const packagePath = path.resolve(__dirname, "..", "..", "package.json");
-    const content = fs.readFileSync(packagePath, "utf8");
-    const pkg = JSON.parse(content);
-    return pkg.version || "0.0.0";
+    // Walk up from current directory until we find sequant's package.json
+    // Works from both source (src/lib/) and compiled (dist/src/lib/) locations
+    let dir = __dirname;
+    while (dir !== path.dirname(dir)) {
+      const candidate = path.resolve(dir, "package.json");
+      try {
+        const content = fs.readFileSync(candidate, "utf8");
+        const pkg = JSON.parse(content);
+        if (pkg.name === "sequant") {
+          return pkg.version || "0.0.0";
+        }
+      } catch {
+        // Not found, continue searching
+      }
+      dir = path.dirname(dir);
+    }
+    return "0.0.0";
   } catch {
     return "0.0.0";
   }
