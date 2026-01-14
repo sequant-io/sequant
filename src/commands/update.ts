@@ -6,7 +6,11 @@ import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { spawnSync } from "child_process";
-import { getManifest, updateManifest } from "../lib/manifest.js";
+import {
+  getManifest,
+  updateManifest,
+  getPackageVersion,
+} from "../lib/manifest.js";
 import {
   getTemplateContent,
   listTemplateFiles,
@@ -43,8 +47,24 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     return;
   }
 
+  const packageVersion = getPackageVersion();
   console.log(chalk.gray(`Current version: ${manifest.version}`));
-  console.log(chalk.gray(`Stack: ${manifest.stack}\n`));
+  console.log(chalk.gray(`Stack: ${manifest.stack}`));
+  console.log(chalk.gray(`CLI version: ${packageVersion}\n`));
+
+  // Warn if running an older CLI version than what's installed
+  const [mMajor, mMinor, mPatch] = manifest.version.split(".").map(Number);
+  const [pMajor, pMinor, pPatch] = packageVersion.split(".").map(Number);
+  const manifestNum = mMajor * 10000 + mMinor * 100 + mPatch;
+  const packageNum = pMajor * 10000 + pMinor * 100 + pPatch;
+  if (packageNum < manifestNum) {
+    console.log(
+      chalk.yellow(
+        `⚠️  Warning: You're running an older CLI version (${packageVersion}) than installed (${manifest.version}).`,
+      ),
+    );
+    console.log(chalk.yellow(`   Run with: npx sequant@latest update\n`));
+  }
 
   // Get config with tokens (or migrate legacy installs)
   let config = await getConfig();
