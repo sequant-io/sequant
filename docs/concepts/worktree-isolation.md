@@ -196,6 +196,57 @@ Return to any issue with full context:
 - Uncommitted changes
 - Development server state
 
+## Safety Safeguards
+
+Sequant includes automatic safeguards to prevent accidental work loss.
+
+### Hard Reset Protection
+
+The pre-tool hook blocks `git reset --hard` when unpushed commits exist on main:
+
+```bash
+# This will be blocked if you have unpushed commits on main
+git reset --hard origin/main
+# HOOK_BLOCKED: 3 unpushed commit(s) on main would be lost
+#   Push first: git push origin main
+#   Or stash: git stash
+```
+
+**Why this matters:** Work can be permanently lost when `git reset --hard` runs before changes are pushed. This safeguard prevents accidental data loss during sync operations.
+
+**To bypass (if intentional):**
+```bash
+CLAUDE_HOOKS_DISABLED=true git reset --hard origin/main
+```
+
+### Main Branch Protection
+
+The `/exec` skill refuses to implement directly on main/master branch:
+
+```bash
+# Check your branch before implementing
+git rev-parse --abbrev-ref HEAD
+# If on 'main' - create a worktree first!
+./scripts/dev/new-feature.sh <issue-number>
+```
+
+**Why this matters:**
+- Work on main is vulnerable to sync operations
+- No branch means no recovery via reflog
+- Worktrees provide isolated, recoverable work environments
+
+### Hook Log
+
+All blocked operations are logged for debugging:
+
+```bash
+# View blocked operations
+cat /tmp/claude-hook.log
+
+# View quality warnings
+cat /tmp/claude-quality.log
+```
+
 ## Common Operations
 
 ### List Worktrees
