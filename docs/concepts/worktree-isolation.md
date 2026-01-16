@@ -215,9 +215,7 @@ git reset --hard origin/main
 **Why this matters:** Work can be permanently lost when `git reset --hard` runs before changes are pushed. This safeguard prevents accidental data loss during sync operations.
 
 **To bypass (if intentional):**
-```bash
-CLAUDE_HOOKS_DISABLED=true git reset --hard origin/main
-```
+Run the command directly in your terminal (outside Claude Code) where hooks don't apply.
 
 ### Main Branch Protection
 
