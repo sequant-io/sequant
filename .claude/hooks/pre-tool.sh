@@ -108,24 +108,47 @@ if echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
     exit 2
 fi
 
-# --- Hard Reset Protection (Issue #85) ---
-# Block git reset --hard when there are unpushed commits on main
-# This prevents accidental loss of local work during sync operations
+# --- Hard Reset Protection (Issue #85, enhanced) ---
+# Block git reset --hard when there is local work that would be lost:
+# - Unpushed commits on main/master
+# - Uncommitted changes (staged or unstaged)
+# - Unfinished merge in progress
 if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
-    # Only check if we're on main branch
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    BLOCK_REASONS=""
+    
+    # Check 1: Unpushed commits (only on main/master)
     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
-        # Count unpushed commits on main
-        UNPUSHED=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+        UNPUSHED=$(git log origin/$CURRENT_BRANCH..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$UNPUSHED" -gt 0 ]]; then
-            {
-                echo "HOOK_BLOCKED: $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH would be lost"
-                echo "  Push first: git push origin $CURRENT_BRANCH"
-                echo "  Or stash: git stash"
-                echo "  Or run directly in terminal (outside Claude Code) to bypass"
-            } | tee -a /tmp/claude-hook.log >&2
-            exit 2
+            BLOCK_REASONS="${BLOCK_REASONS}  - $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH\n"
         fi
+    fi
+    
+    # Check 2: Uncommitted changes (staged or unstaged)
+    UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$UNCOMMITTED" -gt 0 ]]; then
+        BLOCK_REASONS="${BLOCK_REASONS}  - $UNCOMMITTED uncommitted file(s)\n"
+    fi
+    
+    # Check 3: Unfinished merge
+    GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo ".git")
+    if [[ -f "$GIT_DIR/MERGE_HEAD" ]]; then
+        BLOCK_REASONS="${BLOCK_REASONS}  - Unfinished merge in progress\n"
+    fi
+    
+    # Block if any reasons found
+    if [[ -n "$BLOCK_REASONS" ]]; then
+        {
+            echo "HOOK_BLOCKED: git reset --hard would lose local work:"
+            echo -e "$BLOCK_REASONS"
+            echo "  Resolve with:"
+            echo "    git push origin $CURRENT_BRANCH  # push commits"
+            echo "    git stash                        # save changes"
+            echo "    git merge --abort                # cancel merge"
+            echo "  Or run directly in terminal (outside Claude Code) to bypass"
+        } | tee -a /tmp/claude-hook.log >&2
+        exit 2
     fi
 fi
 
