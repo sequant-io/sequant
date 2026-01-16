@@ -108,6 +108,27 @@ if echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
     exit 2
 fi
 
+# --- Hard Reset Protection (Issue #85) ---
+# Block git reset --hard when there are unpushed commits on main
+# This prevents accidental loss of local work during sync operations
+if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
+    # Only check if we're on main branch
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+        # Count unpushed commits on main
+        UNPUSHED=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$UNPUSHED" -gt 0 ]]; then
+            {
+                echo "HOOK_BLOCKED: $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH would be lost"
+                echo "  Push first: git push origin $CURRENT_BRANCH"
+                echo "  Or stash: git stash"
+                echo "  Or force reset: CLAUDE_HOOKS_DISABLED=true git reset --hard origin/main"
+            } | tee -a /tmp/claude-hook.log >&2
+            exit 2
+        fi
+    fi
+fi
+
 # CI/CD triggers (automation shouldn't trigger more automation)
 if echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
     echo "HOOK_BLOCKED: Workflow trigger" | tee -a /tmp/claude-hook.log >&2

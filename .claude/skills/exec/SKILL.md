@@ -190,6 +190,23 @@ git branch -a | grep -i "<issue-number>"
 
 **Execution Phase:** Create and work in a feature worktree.
 
+**CRITICAL: Main Branch Safeguard (Issue #85)**
+
+Before starting any implementation, verify you are NOT on the main/master branch:
+
+```bash
+# Check current branch
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo "Current branch: $CURRENT_BRANCH"
+```
+
+**If on main/master branch:**
+1. **STOP** - Do not implement directly on main
+2. Create a feature worktree first: `./scripts/dev/new-feature.sh <issue-number>`
+3. Navigate to the worktree before making any changes
+
+**Why this matters:** Work done directly on main can be lost during sync operations (git reset, git pull --rebase, etc.). Worktrees provide isolation and safe recovery through branches.
+
 **If orchestrated (SEQUANT_WORKTREE is set):**
 - Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
 - Skip steps 1-2 below (worktree already created by orchestrator)
