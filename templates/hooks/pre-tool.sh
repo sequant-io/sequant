@@ -122,7 +122,7 @@ if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
                 echo "HOOK_BLOCKED: $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH would be lost"
                 echo "  Push first: git push origin $CURRENT_BRANCH"
                 echo "  Or stash: git stash"
-                echo "  Or force reset: CLAUDE_HOOKS_DISABLED=true git reset --hard origin/main"
+                echo "  Or run directly in terminal (outside Claude Code) to bypass"
             } | tee -a /tmp/claude-hook.log >&2
             exit 2
         fi
