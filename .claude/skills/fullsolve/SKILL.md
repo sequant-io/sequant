@@ -395,6 +395,42 @@ while qa_iteration < 2:
 - Code quality validated
 - Ready for merge
 
+### 4.4 Adversarial Self-Evaluation (REQUIRED)
+
+**Before proceeding to PR creation**, you MUST complete this adversarial self-evaluation to catch issues that all automated phases missed.
+
+**Why this matters:** The full workflow passes automated checks, but honest self-reflection catches:
+- Features that don't actually work as expected
+- Edge cases that weren't tested
+- Integration issues with existing features
+- Success metrics reported without honest evaluation
+
+**Answer these questions honestly:**
+1. "Did anything not work as expected during the entire workflow?"
+2. "If this feature broke tomorrow, would the current tests catch it?"
+3. "What's the weakest part of this implementation?"
+4. "Am I reporting success because checks passed, or because I verified it actually works?"
+
+**Include this section in your output:**
+
+```markdown
+### Self-Evaluation
+
+- **Worked as expected:** [Yes/No - if No, explain what didn't work]
+- **Test coverage confidence:** [High/Medium/Low - explain why]
+- **Weakest part:** [Identify the weakest aspect of the implementation]
+- **Honest assessment:** [Any concerns or caveats about this PR?]
+```
+
+**If any answer reveals concerns:**
+- Address the issues before proceeding to PR creation
+- Re-run relevant quality checks
+- Update the self-evaluation after fixes
+
+**Do NOT skip this self-evaluation.** This is the last opportunity to catch issues before the PR is created.
+
+---
+
 ## Phase 5: Pull Request (PR)
 
 ### 5.1 Create PR (if not exists)
@@ -630,6 +666,7 @@ Each issue gets its own worktree, PR, and quality validation.
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **Progress Table** - Phase, iterations, and status for each phase
 - [ ] **AC Coverage** - Each AC marked MET/PARTIALLY_MET/NOT_MET
 - [ ] **Quality Metrics** - Tests passed, build status, type issues

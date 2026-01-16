@@ -247,7 +247,42 @@ Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
 
 See [testing-requirements.md](references/testing-requirements.md) for edge case checklists.
 
-### 5. A+ Status Verdict
+### 5. Adversarial Self-Evaluation (REQUIRED)
+
+**Before issuing your verdict**, you MUST complete this adversarial self-evaluation to catch issues that automated quality checks miss.
+
+**Why this matters:** QA automation catches type issues, deleted tests, and scope creep - but misses:
+- Features that don't actually work as expected
+- Tests that pass but don't test the right things
+- Edge cases only apparent when actually using the feature
+
+**Answer these questions honestly:**
+1. "Did the implementation actually work when I reviewed it, or am I assuming it works?"
+2. "Do the tests actually test the feature's primary purpose, or just pass?"
+3. "What's the most likely way this feature could break in production?"
+4. "Am I giving a positive verdict because the code looks clean, or because I verified it works?"
+
+**Include this section in your output:**
+
+```markdown
+### Self-Evaluation
+
+- **Verified working:** [Yes/No - did you actually verify the feature works, or assume it does?]
+- **Test efficacy:** [High/Medium/Low - do tests catch the feature breaking?]
+- **Likely failure mode:** [What would most likely break this in production?]
+- **Verdict confidence:** [High/Medium/Low - explain any uncertainty]
+```
+
+**If any answer reveals concerns:**
+- Factor the concerns into your verdict
+- If significant, change verdict to `AC_NOT_MET` or `AC_MET_BUT_NOT_A_PLUS`
+- Document the concerns in the QA comment
+
+**Do NOT skip this self-evaluation.** Honest reflection catches issues that code review cannot.
+
+---
+
+### 6. A+ Status Verdict
 
 Provide an overall verdict:
 
@@ -281,7 +316,7 @@ npx tsx scripts/lib/__tests__/run-security-scan.ts 2>/dev/null
 
 See [scripts/quality-checks.sh](scripts/quality-checks.sh) for the complete automation script.
 
-### 6. Draft Review/QA Comment
+### 7. Draft Review/QA Comment
 
 Produce a Markdown snippet for the PR/issue:
 - Short summary of the change
@@ -289,7 +324,7 @@ Produce a Markdown snippet for the PR/issue:
 - Key strengths and issues
 - Clear, actionable next steps
 
-### 7. Update GitHub Issue
+### 8. Update GitHub Issue
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
 - Skip posting GitHub comment (orchestrator handles aggregated summary)
@@ -303,7 +338,7 @@ Post the draft comment to GitHub and update labels:
 - `READY_FOR_MERGE`: add `ready-for-review` label
 - `AC_MET_BUT_NOT_A_PLUS`: add `needs-improvement` label
 
-### 8. Documentation Reminder
+### 9. Documentation Reminder
 
 If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
@@ -311,7 +346,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 **Documentation:** Before merging, run `/docs <issue>` to generate feature documentation.
 ```
 
-### 9. Script/CLI Execution Verification
+### 10. Script/CLI Execution Verification
 
 **REQUIRED for CLI/script features:** When `scripts/` files are modified, execution verification is required before `READY_FOR_MERGE`.
 
@@ -357,6 +392,7 @@ fi
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, or NOT_MET
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions

@@ -701,7 +701,42 @@ When in doubt, choose:
 
 The goal is to satisfy AC with the smallest, safest change possible.
 
-### 5. Progress Summary and Draft Issue Update
+### 5. Adversarial Self-Evaluation (REQUIRED)
+
+**Before outputting your final summary**, you MUST complete this adversarial self-evaluation to catch issues that automated checks miss.
+
+**Why this matters:** Sessions show that honest self-questioning consistently catches real issues:
+- Tests that pass but don't cover the actual changes
+- Features that build but don't work as expected
+- AC items marked "done" but with weak implementation
+
+**Answer these questions honestly:**
+1. "Did anything not work as expected during implementation?"
+2. "If this feature broke tomorrow, would the current tests catch it?"
+3. "What's the weakest part of this implementation?"
+4. "Am I reporting success metrics without honest self-evaluation?"
+
+**Include this section in your output:**
+
+```markdown
+### Self-Evaluation
+
+- **Worked as expected:** [Yes/No - if No, explain what didn't work]
+- **Test coverage confidence:** [High/Medium/Low - explain why]
+- **Weakest part:** [Identify the weakest aspect of the implementation]
+- **Honest assessment:** [Any concerns or caveats?]
+```
+
+**If any answer reveals concerns:**
+- Address the issues before proceeding
+- Re-run relevant checks (`npm test`, `npm run build`)
+- Update the self-evaluation after fixes
+
+**Do NOT skip this self-evaluation.** Honest reflection catches issues that automated checks miss.
+
+---
+
+### 6. Progress Summary and Draft Issue Update
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
 - Skip posting progress comments to GitHub (orchestrator handles summary)
@@ -758,6 +793,7 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
 - [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
