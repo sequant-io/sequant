@@ -108,24 +108,47 @@ if echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
     exit 2
 fi
 
-# --- Hard Reset Protection (Issue #85) ---
-# Block git reset --hard when there are unpushed commits on main
-# This prevents accidental loss of local work during sync operations
+# --- Hard Reset Protection (Issue #85, enhanced) ---
+# Block git reset --hard when there is local work that would be lost:
+# - Unpushed commits on main/master
+# - Uncommitted changes (staged or unstaged)
+# - Unfinished merge in progress
 if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
-    # Only check if we're on main branch
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+    BLOCK_REASONS=""
+    
+    # Check 1: Unpushed commits (only on main/master)
     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
-        # Count unpushed commits on main
-        UNPUSHED=$(git log origin/main..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
+        UNPUSHED=$(git log origin/$CURRENT_BRANCH..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
         if [[ "$UNPUSHED" -gt 0 ]]; then
-            {
-                echo "HOOK_BLOCKED: $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH would be lost"
-                echo "  Push first: git push origin $CURRENT_BRANCH"
-                echo "  Or stash: git stash"
-                echo "  Or run directly in terminal (outside Claude Code) to bypass"
-            } | tee -a /tmp/claude-hook.log >&2
-            exit 2
+            BLOCK_REASONS="${BLOCK_REASONS}  - $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH\n"
         fi
+    fi
+    
+    # Check 2: Uncommitted changes (staged or unstaged)
+    UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "$UNCOMMITTED" -gt 0 ]]; then
+        BLOCK_REASONS="${BLOCK_REASONS}  - $UNCOMMITTED uncommitted file(s)\n"
+    fi
+    
+    # Check 3: Unfinished merge
+    GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo ".git")
+    if [[ -f "$GIT_DIR/MERGE_HEAD" ]]; then
+        BLOCK_REASONS="${BLOCK_REASONS}  - Unfinished merge in progress\n"
+    fi
+    
+    # Block if any reasons found
+    if [[ -n "$BLOCK_REASONS" ]]; then
+        {
+            echo "HOOK_BLOCKED: git reset --hard would lose local work:"
+            echo -e "$BLOCK_REASONS"
+            echo "  Resolve with:"
+            echo "    git push origin $CURRENT_BRANCH  # push commits"
+            echo "    git stash                        # save changes"
+            echo "    git merge --abort                # cancel merge"
+            echo "  Or run directly in terminal (outside Claude Code) to bypass"
+        } | tee -a /tmp/claude-hook.log >&2
+        exit 2
     fi
 fi
 
@@ -294,22 +317,33 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; t
     fi
 fi
 
-# === WORKTREE PATH ENFORCEMENT FOR PARALLEL AGENTS ===
-# When a parallel marker exists with a worktree path, block edits outside that worktree
+# === WORKTREE PATH ENFORCEMENT ===
+# Enforces that file operations stay within the designated worktree
+# Sources for worktree path (in priority order):
+#   1. SEQUANT_WORKTREE env var - set by `sequant run` for isolated issue execution
+#   2. Parallel marker file - for parallel agent execution
 # This prevents agents from accidentally editing the main repo instead of the worktree
-# Marker file format: First line contains the expected worktree path
 if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
     EXPECTED_WORKTREE=""
-    for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
-        if [[ -f "$marker" ]]; then
-            # Read expected worktree path from marker file (first line)
-            EXPECTED_WORKTREE=$(head -1 "$marker" 2>/dev/null || true)
-            break
-        fi
-    done
+
+    # Priority 1: Check SEQUANT_WORKTREE environment variable (set by sequant run)
+    if [[ -n "${SEQUANT_WORKTREE:-}" ]]; then
+        EXPECTED_WORKTREE="$SEQUANT_WORKTREE"
+    fi
+
+    # Priority 2: Fall back to parallel marker file
+    if [[ -z "$EXPECTED_WORKTREE" ]]; then
+        for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
+            if [[ -f "$marker" ]]; then
+                # Read expected worktree path from marker file (first line)
+                EXPECTED_WORKTREE=$(head -1 "$marker" 2>/dev/null || true)
+                break
+            fi
+        done
+    fi
 
     if [[ -n "$EXPECTED_WORKTREE" ]]; then
-        # AC-1 (Issue #550): Check worktree directory exists before path validation
+        # AC-4 (Issue #31): Check worktree directory exists before path validation
         # Prevents Write tool from creating non-existent worktree directories
         if [[ ! -d "$EXPECTED_WORKTREE" ]]; then
             echo "HOOK_BLOCKED: Worktree does not exist: $EXPECTED_WORKTREE" | tee -a /tmp/claude-hook.log >&2
@@ -325,12 +359,23 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
         fi
 
         if [[ -n "$FILE_PATH" ]]; then
+            # Resolve to absolute path for consistent comparison
+            REAL_FILE_PATH=$(realpath "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
+            REAL_WORKTREE=$(realpath "$EXPECTED_WORKTREE" 2>/dev/null || echo "$EXPECTED_WORKTREE")
+
             # Check if file path is within the expected worktree
-            if ! echo "$FILE_PATH" | grep -qF "$EXPECTED_WORKTREE"; then
+            if [[ "$REAL_FILE_PATH" != "$REAL_WORKTREE"* ]]; then
                 echo "$(date +%H:%M:%S) WORKTREE_BLOCKED: Edit outside expected worktree" >> "$QUALITY_LOG"
                 echo "  Expected: $EXPECTED_WORKTREE" >> "$QUALITY_LOG"
                 echo "  Got: $FILE_PATH" >> "$QUALITY_LOG"
-                echo "HOOK_BLOCKED: Edit must be in worktree: $EXPECTED_WORKTREE (got: $FILE_PATH)" | tee -a /tmp/claude-hook.log >&2
+                {
+                    echo "HOOK_BLOCKED: File operation must be within worktree"
+                    echo "  Worktree: $EXPECTED_WORKTREE"
+                    echo "  File: $FILE_PATH"
+                    if [[ -n "${SEQUANT_ISSUE:-}" ]]; then
+                        echo "  Issue: #$SEQUANT_ISSUE"
+                    fi
+                } | tee -a /tmp/claude-hook.log >&2
                 exit 2
             fi
         fi
@@ -374,6 +419,31 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
                 fi
             fi
             # If neither lockf nor flock available, proceed without locking
+        fi
+    fi
+fi
+
+# === PRE-MERGE WORKTREE CLEANUP ===
+# Auto-remove worktree before `gh pr merge` to prevent --delete-branch failure
+# The worktree locks the branch, causing merge to partially fail
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; then
+    # Extract PR number from command
+    PR_NUM=$(echo "$TOOL_INPUT" | grep -oE 'gh pr merge [0-9]+' | grep -oE '[0-9]+')
+
+    if [[ -n "$PR_NUM" ]]; then
+        # Get the branch name for this PR
+        BRANCH_NAME=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
+
+        if [[ -n "$BRANCH_NAME" ]]; then
+            # Check if a worktree exists for this branch
+            # Note: worktree line is 2 lines before branch line in porcelain output
+            WORKTREE_PATH=$(git worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH_NAME" | grep "^worktree " | sed 's/^worktree //' || true)
+
+            if [[ -n "$WORKTREE_PATH" && -d "$WORKTREE_PATH" ]]; then
+                # Remove the worktree before merge proceeds
+                git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+                echo "PRE-MERGE: Removed worktree $WORKTREE_PATH for branch $BRANCH_NAME" >> /tmp/claude-hook.log
+            fi
         fi
     fi
 fi
