@@ -42,7 +42,7 @@ export async function doctorCommand(): Promise<void> {
       // Show remediation steps
       console.log(
         chalk.yellow(
-          `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion)}`,
+          `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
         ),
       );
       console.log("");

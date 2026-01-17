@@ -995,7 +995,7 @@ export async function runCommand(
       if (versionResult.isOutdated && versionResult.latestVersion) {
         console.log(
           chalk.yellow(
-            `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion)}`,
+            `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
           ),
         );
         console.log("");
