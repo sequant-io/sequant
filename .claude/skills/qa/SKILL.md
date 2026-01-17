@@ -171,6 +171,81 @@ If no feature worktree exists (work was done directly on main):
 
 4. **Run quality checks** on the current branch instead of comparing to a worktree.
 
+### Phase 0: Implementation Status Check — REQUIRED
+
+**Before spawning quality check agents**, verify that implementation actually exists. Running full QA on an unimplemented issue wastes tokens and produces confusing output.
+
+**Detection Logic:**
+
+```bash
+# 1. Check for worktree (indicates work may have started)
+worktree_path=$(git worktree list | grep -i "<issue-number>" | awk '{print $1}' | head -1)
+
+# 2. Check for commits on feature branch (vs main)
+commits_exist=$(git log --oneline main..HEAD 2>/dev/null | head -1)
+
+# 3. Check for uncommitted changes
+uncommitted_changes=$(git status --porcelain | head -1)
+
+# 4. Check for open PR linked to this issue
+pr_exists=$(gh pr list --search "<issue-number>" --state open --json number -q '.[0].number' 2>/dev/null)
+```
+
+**Implementation Status Matrix:**
+
+| Worktree | Commits | Uncommitted | PR | Status | Action |
+|----------|---------|-------------|-----|--------|--------|
+| ❌ | ❌ | ❌ | ❌ | No implementation | Early exit |
+| ✅ | ❌ | ❌ | ❌ | Worktree created but no work | Early exit |
+| ✅ | ❌ | ✅ | ❌ | Work in progress (uncommitted) | Proceed with QA |
+| ✅ | ✅ | * | * | Implementation exists | Proceed with QA |
+| * | ✅ | * | * | Commits exist | Proceed with QA |
+| * | * | * | ✅ | PR exists | Proceed with QA |
+
+**Early Exit Condition:**
+- No commits on feature branch AND no uncommitted changes AND no open PR
+
+**If early exit triggered:**
+1. **Skip** sub-agent spawning (nothing to check)
+2. **Skip** code review (no code to review)
+3. **Skip** quality metrics collection
+4. Use the **Early Exit Output Template** below
+5. Verdict: `AC_NOT_MET`
+
+---
+
+### Early Exit Output Template
+
+When no implementation is detected, use this streamlined output:
+
+```markdown
+## QA Review for Issue #<N>
+
+### Implementation Status: NOT FOUND
+
+No implementation detected for this issue:
+- Commits on feature branch: None
+- Uncommitted changes: None
+- Open PR: None
+
+**Verdict: AC_NOT_MET**
+
+No code changes found to review. The acceptance criteria cannot be evaluated without an implementation.
+
+### Next Steps
+
+1. Run `/exec <issue-number>` to implement the feature
+2. Re-run `/qa <issue-number>` after implementation is complete
+
+---
+
+*QA skipped: No implementation to review*
+```
+
+**Important:** Do NOT spawn sub-agents when using early exit. This saves tokens and avoids confusing "no changes found" outputs from quality checkers.
+
+---
+
 ### Quality Checks (Multi-Agent) — REQUIRED
 
 **You MUST spawn sub-agents for quality checks.** Do NOT run these checks inline with bash commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
@@ -392,6 +467,8 @@ fi
 
 **Before responding, verify your output includes ALL of these:**
 
+### Standard QA (Implementation Exists)
+
 - [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, or NOT_MET
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
@@ -400,7 +477,16 @@ fi
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 
-**DO NOT respond until all items are verified.**
+### Early Exit (No Implementation)
+
+When early exit is triggered (no commits, no uncommitted changes, no PR):
+
+- [ ] **Implementation Status** - Clearly states "NOT FOUND"
+- [ ] **Verdict** - Must be `AC_NOT_MET`
+- [ ] **Next Steps** - Directs user to run `/exec` first
+- [ ] **Sub-agents NOT spawned** - Quality check agents were skipped
+
+**DO NOT respond until all applicable items are verified.**
 
 ## Output Template
 
