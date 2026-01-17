@@ -16,6 +16,7 @@
  * ```
  */
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 /**
@@ -187,7 +188,7 @@ export function generateLogFilename(runId: string, startTime: Date): string {
  * @returns Initial RunLog structure
  */
 export function createEmptyRunLog(config: RunConfig): Omit<RunLog, "endTime"> {
-  const runId = crypto.randomUUID();
+  const runId = randomUUID();
   const startTime = new Date().toISOString();
 
   return {
