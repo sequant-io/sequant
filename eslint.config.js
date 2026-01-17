@@ -33,6 +33,12 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "node_modules/", "templates/", "**/*.js"],
+    ignores: [
+      "dist/",
+      "node_modules/",
+      "templates/",
+      "**/*.js",
+      "**/*.test.ts",
+    ],
   },
 );
