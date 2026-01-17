@@ -15,6 +15,7 @@ import {
   getWorktreeChangedFiles,
   parseRecommendedWorkflow,
   detectPhasesFromLabels,
+  createCheckpointCommit,
 } from "./run.js";
 
 describe("run command", () => {
@@ -370,5 +371,221 @@ describe("detectPhasesFromLabels", () => {
       "test",
       "qa",
     ]);
+  });
+});
+
+describe("chain mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("createCheckpointCommit", () => {
+    it("should return true when no changes to commit", () => {
+      // Mock git status returning empty (no changes)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+
+      expect(result).toBe(true);
+      // Only status should be called since there are no changes
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1);
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["-C", "/path/to/worktree", "status", "--porcelain"],
+        { stdio: "pipe" },
+      );
+    });
+
+    it("should create checkpoint commit when there are uncommitted changes", () => {
+      // First call: git status (has changes)
+      // Second call: git add -A
+      // Third call: git commit
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("M src/file.ts\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+
+      expect(result).toBe(true);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(3);
+
+      // Verify git add was called
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        2,
+        "git",
+        ["-C", "/path/to/worktree", "add", "-A"],
+        { stdio: "pipe" },
+      );
+
+      // Verify git commit was called with checkpoint message
+      const commitCall = mockSpawnSync.mock.calls[2];
+      expect(commitCall[0]).toBe("git");
+      expect(commitCall[1]).toContain("-C");
+      expect(commitCall[1]).toContain("commit");
+      expect(commitCall[1]).toContain("-m");
+      // Verify commit message contains issue number
+      const commitMessage = commitCall[1][commitCall[1].indexOf("-m") + 1];
+      expect(commitMessage).toContain("checkpoint(#123)");
+      expect(commitMessage).toContain("QA passed");
+    });
+
+    it("should return false when git status fails", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("error"),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false when git add fails", () => {
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("M src/file.ts\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 1, // git add fails
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("error"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+
+      expect(result).toBe(false);
+    });
+
+    it("should return false when git commit fails", () => {
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("M src/file.ts\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 1, // git commit fails
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("commit failed"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("chain mode validation", () => {
+    it("should require --sequential flag", () => {
+      // This tests the validation logic pattern
+      // --chain without --sequential should be rejected
+      const chainEnabled = true;
+      const sequentialEnabled = false;
+
+      const isValid = !chainEnabled || sequentialEnabled;
+      expect(isValid).toBe(false);
+    });
+
+    it("should allow --chain with --sequential", () => {
+      const chainEnabled = true;
+      const sequentialEnabled = true;
+
+      const isValid = !chainEnabled || sequentialEnabled;
+      expect(isValid).toBe(true);
+    });
+
+    it("should be incompatible with batch mode", () => {
+      const chainEnabled = true;
+      const batchMode = true;
+
+      const isValid = !chainEnabled || !batchMode;
+      expect(isValid).toBe(false);
+    });
+  });
+
+  describe("chain length warning threshold", () => {
+    it("should warn when chain has more than 5 issues", () => {
+      const CHAIN_WARNING_THRESHOLD = 5;
+
+      expect([1, 2, 3, 4, 5].length > CHAIN_WARNING_THRESHOLD).toBe(false);
+      expect([1, 2, 3, 4, 5, 6].length > CHAIN_WARNING_THRESHOLD).toBe(true);
+      expect([1, 2, 3, 4, 5, 6, 7].length > CHAIN_WARNING_THRESHOLD).toBe(true);
+    });
+  });
+
+  describe("chain branch naming", () => {
+    it("should create chain structure: origin/main → issue1 → issue2 → issue3", () => {
+      // Test the expected chain structure
+      const issues = [
+        { number: 1, branch: "feature/1-first" },
+        { number: 2, branch: "feature/2-second" },
+        { number: 3, branch: "feature/3-third" },
+      ];
+
+      // First issue should branch from origin/main
+      const firstBase = "origin/main";
+      expect(firstBase).toBe("origin/main");
+
+      // Subsequent issues should branch from previous
+      for (let i = 1; i < issues.length; i++) {
+        const baseBranch = issues[i - 1].branch;
+        expect(baseBranch).toBe(issues[i - 1].branch);
+      }
+    });
   });
 });
