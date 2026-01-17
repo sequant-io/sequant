@@ -26,6 +26,7 @@ export interface VersionCheckResult {
   currentVersion: string;
   latestVersion: string | null;
   isOutdated: boolean;
+  isLocalInstall?: boolean;
   error?: string;
 }
 
@@ -69,6 +70,29 @@ export function getCurrentVersion(): string {
   } catch {
     return "0.0.0";
   }
+}
+
+/**
+ * Check if running from a local node_modules install (vs npx cache)
+ *
+ * Local installs are in: <project>/node_modules/sequant/
+ * npx installs are in: ~/.npm/_npx/<hash>/node_modules/sequant/
+ *
+ * This matters because:
+ * - Local installs should be updated with: npm update sequant
+ * - npx installs should be updated with: npx sequant@latest
+ */
+export function isLocalNodeModulesInstall(): boolean {
+  // Check if our path contains node_modules/sequant but NOT in .npm/_npx
+  const normalizedPath = __dirname.replace(/\\/g, "/");
+
+  // Running from local node_modules (not npx cache)
+  const inNodeModules = normalizedPath.includes("/node_modules/sequant");
+  const inNpxCache =
+    normalizedPath.includes("/.npm/_npx/") ||
+    normalizedPath.includes("\\.npm\\_npx\\");
+
+  return inNodeModules && !inNpxCache;
 }
 
 /**
@@ -185,13 +209,25 @@ export function isOutdated(
 
 /**
  * Get the version warning message
+ *
+ * For local node_modules installs, recommends `npm update sequant`
+ * For npx usage, recommends `npx sequant@latest`
  */
 export function getVersionWarning(
   currentVersion: string,
   latestVersion: string,
+  isLocal?: boolean,
 ): string {
+  const isLocalInstall = isLocal ?? isLocalNodeModulesInstall();
+
+  if (isLocalInstall) {
+    return `sequant ${latestVersion} is available (you have ${currentVersion})
+   Run: npm update sequant
+   Note: You have sequant as a local dependency. npx uses your node_modules version.`;
+  }
+
   return `sequant ${latestVersion} is available (you have ${currentVersion})
-   Run: npx sequant@latest or npm update sequant`;
+   Run: npx sequant@latest`;
 }
 
 /**
@@ -200,6 +236,7 @@ export function getVersionWarning(
  */
 export async function checkVersionThorough(): Promise<VersionCheckResult> {
   const currentVersion = getCurrentVersion();
+  const isLocal = isLocalNodeModulesInstall();
 
   const latestVersion = await fetchLatestVersion();
 
@@ -208,6 +245,7 @@ export async function checkVersionThorough(): Promise<VersionCheckResult> {
       currentVersion,
       latestVersion: null,
       isOutdated: false,
+      isLocalInstall: isLocal,
       error: "Could not fetch latest version",
     };
   }
@@ -219,6 +257,7 @@ export async function checkVersionThorough(): Promise<VersionCheckResult> {
     currentVersion,
     latestVersion,
     isOutdated: isOutdated(currentVersion, latestVersion),
+    isLocalInstall: isLocal,
   };
 }
 
@@ -228,6 +267,7 @@ export async function checkVersionThorough(): Promise<VersionCheckResult> {
  */
 export async function checkVersionCached(): Promise<VersionCheckResult> {
   const currentVersion = getCurrentVersion();
+  const isLocal = isLocalNodeModulesInstall();
 
   // Check cache first
   const cache = readCache();
@@ -236,6 +276,7 @@ export async function checkVersionCached(): Promise<VersionCheckResult> {
       currentVersion,
       latestVersion: cache.latestVersion,
       isOutdated: isOutdated(currentVersion, cache.latestVersion),
+      isLocalInstall: isLocal,
     };
   }
 
@@ -249,12 +290,14 @@ export async function checkVersionCached(): Promise<VersionCheckResult> {
         currentVersion,
         latestVersion: cache.latestVersion,
         isOutdated: isOutdated(currentVersion, cache.latestVersion),
+        isLocalInstall: isLocal,
       };
     }
     return {
       currentVersion,
       latestVersion: null,
       isOutdated: false,
+      isLocalInstall: isLocal,
     };
   }
 
@@ -265,5 +308,6 @@ export async function checkVersionCached(): Promise<VersionCheckResult> {
     currentVersion,
     latestVersion,
     isOutdated: isOutdated(currentVersion, latestVersion),
+    isLocalInstall: isLocal,
   };
 }

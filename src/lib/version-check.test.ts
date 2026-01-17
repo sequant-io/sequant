@@ -26,6 +26,7 @@ import {
   writeCache,
   isCacheFresh,
   getCurrentVersion,
+  isLocalNodeModulesInstall,
   fetchLatestVersion,
   checkVersionThorough,
   checkVersionCached,
@@ -94,11 +95,30 @@ describe("version-check utilities", () => {
   });
 
   describe("getVersionWarning", () => {
-    it("returns a formatted warning message", () => {
-      const warning = getVersionWarning("1.0.0", "1.5.3");
+    it("returns npx command for non-local installs", () => {
+      const warning = getVersionWarning("1.0.0", "1.5.3", false);
       expect(warning).toContain("1.5.3 is available");
       expect(warning).toContain("you have 1.0.0");
       expect(warning).toContain("npx sequant@latest");
+      expect(warning).not.toContain("npm update");
+    });
+
+    it("returns npm update command for local installs", () => {
+      const warning = getVersionWarning("1.0.0", "1.5.3", true);
+      expect(warning).toContain("1.5.3 is available");
+      expect(warning).toContain("you have 1.0.0");
+      expect(warning).toContain("npm update sequant");
+      expect(warning).toContain("local dependency");
+      expect(warning).not.toContain("npx sequant@latest");
+    });
+  });
+
+  describe("isLocalNodeModulesInstall", () => {
+    it("returns a boolean", () => {
+      // This function depends on __dirname at runtime
+      // Just verify it returns a boolean without throwing
+      const result = isLocalNodeModulesInstall();
+      expect(typeof result).toBe("boolean");
     });
   });
 
@@ -274,6 +294,7 @@ describe("version-check utilities", () => {
       expect(result.currentVersion).toBe("1.0.0");
       expect(result.latestVersion).toBe("1.5.3");
       expect(result.isOutdated).toBe(true);
+      expect(typeof result.isLocalInstall).toBe("boolean");
     });
 
     it("returns up-to-date result when current >= latest", async () => {
