@@ -23,9 +23,9 @@ vi.mock("fs", () => ({
 
 // Mock crypto.randomUUID for deterministic tests
 const mockUUID = "12345678-1234-1234-1234-123456789abc";
-vi.stubGlobal("crypto", {
+vi.mock("node:crypto", () => ({
   randomUUID: () => mockUUID,
-});
+}));
 
 describe("LogWriter", () => {
   const mockConfig: RunConfig = {
