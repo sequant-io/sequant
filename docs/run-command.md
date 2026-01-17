@@ -50,6 +50,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 |--------|-------------|---------|
 | `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
 | `--sequential` | Stop on first failure | `false` |
+| `--chain` | Chain issues: each branches from previous (requires `--sequential`) | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
 | `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
@@ -128,6 +129,65 @@ This is useful for complex issues where initial implementation may need refineme
 # Quality loop with more iterations
 npx sequant run 42 --quality-loop --max-iterations 5
 ```
+
+### Chain Mode
+
+Run dependent issues where each branches from the previous:
+
+```bash
+npx sequant run 1 2 3 --sequential --chain
+```
+
+**What happens:**
+
+1. Issue #1 branches from `origin/main`
+2. Issue #2 branches from `feature/1-xxx` (Issue #1's completed branch)
+3. Issue #3 branches from `feature/2-xxx` (Issue #2's completed branch)
+
+```text
+origin/main
+    └─→ feature/1-add-auth (Issue #1)
+            └─→ feature/2-add-login-page (Issue #2)
+                    └─→ feature/3-add-logout (Issue #3)
+```
+
+**Checkpoint Commits:**
+
+After each issue passes QA, a checkpoint commit is automatically created. This serves as a recovery point if later issues in the chain fail.
+
+**Requirements:**
+
+- `--chain` requires `--sequential` (issues must run in order)
+- Cannot be combined with `--batch` mode
+
+**Warnings:**
+
+A warning is shown for chains longer than 5 issues. Long chains:
+- Increase merge complexity
+- Make code review more difficult
+- Are harder to recover from if failures occur
+
+Consider breaking long chains into smaller batches.
+
+**Use Cases:**
+
+- Implementing features that build on each other
+- Multi-part refactoring where each step depends on the previous
+- Building a feature incrementally (auth → login → logout)
+
+**Merging Chain PRs:**
+
+Option A: Sequential merge to main (recommended)
+```bash
+# Merge each PR in order, rebasing as needed
+gh pr merge 1 --squash --delete-branch
+# Update PR 2's base after 1 is merged
+gh pr merge 2 --squash --delete-branch
+gh pr merge 3 --squash --delete-branch
+```
+
+Option B: Single combined review
+- Review the final branch which contains all changes
 
 ### CI/Scripting Mode
 

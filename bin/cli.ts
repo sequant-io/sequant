@@ -113,6 +113,10 @@ program
   .option("--no-smart-tests", "Disable smart test detection")
   .option("--testgen", "Run testgen phase after spec")
   .option("--quiet", "Suppress version warnings and non-essential output")
+  .option(
+    "--chain",
+    "Chain issues: each branches from previous (requires --sequential)",
+  )
   .action(runCommand);
 
 program

@@ -147,12 +147,14 @@ export function getWorktreeChangedFiles(worktreePath: string): string[] {
 
 /**
  * Create or reuse a worktree for an issue
+ * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  */
 async function ensureWorktree(
   issueNumber: number,
   title: string,
   verbose: boolean,
   packageManager?: string,
+  baseBranch?: string,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
@@ -193,17 +195,24 @@ async function ensureWorktree(
     console.log(chalk.gray(`    🌿 Creating worktree for #${issueNumber}...`));
   }
 
-  // Fetch latest main to ensure worktree starts from fresh baseline
-  if (verbose) {
-    console.log(chalk.gray(`    🔄 Fetching latest main...`));
-  }
-  const fetchResult = spawnSync("git", ["fetch", "origin", "main"], {
-    stdio: "pipe",
-  });
-  if (fetchResult.status !== 0 && verbose) {
-    console.log(
-      chalk.yellow(`    ⚠️  Could not fetch origin/main, using local state`),
-    );
+  // Determine the base for the new branch
+  const baseRef = baseBranch || "origin/main";
+
+  // Fetch latest main to ensure worktree starts from fresh baseline (unless using local branch)
+  if (!baseBranch) {
+    if (verbose) {
+      console.log(chalk.gray(`    🔄 Fetching latest main...`));
+    }
+    const fetchResult = spawnSync("git", ["fetch", "origin", "main"], {
+      stdio: "pipe",
+    });
+    if (fetchResult.status !== 0 && verbose) {
+      console.log(
+        chalk.yellow(`    ⚠️  Could not fetch origin/main, using local state`),
+      );
+    }
+  } else if (verbose) {
+    console.log(chalk.gray(`    🔗 Chaining from branch: ${baseBranch}`));
   }
 
   // Ensure worktrees directory exists
@@ -219,10 +228,10 @@ async function ensureWorktree(
       stdio: "pipe",
     });
   } else {
-    // Create new branch from origin/main (fresh baseline)
+    // Create new branch from base reference (origin/main or previous branch in chain)
     createResult = spawnSync(
       "git",
-      ["worktree", "add", worktreePath, "-b", branch, "origin/main"],
+      ["worktree", "add", worktreePath, "-b", branch, baseRef],
       { stdio: "pipe" },
     );
   }
@@ -322,6 +331,145 @@ async function ensureWorktrees(
   }
 
   return worktrees;
+}
+
+/**
+ * Ensure worktrees exist for all issues in chain mode
+ * Each issue branches from the previous issue's branch
+ */
+async function ensureWorktreesChain(
+  issues: Array<{ number: number; title: string }>,
+  verbose: boolean,
+  packageManager?: string,
+): Promise<Map<number, WorktreeInfo>> {
+  const worktrees = new Map<number, WorktreeInfo>();
+
+  console.log(chalk.blue("\n  🔗 Preparing chained worktrees..."));
+
+  let previousBranch: string | undefined;
+
+  for (const issue of issues) {
+    const worktree = await ensureWorktree(
+      issue.number,
+      issue.title,
+      verbose,
+      packageManager,
+      previousBranch, // Chain from previous branch
+    );
+    if (worktree) {
+      worktrees.set(issue.number, worktree);
+      previousBranch = worktree.branch; // Next issue will branch from this
+    } else {
+      // If worktree creation fails, stop the chain
+      console.log(
+        chalk.red(
+          `  ❌ Chain broken: could not create worktree for #${issue.number}`,
+        ),
+      );
+      break;
+    }
+  }
+
+  const created = Array.from(worktrees.values()).filter(
+    (w) => !w.existed,
+  ).length;
+  const reused = Array.from(worktrees.values()).filter((w) => w.existed).length;
+
+  if (created > 0 || reused > 0) {
+    console.log(
+      chalk.gray(`  Chained worktrees: ${created} created, ${reused} reused`),
+    );
+  }
+
+  // Show chain structure
+  if (worktrees.size > 0) {
+    const chainOrder = issues
+      .filter((i) => worktrees.has(i.number))
+      .map((i) => `#${i.number}`)
+      .join(" → ");
+    console.log(chalk.gray(`  Chain: origin/main → ${chainOrder}`));
+  }
+
+  return worktrees;
+}
+
+/**
+ * Create a checkpoint commit in the worktree after QA passes
+ * This allows recovery in case later issues in the chain fail
+ */
+function createCheckpointCommit(
+  worktreePath: string,
+  issueNumber: number,
+  verbose: boolean,
+): boolean {
+  // Check if there are uncommitted changes
+  const statusResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "status", "--porcelain"],
+    { stdio: "pipe" },
+  );
+
+  if (statusResult.status !== 0) {
+    if (verbose) {
+      console.log(
+        chalk.yellow(`    ⚠️  Could not check git status for checkpoint`),
+      );
+    }
+    return false;
+  }
+
+  const hasChanges = statusResult.stdout.toString().trim().length > 0;
+  if (!hasChanges) {
+    if (verbose) {
+      console.log(
+        chalk.gray(`    📌 No changes to checkpoint (already committed)`),
+      );
+    }
+    return true;
+  }
+
+  // Stage all changes
+  const addResult = spawnSync("git", ["-C", worktreePath, "add", "-A"], {
+    stdio: "pipe",
+  });
+
+  if (addResult.status !== 0) {
+    if (verbose) {
+      console.log(
+        chalk.yellow(`    ⚠️  Could not stage changes for checkpoint`),
+      );
+    }
+    return false;
+  }
+
+  // Create checkpoint commit
+  const commitMessage = `checkpoint(#${issueNumber}): QA passed
+
+This is an automatic checkpoint commit created after issue #${issueNumber}
+passed QA in chain mode. It serves as a recovery point if later issues fail.
+
+Co-Authored-By: Sequant <noreply@sequant.dev>`;
+
+  const commitResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "commit", "-m", commitMessage],
+    { stdio: "pipe" },
+  );
+
+  if (commitResult.status !== 0) {
+    const error = commitResult.stderr.toString();
+    if (verbose) {
+      console.log(
+        chalk.yellow(`    ⚠️  Could not create checkpoint commit: ${error}`),
+      );
+    }
+    return false;
+  }
+
+  console.log(
+    chalk.green(`    📌 Checkpoint commit created for #${issueNumber}`),
+  );
+  return true;
 }
 
 /**
@@ -511,6 +659,8 @@ interface RunOptions {
   reuseWorktrees?: boolean;
   /** Suppress version warnings and non-essential output */
   quiet?: boolean;
+  /** Chain issues: each branches from previous (requires --sequential) */
+  chain?: boolean;
 }
 
 /**
@@ -1061,7 +1211,56 @@ export async function runCommand(
     console.log(
       chalk.gray('Batch example: npx sequant run --batch "1 2" --batch "3"'),
     );
+    console.log(
+      chalk.gray("Chain example: npx sequant run 1 2 3 --sequential --chain"),
+    );
     return;
+  }
+
+  // Validate chain mode requirements
+  if (mergedOptions.chain) {
+    if (!mergedOptions.sequential) {
+      console.log(chalk.red("❌ --chain requires --sequential flag"));
+      console.log(
+        chalk.gray(
+          "   Chain mode executes issues sequentially, each branching from the previous.",
+        ),
+      );
+      console.log(
+        chalk.gray("   Usage: npx sequant run 1 2 3 --sequential --chain"),
+      );
+      return;
+    }
+
+    if (batches) {
+      console.log(chalk.red("❌ --chain cannot be used with --batch"));
+      console.log(
+        chalk.gray(
+          "   Chain mode creates a linear dependency chain between issues.",
+        ),
+      );
+      return;
+    }
+
+    // Warn about long chains
+    if (issueNumbers.length > 5) {
+      console.log(
+        chalk.yellow(
+          `  ⚠️  Warning: Chain has ${issueNumbers.length} issues (recommended max: 5)`,
+        ),
+      );
+      console.log(
+        chalk.yellow(
+          "     Long chains increase merge complexity and review difficulty.",
+        ),
+      );
+      console.log(
+        chalk.yellow(
+          "     Consider breaking into smaller chains or using batch mode.",
+        ),
+      );
+      console.log("");
+    }
   }
 
   // Sort issues by dependencies (if more than one issue)
@@ -1174,6 +1373,11 @@ export async function runCommand(
   if (useWorktreeIsolation) {
     console.log(chalk.gray(`  Worktree isolation: enabled`));
   }
+  if (mergedOptions.chain) {
+    console.log(
+      chalk.gray(`  Chain mode: enabled (each issue branches from previous)`),
+    );
+  }
 
   // Fetch issue info for all issues first
   const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
@@ -1188,11 +1392,21 @@ export async function runCommand(
       number: num,
       title: issueInfoMap.get(num)?.title || `Issue #${num}`,
     }));
-    worktreeMap = await ensureWorktrees(
-      issueData,
-      config.verbose,
-      manifest.packageManager,
-    );
+
+    // Use chain mode or standard worktree creation
+    if (mergedOptions.chain) {
+      worktreeMap = await ensureWorktreesChain(
+        issueData,
+        config.verbose,
+        manifest.packageManager,
+      );
+    } else {
+      worktreeMap = await ensureWorktrees(
+        issueData,
+        config.verbose,
+        manifest.packageManager,
+      );
+    }
 
     // Register cleanup tasks for newly created worktrees (not pre-existing ones)
     for (const [issueNum, worktree] of worktreeMap.entries()) {
@@ -1280,6 +1494,7 @@ export async function runCommand(
           mergedOptions,
           worktreeInfo?.path,
           shutdown,
+          mergedOptions.chain, // Enable checkpoint commits in chain mode
         );
         results.push(result);
 
@@ -1294,9 +1509,10 @@ export async function runCommand(
         }
 
         if (!result.success) {
+          const chainInfo = mergedOptions.chain ? " (chain stopped)" : "";
           console.log(
             chalk.yellow(
-              `\n  ⚠️  Issue #${issueNumber} failed, stopping sequential execution`,
+              `\n  ⚠️  Issue #${issueNumber} failed, stopping sequential execution${chainInfo}`,
             ),
           );
           break;
@@ -1330,6 +1546,7 @@ export async function runCommand(
           mergedOptions,
           worktreeInfo?.path,
           shutdown,
+          false, // Parallel mode doesn't support chain
         );
         results.push(result);
 
@@ -1444,6 +1661,7 @@ async function executeBatch(
       options,
       worktreeInfo?.path,
       shutdownManager,
+      false, // Batch mode doesn't support chain
     );
     results.push(result);
 
@@ -1467,6 +1685,7 @@ async function runIssueWithLogging(
   options: RunOptions,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
+  chainMode?: boolean,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -1718,6 +1937,11 @@ async function runIssueWithLogging(
   // Success is determined by whether all phases completed in any iteration,
   // not whether all accumulated phase results passed (which would fail after loop recovery)
   const success = completedSuccessfully;
+
+  // Create checkpoint commit in chain mode after QA passes
+  if (success && chainMode && worktreePath) {
+    createCheckpointCommit(worktreePath, issueNumber, config.verbose);
+  }
 
   return {
     issueNumber,
