@@ -203,9 +203,73 @@ If MCP servers are available, enhance analysis:
 
 **Fallback:** All core functionality works with standard tools only.
 
-## Phase 2: Present Findings
+## Phase 2: Critical Self-Assessment (REQUIRED)
 
-### 2.1 Effort Classification
+**Before presenting any findings, critically evaluate each one.**
+
+The goal is to filter out busywork and only surface improvements that provide real value. Pattern-matching finds "issues" - honest assessment determines if they matter.
+
+### 2.1 Assessment Questions
+
+For each potential finding, ask:
+
+| Question | If "No" → Filter Out |
+|----------|---------------------|
+| Does this cause real problems today? | Skip theoretical issues |
+| Would fixing this measurably improve the codebase? | Skip cosmetic changes |
+| Is the fix worth the maintenance burden it adds? | Skip if tests/code add more complexity than value |
+| Would a senior engineer care about this? | Skip pedantic findings |
+| Is this the right time to fix this? | Skip if other priorities exist |
+
+### 2.2 Common False Positives to Filter
+
+**Always skip these unless explicitly requested:**
+
+| Pattern Match | Why It's Usually Noise |
+|---------------|----------------------|
+| `any` in test files | Test mocks are hard to type; ESLint disables are fine |
+| `any` with eslint-disable comment | Already acknowledged and accepted |
+| Missing tests for <100 line files | Maintenance burden exceeds value |
+| Missing tests for files tested implicitly | Integration tests often suffice |
+| TODOs that are "nice to have" | If it worked without it for months, it's low priority |
+| Large files that work fine | Size alone isn't a problem if code is cohesive |
+| Low-severity dependency vulns | DoS in dev tools rarely matters |
+| Missing JSDoc on internal functions | Self-documenting code > comment maintenance |
+
+### 2.3 Honest Filtering
+
+After filtering, you should typically have:
+- **0-3 findings** for a well-maintained codebase
+- **5-10 findings** for a codebase with real issues
+- **10+ findings** only for neglected codebases
+
+**If your initial scan found 10+ issues but filtering leaves 0-2, that's correct behavior.** Report honestly:
+
+```markdown
+## Codebase Improvement Analysis
+
+**Scope:** `src/`
+**Initial Scan:** 12 potential issues
+**After Critical Assessment:** 2 worth addressing
+
+The codebase is in good shape. Most findings were false positives:
+- 8 "missing tests" for small files (not worth the maintenance)
+- 1 `any` type in test file (already has eslint-disable)
+- 1 TODO that's a nice-to-have, not a bug
+```
+
+### 2.4 When to Keep Findings
+
+Keep findings that:
+- Cause actual bugs or errors
+- Block future development
+- Create security vulnerabilities (real ones, not theoretical)
+- Make the code significantly harder to understand
+- Were explicitly requested by the user (e.g., `/improve tests`)
+
+## Phase 3: Present Findings
+
+### 3.1 Effort Classification
 
 Categorize each finding by estimated effort:
 
@@ -215,7 +279,7 @@ Categorize each finding by estimated effort:
 | **Medium Effort** | 1-4 hours | Add tests, refactor function, improve error handling |
 | **Larger Refactors** | 4+ hours | Split large file, redesign module, add feature |
 
-### 2.2 Output Format
+### 3.2 Output Format
 
 Present findings in a structured, actionable format:
 
@@ -256,9 +320,9 @@ Present findings in a structured, actionable format:
 **Select improvements to create issues for (enter numbers, e.g., "1,2,4,7"):**
 ```
 
-## Phase 3: Selection
+## Phase 4: Selection
 
-### 3.1 User Selection
+### 4.1 User Selection
 
 Use `AskUserQuestion` to let the user select improvements:
 
@@ -277,15 +341,15 @@ AskUserQuestion({
 })
 ```
 
-### 3.2 Validation
+### 4.2 Validation
 
 - Validate selected numbers exist
 - Confirm selections before creating issues
 - Allow adding related items
 
-## Phase 4: Issue Creation
+## Phase 5: Issue Creation
 
-### 4.1 Issue Template
+### 5.1 Issue Template
 
 For each selected improvement, create a well-formatted GitHub issue:
 
@@ -320,7 +384,7 @@ For each selected improvement, create a well-formatted GitHub issue:
 - Related issues: [if any]
 ```
 
-### 4.2 Label Mapping
+### 5.2 Label Mapping
 
 Map improvement types to GitHub labels:
 
@@ -333,7 +397,7 @@ Map improvement types to GitHub labels:
 | Security | `security`, `priority:high` |
 | Refactoring | `enhancement`, `refactor` |
 
-### 4.3 Issue Creation
+### 5.3 Issue Creation
 
 ```bash
 gh issue create \
@@ -342,7 +406,7 @@ gh issue create \
   --label "<labels>"
 ```
 
-### 4.4 Batch Creation
+### 5.4 Batch Creation
 
 When creating multiple issues:
 1. Create issues sequentially
@@ -360,9 +424,9 @@ When creating multiple issues:
 | 3 | #236 | improve(legacy): Split into modules | enhancement, refactor |
 ```
 
-## Phase 5: Execution Offer
+## Phase 6: Execution Offer
 
-### 5.1 Output Command
+### 6.1 Output Command
 
 After creating issues, offer the execution command:
 
@@ -387,7 +451,7 @@ npx sequant run 234 235 236
 > Larger refactors (#236) may benefit from `/fullsolve` for more thorough handling.
 ```
 
-### 5.2 Execution Options
+### 6.2 Execution Options
 
 Provide context-aware recommendations:
 
