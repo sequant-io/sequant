@@ -162,8 +162,46 @@ fi
 
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
-    echo -e "${BLUE}📦 Installing dependencies...${NC}"
-    npm install --silent
+    # Check for npm install cache optimization (opt-in via SEQUANT_NPM_CACHE=true)
+    if [ "${SEQUANT_NPM_CACHE:-false}" = "true" ]; then
+        CACHE_DIR="../worktrees/.npm-cache"
+        HASH_FILE="${CACHE_DIR}/.package-lock-hash"
+
+        # Calculate current package-lock hash (cross-platform)
+        if command -v md5sum &> /dev/null; then
+            CURRENT_HASH=$(md5sum "${MAIN_REPO_DIR}/package-lock.json" | cut -d' ' -f1)
+        elif command -v md5 &> /dev/null; then
+            CURRENT_HASH=$(md5 -q "${MAIN_REPO_DIR}/package-lock.json")
+        else
+            CURRENT_HASH=""
+        fi
+
+        # Check if cache is valid
+        if [ -n "$CURRENT_HASH" ] && [ -f "$HASH_FILE" ] && [ -d "${MAIN_REPO_DIR}/node_modules" ]; then
+            CACHED_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo "")
+            if [ "$CURRENT_HASH" = "$CACHED_HASH" ]; then
+                echo -e "${GREEN}⚡ Using cached node_modules (package-lock unchanged)${NC}"
+                cp -r "${MAIN_REPO_DIR}/node_modules" ./node_modules
+            else
+                echo -e "${BLUE}📦 Installing dependencies (package-lock changed)...${NC}"
+                npm install --silent
+                # Update cache hash
+                mkdir -p "$CACHE_DIR"
+                echo "$CURRENT_HASH" > "$HASH_FILE"
+            fi
+        else
+            echo -e "${BLUE}📦 Installing dependencies (initializing cache)...${NC}"
+            npm install --silent
+            # Initialize cache hash
+            if [ -n "$CURRENT_HASH" ]; then
+                mkdir -p "$CACHE_DIR"
+                echo "$CURRENT_HASH" > "$HASH_FILE"
+            fi
+        fi
+    else
+        echo -e "${BLUE}📦 Installing dependencies...${NC}"
+        npm install --silent
+    fi
 fi
 
 echo ""

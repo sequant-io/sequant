@@ -138,17 +138,62 @@ git branch -a | grep -i "<issue-number>"
 - Issue is already closed
 - No acceptance criteria exist and cannot be inferred
 
-### 2. Re-establish Context
+### 2. Re-establish Context (with Parallel Optimization)
 
-- **Read all GitHub issue comments** to gather complete context:
-  - Comments often contain clarifications, updates, or additional AC added after the initial issue description
-  - Look for discussion about implementation details, edge cases, or requirements mentioned in comments
-  - Review feedback from previous implementation cycles or review comments
-- Summarize briefly:
-  - The AC checklist (AC-1, AC-2, ...) from the issue and all comments
-  - The current implementation plan (from issue comments or `/spec`)
-- If there is no plan:
-  - Ask whether to quickly propose one (or suggest using `/spec` first).
+**Performance Optimization:** When creating a new worktree, gather context in parallel with worktree creation to reduce setup time by ~5-10 seconds.
+
+#### Parallel Context Gathering Pattern
+
+When worktree creation is needed (standalone mode, no existing worktree):
+
+```
+1. Start worktree creation in background    → runs ~30s (npm install)
+2. While waiting, gather context in parallel:
+   - Fetch issue details                    ~2s
+   - Read all issue comments                ~2s
+   - Check for existing patterns/files      ~2s
+3. Wait for worktree completion
+4. Begin implementation with full context ready
+```
+
+**Implementation:**
+
+1. **Start worktree creation as background task:**
+   ```bash
+   # From main repo, start worktree creation in background
+   ./scripts/dev/new-feature.sh <issue-number> &
+   WORKTREE_PID=$!
+   echo "Worktree creation started (PID: $WORKTREE_PID)"
+   ```
+
+2. **Gather context while waiting:**
+   - **Read all GitHub issue comments** to gather complete context:
+     - Comments often contain clarifications, updates, or additional AC added after the initial issue description
+     - Look for discussion about implementation details, edge cases, or requirements mentioned in comments
+     - Review feedback from previous implementation cycles or review comments
+   - Summarize briefly:
+     - The AC checklist (AC-1, AC-2, ...) from the issue and all comments
+     - The current implementation plan (from issue comments or `/spec`)
+   - If there is no plan:
+     - Ask whether to quickly propose one (or suggest using `/spec` first).
+
+3. **Wait for worktree completion before implementation:**
+   ```bash
+   # Wait for worktree creation to complete
+   wait $WORKTREE_PID
+   WORKTREE_EXIT=$?
+   if [ $WORKTREE_EXIT -ne 0 ]; then
+     echo "ERROR: Worktree creation failed with exit code $WORKTREE_EXIT"
+     # Fall back to sequential creation with error visibility
+   fi
+   ```
+
+**When to use parallel context gathering:**
+- ✅ Creating a new worktree (standalone mode)
+- ❌ Worktree already exists (skip - just navigate to it)
+- ❌ Orchestrated mode (SEQUANT_WORKTREE set - worktree pre-created)
+
+**Fallback:** If parallel execution fails or is not applicable, fall back to sequential context gathering.
 
 ### 2.1a Smoke Test (Recommended for UI Issues)
 
@@ -218,14 +263,31 @@ echo "Current branch: $CURRENT_BRANCH"
    - Check if you're already in a worktree: `git worktree list` or check if `../worktrees/` contains a directory for this issue
    - If worktree exists, navigate to it and continue work there
 
-2. **Create worktree if needed:**
-   - From the main repository directory, run: `./scripts/dev/new-feature.sh <issue-number>`
-   - This will:
+2. **Create worktree if needed (with parallel context gathering):**
+
+   **Optimized flow (parallel):**
+   ```bash
+   # Step 1: Start worktree creation in background
+   ./scripts/dev/new-feature.sh <issue-number> &
+   WORKTREE_PID=$!
+
+   # Step 2: Gather context while worktree creates (see Section 2)
+   # - Fetch issue details
+   # - Read issue comments
+   # - Check for existing patterns
+
+   # Step 3: Wait for worktree completion
+   wait $WORKTREE_PID
+   ```
+
+   **What new-feature.sh does:**
      - Fetch issue details from GitHub
      - Create branch: `feature/<issue-number>-<issue-title-slug>`
      - Create worktree in: `../worktrees/feature/<branch-name>/`
-     - Install dependencies
+     - Install dependencies (can use cache if `SEQUANT_NPM_CACHE=true`)
      - Copy environment files if they exist
+
+   **After completion:**
    - Navigate to the worktree directory: `cd ../worktrees/feature/<branch-name>/`
 
 3. **Work in the worktree:**
@@ -330,18 +392,40 @@ If you discover a new framework-specific issue that caused debugging time, add i
 
 This section covers optional MCP tools that enhance implementation quality when available.
 
-#### MCP Availability Check
+#### MCP Availability Check (Lazy Loading)
 
-**Before using MCP tools**, verify they are available in your session. If unavailable, use the documented fallback behavior.
+**Performance Optimization:** Check MCP availability lazily on first use, NOT proactively at session start. This avoids wasting time checking MCPs for issues that don't need them.
+
+**Lazy Check Pattern:**
+- ❌ **Don't:** Check all MCPs at session start
+- ✅ **Do:** Check MCP availability only when you're about to use it
 
 ```markdown
-**MCP Status Check (perform at session start):**
-- [ ] Context7: Try `mcp__context7__resolve-library-id` - if available, proceed
-- [ ] Sequential Thinking: Try `mcp__sequential-thinking__sequentialthinking` - if available, proceed
-- [ ] Chrome DevTools: Try `mcp__chrome-devtools__take_snapshot` - if available, proceed
-
-If any MCP is unavailable, use fallback strategies documented below.
+**MCP Check (on first use only):**
+When you need to use an MCP tool:
+1. Attempt the MCP call
+2. If it fails with "tool not available", use the fallback strategy
+3. Cache the result for the session (don't re-check)
 ```
+
+**Example - Lazy Context7 Check:**
+```javascript
+// Only check when you actually need library docs
+// NOT at session start
+if (need_library_documentation) {
+  // Try Context7 - fallback to WebSearch if unavailable
+  try {
+    mcp__context7__resolve-library-id(...)
+  } catch {
+    // Fallback: use WebSearch or codebase patterns
+  }
+}
+```
+
+**Why lazy loading:**
+- Many issues don't need MCPs (simple bugs, docs, config changes)
+- Proactive checks waste 2-5 seconds per MCP
+- Lazy checks only run when the tool provides value
 
 ---
 
