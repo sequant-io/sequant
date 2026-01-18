@@ -20,6 +20,11 @@ import {
 } from "../lib/workflow/log-writer.js";
 import type { RunConfig } from "../lib/workflow/run-log-schema.js";
 import {
+  StateManager,
+  type StateManagerOptions,
+} from "../lib/workflow/state-manager.js";
+import type { Phase as StatePhase } from "../lib/workflow/state-schema.js";
+import {
   Phase,
   DEFAULT_PHASES,
   DEFAULT_CONFIG,
@@ -1319,6 +1324,13 @@ export async function runCommand(
     await logWriter.initialize(runConfig);
   }
 
+  // Initialize state manager for persistent workflow state tracking
+  // State tracking is always enabled (unless dry run)
+  let stateManager: StateManager | null = null;
+  if (!config.dryRun) {
+    stateManager = new StateManager({ verbose: config.verbose });
+  }
+
   // Initialize shutdown manager for graceful interruption handling
   const shutdown = new ShutdownManager();
 
@@ -1362,6 +1374,9 @@ export async function runCommand(
         `  Logging: JSON (run ${logWriter.getRunId()?.slice(0, 8)}...)`,
       ),
     );
+  }
+  if (stateManager) {
+    console.log(chalk.gray(`  State tracking: enabled`));
   }
   console.log(
     chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
@@ -1455,6 +1470,7 @@ export async function runCommand(
           batch,
           config,
           logWriter,
+          stateManager,
           mergedOptions,
           issueInfoMap,
           worktreeMap,
@@ -1491,9 +1507,12 @@ export async function runCommand(
           issueNumber,
           config,
           logWriter,
+          stateManager,
+          issueInfo.title,
           issueInfo.labels,
           mergedOptions,
           worktreeInfo?.path,
+          worktreeInfo?.branch,
           shutdown,
           mergedOptions.chain, // Enable checkpoint commits in chain mode
         );
@@ -1543,9 +1562,12 @@ export async function runCommand(
           issueNumber,
           config,
           logWriter,
+          stateManager,
+          issueInfo.title,
           issueInfo.labels,
           mergedOptions,
           worktreeInfo?.path,
+          worktreeInfo?.branch,
           shutdown,
           false, // Parallel mode doesn't support chain
         );
@@ -1630,6 +1652,7 @@ async function executeBatch(
   issueNumbers: number[],
   config: ExecutionConfig,
   logWriter: LogWriter | null,
+  stateManager: StateManager | null,
   options: RunOptions,
   issueInfoMap: Map<number, { title: string; labels: string[] }>,
   worktreeMap: Map<number, WorktreeInfo>,
@@ -1658,9 +1681,12 @@ async function executeBatch(
       issueNumber,
       config,
       logWriter,
+      stateManager,
+      issueInfo.title,
       issueInfo.labels,
       options,
       worktreeInfo?.path,
+      worktreeInfo?.branch,
       shutdownManager,
       false, // Batch mode doesn't support chain
     );
@@ -1682,9 +1708,12 @@ async function runIssueWithLogging(
   issueNumber: number,
   config: ExecutionConfig,
   logWriter: LogWriter | null,
+  stateManager: StateManager | null,
+  issueTitle: string,
   labels: string[],
   options: RunOptions,
   worktreePath?: string,
+  branch?: string,
   shutdownManager?: ShutdownManager,
   chainMode?: boolean,
 ): Promise<IssueResult> {
@@ -1696,6 +1725,35 @@ async function runIssueWithLogging(
   console.log(chalk.blue(`\n  Issue #${issueNumber}`));
   if (worktreePath) {
     console.log(chalk.gray(`    Worktree: ${worktreePath}`));
+  }
+
+  // Initialize state tracking for this issue
+  if (stateManager) {
+    try {
+      const existingState = await stateManager.getIssueState(issueNumber);
+      if (!existingState) {
+        await stateManager.initializeIssue(issueNumber, issueTitle, {
+          worktree: worktreePath,
+          branch,
+          qualityLoop: config.qualityLoop,
+          maxIterations: config.maxIterations,
+        });
+      } else {
+        // Update worktree info if it changed
+        if (worktreePath && branch) {
+          await stateManager.updateWorktreeInfo(
+            issueNumber,
+            worktreePath,
+            branch,
+          );
+        }
+      }
+    } catch (error) {
+      // State tracking errors shouldn't stop execution
+      if (config.verbose) {
+        console.log(chalk.yellow(`    ⚠️  State tracking error: ${error}`));
+      }
+    }
   }
 
   // Determine phases for this specific issue
@@ -1719,6 +1777,19 @@ async function runIssueWithLogging(
       console.log(chalk.gray(`    Running spec to determine workflow...`));
       console.log(chalk.gray(`    ⏳ spec...`));
 
+      // Track spec phase start in state
+      if (stateManager) {
+        try {
+          await stateManager.updatePhaseStatus(
+            issueNumber,
+            "spec",
+            "in_progress",
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
+      }
+
       const specStartTime = new Date();
       // Note: spec runs in main repo (not worktree) for planning
       const specResult = await executePhase(
@@ -1733,6 +1804,17 @@ async function runIssueWithLogging(
 
       if (specResult.sessionId) {
         sessionId = specResult.sessionId;
+        // Update session ID in state for resume capability
+        if (stateManager) {
+          try {
+            await stateManager.updateSessionId(
+              issueNumber,
+              specResult.sessionId,
+            );
+          } catch {
+            // State tracking errors shouldn't stop execution
+          }
+        }
       }
 
       phaseResults.push(specResult);
@@ -1753,6 +1835,23 @@ async function runIssueWithLogging(
           { error: specResult.error },
         );
         logWriter.logPhase(phaseLog);
+      }
+
+      // Track spec phase completion in state
+      if (stateManager) {
+        try {
+          const phaseStatus = specResult.success ? "completed" : "failed";
+          await stateManager.updatePhaseStatus(
+            issueNumber,
+            "spec",
+            phaseStatus,
+            {
+              error: specResult.error,
+            },
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
       }
 
       if (!specResult.success) {
@@ -1846,6 +1945,19 @@ async function runIssueWithLogging(
     for (const phase of phases) {
       console.log(chalk.gray(`    ⏳ ${phase}...`));
 
+      // Track phase start in state
+      if (stateManager) {
+        try {
+          await stateManager.updatePhaseStatus(
+            issueNumber,
+            phase as StatePhase,
+            "in_progress",
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
+      }
+
       const phaseStartTime = new Date();
       const result = await executePhase(
         issueNumber,
@@ -1860,6 +1972,14 @@ async function runIssueWithLogging(
       // Capture session ID for subsequent phases
       if (result.sessionId) {
         sessionId = result.sessionId;
+        // Update session ID in state for resume capability
+        if (stateManager) {
+          try {
+            await stateManager.updateSessionId(issueNumber, result.sessionId);
+          } catch {
+            // State tracking errors shouldn't stop execution
+          }
+        }
       }
 
       phaseResults.push(result);
@@ -1879,6 +1999,25 @@ async function runIssueWithLogging(
           { error: result.error },
         );
         logWriter.logPhase(phaseLog);
+      }
+
+      // Track phase completion in state
+      if (stateManager) {
+        try {
+          const phaseStatus = result.success
+            ? "completed"
+            : result.error?.includes("Timeout")
+              ? "failed"
+              : "failed";
+          await stateManager.updatePhaseStatus(
+            issueNumber,
+            phase as StatePhase,
+            phaseStatus,
+            { error: result.error },
+          );
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
       }
 
       if (result.success) {
@@ -1938,6 +2077,16 @@ async function runIssueWithLogging(
   // Success is determined by whether all phases completed in any iteration,
   // not whether all accumulated phase results passed (which would fail after loop recovery)
   const success = completedSuccessfully;
+
+  // Update final issue status in state
+  if (stateManager) {
+    try {
+      const finalStatus = success ? "ready_for_merge" : "in_progress";
+      await stateManager.updateIssueStatus(issueNumber, finalStatus);
+    } catch {
+      // State tracking errors shouldn't stop execution
+    }
+  }
 
   // Create checkpoint commit in chain mode after QA passes
   if (success && chainMode && worktreePath) {
