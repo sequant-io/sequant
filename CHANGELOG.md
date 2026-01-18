@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `/fullsolve` now invokes child skills (`/spec`, `/exec`, `/test`, `/qa`) via Skill tool instead of inline execution (#111)
+- `/solve` recommends `--chain` flag for dependent/sequential issues (#111)
+- `/solve` recommends `-q` (quality loop) for enhancement/feature issues
+- Local node_modules warning when running stale local installs (#87)
+
+### Changed
+
+- `/fullsolve` auto-progresses between phases without waiting for user confirmation
+
 ## [1.5.2] - 2026-01-13
 
 ### Fixed
