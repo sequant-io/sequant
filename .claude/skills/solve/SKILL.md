@@ -50,6 +50,28 @@ gh issue view <issue-number> --json labels --jq '.labels[].name'
 - Recommend `--quality-loop` flag for auto-retry on failures
 - Quality loop auto-enables for these labels in `sequant run`
 
+### Quality Loop Detection
+
+Quality loop (`--quality-loop` or `-q`) provides automatic fix iterations when phases fail. **Recommend quality loop broadly** for any non-trivial work.
+
+**Always recommend `--quality-loop` when:**
+- Labels include: `complex`, `refactor`, `breaking`, `major` (auto-enabled)
+- Labels include: `enhancement`, `feature` (new functionality)
+- Issue involves multiple files or components
+- Issue title contains: "add", "implement", "create", "refactor", "update"
+- Issue is NOT a simple bug fix with `bug` or `fix` label only
+
+**Skip quality loop recommendation only when:**
+- Simple bug fix (only `bug` or `fix` label, no other labels)
+- Documentation-only changes (`docs` label only)
+- Issue explicitly marked as trivial
+
+**Quality loop benefits:**
+- Auto-retries failed phases up to 3 times
+- Catches intermittent test failures
+- Handles build issues from dependency changes
+- Reduces manual intervention for recoverable errors
+
 ### Chain Mode Detection
 
 When analyzing multiple issues, determine if `--chain` flag should be recommended.
@@ -358,7 +380,8 @@ If issues depend on each other:
 - [ ] **Issue Summary Table** - Table with Issue, Title, Labels, Workflow columns
 - [ ] **Chain Mode Section** - (for 2+ issues) Whether chain is recommended and why
 - [ ] **Recommended Workflow** - Slash commands in order for each issue
-- [ ] **CLI Command** - `npx sequant run <issue-numbers>` command (REQUIRED)
+- [ ] **CLI Command** - `npx sequant run <issue-numbers>` with `-q` flag for non-trivial issues (REQUIRED)
+- [ ] **Quality Loop Note** - Recommend `-q` for enhancement/feature/complex issues
 - [ ] **Explanation** - Brief notes explaining workflow choices
 
 **DO NOT respond until all items are verified.**
@@ -374,7 +397,7 @@ You MUST use this exact structure:
 
 | Issue | Title | Labels | Workflow |
 |-------|-------|--------|----------|
-<!-- FILL: one row per issue. For complex/refactor/breaking/major labels, add "+ quality loop" to Workflow -->
+<!-- FILL: one row per issue. Add "+ quality loop" for enhancement/feature/complex/refactor/breaking/major labels -->
 
 <!-- IF 2+ issues, ALWAYS include Chain Mode section: -->
 ### Chain Mode: ✅ Recommended / ❌ Not Recommended
@@ -399,28 +422,25 @@ These issues are **independent** and can be run in parallel:
 <!-- FILL: slash commands in order -->
 \`\`\`
 
-<!-- IF any issue has complex/refactor/breaking/major label, include this callout: -->
-> **Note:** Issue #<N> has `<label>` label. Quality loop will **auto-enable** when using `sequant run`, providing automatic fix iterations if phases fail.
+<!-- IF any issue has complex/refactor/breaking/major label (auto-enabled): -->
+> **Note:** Issue #<N> has `<label>` label. Quality loop will **auto-enable** when using `sequant run`.
 
 ### CLI Command
 
 <!-- IF chain recommended: -->
 Run with chain mode:
 \`\`\`bash
-npx sequant run <ISSUE_NUMBERS> --sequential --chain
+npx sequant run <ISSUE_NUMBERS> --sequential --chain -q
 \`\`\`
 
 <!-- IF chain NOT recommended (parallel OK): -->
 Run from terminal:
 \`\`\`bash
-npx sequant run <ISSUE_NUMBERS>
+npx sequant run <ISSUE_NUMBERS> -q
 \`\`\`
 
-<!-- IF any issue has complex/refactor/breaking/major label, include: -->
-For complex issues, quality loop is recommended:
-\`\`\`bash
-npx sequant run <ISSUE_NUMBER> --quality-loop   # Explicit (auto-enabled for <label> label)
-\`\`\`
+<!-- ALWAYS include quality loop recommendation for non-trivial issues (enhancement, feature, or any multi-step work): -->
+> **Recommended:** The `-q` (quality loop) flag enables auto-retry on failures, reducing manual intervention.
 
 > **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
 
