@@ -45,6 +45,26 @@ You are the "Full Solve Agent" for the current repository.
 
 When invoked as `/fullsolve <issue-number>`, execute the complete issue resolution workflow with integrated quality loops. This command orchestrates all phases and automatically iterates until quality gates pass.
 
+## CRITICAL: Auto-Progression Between Phases
+
+**DO NOT wait for user confirmation between phases.** This is an autonomous workflow.
+
+After each phase completes successfully, **immediately proceed** to the next phase:
+1. `/spec` completes → **immediately** invoke `/exec`
+2. `/exec` completes → **immediately** invoke `/test` (if UI) or `/qa`
+3. `/test` completes → **immediately** invoke `/qa`
+4. `/qa` completes → **immediately** create PR
+
+**The user invoked `/fullsolve` expecting end-to-end automation.** Only stop for:
+- Unrecoverable errors (after retry attempts exhausted)
+- Final summary after PR creation
+- Explicit user interruption
+
+```
+WRONG: "Spec complete. Ready for exec phase." [waits]
+RIGHT: "Spec complete. Proceeding to exec..." [invokes /exec immediately]
+```
+
 ## Workflow Overview
 
 ```
@@ -227,6 +247,8 @@ Workflow halted. Fix the issue and re-run `/fullsolve <issue-number>`.
 - Implementation plan created (and posted to GitHub)
 - Feature worktree ready
 
+**→ IMMEDIATELY proceed to Phase 2 (do not wait for user input)**
+
 ## Phase 2: Implementation (EXEC)
 
 **Invoke the `/exec` skill** to implement all acceptance criteria.
@@ -309,6 +331,10 @@ After successful `/exec`:
 - Tests passing (verified AFTER final changes)
 - Build succeeding
 
+**→ IMMEDIATELY proceed to Phase 3 or 4 (do not wait for user input)**
+- If UI labels present → invoke `/test`
+- Otherwise → skip to `/qa`
+
 ## Phase 3: Testing (TEST)
 
 **Skip if:** Issue doesn't have `admin`, `ui`, or `frontend` labels (determined from `/spec` output)
@@ -376,6 +402,8 @@ Proceeding to QA phase. Failures will be documented.
 **State after Phase 3:**
 - All tests passing (or max iterations reached)
 - Bugs documented and fixed
+
+**→ IMMEDIATELY proceed to Phase 4 (do not wait for user input)**
 
 ## Phase 4: Quality Assurance (QA)
 
@@ -448,6 +476,8 @@ Creating PR with notes for human review.
 - AC fully met (or documented as partial)
 - Code quality validated
 - Ready for merge (or flagged for human review)
+
+**→ IMMEDIATELY proceed to Phase 5 after self-evaluation (do not wait for user input)**
 
 ### 4.5 Adversarial Self-Evaluation (REQUIRED)
 
