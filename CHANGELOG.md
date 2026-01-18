@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistent workflow state tracking for issue phases (#115)
   - State file at `.sequant/state.json` tracks issue progress across sessions
   - `sequant status --issues` shows all tracked issues and their phase progress
+  - `sequant status --rebuild` rebuilds state from run logs
+  - `sequant status --cleanup` removes stale/orphaned entries
+  - `sequant status --cleanup --dry-run` previews cleanup without changes
+  - `sequant status --cleanup --max-age 30` removes old entries
   - State hook utility for skills to update state when running standalone
-  - Rebuild state from run logs with `rebuildStateFromLogs()`
-  - Cleanup stale/orphaned entries with `cleanupStaleEntries()`
 - `/fullsolve` now invokes child skills (`/spec`, `/exec`, `/test`, `/qa`) via Skill tool instead of inline execution (#111)
 - `/solve` recommends `--chain` flag for dependent/sequential issues (#111)
 - `/solve` recommends `-q` (quality loop) for enhancement/feature issues

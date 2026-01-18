@@ -7,6 +7,10 @@ import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { fileExists } from "../lib/fs.js";
 import { readdir } from "fs/promises";
 import { StateManager } from "../lib/workflow/state-manager.js";
+import {
+  rebuildStateFromLogs,
+  cleanupStaleEntries,
+} from "../lib/workflow/state-utils.js";
 import type {
   IssueState,
   IssueStatus,
@@ -20,6 +24,14 @@ export interface StatusCommandOptions {
   issue?: number;
   /** Output as JSON */
   json?: boolean;
+  /** Rebuild state from run logs */
+  rebuild?: boolean;
+  /** Clean up stale/orphaned entries */
+  cleanup?: boolean;
+  /** Only show what would be cleaned (used with --cleanup) */
+  dryRun?: boolean;
+  /** Remove entries older than this many days (used with --cleanup) */
+  maxAge?: number;
 }
 
 /**
@@ -208,6 +220,18 @@ function displayIssueSummary(issues: IssueState[]): void {
 export async function statusCommand(
   options: StatusCommandOptions = {},
 ): Promise<void> {
+  // Handle --rebuild flag
+  if (options.rebuild) {
+    await handleRebuild(options);
+    return;
+  }
+
+  // Handle --cleanup flag
+  if (options.cleanup) {
+    await handleCleanup(options);
+    return;
+  }
+
   // If --issues or --issue flag, focus on issue state
   if (options.issues || options.issue !== undefined) {
     await displayIssueState(options);
@@ -323,5 +347,100 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
     } else {
       console.log(chalk.red(`\nError reading state: ${error}`));
     }
+  }
+}
+
+/**
+ * Handle --rebuild flag: Rebuild state from run logs
+ */
+async function handleRebuild(options: StatusCommandOptions): Promise<void> {
+  if (!options.json) {
+    console.log(chalk.bold("\n🔄 Rebuilding state from logs...\n"));
+  }
+
+  const result = await rebuildStateFromLogs({ verbose: !options.json });
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (result.success) {
+    console.log(chalk.green("✓ State rebuilt successfully"));
+    console.log(chalk.gray(`  Logs processed: ${result.logsProcessed}`));
+    console.log(chalk.gray(`  Issues found: ${result.issuesFound}`));
+
+    if (result.issuesFound > 0) {
+      console.log(
+        chalk.gray("\nRun `sequant status --issues` to see rebuilt state."),
+      );
+    }
+  } else {
+    console.log(chalk.red(`✗ Rebuild failed: ${result.error}`));
+  }
+}
+
+/**
+ * Handle --cleanup flag: Clean up stale/orphaned entries
+ */
+async function handleCleanup(options: StatusCommandOptions): Promise<void> {
+  const dryRun = options.dryRun ?? false;
+
+  if (!options.json) {
+    if (dryRun) {
+      console.log(chalk.bold("\n🧹 Cleanup preview (dry run)...\n"));
+    } else {
+      console.log(chalk.bold("\n🧹 Cleaning up stale entries...\n"));
+    }
+  }
+
+  const result = await cleanupStaleEntries({
+    dryRun,
+    maxAgeDays: options.maxAge,
+    verbose: !options.json,
+  });
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (result.success) {
+    const orphanedCount = result.orphaned.length;
+    const removedCount = result.removed.length;
+
+    if (orphanedCount === 0 && removedCount === 0) {
+      console.log(chalk.green("✓ No stale entries found"));
+    } else {
+      if (dryRun) {
+        console.log(chalk.yellow("Preview (no changes made):"));
+      } else {
+        console.log(chalk.green("✓ Cleanup completed"));
+      }
+
+      if (orphanedCount > 0) {
+        console.log(
+          chalk.gray(
+            `  Orphaned (worktree missing): ${result.orphaned.map((n) => `#${n}`).join(", ")}`,
+          ),
+        );
+      }
+
+      if (removedCount > 0) {
+        console.log(
+          chalk.gray(
+            `  Removed: ${result.removed.map((n) => `#${n}`).join(", ")}`,
+          ),
+        );
+      }
+
+      if (dryRun) {
+        console.log(
+          chalk.gray("\nRun without --dry-run to apply these changes."),
+        );
+      }
+    }
+  } else {
+    console.log(chalk.red(`✗ Cleanup failed: ${result.error}`));
   }
 }
