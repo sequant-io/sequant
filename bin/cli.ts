@@ -11,6 +11,7 @@ import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
+import { isLocalNodeModulesInstall } from "../src/lib/version-check.js";
 
 // Read version from package.json dynamically
 // Works from both source (bin/) and compiled (dist/bin/) locations
@@ -45,6 +46,18 @@ const program = new Command();
 // Handle --no-color before parsing
 if (process.argv.includes("--no-color")) {
   process.env.FORCE_COLOR = "0";
+}
+
+// Warn if running from local node_modules (not npx cache or global)
+// This helps users who accidentally have a stale local install
+if (!process.argv.includes("--quiet") && isLocalNodeModulesInstall()) {
+  console.warn(
+    chalk.yellow(
+      "⚠️  Running sequant from local node_modules\n" +
+        "   For latest version: npx sequant@latest\n" +
+        "   To remove local: npm uninstall sequant\n",
+    ),
+  );
 }
 
 program
