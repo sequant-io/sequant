@@ -95,8 +95,21 @@ program
 
 program
   .command("status")
-  .description("Show Sequant version and configuration status")
-  .action(statusCommand);
+  .description("Show Sequant version, configuration, and workflow state")
+  .argument("[issue]", "Issue number to show details for", parseInt)
+  .option("--issues", "Show all tracked issues")
+  .option("--json", "Output as JSON")
+  .option("--rebuild", "Rebuild state from run logs")
+  .option("--cleanup", "Clean up stale/orphaned entries")
+  .option("--dry-run", "Preview cleanup without changes")
+  .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .action((issue, options) => {
+    // Support positional arg: `sequant status 42` → --issue 42
+    if (issue) {
+      options.issue = issue;
+    }
+    return statusCommand(options);
+  });
 
 program
   .command("run")
