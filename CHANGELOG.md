@@ -5,10 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.10.0] - 2026-01-19
 
 ### Added
 
+- `--base <branch>` flag for `sequant run` to specify custom base branches (#122)
+  - Branch from feature integration branches instead of main
+  - `run.defaultBase` config option in `.sequant/settings.json`
+  - Resolution priority: CLI flag → config → main
+  - Full documentation in `docs/feature-branch-workflow.md`
 - Persistent workflow state tracking for issue phases (#115)
   - State file at `.sequant/state.json` tracks issue progress across sessions
   - `sequant status --issues` shows all tracked issues and their phase progress
