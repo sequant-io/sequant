@@ -1,0 +1,82 @@
+{
+  "name": "sequant-workflow",
+  "displayName": "Sequant Workflow",
+  "description": "Visualize Sequant workflow state in VS Code sidebar",
+  "version": "0.0.1",
+  "publisher": "sequant",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.sequant/state.json"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sequant",
+          "title": "Sequant",
+          "icon": "resources/sequant.svg"
+        }
+      ]
+    },
+    "views": {
+      "sequant": [
+        {
+          "id": "sequantIssues",
+          "name": "Issues",
+          "icon": "resources/sequant.svg",
+          "contextualTitle": "Sequant Issues"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "sequant.refresh",
+        "title": "Refresh Issues",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sequant.openWorktree",
+        "title": "Open Worktree"
+      },
+      {
+        "command": "sequant.openGitHub",
+        "title": "Open on GitHub"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sequant.refresh",
+          "when": "view == sequantIssues",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sequant.openWorktree",
+          "when": "view == sequantIssues && viewItem == issue"
+        },
+        {
+          "command": "sequant.openGitHub",
+          "when": "view == sequantIssues && viewItem == issue"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}

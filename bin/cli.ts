@@ -40,6 +40,7 @@ import { statusCommand } from "../src/commands/status.js";
 import { runCommand } from "../src/commands/run.js";
 import { logsCommand } from "../src/commands/logs.js";
 import { statsCommand } from "../src/commands/stats.js";
+import { dashboardCommand } from "../src/commands/dashboard.js";
 
 const program = new Command();
 
@@ -168,6 +169,14 @@ program
   .option("--csv", "Output as CSV")
   .option("--json", "Output as JSON")
   .action(statsCommand);
+
+program
+  .command("dashboard")
+  .description("Open visual workflow dashboard in browser")
+  .option("-p, --port <port>", "Server port (default: 3456)", parseInt)
+  .option("--no-browser", "Don't auto-open browser")
+  .option("-v, --verbose", "Verbose logging")
+  .action(dashboardCommand);
 
 // Parse and execute
 program.parse();
