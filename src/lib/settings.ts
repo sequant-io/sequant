@@ -75,6 +75,12 @@ export interface RunSettings {
   smartTests: boolean;
   /** Log rotation settings */
   rotation: RotationSettings;
+  /**
+   * Default base branch for worktree creation.
+   * Resolution priority: CLI --base flag → this config → 'main'
+   * Example: "feature/dashboard" for feature integration branches
+   */
+  defaultBase?: string;
 }
 
 /**

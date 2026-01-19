@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Create a new feature worktree from a GitHub issue
-# Usage: ./scripts/new-feature.sh <issue-number> [--stash]
+# Usage: ./scripts/new-feature.sh <issue-number> [--base <branch>] [--stash]
 # Example: ./scripts/new-feature.sh 4
 # Example: ./scripts/new-feature.sh 4 --stash  # Auto-stash uncommitted changes
+# Example: ./scripts/new-feature.sh 4 --base feature/dashboard  # Branch from feature branch
 
 set -e
 
@@ -14,20 +15,27 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Parse arguments (flexible position for --stash flag)
+# Parse arguments (flexible position for flags)
 STASH_FLAG=false
 ISSUE_NUMBER=""
+BASE_BRANCH="main"
 
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --stash)
             STASH_FLAG=true
+            shift
+            ;;
+        --base)
+            BASE_BRANCH="$2"
+            shift 2
             ;;
         *)
             # First non-flag argument is the issue number
             if [ -z "$ISSUE_NUMBER" ]; then
-                ISSUE_NUMBER=$arg
+                ISSUE_NUMBER=$1
             fi
+            shift
             ;;
     esac
 done
@@ -35,9 +43,10 @@ done
 # Check if issue number is provided
 if [ -z "$ISSUE_NUMBER" ]; then
     echo -e "${RED}❌ Error: Issue number required${NC}"
-    echo "Usage: ./scripts/new-feature.sh <issue-number> [--stash]"
+    echo "Usage: ./scripts/new-feature.sh <issue-number> [--base <branch>] [--stash]"
     echo "Example: ./scripts/new-feature.sh 4"
     echo "Example: ./scripts/new-feature.sh 4 --stash"
+    echo "Example: ./scripts/new-feature.sh 4 --base feature/dashboard"
     exit 1
 fi
 
@@ -95,6 +104,7 @@ WORKTREE_DIR="../worktrees/${BRANCH_NAME}"
 
 echo -e "${GREEN}✨ Creating worktree for issue #${ISSUE_NUMBER}${NC}"
 echo -e "${BLUE}Branch: ${BRANCH_NAME}${NC}"
+echo -e "${BLUE}Base: ${BASE_BRANCH}${NC}"
 echo -e "${BLUE}Worktree: ${WORKTREE_DIR}${NC}"
 echo ""
 
@@ -132,14 +142,14 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
     fi
 fi
 
-# Update main branch
-echo -e "${BLUE}📥 Updating main branch...${NC}"
-git fetch origin main
-git checkout main
-git pull origin main
+# Update base branch
+echo -e "${BLUE}📥 Updating ${BASE_BRANCH} branch...${NC}"
+git fetch origin "$BASE_BRANCH"
+git checkout "$BASE_BRANCH"
+git pull origin "$BASE_BRANCH"
 
-# Create worktree
-echo -e "${BLUE}🌿 Creating new worktree...${NC}"
+# Create worktree from base branch
+echo -e "${BLUE}🌿 Creating new worktree from ${BASE_BRANCH}...${NC}"
 git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME"
 
 # Navigate to worktree

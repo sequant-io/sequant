@@ -74,6 +74,38 @@ parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // f
 
 3. **After #2 completes:** `Task(subagent_type="schema-inspector", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
 
+### Feature Branch Context Detection
+
+Before creating the implementation plan, check if a custom base branch should be recommended:
+
+1. **Check for feature branch references in issue body**:
+   ```bash
+   gh issue view <issue> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)"
+   ```
+
+2. **Check issue labels for feature context**:
+   ```bash
+   gh issue view <issue> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
+   ```
+
+3. **Check if project has defaultBase configured**:
+   ```bash
+   cat .sequant/settings.json 2>/dev/null | jq -r '.run.defaultBase // empty'
+   ```
+
+4. **If feature branch context detected**, include in plan output:
+   ```markdown
+   ## Feature Branch Context
+
+   **Detected base branch**: `feature/dashboard`
+   **Source**: Issue body mentions "Part of dashboard feature" / Project config / Label
+
+   **Recommended workflow**:
+   \`\`\`bash
+   npx sequant run <issue> --base feature/dashboard
+   \`\`\`
+   ```
+
 ### In-Flight Work Analysis (Conflict Detection)
 
 Before creating the implementation plan, scan for potential conflicts with in-flight work:
@@ -83,9 +115,9 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
    git worktree list --porcelain
    ```
 
-2. **For each worktree, get changed files**:
+2. **For each worktree, get changed files** (use detected base branch or default to main):
    ```bash
-   git -C <worktree-path> diff --name-only main...HEAD
+   git -C <worktree-path> diff --name-only <base-branch>...HEAD
    ```
 
 3. **Analyze this issue's likely file touches** based on:

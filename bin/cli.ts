@@ -130,6 +130,10 @@ program
     "--chain",
     "Chain issues: each branches from previous (requires --sequential)",
   )
+  .option(
+    "--base <branch>",
+    "Base branch for worktree creation (default: main or settings.run.defaultBase)",
+  )
   .action(runCommand);
 
 program

@@ -76,6 +76,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 | `SEQUANT_PHASE` | Current phase in the workflow | `exec` |
 | `SEQUANT_ISSUE` | Issue number being processed | `123` |
 | `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+| `SEQUANT_BASE_BRANCH` | Base branch for worktree (if custom) | `feature/dashboard` |
 
 **Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
 
@@ -248,6 +249,7 @@ echo "Current branch: $CURRENT_BRANCH"
 **If on main/master branch:**
 1. **STOP** - Do not implement directly on main
 2. Create a feature worktree first: `./scripts/dev/new-feature.sh <issue-number>`
+   - For custom base branch: `./scripts/dev/new-feature.sh <issue-number> --base <branch>`
 3. Navigate to the worktree before making any changes
 
 **Why this matters:** Work done directly on main can be lost during sync operations (git reset, git pull --rebase, etc.). Worktrees provide isolation and safe recovery through branches.
@@ -268,7 +270,10 @@ echo "Current branch: $CURRENT_BRANCH"
    **Optimized flow (parallel):**
    ```bash
    # Step 1: Start worktree creation in background
+   # For default (main) base:
    ./scripts/dev/new-feature.sh <issue-number> &
+   # For custom base branch (e.g., feature integration branch):
+   ./scripts/dev/new-feature.sh <issue-number> --base feature/dashboard &
    WORKTREE_PID=$!
 
    # Step 2: Gather context while worktree creates (see Section 2)
@@ -284,6 +289,7 @@ echo "Current branch: $CURRENT_BRANCH"
      - Fetch issue details from GitHub
      - Create branch: `feature/<issue-number>-<issue-title-slug>`
      - Create worktree in: `../worktrees/feature/<branch-name>/`
+     - Branch from specified base (default: main)
      - Install dependencies (can use cache if `SEQUANT_NPM_CACHE=true`)
      - Copy environment files if they exist
 
