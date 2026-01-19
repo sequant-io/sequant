@@ -72,6 +72,34 @@ Quality loop (`--quality-loop` or `-q`) provides automatic fix iterations when p
 - Handles build issues from dependency changes
 - Reduces manual intervention for recoverable errors
 
+### Feature Branch Detection
+
+When analyzing issues, check if `--base` flag should be recommended.
+
+**Check for feature branch indicators:**
+
+```bash
+# Check for feature branch references in issue body
+gh issue view <issue-number> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)"
+
+# Check issue labels for feature context
+gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
+
+# Check if project has defaultBase configured
+cat .sequant/settings.json 2>/dev/null | jq -r '.run.defaultBase // empty'
+```
+
+**Recommend `--base <branch>` when:**
+- Issue body references a feature branch (e.g., "Part of dashboard feature")
+- Issue is labeled with a feature epic label (e.g., `dashboard`, `epic-auth`)
+- Multiple related issues reference the same parent feature
+- Project has `run.defaultBase` configured in settings
+
+**Do NOT recommend `--base` when:**
+- Issue should branch from main (default, most common)
+- No feature branch context detected
+- Issue is a standalone bug fix or independent feature
+
 ### Chain Mode Detection
 
 When analyzing multiple issues, determine if `--chain` flag should be recommended.
@@ -306,6 +334,12 @@ npx sequant run 152 153 --sequential
 # Chain mode (each issue branches from previous completed issue)
 npx sequant run 10 11 12 --sequential --chain
 
+# Custom base branch (branch from feature branch instead of main)
+npx sequant run 117 --base feature/dashboard
+
+# Chain mode with custom base branch
+npx sequant run 117 118 119 --sequential --chain --base feature/dashboard
+
 # Custom phases
 npx sequant run 152 --phases spec,exec,qa
 
@@ -318,6 +352,28 @@ npx sequant run 152 --quality-loop --max-iterations 5
 # Dry run (shows what would execute)
 npx sequant run 152 --dry-run
 ```
+
+### Custom Base Branch
+
+The `--base` flag specifies which branch to create worktrees from:
+
+```
+Without --base:           With --base feature/dashboard:
+origin/main               feature/dashboard
+    ├── #117                  ├── #117
+    ├── #118                  ├── #118
+    └── #119                  └── #119
+```
+
+**Use `--base` when:**
+- Working on issues for a feature integration branch
+- Issue references a parent branch (e.g., "Part of dashboard feature")
+- Project uses `.sequant/settings.json` with `run.defaultBase` configured
+- Issues should build on an existing feature branch
+
+**Do NOT use `--base` when:**
+- Issues should branch from main (default behavior)
+- Working on independent bug fixes or features
 
 ### Chain Mode Explained
 

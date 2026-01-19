@@ -201,19 +201,34 @@ async function ensureWorktree(
   }
 
   // Determine the base for the new branch
-  const baseRef = baseBranch || "origin/main";
+  // For custom base branches, use origin/<branch> if it's a remote-style reference
+  // For local branches (chain mode), use as-is
+  const isLocalBranch =
+    baseBranch && !baseBranch.startsWith("origin/") && baseBranch !== "main";
+  const baseRef = baseBranch
+    ? isLocalBranch
+      ? baseBranch
+      : baseBranch.startsWith("origin/")
+        ? baseBranch
+        : `origin/${baseBranch}`
+    : "origin/main";
 
-  // Fetch latest main to ensure worktree starts from fresh baseline (unless using local branch)
-  if (!baseBranch) {
+  // Fetch the base branch to ensure worktree starts from fresh baseline
+  const branchToFetch = baseBranch
+    ? baseBranch.replace(/^origin\//, "")
+    : "main";
+  if (!isLocalBranch) {
     if (verbose) {
-      console.log(chalk.gray(`    🔄 Fetching latest main...`));
+      console.log(chalk.gray(`    🔄 Fetching latest ${branchToFetch}...`));
     }
-    const fetchResult = spawnSync("git", ["fetch", "origin", "main"], {
+    const fetchResult = spawnSync("git", ["fetch", "origin", branchToFetch], {
       stdio: "pipe",
     });
     if (fetchResult.status !== 0 && verbose) {
       console.log(
-        chalk.yellow(`    ⚠️  Could not fetch origin/main, using local state`),
+        chalk.yellow(
+          `    ⚠️  Could not fetch origin/${branchToFetch}, using local state`,
+        ),
       );
     }
   } else if (verbose) {
@@ -302,15 +317,18 @@ async function ensureWorktree(
 
 /**
  * Ensure worktrees exist for all issues before execution
+ * @param baseBranch - Optional base branch for worktree creation (default: main)
  */
 async function ensureWorktrees(
   issues: Array<{ number: number; title: string }>,
   verbose: boolean,
   packageManager?: string,
+  baseBranch?: string,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
-  console.log(chalk.blue("\n  📂 Preparing worktrees..."));
+  const baseDisplay = baseBranch || "main";
+  console.log(chalk.blue(`\n  📂 Preparing worktrees from ${baseDisplay}...`));
 
   for (const issue of issues) {
     const worktree = await ensureWorktree(
@@ -318,6 +336,7 @@ async function ensureWorktrees(
       issue.title,
       verbose,
       packageManager,
+      baseBranch,
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -341,17 +360,23 @@ async function ensureWorktrees(
 /**
  * Ensure worktrees exist for all issues in chain mode
  * Each issue branches from the previous issue's branch
+ * @param baseBranch - Optional starting base branch for the chain (default: main)
  */
 async function ensureWorktreesChain(
   issues: Array<{ number: number; title: string }>,
   verbose: boolean,
   packageManager?: string,
+  baseBranch?: string,
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
-  console.log(chalk.blue("\n  🔗 Preparing chained worktrees..."));
+  const baseDisplay = baseBranch || "main";
+  console.log(
+    chalk.blue(`\n  🔗 Preparing chained worktrees from ${baseDisplay}...`),
+  );
 
-  let previousBranch: string | undefined;
+  // First issue starts from the specified base branch (or main)
+  let previousBranch: string | undefined = baseBranch;
 
   for (const issue of issues) {
     const worktree = await ensureWorktree(
@@ -359,7 +384,7 @@ async function ensureWorktreesChain(
       issue.title,
       verbose,
       packageManager,
-      previousBranch, // Chain from previous branch
+      previousBranch, // Chain from previous branch (or base branch for first issue)
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -392,7 +417,7 @@ async function ensureWorktreesChain(
       .filter((i) => worktrees.has(i.number))
       .map((i) => `#${i.number}`)
       .join(" → ");
-    console.log(chalk.gray(`  Chain: origin/main → ${chainOrder}`));
+    console.log(chalk.gray(`  Chain: ${baseDisplay} → ${chainOrder}`));
   }
 
   return worktrees;
@@ -667,6 +692,11 @@ interface RunOptions {
   quiet?: boolean;
   /** Chain issues: each branches from previous (requires --sequential) */
   chain?: boolean;
+  /**
+   * Base branch for worktree creation.
+   * Resolution priority: this CLI flag → settings.run.defaultBase → 'main'
+   */
+  base?: string;
 }
 
 /**
@@ -1194,6 +1224,10 @@ export async function runCommand(
   const autoDetectPhases = !options.phases && settings.run.autoDetectPhases;
   mergedOptions.autoDetectPhases = autoDetectPhases;
 
+  // Resolve base branch: CLI flag → settings.run.defaultBase → 'main'
+  const resolvedBaseBranch =
+    options.base ?? settings.run.defaultBase ?? undefined;
+
   // Parse issue numbers (or use batch mode)
   let issueNumbers: number[];
   let batches: number[][] | null = null;
@@ -1389,6 +1423,9 @@ export async function runCommand(
   if (useWorktreeIsolation) {
     console.log(chalk.gray(`  Worktree isolation: enabled`));
   }
+  if (resolvedBaseBranch) {
+    console.log(chalk.gray(`  Base branch: ${resolvedBaseBranch}`));
+  }
   if (mergedOptions.chain) {
     console.log(
       chalk.gray(`  Chain mode: enabled (each issue branches from previous)`),
@@ -1415,12 +1452,14 @@ export async function runCommand(
         issueData,
         config.verbose,
         manifest.packageManager,
+        resolvedBaseBranch,
       );
     } else {
       worktreeMap = await ensureWorktrees(
         issueData,
         config.verbose,
         manifest.packageManager,
+        resolvedBaseBranch,
       );
     }
 

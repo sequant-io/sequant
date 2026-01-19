@@ -84,6 +84,7 @@ Run without Claude Code UI:
 npx sequant run 123              # Single issue
 npx sequant run 1 2 3            # Batch (parallel)
 npx sequant run 123 --quality-loop
+npx sequant run 123 --base feature/dashboard  # Custom base branch
 ```
 
 ---
@@ -148,7 +149,8 @@ See [Run Command Options](docs/run-command.md) for advanced usage.
 {
   "run": {
     "qualityLoop": false,
-    "maxIterations": 3
+    "maxIterations": 3,
+    "defaultBase": "feature/dashboard"  // Optional: custom default base branch
   }
 }
 ```
@@ -173,6 +175,7 @@ See [Customization Guide](docs/customization.md) for all options.
 - [Getting Started](docs/getting-started/installation.md)
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/run-command.md)
+- [Feature Branch Workflows](docs/feature-branch-workflow.md)
 - [Customization](docs/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
