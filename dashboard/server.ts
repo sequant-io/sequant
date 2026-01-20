@@ -15,6 +15,7 @@
  */
 
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
 import { watch } from "chokidar";
 import { StateManager } from "../src/lib/workflow/state-manager.js";
@@ -38,8 +39,11 @@ export interface DashboardOptions {
   verbose?: boolean;
 }
 
+/** SSE client callback type */
+type SSECallback = (html: string) => void;
+
 /** Connected SSE clients */
-const clients: Set<WritableStreamDefaultWriter<Uint8Array>> = new Set();
+const clients: Set<SSECallback> = new Set();
 
 /**
  * Escape HTML entities to prevent XSS
@@ -273,7 +277,7 @@ function renderMainPage(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sequant Dashboard</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12/dist/htmx.min.js"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/sse.js"></script>
   <style>
     :root {
@@ -521,46 +525,55 @@ export function createApp(stateManager: StateManager): Hono {
 
   // SSE endpoint for live updates
   app.get("/events", async (c) => {
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
+    return streamSSE(c, async (stream) => {
+      let isActive = true;
+      let messageId = 0;
 
-    clients.add(writer);
+      // Callback to receive broadcast updates
+      const onUpdate = (html: string) => {
+        if (isActive) {
+          stream
+            .writeSSE({
+              data: html.replace(/\n/g, ""),
+              event: "issues-update",
+              id: String(messageId++),
+            })
+            .catch(() => {
+              isActive = false;
+            });
+        }
+      };
 
-    // Send initial data
-    try {
-      const allIssues = await stateManager.getAllIssueStates();
-      const issues = Object.values(allIssues);
-      const html = renderIssuesList(issues);
-      const data = `event: issues-update\ndata: ${html.replace(/\n/g, "")}\n\n`;
-      await writer.write(encoder.encode(data));
-    } catch {
-      // Ignore initial load errors
-    }
+      // Register client
+      clients.add(onUpdate);
 
-    // Keep-alive heartbeat
-    const heartbeat = setInterval(async () => {
+      // Handle client disconnect
+      stream.onAbort(() => {
+        isActive = false;
+        clients.delete(onUpdate);
+      });
+
+      // Send initial data
       try {
-        await writer.write(encoder.encode(": heartbeat\n\n"));
+        const allIssues = await stateManager.getAllIssueStates();
+        const issues = Object.values(allIssues);
+        const html = renderIssuesList(issues);
+        await stream.writeSSE({
+          data: html.replace(/\n/g, ""),
+          event: "issues-update",
+          id: String(messageId++),
+        });
       } catch {
-        clearInterval(heartbeat);
-        clients.delete(writer);
+        // Ignore initial load errors
       }
-    }, 30000);
 
-    // Cleanup on close
-    c.req.raw.signal.addEventListener("abort", () => {
-      clearInterval(heartbeat);
-      clients.delete(writer);
-      writer.close().catch(() => {});
-    });
+      // Keep connection alive with heartbeat
+      while (isActive) {
+        await stream.sleep(30000);
+      }
 
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
+      // Cleanup
+      clients.delete(onUpdate);
     });
   });
 
@@ -584,23 +597,14 @@ async function broadcastUpdate(stateManager: StateManager): Promise<void> {
     const allIssues = await stateManager.getAllIssueStates();
     const issues = Object.values(allIssues);
     const html = renderIssuesList(issues);
-    const data = `event: issues-update\ndata: ${html.replace(/\n/g, "")}\n\n`;
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(data);
 
-    const deadClients: WritableStreamDefaultWriter<Uint8Array>[] = [];
-
-    for (const client of clients) {
+    // Notify all connected clients
+    for (const callback of clients) {
       try {
-        await client.write(encoded);
+        callback(html);
       } catch {
-        deadClients.push(client);
+        // Client callback failed, will be cleaned up on disconnect
       }
-    }
-
-    // Remove dead clients
-    for (const client of deadClients) {
-      clients.delete(client);
     }
   } catch {
     // Ignore broadcast errors
