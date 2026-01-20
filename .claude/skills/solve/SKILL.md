@@ -130,6 +130,22 @@ gh issue view <issue-number> --json body --jq '.body' | grep -oE "#[0-9]+"
 - Issues touch completely different areas of codebase
 - Parallel batch mode is more appropriate (unrelated issues)
 
+### QA Gate Detection
+
+When recommending `--chain`, also consider if `--qa-gate` should be added.
+
+**Recommend `--qa-gate` when:**
+- Chain has 3+ issues (longer chains have higher stale code risk)
+- Issues have tight dependencies (later issues heavily rely on earlier ones)
+- Issues modify the same files across the chain
+- Production-critical or high-risk changes
+
+**Do NOT recommend `--qa-gate` when:**
+- Chain has only 2 issues (lower risk)
+- Issues are mostly independent despite chain structure
+- Speed is prioritized over safety
+- Simple, low-risk changes
+
 **Chain structure visualization:**
 ```
 origin/main → #10 → #11 → #12
@@ -211,6 +227,7 @@ You MUST use this exact structure:
 ┌─ Flags ──────────────────────────────────────────────────────┐
 │  -q  quality-loop   ✓/✗  <one-line reasoning>                │
 │  --chain            ✓/✗  <one-line reasoning>                │
+│  --qa-gate          ✓/✗  <one-line reasoning>                │
 │  --base             ✓/✗  <one-line reasoning>                │
 └──────────────────────────────────────────────────────────────┘
 
@@ -245,6 +262,7 @@ Also consider:
 ┌─ Flags ──────────────────────────────────────────────────────┐
 │  -q  quality-loop   ✓  refactor label auto-enables retry     │
 │  --chain            ✗  independent (different codepaths)     │
+│  --qa-gate          ✗  no chain mode                         │
 │  --base             ✗  branching from main                   │
 └──────────────────────────────────────────────────────────────┘
 
@@ -265,7 +283,7 @@ Also consider:
 ╭──────────────────────────────────────────────────────────────╮
 │  sequant solve                                               │
 │                                                              │
-│  npx sequant run 10 11 12 --sequential --chain -q            │
+│  npx sequant run 10 11 12 --sequential --chain --qa-gate -q  │
 ╰──────────────────────────────────────────────────────────────╯
 
 #10  Add auth middleware ······················ backend → spec → exec → qa
@@ -275,6 +293,7 @@ Also consider:
 ┌─ Flags ──────────────────────────────────────────────────────┐
 │  -q  quality-loop   ✓  multi-step implementation             │
 │  --chain            ✓  #11 depends on #10, #12 depends on #11│
+│  --qa-gate          ✓  3 issues with tight dependencies      │
 │  --base             ✗  branching from main                   │
 └──────────────────────────────────────────────────────────────┘
 
@@ -284,6 +303,7 @@ Chain structure:
 Why this workflow:
   • Explicit dependencies detected in issue bodies
   • Chain ensures each branch builds on previous
+  • QA gate prevents stale code in downstream issues
   • UI issues (#11, #12) include /test phase
 ```
 
@@ -303,6 +323,7 @@ Why this workflow:
 ┌─ Flags ──────────────────────────────────────────────────────┐
 │  -q  quality-loop   ✓  auth changes benefit from retry       │
 │  --chain            ✗  single issue                          │
+│  --qa-gate          ✗  no chain mode                         │
 │  --base             ✗  branching from main                   │
 └──────────────────────────────────────────────────────────────┘
 
@@ -377,6 +398,9 @@ npx sequant run 152 153 --sequential
 
 # Chain mode (each issue branches from previous completed issue)
 npx sequant run 10 11 12 --sequential --chain
+
+# Chain mode with QA gate (pause if QA fails, prevent stale code)
+npx sequant run 10 11 12 --sequential --chain --qa-gate
 
 # Custom base branch (branch from feature branch instead of main)
 npx sequant run 117 --base feature/dashboard
@@ -500,7 +524,7 @@ npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
 
 - [ ] **Header Box** — ASCII box with `sequant solve` and full command
 - [ ] **Issues List** — Each issue with dot leaders: `#N  Title ··· labels → workflow`
-- [ ] **Flags Table** — ALL three flags (-q, --chain, --base) with ✓/✗ and reasoning
+- [ ] **Flags Table** — ALL four flags (-q, --chain, --qa-gate, --base) with ✓/✗ and reasoning
 - [ ] **Why Section** — 3-5 bullet points explaining decisions
 - [ ] **Also Consider** — (conditional) Curated alternatives if applicable
 - [ ] **Conflict Warning** — (conditional) If in-flight work overlaps
