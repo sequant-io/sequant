@@ -561,6 +561,33 @@ Generated with [Claude Code](https://claude.com/claude-code)
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> testgen
+```
+
+**On successful completion:**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> testgen
+```
+
+**On failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> testgen "Failed to generate test stubs"
+```
+
+**Note:** `/testgen` is an optional skill that generates test stubs. State tracking is informational - it doesn't block subsequent phases.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

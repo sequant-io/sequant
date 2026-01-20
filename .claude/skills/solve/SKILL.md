@@ -139,134 +139,178 @@ origin/main → #10 → #11 → #12
 
 ## Output Format
 
-Provide a clear, actionable response with:
+**Design Principles:**
+- Lead with the recommendation (command first, top-down)
+- Show all flag decisions explicitly with reasoning
+- Be concise — signal over prose
+- Visual hierarchy using ASCII boxes and lines
+- Max ~25 lines (excluding conflict warnings)
 
-1. **Issue Summary Table** showing:
-   - Issue number
-   - Title
-   - Labels
-   - Recommended workflow
+**Required Sections (in order):**
 
-2. **Chain Mode Section** (for multiple issues):
-   - Whether `--chain` is recommended
-   - Why chain is/isn't recommended
-   - Chain structure visualization (if recommended)
+1. **Header Box** — Command recommendation prominently displayed
+2. **Issues List** — Compact: `#N  Title ··· labels → workflow`
+3. **Flags Table** — ALL flags with ✓/✗ and one-line reasoning
+4. **Why Section** — 3-5 bullet points explaining key decisions
+5. **Also Consider** — Conditional curated alternatives (0-3 items)
+6. **Conflict Warning** — Only if in-flight work overlaps (conditional)
 
-3. **Recommended Commands** in order
+---
 
-4. **CLI Command** - ALWAYS include `npx sequant run <issue>` for terminal/CI usage
+## Conflict Detection
 
-5. **Explanation** of why this workflow was chosen
-
-### Example Output (Independent Issues - No Chain)
-
-```markdown
-## Solve Workflow for Issues: 152, 153
-
-### Issue Analysis
-
-| Issue | Title | Labels | Workflow |
-|-------|-------|--------|----------|
-| #152 | Add user dashboard | ui, enhancement | Full (with /test) |
-| #153 | Refactor auth module | backend, refactor | Standard + quality loop |
-
-### Chain Mode: ❌ Not Recommended
-
-These issues are **independent** and can be run in parallel:
-- #152 touches UI components
-- #153 touches backend auth module
-- No shared files or dependencies detected
-
-### Recommended Workflow
-
-**For #152 (UI feature):**
-```bash
-/spec 152      # Plan the implementation
-/exec 152      # Implement the feature
-/test 152      # Browser-based UI testing
-/qa 152        # Quality review
-```
-
-**For #153 (Backend refactor):**
-```bash
-/spec 153      # Plan the refactor
-/exec 153      # Implement changes
-/qa 153        # Quality review
-```
-
-> **Note:** Issue #153 has `refactor` label. Quality loop will **auto-enable** when using `sequant run`, providing automatic fix iterations if phases fail.
-
-### CLI Command
-
-Run from terminal (parallel execution):
-```bash
-npx sequant run 152 153
-```
-
-For issue #153 (or any complex work), quality loop is recommended:
-```bash
-npx sequant run 153 --quality-loop   # Explicit (auto-enabled for refactor label)
-```
-
-> **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
-
-### Notes
-- Issue #152 requires UI testing due to `ui` label
-- Issue #153 will auto-enable quality loop due to `refactor` label
-- Quality loop: auto-retries failed phases up to 3 times
-```
-
-### Example Output (Dependent Issues - Chain Recommended)
-
-```markdown
-## Solve Workflow for Issues: 10, 11, 12
-
-### Issue Analysis
-
-| Issue | Title | Labels | Workflow |
-|-------|-------|--------|----------|
-| #10 | Add auth middleware | backend, part-1 | Standard |
-| #11 | Add login page | ui, part-2 | Full (with /test) |
-| #12 | Add logout functionality | ui, part-3 | Full (with /test) |
-
-### Chain Mode: ✅ Recommended
-
-These issues form a **dependency chain**:
-- #11 body contains "depends on #10"
-- #12 body contains "depends on #11"
-- Issues are labeled as parts of a sequence (part-1, part-2, part-3)
-
-**Chain structure:**
-```
-origin/main → #10 → #11 → #12
-              │      │      │
-              auth   login  logout
-```
-
-### Recommended Workflow
-
-Run sequentially with `--chain`:
-```bash
-npx sequant run 10 11 12 --sequential --chain
-```
-
-This ensures:
-- #10 completes and merges before #11 starts
-- #11 branches from completed #10
-- #12 branches from completed #11
-
-### CLI Command
+Before generating output, check for in-flight work that may conflict:
 
 ```bash
-npx sequant run 10 11 12 --sequential --chain
+# List open worktrees
+git worktree list --porcelain 2>/dev/null | grep "^worktree" | cut -d' ' -f2
+
+# For each worktree, get changed files
+git -C <worktree-path> diff --name-only main...HEAD 2>/dev/null
 ```
 
-> **Note:** The `--chain` flag ensures each issue builds on the previous. Without it, issues would branch from the same base.
+**If overlap detected** with files this issue likely touches, include warning:
+```
+⚠ Conflict risk: #45 (open) modifies lib/auth/* — coordinate or wait
+```
 
-### Notes
-- Issues 10, 11, 12 form a dependency chain
-- Chain mode builds each branch on top of the previous
-- Order matters: run in dependency order (10 → 11 → 12)
+---
+
+## "Also Consider" Logic
+
+Only show alternatives representing genuine trade-offs. Max 2-3 items.
+
+| Condition | Show Alternative |
+|-----------|------------------|
+| Complex issues OR user unfamiliar with sequant | `--dry-run` (preview before executing) |
+| UI-adjacent AND test phase not included | `--phases +test` (add browser testing) |
+| Mild dependency risk between issues | `--sequential` (run one at a time) |
+| Dependencies ambiguous | Show both parallel and `--chain` options |
+
+**Rules:**
+- Omit section entirely if nothing worth showing
+- Never list every flag — only curated, contextual options
+- Each alternative needs one-line explanation
+
+---
+
+## Output Template
+
+You MUST use this exact structure:
+
+```
+╭──────────────────────────────────────────────────────────────╮
+│  sequant solve                                               │
+│                                                              │
+│  npx sequant run <ISSUES> <FLAGS>                            │
+╰──────────────────────────────────────────────────────────────╯
+
+#<N>  <Title truncated to ~35 chars> ·········· <labels> → <workflow>
+#<N>  <Title truncated to ~35 chars> ·········· <labels> → <workflow>
+
+┌─ Flags ──────────────────────────────────────────────────────┐
+│  -q  quality-loop   ✓/✗  <one-line reasoning>                │
+│  --chain            ✓/✗  <one-line reasoning>                │
+│  --base             ✓/✗  <one-line reasoning>                │
+└──────────────────────────────────────────────────────────────┘
+
+Why this workflow:
+  • <reason 1>
+  • <reason 2>
+  • <reason 3>
+
+<!-- CONDITIONAL: Only if alternatives worth showing -->
+Also consider:
+  <flag>     <one-line explanation>
+  <flag>     <one-line explanation>
+
+<!-- CONDITIONAL: Only if conflict detected -->
+⚠ Conflict risk: #<N> (open) modifies <path> — coordinate or wait
+```
+
+---
+
+### Example Output (Independent Issues)
+
+```
+╭──────────────────────────────────────────────────────────────╮
+│  sequant solve                                               │
+│                                                              │
+│  npx sequant run 152 153 -q                                  │
+╰──────────────────────────────────────────────────────────────╯
+
+#152  Add user dashboard ······················ ui → spec → exec → test → qa
+#153  Refactor auth module ···················· backend → spec → exec → qa
+
+┌─ Flags ──────────────────────────────────────────────────────┐
+│  -q  quality-loop   ✓  refactor label auto-enables retry     │
+│  --chain            ✗  independent (different codepaths)     │
+│  --base             ✗  branching from main                   │
+└──────────────────────────────────────────────────────────────┘
+
+Why this workflow:
+  • #152 has ui label → includes /test for browser verification
+  • #153 has refactor label → quality loop auto-enabled
+  • No shared files → safe to parallelize
+
+Also consider:
+  --dry-run     Preview execution before running
+```
+
+---
+
+### Example Output (Dependent Issues — Chain)
+
+```
+╭──────────────────────────────────────────────────────────────╮
+│  sequant solve                                               │
+│                                                              │
+│  npx sequant run 10 11 12 --sequential --chain -q            │
+╰──────────────────────────────────────────────────────────────╯
+
+#10  Add auth middleware ······················ backend → spec → exec → qa
+#11  Add login page ··························· ui → spec → exec → test → qa
+#12  Add logout functionality ················· ui → spec → exec → test → qa
+
+┌─ Flags ──────────────────────────────────────────────────────┐
+│  -q  quality-loop   ✓  multi-step implementation             │
+│  --chain            ✓  #11 depends on #10, #12 depends on #11│
+│  --base             ✗  branching from main                   │
+└──────────────────────────────────────────────────────────────┘
+
+Chain structure:
+  main → #10 → #11 → #12
+
+Why this workflow:
+  • Explicit dependencies detected in issue bodies
+  • Chain ensures each branch builds on previous
+  • UI issues (#11, #12) include /test phase
+```
+
+---
+
+### Example Output (With Conflict Warning)
+
+```
+╭──────────────────────────────────────────────────────────────╮
+│  sequant solve                                               │
+│                                                              │
+│  npx sequant run 85 -q                                       │
+╰──────────────────────────────────────────────────────────────╯
+
+#85  Update auth cookie handling ·············· bug → exec → qa
+
+┌─ Flags ──────────────────────────────────────────────────────┐
+│  -q  quality-loop   ✓  auth changes benefit from retry       │
+│  --chain            ✗  single issue                          │
+│  --base             ✗  branching from main                   │
+└──────────────────────────────────────────────────────────────┘
+
+Why this workflow:
+  • Bug fix with clear AC → skip /spec
+  • Single issue → no chain needed
+
+⚠ Conflict risk: #82 (open) modifies lib/auth/cookies.ts — coordinate or wait
 ```
 
 ## Workflow Selection Logic
@@ -429,79 +473,37 @@ If issues depend on each other:
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** `/solve` initializes issue state when analyzing issues.
+
+### State Updates
+
+When analyzing issues, initialize state tracking so the dashboard can show planned work:
+
+**Initialize each issue being analyzed:**
+```bash
+# Get issue title
+TITLE=$(gh issue view <issue-number> --json title -q '.title')
+
+# Initialize state (if not already tracked)
+npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
+```
+
+**Note:** `/solve` only initializes issues - actual phase tracking happens during workflow execution (`/fullsolve`, `sequant run`, or individual skills).
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
 
-- [ ] **Issue Summary Table** - Table with Issue, Title, Labels, Workflow columns
-- [ ] **Chain Mode Section** - (for 2+ issues) Whether chain is recommended and why
-- [ ] **Recommended Workflow** - Slash commands in order for each issue
-- [ ] **CLI Command** - `npx sequant run <issue-numbers>` with `-q` flag for non-trivial issues (REQUIRED)
-- [ ] **Quality Loop Note** - Recommend `-q` for enhancement/feature/complex issues
-- [ ] **Explanation** - Brief notes explaining workflow choices
+- [ ] **Header Box** — ASCII box with `sequant solve` and full command
+- [ ] **Issues List** — Each issue with dot leaders: `#N  Title ··· labels → workflow`
+- [ ] **Flags Table** — ALL three flags (-q, --chain, --base) with ✓/✗ and reasoning
+- [ ] **Why Section** — 3-5 bullet points explaining decisions
+- [ ] **Also Consider** — (conditional) Curated alternatives if applicable
+- [ ] **Conflict Warning** — (conditional) If in-flight work overlaps
+- [ ] **Line Count** — Total ≤25 lines (excluding conflict warnings)
 
 **DO NOT respond until all items are verified.**
-
-## Output Template
-
-You MUST use this exact structure:
-
-```markdown
-## Solve Workflow for Issues: <ISSUE_NUMBERS>
-
-### Issue Analysis
-
-| Issue | Title | Labels | Workflow |
-|-------|-------|--------|----------|
-<!-- FILL: one row per issue. Add "+ quality loop" for enhancement/feature/complex/refactor/breaking/major labels -->
-
-<!-- IF 2+ issues, ALWAYS include Chain Mode section: -->
-### Chain Mode: ✅ Recommended / ❌ Not Recommended
-
-<!-- IF chain recommended: -->
-These issues form a **dependency chain**:
-- [List dependency indicators found]
-
-**Chain structure:**
-\`\`\`
-origin/main → #<first> → #<second> → #<third>
-\`\`\`
-
-<!-- IF chain NOT recommended: -->
-These issues are **independent** and can be run in parallel:
-- [List reasons: different areas, no shared files, no dependencies]
-
-### Recommended Workflow
-
-**For #<N> (<type>):**
-\`\`\`bash
-<!-- FILL: slash commands in order -->
-\`\`\`
-
-<!-- IF any issue has complex/refactor/breaking/major label (auto-enabled): -->
-> **Note:** Issue #<N> has `<label>` label. Quality loop will **auto-enable** when using `sequant run`.
-
-### CLI Command
-
-<!-- IF chain recommended: -->
-Run with chain mode:
-\`\`\`bash
-npx sequant run <ISSUE_NUMBERS> --sequential --chain -q
-\`\`\`
-
-<!-- IF chain NOT recommended (parallel OK): -->
-Run from terminal:
-\`\`\`bash
-npx sequant run <ISSUE_NUMBERS> -q
-\`\`\`
-
-<!-- ALWAYS include quality loop recommendation for non-trivial issues (enhancement, feature, or any multi-step work): -->
-> **Recommended:** The `-q` (quality loop) flag enables auto-retry on failures, reducing manual intervention.
-
-> **Tip:** Install globally with `npm install -g sequant` to omit the `npx` prefix.
-
-### Notes
-<!-- FILL: explanation of workflow choices -->
-<!-- Include note about chain mode if applicable -->
-<!-- Include note about quality loop auto-enabling if applicable -->
-```

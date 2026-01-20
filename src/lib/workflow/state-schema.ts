@@ -28,8 +28,10 @@ export const WORKFLOW_PHASES = [
   "exec",
   "testgen",
   "test",
+  "verify",
   "qa",
   "loop",
+  "merger",
 ] as const;
 
 /**
@@ -69,8 +71,10 @@ export const PhaseSchema = z.enum([
   "exec",
   "testgen",
   "test",
+  "verify",
   "qa",
   "loop",
+  "merger",
 ]);
 
 export type Phase = z.infer<typeof PhaseSchema>;

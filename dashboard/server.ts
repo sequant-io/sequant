@@ -134,8 +134,10 @@ function renderIssueCard(issue: IssueState): string {
     "exec",
     "testgen",
     "test",
+    "verify",
     "qa",
     "loop",
+    "merger",
   ];
   const phaseLabels: Record<Phase, string> = {
     spec: "Spec",
@@ -143,8 +145,10 @@ function renderIssueCard(issue: IssueState): string {
     exec: "Exec",
     testgen: "TGen",
     test: "Test",
+    verify: "Ver",
     qa: "QA",
     loop: "Loop",
+    merger: "Merge",
   };
 
   const phaseIndicators = phases

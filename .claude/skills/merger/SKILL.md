@@ -281,6 +281,35 @@ Environment variables:
 - `SEQUANT_MERGER_NO_CLEANUP` - If true, keep worktrees after merge
 - `SEQUANT_MERGER_FORCE` - If true, proceed even with conflicts
 
+## State Tracking
+
+**IMPORTANT:** `/merger` updates state for merged issues.
+
+### State Updates
+
+When merging issues, update state to reflect the merge:
+
+**After successful merge of each issue:**
+```bash
+npx tsx scripts/state/update.ts merged <issue-number>
+```
+
+**For integration branches (multiple issues merged together):**
+```bash
+# Mark all integrated issues as merged
+npx tsx scripts/state/update.ts merged <issue-1>
+npx tsx scripts/state/update.ts merged <issue-2>
+```
+
+**On merge failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> merger "Merge conflict or CI failure"
+```
+
+**Why this matters:** The dashboard shows merged issues as complete, and state tracking enables accurate workflow metrics.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

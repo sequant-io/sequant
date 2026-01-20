@@ -43,6 +43,8 @@ interface WorktreeInfo {
   path: string;
   branch: string;
   existed: boolean;
+  /** True if an existing branch was rebased onto the chain base */
+  rebased: boolean;
 }
 
 /**
@@ -153,6 +155,7 @@ export function getWorktreeChangedFiles(worktreePath: string): string[] {
 /**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
+ * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
  */
 async function ensureWorktree(
   issueNumber: number,
@@ -160,6 +163,7 @@ async function ensureWorktree(
   verbose: boolean,
   packageManager?: string,
   baseBranch?: string,
+  chainMode?: boolean,
 ): Promise<WorktreeInfo | null> {
   const gitRoot = getGitRoot();
   if (!gitRoot) {
@@ -185,6 +189,7 @@ async function ensureWorktree(
       path: existingPath,
       branch,
       existed: true,
+      rebased: false,
     };
   }
 
@@ -242,11 +247,18 @@ async function ensureWorktree(
 
   // Create the worktree
   let createResult;
+  let needsRebase = false;
+
   if (branchExists) {
     // Use existing branch
     createResult = spawnSync("git", ["worktree", "add", worktreePath, branch], {
       stdio: "pipe",
     });
+
+    // In chain mode with existing branch, mark for rebase onto previous chain link
+    if (chainMode && baseBranch) {
+      needsRebase = true;
+    }
   } else {
     // Create new branch from base reference (origin/main or previous branch in chain)
     createResult = spawnSync(
@@ -260,6 +272,64 @@ async function ensureWorktree(
     const error = createResult.stderr.toString();
     console.log(chalk.red(`    ❌ Failed to create worktree: ${error}`));
     return null;
+  }
+
+  // Rebase existing branch onto chain base if needed
+  let rebased = false;
+  if (needsRebase) {
+    if (verbose) {
+      console.log(
+        chalk.gray(
+          `    🔄 Rebasing existing branch onto previous chain link (${baseRef})...`,
+        ),
+      );
+    }
+
+    const rebaseResult = spawnSync(
+      "git",
+      ["-C", worktreePath, "rebase", baseRef],
+      {
+        stdio: "pipe",
+      },
+    );
+
+    if (rebaseResult.status !== 0) {
+      const rebaseError = rebaseResult.stderr.toString();
+
+      // Check if it's a conflict
+      if (
+        rebaseError.includes("CONFLICT") ||
+        rebaseError.includes("could not apply")
+      ) {
+        console.log(
+          chalk.yellow(
+            `    ⚠️  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+          ),
+        );
+        console.log(
+          chalk.yellow(
+            `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
+          ),
+        );
+
+        // Abort the rebase to restore branch state
+        spawnSync("git", ["-C", worktreePath, "rebase", "--abort"], {
+          stdio: "pipe",
+        });
+      } else {
+        console.log(
+          chalk.yellow(`    ⚠️  Rebase failed: ${rebaseError.trim()}`),
+        );
+        console.log(
+          chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
+        );
+      }
+    } else {
+      rebased = true;
+      if (verbose) {
+        console.log(chalk.green(`    ✅ Branch rebased onto ${baseRef}`));
+      }
+    }
   }
 
   // Copy .env.local if it exists
@@ -312,6 +382,7 @@ async function ensureWorktree(
     path: worktreePath,
     branch,
     existed: false,
+    rebased,
   };
 }
 
@@ -337,6 +408,7 @@ async function ensureWorktrees(
       verbose,
       packageManager,
       baseBranch,
+      false, // Non-chain mode: don't rebase existing branches
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -385,6 +457,7 @@ async function ensureWorktreesChain(
       verbose,
       packageManager,
       previousBranch, // Chain from previous branch (or base branch for first issue)
+      true, // Chain mode: rebase existing branches onto previous chain link
     );
     if (worktree) {
       worktrees.set(issue.number, worktree);
@@ -404,11 +477,16 @@ async function ensureWorktreesChain(
     (w) => !w.existed,
   ).length;
   const reused = Array.from(worktrees.values()).filter((w) => w.existed).length;
+  const rebased = Array.from(worktrees.values()).filter(
+    (w) => w.rebased,
+  ).length;
 
   if (created > 0 || reused > 0) {
-    console.log(
-      chalk.gray(`  Chained worktrees: ${created} created, ${reused} reused`),
-    );
+    let msg = `  Chained worktrees: ${created} created, ${reused} reused`;
+    if (rebased > 0) {
+      msg += `, ${rebased} rebased`;
+    }
+    console.log(chalk.gray(msg));
   }
 
   // Show chain structure
