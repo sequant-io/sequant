@@ -267,6 +267,33 @@ Report infrastructure issues separately from feature issues.
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> verify
+```
+
+**On successful completion (human confirms):**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> verify
+```
+
+**On failure (human rejects or command fails):**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> verify "Verification failed"
+```
+
+**Note:** `/verify` is an optional skill for CLI/script verification. State tracking is informational - it helps track which issues have been manually verified.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

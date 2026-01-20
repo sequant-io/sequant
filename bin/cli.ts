@@ -40,6 +40,7 @@ import { statusCommand } from "../src/commands/status.js";
 import { runCommand } from "../src/commands/run.js";
 import { logsCommand } from "../src/commands/logs.js";
 import { statsCommand } from "../src/commands/stats.js";
+import { dashboardCommand } from "../src/commands/dashboard.js";
 
 const program = new Command();
 
@@ -95,8 +96,21 @@ program
 
 program
   .command("status")
-  .description("Show Sequant version and configuration status")
-  .action(statusCommand);
+  .description("Show Sequant version, configuration, and workflow state")
+  .argument("[issue]", "Issue number to show details for", parseInt)
+  .option("--issues", "Show all tracked issues")
+  .option("--json", "Output as JSON")
+  .option("--rebuild", "Rebuild state from run logs")
+  .option("--cleanup", "Clean up stale/orphaned entries")
+  .option("--dry-run", "Preview cleanup without changes")
+  .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .action((issue, options) => {
+    // Support positional arg: `sequant status 42` → --issue 42
+    if (issue) {
+      options.issue = issue;
+    }
+    return statusCommand(options);
+  });
 
 program
   .command("run")
@@ -155,6 +169,14 @@ program
   .option("--csv", "Output as CSV")
   .option("--json", "Output as JSON")
   .action(statsCommand);
+
+program
+  .command("dashboard")
+  .description("Start visual workflow dashboard in browser")
+  .option("-p, --port <port>", "Port to run server on", parseInt)
+  .option("--no-open", "Don't automatically open browser")
+  .option("-v, --verbose", "Enable verbose logging")
+  .action(dashboardCommand);
 
 // Parse and execute
 program.parse();

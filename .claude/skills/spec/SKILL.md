@@ -314,6 +314,43 @@ gh issue edit <issue-number> --add-label "planned"
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### Check Orchestration Mode
+
+At the start of the skill, check if running orchestrated:
+```bash
+# Check if orchestrated - if so, skip state updates
+if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
+  echo "Running orchestrated - state managed by orchestrator"
+fi
+```
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> spec
+```
+
+**On successful completion:**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> spec
+```
+
+**On failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

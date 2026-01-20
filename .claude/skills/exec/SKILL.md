@@ -879,6 +879,37 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### Check Orchestration Mode
+
+The orchestration check happens automatically when you run the state update script - it exits silently if `SEQUANT_ORCHESTRATOR` is set.
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> exec
+```
+
+**On successful completion:**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> exec
+```
+
+**On failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
