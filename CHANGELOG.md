@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Smart cleanup with PR merge detection (#137)
+  - `sequant status --cleanup` now checks GitHub for merged PRs
+  - Orphaned entries with merged PRs are auto-removed
+  - Orphaned entries without merged PRs are marked `abandoned` (kept for review)
+  - New `--all` flag removes both merged and abandoned entries in one step
+  - Usage: `sequant status --cleanup --all`
 - `--qa-gate` flag for chain mode to pause execution when QA fails (#133)
   - Prevents downstream issues from building on potentially broken code
   - Chain pauses with clear messaging and recovery guidance
