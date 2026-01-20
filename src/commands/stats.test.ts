@@ -111,11 +111,11 @@ describe("statsCommand", () => {
       (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue([]);
     });
 
-    it("should show no logs message for human output", async () => {
+    it("should show no data message for human output", async () => {
       await statsCommand({});
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("No logs found"),
+        expect.stringContaining("No data found"),
       );
     });
 

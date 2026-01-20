@@ -31,6 +31,11 @@ import {
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
+import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
+import {
+  type MetricPhase,
+  determineOutcome,
+} from "../lib/workflow/metrics-schema.js";
 
 /**
  * Worktree information for an issue
@@ -147,6 +152,42 @@ export function getWorktreeChangedFiles(worktreePath: string): string[] {
     .trim()
     .split("\n")
     .filter((f) => f.length > 0);
+}
+
+/**
+ * Get diff stats for a worktree (files changed, lines added)
+ * Returns aggregate metrics only - no file paths to preserve privacy
+ */
+export function getWorktreeDiffStats(worktreePath: string): {
+  filesChanged: number;
+  linesAdded: number;
+} {
+  const result = spawnSync(
+    "git",
+    ["-C", worktreePath, "diff", "--stat", "main...HEAD"],
+    { stdio: "pipe" },
+  );
+
+  if (result.status !== 0) {
+    return { filesChanged: 0, linesAdded: 0 };
+  }
+
+  const output = result.stdout.toString();
+  const lines = output.trim().split("\n");
+
+  // Summary line is last and looks like: " 5 files changed, 100 insertions(+), 20 deletions(-)"
+  const summaryLine = lines[lines.length - 1];
+  if (!summaryLine) {
+    return { filesChanged: 0, linesAdded: 0 };
+  }
+
+  const filesMatch = summaryLine.match(/(\d+)\s+files?\s+changed/);
+  const insertionsMatch = summaryLine.match(/(\d+)\s+insertions?\(\+\)/);
+
+  return {
+    filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
+    linesAdded: insertionsMatch ? parseInt(insertionsMatch[1], 10) : 0,
+  };
 }
 
 /**
@@ -1759,13 +1800,107 @@ export async function runCommand(
       logPath = await logWriter.finalize();
     }
 
+    // Calculate success/failure counts
+    const passed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    // Record metrics (local analytics)
+    if (!config.dryRun && results.length > 0) {
+      try {
+        const metricsWriter = new MetricsWriter({ verbose: config.verbose });
+
+        // Calculate total duration
+        const totalDuration = results.reduce(
+          (sum, r) => sum + (r.durationSeconds ?? 0),
+          0,
+        );
+
+        // Get unique phases from all results
+        const allPhases = new Set<MetricPhase>();
+        for (const result of results) {
+          for (const phaseResult of result.phaseResults) {
+            // Only include phases that are valid MetricPhases
+            const phase = phaseResult.phase as MetricPhase;
+            if (
+              [
+                "spec",
+                "security-review",
+                "testgen",
+                "exec",
+                "test",
+                "qa",
+                "loop",
+              ].includes(phase)
+            ) {
+              allPhases.add(phase);
+            }
+          }
+        }
+
+        // Calculate aggregate metrics from worktrees
+        let totalFilesChanged = 0;
+        let totalLinesAdded = 0;
+        let totalQaIterations = 0;
+
+        for (const result of results) {
+          const worktreeInfo = worktreeMap.get(result.issueNumber);
+          if (worktreeInfo?.path) {
+            const stats = getWorktreeDiffStats(worktreeInfo.path);
+            totalFilesChanged += stats.filesChanged;
+            totalLinesAdded += stats.linesAdded;
+          }
+          // Count QA iterations (loop phases indicate retries)
+          if (result.loopTriggered) {
+            totalQaIterations += result.phaseResults.filter(
+              (p) => p.phase === "loop",
+            ).length;
+          }
+        }
+
+        // Build CLI flags for metrics
+        const cliFlags: string[] = [];
+        if (mergedOptions.sequential) cliFlags.push("--sequential");
+        if (mergedOptions.chain) cliFlags.push("--chain");
+        if (mergedOptions.qaGate) cliFlags.push("--qa-gate");
+        if (mergedOptions.qualityLoop) cliFlags.push("--quality-loop");
+        if (mergedOptions.testgen) cliFlags.push("--testgen");
+
+        // Record the run
+        await metricsWriter.recordRun({
+          issues: issueNumbers,
+          phases: Array.from(allPhases),
+          outcome: determineOutcome(passed, results.length),
+          duration: totalDuration,
+          model: process.env.ANTHROPIC_MODEL ?? "opus",
+          flags: cliFlags,
+          metrics: {
+            tokensUsed: 0, // Token tracking not available from SDK
+            filesChanged: totalFilesChanged,
+            linesAdded: totalLinesAdded,
+            acceptanceCriteria: 0, // Would need to parse from issue
+            qaIterations: totalQaIterations,
+          },
+        });
+
+        if (config.verbose) {
+          console.log(
+            chalk.gray(`  📊 Metrics recorded to .sequant/metrics.json`),
+          );
+        }
+      } catch (metricsError) {
+        // Metrics recording errors shouldn't stop execution
+        if (config.verbose) {
+          console.log(
+            chalk.yellow(`  ⚠️  Metrics recording error: ${metricsError}`),
+          );
+        }
+      }
+    }
+
     // Summary
     console.log(chalk.blue("\n" + "━".repeat(50)));
     console.log(chalk.blue("  Summary"));
     console.log(chalk.blue("━".repeat(50)));
-
-    const passed = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
 
     console.log(
       chalk.gray(

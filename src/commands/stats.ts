@@ -1,7 +1,8 @@
 /**
- * sequant stats - Aggregate analysis of workflow run logs
+ * sequant stats - Local workflow analytics
  *
- * Provides success/failure rates, phase durations, and common failure patterns.
+ * Provides success/failure rates, workflow insights, and aggregate statistics.
+ * All data is local - no telemetry is ever sent remotely.
  */
 
 import chalk from "chalk";
@@ -14,6 +15,12 @@ import {
   type Phase,
   LOG_PATHS,
 } from "../lib/workflow/run-log-schema.js";
+import {
+  MetricsSchema,
+  type Metrics,
+  type MetricRun,
+  METRICS_FILE_PATH,
+} from "../lib/workflow/metrics-schema.js";
 
 interface StatsOptions {
   path?: string;
@@ -290,59 +297,315 @@ function displayStats(stats: AggregateStats, logDir: string): void {
 }
 
 /**
+ * Local metrics analytics
+ */
+interface MetricsAnalytics {
+  totalRuns: number;
+  successCount: number;
+  partialCount: number;
+  failedCount: number;
+  successRate: number;
+  avgTokensPerRun: number;
+  avgFilesChanged: number;
+  avgLinesAdded: number;
+  avgDuration: number;
+  chainModeSuccessRate: number;
+  singleIssueSuccessRate: number;
+  insights: string[];
+}
+
+/**
+ * Load metrics from file
+ */
+function loadMetrics(): Metrics | null {
+  if (!fs.existsSync(METRICS_FILE_PATH)) {
+    return null;
+  }
+
+  try {
+    const content = fs.readFileSync(METRICS_FILE_PATH, "utf-8");
+    const data = JSON.parse(content);
+    return MetricsSchema.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Calculate analytics from metrics
+ */
+function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
+  const runs = metrics.runs;
+
+  if (runs.length === 0) {
+    return {
+      totalRuns: 0,
+      successCount: 0,
+      partialCount: 0,
+      failedCount: 0,
+      successRate: 0,
+      avgTokensPerRun: 0,
+      avgFilesChanged: 0,
+      avgLinesAdded: 0,
+      avgDuration: 0,
+      chainModeSuccessRate: 0,
+      singleIssueSuccessRate: 0,
+      insights: [],
+    };
+  }
+
+  const successCount = runs.filter((r) => r.outcome === "success").length;
+  const partialCount = runs.filter((r) => r.outcome === "partial").length;
+  const failedCount = runs.filter((r) => r.outcome === "failed").length;
+
+  const successRate = (successCount / runs.length) * 100;
+
+  const avgTokensPerRun =
+    runs.reduce((sum, r) => sum + r.metrics.tokensUsed, 0) / runs.length;
+  const avgFilesChanged =
+    runs.reduce((sum, r) => sum + r.metrics.filesChanged, 0) / runs.length;
+  const avgLinesAdded =
+    runs.reduce((sum, r) => sum + r.metrics.linesAdded, 0) / runs.length;
+  const avgDuration =
+    runs.reduce((sum, r) => sum + r.duration, 0) / runs.length;
+
+  // Chain mode vs single issue analysis
+  const chainRuns = runs.filter((r) => r.flags.includes("--chain"));
+  const singleIssueRuns = runs.filter((r) => r.issues.length === 1);
+
+  const chainModeSuccessRate =
+    chainRuns.length > 0
+      ? (chainRuns.filter((r) => r.outcome === "success").length /
+          chainRuns.length) *
+        100
+      : 0;
+
+  const singleIssueSuccessRate =
+    singleIssueRuns.length > 0
+      ? (singleIssueRuns.filter((r) => r.outcome === "success").length /
+          singleIssueRuns.length) *
+        100
+      : 0;
+
+  // Generate insights
+  const insights = generateInsights(
+    runs,
+    successRate,
+    avgFilesChanged,
+    avgLinesAdded,
+    chainModeSuccessRate,
+    singleIssueSuccessRate,
+  );
+
+  return {
+    totalRuns: runs.length,
+    successCount,
+    partialCount,
+    failedCount,
+    successRate,
+    avgTokensPerRun,
+    avgFilesChanged,
+    avgLinesAdded,
+    avgDuration,
+    chainModeSuccessRate,
+    singleIssueSuccessRate,
+    insights,
+  };
+}
+
+/**
+ * Generate insights from metrics data
+ */
+function generateInsights(
+  runs: MetricRun[],
+  successRate: number,
+  avgFilesChanged: number,
+  avgLinesAdded: number,
+  chainModeSuccessRate: number,
+  singleIssueSuccessRate: number,
+): string[] {
+  const insights: string[] = [];
+
+  // Success rate insight
+  if (successRate >= 80) {
+    insights.push(`Strong success rate: ${successRate.toFixed(0)}%`);
+  } else if (successRate >= 60) {
+    insights.push(
+      `Moderate success rate: ${successRate.toFixed(0)}% - consider simpler AC`,
+    );
+  } else if (runs.length >= 5) {
+    insights.push(
+      `Low success rate: ${successRate.toFixed(0)}% - review issue complexity`,
+    );
+  }
+
+  // Optimal file change range (based on common patterns)
+  if (avgFilesChanged > 0) {
+    if (avgFilesChanged <= 5) {
+      insights.push(
+        `Your sweet spot: ${avgFilesChanged.toFixed(1)} files changed avg`,
+      );
+    } else if (avgFilesChanged <= 10) {
+      insights.push(
+        `Avg files changed: ${avgFilesChanged.toFixed(1)} (moderate scope)`,
+      );
+    } else {
+      insights.push(
+        `High avg files (${avgFilesChanged.toFixed(1)}) - consider smaller issues`,
+      );
+    }
+  }
+
+  // Lines of code insight
+  if (avgLinesAdded > 0) {
+    if (avgLinesAdded >= 200 && avgLinesAdded <= 400) {
+      insights.push(
+        `Optimal LOC range: ~${avgLinesAdded.toFixed(0)} lines avg`,
+      );
+    } else if (avgLinesAdded > 500) {
+      insights.push(
+        `Large changes (${avgLinesAdded.toFixed(0)} LOC avg) - consider splitting issues`,
+      );
+    }
+  }
+
+  // Chain mode comparison
+  if (chainModeSuccessRate > 0 && singleIssueSuccessRate > 0) {
+    const diff = singleIssueSuccessRate - chainModeSuccessRate;
+    if (diff > 10) {
+      insights.push(
+        `Chain mode: ${chainModeSuccessRate.toFixed(0)}% (vs ${singleIssueSuccessRate.toFixed(0)}% single issue)`,
+      );
+    }
+  }
+
+  // Multi-issue runs
+  const multiIssueRuns = runs.filter((r) => r.issues.length > 1);
+  if (multiIssueRuns.length >= 3) {
+    const multiIssueSuccess = multiIssueRuns.filter(
+      (r) => r.outcome === "success",
+    ).length;
+    const multiSuccessRate = (multiIssueSuccess / multiIssueRuns.length) * 100;
+    if (multiSuccessRate < singleIssueSuccessRate - 15) {
+      insights.push(
+        `Multi-issue runs less successful (${multiSuccessRate.toFixed(0)}%)`,
+      );
+    }
+  }
+
+  return insights;
+}
+
+/**
+ * Display local metrics analytics
+ */
+function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
+  console.log(chalk.blue("\n📊 Sequant Analytics (local data only)\n"));
+
+  // Overall summary
+  console.log(chalk.gray(`  Runs: ${analytics.totalRuns} total`));
+  console.log(
+    chalk.green(
+      `    Success: ${analytics.successCount} (${analytics.successRate.toFixed(0)}%)`,
+    ),
+  );
+  if (analytics.partialCount > 0) {
+    console.log(chalk.yellow(`    Partial: ${analytics.partialCount}`));
+  }
+  if (analytics.failedCount > 0) {
+    console.log(chalk.red(`    Failed: ${analytics.failedCount}`));
+  }
+
+  // Averages
+  console.log(chalk.blue("\n  Averages"));
+  console.log(chalk.gray(`  ─────────────────────────────────`));
+  if (analytics.avgTokensPerRun > 0) {
+    console.log(
+      chalk.gray(
+        `  Tokens per run: ${analytics.avgTokensPerRun.toLocaleString()}`,
+      ),
+    );
+  }
+  console.log(
+    chalk.gray(`  Files changed: ${analytics.avgFilesChanged.toFixed(1)}`),
+  );
+  if (analytics.avgLinesAdded > 0) {
+    console.log(
+      chalk.gray(`  Lines added: ${analytics.avgLinesAdded.toFixed(0)}`),
+    );
+  }
+  console.log(
+    chalk.gray(`  Duration: ${formatDuration(analytics.avgDuration)}`),
+  );
+
+  // Insights
+  if (analytics.insights.length > 0) {
+    console.log(chalk.blue("\n  Insights"));
+    console.log(chalk.gray(`  ─────────────────────────────────`));
+    for (const insight of analytics.insights) {
+      console.log(chalk.gray(`  • ${insight}`));
+    }
+  }
+
+  console.log(chalk.gray("\n  Data stored locally in .sequant/metrics.json"));
+  console.log("");
+}
+
+/**
  * Main stats command
  */
 export async function statsCommand(options: StatsOptions): Promise<void> {
-  const logDir = resolveLogPath(options.path);
+  // Try to load local metrics first
+  const metrics = loadMetrics();
 
-  // List log files
-  const logFiles = listLogFiles(logDir);
-
-  if (logFiles.length === 0) {
-    if (options.json) {
-      console.log(JSON.stringify({ error: "No logs found", runs: [] }));
-    } else if (options.csv) {
-      console.log("runId,startTime,duration,issues,passed,failed,phases");
-    } else {
-      console.log(chalk.blue("\n📊 Sequant Run Statistics\n"));
-      console.log(chalk.yellow("  No logs found."));
-      console.log(
-        chalk.gray("  Run `npx sequant run <issues>` to generate logs."),
-      );
-      console.log("");
-    }
-    return;
-  }
-
-  // Parse all logs
-  const logs = logFiles
-    .map((filename) => {
-      const filePath = path.join(logDir, filename);
-      return parseLogFile(filePath);
-    })
-    .filter((log): log is RunLog => log !== null);
-
-  if (logs.length === 0) {
-    if (options.json) {
-      console.log(JSON.stringify({ error: "No valid logs found", runs: [] }));
-    } else if (options.csv) {
-      console.log("runId,startTime,duration,issues,passed,failed,phases");
-    } else {
-      console.log(chalk.yellow("\n  No valid log files found.\n"));
-    }
-    return;
-  }
-
-  // CSV output
-  if (options.csv) {
-    console.log(generateCsv(logs));
-    return;
-  }
-
-  // JSON output
+  // If JSON output requested
   if (options.json) {
+    if (metrics && metrics.runs.length > 0) {
+      const analytics = calculateMetricsAnalytics(metrics);
+      const output = {
+        source: "metrics",
+        totalRuns: analytics.totalRuns,
+        successCount: analytics.successCount,
+        partialCount: analytics.partialCount,
+        failedCount: analytics.failedCount,
+        successRate: analytics.successRate,
+        avgTokensPerRun: analytics.avgTokensPerRun,
+        avgFilesChanged: analytics.avgFilesChanged,
+        avgLinesAdded: analytics.avgLinesAdded,
+        avgDuration: analytics.avgDuration,
+        chainModeSuccessRate: analytics.chainModeSuccessRate,
+        singleIssueSuccessRate: analytics.singleIssueSuccessRate,
+        insights: analytics.insights,
+        runs: metrics.runs,
+      };
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+
+    // Fall back to run logs for JSON
+    const logDir = resolveLogPath(options.path);
+    const logFiles = listLogFiles(logDir);
+
+    if (logFiles.length === 0) {
+      console.log(JSON.stringify({ error: "No data found", runs: [] }));
+      return;
+    }
+
+    const logs = logFiles
+      .map((filename) => {
+        const filePath = path.join(logDir, filename);
+        return parseLogFile(filePath);
+      })
+      .filter((log): log is RunLog => log !== null);
+
+    if (logs.length === 0) {
+      console.log(JSON.stringify({ error: "No valid logs found", runs: [] }));
+      return;
+    }
+
     const stats = calculateStats(logs);
     const output = {
+      source: "logs",
       totalRuns: stats.totalRuns,
       totalIssues: stats.totalIssues,
       passed: stats.passed,
@@ -358,7 +621,60 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
     return;
   }
 
-  // Human-readable output
+  // CSV output - use run logs
+  if (options.csv) {
+    const logDir = resolveLogPath(options.path);
+    const logFiles = listLogFiles(logDir);
+
+    if (logFiles.length === 0) {
+      console.log("runId,startTime,duration,issues,passed,failed,phases");
+      return;
+    }
+
+    const logs = logFiles
+      .map((filename) => {
+        const filePath = path.join(logDir, filename);
+        return parseLogFile(filePath);
+      })
+      .filter((log): log is RunLog => log !== null);
+
+    console.log(generateCsv(logs));
+    return;
+  }
+
+  // Human-readable output - prefer metrics, fall back to logs
+  if (metrics && metrics.runs.length > 0) {
+    const analytics = calculateMetricsAnalytics(metrics);
+    displayMetricsAnalytics(analytics);
+    return;
+  }
+
+  // Fall back to run logs display
+  const logDir = resolveLogPath(options.path);
+  const logFiles = listLogFiles(logDir);
+
+  if (logFiles.length === 0) {
+    console.log(chalk.blue("\n📊 Sequant Analytics (local data only)\n"));
+    console.log(chalk.yellow("  No data found."));
+    console.log(
+      chalk.gray("  Run `npx sequant run <issues>` to collect metrics."),
+    );
+    console.log("");
+    return;
+  }
+
+  const logs = logFiles
+    .map((filename) => {
+      const filePath = path.join(logDir, filename);
+      return parseLogFile(filePath);
+    })
+    .filter((log): log is RunLog => log !== null);
+
+  if (logs.length === 0) {
+    console.log(chalk.yellow("\n  No valid log files found.\n"));
+    return;
+  }
+
   const stats = calculateStats(logs);
   displayStats(stats, logDir);
 }
