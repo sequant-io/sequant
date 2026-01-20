@@ -136,9 +136,10 @@ npx sequant update            # Update skill templates
 npx sequant doctor            # Check installation
 npx sequant status            # Show version and config
 npx sequant run <issues...>   # Execute workflow
+npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
 ```
 
-See [Run Command Options](docs/run-command.md) for advanced usage.
+See [Run Command Options](docs/run-command.md) and [State Command](docs/state-command.md) for advanced usage.
 
 ---
 
