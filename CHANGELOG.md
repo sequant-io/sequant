@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `waiting_for_qa_gate` status in state tracking
   - Usage: `sequant run 1 2 3 --sequential --chain --qa-gate`
 
+### Fixed
+
+- `/qa` now detects `templates/scripts/` changes for execution verification (#109)
+  - Previously only `scripts/` was checked, allowing template scripts to bypass `/verify`
+
 ## [1.10.1] - 2026-01-19
 
 ### Fixed
