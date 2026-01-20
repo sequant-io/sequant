@@ -427,7 +427,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
 **Detection:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep "^scripts/" | wc -l | xargs)
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^(scripts/|templates/scripts/)" | wc -l | xargs)
 if [[ $scripts_changed -gt 0 ]]; then
   echo "Script changes detected. Run /verify before READY_FOR_MERGE"
 fi
@@ -450,7 +450,7 @@ fi
 
 **Example workflow:**
 ```bash
-# QA detects scripts/ changes
+# QA detects scripts/ or templates/scripts/ changes
 # -> Prompt: "Run /verify before READY_FOR_MERGE"
 
 /verify 558 --command "npx tsx scripts/migrate.ts --dry-run"
