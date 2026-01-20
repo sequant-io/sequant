@@ -104,6 +104,7 @@ program
   .option("--cleanup", "Clean up stale/orphaned entries")
   .option("--dry-run", "Preview cleanup without changes")
   .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .option("--all", "Remove all orphaned entries (merged and abandoned)")
   .action((issue, options) => {
     // Support positional arg: `sequant status 42` → --issue 42
     if (issue) {

@@ -137,8 +137,10 @@ describe("state command", () => {
       expect(result).toHaveProperty("success");
       expect(result).toHaveProperty("removed");
       expect(result).toHaveProperty("orphaned");
+      expect(result).toHaveProperty("merged");
       expect(Array.isArray(result.removed)).toBe(true);
       expect(Array.isArray(result.orphaned)).toBe(true);
+      expect(Array.isArray(result.merged)).toBe(true);
     });
 
     it("rebuildStateFromLogs returns structured data for output", async () => {

@@ -19,10 +19,7 @@ import {
   createPhaseLogFromTiming,
 } from "../lib/workflow/log-writer.js";
 import type { RunConfig } from "../lib/workflow/run-log-schema.js";
-import {
-  StateManager,
-  type StateManagerOptions,
-} from "../lib/workflow/state-manager.js";
+import { StateManager } from "../lib/workflow/state-manager.js";
 import type { Phase as StatePhase } from "../lib/workflow/state-schema.js";
 import {
   Phase,

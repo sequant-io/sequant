@@ -10,10 +10,24 @@ import {
   rebuildStateFromLogs,
   cleanupStaleEntries,
   discoverUntrackedWorktrees,
+  checkPRMergeStatus,
 } from "./state-utils.js";
 import { StateManager } from "./state-manager.js";
 import { createIssueState, type WorkflowState } from "./state-schema.js";
 import type { RunLog } from "./run-log-schema.js";
+
+// Mock child_process module for testing checkPRMergeStatus
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    spawnSync: vi.fn(actual.spawnSync),
+  };
+});
+
+// Get mocked spawnSync for configuring in tests
+import { spawnSync } from "child_process";
+const mockSpawnSync = vi.mocked(spawnSync);
 
 describe("state-utils", () => {
   let tempDir: string;
@@ -299,6 +313,278 @@ describe("state-utils", () => {
         // No worktrees to test with, just verify the function works
         expect(initialResult.success).toBe(true);
       }
+    });
+  });
+
+  describe("checkPRMergeStatus", () => {
+    beforeEach(() => {
+      mockSpawnSync.mockReset();
+    });
+
+    it("should return MERGED when gh returns merged state", () => {
+      // Mock spawnSync to return merged state
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: Buffer.from("merged\n"),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from("merged\n"), Buffer.from("")],
+        signal: null,
+      });
+
+      const result = checkPRMergeStatus(123);
+      expect(result).toBe("MERGED");
+    });
+
+    it("should return CLOSED when gh returns closed state", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: Buffer.from("CLOSED\n"),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from("CLOSED\n"), Buffer.from("")],
+        signal: null,
+      });
+
+      const result = checkPRMergeStatus(456);
+      expect(result).toBe("CLOSED");
+    });
+
+    it("should return OPEN when gh returns open state", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: Buffer.from("open\n"),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from("open\n"), Buffer.from("")],
+        signal: null,
+      });
+
+      const result = checkPRMergeStatus(789);
+      expect(result).toBe("OPEN");
+    });
+
+    it("should return null when gh command fails", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("not found"),
+        pid: 0,
+        output: [null, Buffer.from(""), Buffer.from("not found")],
+        signal: null,
+      });
+
+      const result = checkPRMergeStatus(999);
+      expect(result).toBe(null);
+    });
+
+    it("should return null when gh throws an error", () => {
+      mockSpawnSync.mockImplementationOnce(() => {
+        throw new Error("gh not installed");
+      });
+
+      const result = checkPRMergeStatus(123);
+      expect(result).toBe(null);
+    });
+  });
+
+  describe("cleanupStaleEntries with PR detection", () => {
+    beforeEach(() => {
+      mockSpawnSync.mockReset();
+    });
+
+    it("should auto-remove orphaned entries with merged PRs", async () => {
+      // Create state with an orphaned issue that has a PR
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "42": {
+            ...createIssueState(42, "Issue with merged PR"),
+            worktree: "/nonexistent/worktree/path/that/does/not/exist",
+            branch: "feature/42-test",
+            pr: { number: 100, url: "https://github.com/test/repo/pull/100" },
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock gh to return merged status
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (
+          cmd === "gh" &&
+          args?.includes("pr") &&
+          args?.includes("view") &&
+          args?.includes("100")
+        ) {
+          return {
+            status: 0,
+            stdout: Buffer.from("MERGED\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("MERGED\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // Mock git worktree list to return empty (no worktrees)
+        if (cmd === "git" && args?.includes("worktree")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await cleanupStaleEntries({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.merged).toContain(42);
+      expect(result.removed).toContain(42);
+
+      // Verify state was updated
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["42"]).toBeUndefined();
+    });
+
+    it("should mark orphaned entries without merged PRs as abandoned", async () => {
+      // Create state with an orphaned issue that has an open PR
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "43": {
+            ...createIssueState(43, "Issue with open PR"),
+            worktree: "/nonexistent/worktree/path/that/does/not/exist",
+            branch: "feature/43-test",
+            pr: { number: 101, url: "https://github.com/test/repo/pull/101" },
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock gh to return open status
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (cmd === "gh" && args?.includes("pr") && args?.includes("101")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("OPEN\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("OPEN\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // Mock git worktree list to return empty
+        if (cmd === "git" && args?.includes("worktree")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await cleanupStaleEntries({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.orphaned).toContain(43);
+      expect(result.merged).not.toContain(43);
+      expect(result.removed).not.toContain(43);
+
+      // Verify state was updated to abandoned
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["43"]).toBeDefined();
+      expect(updatedState.issues["43"].status).toBe("abandoned");
+    });
+
+    it("should remove all orphaned entries with --removeAll flag", async () => {
+      // Create state with multiple orphaned issues
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "44": {
+            ...createIssueState(44, "Abandoned issue 1"),
+            worktree: "/nonexistent/worktree/path/that/does/not/exist",
+            branch: "feature/44-test",
+            status: "in_progress",
+          },
+          "45": {
+            ...createIssueState(45, "Abandoned issue 2"),
+            worktree: "/another/nonexistent/worktree/path",
+            branch: "feature/45-test",
+            status: "in_progress",
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock git worktree list to return empty
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (cmd === "git" && args?.includes("worktree")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await cleanupStaleEntries({ statePath, removeAll: true });
+
+      expect(result.success).toBe(true);
+      expect(result.orphaned).toContain(44);
+      expect(result.orphaned).toContain(45);
+      expect(result.removed).toContain(44);
+      expect(result.removed).toContain(45);
+
+      // Verify state was cleared
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["44"]).toBeUndefined();
+      expect(updatedState.issues["45"]).toBeUndefined();
+    });
+
+    it("should return merged array in result even for empty state", async () => {
+      const result = await cleanupStaleEntries({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.merged).toEqual([]);
+      expect(result.removed).toEqual([]);
+      expect(result.orphaned).toEqual([]);
     });
   });
 });

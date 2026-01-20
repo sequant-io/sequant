@@ -18,14 +18,45 @@ import * as path from "path";
 import { spawnSync } from "child_process";
 import { StateManager } from "./state-manager.js";
 import {
-  type WorkflowState,
   type IssueState,
   type Phase,
   createEmptyState,
   createIssueState,
   createPhaseState,
 } from "./state-schema.js";
-import { RunLogSchema, type RunLog, LOG_PATHS } from "./run-log-schema.js";
+import { RunLogSchema, LOG_PATHS } from "./run-log-schema.js";
+
+/**
+ * PR merge status from GitHub
+ */
+export type PRMergeStatus = "MERGED" | "CLOSED" | "OPEN" | null;
+
+/**
+ * Check the merge status of a PR using the gh CLI
+ *
+ * @param prNumber - The PR number to check
+ * @returns "MERGED" | "CLOSED" | "OPEN" | null (null if PR not found or gh unavailable)
+ */
+export function checkPRMergeStatus(prNumber: number): PRMergeStatus {
+  try {
+    const result = spawnSync(
+      "gh",
+      ["pr", "view", String(prNumber), "--json", "state", "-q", ".state"],
+      { stdio: "pipe", timeout: 10000 },
+    );
+
+    if (result.status === 0 && result.stdout) {
+      const state = result.stdout.toString().trim().toUpperCase();
+      if (state === "MERGED") return "MERGED";
+      if (state === "CLOSED") return "CLOSED";
+      if (state === "OPEN") return "OPEN";
+    }
+  } catch {
+    // gh not available or error - return null
+  }
+
+  return null;
+}
 
 export interface RebuildOptions {
   /** Log directory path (default: .sequant/logs) */
@@ -205,6 +236,8 @@ export interface CleanupOptions {
   verbose?: boolean;
   /** Remove issues older than this many days */
   maxAgeDays?: number;
+  /** Remove all orphaned entries (both merged and abandoned) in one step */
+  removeAll?: boolean;
 }
 
 export interface CleanupResult {
@@ -212,8 +245,10 @@ export interface CleanupResult {
   success: boolean;
   /** Issues that were removed or would be removed */
   removed: number[];
-  /** Issues that were marked as orphaned */
+  /** Issues that were marked as orphaned (abandoned) */
   orphaned: number[];
+  /** Issues detected as merged PRs */
+  merged: number[];
   /** Error message if failed */
   error?: string;
 }
@@ -221,8 +256,11 @@ export interface CleanupResult {
 /**
  * Clean up stale and orphaned entries from workflow state
  *
- * - Removes issues with non-existent worktrees (orphaned)
- * - Optionally removes old merged/abandoned issues
+ * - Checks GitHub to detect if associated PR was merged
+ * - Orphaned entries with merged PRs get status "merged" and are removed automatically
+ * - Orphaned entries without merged PRs get status "abandoned" (kept for review)
+ * - Use removeAll to remove both merged and abandoned orphaned entries in one step
+ * - Use maxAgeDays to remove old merged/abandoned issues
  */
 export async function cleanupStaleEntries(
   options: CleanupOptions = {},
@@ -237,6 +275,7 @@ export async function cleanupStaleEntries(
       success: true,
       removed: [],
       orphaned: [],
+      merged: [],
     };
   }
 
@@ -244,6 +283,7 @@ export async function cleanupStaleEntries(
     const state = await manager.getState();
     const removed: number[] = [];
     const orphaned: number[] = [];
+    const merged: number[] = [];
 
     // Get list of active worktrees
     const activeWorktrees = getActiveWorktrees();
@@ -256,25 +296,60 @@ export async function cleanupStaleEntries(
         issueState.worktree &&
         !activeWorktrees.includes(issueState.worktree)
       ) {
-        orphaned.push(issueNum);
-
         if (options.verbose) {
           console.log(
-            `🗑️  Orphaned: #${issueNum} (worktree not found: ${issueState.worktree})`,
+            `🔍 Orphaned: #${issueNum} (worktree not found: ${issueState.worktree})`,
           );
         }
 
+        // Check if this issue has a PR and if it's merged
+        let prMerged = false;
+        if (issueState.pr?.number) {
+          if (options.verbose) {
+            console.log(`   Checking PR #${issueState.pr.number} status...`);
+          }
+          const prStatus = checkPRMergeStatus(issueState.pr.number);
+          prMerged = prStatus === "MERGED";
+          if (options.verbose) {
+            console.log(`   PR status: ${prStatus ?? "unknown"}`);
+          }
+        }
+
         if (!options.dryRun) {
-          // Mark as abandoned or remove based on status
-          if (
-            issueState.status === "merged" ||
-            issueState.status === "abandoned"
-          ) {
+          if (prMerged || issueState.status === "merged") {
+            // Merged PRs are auto-removed
+            merged.push(issueNum);
             removed.push(issueNum);
+            if (options.verbose) {
+              console.log(`   ✓ Merged PR detected, removing entry`);
+            }
+            delete state.issues[issueNumStr];
+          } else if (issueState.status === "abandoned" || options.removeAll) {
+            // Already abandoned or removeAll flag - remove it
+            orphaned.push(issueNum);
+            removed.push(issueNum);
+            if (options.verbose) {
+              console.log(`   ✓ Removing abandoned entry`);
+            }
             delete state.issues[issueNumStr];
           } else {
-            // Update status to indicate orphaned state
+            // Mark as abandoned (kept for review)
+            orphaned.push(issueNum);
             issueState.status = "abandoned";
+            if (options.verbose) {
+              console.log(`   → Marked as abandoned (kept for review)`);
+            }
+          }
+        } else {
+          // Dry run - report what would happen
+          if (prMerged || issueState.status === "merged") {
+            merged.push(issueNum);
+            removed.push(issueNum);
+          } else if (issueState.status === "abandoned" || options.removeAll) {
+            orphaned.push(issueNum);
+            removed.push(issueNum);
+          } else {
+            orphaned.push(issueNum);
           }
         }
         continue;
@@ -314,12 +389,14 @@ export async function cleanupStaleEntries(
       success: true,
       removed,
       orphaned,
+      merged,
     };
   } catch (error) {
     return {
       success: false,
       removed: [],
       orphaned: [],
+      merged: [],
       error: String(error),
     };
   }

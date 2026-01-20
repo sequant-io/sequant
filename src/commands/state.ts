@@ -14,7 +14,6 @@ import {
   cleanupStaleEntries,
   discoverUntrackedWorktrees,
   type DiscoverOptions,
-  type DiscoverResult,
 } from "../lib/workflow/state-utils.js";
 import { createIssueState } from "../lib/workflow/state-schema.js";
 
@@ -43,6 +42,8 @@ export interface StateCleanOptions {
   dryRun?: boolean;
   /** Remove entries older than this many days */
   maxAge?: number;
+  /** Remove all orphaned entries (both merged and abandoned) in one step */
+  all?: boolean;
 }
 
 /**
@@ -278,15 +279,19 @@ export async function stateRebuildCommand(
  * Clean up orphaned state entries
  *
  * Removes entries for worktrees that no longer exist.
+ * Detects merged PRs and auto-removes them.
  */
 export async function stateCleanCommand(
   options: StateCleanOptions = {},
 ): Promise<void> {
   const dryRun = options.dryRun ?? false;
+  const removeAll = options.all ?? false;
 
   if (!options.json) {
     if (dryRun) {
       console.log(chalk.bold("\n🧹 Cleanup preview (dry run)...\n"));
+    } else if (removeAll) {
+      console.log(chalk.bold("\n🧹 Cleaning up all orphaned entries...\n"));
     } else {
       console.log(chalk.bold("\n🧹 Cleaning up orphaned entries...\n"));
     }
@@ -295,6 +300,7 @@ export async function stateCleanCommand(
   const result = await cleanupStaleEntries({
     dryRun,
     maxAgeDays: options.maxAge,
+    removeAll,
     verbose: options.verbose && !options.json,
   });
 
@@ -310,8 +316,9 @@ export async function stateCleanCommand(
 
   const orphanedCount = result.orphaned.length;
   const removedCount = result.removed.length;
+  const mergedCount = result.merged.length;
 
-  if (orphanedCount === 0 && removedCount === 0) {
+  if (orphanedCount === 0 && removedCount === 0 && mergedCount === 0) {
     console.log(chalk.green("✓ No orphaned entries found"));
     return;
   }
@@ -322,22 +329,47 @@ export async function stateCleanCommand(
     console.log(chalk.green("✓ Cleanup completed"));
   }
 
-  if (orphanedCount > 0) {
+  if (mergedCount > 0) {
     console.log(
-      chalk.gray(
-        `  Orphaned (worktree missing): ${result.orphaned.map((n) => `#${n}`).join(", ")}`,
+      chalk.green(
+        `  Merged PRs (auto-removed): ${result.merged.map((n) => `#${n}`).join(", ")}`,
       ),
     );
   }
 
-  if (removedCount > 0) {
-    console.log(
-      chalk.gray(`  Removed: ${result.removed.map((n) => `#${n}`).join(", ")}`),
+  if (orphanedCount > 0) {
+    const orphanedNotMerged = result.orphaned.filter(
+      (n) => !result.merged.includes(n),
     );
+    if (orphanedNotMerged.length > 0) {
+      console.log(
+        chalk.yellow(
+          `  Abandoned (no merge): ${orphanedNotMerged.map((n) => `#${n}`).join(", ")}`,
+        ),
+      );
+    }
+  }
+
+  if (removedCount > 0) {
+    const removedNotMerged = result.removed.filter(
+      (n) => !result.merged.includes(n),
+    );
+    if (removedNotMerged.length > 0) {
+      console.log(
+        chalk.gray(
+          `  Removed: ${removedNotMerged.map((n) => `#${n}`).join(", ")}`,
+        ),
+      );
+    }
   }
 
   if (dryRun) {
     console.log(chalk.gray("\nRun without --dry-run to apply these changes."));
+    if (!removeAll && orphanedCount > 0) {
+      console.log(
+        chalk.gray("Use --all to remove both merged and abandoned entries."),
+      );
+    }
   }
 }
 

@@ -32,6 +32,8 @@ export interface StatusCommandOptions {
   dryRun?: boolean;
   /** Remove entries older than this many days (used with --cleanup) */
   maxAge?: number;
+  /** Remove all orphaned entries (both merged and abandoned) in one step */
+  all?: boolean;
 }
 
 /**
@@ -392,10 +394,13 @@ async function handleRebuild(options: StatusCommandOptions): Promise<void> {
  */
 async function handleCleanup(options: StatusCommandOptions): Promise<void> {
   const dryRun = options.dryRun ?? false;
+  const removeAll = options.all ?? false;
 
   if (!options.json) {
     if (dryRun) {
       console.log(chalk.bold("\n🧹 Cleanup preview (dry run)...\n"));
+    } else if (removeAll) {
+      console.log(chalk.bold("\n🧹 Cleaning up all orphaned entries...\n"));
     } else {
       console.log(chalk.bold("\n🧹 Cleaning up stale entries...\n"));
     }
@@ -404,6 +409,7 @@ async function handleCleanup(options: StatusCommandOptions): Promise<void> {
   const result = await cleanupStaleEntries({
     dryRun,
     maxAgeDays: options.maxAge,
+    removeAll,
     verbose: !options.json,
   });
 
@@ -415,8 +421,9 @@ async function handleCleanup(options: StatusCommandOptions): Promise<void> {
   if (result.success) {
     const orphanedCount = result.orphaned.length;
     const removedCount = result.removed.length;
+    const mergedCount = result.merged.length;
 
-    if (orphanedCount === 0 && removedCount === 0) {
+    if (orphanedCount === 0 && removedCount === 0 && mergedCount === 0) {
       console.log(chalk.green("✓ No stale entries found"));
     } else {
       if (dryRun) {
@@ -425,26 +432,51 @@ async function handleCleanup(options: StatusCommandOptions): Promise<void> {
         console.log(chalk.green("✓ Cleanup completed"));
       }
 
-      if (orphanedCount > 0) {
+      if (mergedCount > 0) {
         console.log(
-          chalk.gray(
-            `  Orphaned (worktree missing): ${result.orphaned.map((n) => `#${n}`).join(", ")}`,
+          chalk.green(
+            `  Merged PRs (auto-removed): ${result.merged.map((n) => `#${n}`).join(", ")}`,
           ),
         );
       }
 
-      if (removedCount > 0) {
-        console.log(
-          chalk.gray(
-            `  Removed: ${result.removed.map((n) => `#${n}`).join(", ")}`,
-          ),
+      if (orphanedCount > 0) {
+        const orphanedNotMerged = result.orphaned.filter(
+          (n) => !result.merged.includes(n),
         );
+        if (orphanedNotMerged.length > 0) {
+          console.log(
+            chalk.yellow(
+              `  Abandoned (no merge): ${orphanedNotMerged.map((n) => `#${n}`).join(", ")}`,
+            ),
+          );
+        }
+      }
+
+      if (removedCount > 0) {
+        const removedNotMerged = result.removed.filter(
+          (n) => !result.merged.includes(n),
+        );
+        if (removedNotMerged.length > 0) {
+          console.log(
+            chalk.gray(
+              `  Removed: ${removedNotMerged.map((n) => `#${n}`).join(", ")}`,
+            ),
+          );
+        }
       }
 
       if (dryRun) {
         console.log(
           chalk.gray("\nRun without --dry-run to apply these changes."),
         );
+        if (!removeAll && orphanedCount > 0) {
+          console.log(
+            chalk.gray(
+              "Use --all to remove both merged and abandoned entries.",
+            ),
+          );
+        }
       }
     }
   } else {
