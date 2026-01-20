@@ -145,6 +145,10 @@ program
     "Chain issues: each branches from previous (requires --sequential)",
   )
   .option(
+    "--qa-gate",
+    "Wait for QA pass before starting next issue in chain (requires --chain)",
+  )
+  .option(
     "--base <branch>",
     "Base branch for worktree creation (default: main or settings.run.defaultBase)",
   )
