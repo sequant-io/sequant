@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `sequant state` command for managing workflow state (#117)
+  - `sequant state init` - Populate state for untracked worktrees
+  - `sequant state rebuild --force` - Recreate state from logs + worktrees
+  - `sequant state clean` - Remove orphaned entries
+  - `--json` flag for scripting, `--dry-run` for previews
+  - Documentation at `docs/state-command.md`
 - State tracking integration for all workflow skills (#119)
   - CLI helper `scripts/state/update.ts` for skills to update state
   - New phases: `verify`, `merger` added to state schema
