@@ -51,6 +51,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
 | `--sequential` | Stop on first failure | `false` |
 | `--chain` | Chain issues: each branches from previous (requires `--sequential`) | `false` |
+| `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
 | `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
@@ -188,6 +189,83 @@ gh pr merge 3 --squash --delete-branch
 
 Option B: Single combined review
 - Review the final branch which contains all changes
+
+### QA Gate Mode
+
+Add `--qa-gate` to pause the chain when QA fails, preventing downstream issues from building on potentially broken code:
+
+```bash
+npx sequant run 1 2 3 --sequential --chain --qa-gate
+```
+
+**What happens:**
+
+1. Issue #1 runs through spec → exec → qa
+2. If QA passes: Continue to Issue #2
+3. If QA fails: Chain pauses with clear messaging
+
+**QA Gate Pause Output:**
+
+```text
+  ⏸️  QA Gate
+     Issue #1 QA did not pass. Chain paused.
+     Fix QA issues and re-run, or run /loop to auto-fix.
+```
+
+**State Tracking:**
+
+When QA gate pauses a chain, the issue status is set to `waiting_for_qa_gate`. Check status with:
+
+```bash
+sequant status --issues
+```
+
+**When to Use QA Gate:**
+
+- Complex chains where later issues depend heavily on earlier ones
+- When QA findings in early issues could invalidate later implementations
+- Production-critical chains where you want to ensure quality at each step
+
+**When NOT to Use QA Gate:**
+
+- Simple, independent issues that don't build on each other
+- When you want maximum speed and can fix issues later
+- Chains where issues are mostly independent despite the branch structure
+
+**Recovery from QA Gate Pause:**
+
+Option A: Fix and re-run
+```bash
+# Fix the QA issues manually
+cd ../worktrees/feature/1-xxx
+# Make fixes...
+git commit -m "fix: address QA findings"
+
+# Re-run the full chain
+npx sequant run 1 2 3 --sequential --chain --qa-gate
+```
+
+Option B: Use /loop to auto-fix
+```bash
+# In the worktree, run loop to auto-fix
+/loop 1
+
+# Then re-run the chain
+npx sequant run 1 2 3 --sequential --chain --qa-gate
+```
+
+**Combining with Quality Loop:**
+
+You can combine `--qa-gate` with `--quality-loop` for automatic retry:
+
+```bash
+npx sequant run 1 2 3 --sequential --chain --qa-gate --quality-loop
+```
+
+This will:
+1. Run each issue through phases
+2. If a phase fails, automatically retry with `/loop`
+3. If QA still fails after max iterations, pause the chain
 
 ### CI/Scripting Mode
 

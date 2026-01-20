@@ -43,6 +43,8 @@ function colorStatus(status: IssueStatus): string {
       return chalk.gray(status);
     case "in_progress":
       return chalk.blue(status);
+    case "waiting_for_qa_gate":
+      return chalk.yellow(status);
     case "ready_for_merge":
       return chalk.green(status);
     case "merged":
@@ -167,6 +169,7 @@ function displayIssueSummary(issues: IssueState[]): void {
   // Group by status
   const byStatus: Record<IssueStatus, IssueState[]> = {
     in_progress: [],
+    waiting_for_qa_gate: [],
     ready_for_merge: [],
     blocked: [],
     not_started: [],
@@ -181,6 +184,7 @@ function displayIssueSummary(issues: IssueState[]): void {
   // Display in priority order
   const statusOrder: IssueStatus[] = [
     "in_progress",
+    "waiting_for_qa_gate",
     "ready_for_merge",
     "blocked",
     "not_started",
@@ -203,6 +207,9 @@ function displayIssueSummary(issues: IssueState[]): void {
     `Total: ${issues.length}`,
     byStatus.in_progress.length > 0
       ? chalk.blue(`In Progress: ${byStatus.in_progress.length}`)
+      : null,
+    byStatus.waiting_for_qa_gate.length > 0
+      ? chalk.yellow(`QA Gate: ${byStatus.waiting_for_qa_gate.length}`)
       : null,
     byStatus.ready_for_merge.length > 0
       ? chalk.green(`Ready: ${byStatus.ready_for_merge.length}`)

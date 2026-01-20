@@ -693,6 +693,12 @@ interface RunOptions {
   /** Chain issues: each branches from previous (requires --sequential) */
   chain?: boolean;
   /**
+   * Wait for QA pass before starting next issue in chain mode.
+   * When enabled, the chain pauses if QA fails, preventing downstream issues
+   * from building on potentially broken code.
+   */
+  qaGate?: boolean;
+  /**
    * Base branch for worktree creation.
    * Resolution priority: this CLI flag → settings.run.defaultBase → 'main'
    */
@@ -1303,6 +1309,22 @@ export async function runCommand(
     }
   }
 
+  // Validate QA gate requirements
+  if (mergedOptions.qaGate && !mergedOptions.chain) {
+    console.log(chalk.red("❌ --qa-gate requires --chain flag"));
+    console.log(
+      chalk.gray(
+        "   QA gate ensures each issue passes QA before the next issue starts.",
+      ),
+    );
+    console.log(
+      chalk.gray(
+        "   Usage: npx sequant run 1 2 3 --sequential --chain --qa-gate",
+      ),
+    );
+    return;
+  }
+
   // Sort issues by dependencies (if more than one issue)
   if (issueNumbers.length > 1 && !batches) {
     const originalOrder = [...issueNumbers];
@@ -1430,6 +1452,9 @@ export async function runCommand(
     console.log(
       chalk.gray(`  Chain mode: enabled (each issue branches from previous)`),
     );
+  }
+  if (mergedOptions.qaGate) {
+    console.log(chalk.gray(`  QA gate: enabled (chain waits for QA pass)`));
   }
 
   // Fetch issue info for all issues first
@@ -1568,6 +1593,40 @@ export async function runCommand(
         }
 
         if (!result.success) {
+          // Check if QA gate is enabled and QA specifically failed
+          if (mergedOptions.qaGate) {
+            const qaResult = result.phaseResults.find((p) => p.phase === "qa");
+            const qaFailed = qaResult && !qaResult.success;
+
+            if (qaFailed) {
+              // QA gate: pause chain with clear messaging
+              console.log(chalk.yellow("\n  ⏸️  QA Gate"));
+              console.log(
+                chalk.yellow(
+                  `     Issue #${issueNumber} QA did not pass. Chain paused.`,
+                ),
+              );
+              console.log(
+                chalk.gray(
+                  "     Fix QA issues and re-run, or run /loop to auto-fix.",
+                ),
+              );
+
+              // Update state to waiting_for_qa_gate
+              if (stateManager) {
+                try {
+                  await stateManager.updateIssueStatus(
+                    issueNumber,
+                    "waiting_for_qa_gate",
+                  );
+                } catch {
+                  // State tracking errors shouldn't stop execution
+                }
+              }
+              break;
+            }
+          }
+
           const chainInfo = mergedOptions.chain ? " (chain stopped)" : "";
           console.log(
             chalk.yellow(

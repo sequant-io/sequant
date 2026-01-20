@@ -96,6 +96,16 @@ origin/main
 
 Each issue builds on the previous, starting from the integration branch.
 
+### Chain Mode with --qa-gate
+
+For critical chains where you want to ensure each issue passes QA before the next begins:
+
+```bash
+npx sequant run 117 118 119 --sequential --chain --qa-gate --base feature/dashboard
+```
+
+This prevents downstream issues from building on potentially broken code. If QA fails for issue #117, the chain pauses and waits for the issue to be fixed before proceeding to #118.
+
 ## Example: Dashboard Feature Development
 
 You have a `feature/dashboard` integration branch and 5 related issues:

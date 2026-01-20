@@ -64,6 +64,8 @@ function getStatusClass(status: IssueStatus): string {
   switch (status) {
     case "in_progress":
       return "primary";
+    case "waiting_for_qa_gate":
+      return "warning";
     case "ready_for_merge":
       return "success";
     case "blocked":
@@ -211,6 +213,7 @@ function renderIssuesList(issues: IssueState[]): string {
   // Group by status
   const byStatus: Record<IssueStatus, IssueState[]> = {
     in_progress: [],
+    waiting_for_qa_gate: [],
     ready_for_merge: [],
     blocked: [],
     not_started: [],
@@ -233,6 +236,7 @@ function renderIssuesList(issues: IssueState[]): string {
   // Render in priority order
   const statusOrder: IssueStatus[] = [
     "in_progress",
+    "waiting_for_qa_gate",
     "ready_for_merge",
     "blocked",
     "not_started",
@@ -251,6 +255,7 @@ function renderIssuesList(issues: IssueState[]): string {
   // Summary stats
   const total = issues.length;
   const inProgress = byStatus.in_progress.length;
+  const qaGate = byStatus.waiting_for_qa_gate.length;
   const ready = byStatus.ready_for_merge.length;
   const blocked = byStatus.blocked.length;
 
@@ -258,6 +263,7 @@ function renderIssuesList(issues: IssueState[]): string {
     <div class="summary">
       <span>Total: ${total}</span>
       ${inProgress > 0 ? `<span class="stat primary">In Progress: ${inProgress}</span>` : ""}
+      ${qaGate > 0 ? `<span class="stat warning">QA Gate: ${qaGate}</span>` : ""}
       ${ready > 0 ? `<span class="stat success">Ready: ${ready}</span>` : ""}
       ${blocked > 0 ? `<span class="stat warning">Blocked: ${blocked}</span>` : ""}
     </div>
