@@ -1,0 +1,88 @@
+{
+  "name": "sequant-explorer",
+  "displayName": "Sequant Explorer",
+  "description": "Visualize Sequant workflow state in VS Code",
+  "version": "0.0.1",
+  "publisher": "sequant",
+  "private": true,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.sequant/state.json"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sequant-explorer",
+          "title": "Sequant",
+          "icon": "$(layers)"
+        }
+      ]
+    },
+    "views": {
+      "sequant-explorer": [
+        {
+          "id": "sequantIssues",
+          "name": "Issues",
+          "icon": "$(issues)",
+          "contextualTitle": "Sequant Issues"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "sequant.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "sequant.openWorktree",
+        "title": "Open Worktree in Terminal",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "sequant.openInBrowser",
+        "title": "Open on GitHub",
+        "icon": "$(github)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sequant.refresh",
+          "when": "view == sequantIssues",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "sequant.openWorktree",
+          "when": "view == sequantIssues && viewItem == issue",
+          "group": "inline"
+        },
+        {
+          "command": "sequant.openInBrowser",
+          "when": "view == sequantIssues && viewItem == issue",
+          "group": "inline"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}
