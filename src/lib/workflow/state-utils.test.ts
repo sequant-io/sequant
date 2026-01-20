@@ -6,7 +6,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { rebuildStateFromLogs, cleanupStaleEntries } from "./state-utils.js";
+import {
+  rebuildStateFromLogs,
+  cleanupStaleEntries,
+  discoverUntrackedWorktrees,
+} from "./state-utils.js";
 import { StateManager } from "./state-manager.js";
 import { createIssueState, type WorkflowState } from "./state-schema.js";
 import type { RunLog } from "./run-log-schema.js";
@@ -251,6 +255,50 @@ describe("state-utils", () => {
       expect(result.success).toBe(true);
       expect(result.removed).toContain(42);
       expect(result.removed).not.toContain(43);
+    });
+  });
+
+  describe("discoverUntrackedWorktrees", () => {
+    // Note: These tests run against the actual git worktree list output
+    // in the test environment. The function will scan actual worktrees.
+    // For proper isolation, integration tests would use a controlled git repo.
+
+    it("should return success when called", async () => {
+      // This test verifies the function runs without error
+      // It will scan actual worktrees in the environment
+      const result = await discoverUntrackedWorktrees({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(typeof result.worktreesScanned).toBe("number");
+      expect(Array.isArray(result.discovered)).toBe(true);
+      expect(Array.isArray(result.skipped)).toBe(true);
+    });
+
+    it("should not discover worktrees that are already tracked", async () => {
+      // Get current worktrees first
+      const initialResult = await discoverUntrackedWorktrees({ statePath });
+
+      if (initialResult.discovered.length > 0) {
+        // Track the first discovered worktree
+        const worktree = initialResult.discovered[0];
+        const manager = new StateManager({ statePath });
+        await manager.initializeIssue(worktree.issueNumber, worktree.title, {
+          worktree: worktree.worktreePath,
+          branch: worktree.branch,
+        });
+
+        // Now run discovery again
+        const secondResult = await discoverUntrackedWorktrees({ statePath });
+
+        // Should not re-discover the same worktree
+        expect(secondResult.discovered.length).toBeLessThan(
+          initialResult.discovered.length,
+        );
+        expect(secondResult.alreadyTracked).toBeGreaterThan(0);
+      } else {
+        // No worktrees to test with, just verify the function works
+        expect(initialResult.success).toBe(true);
+      }
     });
   });
 });
