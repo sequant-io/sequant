@@ -523,6 +523,8 @@ export function createApp(stateManager: StateManager): Hono {
   // Issues list partial (for htmx)
   app.get("/issues", async (c) => {
     try {
+      // Clear cache to ensure fresh state on every request
+      stateManager.clearCache();
       const allIssues = await stateManager.getAllIssueStates();
       const issues = Object.values(allIssues);
       return c.html(renderIssuesList(issues));
@@ -565,6 +567,8 @@ export function createApp(stateManager: StateManager): Hono {
 
       // Send initial data
       try {
+        // Clear cache to ensure fresh state for new SSE connections
+        stateManager.clearCache();
         const allIssues = await stateManager.getAllIssueStates();
         const issues = Object.values(allIssues);
         const html = renderIssuesList(issues);
