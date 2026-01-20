@@ -389,6 +389,38 @@ Please run /exec <N> first to create the worktree.
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> loop
+```
+
+**Update iteration count:**
+```bash
+npx tsx scripts/state/update.ts iteration <issue-number> <iteration-number>
+```
+
+**On successful completion (all issues fixed):**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> loop
+```
+
+**On max iterations reached:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> loop "Max iterations reached"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

@@ -463,6 +463,34 @@ fi
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> qa
+```
+
+**On successful completion (READY_FOR_MERGE or AC_MET_BUT_NOT_A_PLUS):**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> qa
+npx tsx scripts/state/update.ts status <issue-number> ready_for_merge
+```
+
+**On failure (AC_NOT_MET):**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**

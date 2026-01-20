@@ -429,6 +429,27 @@ If issues depend on each other:
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** `/solve` initializes issue state when analyzing issues.
+
+### State Updates
+
+When analyzing issues, initialize state tracking so the dashboard can show planned work:
+
+**Initialize each issue being analyzed:**
+```bash
+# Get issue title
+TITLE=$(gh issue view <issue-number> --json title -q '.title')
+
+# Initialize state (if not already tracked)
+npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
+```
+
+**Note:** `/solve` only initializes issues - actual phase tracking happens during workflow execution (`/fullsolve`, `sequant run`, or individual skills).
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
