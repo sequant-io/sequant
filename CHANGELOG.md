@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `/qa` now detects `templates/scripts/` changes for execution verification (#109)
   - Previously only `scripts/` was checked, allowing template scripts to bypass `/verify`
+- Dashboard now shows fresh state instead of stale cached data
+  - Issue status updates (e.g., `in_progress` → `ready_for_merge`) now reflect immediately
 
 ## [1.10.1] - 2026-01-19
 
