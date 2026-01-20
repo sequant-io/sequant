@@ -96,7 +96,7 @@ Run `sequant status --issues` to see the rebuilt state.
 
 ### `sequant state clean`
 
-Remove entries for worktrees that no longer exist (orphaned entries).
+Remove entries for worktrees that no longer exist (orphaned entries). Automatically detects merged PRs and handles them appropriately.
 
 ```bash
 sequant state clean --dry-run
@@ -105,14 +105,17 @@ sequant state clean --dry-run
 **What it does:**
 1. Checks each state entry against active git worktrees
 2. Identifies orphaned entries (worktree path no longer exists)
-3. Optionally removes old merged/abandoned issues by age
-4. Updates or removes entries based on their status
+3. For orphaned entries with PRs, checks GitHub to see if the PR was merged
+4. **Merged PRs:** Automatically removed (work is complete)
+5. **Non-merged orphans:** Marked as `abandoned` (kept for review)
+6. Optionally removes old merged/abandoned issues by age
 
 **Options:**
 
 | Option | Description |
 |--------|-------------|
 | `-d, --dry-run` | Preview what would be cleaned without making changes |
+| `--all` | Remove all orphaned entries (both merged and abandoned) in one step |
 | `--max-age <days>` | Also remove merged/abandoned issues older than N days |
 | `--json` | Output results as JSON |
 | `-v, --verbose` | Show detailed progress |
@@ -121,10 +124,36 @@ sequant state clean --dry-run
 ```
 🧹 Cleanup preview (dry run)...
 
+🔍 Orphaned: #42 (worktree not found: /path/to/worktree)
+   Checking PR #100 status...
+   PR status: MERGED
+   ✓ Merged PR detected, removing entry
+
+🔍 Orphaned: #55 (worktree not found: /path/to/worktree)
+   Checking PR #105 status...
+   PR status: OPEN
+   → Marked as abandoned (kept for review)
+
 Preview (no changes made):
-  Orphaned (worktree missing): #42, #55
+  Merged PRs (auto-removed): #42
+  Abandoned (no merge): #55
 
 Run without --dry-run to apply these changes.
+Use --all to remove both merged and abandoned entries.
+```
+
+## Shortcut: `sequant status --cleanup`
+
+The `sequant status` command also supports cleanup flags as a shortcut:
+
+```bash
+# These are equivalent:
+sequant state clean --dry-run
+sequant status --cleanup --dry-run
+
+# With --all flag:
+sequant state clean --all
+sequant status --cleanup --all
 ```
 
 ## Common Workflows
@@ -158,11 +187,15 @@ sequant status --issues
 After removing old worktrees manually:
 
 ```bash
-# 1. Preview what will be cleaned
+# 1. Preview what will be cleaned (checks PRs for merge status)
 sequant state clean --dry-run
 
 # 2. If the preview looks correct, apply changes
+# Merged PRs are auto-removed, non-merged are marked "abandoned"
 sequant state clean
+
+# 3. To remove everything (merged + abandoned) in one step:
+sequant state clean --all
 ```
 
 ### Remove Old Completed Issues
