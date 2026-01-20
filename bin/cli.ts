@@ -41,12 +41,6 @@ import { runCommand } from "../src/commands/run.js";
 import { logsCommand } from "../src/commands/logs.js";
 import { statsCommand } from "../src/commands/stats.js";
 import { dashboardCommand } from "../src/commands/dashboard.js";
-import {
-  stateCommand,
-  stateInitCommand,
-  stateRebuildCommand,
-  stateCleanCommand,
-} from "../src/commands/state.js";
 
 const program = new Command();
 
@@ -151,6 +145,10 @@ program
     "Chain issues: each branches from previous (requires --sequential)",
   )
   .option(
+    "--qa-gate",
+    "Wait for QA pass before starting next issue in chain (requires --chain)",
+  )
+  .option(
     "--base <branch>",
     "Base branch for worktree creation (default: main or settings.run.defaultBase)",
   )
@@ -183,38 +181,6 @@ program
   .option("--no-open", "Don't automatically open browser")
   .option("-v, --verbose", "Enable verbose logging")
   .action(dashboardCommand);
-
-// State command with subcommands
-const stateCmd = program
-  .command("state")
-  .description("Manage workflow state for existing worktrees");
-
-stateCmd
-  .command("init")
-  .description("Populate state for untracked worktrees")
-  .option("--json", "Output as JSON")
-  .option("-v, --verbose", "Enable verbose output")
-  .action(stateInitCommand);
-
-stateCmd
-  .command("rebuild")
-  .description("Recreate entire state from logs and worktrees")
-  .option("--json", "Output as JSON")
-  .option("-v, --verbose", "Enable verbose output")
-  .option("-f, --force", "Force rebuild without confirmation")
-  .action(stateRebuildCommand);
-
-stateCmd
-  .command("clean")
-  .description("Remove entries for worktrees that no longer exist")
-  .option("--json", "Output as JSON")
-  .option("-v, --verbose", "Enable verbose output")
-  .option("-d, --dry-run", "Preview cleanup without changes")
-  .option("--max-age <days>", "Remove entries older than N days", parseInt)
-  .action(stateCleanCommand);
-
-// Default action for `sequant state` without subcommand
-stateCmd.action((options) => stateCommand(undefined, options));
 
 // Parse and execute
 program.parse();

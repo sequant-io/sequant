@@ -28,8 +28,10 @@ export const WORKFLOW_PHASES = [
   "exec",
   "testgen",
   "test",
+  "verify",
   "qa",
   "loop",
+  "merger",
 ] as const;
 
 /**
@@ -51,6 +53,7 @@ export type PhaseStatus = z.infer<typeof PhaseStatusSchema>;
 export const IssueStatusSchema = z.enum([
   "not_started", // Issue tracked but no work begun
   "in_progress", // Actively being worked on
+  "waiting_for_qa_gate", // QA completed, waiting for gate approval in chain mode
   "ready_for_merge", // All phases passed, PR ready for review
   "merged", // PR merged, work complete
   "blocked", // Waiting on external input or dependency
@@ -68,8 +71,10 @@ export const PhaseSchema = z.enum([
   "exec",
   "testgen",
   "test",
+  "verify",
   "qa",
   "loop",
+  "merger",
 ]);
 
 export type Phase = z.infer<typeof PhaseSchema>;
