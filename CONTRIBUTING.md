@@ -83,11 +83,13 @@ Helper scripts exist in two locations:
 | Location | Purpose | Tracked |
 |----------|---------|---------|
 | `templates/scripts/` | Canonical source scripts | ✅ Yes |
-| `scripts/dev/` | Local copies from `sequant init` | ❌ No (gitignored) |
+| `scripts/dev/` | Symlinks to templates (created by `sequant init`) | ❌ No (gitignored) |
 
 **When modifying scripts:** Always change files in `templates/scripts/` — this is what gets committed and distributed to users.
 
-The `scripts/dev/` directory is created automatically when you run `sequant init`. It contains working copies for local use.
+The `scripts/dev/` directory contains symlinks pointing to `templates/scripts/`, created automatically by `sequant init`. This means template updates are immediately available without re-running init.
+
+> ⚠️ **Warning:** Do not edit files in `scripts/dev/` directly — they are symlinks to the source templates. Any local changes should be made in `templates/scripts/`. On Windows without symlink support, `scripts/dev/` contains copies that will be overwritten on the next `sequant init`.
 
 ## Making Changes
 
