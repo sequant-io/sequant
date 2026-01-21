@@ -350,6 +350,16 @@ After implementation is complete and all checks pass, create and verify the PR:
    - If PR exists: Record the URL from `gh pr view` output
    - If PR creation failed: Record the error and include manual creation instructions
 
+6. **Record PR info in workflow state:**
+   ```bash
+   # Extract PR number and URL from gh pr view output, then update state
+   PR_INFO=$(gh pr view --json number,url)
+   PR_NUMBER=$(echo "$PR_INFO" | jq -r '.number')
+   PR_URL=$(echo "$PR_INFO" | jq -r '.url')
+   npx tsx scripts/state/update.ts pr <issue-number> "$PR_NUMBER" "$PR_URL"
+   ```
+   This enables `--cleanup` to detect merged PRs and auto-remove state entries.
+
 **PR Verification Failure Handling:**
 
 If `gh pr view` fails after retry:
