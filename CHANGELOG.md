@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Existing regular files preserved (use `--force` to replace)
   - Windows falls back to copies if symlinks unavailable
   - Use `--no-symlinks` flag to opt out of symlink behavior
+- Dashboard UI enhancements for workflow visibility (#139)
+  - Phase indicators with rich tooltips (status, duration, error messages)
+  - Active phase highlighting with visual pulse animation
+  - Loop iteration counter (e.g., "2/3")
+  - Branch name display with copy-to-clipboard button
+  - Issue tracking age ("Tracked for 3d")
+  - Schema support for acceptance criteria tracking (B2-B4 in #158)
 
 ### Fixed
 
