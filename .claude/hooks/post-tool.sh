@@ -203,6 +203,62 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm run build'
     fi
 fi
 
+# === TEST COVERAGE ANALYSIS (P3) ===
+# Opt-in: Set CLAUDE_HOOKS_COVERAGE=true to enable
+# Automatically appends coverage analysis to npm test output
+# Logs which changed files have/don't have corresponding tests
+if [[ "${CLAUDE_HOOKS_COVERAGE:-}" == "true" ]]; then
+    if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm (test|run test)'; then
+        # Only run if tests passed (don't clutter failure output)
+        if ! echo "$TOOL_OUTPUT" | grep -qE '(FAIL|failed|Error:)'; then
+            COVERAGE_LOG="/tmp/claude-coverage.log"
+
+            # Get changed source files (excluding tests)
+            changed_files=$(git diff main...HEAD --name-only 2>/dev/null | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
+
+            if [[ -n "$changed_files" ]]; then
+                echo "$(date +%H:%M:%S) COVERAGE_ANALYSIS: Checking test coverage for changed files" >> "$QUALITY_LOG"
+
+                files_with_tests=0
+                files_without_tests=0
+                critical_without_tests=""
+
+                while IFS= read -r file; do
+                    [[ -z "$file" ]] && continue
+                    base=$(basename "$file" .ts | sed 's/\.tsx$//')
+
+                    # Check for test file
+                    has_test="no"
+                    if find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
+                        has_test="yes"
+                        ((files_with_tests++))
+                    else
+                        ((files_without_tests++))
+                        # Check if critical path
+                        if echo "$file" | grep -qE 'auth|payment|security|server-action|middleware|admin'; then
+                            critical_without_tests="$critical_without_tests $file"
+                        fi
+                    fi
+                done <<< "$changed_files"
+
+                total=$((files_with_tests + files_without_tests))
+
+                # Log coverage summary
+                echo "$(date +%H:%M:%S) COVERAGE: $files_with_tests/$total changed files have tests" >> "$COVERAGE_LOG"
+
+                if [[ -n "$critical_without_tests" ]]; then
+                    echo "$(date +%H:%M:%S) ⚠️ CRITICAL_NO_TESTS:$critical_without_tests" >> "$COVERAGE_LOG"
+                    echo "$(date +%H:%M:%S) CRITICAL_NO_TESTS:$critical_without_tests" >> "$QUALITY_LOG"
+                fi
+
+                if [[ $files_without_tests -gt 0 ]]; then
+                    echo "$(date +%H:%M:%S) COVERAGE_GAP: $files_without_tests files without tests" >> "$QUALITY_LOG"
+                fi
+            fi
+        fi
+    fi
+fi
+
 # === SMART TEST RUNNING (P3) ===
 # Opt-in: Set CLAUDE_HOOKS_SMART_TESTS=true to enable
 # Runs related tests asynchronously after file edits
