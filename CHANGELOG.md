@@ -35,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sequant state` command now registered in CLI (#144)
+  - Previously implemented in `src/commands/state.ts` but not accessible
+  - Now available: `sequant state init`, `sequant state rebuild`, `sequant state clean`
+  - See `docs/state-command.md` for usage
 - `/qa` now detects `templates/scripts/` changes for execution verification (#109)
   - Previously only `scripts/` was checked, allowing template scripts to bypass `/verify`
 - Dashboard now shows fresh state instead of stale cached data
