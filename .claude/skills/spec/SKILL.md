@@ -221,6 +221,14 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
 3. **Check existing dependencies**
    - Review `package.json` for libraries
    - Prefer existing dependencies over new ones
+   - For "solved problem" domains, recommend established packages in the plan:
+     | Domain | Recommended Packages |
+     |--------|---------------------|
+     | Date/time | `date-fns`, `dayjs` |
+     | Validation | `zod`, `yup`, `valibot` |
+     | HTTP with retry | `ky`, `got`, `axios` |
+     | Form state | `react-hook-form` |
+     | State management | `zustand`, `jotai` |
 
 4. **For database-heavy features**
    - Verify table schemas against TypeScript types
