@@ -65,6 +65,7 @@ interface InitOptions {
   force?: boolean;
   interactive?: boolean;
   skipSetup?: boolean;
+  noSymlinks?: boolean;
 }
 
 /**
@@ -342,9 +343,41 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.blue("⚙️  Creating default settings..."));
   await createDefaultSettings();
 
-  // Copy templates
+  // Copy templates (with symlinks for scripts unless --no-symlinks)
   console.log(chalk.blue("📄 Copying templates..."));
-  await copyTemplates(stack!, tokens);
+  const { scriptsSymlinked, symlinkResults } = await copyTemplates(
+    stack!,
+    tokens,
+    {
+      noSymlinks: options.noSymlinks,
+      force: options.force,
+    },
+  );
+
+  // Report symlink status
+  if (scriptsSymlinked) {
+    console.log(chalk.blue("🔗 Created symlinks for scripts/dev/"));
+  } else if (!options.noSymlinks && symlinkResults) {
+    // Some symlinks may have fallen back to copies
+    const fallbacks = symlinkResults.filter((r) => r.fallbackToCopy);
+    if (fallbacks.length > 0) {
+      console.log(
+        chalk.yellow("⚠️  Some scripts were copied instead of symlinked:"),
+      );
+      for (const fb of fallbacks) {
+        console.log(chalk.gray(`   ${fb.path}: ${fb.reason}`));
+      }
+    }
+    const skipped = symlinkResults.filter((r) => r.skipped);
+    if (skipped.length > 0) {
+      console.log(
+        chalk.yellow("⚠️  Some scripts were skipped (existing files found):"),
+      );
+      for (const s of skipped) {
+        console.log(chalk.gray(`   ${s.path}: ${s.reason}`));
+      }
+    }
+  }
 
   // Create manifest
   console.log(chalk.blue("📋 Creating manifest..."));

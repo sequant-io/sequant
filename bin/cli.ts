@@ -85,6 +85,10 @@ program
     "Force interactive mode even in non-TTY environment",
   )
   .option("--skip-setup", "Skip the dependency setup wizard")
+  .option(
+    "--no-symlinks",
+    "Use copies instead of symlinks for scripts/dev/ files",
+  )
   .action(initCommand);
 
 program

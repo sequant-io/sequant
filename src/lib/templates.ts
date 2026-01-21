@@ -3,10 +3,19 @@
  */
 
 import { readdir, chmod } from "fs/promises";
-import { join, dirname, basename } from "path";
+import { join, dirname, basename, relative } from "path";
 import { fileURLToPath } from "url";
-import { readFile, writeFile, ensureDir, fileExists } from "./fs.js";
+import {
+  readFile,
+  writeFile,
+  ensureDir,
+  fileExists,
+  isSymlink,
+  createSymlink,
+  removeFileOrSymlink,
+} from "./fs.js";
 import { getStackConfig } from "./stacks.js";
+import { isNativeWindows } from "./system.js";
 
 // Get the package templates directory
 function getTemplatesDir(): string {
@@ -75,12 +84,139 @@ export async function getTemplateContent(
 }
 
 /**
+ * Result of symlink creation attempt
+ */
+export interface SymlinkResult {
+  created: boolean;
+  path: string;
+  target: string;
+  fallbackToCopy: boolean;
+  skipped: boolean;
+  reason?: string;
+}
+
+/**
+ * Options for copyTemplates
+ */
+export interface CopyTemplatesOptions {
+  /** Use copies instead of symlinks for scripts (Windows default or user preference) */
+  noSymlinks?: boolean;
+  /** Force replacement of existing files/symlinks */
+  force?: boolean;
+}
+
+/**
+ * Create symlinks for files in a directory, with fallback to copy
+ * @param srcDir Source directory containing template files
+ * @param destDir Destination directory for symlinks
+ * @param options Options controlling symlink behavior
+ * @returns Array of results for each file
+ */
+export async function symlinkDir(
+  srcDir: string,
+  destDir: string,
+  options: { force?: boolean } = {},
+): Promise<SymlinkResult[]> {
+  const results: SymlinkResult[] = [];
+
+  try {
+    const entries = await readdir(srcDir, { withFileTypes: true });
+    await ensureDir(destDir);
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // Recursively handle subdirectories
+        const subResults = await symlinkDir(
+          join(srcDir, entry.name),
+          join(destDir, entry.name),
+          options,
+        );
+        results.push(...subResults);
+        continue;
+      }
+
+      const srcPath = join(srcDir, entry.name);
+      const destPath = join(destDir, entry.name);
+
+      // Calculate relative path from destDir to srcPath for portable symlinks
+      const absoluteDest = join(process.cwd(), destPath);
+      const absoluteSrc = join(process.cwd(), srcPath);
+      const relativeTarget = relative(dirname(absoluteDest), absoluteSrc);
+
+      // Check if destination already exists
+      // Note: isSymlink uses lstat and works on broken symlinks,
+      // while fileExists uses access which fails on broken symlinks
+      const destIsSymlink = await isSymlink(destPath);
+      const destExists = destIsSymlink || (await fileExists(destPath));
+
+      if (destExists && !destIsSymlink && !options.force) {
+        // Regular file exists and force not specified - skip
+        results.push({
+          created: false,
+          path: destPath,
+          target: relativeTarget,
+          fallbackToCopy: false,
+          skipped: true,
+          reason: "existing file (use --force to replace)",
+        });
+        continue;
+      }
+
+      // Remove existing file/symlink if force or if it's already a symlink
+      // (symlinks are always replaced to ensure they point to correct target)
+      if (destExists && (options.force || destIsSymlink)) {
+        await removeFileOrSymlink(destPath);
+      }
+
+      // Try to create symlink
+      const symlinkCreated = await createSymlink(relativeTarget, destPath);
+
+      if (symlinkCreated) {
+        results.push({
+          created: true,
+          path: destPath,
+          target: relativeTarget,
+          fallbackToCopy: false,
+          skipped: false,
+        });
+      } else {
+        // Symlink failed (likely Windows without privileges) - fall back to copy
+        const content = await readFile(srcPath);
+        await writeFile(destPath, content);
+
+        // Make shell scripts executable
+        if (entry.name.endsWith(".sh")) {
+          await chmod(destPath, 0o755);
+        }
+
+        results.push({
+          created: true,
+          path: destPath,
+          target: relativeTarget,
+          fallbackToCopy: true,
+          skipped: false,
+          reason: "symlink not supported, copied instead",
+        });
+      }
+    }
+  } catch (error) {
+    // Skip if source doesn't exist
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  return results;
+}
+
+/**
  * Copy all templates to .claude/ directory
  */
 export async function copyTemplates(
   stack: string,
   tokens?: Record<string, string>,
-): Promise<void> {
+  options: CopyTemplatesOptions = {},
+): Promise<{ scriptsSymlinked: boolean; symlinkResults?: SymlinkResult[] }> {
   const templatesDir = getTemplatesDir();
   const stackConfig = getStackConfig(stack);
   const variables = {
@@ -130,8 +266,27 @@ export async function copyTemplates(
   // Copy memory (constitution, etc.)
   await copyDir(join(templatesDir, "memory"), ".claude/memory");
 
-  // Copy scripts (worktree helpers, etc.)
-  await copyDir(join(templatesDir, "scripts"), "scripts/dev");
+  // Handle scripts directory - use symlinks unless disabled
+  const useSymlinks = !options.noSymlinks && !isNativeWindows();
+  let scriptsSymlinked = false;
+  let symlinkResults: SymlinkResult[] | undefined;
+
+  if (useSymlinks) {
+    // Use symlinks for scripts - they don't need template variable processing
+    symlinkResults = await symlinkDir(
+      join(templatesDir, "scripts"),
+      "scripts/dev",
+      { force: options.force },
+    );
+
+    // Check if any symlinks were actually created (not all fell back to copy)
+    scriptsSymlinked = symlinkResults.some(
+      (r) => r.created && !r.fallbackToCopy,
+    );
+  } else {
+    // Fall back to copies (Windows or --no-symlinks flag)
+    await copyDir(join(templatesDir, "scripts"), "scripts/dev");
+  }
 
   // Copy settings.json
   const settingsPath = join(templatesDir, "settings.json");
@@ -142,4 +297,6 @@ export async function copyTemplates(
       processTemplate(content, variables),
     );
   }
+
+  return { scriptsSymlinked, symlinkResults };
 }

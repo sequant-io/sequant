@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Chain pauses with clear messaging and recovery guidance
   - New `waiting_for_qa_gate` status in state tracking
   - Usage: `sequant run 1 2 3 --sequential --chain --qa-gate`
+- `sequant init` now creates symlinks for `scripts/dev/` pointing to `templates/scripts/` (#107)
+  - Templates automatically update when Sequant is upgraded
+  - Existing regular files preserved (use `--force` to replace)
+  - Windows falls back to copies if symlinks unavailable
+  - Use `--no-symlinks` flag to opt out of symlink behavior
 
 ### Fixed
 

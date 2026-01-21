@@ -43,7 +43,9 @@ vi.mock("../lib/config.js", () => ({
 
 // Mock templates
 vi.mock("../lib/templates.js", () => ({
-  copyTemplates: vi.fn(),
+  copyTemplates: vi.fn(() =>
+    Promise.resolve({ scriptsSymlinked: true, symlinkResults: [] }),
+  ),
 }));
 
 // Mock manifest
@@ -132,7 +134,10 @@ describe("init command", () => {
     mockFileExists.mockResolvedValue(false);
     mockEnsureDir.mockResolvedValue(undefined);
     mockDetectStack.mockResolvedValue(null);
-    mockCopyTemplates.mockResolvedValue(undefined);
+    mockCopyTemplates.mockResolvedValue({
+      scriptsSymlinked: true,
+      symlinkResults: [],
+    });
     mockCreateManifest.mockResolvedValue(undefined);
     mockSaveConfig.mockResolvedValue(undefined);
     mockCreateDefaultSettings.mockResolvedValue(undefined);
@@ -255,10 +260,17 @@ describe("init command", () => {
           stack: "nextjs",
         }),
       );
-      expect(mockCopyTemplates).toHaveBeenCalledWith("nextjs", {
-        DEV_URL: "http://localhost:3000",
-        PM_RUN: "npm run",
-      });
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        {
+          DEV_URL: "http://localhost:3000",
+          PM_RUN: "npm run",
+        },
+        {
+          noSymlinks: undefined,
+          force: undefined,
+        },
+      );
       expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
