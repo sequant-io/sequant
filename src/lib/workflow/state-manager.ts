@@ -31,11 +31,14 @@ import {
   type PhaseStatus,
   type IssueStatus,
   type PRInfo,
+  type AcceptanceCriteria,
+  type ACStatus,
   WorkflowStateSchema,
   STATE_FILE_PATH,
   createEmptyState,
   createIssueState,
   createPhaseState,
+  updateAcceptanceCriteriaSummary,
 } from "./state-schema.js";
 
 export interface StateManagerOptions {
@@ -393,6 +396,100 @@ export class StateManager {
 
     if (this.verbose) {
       console.log(`📊 Removed issue #${issueNumber} from state`);
+    }
+  }
+
+  // === Acceptance Criteria Operations ===
+
+  /**
+   * Update acceptance criteria for an issue
+   *
+   * Used by /spec to store extracted ACs from the issue body.
+   */
+  async updateAcceptanceCriteria(
+    issueNumber: number,
+    acceptanceCriteria: AcceptanceCriteria,
+  ): Promise<void> {
+    const state = await this.getState();
+    const issueState = state.issues[String(issueNumber)];
+
+    if (!issueState) {
+      throw new Error(`Issue #${issueNumber} not found in state`);
+    }
+
+    issueState.acceptanceCriteria = acceptanceCriteria;
+    issueState.lastActivity = new Date().toISOString();
+
+    await this.saveState(state);
+
+    if (this.verbose) {
+      console.log(
+        `📊 AC updated for issue #${issueNumber}: ${acceptanceCriteria.items.length} items`,
+      );
+    }
+  }
+
+  /**
+   * Get acceptance criteria for an issue
+   */
+  async getAcceptanceCriteria(
+    issueNumber: number,
+  ): Promise<AcceptanceCriteria | null> {
+    const issueState = await this.getIssueState(issueNumber);
+    return issueState?.acceptanceCriteria ?? null;
+  }
+
+  /**
+   * Update the status of a specific acceptance criterion
+   *
+   * Used by /qa to mark individual ACs as met/not_met/blocked.
+   * Automatically recalculates the summary counts.
+   */
+  async updateACStatus(
+    issueNumber: number,
+    acId: string,
+    status: ACStatus,
+    notes?: string,
+  ): Promise<void> {
+    const state = await this.getState();
+    const issueState = state.issues[String(issueNumber)];
+
+    if (!issueState) {
+      throw new Error(`Issue #${issueNumber} not found in state`);
+    }
+
+    if (!issueState.acceptanceCriteria) {
+      throw new Error(`Issue #${issueNumber} has no acceptance criteria`);
+    }
+
+    // Find and update the AC item
+    const acItem = issueState.acceptanceCriteria.items.find(
+      (item) => item.id === acId,
+    );
+
+    if (!acItem) {
+      throw new Error(
+        `AC "${acId}" not found in issue #${issueNumber}. ` +
+          `Available IDs: ${issueState.acceptanceCriteria.items.map((i) => i.id).join(", ")}`,
+      );
+    }
+
+    acItem.status = status;
+    acItem.verifiedAt = new Date().toISOString();
+    if (notes !== undefined) {
+      acItem.notes = notes;
+    }
+
+    // Recalculate summary counts
+    issueState.acceptanceCriteria = updateAcceptanceCriteriaSummary(
+      issueState.acceptanceCriteria,
+    );
+    issueState.lastActivity = new Date().toISOString();
+
+    await this.saveState(state);
+
+    if (this.verbose) {
+      console.log(`📊 AC ${acId} → ${status} for issue #${issueNumber}`);
     }
   }
 
