@@ -606,6 +606,73 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
+### 3a. Test Coverage Transparency (REQUIRED)
+
+**Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
+
+**After running `npm test`, you MUST analyze test coverage for changed files:**
+
+```bash
+# Get changed source files (excluding tests)
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
+
+# Check for corresponding test files
+for file in $changed; do
+  base=$(basename "$file" .ts | sed 's/\.tsx$//')
+  # Look for test files in __tests__/ or co-located
+  if ! find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
+    echo "NO TEST: $file"
+  fi
+done
+```
+
+**Required reporting format:**
+
+| Scenario | Report |
+|----------|--------|
+| Tests cover changed files | `Tests: N passed (covers changed files)` |
+| Tests don't cover changed files | `Tests: N passed (⚠️ 0 cover changed files)` |
+| No tests for specific files | `Tests: N passed (⚠️ NO TESTS: file1.ts, file2.ts)` |
+
+### 3b. Change Tier Classification
+
+**Purpose:** Flag coverage gaps based on criticality, not just presence/absence.
+
+**Tier definitions:**
+
+| Tier | Change Type | Coverage Requirement |
+|------|-------------|---------------------|
+| **Critical** | Auth, payments, security, server-actions, middleware, admin | Flag prominently if missing |
+| **Standard** | Business logic, API handlers, utilities | Note if missing |
+| **Optional** | Config, types-only, UI tweaks | No flag needed |
+
+**Detection heuristic:**
+
+```bash
+# Detect critical paths in changed files
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
+
+if [[ -n "$critical" ]]; then
+  echo "⚠️ CRITICAL PATH CHANGES (test coverage strongly recommended):"
+  echo "$critical"
+fi
+```
+
+**Include in progress summary:**
+
+```markdown
+### Test Coverage Analysis
+
+| Changed File | Tier | Has Tests? |
+|--------------|------|------------|
+| `auth/login.ts` | Critical | ⚠️ NO TESTS |
+| `lib/utils.ts` | Standard | ✅ Yes |
+| `types/index.ts` | Optional | - (types only) |
+
+**Coverage:** X/Y changed source files have corresponding tests
+```
+
 ### 4. Implementation Loop
 
 - Implement in **small, incremental diffs**.

@@ -1,5 +1,45 @@
 # Testing Requirements
 
+## Test Quality Guidelines
+
+**The goal is NOT test quantity — it's transparency about what's actually being tested.**
+
+### A Quality Test:
+- **Tests behavior, not implementation details** - Assert on outputs, not internal state
+- **Covers primary use case + at least 1 failure path** - Happy path alone is insufficient
+- **Fails when the feature breaks, passes when it works** - Actually validates the feature
+- **Uses realistic inputs** - Not contrived data that never occurs in production
+
+### Avoid:
+- ❌ Tests that mock everything (tests the mocks, not the code)
+- ❌ Tests that only cover happy path (miss real failures)
+- ❌ Tests written just to hit coverage numbers (low value)
+- ❌ Snapshot tests over 50 lines (too brittle, hard to review)
+- ❌ Tests that mirror implementation (break with any refactor)
+
+### Test Value Hierarchy
+
+| Test Type | Value | When to Use |
+|-----------|-------|-------------|
+| **Integration tests** | High | Critical paths, user flows |
+| **Unit tests (behavior)** | Medium-High | Business logic, utilities |
+| **Unit tests (implementation)** | Low | Avoid - too brittle |
+| **Snapshot tests** | Low | UI components only, small snapshots |
+
+### Test-to-Code Ratio Guidelines
+
+Don't chase coverage percentages. Instead:
+
+| Change Type | Recommended Approach |
+|-------------|---------------------|
+| **Critical path** (auth, payments) | Test thoroughly - multiple scenarios |
+| **Business logic** | Test primary behavior + 1-2 edge cases |
+| **Simple utilities** | Single test covering main use case |
+| **UI tweaks** | Manual verification often sufficient |
+| **Types/config** | No tests needed |
+
+---
+
 ## Adversarial Thinking Checklist
 
 **STOP and ask these questions before any READY_FOR_MERGE verdict:**
