@@ -76,6 +76,19 @@ sequant/
 └── docs/                   # Documentation
 ```
 
+### Script Locations
+
+Helper scripts exist in two locations:
+
+| Location | Purpose | Tracked |
+|----------|---------|---------|
+| `templates/scripts/` | Canonical source scripts | ✅ Yes |
+| `scripts/dev/` | Local copies from `sequant init` | ❌ No (gitignored) |
+
+**When modifying scripts:** Always change files in `templates/scripts/` — this is what gets committed and distributed to users.
+
+The `scripts/dev/` directory is created automatically when you run `sequant init`. It contains working copies for local use.
+
 ## Making Changes
 
 ### Adding a New Command
