@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Comprehensive QA improvements (#147)
+  - **Execution Evidence** — QA now executes smoke tests for scripts/CLI changes before READY_FOR_MERGE
+  - **Test Quality Review** — Evaluates tests for behavior vs implementation, coverage depth, mock hygiene
+  - **Anti-Pattern Detection** — Audits new dependencies and scans for N+1 queries, empty catch blocks, hardcoded secrets
+  - Supersedes #91, #92, #143
 - Local-first analytics for workflow insights (#132)
   - Metrics collected automatically during `sequant run`
   - Data stored in `.sequant/metrics.json` (privacy-focused, no PII)

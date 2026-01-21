@@ -60,6 +60,9 @@ Every `/qa` runs automated checks:
 - **Type Safety** — Detects `any`, `as any`, missing types
 - **Security Scans** — OWASP-style vulnerability detection
 - **Scope Analysis** — Flags changes outside issue scope
+- **Execution Evidence** — Scripts/CLI must pass smoke tests
+- **Test Quality** — Validates test coverage and mock hygiene
+- **Anti-Pattern Detection** — Catches N+1 queries, empty catch blocks, stale dependencies
 
 When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
 
