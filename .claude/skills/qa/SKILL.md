@@ -438,6 +438,42 @@ For each AC item, mark as:
 
 Provide a sentence or two explaining why.
 
+### 3a. AC Status Persistence — REQUIRED
+
+**After evaluating each AC item**, update the status in workflow state:
+
+```bash
+# Update AC status in state
+npx tsx -e "
+import { StateManager } from './src/lib/workflow/state-manager.js';
+
+const issueNumber = <ISSUE_NUMBER>;
+const manager = new StateManager();
+
+// Update each AC item's status
+// Repeat for each AC (AC-1, AC-2, etc.)
+await manager.updateACStatus(issueNumber, 'AC-1', 'met', 'Verified: tests pass and feature works');
+await manager.updateACStatus(issueNumber, 'AC-2', 'not_met', 'Missing error handling for edge case');
+
+console.log('AC status updated for issue #' + issueNumber);
+"
+```
+
+**Status mapping:**
+- `MET` → `'met'`
+- `PARTIALLY_MET` → `'not_met'` (with notes explaining what's missing)
+- `NOT_MET` → `'not_met'`
+- `BLOCKED` → `'blocked'` (external dependency issue)
+
+**Why this matters:** Updating AC status in state enables:
+- Dashboard shows real-time AC progress per issue
+- Cross-skill tracking of which AC items need work
+- Summary badges show "X/Y met" status
+
+**If issue has no stored AC:**
+- Log a warning: "Issue #N has no stored AC - run /spec to extract AC first"
+- Continue with QA but note the gap
+
 ### 4. Failure Path & Edge Case Testing (REQUIRED)
 
 Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:

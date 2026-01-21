@@ -52,7 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Loop iteration counter (e.g., "2/3")
   - Branch name display with copy-to-clipboard button
   - Issue tracking age ("Tracked for 3d")
-  - Schema support for acceptance criteria tracking (B2-B4 in #158)
+- Acceptance criteria tracking integration (#158)
+  - AC parser (`src/lib/ac-parser.ts`) extracts criteria from issue markdown
+    - Supports formats: `**AC-1:**`, `**B2:**`, `AC-1:` (with/without bold)
+    - Auto-infers verification method from description keywords
+  - StateManager AC methods: `updateAcceptanceCriteria()`, `getAcceptanceCriteria()`, `updateACStatus()`
+  - Dashboard displays expandable AC checklist per issue with status icons (✅❌⏳🚫)
+  - Summary badge shows "X/Y met" progress
+  - `/spec` skill wired to extract and store AC from issue body
+  - `/qa` skill wired to update AC status after review
 
 ### Fixed
 

@@ -41,6 +41,51 @@ When called like `/spec <freeform description>`:
 1. Treat the text as the problem/AC source.
 2. Ask clarifying questions if AC are ambiguous or conflicting.
 
+### AC Extraction and Storage — REQUIRED
+
+**After fetching the issue body**, extract and store acceptance criteria in workflow state:
+
+```bash
+# Extract AC from issue body and store in state
+npx tsx -e "
+import { extractAcceptanceCriteria } from './src/lib/ac-parser.js';
+import { StateManager } from './src/lib/workflow/state-manager.js';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+const issueNumber = <ISSUE_NUMBER>;
+const issueTitle = '<ISSUE_TITLE>';
+
+const ac = extractAcceptanceCriteria(issueBody);
+console.log('Extracted AC:', JSON.stringify(ac, null, 2));
+
+if (ac.items.length > 0) {
+  const manager = new StateManager();
+  // Initialize issue if not exists
+  const existing = await manager.getIssueState(issueNumber);
+  if (!existing) {
+    await manager.initializeIssue(issueNumber, issueTitle);
+  }
+  await manager.updateAcceptanceCriteria(issueNumber, ac);
+  console.log('AC stored in state for issue #' + issueNumber);
+}
+"
+```
+
+**Why this matters:** Storing AC in state enables:
+- Dashboard visibility of AC progress per issue
+- `/qa` skill to update AC status during review
+- Cross-skill AC tracking throughout the workflow
+
+**AC Format Detection:**
+The parser supports multiple formats:
+- `- [ ] **AC-1:** Description` (bold with hyphen)
+- `- [ ] **B2:** Description` (letter + number)
+- `- [ ] AC-1: Description` (no bold)
+
+**If no AC found:**
+- Log a warning but continue with planning
+- The plan output should note that AC will need to be defined
+
 ### Feature Worktree Workflow
 
 **Planning Phase:** No worktree needed. Planning happens in the main repository directory. The worktree will be created during the execution phase (`/exec`).
