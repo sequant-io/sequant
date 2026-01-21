@@ -14,6 +14,7 @@
  *   npx tsx scripts/state/update.ts status <issue> <status>
  *   npx tsx scripts/state/update.ts iteration <issue> <iteration>
  *   npx tsx scripts/state/update.ts merged <issue>
+ *   npx tsx scripts/state/update.ts pr <issue> <pr-number> <pr-url>
  *
  * Examples:
  *   npx tsx scripts/state/update.ts start 119 exec
@@ -50,6 +51,7 @@ if (!command) {
   console.error("  status <issue> <status>       - Update issue status");
   console.error("  iteration <issue> <n>         - Update loop iteration");
   console.error("  merged <issue>                - Mark issue as merged");
+  console.error("  pr <issue> <pr-number> <url>  - Record PR info for issue");
   process.exit(1);
 }
 
@@ -191,10 +193,34 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "pr": {
+        const [issueStr, prNumStr, prUrl] = args;
+        const issueNumber = parseInt(issueStr, 10);
+        const prNumber = parseInt(prNumStr, 10);
+        if (isNaN(issueNumber) || isNaN(prNumber) || !prUrl) {
+          console.error("Usage: pr <issue> <pr-number> <pr-url>");
+          process.exit(1);
+        }
+        // Validate URL format
+        try {
+          new URL(prUrl);
+        } catch {
+          console.error(`Invalid URL: ${prUrl}`);
+          process.exit(1);
+        }
+        await ensureIssueExists(issueNumber);
+        await manager.updatePRInfo(issueNumber, {
+          number: prNumber,
+          url: prUrl,
+        });
+        console.log(`📊 PR #${prNumber} linked to issue #${issueNumber}`);
+        break;
+      }
+
       default:
         console.error(`Unknown command: ${command}`);
         console.error(
-          "Valid commands: start, complete, fail, skip, init, status, iteration, merged",
+          "Valid commands: start, complete, fail, skip, init, status, iteration, merged, pr",
         );
         process.exit(1);
     }
