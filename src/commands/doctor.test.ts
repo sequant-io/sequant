@@ -24,6 +24,7 @@ vi.mock("../lib/system.js", () => ({
   isNativeWindows: vi.fn(),
   isWSL: vi.fn(),
   checkOptionalMcpServers: vi.fn(),
+  getMcpServersConfig: vi.fn(),
   OPTIONAL_MCP_SERVERS: [
     {
       name: "chrome-devtools",
@@ -55,6 +56,7 @@ import {
   isNativeWindows,
   isWSL,
   checkOptionalMcpServers,
+  getMcpServersConfig,
 } from "../lib/system.js";
 
 const mockFileExists = vi.mocked(fileExists);
@@ -65,6 +67,7 @@ const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
 const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
+const mockGetMcpServersConfig = vi.mocked(getMcpServersConfig);
 const mockExecSync = vi.mocked(childProcess.execSync);
 
 describe("doctor command", () => {
@@ -98,6 +101,11 @@ describe("doctor command", () => {
       "chrome-devtools": true,
       context7: true,
       "sequential-thinking": true,
+    });
+    // Default: MCP servers config available for headless mode
+    mockGetMcpServersConfig.mockReturnValue({
+      "chrome-devtools": { command: "npx", args: ["mcp-chrome-devtools"] },
+      context7: { command: "npx", args: ["@context7/mcp"] },
     });
     // Default: no closed issues (empty array from gh issue list)
     mockExecSync.mockReturnValue("[]");

@@ -161,6 +161,47 @@ export function getConfiguredMcpServers(): string[] {
 }
 
 /**
+ * MCP server configuration type (matches Claude Desktop config format)
+ * This is the format expected by the Claude Agent SDK mcpServers option
+ */
+export interface McpServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * Get full MCP server configurations from Claude Desktop config
+ *
+ * Returns the complete mcpServers object suitable for passing to the
+ * Claude Agent SDK query() options. Returns undefined if config doesn't
+ * exist or is invalid (graceful degradation for AC-3).
+ *
+ * @returns MCP server configurations or undefined
+ */
+export function getMcpServersConfig():
+  | Record<string, McpServerConfig>
+  | undefined {
+  const configPath = getClaudeConfigPath();
+
+  try {
+    const content = fs.readFileSync(configPath, "utf8");
+    const config = JSON.parse(content);
+    const servers = config.mcpServers;
+
+    // Return undefined if no mcpServers section exists
+    if (!servers || typeof servers !== "object") {
+      return undefined;
+    }
+
+    return servers as Record<string, McpServerConfig>;
+  } catch {
+    // Config file doesn't exist or is invalid - graceful degradation
+    return undefined;
+  }
+}
+
+/**
  * Check which optional MCP servers are configured
  * Returns an object with server names as keys and configured status as values
  */

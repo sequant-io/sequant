@@ -58,6 +58,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Auto-infers verification method from description keywords
   - StateManager AC methods: `updateAcceptanceCriteria()`, `getAcceptanceCriteria()`, `updateACStatus()`
   - Dashboard displays expandable AC checklist per issue with status icons (✅❌⏳🚫)
+- MCP server support for headless `sequant run` (#161)
+  - Reads MCP servers from Claude Desktop config and passes to SDK
+  - Enables Context7, Sequential Thinking, and Chrome DevTools in headless mode
+  - New `--no-mcp` flag to disable MCPs for faster/cheaper runs
+  - New `run.mcp` setting in `.sequant/settings.json` (default: `true`)
+  - `sequant doctor` now shows "MCP Servers (headless)" availability check
+  - See `docs/run-command.md` for configuration details
   - Summary badge shows "X/Y met" progress
   - `/spec` skill wired to extract and store AC from issue body
   - `/qa` skill wired to update AC status after review

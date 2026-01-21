@@ -12,6 +12,7 @@ import {
   isNativeWindows,
   isWSL,
   checkOptionalMcpServers,
+  getMcpServersConfig,
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
 import {
@@ -386,6 +387,24 @@ export async function doctorCommand(
       status: "warn",
       message:
         "No optional MCPs configured (Sequant works without them, but they enhance functionality)",
+    });
+  }
+
+  // Check: MCP availability for headless mode (sequant run)
+  const mcpServersConfig = getMcpServersConfig();
+  if (mcpServersConfig) {
+    const serverCount = Object.keys(mcpServersConfig).length;
+    checks.push({
+      name: "MCP Servers (headless)",
+      status: "pass",
+      message: `Available for sequant run (${serverCount} server${serverCount !== 1 ? "s" : ""} configured)`,
+    });
+  } else {
+    checks.push({
+      name: "MCP Servers (headless)",
+      status: "warn",
+      message:
+        "Not available for sequant run (no Claude Desktop config found or empty mcpServers)",
     });
   }
 

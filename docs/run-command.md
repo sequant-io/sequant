@@ -59,6 +59,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--max-iterations <n>` | Max iterations for quality loop | `3` |
 | `--testgen` | Run testgen phase after spec | `false` |
 | `--batch "<issues>"` | Group issues to run together | - |
+| `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
 
 ### Available Phases
 
@@ -292,6 +293,73 @@ PHASE_TIMEOUT=3600 npx sequant run 42  # 1 hour timeout
 SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 ```
 
+## MCP Server Support
+
+`sequant run` supports MCP (Model Context Protocol) servers for enhanced functionality in headless mode. When enabled, MCP servers configured in Claude Desktop are automatically passed to the Claude Agent SDK.
+
+### How It Works
+
+1. **Reads Claude Desktop config** from the platform-specific path:
+   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+   - Linux: `~/.config/claude/claude_desktop_config.json`
+
+2. **Passes `mcpServers`** to the SDK `query()` call for each phase
+
+3. **Graceful degradation**: If the config doesn't exist or is invalid, runs without MCPs
+
+### Configuration
+
+| Option | Setting | Default | Description |
+|--------|---------|---------|-------------|
+| `--no-mcp` | - | - | Disable MCPs for faster/cheaper runs |
+| - | `run.mcp` | `true` | Enable MCP servers by default |
+
+**Priority:** CLI flag (`--no-mcp`) → Settings (`run.mcp`) → Default (`true`)
+
+### Usage Examples
+
+```bash
+# Default: MCPs enabled (reads from Claude Desktop config)
+npx sequant run 42
+
+# Disable MCPs for faster execution
+npx sequant run 42 --no-mcp
+
+# Disable MCPs via settings
+# In .sequant/settings.json: { "run": { "mcp": false } }
+```
+
+### Checking MCP Availability
+
+Run `sequant doctor` to verify MCP availability for headless mode:
+
+```bash
+sequant doctor
+```
+
+Look for the "MCP Servers (headless)" check:
+- ✓ **Pass**: MCPs available for `sequant run`
+- ⚠ **Warn**: No Claude Desktop config found or empty `mcpServers`
+
+### Supported MCPs
+
+MCPs that enhance Sequant skills in headless mode:
+
+| MCP | Skills Enhanced | Purpose |
+|-----|-----------------|---------|
+| Context7 | `/exec`, `/fullsolve` | External library documentation lookup |
+| Sequential Thinking | `/fullsolve` | Complex multi-step reasoning |
+| Chrome DevTools | `/test`, `/testgen`, `/loop` | Browser automation for UI testing |
+
+### When to Disable MCPs
+
+Use `--no-mcp` when:
+- Running on a system without Claude Desktop installed
+- Optimizing for cost (MCPs add token overhead)
+- Running simple issues that don't need external documentation
+- Debugging to isolate MCP-related issues
+
 ## Settings File
 
 You can configure defaults in `.sequant/settings.json`:
@@ -307,7 +375,8 @@ You can configure defaults in `.sequant/settings.json`:
     "sequential": false,
     "qualityLoop": false,
     "maxIterations": 3,
-    "smartTests": true
+    "smartTests": true,
+    "mcp": true
   }
 }
 ```
