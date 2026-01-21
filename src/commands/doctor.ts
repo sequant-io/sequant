@@ -3,6 +3,7 @@
  */
 
 import chalk from "chalk";
+import { execSync } from "child_process";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -25,10 +26,100 @@ interface Check {
   fix?: () => Promise<void>;
 }
 
-export async function doctorCommand(): Promise<void> {
+export interface DoctorOptions {
+  skipIssueCheck?: boolean;
+}
+
+/**
+ * Labels that indicate an issue should be skipped from closed-issue verification
+ * (case-insensitive matching)
+ */
+const SKIP_ISSUE_LABELS = [
+  "wontfix",
+  "won't fix",
+  "duplicate",
+  "invalid",
+  "question",
+  "documentation",
+  "docs",
+];
+
+interface ClosedIssue {
+  number: number;
+  title: string;
+  closedAt: string;
+  labels: Array<{ name: string }>;
+}
+
+/**
+ * Check recently closed issues for missing commits in main branch
+ * Returns issues that were closed but have no commit referencing them
+ */
+export function checkClosedIssues(): ClosedIssue[] {
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoISO = sevenDaysAgo.toISOString();
+
+  // Fetch closed issues from last 7 days
+  let closedIssues: ClosedIssue[];
+  try {
+    const output = execSync(
+      `gh issue list --state closed --json number,title,closedAt,labels --limit 100`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    );
+    closedIssues = JSON.parse(output) as ClosedIssue[];
+  } catch {
+    // gh command failed - return empty (graceful degradation)
+    return [];
+  }
+
+  // Filter to last 7 days
+  const recentIssues = closedIssues.filter(
+    (issue) => issue.closedAt >= sevenDaysAgoISO,
+  );
+
+  // Filter out issues with skip labels
+  const issuesToCheck = recentIssues.filter((issue) => {
+    const labels = issue.labels.map((l) => l.name.toLowerCase());
+    return !SKIP_ISSUE_LABELS.some((skipLabel) =>
+      labels.some((label) => label.includes(skipLabel.toLowerCase())),
+    );
+  });
+
+  // Check each issue for a commit in main
+  const missingCommitIssues: ClosedIssue[] = [];
+  for (const issue of issuesToCheck) {
+    try {
+      // Look for commit mentioning this issue number
+      const result = execSync(
+        `git log --oneline --grep="#${issue.number}" -1`,
+        {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
+      // If no output, no commit found
+      if (!result.trim()) {
+        missingCommitIssues.push(issue);
+      }
+    } catch {
+      // git log failed or no match - treat as missing
+      missingCommitIssues.push(issue);
+    }
+  }
+
+  return missingCommitIssues;
+}
+
+export async function doctorCommand(
+  options: DoctorOptions = {},
+): Promise<void> {
   console.log(chalk.blue("\n🔍 Running health checks...\n"));
 
   const checks: Check[] = [];
+  // Track gh availability and auth for conditional checks later
+  let ghAvailable = false;
+  let ghAuthenticated = false;
 
   // Check 0: Version freshness
   const versionResult = await checkVersionThorough();
@@ -185,6 +276,7 @@ export async function doctorCommand(): Promise<void> {
 
   // Check 8: GitHub CLI installed
   if (commandExists("gh")) {
+    ghAvailable = true;
     checks.push({
       name: "GitHub CLI",
       status: "pass",
@@ -193,6 +285,7 @@ export async function doctorCommand(): Promise<void> {
 
     // Check 9: GitHub CLI authenticated (only if gh exists)
     if (isGhAuthenticated()) {
+      ghAuthenticated = true;
       checks.push({
         name: "GitHub Auth",
         status: "pass",
@@ -294,6 +387,27 @@ export async function doctorCommand(): Promise<void> {
       message:
         "No optional MCPs configured (Sequant works without them, but they enhance functionality)",
     });
+  }
+
+  // Check: Closed issue verification (only if gh available, authenticated, and not skipped)
+  if (!options.skipIssueCheck && ghAvailable && ghAuthenticated && gitExists) {
+    const missingCommitIssues = checkClosedIssues();
+    if (missingCommitIssues.length === 0) {
+      checks.push({
+        name: "Closed Issues",
+        status: "pass",
+        message: "All recently closed issues have commits in main",
+      });
+    } else {
+      // Add a warning for each issue missing commits
+      for (const issue of missingCommitIssues) {
+        checks.push({
+          name: `Issue #${issue.number}`,
+          status: "warn",
+          message: `Closed but no commit found in main: "${issue.title}"`,
+        });
+      }
+    }
   }
 
   // Display results
