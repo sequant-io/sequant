@@ -26,6 +26,8 @@ import type {
   Phase,
   PhaseState,
   PhaseStatus,
+  AcceptanceCriteria,
+  ACStatus,
 } from "../src/lib/workflow/state-schema.js";
 import { STATE_FILE_PATH } from "../src/lib/workflow/state-schema.js";
 import * as fs from "fs";
@@ -203,6 +205,79 @@ function formatDuration(startedAt: string, completedAt: string): string {
 }
 
 /**
+ * Get status icon for acceptance criteria
+ */
+function getACStatusIcon(status: ACStatus): string {
+  switch (status) {
+    case "met":
+      return "✅";
+    case "not_met":
+      return "❌";
+    case "pending":
+      return "⏳";
+    case "blocked":
+      return "🚫";
+    default:
+      return "❓";
+  }
+}
+
+/**
+ * Render acceptance criteria section for an issue card
+ */
+function renderACSection(ac: AcceptanceCriteria | undefined): string {
+  if (!ac || ac.items.length === 0) {
+    return "";
+  }
+
+  const { summary } = ac;
+  const summaryText = `${summary.met}/${summary.total} met`;
+
+  // Determine badge class based on progress
+  let badgeClass = "ac-badge";
+  if (summary.met === summary.total) {
+    badgeClass += " complete";
+  } else if (summary.notMet > 0) {
+    badgeClass += " has-issues";
+  } else if (summary.blocked > 0) {
+    badgeClass += " blocked";
+  }
+
+  // Render individual AC items
+  const acItems = ac.items
+    .map((item) => {
+      const icon = getACStatusIcon(item.status);
+      const description = escapeHtml(
+        item.description.length > 60
+          ? item.description.slice(0, 57) + "..."
+          : item.description,
+      );
+      const notes = item.notes
+        ? `<span class="ac-notes" title="${escapeHtml(item.notes)}">(note)</span>`
+        : "";
+      return `<li class="ac-item ac-${item.status}">
+        <span class="ac-icon">${icon}</span>
+        <span class="ac-id">${escapeHtml(item.id)}:</span>
+        <span class="ac-desc">${description}</span>
+        ${notes}
+      </li>`;
+    })
+    .join("");
+
+  return `
+    <details class="ac-section">
+      <summary>
+        <span class="${badgeClass}">${summaryText}</span>
+        <span class="ac-label">Acceptance Criteria</span>
+      </summary>
+      <ul class="ac-list">
+        ${acItems}
+      </ul>
+    </details>
+  `;
+}
+
+/**
  * Format tracking age (time since createdAt)
  */
 function formatTrackingAge(createdAt: string): string {
@@ -300,6 +375,9 @@ function renderIssueCard(issue: IssueState): string {
     </span>`;
   }
 
+  // Acceptance Criteria section (AC-B4)
+  const acSection = renderACSection(issue.acceptanceCriteria);
+
   return `
     <article class="issue-card" data-issue="${issue.number}" data-status="${issue.status}">
       <header>
@@ -309,6 +387,7 @@ function renderIssueCard(issue: IssueState): string {
       <div class="phases">
         ${phaseIndicators}
       </div>
+      ${acSection}
       <footer>
         <div class="meta">
           ${prInfo}
@@ -609,6 +688,99 @@ function renderMainPage(): string {
     .tracking-age {
       color: var(--pico-muted-color);
       font-style: italic;
+    }
+
+    /* Acceptance Criteria section (AC-B4) */
+    .ac-section {
+      margin: 0.5rem 0;
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 4px;
+      font-size: 0.8125rem;
+    }
+    .ac-section summary {
+      padding: 0.5rem 0.75rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      user-select: none;
+    }
+    .ac-section summary::-webkit-details-marker {
+      display: none;
+    }
+    .ac-section summary::before {
+      content: '▸';
+      font-size: 0.75rem;
+      transition: transform 0.2s;
+    }
+    .ac-section[open] summary::before {
+      transform: rotate(90deg);
+    }
+    .ac-badge {
+      font-size: 0.6875rem;
+      padding: 0.125rem 0.375rem;
+      border-radius: 3px;
+      background: var(--pico-secondary-background);
+      color: var(--pico-secondary);
+      font-weight: 500;
+    }
+    .ac-badge.complete {
+      background: var(--pico-ins-color);
+      color: var(--pico-background-color);
+    }
+    .ac-badge.has-issues {
+      background: var(--pico-del-color);
+      color: white;
+    }
+    .ac-badge.blocked {
+      background: var(--pico-mark-background-color);
+      color: var(--pico-color);
+    }
+    .ac-label {
+      color: var(--pico-muted-color);
+      font-size: 0.75rem;
+    }
+    .ac-list {
+      list-style: none;
+      margin: 0;
+      padding: 0.5rem 0.75rem;
+      border-top: 1px solid var(--pico-muted-border-color);
+      background: var(--pico-card-sectioning-background-color);
+    }
+    .ac-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.375rem;
+      padding: 0.25rem 0;
+      font-size: 0.75rem;
+    }
+    .ac-item.ac-met {
+      color: var(--pico-ins-color);
+    }
+    .ac-item.ac-not_met {
+      color: var(--pico-del-color);
+    }
+    .ac-item.ac-blocked {
+      color: var(--pico-mark-color);
+    }
+    .ac-item.ac-pending {
+      color: var(--pico-muted-color);
+    }
+    .ac-icon {
+      flex-shrink: 0;
+    }
+    .ac-id {
+      font-weight: 500;
+      flex-shrink: 0;
+    }
+    .ac-desc {
+      flex: 1;
+      word-break: break-word;
+    }
+    .ac-notes {
+      font-size: 0.625rem;
+      color: var(--pico-muted-color);
+      cursor: help;
     }
 
     .summary {

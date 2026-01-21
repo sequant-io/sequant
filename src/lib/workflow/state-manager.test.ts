@@ -10,6 +10,8 @@ import { StateManager, resetStateManager } from "./state-manager.js";
 import {
   createEmptyState,
   createIssueState,
+  createAcceptanceCriterion,
+  createAcceptanceCriteria,
   type WorkflowState,
 } from "./state-schema.js";
 
@@ -365,6 +367,130 @@ describe("StateManager", () => {
       const fresh = await manager.getState();
       expect(fresh.issues["99"]).toBeDefined();
       expect(fresh.lastUpdated).not.toBe(lastUpdated1);
+    });
+  });
+
+  describe("updateAcceptanceCriteria", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+    });
+
+    it("should store acceptance criteria for an issue", async () => {
+      const items = [
+        createAcceptanceCriterion("AC-1", "User can login", "unit_test"),
+        createAcceptanceCriterion(
+          "AC-2",
+          "Session persists",
+          "integration_test",
+        ),
+      ];
+      const ac = createAcceptanceCriteria(items);
+
+      await manager.updateAcceptanceCriteria(42, ac);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].acceptanceCriteria).toBeDefined();
+      expect(state.issues["42"].acceptanceCriteria?.items.length).toBe(2);
+      expect(state.issues["42"].acceptanceCriteria?.summary.total).toBe(2);
+      expect(state.issues["42"].acceptanceCriteria?.summary.pending).toBe(2);
+    });
+
+    it("should throw if issue not found", async () => {
+      const ac = createAcceptanceCriteria([]);
+      await expect(manager.updateAcceptanceCriteria(999, ac)).rejects.toThrow(
+        "Issue #999 not found",
+      );
+    });
+  });
+
+  describe("getAcceptanceCriteria", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+    });
+
+    it("should return acceptance criteria if exists", async () => {
+      const items = [
+        createAcceptanceCriterion("AC-1", "Test criterion", "manual"),
+      ];
+      const ac = createAcceptanceCriteria(items);
+      await manager.updateAcceptanceCriteria(42, ac);
+
+      const retrieved = await manager.getAcceptanceCriteria(42);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved?.items.length).toBe(1);
+      expect(retrieved?.items[0].id).toBe("AC-1");
+    });
+
+    it("should return null if no AC exists", async () => {
+      const retrieved = await manager.getAcceptanceCriteria(42);
+      expect(retrieved).toBeNull();
+    });
+
+    it("should return null if issue does not exist", async () => {
+      const retrieved = await manager.getAcceptanceCriteria(999);
+      expect(retrieved).toBeNull();
+    });
+  });
+
+  describe("updateACStatus", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+      const items = [
+        createAcceptanceCriterion("AC-1", "First criterion", "unit_test"),
+        createAcceptanceCriterion("AC-2", "Second criterion", "manual"),
+      ];
+      const ac = createAcceptanceCriteria(items);
+      await manager.updateAcceptanceCriteria(42, ac);
+    });
+
+    it("should update individual AC status", async () => {
+      await manager.updateACStatus(42, "AC-1", "met");
+
+      const ac = await manager.getAcceptanceCriteria(42);
+      const ac1 = ac?.items.find((i) => i.id === "AC-1");
+      expect(ac1?.status).toBe("met");
+      expect(ac1?.verifiedAt).toBeDefined();
+    });
+
+    it("should recalculate summary counts", async () => {
+      await manager.updateACStatus(42, "AC-1", "met");
+
+      const ac = await manager.getAcceptanceCriteria(42);
+      expect(ac?.summary.met).toBe(1);
+      expect(ac?.summary.pending).toBe(1);
+      expect(ac?.summary.total).toBe(2);
+    });
+
+    it("should add notes when provided", async () => {
+      await manager.updateACStatus(
+        42,
+        "AC-1",
+        "not_met",
+        "Failed due to timeout",
+      );
+
+      const ac = await manager.getAcceptanceCriteria(42);
+      const ac1 = ac?.items.find((i) => i.id === "AC-1");
+      expect(ac1?.notes).toBe("Failed due to timeout");
+    });
+
+    it("should throw if issue not found", async () => {
+      await expect(manager.updateACStatus(999, "AC-1", "met")).rejects.toThrow(
+        "Issue #999 not found",
+      );
+    });
+
+    it("should throw if AC not found", async () => {
+      await expect(manager.updateACStatus(42, "AC-999", "met")).rejects.toThrow(
+        'AC "AC-999" not found in issue #42',
+      );
+    });
+
+    it("should throw if issue has no AC", async () => {
+      await manager.initializeIssue(43, "No AC Issue");
+      await expect(manager.updateACStatus(43, "AC-1", "met")).rejects.toThrow(
+        "Issue #43 has no acceptance criteria",
+      );
     });
   });
 });
