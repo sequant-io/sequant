@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Closed-issue verification in `sequant doctor` (#89)
+  - Warns if issues closed in last 7 days have no commit in main
+  - Helps detect work lost due to manual issue closure without merging
+  - Skips issues with `wontfix`, `duplicate`, `invalid`, `question` labels
+  - Use `--skip-issue-check` flag to disable
 - PR info recorded in workflow state when `/exec` creates a PR (#145)
   - New CLI command: `npx tsx scripts/state/update.ts pr <issue> <pr-number> <url>`
   - Enables `--cleanup` to detect merged PRs for orphaned entries
