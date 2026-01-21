@@ -79,6 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Previously only `scripts/` was checked, allowing template scripts to bypass `/verify`
 - Dashboard now shows fresh state instead of stale cached data
   - Issue status updates (e.g., `in_progress` → `ready_for_merge`) now reflect immediately
+- `--no-mcp` flag now registered in CLI (#161)
+  - Flag was implemented in run command logic but not exposed in Commander.js options
+  - Now available: `sequant run --no-mcp` to disable MCP server injection
 
 ## [1.10.1] - 2026-01-19
 

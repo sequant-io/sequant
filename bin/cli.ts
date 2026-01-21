@@ -163,6 +163,7 @@ program
     "--base <branch>",
     "Base branch for worktree creation (default: main or settings.run.defaultBase)",
   )
+  .option("--no-mcp", "Disable MCP server injection in headless mode")
   .action(runCommand);
 
 program
