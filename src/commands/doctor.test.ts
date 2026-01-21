@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import * as childProcess from "child_process";
+
+// Mock child_process for checkClosedIssues
+vi.mock("child_process", () => ({
+  execSync: vi.fn(),
+}));
 
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
@@ -40,7 +46,7 @@ vi.mock("../lib/system.js", () => ({
   ],
 }));
 
-import { doctorCommand } from "./doctor.js";
+import { doctorCommand, checkClosedIssues } from "./doctor.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -59,6 +65,7 @@ const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
 const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
+const mockExecSync = vi.mocked(childProcess.execSync);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -92,6 +99,8 @@ describe("doctor command", () => {
       context7: true,
       "sequential-thinking": true,
     });
+    // Default: no closed issues (empty array from gh issue list)
+    mockExecSync.mockReturnValue("[]");
   });
 
   afterEach(() => {
@@ -358,6 +367,204 @@ describe("doctor command", () => {
       expect(processExitSpy).not.toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("should work");
+    });
+  });
+
+  describe("closed issue verification", () => {
+    it("passes when no recently closed issues exist", async () => {
+      mockExecSync.mockReturnValue("[]");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Closed Issues");
+      expect(output).toContain(
+        "All recently closed issues have commits in main",
+      );
+    });
+
+    it("passes when closed issues have commits in main", async () => {
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          return JSON.stringify([
+            {
+              number: 42,
+              title: "Test issue",
+              closedAt: twoDaysAgo.toISOString(),
+              labels: [],
+            },
+          ]);
+        }
+        // git log returns a commit for issue #42
+        if (cmd.includes("git log") && cmd.includes("#42")) {
+          return "abc123 feat(#42): implement test feature";
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Closed Issues");
+      expect(output).toContain(
+        "All recently closed issues have commits in main",
+      );
+    });
+
+    it("warns when closed issue has no commit in main", async () => {
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          return JSON.stringify([
+            {
+              number: 78,
+              title: "Lost work issue",
+              closedAt: twoDaysAgo.toISOString(),
+              labels: [],
+            },
+          ]);
+        }
+        // git log returns empty (no commit found)
+        if (cmd.includes("git log")) {
+          return "";
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Issue #78");
+      expect(output).toContain("Closed but no commit found in main");
+      expect(output).toContain("Lost work issue");
+    });
+
+    it("skips issues with wontfix label", async () => {
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          return JSON.stringify([
+            {
+              number: 99,
+              title: "Wontfix issue",
+              closedAt: twoDaysAgo.toISOString(),
+              labels: [{ name: "wontfix" }],
+            },
+          ]);
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not warn about issue #99 since it has wontfix label
+      expect(output).not.toContain("Issue #99");
+      expect(output).toContain("Closed Issues");
+      expect(output).toContain(
+        "All recently closed issues have commits in main",
+      );
+    });
+
+    it("skips issues with duplicate label", async () => {
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          return JSON.stringify([
+            {
+              number: 100,
+              title: "Duplicate issue",
+              closedAt: twoDaysAgo.toISOString(),
+              labels: [{ name: "duplicate" }],
+            },
+          ]);
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("Issue #100");
+    });
+
+    it("skips issues older than 7 days", async () => {
+      const now = new Date();
+      const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          return JSON.stringify([
+            {
+              number: 50,
+              title: "Old issue",
+              closedAt: tenDaysAgo.toISOString(),
+              labels: [],
+            },
+          ]);
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not warn about issue #50 since it's older than 7 days
+      expect(output).not.toContain("Issue #50");
+    });
+
+    it("skips check when gh is not available", async () => {
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
+      mockExecSync.mockReturnValue("[]");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not contain closed issues check
+      expect(output).not.toContain("Closed Issues");
+    });
+
+    it("skips check when gh is not authenticated", async () => {
+      mockIsGhAuthenticated.mockReturnValue(false);
+      mockExecSync.mockReturnValue("[]");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not contain closed issues check
+      expect(output).not.toContain("Closed Issues");
+    });
+
+    it("skips check when --skip-issue-check flag is used", async () => {
+      mockExecSync.mockReturnValue("[]");
+
+      await doctorCommand({ skipIssueCheck: true });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should not contain closed issues check
+      expect(output).not.toContain("Closed Issues");
+    });
+
+    it("handles gh command failure gracefully", async () => {
+      mockExecSync.mockImplementation((cmd: string) => {
+        if (cmd.includes("gh issue list")) {
+          throw new Error("gh command failed");
+        }
+        return "";
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      // Should still show closed issues check (pass because no issues found)
+      expect(output).toContain("Closed Issues");
+      expect(output).toContain(
+        "All recently closed issues have commits in main",
+      );
     });
   });
 });
