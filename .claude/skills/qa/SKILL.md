@@ -302,7 +302,85 @@ Perform a code review focusing on:
 
 See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps.
 
-### 2a. Test Quality Review
+### 2a. Test Coverage Transparency (REQUIRED)
+
+**Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
+
+**After running `npm test`, you MUST analyze test coverage for changed files:**
+
+```bash
+# Get changed source files (excluding tests)
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
+
+# Check for corresponding test files
+for file in $changed; do
+  base=$(basename "$file" .ts | sed 's/\.tsx$//')
+  # Look for test files in __tests__/ or co-located
+  if ! find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
+    echo "NO TEST: $file"
+  fi
+done
+```
+
+**Required reporting format:**
+
+| Scenario | Report |
+|----------|--------|
+| Tests cover changed files | `Tests: N passed (covers changed files)` |
+| Tests don't cover changed files | `Tests: N passed (⚠️ 0 cover changed files)` |
+| No tests for specific files | `Tests: N passed (⚠️ NO TESTS: file1.ts, file2.ts)` |
+
+**Include in output template:**
+
+```markdown
+### Test Coverage Analysis
+
+| Changed File | Has Tests? | Test File |
+|--------------|------------|-----------|
+| `lib/foo.ts` | ✅ Yes | `__tests__/foo.test.ts` |
+| `lib/bar.ts` | ⚠️ No | - |
+
+**Coverage:** X/Y changed files have tests
+```
+
+### 2b. Change Tier Classification
+
+**Purpose:** Flag coverage gaps based on criticality, not just presence/absence.
+
+**Tier definitions:**
+
+| Tier | Change Type | Coverage Requirement |
+|------|-------------|---------------------|
+| **Critical** | Auth, payments, security, server-actions, middleware, admin | Flag prominently if missing |
+| **Standard** | Business logic, API handlers, utilities | Note if missing |
+| **Optional** | Config, types-only, UI tweaks | No flag needed |
+
+**Detection heuristic:**
+
+```bash
+# Detect critical paths in changed files
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
+
+if [[ -n "$critical" ]]; then
+  echo "⚠️ CRITICAL PATH CHANGES (test coverage strongly recommended):"
+  echo "$critical"
+fi
+```
+
+**Reporting format:**
+
+```markdown
+### Change Tiers
+
+| Tier | Files | Coverage Status |
+|------|-------|-----------------|
+| Critical | `auth/login.ts` | ⚠️ NO TESTS - Flag prominently |
+| Standard | `lib/utils.ts` | Note: No tests |
+| Optional | `types/index.ts` | OK - Types only |
+```
+
+### 2c. Test Quality Review
 
 **When to apply:** Test files were added or modified.
 
@@ -592,6 +670,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, or NOT_MET
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
+- [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
 - [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
 - [ ] **Anti-Pattern Detection** - Dependency audit (if package.json changed) + code patterns
@@ -637,6 +716,17 @@ You MUST include these sections:
 | Files changed | X | OK/WARN |
 | Lines added | +X | - |
 | Lines deleted | -X | - |
+
+---
+
+### Test Coverage Analysis
+
+| Changed File | Tier | Has Tests? | Test File |
+|--------------|------|------------|-----------|
+| `[file]` | Critical/Standard/Optional | ✅ Yes / ⚠️ No | `[test file or -]` |
+
+**Coverage:** X/Y changed source files have corresponding tests
+**Critical paths without tests:** [list or "None"]
 
 ---
 
