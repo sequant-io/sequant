@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PR info recorded in workflow state when `/exec` creates a PR (#145)
+  - New CLI command: `npx tsx scripts/state/update.ts pr <issue> <pr-number> <url>`
+  - Enables `--cleanup` to detect merged PRs for orphaned entries
+  - `/exec` skill updated to record PR info after PR creation
 - Comprehensive QA improvements (#147)
   - **Execution Evidence** — QA now executes smoke tests for scripts/CLI changes before READY_FOR_MERGE
   - **Test Quality Review** — Evaluates tests for behavior vs implementation, coverage depth, mock hygiene
