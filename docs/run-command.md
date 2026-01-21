@@ -352,6 +352,67 @@ MCPs that enhance Sequant skills in headless mode:
 | Sequential Thinking | `/fullsolve` | Complex multi-step reasoning |
 | Chrome DevTools | `/test`, `/testgen`, `/loop` | Browser automation for UI testing |
 
+### Adding MCPs for Headless Mode
+
+To add MCP servers for use with `sequant run`, edit the Claude Desktop config file directly.
+
+**1. Locate your config file:**
+
+| Platform | Path |
+|----------|------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Linux | `~/.config/claude/claude_desktop_config.json` |
+
+**2. Add MCPs to the `mcpServers` object:**
+
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "chrome-devtools": {
+      "command": "npx",
+      "args": ["-y", "chrome-devtools-mcp@latest"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    }
+  }
+}
+```
+
+**3. Config format:**
+
+```json
+{
+  "mcpServers": {
+    "<server-name>": {
+      "command": "npx",           // Command to run
+      "args": ["-y", "<package>"], // Arguments (use -y for auto-install)
+      "env": {                     // Optional: environment variables
+        "API_KEY": "..."
+      }
+    }
+  }
+}
+```
+
+**4. Verify configuration:**
+
+```bash
+sequant doctor
+```
+
+Look for:
+- ✓ `MCP Servers: All optional MCPs configured`
+- ✓ `MCP Servers (headless): Available for sequant run (N servers configured)`
+
+**Note:** Changes to Claude Desktop config require restarting Claude Desktop (for interactive use) but take effect immediately for `sequant run` (headless mode).
+
 ### When to Disable MCPs
 
 Use `--no-mcp` when:
