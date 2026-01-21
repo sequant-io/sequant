@@ -3,7 +3,7 @@
  */
 
 import { readdir, chmod } from "fs/promises";
-import { join, dirname, basename, relative } from "path";
+import { join, dirname, basename, relative, isAbsolute } from "path";
 import { fileURLToPath } from "url";
 import {
   readFile,
@@ -139,8 +139,13 @@ export async function symlinkDir(
       const destPath = join(destDir, entry.name);
 
       // Calculate relative path from destDir to srcPath for portable symlinks
-      const absoluteDest = join(process.cwd(), destPath);
-      const absoluteSrc = join(process.cwd(), srcPath);
+      // Note: srcPath may already be absolute (when srcDir is absolute), so check first
+      const absoluteDest = isAbsolute(destPath)
+        ? destPath
+        : join(process.cwd(), destPath);
+      const absoluteSrc = isAbsolute(srcPath)
+        ? srcPath
+        : join(process.cwd(), srcPath);
       const relativeTarget = relative(dirname(absoluteDest), absoluteSrc);
 
       // Check if destination already exists
