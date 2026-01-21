@@ -41,6 +41,11 @@ import { runCommand } from "../src/commands/run.js";
 import { logsCommand } from "../src/commands/logs.js";
 import { statsCommand } from "../src/commands/stats.js";
 import { dashboardCommand } from "../src/commands/dashboard.js";
+import {
+  stateInitCommand,
+  stateRebuildCommand,
+  stateCleanCommand,
+} from "../src/commands/state.js";
 
 const program = new Command();
 
@@ -182,6 +187,36 @@ program
   .option("--no-open", "Don't automatically open browser")
   .option("-v, --verbose", "Enable verbose logging")
   .action(dashboardCommand);
+
+// State management command with subcommands
+const stateCmd = program
+  .command("state")
+  .description("Manage workflow state for worktrees");
+
+stateCmd
+  .command("init")
+  .description("Populate state for untracked worktrees")
+  .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Enable verbose output")
+  .action(stateInitCommand);
+
+stateCmd
+  .command("rebuild")
+  .description("Recreate state from logs and worktrees")
+  .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Enable verbose output")
+  .option("-f, --force", "Force rebuild without confirmation")
+  .action(stateRebuildCommand);
+
+stateCmd
+  .command("clean")
+  .description("Remove entries for deleted worktrees")
+  .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Enable verbose output")
+  .option("-d, --dry-run", "Preview cleanup without changes")
+  .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .option("--all", "Remove all orphaned entries (merged and abandoned)")
+  .action(stateCleanCommand);
 
 // Parse and execute
 program.parse();
