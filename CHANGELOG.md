@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Local-first analytics for workflow insights (#132)
+  - Metrics collected automatically during `sequant run`
+  - Data stored in `.sequant/metrics.json` (privacy-focused, no PII)
+  - `sequant stats` displays success rates, averages, and insights
+  - `sequant stats --json` for programmatic access
+  - No data ever sent remotely — all analytics are local-only
+  - See `docs/analytics.md` for details
 - Smart cleanup with PR merge detection (#137)
   - `sequant status --cleanup` now checks GitHub for merged PRs
   - Orphaned entries with merged PRs are auto-removed
