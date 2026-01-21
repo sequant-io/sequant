@@ -43,6 +43,8 @@ export interface ExecutionConfig {
   noSmartTests: boolean;
   /** Dry run mode - don't actually execute */
   dryRun: boolean;
+  /** Enable MCP servers in headless mode (true by default, false if --no-mcp flag used) */
+  mcp: boolean;
 }
 
 /**
@@ -59,6 +61,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   verbose: false,
   noSmartTests: false,
   dryRun: false,
+  mcp: true,
 };
 
 /**

@@ -30,6 +30,7 @@ import {
   PhaseResult,
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
+import { getMcpServersConfig } from "../lib/system.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
 import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
 import {
@@ -819,6 +820,12 @@ interface RunOptions {
    * Resolution priority: this CLI flag → settings.run.defaultBase → 'main'
    */
   base?: string;
+  /**
+   * Disable MCP servers in headless mode.
+   * When true, MCPs are not passed to the SDK (faster/cheaper runs).
+   * Resolution priority: this CLI flag → settings.run.mcp → default (true)
+   */
+  noMcp?: boolean;
 }
 
 /**
@@ -931,6 +938,11 @@ async function executePhase(
     // Execute using Claude Agent SDK
     // Note: Don't resume sessions when switching to worktree (different cwd breaks resume)
     const canResume = sessionId && !shouldUseWorktree;
+
+    // Get MCP servers config if enabled
+    // Reads from Claude Desktop config and passes to SDK for headless MCP support
+    const mcpServers = config.mcp ? getMcpServersConfig() : undefined;
+
     const queryInstance = query({
       prompt,
       options: {
@@ -948,6 +960,8 @@ async function executePhase(
         ...(canResume ? { resume: sessionId } : {}),
         // Configure smart tests and worktree isolation via environment
         env,
+        // Pass MCP servers for headless mode (AC-2)
+        ...(mcpServers ? { mcpServers } : {}),
       },
     });
 
@@ -1461,6 +1475,11 @@ export async function runCommand(
     ? (mergedOptions.phases.split(",").map((p) => p.trim()) as Phase[])
     : null;
 
+  // Determine MCP enablement: CLI flag (--no-mcp) → settings.run.mcp → default (true)
+  const mcpEnabled = mergedOptions.noMcp
+    ? false
+    : (settings.run.mcp ?? DEFAULT_CONFIG.mcp);
+
   const config: ExecutionConfig = {
     ...DEFAULT_CONFIG,
     phases: explicitPhases ?? DEFAULT_PHASES,
@@ -1471,6 +1490,7 @@ export async function runCommand(
     qualityLoop: mergedOptions.qualityLoop ?? false,
     maxIterations: mergedOptions.maxIterations ?? DEFAULT_CONFIG.maxIterations,
     noSmartTests: mergedOptions.noSmartTests ?? false,
+    mcp: mcpEnabled,
   };
 
   // Initialize log writer if JSON logging enabled

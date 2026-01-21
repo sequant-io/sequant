@@ -81,6 +81,13 @@ export interface RunSettings {
    * Example: "feature/dashboard" for feature integration branches
    */
   defaultBase?: string;
+  /**
+   * Enable MCP servers in headless mode.
+   * When true, reads MCP config from Claude Desktop and passes to SDK.
+   * When false or --no-mcp flag is used, MCPs are disabled.
+   * Default: true
+   */
+  mcp: boolean;
 }
 
 /**
@@ -127,6 +134,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     maxIterations: 3,
     smartTests: true,
     rotation: DEFAULT_ROTATION_SETTINGS,
+    mcp: true, // Enable MCP servers by default in headless mode
   },
   agents: DEFAULT_AGENT_SETTINGS,
 };
