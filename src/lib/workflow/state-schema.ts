@@ -124,6 +124,70 @@ export const LoopStateSchema = z.object({
 export type LoopState = z.infer<typeof LoopStateSchema>;
 
 /**
+ * Acceptance criteria verification status
+ */
+export const ACStatusSchema = z.enum([
+  "pending", // Not yet verified
+  "met", // Verified as satisfied
+  "not_met", // Verified as not satisfied
+  "blocked", // Cannot verify due to external dependency
+]);
+
+export type ACStatus = z.infer<typeof ACStatusSchema>;
+
+/**
+ * Acceptance criteria verification method
+ */
+export const ACVerificationMethodSchema = z.enum([
+  "unit_test",
+  "integration_test",
+  "browser_test",
+  "manual",
+]);
+
+export type ACVerificationMethod = z.infer<typeof ACVerificationMethodSchema>;
+
+/**
+ * Individual acceptance criterion state
+ */
+export const AcceptanceCriterionSchema = z.object({
+  /** AC identifier (e.g., "A1", "B2") */
+  id: z.string(),
+  /** Description of the acceptance criterion */
+  description: z.string(),
+  /** How this AC should be verified */
+  verificationMethod: ACVerificationMethodSchema,
+  /** Current verification status */
+  status: ACStatusSchema,
+  /** When the AC was last verified */
+  verifiedAt: z.string().datetime().optional(),
+  /** Additional notes about verification */
+  notes: z.string().optional(),
+});
+
+export type AcceptanceCriterion = z.infer<typeof AcceptanceCriterionSchema>;
+
+/**
+ * Acceptance criteria tracking for an issue
+ */
+export const AcceptanceCriteriaSchema = z.object({
+  /** List of acceptance criteria */
+  items: z.array(AcceptanceCriterionSchema),
+  /** When the AC list was extracted from the issue */
+  extractedAt: z.string().datetime(),
+  /** Summary counts for quick access */
+  summary: z.object({
+    total: z.number().int().nonnegative(),
+    met: z.number().int().nonnegative(),
+    notMet: z.number().int().nonnegative(),
+    pending: z.number().int().nonnegative(),
+    blocked: z.number().int().nonnegative(),
+  }),
+});
+
+export type AcceptanceCriteria = z.infer<typeof AcceptanceCriteriaSchema>;
+
+/**
  * Complete state for a single issue
  */
 export const IssueStateSchema = z.object({
@@ -145,6 +209,8 @@ export const IssueStateSchema = z.object({
   pr: PRInfoSchema.optional(),
   /** Quality loop state (if loop enabled) */
   loop: LoopStateSchema.optional(),
+  /** Acceptance criteria tracking (if extracted by /spec) */
+  acceptanceCriteria: AcceptanceCriteriaSchema.optional(),
   /** Claude session ID (for resume) */
   sessionId: z.string().optional(),
   /** Most recent activity timestamp */
@@ -232,4 +298,55 @@ export function createPhaseState(status: PhaseStatus = "pending"): PhaseState {
     };
   }
   return { status };
+}
+
+/**
+ * Create acceptance criterion
+ */
+export function createAcceptanceCriterion(
+  id: string,
+  description: string,
+  verificationMethod: ACVerificationMethod = "manual",
+): AcceptanceCriterion {
+  return {
+    id,
+    description,
+    verificationMethod,
+    status: "pending",
+  };
+}
+
+/**
+ * Create acceptance criteria tracking structure
+ */
+export function createAcceptanceCriteria(
+  items: AcceptanceCriterion[],
+): AcceptanceCriteria {
+  return {
+    items,
+    extractedAt: new Date().toISOString(),
+    summary: {
+      total: items.length,
+      met: 0,
+      notMet: 0,
+      pending: items.length,
+      blocked: 0,
+    },
+  };
+}
+
+/**
+ * Update acceptance criteria summary based on item statuses
+ */
+export function updateAcceptanceCriteriaSummary(
+  ac: AcceptanceCriteria,
+): AcceptanceCriteria {
+  const summary = {
+    total: ac.items.length,
+    met: ac.items.filter((i) => i.status === "met").length,
+    notMet: ac.items.filter((i) => i.status === "not_met").length,
+    pending: ac.items.filter((i) => i.status === "pending").length,
+    blocked: ac.items.filter((i) => i.status === "blocked").length,
+  };
+  return { ...ac, summary };
 }

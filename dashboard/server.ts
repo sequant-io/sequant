@@ -22,7 +22,9 @@ import { StateManager } from "../src/lib/workflow/state-manager.js";
 import type {
   IssueState,
   IssueStatus,
+  LoopState,
   Phase,
+  PhaseState,
   PhaseStatus,
 } from "../src/lib/workflow/state-schema.js";
 import { STATE_FILE_PATH } from "../src/lib/workflow/state-schema.js";
@@ -80,28 +82,88 @@ function getStatusClass(status: IssueStatus): string {
 }
 
 /**
+ * Build tooltip text for a phase indicator
+ * Includes: status, duration (if completed), error (if failed)
+ */
+function buildPhaseTooltip(
+  phaseName: string,
+  phaseState: PhaseState | undefined,
+  loopState: LoopState | undefined,
+): string {
+  if (!phaseState) {
+    return `${phaseName}: Pending`;
+  }
+
+  const parts: string[] = [];
+
+  // Status text
+  const statusText =
+    phaseState.status.charAt(0).toUpperCase() +
+    phaseState.status.slice(1).replace(/_/g, " ");
+  parts.push(`${phaseName}: ${statusText}`);
+
+  // Duration (if we have both timestamps)
+  if (phaseState.startedAt && phaseState.completedAt) {
+    const duration = formatDuration(
+      phaseState.startedAt,
+      phaseState.completedAt,
+    );
+    parts.push(`Duration: ${duration}`);
+  }
+
+  // Loop iteration for loop phase
+  if (phaseName === "Loop" && loopState?.enabled) {
+    parts.push(`Iteration: ${loopState.iteration}/${loopState.maxIterations}`);
+  }
+
+  // Error message (if failed)
+  if (phaseState.status === "failed" && phaseState.error) {
+    // Truncate long errors for tooltip
+    const errorMsg =
+      phaseState.error.length > 100
+        ? phaseState.error.slice(0, 100) + "..."
+        : phaseState.error;
+    parts.push(`Error: ${errorMsg}`);
+  }
+
+  return parts.join(" | ");
+}
+
+/**
  * Get phase indicator HTML
  */
 function getPhaseIndicator(
-  phaseState: { status: PhaseStatus } | undefined,
+  phaseState: PhaseState | undefined,
+  options?: {
+    phaseName?: string;
+    isActive?: boolean;
+    loopState?: LoopState;
+  },
 ): string {
+  const phaseName = options?.phaseName ?? "Phase";
+  const isActive = options?.isActive ?? false;
+  const tooltip = escapeHtml(
+    buildPhaseTooltip(phaseName, phaseState, options?.loopState),
+  );
+  const activeClass = isActive ? " active" : "";
+
   if (!phaseState) {
-    return '<span class="phase-dot pending" title="Pending">○</span>';
+    return `<span class="phase-dot pending${activeClass}" title="${tooltip}">○</span>`;
   }
 
   switch (phaseState.status) {
     case "pending":
-      return '<span class="phase-dot pending" title="Pending">○</span>';
+      return `<span class="phase-dot pending${activeClass}" title="${tooltip}">○</span>`;
     case "in_progress":
-      return '<span class="phase-dot in-progress" title="In Progress">◐</span>';
+      return `<span class="phase-dot in-progress${activeClass}" title="${tooltip}">◐</span>`;
     case "completed":
-      return '<span class="phase-dot completed" title="Completed">●</span>';
+      return `<span class="phase-dot completed${activeClass}" title="${tooltip}">●</span>`;
     case "failed":
-      return '<span class="phase-dot failed" title="Failed">✗</span>';
+      return `<span class="phase-dot failed${activeClass}" title="${tooltip}">✗</span>`;
     case "skipped":
-      return '<span class="phase-dot skipped" title="Skipped">-</span>';
+      return `<span class="phase-dot skipped${activeClass}" title="${tooltip}">-</span>`;
     default:
-      return '<span class="phase-dot" title="Unknown">?</span>';
+      return `<span class="phase-dot${activeClass}" title="${tooltip}">?</span>`;
   }
 }
 
@@ -122,6 +184,38 @@ function getRelativeTime(dateString: string): string {
   if (diffHour < 24) return `${diffHour}h ago`;
   if (diffDay < 7) return `${diffDay}d ago`;
   return date.toLocaleDateString();
+}
+
+/**
+ * Format duration between two timestamps
+ */
+function formatDuration(startedAt: string, completedAt: string): string {
+  const start = new Date(startedAt);
+  const end = new Date(completedAt);
+  const diffMs = end.getTime() - start.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+
+  if (diffSec < 60) return `${diffSec}s`;
+  if (diffMin < 60) return `${diffMin}m ${diffSec % 60}s`;
+  return `${diffHour}h ${diffMin % 60}m`;
+}
+
+/**
+ * Format tracking age (time since createdAt)
+ */
+function formatTrackingAge(createdAt: string): string {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const diffMs = now.getTime() - created.getTime();
+  const diffHour = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffHour < 1) return "Tracked for <1h";
+  if (diffHour < 24) return `Tracked for ${diffHour}h`;
+  if (diffDay === 1) return "Tracked for 1d";
+  return `Tracked for ${diffDay}d`;
 }
 
 /**
@@ -151,12 +245,23 @@ function renderIssueCard(issue: IssueState): string {
     merger: "Merge",
   };
 
+  // Build phase indicators with enhanced tooltips (AC-A1, A2, A3, A4)
   const phaseIndicators = phases
     .map((p) => {
-      const indicator = getPhaseIndicator(
-        issue.phases[p] as { status: PhaseStatus } | undefined,
-      );
-      return `<span class="phase-item" title="${phaseLabels[p]}">${indicator}<span class="phase-label">${phaseLabels[p]}</span></span>`;
+      const phaseState = issue.phases[p] as PhaseState | undefined;
+      const isActive = issue.currentPhase === p;
+      const indicator = getPhaseIndicator(phaseState, {
+        phaseName: phaseLabels[p],
+        isActive,
+        loopState: p === "loop" ? issue.loop : undefined,
+      });
+      // Show loop iteration in label if loop is active (AC-A3)
+      let label = phaseLabels[p];
+      if (p === "loop" && issue.loop?.enabled && issue.loop.iteration > 0) {
+        label = `${issue.loop.iteration}/${issue.loop.maxIterations}`;
+      }
+      const activeClass = isActive ? " active" : "";
+      return `<span class="phase-item${activeClass}" title="${phaseLabels[p]}">${indicator}<span class="phase-label">${label}</span></span>`;
     })
     .join("");
 
@@ -166,6 +271,9 @@ function renderIssueCard(issue: IssueState): string {
     issue.title.length > 50 ? issue.title.slice(0, 50) + "..." : issue.title,
   );
   const relativeTime = getRelativeTime(issue.lastActivity);
+
+  // Issue tracking age (AC-A6)
+  const trackingAge = formatTrackingAge(issue.createdAt);
 
   let prInfo = "";
   if (issue.pr) {
@@ -181,6 +289,17 @@ function renderIssueCard(issue: IssueState): string {
     worktreeInfo = `<span class="worktree" title="${escapeHtml(issue.worktree)}">${escapeHtml(shortPath)}</span>`;
   }
 
+  // Branch name with copy button (AC-A5)
+  let branchInfo = "";
+  if (issue.branch) {
+    const shortBranch =
+      issue.branch.length > 30 ? "..." + issue.branch.slice(-27) : issue.branch;
+    branchInfo = `<span class="branch-info">
+      <span class="branch-name" title="${escapeHtml(issue.branch)}">${escapeHtml(shortBranch)}</span>
+      <button class="copy-btn" onclick="copyToClipboard('${escapeHtml(issue.branch)}')" title="Copy branch name">📋</button>
+    </span>`;
+  }
+
   return `
     <article class="issue-card" data-issue="${issue.number}" data-status="${issue.status}">
       <header>
@@ -193,9 +312,13 @@ function renderIssueCard(issue: IssueState): string {
       <footer>
         <div class="meta">
           ${prInfo}
+          ${branchInfo}
           ${worktreeInfo}
         </div>
-        <small class="last-activity">${relativeTime}</small>
+        <div class="timestamps">
+          <small class="tracking-age">${trackingAge}</small>
+          <small class="last-activity">${relativeTime}</small>
+        </div>
       </footer>
     </article>
   `;
@@ -396,6 +519,24 @@ function renderMainPage(): string {
     .phase-dot.failed { color: var(--pico-del-color); }
     .phase-dot.skipped { color: var(--pico-muted-color); }
 
+    /* Active phase highlighting (AC-A4) */
+    .phase-item.active {
+      background: var(--pico-primary-background);
+      border-radius: 4px;
+      padding: 0.125rem 0.25rem;
+    }
+    .phase-item.active .phase-label {
+      color: var(--pico-primary);
+      font-weight: 600;
+    }
+    .phase-dot.active {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
     .phase-label {
       font-size: 0.625rem;
       color: var(--pico-muted-color);
@@ -430,6 +571,44 @@ function renderMainPage(): string {
 
     .last-activity {
       color: var(--pico-muted-color);
+    }
+
+    /* Branch info with copy button (AC-A5) */
+    .branch-info {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .branch-name {
+      color: var(--pico-muted-color);
+      font-family: var(--pico-font-family-monospace);
+      font-size: 0.6875rem;
+    }
+    .copy-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      font-size: 0.75rem;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+    }
+    .copy-btn:hover {
+      opacity: 1;
+    }
+    .copy-btn.copied {
+      color: var(--pico-ins-color);
+    }
+
+    /* Timestamps section (AC-A6) */
+    .timestamps {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .tracking-age {
+      color: var(--pico-muted-color);
+      font-style: italic;
     }
 
     .summary {
@@ -501,6 +680,21 @@ function renderMainPage(): string {
       document.getElementById('connection-dot').classList.remove('connected');
       document.getElementById('connection-text').textContent = 'Disconnected';
     });
+
+    // Copy to clipboard (AC-A5)
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(function() {
+        // Show feedback
+        event.target.classList.add('copied');
+        event.target.textContent = '✓';
+        setTimeout(function() {
+          event.target.classList.remove('copied');
+          event.target.textContent = '📋';
+        }, 1500);
+      }).catch(function(err) {
+        console.error('Failed to copy:', err);
+      });
+    }
 
     // Initial load
     htmx.ajax('GET', '/issues', '#issues-container');
