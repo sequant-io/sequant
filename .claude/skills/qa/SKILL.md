@@ -302,6 +302,55 @@ Perform a code review focusing on:
 
 See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps.
 
+### 2a. Test Quality Review
+
+**When to apply:** Test files were added or modified.
+
+Evaluate test quality using the checklist:
+- **Behavior vs Implementation:** Tests assert on outputs, not internals
+- **Coverage Depth:** Error paths and edge cases covered
+- **Mock Hygiene:** Only external dependencies mocked
+- **Test Reliability:** No timing dependencies, deterministic
+
+See [test-quality-checklist.md](references/test-quality-checklist.md) for detailed evaluation criteria.
+
+**Flag common issues:**
+- Over-mocking (4+ modules mocked in single test)
+- Missing error path tests
+- Snapshot abuse (>50 line snapshots)
+- Implementation mirroring
+
+### 2b. Anti-Pattern Detection
+
+**Always run** code pattern checks on changed files:
+
+```bash
+# Get changed TypeScript/JavaScript files
+changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+```
+
+**Check for:**
+
+| Category | Pattern | Risk |
+|----------|---------|------|
+| Performance | N+1 query (`await` in loop) | ⚠️ Medium |
+| Error Handling | Empty catch block | ⚠️ Medium |
+| Security | Hardcoded secrets | ❌ High |
+| Security | SQL concatenation | ❌ High |
+| Memory | Uncleared interval/timeout | ⚠️ Medium |
+| A11y | Image without alt | ⚠️ Low |
+
+**Dependency audit** (when `package.json` modified):
+
+| Flag | Threshold |
+|------|-----------|
+| Low downloads | <1,000/week |
+| Stale | No updates 12+ months |
+| License risk | UNLICENSED, GPL in MIT |
+| Security | Known vulnerabilities |
+
+See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detection commands and full criteria.
+
 ### 3. QA vs AC
 
 For each AC item, mark as:
@@ -357,7 +406,47 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 ---
 
-### 6. A+ Status Verdict
+### 6. Execution Evidence (REQUIRED for scripts/CLI)
+
+**When to apply:** `scripts/` or CLI files were modified.
+
+**Detect change type:**
+```bash
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs)
+cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs)
+```
+
+**If scripts/CLI changed, execute at least one smoke command:**
+
+| Change Type | Required Command |
+|-------------|------------------|
+| `scripts/` | `npx tsx scripts/<file>.ts --help` |
+| CLI commands | `npx sequant <cmd> --help` or `--dry-run` |
+| Tests only | `npm test -- --grep "feature"` |
+| Types/config only | Waiver with reason |
+
+**Capture evidence:**
+```bash
+# Execute and capture
+npx tsx scripts/example.ts --help 2>&1
+echo "Exit code: $?"
+```
+
+**Evidence status:**
+- **Complete:** All required commands executed successfully
+- **Incomplete:** Some commands not run or failed
+- **Waived:** Explicit reason documented (types-only, config-only)
+- **Not Required:** No executable changes
+
+**Verdict gating:**
+- `READY_FOR_MERGE` requires evidence status: Complete, Waived, or Not Required
+- `AC_MET_BUT_NOT_A_PLUS` if evidence is Incomplete
+
+See [quality-gates.md](references/quality-gates.md) for detailed evidence requirements.
+
+---
+
+### 7. A+ Status Verdict
 
 Provide an overall verdict:
 
@@ -366,6 +455,8 @@ Provide an overall verdict:
 - `AC_NOT_MET` — AC not fully met; additional implementation needed
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict criteria.
+
+---
 
 ## Automated Quality Checks (Reference)
 
@@ -391,7 +482,7 @@ npx tsx scripts/lib/__tests__/run-security-scan.ts 2>/dev/null
 
 See [scripts/quality-checks.sh](scripts/quality-checks.sh) for the complete automation script.
 
-### 7. Draft Review/QA Comment
+### 8. Draft Review/QA Comment
 
 Produce a Markdown snippet for the PR/issue:
 - Short summary of the change
@@ -399,7 +490,7 @@ Produce a Markdown snippet for the PR/issue:
 - Key strengths and issues
 - Clear, actionable next steps
 
-### 8. Update GitHub Issue
+### 9. Update GitHub Issue
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
 - Skip posting GitHub comment (orchestrator handles aggregated summary)
@@ -413,7 +504,7 @@ Post the draft comment to GitHub and update labels:
 - `READY_FOR_MERGE`: add `ready-for-review` label
 - `AC_MET_BUT_NOT_A_PLUS`: add `needs-improvement` label
 
-### 9. Documentation Reminder
+### 10. Documentation Reminder
 
 If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
@@ -421,7 +512,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 **Documentation:** Before merging, run `/docs <issue>` to generate feature documentation.
 ```
 
-### 10. Script/CLI Execution Verification
+### 11. Script/CLI Execution Verification
 
 **REQUIRED for CLI/script features:** When `scripts/` files are modified, execution verification is required before `READY_FOR_MERGE`.
 
@@ -502,6 +593,9 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
+- [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
+- [ ] **Anti-Pattern Detection** - Dependency audit (if package.json changed) + code patterns
+- [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 
@@ -556,6 +650,63 @@ You MUST include these sections:
 
 **Suggestions:**
 - [Improvements recommended]
+
+---
+
+### Test Quality Review
+
+[Include if test files were added/modified, otherwise: "N/A - No test files modified"]
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Behavior vs Implementation | ✅ OK / ⚠️ WARN | [notes] |
+| Coverage Depth | ✅ OK / ⚠️ WARN | [notes] |
+| Mock Hygiene | ✅ OK / ⚠️ WARN | [notes] |
+| Test Reliability | ✅ OK / ⚠️ WARN | [notes] |
+
+**Issues Found:**
+- [file:line - description]
+
+---
+
+### Anti-Pattern Detection
+
+#### Dependency Audit
+[Include if package.json modified, otherwise: "N/A - No dependency changes"]
+
+| Package | Downloads/wk | Last Update | Flags |
+|---------|--------------|-------------|-------|
+| [pkg] | [count] | [date] | [flags] |
+
+#### Code Patterns
+
+| File:Line | Category | Pattern | Suggestion |
+|-----------|----------|---------|------------|
+| [location] | [category] | [pattern] | [fix] |
+
+**Critical Issues:** X
+**Warnings:** Y
+
+---
+
+### Execution Evidence
+
+[Include if scripts/CLI modified, otherwise: "N/A - No executable changes"]
+
+| Test Type | Command | Exit Code | Result |
+|-----------|---------|-----------|--------|
+| Smoke test | `[command]` | [code] | [result] |
+
+**Evidence status:** Complete / Incomplete / Waived (reason) / Not Required
+
+---
+
+### Self-Evaluation
+
+- **Verified working:** [Yes/No - did you actually verify the feature works?]
+- **Test efficacy:** [High/Medium/Low - do tests catch the feature breaking?]
+- **Likely failure mode:** [What would most likely break this in production?]
+- **Verdict confidence:** [High/Medium/Low - explain any uncertainty]
 
 ---
 

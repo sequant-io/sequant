@@ -31,6 +31,7 @@ Must meet ALL of:
 - ✅ Reversibility Test: Clean revert possible
 - ✅ **Adversarial Test: Failure path tested**
 - ✅ **Edge Case Test: At least 1 edge case per AC tested**
+- ✅ **Execution Evidence: Complete or waived** (see below)
 
 ### `AC_MET_BUT_NOT_A_PLUS`
 
@@ -93,3 +94,110 @@ Any of:
 - **Unintegrated exports**: ⚠️ Warning only
 - **Security criticals** > 0: ❌ Blocker
 - **Security warnings** > 0: ⚠️ Review each case
+
+---
+
+## Execution Evidence Requirements
+
+### Purpose
+
+QA must actually execute code for scripts/CLI changes, not just review it. Analysis of 34 run logs shows zero `/loop` phases triggered - QA passes every time without catching runtime issues.
+
+### Change Type Detection
+
+Determine execution requirement based on what files were changed:
+
+```bash
+# Detect change type
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs)
+cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs)
+ui_changed=$(git diff main...HEAD --name-only | grep -E "^(app|components|pages)/" | wc -l | xargs)
+types_only=$(git diff main...HEAD --name-only | grep -E "\.d\.ts$|^types/" | wc -l | xargs)
+tests_only=$(git diff main...HEAD --name-only | grep -E "\.test\.|\.spec\.|__tests__" | wc -l | xargs)
+```
+
+### Execution Matrix
+
+| Change Type | QA Must Execute | Example Command |
+|-------------|-----------------|-----------------|
+| `scripts/` files | ✅ Required | `npx tsx scripts/foo.ts --help` |
+| CLI commands | ✅ Required | `npx sequant <cmd> --help` or dry-run |
+| UI components | ⚠️ Via `/test` | Browser testing required |
+| Types/config only | ❌ Waiver OK | Note: "Types-only change, execution waived" |
+| Tests only | ✅ Run tests | `npm test -- --grep "feature"` |
+
+### Evidence Collection
+
+For each executable change, QA must:
+
+1. **Identify a safe smoke command:**
+   - Prefer `--help`, `--dry-run`, or `--version` flags
+   - For scripts: pass minimal safe arguments
+   - Never execute destructive operations
+
+2. **Execute and capture:**
+   ```bash
+   # Example for a script
+   npx tsx scripts/analytics.ts --help 2>&1
+   echo "Exit code: $?"
+   ```
+
+3. **Record in output:**
+   ```markdown
+   ### Execution Evidence
+
+   | Test Type | Command | Exit Code | Result |
+   |-----------|---------|-----------|--------|
+   | Smoke test | `npx tsx scripts/analytics.ts --help` | 0 | Usage info displayed ✓ |
+   | Dry run | `npx tsx scripts/migrate.ts --dry-run` | 0 | Plan shown, no changes ✓ |
+
+   **Evidence status:** Complete
+   ```
+
+### Evidence Status Definitions
+
+| Status | Definition | Verdict Eligibility |
+|--------|------------|---------------------|
+| **Complete** | All required commands executed successfully | `READY_FOR_MERGE` eligible |
+| **Incomplete** | Some commands not run or failed | `AC_MET_BUT_NOT_A_PLUS` max |
+| **Waived** | Explicit reason documented | `READY_FOR_MERGE` eligible |
+| **Not Required** | No executable changes | `READY_FOR_MERGE` eligible |
+
+### Waiver Criteria
+
+Execution can be waived with documented reason:
+
+| Waiver Reason | Example |
+|---------------|---------|
+| Types-only change | "Only `.d.ts` files modified" |
+| Config-only change | "Only `tsconfig.json` or `.eslintrc` modified" |
+| Documentation-only | "Only `.md` files modified" |
+| Test-only change | "Only test files modified, tests run via `npm test`" |
+
+**Waiver format:**
+```markdown
+### Execution Evidence
+
+**Status:** Waived
+**Reason:** Types-only change - only `.d.ts` files modified
+```
+
+### Verdict Gating
+
+| Verdict | Evidence Requirement |
+|---------|---------------------|
+| `READY_FOR_MERGE` | Evidence: Complete OR Waived (with reason) OR Not Required |
+| `AC_MET_BUT_NOT_A_PLUS` | Evidence: Incomplete + note explaining gap |
+| `AC_NOT_MET` | N/A (AC issues take precedence) |
+
+### Integration with /verify
+
+For complex CLI features, `/verify` provides more comprehensive execution testing:
+
+1. QA detects `scripts/` changes
+2. Basic smoke test in QA (--help, --dry-run)
+3. For full verification: recommend `/verify <issue> --command "..."`
+4. `/verify` posts evidence to issue
+5. Re-run QA to see verification evidence
+
+See [/verify skill](../../verify/SKILL.md) for detailed execution verification.
