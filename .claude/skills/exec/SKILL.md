@@ -391,6 +391,52 @@ If `gh pr view` fails after retry:
 - If it needs modification, extend it rather than creating a new one
 - Document why existing utilities don't meet requirements before creating new ones
 
+### Check npm for Existing Packages
+
+**IMPORTANT:** Before implementing utilities for common "solved problem" domains, check if a well-maintained package exists.
+
+**Domains to check npm first:**
+
+| Domain | Recommended Packages |
+|--------|---------------------|
+| Date/time handling | `date-fns`, `dayjs` |
+| Validation | `zod`, `yup`, `valibot` |
+| HTTP requests with retry | `ky`, `got`, `axios` |
+| Form state | `react-hook-form`, `formik` |
+| State management | `zustand`, `jotai` |
+| ID generation | `nanoid`, `uuid` |
+| String utilities | `lodash` (specific imports only) |
+
+**Package evaluation criteria:**
+
+| Criterion | Threshold | Why |
+|-----------|-----------|-----|
+| Weekly downloads | >10,000 | Indicates community trust |
+| Last update | <6 months ago | Actively maintained |
+| License | MIT, Apache-2.0, BSD | Permissive, compatible |
+| Bundle size | Proportional to use | Avoid 500kb for one function |
+
+**Quick check commands:**
+```bash
+# Package metadata (license, last update, size)
+npm view <pkg> --json | jq '{name, version, license, modified: .time.modified, size: .dist.unpackedSize}'
+
+# Weekly downloads (requires npm API)
+curl -s "https://api.npmjs.org/downloads/point/last-week/<pkg>" | jq '.downloads'
+```
+
+**Custom implementation is appropriate when:**
+- Only a tiny subset of functionality needed (<20 lines)
+- Package is abandoned (no updates 12+ months) or has security issues
+- Project constraints prohibit new dependencies
+- User explicitly requests custom solution
+
+**Decision flow:**
+1. Is this a "solved problem" domain? → Check npm first
+2. Does a well-maintained package exist? → Prefer package
+3. Would custom implementation be <20 lines? → Custom is OK
+4. Uncertain? → Ask user preference
+
 ### Check Framework Gotchas on Runtime Errors
 
 **When encountering unexpected runtime errors or build failures:**
