@@ -582,10 +582,12 @@ class SequantTreeDataProvider implements vscode.TreeDataProvider<SequantTreeItem
     const isFinalState =
       issue.status === "merged" || issue.status === "abandoned";
 
+    // First pass: collect all non-pending phases and find the last one's index
     const relevantPhases: Phase[] = [];
-    let nextPendingAdded = false;
+    let lastNonPendingIndex = -1;
 
-    for (const phase of allPhases) {
+    for (let i = 0; i < allPhases.length; i++) {
+      const phase = allPhases[i];
       const phaseState = issue.phases[phase] as PhaseState | undefined;
       const status = phaseState?.status ?? "pending";
 
@@ -597,12 +599,23 @@ class SequantTreeDataProvider implements vscode.TreeDataProvider<SequantTreeItem
       ) {
         // Always include non-pending phases
         relevantPhases.push(phase);
-      } else if (status === "pending" && !nextPendingAdded && !isFinalState) {
-        // Include only the first pending phase (for active issues)
-        relevantPhases.push(phase);
-        nextPendingAdded = true;
+        lastNonPendingIndex = i;
       }
-      // Skip remaining pending phases
+    }
+
+    // Second pass: add the first pending phase AFTER the last non-pending phase
+    // (only for active issues, not merged/abandoned)
+    if (!isFinalState) {
+      for (let i = lastNonPendingIndex + 1; i < allPhases.length; i++) {
+        const phase = allPhases[i];
+        const phaseState = issue.phases[phase] as PhaseState | undefined;
+        const status = phaseState?.status ?? "pending";
+
+        if (status === "pending") {
+          relevantPhases.push(phase);
+          break; // Only add one pending phase
+        }
+      }
     }
 
     return relevantPhases;
