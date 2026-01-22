@@ -1,6 +1,6 @@
 # VS Code Extension for Workflow Visualization
 
-The Sequant Explorer VS Code extension provides real-time workflow visualization directly in your IDE sidebar.
+The Sequant Explorer VS Code extension provides premium workflow visualization directly in your IDE sidebar.
 
 ## Overview
 
@@ -8,27 +8,110 @@ Instead of switching to a browser-based dashboard, the VS Code extension shows i
 
 ## Features
 
-### Tree View
+### Status-Grouped Tree View
 
-The extension adds a Sequant panel to the Activity Bar showing:
+The extension adds a Sequant panel to the Activity Bar with a premium tree structure:
 
-- **Issues** sorted by status priority (in-progress first, then ready-for-merge, blocked, etc.)
-- **Phases** as expandable children under each issue
-- **Status icons** with color coding:
-  - Blue spinning: in progress
-  - Green check: ready for merge / completed
-  - Yellow warning: blocked
-  - Red X: abandoned / failed
+```
+📊 Overview: 3 issues · 1 in progress · 1 ready to merge
+────────────────────────────────────────────────────
+⚡ IN PROGRESS (1)
+│
+├── #218: Add user authentication [exec]     42m
+│   ├── 📋 Acceptance Criteria (2/4 met)
+│   │   ├── ✓ AC-1: Login form validates input
+│   │   ├── ✓ AC-2: JWT tokens issued
+│   │   ├── ○ AC-3: Refresh token rotation
+│   │   └── ○ AC-4: Logout clears session
+│   ├── 📍 Progress
+│   │   ├── ✓ Spec                           3m
+│   │   ├── ● Execute (in progress)         39m
+│   │   └── ○ QA
+│   ├── 🔗 Links
+│   │   ├── → Open Worktree
+│   │   ├── → View on GitHub
+│   │   └── → Branch: feature/218-auth
+│   ├── ⚠️ Long-running phase (1h 15m)
+│   └── 💡 Action: Run /qa
 
-### Actions
+✅ READY TO MERGE (1)
+│
+└── #215: Fix cart calculation              PR #342
 
-Right-click or use inline buttons on issues:
+📦 RECENTLY MERGED (last 7 days)
+│
+└── #120: VS Code extension                  2h ago
+```
+
+### Status Grouping
+
+Issues are automatically grouped by status for quick visibility:
+
+| Group | Includes | Icon |
+|-------|----------|------|
+| ⚡ IN PROGRESS | `in_progress`, `waiting_for_qa_gate`, `not_started` | Blue spinning |
+| ✅ READY TO MERGE | `ready_for_merge` | Green check |
+| 🔴 BLOCKED | `blocked` | Red warning |
+| 📦 RECENTLY MERGED | `merged` (last 7 days) | Green merge |
+
+### Acceptance Criteria Display
+
+Each issue shows its acceptance criteria with status icons:
+
+| Icon | Status |
+|------|--------|
+| ✓ | Met |
+| ✗ | Not met |
+| ○ | Pending |
+| ⊘ | Blocked |
+
+The parent node shows summary: "2/4 met"
+
+### Time Tracking
+
+- **Phase duration** displayed next to each phase (e.g., "3m", "1h 23m")
+- **Total issue time** shown in issue description
+- **Long-running warning** appears when a phase exceeds 1 hour
+
+### Inline Errors
+
+Failed phases display the error message inline:
+```
+✗ QA — "Type error in handler.ts:42"
+```
+
+Full error available in tooltip on hover.
+
+### PR Integration
+
+When a PR exists:
+- PR number shown in issue description: `PR #342`
+- Quick link to view PR
+- Status icons for checks (future enhancement)
+
+### Smart Actions
+
+Context-aware suggestions appear based on issue state:
+
+| State | Suggested Action |
+|-------|------------------|
+| Spec not started | "Run /spec" |
+| Spec complete, no exec | "Run /exec" |
+| Exec complete, no QA | "Run /qa" |
+| Ready to merge | "Merge PR" |
+| Blocked with failure | "Fix [phase] issues" |
+
+### Right-Click Context Menu
+
+Right-click any issue for actions:
 
 | Action | Description |
 |--------|-------------|
-| Open Worktree | Opens a terminal at the issue's worktree directory |
-| Open on GitHub | Opens the issue in your browser |
-| Refresh | Manually refresh the tree view |
+| Open Worktree in New Window | Opens VS Code with worktree as root |
+| Open Worktree in Terminal | Opens terminal at worktree directory |
+| View on GitHub | Opens issue in browser |
+| View Pull Request | Opens PR in browser (if exists) |
+| Copy Branch Name | Copies branch to clipboard |
 
 ### Auto-Refresh
 
@@ -36,6 +119,7 @@ The extension watches `.sequant/state.json` for changes and automatically update
 - A phase starts or completes
 - Issue status changes
 - New issues are added
+- Acceptance criteria status changes
 
 ## Installation
 
@@ -67,59 +151,31 @@ The extension activates automatically when:
 
 No manual activation required.
 
-## Spike Findings
+## Technical Details
 
-This section documents the exploration results for issue #120.
+### Lines of Code
 
-### Effort Assessment
+| Component | LOC |
+|-----------|-----|
+| extension.ts | ~1100 LOC TypeScript |
+| package.json | ~130 lines |
 
-| Metric | Value |
-|--------|-------|
-| Lines of Code | ~500 LOC TypeScript |
-| Files | 3 (package.json, extension.ts, tsconfig.json) |
-| Dependencies | 0 runtime, 3 dev (@types/node, @types/vscode, typescript) |
-| Build Time | ~2 seconds |
+### Dependencies
 
-The implementation was straightforward using VS Code's built-in APIs.
+- 0 runtime dependencies
+- 3 dev dependencies: @types/node, @types/vscode, typescript
 
-### Limitations
+### Data Source
 
-1. **Tree-Only UI**: VS Code TreeDataProvider only supports hierarchical tree layouts. No grids, cards, or custom layouts without Webview panels.
+All data comes from `.sequant/state.json`:
 
-2. **No Custom Styling**: Limited to VS Code's theme colors and built-in icons. Cannot match custom brand colors.
-
-3. **Distribution**: Must be packaged as VSIX and installed manually, or published to VS Code Marketplace (requires publisher account).
-
-4. **Single Workspace**: Shows state for the current workspace only. Cannot aggregate across multiple repositories.
-
-5. **Read-Only**: Current implementation only displays state. Running phases would require terminal integration or task providers.
-
-### UX Comparison: VS Code Extension vs Web Dashboard
-
-| Aspect | VS Code Extension | Web Dashboard |
-|--------|-------------------|---------------|
-| **Context Switching** | None - in IDE | Must open browser |
-| **Always Visible** | Yes - sidebar panel | No - separate tab |
-| **Custom UI** | Limited (tree only) | Full flexibility |
-| **Multi-Repo View** | No | Possible |
-| **Installation** | VSIX per machine | URL (no install) |
-| **Offline Access** | Yes | Local server needed |
-| **Actions** | Open worktree, GitHub | Could be more interactive |
-| **Filtering/Search** | Basic (VS Code tree filter) | Full search/filter UI |
-
-### Recommendation
-
-**Use the VS Code extension when:**
-- Working on a single repository
-- Prefer minimal context switching
-- Want quick glance at status while coding
-
-**Use the web dashboard when:**
-- Need rich filtering/search
-- Working across multiple repositories
-- Want detailed analytics or history
-
-Both options read the same state file, so they can be used together.
+| Feature | State Field |
+|---------|-------------|
+| Issue grouping | `issue.status` |
+| AC display | `issue.acceptanceCriteria.items` |
+| Time tracking | `phase.startedAt/completedAt` |
+| Inline errors | `phase.error` |
+| PR info | `issue.pr` |
 
 ## Configuration
 
@@ -127,6 +183,7 @@ Currently no configuration options. Future enhancements could include:
 - Custom refresh interval
 - Filter by status
 - Keyboard shortcuts for actions
+- Hide empty status groups
 
 ## Troubleshooting
 
@@ -142,9 +199,14 @@ Currently no configuration options. Future enhancements could include:
 2. Verify JSON is valid: `cat .sequant/state.json | jq`
 3. Check for errors in Developer Tools console
 
+### Status groups not appearing
+
+Status groups only appear when they have issues. If all issues are in one status, only that group shows.
+
 ## Related
 
 - [Workflow Phases](../concepts/workflow-phases.md)
 - [State Command](../state-command.md)
 - Issue #114 - Web Dashboard (Option A)
-- Issue #120 - VS Code Extension (Option C)
+- Issue #120 - VS Code Extension spike
+- Issue #166 - Premium workflow visualization (this enhancement)
