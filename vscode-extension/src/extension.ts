@@ -555,10 +555,18 @@ class SequantTreeDataProvider implements vscode.TreeDataProvider<SequantTreeItem
   }
 
   /**
-   * Get phase items for an issue
+   * Get relevant phases to display for an issue.
+   * Filters out pending phases except for the next one to reduce visual clutter.
+   *
+   * Shows:
+   * - Completed phases
+   * - In-progress phases
+   * - Failed phases
+   * - Skipped phases
+   * - Next pending phase (only one, and only for active issues)
    */
-  private getPhaseItems(issue: IssueState): SequantTreeItem[] {
-    const phases: Phase[] = [
+  private getRelevantPhases(issue: IssueState): Phase[] {
+    const allPhases: Phase[] = [
       "spec",
       "security-review",
       "exec",
@@ -569,6 +577,55 @@ class SequantTreeDataProvider implements vscode.TreeDataProvider<SequantTreeItem
       "loop",
       "merger",
     ];
+
+    // For merged/abandoned issues, only show non-pending phases
+    const isFinalState =
+      issue.status === "merged" || issue.status === "abandoned";
+
+    // First pass: collect all non-pending phases and find the last one's index
+    const relevantPhases: Phase[] = [];
+    let lastNonPendingIndex = -1;
+
+    for (let i = 0; i < allPhases.length; i++) {
+      const phase = allPhases[i];
+      const phaseState = issue.phases[phase] as PhaseState | undefined;
+      const status = phaseState?.status ?? "pending";
+
+      if (
+        status === "completed" ||
+        status === "in_progress" ||
+        status === "failed" ||
+        status === "skipped"
+      ) {
+        // Always include non-pending phases
+        relevantPhases.push(phase);
+        lastNonPendingIndex = i;
+      }
+    }
+
+    // Second pass: add the first pending phase AFTER the last non-pending phase
+    // (only for active issues, not merged/abandoned)
+    if (!isFinalState) {
+      for (let i = lastNonPendingIndex + 1; i < allPhases.length; i++) {
+        const phase = allPhases[i];
+        const phaseState = issue.phases[phase] as PhaseState | undefined;
+        const status = phaseState?.status ?? "pending";
+
+        if (status === "pending") {
+          relevantPhases.push(phase);
+          break; // Only add one pending phase
+        }
+      }
+    }
+
+    return relevantPhases;
+  }
+
+  /**
+   * Get phase items for an issue
+   */
+  private getPhaseItems(issue: IssueState): SequantTreeItem[] {
+    const phases = this.getRelevantPhases(issue);
 
     return phases.map((phase) => {
       const phaseState = issue.phases[phase] as PhaseState | undefined;
