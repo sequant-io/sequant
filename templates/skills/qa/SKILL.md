@@ -120,11 +120,11 @@ If no feature worktree exists (work was done directly on main):
 
 **Spawn ALL THREE agents in a SINGLE message:**
 
-1. `Task(subagent_type="quality-checker", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
+1. `Task(subagent_type="general-purpose", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-2. `Task(subagent_type="quality-checker", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
+2. `Task(subagent_type="general-purpose", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-3. `Task(subagent_type="quality-checker", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
+3. `Task(subagent_type="general-purpose", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 **Add RLS check if admin files modified:**
 ```bash
