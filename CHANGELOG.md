@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.11.0] - 2026-01-23
 
 ### Added
 
@@ -459,7 +459,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/admarble/sequant/compare/v1.2.5...HEAD
+[Unreleased]: https://github.com/admarble/sequant/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/admarble/sequant/compare/v1.10.1...v1.11.0
 [1.2.5]: https://github.com/admarble/sequant/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/admarble/sequant/compare/v1.2.2...v1.2.4
 [1.2.2]: https://github.com/admarble/sequant/compare/v1.2.1...v1.2.2
