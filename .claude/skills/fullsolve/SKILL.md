@@ -419,9 +419,10 @@ Skill(skill: "qa", args: "<issue-number>")
 
 The `/qa` skill will:
 - Run automated quality checks (type safety, deleted tests, scope)
-- Review AC coverage (MET/PARTIALLY_MET/NOT_MET)
+- Review AC coverage (MET/PARTIALLY_MET/NOT_MET/PENDING)
 - Generate review comment draft
-- Return verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
+- Return verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION,
+  or AC_NOT_MET
 
 ### 4.2 Pass Orchestration Context
 
@@ -453,7 +454,12 @@ while qa_iteration < MAX_QA_ITERATIONS:
         # Good enough, proceed with notes
         break
 
-    # Use /loop to fix issues
+    if result.verdict == "NEEDS_VERIFICATION":
+        # ACs are met but pending external verification
+        # Proceed to PR - verification can happen post-PR
+        break
+
+    # Use /loop to fix issues (AC_NOT_MET)
     Skill(skill: "loop", args: "<issue-number> --phase qa")
     qa_iteration += 1
 ```
@@ -599,6 +605,13 @@ Track iterations to prevent infinite loops:
 - Minor issues documented
 - QA verdict: `AC_MET_BUT_NOT_A_PLUS`
 - PR created with notes
+
+**Pending Verification:**
+
+- All AC met or pending
+- External verification required (CI, manual test)
+- QA verdict: `NEEDS_VERIFICATION`
+- PR created, verification can happen post-PR
 
 **Failure (manual intervention needed):**
 - Max iterations reached on test or QA loop
@@ -801,7 +814,8 @@ As an orchestrator, `/fullsolve` must:
 - [ ] **AC Coverage** - Each AC marked MET/PARTIALLY_MET/NOT_MET
 - [ ] **Quality Metrics** - Tests passed, build status, type issues
 - [ ] **Iteration Summary** - Test loop and QA loop iteration counts
-- [ ] **Final Verdict** - READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
+- [ ] **Final Verdict** - READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION,
+  or AC_NOT_MET
 - [ ] **PR Link** - Pull request URL (if created)
 - [ ] **Final GitHub Comment** - Summary posted to issue
 

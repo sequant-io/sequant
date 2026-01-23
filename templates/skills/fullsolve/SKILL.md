@@ -328,7 +328,16 @@ while qa_iteration < 2:
     if verdict == "READY_FOR_MERGE":
         break
 
-    # Parse issues
+    if verdict == "AC_MET_BUT_NOT_A_PLUS":
+        # Good enough, proceed with notes
+        break
+
+    if verdict == "NEEDS_VERIFICATION":
+        # ACs are met but pending external verification
+        # Proceed to PR - verification can happen post-PR
+        break
+
+    # Parse issues (AC_NOT_MET)
     issues = parse_qa_issues()
 
     # Fix each issue
@@ -429,6 +438,13 @@ Track iterations to prevent infinite loops:
 - Minor issues documented
 - QA verdict: `AC_MET_BUT_NOT_A_PLUS`
 - PR created with notes
+
+**Pending Verification:**
+
+- All AC met or pending
+- External verification required (CI, manual test)
+- QA verdict: `NEEDS_VERIFICATION`
+- PR created, verification can happen post-PR
 
 **Failure (manual intervention needed):**
 - Max iterations reached on test or QA loop
@@ -584,7 +600,8 @@ Each issue gets its own worktree, PR, and quality validation.
 - [ ] **AC Coverage** - Each AC marked MET/PARTIALLY_MET/NOT_MET
 - [ ] **Quality Metrics** - Tests passed, build status, type issues
 - [ ] **Iteration Summary** - Test loop and QA loop iteration counts
-- [ ] **Final Verdict** - READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
+- [ ] **Final Verdict** - READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION,
+  or AC_NOT_MET
 - [ ] **PR Link** - Pull request URL (if created)
 - [ ] **Final GitHub Comment** - Summary posted to issue
 
