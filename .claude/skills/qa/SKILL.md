@@ -564,9 +564,32 @@ See [quality-gates.md](references/quality-gates.md) for detailed evidence requir
 
 Provide an overall verdict:
 
-- `READY_FOR_MERGE` — AC met and code quality is high ("A+")
-- `AC_MET_BUT_NOT_A_PLUS` — AC met, but meaningful improvements recommended
-- `AC_NOT_MET` — AC not fully met; additional implementation needed
+- `READY_FOR_MERGE` — ALL ACs are `MET` and code quality is high ("A+")
+- `AC_MET_BUT_NOT_A_PLUS` — ALL ACs are `MET`, but meaningful improvements recommended
+- `NEEDS_VERIFICATION` — ALL ACs are `MET` or `PENDING`, at least one requires external verification
+- `AC_NOT_MET` — One or more ACs are `NOT_MET` or `PARTIALLY_MET`
+
+**Verdict Determination Algorithm (REQUIRED):**
+
+```text
+1. Count AC statuses:
+   - met_count = ACs with status MET
+   - partial_count = ACs with status PARTIALLY_MET
+   - pending_count = ACs with status PENDING
+   - not_met_count = ACs with status NOT_MET
+
+2. Determine verdict (in order):
+   - IF not_met_count > 0 OR partial_count > 0:
+       → AC_NOT_MET (block merge)
+   - ELSE IF pending_count > 0:
+       → NEEDS_VERIFICATION (wait for verification)
+   - ELSE IF improvement_suggestions.length > 0:
+       → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
+   - ELSE:
+       → READY_FOR_MERGE (A+ implementation)
+```
+
+**CRITICAL:** `PARTIALLY_MET` is NOT sufficient for merge. It MUST be treated as `NOT_MET` for verdict purposes.
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict criteria.
 
@@ -614,9 +637,11 @@ Produce a Markdown snippet for the PR/issue:
 **If standalone:**
 
 Post the draft comment to GitHub and update labels:
+
 - `AC_NOT_MET`: add `needs-work` label
 - `READY_FOR_MERGE`: add `ready-for-review` label
 - `AC_MET_BUT_NOT_A_PLUS`: add `needs-improvement` label
+- `NEEDS_VERIFICATION`: add `needs-verification` label
 
 ### 10. Documentation Reminder
 
