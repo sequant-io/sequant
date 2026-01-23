@@ -109,6 +109,39 @@ const output = exec(`git log --author="${sanitized}"`);
 - Escape output before rendering
 - Store secrets in environment variables
 
+## QA Verdicts
+
+After running all checks, QA issues one of four verdicts:
+
+| Verdict | Meaning | Action |
+|---------|---------|--------|
+| `READY_FOR_MERGE` | All AC met, high code quality | Merge the PR |
+| `AC_MET_BUT_NOT_A_PLUS` | All AC met, minor improvements suggested | Can merge, consider suggestions |
+| `NEEDS_VERIFICATION` | All AC met or pending, awaiting external verification | Complete verification, re-run QA |
+| `AC_NOT_MET` | One or more AC not fully met | Fix issues before merge |
+
+### Verdict Determination
+
+Verdicts are determined by AC status counts:
+
+1. **If any AC is `NOT_MET` or `PARTIALLY_MET`:** → `AC_NOT_MET`
+2. **If any AC is `PENDING`:** → `NEEDS_VERIFICATION`
+3. **If improvements are suggested:** → `AC_MET_BUT_NOT_A_PLUS`
+4. **Otherwise:** → `READY_FOR_MERGE`
+
+> **Important:** `PARTIALLY_MET` is treated as `NOT_MET` for verdict purposes. Partial implementations block merge.
+
+### Example
+
+```text
+AC-1: Add login button         → MET
+AC-2: Button redirects         → MET
+AC-3: CI passes                 → PENDING (awaiting CI)
+
+Verdict: NEEDS_VERIFICATION
+Reason: AC-3 requires external verification
+```
+
 ## Scope Analysis
 
 Detects changes unrelated to the issue being worked on.
