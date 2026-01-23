@@ -256,21 +256,21 @@ No code changes found to review. The acceptance criteria cannot be evaluated wit
 
 **Spawn ALL THREE agents in a SINGLE message (one Tool call per agent, all in same response):**
 
-1. `Task(subagent_type="quality-checker", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
+1. `Task(subagent_type="general-purpose", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-2. `Task(subagent_type="quality-checker", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
+2. `Task(subagent_type="general-purpose", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-3. `Task(subagent_type="quality-checker", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
+3. `Task(subagent_type="general-purpose", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 #### If sequential mode (default):
 
 **Spawn each agent ONE AT A TIME, waiting for each to complete before the next:**
 
-1. **First:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
+1. **First:** `Task(subagent_type="general-purpose", model="haiku", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-2. **After #1 completes:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
+2. **After #1 completes:** `Task(subagent_type="general-purpose", model="haiku", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-3. **After #2 completes:** `Task(subagent_type="quality-checker", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
+3. **After #2 completes:** `Task(subagent_type="general-purpose", model="haiku", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 **Add RLS check if admin files modified:**
 ```bash
