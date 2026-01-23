@@ -78,7 +78,8 @@ cat /tmp/claude-issue-<issue-number>.log
 
 Parse the log to find:
 - **Last phase executed:** `/test` or `/qa`
-- **Verdict:** `READY_FOR_MERGE`, `AC_NOT_MET`, `AC_MET_BUT_NOT_A_PLUS`
+- **Verdict:** `READY_FOR_MERGE`, `AC_MET_BUT_NOT_A_PLUS`, `NEEDS_VERIFICATION`,
+  or `AC_NOT_MET`
 - **Test results:** PASS/FAIL/BLOCKED counts
 - **Issues to fix:** Numbered recommendations or bug descriptions
 
@@ -111,6 +112,7 @@ Extract:
 
 **Exit loop if:**
 - Verdict is `READY_FOR_MERGE` - Nothing to fix!
+- Verdict is `NEEDS_VERIFICATION` - Pending external verification
 - No actionable issues found
 - Max iterations reached (3 by default)
 
