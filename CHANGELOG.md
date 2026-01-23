@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- QA verdict logic now enforces strict `READY_FOR_MERGE` criteria (#171)
+  - Added `NEEDS_VERIFICATION` verdict for ACs with `PENDING` status
+  - `PARTIALLY_MET` ACs now correctly result in `AC_NOT_MET` verdict
+  - Added explicit verdict determination algorithm to prevent false positives
 - Sub-agent spawning in `/spec` and `/qa` skills (#170)
   - Replaced invalid subagent types (`quality-checker`, `pattern-scout`, `schema-inspector`) with valid Claude Code types
   - `/qa` now uses `general-purpose` for quality checks

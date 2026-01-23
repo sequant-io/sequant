@@ -36,6 +36,7 @@ Must meet ALL of:
 ### `AC_MET_BUT_NOT_A_PLUS`
 
 AC met, but one or more issues:
+
 - ⚠️ Minor scope creep (1-2 extra files)
 - ⚠️ Over-engineering (abstraction not required)
 - ⚠️ Size larger than expected but justified
@@ -44,9 +45,21 @@ AC met, but one or more issues:
 
 **Action:** List specific improvements, but don't block merge if working
 
+### `NEEDS_VERIFICATION`
+
+All AC items are `MET`, but one or more items have `PENDING` status requiring external verification:
+
+- ⏳ CI/CD verification pending
+- ⏳ Manual testing not yet performed
+- ⏳ External dependency verification needed
+- ⏳ Production environment validation required
+
+**Action:** Complete pending verification, then re-run `/qa`
+
 ### `AC_NOT_MET`
 
 Any of:
+
 - ❌ One or more AC items `NOT_MET` or `PARTIALLY_MET`
 - ❌ Deleted tests without justification
 - ❌ Major scope creep (many unrelated files)
@@ -55,6 +68,37 @@ Any of:
 - ❌ Breaking changes to shared code
 
 **Action:** Block merge, list required fixes
+
+## Verdict Determination Algorithm
+
+**CRITICAL:** Follow this algorithm exactly when determining the verdict. Do NOT give `READY_FOR_MERGE` unless ALL conditions are met.
+
+```text
+1. Count AC statuses:
+   - met_count = ACs with status MET
+   - partial_count = ACs with status PARTIALLY_MET
+   - pending_count = ACs with status PENDING
+   - not_met_count = ACs with status NOT_MET
+
+2. Determine verdict (in order):
+   - IF not_met_count > 0 OR partial_count > 0:
+       → AC_NOT_MET (block merge)
+   - ELSE IF pending_count > 0:
+       → NEEDS_VERIFICATION (wait for verification)
+   - ELSE IF improvement_suggestions.length > 0:
+       → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
+   - ELSE:
+       → READY_FOR_MERGE (A+ implementation)
+```
+
+| Verdict                  | When to Use                                              |
+|--------------------------|----------------------------------------------------------|
+| `READY_FOR_MERGE`        | ALL ACs are `MET`, no improvements needed                |
+| `AC_MET_BUT_NOT_A_PLUS`  | ALL ACs are `MET`, but minor improvements suggested      |
+| `NEEDS_VERIFICATION`     | ALL ACs are `MET` or `PENDING`, at least one is `PENDING`|
+| `AC_NOT_MET`             | ANY AC is `NOT_MET` or `PARTIALLY_MET`                   |
+
+**Important:** `PARTIALLY_MET` is NOT sufficient for merge. It must be treated as `NOT_MET` for verdict purposes.
 
 ## Code Review Decision Framework
 
