@@ -1,0 +1,24 @@
+{
+  "$schema": "https://claude.ai/schemas/plugin.json",
+  "name": "sequant",
+  "version": "1.11.0",
+  "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases",
+  "author": {
+    "name": "admarble",
+    "url": "https://github.com/admarble"
+  },
+  "homepage": "https://github.com/admarble/sequant",
+  "repository": "https://github.com/admarble/sequant",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "github",
+    "issues",
+    "automation",
+    "qa",
+    "testing",
+    "code-review"
+  ],
+  "skills": "./skills",
+  "hooks": "./hooks/hooks.json"
+}
