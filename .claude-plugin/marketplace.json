@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "sequant",
-      "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases. Includes 15 skills for planning, implementation, testing, code review, and quality assurance.",
+      "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases. Includes 16 skills for planning, implementation, testing, code review, and quality assurance.",
       "version": "1.11.0",
       "source": ".",
       "categories": ["workflow", "automation", "development"],
