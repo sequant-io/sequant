@@ -12,6 +12,8 @@ allowed-tools:
   - Bash(cp:*)
   - Bash(ls:*)
   - Bash(cat:*)
+  - Bash(git --version)
+  - Bash(gh auth status:*)
 ---
 
 # Sequant Setup
