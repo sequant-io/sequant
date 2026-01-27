@@ -163,9 +163,9 @@ npx sequant run 123 --base feature/dashboard  # Custom base branch
 
 | Command | Purpose |
 |---------|---------|
-| `/merger` | Multi-issue integration and merge |
 | `/testgen` | Generate test stubs from spec |
 | `/verify` | CLI/script execution verification |
+| `/setup` | Initialize Sequant in a project |
 
 ### Utilities
 
@@ -190,6 +190,7 @@ npx sequant status            # Show version and config
 npx sequant run <issues...>   # Execute workflow
 npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
 npx sequant stats             # View local workflow analytics
+npx sequant dashboard         # Launch real-time workflow dashboard
 ```
 
 See [Run Command Options](docs/run-command.md), [State Command](docs/state-command.md), and [Analytics](docs/analytics.md) for details.
@@ -227,6 +228,7 @@ See [Customization Guide](docs/customization.md) for all options.
 ## Documentation
 
 - [Getting Started](docs/getting-started/installation.md)
+- [What We've Built](docs/what-weve-built.md) — Comprehensive project overview
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/run-command.md)
 - [Feature Branch Workflows](docs/feature-branch-workflow.md)
