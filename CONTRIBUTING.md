@@ -331,10 +331,91 @@ When reporting bugs, include:
 - Expected vs actual behavior
 - Error messages or logs
 
+**For plugin-specific issues**, use the [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml) which collects additional context like installation method, affected skills, and MCP configuration.
+
+## Plugin-Specific Contributions
+
+If you installed Sequant as a Claude Code plugin, here's how to contribute:
+
+### Testing Plugin Changes Locally
+
+```bash
+# Clone the repo to test changes
+git clone https://github.com/admarble/sequant.git
+cd sequant
+
+# The plugin skills are in the skills/ directory (not templates/)
+# These are the files that get loaded when using the plugin
+
+# Test skill changes by running Claude Code in this directory
+# Skills in skills/ will override your installed plugin
+```
+
+### Plugin Directory Structure
+
+When contributing to the plugin, understand these key directories:
+
+| Directory | Purpose | Used By |
+|-----------|---------|---------|
+| `skills/` | Plugin skills (loaded by Claude Code plugin system) | Plugin users |
+| `templates/skills/` | Template skills (copied by `sequant init`) | npm users |
+| `hooks/` | Plugin hooks (pre-tool, post-tool) | Plugin users |
+| `templates/hooks/` | Template hooks (copied by `sequant init`) | npm users |
+| `memory/` | Plugin memory (constitution) | Plugin users |
+| `scripts/` | Plugin helper scripts | Plugin users |
+
+**Important:** If you modify a skill, update BOTH locations:
+- `skills/<skill-name>/SKILL.md` - For plugin users
+- `templates/skills/<skill-name>/SKILL.md` - For npm users
+
+### Contributing New Skills
+
+1. Create skill in both locations:
+   ```bash
+   mkdir -p skills/myskill templates/skills/myskill
+   ```
+
+2. Create `SKILL.md` following the [skill format](#adding-a-new-skill)
+
+3. Update `skills/_shared/references/` if adding shared references
+
+4. Test with the plugin:
+   ```bash
+   # In a test project, temporarily point to your local clone
+   # by setting up a local marketplace or using direct path
+   ```
+
+5. Validate both locations:
+   ```bash
+   npx skills-ref validate skills/myskill
+   npx skills-ref validate templates/skills/myskill
+   ```
+
+### Plugin-Specific Testing
+
+When testing plugin changes:
+
+1. **Hook testing:** Check `/tmp/claude-hooks.log` for hook execution logs
+2. **Skill testing:** Use `/assess <issue>` to verify skill availability
+3. **MCP fallbacks:** Test with MCPs disabled to ensure graceful degradation
+
+### Reporting Plugin Issues
+
+Use `/improve` within Claude Code to analyze issues, or file directly:
+
+- **Plugin bugs:** [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml)
+- **Skill issues:** Include which skill and the error message
+- **Hook issues:** Include contents of `/tmp/claude-hooks.log`
+
 ## Questions?
 
 - Open a [GitHub Issue](https://github.com/admarble/sequant/issues)
 - Check existing issues for similar questions
+- Use [GitHub Discussions](https://github.com/admarble/sequant/discussions) for general questions
+
+## Telemetry
+
+Sequant does not collect any usage telemetry. See [docs/telemetry.md](docs/telemetry.md) for our reasoning.
 
 ## License
 
