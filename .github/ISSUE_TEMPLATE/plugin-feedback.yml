@@ -1,0 +1,157 @@
+name: Plugin Feedback
+description: Report issues or provide feedback about the Sequant Claude Code plugin
+labels: ["plugin", "feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for providing feedback on the Sequant plugin! This helps us improve the plugin experience.
+
+        **Tip:** You can also use `/improve` within Claude Code to analyze issues and create structured reports.
+
+  - type: dropdown
+    id: feedback-type
+    attributes:
+      label: Feedback Type
+      description: What kind of feedback is this?
+      options:
+        - Bug - Something isn't working
+        - Installation Issue - Problems installing or updating
+        - Skill Issue - A skill isn't working as expected
+        - Hook Issue - Pre/post hooks aren't firing correctly
+        - Feature Request - Suggest a new capability
+        - Documentation - Improve plugin docs
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation-method
+    attributes:
+      label: Installation Method
+      description: How did you install Sequant?
+      options:
+        - Plugin marketplace (/plugin install sequant@admarble/sequant)
+        - npm install -g sequant
+        - npm install sequant (local)
+        - Clone from GitHub
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe your issue or feedback
+      placeholder: |
+        What happened? What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this issue? (for bugs)
+      placeholder: |
+        1. Run `/fullsolve 123`
+        2. Wait for spec phase to complete
+        3. See error...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: skill-affected
+    attributes:
+      label: Skill Affected
+      description: Which skill is involved? (if applicable)
+      options:
+        - N/A
+        - /fullsolve
+        - /spec
+        - /exec
+        - /test
+        - /qa
+        - /loop
+        - /improve
+        - /assess
+        - /verify
+        - /docs
+        - /release
+        - /clean
+        - /solve
+        - /testgen
+        - /reflect
+        - /security-review
+        - /setup
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Provide relevant environment details
+      placeholder: |
+        - OS: macOS 14.x / Ubuntu 22.04 / Windows 11
+        - Shell: bash / zsh / powershell
+        - Node.js: 20.x (run `node --version`)
+        - Claude Code version: (run `claude --version`)
+        - Sequant version: (run `sequant --version` if installed via npm)
+      render: markdown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mcp-servers
+    attributes:
+      label: MCP Servers Available
+      description: Which optional MCP servers do you have configured?
+      options:
+        - None
+        - chrome-devtools only
+        - sequential-thinking only
+        - context7 only
+        - Multiple MCPs
+        - All MCPs (chrome-devtools, sequential-thinking, context7)
+        - Not sure
+      multiple: false
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs
+      description: Include any error messages or logs
+      placeholder: |
+        Paste error messages, stack traces, or relevant logs here.
+
+        For hook issues, check: /tmp/claude-hooks.log
+        For test issues, check: /tmp/claude-tests.log
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Did you find a workaround? (helps others with the same issue)
+      placeholder: |
+        I was able to work around this by...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues to avoid duplicates
+          required: true
+        - label: I have included environment details
+          required: true
+        - label: I am using the latest version of Sequant
+          required: false

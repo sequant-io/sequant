@@ -174,6 +174,7 @@ npx sequant run 123 --base feature/dashboard  # Custom base branch
 | `/assess` | Issue triage and status assessment |
 | `/docs` | Generate feature documentation |
 | `/clean` | Repository cleanup |
+| `/improve` | Codebase analysis and improvement discovery |
 | `/security-review` | Deep security analysis |
 | `/reflect` | Workflow improvement analysis |
 
@@ -234,6 +235,37 @@ See [Customization Guide](docs/customization.md) for all options.
 - [Troubleshooting](docs/troubleshooting.md)
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)
+
+---
+
+## Feedback & Contributing
+
+### Reporting Issues
+
+- **Plugin issues:** [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml)
+- **Bug reports:** [Bug template](https://github.com/admarble/sequant/issues/new?template=bug.yml)
+- **Feature requests:** [Feature template](https://github.com/admarble/sequant/issues/new?template=feature.yml)
+- **Questions:** [GitHub Discussions](https://github.com/admarble/sequant/discussions)
+
+### Using `/improve` for Feedback
+
+Run `/improve` in Claude Code to analyze your codebase and create structured issues:
+
+```
+/improve              # Analyze entire codebase
+/improve security     # Focus on security concerns
+/improve tests        # Find test coverage gaps
+```
+
+The skill will present findings and offer to create GitHub issues automatically.
+
+### Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+### Telemetry
+
+Sequant does not collect any usage telemetry. See [docs/telemetry.md](docs/telemetry.md) for details.
 
 ---
 
