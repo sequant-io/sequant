@@ -40,13 +40,14 @@ PARALLEL_MARKER_PREFIX="/tmp/claude-parallel-"
 # For parallel agents, detect group ID from marker files
 # Format: /tmp/claude-parallel-<group-id>.marker
 AGENT_ID=""
-for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
-    if [[ -f "$marker" ]]; then
+# Find marker files using find (works in both bash and zsh)
+while IFS= read -r marker; do
+    if [[ -n "$marker" && -f "$marker" ]]; then
         # Extract group ID from marker filename
         AGENT_ID=$(basename "$marker" | sed 's/claude-parallel-//' | sed 's/\.marker//')
         break
     fi
-done
+done < <(find /tmp -maxdepth 1 -name "claude-parallel-*.marker" 2>/dev/null)
 
 # === TIMING START ===
 # Include agent ID in log format if available (AC-4)
