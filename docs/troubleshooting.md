@@ -170,6 +170,117 @@ If you want only one:
 
 ---
 
+## Worktree Issues
+
+### "Branch already exists" error
+
+**Problem:** Creating a new feature worktree fails with "branch already exists".
+
+**Solutions:**
+
+1. Check if worktree already exists:
+   ```bash
+   git worktree list
+   ```
+
+2. If worktree exists but is stale, remove it:
+   ```bash
+   # Remove the worktree directory
+   rm -rf ../worktrees/feature/<issue-number>-*
+
+   # Prune worktree references
+   git worktree prune
+   ```
+
+3. If branch exists without worktree, delete the branch:
+   ```bash
+   git branch -D feature/<issue-number>-*
+   ```
+
+### Orphaned worktrees after failed runs
+
+**Problem:** Failed `/exec` or `/fullsolve` leaves behind orphaned worktrees.
+
+**Solutions:**
+
+1. List all worktrees to find orphans:
+   ```bash
+   git worktree list
+   ls ../worktrees/feature/
+   ```
+
+2. Clean up using the cleanup script:
+   ```bash
+   ./scripts/cleanup-worktree.sh feature/<issue-number>-*
+   ```
+
+3. Or clean manually:
+   ```bash
+   rm -rf ../worktrees/feature/<issue-number>-*
+   git worktree prune
+   git branch -D feature/<issue-number>-*
+   ```
+
+### Worktree not found during /qa or /exec
+
+**Problem:** Skills report "worktree not found" even though work was started.
+
+**Solutions:**
+
+1. Verify the worktree path:
+   ```bash
+   ls ../worktrees/feature/ | grep <issue-number>
+   ```
+
+2. If path exists but skill can't find it, specify explicitly:
+   ```bash
+   cd ../worktrees/feature/<issue-number>-*/
+   # Then run skill from within the worktree
+   ```
+
+3. If worktree was accidentally deleted, recreate it:
+   ```bash
+   ./scripts/new-feature.sh <issue-number>
+   ```
+
+---
+
+## Project Type Support
+
+### Using Sequant with non-Node.js projects
+
+**Context:** Sequant is optimized for Node.js/TypeScript projects, but the core worktree workflow works with any git repository.
+
+**What works universally:**
+- `/spec` - Issue planning and AC extraction
+- `/exec` - Implementation in isolated worktree
+- `/qa` - Code review (adapts to project type)
+- `/fullsolve` - Complete workflow orchestration
+- Git worktree isolation
+
+**Node.js specific features:**
+- `npm test` / `npm run build` verification
+- Hook-based test running (detects npm/yarn/pnpm/bun)
+- Prettier formatting for JS/TS files
+
+**For non-Node.js projects:**
+
+1. Skills will attempt to detect your build/test commands
+2. You may see warnings about missing `package.json` - these are safe to ignore
+3. Customize test commands in your constitution:
+   ```markdown
+   ## Project-Specific Notes
+   - Build: `cargo build` (Rust) / `go build` (Go) / `pytest` (Python)
+   - Test: `cargo test` / `go test ./...` / `pytest`
+   ```
+
+**Stack guides available:**
+- [Rust](stacks/rust.md)
+- [Python](stacks/python.md)
+- [Go](stacks/go.md)
+
+---
+
 ## Installation Issues (npm)
 
 ### `sequant: command not found`
