@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { join } from "path";
+import { join, basename } from "path";
 import { mkdtemp, rm, writeFile as fsWriteFile, mkdir } from "fs/promises";
 import { tmpdir } from "os";
 import { detectProjectName, getProjectName } from "./project-name.js";
+import { processTemplate } from "./templates.js";
 
 describe("project-name detection", () => {
   let testDir: string;
@@ -363,6 +364,77 @@ go 1.21
 
       expect(name).toBe("simple-name");
       expect(typeof name).toBe("string");
+    });
+  });
+
+  describe("graceful fallback (AC-3)", () => {
+    it("always returns a usable name, never keeps literal placeholder", async () => {
+      // Empty directory with no config files, no git
+      // This tests AC-3: "Falls back gracefully if no name detected"
+      const result = await detectProjectName();
+
+      // Should always get a name (directory fallback)
+      expect(result.name).toBeTruthy();
+      expect(result.name).not.toBe("{{PROJECT_NAME}}");
+      expect(result.name).not.toContain("{{");
+      expect(result.source).toBe("directory");
+    });
+
+    it("uses directory name as final fallback", async () => {
+      const result = await detectProjectName();
+
+      // Directory name should be the temp dir name
+      const expectedDirName = basename(testDir);
+      expect(result.name).toBe(expectedDirName);
+    });
+
+    it("never returns empty string", async () => {
+      const result = await detectProjectName();
+
+      expect(result.name.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("integration with processTemplate", () => {
+    it("detected project name replaces {{PROJECT_NAME}} in templates", async () => {
+      await fsWriteFile(
+        join(testDir, "package.json"),
+        JSON.stringify({ name: "my-awesome-project" }),
+      );
+
+      const projectName = await getProjectName();
+      const template =
+        "# {{PROJECT_NAME}} Constitution\n\nWelcome to {{PROJECT_NAME}}!";
+      const result = processTemplate(template, { PROJECT_NAME: projectName });
+
+      expect(result).toBe(
+        "# my-awesome-project Constitution\n\nWelcome to my-awesome-project!",
+      );
+      expect(result).not.toContain("{{PROJECT_NAME}}");
+    });
+
+    it("directory fallback name also replaces placeholder correctly", async () => {
+      // No config files - will use directory name
+      const projectName = await getProjectName();
+      const template = "# {{PROJECT_NAME}} Constitution";
+      const result = processTemplate(template, { PROJECT_NAME: projectName });
+
+      // Should have the temp directory name, not the placeholder
+      expect(result).not.toContain("{{PROJECT_NAME}}");
+      expect(result).toMatch(/^# sequant-project-name-test-.+ Constitution$/);
+    });
+
+    it("scoped package names work in templates", async () => {
+      await fsWriteFile(
+        join(testDir, "package.json"),
+        JSON.stringify({ name: "@myorg/my-package" }),
+      );
+
+      const projectName = await getProjectName();
+      const template = "# {{PROJECT_NAME}} Constitution";
+      const result = processTemplate(template, { PROJECT_NAME: projectName });
+
+      expect(result).toBe("# @myorg/my-package Constitution");
     });
   });
 });
