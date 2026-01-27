@@ -168,6 +168,51 @@ If you want only one:
 - **Plugin only:** Uninstall npm package: `npm uninstall sequant`
 - **npm only:** Uninstall plugin: `/plugin uninstall sequant`
 
+### Settings merge behavior
+
+**Problem:** Confusion about how plugin settings interact with existing `.claude/settings.json`.
+
+**How it works:**
+
+Plugins do **not** automatically merge settings. Instead:
+- Plugin provides skills, hooks, and scripts
+- Your existing `.claude/settings.json` remains unchanged
+- Plugin configuration stored in `enabledPlugins` key
+
+**Settings scope cascade (highest to lowest priority):**
+
+| Scope | File | Purpose |
+|-------|------|---------|
+| `local` | `.claude/settings.local.json` | Project-specific, gitignored |
+| `project` | `.claude/settings.json` | Team settings, version controlled |
+| `user` | `~/.claude/settings.json` | Personal settings across all projects |
+| `managed` | `managed-settings.json` | Admin-controlled (read-only) |
+
+**Key points:**
+- Plugin skills are immediately available after install (no settings merge needed)
+- Plugin hooks are registered automatically
+- Your existing project settings (permissions, MCPs, etc.) are preserved
+- To override plugin behavior, add settings to your project's `.claude/settings.json`
+
+**Common scenarios:**
+
+1. **Plugin installed, want to disable a hook:**
+   ```json
+   // .claude/settings.json
+   {
+     "hooks": {
+       "PreToolUse": []  // Disables pre-tool hooks
+     }
+   }
+   ```
+
+2. **Plugin installed, want custom MCP config:**
+   - Add your MCP config to `.claude/settings.json` - it won't conflict with plugin
+
+3. **Plugin installed, want to override a skill:**
+   - Create your own version in `.claude/skills/<skill-name>/SKILL.md`
+   - Local skills take precedence over plugin skills
+
 ---
 
 ## Worktree Issues

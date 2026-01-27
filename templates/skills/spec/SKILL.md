@@ -107,10 +107,51 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
    **Status**: [Open/Merged/Closed]
    ```
 
-### Using MCP Tools (Optional)
+### MCP Tools (Optional - Graceful Degradation)
 
-- **Sequential Thinking:** For complex analysis with multiple dependencies
-- **Context7:** For understanding existing patterns and architecture
+MCP tools enhance `/spec` but are **not required**. The skill works fully without them.
+
+#### MCP Availability Check
+
+Before using MCP tools, verify they are available. If unavailable, use the fallback strategies.
+
+| MCP Tool | Purpose | Fallback When Unavailable |
+|----------|---------|---------------------------|
+| Sequential Thinking | Complex multi-step analysis | Use explicit step-by-step reasoning in response |
+| Context7 | Library documentation lookup | Use WebSearch or read existing codebase patterns |
+
+#### Sequential Thinking Fallback
+
+**When to use Sequential Thinking:**
+- Issues with 5+ AC items requiring dependency analysis
+- Architectural decisions with multiple trade-offs
+- Complex conflict resolution between in-flight work
+
+**If unavailable:**
+1. Break analysis into explicit numbered steps in your response
+2. Create a pros/cons table for architectural decisions
+3. Document trade-offs before making recommendations
+
+```markdown
+## Analysis Steps (Manual Sequential Thinking)
+
+**Step 1:** [Analysis of first aspect]
+**Step 2:** [Analysis of second aspect]
+**Step 3:** [Synthesis and recommendation]
+```
+
+#### Context7 Fallback
+
+**When to use Context7:**
+- Planning features that use unfamiliar libraries
+- Checking for API patterns in third-party dependencies
+- Understanding framework-specific conventions
+
+**If unavailable:**
+1. Search codebase with Grep for existing usage patterns
+2. Use WebSearch to find official documentation
+3. Check library's package.json or README in node_modules
+4. Look for similar features in the codebase as reference
 
 ## Context Gathering Strategy
 
