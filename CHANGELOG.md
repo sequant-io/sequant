@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Claude Code Plugin support (#185)
+  - Sequant can now be installed as a Claude Code plugin: `/plugin install sequant`
+  - Plugin marketplace configuration in `.claude-plugin/`
+  - `/setup` skill for plugin initialization (creates worktrees directory, copies constitution)
+  - Plugin-specific documentation: updates, versioning, feedback mechanisms
+- Auto-detect project name in `/setup` skill (#187)
+  - Detects from package.json, Cargo.toml, pyproject.toml, go.mod, or git remote
+  - Substitutes `{{PROJECT_NAME}}` in constitution template
+  - Falls back to directory name if no project file found
+- Comprehensive "What We've Built" project overview documentation
+  - Covers all 16 skills, 9 CLI commands, hooks system, dashboard, VS Code extension
+  - Added to README documentation section
+
 ### Fixed
 
 - QA verdict logic now enforces strict `READY_FOR_MERGE` criteria (#171)
@@ -474,6 +489,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [Unreleased]: https://github.com/admarble/sequant/compare/v1.11.0...HEAD
 [1.11.0]: https://github.com/admarble/sequant/compare/v1.10.1...v1.11.0
+[1.10.1]: https://github.com/admarble/sequant/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/admarble/sequant/compare/v1.5.2...v1.10.0
+[1.5.2]: https://github.com/admarble/sequant/compare/v1.5.1...v1.5.2
+[1.5.1]: https://github.com/admarble/sequant/compare/v1.5.0...v1.5.1
+[1.5.0]: https://github.com/admarble/sequant/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/admarble/sequant/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/admarble/sequant/compare/v1.2.7...v1.3.0
+[1.2.7]: https://github.com/admarble/sequant/compare/v1.2.5...v1.2.7
 [1.2.5]: https://github.com/admarble/sequant/compare/v1.2.4...v1.2.5
 [1.2.4]: https://github.com/admarble/sequant/compare/v1.2.2...v1.2.4
 [1.2.2]: https://github.com/admarble/sequant/compare/v1.2.1...v1.2.2
