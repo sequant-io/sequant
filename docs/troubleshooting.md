@@ -2,7 +2,286 @@
 
 Common issues and solutions when using Sequant.
 
-## Installation Issues
+## Plugin Installation Issues
+
+### Marketplace not found
+
+**Problem:** `/plugin marketplace add admarble/sequant` shows "marketplace not found".
+
+**Solutions:**
+
+1. Check the marketplace name is correct (owner/repo format):
+   ```
+   /plugin marketplace add admarble/sequant
+   ```
+
+2. Verify GitHub access - the marketplace requires read access to the repo:
+   ```bash
+   gh repo view admarble/sequant
+   ```
+
+3. If behind a proxy, ensure GitHub is accessible from Claude Code.
+
+### Plugin install fails
+
+**Problem:** `/plugin install sequant` fails after adding the marketplace.
+
+**Solutions:**
+
+1. Verify the marketplace was added successfully:
+   ```
+   /plugin marketplace list
+   ```
+
+2. Try reinstalling with explicit marketplace reference:
+   ```
+   /plugin install sequant@admarble/sequant
+   ```
+
+3. Check for conflicting plugin names:
+   ```
+   /plugin list
+   ```
+
+4. Remove and re-add the marketplace:
+   ```
+   /plugin marketplace remove admarble/sequant
+   /plugin marketplace add admarble/sequant
+   /plugin install sequant
+   ```
+
+### Skills not available after plugin install
+
+**Problem:** After installing, `/fullsolve` or other Sequant skills aren't recognized.
+
+**Solutions:**
+
+1. Restart Claude Code to reload plugins:
+   - Close the terminal or IDE session
+   - Reopen Claude Code
+
+2. Verify plugin is enabled:
+   ```
+   /plugin list
+   ```
+   Look for `sequant` in the enabled plugins.
+
+3. Check skill namespace - plugin skills may require prefix:
+   ```
+   /sequant:fullsolve 123    # Namespaced version
+   /fullsolve 123            # Direct version (if no conflicts)
+   ```
+
+4. Re-enable the plugin if disabled:
+   ```
+   /plugin enable sequant
+   ```
+
+### `/sequant:setup` fails
+
+**Problem:** The setup skill fails to initialize worktrees directory or copy constitution.
+
+**Solutions:**
+
+1. Verify you're in a git repository:
+   ```bash
+   git status
+   ```
+
+2. Check git is configured:
+   ```bash
+   git config user.name
+   git config user.email
+   ```
+
+3. Verify GitHub CLI is authenticated:
+   ```bash
+   gh auth status
+   ```
+
+4. Create worktrees directory manually if needed:
+   ```bash
+   mkdir -p ../worktrees/feature
+   ```
+
+5. Copy constitution template manually:
+   ```bash
+   # From the plugin cache (path varies)
+   cp ~/.claude/plugins/cache/sequant/memory/constitution.md .claude/memory/constitution.md
+   ```
+
+### Plugin updates not applying
+
+**Problem:** After a new version releases, you still have the old version.
+
+**Solutions:**
+
+1. Third-party marketplaces don't auto-update by default. Update manually:
+   ```
+   /plugin marketplace update admarble/sequant
+   ```
+
+2. Verify update applied:
+   ```
+   /plugin list
+   ```
+   Check the version number.
+
+3. If still outdated, try reinstall:
+   ```
+   /plugin uninstall sequant
+   /plugin install sequant@admarble/sequant
+   ```
+
+### Hook permission errors
+
+**Problem:** Plugin hooks fail with permission errors.
+
+**Solutions:**
+
+1. Plugin hooks should be executable by default. If not, locate and fix:
+   ```bash
+   # Find plugin cache location
+   ls ~/.claude/plugins/cache/
+
+   # Make hooks executable
+   chmod +x ~/.claude/plugins/cache/sequant*/hooks/*.sh
+   ```
+
+2. Check your shell - hooks are bash scripts:
+   - Works: bash, zsh
+   - May need configuration: fish, tcsh
+
+### Conflict with npm install
+
+**Problem:** Both npm-installed Sequant and plugin are present.
+
+**Solutions:**
+
+This is fine - both can coexist. The plugin provides Claude Code skills, while npm provides the CLI.
+
+**Recommended approach:**
+- Use plugin for `/fullsolve`, `/spec`, `/exec`, etc. (Claude Code integration)
+- Use npm for `npx sequant run` (headless CLI mode)
+
+If you want only one:
+- **Plugin only:** Uninstall npm package: `npm uninstall sequant`
+- **npm only:** Uninstall plugin: `/plugin uninstall sequant`
+
+---
+
+## Worktree Issues
+
+### "Branch already exists" error
+
+**Problem:** Creating a new feature worktree fails with "branch already exists".
+
+**Solutions:**
+
+1. Check if worktree already exists:
+   ```bash
+   git worktree list
+   ```
+
+2. If worktree exists but is stale, remove it:
+   ```bash
+   # Remove the worktree directory
+   rm -rf ../worktrees/feature/<issue-number>-*
+
+   # Prune worktree references
+   git worktree prune
+   ```
+
+3. If branch exists without worktree, delete the branch:
+   ```bash
+   git branch -D feature/<issue-number>-*
+   ```
+
+### Orphaned worktrees after failed runs
+
+**Problem:** Failed `/exec` or `/fullsolve` leaves behind orphaned worktrees.
+
+**Solutions:**
+
+1. List all worktrees to find orphans:
+   ```bash
+   git worktree list
+   ls ../worktrees/feature/
+   ```
+
+2. Clean up using the cleanup script:
+   ```bash
+   ./scripts/cleanup-worktree.sh feature/<issue-number>-*
+   ```
+
+3. Or clean manually:
+   ```bash
+   rm -rf ../worktrees/feature/<issue-number>-*
+   git worktree prune
+   git branch -D feature/<issue-number>-*
+   ```
+
+### Worktree not found during /qa or /exec
+
+**Problem:** Skills report "worktree not found" even though work was started.
+
+**Solutions:**
+
+1. Verify the worktree path:
+   ```bash
+   ls ../worktrees/feature/ | grep <issue-number>
+   ```
+
+2. If path exists but skill can't find it, specify explicitly:
+   ```bash
+   cd ../worktrees/feature/<issue-number>-*/
+   # Then run skill from within the worktree
+   ```
+
+3. If worktree was accidentally deleted, recreate it:
+   ```bash
+   ./scripts/new-feature.sh <issue-number>
+   ```
+
+---
+
+## Project Type Support
+
+### Using Sequant with non-Node.js projects
+
+**Context:** Sequant is optimized for Node.js/TypeScript projects, but the core worktree workflow works with any git repository.
+
+**What works universally:**
+- `/spec` - Issue planning and AC extraction
+- `/exec` - Implementation in isolated worktree
+- `/qa` - Code review (adapts to project type)
+- `/fullsolve` - Complete workflow orchestration
+- Git worktree isolation
+
+**Node.js specific features:**
+- `npm test` / `npm run build` verification
+- Hook-based test running (detects npm/yarn/pnpm/bun)
+- Prettier formatting for JS/TS files
+
+**For non-Node.js projects:**
+
+1. Skills will attempt to detect your build/test commands
+2. You may see warnings about missing `package.json` - these are safe to ignore
+3. Customize test commands in your constitution:
+   ```markdown
+   ## Project-Specific Notes
+   - Build: `cargo build` (Rust) / `go build` (Go) / `pytest` (Python)
+   - Test: `cargo test` / `go test ./...` / `pytest`
+   ```
+
+**Stack guides available:**
+- [Rust](stacks/rust.md)
+- [Python](stacks/python.md)
+- [Go](stacks/go.md)
+
+---
+
+## Installation Issues (npm)
 
 ### `sequant: command not found`
 

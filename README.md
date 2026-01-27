@@ -9,11 +9,30 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ## Quick Start
 
+### Option A: Install as Claude Code Plugin (Recommended)
+
+```bash
+# Add the Sequant marketplace
+/plugin marketplace add admarble/sequant
+
+# Install the plugin
+/plugin install sequant
+```
+
+Then run setup:
+```
+/sequant:setup    # Initialize worktrees directory
+```
+
+### Option B: Install via npm
+
 ```bash
 # In your project directory
 npx sequant init
 npx sequant doctor   # Verify setup
 ```
+
+### Start Using
 
 Then in Claude Code:
 
@@ -31,9 +50,20 @@ Or step-by-step:
 
 ### Prerequisites
 
+**Required:**
 - [Claude Code](https://claude.ai/code) — AI coding assistant
 - [GitHub CLI](https://cli.github.com/) — run `gh auth login`
-- Node.js 18+ and Git
+- Git (for worktree-based isolation)
+
+**For npm installation:**
+- Node.js 18+
+
+**Optional MCP servers (enhanced features):**
+- `chrome-devtools` — enables `/test` for browser-based UI testing
+- `sequential-thinking` — enhanced reasoning for complex decisions
+- `context7` — library documentation lookup
+
+> **Note:** Sequant is optimized for Node.js/TypeScript projects. The worktree workflow works with any git repository.
 
 ---
 
@@ -51,6 +81,24 @@ Sequant adds slash commands to Claude Code that enforce a structured workflow:
 ```
 
 > `/test` is optional — used for UI features when Chrome DevTools MCP is available.
+
+### Worktree Isolation
+
+Sequant uses Git worktrees to isolate each issue's work:
+
+```
+your-project/           # Main repo (stays on main branch)
+../worktrees/
+  feature/
+    123-add-login/     # Issue #123 worktree (feature branch)
+    456-fix-bug/       # Issue #456 worktree (feature branch)
+```
+
+**Why worktrees?**
+- Work on multiple issues simultaneously
+- Never pollute your main branch
+- Each issue has its own dependencies and build
+- Safe to discard failed experiments
 
 ### Quality Gates
 
