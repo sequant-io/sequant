@@ -230,6 +230,7 @@ See [Customization Guide](docs/customization.md) for all options.
 - [Run Command](docs/run-command.md)
 - [Feature Branch Workflows](docs/feature-branch-workflow.md)
 - [Customization](docs/customization.md)
+- [Plugin Updates & Versioning](docs/plugin-updates.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)

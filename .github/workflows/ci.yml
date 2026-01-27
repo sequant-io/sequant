@@ -81,3 +81,100 @@ jobs:
 
       - name: Type check
         run: npx tsc --noEmit
+
+  validate-plugin:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Validate plugin.json structure
+        run: |
+          echo "Validating plugin.json..."
+
+          # Check plugin.json exists
+          if [ ! -f ".claude-plugin/plugin.json" ]; then
+            echo "Error: .claude-plugin/plugin.json not found"
+            exit 1
+          fi
+
+          # Validate JSON syntax
+          if ! node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json', 'utf8'))"; then
+            echo "Error: plugin.json is not valid JSON"
+            exit 1
+          fi
+
+          # Check required fields
+          node -e "
+            const plugin = JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            const required = ['name', 'description'];
+            const missing = required.filter(f => !plugin[f]);
+            if (missing.length > 0) {
+              console.error('Missing required fields:', missing.join(', '));
+              process.exit(1);
+            }
+            console.log('Required fields present: name, description');
+          "
+
+          echo "plugin.json validated successfully!"
+
+      - name: Check version sync
+        run: |
+          echo "Checking version sync between package.json and plugin.json..."
+
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./.claude-plugin/plugin.json').version")
+
+          echo "package.json version: $PKG_VERSION"
+          echo "plugin.json version: $PLUGIN_VERSION"
+
+          if [ "$PKG_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "Error: Version mismatch!"
+            echo "package.json: $PKG_VERSION"
+            echo "plugin.json: $PLUGIN_VERSION"
+            echo ""
+            echo "Run the following to sync:"
+            echo "  node -e \"const p=require('./.claude-plugin/plugin.json');p.version='$PKG_VERSION';require('fs').writeFileSync('./.claude-plugin/plugin.json',JSON.stringify(p,null,2)+'\\n')\""
+            exit 1
+          fi
+
+          echo "Versions are in sync!"
+
+      - name: Validate marketplace.json structure
+        run: |
+          echo "Validating marketplace.json..."
+
+          # Check marketplace.json exists
+          if [ ! -f ".claude-plugin/marketplace.json" ]; then
+            echo "Error: .claude-plugin/marketplace.json not found"
+            exit 1
+          fi
+
+          # Validate JSON syntax
+          if ! node -e "JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'))"; then
+            echo "Error: marketplace.json is not valid JSON"
+            exit 1
+          fi
+
+          # Check required fields
+          node -e "
+            const mp = JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'));
+            const required = ['name', 'description', 'plugins'];
+            const missing = required.filter(f => !mp[f]);
+            if (missing.length > 0) {
+              console.error('Missing required fields:', missing.join(', '));
+              process.exit(1);
+            }
+            if (!Array.isArray(mp.plugins) || mp.plugins.length === 0) {
+              console.error('plugins must be a non-empty array');
+              process.exit(1);
+            }
+            console.log('Required fields present: name, description, plugins');
+          "
+
+          echo "marketplace.json validated successfully!"

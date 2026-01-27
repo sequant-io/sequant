@@ -179,6 +179,31 @@ npm version {patch|minor|major} --no-git-tag-version
 npm version prerelease --preid=beta --no-git-tag-version
 ```
 
+### Step 4.5: Sync Plugin Version
+
+**IMPORTANT:** Keep plugin.json in sync with package.json.
+
+```bash
+# Get new version from package.json
+new_version=$(node -p "require('./package.json').version")
+
+# Update plugin.json to match
+node -e "
+const fs = require('fs');
+const pluginPath = './.claude-plugin/plugin.json';
+if (fs.existsSync(pluginPath)) {
+  const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
+  plugin.version = '${new_version}';
+  fs.writeFileSync(pluginPath, JSON.stringify(plugin, null, 2) + '\n');
+  console.log('Updated plugin.json to version ${new_version}');
+} else {
+  console.log('No plugin.json found - skipping');
+}
+"
+```
+
+**Why sync?** Sequant is distributed as both npm package and Claude Code plugin. Both must have matching versions to avoid user confusion and ensure compatibility.
+
 ### Step 5: Verify Package Size
 
 ```bash
@@ -194,7 +219,7 @@ echo "Package size: ${size}"
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json
 git commit -m "chore: release v${new_version}"
 git push origin main
 ```
@@ -266,14 +291,21 @@ Release v{version} Complete
 
   GitHub:   https://github.com/admarble/sequant/releases/tag/v{new}
   npm:      https://www.npmjs.com/package/sequant/v/{new}
+  Plugin:   Version synced in .claude-plugin/plugin.json
 
-  Install:  npm install sequant@{new}
-            npx sequant@{new}
+  Install (npm):
+    npm install sequant@{new}
+    npx sequant@{new}
+
+  Install (plugin):
+    /plugin marketplace update admarble/sequant
+    /plugin install sequant
 
 Verification:
   [x] npm view shows correct version
   [x] GitHub release created
   [x] Tag pushed
+  [x] plugin.json version synced
 
 Next steps:
   - Announce release (if major/minor)

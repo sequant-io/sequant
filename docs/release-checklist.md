@@ -16,6 +16,28 @@ Before tagging a release, verify:
 - [ ] CHANGELOG.md updated
 - [ ] No uncommitted changes: `git status`
 
+## Plugin Version Sync
+
+**Both npm and plugin must use the same version.**
+
+- [ ] `.claude-plugin/plugin.json` version matches `package.json`
+- [ ] Validate plugin manifest: `/plugin validate .` (in Claude Code)
+
+To update both versions together:
+```bash
+# Bump version in both files
+npm version patch --no-git-tag-version
+# Update plugin.json to match
+node -e "
+const pkg = require('./package.json');
+const plugin = require('./.claude-plugin/plugin.json');
+plugin.version = pkg.version;
+require('fs').writeFileSync('./.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
+"
+```
+
+Or use the `/release` skill which handles this automatically.
+
 ## Issue Integration
 
 Before merging, verify the full trail for each issue:
@@ -45,3 +67,16 @@ Before merging, verify the full trail for each issue:
 ## Smoke Test
 - [ ] `sequant init` works in a fresh directory
 - [ ] `sequant run <issue> --dry-run` works
+
+## Plugin Smoke Test
+
+After release, verify the plugin works for new users:
+
+```bash
+# In a fresh Claude Code session (different project)
+/plugin marketplace add admarble/sequant
+/plugin install sequant
+
+# Verify skills are available
+/sequant:setup
+```
