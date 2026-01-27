@@ -133,10 +133,52 @@ admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
 
-### Using MCP Tools (Optional)
+### MCP Tools (Optional - Graceful Degradation)
 
-- **Sequential Thinking:** For complex multi-step analysis
-- **Context7:** For broader pattern context and library documentation
+MCP tools enhance `/qa` but are **not required**. The skill works fully without them.
+
+#### MCP Availability Check
+
+Before using MCP tools, verify they are available. If unavailable, use the fallback strategies.
+
+| MCP Tool | Purpose | Fallback When Unavailable |
+|----------|---------|---------------------------|
+| Sequential Thinking | Complex multi-step analysis | Use explicit step-by-step reasoning in response |
+| Context7 | Library documentation lookup | Use WebSearch or codebase pattern search |
+
+#### Sequential Thinking Fallback
+
+**When to use Sequential Thinking:**
+- Complex architectural trade-offs during code review
+- Multi-dimensional quality assessment
+- Analyzing interconnected issues across files
+
+**If unavailable:**
+1. Structure your analysis with explicit numbered steps
+2. Document each concern systematically before synthesizing verdict
+3. Use a pros/cons format for trade-off decisions
+
+```markdown
+## Analysis Steps (Manual Sequential Thinking)
+
+**Step 1:** [Analyze first dimension - correctness]
+**Step 2:** [Analyze second dimension - maintainability]
+**Step 3:** [Analyze third dimension - performance]
+**Step 4:** [Synthesize findings into verdict]
+```
+
+#### Context7 Fallback
+
+**When to use Context7:**
+- Verifying implementation matches library best practices
+- Checking if API usage follows recommended patterns
+- Understanding framework-specific conventions in reviewed code
+
+**If unavailable:**
+1. Search codebase with Grep for existing usage patterns
+2. Use WebSearch for official library documentation
+3. Check similar implementations in the codebase as reference
+4. Review library's README or documentation in node_modules
 
 ### 1. Context and AC Alignment
 
