@@ -3,7 +3,7 @@
  */
 
 import { readdir, chmod } from "fs/promises";
-import { join, dirname, basename, relative, isAbsolute } from "path";
+import { join, dirname, relative, isAbsolute } from "path";
 import { fileURLToPath } from "url";
 import {
   readFile,
@@ -16,6 +16,7 @@ import {
 } from "./fs.js";
 import { getStackConfig } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
+import { getProjectName } from "./project-name.js";
 
 // Get the package templates directory
 function getTemplatesDir(): string {
@@ -224,10 +225,14 @@ export async function copyTemplates(
 ): Promise<{ scriptsSymlinked: boolean; symlinkResults?: SymlinkResult[] }> {
   const templatesDir = getTemplatesDir();
   const stackConfig = getStackConfig(stack);
+
+  // Detect project name from available sources (package.json, Cargo.toml, etc.)
+  const projectName = await getProjectName();
+
   const variables = {
     ...stackConfig.variables,
     ...tokens,
-    PROJECT_NAME: basename(process.cwd()) || "project",
+    PROJECT_NAME: projectName,
     STACK: stack,
   };
 
