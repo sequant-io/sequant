@@ -45,24 +45,43 @@ This document defines the core principles and patterns for AI-assisted developme
 
 ## Commands Available
 
+### Core Workflow
 | Command | Purpose |
 |---------|---------|
-| `/spec` | Plan implementation for an issue |
-| `/exec` | Implement a planned feature |
-| `/test` | Run browser-based UI tests |
-| `/qa` | Quality review before merge |
-| `/loop` | Fix iteration when tests fail |
+| `/fullsolve` | Complete issue resolution with integrated quality loops |
+| `/spec` | Plan implementation against acceptance criteria |
+| `/exec` | Implement a planned feature in worktree |
+| `/qa` | Code review and quality verification |
+
+### Supporting Commands
+| Command | Purpose |
+|---------|---------|
+| `/solve` | Generate recommended workflow for GitHub issues |
+| `/assess` | Issue triage and status assessment |
+| `/test` | Browser-based UI testing (requires chrome-devtools MCP) |
+| `/verify` | CLI/script execution verification |
+| `/testgen` | Generate test stubs from spec criteria |
+| `/loop` | Quality loop - iterate until tests pass |
 | `/docs` | Generate feature documentation |
 
-## Stack-Specific Notes
-
-### Astro Projects
-- Astro projects may not have `test` or `lint` scripts configured by default
-- If tests are needed, consider adding Vitest (`npm install -D vitest`)
-- For linting, consider ESLint with the Astro plugin (`npm install -D eslint eslint-plugin-astro`)
-- Build output goes to `dist/` by default
+### Utility Commands
+| Command | Purpose |
+|---------|---------|
+| `/setup` | Initialize Sequant in a project |
+| `/clean` | Repository cleanup |
+| `/improve` | Codebase analysis and improvement discovery |
+| `/reflect` | Strategic reflection on workflow effectiveness |
+| `/security-review` | Deep security analysis for sensitive features |
 
 ## Project-Specific Notes
 
-<!-- Add your project-specific guidelines below -->
+<!--
+Customize this section for your project:
+
+- Tech stack (framework, language, database)
+- Architecture patterns and conventions
+- Important file locations
+- Testing approach and tools
+- Build and deployment notes
+-->
 
