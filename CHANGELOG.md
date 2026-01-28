@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CI workflow failures on main branch
+  - ESLint error in `project-name.ts` (unnecessary regex escape)
+  - `validate-skills` job now skips `_shared` directory (shared resources, not a skill)
 - QA verdict logic now enforces strict `READY_FOR_MERGE` criteria (#171)
   - Added `NEEDS_VERIFICATION` verdict for ACs with `PENDING` status
   - `PARTIALLY_MET` ACs now correctly result in `AC_NOT_MET` verdict
