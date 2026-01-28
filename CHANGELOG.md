@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive "What We've Built" project overview documentation
   - Covers all 16 skills, 9 CLI commands, hooks system, dashboard, VS Code extension
   - Added to README documentation section
+- Sub-agent prompt templates for `/exec` skill (#181)
+  - Task-specific templates: component, type, CLI, test, refactor
+  - Automatic template selection via keyword detection
+  - Manual override with `[template: X]` annotation
+  - Error recovery template with diagnosis checklist
+  - See `templates/skills/_shared/references/prompt-templates.md`
 
 ### Fixed
 

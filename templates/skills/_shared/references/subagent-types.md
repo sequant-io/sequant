@@ -126,5 +126,6 @@ See issue #170 for context on this fix.
 ## References
 
 - [Claude Code Task Tool Documentation](https://docs.anthropic.com/claude-code)
+- [Prompt Templates](./prompt-templates.md) - Task-specific prompt templates for sub-agents
 - `/exec` skill parallel execution: `templates/skills/exec/SKILL.md`
 - `/qa` skill quality checks: `templates/skills/qa/SKILL.md`
