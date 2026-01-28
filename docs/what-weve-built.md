@@ -10,7 +10,7 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 
 | Metric | Count |
 |--------|-------|
-| Slash Commands | 16 |
+| Slash Commands | 17 |
 | CLI Commands | 9 |
 | Core Library Modules | 22 |
 | Test Files | 27 |
@@ -72,7 +72,7 @@ Sequant brings **discipline without friction**:
 
 ## Skill Commands
 
-Sequant provides **16 slash commands** organized by purpose. Run them inside Claude Code.
+Sequant provides **17 slash commands** organized by purpose. Run them inside Claude Code.
 
 ### Core Workflow
 
@@ -113,11 +113,13 @@ For when you want to go hands-off:
 | `/reflect` | **Learning** | Analyzes session effectiveness, proposes documentation/process improvements |
 | `/security-review` | **Security Audit** | Domain-specific checklists (auth, API, admin), threat modeling |
 | `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name |
+| `/merger` | **Integration** | Multi-issue merge with conflict detection, dependency ordering, worktree cleanup |
 
 ### Shared Resources
 
 Skills share common references stored in `skills/_shared/`:
 - `references/subagent-types.md` — Valid Claude Code sub-agent types
+- `references/prompt-templates.md` — Task-specific templates for sub-agent spawning (component, type, CLI, test, refactor)
 
 ---
 
@@ -630,16 +632,6 @@ Shell scripts in `templates/scripts/`:
 
 ---
 
-## Planned Features
-
-Skills listed but not yet implemented:
-
-| Skill | Purpose | Status |
-|-------|---------|--------|
-| `/merger` | Multi-issue integration and merge | Planned |
-
----
-
 ## Timeline: How We Got Here
 
 ### Phase 1: Foundation
@@ -672,6 +664,8 @@ Skills listed but not yet implemented:
 - Strict QA verdicts (`NEEDS_VERIFICATION`, proper `PARTIALLY_MET`)
 - MCP server support for headless mode
 - VS Code extension with premium workflow visualization
+- Sub-agent prompt templates for `/exec` (component, type, CLI, test, refactor)
+- `/merger` skill for multi-issue integration with conflict detection
 
 ---
 
@@ -750,7 +744,7 @@ npm run build
 
 | What | How Many |
 |------|----------|
-| Slash Commands | 16 |
+| Slash Commands | 17 |
 | CLI Commands | 9 |
 | Library Modules | 22 |
 | Test Files | 27 |
@@ -774,7 +768,7 @@ npm run build
 │                              SEQUANT v1.11.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (16)              CLI (9)                 LIBRARIES (22)            │
+│  SKILLS (17)              CLI (9)                 LIBRARIES (22)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
