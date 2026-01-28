@@ -154,7 +154,7 @@ function fromGitRemote(): string | null {
     const url = result.stdout.trim();
 
     // Handle SSH format: git@github.com:org/repo.git
-    const sshMatch = url.match(/[:\/]([^/]+)\.git$/);
+    const sshMatch = url.match(/[:/]([^/]+)\.git$/);
     if (sshMatch && sshMatch[1]) {
       return sshMatch[1];
     }
