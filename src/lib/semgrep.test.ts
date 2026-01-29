@@ -427,7 +427,7 @@ describe("semgrep", () => {
       console.log(
         `  ✓ Scan complete: ${result.criticalCount} critical, ${result.warningCount} warnings, ${result.infoCount} info`,
       );
-    });
+    }, 30000);
 
     it("applies stack-specific rules", async () => {
       const availability = await checkSemgrepAvailability();
@@ -449,7 +449,7 @@ describe("semgrep", () => {
         expect(result.success).toBe(true);
         console.log(`  ✓ Stack "${stack}": ${result.findings.length} findings`);
       }
-    });
+    }, 120000); // 2 minutes for 4 stack scans
 
     it("handles non-existent target gracefully", async () => {
       const availability = await checkSemgrepAvailability();
@@ -467,6 +467,6 @@ describe("semgrep", () => {
       // (either success with no findings, or error)
       expect(typeof result.success).toBe("boolean");
       expect(Array.isArray(result.findings)).toBe(true);
-    });
+    }, 30000);
   });
 });
