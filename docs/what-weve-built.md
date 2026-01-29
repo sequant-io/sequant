@@ -12,11 +12,11 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 |--------|-------|
 | Slash Commands | 17 |
 | CLI Commands | 9 |
-| Core Library Modules | 22 |
-| Test Files | 27 |
+| Core Library Modules | 23 |
+| Test Files | 28 |
 | Documentation Files | 26+ |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~15,000+ |
+| Lines of TypeScript | ~17,000+ |
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -83,7 +83,7 @@ The four pillars of the Sequant workflow:
 | `/spec` | **Plan** | Extracts acceptance criteria from issues, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
 | `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, creates PRs |
 | `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, graceful fallback to manual checklists |
-| `/qa` | **Review** | Validates against AC, type safety checks, security scans, scope analysis. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
+| `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
 
 ### Automation Commands
 
@@ -174,6 +174,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | Module | Purpose |
 |--------|---------|
 | `stacks.ts` | Detects project type (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go), package manager, provides build/test commands, stack-specific constitution notes |
+| `semgrep.ts` | Stack-aware Semgrep static analysis integration — ruleset mapping, graceful degradation, custom rules support, verdict contribution |
 | `templates.ts` | Copies skill templates to `.claude/`, handles variable substitution |
 | `manifest.ts` | Tracks installed skills and versions in `.sequant-manifest.json` |
 | `settings.ts` | Reads/writes `.sequant/settings.json` for persistent configuration |
@@ -588,6 +589,7 @@ Skills include rich guidance documents in `templates/skills/*/references/`:
 | `qa/references/code-review-checklist.md` | Systematic review checklist |
 | `qa/references/code-quality-exemplars.md` | Examples of good vs bad code |
 | `qa/references/testing-requirements.md` | What tests are expected |
+| `qa/references/semgrep-rules.md` | Semgrep integration guide and custom rule documentation |
 
 ### Planning
 
@@ -661,6 +663,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.11.0)
+- **Semgrep static analysis integration** — `/qa` now runs Semgrep with stack-aware rulesets (Next.js, Python, Go, Rust, etc.), graceful skip when not installed, custom rules via `.sequant/semgrep-rules.yaml`, critical findings block merge verdict
 - **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
 - Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
 - Plugin marketplace integration
@@ -749,14 +752,14 @@ npm run build
 |------|----------|
 | Slash Commands | 17 |
 | CLI Commands | 9 |
-| Library Modules | 22 |
-| Test Files | 27 |
+| Library Modules | 23 |
+| Test Files | 28 |
 | Docs Files | 26+ |
 | Stack Configs | 9 |
-| Reference Docs | 10 |
+| Reference Docs | 11 |
 | Hook Lines | 450+ |
 | Dashboard Lines | 1000+ |
-| TypeScript LOC | ~15,000+ |
+| TypeScript LOC | ~17,000+ |
 
 **Current Version:** 1.11.0
 **Status:** Production-ready
@@ -771,7 +774,7 @@ npm run build
 │                              SEQUANT v1.11.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (17)              CLI (9)                 LIBRARIES (22)            │
+│  SKILLS (17)              CLI (9)                 LIBRARIES (23)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -799,7 +802,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 27  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 28  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
