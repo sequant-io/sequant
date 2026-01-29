@@ -15,7 +15,7 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 | Core Library Modules | 22 |
 | Test Files | 27 |
 | Documentation Files | 26+ |
-| Stack Configurations | 5 |
+| Stack Configurations | 9 |
 | Lines of TypeScript | ~15,000+ |
 
 **License:** MIT
@@ -112,7 +112,7 @@ For when you want to go hands-off:
 | `/improve` | **Discovery** | Scans for issues (type safety, tests, docs), creates GitHub issues, offers execution |
 | `/reflect` | **Learning** | Analyzes session effectiveness, proposes documentation/process improvements |
 | `/security-review` | **Security Audit** | Domain-specific checklists (auth, API, admin), threat modeling |
-| `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name |
+| `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name and stack, injects stack-specific notes (testing, linting, build conventions) |
 | `/merger` | **Integration** | Multi-issue merge with conflict detection, dependency ordering, worktree cleanup |
 
 ### Shared Resources
@@ -173,7 +173,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 
 | Module | Purpose |
 |--------|---------|
-| `stacks.ts` | Detects project type (Next.js, Rust, Python, Go), package manager, provides build/test commands |
+| `stacks.ts` | Detects project type (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go), package manager, provides build/test commands, stack-specific constitution notes |
 | `templates.ts` | Copies skill templates to `.claude/`, handles variable substitution |
 | `manifest.ts` | Tracks installed skills and versions in `.sequant-manifest.json` |
 | `settings.ts` | Reads/writes `.sequant/settings.json` for persistent configuration |
@@ -208,22 +208,24 @@ State management and analytics live in `src/lib/workflow/`:
 
 ## Stack Support
 
-Sequant auto-detects your project type and configures itself appropriately.
+Sequant auto-detects your project type and configures itself appropriately. Each stack injects specific testing, linting, and build notes into your constitution template.
 
 | Stack | Detection | Build Command | Test Command |
 |-------|-----------|---------------|--------------|
-| **Next.js** | `next.config.*` | `npm run build` | `npm test` |
-| **Rust** | `Cargo.toml` | `cargo build` | `cargo test` |
-| **Python** | `pyproject.toml`, `setup.py` | varies | `pytest` |
-| **Go** | `go.mod` | `go build` | `go test ./...` |
-| **Generic Node** | `package.json` | `npm run build` | `npm test` |
+| **Next.js** | `next.config.*`, `next` dep | `npm run build` | `npm test` |
+| **Astro** | `astro.config.*`, `astro` dep | `npm run build` | `npm test` |
+| **SvelteKit** | `svelte.config.*`, `@sveltejs/kit` dep | `npm run build` | `npm test` |
+| **Remix** | `remix.config.*`, `@remix-run/react` dep | `npm run build` | `npm test` |
+| **Nuxt** | `nuxt.config.*`, `nuxt` dep | `npm run build` | `npm test` |
+| **Rust** | `Cargo.toml` | `cargo build --release` | `cargo test` |
+| **Python** | `pyproject.toml`, `setup.py`, `requirements.txt` | `python -m build` | `pytest` |
+| **Go** | `go.mod` | `go build ./...` | `go test ./...` |
+| **Generic** | `package.json` (fallback) | `npm run build` | `npm test` |
 
-Stack configurations live in `stacks/*.yaml` with customizable:
-- Build commands
-- Test commands
-- Lint commands
-- Type check commands
-- Coverage thresholds
+Stack-specific constitution notes include:
+- **Testing:** Frameworks, patterns, test file locations
+- **Linting:** Tools, commands, configuration
+- **Build:** Output directories, commands, deployment notes
 
 ---
 
@@ -615,7 +617,7 @@ Skills include rich guidance documents in `templates/skills/*/references/`:
 - Workflow phase overview
 - Code standards (naming, error handling, testing)
 - Available commands reference
-- Stack-specific notes (e.g., Astro projects)
+- **Dynamic stack-specific notes** — Auto-injected based on detected stack (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go) with testing, linting, and build conventions
 - Space for project-specific customization
 
 ---
@@ -659,6 +661,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.11.0)
+- **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
 - Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
 - Plugin marketplace integration
 - Strict QA verdicts (`NEEDS_VERIFICATION`, proper `PARTIALLY_MET`)
@@ -749,7 +752,7 @@ npm run build
 | Library Modules | 22 |
 | Test Files | 27 |
 | Docs Files | 26+ |
-| Stack Configs | 5 |
+| Stack Configs | 9 |
 | Reference Docs | 10 |
 | Hook Lines | 450+ |
 | Dashboard Lines | 1000+ |
@@ -787,13 +790,13 @@ npm run build
 │  /security-review         AC tracking             File locking              │
 │  /setup                   Phase indicators        Reset protection          │
 │                                                                             │
-│  REFERENCE DOCS (10)      VS CODE EXTENSION       STACKS (5)                │
+│  REFERENCE DOCS (10)      VS CODE EXTENSION       STACKS (9)                │
 │  ──────────────────       ─────────────────       ──────────                │
-│  Quality gates            Workflow tree view      Next.js                   │
-│  Code review checklist    Issue tracking          Rust                      │
-│  Security checklists      Worktree commands       Python                    │
-│  Verification criteria    GitHub integration      Go                        │
-│  Documentation tiers      Copy branch names       Generic Node              │
+│  Quality gates            Workflow tree view      Next.js, Astro            │
+│  Code review checklist    Issue tracking          SvelteKit, Remix          │
+│  Security checklists      Worktree commands       Nuxt, Rust                │
+│  Verification criteria    GitHub integration      Python, Go                │
+│  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  TEST FILES: 27  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
