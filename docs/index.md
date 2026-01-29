@@ -13,6 +13,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Installation](getting-started/installation.md) — Install and configure Sequant
 - [Your First Workflow](getting-started/first-workflow.md) — Solve your first issue
 - [Prerequisites](getting-started/prerequisites.md) — Required tools and setup
+- [What We've Built](what-weve-built.md) — Comprehensive project overview
 
 ### Core Concepts
 
@@ -27,8 +28,8 @@ From GitHub issue to merge-ready PR — verified at every step.
 |----------|----------|
 | **Core Workflow** | `/spec` · `/exec` · `/test` · `/qa` |
 | **Automation** | `/fullsolve` · `/solve` · `/loop` |
-| **Integration** | `/merger` · `/testgen` · `/verify` |
-| **Utilities** | `/assess` · `/docs` · `/release` · `/clean` · `/security-review` · `/reflect` |
+| **Integration** | `/setup` · `/testgen` · `/verify` |
+| **Utilities** | `/assess` · `/docs` · `/clean` · `/improve` · `/security-review` · `/reflect` |
 
 > Command documentation is in `.claude/skills/<command>/SKILL.md`. Individual reference pages coming soon.
 

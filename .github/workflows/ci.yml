@@ -59,6 +59,11 @@ jobs:
         run: |
           echo "Validating all skills with skills-ref..."
           for skill in templates/skills/*/; do
+            # Skip _shared directory (contains shared resources, not a skill)
+            if [[ "$skill" == *"_shared"* ]]; then
+              echo "Skipping ${skill} (shared resources)"
+              continue
+            fi
             echo "Validating ${skill}..."
             npx skills-ref validate "$skill"
           done
