@@ -107,6 +107,7 @@ Every `/qa` runs automated checks:
 - **AC Adherence** — Code verified against acceptance criteria
 - **Type Safety** — Detects `any`, `as any`, missing types
 - **Security Scans** — OWASP-style vulnerability detection
+- **Semgrep Static Analysis** — Stack-aware rulesets, custom rules via `.sequant/semgrep-rules.yaml`
 - **Scope Analysis** — Flags changes outside issue scope
 - **Execution Evidence** — Scripts/CLI must pass smoke tests
 - **Test Quality** — Validates test coverage and mock hygiene

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Semgrep static analysis integration in `/qa` skill (#200)
+  - Stack-aware rulesets: Next.js, Astro, SvelteKit, Remix, Nuxt, Python, Go, Rust
+  - Graceful degradation when Semgrep not installed
+  - Custom rules support via `.sequant/semgrep-rules.yaml`
+  - Critical findings block merge verdict (`AC_NOT_MET`)
+  - CLI runner: `npx tsx scripts/semgrep-scan.ts`
+  - Documentation: `references/semgrep-rules.md`
 - Stack-aware constitution templates in `/setup` skill (#188, #193)
   - Auto-detects project stack (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
   - Injects stack-specific testing, linting, and build notes into constitution

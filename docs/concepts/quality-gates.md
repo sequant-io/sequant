@@ -109,6 +109,62 @@ const output = exec(`git log --author="${sanitized}"`);
 - Escape output before rendering
 - Store secrets in environment variables
 
+## Semgrep Static Analysis
+
+Semgrep provides AST-aware static analysis that catches issues regex patterns miss.
+
+### How It Works
+
+1. Detects your project stack (Next.js, Python, Go, etc.)
+2. Applies stack-specific rulesets (e.g., `p/typescript`, `p/react`, `p/security-audit`)
+3. Loads custom rules from `.sequant/semgrep-rules.yaml` if present
+4. Reports findings by severity (critical, warning, info)
+
+### What Gets Checked
+
+| Category | Examples |
+|----------|----------|
+| Security | SQL injection, XSS, command injection, hardcoded secrets |
+| Code Quality | Unused variables, unreachable code, deprecated APIs |
+| Best Practices | Missing error handling, unsafe type assertions |
+
+### Severity Impact
+
+| Severity | Verdict Impact |
+|----------|----------------|
+| `ERROR` / Critical | **Blocks merge** — `AC_NOT_MET` |
+| `WARNING` | Non-blocking — noted for review |
+| `INFO` | Non-blocking — suggestions only |
+
+### Custom Rules
+
+Add project-specific rules in `.sequant/semgrep-rules.yaml`:
+
+```yaml
+rules:
+  - id: no-console-log
+    pattern: console.log(...)
+    message: "Remove console.log before merging"
+    severity: WARNING
+    languages: [typescript, javascript]
+    paths:
+      exclude:
+        - "**/*.test.*"
+```
+
+See `docs/examples/semgrep-rules.example.yaml` for more examples.
+
+### Graceful Degradation
+
+If Semgrep is not installed, `/qa` skips the scan with a message:
+
+```
+⚠️ Semgrep not installed (optional)
+   Install with: pip install semgrep
+```
+
+This ensures Semgrep is opt-in and doesn't block workflows.
+
 ## QA Verdicts
 
 After running all checks, QA issues one of four verdicts:
