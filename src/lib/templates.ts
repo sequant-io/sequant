@@ -14,7 +14,7 @@ import {
   createSymlink,
   removeFileOrSymlink,
 } from "./fs.js";
-import { getStackConfig } from "./stacks.js";
+import { getStackConfig, getStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
 
@@ -229,11 +229,15 @@ export async function copyTemplates(
   // Detect project name from available sources (package.json, Cargo.toml, etc.)
   const projectName = await getProjectName();
 
+  // Get stack-specific notes for constitution template
+  const stackNotes = getStackNotes(stack);
+
   const variables = {
     ...stackConfig.variables,
     ...tokens,
     PROJECT_NAME: projectName,
     STACK: stack,
+    STACK_NOTES: stackNotes,
   };
 
   async function copyDir(srcDir: string, destDir: string): Promise<void> {
