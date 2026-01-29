@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stack-aware constitution templates in `/setup` skill (#188, #193)
+  - Auto-detects project stack (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
+  - Injects stack-specific testing, linting, and build notes into constitution
+  - Falls back to generic notes for unknown stacks
+
 ### Fixed
 
 - QA verdict logic now enforces strict `READY_FOR_MERGE` criteria (#171)
