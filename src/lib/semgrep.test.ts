@@ -5,12 +5,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checkSemgrepAvailability,
   countFindingsBySeverity,
   formatFindingsForDisplay,
+  getCustomRulesPath,
   getRulesForStack,
   getSemgrepVerdictContribution,
   hasCustomRules,
   parseSemgrepOutput,
+  runSemgrepScan,
   SemgrepFinding,
   SemgrepResult,
   STACK_RULESETS,
@@ -343,6 +346,127 @@ describe("semgrep", () => {
     it("returns false for non-existent path", () => {
       const result = hasCustomRules("/non/existent/path");
       expect(result).toBe(false);
+    });
+  });
+
+  describe("getCustomRulesPath", () => {
+    it("returns null for non-existent path", () => {
+      const result = getCustomRulesPath("/non/existent/path");
+      expect(result).toBeNull();
+    });
+  });
+
+  // ============================================================
+  // Integration Tests (run only when Semgrep is available)
+  // ============================================================
+
+  describe("integration: checkSemgrepAvailability", () => {
+    it("returns availability status", async () => {
+      const result = await checkSemgrepAvailability();
+
+      // Should always return a valid structure
+      expect(result).toHaveProperty("available");
+      expect(result).toHaveProperty("command");
+      expect(result).toHaveProperty("useNpx");
+      expect(typeof result.available).toBe("boolean");
+      expect(typeof result.useNpx).toBe("boolean");
+
+      if (result.available) {
+        expect(result.command).toBeTruthy();
+        console.log(
+          `  ✓ Semgrep available via: ${result.useNpx ? "npx" : "native"}`,
+        );
+      } else {
+        expect(result.command).toBe("");
+        console.log("  ⚠ Semgrep not installed (skipping integration tests)");
+      }
+    });
+  });
+
+  describe("integration: runSemgrepScan", () => {
+    it("returns skipped result when semgrep not available", async () => {
+      const availability = await checkSemgrepAvailability();
+      if (availability.available) {
+        // Skip this test if Semgrep IS available
+        console.log("  ⚠ Skipping (Semgrep is available)");
+        return;
+      }
+
+      const result = await runSemgrepScan({
+        targets: ["."],
+        stack: "generic",
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(true);
+      expect(result.skipReason).toContain("not installed");
+      expect(result.findings).toEqual([]);
+    });
+
+    it("scans files when semgrep is available", async () => {
+      const availability = await checkSemgrepAvailability();
+      if (!availability.available) {
+        console.log("  ⚠ Skipping (Semgrep not installed)");
+        return;
+      }
+
+      // Scan this test file itself (should be clean)
+      const result = await runSemgrepScan({
+        targets: ["src/lib/semgrep.test.ts"],
+        stack: "nextjs",
+        useCustomRules: false,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBeFalsy();
+      expect(Array.isArray(result.findings)).toBe(true);
+      expect(typeof result.criticalCount).toBe("number");
+      expect(typeof result.warningCount).toBe("number");
+      expect(typeof result.infoCount).toBe("number");
+
+      console.log(
+        `  ✓ Scan complete: ${result.criticalCount} critical, ${result.warningCount} warnings, ${result.infoCount} info`,
+      );
+    });
+
+    it("applies stack-specific rules", async () => {
+      const availability = await checkSemgrepAvailability();
+      if (!availability.available) {
+        console.log("  ⚠ Skipping (Semgrep not installed)");
+        return;
+      }
+
+      // Scan with different stacks - should not error
+      const stacks = ["nextjs", "python", "go", "generic"];
+
+      for (const stack of stacks) {
+        const result = await runSemgrepScan({
+          targets: ["src/lib/semgrep.ts"],
+          stack,
+          useCustomRules: false,
+        });
+
+        expect(result.success).toBe(true);
+        console.log(`  ✓ Stack "${stack}": ${result.findings.length} findings`);
+      }
+    });
+
+    it("handles non-existent target gracefully", async () => {
+      const availability = await checkSemgrepAvailability();
+      if (!availability.available) {
+        console.log("  ⚠ Skipping (Semgrep not installed)");
+        return;
+      }
+
+      const result = await runSemgrepScan({
+        targets: ["non/existent/file.ts"],
+        stack: "generic",
+      });
+
+      // Semgrep should handle missing files gracefully
+      // (either success with no findings, or error)
+      expect(typeof result.success).toBe("boolean");
+      expect(Array.isArray(result.findings)).toBe(true);
     });
   });
 });
