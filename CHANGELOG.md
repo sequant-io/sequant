@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stack-aware constitution templates in `/setup` skill (#188, #193)
+  - Auto-detects project stack (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
+  - Injects stack-specific testing, linting, and build notes into constitution
+  - Falls back to generic notes for unknown stacks
 - Claude Code Plugin support (#185)
   - Sequant can now be installed as a Claude Code plugin: `/plugin install sequant`
   - Plugin marketplace configuration in `.claude-plugin/`

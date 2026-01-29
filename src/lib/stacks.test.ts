@@ -6,6 +6,8 @@ import {
   detectPackageManager,
   getPackageManagerCommands,
   PM_CONFIG,
+  STACK_NOTES,
+  getStackNotes,
 } from "./stacks.js";
 
 // Mock the fs module
@@ -616,5 +618,105 @@ describe("PM_CONFIG", () => {
     expect(PM_CONFIG).toHaveProperty("bun");
     expect(PM_CONFIG).toHaveProperty("yarn");
     expect(PM_CONFIG).toHaveProperty("pnpm");
+  });
+});
+
+describe("STACK_NOTES", () => {
+  it("has notes for all supported stacks", () => {
+    const supportedStacks = [
+      "nextjs",
+      "astro",
+      "sveltekit",
+      "remix",
+      "nuxt",
+      "rust",
+      "python",
+      "go",
+      "generic",
+    ];
+
+    for (const stack of supportedStacks) {
+      expect(STACK_NOTES).toHaveProperty(stack);
+      expect(STACK_NOTES[stack]).toBeTruthy();
+    }
+  });
+
+  it("includes testing section for each stack", () => {
+    for (const [stack, notes] of Object.entries(STACK_NOTES)) {
+      expect(notes.toLowerCase()).toContain("test");
+    }
+  });
+
+  it("includes linting section for each stack", () => {
+    for (const [stack, notes] of Object.entries(STACK_NOTES)) {
+      expect(notes.toLowerCase()).toContain("lint");
+    }
+  });
+
+  it("includes build section for each stack", () => {
+    for (const [stack, notes] of Object.entries(STACK_NOTES)) {
+      expect(notes.toLowerCase()).toContain("build");
+    }
+  });
+
+  describe("stack-specific content", () => {
+    it("nextjs notes mention Jest and next/jest", () => {
+      expect(STACK_NOTES.nextjs).toContain("Jest");
+      expect(STACK_NOTES.nextjs).toContain("next/jest");
+    });
+
+    it("astro notes mention Vitest", () => {
+      expect(STACK_NOTES.astro).toContain("Vitest");
+    });
+
+    it("rust notes mention cargo commands", () => {
+      expect(STACK_NOTES.rust).toContain("cargo test");
+      expect(STACK_NOTES.rust).toContain("cargo clippy");
+    });
+
+    it("python notes mention pytest and ruff", () => {
+      expect(STACK_NOTES.python).toContain("pytest");
+      expect(STACK_NOTES.python).toContain("ruff");
+    });
+
+    it("go notes mention go test and golangci-lint", () => {
+      expect(STACK_NOTES.go).toContain("go test");
+      expect(STACK_NOTES.go).toContain("golangci-lint");
+    });
+  });
+});
+
+describe("getStackNotes", () => {
+  it("returns notes for known stacks", () => {
+    expect(getStackNotes("nextjs")).toBe(STACK_NOTES.nextjs);
+    expect(getStackNotes("rust")).toBe(STACK_NOTES.rust);
+    expect(getStackNotes("python")).toBe(STACK_NOTES.python);
+  });
+
+  it("falls back to generic notes for unknown stack", () => {
+    expect(getStackNotes("unknown-stack")).toBe(STACK_NOTES.generic);
+  });
+
+  it("falls back to generic notes for empty string", () => {
+    expect(getStackNotes("")).toBe(STACK_NOTES.generic);
+  });
+
+  it("returns non-empty string for all supported stacks", () => {
+    const supportedStacks = [
+      "nextjs",
+      "astro",
+      "sveltekit",
+      "remix",
+      "nuxt",
+      "rust",
+      "python",
+      "go",
+      "generic",
+    ];
+
+    for (const stack of supportedStacks) {
+      const notes = getStackNotes(stack);
+      expect(notes.length).toBeGreaterThan(100);
+    }
   });
 });

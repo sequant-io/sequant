@@ -357,3 +357,172 @@ export async function detectStack(): Promise<string | null> {
 export function getStackConfig(stack: string): StackConfig {
   return STACKS[stack] || STACKS.generic;
 }
+
+/**
+ * Stack-specific notes for constitution templates
+ *
+ * These notes are injected into the constitution during setup to provide
+ * context-aware guidance for AI-assisted development.
+ */
+export const STACK_NOTES: Record<string, string> = {
+  nextjs: `### Next.js
+
+**Testing:**
+- Use Jest or Vitest with React Testing Library
+- Place tests in \`__tests__/\` directories or as \`.test.ts(x)\` files
+- Use \`next/jest\` preset for proper Next.js configuration
+- Mock \`next/router\` and \`next/navigation\` in component tests
+
+**Linting:**
+- ESLint with \`eslint-config-next\` (included by default)
+- Run \`npm run lint\` or \`next lint\`
+- TypeScript strict mode recommended
+
+**Build:**
+- Output to \`.next/\` directory
+- Use \`next build\` for production builds
+- Static exports via \`output: 'export'\` in next.config.js`,
+
+  astro: `### Astro
+
+**Testing:**
+- Astro projects may not have test scripts configured by default
+- Consider adding Vitest: \`npm install -D vitest\`
+- Use \`@astrojs/test-utils\` for component testing
+
+**Linting:**
+- Consider ESLint with \`eslint-plugin-astro\`
+- Install: \`npm install -D eslint eslint-plugin-astro\`
+
+**Build:**
+- Output to \`dist/\` by default
+- Use \`astro build\` for production
+- SSR mode available via adapters`,
+
+  sveltekit: `### SvelteKit
+
+**Testing:**
+- Use Vitest with \`@testing-library/svelte\`
+- Playwright for E2E testing (often pre-configured)
+- Place unit tests in \`src/\` alongside components
+
+**Linting:**
+- ESLint with \`eslint-plugin-svelte\`
+- Prettier with \`prettier-plugin-svelte\`
+- Run \`npm run lint\` and \`npm run check\`
+
+**Build:**
+- Output depends on adapter (node, static, vercel, etc.)
+- Use \`svelte-kit build\` for production
+- Type-check with \`svelte-kit sync && svelte-check\``,
+
+  remix: `### Remix
+
+**Testing:**
+- Use Vitest or Jest with React Testing Library
+- Cypress or Playwright for E2E testing
+- Test loaders and actions separately from components
+
+**Linting:**
+- ESLint with React and TypeScript plugins
+- Remix doesn't include ESLint config by default
+
+**Build:**
+- Output to \`build/\` directory
+- Use \`remix build\` for production
+- Server and client bundles are separate`,
+
+  nuxt: `### Nuxt
+
+**Testing:**
+- Use Vitest with \`@nuxt/test-utils\`
+- \`@vue/test-utils\` for component testing
+- Playwright for E2E testing
+
+**Linting:**
+- ESLint with \`@nuxt/eslint-config\`
+- Run \`npm run lint\` or \`nuxi lint\`
+
+**Build:**
+- Output to \`.output/\` directory
+- Use \`nuxi build\` for production
+- \`nuxi generate\` for static site generation`,
+
+  rust: `### Rust
+
+**Testing:**
+- Unit tests: \`#[cfg(test)]\` modules in source files
+- Integration tests: \`tests/\` directory
+- Run \`cargo test\` for all tests
+- Use \`#[should_panic]\` for panic tests
+
+**Linting:**
+- \`cargo clippy\` for lints (install: \`rustup component add clippy\`)
+- \`cargo fmt\` for formatting
+- Consider \`cargo deny\` for dependency auditing
+
+**Build:**
+- Debug: \`cargo build\`
+- Release: \`cargo build --release\`
+- Output to \`target/debug/\` or \`target/release/\``,
+
+  python: `### Python
+
+**Testing:**
+- pytest is the standard test runner
+- Place tests in \`tests/\` directory
+- Use \`pytest-cov\` for coverage reports
+- Fixtures in \`conftest.py\`
+
+**Linting:**
+- Ruff for fast linting and formatting: \`ruff check .\` and \`ruff format .\`
+- Alternative: Black + isort + flake8
+- mypy for type checking
+
+**Build:**
+- Use virtual environments (venv, poetry, pdm)
+- \`python -m build\` for package builds
+- \`pip install -e .\` for development installs`,
+
+  go: `### Go
+
+**Testing:**
+- Tests in \`*_test.go\` files alongside source
+- Run \`go test ./...\` for all packages
+- Use \`-v\` for verbose output, \`-race\` for race detection
+- Table-driven tests are idiomatic
+
+**Linting:**
+- \`golangci-lint run\` for comprehensive linting
+- \`go vet\` for basic checks
+- \`gofmt\` or \`goimports\` for formatting
+
+**Build:**
+- \`go build ./...\` to compile
+- \`go install\` to build and install
+- Cross-compile with GOOS/GOARCH environment variables`,
+
+  generic: `### General Guidelines
+
+**Testing:**
+- Check for test scripts in package.json or equivalent
+- Common patterns: \`npm test\`, \`pytest\`, \`go test\`, \`cargo test\`
+
+**Linting:**
+- Check for lint scripts or configuration files
+- Common: ESLint, Prettier, Ruff, golangci-lint, clippy
+
+**Build:**
+- Check for build scripts and output directories
+- Document build commands in README`,
+};
+
+/**
+ * Get stack-specific notes for constitution template
+ *
+ * @param stack - The stack name (e.g., "nextjs", "python", "rust")
+ * @returns The stack-specific notes markdown content
+ */
+export function getStackNotes(stack: string): string {
+  return STACK_NOTES[stack] || STACK_NOTES.generic;
+}
