@@ -41,6 +41,116 @@ When called like `/spec <freeform description>`:
 1. Treat the text as the problem/AC source.
 2. Ask clarifying questions if AC are ambiguous or conflicting.
 
+**Flag:** `--skip-ac-lint`
+- Usage: `/spec 123 --skip-ac-lint`
+- Effect: Skips the AC Quality Check step
+- Use when: AC are intentionally high-level or you want to defer linting
+
+### AC Extraction and Storage — REQUIRED
+
+**After fetching the issue body**, extract and store acceptance criteria in workflow state:
+
+```bash
+# Extract AC from issue body and store in state
+npx tsx -e "
+import { extractAcceptanceCriteria } from './src/lib/ac-parser.js';
+import { StateManager } from './src/lib/workflow/state-manager.js';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+const issueNumber = <ISSUE_NUMBER>;
+const issueTitle = '<ISSUE_TITLE>';
+
+const ac = extractAcceptanceCriteria(issueBody);
+console.log('Extracted AC:', JSON.stringify(ac, null, 2));
+
+if (ac.items.length > 0) {
+  const manager = new StateManager();
+  // Initialize issue if not exists
+  const existing = await manager.getIssueState(issueNumber);
+  if (!existing) {
+    await manager.initializeIssue(issueNumber, issueTitle);
+  }
+  await manager.updateAcceptanceCriteria(issueNumber, ac);
+  console.log('AC stored in state for issue #' + issueNumber);
+}
+"
+```
+
+**Why this matters:** Storing AC in state enables:
+- Dashboard visibility of AC progress per issue
+- `/qa` skill to update AC status during review
+- Cross-skill AC tracking throughout the workflow
+
+**AC Format Detection:**
+The parser supports multiple formats:
+- `- [ ] **AC-1:** Description` (bold with hyphen)
+- `- [ ] **B2:** Description` (letter + number)
+- `- [ ] AC-1: Description` (no bold)
+
+**If no AC found:**
+- Log a warning but continue with planning
+- The plan output should note that AC will need to be defined
+
+### AC Quality Check — REQUIRED (unless --skip-ac-lint)
+
+**After extracting AC**, run the AC linter to flag vague, untestable, or incomplete requirements:
+
+```bash
+# Lint AC for quality issues (skip if --skip-ac-lint flag is set)
+npx tsx -e "
+import { parseAcceptanceCriteria } from './src/lib/ac-parser.js';
+import { lintAcceptanceCriteria, formatACLintResults } from './src/lib/ac-linter.js';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+
+const criteria = parseAcceptanceCriteria(issueBody);
+const lintResults = lintAcceptanceCriteria(criteria);
+console.log(formatACLintResults(lintResults));
+"
+```
+
+**Why this matters:** Vague AC lead to:
+- Ambiguous implementations that don't match expectations
+- Subjective /qa verdicts ("does it work properly?")
+- Wasted iteration cycles when requirements are clarified late
+
+**Pattern Detection:**
+
+| Pattern Type | Examples | Issue |
+|--------------|----------|-------|
+| Vague | "should work", "properly", "correctly" | Subjective, no measurable outcome |
+| Unmeasurable | "fast", "performant", "responsive" | No threshold defined |
+| Incomplete | "handle errors", "edge cases" | Specific scenarios not enumerated |
+| Open-ended | "etc.", "and more", "such as" | Scope is undefined |
+
+**Example Output:**
+
+```markdown
+## AC Quality Check
+
+⚠️ **AC-2:** "System should handle errors gracefully"
+   → Incomplete: error types not specified
+   → Suggest: List specific error types and expected responses (e.g., 400 for invalid input, 503 for service unavailable)
+
+⚠️ **AC-4:** "Page loads quickly"
+   → Unmeasurable: "quickly" has no threshold
+   → Suggest: Specify time limit (e.g., completes in <5 seconds)
+
+✅ AC-1, AC-3, AC-5: Clear and testable
+
+**Summary:** 2/5 AC items flagged for review
+```
+
+**Behavior:**
+- **Warning-only**: AC Quality Check does NOT block planning
+- Issues are surfaced in the output but plan generation continues
+- Include flagged AC in the issue comment draft with suggestions
+- Recommend refining vague AC before implementation
+
+**If `--skip-ac-lint` flag is set:**
+- Output: `AC Quality Check: Skipped (--skip-ac-lint flag set)`
+- Continue directly to plan generation
+
 ### Feature Worktree Workflow
 
 **Planning Phase:** No worktree needed. Planning happens in the main repository directory. The worktree will be created during the execution phase (`/exec`).
@@ -49,6 +159,13 @@ When called like `/spec <freeform description>`:
 
 **You MUST spawn sub-agents for context gathering.** Do NOT explore the codebase inline with Glob/Grep commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
 
+**Check agent execution mode first:**
+```bash
+parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+```
+
+#### If parallel mode enabled:
+
 **Spawn ALL THREE agents in a SINGLE message:**
 
 1. `Task(subagent_type="Explore", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
@@ -56,6 +173,48 @@ When called like `/spec <freeform description>`:
 2. `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
 
 3. `Task(subagent_type="Explore", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+
+#### If sequential mode (default):
+
+**Spawn each agent ONE AT A TIME, waiting for each to complete:**
+
+1. **First:** `Task(subagent_type="Explore", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+
+2. **After #1 completes:** `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+
+3. **After #2 completes:** `Task(subagent_type="Explore", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+
+### Feature Branch Context Detection
+
+Before creating the implementation plan, check if a custom base branch should be recommended:
+
+1. **Check for feature branch references in issue body**:
+   ```bash
+   gh issue view <issue> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)"
+   ```
+
+2. **Check issue labels for feature context**:
+   ```bash
+   gh issue view <issue> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
+   ```
+
+3. **Check if project has defaultBase configured**:
+   ```bash
+   cat .sequant/settings.json 2>/dev/null | jq -r '.run.defaultBase // empty'
+   ```
+
+4. **If feature branch context detected**, include in plan output:
+   ```markdown
+   ## Feature Branch Context
+
+   **Detected base branch**: `feature/dashboard`
+   **Source**: Issue body mentions "Part of dashboard feature" / Project config / Label
+
+   **Recommended workflow**:
+   \`\`\`bash
+   npx sequant run <issue> --base feature/dashboard
+   \`\`\`
+   ```
 
 ### In-Flight Work Analysis (Conflict Detection)
 
@@ -66,9 +225,9 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
    git worktree list --porcelain
    ```
 
-2. **For each worktree, get changed files**:
+2. **For each worktree, get changed files** (use detected base branch or default to main):
    ```bash
-   git -C <worktree-path> diff --name-only main...HEAD
+   git -C <worktree-path> diff --name-only <base-branch>...HEAD
    ```
 
 3. **Analyze this issue's likely file touches** based on:
@@ -107,51 +266,10 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
    **Status**: [Open/Merged/Closed]
    ```
 
-### MCP Tools (Optional - Graceful Degradation)
+### Using MCP Tools (Optional)
 
-MCP tools enhance `/spec` but are **not required**. The skill works fully without them.
-
-#### MCP Availability Check
-
-Before using MCP tools, verify they are available. If unavailable, use the fallback strategies.
-
-| MCP Tool | Purpose | Fallback When Unavailable |
-|----------|---------|---------------------------|
-| Sequential Thinking | Complex multi-step analysis | Use explicit step-by-step reasoning in response |
-| Context7 | Library documentation lookup | Use WebSearch or read existing codebase patterns |
-
-#### Sequential Thinking Fallback
-
-**When to use Sequential Thinking:**
-- Issues with 5+ AC items requiring dependency analysis
-- Architectural decisions with multiple trade-offs
-- Complex conflict resolution between in-flight work
-
-**If unavailable:**
-1. Break analysis into explicit numbered steps in your response
-2. Create a pros/cons table for architectural decisions
-3. Document trade-offs before making recommendations
-
-```markdown
-## Analysis Steps (Manual Sequential Thinking)
-
-**Step 1:** [Analysis of first aspect]
-**Step 2:** [Analysis of second aspect]
-**Step 3:** [Synthesis and recommendation]
-```
-
-#### Context7 Fallback
-
-**When to use Context7:**
-- Planning features that use unfamiliar libraries
-- Checking for API patterns in third-party dependencies
-- Understanding framework-specific conventions
-
-**If unavailable:**
-1. Search codebase with Grep for existing usage patterns
-2. Use WebSearch to find official documentation
-3. Check library's package.json or README in node_modules
-4. Look for similar features in the codebase as reference
+- **Sequential Thinking:** For complex analysis with multiple dependencies
+- **Context7:** For understanding existing patterns and architecture
 
 ## Context Gathering Strategy
 
@@ -168,6 +286,14 @@ Before using MCP tools, verify they are available. If unavailable, use the fallb
 3. **Check existing dependencies**
    - Review `package.json` for libraries
    - Prefer existing dependencies over new ones
+   - For "solved problem" domains, recommend established packages in the plan:
+     | Domain | Recommended Packages |
+     |--------|---------------------|
+     | Date/time | `date-fns`, `dayjs` |
+     | Validation | `zod`, `yup`, `valibot` |
+     | HTTP with retry | `ky`, `got`, `axios` |
+     | Form state | `react-hook-form` |
+     | State management | `zustand`, `jotai` |
 
 4. **For database-heavy features**
    - Verify table schemas against TypeScript types
@@ -306,10 +432,48 @@ gh issue edit <issue-number> --add-label "planned"
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### Check Orchestration Mode
+
+At the start of the skill, check if running orchestrated:
+```bash
+# Check if orchestrated - if so, skip state updates
+if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
+  echo "Running orchestrated - state managed by orchestrator"
+fi
+```
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> spec
+```
+
+**On successful completion:**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> spec
+```
+
+**On failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **AC Quality Check** - Lint results (or "Skipped" if --skip-ac-lint)
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
@@ -326,6 +490,12 @@ gh issue edit <issue-number> --add-label "planned"
 You MUST include these sections in order:
 
 ```markdown
+## AC Quality Check
+
+[Output from AC linter, or "Skipped (--skip-ac-lint flag set)"]
+
+---
+
 ## Acceptance Criteria
 
 ### AC-1: [Description]

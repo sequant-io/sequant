@@ -41,6 +41,11 @@ When called like `/spec <freeform description>`:
 1. Treat the text as the problem/AC source.
 2. Ask clarifying questions if AC are ambiguous or conflicting.
 
+**Flag:** `--skip-ac-lint`
+- Usage: `/spec 123 --skip-ac-lint`
+- Effect: Skips the AC Quality Check step
+- Use when: AC are intentionally high-level or you want to defer linting
+
 ### AC Extraction and Storage — REQUIRED
 
 **After fetching the issue body**, extract and store acceptance criteria in workflow state:
@@ -85,6 +90,66 @@ The parser supports multiple formats:
 **If no AC found:**
 - Log a warning but continue with planning
 - The plan output should note that AC will need to be defined
+
+### AC Quality Check — REQUIRED (unless --skip-ac-lint)
+
+**After extracting AC**, run the AC linter to flag vague, untestable, or incomplete requirements:
+
+```bash
+# Lint AC for quality issues (skip if --skip-ac-lint flag is set)
+npx tsx -e "
+import { parseAcceptanceCriteria } from './src/lib/ac-parser.js';
+import { lintAcceptanceCriteria, formatACLintResults } from './src/lib/ac-linter.js';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+
+const criteria = parseAcceptanceCriteria(issueBody);
+const lintResults = lintAcceptanceCriteria(criteria);
+console.log(formatACLintResults(lintResults));
+"
+```
+
+**Why this matters:** Vague AC lead to:
+- Ambiguous implementations that don't match expectations
+- Subjective /qa verdicts ("does it work properly?")
+- Wasted iteration cycles when requirements are clarified late
+
+**Pattern Detection:**
+
+| Pattern Type | Examples | Issue |
+|--------------|----------|-------|
+| Vague | "should work", "properly", "correctly" | Subjective, no measurable outcome |
+| Unmeasurable | "fast", "performant", "responsive" | No threshold defined |
+| Incomplete | "handle errors", "edge cases" | Specific scenarios not enumerated |
+| Open-ended | "etc.", "and more", "such as" | Scope is undefined |
+
+**Example Output:**
+
+```markdown
+## AC Quality Check
+
+⚠️ **AC-2:** "System should handle errors gracefully"
+   → Incomplete: error types not specified
+   → Suggest: List specific error types and expected responses (e.g., 400 for invalid input, 503 for service unavailable)
+
+⚠️ **AC-4:** "Page loads quickly"
+   → Unmeasurable: "quickly" has no threshold
+   → Suggest: Specify time limit (e.g., completes in <5 seconds)
+
+✅ AC-1, AC-3, AC-5: Clear and testable
+
+**Summary:** 2/5 AC items flagged for review
+```
+
+**Behavior:**
+- **Warning-only**: AC Quality Check does NOT block planning
+- Issues are surfaced in the output but plan generation continues
+- Include flagged AC in the issue comment draft with suggestions
+- Recommend refining vague AC before implementation
+
+**If `--skip-ac-lint` flag is set:**
+- Output: `AC Quality Check: Skipped (--skip-ac-lint flag set)`
+- Continue directly to plan generation
 
 ### Feature Worktree Workflow
 
@@ -408,6 +473,7 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **AC Quality Check** - Lint results (or "Skipped" if --skip-ac-lint)
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
@@ -424,6 +490,12 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 You MUST include these sections in order:
 
 ```markdown
+## AC Quality Check
+
+[Output from AC linter, or "Skipped (--skip-ac-lint flag set)"]
+
+---
+
 ## Acceptance Criteria
 
 ### AC-1: [Description]
