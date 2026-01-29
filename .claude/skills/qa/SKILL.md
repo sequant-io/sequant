@@ -16,6 +16,9 @@ allowed-tools:
   - Bash(gh pr view:*)
   - Bash(gh pr diff:*)
   - Bash(gh pr comment:*)
+  - Bash(semgrep:*)
+  - Bash(npx semgrep:*)
+  - Bash(npx tsx scripts/semgrep-scan.ts:*)
   - Task
   - AgentOutputTool
 ---
