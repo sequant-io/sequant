@@ -9,13 +9,55 @@ Combine agent outputs into a unified quality assessment:
 | Type Safety Checker | Type issues count, verdict | High - blocking if issues > 3 |
 | Scope/Size Checker | Files changed, LOC, assessment | Medium - warning if very large |
 | Security Scanner | Critical/warning/info counts | High - blocking if criticals > 0 |
+| Semgrep Static Analysis | Critical/warning findings | High - blocking if criticals > 0 |
 | RLS Checker (conditional) | Violations found | High - blocking if violations |
 
 **Synthesis Rules:**
 - **Any FAIL verdict** → Flag as blocker in manual review
-- **Security criticals** → Block merge, require fix before proceeding
+- **Security criticals (including Semgrep)** → Block merge, require fix before proceeding
 - **All PASS** → Proceed with confidence to manual review
 - **WARN verdicts** → Note in review, verify manually
+
+## Semgrep Integration
+
+Semgrep provides static analysis for security vulnerabilities and anti-patterns.
+
+### Verdict Mapping
+
+| Semgrep Result | QA Verdict Impact |
+|----------------|-------------------|
+| Critical findings > 0 | **BLOCKING** - `AC_NOT_MET` |
+| Warning findings only | Non-blocking - note in review |
+| No findings | Pass - no impact |
+| Semgrep not installed | Skipped - graceful degradation |
+| Semgrep error | Non-blocking - log error |
+
+### Output Format
+
+```markdown
+## Static Analysis (Semgrep)
+
+✅ No critical findings
+⚠️ 2 warnings:
+  - src/api/users.ts:47 - Potential SQL injection (user input in query)
+  - src/utils/exec.ts:12 - Command injection risk (unsanitized shell arg)
+```
+
+### Stack-Aware Rulesets
+
+Semgrep uses stack-specific rulesets for targeted analysis:
+
+| Stack | Rulesets |
+|-------|----------|
+| Next.js | p/typescript, p/javascript, p/react, p/security-audit, p/secrets |
+| Python | p/python, p/django, p/flask, p/security-audit, p/secrets |
+| Go | p/golang, p/security-audit, p/secrets |
+| Rust | p/rust, p/security-audit, p/secrets |
+| Generic | p/security-audit, p/secrets |
+
+### Custom Rules
+
+Projects can add custom rules in `.sequant/semgrep-rules.yaml`. These are loaded alongside stack rules automatically.
 
 ## Verdict Criteria
 
