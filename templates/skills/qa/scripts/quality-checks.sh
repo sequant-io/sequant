@@ -114,18 +114,19 @@ if [[ "$semgrep_available" == "true" ]]; then
     # Run Semgrep with security rules on changed files
     echo "   Scanning $(echo "$changed_files" | wc -l | xargs) changed file(s)..."
 
-    # Run with basic security rules, output in text format
-    # Use --quiet to suppress progress, capture exit code
+    # Run with basic security rules, JSON output for reliable parsing
+    # Use --quiet to suppress progress
     semgrep_output=$($semgrep_cmd --config p/security-audit --config p/secrets \
-      --quiet --no-git-ignore \
+      --quiet --no-git-ignore --json \
       $changed_files 2>&1) || semgrep_exit=$?
 
-    if [[ -z "$semgrep_output" ]]; then
+    if [[ -z "$semgrep_output" ]] || ! echo "$semgrep_output" | grep -q '"results"'; then
       echo "   ✅ Semgrep: No security issues found"
     else
-      # Count findings by severity
-      critical_count=$(echo "$semgrep_output" | grep -c "severity:error" 2>/dev/null || echo "0")
-      warning_count=$(echo "$semgrep_output" | grep -c "severity:warning" 2>/dev/null || echo "0")
+      # Count findings by severity from JSON output
+      # Semgrep JSON uses "severity":"ERROR" (uppercase) for critical, "WARNING" for warnings
+      critical_count=$(echo "$semgrep_output" | grep -o '"severity":"ERROR"' | wc -l | xargs)
+      warning_count=$(echo "$semgrep_output" | grep -o '"severity":"WARNING"' | wc -l | xargs)
 
       if [[ "$critical_count" -gt 0 ]]; then
         echo "   ❌ Semgrep: $critical_count critical finding(s) - REVIEW REQUIRED"
