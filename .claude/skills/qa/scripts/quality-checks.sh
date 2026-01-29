@@ -92,5 +92,58 @@ else
   echo "   npx not available, skipping security scan"
 fi
 
+# 9. Semgrep static analysis (optional - graceful skip if not installed)
+echo ""
+echo "🔍 Running Semgrep static analysis..."
+
+# Check if Semgrep is available
+semgrep_available=false
+if command -v semgrep &> /dev/null; then
+  semgrep_available=true
+  semgrep_cmd="semgrep"
+elif command -v npx &> /dev/null && npx semgrep --version &> /dev/null 2>&1; then
+  semgrep_available=true
+  semgrep_cmd="npx semgrep"
+fi
+
+if [[ "$semgrep_available" == "true" ]]; then
+  # Get changed files for targeted scan
+  changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx|py|go|rs)$' || true)
+
+  if [[ -n "$changed_files" ]]; then
+    # Run Semgrep with security rules on changed files
+    echo "   Scanning $(echo "$changed_files" | wc -l | xargs) changed file(s)..."
+
+    # Run with basic security rules, output in text format
+    # Use --quiet to suppress progress, capture exit code
+    semgrep_output=$($semgrep_cmd --config p/security-audit --config p/secrets \
+      --quiet --no-git-ignore \
+      $changed_files 2>&1) || semgrep_exit=$?
+
+    if [[ -z "$semgrep_output" ]]; then
+      echo "   ✅ Semgrep: No security issues found"
+    else
+      # Count findings by severity
+      critical_count=$(echo "$semgrep_output" | grep -c "severity:error" 2>/dev/null || echo "0")
+      warning_count=$(echo "$semgrep_output" | grep -c "severity:warning" 2>/dev/null || echo "0")
+
+      if [[ "$critical_count" -gt 0 ]]; then
+        echo "   ❌ Semgrep: $critical_count critical finding(s) - REVIEW REQUIRED"
+      fi
+      if [[ "$warning_count" -gt 0 ]]; then
+        echo "   ⚠️  Semgrep: $warning_count warning(s)"
+      fi
+      if [[ "$critical_count" -eq 0 && "$warning_count" -eq 0 ]]; then
+        echo "   ✅ Semgrep: No security issues found"
+      fi
+    fi
+  else
+    echo "   No source files changed, skipping Semgrep scan"
+  fi
+else
+  echo "   ⚠️  Semgrep not installed (optional)"
+  echo "   Install with: pip install semgrep"
+fi
+
 echo ""
 echo "✅ Quality checks complete"

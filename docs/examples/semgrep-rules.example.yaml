@@ -1,0 +1,109 @@
+# Custom Semgrep Rules for Your Project
+#
+# This file contains project-specific Semgrep rules that run alongside
+# the default stack-aware rulesets during /qa.
+#
+# To use: Copy this file to .sequant/semgrep-rules.yaml in your project root.
+#
+# Rule Reference: https://semgrep.dev/docs/writing-rules/rule-syntax/
+# Rule Registry: https://semgrep.dev/r (browse existing rules for inspiration)
+
+rules:
+  # ============================================================
+  # SECURITY RULES (severity: ERROR = blocking)
+  # ============================================================
+
+  # Prevent hardcoded secrets
+  - id: no-hardcoded-secrets
+    patterns:
+      - pattern-regex: "(password|secret|api[_-]?key|token)\\s*[:=]\\s*['\"][^'\"]{8,}['\"]"
+    message: "Potential hardcoded secret detected. Use environment variables instead."
+    severity: ERROR
+    languages: [typescript, javascript, python]
+    paths:
+      exclude:
+        - "**/*.test.*"
+        - "**/__tests__/**"
+        - "**/fixtures/**"
+
+  # Detect potential SQL injection
+  - id: sql-injection-template-literal
+    patterns:
+      - pattern: $DB.query(`...${$VAR}...`)
+      - pattern: $DB.raw(`...${$VAR}...`)
+    message: "Potential SQL injection via template literal. Use parameterized queries."
+    severity: ERROR
+    languages: [typescript, javascript]
+
+  # ============================================================
+  # CODE QUALITY RULES (severity: WARNING = non-blocking)
+  # ============================================================
+
+  # No console.log in production code
+  - id: no-console-log
+    pattern: console.log(...)
+    message: "Remove console.log before merging. Use a proper logger instead."
+    severity: WARNING
+    languages: [typescript, javascript]
+    paths:
+      exclude:
+        - "**/*.test.*"
+        - "**/__tests__/**"
+        - "**/scripts/**"
+
+  # Avoid any type
+  - id: no-explicit-any
+    pattern: |
+      $X: any
+    message: "Avoid using 'any' type. Consider using 'unknown' or a specific type."
+    severity: WARNING
+    languages: [typescript]
+    paths:
+      exclude:
+        - "**/*.d.ts"
+
+  # ============================================================
+  # STYLE RULES (severity: INFO = suggestions)
+  # ============================================================
+
+  # Prefer const over let when not reassigned
+  # (Note: This is better handled by ESLint, shown as example)
+  # - id: prefer-const
+  #   pattern: let $VAR = $INIT;
+  #   message: "Consider using 'const' if the variable is not reassigned."
+  #   severity: INFO
+  #   languages: [typescript, javascript]
+
+  # ============================================================
+  # PROJECT-SPECIFIC RULES
+  # ============================================================
+
+  # Example: Require error handling for async operations
+  # - id: async-requires-try-catch
+  #   pattern: |
+  #     async function $FUNC(...) {
+  #       ...
+  #       await $EXPR
+  #       ...
+  #     }
+  #   pattern-not: |
+  #     async function $FUNC(...) {
+  #       ...
+  #       try { ... } catch (...) { ... }
+  #       ...
+  #     }
+  #   message: "Async functions should include error handling."
+  #   severity: WARNING
+  #   languages: [typescript, javascript]
+
+  # Example: Enforce use of project utilities
+  # - id: use-project-logger
+  #   patterns:
+  #     - pattern: console.error(...)
+  #     - pattern: console.warn(...)
+  #   message: "Use the project logger from '@/lib/logger' instead of console methods."
+  #   severity: INFO
+  #   languages: [typescript, javascript]
+  #   paths:
+  #     exclude:
+  #       - "**/lib/logger.ts"
