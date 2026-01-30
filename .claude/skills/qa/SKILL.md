@@ -16,6 +16,7 @@ allowed-tools:
   - Bash(gh pr view:*)
   - Bash(gh pr diff:*)
   - Bash(gh pr comment:*)
+  - Bash(gh pr checks:*)
   - Bash(semgrep:*)
   - Bash(npx semgrep:*)
   - Bash(npx tsx scripts/semgrep-scan.ts:*)
@@ -246,6 +247,101 @@ No code changes found to review. The acceptance criteria cannot be evaluated wit
 ```
 
 **Important:** Do NOT spawn sub-agents when using early exit. This saves tokens and avoids confusing "no changes found" outputs from quality checkers.
+
+---
+
+### Phase 1: CI Status Check — REQUIRED
+
+**Purpose:** Check GitHub CI status before finalizing verdict. CI-dependent AC items (e.g., "Tests pass in CI") should reflect actual CI status, not just local test results.
+
+**When to check:** If a PR exists for the issue/branch.
+
+**Detection:**
+```bash
+# Get PR number for current branch
+pr_number=$(gh pr view --json number -q '.number' 2>/dev/null)
+
+# If PR exists, check CI status
+if [[ -n "$pr_number" ]]; then
+  gh pr checks "$pr_number" --json name,state,conclusion
+fi
+```
+
+**CI Status Mapping:**
+
+| CI State | CI Conclusion | AC Status | Verdict Impact |
+|----------|---------------|-----------|----------------|
+| `completed` | `success` | `MET` | No impact |
+| `completed` | `failure` | `NOT_MET` | Blocks merge |
+| `completed` | `cancelled` | `NOT_MET` | Blocks merge |
+| `completed` | `skipped` | `N/A` | No impact |
+| `in_progress` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| `queued` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| `pending` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| (empty response) | - | `N/A` | No CI configured |
+
+**CI-Related AC Detection:**
+
+Identify AC items that depend on CI by matching these patterns:
+- "Tests pass in CI"
+- "CI passes"
+- "Build succeeds in CI"
+- "GitHub Actions pass"
+- "Pipeline passes"
+- "Workflow passes"
+- "Checks pass"
+- "Actions succeed"
+- "CI/CD passes"
+
+```bash
+# Example: Check if any AC mentions CI
+ci_ac_patterns="CI|pipeline|GitHub Actions|build succeeds|tests pass in CI|workflow|checks pass|actions succeed"
+```
+
+**Error Handling:**
+
+If `gh pr checks` fails or returns unexpected results:
+- **Network/auth error** → Treat as N/A with note: "CI status unavailable (gh command failed)"
+- **No PR exists** → Skip CI status section entirely
+- **Empty response** → No CI configured (not an error)
+
+**Output Format:**
+
+Include CI status in the QA output:
+
+```markdown
+### CI Status
+
+| Check | State | Conclusion | Impact |
+|-------|-------|------------|--------|
+| `build` | completed | success | ✅ MET |
+| `test` | in_progress | - | ⏳ PENDING |
+| `lint` | completed | failure | ❌ NOT_MET |
+
+**CI Summary:** 1 passed, 1 pending, 1 failed
+**CI-related AC items:** AC-4 ("Tests pass in CI") → PENDING (CI still running)
+```
+
+**No CI Configured:**
+
+If `gh pr checks` returns an empty response:
+```markdown
+### CI Status
+
+No CI checks configured for this repository.
+
+**CI-related AC items:** AC-4 ("Tests pass in CI") → N/A (no CI configured)
+```
+
+**Verdict Integration:**
+
+CI status affects the final verdict through the standard verdict algorithm:
+- CI `PENDING` → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
+- CI `failure` → AC item marked `NOT_MET` → Verdict: `AC_NOT_MET`
+- CI `success` → AC item marked `MET` → No additional impact
+- No CI → AC item marked `N/A` → No impact on verdict
+
+**Important:** Do NOT give `READY_FOR_MERGE` if any CI check is still pending. The correct verdict is `NEEDS_VERIFICATION` with a note to re-run QA after CI completes.
 
 ---
 
@@ -731,8 +827,9 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 ### Standard QA (Implementation Exists)
 
 - [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
-- [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, or NOT_MET
-- [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, AC_NOT_MET
+- [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, NOT_MET, PENDING, or N/A
+- [ ] **CI Status** - Included if PR exists (or marked "No PR" / "No CI configured")
+- [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
 - [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
@@ -764,10 +861,23 @@ You MUST include these sections:
 
 | AC | Description | Status | Notes |
 |----|-------------|--------|-------|
-| AC-1 | [description] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
-| AC-2 | [description] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
+| AC-1 | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
+| AC-2 | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
 
 **Coverage:** X/Y AC items fully met
+
+---
+
+### CI Status
+
+[Include if PR exists, otherwise: "No PR exists yet" or "No CI configured"]
+
+| Check | State | Conclusion | Impact |
+|-------|-------|------------|--------|
+| `[check name]` | completed/in_progress/queued/pending | success/failure/cancelled/skipped/- | ✅ MET / ❌ NOT_MET / ⏳ PENDING |
+
+**CI Summary:** X passed, Y pending, Z failed
+**CI-related AC items:** [list affected AC items and their status based on CI]
 
 ---
 
@@ -864,7 +974,7 @@ You MUST include these sections:
 
 ---
 
-### Verdict: [READY_FOR_MERGE | AC_MET_BUT_NOT_A_PLUS | AC_NOT_MET]
+### Verdict: [READY_FOR_MERGE | AC_MET_BUT_NOT_A_PLUS | NEEDS_VERIFICATION | AC_NOT_MET]
 
 [Explanation of verdict]
 
