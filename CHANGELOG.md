@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AC linting in `/spec` skill (#201)
+  - Flags vague patterns: "should work", "properly", "correctly", "as expected"
+  - Flags unmeasurable terms: "fast", "performant", "responsive", "scalable"
+  - Flags incomplete specs: "handle errors", "edge cases", "all scenarios"
+  - Flags open-ended scope: "etc.", "and more", "such as", "including but not limited to"
+  - 28 configurable patterns with suggestions for improvement
+  - Warning-only (doesn't block planning)
+  - Skip with `--skip-ac-lint` flag
+  - New module: `src/lib/ac-linter.ts`
 - Semgrep static analysis integration in `/qa` skill (#200)
   - Stack-aware rulesets: Next.js, Astro, SvelteKit, Remix, Nuxt, Python, Go, Rust
   - Graceful degradation when Semgrep not installed

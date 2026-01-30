@@ -80,7 +80,7 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
+| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
 | `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, creates PRs |
 | `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, graceful fallback to manual checklists |
 | `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
@@ -186,6 +186,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `shutdown.ts` | Signal handling for graceful shutdown |
 | `version-check.ts` | Checks for updates, warns on stale local installs |
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
+| `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
 | `project-name.ts` | Auto-detects project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote |
 
 ### Workflow Subsystem
@@ -289,7 +290,7 @@ Full execution logs with automatic rotation:
 | Area | Test Files |
 |------|------------|
 | **Commands** | `init`, `doctor`, `run`, `status`, `state`, `stats` |
-| **Libraries** | `fs`, `stacks`, `system`, `templates`, `wizard`, `tty`, `shutdown`, `version-check`, `ac-parser`, `project-name` |
+| **Libraries** | `fs`, `stacks`, `system`, `templates`, `wizard`, `tty`, `shutdown`, `version-check`, `ac-parser`, `ac-linter`, `project-name` |
 | **Workflow** | `state-manager`, `state-utils`, `state-hook`, `log-writer`, `log-rotation`, `metrics-writer` |
 | **Integration** | `cli.integration`, `doctor.integration` |
 
