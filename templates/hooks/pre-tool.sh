@@ -309,6 +309,12 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; t
             {
                 echo "HOOK_BLOCKED: Commit must follow conventional commits format"
                 echo "  Expected: type(scope): description"
+                # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
+                if [[ "$MSG" == Merge\ * ]]; then
+                    echo ""
+                    echo "  💡 For merge commits, use: chore: merge main into feature branch"
+                    echo ""
+                fi
                 echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
                 echo "  Got: $MSG"
             } | tee -a /tmp/claude-hook.log >&2
