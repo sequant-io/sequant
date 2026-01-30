@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Error recovery template with diagnosis checklist
   - See `templates/skills/_shared/references/prompt-templates.md`
 
+### Improved
+
+- Hook error message for merge commits now suggests `chore: merge...` format (#198)
+
 ### Fixed
 
 - CI workflow failures on main branch
