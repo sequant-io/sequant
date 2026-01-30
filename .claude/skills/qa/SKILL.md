@@ -301,9 +301,20 @@ ci_ac_patterns="CI|pipeline|GitHub Actions|build succeeds|tests pass in CI|workf
 **Error Handling:**
 
 If `gh pr checks` fails or returns unexpected results:
+- **`gh` not installed** → Skip CI section with note: "CI status unavailable (gh CLI not found)"
+- **`gh` not authenticated** → Skip CI section with note: "CI status unavailable (gh auth required)"
 - **Network/auth error** → Treat as N/A with note: "CI status unavailable (gh command failed)"
 - **No PR exists** → Skip CI status section entirely
 - **Empty response** → No CI configured (not an error)
+
+**Portability Note:**
+
+CI status detection requires GitHub. Other platforms (GitLab, Bitbucket, Azure DevOps) are not supported. To check if `gh` is available:
+```bash
+if ! command -v gh &>/dev/null; then
+  echo "gh CLI not installed - skipping CI status check"
+fi
+```
 
 **Output Format:**
 

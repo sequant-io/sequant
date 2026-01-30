@@ -175,9 +175,13 @@ Identify AC items that depend on CI by matching patterns:
 ### Error Handling
 
 If `gh pr checks` fails:
-- **Network/auth error** → Treat as N/A with note: "CI status unavailable"
+- **`gh` not installed** → Skip CI section: "CI status unavailable (gh CLI not found)"
+- **`gh` not authenticated** → Skip CI section: "CI status unavailable (gh auth required)"
+- **Network/auth error** → Treat as N/A: "CI status unavailable"
 - **No PR exists** → Skip CI check entirely
 - **Empty response** → No CI configured (not an error)
+
+**Portability:** CI detection requires GitHub (`gh` CLI). GitLab, Bitbucket, Azure DevOps not supported.
 
 ### CI Verdict Rules
 
