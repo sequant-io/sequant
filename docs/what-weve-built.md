@@ -12,8 +12,8 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 |--------|-------|
 | Slash Commands | 17 |
 | CLI Commands | 9 |
-| Core Library Modules | 23 |
-| Test Files | 28 |
+| Core Library Modules | 25 |
+| Test Files | 29 |
 | Documentation Files | 26+ |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~17,000+ |
@@ -666,7 +666,7 @@ Shell scripts in `templates/scripts/`:
 - **Semgrep static analysis integration** — `/qa` now runs Semgrep with stack-aware rulesets (Next.js, Python, Go, Rust, etc.), graceful skip when not installed, custom rules via `.sequant/semgrep-rules.yaml`, critical findings block merge verdict
 - **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
 - Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
-- Plugin marketplace integration
+- **Plugin marketplace integration** — Claude Code plugin with CI-enforced version sync (plugin.json must match package.json), structure validation on every PR, `/release` skill auto-syncs versions
 - Strict QA verdicts (`NEEDS_VERIFICATION`, proper `PARTIALLY_MET`)
 - MCP server support for headless mode
 - VS Code extension with premium workflow visualization
