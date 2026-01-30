@@ -263,21 +263,21 @@ pr_number=$(gh pr view --json number -q '.number' 2>/dev/null)
 
 # If PR exists, check CI status
 if [[ -n "$pr_number" ]]; then
-  gh pr checks "$pr_number" --json name,state,conclusion
+  gh pr checks "$pr_number" --json name,state,bucket
 fi
 ```
 
 **CI Status Mapping:**
 
-| CI State | CI Conclusion | AC Status | Verdict Impact |
-|----------|---------------|-----------|----------------|
-| `completed` | `success` | `MET` | No impact |
-| `completed` | `failure` | `NOT_MET` | Blocks merge |
-| `completed` | `cancelled` | `NOT_MET` | Blocks merge |
-| `completed` | `skipped` | `N/A` | No impact |
-| `in_progress` | - | `PENDING` | → `NEEDS_VERIFICATION` |
-| `queued` | - | `PENDING` | → `NEEDS_VERIFICATION` |
-| `pending` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| State | Bucket | AC Status | Verdict Impact |
+|-------|--------|-----------|----------------|
+| `SUCCESS` | `pass` | `MET` | No impact |
+| `FAILURE` | `fail` | `NOT_MET` | Blocks merge |
+| `CANCELLED` | `fail` | `NOT_MET` | Blocks merge |
+| `SKIPPED` | `pass` | `N/A` | No impact |
+| `PENDING` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `QUEUED` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `IN_PROGRESS` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
 | (empty response) | - | `N/A` | No CI configured |
 
 **CI-Related AC Detection:**
@@ -312,11 +312,11 @@ Include CI status in the QA output:
 ```markdown
 ### CI Status
 
-| Check | State | Conclusion | Impact |
-|-------|-------|------------|--------|
-| `build` | completed | success | ✅ MET |
-| `test` | in_progress | - | ⏳ PENDING |
-| `lint` | completed | failure | ❌ NOT_MET |
+| Check | State | Bucket | Impact |
+|-------|-------|--------|--------|
+| `build (18.x)` | SUCCESS | pass | ✅ MET |
+| `build (20.x)` | PENDING | pending | ⏳ PENDING |
+| `lint` | FAILURE | fail | ❌ NOT_MET |
 
 **CI Summary:** 1 passed, 1 pending, 1 failed
 **CI-related AC items:** AC-4 ("Tests pass in CI") → PENDING (CI still running)

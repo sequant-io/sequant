@@ -148,15 +148,15 @@ Any of:
 
 ### CI Status Mapping
 
-| CI State | CI Conclusion | AC Status | Verdict Impact |
-|----------|---------------|-----------|----------------|
-| `completed` | `success` | `MET` | No impact |
-| `completed` | `failure` | `NOT_MET` | Blocks merge |
-| `completed` | `cancelled` | `NOT_MET` | Blocks merge |
-| `completed` | `skipped` | `N/A` | No impact |
-| `in_progress` | - | `PENDING` | → `NEEDS_VERIFICATION` |
-| `queued` | - | `PENDING` | → `NEEDS_VERIFICATION` |
-| `pending` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| State | Bucket | AC Status | Verdict Impact |
+|-------|--------|-----------|----------------|
+| `SUCCESS` | `pass` | `MET` | No impact |
+| `FAILURE` | `fail` | `NOT_MET` | Blocks merge |
+| `CANCELLED` | `fail` | `NOT_MET` | Blocks merge |
+| `SKIPPED` | `pass` | `N/A` | No impact |
+| `PENDING` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `QUEUED` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `IN_PROGRESS` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
 | (no checks) | - | `N/A` | No CI configured |
 
 ### CI-Related AC Detection
