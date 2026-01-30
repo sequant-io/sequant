@@ -179,7 +179,7 @@ verify_build_against_main() {
   if [[ -z "$main_repo_dir" || ! -d "$main_repo_dir" ]]; then
     echo "   ⚠️ Could not locate main repository for comparison"
     echo "   Skipping build verification against main"
-    return 1
+    return 3  # Skipped - distinct from regression (1) or different errors (2)
   fi
 
   # Run build in main repo (temporarily switch, then switch back)
@@ -304,6 +304,10 @@ if [[ $build_verification_result -eq 1 ]]; then
 elif [[ $build_verification_result -eq 2 ]]; then
   echo ""
   echo "⚠️  Build verification: Different errors detected (needs review)"
+elif [[ $build_verification_result -eq 3 ]]; then
+  echo ""
+  echo "⚠️  Build verification: SKIPPED (could not locate main repo)"
+  build_verification_result=0  # Don't fail the script for skipped verification
 fi
 
 echo ""
