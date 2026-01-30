@@ -142,6 +142,61 @@ Any of:
 
 **Important:** `PARTIALLY_MET` is NOT sufficient for merge. It must be treated as `NOT_MET` for verdict purposes.
 
+## CI Status Impact on Verdict
+
+**Purpose:** CI status directly affects verdict when AC items depend on CI (e.g., "Tests pass in CI").
+
+### CI Status Mapping
+
+| CI State | CI Conclusion | AC Status | Verdict Impact |
+|----------|---------------|-----------|----------------|
+| `completed` | `success` | `MET` | No impact |
+| `completed` | `failure` | `NOT_MET` | Blocks merge |
+| `completed` | `cancelled` | `NOT_MET` | Blocks merge |
+| `completed` | `skipped` | `N/A` | No impact |
+| `in_progress` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| `queued` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| `pending` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| (no checks) | - | `N/A` | No CI configured |
+
+### CI-Related AC Detection
+
+Identify AC items that depend on CI by matching patterns:
+- "Tests pass in CI"
+- "CI passes"
+- "Build succeeds in CI"
+- "GitHub Actions pass"
+- "Pipeline passes"
+- "Workflow passes"
+- "Checks pass"
+- "Actions succeed"
+- "CI/CD passes"
+
+### Error Handling
+
+If `gh pr checks` fails:
+- **Network/auth error** → Treat as N/A with note: "CI status unavailable"
+- **No PR exists** → Skip CI check entirely
+- **Empty response** → No CI configured (not an error)
+
+### CI Verdict Rules
+
+1. **CI failure → AC_NOT_MET:** Any failed CI check that maps to an AC item means that AC is NOT_MET
+2. **CI pending → NEEDS_VERIFICATION:** If CI is still running for a CI-related AC, verdict is NEEDS_VERIFICATION
+3. **No CI configured → N/A:** Mark CI-related AC items as N/A, don't block on missing CI
+4. **CI success → MET:** CI-related AC items are MET when all relevant checks pass
+
+**Example Scenario:**
+
+```markdown
+AC-1: "Feature implemented" → MET (code review)
+AC-2: "Tests pass locally" → MET (npm test passed)
+AC-3: "Tests pass in CI" → PENDING (CI in progress)
+AC-4: "Docs updated" → MET (README updated)
+
+Verdict: NEEDS_VERIFICATION (due to AC-3 PENDING)
+```
+
 ## Code Review Decision Framework
 
 ### 1. Purpose Test
