@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Plugin marketplace configuration in `.claude-plugin/`
   - `/setup` skill for plugin initialization (creates worktrees directory, copies constitution)
   - Plugin-specific documentation: updates, versioning, feedback mechanisms
+  - CI validation for plugin.json (#191): structure check, required fields, version sync with package.json
+  - `/release` skill now auto-syncs plugin.json version during releases
+  - Comprehensive upgrade documentation in `docs/plugin-updates.md`
 - Auto-detect project name in `/setup` skill (#187)
   - Detects from package.json, Cargo.toml, pyproject.toml, go.mod, or git remote
   - Substitutes `{{PROJECT_NAME}}` in constitution template

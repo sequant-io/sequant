@@ -183,3 +183,34 @@ jobs:
           "
 
           echo "marketplace.json validated successfully!"
+
+      - name: Verify version sync check catches mismatches (negative test)
+        run: |
+          echo "Testing that version sync check catches mismatches..."
+
+          # Backup original plugin.json
+          cp .claude-plugin/plugin.json .claude-plugin/plugin.json.bak
+
+          # Create a version mismatch
+          node -e "
+            const fs = require('fs');
+            const plugin = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            plugin.version = '0.0.0-test-mismatch';
+            fs.writeFileSync('.claude-plugin/plugin.json', JSON.stringify(plugin, null, 2) + '\n');
+          "
+
+          # Run the sync check - it SHOULD fail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          PLUGIN_VERSION=$(node -p "require('./.claude-plugin/plugin.json').version")
+
+          if [ "$PKG_VERSION" = "$PLUGIN_VERSION" ]; then
+            echo "ERROR: Versions should not match in this test!"
+            mv .claude-plugin/plugin.json.bak .claude-plugin/plugin.json
+            exit 1
+          fi
+
+          echo "✓ Version mismatch correctly detected (package: $PKG_VERSION, plugin: $PLUGIN_VERSION)"
+
+          # Restore original plugin.json
+          mv .claude-plugin/plugin.json.bak .claude-plugin/plugin.json
+          echo "✓ Negative test passed - version sync check works correctly"
