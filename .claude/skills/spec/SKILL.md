@@ -305,9 +305,9 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
 
 ## Output Structure
 
-### 1. AC Checklist with Verification Criteria
+### 1. AC Checklist with Verification Criteria (REQUIRED)
 
-Restate AC as a checklist with verification for each:
+**Every AC MUST have an explicit Verification Method.** Restate AC as a checklist with verification for each:
 
 ```markdown
 ### AC-1: [Description]
@@ -325,6 +325,64 @@ Restate AC as a checklist with verification for each:
 **Assumptions to Validate:**
 - [ ] [Assumption that must be true]
 ```
+
+#### Verification Method Decision Framework
+
+**REQUIRED:** Choose the most appropriate verification method for each AC:
+
+| AC Type | Verification Method | When to Use |
+|---------|---------------------|-------------|
+| Pure logic/calculation | **Unit Test** | Functions with clear input/output, no side effects |
+| API endpoint | **Integration Test** | HTTP handlers, database queries, external service calls |
+| User workflow | **Browser Test** | Multi-step UI interactions, form submissions |
+| Visual appearance | **Manual Test** | Styling, layout, animations (hard to automate) |
+| CLI command | **Integration Test** | Script execution, file operations, stdout verification |
+| Error handling | **Unit Test** + **Integration Test** | Both isolated behavior and realistic scenarios |
+| Performance | **Manual Test** + **Integration Test** | Timing thresholds, load testing |
+
+#### Verification Method Examples
+
+**Good (specific and testable):**
+```markdown
+**AC-1:** User can submit the registration form
+**Verification Method:** Browser Test
+**Test Scenario:**
+- Given: User on /register page
+- When: Fill form fields, click Submit
+- Then: Redirect to /dashboard, success toast appears
+```
+
+**Bad (vague, no clear verification):**
+```markdown
+**AC-1:** Registration should work properly
+**Verification Method:** ??? (cannot determine)
+```
+
+#### Flags for Missing Verification Methods
+
+If you cannot determine a verification method for an AC:
+
+1. **Flag the AC as unclear:**
+   ```markdown
+   **AC-3:** System handles errors gracefully
+   **Verification Method:** ⚠️ UNCLEAR - needs specific error scenarios
+   **Suggested Refinement:** List specific error types and expected responses
+   ```
+
+2. **Include in Open Questions:**
+   ```markdown
+   ## Open Questions
+
+   1. **AC-3 verification method unclear**
+      - Question: What specific error scenarios should be tested?
+      - Recommendation: Define 3-5 error types with expected behavior
+      - Impact: Without this, QA cannot objectively validate
+   ```
+
+**Why this matters:** AC without verification methods:
+- Cannot be objectively validated in `/qa`
+- Lead to subjective "does it work?" assessments
+- Cause rework when expectations don't match implementation
 
 See [verification-criteria.md](references/verification-criteria.md) for detailed examples including the #452 hooks failure case.
 
@@ -475,13 +533,20 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 
 - [ ] **AC Quality Check** - Lint results (or "Skipped" if --skip-ac-lint)
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
-- [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
+- [ ] **Verification Criteria (REQUIRED)** - Each AC MUST have:
+  - Explicit Verification Method (Unit Test, Integration Test, Browser Test, or Manual Test)
+  - Test Scenario with Given/When/Then format
+  - If unclear, flag as "⚠️ UNCLEAR" and add to Open Questions
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
-- [ ] **Open Questions** - Any ambiguities with recommended defaults
+- [ ] **Open Questions** - Any ambiguities with recommended defaults (including unclear verification methods)
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
+
+**CRITICAL:** Do NOT output AC items without verification methods. Either:
+1. Assign a verification method from the decision framework, or
+2. Flag as "⚠️ UNCLEAR" and include in Open Questions
 
 **DO NOT respond until all items are verified.**
 
@@ -508,6 +573,20 @@ You MUST include these sections in order:
 - Then: [Expected outcome]
 
 ### AC-2: [Description]
+
+**Verification Method:** [Choose from decision framework]
+
+**Test Scenario:**
+- Given: [Initial state]
+- When: [Action]
+- Then: [Expected outcome]
+
+### AC-N: [Unclear AC example]
+
+**Verification Method:** ⚠️ UNCLEAR - [reason why verification is unclear]
+
+**Suggested Refinement:** [How to make this AC testable]
+
 <!-- Continue for all AC items -->
 
 ---
