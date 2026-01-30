@@ -472,6 +472,9 @@ type(scope): description
 Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
 ```
 
+Provides helpful suggestions for common scenarios:
+- Merge commits: Suggests `chore: merge main into feature branch` format
+
 ### Worktree Path Enforcement
 
 When `SEQUANT_WORKTREE` is set (by `sequant run`), blocks file edits outside the designated worktree. Prevents accidental edits to the main repo during feature work.
