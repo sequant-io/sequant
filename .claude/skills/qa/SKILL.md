@@ -412,7 +412,61 @@ Perform a code review focusing on:
 
 See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps.
 
-### 2a. Test Coverage Transparency (REQUIRED)
+### 2a. Build Verification (When Build Fails)
+
+**When to apply:** `npm run build` fails on the feature branch.
+
+**Purpose:** Distinguish between pre-existing build failures (already on main) and regressions introduced by this PR.
+
+**Detection:**
+```bash
+# Run build and capture result
+npm run build 2>&1
+BUILD_EXIT_CODE=$?
+```
+
+**If build fails, verify against main:**
+
+The quality-checks.sh script includes `run_build_with_verification()` which:
+1. Runs `npm run build` on the feature branch
+2. If it fails, runs build on main branch (via the main repo directory)
+3. Compares exit codes and first error lines
+4. Produces a "Build Verification" table (see AC-4)
+
+**Verification Logic:**
+
+| Feature Build | Main Build | Error Match | Result |
+|---------------|------------|-------------|--------|
+| ❌ Fail | ✅ Pass | N/A | **Regression** - failure introduced by PR |
+| ❌ Fail | ❌ Fail | Same error | **Pre-existing** - not blocking |
+| ❌ Fail | ❌ Fail | Different | **Unknown** - manual review needed |
+| ✅ Pass | * | N/A | No verification needed |
+
+**Verdict Impact:**
+
+| Build Verification Result | Verdict Impact |
+|---------------------------|----------------|
+| Regression detected | `AC_NOT_MET` - must fix before merge |
+| Pre-existing failure | No impact - document and proceed |
+| Unknown (different errors) | `AC_MET_BUT_NOT_A_PLUS` - manual review |
+| Build passes | No impact |
+
+**Output Format:**
+
+```markdown
+### Build Verification
+
+| Check | Status |
+|-------|--------|
+| Feature branch build | ❌ Failed |
+| Main branch build | ❌ Failed |
+| Error match | ✅ Same error |
+| Regression | **No** (pre-existing) |
+
+**Note:** Build failure is pre-existing on main branch. Not blocking this PR.
+```
+
+### 2b. Test Coverage Transparency (REQUIRED)
 
 **Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
 
@@ -453,7 +507,7 @@ done
 **Coverage:** X/Y changed files have tests
 ```
 
-### 2b. Change Tier Classification
+### 2c. Change Tier Classification
 
 **Purpose:** Flag coverage gaps based on criticality, not just presence/absence.
 
@@ -490,7 +544,7 @@ fi
 | Optional | `types/index.ts` | OK - Types only |
 ```
 
-### 2c. Test Quality Review
+### 2d. Test Quality Review
 
 **When to apply:** Test files were added or modified.
 
@@ -508,7 +562,7 @@ See [test-quality-checklist.md](references/test-quality-checklist.md) for detail
 - Snapshot abuse (>50 line snapshots)
 - Implementation mirroring
 
-### 2b. Anti-Pattern Detection
+### 2e. Anti-Pattern Detection
 
 **Always run** code pattern checks on changed files:
 
@@ -842,6 +896,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **CI Status** - Included if PR exists (or marked "No PR" / "No CI configured")
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
+- [ ] **Build Verification** - Included if build failed (or marked N/A if build passed)
 - [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
 - [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
@@ -901,6 +956,23 @@ You MUST include these sections:
 | Files changed | X | OK/WARN |
 | Lines added | +X | - |
 | Lines deleted | -X | - |
+
+---
+
+### Build Verification
+
+[Include if `npm run build` failed, otherwise: "N/A - Build passed"]
+
+| Check | Status |
+|-------|--------|
+| Feature branch build | ✅ Passed / ❌ Failed |
+| Main branch build | ✅ Passed / ❌ Failed |
+| Error match | ✅ Same error / ❌ Different errors / N/A |
+| Regression | **Yes** (new) / **No** (pre-existing) / **Unknown** |
+
+**Note:** [Explanation of build verification result]
+
+**Verdict impact:** [None / Blocking / Needs review]
 
 ---
 

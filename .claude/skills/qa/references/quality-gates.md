@@ -15,8 +15,59 @@ Combine agent outputs into a unified quality assessment:
 **Synthesis Rules:**
 - **Any FAIL verdict** → Flag as blocker in manual review
 - **Security criticals (including Semgrep)** → Block merge, require fix before proceeding
+- **Build regression detected** → Block merge, require fix before proceeding
 - **All PASS** → Proceed with confidence to manual review
 - **WARN verdicts** → Note in review, verify manually
+
+## Build Verification
+
+When `npm run build` fails on the feature branch, QA must verify whether the failure is a regression (new) or pre-existing (already on main).
+
+### Verification Logic
+
+| Feature Build | Main Build | Error Match | Classification |
+|---------------|------------|-------------|----------------|
+| ❌ Fail | ✅ Pass | N/A | **Regression** - failure introduced by PR |
+| ❌ Fail | ❌ Fail | Same error | **Pre-existing** - not blocking |
+| ❌ Fail | ❌ Fail | Different | **Unknown** - requires manual review |
+| ✅ Pass | * | N/A | N/A - no verification needed |
+
+### Verdict Mapping
+
+| Build Verification Result | QA Verdict Impact |
+|---------------------------|-------------------|
+| **Regression detected** | **BLOCKING** - `AC_NOT_MET`, must fix before merge |
+| **Pre-existing failure** | Non-blocking - document and proceed |
+| **Unknown (different errors)** | `AC_MET_BUT_NOT_A_PLUS` - manual review recommended |
+| **Build passes** | No impact |
+
+### Output Format
+
+```markdown
+### Build Verification
+
+| Check | Status |
+|-------|--------|
+| Feature branch build | ❌ Failed |
+| Main branch build | ❌ Failed |
+| Error match | ✅ Same error |
+| Regression | **No** (pre-existing) |
+
+**Note:** Build failure is pre-existing on main branch. Not blocking this PR.
+```
+
+### Implementation
+
+The `quality-checks.sh` script includes:
+- `run_build_with_verification()` - runs build and triggers verification on failure
+- `verify_build_against_main()` - compares build results against main branch
+
+**How it works:**
+1. Run `npm run build` on feature branch
+2. If build fails, capture exit code and error output
+3. Run build on main branch (via main repo directory, not checkout)
+4. Compare exit codes and first error line
+5. Output Build Verification table with classification
 
 ## Semgrep Integration
 

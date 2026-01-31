@@ -146,5 +146,172 @@ else
   echo "   Install with: pip install semgrep"
 fi
 
+# 10. Build Verification Against Main (when build fails)
+# AC-1: When build fails, check if same failure exists on main branch
+# AC-2: If failure is new (not on main), flag as potential regression
+# AC-3: If failure is pre-existing (on main), document and proceed
+verify_build_against_main() {
+  local feature_exit_code=$1
+  local feature_error_output=$2
+
+  echo ""
+  echo "🔍 Verifying build failure against main branch..."
+
+  # Get current directory and branch info
+  local current_dir=$(pwd)
+  local current_branch=$(git rev-parse --abbrev-ref HEAD)
+  local main_repo_dir=""
+
+  # Find the main repository (parent of worktrees)
+  if [[ "$current_dir" == *"/worktrees/"* ]]; then
+    # We're in a worktree, find the main repo (check both main and master branches)
+    main_repo_dir=$(git worktree list | grep -E "\[(main|master)\]" | awk '{print $1}' | head -1)
+    if [[ -z "$main_repo_dir" ]]; then
+      # Fallback: first worktree entry is typically the main repo
+      main_repo_dir=$(git worktree list | head -1 | awk '{print $1}')
+      echo "   Note: Using fallback worktree detection (no [main] or [master] found)"
+    fi
+  else
+    # We're in the main repo
+    main_repo_dir="$current_dir"
+  fi
+
+  if [[ -z "$main_repo_dir" || ! -d "$main_repo_dir" ]]; then
+    echo "   ⚠️ Could not locate main repository for comparison"
+    echo "   Skipping build verification against main"
+    return 3  # Skipped - distinct from regression (1) or different errors (2)
+  fi
+
+  # Run build in main repo (temporarily switch, then switch back)
+  echo "   Running build on main branch..."
+
+  # Capture main branch build result
+  local main_exit_code=0
+  local main_error_output=""
+
+  # Use a subshell to avoid changing directory in main shell
+  # Timeout after 120s to prevent hanging on slow builds
+  if command -v timeout &> /dev/null; then
+    main_error_output=$(cd "$main_repo_dir" && timeout 120 npm run build 2>&1 | head -30) || main_exit_code=$?
+  else
+    # macOS doesn't have timeout by default, use perl fallback
+    main_error_output=$(cd "$main_repo_dir" && perl -e 'alarm 120; exec @ARGV' npm run build 2>&1 | head -30) || main_exit_code=$?
+  fi
+
+  # Extract first meaningful error line for comparison
+  local feature_first_error=$(echo "$feature_error_output" | grep -E "Error:|error:|ERROR:" | head -1)
+  local main_first_error=$(echo "$main_error_output" | grep -E "Error:|error:|ERROR:" | head -1)
+
+  echo ""
+  echo "### Build Verification"
+  echo ""
+  echo "| Check | Status |"
+  echo "|-------|--------|"
+
+  if [[ $feature_exit_code -ne 0 ]]; then
+    echo "| Feature branch build | ❌ Failed |"
+  else
+    echo "| Feature branch build | ✅ Passed |"
+  fi
+
+  if [[ $main_exit_code -ne 0 ]]; then
+    echo "| Main branch build | ❌ Failed |"
+
+    # Compare error messages to determine if same failure
+    if [[ "$feature_first_error" == "$main_first_error" ]] || \
+       [[ -n "$feature_first_error" && -n "$main_first_error" && \
+          "$(echo "$feature_first_error" | cut -c1-50)" == "$(echo "$main_first_error" | cut -c1-50)" ]]; then
+      echo "| Error match | ✅ Same error |"
+      echo "| Regression | **No** (pre-existing) |"
+      echo ""
+      echo "**Note:** Build failure is pre-existing on main branch. Not blocking this PR."
+      return 0  # Not a regression
+    else
+      echo "| Error match | ❌ Different errors |"
+      echo "| Regression | **Unknown** (different failure modes) |"
+      echo ""
+      echo "**Note:** Build failures differ between branches. Manual review recommended."
+      echo ""
+      echo "Feature branch error:"
+      echo "\`\`\`"
+      echo "$feature_first_error"
+      echo "\`\`\`"
+      echo ""
+      echo "Main branch error:"
+      echo "\`\`\`"
+      echo "$main_first_error"
+      echo "\`\`\`"
+      return 2  # Different failures, needs review
+    fi
+  else
+    echo "| Main branch build | ✅ Passed |"
+    echo "| Regression | **Yes** (new failure) |"
+    echo ""
+    echo "⚠️ **REGRESSION DETECTED:** Build passes on main but fails on feature branch."
+    echo "This failure was introduced by changes in this PR."
+    echo ""
+    echo "Feature branch error:"
+    echo "\`\`\`"
+    echo "$feature_first_error"
+    echo "\`\`\`"
+    return 1  # Regression detected
+  fi
+}
+
+# Function to run build and capture output for verification
+run_build_with_verification() {
+  echo ""
+  echo "🏗️ Running build check..."
+
+  local build_output=""
+  local build_exit_code=0
+
+  # Timeout after 120s to prevent hanging on slow builds
+  if command -v timeout &> /dev/null; then
+    build_output=$(timeout 120 npm run build 2>&1) || build_exit_code=$?
+  else
+    # macOS doesn't have timeout by default, use perl fallback
+    build_output=$(perl -e 'alarm 120; exec @ARGV' npm run build 2>&1) || build_exit_code=$?
+  fi
+
+  if [[ $build_exit_code -eq 0 ]]; then
+    echo "✅ Build: Passed"
+    return 0
+  else
+    echo "❌ Build: Failed (exit code: $build_exit_code)"
+    echo ""
+    echo "Build error output (first 20 lines):"
+    echo "$build_output" | head -20
+    echo ""
+
+    # Verify against main branch (AC-1, AC-2, AC-3)
+    verify_build_against_main "$build_exit_code" "$build_output"
+    local verification_result=$?
+
+    return $verification_result
+  fi
+}
+
+# 10. Run build with verification (calls the functions defined above)
+# Capture return code to prevent set -e from exiting early
+build_verification_result=0
+run_build_with_verification || build_verification_result=$?
+
+# Report build verification status
+if [[ $build_verification_result -eq 1 ]]; then
+  echo ""
+  echo "⚠️  Build verification: REGRESSION DETECTED (blocking)"
+elif [[ $build_verification_result -eq 2 ]]; then
+  echo ""
+  echo "⚠️  Build verification: Different errors detected (needs review)"
+elif [[ $build_verification_result -eq 3 ]]; then
+  echo ""
+  echo "⚠️  Build verification: SKIPPED (could not locate main repo)"
+  build_verification_result=0  # Don't fail the script for skipped verification
+fi
+
 echo ""
 echo "✅ Quality checks complete"
+
+# Exit with build verification result if it indicates a problem
+exit $build_verification_result
