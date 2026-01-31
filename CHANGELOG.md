@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Build verification against main branch in `/qa` skill (#177)
+  - Distinguishes regressions from pre-existing build failures
+  - New "Build Verification" table in QA output when build fails
+  - Regressions block merge (`AC_NOT_MET`); pre-existing failures documented only
+  - Script: `scripts/quality-checks.sh` includes `run_build_with_verification()`
+- CI status awareness in `/qa` skill (#178)
+  - Checks GitHub CI status via `gh pr checks` before finalizing verdict
+  - CI pending → `NEEDS_VERIFICATION` verdict (prevents premature READY_FOR_MERGE)
+  - CI failure → `NOT_MET` for CI-related acceptance criteria
+  - No CI configured → AC marked N/A (no impact on verdict)
+  - New "CI Status" table in QA output
+- Shift-left gap detection across workflow phases (#196)
+  - `/spec`: Verification method decision framework - every AC must have explicit test type
+  - `/exec`: Pre-PR AC verification - checks each AC is addressed before creating PR
+  - `/test`: Coverage analysis - warns when new/modified files lack test coverage
+  - Principle: "QA should validate, not discover" - catch gaps at source
+- Shell script quality checks in `/exec` skill (#210)
+  - Syntax validation, shellcheck integration, unused function detection
+  - Smoke test execution for scripts with --help support
+
 ## [1.12.0] - 2026-01-29
 
 ### Added
