@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.11.0
+# What We've Built: Sequant v1.12.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -80,10 +80,10 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
-| `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, creates PRs |
-| `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, graceful fallback to manual checklists |
-| `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
+| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
+| `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, **Pre-PR AC verification** (checks each AC addressed before PR), **shell script quality checks**, creates PRs |
+| `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, **coverage analysis** (warns when files lack tests), graceful fallback to manual checklists |
+| `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis, CI status awareness, build verification against main. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
 
 ### Automation Commands
 
@@ -666,7 +666,10 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.11.0)
+### Recent Additions (v1.12.0)
+- **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals
+- **CI status awareness** — `/qa` checks GitHub CI status via `gh pr checks`, preventing `READY_FOR_MERGE` when CI is still pending
+- **AC linting** — `/spec` flags vague, unmeasurable, or incomplete acceptance criteria before implementation begins
 - **Semgrep static analysis integration** — `/qa` now runs Semgrep with stack-aware rulesets (Next.js, Python, Go, Rust, etc.), graceful skip when not installed, custom rules via `.sequant/semgrep-rules.yaml`, critical findings block merge verdict
 - **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
 - Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
@@ -765,7 +768,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~17,000+ |
 
-**Current Version:** 1.11.0
+**Current Version:** 1.12.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
