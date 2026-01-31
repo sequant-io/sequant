@@ -719,6 +719,62 @@ fi
 **Coverage:** X/Y changed source files have corresponding tests
 ```
 
+### 3c. Shell Script Checks (When .sh files modified)
+
+**Purpose:** Catch shell script issues that `npm test` and `npm run build` miss.
+
+**When shell scripts are modified, run these checks:**
+
+```bash
+# Get changed shell scripts
+shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$')
+
+for script in $shell_scripts; do
+  echo "Checking: $script"
+
+  # 1. Syntax validation
+  bash -n "$script" && echo "✅ Syntax OK" || echo "❌ Syntax error"
+
+  # 2. Shellcheck (if available)
+  if command -v shellcheck &>/dev/null; then
+    shellcheck "$script" && echo "✅ Shellcheck OK" || echo "⚠️ Shellcheck warnings"
+  fi
+
+  # 3. Unused function detection
+  funcs=$(grep -oE "^[a-zA-Z_]+\(\)" "$script" | sed 's/()//')
+  for func in $funcs; do
+    calls=$(grep -c "\b${func}\b" "$script")
+    if [[ $calls -lt 2 ]]; then
+      echo "⚠️ Function '$func' defined but possibly not called"
+    fi
+  done
+
+  # 4. Smoke test (--help or similar)
+  if grep -q "getopts\|--help" "$script"; then
+    bash "$script" --help 2>/dev/null && echo "✅ --help works" || echo "⚠️ --help failed"
+  fi
+done
+```
+
+**Checklist:**
+
+| Check | Command | Pass Criteria |
+|-------|---------|---------------|
+| Syntax | `bash -n script.sh` | Exit code 0 |
+| Shellcheck | `shellcheck script.sh` | No errors (warnings OK) |
+| Functions used | grep analysis | All defined functions called |
+| Smoke test | `bash script.sh --help` | Runs without crash |
+
+**Include in progress summary:**
+
+```markdown
+### Shell Script Checks
+
+| Script | Syntax | Shellcheck | Functions | Smoke Test |
+|--------|--------|------------|-----------|------------|
+| `quality-checks.sh` | ✅ OK | ⚠️ 2 warnings | ✅ All used | ✅ OK |
+```
+
 ### 4. Implementation Loop
 
 - Implement in **small, incremental diffs**.
