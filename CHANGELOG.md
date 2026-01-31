@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Mandatory prompt template enforcement in `/exec` parallel execution (#212)
+  - REQUIRED: Sub-agents MUST use templates from Section 4c for typed tasks
+  - Warning: Skipping templates for typed tasks results in QA rejection
+  - Synced Section 4c (Prompt Templates for Sub-Agents) to active skill file
+  - Added `prompt-templates.md` reference to `.claude/skills/_shared/references/`
 - Build verification against main branch in `/qa` skill (#177)
   - Distinguishes regressions from pre-existing build failures
   - New "Build Verification" table in QA output when build fails
