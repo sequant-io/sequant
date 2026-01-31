@@ -14,7 +14,7 @@ import {
   createSymlink,
   removeFileOrSymlink,
 } from "./fs.js";
-import { getStackConfig, getStackNotes } from "./stacks.js";
+import { getStackConfig, getStackNotes, getMultiStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
 
@@ -104,6 +104,8 @@ export interface CopyTemplatesOptions {
   noSymlinks?: boolean;
   /** Force replacement of existing files/symlinks */
   force?: boolean;
+  /** Additional stacks to include in constitution notes (for multi-stack projects) */
+  additionalStacks?: string[];
 }
 
 /**
@@ -230,7 +232,11 @@ export async function copyTemplates(
   const projectName = await getProjectName();
 
   // Get stack-specific notes for constitution template
-  const stackNotes = getStackNotes(stack);
+  // Use multi-stack notes if additional stacks are provided
+  const stackNotes =
+    options.additionalStacks && options.additionalStacks.length > 0
+      ? getMultiStackNotes(stack, options.additionalStacks)
+      : getStackNotes(stack);
 
   const variables = {
     ...stackConfig.variables,

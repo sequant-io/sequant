@@ -17,6 +17,7 @@ vi.mock("../lib/settings.js", () => ({
 // Mock stacks
 vi.mock("../lib/stacks.js", () => ({
   detectStack: vi.fn(),
+  detectAllStacks: vi.fn(() => Promise.resolve([])),
   detectPackageManager: vi.fn(() => Promise.resolve("npm")),
   getPackageManagerCommands: vi.fn(() => ({
     run: "npm run",
@@ -34,6 +35,11 @@ vi.mock("../lib/stacks.js", () => ({
       LINT_COMMAND: "npm run lint",
     },
   })),
+  STACKS: {
+    nextjs: { displayName: "Next.js" },
+    python: { displayName: "Python" },
+    generic: { displayName: "Generic" },
+  },
 }));
 
 // Mock config
@@ -51,6 +57,11 @@ vi.mock("../lib/templates.js", () => ({
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   createManifest: vi.fn(),
+}));
+
+// Mock stack-config
+vi.mock("../lib/stack-config.js", () => ({
+  saveStackConfig: vi.fn(),
 }));
 
 // Mock system functions
@@ -98,7 +109,7 @@ vi.mock("inquirer", () => ({
 
 import { initCommand } from "./init.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
-import { detectStack } from "../lib/stacks.js";
+import { detectStack, detectAllStacks } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
@@ -113,6 +124,7 @@ import inquirer from "inquirer";
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
 const mockDetectStack = vi.mocked(detectStack);
+const mockDetectAllStacks = vi.mocked(detectAllStacks);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockCreateManifest = vi.mocked(createManifest);
 const mockSaveConfig = vi.mocked(saveConfig);
@@ -269,6 +281,7 @@ describe("init command", () => {
         {
           noSymlinks: undefined,
           force: undefined,
+          additionalStacks: [],
         },
       );
       expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
@@ -402,6 +415,157 @@ describe("init command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("Dev URL: http://localhost:3000 (default)");
+    });
+  });
+
+  // === MULTI-STACK SELECTION UI (Issue #197) ===
+  describe("multi-stack selection (AC-4, AC-5)", () => {
+    it("shows multi-stack detection when multiple stacks found", async () => {
+      // Given: Monorepo with multiple stacks detected
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "" },
+        { stack: "python", path: "backend" },
+      ]);
+
+      // Setup prompts: checkbox selection, primary selection, dev URL
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStacks: ["nextjs", "python"] })
+        .mockResolvedValueOnce({ primaryStack: "nextjs" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Detected 2 stacks");
+      expect(output).toContain("Next.js");
+      expect(output).toContain("Python");
+    });
+
+    it("passes additional stacks to copyTemplates", async () => {
+      // Given: User selects multiple stacks with Next.js as primary
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "" },
+        { stack: "python", path: "backend" },
+      ]);
+
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStacks: ["nextjs", "python"] })
+        .mockResolvedValueOnce({ primaryStack: "nextjs" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      // Then: copyTemplates receives additionalStacks
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        expect.any(Object),
+        expect.objectContaining({
+          additionalStacks: ["python"],
+        }),
+      );
+    });
+
+    it("allows changing primary stack from checkbox selection", async () => {
+      // Given: User selects python and nextjs, then picks python as primary
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "frontend" },
+        { stack: "python", path: "backend" },
+      ]);
+
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStacks: ["nextjs", "python"] })
+        .mockResolvedValueOnce({ primaryStack: "python" }) // Change to python
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:8000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      // Then: python is primary, nextjs is additional
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "python",
+        expect.any(Object),
+        expect.objectContaining({
+          additionalStacks: ["nextjs"],
+        }),
+      );
+    });
+
+    it("skips primary selection when only one stack selected", async () => {
+      // Given: Multiple stacks detected but user only selects one
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "" },
+        { stack: "python", path: "backend" },
+      ]);
+
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStacks: ["nextjs"] }) // Only select one
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true });
+
+      await initCommand({ interactive: true });
+
+      // Then: No additional stacks, no primary selection prompt
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        expect.any(Object),
+        expect.objectContaining({
+          additionalStacks: [],
+        }),
+      );
+    });
+
+    it("skips multi-stack UI in non-interactive mode", async () => {
+      // Given: Multi-stack project but non-interactive mode
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI");
+      mockDetectAllStacks.mockResolvedValue([
+        { stack: "nextjs", path: "" },
+        { stack: "python", path: "backend" },
+      ]);
+      mockDetectStack.mockResolvedValue("nextjs");
+
+      await initCommand({});
+
+      // Then: Falls back to single-stack detection
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("Detected 2 stacks");
+      expect(output).toContain("Detected stack: nextjs");
+      expect(mockInquirerPrompt).not.toHaveBeenCalled();
+    });
+
+    // === ERROR HANDLING ===
+    describe("error handling", () => {
+      it("requires at least one stack selection", async () => {
+        // Given: Multi-stack detection
+        mockDetectAllStacks.mockResolvedValue([
+          { stack: "nextjs", path: "" },
+          { stack: "python", path: "backend" },
+        ]);
+
+        // When: Checkbox prompt has validation
+        mockInquirerPrompt.mockImplementation(async (questions) => {
+          const q = Array.isArray(questions) ? questions[0] : questions;
+          if (q.type === "checkbox" && q.validate) {
+            // Verify validation rejects empty selection
+            const result = q.validate([]);
+            expect(result).toBe("You must select at least one stack.");
+          }
+          return { selectedStacks: ["nextjs"] };
+        });
+
+        await initCommand({ interactive: true });
+      });
+
+      it("handles detectAllStacks failure gracefully", async () => {
+        // Given: detectAllStacks throws an error
+        mockDetectAllStacks.mockRejectedValue(new Error("Read error"));
+        mockDetectStack.mockResolvedValue("generic");
+
+        // When/Then: Should not crash, falls back to single-stack
+        await expect(initCommand({ yes: true })).resolves.not.toThrow();
+      });
     });
   });
 });
