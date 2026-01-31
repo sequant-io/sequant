@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shell script quality checks in `/exec` skill (#210)
   - Syntax validation, shellcheck integration, unused function detection
   - Smoke test execution for scripts with --help support
+- Interactive stack selection and multi-stack support in `/setup` (#197)
+  - `--interactive` / `-i` flag for guided stack configuration
+  - Multi-stack detection: identifies stacks in root and subdirectories
+  - Checkbox UI for selecting multiple stacks in monorepos
+  - Primary stack selection determines dev URL and commands
+  - Combined constitution notes from all selected stacks
+  - Stack config persistence in `.sequant/stack.json`
 
 ## [1.12.0] - 2026-01-29
 

@@ -6,9 +6,11 @@ import chalk from "chalk";
 import inquirer from "inquirer";
 import {
   detectStack,
+  detectAllStacks,
   getStackConfig,
   detectPackageManager,
   getPackageManagerCommands,
+  STACKS,
 } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
@@ -30,6 +32,7 @@ import {
   runSetupWizard,
   shouldRunSetupWizard,
 } from "../lib/wizard.js";
+import { saveStackConfig, type StackConfigFile } from "../lib/stack-config.js";
 
 /**
  * Check prerequisites and display warnings
@@ -207,54 +210,130 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Detect or prompt for stack
   let stack = options.stack;
-  if (!stack) {
-    const detected = await detectStack();
-    if (detected && skipPrompts) {
-      stack = detected;
-      logDefault("Detected stack", stack);
-    } else if (detected && !skipPrompts) {
-      const { confirmedStack } = await inquirer.prompt([
-        {
-          type: "list",
-          name: "confirmedStack",
-          message: `Detected ${detected} project. Is this correct?`,
-          choices: [
-            { name: `Yes, use ${detected}`, value: detected },
-            { name: "No, let me choose", value: null },
-          ],
-        },
-      ]);
-      stack = confirmedStack;
-    }
+  let additionalStacks: string[] = [];
 
-    if (!stack && skipPrompts) {
-      // No detection and skipping prompts: use generic as default
-      stack = "generic";
-      logDefault("Using stack", stack);
-    } else if (!stack) {
-      const { selectedStack } = await inquirer.prompt([
+  if (!stack) {
+    // Check for multi-stack project in interactive mode
+    const allDetectedStacks = !skipPrompts ? await detectAllStacks() : [];
+
+    if (allDetectedStacks.length > 1 && !skipPrompts) {
+      // Multi-stack project detected - show checkbox selection
+      console.log(
+        chalk.blue(
+          `\n🔍 Detected ${allDetectedStacks.length} stacks in this project:`,
+        ),
+      );
+      for (const ds of allDetectedStacks) {
+        const location = ds.path ? ` (${ds.path}/)` : " (root)";
+        console.log(
+          chalk.gray(
+            `   • ${STACKS[ds.stack]?.displayName || ds.stack}${location}`,
+          ),
+        );
+      }
+      console.log();
+
+      // Multi-stack selection prompt
+      const { selectedStacks } = await inquirer.prompt([
         {
-          type: "list",
-          name: "selectedStack",
-          message: "Select your project stack:",
-          choices: [
-            { name: "Next.js / React", value: "nextjs" },
-            { name: "Astro", value: "astro" },
-            { name: "SvelteKit", value: "sveltekit" },
-            { name: "Remix", value: "remix" },
-            { name: "Nuxt", value: "nuxt" },
-            { name: "Rust", value: "rust" },
-            { name: "Python", value: "python" },
-            { name: "Go", value: "go" },
-            { name: "Generic (no stack-specific config)", value: "generic" },
-          ],
+          type: "checkbox",
+          name: "selectedStacks",
+          message: "Select stacks to include in your constitution:",
+          choices: allDetectedStacks.map((ds) => ({
+            name: `${STACKS[ds.stack]?.displayName || ds.stack}${ds.path ? ` (${ds.path}/)` : " (root)"}`,
+            value: ds.stack,
+            checked: true, // Pre-select all detected stacks
+          })),
+          validate: (answer: string[]) => {
+            if (answer.length < 1) {
+              return "You must select at least one stack.";
+            }
+            return true;
+          },
         },
       ]);
-      stack = selectedStack;
+
+      // First selected stack is the primary
+      if (selectedStacks.length > 0) {
+        stack = selectedStacks[0];
+        additionalStacks = selectedStacks.slice(1);
+      }
+
+      // Confirm or change primary stack if multiple selected
+      if (selectedStacks.length > 1) {
+        const { primaryStack } = await inquirer.prompt([
+          {
+            type: "list",
+            name: "primaryStack",
+            message:
+              "Which stack should be the primary? (determines dev URL and commands)",
+            choices: selectedStacks.map((s: string) => ({
+              name: STACKS[s]?.displayName || s,
+              value: s,
+            })),
+          },
+        ]);
+        stack = primaryStack;
+        additionalStacks = selectedStacks.filter(
+          (s: string) => s !== primaryStack,
+        );
+      }
+    } else {
+      // Single stack detection (original behavior)
+      const detected = await detectStack();
+      if (detected && skipPrompts) {
+        stack = detected;
+        logDefault("Detected stack", stack);
+      } else if (detected && !skipPrompts) {
+        const { confirmedStack } = await inquirer.prompt([
+          {
+            type: "list",
+            name: "confirmedStack",
+            message: `Detected ${detected} project. Is this correct?`,
+            choices: [
+              { name: `Yes, use ${detected}`, value: detected },
+              { name: "No, let me choose", value: null },
+            ],
+          },
+        ]);
+        stack = confirmedStack;
+      }
+
+      if (!stack && skipPrompts) {
+        // No detection and skipping prompts: use generic as default
+        stack = "generic";
+        logDefault("Using stack", stack);
+      } else if (!stack) {
+        const { selectedStack } = await inquirer.prompt([
+          {
+            type: "list",
+            name: "selectedStack",
+            message: "Select your project stack:",
+            choices: [
+              { name: "Next.js / React", value: "nextjs" },
+              { name: "Astro", value: "astro" },
+              { name: "SvelteKit", value: "sveltekit" },
+              { name: "Remix", value: "remix" },
+              { name: "Nuxt", value: "nuxt" },
+              { name: "Rust", value: "rust" },
+              { name: "Python", value: "python" },
+              { name: "Go", value: "go" },
+              { name: "Generic (no stack-specific config)", value: "generic" },
+            ],
+          },
+        ]);
+        stack = selectedStack;
+      }
     }
   }
 
-  console.log(chalk.blue(`\n📋 Stack: ${stack}`));
+  // Display selected stacks
+  if (additionalStacks.length > 0) {
+    console.log(chalk.blue(`\n📋 Primary Stack: ${stack}`));
+    console.log(chalk.blue(`   Additional: ${additionalStacks.join(", ")}`));
+  } else {
+    console.log(chalk.blue(`\n📋 Stack: ${stack}`));
+  }
 
   // Detect package manager
   const packageManager = await detectPackageManager();
@@ -339,6 +418,16 @@ export async function initCommand(options: InitOptions): Promise<void> {
     initialized: new Date().toISOString(),
   });
 
+  // Save multi-stack configuration if additional stacks selected
+  if (additionalStacks.length > 0) {
+    const stackConfig: StackConfigFile = {
+      primary: { name: stack! },
+      additional: additionalStacks.map((name) => ({ name })),
+    };
+    await saveStackConfig(stackConfig);
+    console.log(chalk.blue("📋 Saved multi-stack configuration"));
+  }
+
   // Create default settings
   console.log(chalk.blue("⚙️  Creating default settings..."));
   await createDefaultSettings();
@@ -351,6 +440,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     {
       noSymlinks: options.noSymlinks,
       force: options.force,
+      additionalStacks,
     },
   );
 

@@ -2,7 +2,52 @@
  * Stack detection and configuration
  */
 
+import { readdir } from "fs/promises";
 import { fileExists, readFile } from "./fs.js";
+
+/**
+ * Detected stack with location information
+ */
+export interface DetectedStack {
+  /** Stack name (e.g., "nextjs", "python") */
+  stack: string;
+  /** Path relative to project root (empty string for root) */
+  path: string;
+}
+
+/**
+ * Stack configuration for persistence in .sequant/stack.json
+ */
+export interface StackConfig_Persisted {
+  /** Primary stack for the project (determines dev URL, commands) */
+  primary: {
+    name: string;
+    path?: string;
+  };
+  /** Additional stacks to include in constitution notes */
+  additional?: Array<{
+    name: string;
+    path?: string;
+  }>;
+}
+
+/**
+ * Directories to skip during multi-stack detection
+ */
+const SKIP_DIRECTORIES = [
+  "node_modules",
+  ".git",
+  "vendor",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  ".output",
+  "__pycache__",
+  "target",
+  ".claude",
+  ".sequant",
+];
 
 /**
  * Supported package managers
@@ -354,6 +399,142 @@ export async function detectStack(): Promise<string | null> {
   return null;
 }
 
+/**
+ * Detect stack in a specific directory
+ * Similar to detectStack but operates on a given path
+ *
+ * @param basePath - Directory path to check (relative to cwd)
+ * @returns Stack name or null if not detected
+ */
+export async function detectStackInDirectory(
+  basePath: string,
+): Promise<string | null> {
+  const pathPrefix = basePath ? `${basePath}/` : "";
+
+  // Check for Next.js config files
+  for (const file of STACKS.nextjs.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "nextjs";
+    }
+  }
+
+  // Check for Astro config files
+  for (const file of STACKS.astro.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "astro";
+    }
+  }
+
+  // Check for SvelteKit config files
+  for (const file of STACKS.sveltekit.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "sveltekit";
+    }
+  }
+
+  // Check for Remix config files
+  for (const file of STACKS.remix.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "remix";
+    }
+  }
+
+  // Check for Nuxt config files
+  for (const file of STACKS.nuxt.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "nuxt";
+    }
+  }
+
+  // Check package.json for JS framework dependencies
+  const packageJsonPath = `${pathPrefix}package.json`;
+  if (await fileExists(packageJsonPath)) {
+    try {
+      const pkg = JSON.parse(await readFile(packageJsonPath));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (deps.next) return "nextjs";
+      if (deps.astro) return "astro";
+      if (deps["@sveltejs/kit"]) return "sveltekit";
+      if (deps["@remix-run/react"]) return "remix";
+      if (deps.nuxt) return "nuxt";
+    } catch {
+      // Ignore parse errors
+    }
+  }
+
+  // Check for Rust
+  if (await fileExists(`${pathPrefix}Cargo.toml`)) {
+    return "rust";
+  }
+
+  // Check for Go
+  if (await fileExists(`${pathPrefix}go.mod`)) {
+    return "go";
+  }
+
+  // Check for Python
+  for (const file of STACKS.python.detection.files || []) {
+    if (await fileExists(`${pathPrefix}${file}`)) {
+      return "python";
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Detect all stacks in the repository
+ *
+ * Traverses root and immediate subdirectories (1 level deep) to find
+ * all stacks present in a monorepo or multi-stack project.
+ *
+ * @returns Array of detected stacks with their paths
+ */
+export async function detectAllStacks(): Promise<DetectedStack[]> {
+  const results: DetectedStack[] = [];
+
+  // Check root directory
+  const rootStack = await detectStackInDirectory("");
+  if (rootStack) {
+    results.push({ stack: rootStack, path: "" });
+  }
+
+  // Check immediate subdirectories (1 level deep)
+  try {
+    const entries = await readdir(".", { withFileTypes: true });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (SKIP_DIRECTORIES.includes(entry.name)) continue;
+      if (entry.name.startsWith(".")) continue; // Skip hidden directories
+
+      const subdirStack = await detectStackInDirectory(entry.name);
+      if (subdirStack) {
+        // Skip if same stack as root (likely a false positive)
+        // e.g., both root and /packages/web detect "nextjs"
+        // We want distinct stacks, not duplicates
+        const isDuplicate = results.some(
+          (r) => r.stack === subdirStack && r.path === "",
+        );
+
+        // Only skip if root has the same stack AND this is a common mono-repo pattern
+        // (like packages/, apps/, etc.)
+        if (
+          !isDuplicate ||
+          entry.name === "frontend" ||
+          entry.name === "backend"
+        ) {
+          results.push({ stack: subdirStack, path: entry.name });
+        }
+      }
+    }
+  } catch {
+    // Directory read failed, return what we have
+  }
+
+  return results;
+}
+
 export function getStackConfig(stack: string): StackConfig {
   return STACKS[stack] || STACKS.generic;
 }
@@ -525,4 +706,45 @@ export const STACK_NOTES: Record<string, string> = {
  */
 export function getStackNotes(stack: string): string {
   return STACK_NOTES[stack] || STACK_NOTES.generic;
+}
+
+/**
+ * Get combined stack notes for multiple stacks
+ *
+ * Combines notes from a primary stack and optional additional stacks
+ * into a single markdown section for multi-stack projects.
+ *
+ * @param primary - Primary stack name (determines primary tooling)
+ * @param additional - Additional stacks to include notes for
+ * @returns Combined stack notes markdown content
+ */
+export function getMultiStackNotes(
+  primary: string,
+  additional: string[] = [],
+): string {
+  const sections: string[] = [];
+
+  // Add primary stack notes (with "Primary" marker)
+  const primaryNotes = STACK_NOTES[primary] || STACK_NOTES.generic;
+  if (additional.length > 0) {
+    // Replace the first line heading to include "(Primary)"
+    const modifiedPrimary = primaryNotes.replace(
+      /^### (.+)$/m,
+      "### $1 (Primary)",
+    );
+    sections.push(modifiedPrimary);
+  } else {
+    sections.push(primaryNotes);
+  }
+
+  // Add additional stack notes
+  for (const stack of additional) {
+    if (stack === primary) continue; // Skip if same as primary
+    const notes = STACK_NOTES[stack];
+    if (notes && notes !== STACK_NOTES.generic) {
+      sections.push(notes);
+    }
+  }
+
+  return sections.join("\n\n---\n\n");
 }
