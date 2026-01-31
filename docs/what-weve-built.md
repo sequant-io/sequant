@@ -112,7 +112,7 @@ For when you want to go hands-off:
 | `/improve` | **Discovery** | Scans for issues (type safety, tests, docs), creates GitHub issues, offers execution |
 | `/reflect` | **Learning** | Analyzes session effectiveness, proposes documentation/process improvements |
 | `/security-review` | **Security Audit** | Domain-specific checklists (auth, API, admin), threat modeling |
-| `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name and stack, injects stack-specific notes (testing, linting, build conventions) |
+| `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name and stack, injects stack-specific notes; `--interactive` mode for guided setup, multi-stack support for monorepos |
 | `/merger` | **Integration** | Multi-issue merge with conflict detection, dependency ordering, worktree cleanup |
 
 ### Shared Resources
@@ -672,6 +672,7 @@ Shell scripts in `templates/scripts/`:
 - **AC linting** — `/spec` flags vague, unmeasurable, or incomplete acceptance criteria before implementation begins
 - **Semgrep static analysis integration** — `/qa` now runs Semgrep with stack-aware rulesets (Next.js, Python, Go, Rust, etc.), graceful skip when not installed, custom rules via `.sequant/semgrep-rules.yaml`, critical findings block merge verdict
 - **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
+- **Interactive stack selection & multi-stack support** — `/setup --interactive` offers guided stack configuration with confirmation prompts; monorepos get checkbox selection for multiple stacks (e.g., Next.js frontend + Python backend) with combined constitution notes
 - Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
 - **Plugin marketplace integration** — Claude Code plugin with CI-enforced version sync (plugin.json must match package.json), structure validation on every PR, `/release` skill auto-syncs versions
 - Strict QA verdicts (`NEEDS_VERIFICATION`, proper `PARTIALLY_MET`)
