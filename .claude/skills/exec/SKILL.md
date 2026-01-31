@@ -912,6 +912,9 @@ Fall back to sequential execution (standard implementation loop).
 - Run Prettier on all modified files after each group (agents skip auto-format)
 - On any agent failure: stop remaining agents, log error, continue with sequential
 - File locking prevents concurrent edits to the same file
+- **REQUIRED:** When spawning agents, you MUST use prompt templates from Section 4c for typed tasks (component, CLI, test, refactor). Generic prompts are only acceptable for truly untyped tasks.
+
+⚠️ **Warning:** Skipping templates for typed tasks will result in QA rejection.
 
 **Error Handling with Automatic Retry:**
 
@@ -950,6 +953,87 @@ Parse the agent's output text for these patterns to detect failures:
 | `unable to proceed` | Agent could not complete the task |
 | `blocked by hook` | Operation was blocked by pre-tool hook |
 | `I'm unable to` | Agent hit a blocking constraint |
+
+### 4c. Prompt Templates for Sub-Agents
+
+When spawning sub-agents for implementation tasks, use task-specific prompt templates for better results. See [prompt-templates.md](../_shared/references/prompt-templates.md) for the full reference.
+
+**Template Selection:**
+
+Templates are selected automatically based on keywords in the task description:
+
+| Keywords | Template |
+|----------|----------|
+| `component`, `Component`, `React` | Component Template |
+| `type`, `interface`, `types/` | Type Definition Template |
+| `CLI`, `command`, `script`, `bin/` | CLI/Script Template |
+| `test`, `spec`, `.test.` | Test Template |
+| `refactor`, `restructure`, `migrate` | Refactor Template |
+| (none matched) | Generic Template |
+
+**Explicit Override:**
+
+Use `[template: X]` annotation to force a specific template:
+
+```
+[template: component] Create UserCard in components/admin/
+[template: cli] Add export command to scripts/
+```
+
+**Example with Template:**
+
+Instead of a generic prompt:
+```
+Task(subagent_type="general-purpose",
+     model="haiku",
+     prompt="Create MetricsCard component in components/admin/")
+```
+
+Use a structured template prompt:
+```
+Task(subagent_type="general-purpose",
+     model="haiku",
+     prompt="## Task: Create React Component
+
+**Component:** MetricsCard
+**Location:** components/admin/metrics/MetricsCard.tsx
+
+**Requirements:**
+- [ ] TypeScript with proper prop types
+- [ ] Follow existing component patterns
+- [ ] Include displayName for debugging
+- [ ] No inline styles
+
+**Constraints:**
+- Working directory: [worktree path]
+- Do NOT create test files
+
+**Deliverable:**
+Report: files created, component name, props interface")
+```
+
+**Error Recovery with Enhanced Context:**
+
+When retrying a failed agent, use the error recovery template from [prompt-templates.md](../_shared/references/prompt-templates.md#error-recovery-template):
+
+```markdown
+## RETRY: Previous Attempt Failed
+
+**Original Task:** [task]
+**Previous Error:** [error from TaskOutput]
+
+**Diagnosis Checklist:**
+- [ ] Check imports are correct
+- [ ] Verify file paths use worktree directory
+- [ ] Confirm types match expected signatures
+- [ ] Look for typos in identifiers
+
+**Fix Strategy:**
+1. Read the failing file
+2. Identify the specific error location
+3. Apply minimal fix
+4. Verify fix compiles
+```
 
 ## Implementation Quality Standards
 
