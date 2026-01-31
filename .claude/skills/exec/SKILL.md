@@ -912,6 +912,9 @@ Fall back to sequential execution (standard implementation loop).
 - Run Prettier on all modified files after each group (agents skip auto-format)
 - On any agent failure: stop remaining agents, log error, continue with sequential
 - File locking prevents concurrent edits to the same file
+- **REQUIRED:** When spawning agents, you MUST use prompt templates from Section 4c for typed tasks (component, CLI, test, refactor). Generic prompts are only acceptable for truly untyped tasks.
+
+⚠️ **Warning:** Skipping templates for typed tasks will result in QA rejection.
 
 **Error Handling with Automatic Retry:**
 
