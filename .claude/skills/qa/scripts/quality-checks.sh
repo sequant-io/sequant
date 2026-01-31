@@ -146,7 +146,35 @@ else
   echo "   Install with: pip install semgrep"
 fi
 
-# 10. Build Verification Against Main (when build fails)
+# 10. Shell Script Semantic Checks (unused functions, integration)
+echo ""
+echo "🔍 Checking shell script semantics..."
+shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$' || true)
+if [[ -n "$shell_scripts" ]]; then
+  for script in $shell_scripts; do
+    if [[ -f "$script" ]]; then
+      echo "   Analyzing: $script"
+      # Extract function definitions and check if they're called
+      funcs=$(grep -oE "^[a-zA-Z_][a-zA-Z0-9_]*\(\)" "$script" 2>/dev/null | sed 's/()//' || true)
+      unused_count=0
+      for func in $funcs; do
+        # Count calls (excluding the definition line)
+        call_count=$(grep -c "\b${func}\b" "$script" 2>/dev/null || echo "0")
+        if [[ $call_count -lt 2 ]]; then  # Only definition, no calls
+          echo "   ⚠️  Function '$func' defined but possibly not called"
+          unused_count=$((unused_count + 1))
+        fi
+      done
+      if [[ $unused_count -eq 0 && -n "$funcs" ]]; then
+        echo "   ✅ All functions are called"
+      fi
+    fi
+  done
+else
+  echo "   No shell scripts changed"
+fi
+
+# 11. Build Verification Against Main (when build fails)
 # AC-1: When build fails, check if same failure exists on main branch
 # AC-2: If failure is new (not on main), flag as potential regression
 # AC-3: If failure is pre-existing (on main), document and proceed
