@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Skill command verification in `/qa` skill (#209)
+  - Detects when `.claude/skills/**/*.md` files are modified
+  - Extracts CLI commands from bash code blocks, subshells, inline backticks
+  - Validates JSON field names against `--help` output (e.g., `gh pr checks --json name,state,bucket`)
+  - Pre-requisite check for `gh` CLI availability
+  - Verdict gating: `READY_FOR_MERGE` blocked if command verification fails
+  - New "Skill Command Verification" and "Skill Change Review" sections in QA output
 - Mandatory prompt template enforcement in `/exec` parallel execution (#212)
   - REQUIRED: Sub-agents MUST use templates from Section 4c for typed tasks
   - Warning: Skipping templates for typed tasks results in QA rejection

@@ -667,6 +667,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.12.0)
+- **Skill command verification** — `/qa` now detects skill file changes (`.claude/skills/**/*.md`), extracts referenced CLI commands, validates JSON field names against `--help` output, and blocks `READY_FOR_MERGE` if commands have invalid syntax or non-existent fields (prevents bugs like #178's `conclusion` field issue)
 - **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals
 - **CI status awareness** — `/qa` checks GitHub CI status via `gh pr checks`, preventing `READY_FOR_MERGE` when CI is still pending
 - **AC linting** — `/spec` flags vague, unmeasurable, or incomplete acceptance criteria before implementation begins
