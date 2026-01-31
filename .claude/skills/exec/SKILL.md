@@ -308,6 +308,64 @@ echo "Current branch: $CURRENT_BRANCH"
 
 **Important:** Always work in the worktree directory, not the main repository, once the worktree is created.
 
+### Pre-PR AC Verification (REQUIRED)
+
+**Before creating a PR**, you MUST verify that each Acceptance Criteria has been addressed:
+
+1. **Retrieve AC from workflow state:**
+   ```bash
+   # Get stored AC for this issue
+   npx tsx -e "
+   import { StateManager } from './src/lib/workflow/state-manager.js';
+   const manager = new StateManager();
+   const state = await manager.getIssueState(<issue-number>);
+   if (state?.acceptanceCriteria) {
+     console.log(JSON.stringify(state.acceptanceCriteria, null, 2));
+   } else {
+     console.log('No AC found in state - check issue body');
+   }
+   "
+   ```
+
+2. **If no AC in state**, extract from issue body:
+   - Check issue body for AC items (AC-1, AC-2, etc.)
+   - Parse from issue comments if clarifications were added
+
+3. **Generate AC Verification Checklist:**
+
+   For each AC item, determine implementation status:
+
+   ```markdown
+   ### Pre-PR AC Verification
+
+   | AC | Description | Status | Evidence |
+   |----|-------------|--------|----------|
+   | AC-1 | [Description] | ✅ Implemented | [File:line or brief explanation] |
+   | AC-2 | [Description] | ✅ Implemented | [File:line or brief explanation] |
+   | AC-3 | [Description] | ⚠️ Partial | [What's missing] |
+   | AC-4 | [Description] | ❌ Not addressed | [Justification if intentional] |
+   ```
+
+4. **Status Definitions:**
+   - ✅ **Implemented**: Code exists that satisfies this AC
+   - ⚠️ **Partial**: Some aspects implemented, others missing
+   - ❌ **Not addressed**: AC not implemented (must include justification)
+   - 🔄 **Deferred**: Intentionally deferred to follow-up issue (link issue)
+
+5. **Verification Behavior:**
+   - **All AC ✅**: Proceed to PR creation
+   - **Some AC ⚠️/❌**: Include in PR description as known gaps
+   - **Critical AC ❌**: Consider whether to create PR or continue implementation
+
+6. **Include in PR Description:**
+   Add the AC verification table to the PR body so reviewers can validate coverage.
+
+**Why this matters:** Catching AC gaps before PR creation:
+- Reduces review cycles
+- Ensures nothing is forgotten
+- Documents intentional deferrals
+- Enables better QA in `/qa` phase
+
 ### PR Creation and Verification
 
 After implementation is complete and all checks pass, create and verify the PR:
