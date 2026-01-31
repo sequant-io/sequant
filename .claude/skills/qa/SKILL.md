@@ -682,6 +682,35 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 **Do NOT skip this self-evaluation.** Honest reflection catches issues that code review cannot.
 
+#### Skill Change Review (Conditional)
+
+**When to apply:** `.claude/skills/**/*.md` files were modified.
+
+**Detect skill changes:**
+```bash
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs)
+```
+
+**If skills_changed > 0, add these adversarial prompts:**
+
+| Prompt | Why It Matters |
+|--------|----------------|
+| **Command verified:** Did you execute at least one referenced command? | Skill instructions can reference commands that don't work (wrong flags, missing fields) |
+| **Fields verified:** For JSON commands, do field names match actual output? | Issue #178: `gh pr checks --json conclusion` failed because `conclusion` doesn't exist |
+| **Patterns complete:** What variations might users write that aren't covered? | Skills define patterns - missing coverage causes silent failures |
+| **Dependencies explicit:** What CLIs/tools does this skill assume are installed? | Missing `gh`, `npm`, etc. breaks the skill with confusing errors |
+
+**Example skill-specific self-evaluation:**
+
+```markdown
+### Skill Change Review
+
+- [ ] **Command verified:** Executed `gh pr checks --json name,state,bucket` - fields exist ✅
+- [ ] **Fields verified:** Checked `gh pr checks --help` for valid JSON fields ✅
+- [ ] **Patterns complete:** Covered SUCCESS, FAILURE, PENDING states ✅
+- [ ] **Dependencies explicit:** Requires `gh` CLI authenticated ✅
+```
+
 ---
 
 ### 6. Execution Evidence (REQUIRED for scripts/CLI)
@@ -724,6 +753,140 @@ See [quality-gates.md](references/quality-gates.md) for detailed evidence requir
 
 ---
 
+### 6a. Skill Command Verification (REQUIRED for skill changes)
+
+**When to apply:** `.claude/skills/**/*.md` files were modified.
+
+**Purpose:** Skills contain instructions with CLI commands. If those commands have wrong syntax, missing flags, or non-existent JSON fields, the skill will fail when used. QA must verify commands actually work before READY_FOR_MERGE.
+
+**Detect skill changes:**
+```bash
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$")
+skill_count=$(echo "$skills_changed" | grep -c . || echo 0)
+```
+
+**Pre-requisite check:**
+```bash
+# Verify gh CLI is available before running verification
+if ! command -v gh &>/dev/null; then
+  echo "⚠️ gh CLI not installed - skill command verification skipped"
+  echo "Install: https://cli.github.com/"
+  # Set verification status to "Skipped" with reason
+fi
+```
+
+**If skill_count > 0, extract and verify commands:**
+
+#### Step 1: Extract Commands from Changed Skills
+
+```bash
+# Extract command patterns from skill files
+for skill_file in $skills_changed; do
+  echo "=== Commands in $skill_file ==="
+
+  # Commands at start of line (simple commands)
+  grep -E '^\s*(gh|npm|npx|git)\s+' "$skill_file" 2>/dev/null | head -10
+
+  # Commands in subshells/variable assignments: result=$(gh pr view ...)
+  grep -oE '\$\((gh|npm|npx|git)\s+[^)]+\)' "$skill_file" 2>/dev/null | head -10
+
+  # Commands in inline backticks
+  grep -oE '\`(gh|npm|npx|git)\s+[^\`]+\`' "$skill_file" 2>/dev/null | head -10
+
+  # Commands after pipe or semicolon: ... | gh ... or ; npm ...
+  grep -oE '[|;]\s*(gh|npm|npx|git)\s+[^|;&]+' "$skill_file" 2>/dev/null | head -10
+done
+```
+
+**Note:** Multi-line commands (using `\` continuation) require manual review. The extraction patterns above capture single-line commands only.
+
+#### Step 2: Verify Command Syntax
+
+For each extracted command type:
+
+| Command Type | Verification Method | Example |
+|--------------|---------------------|---------|
+| `gh pr checks --json X` | Check `gh pr checks --help` for valid JSON fields | `gh pr checks --help \| grep -A 30 "JSON FIELDS"` |
+| `gh issue view --json X` | Check `gh issue view --help` for valid JSON fields | `gh issue view --help \| grep -A 30 "JSON FIELDS"` |
+| `gh api ...` | Verify endpoint format matches GitHub API | Check endpoint structure |
+| `npm run <script>` | Verify script exists in package.json | `jq '.scripts["<script>"]' package.json` |
+| `npx tsx <file>` | Verify file exists | `test -f <file>` |
+| `git <cmd>` | Verify against `git <cmd> --help` | Check valid flags |
+
+**JSON Field Validation Example:**
+
+```bash
+# For commands like: gh pr checks --json name,state,conclusion
+# Verify each field exists
+
+# Get valid fields
+valid_fields=$(gh pr checks --help 2>/dev/null | grep -A 50 "JSON FIELDS" | grep -E "^\s+\w+" | awk '{print $1}')
+
+# Check if "conclusion" is valid (spoiler: it's not)
+echo "$valid_fields" | grep -qw "conclusion" && echo "✅ conclusion exists" || echo "❌ conclusion NOT a valid field"
+```
+
+#### Step 3: Handle Placeholders
+
+Commands with placeholders (`<issue-number>`, `$PR_NUMBER`, `${VAR}`) cannot be executed directly.
+
+**Handling:**
+- **Skip execution** for commands with placeholders
+- **Mark as "Syntax verified, execution skipped"**
+- **Still verify JSON fields** by extracting field names
+
+```bash
+# Example: gh pr checks $pr_number --json name,state,bucket
+# Can't execute (no $pr_number), but can verify fields
+echo "name,state,bucket" | tr ',' '\n' | while read field; do
+  gh pr checks --help | grep -qw "$field" && echo "✅ $field" || echo "❌ $field"
+done
+```
+
+#### Step 4: Command Verification Status
+
+| Status | Meaning |
+|--------|---------|
+| **Passed** | All commands verified, fields exist |
+| **Failed** | At least one command has invalid syntax or non-existent fields |
+| **Skipped** | Commands have placeholders; syntax looks valid but not executed |
+| **Not Required** | No skill files changed |
+
+#### Verdict Gating
+
+**CRITICAL:** If skill command verification = **Failed**, verdict CANNOT be `READY_FOR_MERGE`.
+
+| Verification Status | Maximum Verdict |
+|---------------------|-----------------|
+| Passed | READY_FOR_MERGE |
+| Skipped | READY_FOR_MERGE (with note about unverified placeholders) |
+| Failed | AC_MET_BUT_NOT_A_PLUS (blocks merge until fixed) |
+| Not Required | READY_FOR_MERGE |
+
+**Output Format:**
+
+```markdown
+### Skill Command Verification
+
+**Skill files changed:** 2
+
+| File | Commands Found | Verification Status |
+|------|----------------|---------------------|
+| `.claude/skills/qa/SKILL.md` | 5 | ✅ Passed |
+| `.claude/skills/exec/SKILL.md` | 3 | ⚠️ Skipped (placeholders) |
+
+**Commands Verified:**
+- `gh pr checks --json name,state,bucket` → ✅ All fields exist
+- `gh issue view --json title,body` → ✅ All fields exist
+
+**Commands with Issues:**
+- `gh pr checks --json conclusion` → ❌ Field "conclusion" does not exist
+
+**Verification Status:** Failed
+```
+
+---
+
 ### 7. A+ Status Verdict
 
 Provide an overall verdict:
@@ -742,9 +905,17 @@ Provide an overall verdict:
    - pending_count = ACs with status PENDING
    - not_met_count = ACs with status NOT_MET
 
-2. Determine verdict (in order):
+2. Check verification gates:
+   - skill_verification = status from Section 6a (Passed/Failed/Skipped/Not Required)
+   - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
+
+3. Determine verdict (in order):
    - IF not_met_count > 0 OR partial_count > 0:
        → AC_NOT_MET (block merge)
+   - ELSE IF skill_verification == "Failed":
+       → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
+   - ELSE IF execution_evidence == "Incomplete":
+       → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
    - ELSE IF pending_count > 0:
        → NEEDS_VERIFICATION (wait for verification)
    - ELSE IF improvement_suggestions.length > 0:
@@ -754,6 +925,8 @@ Provide an overall verdict:
 ```
 
 **CRITICAL:** `PARTIALLY_MET` is NOT sufficient for merge. It MUST be treated as `NOT_MET` for verdict purposes.
+
+**CRITICAL:** If skill command verification = "Failed", verdict CANNOT be `READY_FOR_MERGE`. This prevents shipping skills with broken commands (like issue #178's `conclusion` field).
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict criteria.
 
@@ -902,6 +1075,8 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
 - [ ] **Anti-Pattern Detection** - Dependency audit (if package.json changed) + code patterns
 - [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
+- [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
+- [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 
@@ -1045,6 +1220,37 @@ You MUST include these sections:
 | Smoke test | `[command]` | [code] | [result] |
 
 **Evidence status:** Complete / Incomplete / Waived (reason) / Not Required
+
+---
+
+### Skill Command Verification
+
+[Include if `.claude/skills/**/*.md` modified, otherwise: "N/A - No skill files changed"]
+
+**Skill files changed:** X
+
+| File | Commands Found | Verification Status |
+|------|----------------|---------------------|
+| `[skill file]` | [count] | ✅ Passed / ❌ Failed / ⚠️ Skipped |
+
+**Commands Verified:**
+- `[command]` → ✅ [result]
+
+**Commands with Issues:**
+- `[command]` → ❌ [issue description]
+
+**Verification Status:** Passed / Failed / Skipped / Not Required
+
+---
+
+### Skill Change Review
+
+[Include if skill files changed, otherwise omit]
+
+- [ ] **Command verified:** Did you execute at least one referenced command?
+- [ ] **Fields verified:** For JSON commands, do field names match actual output?
+- [ ] **Patterns complete:** What variations might users write that aren't covered?
+- [ ] **Dependencies explicit:** What CLIs/tools does this skill assume are installed?
 
 ---
 
