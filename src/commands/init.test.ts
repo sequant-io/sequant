@@ -17,6 +17,7 @@ vi.mock("../lib/settings.js", () => ({
 // Mock stacks
 vi.mock("../lib/stacks.js", () => ({
   detectStack: vi.fn(),
+  detectAllStacks: vi.fn(() => Promise.resolve([])),
   detectPackageManager: vi.fn(() => Promise.resolve("npm")),
   getPackageManagerCommands: vi.fn(() => ({
     run: "npm run",
@@ -34,6 +35,11 @@ vi.mock("../lib/stacks.js", () => ({
       LINT_COMMAND: "npm run lint",
     },
   })),
+  STACKS: {
+    nextjs: { displayName: "Next.js" },
+    python: { displayName: "Python" },
+    generic: { displayName: "Generic" },
+  },
 }));
 
 // Mock config
@@ -51,6 +57,11 @@ vi.mock("../lib/templates.js", () => ({
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   createManifest: vi.fn(),
+}));
+
+// Mock stack-config
+vi.mock("../lib/stack-config.js", () => ({
+  saveStackConfig: vi.fn(),
 }));
 
 // Mock system functions
@@ -269,6 +280,7 @@ describe("init command", () => {
         {
           noSymlinks: undefined,
           force: undefined,
+          additionalStacks: [],
         },
       );
       expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");

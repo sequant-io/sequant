@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   detectStack,
+  detectStackInDirectory,
+  detectAllStacks,
   getStackConfig,
   STACKS,
   detectPackageManager,
@@ -8,6 +10,7 @@ import {
   PM_CONFIG,
   STACK_NOTES,
   getStackNotes,
+  getMultiStackNotes,
 } from "./stacks.js";
 
 // Mock the fs module
@@ -16,10 +19,17 @@ vi.mock("./fs.js", () => ({
   readFile: vi.fn(),
 }));
 
+// Mock fs/promises for readdir
+vi.mock("fs/promises", () => ({
+  readdir: vi.fn(),
+}));
+
 import { fileExists, readFile } from "./fs.js";
+import { readdir } from "fs/promises";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockReadFile = vi.mocked(readFile);
+const mockReaddir = vi.mocked(readdir);
 
 describe("STACKS", () => {
   describe("astro config", () => {
@@ -718,5 +728,253 @@ describe("getStackNotes", () => {
       const notes = getStackNotes(stack);
       expect(notes.length).toBeGreaterThan(100);
     }
+  });
+});
+
+describe("detectStackInDirectory", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockFileExists.mockResolvedValue(false);
+    mockReadFile.mockResolvedValue("{}");
+  });
+
+  it("detects Next.js in root directory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "next.config.js";
+    });
+
+    const result = await detectStackInDirectory("");
+    expect(result).toBe("nextjs");
+  });
+
+  it("detects Next.js in subdirectory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "frontend/next.config.js";
+    });
+
+    const result = await detectStackInDirectory("frontend");
+    expect(result).toBe("nextjs");
+  });
+
+  it("detects Python in subdirectory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "backend/requirements.txt";
+    });
+
+    const result = await detectStackInDirectory("backend");
+    expect(result).toBe("python");
+  });
+
+  it("detects Rust in subdirectory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "services/api/Cargo.toml";
+    });
+
+    const result = await detectStackInDirectory("services/api");
+    expect(result).toBe("rust");
+  });
+
+  it("detects Go in subdirectory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "cmd/server/go.mod";
+    });
+
+    const result = await detectStackInDirectory("cmd/server");
+    expect(result).toBe("go");
+  });
+
+  it("returns null when no stack found in subdirectory", async () => {
+    mockFileExists.mockResolvedValue(false);
+
+    const result = await detectStackInDirectory("empty-dir");
+    expect(result).toBeNull();
+  });
+
+  it("detects stack via package.json in subdirectory", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "web/package.json";
+    });
+    mockReadFile.mockResolvedValue(
+      JSON.stringify({
+        dependencies: { astro: "^4.0.0" },
+      }),
+    );
+
+    const result = await detectStackInDirectory("web");
+    expect(result).toBe("astro");
+  });
+});
+
+describe("detectAllStacks", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockFileExists.mockResolvedValue(false);
+    mockReadFile.mockResolvedValue("{}");
+    mockReaddir.mockResolvedValue([]);
+  });
+
+  it("detects single stack in root", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "next.config.js";
+    });
+
+    const result = await detectAllStacks();
+    expect(result).toEqual([{ stack: "nextjs", path: "" }]);
+  });
+
+  it("detects stacks in subdirectories", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      if (path === "frontend/next.config.js") return true;
+      if (path === "backend/requirements.txt") return true;
+      return false;
+    });
+    mockReaddir.mockResolvedValue([
+      { name: "frontend", isDirectory: () => true } as any,
+      { name: "backend", isDirectory: () => true } as any,
+    ]);
+
+    const result = await detectAllStacks();
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual({ stack: "nextjs", path: "frontend" });
+    expect(result).toContainEqual({ stack: "python", path: "backend" });
+  });
+
+  it("detects both root and subdirectory stacks", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      if (path === "next.config.js") return true;
+      if (path === "backend/Cargo.toml") return true;
+      return false;
+    });
+    mockReaddir.mockResolvedValue([
+      { name: "backend", isDirectory: () => true } as any,
+    ]);
+
+    const result = await detectAllStacks();
+    expect(result).toHaveLength(2);
+    expect(result).toContainEqual({ stack: "nextjs", path: "" });
+    expect(result).toContainEqual({ stack: "rust", path: "backend" });
+  });
+
+  it("skips node_modules and other excluded directories", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      if (path === "node_modules/package.json") return true;
+      if (path === ".git/config") return true;
+      return false;
+    });
+    mockReaddir.mockResolvedValue([
+      { name: "node_modules", isDirectory: () => true } as any,
+      { name: ".git", isDirectory: () => true } as any,
+      { name: "vendor", isDirectory: () => true } as any,
+    ]);
+
+    const result = await detectAllStacks();
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips hidden directories", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      if (path === ".hidden/next.config.js") return true;
+      return false;
+    });
+    mockReaddir.mockResolvedValue([
+      { name: ".hidden", isDirectory: () => true } as any,
+    ]);
+
+    const result = await detectAllStacks();
+    expect(result).toHaveLength(0);
+  });
+
+  it("skips files (only processes directories)", async () => {
+    mockReaddir.mockResolvedValue([
+      { name: "README.md", isDirectory: () => false } as any,
+      { name: "package.json", isDirectory: () => false } as any,
+    ]);
+
+    const result = await detectAllStacks();
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns empty array when no stacks detected", async () => {
+    mockFileExists.mockResolvedValue(false);
+    mockReaddir.mockResolvedValue([]);
+
+    const result = await detectAllStacks();
+    expect(result).toEqual([]);
+  });
+
+  it("handles readdir failure gracefully", async () => {
+    mockFileExists.mockImplementation(async (path) => {
+      return path === "next.config.js";
+    });
+    mockReaddir.mockRejectedValue(new Error("Permission denied"));
+
+    const result = await detectAllStacks();
+    // Should still return root stack even if readdir fails
+    expect(result).toEqual([{ stack: "nextjs", path: "" }]);
+  });
+});
+
+describe("getMultiStackNotes", () => {
+  it("returns single stack notes when no additional stacks", () => {
+    const notes = getMultiStackNotes("nextjs");
+    expect(notes).toBe(STACK_NOTES.nextjs);
+  });
+
+  it("combines notes from primary and additional stacks", () => {
+    const notes = getMultiStackNotes("nextjs", ["python"]);
+
+    expect(notes).toContain("Next.js (Primary)");
+    expect(notes).toContain("Python");
+    expect(notes).toContain("---"); // Separator
+  });
+
+  it("marks primary stack with (Primary) label", () => {
+    const notes = getMultiStackNotes("rust", ["go"]);
+
+    expect(notes).toContain("### Rust (Primary)");
+    expect(notes).toContain("### Go");
+  });
+
+  it("skips duplicate stack in additional list", () => {
+    const notes = getMultiStackNotes("python", ["python", "go"]);
+
+    // Should only have one Python section, plus Go
+    const pythonCount = (notes.match(/### Python/g) || []).length;
+    expect(pythonCount).toBe(1);
+    expect(notes).toContain("### Go");
+  });
+
+  it("skips generic notes in additional stacks", () => {
+    const notes = getMultiStackNotes("nextjs", ["generic"]);
+
+    // Should not include generic section
+    expect(notes).not.toContain("General Guidelines");
+    expect(notes).toContain("Next.js");
+  });
+
+  it("falls back to generic for unknown primary stack", () => {
+    const notes = getMultiStackNotes("unknown");
+
+    expect(notes).toContain("General Guidelines");
+  });
+
+  it("combines multiple additional stacks", () => {
+    const notes = getMultiStackNotes("nextjs", ["python", "go"]);
+
+    expect(notes).toContain("Next.js (Primary)");
+    expect(notes).toContain("### Python");
+    expect(notes).toContain("### Go");
+  });
+
+  it("preserves full content of each stack notes section", () => {
+    const notes = getMultiStackNotes("rust", ["python"]);
+
+    // Check Rust section has its content
+    expect(notes).toContain("cargo test");
+    expect(notes).toContain("cargo clippy");
+
+    // Check Python section has its content
+    expect(notes).toContain("pytest");
+    expect(notes).toContain("ruff");
   });
 });
