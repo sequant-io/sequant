@@ -765,6 +765,16 @@ skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*
 skill_count=$(echo "$skills_changed" | grep -c . || echo 0)
 ```
 
+**Pre-requisite check:**
+```bash
+# Verify gh CLI is available before running verification
+if ! command -v gh &>/dev/null; then
+  echo "⚠️ gh CLI not installed - skill command verification skipped"
+  echo "Install: https://cli.github.com/"
+  # Set verification status to "Skipped" with reason
+fi
+```
+
 **If skill_count > 0, extract and verify commands:**
 
 #### Step 1: Extract Commands from Changed Skills
@@ -773,12 +783,22 @@ skill_count=$(echo "$skills_changed" | grep -c . || echo 0)
 # Extract command patterns from skill files
 for skill_file in $skills_changed; do
   echo "=== Commands in $skill_file ==="
-  # Commands in bash code blocks
+
+  # Commands at start of line (simple commands)
   grep -E '^\s*(gh|npm|npx|git)\s+' "$skill_file" 2>/dev/null | head -10
+
+  # Commands in subshells/variable assignments: result=$(gh pr view ...)
+  grep -oE '\$\((gh|npm|npx|git)\s+[^)]+\)' "$skill_file" 2>/dev/null | head -10
+
   # Commands in inline backticks
   grep -oE '\`(gh|npm|npx|git)\s+[^\`]+\`' "$skill_file" 2>/dev/null | head -10
+
+  # Commands after pipe or semicolon: ... | gh ... or ; npm ...
+  grep -oE '[|;]\s*(gh|npm|npx|git)\s+[^|;&]+' "$skill_file" 2>/dev/null | head -10
 done
 ```
+
+**Note:** Multi-line commands (using `\` continuation) require manual review. The extraction patterns above capture single-line commands only.
 
 #### Step 2: Verify Command Syntax
 
