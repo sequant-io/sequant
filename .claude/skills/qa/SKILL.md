@@ -593,49 +593,6 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
 
 See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detection commands and full criteria.
 
-### 2f. Semantic Review (REQUIRED)
-
-**Purpose:** Catch issues that syntax checks and tests miss - dead code, hardcoding, design flaws.
-
-**Before issuing any verdict, complete this checklist:**
-
-| Check | Question | Red Flags |
-|-------|----------|-----------|
-| **Dead Code** | Are all new functions/exports actually used? | Function defined but never called |
-| **Hardcoding** | Are there hardcoded values that should be configurable? | Branch names, paths, magic numbers |
-| **Return Codes** | Are return/exit codes distinct and documented? | Same code for different error types |
-| **Integration** | Does new code integrate with existing flow? | New module not imported anywhere |
-| **Edge Cases** | What happens with empty/null/error inputs? | No handling for failure paths |
-
-**Shell script specific checks:**
-
-```bash
-# Check for unused functions in shell scripts
-for script in $(git diff main...HEAD --name-only | grep '\.sh$'); do
-  funcs=$(grep -oE "^[a-zA-Z_]+\(\)" "$script" | sed 's/()//')
-  for func in $funcs; do
-    calls=$(grep -c "\b${func}\b" "$script")
-    if [[ $calls -lt 2 ]]; then
-      echo "⚠️  $script: Function '$func' defined but not called"
-    fi
-  done
-done
-```
-
-**Include in output:**
-
-```markdown
-### Semantic Review
-
-| Check | Status | Notes |
-|-------|--------|-------|
-| Dead code | ✅ OK / ⚠️ WARN | [notes] |
-| Hardcoding | ✅ OK / ⚠️ WARN | [notes] |
-| Return codes | ✅ OK / ⚠️ WARN | [notes] |
-| Integration | ✅ OK / ⚠️ WARN | [notes] |
-| Edge cases | ✅ OK / ⚠️ WARN | [notes] |
-```
-
 ### 3. QA vs AC
 
 For each AC item, mark as:
