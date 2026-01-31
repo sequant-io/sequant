@@ -97,6 +97,27 @@ npm pack --dry-run 2>&1 | tail -20
 gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 ```
 
+### Documentation Checks
+
+```bash
+# 11. Check docs/what-weve-built.md is up to date
+if [ -f "docs/what-weve-built.md" ]; then
+  current=$(node -p "require('./package.json').version")
+
+  # Check title version
+  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  if [ "$title_version" != "$current" ]; then
+    echo "Warning: docs/what-weve-built.md title shows v${title_version}, expected v${current}"
+  fi
+
+  # Check ASCII art version
+  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  if [ "$ascii_version" != "$current" ]; then
+    echo "Warning: docs/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
+  fi
+fi
+```
+
 ## Release Steps
 
 ### Step 1: Determine Version
@@ -204,6 +225,45 @@ if (fs.existsSync(pluginPath)) {
 
 **Why sync?** Sequant is distributed as both npm package and Claude Code plugin. Both must have matching versions to avoid user confusion and ensure compatibility.
 
+### Step 4.6: Update what-weve-built.md
+
+**IMPORTANT:** Keep `docs/what-weve-built.md` version references in sync and document new features.
+
+```bash
+new_version=$(node -p "require('./package.json').version")
+
+if [ -f "docs/what-weve-built.md" ]; then
+  # Update title version
+  sed -i '' "s/Sequant v[0-9]*\.[0-9]*\.[0-9]*/Sequant v${new_version}/g" docs/what-weve-built.md
+
+  # Update ASCII art version
+  sed -i '' "s/SEQUANT v[0-9]*\.[0-9]*\.[0-9]*/SEQUANT v${new_version}/g" docs/what-weve-built.md
+
+  # Update "Current Version" line
+  sed -i '' "s/\*\*Current Version:\*\* [0-9]*\.[0-9]*\.[0-9]*/\*\*Current Version:\*\* ${new_version}/g" docs/what-weve-built.md
+
+  echo "Updated what-weve-built.md to version ${new_version}"
+fi
+```
+
+**Check for undocumented features:**
+
+Review commits since last tag for `feat:` entries:
+```bash
+last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+if [ -n "$last_tag" ]; then
+  echo "New features since ${last_tag}:"
+  git log ${last_tag}..HEAD --oneline --no-merges | grep -E "^[a-f0-9]+ feat" || echo "  (none)"
+fi
+```
+
+If there are new features:
+1. Update the "Recent Additions (vX.Y.Z)" section header to the new version
+2. Add bullet points for each significant feature
+3. Update counts in "At a Glance" table if applicable (commands, modules, etc.)
+
+**Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
+
 ### Step 5: Verify Package Size
 
 ```bash
@@ -219,7 +279,7 @@ echo "Package size: ${size}"
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json docs/what-weve-built.md
 git commit -m "chore: release v${new_version}"
 git push origin main
 ```
@@ -292,6 +352,7 @@ Release v{version} Complete
   GitHub:   https://github.com/admarble/sequant/releases/tag/v{new}
   npm:      https://www.npmjs.com/package/sequant/v/{new}
   Plugin:   Version synced in .claude-plugin/plugin.json
+  Docs:     Version synced in docs/what-weve-built.md
 
   Install (npm):
     npm install sequant@{new}
@@ -306,6 +367,8 @@ Verification:
   [x] GitHub release created
   [x] Tag pushed
   [x] plugin.json version synced
+  [x] what-weve-built.md version synced
+  [x] New features documented (if any)
 
 Next steps:
   - Announce release (if major/minor)

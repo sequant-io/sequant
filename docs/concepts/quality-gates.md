@@ -10,6 +10,8 @@ Quality gates are automated checks that run during the `/qa` phase. They verify:
 2. **Type Safety** — Are types properly defined?
 3. **Security** — Are there vulnerabilities?
 4. **Scope** — Are changes within the issue scope?
+5. **CI Status** — Are GitHub CI checks passing?
+6. **Build Verification** — Is build failure a regression or pre-existing?
 
 ## AC Adherence
 
@@ -164,6 +166,98 @@ If Semgrep is not installed, `/qa` skips the scan with a message:
 ```
 
 This ensures Semgrep is opt-in and doesn't block workflows.
+
+## CI Status Awareness
+
+QA checks GitHub CI status before finalizing verdicts. This prevents premature `READY_FOR_MERGE` when CI is still running.
+
+### How It Works
+
+1. Detects if a PR exists for the current branch
+2. Runs `gh pr checks` to get CI status
+3. Maps CI status to AC status for CI-related criteria
+4. Factors CI status into the final verdict
+
+### CI Status Mapping
+
+| CI State | CI Conclusion | AC Status | Verdict Impact |
+|----------|---------------|-----------|----------------|
+| `completed` | `success` | `MET` | No impact |
+| `completed` | `failure` | `NOT_MET` | Blocks merge |
+| `in_progress` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| `queued` | - | `PENDING` | → `NEEDS_VERIFICATION` |
+| (no checks) | - | `N/A` | No CI configured |
+
+### CI-Related AC Detection
+
+QA identifies AC items that depend on CI by matching patterns:
+- "Tests pass in CI"
+- "CI passes"
+- "Build succeeds in CI"
+- "GitHub Actions pass"
+- "Pipeline passes"
+
+### Example
+
+```text
+AC-1: Add login button         → MET
+AC-2: Tests pass in CI         → PENDING (CI still running)
+
+Verdict: NEEDS_VERIFICATION
+Reason: CI checks not yet complete
+```
+
+### No CI Configured
+
+If the repository has no CI checks, CI-related AC items are marked `N/A` with no impact on verdict.
+
+## Build Verification
+
+When `npm run build` fails, QA verifies whether the failure is a regression (new) or pre-existing (already on main).
+
+### Why This Matters
+
+Without verification, QA might dismiss build failures as "unrelated to our changes" when they're actually regressions introduced by the PR.
+
+### How It Works
+
+1. Run `npm run build` on feature branch
+2. If build fails, run build on main branch (via main repo directory)
+3. Compare exit codes and error messages
+4. Classify as regression, pre-existing, or unknown
+
+### Verification Logic
+
+| Feature Build | Main Build | Error Match | Classification |
+|---------------|------------|-------------|----------------|
+| ❌ Fail | ✅ Pass | N/A | **Regression** — failure introduced by PR |
+| ❌ Fail | ❌ Fail | Same error | **Pre-existing** — not blocking |
+| ❌ Fail | ❌ Fail | Different | **Unknown** — manual review needed |
+| ✅ Pass | * | N/A | N/A — no verification needed |
+
+### Verdict Impact
+
+| Classification | Verdict Impact |
+|----------------|----------------|
+| **Regression detected** | **Blocks merge** — `AC_NOT_MET` |
+| **Pre-existing failure** | Non-blocking — documented only |
+| **Unknown** | `AC_MET_BUT_NOT_A_PLUS` — manual review |
+| **Build passes** | No impact |
+
+### Example Output
+
+```markdown
+### Build Verification
+
+| Check | Status |
+|-------|--------|
+| Feature branch build | ❌ Failed |
+| Main branch build | ❌ Failed |
+| Error match | ✅ Same error |
+| Regression | **No** (pre-existing) |
+
+**Note:** Build failure is pre-existing on main branch. Not blocking this PR.
+```
 
 ## QA Verdicts
 
