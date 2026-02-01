@@ -23,7 +23,7 @@ const execOptions: ExecSyncOptionsWithStringEncoding = {
   stdio: ["pipe", "pipe", "pipe"],
 };
 
-describe("doctor command integration", () => {
+describe("doctor command integration", { timeout: 60000 }, () => {
   beforeAll(() => {
     // Build the project before running integration tests
     execSync("npm run build", {

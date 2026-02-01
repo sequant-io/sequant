@@ -360,7 +360,7 @@ describe("semgrep", () => {
   // Integration Tests (run only when Semgrep is available)
   // ============================================================
 
-  describe("integration: checkSemgrepAvailability", () => {
+  describe("integration: checkSemgrepAvailability", { timeout: 30000 }, () => {
     it("returns availability status", async () => {
       const result = await checkSemgrepAvailability();
 
@@ -383,7 +383,7 @@ describe("semgrep", () => {
     });
   });
 
-  describe("integration: runSemgrepScan", () => {
+  describe("integration: runSemgrepScan", { timeout: 120000 }, () => {
     it("returns skipped result when semgrep not available", async () => {
       const availability = await checkSemgrepAvailability();
       if (availability.available) {

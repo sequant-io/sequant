@@ -37,7 +37,7 @@ function runCli(
   };
 }
 
-describe("state update CLI", () => {
+describe("state update CLI", { timeout: 60000 }, () => {
   let tempDir: string;
   let statePath: string;
 
