@@ -62,7 +62,6 @@ export function extractChanges(releaseBody: string): string[] {
  */
 export function matchKeywords(change: string, keywords: string[]): string[] {
   const matched: string[] = [];
-  const changeLower = change.toLowerCase();
 
   for (const keyword of keywords) {
     // Create word boundary regex for keyword
@@ -186,7 +185,7 @@ export function generateTitle(
 ): string {
   // Truncate long changes
   const maxLength = 80;
-  let title =
+  const title =
     change.length > maxLength ? change.slice(0, maxLength) + "..." : change;
 
   // Add prefix based on category
