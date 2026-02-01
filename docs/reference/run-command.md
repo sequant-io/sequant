@@ -580,9 +580,9 @@ gh auth status
 
 ## See Also
 
-- [Customization Guide](customization.md) - Configure phases and timeouts
-- [Troubleshooting](troubleshooting.md) - Common issues and solutions
-- [Testing Guide](testing.md) - Cross-platform testing matrix
+- [Customization Guide](../guides/customization.md) - Configure phases and timeouts
+- [Troubleshooting](../troubleshooting.md) - Common issues and solutions
+- [Testing Guide](../internal/testing.md) - Cross-platform testing matrix
 
 ---
 

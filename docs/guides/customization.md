@@ -275,5 +275,5 @@ To install Chrome DevTools MCP, see the [MCP documentation](https://github.com/a
 
 ## See Also
 
-- [Stack Guides](stacks/)
-- [Troubleshooting](troubleshooting.md)
+- [Stack Guides](../stacks/)
+- [Troubleshooting](../troubleshooting.md)

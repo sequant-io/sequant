@@ -319,29 +319,28 @@ Every PR goes through:
 
 ### Getting Started
 - `getting-started/installation.md` — Installation guide
-- `index.md` — Documentation hub
+- `README.md` — Documentation hub
 
 ### Concepts
 - `concepts/workflow-phases.md` — Phase overview and selection
 
-### Command Guides
-- `run-command.md` — Comprehensive `sequant run` guide
-- `state-command.md` — State management
-- `analytics.md` — Local analytics deep-dive
+### Guides
+- `guides/customization.md` — Configuration options
+- `guides/mcp-integrations.md` — MCP server configuration
+- `guides/git-workflows.md` — Git workflow patterns
 
-### How-To Guides
-- `customization.md` — Configuration options
-- `feature-branch-workflow.md` — Branch patterns
-- `troubleshooting.md` — Common issues and solutions
-- `platform-requirements.md` — OS support matrix
+### Reference
+- `reference/run-command.md` — Comprehensive `sequant run` guide
+- `reference/state-command.md` — State management
+- `reference/analytics.md` — Local analytics deep-dive
+- `reference/telemetry.md` — Privacy statement (spoiler: no telemetry)
+- `reference/platform-requirements.md` — OS support matrix
 
 ### Stack-Specific
 - `stacks/nextjs.md`, `stacks/rust.md`, `stacks/python.md`, `stacks/go.md`
 
-### Reference
-- `mcp-integrations.md` — MCP server configuration
-- `telemetry.md` — Privacy statement (spoiler: no telemetry)
-- `git-patterns.md` — Git workflow patterns
+### Troubleshooting
+- `troubleshooting.md` — Common issues and solutions
 - `logging.md` — Logging system
 - `testing.md` — Testing approach
 

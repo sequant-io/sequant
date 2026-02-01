@@ -118,4 +118,4 @@ This automatically fixes issues found during QA and re-runs checks.
 
 - [Workflow Phases](../concepts/workflow-phases.md) — Understand each phase in depth
 - [Two Modes](../concepts/two-modes.md) — Interactive vs autonomous execution
-- [Run Command](../run-command.md) — Batch execution for multiple issues
+- [Run Command](../reference/run-command.md) — Batch execution for multiple issues

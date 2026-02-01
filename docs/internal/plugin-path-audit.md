@@ -201,4 +201,4 @@ To verify graceful degradation without MCPs:
 ---
 
 *Last updated: 2026-01-27*
-*Related: [Plugin Research](plugin-research-185.md), [Troubleshooting](troubleshooting.md)*
+*Related: [Troubleshooting](../troubleshooting.md)*

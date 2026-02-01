@@ -114,5 +114,5 @@ crates/
 
 ## See Also
 
-- [Customization Guide](../customization.md)
+- [Customization Guide](../guides/customization.md)
 - [Troubleshooting](../troubleshooting.md)

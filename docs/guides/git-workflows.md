@@ -1,8 +1,88 @@
-# Feature Branch Workflows
+# Git Workflows
 
-This guide explains how to use Sequant with feature integration branches instead of branching directly from `main`.
+Git patterns and worktree strategies for Sequant development.
 
-## When to Use Custom Base Branches
+## Worktree Basics
+
+### Creating Feature Worktrees
+
+Standard pattern for new feature work:
+
+```bash
+# Create worktree with new branch
+git worktree add ../worktrees/feature/<N>-<slug> -b feature/<N>-<slug>
+
+# Or use the helper script
+./scripts/dev/new-feature.sh <N>
+```
+
+### Worktree Locations
+
+By convention, worktrees live in a sibling directory:
+
+```
+~/Projects/
+├── sequant/              # Main repo
+└── worktrees/
+    └── feature/
+        ├── 10-windows-docs/
+        ├── 29-phase-detection/
+        └── ...
+```
+
+This keeps worktrees separate from the main repo while allowing easy access.
+
+## Merging PRs with Active Worktrees
+
+Worktrees lock their branches - you can't delete a branch that's checked out in a worktree.
+
+### Option A: Remove worktrees first (recommended)
+
+```bash
+# 1. Remove the worktree
+git worktree remove /path/to/worktree
+
+# 2. Merge with branch cleanup
+gh pr merge <N> --squash --delete-branch
+```
+
+### Option B: Merge first, clean up after
+
+```bash
+# 1. Merge WITHOUT --delete-branch
+gh pr merge <N> --squash
+
+# 2. Remove the worktree
+git worktree remove /path/to/worktree
+
+# 3. Delete local branch manually
+git branch -D feature/<N>-*
+```
+
+### Batch cleanup
+
+After merging multiple PRs with worktrees:
+
+```bash
+# List all worktrees
+git worktree list
+
+# Remove merged worktrees
+git worktree remove /path/to/worktree1
+git worktree remove /path/to/worktree2
+
+# Clean up stale branches
+git fetch --prune
+git branch -vv | grep ': gone]' | awk '{print $1}' | xargs git branch -D
+```
+
+---
+
+## Feature Branch Workflows
+
+Use feature integration branches instead of branching directly from `main`.
+
+### When to Use Custom Base Branches
 
 Use the `--base` flag when:
 
@@ -10,8 +90,6 @@ Use the `--base` flag when:
 - **Release branches**: Preparing a release with multiple fixes/features
 - **Team branches**: In monorepos where teams have dedicated integration branches
 - **Epic development**: Building a large feature across multiple issues
-
-## Quick Start
 
 ### One-off Override (CLI Flag)
 
@@ -51,7 +129,7 @@ Override with CLI flag when needed:
 npx sequant run 120 --base main  # Override back to main
 ```
 
-## Resolution Priority
+### Resolution Priority
 
 Base branch is resolved in this order (highest priority first):
 
@@ -59,9 +137,9 @@ Base branch is resolved in this order (highest priority first):
 2. **Project config**: `.sequant/settings.json` → `run.defaultBase`
 3. **Default**: `main`
 
-## Visual Comparison
+### Visual Comparison
 
-### Standard Workflow (no --base)
+**Standard Workflow (no --base)**
 
 ```
 origin/main
@@ -72,7 +150,7 @@ origin/main
 
 All issues branch independently from main.
 
-### Feature Branch Workflow (--base)
+**Feature Branch Workflow (--base)**
 
 ```
 origin/main
@@ -84,7 +162,7 @@ origin/main
 
 All issues branch from the integration branch.
 
-### Chain Mode with --base
+**Chain Mode with --base**
 
 ```
 origin/main
@@ -104,9 +182,9 @@ For critical chains where you want to ensure each issue passes QA before the nex
 npx sequant run 117 118 119 --sequential --chain --qa-gate --base feature/dashboard
 ```
 
-This prevents downstream issues from building on potentially broken code. If QA fails for issue #117, the chain pauses and waits for the issue to be fixed before proceeding to #118.
+This prevents downstream issues from building on potentially broken code.
 
-## Example: Dashboard Feature Development
+### Example: Dashboard Feature Development
 
 You have a `feature/dashboard` integration branch and 5 related issues:
 
@@ -122,7 +200,7 @@ echo '{"run": {"defaultBase": "feature/dashboard"}}' > .sequant/settings.json
 npx sequant run 117 118 119 120 121
 ```
 
-## Script Usage
+### Script Usage
 
 The `new-feature.sh` script also supports `--base`:
 

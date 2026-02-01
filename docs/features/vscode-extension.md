@@ -206,7 +206,7 @@ Status groups only appear when they have issues. If all issues are in one status
 ## Related
 
 - [Workflow Phases](../concepts/workflow-phases.md)
-- [State Command](../state-command.md)
+- [State Command](../reference/state-command.md)
 - Issue #114 - Web Dashboard (Option A)
 - Issue #120 - VS Code Extension spike
 - Issue #166 - Premium workflow visualization (this enhancement)

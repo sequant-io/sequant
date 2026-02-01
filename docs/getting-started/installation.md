@@ -117,4 +117,4 @@ After installation:
 ## Next Steps
 
 - [Your First Workflow](first-workflow.md) — Solve your first issue
-- [Customization Guide](../customization.md) — Override templates safely
+- [Customization Guide](../guides/customization.md) — Override templates safely

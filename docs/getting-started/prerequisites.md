@@ -75,7 +75,7 @@ Sequant works fully without MCP servers, but these optional integrations enhance
 - **Context7 MCP** — Library documentation lookup during `/exec`
 - **Sequential Thinking MCP** — Complex reasoning for `/fullsolve`
 
-See [MCP Integrations](../mcp-integrations.md) for setup instructions.
+See [MCP Integrations](../guides/mcp-integrations.md) for setup instructions.
 
 ## Platform Notes
 

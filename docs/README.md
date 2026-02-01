@@ -13,7 +13,6 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Installation](getting-started/installation.md) — Install and configure Sequant
 - [Your First Workflow](getting-started/first-workflow.md) — Solve your first issue
 - [Prerequisites](getting-started/prerequisites.md) — Required tools and setup
-- [What We've Built](what-weve-built.md) — Comprehensive project overview
 
 ### Core Concepts
 
@@ -35,10 +34,18 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 ### Guides
 
-- [Run Command Options](run-command.md) — Batch execution and CLI options
-- [Customization](customization.md) — Override templates safely
-- [MCP Integrations](mcp-integrations.md) — Optional MCP server setup
-- [Git Patterns](git-patterns.md) — Worktree and merge workflows
+- [Customization](guides/customization.md) — Override templates safely
+- [MCP Integrations](guides/mcp-integrations.md) — Optional MCP server setup
+- [Git Workflows](guides/git-workflows.md) — Worktree and merge workflows
+
+### Reference
+
+- [Run Command](reference/run-command.md) — Batch execution and CLI options
+- [State Command](reference/state-command.md) — Workflow state management
+- [Analytics](reference/analytics.md) — Usage tracking and metrics
+- [Logging](reference/logging.md) — Log configuration
+- [Telemetry](reference/telemetry.md) — Telemetry settings
+- [Platform Requirements](reference/platform-requirements.md) — GitHub dependency and alternatives
 
 ### Stack-Specific Guides
 
@@ -50,7 +57,11 @@ From GitHub issue to merge-ready PR — verified at every step.
 ### Troubleshooting
 
 - [Common Issues](troubleshooting.md) — Solutions to frequent problems
-- [Platform Requirements](platform-requirements.md) — GitHub dependency and alternatives
+
+### Internal
+
+- [What We've Built](internal/what-weve-built.md) — Project changelog and history
+- [Release Checklist](internal/release-checklist.md) — Release process
 
 ---
 

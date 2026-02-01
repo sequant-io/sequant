@@ -703,5 +703,5 @@ sequant init --force
 
 ## See Also
 
-- [Customization Guide](customization.md)
+- [Customization Guide](guides/customization.md)
 - [Stack Guides](stacks/)
