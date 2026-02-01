@@ -80,7 +80,7 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
+| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
 | `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, **Pre-PR AC verification** (checks each AC addressed before PR), **shell script quality checks**, **mandatory prompt templates** for parallel sub-agents, creates PRs |
 | `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, **coverage analysis** (warns when files lack tests), graceful fallback to manual checklists |
 | `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis, CI status awareness, build verification against main. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
@@ -667,6 +667,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.12.0)
+- **Feature Quality Planning** — `/spec` now includes a comprehensive quality planning section with 6 dimensions (Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish). Generates Derived ACs from quality checklist items. `/exec` references the quality plan during implementation. `/qa` verifies quality plan items with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%)
 - **Skill command verification** — `/qa` now detects skill file changes (`.claude/skills/**/*.md`), extracts referenced CLI commands, validates JSON field names against `--help` output, and blocks `READY_FOR_MERGE` if commands have invalid syntax or non-existent fields (prevents bugs like #178's `conclusion` field issue)
 - **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals
 - **CI status awareness** — `/qa` checks GitHub CI status via `gh pr checks`, preventing `READY_FOR_MERGE` when CI is still pending

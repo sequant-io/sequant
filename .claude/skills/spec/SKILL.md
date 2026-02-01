@@ -406,7 +406,134 @@ For each major decision:
 
 See [parallel-groups.md](references/parallel-groups.md) for parallelization format.
 
-### 3. Plan Review
+### 3. Feature Quality Planning (REQUIRED)
+
+**Purpose:** Systematically consider professional implementation requirements beyond the minimum AC. This prevents gaps that slip through exec and QA because they were never planned.
+
+**Why this matters:** Spec currently plans the "minimum to satisfy AC" rather than "complete professional implementation." Gaps found in manual review are omissions from incomplete planning, not failures.
+
+**Complexity Scaling:**
+- **Simple issues** (`simple-fix`, `typo`, `docs-only` labels): Use abbreviated checklist (Completeness + one relevant section)
+- **Standard issues**: Complete all applicable sections
+- **Complex issues** (`complex`, `refactor`, `breaking` labels): Complete all sections with detailed items
+
+```markdown
+## Feature Quality Planning
+
+### Completeness Check
+- [ ] All AC items have corresponding implementation steps
+- [ ] Integration points with existing features identified
+- [ ] No partial implementations or TODOs planned
+- [ ] State management considered (if applicable)
+- [ ] Data flow is complete end-to-end
+
+### Error Handling
+- [ ] Invalid input scenarios identified
+- [ ] API/external service failures handled
+- [ ] Edge cases documented (empty, null, max values)
+- [ ] Error messages are user-friendly
+- [ ] Graceful degradation planned
+
+### Code Quality
+- [ ] Types fully defined (no `any` planned)
+- [ ] Follows existing patterns in codebase
+- [ ] Error boundaries where needed
+- [ ] No magic strings/numbers
+- [ ] Consistent naming conventions
+
+### Test Coverage Plan
+- [ ] Unit tests for business logic
+- [ ] Integration tests for data flow
+- [ ] Edge case tests identified
+- [ ] Mocking strategy appropriate
+- [ ] Critical paths have test coverage
+
+### Best Practices
+- [ ] Logging for debugging/observability
+- [ ] Accessibility considerations (if UI)
+- [ ] Performance implications considered
+- [ ] Security reviewed (auth, validation, sanitization)
+- [ ] Documentation updated (if behavior changes)
+
+### Polish (UI features only)
+- [ ] Loading states planned
+- [ ] Error states have UI
+- [ ] Empty states handled
+- [ ] Responsive design considered
+- [ ] Keyboard navigation works
+
+### Derived ACs
+
+Based on quality planning, identify additional ACs needed:
+
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| Error Handling | AC-N: Handle [specific error] with [specific response] | High/Medium/Low |
+| Test Coverage | AC-N+1: Add tests for [specific scenario] | High/Medium/Low |
+| Best Practices | AC-N+2: Add logging for [specific operation] | High/Medium/Low |
+
+**Note:** Derived ACs are numbered sequentially after original ACs and follow the same format.
+```
+
+**Section Applicability:**
+
+| Issue Type | Sections Required |
+|------------|-------------------|
+| Bug fix | Completeness, Error Handling, Test Coverage |
+| New feature | All sections |
+| Refactor | Completeness, Code Quality, Test Coverage |
+| UI change | All sections including Polish |
+| Backend/API | Completeness, Error Handling, Code Quality, Test Coverage, Best Practices |
+| CLI/Script | Completeness, Error Handling, Test Coverage, Best Practices |
+| Docs only | Completeness only |
+
+**Example (API endpoint feature):**
+
+```markdown
+## Feature Quality Planning
+
+### Completeness Check
+- [x] All AC items have corresponding implementation steps
+- [x] Integration points: Auth middleware, database queries, response serializer
+- [x] No partial implementations planned
+- [ ] State management: N/A (stateless API)
+- [x] Data flow: Request → Validate → Query → Transform → Response
+
+### Error Handling
+- [x] Invalid input: Return 400 with validation errors
+- [x] Auth failure: Return 401 with "Unauthorized" message
+- [x] Not found: Return 404 with resource ID
+- [x] Server error: Return 500, log full error, return generic message
+- [x] Rate limit: Return 429 with retry-after header
+
+### Code Quality
+- [x] Types: Define RequestDTO, ResponseDTO, ErrorResponse
+- [x] Patterns: Follow existing controller pattern in `src/api/`
+- [ ] Error boundaries: N/A (API, not UI)
+- [x] No magic strings: Use constants for error messages
+
+### Test Coverage Plan
+- [x] Unit: Validation logic, data transformation
+- [x] Integration: Full request/response cycle
+- [x] Edge cases: Empty results, max pagination, invalid IDs
+- [x] Mocking: Mock database, not HTTP layer
+
+### Best Practices
+- [x] Logging: Log request ID, duration, status code
+- [ ] Accessibility: N/A (API)
+- [x] Performance: Add database index for query field
+- [x] Security: Validate input, sanitize output, check auth
+
+### Derived ACs
+
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| Error Handling | AC-6: Return 429 with retry-after header on rate limit | Medium |
+| Best Practices | AC-7: Log request ID and duration for observability | High |
+| Test Coverage | AC-8: Add integration test for auth failure path | High |
+```
+
+### 4. Plan Review
 
 Ask the user to confirm or adjust:
 - The AC checklist (with verification criteria)
@@ -415,7 +542,7 @@ Ask the user to confirm or adjust:
 
 **Do NOT start implementation** - this is planning-only.
 
-### 4. Recommended Workflow
+### 5. Recommended Workflow
 
 Analyze the issue and recommend the optimal workflow phases:
 
@@ -434,7 +561,7 @@ Analyze the issue and recommend the optimal workflow phases:
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
 
-### 5. Label Review
+### 6. Label Review
 
 Analyze current labels vs implementation plan and suggest updates:
 
@@ -464,7 +591,7 @@ Analyze current labels vs implementation plan and suggest updates:
 - Check if API contracts are changing
 - Match against quality loop trigger labels
 
-### 6. Issue Comment Draft
+### 7. Issue Comment Draft
 
 Generate a Markdown snippet with:
 - AC checklist with verification criteria
@@ -480,7 +607,7 @@ Label clearly as:
 --- DRAFT GITHUB ISSUE COMMENT (PLAN) ---
 ```
 
-### 7. Update GitHub Issue
+### 8. Update GitHub Issue
 
 Post the draft comment to GitHub:
 ```bash
@@ -539,6 +666,7 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
   - If unclear, flag as "⚠️ UNCLEAR" and add to Open Questions
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
+- [ ] **Feature Quality Planning** - Quality dimensions checklist completed (abbreviated for simple-fix/typo/docs-only labels)
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults (including unclear verification methods)
@@ -599,6 +727,44 @@ You MUST include these sections in order:
 
 ### Phase 2: [Phase Name]
 <!-- Continue for all phases -->
+
+---
+
+## Feature Quality Planning
+
+### Completeness Check
+- [ ] All AC items have corresponding implementation steps
+- [ ] Integration points identified
+- [ ] No partial implementations planned
+
+### Error Handling
+- [ ] Invalid input scenarios identified
+- [ ] External service failures handled
+- [ ] Edge cases documented
+
+### Code Quality
+- [ ] Types fully defined (no `any`)
+- [ ] Follows existing patterns
+- [ ] No magic strings/numbers
+
+### Test Coverage Plan
+- [ ] Unit tests for business logic
+- [ ] Edge case tests identified
+- [ ] Critical paths covered
+
+### Best Practices
+- [ ] Logging for observability
+- [ ] Security reviewed
+- [ ] Documentation updated
+
+### Polish (UI only)
+- [ ] Loading/error/empty states
+- [ ] Responsive design
+
+### Derived ACs
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| [Section] | AC-N: [Description] | High/Medium/Low |
 
 ---
 
