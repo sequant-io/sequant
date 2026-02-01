@@ -23,13 +23,16 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 
 **What it does:**
 1. Reads the GitHub issue and all comments
-2. Analyzes the codebase for relevant patterns
-3. Drafts acceptance criteria (AC) if not present
-4. Creates an implementation plan
-5. Posts the plan as a GitHub issue comment
+2. Analyzes title/body for phase-relevant keywords (UI, security, complexity)
+3. Analyzes the codebase for relevant patterns
+4. Drafts acceptance criteria (AC) if not present
+5. Lints AC for vague or unmeasurable terms
+6. Creates an implementation plan with quality dimensions
+7. Posts the plan as a GitHub issue comment
 
 **Outputs:**
-- Acceptance criteria checklist
+- Acceptance criteria checklist (with lint warnings if vague)
+- Content analysis signals (title/body patterns detected)
 - Implementation plan with file changes
 - Recommended workflow (which phases to run)
 

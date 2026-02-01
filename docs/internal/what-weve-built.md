@@ -12,8 +12,8 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 |--------|-------|
 | Slash Commands | 18 |
 | CLI Commands | 9 |
-| Core Library Modules | 25 |
-| Test Files | 29 |
+| Core Library Modules | 30 |
+| Test Files | 38 |
 | Documentation Files | 26+ |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~17,000+ |
@@ -80,7 +80,7 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, creates implementation plans, detects conflicts with in-flight work, posts plan comments |
+| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, **content analysis** (title/body patterns → phase recommendations with signal priority: Labels > Solve > Title > Body), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
 | `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, **Pre-PR AC verification** (checks each AC addressed before PR), **shell script quality checks**, **mandatory prompt templates** for parallel sub-agents, creates PRs |
 | `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, **coverage analysis** (warns when files lack tests), graceful fallback to manual checklists |
 | `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis, CI status awareness, build verification against main. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
@@ -188,6 +188,9 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `version-check.ts` | Checks for updates, warns on stale local installs |
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
 | `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
+| `content-analyzer.ts` | Analyzes issue title/body for phase-relevant keywords (UI, security, complexity patterns) |
+| `phase-signal.ts` | Phase signal types and priority-based merging (Labels > Solve > Title > Body) |
+| `solve-comment-parser.ts` | Detects and parses `/solve` workflow recommendations from issue comments |
 | `project-name.ts` | Auto-detects project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote |
 
 ### Workflow Subsystem
