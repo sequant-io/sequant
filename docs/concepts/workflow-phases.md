@@ -5,15 +5,17 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 ## Phase Overview
 
 ```
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  /spec  │───▶│  /exec  │───▶│  /test  │───▶│   /qa   │───▶ Merge
-└─────────┘    └─────────┘    └─────────┘    └─────────┘
-     │              │              │              │
-     ▼              ▼              ▼              ▼
-   Plan          Build       Verify (UI)      Review
+┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
+│  /spec  │───▶│/testgen │───▶│  /exec  │───▶│  /test  │───▶│   /qa   │───▶ Merge
+└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
+     │              │              │              │              │
+     ▼              ▼              ▼              ▼              ▼
+   Plan        Test Stubs       Build       Verify (UI)      Review
 ```
 
-> **Note:** `/test` is optional — used for UI features when Chrome DevTools MCP is available. Backend-only changes skip directly from `/exec` to `/qa`.
+> **Note:** `/testgen` and `/test` are optional phases:
+> - `/testgen` is auto-included when ACs have Unit/Integration Test verification methods
+> - `/test` is used for UI features when Chrome DevTools MCP is available
 
 ## Phase 1: Spec
 
@@ -40,6 +42,36 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 - Before implementing any non-trivial feature
 - When acceptance criteria are unclear
 - When you want to review the approach before coding
+
+## Phase 1.5: Testgen (Optional)
+
+**Command:** `/testgen 123`
+
+**Purpose:** Generate test stubs from verification criteria before implementation.
+
+**What it does:**
+1. Reads verification criteria from the `/spec` comment
+2. Parses each AC's verification method (Unit Test, Integration Test, etc.)
+3. Generates test stubs with TODO markers
+4. Uses haiku sub-agents for cost-efficient stub generation
+5. Posts a summary to the GitHub issue
+
+**Outputs:**
+- Test stub files in `__tests__/` directory
+- Browser test scenarios (for UI verification)
+- Manual test checklists (for non-automated tests)
+- Summary comment on GitHub issue
+
+**When to use:**
+- New features with testable acceptance criteria
+- ACs that specify Unit Test or Integration Test verification
+- Features where test structure should be defined before implementation
+
+**Auto-detection:**
+`/spec` automatically recommends `/testgen` when:
+- ACs have "Unit Test" or "Integration Test" verification methods
+- Issue is a new feature (not a bug fix)
+- Project has test infrastructure (Jest, Vitest, etc.)
 
 ## Phase 2: Exec
 
@@ -157,10 +189,23 @@ When using `sequant run`, phases are detected automatically:
 
 | Labels | Phases | Why |
 |--------|--------|-----|
-| `bug`, `fix`, `hotfix` | exec → qa | Simple fixes skip spec |
-| `docs`, `documentation` | exec → qa | Docs changes skip spec |
-| `ui`, `frontend`, `admin` | spec → exec → test → qa | Add browser testing |
-| `complex`, `refactor` | (default) + quality loop | Complex changes need iteration |
+| `bug`, `fix`, `hotfix` | exec → qa | Simple fixes skip spec and testgen |
+| `docs`, `documentation` | exec → qa | Docs changes skip spec and testgen |
+| `enhancement`, `feature` | spec → testgen → exec → qa | New features need test stubs |
+| `ui`, `frontend`, `admin` | spec → testgen → exec → test → qa | UI with testable ACs |
+| `complex`, `refactor` | spec → testgen → exec → qa + quality loop | Complex changes need tests and iteration |
+
+### Testgen Auto-Detection
+
+`/spec` recommends `/testgen` when:
+- ACs have "Unit Test" or "Integration Test" verification methods
+- Issue has `enhancement` or `feature` label
+- Project has test framework detected
+
+`/spec` skips `/testgen` when:
+- Issue is bug-only (`bug`, `fix`, `hotfix` labels only)
+- Issue is docs-only (`docs` label)
+- All ACs use "Manual Test" or "Browser Test" verification
 
 ## Skipping Phases
 
