@@ -20,6 +20,7 @@ export {
   isAlreadyAssessed,
   saveLocalReport,
   validateVersion,
+  checkGhCliAvailable,
 } from "./assessment.js";
 
 // Relevance detection

@@ -76,6 +76,40 @@ async function execCommand(
 }
 
 /**
+ * Check if gh CLI is available and authenticated
+ * @returns Object with availability status and error message if not available
+ */
+export async function checkGhCliAvailable(): Promise<{
+  available: boolean;
+  authenticated: boolean;
+  error?: string;
+}> {
+  try {
+    // Check if gh is installed
+    await execCommand("gh", ["--version"]);
+  } catch {
+    return {
+      available: false,
+      authenticated: false,
+      error:
+        "GitHub CLI (gh) is not installed. Install from: https://cli.github.com/",
+    };
+  }
+
+  try {
+    // Check if gh is authenticated
+    await execCommand("gh", ["auth", "status"]);
+    return { available: true, authenticated: true };
+  } catch {
+    return {
+      available: true,
+      authenticated: false,
+      error: "GitHub CLI is not authenticated. Run: gh auth login",
+    };
+  }
+}
+
+/**
  * Default paths for upstream files
  */
 const BASELINE_PATH = ".sequant/upstream/baseline.json";

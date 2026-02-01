@@ -9,7 +9,11 @@
  *   npx tsx scripts/upstream/assess.ts --help            # Show help
  */
 
-import { runUpstream, validateVersion } from "../../src/lib/upstream/index.js";
+import {
+  runUpstream,
+  validateVersion,
+  checkGhCliAvailable,
+} from "../../src/lib/upstream/index.js";
 import type { AssessmentOptions } from "../../src/lib/upstream/types.js";
 
 function showHelp(): void {
@@ -95,6 +99,13 @@ async function main(): Promise<void> {
     console.error(
       "Version must be in semver format (e.g., v1.2.3 or 1.2.3-beta.1)",
     );
+    process.exit(1);
+  }
+
+  // Check gh CLI availability
+  const ghStatus = await checkGhCliAvailable();
+  if (!ghStatus.available || !ghStatus.authenticated) {
+    console.error(`Error: ${ghStatus.error}`);
     process.exit(1);
   }
 
