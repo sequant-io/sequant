@@ -54,10 +54,12 @@ describe("state update CLI", { timeout: 60000 }, () => {
   });
 
   // Helper to run CLI in temp directory
+  // Clear SEQUANT_ORCHESTRATOR by default so tests run the actual CLI logic
   const runInTemp = (
     args: string[],
     env?: Record<string, string>,
-  ): ReturnType<typeof runCli> => runCli(args, { cwd: tempDir, env });
+  ): ReturnType<typeof runCli> =>
+    runCli(args, { cwd: tempDir, env: { SEQUANT_ORCHESTRATOR: "", ...env } });
 
   describe("pr command", () => {
     beforeEach(() => {
@@ -183,7 +185,8 @@ describe("state update CLI", { timeout: 60000 }, () => {
 
   describe("help output", () => {
     it("should include pr command in usage", () => {
-      const result = runCli([]);
+      // Clear SEQUANT_ORCHESTRATOR to ensure help is shown (not early exit)
+      const result = runCli([], { env: { SEQUANT_ORCHESTRATOR: "" } });
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain(
@@ -192,7 +195,10 @@ describe("state update CLI", { timeout: 60000 }, () => {
     });
 
     it("should include pr in valid commands list", () => {
-      const result = runCli(["invalid-command"]);
+      // Clear SEQUANT_ORCHESTRATOR to ensure error handling is triggered
+      const result = runCli(["invalid-command"], {
+        env: { SEQUANT_ORCHESTRATOR: "" },
+      });
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("merged, pr");
