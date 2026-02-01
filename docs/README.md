@@ -10,6 +10,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 ### Getting Started
 
+- [Quickstart](guides/quickstart.md) — Zero to first solved issue in 5 minutes
 - [Installation](getting-started/installation.md) — Install and configure Sequant
 - [Your First Workflow](getting-started/first-workflow.md) — Solve your first issue
 - [Prerequisites](getting-started/prerequisites.md) — Required tools and setup
@@ -34,6 +35,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 ### Guides
 
+- [Complete Workflow](guides/workflow.md) — Full workflow including post-QA patterns
 - [Customization](guides/customization.md) — Override templates safely
 - [MCP Integrations](guides/mcp-integrations.md) — Optional MCP server setup
 - [Git Workflows](guides/git-workflows.md) — Worktree and merge workflows
