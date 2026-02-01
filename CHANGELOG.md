@@ -71,6 +71,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Primary stack selection determines dev URL and commands
   - Combined constitution notes from all selected stacks
   - Stack config persistence in `.sequant/stack.json`
+- Content analysis for phase detection in `/spec` skill (#175)
+  - Analyzes issue title for phase-relevant keywords (UI, security, complexity patterns)
+  - Analyzes issue body for file references and patterns (.tsx, scripts/, auth/)
+  - Signal priority merging: Labels > Solve comment > Title > Body
+  - Solve comment detection: uses existing `/solve` recommendations when available
+  - New "Content Analysis" section in spec output with signal sources table
+  - Library exports: `analyzeContentForPhases()`, `mergePhaseSignals()`, `findSolveComment()`
+  - 92 unit tests covering all detection patterns and edge cases
 
 ### Fixed
 
