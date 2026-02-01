@@ -286,7 +286,8 @@ describe("doctor command", () => {
       await doctorCommand();
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
-      expect(output).toContain("All checks passed");
+      // New boxed format includes the count: "All X checks passed!"
+      expect(output).toMatch(/All \d+ checks passed/);
       expect(processExitSpy).not.toHaveBeenCalled();
     });
 

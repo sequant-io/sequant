@@ -3,6 +3,7 @@
  */
 
 import chalk from "chalk";
+import { ui, colors } from "../lib/cli-ui.js";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { fileExists } from "../lib/fs.js";
 import { readdir } from "fs/promises";
@@ -166,8 +167,6 @@ function displayIssueSummary(issues: IssueState[]): void {
     return;
   }
 
-  console.log(chalk.bold("\n  Tracked Issues:\n"));
-
   // Group by status
   const byStatus: Record<IssueStatus, IssueState[]> = {
     in_progress: [],
@@ -183,7 +182,7 @@ function displayIssueSummary(issues: IssueState[]): void {
     byStatus[issue.status].push(issue);
   }
 
-  // Display in priority order
+  // Display in priority order using a table
   const statusOrder: IssueStatus[] = [
     "in_progress",
     "waiting_for_qa_gate",
@@ -194,36 +193,57 @@ function displayIssueSummary(issues: IssueState[]): void {
     "abandoned",
   ];
 
+  // Build rows for the table
+  const rows: (string | number)[][] = [];
   for (const status of statusOrder) {
     const statusIssues = byStatus[status];
-    if (statusIssues.length === 0) continue;
-
     for (const issue of statusIssues) {
-      console.log(formatIssueState(issue));
-      console.log("");
+      const title =
+        issue.title.length > 30
+          ? issue.title.substring(0, 27) + "..."
+          : issue.title;
+      rows.push([
+        `#${issue.number}`,
+        title,
+        colorStatus(issue.status),
+        issue.currentPhase || "-",
+      ]);
     }
   }
+
+  // Display table
+  console.log(
+    "\n" +
+      ui.table(rows, {
+        columns: [
+          { header: "Issue", width: 8 },
+          { header: "Title", width: 32 },
+          { header: "Status", width: 20 },
+          { header: "Phase", width: 10 },
+        ],
+      }),
+  );
 
   // Summary counts
   const summary = [
     `Total: ${issues.length}`,
     byStatus.in_progress.length > 0
-      ? chalk.blue(`In Progress: ${byStatus.in_progress.length}`)
+      ? colors.info(`In Progress: ${byStatus.in_progress.length}`)
       : null,
     byStatus.waiting_for_qa_gate.length > 0
-      ? chalk.yellow(`QA Gate: ${byStatus.waiting_for_qa_gate.length}`)
+      ? colors.warning(`QA Gate: ${byStatus.waiting_for_qa_gate.length}`)
       : null,
     byStatus.ready_for_merge.length > 0
-      ? chalk.green(`Ready: ${byStatus.ready_for_merge.length}`)
+      ? colors.success(`Ready: ${byStatus.ready_for_merge.length}`)
       : null,
     byStatus.blocked.length > 0
-      ? chalk.yellow(`Blocked: ${byStatus.blocked.length}`)
+      ? colors.warning(`Blocked: ${byStatus.blocked.length}`)
       : null,
   ]
     .filter(Boolean)
     .join("  ");
 
-  console.log(chalk.gray(`  ${summary}`));
+  console.log(`\n  ${summary}`);
 }
 
 export async function statusCommand(
@@ -247,7 +267,8 @@ export async function statusCommand(
     return;
   }
 
-  console.log(chalk.bold("\n📊 Sequant Status\n"));
+  console.log(ui.headerBox("SEQUANT STATUS"));
+  console.log();
 
   // Package version
   console.log(chalk.gray(`Package version: ${getPackageVersion()}`));

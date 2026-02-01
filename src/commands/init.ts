@@ -4,6 +4,7 @@
 
 import chalk from "chalk";
 import inquirer from "inquirer";
+import { ui, colors } from "../lib/cli-ui.js";
 import {
   detectStack,
   detectAllStacks,
@@ -111,7 +112,9 @@ function logDefault(label: string, value: string): void {
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
-  console.log(chalk.green("\n🚀 Initializing Sequant...\n"));
+  // Show banner
+  console.log(ui.banner());
+  console.log(colors.success("\nInitializing Sequant...\n"));
 
   // Determine if we should use interactive mode
   const useInteractive = shouldUseInteractiveMode(options.interactive);
@@ -388,23 +391,26 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
-  // Create directories
-  console.log(chalk.blue("\n📁 Creating directories..."));
+  // Create directories with spinner
+  const dirSpinner = ui.spinner("Creating directories...");
+  dirSpinner.start();
   await ensureDir(".claude/skills");
   await ensureDir(".claude/hooks");
   await ensureDir(".claude/memory");
   await ensureDir(".claude/.sequant");
   await ensureDir(".sequant/logs");
   await ensureDir("scripts/dev");
+  dirSpinner.succeed("Created directories");
 
   // Update .gitignore
   const gitignoreUpdated = await updateGitignore();
   if (gitignoreUpdated) {
-    console.log(chalk.blue("📝 Updated .gitignore with Sequant entries"));
+    ui.printStatus("success", "Updated .gitignore with Sequant entries");
   }
 
   // Save config with tokens
-  console.log(chalk.blue("💾 Saving configuration..."));
+  const configSpinner = ui.spinner("Saving configuration...");
+  configSpinner.start();
   const pmConfig = packageManager
     ? getPackageManagerCommands(packageManager)
     : getPackageManagerCommands("npm");
@@ -417,6 +423,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     stack: stack!,
     initialized: new Date().toISOString(),
   });
+  configSpinner.succeed("Saved configuration");
 
   // Save multi-stack configuration if additional stacks selected
   if (additionalStacks.length > 0) {
@@ -429,11 +436,14 @@ export async function initCommand(options: InitOptions): Promise<void> {
   }
 
   // Create default settings
-  console.log(chalk.blue("⚙️  Creating default settings..."));
+  const settingsSpinner = ui.spinner("Creating default settings...");
+  settingsSpinner.start();
   await createDefaultSettings();
+  settingsSpinner.succeed("Created default settings");
 
   // Copy templates (with symlinks for scripts unless --no-symlinks)
-  console.log(chalk.blue("📄 Copying templates..."));
+  const templatesSpinner = ui.spinner("Copying templates...");
+  templatesSpinner.start();
   const { scriptsSymlinked, symlinkResults } = await copyTemplates(
     stack!,
     tokens,
@@ -444,9 +454,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
     },
   );
 
+  templatesSpinner.succeed("Copied templates");
+
   // Report symlink status
   if (scriptsSymlinked) {
-    console.log(chalk.blue("🔗 Created symlinks for scripts/dev/"));
+    ui.printStatus("success", "Created symlinks for scripts/dev/");
   } else if (!options.noSymlinks && symlinkResults) {
     // Some symlinks may have fallen back to copies
     const fallbacks = symlinkResults.filter((r) => r.fallbackToCopy);
@@ -470,8 +482,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
   }
 
   // Create manifest
-  console.log(chalk.blue("📋 Creating manifest..."));
+  const manifestSpinner = ui.spinner("Creating manifest...");
+  manifestSpinner.start();
   await createManifest(stack!, packageManager ?? undefined);
+  manifestSpinner.succeed("Created manifest");
 
   // Build optional suggestions section
   const optionalSuggestions = suggestions.filter((s) =>
@@ -489,21 +503,28 @@ export async function initCommand(options: InitOptions): Promise<void> {
     ? `\n${chalk.yellow("⚠️  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
     : "";
 
-  // Success message
-  console.log(
-    chalk.green(`
-✅ Sequant initialized successfully!
-${prereqReminder}
-${chalk.bold("Next steps:")}
-  1. Review .claude/memory/constitution.md and customize for your project
-  2. Start using workflow commands in Claude Code:
+  // Success message with boxed output
+  const nextStepsContent = `${chalk.bold("Next steps:")}
+  1. Review .claude/memory/constitution.md
+  2. Start using workflow commands:
 
-     ${chalk.cyan("/spec 123")}    - Plan implementation for issue #123
-     ${chalk.cyan("/exec 123")}    - Implement the feature
-     ${chalk.cyan("/qa 123")}      - Quality review
-${optionalSection}
-${chalk.bold("Documentation:")}
-  https://github.com/admarble/sequant#readme
-`),
+     ${chalk.cyan("/spec 123")}  - Plan implementation
+     ${chalk.cyan("/exec 123")}  - Implement the feature
+     ${chalk.cyan("/qa 123")}    - Quality review`;
+
+  console.log(
+    "\n" + ui.successBox("Sequant initialized successfully!", nextStepsContent),
+  );
+
+  if (prereqReminder) {
+    console.log(prereqReminder);
+  }
+
+  if (optionalSection) {
+    console.log(optionalSection);
+  }
+
+  console.log(
+    chalk.gray("\nDocumentation: https://github.com/admarble/sequant#readme\n"),
   );
 }

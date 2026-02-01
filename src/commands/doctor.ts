@@ -4,6 +4,7 @@
 
 import chalk from "chalk";
 import { execSync } from "child_process";
+import { ui, colors } from "../lib/cli-ui.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -115,7 +116,8 @@ export function checkClosedIssues(): ClosedIssue[] {
 export async function doctorCommand(
   options: DoctorOptions = {},
 ): Promise<void> {
-  console.log(chalk.blue("\n🔍 Running health checks...\n"));
+  console.log(ui.headerBox("SEQUANT HEALTH CHECK"));
+  console.log();
 
   const checks: Check[] = [];
   // Track gh availability and auth for conditional checks later
@@ -429,48 +431,51 @@ export async function doctorCommand(
     }
   }
 
-  // Display results
+  // Display results with status icons
   let passCount = 0;
   let warnCount = 0;
   let failCount = 0;
 
   for (const check of checks) {
-    const icon =
+    const statusType =
       check.status === "pass"
-        ? chalk.green("✓")
+        ? "success"
         : check.status === "warn"
-          ? chalk.yellow("⚠")
-          : chalk.red("✗");
+          ? "warning"
+          : "error";
     const color =
       check.status === "pass"
-        ? chalk.green
+        ? colors.success
         : check.status === "warn"
-          ? chalk.yellow
-          : chalk.red;
+          ? colors.warning
+          : colors.error;
 
-    console.log(`${icon} ${chalk.bold(check.name)}: ${color(check.message)}`);
+    console.log(
+      `  ${ui.statusIcon(statusType as "success" | "warning" | "error")} ${chalk.bold(check.name)}: ${color(check.message)}`,
+    );
 
     if (check.status === "pass") passCount++;
     else if (check.status === "warn") warnCount++;
     else failCount++;
   }
 
-  // Summary
-  console.log(chalk.bold("\nSummary:"));
-  console.log(chalk.green(`  ✓ Passed: ${passCount}`));
-  if (warnCount > 0) console.log(chalk.yellow(`  ⚠ Warnings: ${warnCount}`));
-  if (failCount > 0) console.log(chalk.red(`  ✗ Failed: ${failCount}`));
+  // Summary with boxed output
+  const totalChecks = passCount + warnCount + failCount;
+  let summaryTitle: string;
+  let summaryMessage: string;
 
   if (failCount > 0) {
-    console.log(
-      chalk.red("\n❌ Some checks failed. Run `sequant init` to fix."),
-    );
+    summaryTitle = `${failCount} check${failCount > 1 ? "s" : ""} failed`;
+    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\nFailed: ${failCount}\n\nRun \`sequant init\` to fix issues.`;
+    console.log("\n" + ui.errorBox(summaryTitle, summaryMessage));
     process.exit(1);
   } else if (warnCount > 0) {
-    console.log(
-      chalk.yellow("\n⚠️  Some warnings found but Sequant should work."),
-    );
+    summaryTitle = `All checks passed (${warnCount} warning${warnCount > 1 ? "s" : ""})`;
+    summaryMessage = `Passed: ${passCount}/${totalChecks}\nWarnings: ${warnCount}\n\nSequant should work correctly.`;
+    console.log("\n" + ui.warningBox(summaryTitle, summaryMessage));
   } else {
-    console.log(chalk.green("\n✅ All checks passed!"));
+    summaryTitle = `All ${totalChecks} checks passed!`;
+    summaryMessage = `Your Sequant installation is healthy.`;
+    console.log("\n" + ui.successBox(summaryTitle, summaryMessage));
   }
 }

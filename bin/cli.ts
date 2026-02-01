@@ -12,6 +12,8 @@ import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
 import { isLocalNodeModulesInstall } from "../src/lib/version-check.js";
+import { configureUI, banner, headerBox } from "../src/lib/cli-ui.js";
+import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 
 // Read version from package.json dynamically
 // Works from both source (bin/) and compiled (dist/bin/) locations
@@ -53,6 +55,16 @@ const program = new Command();
 if (process.argv.includes("--no-color")) {
   process.env.FORCE_COLOR = "0";
 }
+
+// Configure UI early based on environment and flags
+configureUI({
+  noColor: process.argv.includes("--no-color") || !!process.env.NO_COLOR,
+  jsonMode: process.argv.includes("--json"),
+  verbose: process.argv.includes("--verbose") || process.argv.includes("-v"),
+  isTTY: isStdoutTTY(),
+  isCI: isCI(),
+  minimal: process.env.SEQUANT_MINIMAL === "1",
+});
 
 // Warn if running from local node_modules (not npx cache or global)
 // This helps users who accidentally have a stale local install
@@ -229,16 +241,6 @@ program.parse();
 
 // Show help if no command provided
 if (!process.argv.slice(2).length) {
-  console.log(
-    chalk.green(`
-  ╔═══════════════════════════════════════════════════════════╗
-  ║                                                           ║
-  ║   ${chalk.bold("Sequant")} - Quantize your development workflow          ║
-  ║                                                           ║
-  ║   Sequential AI phases with quality gates                 ║
-  ║                                                           ║
-  ╚═══════════════════════════════════════════════════════════╝
-  `),
-  );
+  console.log(banner());
   program.help();
 }
