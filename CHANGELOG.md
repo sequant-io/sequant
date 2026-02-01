@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Feature Quality Planning in workflow skills (#219)
+  - `/spec`: New "Feature Quality Planning" section with 6 quality dimensions
+    - Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish
+    - Generates Derived ACs from quality checklist items
+    - Complexity scaling (simple/standard/complex issues)
+    - Section Applicability table for issue types
+  - `/exec`: Quality Plan Reference section to implement quality items during execution
+  - `/qa`: Quality Plan Verification with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%)
+  - Addresses gap where `/spec` planned "minimum to satisfy AC" instead of "complete professional implementation"
 - Skill command verification in `/qa` skill (#209)
   - Detects when `.claude/skills/**/*.md` files are modified
   - Extracts CLI commands from bash code blocks, subshells, inline backticks
