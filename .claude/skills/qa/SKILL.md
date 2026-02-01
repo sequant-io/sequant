@@ -250,6 +250,94 @@ No code changes found to review. The acceptance criteria cannot be evaluated wit
 
 ---
 
+### Phase 0b: Quality Plan Verification (CONDITIONAL)
+
+**When to apply:** If issue has a Feature Quality Planning section in comments (from `/spec`).
+
+**Purpose:** Verify that quality dimensions identified during planning were addressed in implementation. This catches gaps that AC verification alone misses.
+
+**Detection:**
+```bash
+# Check if issue has quality planning section in comments
+quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comments[].body' | grep -q "Feature Quality Planning" && echo "yes" || echo "no")
+```
+
+**If Quality Plan found:**
+
+1. **Extract quality dimensions** from the spec comment:
+   - Completeness Check items
+   - Error Handling items
+   - Code Quality items
+   - Test Coverage Plan items
+   - Best Practices items
+   - Polish items (if UI feature)
+   - Derived ACs
+
+2. **Verify each dimension against implementation:**
+
+   | Dimension | Verification Method |
+   |-----------|---------------------|
+   | Completeness | Check all AC steps have code |
+   | Error Handling | Search for error handling code, try/catch blocks |
+   | Code Quality | Check for `any` types, magic strings |
+   | Test Coverage | Verify test files exist for critical paths |
+   | Best Practices | Check for logging, security patterns |
+   | Polish | Check loading/error/empty states in UI |
+
+3. **Verify Derived ACs:**
+   - Treat derived ACs as additional AC items
+   - Include in AC coverage table
+   - Mark as MET/PARTIALLY_MET/NOT_MET
+
+**Output Format:**
+
+```markdown
+### Quality Plan Verification
+
+**Quality Plan found:** Yes/No
+
+| Dimension | Items Planned | Items Addressed | Status |
+|-----------|---------------|-----------------|--------|
+| Completeness | 5 | 5 | ✅ Complete |
+| Error Handling | 3 | 2 | ⚠️ Partial (missing: API timeout) |
+| Code Quality | 4 | 4 | ✅ Complete |
+| Test Coverage | 3 | 3 | ✅ Complete |
+| Best Practices | 2 | 2 | ✅ Complete |
+| Polish | N/A | N/A | - (not UI feature) |
+
+**Derived ACs:** 2/2 addressed
+
+**Quality Plan Status:** Complete / Partial / Not Addressed
+```
+
+**Verdict Impact:**
+
+| Quality Plan Status | Verdict Impact |
+|---------------------|----------------|
+| Complete | No impact (positive signal) |
+| Partial | Note in findings, consider `AC_MET_BUT_NOT_A_PLUS` |
+| Not Addressed | Flag in findings, may indicate gaps |
+| No Plan Found | Note: "Quality plan not available - standard QA only" |
+
+**Status Threshold Definitions:**
+
+| Status | Criteria |
+|--------|----------|
+| **Complete** | All applicable dimensions have ≥80% items addressed |
+| **Partial** | At least 50% of applicable dimensions have items addressed |
+| **Not Addressed** | <50% of applicable dimensions addressed, or 0 items addressed |
+
+*Example: If 4 dimensions apply (Completeness, Error Handling, Code Quality, Test Coverage):*
+- *Complete: 4/4 dimensions at ≥80%*
+- *Partial: 2-3/4 dimensions have work done*
+- *Not Addressed: 0-1/4 dimensions have work done*
+
+**If no Quality Plan found:**
+- Output: "Quality Plan Verification: N/A - No quality plan found in issue comments"
+- Proceed with standard QA (no verdict impact)
+
+---
+
 ### Phase 1: CI Status Check — REQUIRED
 
 **Purpose:** Check GitHub CI status before finalizing verdict. CI-dependent AC items (e.g., "Tests pass in CI") should reflect actual CI status, not just local test results.
@@ -908,6 +996,7 @@ Provide an overall verdict:
 2. Check verification gates:
    - skill_verification = status from Section 6a (Passed/Failed/Skipped/Not Required)
    - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
+   - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
 
 3. Determine verdict (in order):
    - IF not_met_count > 0 OR partial_count > 0:
@@ -916,8 +1005,12 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
    - ELSE IF execution_evidence == "Incomplete":
        → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
+   - ELSE IF quality_plan_status == "Not Addressed" AND quality_plan_exists:
+       → AC_MET_BUT_NOT_A_PLUS (quality dimensions not addressed - flag for review)
    - ELSE IF pending_count > 0:
        → NEEDS_VERIFICATION (wait for verification)
+   - ELSE IF quality_plan_status == "Partial":
+       → AC_MET_BUT_NOT_A_PLUS (some quality dimensions incomplete - can merge with notes)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
@@ -1066,6 +1159,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 
 - [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, NOT_MET, PENDING, or N/A
+- [ ] **Quality Plan Verification** - Included if quality plan exists (or marked N/A if no quality plan)
 - [ ] **CI Status** - Included if PR exists (or marked "No PR" / "No CI configured")
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
@@ -1106,6 +1200,24 @@ You MUST include these sections:
 | AC-2 | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
 
 **Coverage:** X/Y AC items fully met
+
+---
+
+### Quality Plan Verification
+
+[Include if quality plan exists in issue comments, otherwise: "N/A - No quality plan found"]
+
+| Dimension | Items Planned | Items Addressed | Status |
+|-----------|---------------|-----------------|--------|
+| Completeness | X | X | ✅ Complete / ⚠️ Partial / ❌ Not addressed |
+| Error Handling | X | X | ✅ Complete / ⚠️ Partial / ❌ Not addressed |
+| Code Quality | X | X | ✅ Complete / ⚠️ Partial / ❌ Not addressed |
+| Test Coverage | X | X | ✅ Complete / ⚠️ Partial / ❌ Not addressed |
+| Best Practices | X | X | ✅ Complete / ⚠️ Partial / ❌ Not addressed |
+| Polish | X | X | ✅ Complete / ⚠️ Partial / N/A (not UI) |
+
+**Derived ACs:** X/Y addressed
+**Quality Plan Status:** Complete / Partial / Not Addressed
 
 ---
 

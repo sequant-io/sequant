@@ -175,8 +175,35 @@ When worktree creation is needed (standalone mode, no existing worktree):
    - Summarize briefly:
      - The AC checklist (AC-1, AC-2, ...) from the issue and all comments
      - The current implementation plan (from issue comments or `/spec`)
+     - **The Feature Quality Planning section** (if present from `/spec`)
    - If there is no plan:
      - Ask whether to quickly propose one (or suggest using `/spec` first).
+
+#### 2.1b Quality Plan Reference (RECOMMENDED)
+
+**If `/spec` was run**, look for the **Feature Quality Planning** section in issue comments. This section provides guidance for implementation quality:
+
+**What to extract from Quality Plan:**
+- **Error Handling items** → Implement error handling for identified scenarios
+- **Edge cases** → Handle edge cases listed in the plan
+- **Test Coverage items** → Know what tests are expected
+- **Derived ACs** → Additional ACs generated from quality planning
+
+**How to use during implementation:**
+1. Before implementing each AC, check if quality plan has related items
+2. Implement error handling per quality plan's "Error Handling" checklist
+3. Ensure test coverage matches quality plan's "Test Coverage Plan"
+4. Address derived ACs alongside original ACs
+
+**Example reference:**
+```markdown
+Per Quality Plan:
+- Error Handling: Handle API timeout with graceful fallback
+- Test Coverage: Add unit tests for edge case (empty input)
+- Derived AC-6: Log errors for observability
+```
+
+**If no Quality Plan found:** Proceed with standard implementation but note in progress update that quality planning was not available.
 
 3. **Wait for worktree completion before implementation:**
    ```bash
@@ -1169,8 +1196,25 @@ At the end of a session:
    - Include:
      - AC coverage summary
      - Brief list of key files changed
+     - **Quality Plan Alignment** (REQUIRED if quality plan exists in issue comments)
      - **PR Status** (Created with URL, or Failed with reason and manual instructions)
      - Any known gaps or open questions
+
+   **Quality Plan Alignment (REQUIRED when quality plan exists):**
+
+   If the issue has a Feature Quality Planning section from `/spec`, you MUST include this section. If no quality plan exists, output: "Quality Plan Alignment: N/A - No quality plan in issue"
+   ```markdown
+   ### Quality Plan Alignment
+
+   | Quality Dimension | Items Addressed | Notes |
+   |-------------------|-----------------|-------|
+   | Error Handling | 2/3 | Missing: API timeout handling |
+   | Test Coverage | 3/3 | All critical paths covered |
+   | Code Quality | 2/2 | Types defined, patterns followed |
+   | Best Practices | 1/1 | Logging added |
+
+   **Derived ACs:** 2/2 addressed
+   ```
 
    - Label it clearly as:
 
@@ -1239,6 +1283,7 @@ npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
 - [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
+- [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
 - [ ] **Documentation Reminder** - Note if README/docs need updating (checked in /qa)
