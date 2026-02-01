@@ -1,0 +1,6 @@
+{
+  "tagName": "v2.1.27",
+  "name": "v2.1.27",
+  "body": "## What's changed\n\n- Added tool call failures and denials to debug logs\n- Fixed context management validation error for gateway users\n- Added `--from-pr` flag to resume sessions linked to a specific GitHub PR\n- Permissions now respect content-level `ask` over tool-level `allow`\n- Fixed bug where parallel agent execution could hang\n- Updated documentation for new MCP server configuration\n- Internal refactoring of error handling",
+  "publishedAt": "2025-01-25T10:00:00Z"
+}

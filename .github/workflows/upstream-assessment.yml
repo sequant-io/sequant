@@ -1,0 +1,145 @@
+name: Upstream Assessment
+
+on:
+  # Weekly check on Monday 9am UTC
+  schedule:
+    - cron: '0 9 * * 1'
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Claude Code version to assess (blank = latest)'
+        required: false
+        type: string
+      since:
+        description: 'Assess all versions since this version'
+        required: false
+        type: string
+      dry_run:
+        description: 'Dry run (no issues created)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Get latest Claude Code version
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(gh release list --repo anthropics/claude-code --limit 1 --json tagName --jq '.[0].tagName')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Latest Claude Code version: $VERSION"
+
+      - name: Get last assessed version
+        id: baseline
+        run: |
+          if [ -f ".sequant/upstream/baseline.json" ]; then
+            LAST=$(jq -r '.lastAssessedVersion // "none"' .sequant/upstream/baseline.json)
+            echo "last=$LAST" >> $GITHUB_OUTPUT
+            echo "Last assessed version: $LAST"
+          else
+            echo "last=none" >> $GITHUB_OUTPUT
+            echo "No baseline found"
+          fi
+
+      - name: Check if already assessed
+        id: check
+        run: |
+          VERSION="${{ inputs.version || steps.latest.outputs.version }}"
+          if [ -f ".sequant/upstream/${VERSION}.md" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Version $VERSION already assessed"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION not yet assessed"
+          fi
+
+      - name: Determine assessment mode
+        id: mode
+        run: |
+          if [ -n "${{ inputs.since }}" ]; then
+            echo "mode=since" >> $GITHUB_OUTPUT
+            echo "version=${{ inputs.since }}" >> $GITHUB_OUTPUT
+          elif [ -n "${{ inputs.version }}" ]; then
+            echo "mode=single" >> $GITHUB_OUTPUT
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.baseline.outputs.last }}" != "none" ]; then
+            echo "mode=since" >> $GITHUB_OUTPUT
+            echo "version=${{ steps.baseline.outputs.last }}" >> $GITHUB_OUTPUT
+          else
+            echo "mode=latest" >> $GITHUB_OUTPUT
+            echo "version=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run upstream assessment
+        if: steps.check.outputs.skip == 'false' || inputs.since != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MODE="${{ steps.mode.outputs.mode }}"
+          VERSION="${{ steps.mode.outputs.version }}"
+          DRY_RUN="${{ inputs.dry_run }}"
+
+          # Build assessment options
+          OPTIONS=""
+          if [ "$DRY_RUN" = "true" ]; then
+            OPTIONS="$OPTIONS --dry-run"
+          fi
+
+          if [ "$MODE" = "since" ]; then
+            echo "Assessing all versions since $VERSION"
+            npx tsx scripts/upstream/assess.ts --since "$VERSION" $OPTIONS
+          elif [ "$MODE" = "single" ]; then
+            echo "Assessing single version: $VERSION"
+            npx tsx scripts/upstream/assess.ts "$VERSION" $OPTIONS
+          else
+            echo "Assessing latest version"
+            npx tsx scripts/upstream/assess.ts $OPTIONS
+          fi
+
+      - name: Commit report and baseline
+        if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes to commit
+          if git diff --quiet .sequant/upstream/; then
+            echo "No changes to commit"
+          else
+            git add .sequant/upstream/
+            VERSION="${{ inputs.version || steps.latest.outputs.version }}"
+            git commit -m "docs: Upstream assessment for $VERSION"
+            git push
+            echo "Committed and pushed assessment report"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Upstream Assessment Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** ${{ steps.mode.outputs.mode }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** ${{ steps.mode.outputs.version || steps.latest.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry Run:** ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Skipped:** ${{ steps.check.outputs.skip }}" >> $GITHUB_STEP_SUMMARY
