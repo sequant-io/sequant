@@ -357,7 +357,82 @@ Ask the user to confirm or adjust:
 
 **Do NOT start implementation** - this is planning-only.
 
-### 4. Recommended Workflow
+### 4. Content Analysis (AC-1, AC-2, AC-3, AC-4)
+
+**Before** determining the recommended workflow, analyze the issue content for phase-relevant signals:
+
+#### Step 1: Check for Solve Comment (AC-4)
+
+First, check if a `/solve` comment already exists for this issue:
+
+```bash
+# Check issue comments for solve workflow
+gh issue view <issue-number> --json comments --jq '.comments[].body' | grep -l "## Solve Workflow for Issues:"
+```
+
+**If solve comment found:**
+- Extract phases from the solve workflow (e.g., `spec → exec → test → qa`)
+- Use solve recommendations as the primary source (after labels)
+- Skip content analysis for phases (solve already analyzed)
+- Include in output: `"Solve comment found - using /solve workflow recommendations"`
+
+#### Step 2: Analyze Title for Keywords (AC-1)
+
+If no solve comment, analyze the issue title for phase-relevant keywords:
+
+| Pattern | Detection | Suggested Phase |
+|---------|-----------|-----------------|
+| `extract`, `component` | UI work | Add `/test` |
+| `refactor.*ui`, `ui refactor` | UI work | Add `/test` |
+| `frontend`, `dashboard` | UI work | Add `/test` |
+| `auth`, `permission`, `security` | Security-sensitive | Add `/security-review` |
+| `password`, `credential`, `token` | Security-sensitive | Add `/security-review` |
+| `refactor`, `migration`, `restructure` | Complex work | Enable quality loop |
+| `breaking change` | Complex work | Enable quality loop |
+
+#### Step 3: Analyze Body for Patterns (AC-2)
+
+Analyze the issue body for file references and keywords:
+
+| Pattern | Detection | Suggested Phase |
+|---------|-----------|-----------------|
+| References `.tsx` or `.jsx` files | UI work likely | Add `/test` |
+| References `components/` directory | UI work | Add `/test` |
+| References `scripts/` or `bin/` | CLI work | May need `/verify` |
+| References `auth/` directory | Security-sensitive | Add `/security-review` |
+| References `middleware.ts` | May be auth-related | Consider `/security-review` |
+| Contains "breaking change" | Complex work | Enable quality loop |
+
+#### Step 4: Merge Signals (AC-3)
+
+Content analysis **supplements** label detection - it can only ADD phases, never remove them.
+
+**Priority order (highest first):**
+1. **Labels** (explicit, highest priority)
+2. **Solve comment** (if exists)
+3. **Title keywords**
+4. **Body patterns** (lowest priority)
+
+**Output format:**
+
+```markdown
+## Content Analysis
+
+### Signal Sources
+
+| Phase | Source | Confidence | Reason |
+|-------|--------|------------|--------|
+| /test | title | high | "Extract component" detected |
+| /security-review | body | medium | References auth/ directory |
+
+### Merged Recommendations
+
+**From labels:** /test (ui label)
+**From content:** /security-review (added)
+**Final phases:** spec → exec → test → security-review → qa
+```
+
+### 5. Recommended Workflow
 
 Analyze the issue and recommend the optimal workflow phases:
 
@@ -366,6 +441,7 @@ Analyze the issue and recommend the optimal workflow phases:
 
 **Phases:** spec → exec → qa
 **Quality Loop:** disabled
+**Signal Sources:** [labels | solve | content]
 **Reasoning:** [Brief explanation of why these phases were chosen]
 ```
 
@@ -376,7 +452,11 @@ Analyze the issue and recommend the optimal workflow phases:
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
 
-### 5. Label Review
+**Content Analysis Integration:**
+- Include content-detected phases in the workflow
+- Note signal source in reasoning (e.g., "Added /test based on title keyword 'extract component'")
+
+### 6. Label Review
 
 Analyze current labels vs implementation plan and suggest updates:
 
@@ -406,7 +486,7 @@ Analyze current labels vs implementation plan and suggest updates:
 - Check if API contracts are changing
 - Match against quality loop trigger labels
 
-### 6. Issue Comment Draft
+### 7. Issue Comment Draft
 
 Generate a Markdown snippet with:
 - AC checklist with verification criteria
@@ -422,7 +502,7 @@ Label clearly as:
 --- DRAFT GITHUB ISSUE COMMENT (PLAN) ---
 ```
 
-### 7. Update GitHub Issue
+### 8. Update GitHub Issue
 
 Post the draft comment to GitHub:
 ```bash
@@ -478,7 +558,8 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
-- [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
+- [ ] **Content Analysis** - Title/body analysis results (or "Solve comment found" if using /solve)
+- [ ] **Recommended Workflow** - Phases, Quality Loop setting, Signal Sources, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
@@ -531,10 +612,31 @@ You MUST include these sections in order:
 
 ---
 
+## Content Analysis
+
+<!-- If solve comment found: -->
+**Source:** Solve comment found - using /solve workflow recommendations
+
+<!-- If no solve comment, show analysis: -->
+### Signal Sources
+
+| Phase | Source | Confidence | Reason |
+|-------|--------|------------|--------|
+| /test | title | high | "[matched keyword]" detected |
+| /security-review | body | medium | References [pattern] |
+
+### Merged Recommendations
+
+**From labels:** [label-detected phases]
+**From content:** [content-detected phases]
+
+---
+
 ## Recommended Workflow
 
 **Phases:** exec → qa
 **Quality Loop:** disabled
+**Signal Sources:** [labels | solve | content]
 **Reasoning:** [Why these phases based on issue analysis]
 
 ---
