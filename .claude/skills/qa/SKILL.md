@@ -292,7 +292,7 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
    # Format: | Source | AC-N: Description | Priority |
    derived_acs=$(gh issue view <issue-number> --comments --json comments -q '.comments[].body' | \
      grep -E '\|\s*(Error Handling|Test Coverage|Best Practices|Code Quality|Completeness|Polish)\s*\|.*AC-[0-9]+:' | \
-     sed 's/.*\(AC-[0-9]\+:[^|]*\).*/\1/' | \
+     grep -oE 'AC-[0-9]+:[^|]+' | \
      sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
      sort -u)
 
