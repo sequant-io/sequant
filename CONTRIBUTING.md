@@ -415,7 +415,7 @@ Use `/improve` within Claude Code to analyze issues, or file directly:
 
 ## Telemetry
 
-Sequant does not collect any usage telemetry. See [docs/telemetry.md](docs/telemetry.md) for our reasoning.
+Sequant does not collect any usage telemetry. See [docs/reference/telemetry.md](docs/reference/telemetry.md) for our reasoning.
 
 ## License
 
