@@ -3,8 +3,7 @@
  * Coordinates release fetching, analysis, and output generation
  */
 
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import { readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
@@ -23,7 +22,58 @@ import {
 } from "./report.js";
 import { createAssessmentIssue, createOrLinkFinding } from "./issues.js";
 
-const execAsync = promisify(exec);
+/**
+ * Regex pattern for valid semantic version strings
+ * Matches: v1.2.3, 1.2.3, v1.2.3-beta.1, v1.2.3-rc1, etc.
+ */
+const VERSION_PATTERN = /^v?\d+\.\d+\.\d+(-[\w.]+)?$/;
+
+/**
+ * Validate a version string to prevent command injection
+ * @throws Error if version format is invalid
+ */
+export function validateVersion(version: string): void {
+  if (!VERSION_PATTERN.test(version)) {
+    throw new Error(
+      `Invalid version format: "${version}". Expected semver format (e.g., v1.2.3 or 1.2.3-beta.1)`,
+    );
+  }
+}
+
+/**
+ * Execute a command safely using spawn with argument arrays
+ * This prevents command injection by not using shell interpolation
+ */
+async function execCommand(
+  command: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
+      }
+    });
+
+    proc.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
 
 /**
  * Default paths for upstream files
@@ -38,11 +88,24 @@ export async function fetchRelease(
   version?: string,
 ): Promise<ReleaseData | null> {
   try {
-    const versionArg = version || "";
-    const { stdout } = await execAsync(
-      `gh release view ${versionArg} --repo anthropics/claude-code --json tagName,name,body,publishedAt`,
+    // Validate version if provided to prevent injection
+    if (version) {
+      validateVersion(version);
+    }
+
+    // Build args array safely - no shell interpolation
+    const args = ["release", "view"];
+    if (version) {
+      args.push(version);
+    }
+    args.push(
+      "--repo",
+      "anthropics/claude-code",
+      "--json",
+      "tagName,name,body,publishedAt",
     );
 
+    const { stdout } = await execCommand("gh", args);
     return JSON.parse(stdout) as ReleaseData;
   } catch (error) {
     console.error("Error fetching release:", error);
@@ -57,9 +120,21 @@ export async function listReleases(
   limit: number = 50,
 ): Promise<Array<{ tagName: string; publishedAt: string }>> {
   try {
-    const { stdout } = await execAsync(
-      `gh release list --repo anthropics/claude-code --limit ${limit} --json tagName,publishedAt`,
-    );
+    // Validate limit is a reasonable positive integer
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("Limit must be an integer between 1 and 100");
+    }
+
+    const { stdout } = await execCommand("gh", [
+      "release",
+      "list",
+      "--repo",
+      "anthropics/claude-code",
+      "--limit",
+      String(limit),
+      "--json",
+      "tagName,publishedAt",
+    ]);
 
     return JSON.parse(stdout) as Array<{
       tagName: string;

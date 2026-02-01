@@ -19,6 +19,7 @@ export {
   updateBaseline,
   isAlreadyAssessed,
   saveLocalReport,
+  validateVersion,
 } from "./assessment.js";
 
 // Relevance detection
@@ -52,6 +53,8 @@ export {
   addIssueComment,
   createOrLinkFinding,
   createAssessmentIssue,
+  extractSearchTerms,
+  isSimilarTitle,
 } from "./issues.js";
 
 // Types
