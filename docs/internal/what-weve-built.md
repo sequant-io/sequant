@@ -12,8 +12,8 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 |--------|-------|
 | Slash Commands | 18 |
 | CLI Commands | 9 |
-| Core Library Modules | 30 |
-| Test Files | 38 |
+| Core Library Modules | 31 |
+| Test Files | 39 |
 | Documentation Files | 26+ |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~17,000+ |
@@ -186,6 +186,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `wizard.ts` | Guides users through dependency installation |
 | `shutdown.ts` | Signal handling for graceful shutdown |
 | `version-check.ts` | Checks for updates, warns on stale local installs |
+| `cli-ui.ts` | Centralized CLI UI (spinners, boxes, tables, colors, ASCII branding) with graceful degradation |
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
 | `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
 | `content-analyzer.ts` | Analyzes issue title/body for phase-relevant keywords (UI, security, complexity patterns) |
@@ -671,6 +672,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.12.0)
+- **Enhanced CLI UI** — New `cli-ui.ts` module provides animated spinners (`ora`), decorative boxes (`boxen`), ASCII tables (`cli-table3`), gradient branding, and progress bars. All CLI commands (`doctor`, `status`, `stats`, `logs`, `init`) use consistent styling with graceful degradation for CI, non-TTY, `--no-color`, `--verbose`, and Windows legacy terminals. 73 unit tests cover all UI functions.
 - **Feature Quality Planning** — `/spec` now includes a comprehensive quality planning section with 6 dimensions (Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish). Generates Derived ACs from quality checklist items. `/exec` references the quality plan during implementation and explicitly extracts/tracks derived ACs in Pre-PR verification. `/qa` verifies quality plan items with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%) and includes derived ACs in AC Coverage table with source attribution
 - **Skill command verification** — `/qa` now detects skill file changes (`.claude/skills/**/*.md`), extracts referenced CLI commands, validates JSON field names against `--help` output, and blocks `READY_FOR_MERGE` if commands have invalid syntax or non-existent fields (prevents bugs like #178's `conclusion` field issue)
 - **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals

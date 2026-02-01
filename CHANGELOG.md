@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Enhanced CLI UI with modern terminal patterns (#215)
+  - New `src/lib/cli-ui.ts` module (736 lines) with centralized UI utilities
+  - Animated spinners with `ora` (graceful fallback to text in CI/non-TTY/verbose modes)
+  - Decorative boxes with `boxen` for success/error/warning/header messages
+  - ASCII tables with `cli-table3` for `sequant status` issue list
+  - Gradient ASCII branding (static logo, no figlet dependency)
+  - Progress bars for `sequant stats` success rate visualization
+  - Standardized color palette across all CLI commands
+  - Graceful degradation: `--no-color`, `--json`, `--verbose`, non-TTY, CI auto-detection
+  - Windows legacy terminal ASCII fallback
+  - `SEQUANT_MINIMAL=1` environment variable support
+  - 73 unit tests covering all UI functions and fallback scenarios
 - `/upstream` skill for Claude Code release tracking (#222)
   - Monitors anthropics/claude-code releases via GitHub API
   - Detects breaking changes, deprecations, new tools, opportunities
