@@ -228,6 +228,8 @@ See [Customization Guide](docs/guides/customization.md) for all options.
 
 ## Documentation
 
+- [Quickstart](docs/guides/quickstart.md) — 5-minute guide
+- [Complete Workflow](docs/guides/workflow.md) — Full workflow including post-QA patterns
 - [Getting Started](docs/getting-started/installation.md)
 - [What We've Built](docs/internal/what-weve-built.md) — Comprehensive project overview
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
