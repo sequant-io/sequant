@@ -28,6 +28,7 @@ import {
   ExecutionConfig,
   IssueResult,
   PhaseResult,
+  QaVerdict,
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
 import { getMcpServersConfig } from "../lib/system.js";
@@ -59,6 +60,37 @@ function slugify(title: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .substring(0, 50);
+}
+
+/**
+ * Parse QA verdict from phase output
+ *
+ * Looks for verdict patterns in the QA output:
+ * - "### Verdict: READY_FOR_MERGE"
+ * - "**Verdict:** AC_NOT_MET"
+ * - "Verdict: AC_MET_BUT_NOT_A_PLUS"
+ *
+ * @param output - The captured output from QA phase
+ * @returns The parsed verdict or null if not found
+ */
+export function parseQaVerdict(output: string): QaVerdict | null {
+  if (!output) return null;
+
+  // Match various verdict formats:
+  // - "### Verdict: X" (markdown header)
+  // - "**Verdict:** X" (bold label with colon inside)
+  // - "**Verdict:** **X**" (bold label and bold value)
+  // - "Verdict: X" (plain)
+  // Case insensitive, handles optional markdown formatting
+  const verdictMatch = output.match(
+    /(?:###?\s*)?(?:\*\*)?Verdict:?\*?\*?\s*\*?\*?\s*(READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|AC_NOT_MET|NEEDS_VERIFICATION)\*?\*?/i,
+  );
+
+  if (!verdictMatch) return null;
+
+  // Normalize to uppercase with underscores
+  const verdict = verdictMatch[1].toUpperCase().replace(/-/g, "_") as QaVerdict;
+  return verdict;
 }
 
 /**
@@ -1010,6 +1042,38 @@ async function executePhase(
     // Check result status
     if (resultMessage) {
       if (resultMessage.subtype === "success") {
+        // For QA phase, check the verdict to determine actual success
+        // SDK "success" just means the query completed - we need to parse the verdict
+        if (phase === "qa" && capturedOutput) {
+          const verdict = parseQaVerdict(capturedOutput);
+          // Only READY_FOR_MERGE and NEEDS_VERIFICATION are considered passing
+          // NEEDS_VERIFICATION is external verification, not a code quality issue
+          if (
+            verdict &&
+            verdict !== "READY_FOR_MERGE" &&
+            verdict !== "NEEDS_VERIFICATION"
+          ) {
+            return {
+              phase,
+              success: false,
+              durationSeconds,
+              error: `QA verdict: ${verdict}`,
+              sessionId: resultSessionId,
+              output: capturedOutput,
+              verdict, // Include parsed verdict
+            };
+          }
+          // Pass case - include verdict for logging
+          return {
+            phase,
+            success: true,
+            durationSeconds,
+            sessionId: resultSessionId,
+            output: capturedOutput,
+            verdict: verdict ?? undefined, // Include if found
+          };
+        }
+
         return {
           phase,
           success: true,
@@ -2324,7 +2388,11 @@ async function runIssueWithLogging(
             : result.error?.includes("Timeout")
               ? "timeout"
               : "failure",
-          { error: result.error },
+          {
+            error: result.error,
+            // Include verdict for QA phase (AC-6)
+            verdict: result.verdict,
+          },
         );
         logWriter.logPhase(phaseLog);
       }

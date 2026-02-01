@@ -54,6 +54,18 @@ export const IssueStatusSchema = z.enum(["success", "failure", "partial"]);
 export type IssueStatus = z.infer<typeof IssueStatusSchema>;
 
 /**
+ * Valid QA verdicts schema
+ */
+export const QaVerdictSchema = z.enum([
+  "READY_FOR_MERGE",
+  "AC_MET_BUT_NOT_A_PLUS",
+  "AC_NOT_MET",
+  "NEEDS_VERIFICATION",
+]);
+
+export type QaVerdict = z.infer<typeof QaVerdictSchema>;
+
+/**
  * Log entry for a single phase execution
  */
 export const PhaseLogSchema = z.object({
@@ -79,6 +91,8 @@ export const PhaseLogSchema = z.object({
   testsRun: z.number().int().nonnegative().optional(),
   /** Number of tests passed */
   testsPassed: z.number().int().nonnegative().optional(),
+  /** Parsed QA verdict (only for qa phase) */
+  verdict: QaVerdictSchema.optional(),
 });
 
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
@@ -229,7 +243,7 @@ export function createPhaseLog(
  *
  * @param phaseLog - Partial phase log
  * @param status - Final status
- * @param options - Additional fields (error, filesModified, etc.)
+ * @param options - Additional fields (error, filesModified, verdict, etc.)
  * @returns Complete PhaseLog
  */
 export function completePhaseLog(
@@ -238,7 +252,12 @@ export function completePhaseLog(
   options?: Partial<
     Pick<
       PhaseLog,
-      "error" | "iterations" | "filesModified" | "testsRun" | "testsPassed"
+      | "error"
+      | "iterations"
+      | "filesModified"
+      | "testsRun"
+      | "testsPassed"
+      | "verdict"
     >
   >,
 ): PhaseLog {

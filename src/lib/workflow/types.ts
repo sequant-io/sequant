@@ -64,6 +64,10 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   mcp: true,
 };
 
+// Import and re-export QaVerdict from run-log-schema (single source of truth)
+import type { QaVerdict } from "./run-log-schema.js";
+export type { QaVerdict } from "./run-log-schema.js";
+
 /**
  * Result of executing a single phase
  */
@@ -74,6 +78,8 @@ export interface PhaseResult {
   error?: string;
   /** Captured output from the phase (used for parsing spec recommendations) */
   output?: string;
+  /** Parsed QA verdict (only for qa phase) */
+  verdict?: QaVerdict;
 }
 
 /**
