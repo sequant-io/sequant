@@ -205,6 +205,60 @@ Per Quality Plan:
 
 **If no Quality Plan found:** Proceed with standard implementation but note in progress update that quality planning was not available.
 
+#### 2.1c Derived AC Extraction (REQUIRED when Quality Plan exists)
+
+**Purpose:** Extract derived ACs from the spec comment's Derived ACs table so they can be tracked alongside original ACs during implementation.
+
+**When to extract:** If the Quality Plan section exists and contains a "Derived ACs" table.
+
+**Extraction Method:**
+
+```bash
+# Extract derived ACs from spec comment's Derived ACs table
+# Format: | Source | AC-N: Description | Priority |
+derived_acs=$(gh issue view <issue-number> --comments --json comments -q '.comments[].body' | \
+  grep -E '\|\s*(Error Handling|Test Coverage|Best Practices|Code Quality|Completeness|Polish)\s*\|.*AC-[0-9]+:' | \
+  grep -oE 'AC-[0-9]+:[^|]+' | \
+  sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+  sort -u)
+
+# Display extracted derived ACs
+if [[ -n "$derived_acs" ]]; then
+  echo "Derived ACs found:"
+  echo "$derived_acs"
+else
+  echo "No derived ACs found in spec comment"
+fi
+```
+
+**Handling Malformed Rows:**
+
+The extraction pattern is designed to handle edge cases:
+- Missing columns → Row is skipped (requires Source + AC-N pattern)
+- Extra whitespace → Trimmed during extraction
+- Empty description → AC ID still captured
+- Non-standard source names → Row is skipped (only standard sources matched)
+
+**Include in AC Tracking:**
+
+Once extracted, derived ACs should be:
+1. Added to the implementation checklist
+2. Tracked in the Pre-PR AC Verification table (labeled as "Derived")
+3. Included in progress updates
+
+**Example Output:**
+
+```markdown
+## Derived ACs (from Quality Plan)
+
+| AC | Source | Description | Status |
+|----|--------|-------------|--------|
+| AC-6 | Error Handling | Handle malformed table rows gracefully | ⬜ Pending |
+| AC-7 | Test Coverage | Verify extraction with 0, 1, 5+ derived ACs | ⬜ Pending |
+```
+
+**If no Derived ACs found:** Output: "Derived ACs: None in spec comment" and proceed with original ACs only.
+
 3. **Wait for worktree completion before implementation:**
    ```bash
    # Wait for worktree creation to complete
@@ -360,18 +414,25 @@ echo "Current branch: $CURRENT_BRANCH"
 
 3. **Generate AC Verification Checklist:**
 
-   For each AC item, determine implementation status:
+   For each AC item (including derived ACs), determine implementation status:
 
    ```markdown
    ### Pre-PR AC Verification
 
-   | AC | Description | Status | Evidence |
-   |----|-------------|--------|----------|
-   | AC-1 | [Description] | ✅ Implemented | [File:line or brief explanation] |
-   | AC-2 | [Description] | ✅ Implemented | [File:line or brief explanation] |
-   | AC-3 | [Description] | ⚠️ Partial | [What's missing] |
-   | AC-4 | [Description] | ❌ Not addressed | [Justification if intentional] |
+   | AC | Source | Description | Status | Evidence |
+   |----|--------|-------------|--------|----------|
+   | AC-1 | Original | [Description] | ✅ Implemented | [File:line or brief explanation] |
+   | AC-2 | Original | [Description] | ✅ Implemented | [File:line or brief explanation] |
+   | AC-3 | Original | [Description] | ⚠️ Partial | [What's missing] |
+   | **Derived ACs** | | | | |
+   | AC-6 | Error Handling | [From Quality Plan] | ✅ Implemented | [File:line] |
+   | AC-7 | Test Coverage | [From Quality Plan] | ⚠️ Partial | [What's missing] |
    ```
+
+   **Derived AC Handling:**
+   - Extract derived ACs using the method in Section 2.1c
+   - Include in the same verification table with "Source" column indicating origin
+   - Treat derived ACs identically to original ACs for verification purposes
 
 4. **Status Definitions:**
    - ✅ **Implemented**: Code exists that satisfies this AC

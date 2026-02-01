@@ -28,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/exec`: Quality Plan Reference section to implement quality items during execution
   - `/qa`: Quality Plan Verification with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%)
   - Addresses gap where `/spec` planned "minimum to satisfy AC" instead of "complete professional implementation"
+- Derived AC tracking through workflow phases (#223)
+  - `/exec`: Extracts derived ACs from spec comments, includes in Pre-PR AC Verification table with "Source" column
+  - `/qa`: Parses derived ACs, includes in AC Coverage table with source attribution (e.g., "Derived (Error Handling)")
+  - Derived ACs treated identically to original ACs for verdict determination
+  - Edge case handling: malformed rows skipped, 0/1/5+ derived ACs supported
 - Skill command verification in `/qa` skill (#209)
   - Detects when `.claude/skills/**/*.md` files are modified
   - Extracts CLI commands from bash code blocks, subshells, inline backticks

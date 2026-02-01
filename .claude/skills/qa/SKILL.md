@@ -284,10 +284,33 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
    | Best Practices | Check for logging, security patterns |
    | Polish | Check loading/error/empty states in UI |
 
-3. **Verify Derived ACs:**
-   - Treat derived ACs as additional AC items
-   - Include in AC coverage table
-   - Mark as MET/PARTIALLY_MET/NOT_MET
+3. **Extract and Verify Derived ACs:**
+
+   **Extraction Method:**
+   ```bash
+   # Extract derived ACs from spec comment's Derived ACs table
+   # Format: | Source | AC-N: Description | Priority |
+   derived_acs=$(gh issue view <issue-number> --comments --json comments -q '.comments[].body' | \
+     grep -E '\|\s*(Error Handling|Test Coverage|Best Practices|Code Quality|Completeness|Polish)\s*\|.*AC-[0-9]+:' | \
+     grep -oE 'AC-[0-9]+:[^|]+' | \
+     sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+     sort -u)
+
+   # Count derived ACs
+   derived_count=$(echo "$derived_acs" | grep -c "AC-" || echo "0")
+   echo "Found $derived_count derived ACs"
+   ```
+
+   **Handling Edge Cases:**
+   - **0 derived ACs:** Output "Derived ACs: None found" and skip derived AC verification
+   - **1+ derived ACs:** Include each in AC coverage table with source attribution
+   - **Malformed rows:** Rows missing the `| Source | AC-N: ... |` pattern are skipped
+   - **Extra whitespace:** Trimmed during extraction
+
+   **Verification:**
+   - Treat derived ACs identically to original ACs
+   - Include in AC coverage table with "Derived ([Source])" notation
+   - Mark as MET/PARTIALLY_MET/NOT_MET based on implementation evidence
 
 **Output Format:**
 
@@ -987,11 +1010,14 @@ Provide an overall verdict:
 **Verdict Determination Algorithm (REQUIRED):**
 
 ```text
-1. Count AC statuses:
-   - met_count = ACs with status MET
-   - partial_count = ACs with status PARTIALLY_MET
-   - pending_count = ACs with status PENDING
-   - not_met_count = ACs with status NOT_MET
+1. Count AC statuses (INCLUDES both original AND derived ACs):
+   - met_count = ACs with status MET (original + derived)
+   - partial_count = ACs with status PARTIALLY_MET (original + derived)
+   - pending_count = ACs with status PENDING (original + derived)
+   - not_met_count = ACs with status NOT_MET (original + derived)
+
+   NOTE: Derived ACs are treated IDENTICALLY to original ACs.
+   A derived AC marked NOT_MET will block merge just like an original AC.
 
 2. Check verification gates:
    - skill_verification = status from Section 6a (Passed/Failed/Skipped/Not Required)
@@ -1194,12 +1220,17 @@ You MUST include these sections:
 
 ### AC Coverage
 
-| AC | Description | Status | Notes |
-|----|-------------|--------|-------|
-| AC-1 | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
-| AC-2 | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
+| AC | Source | Description | Status | Notes |
+|----|--------|-------------|--------|-------|
+| AC-1 | Original | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
+| AC-2 | Original | [description] | MET/PARTIALLY_MET/NOT_MET/PENDING/N/A | [explanation] |
+| **Derived ACs** | | | | |
+| AC-6 | Derived (Error Handling) | [description from quality plan] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
+| AC-7 | Derived (Test Coverage) | [description from quality plan] | MET/PARTIALLY_MET/NOT_MET | [explanation] |
 
-**Coverage:** X/Y AC items fully met
+**Coverage:** X/Y AC items fully met (includes derived ACs)
+**Original ACs:** X/Y met
+**Derived ACs:** X/Y met
 
 ---
 
