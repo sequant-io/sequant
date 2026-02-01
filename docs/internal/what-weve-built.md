@@ -666,7 +666,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.12.0)
-- **Feature Quality Planning** — `/spec` now includes a comprehensive quality planning section with 6 dimensions (Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish). Generates Derived ACs from quality checklist items. `/exec` references the quality plan during implementation. `/qa` verifies quality plan items with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%)
+- **Feature Quality Planning** — `/spec` now includes a comprehensive quality planning section with 6 dimensions (Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish). Generates Derived ACs from quality checklist items. `/exec` references the quality plan during implementation and explicitly extracts/tracks derived ACs in Pre-PR verification. `/qa` verifies quality plan items with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%) and includes derived ACs in AC Coverage table with source attribution
 - **Skill command verification** — `/qa` now detects skill file changes (`.claude/skills/**/*.md`), extracts referenced CLI commands, validates JSON field names against `--help` output, and blocks `READY_FOR_MERGE` if commands have invalid syntax or non-existent fields (prevents bugs like #178's `conclusion` field issue)
 - **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals
 - **CI status awareness** — `/qa` checks GitHub CI status via `gh pr checks`, preventing `READY_FOR_MERGE` when CI is still pending
