@@ -9,6 +9,7 @@ import chalk from "chalk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { ui, colors } from "../lib/cli-ui.js";
 import {
   RunLogSchema,
   type RunLog,
@@ -228,60 +229,70 @@ function generateCsv(logs: RunLog[]): string {
 }
 
 /**
- * Display human-readable statistics
+ * Display human-readable statistics with dashboard-style boxes
  */
 function displayStats(stats: AggregateStats, logDir: string): void {
-  console.log(chalk.blue("\n📊 Sequant Run Statistics\n"));
-  console.log(chalk.gray(`  Log directory: ${logDir}`));
+  console.log(ui.headerBox("SEQUANT ANALYTICS"));
+  console.log(colors.muted(`\n  Log directory: ${logDir}`));
+  console.log(colors.muted("  Local data only - no telemetry\n"));
 
-  // Overall summary
-  console.log(chalk.blue("\n  Overview"));
-  console.log(chalk.gray(`  ─────────────────────────────────`));
-  console.log(chalk.gray(`  Total runs analyzed: ${stats.totalRuns}`));
-  console.log(chalk.gray(`  Total issues processed: ${stats.totalIssues}`));
-  console.log(
-    chalk.gray(
-      `  Average run duration: ${formatDuration(stats.avgDurationSeconds)}`,
-    ),
-  );
+  // Overview table
+  const overviewData: Record<string, string | number> = {
+    "Total Runs": stats.totalRuns,
+    "Issues Processed": stats.totalIssues,
+    "Avg Duration": formatDuration(stats.avgDurationSeconds),
+  };
+  console.log(ui.keyValueTable(overviewData));
 
-  // Success/failure rates
-  console.log(chalk.blue("\n  Success/Failure Rates"));
-  console.log(chalk.gray(`  ─────────────────────────────────`));
+  // Success rates with progress bar
+  console.log(ui.sectionHeader("Success Rates"));
+
+  const passedBar = ui.progressBar(stats.passed, stats.totalIssues, 12);
+  const failedBar = ui.progressBar(stats.failed, stats.totalIssues, 12);
+
   console.log(
-    chalk.green(`  Passed: ${stats.passed} (${stats.successRate.toFixed(1)}%)`),
+    `  ${colors.success("\u2713 Passed")}     ${stats.passed} (${stats.successRate.toFixed(1)}%)     ${passedBar}`,
   );
   console.log(
-    chalk.red(`  Failed: ${stats.failed} (${stats.failureRate.toFixed(1)}%)`),
+    `  ${colors.error("\u2717 Failed")}     ${stats.failed} (${stats.failureRate.toFixed(1)}%)     ${failedBar}`,
   );
   if (stats.partial > 0) {
-    console.log(chalk.yellow(`  Partial: ${stats.partial}`));
+    const partialRate = (stats.partial / stats.totalIssues) * 100;
+    const partialBar = ui.progressBar(stats.partial, stats.totalIssues, 12);
+    console.log(
+      `  ${colors.warning("\u26A0 Partial")}    ${stats.partial} (${partialRate.toFixed(1)}%)     ${partialBar}`,
+    );
   }
 
-  // Phase durations
+  // Phase durations table
   if (stats.phaseDurations.size > 0) {
-    console.log(chalk.blue("\n  Average Phase Durations"));
-    console.log(chalk.gray(`  ─────────────────────────────────`));
+    console.log(ui.sectionHeader("Phase Durations"));
 
     // Sort phases by count (most common first)
     const sortedPhases = [...stats.phaseDurations.entries()].sort(
       (a, b) => b[1].count - a[1].count,
     );
 
-    for (const [phase, data] of sortedPhases) {
-      const avgFormatted = formatDuration(data.avg);
-      console.log(
-        chalk.gray(
-          `  ${phase.padEnd(10)} ${avgFormatted.padStart(8)} avg (${data.count} runs)`,
-        ),
-      );
-    }
+    const phaseRows = sortedPhases.map(([phase, data]) => [
+      phase,
+      formatDuration(data.avg),
+      data.count,
+    ]);
+
+    console.log(
+      ui.table(phaseRows, {
+        columns: [
+          { header: "Phase", width: 12 },
+          { header: "Avg Time", width: 12 },
+          { header: "Runs", width: 8 },
+        ],
+      }),
+    );
   }
 
   // Common failures
   if (stats.commonFailures.size > 0) {
-    console.log(chalk.blue("\n  Common Failure Points"));
-    console.log(chalk.gray(`  ─────────────────────────────────`));
+    console.log(ui.sectionHeader("Common Failures"));
 
     // Sort by frequency
     const sortedFailures = [...stats.commonFailures.entries()]
@@ -289,7 +300,7 @@ function displayStats(stats: AggregateStats, logDir: string): void {
       .slice(0, 5); // Top 5
 
     for (const [error, count] of sortedFailures) {
-      console.log(chalk.red(`  ${count}x ${error}`));
+      console.log(`  ${colors.error(`${count}x`)} ${error}`);
     }
   }
 
@@ -497,57 +508,60 @@ function generateInsights(
 }
 
 /**
- * Display local metrics analytics
+ * Display local metrics analytics with dashboard-style boxes
  */
 function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
-  console.log(chalk.blue("\n📊 Sequant Analytics (local data only)\n"));
+  console.log(ui.headerBox("SEQUANT ANALYTICS"));
+  console.log(colors.muted("\n  Local data only - no telemetry\n"));
 
-  // Overall summary
-  console.log(chalk.gray(`  Runs: ${analytics.totalRuns} total`));
+  // Overview with progress bars
+  const total =
+    analytics.successCount + analytics.partialCount + analytics.failedCount;
+  const successBar = ui.progressBar(analytics.successCount, total, 12);
+  const failedBar = ui.progressBar(analytics.failedCount, total, 12);
+
+  console.log(`  Runs: ${analytics.totalRuns} total\n`);
   console.log(
-    chalk.green(
-      `    Success: ${analytics.successCount} (${analytics.successRate.toFixed(0)}%)`,
-    ),
+    `  ${colors.success("\u2713 Success")}   ${analytics.successCount} (${analytics.successRate.toFixed(0)}%)    ${successBar}`,
   );
   if (analytics.partialCount > 0) {
-    console.log(chalk.yellow(`    Partial: ${analytics.partialCount}`));
+    const partialRate = (analytics.partialCount / total) * 100;
+    const partialBar = ui.progressBar(analytics.partialCount, total, 12);
+    console.log(
+      `  ${colors.warning("\u26A0 Partial")}   ${analytics.partialCount} (${partialRate.toFixed(0)}%)    ${partialBar}`,
+    );
   }
   if (analytics.failedCount > 0) {
-    console.log(chalk.red(`    Failed: ${analytics.failedCount}`));
+    const failedRate = (analytics.failedCount / total) * 100;
+    console.log(
+      `  ${colors.error("\u2717 Failed")}    ${analytics.failedCount} (${failedRate.toFixed(0)}%)    ${failedBar}`,
+    );
   }
 
-  // Averages
-  console.log(chalk.blue("\n  Averages"));
-  console.log(chalk.gray(`  ─────────────────────────────────`));
+  // Averages table
+  console.log(ui.sectionHeader("Averages"));
+
+  const avgData: Record<string, string | number> = {};
   if (analytics.avgTokensPerRun > 0) {
-    console.log(
-      chalk.gray(
-        `  Tokens per run: ${analytics.avgTokensPerRun.toLocaleString()}`,
-      ),
-    );
+    avgData["Tokens/run"] = analytics.avgTokensPerRun.toLocaleString();
   }
-  console.log(
-    chalk.gray(`  Files changed: ${analytics.avgFilesChanged.toFixed(1)}`),
-  );
+  avgData["Files changed"] = analytics.avgFilesChanged.toFixed(1);
   if (analytics.avgLinesAdded > 0) {
-    console.log(
-      chalk.gray(`  Lines added: ${analytics.avgLinesAdded.toFixed(0)}`),
-    );
+    avgData["Lines added"] = analytics.avgLinesAdded.toFixed(0);
   }
-  console.log(
-    chalk.gray(`  Duration: ${formatDuration(analytics.avgDuration)}`),
-  );
+  avgData["Duration"] = formatDuration(analytics.avgDuration);
+
+  console.log(ui.keyValueTable(avgData));
 
   // Insights
   if (analytics.insights.length > 0) {
-    console.log(chalk.blue("\n  Insights"));
-    console.log(chalk.gray(`  ─────────────────────────────────`));
+    console.log(ui.sectionHeader("Insights"));
     for (const insight of analytics.insights) {
-      console.log(chalk.gray(`  • ${insight}`));
+      console.log(`  ${colors.accent("\u2022")} ${insight}`);
     }
   }
 
-  console.log(chalk.gray("\n  Data stored locally in .sequant/metrics.json"));
+  console.log(colors.muted("\n  Data stored locally in .sequant/metrics.json"));
   console.log("");
 }
 
@@ -654,10 +668,11 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
   const logFiles = listLogFiles(logDir);
 
   if (logFiles.length === 0) {
-    console.log(chalk.blue("\n📊 Sequant Analytics (local data only)\n"));
-    console.log(chalk.yellow("  No data found."));
+    console.log(ui.headerBox("SEQUANT ANALYTICS"));
+    console.log(colors.muted("\n  Local data only - no telemetry\n"));
+    console.log(colors.warning("  No data found."));
     console.log(
-      chalk.gray("  Run `npx sequant run <issues>` to collect metrics."),
+      colors.muted("  Run `npx sequant run <issues>` to collect metrics."),
     );
     console.log("");
     return;
@@ -671,7 +686,7 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
     .filter((log): log is RunLog => log !== null);
 
   if (logs.length === 0) {
-    console.log(chalk.yellow("\n  No valid log files found.\n"));
+    console.log(colors.warning("\n  No valid log files found.\n"));
     return;
   }
 

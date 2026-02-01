@@ -8,6 +8,7 @@ import chalk from "chalk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
+import { ui, colors } from "../lib/cli-ui.js";
 import {
   RunLogSchema,
   type RunLog,
@@ -265,22 +266,22 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
     return;
   }
 
-  console.log(chalk.blue("\n📝 Sequant Run Logs\n"));
-  console.log(chalk.gray(`  Log directory: ${logDir}`));
+  console.log(ui.headerBox("SEQUANT RUN LOGS"));
+  console.log(colors.muted(`\n  Log directory: ${logDir}`));
 
   // List log files
   const logFiles = listLogFiles(logDir);
 
   if (logFiles.length === 0) {
-    console.log(chalk.yellow("\n  No logs found."));
+    console.log(colors.warning("\n  No logs found."));
     console.log(
-      chalk.gray("  Run `npx sequant run <issues>` to generate logs."),
+      colors.muted("  Run `npx sequant run <issues>` to generate logs."),
     );
     console.log("");
     return;
   }
 
-  console.log(chalk.gray(`  Found ${logFiles.length} log file(s)\n`));
+  console.log(colors.muted(`  Found ${logFiles.length} log file(s)\n`));
 
   // Parse all logs
   const logs = logFiles
@@ -312,7 +313,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
     }
 
     // Summary
-    console.log(chalk.blue("\n" + "━".repeat(50)));
+    console.log("\n" + ui.divider());
 
     const totalPassed = filteredLogs.reduce(
       (sum, { log }) => sum + log.summary.passed,
