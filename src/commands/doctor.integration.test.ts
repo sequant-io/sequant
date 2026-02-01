@@ -60,8 +60,8 @@ describe("doctor command integration", { timeout: 60000 }, () => {
       }
     }
 
-    // Verify the command actually ran and produced expected output
-    expect(output).toContain("Running health checks");
+    // Verify the command actually ran and produced expected output (new boxed header)
+    expect(output).toContain("SEQUANT HEALTH CHECK");
 
     // Accept both exit code 0 (all pass) and 1 (some checks fail in CI)
     expect([0, 1]).toContain(exitCode);

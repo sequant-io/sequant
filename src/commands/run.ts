@@ -38,6 +38,7 @@ import {
   type MetricPhase,
   determineOutcome,
 } from "../lib/workflow/metrics-schema.js";
+import { ui, colors } from "../lib/cli-ui.js";
 
 /**
  * Worktree information for an issue
@@ -1372,7 +1373,7 @@ export async function runCommand(
   issues: string[],
   options: RunOptions,
 ): Promise<void> {
-  console.log(chalk.blue("\n🌐 Sequant Workflow Execution\n"));
+  console.log(ui.headerBox("SEQUANT WORKFLOW"));
 
   // Version freshness check (cached, non-blocking, respects --quiet)
   if (!options.quiet) {
@@ -1982,25 +1983,29 @@ export async function runCommand(
     }
 
     // Summary
-    console.log(chalk.blue("\n" + "━".repeat(50)));
-    console.log(chalk.blue("  Summary"));
-    console.log(chalk.blue("━".repeat(50)));
+    console.log("\n" + ui.divider());
+    console.log(colors.info("  Summary"));
+    console.log(ui.divider());
 
     console.log(
-      chalk.gray(
-        `\n  Results: ${chalk.green(`${passed} passed`)}, ${chalk.red(`${failed} failed`)}`,
+      colors.muted(
+        `\n  Results: ${colors.success(`${passed} passed`)}, ${colors.error(`${failed} failed`)}`,
       ),
     );
 
     for (const result of results) {
-      const status = result.success ? chalk.green("✓") : chalk.red("✗");
+      const status = result.success
+        ? ui.statusIcon("success")
+        : ui.statusIcon("error");
       const duration = result.durationSeconds
-        ? chalk.gray(` (${formatDuration(result.durationSeconds)})`)
+        ? colors.muted(` (${formatDuration(result.durationSeconds)})`)
         : "";
       const phases = result.phaseResults
-        .map((p) => (p.success ? chalk.green(p.phase) : chalk.red(p.phase)))
+        .map((p) =>
+          p.success ? colors.success(p.phase) : colors.error(p.phase),
+        )
         .join(" → ");
-      const loopInfo = result.loopTriggered ? chalk.yellow(" [loop]") : "";
+      const loopInfo = result.loopTriggered ? colors.warning(" [loop]") : "";
       console.log(
         `  ${status} #${result.issueNumber}: ${phases}${loopInfo}${duration}`,
       );
@@ -2009,13 +2014,13 @@ export async function runCommand(
     console.log("");
 
     if (logPath) {
-      console.log(chalk.gray(`  📝 Log: ${logPath}`));
+      console.log(colors.muted(`  📝 Log: ${logPath}`));
       console.log("");
     }
 
     if (config.dryRun) {
       console.log(
-        chalk.yellow(
+        colors.warning(
           "  ℹ️  This was a dry run. Use without --dry-run to execute.",
         ),
       );

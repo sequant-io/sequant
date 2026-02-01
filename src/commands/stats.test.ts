@@ -21,6 +21,96 @@ vi.mock("path", async () => {
   };
 });
 
+// Mock cli-ui to pass through content without visual formatting
+vi.mock("../lib/cli-ui.js", () => ({
+  configureUI: vi.fn(),
+  getUIConfig: vi.fn(() => ({ noColor: true, jsonMode: false })),
+  colors: {
+    success: (s: string) => s,
+    error: (s: string) => s,
+    warning: (s: string) => s,
+    info: (s: string) => s,
+    muted: (s: string) => s,
+    header: (s: string) => s,
+    label: (s: string) => s,
+    value: (s: string) => s,
+    accent: (s: string) => s,
+    bold: (s: string) => s,
+    pending: (s: string) => s,
+    running: (s: string) => s,
+    completed: (s: string) => s,
+    failed: (s: string) => s,
+  },
+  logo: vi.fn(() => ""),
+  banner: vi.fn(() => ""),
+  box: vi.fn((content: string) => content),
+  successBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  errorBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  warningBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  headerBox: vi.fn((title: string) => title),
+  table: vi.fn(() => ""),
+  keyValueTable: vi.fn((data: Record<string, unknown>) =>
+    Object.entries(data)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n"),
+  ),
+  statusIcon: vi.fn(() => ""),
+  printStatus: vi.fn(),
+  divider: vi.fn(() => "---"),
+  sectionHeader: vi.fn((title: string) => title),
+  phaseProgress: vi.fn(() => ""),
+  progressBar: vi.fn(() => ""),
+  spinner: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    succeed: vi.fn(),
+    fail: vi.fn(),
+    warn: vi.fn(),
+    text: "",
+  })),
+  ui: {
+    logo: vi.fn(() => ""),
+    banner: vi.fn(() => ""),
+    box: vi.fn((content: string) => content),
+    successBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    errorBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    warningBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    headerBox: vi.fn((title: string) => title),
+    table: vi.fn(() => ""),
+    keyValueTable: vi.fn((data: Record<string, unknown>) =>
+      Object.entries(data)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n"),
+    ),
+    statusIcon: vi.fn(() => ""),
+    printStatus: vi.fn(),
+    divider: vi.fn(() => "---"),
+    sectionHeader: vi.fn((title: string) => title),
+    phaseProgress: vi.fn(() => ""),
+    progressBar: vi.fn(() => ""),
+    spinner: vi.fn(() => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      warn: vi.fn(),
+      text: "",
+    })),
+  },
+}));
+
 describe("statsCommand", () => {
   const mockLog: RunLog = {
     version: 1,
@@ -150,11 +240,13 @@ describe("statsCommand", () => {
     it("should show statistics for human output", async () => {
       await statsCommand({});
 
+      // New UI format uses SEQUANT ANALYTICS header
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Sequant Run Statistics"),
+        expect.stringContaining("SEQUANT ANALYTICS"),
       );
+      // Key-value table format: "Total Runs: 1"
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Total runs analyzed: 1"),
+        expect.stringContaining("Total Runs: 1"),
       );
     });
 

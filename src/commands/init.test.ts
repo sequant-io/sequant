@@ -107,6 +107,88 @@ vi.mock("inquirer", () => ({
   },
 }));
 
+// Mock cli-ui to pass through content without visual formatting
+vi.mock("../lib/cli-ui.js", () => ({
+  configureUI: vi.fn(),
+  getUIConfig: vi.fn(() => ({ noColor: true, jsonMode: false })),
+  colors: {
+    success: (s: string) => s,
+    error: (s: string) => s,
+    warning: (s: string) => s,
+    info: (s: string) => s,
+    muted: (s: string) => s,
+    header: (s: string) => s,
+    label: (s: string) => s,
+    value: (s: string) => s,
+    accent: (s: string) => s,
+    bold: (s: string) => s,
+    pending: (s: string) => s,
+    running: (s: string) => s,
+    completed: (s: string) => s,
+    failed: (s: string) => s,
+  },
+  logo: vi.fn(() => ""),
+  banner: vi.fn(() => ""),
+  box: vi.fn((content: string) => content),
+  successBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  errorBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  warningBox: vi.fn((title: string, content?: string) =>
+    content ? `${title}\n${content}` : title,
+  ),
+  headerBox: vi.fn((title: string) => title),
+  table: vi.fn(() => ""),
+  keyValueTable: vi.fn(() => ""),
+  statusIcon: vi.fn(() => ""),
+  printStatus: vi.fn(),
+  divider: vi.fn(() => "---"),
+  sectionHeader: vi.fn((title: string) => title),
+  phaseProgress: vi.fn(() => ""),
+  progressBar: vi.fn(() => ""),
+  spinner: vi.fn(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    succeed: vi.fn(),
+    fail: vi.fn(),
+    warn: vi.fn(),
+    text: "",
+  })),
+  ui: {
+    logo: vi.fn(() => ""),
+    banner: vi.fn(() => ""),
+    box: vi.fn((content: string) => content),
+    successBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    errorBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    warningBox: vi.fn((title: string, content?: string) =>
+      content ? `${title}\n${content}` : title,
+    ),
+    headerBox: vi.fn((title: string) => title),
+    table: vi.fn(() => ""),
+    keyValueTable: vi.fn(() => ""),
+    statusIcon: vi.fn(() => ""),
+    printStatus: vi.fn(),
+    divider: vi.fn(() => "---"),
+    sectionHeader: vi.fn((title: string) => title),
+    phaseProgress: vi.fn(() => ""),
+    progressBar: vi.fn(() => ""),
+    spinner: vi.fn(() => ({
+      start: vi.fn(),
+      stop: vi.fn(),
+      succeed: vi.fn(),
+      fail: vi.fn(),
+      warn: vi.fn(),
+      text: "",
+    })),
+  },
+}));
+
 import { initCommand } from "./init.js";
 import { fileExists, ensureDir } from "../lib/fs.js";
 import { detectStack, detectAllStacks } from "../lib/stacks.js";
