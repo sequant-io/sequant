@@ -12,7 +12,7 @@ import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
 import { isLocalNodeModulesInstall } from "../src/lib/version-check.js";
-import { configureUI, banner, headerBox } from "../src/lib/cli-ui.js";
+import { configureUI, banner } from "../src/lib/cli-ui.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 
 // Read version from package.json dynamically

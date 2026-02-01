@@ -8,10 +8,8 @@
 import chalk from "chalk";
 import ora, { type Ora } from "ora";
 import boxen, { type Options as BoxenOptions } from "boxen";
-// Use require for cli-table3 which uses CommonJS `export =` syntax
-import { createRequire } from "module";
-const require = createRequire(import.meta.url);
-const Table = require("cli-table3") as typeof import("cli-table3");
+// cli-table3 uses CommonJS `export =` syntax, default import works with esModuleInterop
+import Table from "cli-table3";
 import gradient from "gradient-string";
 import { isCI, isStdoutTTY } from "./tty.js";
 
@@ -146,27 +144,6 @@ function isLegacyWindows(): boolean {
     !process.env.TERM_PROGRAM // Not VS Code terminal
   );
 }
-
-/**
- * Box drawing characters with Windows fallback
- */
-const BOX_CHARS = isLegacyWindows()
-  ? {
-      topLeft: "+",
-      topRight: "+",
-      bottomLeft: "+",
-      bottomRight: "+",
-      horizontal: "-",
-      vertical: "|",
-    }
-  : {
-      topLeft: "\u256D",
-      topRight: "\u256E",
-      bottomLeft: "\u2570",
-      bottomRight: "\u256F",
-      horizontal: "\u2500",
-      vertical: "\u2502",
-    };
 
 // ============================================================================
 // ASCII Logo (Static - No figlet)

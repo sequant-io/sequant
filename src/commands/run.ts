@@ -38,7 +38,7 @@ import {
   type MetricPhase,
   determineOutcome,
 } from "../lib/workflow/metrics-schema.js";
-import { ui, colors, headerBox, divider } from "../lib/cli-ui.js";
+import { ui, colors } from "../lib/cli-ui.js";
 
 /**
  * Worktree information for an issue
