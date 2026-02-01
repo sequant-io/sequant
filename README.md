@@ -194,7 +194,7 @@ npx sequant stats             # View local workflow analytics
 npx sequant dashboard         # Launch real-time workflow dashboard
 ```
 
-See [Run Command Options](docs/run-command.md), [State Command](docs/state-command.md), and [Analytics](docs/analytics.md) for details.
+See [Run Command Options](docs/reference/run-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
 
 ---
 
@@ -211,7 +211,7 @@ See [Run Command Options](docs/run-command.md), [State Command](docs/state-comma
 }
 ```
 
-See [Customization Guide](docs/customization.md) for all options.
+See [Customization Guide](docs/guides/customization.md) for all options.
 
 ---
 
@@ -229,12 +229,12 @@ See [Customization Guide](docs/customization.md) for all options.
 ## Documentation
 
 - [Getting Started](docs/getting-started/installation.md)
-- [What We've Built](docs/what-weve-built.md) — Comprehensive project overview
+- [What We've Built](docs/internal/what-weve-built.md) — Comprehensive project overview
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
-- [Run Command](docs/run-command.md)
-- [Feature Branch Workflows](docs/feature-branch-workflow.md)
-- [Customization](docs/customization.md)
-- [Plugin Updates & Versioning](docs/plugin-updates.md)
+- [Run Command](docs/reference/run-command.md)
+- [Git Workflows](docs/guides/git-workflows.md)
+- [Customization](docs/guides/customization.md)
+- [Plugin Updates & Versioning](docs/internal/plugin-updates.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)
@@ -268,7 +268,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
 
 ### Telemetry
 
-Sequant does not collect any usage telemetry. See [docs/telemetry.md](docs/telemetry.md) for details.
+Sequant does not collect any usage telemetry. See [docs/reference/telemetry.md](docs/reference/telemetry.md) for details.
 
 ---
 
