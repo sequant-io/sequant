@@ -272,7 +272,12 @@ export function createPhaseLogFromTiming(
   options?: Partial<
     Pick<
       PhaseLog,
-      "error" | "iterations" | "filesModified" | "testsRun" | "testsPassed"
+      | "error"
+      | "iterations"
+      | "filesModified"
+      | "testsRun"
+      | "testsPassed"
+      | "verdict"
     >
   >,
 ): PhaseLog {

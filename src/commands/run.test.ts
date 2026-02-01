@@ -16,6 +16,7 @@ import {
   parseRecommendedWorkflow,
   detectPhasesFromLabels,
   createCheckpointCommit,
+  parseQaVerdict,
 } from "./run.js";
 
 describe("run command", () => {
@@ -586,6 +587,124 @@ describe("chain mode", () => {
         const baseBranch = issues[i - 1].branch;
         expect(baseBranch).toBe(issues[i - 1].branch);
       }
+    });
+  });
+});
+
+describe("parseQaVerdict", () => {
+  describe("should parse valid verdict formats", () => {
+    it("should parse markdown header format", () => {
+      const output = "Some text\n### Verdict: READY_FOR_MERGE\nMore text";
+      expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+    });
+
+    it("should parse bold label format", () => {
+      const output = "**Verdict:** AC_NOT_MET";
+      expect(parseQaVerdict(output)).toBe("AC_NOT_MET");
+    });
+
+    it("should parse plain format", () => {
+      const output = "Verdict: AC_MET_BUT_NOT_A_PLUS";
+      expect(parseQaVerdict(output)).toBe("AC_MET_BUT_NOT_A_PLUS");
+    });
+
+    it("should parse NEEDS_VERIFICATION", () => {
+      const output = "### Verdict: NEEDS_VERIFICATION";
+      expect(parseQaVerdict(output)).toBe("NEEDS_VERIFICATION");
+    });
+
+    it("should be case insensitive", () => {
+      const output = "verdict: ready_for_merge";
+      expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+    });
+
+    it("should handle mixed case", () => {
+      const output = "**Verdict:** Ready_For_Merge";
+      expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+    });
+
+    it("should handle double hash header", () => {
+      const output = "## Verdict: AC_NOT_MET";
+      expect(parseQaVerdict(output)).toBe("AC_NOT_MET");
+    });
+
+    it("should handle verdict with asterisks around value", () => {
+      const output = "**Verdict:** **READY_FOR_MERGE**";
+      expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+    });
+  });
+
+  describe("should return null for invalid inputs", () => {
+    it("should return null for empty string", () => {
+      expect(parseQaVerdict("")).toBeNull();
+    });
+
+    it("should return null for null/undefined-like empty", () => {
+      expect(parseQaVerdict("")).toBeNull();
+    });
+
+    it("should return null when no verdict found", () => {
+      const output = "Some random text without any verdict";
+      expect(parseQaVerdict(output)).toBeNull();
+    });
+
+    it("should return null for invalid verdict values", () => {
+      const output = "Verdict: INVALID_VERDICT";
+      expect(parseQaVerdict(output)).toBeNull();
+    });
+
+    it("should return null for partial matches", () => {
+      const output =
+        "The verdict was in question but READY_FOR_MERGE was mentioned";
+      // This should NOT match because "Verdict:" pattern is required
+      expect(parseQaVerdict(output)).toBeNull();
+    });
+  });
+
+  describe("real-world QA output examples", () => {
+    it("should parse from typical QA output", () => {
+      const output = `
+## QA Summary
+
+### Acceptance Criteria Coverage
+
+- AC-1: ✅ MET
+- AC-2: ✅ MET
+
+### Verdict: READY_FOR_MERGE
+
+All acceptance criteria have been met.
+`;
+      expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+    });
+
+    it("should parse AC_NOT_MET from typical output", () => {
+      const output = `
+## QA Summary
+
+### Acceptance Criteria Coverage
+
+- AC-1: ✅ MET
+- AC-2: ❌ NOT_MET - Missing error handling
+
+### Verdict: AC_NOT_MET
+
+Some criteria have not been satisfied.
+`;
+      expect(parseQaVerdict(output)).toBe("AC_NOT_MET");
+    });
+
+    it("should parse AC_MET_BUT_NOT_A_PLUS from typical output", () => {
+      const output = `
+## QA Summary
+
+All AC technically met but code quality could be improved.
+
+**Verdict:** AC_MET_BUT_NOT_A_PLUS
+
+Suggestions for improvement listed below.
+`;
+      expect(parseQaVerdict(output)).toBe("AC_MET_BUT_NOT_A_PLUS");
     });
   });
 });
