@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/upstream` skill for Claude Code release tracking (#222)
+  - Monitors anthropics/claude-code releases via GitHub API
+  - Detects breaking changes, deprecations, new tools, opportunities
+  - Auto-creates GitHub issues for actionable findings (with deduplication)
+  - Keyword matching + regex patterns against sequant capabilities baseline
+  - `--since <version>` for batch assessment of multiple releases
+  - `--dry-run` mode to preview without creating issues
+  - GitHub Action for weekly automated assessment
+  - Security: All shell commands use `spawn()` with argument arrays (no injection risk)
+  - 90 unit tests covering relevance detection, report generation, issue management
 - Feature Quality Planning in workflow skills (#219)
   - `/spec`: New "Feature Quality Planning" section with 6 quality dimensions
     - Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish

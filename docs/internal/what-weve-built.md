@@ -10,7 +10,7 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 
 | Metric | Count |
 |--------|-------|
-| Slash Commands | 17 |
+| Slash Commands | 18 |
 | CLI Commands | 9 |
 | Core Library Modules | 25 |
 | Test Files | 29 |
@@ -114,6 +114,7 @@ For when you want to go hands-off:
 | `/security-review` | **Security Audit** | Domain-specific checklists (auth, API, admin), threat modeling |
 | `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name and stack, injects stack-specific notes; `--interactive` mode for guided setup, multi-stack support for monorepos |
 | `/merger` | **Integration** | Multi-issue merge with conflict detection, dependency ordering, worktree cleanup |
+| `/upstream` | **Release Tracking** | Monitors Claude Code releases, detects breaking changes/opportunities, auto-creates issues for sequant maintainers |
 
 ### Shared Resources
 
@@ -348,6 +349,7 @@ Every PR goes through:
 - `release-checklist.md` — Release process
 - `dashboard-spike.md` — Dashboard design notes
 - `plugin-updates.md` — Plugin versioning
+- `upstream-skill.md` — Claude Code release tracking and gap analysis
 
 ---
 
@@ -759,7 +761,7 @@ npm run build
 
 | What | How Many |
 |------|----------|
-| Slash Commands | 17 |
+| Slash Commands | 18 |
 | CLI Commands | 9 |
 | Library Modules | 23 |
 | Test Files | 28 |
