@@ -560,6 +560,64 @@ Analyze the issue and recommend the optimal workflow phases:
 - **Complex refactors** → Enable quality loop
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
+- **New features with testable ACs** → Add `testgen` phase after spec
+- **Refactors needing regression tests** → Add `testgen` phase
+
+#### Testgen Phase Auto-Detection
+
+**When to recommend `testgen` phase:**
+
+| Condition | Recommend testgen? | Reasoning |
+|-----------|-------------------|-----------|
+| ACs have "Unit Test" verification method | ✅ Yes | Tests should be stubbed before implementation |
+| ACs have "Integration Test" verification method | ✅ Yes | Complex integration tests benefit from early structure |
+| Issue is a new feature (not bug fix) with >2 AC items | ✅ Yes | Features need test coverage |
+| Issue has `enhancement` or `feature` label | ✅ Yes | New functionality needs tests |
+| Project has test framework (Jest, Vitest, etc.) | ✅ Yes | Infrastructure exists to run tests |
+| Issue is a simple bug fix (`bug` label only) | ❌ No | Bug fixes typically have targeted tests |
+| Issue is docs-only (`docs` label) | ❌ No | Documentation doesn't need unit tests |
+| All ACs have "Manual Test" or "Browser Test" verification | ❌ No | These don't generate code stubs |
+
+**Detection Logic:**
+
+1. **Check verification methods in AC items:**
+   - Count ACs with "Unit Test" → If >0, recommend testgen
+   - Count ACs with "Integration Test" → If >0, recommend testgen
+
+2. **Check issue labels:**
+   ```bash
+   gh issue view <issue> --json labels --jq '.labels[].name'
+   ```
+   - If `bug` or `fix` is the ONLY label → Skip testgen
+   - If `docs` is present → Skip testgen
+   - If `enhancement`, `feature`, `refactor` → Consider testgen
+
+3. **Check project test infrastructure:**
+   ```bash
+   # Check for test framework in package.json
+   grep -E "jest|vitest|mocha" package.json
+   ```
+   - If no test framework detected → Skip testgen (no infrastructure)
+
+**Example output when testgen is recommended:**
+
+```markdown
+## Recommended Workflow
+
+**Phases:** spec → testgen → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** ACs include Unit Test verification methods; testgen will create stubs before implementation
+```
+
+**Example output when testgen is NOT recommended:**
+
+```markdown
+## Recommended Workflow
+
+**Phases:** spec → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** Bug fix with targeted scope; existing tests sufficient
+```
 
 ### 6. Label Review
 

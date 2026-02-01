@@ -50,6 +50,10 @@ gh issue view <issue-number> --json labels --jq '.labels[].name'
 - Recommend `--quality-loop` flag for auto-retry on failures
 - Quality loop auto-enables for these labels in `sequant run`
 
+**New Features** (labels: `enhancement`, `feature`):
+- Include `testgen` phase when ACs need automated tests
+- Workflow: `spec → testgen → exec → qa`
+
 ### Quality Loop Detection
 
 Quality loop (`--quality-loop` or `-q`) provides automatic fix iterations when phases fail. **Recommend quality loop broadly** for any non-trivial work.
@@ -229,6 +233,7 @@ You MUST use this exact structure:
 │  --chain            ✓/✗  <one-line reasoning>                │
 │  --qa-gate          ✓/✗  <one-line reasoning>                │
 │  --base             ✓/✗  <one-line reasoning>                │
+│  --testgen          ✓/✗  <one-line reasoning>                │
 └──────────────────────────────────────────────────────────────┘
 
 Why this workflow:
@@ -256,7 +261,7 @@ Also consider:
 │  npx sequant run 152 153 -q                                  │
 ╰──────────────────────────────────────────────────────────────╯
 
-#152  Add user dashboard ······················ ui → spec → exec → test → qa
+#152  Add user dashboard ······················ ui → spec → testgen → exec → test → qa
 #153  Refactor auth module ···················· backend → spec → exec → qa
 
 ┌─ Flags ──────────────────────────────────────────────────────┐
@@ -264,10 +269,12 @@ Also consider:
 │  --chain            ✗  independent (different codepaths)     │
 │  --qa-gate          ✗  no chain mode                         │
 │  --base             ✗  branching from main                   │
+│  --testgen          ✓  #152 has testable ACs (Unit Tests)    │
 └──────────────────────────────────────────────────────────────┘
 
 Why this workflow:
   • #152 has ui label → includes /test for browser verification
+  • #152 has testable ACs → includes /testgen for test stubs
   • #153 has refactor label → quality loop auto-enabled
   • No shared files → safe to parallelize
 
@@ -286,8 +293,8 @@ Also consider:
 │  npx sequant run 10 11 12 --sequential --chain --qa-gate -q  │
 ╰──────────────────────────────────────────────────────────────╯
 
-#10  Add auth middleware ······················ backend → spec → exec → qa
-#11  Add login page ··························· ui → spec → exec → test → qa
+#10  Add auth middleware ······················ backend → spec → testgen → exec → qa
+#11  Add login page ··························· ui → spec → testgen → exec → test → qa
 #12  Add logout functionality ················· ui → spec → exec → test → qa
 
 ┌─ Flags ──────────────────────────────────────────────────────┐
@@ -295,6 +302,7 @@ Also consider:
 │  --chain            ✓  #11 depends on #10, #12 depends on #11│
 │  --qa-gate          ✓  3 issues with tight dependencies      │
 │  --base             ✗  branching from main                   │
+│  --testgen          ✓  #10, #11 have Unit Test ACs           │
 └──────────────────────────────────────────────────────────────┘
 
 Chain structure:
@@ -305,6 +313,7 @@ Why this workflow:
   • Chain ensures each branch builds on previous
   • QA gate prevents stale code in downstream issues
   • UI issues (#11, #12) include /test phase
+  • #10, #11 have testable ACs → include /testgen
 ```
 
 ---
@@ -325,10 +334,12 @@ Why this workflow:
 │  --chain            ✗  single issue                          │
 │  --qa-gate          ✗  no chain mode                         │
 │  --base             ✗  branching from main                   │
+│  --testgen          ✗  bug fix (targeted tests in exec)      │
 └──────────────────────────────────────────────────────────────┘
 
 Why this workflow:
   • Bug fix with clear AC → skip /spec
+  • Bug fix → skip /testgen (targeted tests added during exec)
   • Single issue → no chain needed
 
 ⚠ Conflict risk: #82 (open) modifies lib/auth/cookies.ts — coordinate or wait
@@ -345,16 +356,29 @@ Why this workflow:
    - UI/frontend changes → Add `test` phase
    - Complex refactors → Enable quality loop
    - Security-sensitive → Add `security-review` phase
+   - New features with testable ACs → Add `testgen` phase
 
 ### Standard Workflow (Most Issues)
 ```
 /spec → /exec → /qa
 ```
 
+### Feature with Testable ACs
+```
+/spec → /testgen → /exec → /qa
+```
+Include `testgen` when ACs have Unit Test or Integration Test verification methods.
+
 ### UI Feature Workflow
 ```
 /spec → /exec → /test → /qa
 ```
+
+### UI Feature with Tests
+```
+/spec → /testgen → /exec → /test → /qa
+```
+Combine `testgen` and `test` for UI features with testable ACs.
 
 ### Bug Fix Workflow (Simple)
 ```
@@ -373,10 +397,24 @@ Runs complete workflow with automatic fix iterations.
 | Issue Type | Labels | Workflow |
 |------------|--------|----------|
 | UI Feature | ui, frontend, admin | spec → exec → test → qa |
+| UI Feature with Tests | ui + enhancement | spec → testgen → exec → test → qa |
 | Backend Feature | backend, api | spec → exec → qa |
+| New Feature (testable) | enhancement, feature | spec → testgen → exec → qa |
 | Bug Fix | bug, fix | exec → qa (or full if complex) |
 | Complex Feature | complex, refactor | `--quality-loop` or fullsolve |
 | Documentation | docs | exec → qa |
+
+### Testgen Phase Detection
+
+**Include `testgen` in workflow when:**
+- Issue has `enhancement` or `feature` label AND
+- Issue is NOT a simple bug fix or docs-only change AND
+- Project has test infrastructure (Jest, Vitest, etc.)
+
+**Skip `testgen` when:**
+- Issue is `bug` or `fix` only (targeted tests added during exec)
+- Issue is `docs` only (no code tests needed)
+- All ACs use Manual Test or Browser Test verification
 
 **Quality Loop vs Fullsolve:**
 - `--quality-loop`: Enables auto-retry within `sequant run` (good for CI/automation)
@@ -524,7 +562,7 @@ npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
 
 - [ ] **Header Box** — ASCII box with `sequant solve` and full command
 - [ ] **Issues List** — Each issue with dot leaders: `#N  Title ··· labels → workflow`
-- [ ] **Flags Table** — ALL four flags (-q, --chain, --qa-gate, --base) with ✓/✗ and reasoning
+- [ ] **Flags Table** — ALL five flags (-q, --chain, --qa-gate, --base, --testgen) with ✓/✗ and reasoning
 - [ ] **Why Section** — 3-5 bullet points explaining decisions
 - [ ] **Also Consider** — (conditional) Curated alternatives if applicable
 - [ ] **Conflict Warning** — (conditional) If in-flight work overlaps

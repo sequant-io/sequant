@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(git worktree list:*)
   - Bash(ls:*)
   - Bash(mkdir:*)
+  - Task
 ---
 
 # Test Generation Command
@@ -37,6 +38,116 @@ When invoked as `/testgen <issue-number>`, your job is to:
 
 - `/testgen 123` - Generate test stubs for issue #123 based on /spec comment
 - `/testgen` - Generate stubs for the most recently discussed issue in conversation
+
+## Token Optimization with Haiku Sub-Agents
+
+**Purpose:** Test stub generation is highly mechanical and benefits from using haiku sub-agents to minimize token cost.
+
+**Pattern:** Use `Task(subagent_type="general-purpose", model="haiku")` for:
+1. Parsing verification criteria from /spec comments
+2. Generating individual test stubs from templates
+3. Writing test file content
+
+**Benefits:**
+- 90% token cost reduction for mechanical generation
+- Faster execution for templated operations
+- Main agent focuses on orchestration and decisions
+
+### Sub-Agent Usage
+
+**Step 1: Parse Verification Criteria (use haiku)**
+
+```javascript
+Task(subagent_type="general-purpose", model="haiku", prompt=`
+Parse the following /spec comment and extract verification criteria.
+
+For each AC, extract:
+- AC number and description
+- Verification method (Unit Test, Integration Test, Browser Test, Manual Test)
+- Test scenario (Given/When/Then)
+- Integration points
+- Assumptions to validate
+
+Return as JSON:
+{
+  "criteria": [
+    {
+      "acNumber": "AC-1",
+      "description": "...",
+      "verificationMethod": "Unit Test",
+      "scenario": { "given": "...", "when": "...", "then": "..." },
+      "integrationPoints": ["..."],
+      "assumptions": ["..."]
+    }
+  ]
+}
+
+/spec comment:
+${specComment}
+`)
+```
+
+**Step 2: Generate Test Stubs (use haiku for each AC)**
+
+```javascript
+// For each AC with Unit Test or Integration Test verification method
+Task(subagent_type="general-purpose", model="haiku", prompt=`
+Generate a Jest test stub for the following verification criteria.
+
+AC: ${ac.acNumber}: ${ac.description}
+Verification Method: ${ac.verificationMethod}
+Test Scenario:
+- Given: ${ac.scenario.given}
+- When: ${ac.scenario.when}
+- Then: ${ac.scenario.then}
+
+Use the template format:
+- Include Given/When/Then as comments
+- Add TODO markers where implementation is needed
+- Include failure path stubs based on the action verb
+- Use throw new Error('Test stub - implement this test')
+
+Return ONLY the test code, no explanation.
+`)
+```
+
+**Step 3: Write Test Files (main agent)**
+
+The main agent handles file operations to ensure proper coordination:
+- Check if files exist (don't overwrite)
+- Create directories if needed
+- Write generated stubs to correct locations
+
+### When to Use Sub-Agents vs Main Agent
+
+| Task | Agent | Reasoning |
+|------|-------|-----------|
+| Parse /spec comment | haiku | Mechanical text extraction |
+| Generate test stub code | haiku | Templated generation |
+| Identify failure scenarios | haiku | Pattern matching |
+| Decide file locations | main | Requires codebase context |
+| Write files | main | File system coordination |
+| Post GitHub comment | main | Session context needed |
+
+### Parallel Sub-Agent Execution
+
+When multiple ACs need test stubs, spawn haiku agents in parallel:
+
+```javascript
+// Spawn all stub generation agents in a single message
+const stubPromises = criteria
+  .filter(ac => ac.verificationMethod === 'Unit Test' || ac.verificationMethod === 'Integration Test')
+  .map(ac => Task(subagent_type="general-purpose", model="haiku", prompt=`Generate test stub for ${ac.acNumber}...`))
+
+// Collect results
+// Main agent writes all files
+```
+
+**Cost savings example:**
+- 5 AC items with Unit Test verification
+- Without haiku: ~50K tokens (main agent generates all)
+- With haiku: ~5K tokens (main orchestrates, haiku generates)
+- Savings: ~90%
 
 ## Workflow
 
