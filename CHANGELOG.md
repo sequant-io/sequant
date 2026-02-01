@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Combined constitution notes from all selected stacks
   - Stack config persistence in `.sequant/stack.json`
 
+### Fixed
+
+- Quality loop never triggering despite `--quality-loop` flag (#218)
+  - Root cause: QA phase success was determined by SDK query completion, not actual QA verdict
+  - Added `parseQaVerdict()` to parse verdict from QA output (READY_FOR_MERGE, AC_NOT_MET, etc.)
+  - Non-passing verdicts now correctly mark QA phase as failure, triggering `/loop`
+  - Verdict logged to `.sequant/logs/*.json` for debugging
+  - 15 unit tests for verdict parsing covering all markdown formats
+
 ## [1.12.0] - 2026-01-29
 
 ### Added
