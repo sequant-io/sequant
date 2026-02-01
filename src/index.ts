@@ -60,3 +60,42 @@ export type {
   CleanupOptions,
   CleanupResult,
 } from "./lib/workflow/state-utils.js";
+
+// Content analysis exports
+export {
+  analyzeTitleForPhases,
+  analyzeBodyForPhases,
+  analyzeContentForPhases,
+  isTrivialWork,
+  formatContentAnalysis,
+} from "./lib/content-analyzer.js";
+export type {
+  ContentSignal,
+  ContentAnalysisResult,
+} from "./lib/content-analyzer.js";
+
+export {
+  mergePhaseSignals,
+  signalFromLabel,
+  signalsFromLabels,
+  formatMergedPhases,
+  SIGNAL_PRIORITY,
+} from "./lib/phase-signal.js";
+export type {
+  SignalSource,
+  SignalConfidence,
+  PhaseSignal,
+  MergedPhaseResult,
+} from "./lib/phase-signal.js";
+
+export {
+  isSolveComment,
+  findSolveComment,
+  parseSolveWorkflow,
+  solveWorkflowToSignals,
+  solveCoversIssue,
+} from "./lib/solve-comment-parser.js";
+export type {
+  SolveWorkflowResult,
+  IssueComment,
+} from "./lib/solve-comment-parser.js";
