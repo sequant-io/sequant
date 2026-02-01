@@ -1,0 +1,97 @@
+{
+  "lastAssessedVersion": null,
+  "schemaVersion": "1.0.0",
+  "tools": {
+    "core": ["Task", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "TodoWrite"],
+    "optional": ["WebFetch", "WebSearch", "NotebookEdit", "AskUserQuestion"]
+  },
+  "hooks": {
+    "used": ["PreToolUse"],
+    "files": ["src/hooks/pre-tool-hook.ts"]
+  },
+  "mcpServers": {
+    "required": [],
+    "optional": ["chrome-devtools", "context7", "sequential-thinking", "playwright", "github", "memory"]
+  },
+  "permissions": {
+    "patterns": ["Bash(*)", "Task(*)", "Edit(*)"],
+    "files": [".claude/settings.json"]
+  },
+  "keywords": [
+    "Task",
+    "Bash",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "hook",
+    "PreToolUse",
+    "PostToolUse",
+    "MCP",
+    "permission",
+    "allow",
+    "deny",
+    "ask",
+    "tool",
+    "background",
+    "parallel",
+    "agent",
+    "subagent",
+    "settings",
+    "config",
+    "plugin",
+    "skill",
+    "TodoWrite",
+    "WebFetch",
+    "WebSearch",
+    "AskUserQuestion",
+    "NotebookEdit"
+  ],
+  "dependencyMap": {
+    "permission": [
+      ".claude/settings.json",
+      "docs/permissions.md"
+    ],
+    "hook": [
+      "src/hooks/pre-tool-hook.ts"
+    ],
+    "PreToolUse": [
+      "src/hooks/pre-tool-hook.ts"
+    ],
+    "PostToolUse": [
+      "src/hooks/post-tool-hook.ts"
+    ],
+    "Task": [
+      ".claude/skills/**/*.md",
+      "src/lib/workflow/*.ts"
+    ],
+    "MCP": [
+      "docs/mcp-integrations.md",
+      ".claude/settings.json"
+    ],
+    "skill": [
+      ".claude/skills/**/*.md"
+    ],
+    "agent": [
+      ".claude/skills/**/*.md",
+      "src/lib/workflow/*.ts"
+    ],
+    "subagent": [
+      ".claude/skills/**/*.md"
+    ],
+    "background": [
+      ".claude/skills/**/*.md"
+    ],
+    "parallel": [
+      ".claude/skills/**/*.md"
+    ],
+    "settings": [
+      ".claude/settings.json",
+      ".claude/settings.local.json"
+    ],
+    "config": [
+      ".claude/settings.json"
+    ]
+  }
+}
