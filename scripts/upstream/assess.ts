@@ -9,7 +9,7 @@
  *   npx tsx scripts/upstream/assess.ts --help            # Show help
  */
 
-import { runUpstream } from "../../src/lib/upstream/index.js";
+import { runUpstream, validateVersion } from "../../src/lib/upstream/index.js";
 import type { AssessmentOptions } from "../../src/lib/upstream/types.js";
 
 function showHelp(): void {
@@ -78,6 +78,24 @@ async function main(): Promise<void> {
   // Set version from positional arg if provided
   if (positionalVersion) {
     options.version = positionalVersion;
+  }
+
+  // Validate version inputs early to provide clear error messages
+  try {
+    if (options.version) {
+      validateVersion(options.version);
+    }
+    if (options.since) {
+      validateVersion(options.since);
+    }
+  } catch (error) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : "Invalid version format"}`,
+    );
+    console.error(
+      "Version must be in semver format (e.g., v1.2.3 or 1.2.3-beta.1)",
+    );
+    process.exit(1);
   }
 
   // Run assessment
