@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- QA caching to skip unchanged checks on re-run (#228)
+  - New `src/lib/workflow/qa-cache.ts` module with hash-based cache invalidation
+  - Cache keyed by git diff hash + config hash + TTL (1 hour default)
+  - `--no-cache` flag to force fresh run
+  - Cache hit/miss reported in QA output via `quality-checks.sh`
+  - Graceful degradation on corrupted cache (falls back to fresh run)
+  - CLI helper `scripts/qa/qa-cache-cli.ts` for shell script integration
+  - 36 unit tests covering cache operations, invalidation, TTL expiry
+- Testgen auto-detection in `/spec` and `/solve` (#217)
+  - Automatically recommends `--testgen` phase when issue has testable ACs
+  - Pattern detection for UI components, API endpoints, validation logic
+  - Reduces manual workflow configuration for common feature types
 - Enhanced CLI UI with modern terminal patterns (#215)
   - New `src/lib/cli-ui.ts` module (736 lines) with centralized UI utilities
   - Animated spinners with `ora` (graceful fallback to text in CI/non-TTY/verbose modes)
