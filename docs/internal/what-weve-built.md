@@ -80,7 +80,7 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, **content analysis** (title/body patterns → phase recommendations with signal priority: Labels > Solve > Title > Body), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
+| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, **content analysis** (title/body patterns → phase recommendations with signal priority: Labels > Solve > Title > Body), **testgen auto-detection** (recommends `/testgen` when ACs have Unit/Integration tests), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
 | `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, **Pre-PR AC verification** (checks each AC addressed before PR), **shell script quality checks**, **mandatory prompt templates** for parallel sub-agents, creates PRs |
 | `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, **coverage analysis** (warns when files lack tests), graceful fallback to manual checklists |
 | `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis, CI status awareness, build verification against main. Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
@@ -92,14 +92,14 @@ For when you want to go hands-off:
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
 | `/fullsolve` | **End-to-End** | Orchestrates spec→exec→test→qa with auto-fix loops, max iteration limits, progress tracking |
-| `/solve` | **Advisor** | Analyzes issue labels and content, recommends optimal workflow, outputs ready-to-run CLI commands |
+| `/solve` | **Advisor** | Analyzes issue labels and content, recommends optimal workflow (including `--testgen` for features with testable ACs), outputs ready-to-run CLI commands |
 | `/loop` | **Quality Loop** | Parses test/QA findings, applies fixes, re-validates until quality gates pass |
 
 ### Testing & Verification
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/testgen` | **Test Generator** | Creates test stubs from `/spec` verification criteria |
+| `/testgen` | **Test Generator** | Creates test stubs from `/spec` verification criteria, **haiku sub-agents** for cost-efficient generation (~90% token savings), auto-recommended by `/spec` when ACs need automated tests |
 | `/verify` | **CLI Verification** | Runs CLI commands, captures output, posts evidence to issues |
 | `/docs` | **Documentation** | Auto-detects doc type, generates admin-facing operational docs |
 

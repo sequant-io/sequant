@@ -78,6 +78,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Smoke test execution for scripts with --help support
 - Interactive stack selection and multi-stack support in `/setup` (#197)
   - `--interactive` / `-i` flag for guided stack configuration
+- Testgen phase auto-detection and haiku optimization (#217)
+  - `/spec`: Auto-recommends `testgen` phase when ACs have Unit/Integration Test verification methods
+  - `/solve`: Includes `--testgen` flag and testgen in workflow recommendations
+  - `/testgen`: Uses haiku sub-agents for cost-efficient stub generation (~90% token savings)
+  - Detection rules skip testgen for bug fixes and docs-only issues
+  - Updated `docs/concepts/workflow-phases.md` with testgen auto-detection documentation
   - Multi-stack detection: identifies stacks in root and subdirectories
   - Checkbox UI for selecting multiple stacks in monorepos
   - Primary stack selection determines dev URL and commands
