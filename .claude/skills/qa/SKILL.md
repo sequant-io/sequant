@@ -94,6 +94,70 @@ Before spawning quality check agents, determine the execution mode:
 | Sequential | 1x (baseline) | Slower | Limited API plans, single issues |
 | Parallel | ~2-3x | ~50% faster | Unlimited plans, batch operations |
 
+### Quality Check Caching
+
+The QA quality checks support caching to skip unchanged checks on re-run, significantly improving iteration speed.
+
+#### Cache Configuration
+
+**CLI flags:**
+- `/qa 123 --no-cache`: Force fresh run, ignore all cached results
+- `/qa 123 --use-cache`: Enable caching (default)
+
+**When caching is used:**
+- Type safety check → Cached (keyed by diff hash)
+- Deleted tests check → Cached (keyed by diff hash)
+- Security scan → Cached (keyed by diff hash + config)
+- Semgrep analysis → Cached (keyed by diff hash)
+- Build verification → Cached (keyed by diff hash)
+- Scope/size metrics → Always fresh (cheap operations)
+
+#### Cache Invalidation Rules
+
+| Change Type | Invalidation Scope |
+|-------------|-------------------|
+| Source file changes | Re-run type safety, security, semgrep |
+| Test file changes | Re-run deleted-tests check |
+| Config changes (tsconfig, package.json) | Re-run affected checks |
+| `package-lock.json` changes | Re-run ALL checks |
+| TTL expiry (1 hour default) | Re-run expired checks |
+
+#### Cache Status Reporting (AC-4)
+
+The quality-checks.sh script outputs a cache status table:
+
+```markdown
+### Cache Status Report
+
+| Check | Cache Status |
+|-------|--------------|
+| type-safety | ✅ HIT |
+| deleted-tests | ✅ HIT |
+| scope | ⏭️ SKIP |
+| size | ⏭️ SKIP |
+| security | ❌ MISS |
+| semgrep | ❌ MISS |
+| build | ✅ HIT |
+
+**Summary:** 3 hits, 2 misses, 2 skipped
+**Performance:** Cached checks saved execution time
+```
+
+#### Cache Location
+
+Cache is stored at `.sequant/.cache/qa/cache.json` with the following structure:
+- `diffHash`: SHA256 hash of `git diff main...HEAD`
+- `configHash`: SHA256 hash of relevant config files
+- `result`: Check result (passed, message, details)
+- `ttl`: Time-to-live in milliseconds (default: 1 hour)
+
+#### Graceful Degradation (AC-6)
+
+If the cache is corrupted or unreadable:
+1. Log warning at debug level (AC-7)
+2. Fall back to fresh run
+3. Continue without caching errors affecting QA
+
 ### Pre-flight Sync Check
 
 **Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator has already verified sync status.
@@ -1189,6 +1253,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **CI Status** - Included if PR exists (or marked "No PR" / "No CI configured")
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions
+- [ ] **Cache Status** - Included if caching enabled (or marked N/A if --no-cache)
 - [ ] **Build Verification** - Included if build failed (or marked N/A if build passed)
 - [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
@@ -1274,6 +1339,25 @@ You MUST include these sections:
 | Files changed | X | OK/WARN |
 | Lines added | +X | - |
 | Lines deleted | -X | - |
+
+---
+
+### Cache Status
+
+[Include if caching enabled, otherwise: "N/A - Caching disabled (--no-cache)"]
+
+| Check | Cache Status |
+|-------|--------------|
+| type-safety | ✅ HIT / ❌ MISS / ⏭️ SKIP |
+| deleted-tests | ✅ HIT / ❌ MISS / ⏭️ SKIP |
+| scope | ⏭️ SKIP (always fresh) |
+| size | ⏭️ SKIP (always fresh) |
+| security | ✅ HIT / ❌ MISS / ⏭️ SKIP |
+| semgrep | ✅ HIT / ❌ MISS / ⏭️ SKIP |
+| build | ✅ HIT / ❌ MISS / ⏭️ SKIP |
+
+**Summary:** X hits, Y misses, Z skipped
+**Performance:** [Note if cached checks saved time]
 
 ---
 
