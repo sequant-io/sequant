@@ -79,6 +79,18 @@ fi
 echo "📦 Bumping version to $VERSION..."
 npm version "$VERSION" --no-git-tag-version
 
+# Update plugin.json version
+echo "📦 Updating plugin.json version..."
+if [[ -f ".claude-plugin/plugin.json" ]]; then
+  sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" .claude-plugin/plugin.json
+fi
+
+# Update marketplace.json version
+echo "📦 Updating marketplace.json version..."
+if [[ -f ".claude-plugin/marketplace.json" ]]; then
+  sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" .claude-plugin/marketplace.json
+fi
+
 # Commit release
 echo "💾 Committing release..."
 git add -A
