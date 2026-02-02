@@ -191,7 +191,7 @@ export class QACache {
         .update(diff)
         .digest("hex")
         .slice(0, 16);
-    } catch (error) {
+    } catch {
       // If git command fails, return a unique hash to force fresh run
       this.log("Failed to compute diff hash, using timestamp fallback");
       return crypto
@@ -336,7 +336,7 @@ export class QACache {
       const state = QACacheSchema.parse(parsed);
       this.cachedState = state;
       return state;
-    } catch (error) {
+    } catch {
       // Graceful degradation: corrupted cache -> fresh state (AC-6)
       this.log("Cache corrupted or invalid, creating fresh cache");
       const emptyState = this.createEmptyState();
