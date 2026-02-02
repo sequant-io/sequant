@@ -12,8 +12,8 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 |--------|-------|
 | Slash Commands | 18 |
 | CLI Commands | 9 |
-| Core Library Modules | 31 |
-| Test Files | 39 |
+| Core Library Modules | 39 |
+| Test Files | 42 |
 | Documentation Files | 26+ |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~17,000+ |
@@ -187,6 +187,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `shutdown.ts` | Signal handling for graceful shutdown |
 | `version-check.ts` | Checks for updates, warns on stale local installs |
 | `cli-ui.ts` | Centralized CLI UI (spinners, boxes, tables, colors, ASCII branding) with graceful degradation |
+| `phase-spinner.ts` | Animated phase execution spinner with elapsed time, progress indicators, and graceful TTY fallback |
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
 | `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
 | `content-analyzer.ts` | Analyzes issue title/body for phase-relevant keywords (UI, security, complexity patterns) |
@@ -671,7 +672,8 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.12.0)
+### Recent Additions (v1.13.0+)
+- **Animated phase spinners** — `sequant run` now shows animated `ora` spinners with elapsed time during phase execution. Spinner cycles (⠋ ⠙ ⠹ ⠸) with elapsed time updating every 5 seconds. Phase progress indicators (1/3, 2/3, 3/3) and completion states with duration. Graceful fallback to static text in CI/non-TTY/verbose modes. 35 unit tests for `PhaseSpinner` class.
 - **QA caching** — `/qa` now caches expensive check results (type safety, security, Semgrep) keyed by git diff hash + config hash. Re-runs skip unchanged checks for faster iteration. `--no-cache` forces fresh run. Cache hit/miss reported in output. Graceful degradation on corrupted cache. 36 unit tests.
 - **Testgen auto-detection** — `/spec` and `/solve` automatically recommend `--testgen` phase when issue has testable ACs (UI components, API endpoints, validation logic). Reduces manual workflow configuration.
 - **Enhanced CLI UI** — New `cli-ui.ts` module provides animated spinners (`ora`), decorative boxes (`boxen`), ASCII tables (`cli-table3`), gradient branding, and progress bars. All CLI commands (`doctor`, `status`, `stats`, `logs`, `init`) use consistent styling with graceful degradation for CI, non-TTY, `--no-color`, `--verbose`, and Windows legacy terminals. 73 unit tests cover all UI functions.
@@ -770,8 +772,8 @@ npm run build
 |------|----------|
 | Slash Commands | 18 |
 | CLI Commands | 9 |
-| Library Modules | 23 |
-| Test Files | 28 |
+| Library Modules | 39 |
+| Test Files | 42 |
 | Docs Files | 26+ |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
@@ -792,7 +794,7 @@ npm run build
 │                              SEQUANT v1.13.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (17)              CLI (9)                 LIBRARIES (23)            │
+│  SKILLS (17)              CLI (9)                 LIBRARIES (39)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -800,7 +802,7 @@ npm run build
 │  /qa                      sequant status          metrics-writer.ts         │
 │  /fullsolve               sequant update          ac-parser.ts              │
 │  /solve                   sequant state           project-name.ts           │
-│  /loop                    sequant stats           ... and 16 more           │
+│  /loop                    sequant stats           ... and 32 more           │
 │  /testgen                 sequant logs                                      │
 │  /verify                  sequant dashboard       HOOKS (450+ lines)        │
 │  /docs                                            ─────────────────         │
@@ -820,7 +822,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 28  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 42  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 

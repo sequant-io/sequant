@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Animated spinners with elapsed time for `sequant run` phase execution (#244)
+  - Animated `ora` spinner cycles while phases run (⠋ ⠙ ⠹ ⠸)
+  - Elapsed time updates every 5 seconds during execution
+  - Phase progress indicators (e.g., "spec (1/3)")
+  - Completion states show checkmark with total duration
+  - Graceful fallback to static text in CI/non-TTY/verbose modes
+  - New `PhaseSpinner` class in `src/lib/phase-spinner.ts`
+  - 35 unit tests covering spinner lifecycle and edge cases
+
 ## [1.13.0] - 2026-02-01
 
 ### Added
