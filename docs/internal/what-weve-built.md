@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.12.0
+# What We've Built: Sequant v1.13.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -789,7 +789,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.12.0                                │
+│                              SEQUANT v1.13.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (17)              CLI (9)                 LIBRARIES (23)            │

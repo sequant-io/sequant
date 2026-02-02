@@ -1,6 +1,6 @@
 {
   "name": "sequant",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Quantize your development workflow - Sequential AI phases with quality gates",
   "type": "module",
   "bin": {
