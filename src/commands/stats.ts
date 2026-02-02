@@ -5,7 +5,6 @@
  * All data is local - no telemetry is ever sent remotely.
  */
 
-import chalk from "chalk";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
