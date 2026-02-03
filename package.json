@@ -17,7 +17,8 @@
   "files": [
     "dist",
     "templates",
-    "stacks"
+    "stacks",
+    ".claude-plugin"
   ],
   "scripts": {
     "build": "tsc",
