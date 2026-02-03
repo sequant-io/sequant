@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Animated spinners with elapsed time for `sequant run` phase execution (#244)
+
+### Improved
+
+- Better error diagnostics when Claude Code CLI exits unexpectedly
+  - Captures stderr output from SDK for debugging
+  - Includes stderr in error messages (up to 500 chars)
+  - Streams stderr in real-time with `--verbose` flag
   - Animated `ora` spinner cycles while phases run (⠋ ⠙ ⠹ ⠸)
   - Elapsed time updates every 5 seconds during execution
   - Phase progress indicators (e.g., "spec (1/3)")
