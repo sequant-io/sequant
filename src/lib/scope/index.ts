@@ -28,7 +28,6 @@ import {
   createScopeMetrics,
   calculateVerdict,
   generateRecommendation,
-  shouldEnableQualityLoop,
 } from "./verdict.js";
 
 // Re-export types

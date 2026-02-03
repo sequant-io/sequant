@@ -19,7 +19,6 @@
 
 import { z } from "zod";
 import { ScopeAssessmentSchema } from "../scope/types.js";
-import type { ScopeAssessment } from "../scope/types.js";
 
 /**
  * Workflow phases in order of execution
