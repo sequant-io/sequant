@@ -9,7 +9,22 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ## Quick Start
 
-### Option A: Install as Claude Code Plugin (Recommended)
+### Install via npm (Recommended)
+
+```bash
+# In your project directory
+npm install sequant
+npx sequant doctor   # Verify setup
+```
+
+To update:
+```bash
+npm update sequant
+```
+
+### Alternative: Install as Claude Code Plugin
+
+> **Note:** Plugin updates via `/plugin update` may not work reliably. Use `npm update sequant` to get latest skills.
 
 ```bash
 # Add the Sequant marketplace
@@ -17,19 +32,6 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 # Install the plugin
 /plugin install sequant
-```
-
-Then run setup:
-```
-/sequant:setup    # Initialize worktrees directory
-```
-
-### Option B: Install via npm
-
-```bash
-# In your project directory
-npx sequant init
-npx sequant doctor   # Verify setup
 ```
 
 ### Start Using
