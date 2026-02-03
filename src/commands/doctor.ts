@@ -20,6 +20,7 @@ import {
   checkVersionThorough,
   getVersionWarning,
 } from "../lib/version-check.js";
+import { areSkillsOutdated } from "./sync.js";
 
 interface Check {
   name: string;
@@ -207,6 +208,22 @@ export async function doctorCommand(
       name: "Core Skills",
       status: "fail",
       message: `Missing skills: ${missingSkills.join(", ")}`,
+    });
+  }
+
+  // Check 3.5: Skills version (are skills in sync with package?)
+  const skillsStatus = await areSkillsOutdated();
+  if (skillsStatus.outdated) {
+    checks.push({
+      name: "Skills Version",
+      status: "warn",
+      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: npx sequant sync`,
+    });
+  } else {
+    checks.push({
+      name: "Skills Version",
+      status: "pass",
+      message: `Up to date (${skillsStatus.packageVersion})`,
     });
   }
 

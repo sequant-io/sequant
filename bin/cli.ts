@@ -48,6 +48,7 @@ import {
   stateRebuildCommand,
   stateCleanCommand,
 } from "../src/commands/state.js";
+import { syncCommand } from "../src/commands/sync.js";
 
 const program = new Command();
 
@@ -109,6 +110,15 @@ program
   .option("-d, --dry-run", "Show what would be updated without making changes")
   .option("-f, --force", "Overwrite local modifications")
   .action(updateCommand);
+
+program
+  .command("sync")
+  .description(
+    "Sync skills and templates from the Sequant package (non-interactive)",
+  )
+  .option("-f, --force", "Sync even if versions match")
+  .option("-q, --quiet", "Suppress output")
+  .action(syncCommand);
 
 program
   .command("doctor")
