@@ -62,8 +62,9 @@ Quality loop (`--quality-loop` or `-q`) provides automatic fix iterations when p
 - Labels include: `complex`, `refactor`, `breaking`, `major` (auto-enabled)
 - Labels include: `enhancement`, `feature` (new functionality)
 - Issue involves multiple files or components
-- Issue title contains: "add", "implement", "create", "refactor", "update"
+- Issue title contains: "add", "implement", "create", "refactor", "update", "overhaul", "redesign", "improve", "rework", "revamp", "migrate", "convert", "design", "build", "develop"
 - Issue is NOT a simple bug fix with `bug` or `fix` label only
+- **Default: recommend quality loop unless explicitly trivial** — most issues benefit from retry capability
 
 **Skip quality loop recommendation only when:**
 - Simple bug fix (only `bug` or `fix` label, no other labels)
