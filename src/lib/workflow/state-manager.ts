@@ -40,6 +40,7 @@ import {
   createPhaseState,
   updateAcceptanceCriteriaSummary,
 } from "./state-schema.js";
+import type { ScopeAssessment } from "../scope/types.js";
 
 export interface StateManagerOptions {
   /** Path to state file (default: .sequant/state.json) */
@@ -491,6 +492,46 @@ export class StateManager {
     if (this.verbose) {
       console.log(`📊 AC ${acId} → ${status} for issue #${issueNumber}`);
     }
+  }
+
+  // === Scope Assessment Operations ===
+
+  /**
+   * Update scope assessment for an issue
+   *
+   * Used by /spec to store the scope assessment result.
+   */
+  async updateScopeAssessment(
+    issueNumber: number,
+    scopeAssessment: ScopeAssessment,
+  ): Promise<void> {
+    const state = await this.getState();
+    const issueState = state.issues[String(issueNumber)];
+
+    if (!issueState) {
+      throw new Error(`Issue #${issueNumber} not found in state`);
+    }
+
+    issueState.scopeAssessment = scopeAssessment;
+    issueState.lastActivity = new Date().toISOString();
+
+    await this.saveState(state);
+
+    if (this.verbose) {
+      console.log(
+        `📊 Scope assessment updated for issue #${issueNumber}: ${scopeAssessment.verdict}`,
+      );
+    }
+  }
+
+  /**
+   * Get scope assessment for an issue
+   */
+  async getScopeAssessment(
+    issueNumber: number,
+  ): Promise<ScopeAssessment | null> {
+    const issueState = await this.getIssueState(issueNumber);
+    return issueState?.scopeAssessment ?? null;
   }
 
   // === Utility Operations ===

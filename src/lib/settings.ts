@@ -91,6 +91,35 @@ export interface RunSettings {
 }
 
 /**
+ * Scope assessment threshold configuration
+ */
+export interface ScopeThreshold {
+  /** Value at which status becomes yellow */
+  yellow: number;
+  /** Value at which status becomes red */
+  red: number;
+}
+
+/**
+ * Scope assessment settings
+ */
+export interface ScopeAssessmentSettings {
+  /** Whether scope assessment is enabled (default: true) */
+  enabled: boolean;
+  /** Skip assessment for trivial issues (default: true) */
+  skipIfSimple: boolean;
+  /** Thresholds for scope metrics */
+  thresholds: {
+    /** Feature count thresholds (default: yellow=2, red=3) */
+    featureCount: ScopeThreshold;
+    /** AC items thresholds (default: yellow=6, red=9) */
+    acItems: ScopeThreshold;
+    /** File estimate thresholds (default: yellow=8, red=13) */
+    fileEstimate: ScopeThreshold;
+  };
+}
+
+/**
  * Full settings schema
  */
 export interface SequantSettings {
@@ -100,6 +129,8 @@ export interface SequantSettings {
   run: RunSettings;
   /** Agent execution settings */
   agents: AgentSettings;
+  /** Scope assessment settings */
+  scopeAssessment: ScopeAssessmentSettings;
 }
 
 /**
@@ -120,6 +151,19 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
 };
 
 /**
+ * Default scope assessment settings
+ */
+export const DEFAULT_SCOPE_ASSESSMENT_SETTINGS: ScopeAssessmentSettings = {
+  enabled: true,
+  skipIfSimple: true,
+  thresholds: {
+    featureCount: { yellow: 2, red: 3 },
+    acItems: { yellow: 6, red: 9 },
+    fileEstimate: { yellow: 8, red: 13 },
+  },
+};
+
+/**
  * Default settings
  */
 export const DEFAULT_SETTINGS: SequantSettings = {
@@ -137,6 +181,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     mcp: true, // Enable MCP servers by default in headless mode
   },
   agents: DEFAULT_AGENT_SETTINGS,
+  scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
 };
 
 /**
@@ -163,6 +208,14 @@ export async function getSettings(): Promise<SequantSettings> {
       agents: {
         ...DEFAULT_AGENT_SETTINGS,
         ...parsed.agents,
+      },
+      scopeAssessment: {
+        ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
+        ...parsed.scopeAssessment,
+        thresholds: {
+          ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.thresholds,
+          ...parsed.scopeAssessment?.thresholds,
+        },
       },
     };
   } catch {

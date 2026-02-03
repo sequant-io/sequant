@@ -46,6 +46,11 @@ When called like `/spec <freeform description>`:
 - Effect: Skips the AC Quality Check step
 - Use when: AC are intentionally high-level or you want to defer linting
 
+**Flag:** `--skip-scope-check`
+- Usage: `/spec 123 --skip-scope-check`
+- Effect: Skips the Scope Assessment step
+- Use when: Issue scope is intentionally complex or you want to defer assessment
+
 ### AC Extraction and Storage — REQUIRED
 
 **After fetching the issue body**, extract and store acceptance criteria in workflow state:
@@ -150,6 +155,90 @@ console.log(formatACLintResults(lintResults));
 **If `--skip-ac-lint` flag is set:**
 - Output: `AC Quality Check: Skipped (--skip-ac-lint flag set)`
 - Continue directly to plan generation
+
+### Scope Assessment — REQUIRED (unless --skip-scope-check)
+
+**After AC Quality Check**, run scope assessment to detect overscoped issues:
+
+```bash
+# Run scope assessment (skip if --skip-scope-check flag is set)
+npx tsx -e "
+import { parseAcceptanceCriteria } from './src/lib/ac-parser.js';
+import { performScopeAssessment, formatScopeAssessment } from './src/lib/scope/index.js';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+const issueTitle = '<ISSUE_TITLE>';
+
+const criteria = parseAcceptanceCriteria(issueBody);
+const assessment = performScopeAssessment(criteria, issueBody, issueTitle);
+console.log(formatScopeAssessment(assessment));
+"
+```
+
+**Why this matters:**
+- Bundled features (3+ distinct features) should be separate issues
+- Missing non-goals lead to scope creep during implementation
+- High AC counts increase complexity and error rates
+
+**Scope Metrics:**
+
+| Metric | Green | Yellow | Red |
+|--------|-------|--------|-----|
+| Feature count | 1 | 2 | 3+ |
+| AC items | 1-5 | 6-8 | 9+ |
+| Directory spread | 1-2 | 3-4 | 5+ |
+
+**Non-Goals Section:**
+
+Every `/spec` output MUST include a Non-Goals section. If the issue lacks one, output a warning:
+
+```markdown
+## Non-Goals
+
+⚠️ **Non-Goals section not found.** Consider adding scope boundaries.
+
+Example format:
+- [ ] [Adjacent feature we're deferring]
+- [ ] [Scope boundary we're respecting]
+- [ ] [Future work that's out of scope]
+```
+
+**Scope Verdicts:**
+
+| Verdict | Meaning | Action |
+|---------|---------|--------|
+| ✅ SCOPE_OK | Single focused feature | Proceed normally |
+| ⚠️ SCOPE_WARNING | Moderate complexity | Consider narrowing; quality loop auto-enabled |
+| ❌ SCOPE_SPLIT_RECOMMENDED | Multiple features bundled | Strongly recommend splitting |
+
+**Quality Loop Auto-Enable:**
+
+If scope verdict is SCOPE_WARNING or SCOPE_SPLIT_RECOMMENDED:
+- Quality loop is automatically enabled
+- Include note in Recommended Workflow section:
+  ```markdown
+  **Quality Loop:** enabled (auto-enabled due to scope concerns)
+  ```
+
+**If `--skip-scope-check` flag is set:**
+- Output: `Scope Assessment: Skipped (--skip-scope-check flag set)`
+- Continue to plan generation
+
+**Store in State:**
+
+After assessment, store results in workflow state for analytics:
+
+```bash
+npx tsx -e "
+import { StateManager } from './src/lib/workflow/state-manager.js';
+import { performScopeAssessment } from './src/lib/scope/index.js';
+
+// ... perform assessment ...
+
+const manager = new StateManager();
+await manager.updateScopeAssessment(issueNumber, assessment);
+"
+```
 
 ### Feature Worktree Workflow
 
@@ -717,6 +806,8 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 **Before responding, verify your output includes ALL of these:**
 
 - [ ] **AC Quality Check** - Lint results (or "Skipped" if --skip-ac-lint)
+- [ ] **Scope Assessment** - Verdict and metrics (or "Skipped" if --skip-scope-check)
+- [ ] **Non-Goals Section** - Listed or warning if missing
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
 - [ ] **Verification Criteria (REQUIRED)** - Each AC MUST have:
   - Explicit Verification Method (Unit Test, Integration Test, Browser Test, or Manual Test)
@@ -725,7 +816,7 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
 - [ ] **Feature Quality Planning** - Quality dimensions checklist completed (abbreviated for simple-fix/typo/docs-only labels)
-- [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
+- [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning (auto-enable quality loop if scope is yellow/red)
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults (including unclear verification methods)
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
@@ -744,6 +835,26 @@ You MUST include these sections in order:
 ## AC Quality Check
 
 [Output from AC linter, or "Skipped (--skip-ac-lint flag set)"]
+
+---
+
+## Scope Assessment
+
+### Non-Goals (Required)
+
+[List non-goals from issue, or warning if missing]
+
+### Scope Metrics
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Feature count | [N] | [✅/⚠️/❌] |
+| AC items | [N] | [✅/⚠️/❌] |
+| Directory spread | [N] | [✅/⚠️/❌] |
+
+### Scope Verdict
+
+[✅/⚠️/❌] **[SCOPE_OK/SCOPE_WARNING/SCOPE_SPLIT_RECOMMENDED]** - [Recommendation]
 
 ---
 

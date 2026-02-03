@@ -18,6 +18,7 @@
  */
 
 import { z } from "zod";
+import { ScopeAssessmentSchema } from "../scope/types.js";
 
 /**
  * Workflow phases in order of execution
@@ -211,6 +212,8 @@ export const IssueStateSchema = z.object({
   loop: LoopStateSchema.optional(),
   /** Acceptance criteria tracking (if extracted by /spec) */
   acceptanceCriteria: AcceptanceCriteriaSchema.optional(),
+  /** Scope assessment result (if performed by /spec) */
+  scopeAssessment: ScopeAssessmentSchema.optional(),
   /** Claude session ID (for resume) */
   sessionId: z.string().optional(),
   /** Most recent activity timestamp */
