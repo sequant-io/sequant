@@ -498,6 +498,47 @@ Plugins do **not** automatically merge settings. Instead:
    gh auth status
    ```
 
+### Claude Code process exited with code 1
+
+**Problem:** `sequant run` fails with "Claude Code process exited with code 1" during a phase.
+
+**Causes:**
+- Outdated sequant version in local node_modules
+- MCP server configuration issues
+- Invalid project settings in `.claude/settings.json`
+
+**Solutions:**
+
+1. Update sequant to latest version:
+   ```bash
+   npm update sequant
+   # or remove local and use npx
+   npm uninstall sequant
+   npx sequant@latest run 123
+   ```
+
+2. Try running without MCP servers to isolate the issue:
+   ```bash
+   npx sequant run 123 --no-mcp
+   ```
+
+3. Run with verbose mode to see detailed error output:
+   ```bash
+   npx sequant run 123 -v
+   ```
+
+4. Check for invalid hook scripts in `.claude/hooks/`:
+   ```bash
+   # Test hooks manually
+   echo '{}' | .claude/hooks/pre-tool.sh
+   ```
+
+5. Verify Claude Code CLI works standalone:
+   ```bash
+   claude --version
+   claude -p "Say hello" --print
+   ```
+
 ## Update Issues
 
 ### Conflicts during update
