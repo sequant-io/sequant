@@ -493,4 +493,138 @@ describe("StateManager", () => {
       );
     });
   });
+
+  describe("updateScopeAssessment", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+    });
+
+    it("should store scope assessment for an issue", async () => {
+      const assessment = {
+        assessedAt: new Date().toISOString(),
+        skipped: false,
+        verdict: "SCOPE_OK" as const,
+        metrics: [
+          { name: "Feature count", value: 1, status: "green" as const },
+          { name: "AC items", value: 4, status: "green" as const },
+          { name: "Directory spread", value: 2, status: "green" as const },
+        ],
+        featureDetection: {
+          featureCount: 1,
+          clusters: [{ keyword: "auth", acIds: ["AC-1", "AC-2"], count: 2 }],
+          multipleVerbs: false,
+          titleVerbs: ["add"],
+          directorySpread: 2,
+          directories: ["src", "lib"],
+        },
+        nonGoals: {
+          items: ["Database migrations", "Performance optimization"],
+          found: true,
+        },
+        recommendation: "Single focused feature with clear boundaries.",
+      };
+
+      await manager.updateScopeAssessment(42, assessment);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].scopeAssessment).toBeDefined();
+      expect(state.issues["42"].scopeAssessment?.verdict).toBe("SCOPE_OK");
+      expect(state.issues["42"].scopeAssessment?.metrics.length).toBe(3);
+      expect(state.issues["42"].scopeAssessment?.nonGoals.items.length).toBe(2);
+    });
+
+    it("should store skipped assessment", async () => {
+      const assessment = {
+        assessedAt: new Date().toISOString(),
+        skipped: true,
+        skipReason: "Trivial issue (2 AC items, 1 directories)",
+        verdict: "SCOPE_OK" as const,
+        metrics: [],
+        featureDetection: {
+          featureCount: 1,
+          clusters: [],
+          multipleVerbs: false,
+          titleVerbs: [],
+          directorySpread: 1,
+          directories: [],
+        },
+        nonGoals: { items: [], found: false },
+        recommendation: "Trivial issue - scope assessment skipped.",
+      };
+
+      await manager.updateScopeAssessment(42, assessment);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].scopeAssessment?.skipped).toBe(true);
+      expect(state.issues["42"].scopeAssessment?.skipReason).toContain(
+        "Trivial",
+      );
+    });
+
+    it("should throw if issue not found", async () => {
+      const assessment = {
+        assessedAt: new Date().toISOString(),
+        skipped: false,
+        verdict: "SCOPE_OK" as const,
+        metrics: [],
+        featureDetection: {
+          featureCount: 1,
+          clusters: [],
+          multipleVerbs: false,
+          titleVerbs: [],
+          directorySpread: 0,
+          directories: [],
+        },
+        nonGoals: { items: [], found: false },
+        recommendation: "",
+      };
+
+      await expect(
+        manager.updateScopeAssessment(999, assessment),
+      ).rejects.toThrow("Issue #999 not found");
+    });
+  });
+
+  describe("getScopeAssessment", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+    });
+
+    it("should return scope assessment if exists", async () => {
+      const assessment = {
+        assessedAt: new Date().toISOString(),
+        skipped: false,
+        verdict: "SCOPE_WARNING" as const,
+        metrics: [
+          { name: "Feature count", value: 2, status: "yellow" as const },
+        ],
+        featureDetection: {
+          featureCount: 2,
+          clusters: [],
+          multipleVerbs: true,
+          titleVerbs: ["add", "refactor"],
+          directorySpread: 1,
+          directories: [],
+        },
+        nonGoals: { items: [], found: false },
+        recommendation: "Consider narrowing scope.",
+      };
+      await manager.updateScopeAssessment(42, assessment);
+
+      const retrieved = await manager.getScopeAssessment(42);
+      expect(retrieved).not.toBeNull();
+      expect(retrieved?.verdict).toBe("SCOPE_WARNING");
+      expect(retrieved?.featureDetection.multipleVerbs).toBe(true);
+    });
+
+    it("should return null if no scope assessment exists", async () => {
+      const retrieved = await manager.getScopeAssessment(42);
+      expect(retrieved).toBeNull();
+    });
+
+    it("should return null if issue does not exist", async () => {
+      const retrieved = await manager.getScopeAssessment(999);
+      expect(retrieved).toBeNull();
+    });
+  });
 });
