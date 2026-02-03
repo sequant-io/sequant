@@ -20,7 +20,22 @@ When invoked as `/solve <issue-numbers>`, your job is to:
 1. Analyze the provided issue number(s)
 2. Check labels to determine issue type
 3. Recommend the optimal workflow sequence
-4. Display the recommended commands
+4. **Output using the EXACT template format** (see Output Template section)
+
+## CRITICAL: Output Requirements
+
+**You MUST follow the Output Template exactly.** Key requirements:
+
+1. **Use the ASCII box header** with `npx sequant run <ISSUES> <FLAGS>`
+2. **Include the Flags Table** showing ALL flags with ✓/✗:
+   - `-q` (quality-loop) — **Default to ✓** unless trivial bug fix
+   - `--chain` — ✓ if dependencies between issues
+   - `--qa-gate` — ✓ if chain with 3+ issues
+   - `--base` — ✓ if feature branch context
+   - `--testgen` — ✓ if new feature needs tests
+3. **Quality loop (`-q`) should be ✓ (enabled)** for most issues — only skip for simple bug fixes or docs-only changes
+
+**DO NOT** output free-form prose. Use the structured template.
 
 ## Behavior
 
