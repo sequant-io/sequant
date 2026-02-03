@@ -141,8 +141,8 @@ describe("cli-ui", () => {
     it("should contain SEQUANT text pattern", () => {
       configureUI({ noColor: true }); // Use plain ASCII
       const result = logo();
-      // The logo uses ASCII art characters
-      expect(result).toContain("___");
+      // The logo uses block characters for ASCII art
+      expect(result).toContain("██");
     });
   });
 

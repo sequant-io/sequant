@@ -926,6 +926,9 @@ async function executePhase(
   const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
 
+  // Track stderr for error diagnostics (declared outside try for catch access)
+  let capturedStderr = "";
+
   try {
     // Check if shutdown is in progress
     if (shutdownManager?.shuttingDown) {
@@ -997,6 +1000,15 @@ async function executePhase(
         env,
         // Pass MCP servers for headless mode (AC-2)
         ...(mcpServers ? { mcpServers } : {}),
+        // Capture stderr for debugging (helps diagnose early exit failures)
+        stderr: (data: string) => {
+          capturedStderr += data;
+          if (config.verbose) {
+            spinner?.pause();
+            process.stderr.write(chalk.red(data));
+            spinner?.resume();
+          }
+        },
       },
     });
 
@@ -1133,11 +1145,16 @@ async function executePhase(
       };
     }
 
+    // Include stderr in error message if available (helps diagnose early exit failures)
+    const stderrSuffix = capturedStderr
+      ? `\nStderr: ${capturedStderr.slice(0, 500)}`
+      : "";
+
     return {
       phase,
       success: false,
       durationSeconds,
-      error,
+      error: error + stderrSuffix,
     };
   }
 }
