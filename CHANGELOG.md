@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Scope assessment for `/spec` to catch overscoped issues early (#239)
+  - Non-Goals section parsing with warnings if missing
+  - Feature count detection via AC clustering, title verbs, directory spread
+  - Scope metrics table (feature count, AC items, directory spread)
+  - Three verdicts: `SCOPE_OK`, `SCOPE_WARNING`, `SCOPE_SPLIT_RECOMMENDED`
+  - Quality loop auto-enabled for yellow/red verdicts
+  - Configurable thresholds in `.sequant/settings.json`
+  - `--skip-scope-check` flag to bypass assessment
+  - State persistence via `StateManager.updateScopeAssessment()`
 - Animated spinners with elapsed time for `sequant run` phase execution (#244)
 
 ### Fixed
