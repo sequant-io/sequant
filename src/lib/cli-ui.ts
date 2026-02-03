@@ -10,7 +10,6 @@ import ora, { type Ora } from "ora";
 import boxen, { type Options as BoxenOptions } from "boxen";
 // cli-table3 uses CommonJS `export =` syntax, default import works with esModuleInterop
 import Table from "cli-table3";
-import gradient from "gradient-string";
 import { isCI, isStdoutTTY } from "./tty.js";
 
 // ============================================================================
@@ -151,27 +150,26 @@ function isLegacyWindows(): boolean {
 
 /**
  * Static ASCII logo for SEQUANT branding
- * Pre-generated to avoid ~1MB figlet font bundle
+ * Clean, legible design inspired by the sequant logo
+ * Q has distinctive tail like the brand logo
  */
-const ASCII_LOGO = `
-   _____ _____ _____ _   _ _____ _   _ _____
-  /  ___/  ___|  _  | | | |  _  | \\ | |_   _|
-  \\ \`--.\\ \`--.| | | | | | | | | |  \\| | | |
-   \`--. \\\`--. \\ \\_/ / | | \\_| |_| . \` | | |
-  /\\__/ /\\__/ /\\___/\\ |_| |\\___/\\_|\\_/ \\_/
-  \\____/\\____/       \\___/
-`.trimStart();
+const ASCII_LOGO = ` ██████  ███████   ██████   ██    ██   █████   ███    ██  ████████
+██       ██       ██    ██  ██    ██  ██   ██  ████   ██     ██
+ █████   █████    ██    ██  ██    ██  ███████  ██ ██  ██     ██
+     ██  ██       ██ ▄▄ ██  ██    ██  ██   ██  ██  ██ ██     ██
+██████   ███████   ██████    ██████   ██   ██  ██   ████     ██
+                      ▀▀
+`;
 
 /**
- * Get the ASCII logo with optional gradient
+ * Get the ASCII logo with brand color
  */
 export function logo(): string {
   if (config.jsonMode || config.minimal) return "";
   if (config.noColor || !config.isTTY) return ASCII_LOGO;
 
-  // Apply gradient for color terminals
-  const sequantGradient = gradient(["#00D4FF", "#7B68EE", "#FF6B9D"]);
-  return sequantGradient(ASCII_LOGO);
+  // Apply brand orange color
+  return chalk.hex("#FF8012")(ASCII_LOGO);
 }
 
 /**
