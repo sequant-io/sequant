@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.13.0
+# What We've Built: Sequant v1.13.5
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -781,7 +781,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~17,000+ |
 
-**Current Version:** 1.12.0
+**Current Version:** 1.13.5
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -791,7 +791,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.13.0                                │
+│                              SEQUANT v1.13.5                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (17)              CLI (9)                 LIBRARIES (39)            │
