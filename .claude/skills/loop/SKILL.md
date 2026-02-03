@@ -85,8 +85,8 @@ if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
   # Use SEQUANT_ISSUE if provided, otherwise parse from invocation
   ISSUE_NUMBER="${SEQUANT_ISSUE:-<issue-number>}"
 
-  # Fetch QA findings from issue comments
-  gh issue view "$ISSUE_NUMBER" --json comments -q '.comments[] | select(.body | contains("## QA Review for Issue")) | .body' | tail -1
+  # Fetch QA findings from issue comments (use startswith to avoid matching comments that reference QA format)
+  gh issue view "$ISSUE_NUMBER" --json comments -q '.comments[] | select(.body | startswith("## QA Review for Issue")) | .body' | tail -1
 fi
 ```
 
