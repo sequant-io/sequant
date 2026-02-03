@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Animated spinners with elapsed time for `sequant run` phase execution (#244)
 
+### Fixed
+
+- `/loop` skill failing in `sequant run` due to missing log file (#240)
+  - Added orchestrated mode support: reads QA findings from GitHub issue comments when `SEQUANT_ORCHESTRATOR` is set
+  - Preserved standalone mode: continues reading from `/tmp/claude-issue-<N>.log` when run interactively
+  - Improved jq query to use `startswith()` instead of `contains()` to avoid false positives
+
 ### Improved
 
 - Better error diagnostics when Claude Code CLI exits unexpectedly
