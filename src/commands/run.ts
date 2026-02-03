@@ -39,6 +39,7 @@ import {
   determineOutcome,
 } from "../lib/workflow/metrics-schema.js";
 import { ui, colors } from "../lib/cli-ui.js";
+import { PhaseSpinner } from "../lib/phase-spinner.js";
 
 /**
  * Worktree information for an issue
@@ -896,6 +897,7 @@ async function executePhase(
   sessionId?: string,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
+  spinner?: PhaseSpinner,
 ): Promise<PhaseResult & { sessionId?: string }> {
   const startTime = Date.now();
 
@@ -923,6 +925,9 @@ async function executePhase(
   // Determine working directory and environment
   const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
+
+  // Track stderr for error diagnostics (declared outside try for catch access)
+  let capturedStderr = "";
 
   try {
     // Check if shutdown is in progress
@@ -995,6 +1000,15 @@ async function executePhase(
         env,
         // Pass MCP servers for headless mode (AC-2)
         ...(mcpServers ? { mcpServers } : {}),
+        // Capture stderr for debugging (helps diagnose early exit failures)
+        stderr: (data: string) => {
+          capturedStderr += data;
+          if (config.verbose) {
+            spinner?.pause();
+            process.stderr.write(chalk.red(data));
+            spinner?.resume();
+          }
+        },
       },
     });
 
@@ -1020,7 +1034,10 @@ async function executePhase(
           capturedOutput += textContent;
           // Show streaming output in verbose mode
           if (config.verbose) {
+            // Pause spinner during verbose streaming to avoid terminal corruption
+            spinner?.pause();
             process.stdout.write(chalk.gray(textContent));
+            spinner?.resume();
           }
         }
       }
@@ -1128,11 +1145,16 @@ async function executePhase(
       };
     }
 
+    // Include stderr in error message if available (helps diagnose early exit failures)
+    const stderrSuffix = capturedStderr
+      ? `\nStderr: ${capturedStderr.slice(0, 500)}`
+      : "";
+
     return {
       phase,
       success: false,
       durationSeconds,
-      error,
+      error: error + stderrSuffix,
     };
   }
 }
@@ -2172,7 +2194,15 @@ async function runIssueWithLogging(
     } else {
       // Run spec first to get recommended workflow
       console.log(chalk.gray(`    Running spec to determine workflow...`));
-      console.log(chalk.gray(`    ⏳ spec...`));
+
+      // Create spinner for spec phase (1 of estimated 3: spec, exec, qa)
+      const specSpinner = new PhaseSpinner({
+        phase: "spec",
+        phaseIndex: 1,
+        totalPhases: 3, // Estimate; will be refined after spec
+        shutdownManager,
+      });
+      specSpinner.start();
 
       // Track spec phase start in state
       if (stateManager) {
@@ -2196,6 +2226,7 @@ async function runIssueWithLogging(
         sessionId,
         worktreePath, // Will be ignored for spec (non-isolated phase)
         shutdownManager,
+        specSpinner,
       );
       const specEndTime = new Date();
 
@@ -2252,7 +2283,7 @@ async function runIssueWithLogging(
       }
 
       if (!specResult.success) {
-        console.log(chalk.red(`    ✗ spec: ${specResult.error}`));
+        specSpinner.fail(specResult.error);
         const durationSeconds = (Date.now() - startTime) / 1000;
         return {
           issueNumber,
@@ -2263,10 +2294,7 @@ async function runIssueWithLogging(
         };
       }
 
-      const duration = specResult.durationSeconds
-        ? ` (${formatDuration(specResult.durationSeconds)})`
-        : "";
-      console.log(chalk.green(`    ✓ spec${duration}`));
+      specSpinner.succeed();
 
       // Parse recommended workflow from spec output
       const parsedWorkflow = specResult.output
@@ -2339,8 +2367,24 @@ async function runIssueWithLogging(
 
     let phasesFailed = false;
 
-    for (const phase of phases) {
-      console.log(chalk.gray(`    ⏳ ${phase}...`));
+    // Calculate total phases for progress indicator
+    // If spec already ran in auto-detect mode, it's counted separately
+    const totalPhases = specAlreadyRan ? phases.length + 1 : phases.length;
+    const phaseIndexOffset = specAlreadyRan ? 1 : 0;
+
+    for (let phaseIdx = 0; phaseIdx < phases.length; phaseIdx++) {
+      const phase = phases[phaseIdx];
+      const phaseNumber = phaseIdx + 1 + phaseIndexOffset;
+
+      // Create spinner for this phase
+      const phaseSpinner = new PhaseSpinner({
+        phase,
+        phaseIndex: phaseNumber,
+        totalPhases,
+        shutdownManager,
+        iteration: useQualityLoop ? iteration : undefined,
+      });
+      phaseSpinner.start();
 
       // Track phase start in state
       if (stateManager) {
@@ -2363,6 +2407,7 @@ async function runIssueWithLogging(
         sessionId,
         worktreePath,
         shutdownManager,
+        phaseSpinner,
       );
       const phaseEndTime = new Date();
 
@@ -2422,17 +2467,22 @@ async function runIssueWithLogging(
       }
 
       if (result.success) {
-        const duration = result.durationSeconds
-          ? ` (${formatDuration(result.durationSeconds)})`
-          : "";
-        console.log(chalk.green(`    ✓ ${phase}${duration}`));
+        phaseSpinner.succeed();
       } else {
-        console.log(chalk.red(`    ✗ ${phase}: ${result.error}`));
+        phaseSpinner.fail(result.error);
         phasesFailed = true;
 
         // If quality loop enabled, run loop phase to fix issues
         if (useQualityLoop && iteration < maxIterations) {
-          console.log(chalk.yellow(`    Running /loop to fix issues...`));
+          // Create spinner for loop phase
+          const loopSpinner = new PhaseSpinner({
+            phase: "loop",
+            phaseIndex: phaseNumber,
+            totalPhases,
+            shutdownManager,
+            iteration,
+          });
+          loopSpinner.start();
 
           const loopResult = await executePhase(
             issueNumber,
@@ -2441,6 +2491,7 @@ async function runIssueWithLogging(
             sessionId,
             worktreePath,
             shutdownManager,
+            loopSpinner,
           );
           phaseResults.push(loopResult);
 
@@ -2449,11 +2500,11 @@ async function runIssueWithLogging(
           }
 
           if (loopResult.success) {
-            console.log(chalk.green(`    ✓ loop - retrying phases`));
+            loopSpinner.succeed();
             // Continue to next iteration
             break;
           } else {
-            console.log(chalk.red(`    ✗ loop: ${loopResult.error}`));
+            loopSpinner.fail(loopResult.error);
           }
         }
 

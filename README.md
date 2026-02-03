@@ -9,27 +9,18 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ## Quick Start
 
-### Option A: Install as Claude Code Plugin (Recommended)
-
-```bash
-# Add the Sequant marketplace
-/plugin marketplace add admarble/sequant
-
-# Install the plugin
-/plugin install sequant
-```
-
-Then run setup:
-```
-/sequant:setup    # Initialize worktrees directory
-```
-
-### Option B: Install via npm
+### Install
 
 ```bash
 # In your project directory
-npx sequant init
+npm install sequant
+npx sequant init     # Install skills to your project
 npx sequant doctor   # Verify setup
+```
+
+To update:
+```bash
+npm update sequant
 ```
 
 ### Start Using
@@ -236,7 +227,6 @@ See [Customization Guide](docs/guides/customization.md) for all options.
 - [Run Command](docs/reference/run-command.md)
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
-- [Plugin Updates & Versioning](docs/internal/plugin-updates.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)
@@ -247,7 +237,6 @@ Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) ·
 
 ### Reporting Issues
 
-- **Plugin issues:** [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml)
 - **Bug reports:** [Bug template](https://github.com/admarble/sequant/issues/new?template=bug.yml)
 - **Feature requests:** [Feature template](https://github.com/admarble/sequant/issues/new?template=feature.yml)
 - **Questions:** [GitHub Discussions](https://github.com/admarble/sequant/discussions)

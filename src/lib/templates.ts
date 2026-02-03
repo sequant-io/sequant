@@ -14,6 +14,9 @@ import {
   createSymlink,
   removeFileOrSymlink,
 } from "./fs.js";
+import { getPackageVersion } from "./manifest.js";
+
+const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 import { getStackConfig, getStackNotes, getMultiStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
@@ -317,6 +320,9 @@ export async function copyTemplates(
       processTemplate(content, variables),
     );
   }
+
+  // Write skills version marker for sync detection
+  await writeFile(SKILLS_VERSION_PATH, getPackageVersion());
 
   return { scriptsSymlinked, symlinkResults };
 }

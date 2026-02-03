@@ -15,6 +15,18 @@ vi.mock("../lib/fs.js", () => ({
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
+  getPackageVersion: vi.fn(() => "1.0.0"),
+}));
+
+// Mock sync module
+vi.mock("./sync.js", () => ({
+  areSkillsOutdated: vi.fn(() =>
+    Promise.resolve({
+      outdated: false,
+      currentVersion: "1.0.0",
+      packageVersion: "1.0.0",
+    }),
+  ),
 }));
 
 // Mock system functions

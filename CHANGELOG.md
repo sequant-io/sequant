@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Animated spinners with elapsed time for `sequant run` phase execution (#244)
+
+### Fixed
+
+- `/loop` skill failing in `sequant run` due to missing log file (#240)
+  - Added orchestrated mode support: reads QA findings from GitHub issue comments when `SEQUANT_ORCHESTRATOR` is set
+  - Preserved standalone mode: continues reading from `/tmp/claude-issue-<N>.log` when run interactively
+  - Improved jq query to use `startswith()` instead of `contains()` to avoid false positives
+
+### Improved
+
+- Better error diagnostics when Claude Code CLI exits unexpectedly
+  - Captures stderr output from SDK for debugging
+  - Includes stderr in error messages (up to 500 chars)
+  - Streams stderr in real-time with `--verbose` flag
+  - Animated `ora` spinner cycles while phases run (⠋ ⠙ ⠹ ⠸)
+  - Elapsed time updates every 5 seconds during execution
+  - Phase progress indicators (e.g., "spec (1/3)")
+  - Completion states show checkmark with total duration
+  - Graceful fallback to static text in CI/non-TTY/verbose modes
+  - New `PhaseSpinner` class in `src/lib/phase-spinner.ts`
+  - 35 unit tests covering spinner lifecycle and edge cases
+
 ## [1.13.0] - 2026-02-01
 
 ### Added
