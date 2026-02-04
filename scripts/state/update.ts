@@ -15,6 +15,8 @@
  *   npx tsx scripts/state/update.ts iteration <issue> <iteration>
  *   npx tsx scripts/state/update.ts merged <issue>
  *   npx tsx scripts/state/update.ts pr <issue> <pr-number> <pr-url>
+ *   npx tsx scripts/state/update.ts ac <issue> <ac-id> <status> "<notes>"
+ *   npx tsx scripts/state/update.ts init-ac <issue> <ac-ids-csv> "<descriptions-csv>"
  *
  * Examples:
  *   npx tsx scripts/state/update.ts start 119 exec
@@ -29,7 +31,10 @@ import { StateManager } from "../../src/lib/workflow/state-manager.js";
 import type {
   Phase,
   IssueStatus,
+  ACStatus,
+  AcceptanceCriterion,
 } from "../../src/lib/workflow/state-schema.js";
+import { createAcceptanceCriteria } from "../../src/lib/workflow/state-schema.js";
 
 // Check if running in orchestrated mode
 if (process.env.SEQUANT_ORCHESTRATOR) {
@@ -52,6 +57,8 @@ if (!command) {
   console.error("  iteration <issue> <n>         - Update loop iteration");
   console.error("  merged <issue>                - Mark issue as merged");
   console.error("  pr <issue> <pr-number> <url>  - Record PR info for issue");
+  console.error("  ac <issue> <ac-id> <status> <notes> - Update AC status");
+  console.error("  init-ac <issue> <count>           - Initialize N AC items");
   process.exit(1);
 }
 
@@ -217,10 +224,65 @@ async function main(): Promise<void> {
         break;
       }
 
+      case "init-ac": {
+        const [issueStr, countStr] = args;
+        const issueNumber = parseInt(issueStr, 10);
+        const count = parseInt(countStr, 10);
+        if (isNaN(issueNumber) || isNaN(count) || count < 1) {
+          console.error("Usage: init-ac <issue> <count>");
+          console.error("Example: init-ac 250 6  # Creates AC-1 through AC-6");
+          process.exit(1);
+        }
+        await ensureIssueExists(issueNumber);
+        const items: AcceptanceCriterion[] = Array.from(
+          { length: count },
+          (_, i) => ({
+            id: `AC-${i + 1}`,
+            description: `Acceptance criterion ${i + 1}`,
+            verificationMethod: "manual" as const,
+            status: "pending" as ACStatus,
+          }),
+        );
+        const ac = createAcceptanceCriteria(items);
+        await manager.updateAcceptanceCriteria(issueNumber, ac);
+        console.log(
+          `📊 Initialized ${count} AC items for issue #${issueNumber}`,
+        );
+        break;
+      }
+
+      case "ac": {
+        const [issueStr, acId, status, ...notesParts] = args;
+        const issueNumber = parseInt(issueStr, 10);
+        const notes = notesParts.join(" ");
+        if (isNaN(issueNumber) || !acId || !status) {
+          console.error('Usage: ac <issue> <ac-id> <status> "<notes>"');
+          console.error("Valid statuses: met, not_met, blocked, pending");
+          process.exit(1);
+        }
+        const validStatuses = ["met", "not_met", "blocked", "pending"];
+        if (!validStatuses.includes(status)) {
+          console.error(`Invalid status: ${status}`);
+          console.error("Valid statuses: met, not_met, blocked, pending");
+          process.exit(1);
+        }
+        await ensureIssueExists(issueNumber);
+        await manager.updateACStatus(
+          issueNumber,
+          acId,
+          status as ACStatus,
+          notes || undefined,
+        );
+        console.log(
+          `📊 AC '${acId}' updated to '${status}' for issue #${issueNumber}`,
+        );
+        break;
+      }
+
       default:
         console.error(`Unknown command: ${command}`);
         console.error(
-          "Valid commands: start, complete, fail, skip, init, status, iteration, merged, pr",
+          "Valid commands: start, complete, fail, skip, init, status, iteration, merged, pr, init-ac, ac",
         );
         process.exit(1);
     }
