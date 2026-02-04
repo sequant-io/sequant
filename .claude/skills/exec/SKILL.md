@@ -216,8 +216,9 @@ Per Quality Plan:
 ```bash
 # Extract derived ACs from spec comment's Derived ACs table
 # Format: | Source | AC-N: Description | Priority |
+# Uses flexible pattern to match any source dimension (not hardcoded)
 derived_acs=$(gh issue view <issue-number> --comments --json comments -q '.comments[].body' | \
-  grep -E '\|\s*(Error Handling|Test Coverage|Best Practices|Code Quality|Completeness|Polish)\s*\|.*AC-[0-9]+:' | \
+  grep -E '\|[^|]+\|\s*AC-[0-9]+:' | \
   grep -oE 'AC-[0-9]+:[^|]+' | \
   sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
   sort -u)
