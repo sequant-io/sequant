@@ -311,6 +311,54 @@ Just some random text without a workflow section.
     expect(result).not.toBeNull();
     expect(result!.phases).toEqual(["spec", "exec", "qa"]);
   });
+
+  it("should parse testgen phase when present", () => {
+    const output = `
+## Recommended Workflow
+
+**Phases:** spec → testgen → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** Feature with Unit Test verification methods - testgen phase recommended.
+`;
+    const result = parseRecommendedWorkflow(output);
+    expect(result).not.toBeNull();
+    expect(result!.phases).toEqual(["spec", "testgen", "exec", "qa"]);
+    expect(result!.qualityLoop).toBe(false);
+  });
+
+  it("should parse testgen with other phases like test and security-review", () => {
+    const output = `
+## Recommended Workflow
+
+**Phases:** spec → security-review → testgen → exec → test → qa
+**Quality Loop:** enabled
+**Reasoning:** Security-sensitive feature with UI components and Unit Test verification.
+`;
+    const result = parseRecommendedWorkflow(output);
+    expect(result).not.toBeNull();
+    expect(result!.phases).toEqual([
+      "spec",
+      "security-review",
+      "testgen",
+      "exec",
+      "test",
+      "qa",
+    ]);
+    expect(result!.qualityLoop).toBe(true);
+  });
+
+  it("should handle testgen as standalone phase with exec", () => {
+    const output = `
+## Recommended Workflow
+
+**Phases:** testgen → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** Test-first implementation approach.
+`;
+    const result = parseRecommendedWorkflow(output);
+    expect(result).not.toBeNull();
+    expect(result!.phases).toEqual(["testgen", "exec", "qa"]);
+  });
 });
 
 describe("detectPhasesFromLabels", () => {
