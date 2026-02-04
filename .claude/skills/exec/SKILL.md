@@ -481,6 +481,8 @@ After implementation is complete and all checks pass, create and verify the PR:
    )"
    ```
 
+   > **Session Auto-Linking (Claude Code v2.1.27+):** When you create a PR using `gh pr create`, Claude Code automatically links the current session to that PR. This enables resuming work on the PR later using `claude --from-pr <pr-number>`. No manual linking is required.
+
 3. **Immediately verify PR was created:**
    ```bash
    # Verify PR exists - this MUST succeed
@@ -507,6 +509,30 @@ After implementation is complete and all checks pass, create and verify the PR:
    npx tsx scripts/state/update.ts pr <issue-number> "$PR_NUMBER" "$PR_URL"
    ```
    This enables `--cleanup` to detect merged PRs and auto-remove state entries.
+
+### Resuming PR Sessions
+
+**Claude Code v2.1.27+** introduced the `--from-pr` flag to resume sessions linked to a specific GitHub PR:
+
+```bash
+# Resume by PR number
+claude --from-pr 123
+
+# Resume by PR URL
+claude --from-pr https://github.com/owner/repo/pull/123
+```
+
+**How it works:**
+- Sessions are automatically linked to PRs when created via `gh pr create`
+- Use `--from-pr` to return to work on a specific PR with full session context
+- Useful for context switching between multiple PRs or returning to stale work
+
+**When to use:**
+| Scenario | Command |
+|----------|---------|
+| Return to PR after break | `claude --from-pr <pr-number>` |
+| Switch between PRs | `claude --from-pr <other-pr>` |
+| Resume from PR URL | `claude --from-pr <full-url>` |
 
 **PR Verification Failure Handling:**
 
