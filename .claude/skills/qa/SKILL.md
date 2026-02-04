@@ -780,30 +780,31 @@ Provide a sentence or two explaining why.
 
 ### 3a. AC Status Persistence — REQUIRED
 
-**After evaluating each AC item**, update the status in workflow state:
+**After evaluating each AC item**, update the status in workflow state using the state CLI:
 
 ```bash
-# Update AC status in state
-npx tsx -e "
-import { StateManager } from './src/lib/workflow/state-manager.js';
+# Step 1: Initialize AC items for the issue (run once, before updating statuses)
+npx tsx scripts/state/update.ts init-ac <issue-number> <ac-count>
 
-const issueNumber = <ISSUE_NUMBER>;
-const manager = new StateManager();
+# Example: Initialize 4 AC items for issue #250
+npx tsx scripts/state/update.ts init-ac 250 4
+```
 
-// Update each AC item's status
-// Repeat for each AC (AC-1, AC-2, etc.)
-await manager.updateACStatus(issueNumber, 'AC-1', 'met', 'Verified: tests pass and feature works');
-await manager.updateACStatus(issueNumber, 'AC-2', 'not_met', 'Missing error handling for edge case');
+```bash
+# Step 2: Update each AC item's status
+npx tsx scripts/state/update.ts ac <issue-number> <ac-id> <status> "<notes>"
 
-console.log('AC status updated for issue #' + issueNumber);
-"
+# Examples:
+npx tsx scripts/state/update.ts ac 250 AC-1 met "Verified: tests pass and feature works"
+npx tsx scripts/state/update.ts ac 250 AC-2 not_met "Missing error handling for edge case"
+npx tsx scripts/state/update.ts ac 250 AC-3 blocked "Waiting on upstream dependency"
 ```
 
 **Status mapping:**
-- `MET` → `'met'`
-- `PARTIALLY_MET` → `'not_met'` (with notes explaining what's missing)
-- `NOT_MET` → `'not_met'`
-- `BLOCKED` → `'blocked'` (external dependency issue)
+- `MET` → `met`
+- `PARTIALLY_MET` → `not_met` (with notes explaining what's missing)
+- `NOT_MET` → `not_met`
+- `BLOCKED` → `blocked` (external dependency issue)
 
 **Why this matters:** Updating AC status in state enables:
 - Dashboard shows real-time AC progress per issue
@@ -811,8 +812,8 @@ console.log('AC status updated for issue #' + issueNumber);
 - Summary badges show "X/Y met" status
 
 **If issue has no stored AC:**
-- Log a warning: "Issue #N has no stored AC - run /spec to extract AC first"
-- Continue with QA but note the gap
+- Run `init-ac` first to create the AC items
+- Then update each AC status individually
 
 ### 4. Failure Path & Edge Case Testing (REQUIRED)
 
