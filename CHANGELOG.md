@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pre-PR lint validation in `/exec` skill (#250)
+  - Adds `npm run lint` to pre-PR quality gates (build → lint → test order)
+  - Catches ESLint errors locally before they fail CI
+  - Graceful skip for projects without lint script
+  - Prevents wasted quality loop iterations from lint failures
+- AC status management commands for state CLI
+  - `npx tsx scripts/state/update.ts init-ac <issue> <count>` - Initialize AC items
+  - `npx tsx scripts/state/update.ts ac <issue> <ac-id> <status> <notes>` - Update AC status
+  - Enables `/qa` to persist AC verification status to workflow state
 - Scope assessment for `/spec` to catch overscoped issues early (#239)
   - Non-Goals section parsing with warnings if missing
   - Feature count detection via AC clustering, title verbs, directory spread
