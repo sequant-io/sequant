@@ -12,9 +12,10 @@ allowed-tools:
   - Grep
   - Edit
   - Write
-  # Build and test
+  # Build, lint, and test
   - Bash(npm test:*)
   - Bash(npm run build:*)
+  - Bash(npm run lint:*)
   - Bash(npm install:*)
   - Bash(npx tsc:*)
   # Git operations
@@ -793,9 +794,20 @@ If your project uses a database MCP (e.g., Supabase, Postgres):
 ### 3. Checks-first Mindset
 
 - Before and after meaningful changes, plan to run:
-  - `npm test`
+  - `npm run build` - TypeScript compilation
+  - `npm run lint` - ESLint validation (catches unused imports, formatting issues)
+  - `npm test` - Run relevant tests
 - For larger changes or anything that might impact build/runtime:
   - Suggest running `npm run build` and interpret any errors.
+
+**Pre-PR Quality Gates (REQUIRED):**
+
+Before creating a PR, run ALL checks in this order:
+1. `npm run build` - Must pass (no TypeScript errors)
+2. `npm run lint` - Must pass (no ESLint errors)
+3. `npm test` - Must pass (all tests green)
+
+If any check fails, fix the issues before creating the PR.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
@@ -922,14 +934,102 @@ done
 | `quality-checks.sh` | ✅ OK | ⚠️ 2 warnings | ✅ All used | ✅ OK |
 ```
 
+### 3d. Lint Check (REQUIRED before PR)
+
+**Purpose:** Catch ESLint errors locally before they fail CI. This prevents wasted quality loop iterations from lint failures.
+
+**When to run:** Before every PR creation. Run after `npm run build` succeeds, before `npm test`.
+
+**Execution:**
+
+```bash
+# Run lint check
+npm run lint
+
+# If lint script doesn't exist, gracefully skip
+if ! npm run lint 2>/dev/null; then
+  if npm run --list 2>/dev/null | grep -q "lint"; then
+    echo "❌ Lint failed - fix issues before PR"
+    # Show specific errors
+    npm run lint 2>&1 | head -50
+  else
+    echo "ℹ️ No lint script found - skipping lint check"
+  fi
+fi
+```
+
+**Graceful Skip Logic (AC-4):**
+
+Not all projects have a lint script. Handle this gracefully:
+
+| Scenario | Behavior |
+|----------|----------|
+| `npm run lint` passes | ✅ Continue to tests |
+| `npm run lint` fails with errors | ❌ Fix errors before PR |
+| No `lint` script in package.json | ⚠️ Skip lint, log "No lint script found" |
+| Lint script exists but times out | ⚠️ Log warning, continue |
+
+**Detection of lint script:**
+
+```bash
+# Check if lint script exists
+if npm run --list 2>/dev/null | grep -qE "^\s*lint\b"; then
+  echo "Lint script found - running npm run lint"
+  npm run lint
+else
+  echo "ℹ️ No lint script in package.json - skipping lint check"
+fi
+```
+
+**If lint fails:**
+
+1. **Read the error output** - identify which files/lines have issues
+2. **Common lint errors to fix:**
+   - Unused imports → Remove them
+   - Unused variables → Remove or use them
+   - Missing semicolons → Add them (if required by config)
+   - Formatting issues → Run auto-fix if available
+3. **Fix the issues** - make minimal changes
+4. **Re-run lint** - verify all errors are resolved
+5. **Then continue** - to `npm test`
+
+**Auto-fix consideration:**
+
+Some projects support `npm run lint -- --fix`. However, auto-fix should be used cautiously:
+- ✅ Safe: formatting fixes, import ordering
+- ⚠️ Caution: removing unused code (verify it's truly unused)
+- ❌ Avoid: auto-fixing semantic errors without review
+
+**Include in progress summary:**
+
+```markdown
+### Lint Results
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| ESLint | ✅ Passed | 0 errors, 0 warnings |
+```
+
+Or if issues were found and fixed:
+
+```markdown
+### Lint Results
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| ESLint | ✅ Passed (after fixes) | Fixed 2 unused imports in `src/lib/scope/index.ts` |
+```
+
 ### 4. Implementation Loop
 
 - Implement in **small, incremental diffs**.
 - Prefer touching the minimal number of files required.
 - Align with repository conventions described in CLAUDE.md (naming, patterns, etc.).
 - After each meaningful change:
-  1. Run `npm test` (and optionally `npm run build`).
-  2. If checks fail:
+  1. Run `npm run build` (if TypeScript changes)
+  2. Run `npm run lint` (catches unused imports early)
+  3. Run `npm test`
+  4. If checks fail:
      - Inspect the failure output.
      - Identify the root cause.
      - Apply small, targeted fixes.
@@ -1344,7 +1444,7 @@ npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
 - [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
-- [ ] **Test/Build Results** - Output from `npm test` and `npm run build`
+- [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
 - [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
