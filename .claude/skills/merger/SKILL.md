@@ -11,7 +11,6 @@ allowed-tools:
   - Bash(gh issue:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
-  - Task
   - Read
   - Grep
   - Glob

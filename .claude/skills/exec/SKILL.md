@@ -38,7 +38,7 @@ allowed-tools:
   - mcp__context7__*  # Library documentation lookup - falls back to web search if unavailable
   - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
   # Task management
-  - Task
+  - Task(general-purpose)
   - TodoWrite
 ---
 

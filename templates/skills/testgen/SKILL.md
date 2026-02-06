@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(git worktree list:*)
   - Bash(ls:*)
   - Bash(mkdir:*)
+  - Task(general-purpose)
 ---
 
 # Test Generation Command

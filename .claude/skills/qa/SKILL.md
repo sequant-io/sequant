@@ -20,7 +20,7 @@ allowed-tools:
   - Bash(semgrep:*)
   - Bash(npx semgrep:*)
   - Bash(npx tsx scripts/semgrep-scan.ts:*)
-  - Task
+  - Task(general-purpose)
   - AgentOutputTool
 ---
 

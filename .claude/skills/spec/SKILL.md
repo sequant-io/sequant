@@ -13,7 +13,7 @@ allowed-tools:
   - Bash(gh label:*)
   - Bash(git worktree:*)
   - Bash(git -C:*)
-  - Task
+  - Task(Explore)
   - AgentOutputTool
 ---
 

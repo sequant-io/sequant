@@ -9,7 +9,6 @@ allowed-tools:
   - Read
   - Glob
   - Grep
-  - Task
   - Bash(git diff:*)
   - Bash(git status:*)
   - Bash(git log:*)
