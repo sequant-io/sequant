@@ -43,7 +43,21 @@ export type {
   IssueStatus,
   PRInfo,
   LoopState,
+  PhaseMarker,
 } from "./lib/workflow/state-schema.js";
+// Phase detection exports
+export {
+  formatPhaseMarker,
+  parsePhaseMarkers,
+  detectPhaseFromComments,
+  getPhaseMap,
+  getCompletedPhasesFromComments,
+  getResumablePhases,
+  isPhaseCompletedOrPast,
+  getIssuePhase,
+  getCompletedPhases,
+  getResumablePhasesForIssue,
+} from "./lib/workflow/phase-detection.js";
 export {
   createStateHook,
   isOrchestrated,
