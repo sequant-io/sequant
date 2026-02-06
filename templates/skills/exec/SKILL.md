@@ -63,7 +63,7 @@ When invoked as `/exec`, your job is to:
 ```bash
 # Check for existing phase markers
 phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
-  grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | tail -1)
+  grep -o '{[^}]*}' | grep '"phase"' | tail -1)
 
 if [[ -n "$phase_data" ]]; then
   phase=$(echo "$phase_data" | jq -r '.phase')

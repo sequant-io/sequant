@@ -45,13 +45,13 @@ When invoked as `/qa`, your job is to:
 # Check for existing phase markers
 comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
 exec_completed=$(echo "$comments_json" | \
-  grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | \
+  grep -o '{[^}]*}' | grep '"phase"' | \
   jq -r 'select(.phase == "exec" and .status == "completed")' 2>/dev/null)
 
 if [[ -z "$exec_completed" ]]; then
   # Check if any exec marker exists at all
   exec_any=$(echo "$comments_json" | \
-    grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | \
+    grep -o '{[^}]*}' | grep '"phase"' | \
     jq -r 'select(.phase == "exec")' 2>/dev/null)
 
   if [[ -n "$exec_any" ]]; then

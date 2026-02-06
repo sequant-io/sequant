@@ -171,7 +171,7 @@ This skill acts as an **orchestrator** and sets environment variables for child 
 ```bash
 # Get all phase markers from issue comments
 comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
-markers=$(echo "$comments_json" | grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}')
+markers=$(echo "$comments_json" | grep -o '{[^}]*}' | grep '"phase"')
 
 if [[ -n "$markers" ]]; then
   echo "Phase markers detected:"
