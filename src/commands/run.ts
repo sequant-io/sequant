@@ -227,6 +227,32 @@ export function getWorktreeDiffStats(worktreePath: string): {
 }
 
 /**
+ * Filter phases based on resume status.
+ *
+ * When `resume` is true, calls `getResumablePhasesForIssue` to determine
+ * which phases have already completed (via GitHub issue comment markers)
+ * and removes them from the execution list.
+ *
+ * @param issueNumber - GitHub issue number
+ * @param phases - The phases to potentially filter
+ * @param resume - Whether the --resume flag is set
+ * @returns Object with filtered phases and any skipped phases
+ */
+export function filterResumedPhases(
+  issueNumber: number,
+  phases: Phase[],
+  resume: boolean,
+): { phases: Phase[]; skipped: Phase[] } {
+  if (!resume) {
+    return { phases: [...phases], skipped: [] };
+  }
+
+  const resumable = getResumablePhasesForIssue(issueNumber, phases) as Phase[];
+  const skipped = phases.filter((p) => !resumable.includes(p));
+  return { phases: resumable, skipped };
+}
+
+/**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
@@ -2339,21 +2365,21 @@ async function runIssueWithLogging(
 
   // Resume: filter out completed phases if --resume flag is set
   if (options.resume) {
-    const resumable = getResumablePhasesForIssue(
-      issueNumber,
-      phases,
-    ) as Phase[];
-    const skipped = phases.filter((p) => !resumable.includes(p));
-    if (skipped.length > 0) {
+    const resumeResult = filterResumedPhases(issueNumber, phases, true);
+    if (resumeResult.skipped.length > 0) {
       console.log(
         chalk.gray(
-          `    Resume: skipping completed phases: ${skipped.join(", ")}`,
+          `    Resume: skipping completed phases: ${resumeResult.skipped.join(", ")}`,
         ),
       );
-      phases = resumable;
+      phases = resumeResult.phases;
     }
     // Also skip spec if it was auto-detected as completed
-    if (specAlreadyRan && skipped.length === 0 && phases.length === 0) {
+    if (
+      specAlreadyRan &&
+      resumeResult.skipped.length === 0 &&
+      resumeResult.phases.length === 0
+    ) {
       console.log(chalk.gray(`    Resume: all phases already completed`));
     }
   }
