@@ -97,7 +97,7 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 ```bash
 # Get all phase markers from issue comments
 comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
-markers=$(echo "$comments_json" | grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}')
+markers=$(echo "$comments_json" | grep -o '{[^}]*}' | grep '"phase"')
 
 if [[ -n "$markers" ]]; then
   echo "Phase markers detected:"
