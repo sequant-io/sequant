@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-02-05
+
 ### Added
 
 - Pre-PR lint validation in `/exec` skill (#250)
@@ -28,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--skip-scope-check` flag to bypass assessment
   - State persistence via `StateManager.updateScopeAssessment()`
 - Animated spinners with elapsed time for `sequant run` phase execution (#244)
+- Integration tests for testgen auto-detection workflow (#252)
 
 ### Fixed
 
@@ -35,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added orchestrated mode support: reads QA findings from GitHub issue comments when `SEQUANT_ORCHESTRATOR` is set
   - Preserved standalone mode: continues reading from `/tmp/claude-issue-<N>.log` when run interactively
   - Improved jq query to use `startswith()` instead of `contains()` to avoid false positives
+- Pre-PR lint validation catches CI failures early (#253)
 
 ### Improved
 
@@ -49,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Graceful fallback to static text in CI/non-TTY/verbose modes
   - New `PhaseSpinner` class in `src/lib/phase-spinner.ts`
   - 35 unit tests covering spinner lifecycle and edge cases
+
+### Refactored
+
+- Decoupled derived AC extraction from hardcoded dimensions (#251)
 
 ## [1.13.0] - 2026-02-01
 
@@ -682,7 +690,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/admarble/sequant/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/admarble/sequant/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/admarble/sequant/compare/v1.13.0...v1.14.0
+[1.13.0]: https://github.com/admarble/sequant/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/admarble/sequant/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/admarble/sequant/compare/v1.10.1...v1.11.0
 [1.10.1]: https://github.com/admarble/sequant/compare/v1.10.0...v1.10.1

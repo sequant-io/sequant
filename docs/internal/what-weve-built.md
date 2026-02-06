@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.13.5
+# What We've Built: Sequant v1.14.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -10,13 +10,13 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 
 | Metric | Count |
 |--------|-------|
-| Slash Commands | 18 |
-| CLI Commands | 9 |
-| Core Library Modules | 39 |
-| Test Files | 42 |
-| Documentation Files | 26+ |
+| Slash Commands | 19 |
+| CLI Commands | 10 |
+| Core Library Modules | 44 |
+| Test Files | 45 |
+| Documentation Files | 38 |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~17,000+ |
+| Lines of TypeScript | ~36,600 |
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)
@@ -72,7 +72,7 @@ Sequant brings **discipline without friction**:
 
 ## Skill Commands
 
-Sequant provides **17 slash commands** organized by purpose. Run them inside Claude Code.
+Sequant provides **19 slash commands** organized by purpose. Run them inside Claude Code.
 
 ### Core Workflow
 
@@ -289,7 +289,7 @@ Full execution logs with automatic rotation:
 
 ## Testing & Quality
 
-**27 test files** ensure reliability.
+**45 test files** ensure reliability.
 
 ### Test Coverage
 
@@ -672,8 +672,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.13.0+)
+### Recent Additions (v1.14.0)
+- **Scope assessment** — `/spec` now detects overscoped issues via AC clustering, title verbs, and directory spread. Requires Non-Goals section. Verdicts: `SCOPE_OK`, `SCOPE_WARNING`, `SCOPE_SPLIT_RECOMMENDED`. Configurable thresholds in `.sequant/settings.json`. `--skip-scope-check` flag to bypass.
+- **AC status management CLI** — New `init-ac` and `ac` commands for state CLI enable `/qa` to persist acceptance criteria verification status to workflow state.
+- **Pre-PR lint validation** — `/exec` adds `npm run lint` to pre-PR quality gates (build → lint → test order). Catches ESLint errors locally before CI. Graceful skip for projects without lint script.
 - **Animated phase spinners** — `sequant run` now shows animated `ora` spinners with elapsed time during phase execution. Spinner cycles (⠋ ⠙ ⠹ ⠸) with elapsed time updating every 5 seconds. Phase progress indicators (1/3, 2/3, 3/3) and completion states with duration. Graceful fallback to static text in CI/non-TTY/verbose modes. 35 unit tests for `PhaseSpinner` class.
+- **`/loop` orchestrated mode** — `/loop` now reads QA findings from GitHub issue comments when `SEQUANT_ORCHESTRATOR` is set, fixing failures under `sequant run`.
+- **Better SDK error diagnostics** — Captures stderr from Claude Code CLI for debugging unexpected exits. Includes stderr in error messages (up to 500 chars). Streams stderr in real-time with `--verbose`.
+- **Derived AC decoupling** — Refactored derived AC extraction from hardcoded quality dimensions to a flexible model (#251).
+
+### Earlier Additions (v1.13.0)
 - **QA caching** — `/qa` now caches expensive check results (type safety, security, Semgrep) keyed by git diff hash + config hash. Re-runs skip unchanged checks for faster iteration. `--no-cache` forces fresh run. Cache hit/miss reported in output. Graceful degradation on corrupted cache. 36 unit tests.
 - **Testgen auto-detection** — `/spec` and `/solve` automatically recommend `--testgen` phase when issue has testable ACs (UI components, API endpoints, validation logic). Reduces manual workflow configuration.
 - **Enhanced CLI UI** — New `cli-ui.ts` module provides animated spinners (`ora`), decorative boxes (`boxen`), ASCII tables (`cli-table3`), gradient branding, and progress bars. All CLI commands (`doctor`, `status`, `stats`, `logs`, `init`) use consistent styling with graceful degradation for CI, non-TTY, `--no-color`, `--verbose`, and Windows legacy terminals. 73 unit tests cover all UI functions.
@@ -770,18 +778,18 @@ npm run build
 
 | What | How Many |
 |------|----------|
-| Slash Commands | 18 |
-| CLI Commands | 9 |
-| Library Modules | 39 |
-| Test Files | 42 |
-| Docs Files | 26+ |
+| Slash Commands | 19 |
+| CLI Commands | 10 |
+| Library Modules | 44 |
+| Test Files | 45 |
+| Docs Files | 38 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
 | Hook Lines | 450+ |
 | Dashboard Lines | 1000+ |
-| TypeScript LOC | ~17,000+ |
+| TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.13.5
+**Current Version:** 1.14.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -791,10 +799,10 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.13.5                                │
+│                              SEQUANT v1.14.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (17)              CLI (9)                 LIBRARIES (39)            │
+│  SKILLS (19)              CLI (10)                LIBRARIES (44)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -802,7 +810,7 @@ npm run build
 │  /qa                      sequant status          metrics-writer.ts         │
 │  /fullsolve               sequant update          ac-parser.ts              │
 │  /solve                   sequant state           project-name.ts           │
-│  /loop                    sequant stats           ... and 32 more           │
+│  /loop                    sequant stats           ... and 37 more           │
 │  /testgen                 sequant logs                                      │
 │  /verify                  sequant dashboard       HOOKS (450+ lines)        │
 │  /docs                                            ─────────────────         │
@@ -822,7 +830,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 42  │  DOCS: 26+  │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 45  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
