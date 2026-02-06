@@ -186,6 +186,10 @@ program
     "Base branch for worktree creation (default: main or settings.run.defaultBase)",
   )
   .option("--no-mcp", "Disable MCP server injection in headless mode")
+  .option(
+    "--resume",
+    "Resume from last completed phase (reads phase markers from GitHub)",
+  )
   .action(runCommand);
 
 program

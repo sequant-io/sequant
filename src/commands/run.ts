@@ -38,6 +38,7 @@ import {
   type MetricPhase,
   determineOutcome,
 } from "../lib/workflow/metrics-schema.js";
+import { getResumablePhasesForIssue } from "../lib/workflow/phase-detection.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { PhaseSpinner } from "../lib/phase-spinner.js";
 
@@ -860,6 +861,11 @@ interface RunOptions {
    * Resolution priority: this CLI flag → settings.run.mcp → default (true)
    */
   noMcp?: boolean;
+  /**
+   * Resume from last completed phase.
+   * Reads phase markers from GitHub issue comments and skips completed phases.
+   */
+  resume?: boolean;
 }
 
 /**
@@ -2328,6 +2334,27 @@ async function runIssueWithLogging(
     phases = determinePhasesForIssue(config.phases, labels, options);
     if (phases.length !== config.phases.length) {
       console.log(chalk.gray(`    Phases adjusted: ${phases.join(" → ")}`));
+    }
+  }
+
+  // Resume: filter out completed phases if --resume flag is set
+  if (options.resume) {
+    const resumable = getResumablePhasesForIssue(
+      issueNumber,
+      phases,
+    ) as Phase[];
+    const skipped = phases.filter((p) => !resumable.includes(p));
+    if (skipped.length > 0) {
+      console.log(
+        chalk.gray(
+          `    Resume: skipping completed phases: ${skipped.join(", ")}`,
+        ),
+      );
+      phases = resumable;
+    }
+    // Also skip spec if it was auto-detected as completed
+    if (specAlreadyRan && skipped.length === 0 && phases.length === 0) {
+      console.log(chalk.gray(`    Resume: all phases already completed`));
     }
   }
 

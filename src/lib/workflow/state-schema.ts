@@ -81,6 +81,26 @@ export const PhaseSchema = z.enum([
 export type Phase = z.infer<typeof PhaseSchema>;
 
 /**
+ * Phase marker stored in GitHub issue comments for cross-session detection.
+ *
+ * Embedded as HTML comments: `<!-- SEQUANT_PHASE: {...} -->`
+ */
+export const PhaseMarkerSchema = z.object({
+  /** The workflow phase */
+  phase: PhaseSchema,
+  /** Phase completion status */
+  status: PhaseStatusSchema,
+  /** ISO 8601 timestamp */
+  timestamp: z.string().datetime(),
+  /** PR number if created during this phase */
+  pr: z.number().int().positive().optional(),
+  /** Error message if phase failed */
+  error: z.string().optional(),
+});
+
+export type PhaseMarker = z.infer<typeof PhaseMarkerSchema>;
+
+/**
  * Individual phase state within an issue
  */
 export const PhaseStateSchema = z.object({

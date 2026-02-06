@@ -30,6 +30,44 @@ When invoked as `/spec`, your job is to:
 3. Identify ambiguities, gaps, or risks.
 4. Draft a GitHub issue comment summarizing AC + the agreed plan.
 
+## Phase Detection (Smart Resumption)
+
+**Before executing**, check if this phase has already been completed by reading phase markers from issue comments:
+
+```bash
+# Check for existing phase markers
+phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
+  grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | tail -1)
+
+if [[ -n "$phase_data" ]]; then
+  phase=$(echo "$phase_data" | jq -r '.phase')
+  status=$(echo "$phase_data" | jq -r '.status')
+
+  # Skip if spec is already completed or a later phase is completed
+  if [[ "$phase" == "spec" && "$status" == "completed" ]] || \
+     [[ "$phase" == "exec" || "$phase" == "test" || "$phase" == "qa" ]]; then
+    echo "⏭️ Spec phase already completed (detected: $phase:$status). Skipping."
+    # Exit early — no work needed
+  fi
+fi
+```
+
+**Behavior:**
+- If `spec:completed` or a later phase is detected → Skip with message
+- If `spec:failed` → Re-run spec (retry)
+- If no markers found → Normal execution (fresh start)
+- If detection fails (API error) → Fall through to normal execution
+
+**Phase Marker Emission:**
+
+When posting the spec plan comment to GitHub, append a phase marker at the end:
+
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"<ISO-8601>"} -->
+```
+
+Include this marker in every `gh issue comment` that represents phase completion.
+
 ## Behavior
 
 When called like `/spec 123`:

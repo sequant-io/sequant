@@ -56,6 +56,55 @@ When invoked as `/exec`, your job is to:
 5. Iterate until the AC appear satisfied or clear blockers are reached.
 6. Draft a progress update for the GitHub issue.
 
+## Phase Detection (Smart Resumption)
+
+**Before executing**, check if this phase has already been completed or if prerequisites are met:
+
+```bash
+# Check for existing phase markers
+phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
+  grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | tail -1)
+
+if [[ -n "$phase_data" ]]; then
+  phase=$(echo "$phase_data" | jq -r '.phase')
+  status=$(echo "$phase_data" | jq -r '.status')
+
+  # Skip if exec is already completed
+  if [[ "$phase" == "exec" && "$status" == "completed" ]]; then
+    echo "⏭️ Exec phase already completed. Skipping."
+    # Exit early — no work needed
+  fi
+
+  # Resume if exec previously failed
+  if [[ "$phase" == "exec" && "$status" == "failed" ]]; then
+    echo "🔄 Exec phase previously failed. Resuming from failure point."
+    # Continue execution — will retry the implementation
+  fi
+fi
+```
+
+**Behavior:**
+- If `exec:completed` → Skip with message
+- If `exec:failed` → Resume (retry implementation)
+- If `spec:completed` (no exec marker) → Normal execution
+- If no markers found → Normal execution (fresh start)
+- If detection fails (API error) → Fall through to normal execution
+
+**Phase Marker Emission:**
+
+When posting the progress update comment to GitHub, append a phase marker at the end:
+
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"<ISO-8601>","pr":<PR_NUMBER>} -->
+```
+
+If exec fails, emit a failure marker:
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"<ISO-8601>","error":"<error message>"} -->
+```
+
+Include this marker in every `gh issue comment` that represents phase completion or failure.
+
 ## Behavior
 
 Invocation:

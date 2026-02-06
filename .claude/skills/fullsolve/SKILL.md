@@ -164,6 +164,52 @@ This skill acts as an **orchestrator** and sets environment variables for child 
 - `/qa`: Skips pre-flight sync, defers GitHub updates
 - `/loop`: Uses provided worktree, defers GitHub updates
 
+## Phase Detection (Smart Resumption)
+
+**Before starting any phase**, detect the current workflow state from GitHub issue comments to enable smart resumption:
+
+```bash
+# Get all phase markers from issue comments
+comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
+markers=$(echo "$comments_json" | grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}')
+
+if [[ -n "$markers" ]]; then
+  echo "Phase markers detected:"
+  echo "$markers" | jq -r '"  \(.phase): \(.status)"'
+
+  # Determine resume point
+  latest_completed=$(echo "$markers" | jq -r 'select(.status == "completed") | .phase' | tail -1)
+  latest_failed=$(echo "$markers" | jq -r 'select(.status == "failed") | .phase' | tail -1)
+
+  echo "Latest completed: ${latest_completed:-none}"
+  echo "Latest failed: ${latest_failed:-none}"
+fi
+```
+
+**Resume Logic:**
+
+| Detected State | Action |
+|---------------|--------|
+| No markers | Start from Phase 1 (spec) — fresh start |
+| `spec:completed` | Skip to Phase 2 (exec) |
+| `exec:completed` | Skip to Phase 3 (test) or Phase 4 (qa) |
+| `exec:failed` | Resume at Phase 2 (exec) — retry |
+| `test:completed` | Skip to Phase 4 (qa) |
+| `qa:completed` | Skip to Phase 5 (PR) |
+| `qa:failed` | Resume at Phase 4 (qa) — retry with /loop |
+| All completed | Skip to PR creation (if no PR exists) |
+
+**Backward Compatibility:**
+- Issues without markers → treat as fresh start (no phase detection)
+- If detection fails (API error) → fall through to standard Phase 0 checks
+
+**Phase Marker Emission:**
+
+When posting progress comments after each phase, append the appropriate marker:
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"<phase>","status":"<completed|failed>","timestamp":"<ISO-8601>"} -->
+```
+
 ## Phase 0: Pre-flight Checks
 
 **CRITICAL after context restoration:** Before starting any work, verify the current git state to avoid duplicate work.

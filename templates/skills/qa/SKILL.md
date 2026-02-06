@@ -37,6 +37,52 @@ When invoked as `/qa`, your job is to:
 4. Assess whether the change is "A+ status" or needs more work.
 5. Draft a GitHub review/QA comment summarizing findings and recommendations.
 
+## Phase Detection (Smart Resumption)
+
+**Before executing**, check if the exec phase has been completed (prerequisite for QA):
+
+```bash
+# Check for existing phase markers
+comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
+exec_completed=$(echo "$comments_json" | \
+  grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | \
+  jq -r 'select(.phase == "exec" and .status == "completed")' 2>/dev/null)
+
+if [[ -z "$exec_completed" ]]; then
+  # Check if any exec marker exists at all
+  exec_any=$(echo "$comments_json" | \
+    grep -oP '<!-- SEQUANT_PHASE: \K\{[^}]+\}' | \
+    jq -r 'select(.phase == "exec")' 2>/dev/null)
+
+  if [[ -n "$exec_any" ]]; then
+    echo "⚠️ Exec phase not completed (status: $(echo "$exec_any" | jq -r '.status')). Run /exec first."
+  else
+    echo "ℹ️ No phase markers found — proceeding with QA (may be a fresh issue or legacy workflow)."
+  fi
+fi
+```
+
+**Behavior:**
+- If `exec:completed` marker found → Normal QA execution
+- If `exec:failed` or `exec:in_progress` → Warn "Exec not complete, run /exec first" (but don't block — QA may still be useful for partial review)
+- If no markers found → Normal execution (backward compatible)
+- If detection fails (API error) → Fall through to normal execution
+
+**Phase Marker Emission:**
+
+When posting the QA review comment to GitHub, append a phase marker at the end:
+
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"<ISO-8601>"} -->
+```
+
+If QA determines AC_NOT_MET, emit:
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"<ISO-8601>","error":"AC_NOT_MET"} -->
+```
+
+Include this marker in every `gh issue comment` that represents QA completion.
+
 ## Behavior
 
 Invocation:
