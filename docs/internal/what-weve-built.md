@@ -13,7 +13,7 @@ Sequant transforms the chaos of AI-assisted development into a structured, repea
 | Slash Commands | 19 |
 | CLI Commands | 10 |
 | Core Library Modules | 44 |
-| Test Files | 45 |
+| Test Files | 47 |
 | Documentation Files | 38 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
@@ -147,7 +147,7 @@ npx sequant              # Or run via npx
 |---------|-------------|
 | `sequant init` | Initialize Sequant in a project (copies templates, creates `.claude/` and `.sequant/`) |
 | `sequant doctor` | Check installation health — prerequisites, closed-issue verification, config validation |
-| `sequant run <issues>` | Execute workflow for issues using Claude Agent SDK (supports `-q` quality loop, `--chain` mode) |
+| `sequant run <issues>` | Execute workflow for issues using Claude Agent SDK (supports `-q` quality loop, `--chain` mode, `--resume` smart resumption) |
 | `sequant status` | Show version, config, tracked issues with cleanup options |
 | `sequant update` | Update skill templates to latest versions |
 | `sequant state` | Manage workflow state (`init`, `rebuild`, `clean`) |
@@ -221,6 +221,8 @@ State management and analytics live in `src/lib/workflow/`:
 | `log-rotation.ts` | Log file rotation and cleanup |
 | `metrics-writer.ts` | Analytics metrics writer |
 | `metrics-schema.ts` | Schema for local analytics data |
+| `phase-detection.ts` | GitHub-based phase marker parsing; powers `--resume` smart resumption across sessions/machines |
+| `qa-cache.ts` | QA check result caching keyed by diff hash + config hash |
 
 ---
 
@@ -299,15 +301,15 @@ Full execution logs with automatic rotation:
 
 ## Testing & Quality
 
-**45 test files** ensure reliability.
+**47 test files** ensure reliability.
 
 ### Test Coverage
 
 | Area | Test Files |
 |------|------------|
-| **Commands** | `init`, `doctor`, `run`, `status`, `state`, `stats` |
+| **Commands** | `init`, `doctor`, `run`, `run-resume`, `status`, `state`, `stats` |
 | **Libraries** | `fs`, `stacks`, `system`, `templates`, `wizard`, `tty`, `shutdown`, `version-check`, `ac-parser`, `ac-linter`, `project-name` |
-| **Workflow** | `state-manager`, `state-utils`, `state-hook`, `log-writer`, `log-rotation`, `metrics-writer` |
+| **Workflow** | `state-manager`, `state-utils`, `state-hook`, `log-writer`, `log-rotation`, `metrics-writer`, `phase-detection`, `qa-cache` |
 | **Integration** | `cli.integration`, `doctor.integration` |
 
 ### Running Tests
@@ -683,6 +685,8 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.14.0)
+- **`--resume` integration tests** — Extracted `filterResumedPhases()` helper from `run.ts` and added 8 integration tests covering the full CLI flag → `getResumablePhasesForIssue` → phase filtering wiring. Tests verify: flag parsing, correct `gh` CLI invocation, completed phase filtering, failed phase retention for retry, all-completed edge case, and graceful fallback on `gh` CLI error.
+- **GitHub-based smart resumption** — `sequant run --resume` reads phase markers from GitHub issue comments to skip completed phases, enabling workflow resumption across sessions, machines, and users. Phase detection library has 32 unit tests; integration path now covered by 8 additional tests.
 - **Sub-agent type restrictions** — Skills now declare `Task(agent_type)` instead of unrestricted `Task` in frontmatter, enforcing principle of least privilege. `/spec` → `Task(Explore)` (read-only), `/qa`/`/exec`/`/testgen` → `Task(general-purpose)`, `/fullsolve` uses `Skill` (no Task). Skills that don't spawn sub-agents (security-review, merger, etc.) have `Task` removed entirely.
 - **Scope assessment** — `/spec` now detects overscoped issues via AC clustering, title verbs, and directory spread. Requires Non-Goals section. Verdicts: `SCOPE_OK`, `SCOPE_WARNING`, `SCOPE_SPLIT_RECOMMENDED`. Configurable thresholds in `.sequant/settings.json`. `--skip-scope-check` flag to bypass.
 - **AC status management CLI** — New `init-ac` and `ac` commands for state CLI enable `/qa` to persist acceptance criteria verification status to workflow state.
@@ -792,7 +796,7 @@ npm run build
 | Slash Commands | 19 |
 | CLI Commands | 10 |
 | Library Modules | 44 |
-| Test Files | 45 |
+| Test Files | 47 |
 | Docs Files | 38 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
@@ -841,7 +845,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 45  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 47  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -851,4 +855,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-06 · `322ef14` docs: document sub-agent type restrictions (#262)*
+*Last updated: 2026-02-06 · `1beaf5e` test(#268): add integration tests for --resume flag (#271)*
