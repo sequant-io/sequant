@@ -13,6 +13,7 @@ allowed-tools:
   - Grep
   - Bash
   - TodoWrite
+  - Skill  # For invoking child skills (/spec, /exec, /test, /qa)
   # Optional MCP tools (enhanced functionality if available)
   - mcp__chrome-devtools__*  # Browser testing - falls back to manual checklist if unavailable
   - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
