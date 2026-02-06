@@ -175,6 +175,37 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 - For user-facing features
 - When documentation is required before merge
 
+## Phase Isolation: Why Fresh Conversations
+
+Each phase runs as a **separate conversation** — a fresh Claude session with no memory of previous phases. This is an intentional architectural decision, not a limitation.
+
+### Why isolation matters
+
+**Prevents context pollution.** If `/exec` remembered everything from `/spec`, stale planning notes ("we considered approach A but rejected it") would compete with actual implementation context for the limited context window. After 10-20 issues, accumulated implicit memory would crowd out the skill instructions and issue content that actually matter.
+
+**Enables honest review.** `/qa` should evaluate the code as it exists, not as the implementer intended it. A fresh conversation forces QA to read the actual diff and AC — not rely on implementation memories that might be wrong or outdated.
+
+**Makes phases composable.** You can run `/qa` without `/spec`, re-run `/exec` after a failed QA, or skip phases entirely. Each phase is self-contained because it gathers its own context from explicit sources.
+
+### How context flows between phases
+
+Instead of implicit memory, sequant uses **explicit, scoped channels**:
+
+| Channel | What it carries | Example |
+|---------|----------------|---------|
+| `state.json` | Phase progress, AC status, PR info | "Issue #42: exec complete, qa pending" |
+| Issue comments | Spec plans, QA verdicts, progress updates | `/spec` posts the implementation plan |
+| Git diff | What actually changed | `/qa` reviews the diff, not a memory of what was coded |
+| Environment variables | Orchestration context | `SEQUANT_WORKTREE`, `SEQUANT_PHASE` |
+
+These channels are explicit (you can inspect them), scoped (each issue has its own state), and don't accumulate noise across issues.
+
+### Design trade-off
+
+Phase isolation means each phase spends a few seconds re-establishing context (reading the issue, comments, and state). This is slower than carrying memory forward — but it's safer, more predictable, and produces better results because each phase works from ground truth rather than accumulated assumptions.
+
+---
+
 ## Phase Selection
 
 ### Automatic Detection

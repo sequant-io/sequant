@@ -68,6 +68,16 @@ Sequant brings **discipline without friction**:
 - **Quality gates** catch problems before merge
 - **Local state** tracks what's done and what's not
 
+### Phase Isolation by Design
+
+Each phase runs as a **fresh conversation** — no implicit memory carried forward. This is intentional:
+
+- **No context pollution** — stale planning notes don't crowd out implementation context
+- **Honest review** — `/qa` evaluates the actual diff, not the implementer's memory of it
+- **Composable phases** — run `/qa` alone, re-run `/exec` after failure, skip phases freely
+
+Cross-phase context flows through **explicit channels**: `state.json` (phase progress, AC status), GitHub issue comments (spec plans, QA verdicts), git diff (what actually changed), and environment variables (orchestration context). These are inspectable, scoped per issue, and don't accumulate noise.
+
 ---
 
 ## Skill Commands
