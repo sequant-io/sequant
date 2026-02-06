@@ -683,6 +683,7 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.14.0)
+- **Sub-agent type restrictions** — Skills now declare `Task(agent_type)` instead of unrestricted `Task` in frontmatter, enforcing principle of least privilege. `/spec` → `Task(Explore)` (read-only), `/qa`/`/exec`/`/testgen` → `Task(general-purpose)`, `/fullsolve` uses `Skill` (no Task). Skills that don't spawn sub-agents (security-review, merger, etc.) have `Task` removed entirely.
 - **Scope assessment** — `/spec` now detects overscoped issues via AC clustering, title verbs, and directory spread. Requires Non-Goals section. Verdicts: `SCOPE_OK`, `SCOPE_WARNING`, `SCOPE_SPLIT_RECOMMENDED`. Configurable thresholds in `.sequant/settings.json`. `--skip-scope-check` flag to bypass.
 - **AC status management CLI** — New `init-ac` and `ac` commands for state CLI enable `/qa` to persist acceptance criteria verification status to workflow state.
 - **Pre-PR lint validation** — `/exec` adds `npm run lint` to pre-PR quality gates (build → lint → test order). Catches ESLint errors locally before CI. Graceful skip for projects without lint script.

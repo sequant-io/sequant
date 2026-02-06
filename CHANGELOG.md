@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Restrict sub-agent types per skill via `Task(agent_type)` frontmatter (#262)
+  - `/spec` → `Task(Explore)` (read-only research)
+  - `/qa`, `/exec`, `/testgen` → `Task(general-purpose)` (quality checks)
+  - `/fullsolve` → `Skill` only (orchestrator, no direct sub-agents)
+  - Skills without sub-agents (security-review, merger) have `Task` removed
+  - Enforces principle of least privilege per workflow phase
+
 ## [1.14.0] - 2026-02-05
 
 ### Added
