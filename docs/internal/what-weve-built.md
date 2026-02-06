@@ -848,3 +848,7 @@ npm run build
 ---
 
 *Built with obsessive attention to quality gates, because that's kind of the whole point.*
+
+---
+
+*Last updated: 2026-02-06 · `322ef14` docs: document sub-agent type restrictions (#262)*
