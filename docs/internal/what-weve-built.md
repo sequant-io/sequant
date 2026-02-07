@@ -2,7 +2,10 @@
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
-Sequant transforms the chaos of AI-assisted development into a structured, repeatable process. Every GitHub issue becomes a journey through planning, implementation, testing, and review — with quality gates at every step.
+Sequant transforms the chaos of AI-assisted development into
+a structured, repeatable process. Every GitHub issue becomes a
+journey through planning, implementation, testing, and review
+— with quality gates at every step.
 
 ---
 
@@ -76,7 +79,12 @@ Each phase runs as a **fresh conversation** — no implicit memory carried forwa
 - **Honest review** — `/qa` evaluates the actual diff, not the implementer's memory of it
 - **Composable phases** — run `/qa` alone, re-run `/exec` after failure, skip phases freely
 
-Cross-phase context flows through **explicit channels**: `state.json` (phase progress, AC status), GitHub issue comments (spec plans, QA verdicts), git diff (what actually changed), and environment variables (orchestration context). These are inspectable, scoped per issue, and don't accumulate noise.
+Cross-phase context flows through **explicit channels**:
+`state.json` (phase progress, AC status), GitHub issue
+comments (spec plans, QA verdicts), git diff (what actually
+changed), and environment variables (orchestration context).
+These are inspectable, scoped per issue, and don't accumulate
+noise.
 
 ---
 
@@ -90,10 +98,36 @@ The four pillars of the Sequant workflow:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/spec` | **Plan** | Extracts acceptance criteria from issues, **lints AC for vague/unmeasurable terms**, **requires explicit verification methods** (Unit/Integration/Browser/Manual test), **Feature Quality Planning** (6 dimensions: completeness, error handling, code quality, test coverage, best practices, polish), generates Derived ACs, **Scope Assessment** (detects overscoped issues via AC clustering, title verbs, directory spread; requires Non-Goals section; verdicts: `SCOPE_OK`/`SCOPE_WARNING`/`SCOPE_SPLIT_RECOMMENDED`), **content analysis** (title/body patterns → phase recommendations with signal priority: Labels > Solve > Title > Body), **testgen auto-detection** (recommends `/testgen` when ACs have Unit/Integration tests), creates implementation plans, detects conflicts with in-flight work, posts plan comments |
-| `/exec` | **Build** | Creates feature worktrees, implements incrementally, runs tests, **Pre-PR AC verification** (checks each AC addressed before PR), **shell script quality checks**, **mandatory prompt templates** for parallel sub-agents, creates PRs |
-| `/test` | **Verify** | Browser automation with Chrome DevTools, screenshot evidence, **coverage analysis** (warns when files lack tests), graceful fallback to manual checklists |
-| `/qa` | **Review** | Validates against AC, type safety checks, security scans, Semgrep static analysis, scope analysis, CI status awareness, build verification against main. **Caches expensive checks** (skips unchanged on re-run, `--no-cache` to force fresh). Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`, `NEEDS_VERIFICATION`, `SECURITY_CONCERN` |
+| `/spec` | **Plan** | Extracts AC, creates implementation plans, posts to GitHub |
+| `/exec` | **Build** | Creates worktrees, implements incrementally, creates PRs |
+| `/test` | **Verify** | Browser automation via Chrome DevTools, screenshot evidence |
+| `/qa` | **Review** | Validates AC, runs quality checks, renders merge verdicts |
+
+**`/spec` details:**
+- Lints AC for vague/unmeasurable terms
+- Requires explicit verification methods (Unit/Integration/Browser/Manual)
+- Feature Quality Planning (6 dimensions: completeness, error handling,
+  code quality, test coverage, best practices, polish)
+- Scope Assessment with verdicts: `SCOPE_OK` / `SCOPE_WARNING` /
+  `SCOPE_SPLIT_RECOMMENDED`
+- Content analysis (title/body patterns → phase recommendations)
+- Testgen auto-detection, conflict detection, Derived ACs
+
+**`/exec` details:**
+- Pre-PR AC verification (checks each AC before PR creation)
+- Shell script quality checks
+- Mandatory prompt templates for parallel sub-agents
+
+**`/test` details:**
+- Coverage analysis (warns when changed files lack tests)
+- Graceful fallback to manual checklists
+
+**`/qa` details:**
+- Type safety, security scans, Semgrep static analysis
+- CI status awareness, build verification against main
+- Caches expensive checks (`--no-cache` to force fresh)
+- Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`,
+  `NEEDS_VERIFICATION`, `SECURITY_CONCERN`
 
 ### Automation Commands
 
@@ -101,36 +135,36 @@ For when you want to go hands-off:
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/fullsolve` | **End-to-End** | Orchestrates spec→exec→test→qa with auto-fix loops, max iteration limits, progress tracking |
-| `/solve` | **Advisor** | Analyzes issue labels and content, recommends optimal workflow (including `--testgen` for features with testable ACs), outputs ready-to-run CLI commands |
-| `/loop` | **Quality Loop** | Parses test/QA findings, applies fixes, re-validates until quality gates pass |
+| `/fullsolve` | **End-to-End** | Orchestrates spec→exec→test→qa with auto-fix loops |
+| `/solve` | **Advisor** | Recommends optimal workflow, outputs CLI commands |
+| `/loop` | **Quality Loop** | Parses findings, applies fixes, re-validates |
 
 ### Testing & Verification
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/testgen` | **Test Generator** | Creates test stubs from `/spec` verification criteria, **haiku sub-agents** for cost-efficient generation (~90% token savings), auto-recommended by `/spec` when ACs need automated tests |
-| `/verify` | **CLI Verification** | Runs CLI commands, captures output, posts evidence to issues |
-| `/docs` | **Documentation** | Auto-detects doc type, generates admin-facing operational docs |
+| `/testgen` | **Test Generator** | Creates stubs from `/spec` verification criteria |
+| `/verify` | **CLI Verification** | Runs commands, captures output, posts evidence |
+| `/docs` | **Documentation** | Auto-detects doc type, generates operational docs |
 
 ### Analysis & Utilities
 
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
-| `/assess` | **Triage** | Determines current phase, detects existing artifacts, recommends next action |
-| `/clean` | **Cleanup** | Archives stale files, verifies build, commits changes |
-| `/improve` | **Discovery** | Scans for issues (type safety, tests, docs), creates GitHub issues, offers execution |
-| `/reflect` | **Learning** | Analyzes session effectiveness, proposes documentation/process improvements |
-| `/security-review` | **Security Audit** | Domain-specific checklists (auth, API, admin), threat modeling |
-| `/setup` | **Initialize** | Creates worktrees directory, copies constitution template, auto-detects project name and stack, injects stack-specific notes; `--interactive` mode for guided setup, multi-stack support for monorepos |
-| `/merger` | **Integration** | Multi-issue merge with conflict detection, dependency ordering, worktree cleanup |
-| `/upstream` | **Release Tracking** | Monitors Claude Code releases, detects breaking changes/opportunities, auto-creates issues for sequant maintainers |
+| `/assess` | **Triage** | Detects current phase, recommends next action |
+| `/clean` | **Cleanup** | Archives stale files, verifies build, commits |
+| `/improve` | **Discovery** | Scans for issues, creates GitHub issues |
+| `/reflect` | **Learning** | Analyzes session effectiveness |
+| `/security-review` | **Security** | Domain-specific checklists, threat modeling |
+| `/setup` | **Initialize** | Creates worktrees, copies templates, detects stack |
+| `/merger` | **Integration** | Multi-issue merge with conflict detection |
+| `/upstream` | **Tracking** | Monitors Claude Code releases, creates issues |
 
 ### Shared Resources
 
-Skills share common references stored in `skills/_shared/`:
-- `references/subagent-types.md` — Valid Claude Code sub-agent types
-- `references/prompt-templates.md` — Task-specific templates for sub-agent spawning (component, type, CLI, test, refactor)
+Skills share common references in `skills/_shared/`:
+- `subagent-types.md` — Valid sub-agent types
+- `prompt-templates.md` — Task-specific sub-agent templates
 
 ---
 
@@ -147,7 +181,7 @@ npx sequant              # Or run via npx
 |---------|-------------|
 | `sequant init` | Initialize Sequant in a project (copies templates, creates `.claude/` and `.sequant/`) |
 | `sequant doctor` | Check installation health — prerequisites, closed-issue verification, config validation |
-| `sequant run <issues>` | Execute workflow for issues using Claude Agent SDK (supports `-q` quality loop, `--chain` mode, `--resume` smart resumption) |
+| `sequant run <issues>` | Execute workflow (`-q` quality loop, `--chain`, `--resume`) |
 | `sequant status` | Show version, config, tracked issues with cleanup options |
 | `sequant update` | Update skill templates to latest versions |
 | `sequant state` | Manage workflow state (`init`, `rebuild`, `clean`) |
@@ -184,8 +218,8 @@ The engine room lives in `src/lib/`. These modules power everything.
 
 | Module | Purpose |
 |--------|---------|
-| `stacks.ts` | Detects project type (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go), package manager, provides build/test commands, stack-specific constitution notes |
-| `semgrep.ts` | Stack-aware Semgrep static analysis integration — ruleset mapping, graceful degradation, custom rules support, verdict contribution |
+| `stacks.ts` | Detects project type and package manager, provides build/test commands |
+| `semgrep.ts` | Stack-aware Semgrep static analysis with custom rules support |
 | `templates.ts` | Copies skill templates to `.claude/`, handles variable substitution |
 | `manifest.ts` | Tracks installed skills and versions in `.sequant-manifest.json` |
 | `settings.ts` | Reads/writes `.sequant/settings.json` for persistent configuration |
@@ -197,7 +231,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `shutdown.ts` | Signal handling for graceful shutdown |
 | `version-check.ts` | Checks for updates, warns on stale local installs |
 | `cli-ui.ts` | Centralized CLI UI (spinners, boxes, tables, colors, ASCII branding) with graceful degradation |
-| `phase-spinner.ts` | Animated phase execution spinner with elapsed time, progress indicators, and graceful TTY fallback |
+| `phase-spinner.ts` | Animated phase spinner with elapsed time and TTY fallback |
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
 | `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
 | `content-analyzer.ts` | Analyzes issue title/body for phase-relevant keywords (UI, security, complexity patterns) |
@@ -221,14 +255,16 @@ State management and analytics live in `src/lib/workflow/`:
 | `log-rotation.ts` | Log file rotation and cleanup |
 | `metrics-writer.ts` | Analytics metrics writer |
 | `metrics-schema.ts` | Schema for local analytics data |
-| `phase-detection.ts` | GitHub-based phase marker parsing; powers `--resume` smart resumption across sessions/machines |
+| `phase-detection.ts` | Phase marker parsing; powers `--resume` resumption |
 | `qa-cache.ts` | QA check result caching keyed by diff hash + config hash |
 
 ---
 
 ## Stack Support
 
-Sequant auto-detects your project type and configures itself appropriately. Each stack injects specific testing, linting, and build notes into your constitution template.
+Sequant auto-detects your project type and configures itself.
+Each stack injects testing, linting, and build notes into your
+constitution template.
 
 | Stack | Detection | Build Command | Test Command |
 |-------|-----------|---------------|--------------|
@@ -308,8 +344,8 @@ Full execution logs with automatic rotation:
 | Area | Test Files |
 |------|------------|
 | **Commands** | `init`, `doctor`, `run`, `run-resume`, `status`, `state`, `stats` |
-| **Libraries** | `fs`, `stacks`, `system`, `templates`, `wizard`, `tty`, `shutdown`, `version-check`, `ac-parser`, `ac-linter`, `project-name` |
-| **Workflow** | `state-manager`, `state-utils`, `state-hook`, `log-writer`, `log-rotation`, `metrics-writer`, `phase-detection`, `qa-cache` |
+| **Libraries** | `fs`, `stacks`, `system`, `templates`, `wizard`, `tty`, `shutdown`, `version-check`, `ac-parser`, `ac-linter` |
+| **Workflow** | `state-manager`, `state-utils`, `state-hook`, `log-writer`, `log-rotation`, `metrics-writer`, `phase-detection` |
 | **Integration** | `cli.integration`, `doctor.integration` |
 
 ### Running Tests
@@ -446,7 +482,9 @@ Issue #123 ──► /spec ──► Plan Posted ──► User Approves
 
 ## Hooks System
 
-The **pre-tool hook** (`templates/hooks/pre-tool.sh`) is a 450+ line security and quality enforcement system. It intercepts every tool call before execution.
+The **pre-tool hook** (`templates/hooks/pre-tool.sh`) is a
+450+ line security and quality enforcement system. It intercepts
+every tool call before execution.
 
 ### Security Guardrails
 
@@ -495,11 +533,14 @@ Provides helpful suggestions for common scenarios:
 
 ### Worktree Path Enforcement
 
-When `SEQUANT_WORKTREE` is set (by `sequant run`), blocks file edits outside the designated worktree. Prevents accidental edits to the main repo during feature work.
+When `SEQUANT_WORKTREE` is set (by `sequant run`), blocks
+file edits outside the designated worktree. Prevents accidental
+edits to the main repo during feature work.
 
 ### File Locking for Parallel Agents
 
-Uses `lockf` (macOS) or `flock` (Linux) to prevent concurrent edits to the same file when multiple agents run in parallel.
+Uses `lockf` (macOS) or `flock` (Linux) to prevent concurrent
+edits to the same file when multiple agents run in parallel.
 
 ### Git Reset Protection
 
@@ -641,7 +682,8 @@ Skills include rich guidance documents in `templates/skills/*/references/`:
 - Workflow phase overview
 - Code standards (naming, error handling, testing)
 - Available commands reference
-- **Dynamic stack-specific notes** — Auto-injected based on detected stack (Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go) with testing, linting, and build conventions
+- **Dynamic stack-specific notes** — Auto-injected based on
+  detected stack with testing, linting, and build conventions
 - Space for project-specific customization
 
 ---
@@ -685,36 +727,86 @@ Shell scripts in `templates/scripts/`:
 - **Claude Code Plugin** marketplace listing
 
 ### Recent Additions (v1.14.0)
-- **`--resume` integration tests** — Extracted `filterResumedPhases()` helper from `run.ts` and added 8 integration tests covering the full CLI flag → `getResumablePhasesForIssue` → phase filtering wiring. Tests verify: flag parsing, correct `gh` CLI invocation, completed phase filtering, failed phase retention for retry, all-completed edge case, and graceful fallback on `gh` CLI error.
-- **GitHub-based smart resumption** — `sequant run --resume` reads phase markers from GitHub issue comments to skip completed phases, enabling workflow resumption across sessions, machines, and users. Phase detection library has 32 unit tests; integration path now covered by 8 additional tests.
-- **Sub-agent type restrictions** — Skills now declare `Task(agent_type)` instead of unrestricted `Task` in frontmatter, enforcing principle of least privilege. `/spec` → `Task(Explore)` (read-only), `/qa`/`/exec`/`/testgen` → `Task(general-purpose)`, `/fullsolve` uses `Skill` (no Task). Skills that don't spawn sub-agents (security-review, merger, etc.) have `Task` removed entirely.
-- **Scope assessment** — `/spec` now detects overscoped issues via AC clustering, title verbs, and directory spread. Requires Non-Goals section. Verdicts: `SCOPE_OK`, `SCOPE_WARNING`, `SCOPE_SPLIT_RECOMMENDED`. Configurable thresholds in `.sequant/settings.json`. `--skip-scope-check` flag to bypass.
-- **AC status management CLI** — New `init-ac` and `ac` commands for state CLI enable `/qa` to persist acceptance criteria verification status to workflow state.
-- **Pre-PR lint validation** — `/exec` adds `npm run lint` to pre-PR quality gates (build → lint → test order). Catches ESLint errors locally before CI. Graceful skip for projects without lint script.
-- **Animated phase spinners** — `sequant run` now shows animated `ora` spinners with elapsed time during phase execution. Spinner cycles (⠋ ⠙ ⠹ ⠸) with elapsed time updating every 5 seconds. Phase progress indicators (1/3, 2/3, 3/3) and completion states with duration. Graceful fallback to static text in CI/non-TTY/verbose modes. 35 unit tests for `PhaseSpinner` class.
-- **`/loop` orchestrated mode** — `/loop` now reads QA findings from GitHub issue comments when `SEQUANT_ORCHESTRATOR` is set, fixing failures under `sequant run`.
-- **Better SDK error diagnostics** — Captures stderr from Claude Code CLI for debugging unexpected exits. Includes stderr in error messages (up to 500 chars). Streams stderr in real-time with `--verbose`.
-- **Derived AC decoupling** — Refactored derived AC extraction from hardcoded quality dimensions to a flexible model (#251).
+
+- **GitHub-based smart resumption**
+  - `sequant run --resume` skips completed phases across
+    sessions, machines, and users
+  - Reads phase markers from GitHub issue comments
+  - 32 unit tests + 8 integration tests
+- **`--resume` integration tests**
+  - Extracted `filterResumedPhases()` helper from `run.ts`
+  - Covers: flag parsing, phase filtering, failed phase retry,
+    error fallback
+- **Sub-agent type restrictions**
+  - Skills declare `Task(agent_type)` in frontmatter
+  - `/spec` → `Task(Explore)`, `/exec` → `Task(general-purpose)`
+  - Skills without sub-agents have `Task` removed entirely
+- **Scope assessment**
+  - Detects overscoped issues via AC clustering and title verbs
+  - Verdicts: `SCOPE_OK` / `SCOPE_WARNING` /
+    `SCOPE_SPLIT_RECOMMENDED`
+  - `--skip-scope-check` flag to bypass
+- **AC status management CLI**
+  - `init-ac` and `ac` commands for state CLI
+  - `/qa` persists AC verification status to workflow state
+- **Pre-PR lint validation**
+  - `npm run lint` added to quality gates (build → lint → test)
+  - Graceful skip for projects without lint script
+- **Animated phase spinners**
+  - `ora` spinners with elapsed time during `sequant run`
+  - Progress indicators (1/3, 2/3, 3/3), TTY fallback
+  - 35 unit tests
+- **`/loop` orchestrated mode** — reads QA findings from
+  GitHub comments when `SEQUANT_ORCHESTRATOR` is set
+- **Better SDK error diagnostics** — captures stderr from
+  Claude Code CLI (up to 500 chars), streams with `--verbose`
+- **Derived AC decoupling** — flexible model replacing
+  hardcoded quality dimensions (#251)
 
 ### Earlier Additions (v1.13.0)
-- **QA caching** — `/qa` now caches expensive check results (type safety, security, Semgrep) keyed by git diff hash + config hash. Re-runs skip unchanged checks for faster iteration. `--no-cache` forces fresh run. Cache hit/miss reported in output. Graceful degradation on corrupted cache. 36 unit tests.
-- **Testgen auto-detection** — `/spec` and `/solve` automatically recommend `--testgen` phase when issue has testable ACs (UI components, API endpoints, validation logic). Reduces manual workflow configuration.
-- **Enhanced CLI UI** — New `cli-ui.ts` module provides animated spinners (`ora`), decorative boxes (`boxen`), ASCII tables (`cli-table3`), gradient branding, and progress bars. All CLI commands (`doctor`, `status`, `stats`, `logs`, `init`) use consistent styling with graceful degradation for CI, non-TTY, `--no-color`, `--verbose`, and Windows legacy terminals. 73 unit tests cover all UI functions.
-- **Feature Quality Planning** — `/spec` now includes a comprehensive quality planning section with 6 dimensions (Completeness, Error Handling, Code Quality, Test Coverage, Best Practices, Polish). Generates Derived ACs from quality checklist items. `/exec` references the quality plan during implementation and explicitly extracts/tracks derived ACs in Pre-PR verification. `/qa` verifies quality plan items with threshold-based status (Complete ≥80%, Partial ≥50%, Not Addressed <50%) and includes derived ACs in AC Coverage table with source attribution
-- **Skill command verification** — `/qa` now detects skill file changes (`.claude/skills/**/*.md`), extracts referenced CLI commands, validates JSON field names against `--help` output, and blocks `READY_FOR_MERGE` if commands have invalid syntax or non-existent fields (prevents bugs like #178's `conclusion` field issue)
-- **Build verification against main** — `/qa` now verifies if build failures are regressions or pre-existing issues on main branch, preventing false "unrelated to our changes" dismissals
-- **CI status awareness** — `/qa` checks GitHub CI status via `gh pr checks`, preventing `READY_FOR_MERGE` when CI is still pending
-- **AC linting** — `/spec` flags vague, unmeasurable, or incomplete acceptance criteria before implementation begins
-- **Semgrep static analysis integration** — `/qa` now runs Semgrep with stack-aware rulesets (Next.js, Python, Go, Rust, etc.), graceful skip when not installed, custom rules via `.sequant/semgrep-rules.yaml`, critical findings block merge verdict
-- **Stack-aware constitution templates** — `/setup` auto-detects project stack and injects stack-specific notes for testing, linting, and build conventions (supports Next.js, Astro, SvelteKit, Remix, Nuxt, Rust, Python, Go)
-- **Interactive stack selection & multi-stack support** — `/setup --interactive` offers guided stack configuration with confirmation prompts; monorepos get checkbox selection for multiple stacks (e.g., Next.js frontend + Python backend) with combined constitution notes
-- Auto-detect project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote
-- **Plugin marketplace integration** — Claude Code plugin with CI-enforced version sync (plugin.json must match package.json), structure validation on every PR, `/release` skill auto-syncs versions
-- Strict QA verdicts (`NEEDS_VERIFICATION`, proper `PARTIALLY_MET`)
+
+- **QA caching**
+  - Caches check results keyed by diff hash + config hash
+  - `--no-cache` to force fresh run
+  - Graceful degradation on corrupted cache; 36 unit tests
+- **Testgen auto-detection**
+  - `/spec` and `/solve` recommend `--testgen` for testable ACs
+- **Enhanced CLI UI**
+  - Spinners (`ora`), boxes (`boxen`), tables (`cli-table3`)
+  - Graceful degradation for CI, non-TTY, Windows legacy
+  - 73 unit tests
+- **Feature Quality Planning**
+  - 6 dimensions in `/spec`: completeness, error handling,
+    code quality, test coverage, best practices, polish
+  - Generates Derived ACs from quality checklist items
+  - `/qa` verifies with threshold-based status
+- **Skill command verification**
+  - Detects skill file changes, validates CLI commands
+  - Blocks `READY_FOR_MERGE` on invalid syntax/fields
+- **Build verification against main** — distinguishes
+  regressions from pre-existing failures
+- **CI status awareness** — checks `gh pr checks`,
+  blocks merge when CI is pending
+- **AC linting** — flags vague/unmeasurable AC before
+  implementation
+- **Semgrep static analysis**
+  - Stack-aware rulesets, graceful skip when not installed
+  - Custom rules via `.sequant/semgrep-rules.yaml`
+- **Stack-aware constitution templates**
+  - Auto-detects stack, injects testing/linting/build notes
+  - 9 stacks: Next.js, Astro, SvelteKit, Remix, Nuxt,
+    Rust, Python, Go, Generic
+- **Interactive stack selection** — `--interactive` mode
+  with multi-stack support for monorepos
+- Auto-detect project name from package.json, Cargo.toml,
+  pyproject.toml, go.mod, git remote
+- **Plugin marketplace integration** — CI-enforced version
+  sync, structure validation, `/release` auto-syncs
+- Strict QA verdicts (`NEEDS_VERIFICATION`, `PARTIALLY_MET`)
 - MCP server support for headless mode
-- VS Code extension with premium workflow visualization
-- Sub-agent prompt templates for `/exec` (component, type, CLI, test, refactor)
-- `/merger` skill for multi-issue integration with conflict detection
+- VS Code extension with workflow visualization
+- Sub-agent prompt templates for `/exec`
+- `/merger` skill for multi-issue integration
 
 ---
 
@@ -760,13 +852,21 @@ Sequant's plugin config lives in `.claude-plugin/`:
 
 ## Philosophy
 
-**Local-first, always.** Your code stays on your machine. No telemetry. No cloud dependencies (except GitHub, which you're already using).
+**Local-first, always.** Your code stays on your machine.
+No telemetry. No cloud dependencies (except GitHub, which
+you're already using).
 
-**Phases, not chaos.** Breaking work into discrete phases (plan, build, test, review) catches problems early and ensures nothing gets skipped.
+**Phases, not chaos.** Breaking work into discrete phases
+(plan, build, test, review) catches problems early and
+ensures nothing gets skipped.
 
-**Quality gates, not gatekeeping.** Automated checks help you ship better code faster. They're not there to slow you down — they're there to catch what you'd miss at 2am.
+**Quality gates, not gatekeeping.** Automated checks help
+you ship better code faster. They're not there to slow you
+down — they're there to catch what you'd miss at 2am.
 
-**Works with Claude Code, not against it.** Sequant enhances Claude Code with structure. It doesn't replace your workflow — it quantizes it.
+**Works with Claude Code, not against it.** Sequant enhances
+Claude Code with structure. It doesn't replace your workflow
+— it quantizes it.
 
 ---
 
