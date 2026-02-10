@@ -21,9 +21,9 @@
 
 | Command | Purpose |
 |---------|---------|
-| `/spec <issue>` | Plan implementation, extract acceptance criteria |
+| `/spec <issue>` | Plan and review acceptance criteria, post issue comment |
 | `/exec <issue>` | Build in isolated worktree until AC met |
-| `/test <issue>` | Browser-based UI testing (needs Chrome DevTools MCP) |
+| `/test <issue>` | Browser-based testing for admin features (needs Chrome DevTools MCP) |
 | `/qa <issue>` | Code review and quality gate validation |
 
 **Automation**
@@ -86,7 +86,7 @@
 | `--qa-gate` | Wait for QA pass before next issue in chain (requires `--chain`) | off |
 | `--phases <list>` | Phases to run | `spec,exec,qa` |
 | `--resume` | Resume from last completed phase (reads GitHub markers) | off |
-| `--base <branch>` | Base branch for worktree creation | `main` |
+| `--base <branch>` | Base branch for worktree creation | `main` (or `settings.run.defaultBase`) |
 
 **Quality**
 
@@ -181,11 +181,9 @@ Adds a security review phase before final QA.
 | Verdict | Meaning | Action |
 |---------|---------|--------|
 | `READY_FOR_MERGE` | All AC met, quality high | Merge the PR |
-| `AC_MET_BUT_NOT_A_PLUS` | AC met, minor improvements possible | Merge or iterate |
+| `AC_MET_BUT_NOT_A_PLUS` | AC met, meaningful improvements suggested | Merge or iterate |
 | `NEEDS_VERIFICATION` | AC met, pending external verification | Verify in CI/staging |
 | `AC_NOT_MET` | Acceptance criteria failures | Fix and re-run `/qa` |
-| `SECURITY_CONCERN` | Security issues found | Run `/security-review` |
-| `BLOCKED` | External dependency or question | Resolve blocker first |
 
 ---
 
