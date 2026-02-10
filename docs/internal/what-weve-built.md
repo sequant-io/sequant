@@ -13,7 +13,7 @@ journey through planning, implementation, testing, and review
 
 | Metric | Count |
 |--------|-------|
-| Slash Commands | 19 |
+| Slash Commands | 18 |
 | CLI Commands | 10 |
 | Core Library Modules | 44 |
 | Test Files | 47 |
@@ -90,7 +90,7 @@ noise.
 
 ## Skill Commands
 
-Sequant provides **19 slash commands** organized by purpose. Run them inside Claude Code.
+Sequant provides **18 slash commands** organized by purpose. Run them inside Claude Code.
 
 ### Core Workflow
 
@@ -156,7 +156,6 @@ For when you want to go hands-off:
 | `/improve` | **Discovery** | Scans for issues, creates GitHub issues |
 | `/reflect` | **Learning** | Analyzes session effectiveness |
 | `/security-review` | **Security** | Domain-specific checklists, threat modeling |
-| `/setup` | **Initialize** | Creates worktrees, copies templates, detects stack |
 | `/merger` | **Integration** | Multi-issue merge with conflict detection |
 | `/upstream` | **Tracking** | Monitors Claude Code releases, creates issues |
 
@@ -720,7 +719,7 @@ Shell scripts in `templates/scripts/`:
 - Chain mode for dependent issues
 
 ### Phase 4: Polish & Distribution
-- `/setup` skill for easy initialization
+- `sequant init` for easy initialization
 - Auto-detect project name
 - VS Code extension
 - Dashboard for workflow visualization
@@ -893,7 +892,7 @@ npm run build
 
 | What | How Many |
 |------|----------|
-| Slash Commands | 19 |
+| Slash Commands | 18 |
 | CLI Commands | 10 |
 | Library Modules | 44 |
 | Test Files | 47 |
@@ -917,7 +916,7 @@ npm run build
 │                              SEQUANT v1.14.1                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (19)              CLI (10)                LIBRARIES (44)            │
+│  SKILLS (18)              CLI (10)                LIBRARIES (44)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -934,7 +933,7 @@ npm run build
 │  /improve                 Hono + htmx + SSE       Conventional commits      │
 │  /reflect                 Live issue cards        Worktree enforcement      │
 │  /security-review         AC tracking             File locking              │
-│  /setup                   Phase indicators        Reset protection          │
+│                           Phase indicators        Reset protection          │
 │                                                                             │
 │  REFERENCE DOCS (10)      VS CODE EXTENSION       STACKS (9)                │
 │  ──────────────────       ─────────────────       ──────────                │
