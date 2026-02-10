@@ -41,6 +41,7 @@ sequant doctor              # Verify installation health
 
 | Goal | Command |
 |------|---------|
+| Not sure where to start? | `/solve 123` |
 | Solve an issue end-to-end | `/fullsolve 123` |
 | Step-by-step workflow | `/spec 123` → `/exec 123` → `/qa 123` |
 | Headless batch run | `npx sequant run 1 2 3 --quality-loop` |
