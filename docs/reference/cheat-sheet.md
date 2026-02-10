@@ -5,6 +5,38 @@
 
 ---
 
+## Installation & Setup
+
+```bash
+# Install globally
+npm install -g sequant
+
+# Or run via npx (no install needed)
+npx sequant init
+
+# As a Claude Code plugin
+/install-plugin sequant
+```
+
+#### Update & sync
+
+```bash
+sequant update              # Update skill templates to latest version
+sequant sync                # Sync skills and templates (non-interactive, CI-safe)
+sequant doctor              # Verify installation health
+```
+
+#### When to use which
+
+| Scenario | Command |
+|----------|---------|
+| First time setup | `sequant init` |
+| New Sequant version released | `npm update -g sequant && sequant update` |
+| CI/automation template sync | `sequant sync` |
+| Something seems off | `sequant doctor` |
+
+---
+
 ## Quick Start
 
 | Goal | Command |
