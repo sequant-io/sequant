@@ -17,7 +17,7 @@ journey through planning, implementation, testing, and review
 | CLI Commands | 10 |
 | Core Library Modules | 44 |
 | Test Files | 47 |
-| Documentation Files | 38 |
+| Documentation Files | 39 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
 
