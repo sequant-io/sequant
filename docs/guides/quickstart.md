@@ -10,16 +10,6 @@ Get from zero to your first solved issue in 5 minutes.
 
 ## Install Sequant
 
-**Option A: Claude Code Plugin (Recommended)**
-
-```
-/plugin marketplace add admarble/sequant
-/plugin install sequant
-/sequant:setup
-```
-
-**Option B: npm**
-
 ```bash
 npx sequant init
 npx sequant doctor  # Verify setup

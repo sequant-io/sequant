@@ -29,7 +29,7 @@ Even "anonymous" telemetry (skill usage counts, error rates) could inadvertently
 
 ### 3. Claude Code Already Handles This
 
-Claude Code (the CLI tool that runs Sequant) has its own telemetry and feedback mechanisms. Adding a second layer of telemetry for a plugin would be:
+Claude Code (the CLI tool that runs Sequant) has its own telemetry and feedback mechanisms. Adding a second layer would be:
 - Redundant
 - Confusing for users
 - Additional maintenance burden
@@ -52,7 +52,6 @@ None of this adds value to Sequant's core mission of providing quality workflow 
 All feedback flows through GitHub issues:
 
 - **Bug reports:** Use the [Bug Report template](https://github.com/admarble/sequant/issues/new?template=bug.yml)
-- **Plugin-specific issues:** Use the [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml)
 - **Feature requests:** Use the [Feature Request template](https://github.com/admarble/sequant/issues/new?template=feature.yml)
 
 ### The `/improve` Skill
@@ -66,7 +65,7 @@ This provides structured feedback without any data leaving the user's machine.
 
 ### Community Contributions
 
-We welcome contributions via pull requests. See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines, including plugin-specific contribution instructions.
+We welcome contributions via pull requests. See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
 ## What This Means for You
 
