@@ -42,6 +42,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 ### Reference
 
+- [Cheat Sheet](reference/cheat-sheet.md) — Quick reference for all commands, flags, and workflows
 - [Run Command](reference/run-command.md) — Batch execution and CLI options
 - [State Command](reference/state-command.md) — Workflow state management
 - [Analytics](reference/analytics.md) — Usage tracking and metrics
