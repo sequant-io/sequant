@@ -383,6 +383,7 @@ Every PR goes through:
 - `guides/git-workflows.md` — Git workflow patterns
 
 ### Reference
+- `reference/cheat-sheet.md` — Quick reference for all commands, flags, and workflows
 - `reference/run-command.md` — Comprehensive `sequant run` guide
 - `reference/state-command.md` — State management
 - `reference/analytics.md` — Local analytics deep-dive
