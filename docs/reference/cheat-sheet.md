@@ -13,9 +13,6 @@ npm install -g sequant
 
 # Or run via npx (no install needed)
 npx sequant init
-
-# As a Claude Code plugin
-/install-plugin sequant
 ```
 
 #### Update & sync
