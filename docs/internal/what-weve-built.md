@@ -375,6 +375,7 @@ Every PR goes through:
 - `README.md` — Documentation hub
 
 ### Concepts
+- `concepts/what-is-sequant.md` — Elevator pitch, pipeline diagram, architecture overview
 - `concepts/workflow-phases.md` — Phase overview and selection
 
 ### Guides
