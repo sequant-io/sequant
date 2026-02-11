@@ -223,6 +223,7 @@ See [Customization Guide](docs/guides/customization.md) for all options.
 - [Complete Workflow](docs/guides/workflow.md) — Full workflow including post-QA patterns
 - [Getting Started](docs/getting-started/installation.md)
 - [What We've Built](docs/internal/what-weve-built.md) — Comprehensive project overview
+- [What Is Sequant](docs/concepts/what-is-sequant.md) — Elevator pitch, pipeline diagram, architecture
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
 - [Git Workflows](docs/guides/git-workflows.md)
