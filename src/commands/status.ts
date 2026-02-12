@@ -11,6 +11,7 @@ import { StateManager } from "../lib/workflow/state-manager.js";
 import {
   rebuildStateFromLogs,
   cleanupStaleEntries,
+  checkPRMergeStatus,
 } from "../lib/workflow/state-utils.js";
 import type {
   IssueState,
@@ -35,6 +36,29 @@ export interface StatusCommandOptions {
   maxAge?: number;
   /** Remove all orphaned entries (both merged and abandoned) in one step */
   all?: boolean;
+}
+
+/**
+ * Auto-detect merged PRs and update state for issues stuck at ready_for_merge.
+ * Queries GitHub for each ready_for_merge issue that has a PR number.
+ */
+async function refreshMergedStatuses(
+  stateManager: StateManager,
+  issues: IssueState[],
+): Promise<void> {
+  const readyIssues = issues.filter(
+    (i) => i.status === "ready_for_merge" && i.pr?.number,
+  );
+
+  if (readyIssues.length === 0) return;
+
+  for (const issue of readyIssues) {
+    const prStatus = checkPRMergeStatus(issue.pr!.number);
+    if (prStatus === "MERGED") {
+      issue.status = "merged";
+      await stateManager.updateIssueStatus(issue.number, "merged");
+    }
+  }
 }
 
 /**
@@ -282,7 +306,7 @@ export async function statusCommand(
   }
 
   console.log(chalk.green("Status: Initialized"));
-  console.log(chalk.gray(`Installed version: ${manifest.version}`));
+  console.log(chalk.gray(`Skills version: ${manifest.version}`));
   console.log(chalk.gray(`Stack: ${manifest.stack}`));
   console.log(chalk.gray(`Installed: ${manifest.installedAt}`));
   if (manifest.updatedAt) {
@@ -315,6 +339,7 @@ export async function statusCommand(
       const issues = Object.values(allIssues);
 
       if (issues.length > 0) {
+        await refreshMergedStatuses(stateManager, issues);
         displayIssueSummary(issues);
       }
     } catch {
@@ -349,6 +374,10 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
       // Show single issue details
       const issueState = await stateManager.getIssueState(options.issue);
 
+      if (issueState) {
+        await refreshMergedStatuses(stateManager, [issueState]);
+      }
+
       if (options.json) {
         console.log(JSON.stringify(issueState, null, 2));
       } else if (issueState) {
@@ -363,6 +392,8 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
       // Show all issues
       const allIssues = await stateManager.getAllIssueStates();
       const issues = Object.values(allIssues);
+
+      await refreshMergedStatuses(stateManager, issues);
 
       if (options.json) {
         console.log(JSON.stringify({ issues: allIssues }, null, 2));

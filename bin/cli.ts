@@ -48,7 +48,8 @@ import {
   stateRebuildCommand,
   stateCleanCommand,
 } from "../src/commands/state.js";
-import { syncCommand } from "../src/commands/sync.js";
+import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
+import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
 
@@ -249,6 +250,22 @@ stateCmd
   .option("--max-age <days>", "Remove entries older than N days", parseInt)
   .option("--all", "Remove all orphaned entries (merged and abandoned)")
   .action(stateCleanCommand);
+
+// Auto-sync skills after npm upgrade (version mismatch detection)
+// Only triggers when skills were previously synced (has .sequant-version marker).
+// Projects that manage skills manually (no marker) are not affected.
+program.hook("preAction", async (thisCommand) => {
+  const cmd = thisCommand.name();
+  if (cmd === "init" || cmd === "sync") return;
+
+  const manifest = await getManifest();
+  if (!manifest) return;
+
+  const { outdated, currentVersion } = await areSkillsOutdated();
+  if (outdated && currentVersion !== null) {
+    await syncCommand({ quiet: true });
+  }
+});
 
 // Parse and execute
 program.parse();
