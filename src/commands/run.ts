@@ -1670,6 +1670,13 @@ export async function runCommand(
     mcp: mcpEnabled,
   };
 
+  // Propagate verbose mode to UI config so spinners use text-only mode.
+  // This prevents animated spinner control characters from colliding with
+  // verbose console.log() calls from StateManager/MetricsWriter (#282).
+  if (config.verbose) {
+    ui.configure({ verbose: true });
+  }
+
   // Initialize log writer if JSON logging enabled
   // Default: enabled via settings (logJson: true), can be disabled with --no-log
   let logWriter: LogWriter | null = null;
