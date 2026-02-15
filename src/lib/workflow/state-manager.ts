@@ -134,10 +134,6 @@ export class StateManager {
 
       // Update cache
       this.cachedState = state;
-
-      if (this.verbose) {
-        console.log(`📊 State saved: ${this.statePath}`);
-      }
     } catch (error) {
       // Clean up temp file on error
       if (fs.existsSync(tempPath)) {
