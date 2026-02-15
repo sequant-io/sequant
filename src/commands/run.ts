@@ -1192,6 +1192,64 @@ async function executePhase(
 }
 
 /**
+ * Cold-start retry threshold in seconds.
+ * Failures under this duration are likely Claude Code subprocess initialization
+ * issues rather than genuine phase failures (based on empirical data: cold-start
+ * failures consistently complete in 15-39s vs 150-310s for real work).
+ */
+const COLD_START_THRESHOLD_SECONDS = 60;
+const COLD_START_MAX_RETRIES = 2;
+
+/**
+ * Execute a phase with automatic retry for cold-start failures.
+ * If a phase fails within COLD_START_THRESHOLD_SECONDS, it's likely a subprocess
+ * initialization issue — retry up to COLD_START_MAX_RETRIES times before giving up.
+ */
+async function executePhaseWithRetry(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  sessionId?: string,
+  worktreePath?: string,
+  shutdownManager?: ShutdownManager,
+  spinner?: PhaseSpinner,
+): Promise<PhaseResult & { sessionId?: string }> {
+  let lastResult: PhaseResult & { sessionId?: string };
+
+  for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
+    lastResult = await executePhase(
+      issueNumber,
+      phase,
+      config,
+      sessionId,
+      worktreePath,
+      shutdownManager,
+      spinner,
+    );
+
+    const duration = lastResult.durationSeconds ?? 0;
+
+    // Success or genuine failure (took long enough to be real work)
+    if (lastResult.success || duration >= COLD_START_THRESHOLD_SECONDS) {
+      return lastResult;
+    }
+
+    // Cold-start failure detected — retry
+    if (attempt < COLD_START_MAX_RETRIES) {
+      if (config.verbose) {
+        console.log(
+          chalk.yellow(
+            `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+          ),
+        );
+      }
+    }
+  }
+
+  return lastResult!;
+}
+
+/**
  * Fetch issue info from GitHub
  */
 async function getIssueInfo(
@@ -2251,7 +2309,7 @@ async function runIssueWithLogging(
 
       const specStartTime = new Date();
       // Note: spec runs in main repo (not worktree) for planning
-      const specResult = await executePhase(
+      const specResult = await executePhaseWithRetry(
         issueNumber,
         "spec",
         config,
@@ -2453,7 +2511,7 @@ async function runIssueWithLogging(
       }
 
       const phaseStartTime = new Date();
-      const result = await executePhase(
+      const result = await executePhaseWithRetry(
         issueNumber,
         phase,
         config,
@@ -2537,7 +2595,7 @@ async function runIssueWithLogging(
           });
           loopSpinner.start();
 
-          const loopResult = await executePhase(
+          const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
             config,
