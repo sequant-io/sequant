@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.14.2
+# What We've Built: Sequant v1.15.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -727,7 +727,17 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.14.0)
+### Recent Additions (v1.15.0)
+
+- **Cold-start retry for phase execution**
+  - Phases that fail within 60s are automatically retried (up to 2x)
+  - Distinguishes subprocess init failures from genuine phase failures
+  - Improves reliability of unattended `sequant run` workflows
+- **Auto-sync skills on upgrade**
+  - Skills automatically sync when upgrading sequant
+  - `sequant status` auto-detects merged PRs
+
+### v1.14.0
 
 - **GitHub-based smart resumption**
   - `sequant run --resume` skips completed phases across
@@ -905,7 +915,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.14.2
+**Current Version:** 1.15.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -915,7 +925,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.14.2                                │
+│                              SEQUANT v1.15.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (10)                LIBRARIES (44)            │
