@@ -125,10 +125,6 @@ export class MetricsWriter {
 
       // Update cache
       this.cachedMetrics = metrics;
-
-      if (this.verbose) {
-        console.log(`📊 Metrics saved: ${this.metricsPath}`);
-      }
     } catch (error) {
       // Clean up temp file on error
       if (fs.existsSync(tempPath)) {
