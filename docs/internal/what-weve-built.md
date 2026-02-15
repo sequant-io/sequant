@@ -736,6 +736,12 @@ Shell scripts in `templates/scripts/`:
 - **Auto-sync skills on upgrade**
   - Skills automatically sync when upgrading sequant
   - `sequant status` auto-detects merged PRs
+- **Fix: `--verbose` spinner garbling** (#282)
+  - Propagate verbose flag to cli-ui so spinners use text-only mode
+  - Prevents animated spinner control characters from colliding with
+    verbose `console.log()` calls from StateManager/MetricsWriter
+  - Suppressed repetitive `State saved` / `Metrics saved` noise;
+    operator-useful messages (phase transitions, status changes) remain
 
 ### v1.14.0
 
@@ -966,4 +972,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-06 · `1beaf5e` test(#268): add integration tests for --resume flag (#271)*
+*Last updated: 2026-02-15 · `7dae48d` fix(#282): prevent spinner + verbose log interleaving*
