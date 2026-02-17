@@ -3,7 +3,7 @@
   "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases",
   "version": "1.15.1",
   "author": {
-    "name": "admarble",
-    "email": "github@admarble.com"
+    "name": "sequant-io",
+    "email": "hello@sequant.io"
   }
 }

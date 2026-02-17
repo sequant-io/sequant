@@ -23,7 +23,7 @@ We follow [Semantic Versioning](https://semver.org/):
 
 ### For Official Marketplaces (Default)
 
-Plugins from Anthropic's official marketplace auto-update by default. Since Sequant uses a third-party marketplace (`admarble/sequant`), updates work differently.
+Plugins from Anthropic's official marketplace auto-update by default. Since Sequant uses a third-party marketplace (`sequant-io/sequant`), updates work differently.
 
 ### For Third-Party Marketplaces (Sequant)
 
@@ -33,7 +33,7 @@ Auto-update is **disabled by default** for third-party plugins. Users get update
 
 ```bash
 # Update the marketplace catalog
-/plugin marketplace update admarble/sequant
+/plugin marketplace update sequant-io/sequant
 
 # Reinstall to get latest version
 /plugin install sequant
@@ -48,7 +48,7 @@ Users can opt into auto-updates:
 {
   "extraKnownMarketplaces": [
     {
-      "source": "admarble/sequant",
+      "source": "sequant-io/sequant",
       "autoUpdate": true
     }
   ]
@@ -195,7 +195,7 @@ npx sequant status
 
 2. Force marketplace refresh:
    ```
-   /plugin marketplace update admarble/sequant
+   /plugin marketplace update sequant-io/sequant
    ```
 
 3. Reinstall plugin:
@@ -217,7 +217,7 @@ Upgrade each independently:
 npm update -g sequant
 
 # Plugin (in Claude Code)
-/plugin marketplace update admarble/sequant
+/plugin marketplace update sequant-io/sequant
 /plugin install sequant
 ```
 
@@ -246,5 +246,5 @@ Sequant does not follow a fixed release schedule. Releases happen when:
 - Breaking changes have accumulated (for major versions)
 
 Subscribe to releases on GitHub for notifications:
-1. Go to https://github.com/admarble/sequant
+1. Go to https://github.com/sequant-io/sequant
 2. Click "Watch" → "Custom" → select "Releases"

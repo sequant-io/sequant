@@ -527,7 +527,7 @@ sequant init --force
    sequant run --help
    ```
 
-4. File an issue: [GitHub Issues](https://github.com/admarble/sequant/issues)
+4. File an issue: [GitHub Issues](https://github.com/sequant-io/sequant/issues)
 
 ## See Also
 

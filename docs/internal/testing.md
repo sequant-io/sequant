@@ -112,7 +112,7 @@ When reporting platform-specific issues, include:
 5. **Error output**: Full error message or screenshot
 6. **Steps to reproduce**: What commands were run
 
-File issues at: https://github.com/admarble/sequant/issues
+File issues at: https://github.com/sequant-io/sequant/issues
 
 ## Contributing Test Results
 

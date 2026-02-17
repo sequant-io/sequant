@@ -31,7 +31,7 @@ body:
       label: Installation Method
       description: How did you install Sequant?
       options:
-        - Plugin marketplace (/plugin install sequant@admarble/sequant)
+        - Plugin marketplace (/plugin install sequant@sequant-io/sequant)
         - npm install -g sequant
         - npm install sequant (local)
         - Clone from GitHub

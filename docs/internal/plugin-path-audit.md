@@ -144,7 +144,7 @@ Skills that use optional MCPs include graceful degradation:
 - [ ] Hooks execute without path errors
 
 ### Plugin Installation
-- [ ] `/plugin install sequant@admarble/sequant` succeeds
+- [ ] `/plugin install sequant@sequant-io/sequant` succeeds
 - [ ] Skills are recognized after install
 - [ ] Hooks execute without path errors
 - [ ] `/fullsolve` works end-to-end
@@ -156,7 +156,7 @@ Run this in Claude Code to verify plugin installation:
 
 ```
 # Step 1: Add marketplace and install
-/plugin marketplace add admarble/sequant
+/plugin marketplace add sequant-io/sequant
 /plugin install sequant
 
 # Step 2: Verify skills are available
