@@ -1239,7 +1239,7 @@ fi
 
 **If no verification evidence exists:**
 1. Prompt: "Script changes detected but no execution verification found. Run `/verify <issue> --command \"<test command>\"` before READY_FOR_MERGE verdict."
-2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete
+2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete (unless an approved override applies — see Section 11a)
 3. Verdict should be `AC_MET_BUT_NOT_A_PLUS` with note about missing verification
 
 **Why this matters:**
@@ -1258,6 +1258,59 @@ fi
 
 /qa 558  # Re-run, now sees verification, can give READY_FOR_MERGE
 ```
+
+### 11a. Script Verification Override
+
+In some cases, `/verify` execution can be safely skipped when script changes are purely cosmetic or have no runtime impact. **Overrides require explicit justification and risk assessment.**
+
+**Override Format (REQUIRED when skipping /verify):**
+
+```markdown
+### Script Verification Override
+
+**Requirement:** `/verify` before READY_FOR_MERGE
+**Override:** Yes
+**Justification:** [One of the approved categories below]
+**Risk Assessment:** [None/Low/Medium]
+```
+
+**Approved Override Categories:**
+
+| Category | Example | Risk |
+|----------|---------|------|
+| Syntax-only refactor | `catch (error)` → `catch` | None |
+| Comment/documentation changes | Adding JSDoc, updating comments | None |
+| Type annotation additions | Adding `: string`, `: number` | None |
+| Import reorganization | Sorting imports, removing unused | None |
+| Variable rename (no logic change) | `foo` → `bar` with no behavioral change | Low |
+| Dead code removal | Removing unreachable branches | Low |
+
+**NOT Approved for Override (always require /verify):**
+
+| Category | Example | Why |
+|----------|---------|-----|
+| Logic changes | Modified conditionals, new branches | Runtime behavior changes |
+| New functionality | Added functions, new exports | Must verify execution |
+| Dependency changes | Updated imports from new packages | May affect runtime |
+| Error handling changes | Modified catch blocks, new try/catch | Failure paths change |
+| Configuration changes | Modified env vars, config parsing | Environment-dependent |
+
+**Risk Assessment Definitions:**
+
+| Level | Meaning | Criteria |
+|-------|---------|----------|
+| **None** | Zero runtime impact | Change is invisible at runtime (comments, types, syntax) |
+| **Low** | Negligible runtime impact | Change is cosmetic (rename, dead code) with no logical effect |
+| **Medium** | Possible runtime impact | Change touches executable code but appears safe — **should NOT be overridden** |
+
+**Override Decision Flow:**
+
+1. Check if change matches an approved category → If no, `/verify` is required
+2. Assess risk level → If Medium or higher, `/verify` is required
+3. Document override using the format above in the QA output
+4. Include override in the GitHub issue comment for audit trail
+
+**CRITICAL:** When in doubt, run `/verify`. Overrides are for clear-cut cases only. If you need to argue that a change is safe, it probably needs verification.
 
 ---
 
@@ -1308,6 +1361,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
 - [ ] **Anti-Pattern Detection** - Dependency audit (if package.json changed) + code patterns
 - [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
+- [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
@@ -1495,6 +1549,17 @@ You MUST include these sections:
 | Smoke test | `[command]` | [code] | [result] |
 
 **Evidence status:** Complete / Incomplete / Waived (reason) / Not Required
+
+---
+
+### Script Verification Override
+
+[Include if scripts/CLI modified AND /verify was skipped, otherwise omit this section]
+
+**Requirement:** `/verify` before READY_FOR_MERGE
+**Override:** Yes
+**Justification:** [Approved category from Section 11a]
+**Risk Assessment:** [None/Low/Medium]
 
 ---
 
