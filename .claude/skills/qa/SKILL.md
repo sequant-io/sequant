@@ -1239,7 +1239,7 @@ fi
 
 **If no verification evidence exists:**
 1. Prompt: "Script changes detected but no execution verification found. Run `/verify <issue> --command \"<test command>\"` before READY_FOR_MERGE verdict."
-2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete
+2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete (unless an approved override applies — see Section 11a)
 3. Verdict should be `AC_MET_BUT_NOT_A_PLUS` with note about missing verification
 
 **Why this matters:**
