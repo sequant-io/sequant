@@ -128,4 +128,4 @@ Want to help add support for your platform? See the [contribution guidelines](..
 
 ## Related Issues
 
-- [#7 - Support GitLab and Bitbucket](https://github.com/admarble/sequant/issues/7)
+- [#7 - Support GitLab and Bitbucket](https://github.com/sequant-io/sequant/issues/7)

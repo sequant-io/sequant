@@ -51,8 +51,8 @@ None of this adds value to Sequant's core mission of providing quality workflow 
 
 All feedback flows through GitHub issues:
 
-- **Bug reports:** Use the [Bug Report template](https://github.com/admarble/sequant/issues/new?template=bug.yml)
-- **Feature requests:** Use the [Feature Request template](https://github.com/admarble/sequant/issues/new?template=feature.yml)
+- **Bug reports:** Use the [Bug Report template](https://github.com/sequant-io/sequant/issues/new?template=bug.yml)
+- **Feature requests:** Use the [Feature Request template](https://github.com/sequant-io/sequant/issues/new?template=feature.yml)
 
 ### The `/improve` Skill
 

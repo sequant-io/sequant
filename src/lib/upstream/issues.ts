@@ -76,7 +76,7 @@ async function execCommand(
  */
 export async function checkForDuplicate(
   title: string,
-  owner: string = "admarble",
+  owner: string = "sequant-io",
   repo: string = "sequant",
 ): Promise<DuplicateCheckResult> {
   try {
@@ -199,7 +199,7 @@ export function isSimilarTitle(title1: string, title2: string): boolean {
  */
 export async function createIssue(
   params: IssueParams,
-  owner: string = "admarble",
+  owner: string = "sequant-io",
   repo: string = "sequant",
 ): Promise<IssueResult> {
   validateRepoParams(owner, repo);
@@ -251,7 +251,7 @@ export async function createIssue(
 export async function addIssueComment(
   issueNumber: number,
   comment: string,
-  owner: string = "admarble",
+  owner: string = "sequant-io",
   repo: string = "sequant",
 ): Promise<void> {
   validateRepoParams(owner, repo);
@@ -294,7 +294,7 @@ export async function createOrLinkFinding(
   version: string,
   assessmentIssueNumber: number | undefined,
   dryRun: boolean = false,
-  owner: string = "admarble",
+  owner: string = "sequant-io",
   repo: string = "sequant",
 ): Promise<Finding> {
   // Generate issue content
@@ -343,7 +343,7 @@ export async function createAssessmentIssue(
   title: string,
   body: string,
   dryRun: boolean = false,
-  owner: string = "admarble",
+  owner: string = "sequant-io",
   repo: string = "sequant",
 ): Promise<number | undefined> {
   if (dryRun) {

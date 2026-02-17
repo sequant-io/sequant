@@ -14,7 +14,7 @@ Thank you for your interest in contributing to Sequant! This document provides g
 
 ```bash
 # Clone the repository
-git clone https://github.com/admarble/sequant.git
+git clone https://github.com/sequant-io/sequant.git
 cd sequant
 
 # Install dependencies
@@ -331,7 +331,7 @@ When reporting bugs, include:
 - Expected vs actual behavior
 - Error messages or logs
 
-**For plugin-specific issues**, use the [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml) which collects additional context like installation method, affected skills, and MCP configuration.
+**For plugin-specific issues**, use the [Plugin Feedback template](https://github.com/sequant-io/sequant/issues/new?template=plugin-feedback.yml) which collects additional context like installation method, affected skills, and MCP configuration.
 
 ## Plugin-Specific Contributions
 
@@ -341,7 +341,7 @@ If you installed Sequant as a Claude Code plugin, here's how to contribute:
 
 ```bash
 # Clone the repo to test changes
-git clone https://github.com/admarble/sequant.git
+git clone https://github.com/sequant-io/sequant.git
 cd sequant
 
 # The plugin skills are in the skills/ directory (not templates/)
@@ -403,15 +403,15 @@ When testing plugin changes:
 
 Use `/improve` within Claude Code to analyze issues, or file directly:
 
-- **Plugin bugs:** [Plugin Feedback template](https://github.com/admarble/sequant/issues/new?template=plugin-feedback.yml)
+- **Plugin bugs:** [Plugin Feedback template](https://github.com/sequant-io/sequant/issues/new?template=plugin-feedback.yml)
 - **Skill issues:** Include which skill and the error message
 - **Hook issues:** Include contents of `/tmp/claude-hooks.log`
 
 ## Questions?
 
-- Open a [GitHub Issue](https://github.com/admarble/sequant/issues)
+- Open a [GitHub Issue](https://github.com/sequant-io/sequant/issues)
 - Check existing issues for similar questions
-- Use [GitHub Discussions](https://github.com/admarble/sequant/discussions) for general questions
+- Use [GitHub Discussions](https://github.com/sequant-io/sequant/discussions) for general questions
 
 ## Telemetry
 

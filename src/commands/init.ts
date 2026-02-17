@@ -525,6 +525,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
   }
 
   console.log(
-    chalk.gray("\nDocumentation: https://github.com/admarble/sequant#readme\n"),
+    chalk.gray(
+      "\nDocumentation: https://github.com/sequant-io/sequant#readme\n",
+    ),
   );
 }

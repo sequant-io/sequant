@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: General Question
-    url: https://github.com/admarble/sequant/discussions
+    url: https://github.com/sequant-io/sequant/discussions
     about: Ask questions and discuss ideas in GitHub Discussions
   - name: Plugin Documentation
-    url: https://github.com/admarble/sequant#plugin-installation
+    url: https://github.com/sequant-io/sequant#plugin-installation
     about: Read the plugin installation and usage guide

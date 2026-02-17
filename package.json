@@ -45,12 +45,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/admarble/sequant.git"
+    "url": "git+https://github.com/sequant-io/sequant.git"
   },
   "bugs": {
-    "url": "https://github.com/admarble/sequant/issues"
+    "url": "https://github.com/sequant-io/sequant/issues"
   },
-  "homepage": "https://github.com/admarble/sequant#readme",
+  "homepage": "https://github.com/sequant-io/sequant#readme",
   "engines": {
     "node": ">=18.0.0"
   },

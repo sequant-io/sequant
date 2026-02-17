@@ -238,9 +238,9 @@ Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) ·
 
 ### Reporting Issues
 
-- **Bug reports:** [Bug template](https://github.com/admarble/sequant/issues/new?template=bug.yml)
-- **Feature requests:** [Feature template](https://github.com/admarble/sequant/issues/new?template=feature.yml)
-- **Questions:** [GitHub Discussions](https://github.com/admarble/sequant/discussions)
+- **Bug reports:** [Bug template](https://github.com/sequant-io/sequant/issues/new?template=bug.yml)
+- **Feature requests:** [Feature template](https://github.com/sequant-io/sequant/issues/new?template=feature.yml)
+- **Questions:** [GitHub Discussions](https://github.com/sequant-io/sequant/discussions)
 
 ### Using `/improve` for Feedback
 

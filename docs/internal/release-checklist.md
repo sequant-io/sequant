@@ -74,7 +74,7 @@ After release, verify the plugin works for new users:
 
 ```bash
 # In a fresh Claude Code session (different project)
-/plugin marketplace add admarble/sequant
+/plugin marketplace add sequant-io/sequant
 /plugin install sequant
 
 # Verify skills are available

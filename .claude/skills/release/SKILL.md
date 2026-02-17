@@ -168,7 +168,7 @@ Categorize by conventional commit prefix:
 ### Breaking Changes
 - Description of breaking change and migration path
 
-**Full Changelog**: https://github.com/admarble/sequant/compare/v{old}...v{new}
+**Full Changelog**: https://github.com/sequant-io/sequant/compare/v{old}...v{new}
 ```
 
 **Show draft to user for approval before proceeding.**
@@ -349,7 +349,7 @@ Release v{version} Complete
   Commit:   {hash}
   Tag:      v{new}
 
-  GitHub:   https://github.com/admarble/sequant/releases/tag/v{new}
+  GitHub:   https://github.com/sequant-io/sequant/releases/tag/v{new}
   npm:      https://www.npmjs.com/package/sequant/v/{new}
   Plugin:   Version synced in .claude-plugin/plugin.json
   Docs:     Version synced in docs/what-weve-built.md
@@ -359,7 +359,7 @@ Release v{version} Complete
     npx sequant@{new}
 
   Install (plugin):
-    /plugin marketplace update admarble/sequant
+    /plugin marketplace update sequant-io/sequant
     /plugin install sequant
 
 Verification:
