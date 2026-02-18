@@ -113,6 +113,65 @@ Some content
   it("handles empty string", () => {
     expect(parsePhaseMarkers("")).toEqual([]);
   });
+
+  it("ignores markers inside fenced code blocks (AC-1)", () => {
+    const body = `Here's how to emit a phase marker:
+
+\`\`\`markdown
+<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->
+\`\`\`
+
+This is documentation, not a real marker.`;
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toEqual([]);
+  });
+
+  it("ignores markers inside tilde fenced code blocks", () => {
+    const body = `Example with tildes:
+
+~~~
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->
+~~~`;
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toEqual([]);
+  });
+
+  it("ignores markers inside 4+ backtick fenced code blocks", () => {
+    const body = `Example with 4 backticks:
+
+\`\`\`\`markdown
+<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->
+\`\`\`\``;
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toEqual([]);
+  });
+
+  it("ignores markers inside inline code (AC-2)", () => {
+    const body =
+      'Use the marker format: `<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->`';
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toEqual([]);
+  });
+
+  it("parses real markers while ignoring code block examples", () => {
+    const body = `## Phase Detection Documentation
+
+Here's an example of a phase marker:
+
+\`\`\`markdown
+<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T09:00:00.000Z"} -->
+\`\`\`
+
+And inline: \`<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->\`
+
+The real marker is below:
+
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->`;
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].phase).toBe("qa");
+    expect(markers[0].status).toBe("completed");
+  });
 });
 
 describe("detectPhaseFromComments", () => {
