@@ -755,6 +755,16 @@ Shell scripts in `templates/scripts/`:
     (syntax-only, comments, type annotations, import reorg, dead code)
   - Structured override format with risk assessment (None/Low/Medium)
   - Decision flow: overrides only for clear-cut zero-runtime-impact changes
+- **Fix: phase marker regex matches inside code blocks** (#269)
+  - `stripMarkdownCode()` pre-strips fenced blocks and inline code
+    before phase marker regex matching
+  - Handles 3+ backtick/tilde fences per CommonMark spec
+  - 5 regression tests (backtick, tilde, 4+ backtick, inline, mixed)
+- **Test: gh CLI wrapper error path coverage** (#270)
+  - Unit tests for `getIssuePhase`, `getCompletedPhases`,
+    `getResumablePhasesForIssue` error and success paths
+  - Mocks `child_process.execSync` following `state-utils.test.ts` pattern
+  - 9 new tests covering all 5 AC items plus edge cases
 
 ### v1.14.0
 
@@ -985,4 +995,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-18 · `4555750` fix(#289): chain mode worktree rebase*
+*Last updated: 2026-02-18 · `1e0d662` test(phase-detection): gh CLI wrapper error paths*

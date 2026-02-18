@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Phase marker regex matches inside markdown code blocks (#269)
+  - Pre-strips fenced code blocks and inline code before regex matching
+  - Handles 3+ backtick/tilde fences per CommonMark spec
+
+### Added
+
+- Unit tests for gh CLI wrapper error paths in phase-detection (#270)
+  - Covers `getIssuePhase`, `getCompletedPhases`, `getResumablePhasesForIssue`
+  - Tests both error (execSync throws) and success paths
+
 ### Changed
 
 - Restrict sub-agent types per skill via `Task(agent_type)` frontmatter (#262)
