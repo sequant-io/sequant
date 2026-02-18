@@ -23,6 +23,29 @@ import {
 const PHASE_MARKER_REGEX = /<!-- SEQUANT_PHASE: (\{[^}]+\}) -->/g;
 
 /**
+ * Regex patterns for markdown code constructs that should be ignored.
+ * - Fenced code blocks: 3+ backticks or tildes (CommonMark spec)
+ * - Inline code: `...`
+ */
+const FENCED_CODE_BLOCK_REGEX = /`{3,}[\s\S]*?`{3,}|~{3,}[\s\S]*?~{3,}/g;
+const INLINE_CODE_REGEX = /`[^`\n]+`/g;
+
+/**
+ * Strip markdown code blocks and inline code from text.
+ * This prevents phase markers inside code examples from being parsed.
+ *
+ * @param text - The text to strip code from
+ * @returns Text with code blocks and inline code removed
+ */
+function stripMarkdownCode(text: string): string {
+  // First remove fenced code blocks (multi-line)
+  let result = text.replace(FENCED_CODE_BLOCK_REGEX, "");
+  // Then remove inline code
+  result = result.replace(INLINE_CODE_REGEX, "");
+  return result;
+}
+
+/**
  * Format a phase marker as an HTML comment string for embedding in GitHub comments.
  *
  * @param marker - The phase marker data
@@ -35,16 +58,21 @@ export function formatPhaseMarker(marker: PhaseMarker): string {
 /**
  * Parse all phase markers from a single comment body.
  *
+ * Phase markers inside fenced code blocks (```...```) or inline code (`...`)
+ * are ignored to prevent false positives from documentation examples.
+ *
  * @param commentBody - The full body text of a GitHub comment
  * @returns Array of parsed phase markers (empty if none found)
  */
 export function parsePhaseMarkers(commentBody: string): PhaseMarker[] {
   const markers: PhaseMarker[] = [];
+  // Strip code blocks before matching to avoid false positives
+  const strippedBody = stripMarkdownCode(commentBody);
   // Reset regex state for reuse
   PHASE_MARKER_REGEX.lastIndex = 0;
 
   let match: RegExpExecArray | null;
-  while ((match = PHASE_MARKER_REGEX.exec(commentBody)) !== null) {
+  while ((match = PHASE_MARKER_REGEX.exec(strippedBody)) !== null) {
     try {
       const parsed = JSON.parse(match[1]);
       const result = PhaseMarkerSchema.safeParse(parsed);
