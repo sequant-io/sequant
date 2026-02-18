@@ -1,7 +1,7 @@
 {
   "name": "sequant",
   "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases",
-  "version": "1.15.1",
+  "version": "1.15.2",
   "author": {
     "name": "sequant-io",
     "email": "hello@sequant.io"
