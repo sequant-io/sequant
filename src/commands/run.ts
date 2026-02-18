@@ -1011,6 +1011,12 @@ async function executePhase(
     // Reads from Claude Desktop config and passes to SDK for headless MCP support
     const mcpServers = config.mcp ? getMcpServersConfig() : undefined;
 
+    // Track whether we're actively streaming verbose output
+    // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
+    // (Issue #283: ora's stop() clears the current line, which can truncate output when
+    // pause/resume is called for every chunk in rapid succession)
+    let verboseStreamingActive = false;
+
     const queryInstance = query({
       prompt,
       options: {
@@ -1033,10 +1039,14 @@ async function executePhase(
         // Capture stderr for debugging (helps diagnose early exit failures)
         stderr: (data: string) => {
           capturedStderr += data;
+          // Write stderr in verbose mode
           if (config.verbose) {
-            spinner?.pause();
+            // Pause spinner once to avoid truncation (Issue #283)
+            if (!verboseStreamingActive) {
+              spinner?.pause();
+              verboseStreamingActive = true;
+            }
             process.stderr.write(chalk.red(data));
-            spinner?.resume();
           }
         },
       },
@@ -1064,10 +1074,13 @@ async function executePhase(
           capturedOutput += textContent;
           // Show streaming output in verbose mode
           if (config.verbose) {
-            // Pause spinner during verbose streaming to avoid terminal corruption
-            spinner?.pause();
+            // Pause spinner once at start of streaming to avoid truncation
+            // (Issue #283: repeated pause/resume causes ora to clear lines between chunks)
+            if (!verboseStreamingActive) {
+              spinner?.pause();
+              verboseStreamingActive = true;
+            }
             process.stdout.write(chalk.gray(textContent));
-            spinner?.resume();
           }
         }
       }
@@ -1076,6 +1089,12 @@ async function executePhase(
       if (message.type === "result") {
         resultMessage = message;
       }
+    }
+
+    // Resume spinner after streaming completes (if we paused it)
+    if (verboseStreamingActive) {
+      spinner?.resume();
+      verboseStreamingActive = false;
     }
 
     clearTimeout(timeoutId);
