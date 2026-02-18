@@ -129,6 +129,10 @@ export const RunConfigSchema = z.object({
   qualityLoop: z.boolean(),
   /** Maximum iterations for fix loops */
   maxIterations: z.number().int().positive(),
+  /** Whether chain mode was enabled (each issue branches from previous) */
+  chain: z.boolean().optional(),
+  /** Whether QA gate was enabled (chain pauses if QA fails) */
+  qaGate: z.boolean().optional(),
 });
 
 export type RunConfig = z.infer<typeof RunConfigSchema>;
