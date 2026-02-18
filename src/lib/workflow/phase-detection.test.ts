@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   formatPhaseMarker,
   parsePhaseMarkers,
@@ -7,8 +7,24 @@ import {
   getCompletedPhasesFromComments,
   getResumablePhases,
   isPhaseCompletedOrPast,
+  getIssuePhase,
+  getCompletedPhases,
+  getResumablePhasesForIssue,
 } from "./phase-detection.js";
 import type { PhaseMarker } from "./state-schema.js";
+
+// Mock child_process module for testing gh CLI wrapper functions
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    execSync: vi.fn(actual.execSync),
+  };
+});
+
+// Get mocked execSync for configuring in tests
+import { execSync } from "child_process";
+const mockExecSync = vi.mocked(execSync);
 
 describe("formatPhaseMarker", () => {
   it("produces valid HTML comment with JSON", () => {
@@ -346,5 +362,114 @@ describe("isPhaseCompletedOrPast", () => {
 
   it("returns false for empty comments", () => {
     expect(isPhaseCompletedOrPast("spec", [])).toBe(false);
+  });
+});
+
+describe("gh CLI wrapper functions", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+  });
+
+  describe("getIssuePhase", () => {
+    it("returns null when execSync throws (AC-1)", () => {
+      mockExecSync.mockImplementation(() => {
+        throw new Error("gh CLI not available");
+      });
+
+      const result = getIssuePhase(123);
+      expect(result).toBeNull();
+    });
+
+    it("returns correct marker when execSync returns valid JSON (AC-4)", () => {
+      const commentBodies = [
+        '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
+        '<!-- SEQUANT_PHASE: {"phase":"exec","status":"in_progress","timestamp":"2025-01-15T11:00:00.000Z"} -->',
+      ];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const result = getIssuePhase(42);
+
+      expect(result).not.toBeNull();
+      expect(result!.phase).toBe("exec");
+      expect(result!.status).toBe("in_progress");
+    });
+
+    it("returns null when no phase markers found", () => {
+      const commentBodies = ["Just a regular comment", "Another comment"];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const result = getIssuePhase(42);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("getCompletedPhases", () => {
+    it("returns empty array when execSync throws (AC-2)", () => {
+      mockExecSync.mockImplementation(() => {
+        throw new Error("Network error");
+      });
+
+      const result = getCompletedPhases(456);
+      expect(result).toEqual([]);
+    });
+
+    it("returns correct phases when execSync returns valid JSON (AC-5)", () => {
+      const commentBodies = [
+        '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
+        '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
+        '<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2025-01-15T12:00:00.000Z"} -->',
+      ];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const result = getCompletedPhases(42);
+
+      expect(result).toEqual(["spec", "exec"]);
+    });
+
+    it("returns empty array when no phases completed", () => {
+      const commentBodies = [
+        '<!-- SEQUANT_PHASE: {"phase":"spec","status":"in_progress","timestamp":"2025-01-15T10:00:00.000Z"} -->',
+      ];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const result = getCompletedPhases(42);
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe("getResumablePhasesForIssue", () => {
+    it("returns all requested phases when execSync throws (AC-3)", () => {
+      mockExecSync.mockImplementation(() => {
+        throw new Error("GitHub API error");
+      });
+
+      const requestedPhases = ["spec", "exec", "qa"];
+      const result = getResumablePhasesForIssue(789, requestedPhases);
+
+      expect(result).toEqual(["spec", "exec", "qa"]);
+    });
+
+    it("filters out completed phases when execSync returns valid JSON", () => {
+      const commentBodies = [
+        '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
+        '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
+      ];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const requestedPhases = ["spec", "exec", "qa"];
+      const result = getResumablePhasesForIssue(42, requestedPhases);
+
+      expect(result).toEqual(["qa"]);
+    });
+
+    it("returns all phases when no markers found", () => {
+      const commentBodies = ["Just a regular comment"];
+      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+
+      const requestedPhases = ["spec", "exec", "qa"];
+      const result = getResumablePhasesForIssue(42, requestedPhases);
+
+      expect(result).toEqual(["spec", "exec", "qa"]);
+    });
   });
 });
