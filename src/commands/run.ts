@@ -655,9 +655,7 @@ export function createCheckpointCommit(
   const commitMessage = `checkpoint(#${issueNumber}): QA passed
 
 This is an automatic checkpoint commit created after issue #${issueNumber}
-passed QA in chain mode. It serves as a recovery point if later issues fail.
-
-Co-Authored-By: Sequant <noreply@sequant.dev>`;
+passed QA in chain mode. It serves as a recovery point if later issues fail.`;
 
   const commitResult = spawnSync(
     "git",
