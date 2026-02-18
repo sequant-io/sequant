@@ -195,6 +195,35 @@ describe("Zod Schemas", () => {
         RunConfigSchema.parse({ ...validConfig, maxIterations: -1 }),
       ).toThrow();
     });
+
+    it("accepts optional chain flag", () => {
+      expect(() =>
+        RunConfigSchema.parse({ ...validConfig, chain: true }),
+      ).not.toThrow();
+      expect(() =>
+        RunConfigSchema.parse({ ...validConfig, chain: false }),
+      ).not.toThrow();
+    });
+
+    it("accepts optional qaGate flag", () => {
+      expect(() =>
+        RunConfigSchema.parse({ ...validConfig, qaGate: true }),
+      ).not.toThrow();
+      expect(() =>
+        RunConfigSchema.parse({ ...validConfig, qaGate: false }),
+      ).not.toThrow();
+    });
+
+    it("accepts both chain and qaGate flags", () => {
+      expect(() =>
+        RunConfigSchema.parse({ ...validConfig, chain: true, qaGate: true }),
+      ).not.toThrow();
+    });
+
+    it("accepts config without chain and qaGate (backwards compatibility)", () => {
+      // Existing logs without these fields should still parse
+      expect(() => RunConfigSchema.parse(validConfig)).not.toThrow();
+    });
   });
 
   describe("RunLogSchema", () => {

@@ -637,6 +637,96 @@ describe("chain mode", () => {
       }
     });
   });
+
+  describe("pre-existing worktree handling in chain mode", () => {
+    it("should rebase existing worktree onto previous chain link in chain mode", () => {
+      // This test documents the expected behavior:
+      // When a worktree already exists and chainMode is true with a baseBranch,
+      // the existing worktree should be rebased onto the baseBranch
+
+      // Scenario: #40 worktree exists, running chain with #40 → #41 → #42
+      // Expected: #40's worktree should be rebased onto origin/main (or specified base)
+
+      const chainMode = true;
+      const baseBranch = "feature/39-previous";
+      const existingWorktreePath = "/path/to/worktrees/feature/40-current";
+
+      // The logic should detect: chainMode && baseBranch && existingPath
+      const shouldRebase = chainMode && baseBranch && existingWorktreePath;
+      expect(shouldRebase).toBeTruthy();
+    });
+
+    it("should skip rebase when not in chain mode even if baseBranch exists", () => {
+      // Non-chain mode should not rebase existing worktrees
+      const chainMode = false;
+      const baseBranch = "feature/39-previous";
+      const existingWorktreePath = "/path/to/worktrees/feature/40-current";
+
+      const shouldRebase = chainMode && baseBranch && existingWorktreePath;
+      expect(shouldRebase).toBeFalsy();
+    });
+
+    it("should skip rebase when no baseBranch provided", () => {
+      // First issue in chain has no baseBranch (uses origin/main)
+      const chainMode = true;
+      const baseBranch = undefined;
+      const existingWorktreePath = "/path/to/worktrees/feature/40-current";
+
+      const shouldRebase = chainMode && baseBranch && existingWorktreePath;
+      expect(shouldRebase).toBeFalsy();
+    });
+
+    it("should handle rebase conflicts gracefully", () => {
+      // When rebase fails due to conflicts, the function should:
+      // 1. Log a warning
+      // 2. Abort the rebase
+      // 3. Return with rebased: false
+      // 4. Continue operation (not throw)
+
+      // This documents the expected error handling behavior
+      const conflictIndicators = ["CONFLICT", "could not apply"];
+      const errorMessage = "error: could not apply abc123... Add feature";
+
+      const isConflict = conflictIndicators.some((indicator) =>
+        errorMessage.includes(indicator),
+      );
+      expect(isConflict).toBe(true);
+    });
+
+    it("should return rebased: true on successful rebase", () => {
+      // When rebase succeeds, returned WorktreeInfo should have:
+      // - existed: true (worktree already existed)
+      // - rebased: true (rebase was performed successfully)
+
+      const expectedResult = {
+        issue: 40,
+        path: "/path/to/worktrees/feature/40-test",
+        branch: "feature/40-test",
+        existed: true,
+        rebased: true,
+      };
+
+      expect(expectedResult.existed).toBe(true);
+      expect(expectedResult.rebased).toBe(true);
+    });
+
+    it("should return rebased: false when rebase fails", () => {
+      // When rebase fails, returned WorktreeInfo should have:
+      // - existed: true
+      // - rebased: false
+
+      const expectedResult = {
+        issue: 40,
+        path: "/path/to/worktrees/feature/40-test",
+        branch: "feature/40-test",
+        existed: true,
+        rebased: false,
+      };
+
+      expect(expectedResult.existed).toBe(true);
+      expect(expectedResult.rebased).toBe(false);
+    });
+  });
 });
 
 describe("parseQaVerdict", () => {

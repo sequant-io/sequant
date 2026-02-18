@@ -284,6 +284,81 @@ async function ensureWorktree(
         chalk.gray(`    📂 Reusing existing worktree: ${existingPath}`),
       );
     }
+
+    // In chain mode, rebase existing worktree onto previous chain link
+    if (chainMode && baseBranch) {
+      if (verbose) {
+        console.log(
+          chalk.gray(
+            `    🔄 Rebasing existing worktree onto chain base (${baseBranch})...`,
+          ),
+        );
+      }
+
+      const rebaseResult = spawnSync(
+        "git",
+        ["-C", existingPath, "rebase", baseBranch],
+        { stdio: "pipe" },
+      );
+
+      if (rebaseResult.status !== 0) {
+        const rebaseError = rebaseResult.stderr.toString();
+
+        // Check if it's a conflict
+        if (
+          rebaseError.includes("CONFLICT") ||
+          rebaseError.includes("could not apply")
+        ) {
+          console.log(
+            chalk.yellow(
+              `    ⚠️  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+            ),
+          );
+          console.log(
+            chalk.yellow(
+              `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
+            ),
+          );
+
+          // Abort the rebase to restore branch state
+          spawnSync("git", ["-C", existingPath, "rebase", "--abort"], {
+            stdio: "pipe",
+          });
+        } else {
+          console.log(
+            chalk.yellow(`    ⚠️  Rebase failed: ${rebaseError.trim()}`),
+          );
+          console.log(
+            chalk.yellow(
+              `    ℹ️  Continuing with branch in its original state.`,
+            ),
+          );
+        }
+
+        return {
+          issue: issueNumber,
+          path: existingPath,
+          branch,
+          existed: true,
+          rebased: false,
+        };
+      }
+
+      if (verbose) {
+        console.log(
+          chalk.green(`    ✅ Existing worktree rebased onto ${baseBranch}`),
+        );
+      }
+
+      return {
+        issue: issueNumber,
+        path: existingPath,
+        branch,
+        existed: true,
+        rebased: true,
+      };
+    }
+
     return {
       issue: issueNumber,
       path: existingPath,
@@ -1708,6 +1783,8 @@ export async function runCommand(
       sequential: config.sequential,
       qualityLoop: config.qualityLoop,
       maxIterations: config.maxIterations,
+      chain: mergedOptions.chain,
+      qaGate: mergedOptions.qaGate,
     };
 
     logWriter = new LogWriter({
