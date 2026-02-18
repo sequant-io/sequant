@@ -527,6 +527,8 @@ parent-directory/
 If a worktree already exists for an issue's branch, Sequant reuses it.
 This preserves any in-progress work.
 
+In **chain mode**, existing worktrees are automatically rebased onto the previous chain link. If a rebase conflict occurs, the rebase is aborted and the worktree continues in its original state with a warning.
+
 ### Phase Isolation
 
 Not all phases run in the worktree:

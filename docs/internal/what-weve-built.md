@@ -727,7 +727,7 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.15.0)
+### Recent Additions (v1.15.x)
 
 - **Cold-start retry for phase execution**
   - Phases that fail within 60s are automatically retried (up to 2x)
@@ -742,6 +742,19 @@ Shell scripts in `templates/scripts/`:
     verbose `console.log()` calls from StateManager/MetricsWriter
   - Suppressed repetitive `State saved` / `Metrics saved` noise;
     operator-useful messages (phase transitions, status changes) remain
+- **Fix: streaming output truncation** (#283)
+  - Pauses spinner once per streaming session instead of per-chunk
+  - Eliminates truncation caused by ora's line-clearing during rapid
+    pause/resume cycles in verbose mode
+- **Fix: chain mode with pre-existing worktrees** (#289)
+  - Existing worktrees are rebased onto previous chain link in chain mode
+  - Conflict detection with graceful abort and user-facing warnings
+  - `chain` and `qaGate` flags now recorded in run logs
+- **QA script verification overrides** (#176)
+  - Approved override categories for cosmetic script changes
+    (syntax-only, comments, type annotations, import reorg, dead code)
+  - Structured override format with risk assessment (None/Low/Medium)
+  - Decision flow: overrides only for clear-cut zero-runtime-impact changes
 
 ### v1.14.0
 
@@ -972,4 +985,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-15 · `7dae48d` fix(#282): prevent spinner + verbose log interleaving*
+*Last updated: 2026-02-18 · `4555750` fix(#289): chain mode worktree rebase*
