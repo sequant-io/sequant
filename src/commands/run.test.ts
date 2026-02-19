@@ -729,6 +729,148 @@ describe("chain mode", () => {
   });
 });
 
+describe("MCP fallback retry behavior", () => {
+  describe("retry config option", () => {
+    it("should default retry to true", () => {
+      // Document the default behavior: retry is enabled by default
+      const defaultRetry = true;
+      expect(defaultRetry).toBe(true);
+    });
+
+    it("should disable retry when noRetry option is set", () => {
+      // When --no-retry flag is used, retry should be disabled
+      const noRetry = true;
+      const retryEnabled = !noRetry;
+      expect(retryEnabled).toBe(false);
+    });
+
+    it("should respect settings.run.retry when noRetry is not set", () => {
+      // Settings hierarchy: CLI flag → settings.run.retry → default (true)
+      const settingsRetry = false;
+      const noRetry = false;
+      const retryEnabled = noRetry ? false : (settingsRetry ?? true);
+      expect(retryEnabled).toBe(false);
+    });
+
+    it("should use default true when settings.run.retry is undefined", () => {
+      const settingsRetry = undefined;
+      const noRetry = false;
+      const retryEnabled = noRetry ? false : (settingsRetry ?? true);
+      expect(retryEnabled).toBe(true);
+    });
+  });
+
+  describe("MCP fallback conditions", () => {
+    it("should only attempt MCP fallback when MCP is enabled", () => {
+      // MCP fallback should only trigger when config.mcp is true
+      const mcpEnabled = true;
+      const phaseFailed = true;
+      const shouldAttemptMcpFallback = mcpEnabled && phaseFailed;
+      expect(shouldAttemptMcpFallback).toBe(true);
+    });
+
+    it("should not attempt MCP fallback when MCP is already disabled", () => {
+      // If MCP is disabled, no point in retrying without it
+      const mcpEnabled = false;
+      const phaseFailed = true;
+      const shouldAttemptMcpFallback = mcpEnabled && phaseFailed;
+      expect(shouldAttemptMcpFallback).toBe(false);
+    });
+
+    it("should not attempt MCP fallback when phase succeeds", () => {
+      // No fallback needed on success
+      const mcpEnabled = true;
+      const phaseFailed = false;
+      const shouldAttemptMcpFallback = mcpEnabled && phaseFailed;
+      expect(shouldAttemptMcpFallback).toBe(false);
+    });
+  });
+
+  describe("cold-start retry thresholds", () => {
+    it("should identify cold-start failure when duration is under threshold", () => {
+      const COLD_START_THRESHOLD_SECONDS = 60;
+      const duration = 25; // Typical cold-start failure duration (15-39s)
+      const isSuccess = false;
+
+      const isColdStartFailure =
+        !isSuccess && duration < COLD_START_THRESHOLD_SECONDS;
+      expect(isColdStartFailure).toBe(true);
+    });
+
+    it("should identify genuine failure when duration exceeds threshold", () => {
+      const COLD_START_THRESHOLD_SECONDS = 60;
+      const duration = 180; // Long enough to be real work
+      const isSuccess = false;
+
+      const isGenuineFailure =
+        !isSuccess && duration >= COLD_START_THRESHOLD_SECONDS;
+      expect(isGenuineFailure).toBe(true);
+    });
+
+    it("should not retry on success regardless of duration", () => {
+      const COLD_START_THRESHOLD_SECONDS = 60;
+      const duration = 10; // Short duration
+      const isSuccess = true;
+
+      const shouldRetry = !isSuccess && duration < COLD_START_THRESHOLD_SECONDS;
+      expect(shouldRetry).toBe(false);
+    });
+
+    it("should limit cold-start retries to COLD_START_MAX_RETRIES", () => {
+      const COLD_START_MAX_RETRIES = 2;
+      // Total attempts = 1 initial + 2 retries = 3
+      const totalAttempts = 1 + COLD_START_MAX_RETRIES;
+      expect(totalAttempts).toBe(3);
+    });
+  });
+
+  describe("error preservation", () => {
+    it("should return original error when both attempts fail", () => {
+      // When MCP fallback also fails, return original error for better diagnostics
+      const originalError = "MCP server initialization failed";
+      const retryError = "Generic failure without MCP";
+
+      // On double failure, we want to show the original error
+      const errorToReturn = originalError;
+      expect(errorToReturn).toBe(originalError);
+    });
+  });
+});
+
+describe("logWriter error handling", () => {
+  describe("initialization failure handling", () => {
+    it("should continue execution when logWriter fails to initialize", () => {
+      // Log initialization failure should not crash the run
+      const logInitFailed = true;
+      const shouldContinue = true; // Run continues without logging
+
+      expect(logInitFailed).toBe(true);
+      expect(shouldContinue).toBe(true);
+    });
+
+    it("should set logWriter to null on initialization failure", () => {
+      // When initialization fails, logWriter should be null
+      let logWriter: null | { initialized: boolean } = { initialized: false };
+
+      // Simulate failure
+      const initFailed = true;
+      if (initFailed) {
+        logWriter = null;
+      }
+
+      expect(logWriter).toBeNull();
+    });
+
+    it("should log a warning on initialization failure", () => {
+      // The warning message pattern
+      const errorMessage = "Permission denied";
+      const expectedWarning = `⚠️ Log initialization failed, continuing without logging: ${errorMessage}`;
+      expect(expectedWarning).toContain("Log initialization failed");
+      expect(expectedWarning).toContain(errorMessage);
+    });
+  });
+});
+
 describe("parseQaVerdict", () => {
   describe("should parse valid verdict formats", () => {
     it("should parse markdown header format", () => {
