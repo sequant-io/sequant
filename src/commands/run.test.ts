@@ -17,6 +17,7 @@ import {
   detectPhasesFromLabels,
   createCheckpointCommit,
   parseQaVerdict,
+  executePhaseWithRetry,
 } from "./run.js";
 
 describe("run command", () => {
@@ -725,6 +726,236 @@ describe("chain mode", () => {
 
       expect(expectedResult.existed).toBe(true);
       expect(expectedResult.rebased).toBe(false);
+    });
+  });
+});
+
+describe("executePhaseWithRetry", () => {
+  const baseConfig = {
+    phases: ["exec" as const],
+    phaseTimeout: 1800,
+    qualityLoop: false,
+    maxIterations: 3,
+    skipVerification: false,
+    sequential: false,
+    forceParallel: false,
+    verbose: false,
+    noSmartTests: false,
+    dryRun: false,
+    mcp: true,
+    retry: true,
+  };
+
+  const successResult = {
+    phase: "exec" as const,
+    success: true,
+    durationSeconds: 120,
+  };
+
+  const coldStartFailure = {
+    phase: "exec" as const,
+    success: false,
+    durationSeconds: 25,
+    error: "MCP server initialization failed",
+  };
+
+  const genuineFailure = {
+    phase: "exec" as const,
+    success: false,
+    durationSeconds: 180,
+    error: "Phase execution failed",
+  };
+
+  describe("MCP fallback retry", () => {
+    it("should retry with MCP disabled when phase fails and MCP is enabled", async () => {
+      const mockExecutePhase = vi
+        .fn()
+        // Cold-start retries: fail 3 times (initial + 2 retries) under threshold
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        // MCP fallback: succeed
+        .mockResolvedValueOnce(successResult);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, mcp: true },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(true);
+      // 3 cold-start attempts + 1 MCP fallback = 4 calls
+      expect(mockExecutePhase).toHaveBeenCalledTimes(4);
+      // Last call should have mcp: false
+      const lastCall = mockExecutePhase.mock.calls[3];
+      expect(lastCall[2].mcp).toBe(false);
+    });
+
+    it("should not attempt MCP fallback when MCP is already disabled", async () => {
+      const mockExecutePhase = vi.fn().mockResolvedValue(genuineFailure);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, mcp: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(false);
+      // Only 1 call — genuine failure (duration >= threshold), no cold-start retries, no MCP fallback
+      expect(mockExecutePhase).toHaveBeenCalledTimes(1);
+    });
+
+    it("should not retry when phase succeeds on first attempt", async () => {
+      const mockExecutePhase = vi.fn().mockResolvedValue(successResult);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        baseConfig,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(true);
+      expect(mockExecutePhase).toHaveBeenCalledTimes(1);
+    });
+
+    it("should return original error when both MCP-enabled and MCP-disabled fail", async () => {
+      const mcpFallbackFailure = {
+        phase: "exec" as const,
+        success: false,
+        durationSeconds: 25,
+        error: "Generic failure without MCP",
+      };
+
+      const mockExecutePhase = vi
+        .fn()
+        // Cold-start retries all fail
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        // MCP fallback also fails
+        .mockResolvedValueOnce(mcpFallbackFailure);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, mcp: true },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(false);
+      // Should return original error, not the MCP fallback error
+      expect(result.error).toBe("MCP server initialization failed");
+    });
+  });
+
+  describe("retry disabled", () => {
+    it("should skip all retry logic when config.retry is false", async () => {
+      const mockExecutePhase = vi.fn().mockResolvedValue(coldStartFailure);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, retry: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(false);
+      // Exactly 1 call — no retries at all
+      expect(mockExecutePhase).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("cold-start retry behavior", () => {
+    it("should not retry when failure duration exceeds threshold", async () => {
+      const mockExecutePhase = vi.fn().mockResolvedValue(genuineFailure);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        baseConfig,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(false);
+      // Duration >= 60s, so it's treated as genuine failure — no retry
+      expect(mockExecutePhase).toHaveBeenCalledTimes(1);
+    });
+
+    it("should retry up to COLD_START_MAX_RETRIES times for short failures", async () => {
+      const mockExecutePhase = vi.fn().mockResolvedValue(coldStartFailure);
+
+      const result = await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, mcp: false },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      expect(result.success).toBe(false);
+      // 1 initial + 2 retries = 3 total (MCP fallback skipped because mcp: false)
+      expect(mockExecutePhase).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe("MCP fallback warning", () => {
+    it("should log warning when falling back to no-MCP", async () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const mockExecutePhase = vi
+        .fn()
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(coldStartFailure)
+        .mockResolvedValueOnce(successResult);
+
+      await executePhaseWithRetry(
+        123,
+        "exec",
+        { ...baseConfig, mcp: true },
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        mockExecutePhase,
+      );
+
+      const logCalls = consoleSpy.mock.calls.map((c) => String(c[0]));
+      expect(logCalls.some((msg) => msg.includes("retrying without MCP"))).toBe(
+        true,
+      );
+
+      consoleSpy.mockRestore();
     });
   });
 });

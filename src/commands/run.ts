@@ -965,6 +965,12 @@ interface RunOptions {
    * Reads phase markers from GitHub issue comments and skips completed phases.
    */
   resume?: boolean;
+  /**
+   * Disable automatic retry with MCP fallback.
+   * When true, no retry attempts are made on phase failure.
+   * Useful for debugging to see the actual failure without retry masking it.
+   */
+  noRetry?: boolean;
 }
 
 /**
@@ -1293,11 +1299,20 @@ const COLD_START_THRESHOLD_SECONDS = 60;
 const COLD_START_MAX_RETRIES = 2;
 
 /**
- * Execute a phase with automatic retry for cold-start failures.
- * If a phase fails within COLD_START_THRESHOLD_SECONDS, it's likely a subprocess
- * initialization issue — retry up to COLD_START_MAX_RETRIES times before giving up.
+ * Execute a phase with automatic retry for cold-start failures and MCP fallback.
+ *
+ * Retry strategy:
+ * 1. If phase fails within COLD_START_THRESHOLD_SECONDS, retry up to COLD_START_MAX_RETRIES times
+ * 2. If still failing and MCP is enabled, retry once with MCP disabled (npx-based MCP servers
+ *    can fail on first run due to cold-cache issues)
+ *
+ * The MCP fallback is safe because MCP servers are optional enhancements, not required
+ * for core functionality.
  */
-async function executePhaseWithRetry(
+/**
+ * @internal Exported for testing only
+ */
+export async function executePhaseWithRetry(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
@@ -1305,11 +1320,27 @@ async function executePhaseWithRetry(
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
   spinner?: PhaseSpinner,
+  /** @internal Injected for testing — defaults to module-level executePhase */
+  executePhaseFn: typeof executePhase = executePhase,
 ): Promise<PhaseResult & { sessionId?: string }> {
+  // Skip retry logic if explicitly disabled
+  if (config.retry === false) {
+    return executePhaseFn(
+      issueNumber,
+      phase,
+      config,
+      sessionId,
+      worktreePath,
+      shutdownManager,
+      spinner,
+    );
+  }
+
   let lastResult: PhaseResult & { sessionId?: string };
 
+  // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
   for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
-    lastResult = await executePhase(
+    lastResult = await executePhaseFn(
       issueNumber,
       phase,
       config,
@@ -1336,6 +1367,50 @@ async function executePhaseWithRetry(
         );
       }
     }
+  }
+
+  // Capture the original error for better diagnostics
+  const originalError = lastResult!.error;
+
+  // Phase 2: MCP fallback - if MCP is enabled and we're still failing, try without MCP
+  // This handles npx-based MCP servers that fail on first run due to cold-cache issues
+  if (config.mcp && !lastResult!.success) {
+    console.log(
+      chalk.yellow(
+        `\n    ⚠️ Phase failed with MCP enabled, retrying without MCP...`,
+      ),
+    );
+
+    // Create config copy with MCP disabled
+    const configWithoutMcp: ExecutionConfig = {
+      ...config,
+      mcp: false,
+    };
+
+    const retryResult = await executePhaseFn(
+      issueNumber,
+      phase,
+      configWithoutMcp,
+      sessionId,
+      worktreePath,
+      shutdownManager,
+      spinner,
+    );
+
+    if (retryResult.success) {
+      console.log(
+        chalk.green(
+          `    ✓ Phase succeeded without MCP (MCP cold-start issue detected)`,
+        ),
+      );
+      return retryResult;
+    }
+
+    // Both attempts failed - return original error for better diagnostics
+    return {
+      ...lastResult!,
+      error: originalError,
+    };
   }
 
   return lastResult!;
@@ -1749,6 +1824,11 @@ export async function runCommand(
     ? false
     : (settings.run.mcp ?? DEFAULT_CONFIG.mcp);
 
+  // Resolve retry setting: CLI flag → settings.run.retry → default (true)
+  const retryEnabled = mergedOptions.noRetry
+    ? false
+    : (settings.run.retry ?? true);
+
   const config: ExecutionConfig = {
     ...DEFAULT_CONFIG,
     phases: explicitPhases ?? DEFAULT_PHASES,
@@ -1760,6 +1840,7 @@ export async function runCommand(
     maxIterations: mergedOptions.maxIterations ?? DEFAULT_CONFIG.maxIterations,
     noSmartTests: mergedOptions.noSmartTests ?? false,
     mcp: mcpEnabled,
+    retry: retryEnabled,
   };
 
   // Propagate verbose mode to UI config so spinners use text-only mode.
@@ -1787,11 +1868,23 @@ export async function runCommand(
       qaGate: mergedOptions.qaGate,
     };
 
-    logWriter = new LogWriter({
-      logPath: mergedOptions.logPath ?? settings.run.logPath,
-      verbose: config.verbose,
-    });
-    await logWriter.initialize(runConfig);
+    try {
+      logWriter = new LogWriter({
+        logPath: mergedOptions.logPath ?? settings.run.logPath,
+        verbose: config.verbose,
+      });
+      await logWriter.initialize(runConfig);
+    } catch (err) {
+      // Log initialization failure is non-fatal - warn and continue without logging
+      // Common causes: permissions issues, disk full, invalid path
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      console.log(
+        chalk.yellow(
+          `  ⚠️ Log initialization failed, continuing without logging: ${errorMessage}`,
+        ),
+      );
+      logWriter = null;
+    }
   }
 
   // Initialize state manager for persistent workflow state tracking

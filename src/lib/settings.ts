@@ -88,6 +88,13 @@ export interface RunSettings {
    * Default: true
    */
   mcp: boolean;
+  /**
+   * Enable automatic retry with MCP fallback.
+   * When true (default), failed phases are retried with MCP disabled.
+   * When false or --no-retry flag is used, no retry attempts are made.
+   * Default: true
+   */
+  retry: boolean;
 }
 
 /**
@@ -179,6 +186,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     smartTests: true,
     rotation: DEFAULT_ROTATION_SETTINGS,
     mcp: true, // Enable MCP servers by default in headless mode
+    retry: true, // Enable automatic retry with MCP fallback by default
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
