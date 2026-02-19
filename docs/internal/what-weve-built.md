@@ -729,10 +729,20 @@ Shell scripts in `templates/scripts/`:
 
 ### Recent Additions (v1.15.x)
 
-- **Cold-start retry for phase execution**
-  - Phases that fail within 60s are automatically retried (up to 2x)
-  - Distinguishes subprocess init failures from genuine phase failures
-  - Improves reliability of unattended `sequant run` workflows
+- **MCP fallback retry for cold-start failures** (#267)
+  - Two-phase retry: cold-start retries (up to 2x within 60s) then MCP fallback
+  - MCP fallback disables MCP servers on retry, addressing npx cold-cache failures
+  - Original error preserved on double-failure for better diagnostics
+  - `--no-retry` flag and `run.retry` setting for explicit control
+  - Non-fatal `logWriter.initialize()` — runs continue without logging on failure
+  - 8 unit tests via dependency-injected `executePhaseFn`
+- **Pre-PR rebase to prevent lockfile drift** (#295)
+  - Worktree branches rebase onto `origin/main` before PR creation
+  - Lockfile change detection (`ORIG_HEAD..HEAD`) triggers automatic reinstall
+  - Chain mode: only final branch rebases (intermediate branches preserved)
+  - Graceful conflict handling (abort, warn, continue with original state)
+  - `--no-rebase` flag for manual rebase workflows
+  - 10 unit tests covering rebase, lockfile detection, and conflict handling
 - **Auto-sync skills on upgrade**
   - Skills automatically sync when upgrading sequant
   - `sequant status` auto-detects merged PRs
@@ -995,4 +1005,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-18 · `1e0d662` test(phase-detection): gh CLI wrapper error paths*
+*Last updated: 2026-02-19 · `7d0f6c6` fix(#295): Rebase worktrees onto main before PR to prevent lockfile drift*
