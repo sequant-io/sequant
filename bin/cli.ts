@@ -195,6 +195,10 @@ program
     "--resume",
     "Resume from last completed phase (reads phase markers from GitHub)",
   )
+  .option(
+    "--no-rebase",
+    "Skip pre-PR rebase onto origin/main (use when you want to handle rebasing manually)",
+  )
   .action(runCommand);
 
 program

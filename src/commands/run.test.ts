@@ -18,6 +18,8 @@ import {
   createCheckpointCommit,
   parseQaVerdict,
   executePhaseWithRetry,
+  rebaseBeforePR,
+  reinstallIfLockfileChanged,
 } from "./run.js";
 
 describe("run command", () => {
@@ -1074,6 +1076,312 @@ All AC technically met but code quality could be improved.
 Suggestions for improvement listed below.
 `;
       expect(parseQaVerdict(output)).toBe("AC_MET_BUT_NOT_A_PLUS");
+    });
+  });
+});
+
+describe("pre-PR rebase", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("rebaseBeforePR", () => {
+    it("should successfully rebase and return success", () => {
+      // Mock fetch origin main (success)
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock rebase (success)
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock lockfile check (no changes)
+        .mockReturnValue({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR("/path/to/worktree", 123, "npm", false);
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it("should handle rebase conflicts gracefully", () => {
+      // Mock fetch (success)
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock rebase (conflict)
+        .mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("CONFLICT (content): Merge conflict in file.ts"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock rebase --abort
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR("/path/to/worktree", 123, "npm", false);
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("conflict");
+    });
+
+    it("should handle non-conflict rebase failures", () => {
+      // Mock fetch (success)
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock rebase (other failure)
+        .mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("fatal: No rebase in progress?"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR("/path/to/worktree", 123, "npm", false);
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it("should continue even if fetch fails", () => {
+      // Mock fetch (failure)
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("Could not fetch"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock rebase (success)
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock lockfile check (no changes)
+        .mockReturnValue({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR("/path/to/worktree", 123, "npm", false);
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("reinstallIfLockfileChanged", () => {
+    it("should return false when no lockfile changed", () => {
+      // Mock all lockfile checks (no changes)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      const result = reinstallIfLockfileChanged(
+        "/path/to/worktree",
+        "npm",
+        false,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should reinstall when package-lock.json changed", () => {
+      // Mock lockfile checks - package-lock.json changed
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("package-lock.json\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock npm install
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = reinstallIfLockfileChanged(
+        "/path/to/worktree",
+        "npm",
+        false,
+      );
+
+      expect(result).toBe(true);
+      // Verify npm install was called
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+    });
+
+    it("should reinstall when pnpm-lock.yaml changed", () => {
+      // First lockfile (package-lock.json) - no change
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Second lockfile (pnpm-lock.yaml) - changed
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("pnpm-lock.yaml\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock pnpm install
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = reinstallIfLockfileChanged(
+        "/path/to/worktree",
+        "pnpm",
+        false,
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it("should return false when install fails", () => {
+      // Mock lockfile changed
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("package-lock.json\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock install failure
+        .mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("npm ERR! install failed"),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = reinstallIfLockfileChanged(
+        "/path/to/worktree",
+        "npm",
+        false,
+      );
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("lockfile detection", () => {
+    it("should use ORIG_HEAD..HEAD by default for rebase-aware comparison", () => {
+      // Mock all lockfile checks (no changes)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      reinstallIfLockfileChanged("/path/to/worktree", "npm", false);
+
+      // Verify the first call uses ORIG_HEAD..HEAD (not HEAD~1)
+      const firstCall = mockSpawnSync.mock.calls[0];
+      expect(firstCall[0]).toBe("git");
+      expect(firstCall[1]).toContain("ORIG_HEAD..HEAD");
+    });
+
+    it("should accept a custom preRebaseRef", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      reinstallIfLockfileChanged("/path/to/worktree", "npm", false, "abc123");
+
+      const firstCall = mockSpawnSync.mock.calls[0];
+      expect(firstCall[1]).toContain("abc123..HEAD");
     });
   });
 });
