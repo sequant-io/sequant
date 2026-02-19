@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase marker regex matches inside markdown code blocks (#269)
   - Pre-strips fenced code blocks and inline code before regex matching
   - Handles 3+ backtick/tilde fences per CommonMark spec
+- `sequant run` fails on first execution, succeeds on retry (#267)
+  - Two-phase retry strategy: cold-start retries (up to 2x within 60s threshold) then MCP fallback
+  - MCP fallback disables MCP servers on retry, addressing npx-based cold-cache failures
+  - Original error preserved on double-failure for better diagnostics
+  - `--no-retry` flag and `run.retry` setting to disable retry behavior
+  - Non-fatal `logWriter.initialize()` — run continues without logging on failure
+- Worktree branches carry stale lockfiles after merge (#295)
+  - Pre-PR rebase onto `origin/main` ensures branches are up-to-date before merge
+  - Lockfile change detection (`ORIG_HEAD..HEAD`) triggers automatic dependency reinstall
+  - Chain mode: only the final branch rebases (intermediate branches stay based on predecessor)
+  - Rebase conflicts handled gracefully (abort, warn, continue with original state)
+  - `--no-rebase` flag to skip pre-PR rebase for manual workflows
 
 ### Added
 
