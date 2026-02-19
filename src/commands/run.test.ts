@@ -1349,20 +1349,39 @@ describe("pre-PR rebase", () => {
   });
 
   describe("lockfile detection", () => {
-    it("should check all lockfile types", () => {
-      // All lockfiles should be checked
-      const lockfiles = [
-        "package-lock.json",
-        "pnpm-lock.yaml",
-        "bun.lock",
-        "yarn.lock",
-      ];
+    it("should use ORIG_HEAD..HEAD by default for rebase-aware comparison", () => {
+      // Mock all lockfile checks (no changes)
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
 
-      // Verify these are the lockfiles we check
-      expect(lockfiles).toContain("package-lock.json");
-      expect(lockfiles).toContain("pnpm-lock.yaml");
-      expect(lockfiles).toContain("bun.lock");
-      expect(lockfiles).toContain("yarn.lock");
+      reinstallIfLockfileChanged("/path/to/worktree", "npm", false);
+
+      // Verify the first call uses ORIG_HEAD..HEAD (not HEAD~1)
+      const firstCall = mockSpawnSync.mock.calls[0];
+      expect(firstCall[0]).toBe("git");
+      expect(firstCall[1]).toContain("ORIG_HEAD..HEAD");
+    });
+
+    it("should accept a custom preRebaseRef", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 1234,
+        signal: null,
+        output: [],
+      });
+
+      reinstallIfLockfileChanged("/path/to/worktree", "npm", false, "abc123");
+
+      const firstCall = mockSpawnSync.mock.calls[0];
+      expect(firstCall[1]).toContain("abc123..HEAD");
     });
   });
 });

@@ -770,6 +770,10 @@ const LOCKFILES = [
  * @param worktreePath Path to the worktree
  * @param packageManager Package manager to use for install
  * @param verbose Whether to show verbose output
+ * @param preRebaseRef Git ref pointing to pre-rebase HEAD (defaults to ORIG_HEAD,
+ *        which git sets automatically after rebase). Using ORIG_HEAD captures all
+ *        lockfile changes across multi-commit rebases, unlike HEAD~1 which only
+ *        checks the last commit.
  * @returns true if reinstall was performed, false otherwise
  * @internal Exported for testing
  */
@@ -777,15 +781,24 @@ export function reinstallIfLockfileChanged(
   worktreePath: string,
   packageManager: string | undefined,
   verbose: boolean,
+  preRebaseRef: string = "ORIG_HEAD",
 ): boolean {
-  // Check if any lockfile changed in the last commit (after rebase)
-  // We compare HEAD to HEAD~1 to see what the rebase brought in
+  // Compare pre-rebase state to current HEAD to detect all lockfile changes
+  // introduced by the rebase (including changes from main that were pulled in)
   let lockfileChanged = false;
 
   for (const lockfile of LOCKFILES) {
     const result = spawnSync(
       "git",
-      ["-C", worktreePath, "diff", "--name-only", "HEAD~1", "--", lockfile],
+      [
+        "-C",
+        worktreePath,
+        "diff",
+        "--name-only",
+        `${preRebaseRef}..HEAD`,
+        "--",
+        lockfile,
+      ],
       { stdio: "pipe" },
     );
 
@@ -2270,7 +2283,8 @@ export async function runCommand(
       }
     } else if (config.sequential) {
       // Sequential execution
-      for (const issueNumber of issueNumbers) {
+      for (let i = 0; i < issueNumbers.length; i++) {
+        const issueNumber = issueNumbers[i];
         const issueInfo = issueInfoMap.get(issueNumber) ?? {
           title: `Issue #${issueNumber}`,
           labels: [],
@@ -2295,6 +2309,8 @@ export async function runCommand(
           shutdown,
           mergedOptions.chain, // Enable checkpoint commits in chain mode
           manifest.packageManager,
+          // In chain mode, only the last issue should trigger pre-PR rebase
+          mergedOptions.chain ? i === issueNumbers.length - 1 : undefined,
         );
         results.push(result);
 
@@ -2632,6 +2648,7 @@ async function runIssueWithLogging(
   shutdownManager?: ShutdownManager,
   chainMode?: boolean,
   packageManager?: string,
+  isLastInChain?: boolean,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -3066,8 +3083,14 @@ async function runIssueWithLogging(
   // Rebase onto origin/main before PR creation (unless --no-rebase)
   // This ensures the branch is up-to-date and prevents lockfile drift
   // AC-1: Non-chain mode rebases onto origin/main before PR
-  // AC-2: Chain mode rebases final branch onto origin/main before PR
-  if (success && worktreePath && !options.noRebase) {
+  // AC-2: Chain mode rebases only the final branch onto origin/main before PR
+  //        (intermediate branches must stay based on their predecessor)
+  const shouldRebase =
+    success &&
+    worktreePath &&
+    !options.noRebase &&
+    (!chainMode || isLastInChain);
+  if (shouldRebase) {
     rebaseBeforePR(worktreePath, issueNumber, packageManager, config.verbose);
   }
 
