@@ -45,6 +45,12 @@ export interface ExecutionConfig {
   dryRun: boolean;
   /** Enable MCP servers in headless mode (true by default, false if --no-mcp flag used) */
   mcp: boolean;
+  /**
+   * Enable automatic retry with MCP fallback.
+   * When true (default), failed phases are retried with MCP disabled.
+   * When false (--no-retry flag), no retry attempts are made.
+   */
+  retry?: boolean;
 }
 
 /**
@@ -62,6 +68,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   noSmartTests: false,
   dryRun: false,
   mcp: true,
+  retry: true,
 };
 
 // Import and re-export QaVerdict from run-log-schema (single source of truth)

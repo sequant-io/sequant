@@ -188,6 +188,10 @@ program
   )
   .option("--no-mcp", "Disable MCP server injection in headless mode")
   .option(
+    "--no-retry",
+    "Disable automatic retry with MCP fallback (useful for debugging)",
+  )
+  .option(
     "--resume",
     "Resume from last completed phase (reads phase markers from GitHub)",
   )
