@@ -1069,6 +1069,152 @@ Or if issues were found and fixed:
 | ESLint | ✅ Passed (after fixes) | Fixed 2 unused imports in `src/lib/scope/index.ts` |
 ```
 
+### 3e. Testing Non-Exported Functions (REQUIRED)
+
+**Purpose:** Provide guidance when a function needs tests but is not exported, preventing tautological tests that provide zero regression protection.
+
+**Decision Tree:**
+
+```
+Function needs tests but is not exported?
+│
+├─ Can it be exported with @internal tag?
+│   └─ YES → Export it, test directly
+│
+├─ Can a dependency be injected for mocking?
+│   └─ YES → Add optional param, test with mock
+│
+├─ Can the behavior be tested via a public caller?
+│   └─ YES → Write integration test through the public API
+│
+└─ None of the above?
+    └─ Document why tests are limited, do NOT write tautological tests
+```
+
+**⚠️ ANTI-PATTERN WARNING:**
+
+> **NEVER write tests that only assert on local variables.** If a test block does not call any imported function, it is tautological and provides no regression protection.
+>
+> **Bad example (from #267):**
+> ```typescript
+> // ❌ TAUTOLOGICAL - tests nothing real
+> it("should retry on failure", () => {
+>   const mcpEnabled = true;
+>   const phaseFailed = true;
+>   expect(mcpEnabled && phaseFailed).toBe(true); // Always passes!
+> });
+> ```
+>
+> If you cannot test a function directly, escalate to integration testing or export with `@internal` — **do not fake the test**.
+
+**Pattern 1: Export with @internal**
+
+When the function can be safely exported without breaking encapsulation:
+
+```typescript
+// src/lib/retry.ts
+
+/** @internal Exported for testing only - do not use directly */
+export function executePhaseWithRetry(
+  phase: Phase,
+  maxRetries: number,
+): Promise<Result> {
+  // Implementation
+}
+
+// src/lib/retry.test.ts
+import { executePhaseWithRetry } from './retry';
+
+it("retries up to maxRetries on failure", async () => {
+  const result = await executePhaseWithRetry(mockPhase, 3);
+  expect(result.attempts).toBe(3);
+});
+```
+
+**Pattern 2: Dependency Injection**
+
+When the function has internal dependencies that need mocking:
+
+```typescript
+// src/lib/retry.ts
+
+export function retry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number,
+  // Injectable for tests - defaults to real implementation
+  delayFn: (ms: number) => Promise<void> = delay,
+): Promise<T> {
+  // Implementation uses delayFn instead of hardcoded delay
+}
+
+// src/lib/retry.test.ts
+import { retry } from './retry';
+
+it("waits between retries", async () => {
+  const mockDelay = vi.fn().mockResolvedValue(undefined);
+
+  await retry(failingFn, 3, mockDelay);
+
+  expect(mockDelay).toHaveBeenCalledTimes(2); // Called between retries
+});
+```
+
+**Pattern 3: Integration Test via Public API**
+
+When the private function is called by a public entry point:
+
+```typescript
+// src/commands/run.ts (public)
+export async function runCommand(options: RunOptions): Promise<Result> {
+  // Internally calls executePhaseWithRetry (private)
+}
+
+// src/commands/run.test.ts
+import { runCommand } from './run';
+
+it("retries on cold-start MCP failure", async () => {
+  // Mock the MCP to fail once then succeed
+  mockMcp.onFirstCall().throws(new Error("Cold start"));
+  mockMcp.onSecondCall().resolves(successResult);
+
+  // Test via public API - exercises the private retry logic
+  const result = await runCommand({ useMcp: true });
+
+  expect(result.exitCode).toBe(0);
+  expect(mockMcp.callCount).toBe(2); // Proves retry happened
+});
+```
+
+**Pattern 4: Document Limitation (Last Resort)**
+
+When none of the above approaches work, document the limitation clearly:
+
+```typescript
+// src/lib/internal.ts
+
+/**
+ * @remarks
+ * This function cannot be directly tested because:
+ * - It relies on process-level state that cannot be mocked
+ * - Exporting would break the module's encapsulation contract
+ * - No public API exercises this code path in isolation
+ *
+ * Coverage is provided indirectly through E2E tests in:
+ * - e2e/full-workflow.test.ts (lines 45-67)
+ *
+ * TODO: Refactor to enable direct testing (see #XXX)
+ */
+function internalHelper(): void {
+  // Implementation
+}
+```
+
+**When documenting limitations, you MUST:**
+1. Explain WHY direct testing is not possible
+2. Reference any indirect coverage (E2E, integration tests)
+3. Create a follow-up issue if refactoring would enable testability
+4. **Never** write a tautological test to inflate coverage numbers
+
 ### 4. Implementation Loop
 
 - Implement in **small, incremental diffs**.
