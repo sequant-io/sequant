@@ -812,6 +812,120 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
 
 See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detection commands and full criteria.
 
+### 2f. Call-Site Review (When New Functions Added)
+
+**When to apply:** New exported functions are detected in the diff.
+
+**Purpose:** Review not just the function implementation but **where** and **how** it's called. A function can be perfectly implemented but called incorrectly at the call site. (Origin: Issue #295 — `rebaseBeforePR()` had thorough unit tests but was called for every issue in a chain loop when the AC specified "only the final branch.")
+
+**Detection:**
+```bash
+# Find new exported functions (added lines only)
+new_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}')
+export_count=$(echo "$new_exports" | grep -c . || echo 0)
+
+if [[ $export_count -gt 0 ]]; then
+  echo "New exported functions detected: $export_count"
+  echo "$new_exports"
+fi
+```
+
+**If new exported functions found:**
+
+#### Step 1: Call-Site Inventory (AC-2)
+
+For each new exported function, identify ALL call sites:
+
+```bash
+# For each new function, find call sites
+for func in $new_exports; do
+  echo "=== Call sites for $func ==="
+  grep -rn "${func}(" --include="*.ts" --include="*.tsx" . | grep -v "\.test\." | grep -v "__tests__" | grep -v "export.*function ${func}"
+done
+```
+
+**Call site types:**
+- Direct call: `functionName(args)`
+- Method call: `this.functionName(args)` or `obj.functionName(args)`
+- Callback: `.then(functionName)` or `array.map(functionName)`
+- Conditional: `condition && functionName(args)`
+
+#### Step 2: Condition Audit (AC-3)
+
+For each call site, document the conditions that gate the call:
+
+| Condition Type | Example | Check |
+|----------------|---------|-------|
+| Guard clause | `if (x) { fn() }` | Does condition match AC? |
+| Logical AND | `x && fn()` | Is guard sufficient? |
+| Ternary | `x ? fn() : null` | Correct branch? |
+| Early return | `if (!x) return; fn()` | Correct logic? |
+
+**Compare conditions against AC constraints:**
+- AC says "only when X" → Call site should have `if (X)` guard
+- AC says "not in Y mode" → Call site should have `if (!Y)` guard
+- AC says "for Z items" → Call site should filter for Z condition
+
+#### Step 3: Loop Awareness (AC-4)
+
+**Detect if function is called inside a loop:**
+
+```bash
+# Check context around each call site (5 lines before)
+for func in $new_exports; do
+  grep -rn "${func}(" --include="*.ts" --include="*.tsx" . -B 5 | \
+    grep -E "(for|while|forEach|\.map\(|\.filter\(|\.reduce\()" && \
+    echo "⚠️ $func called inside loop - verify iteration scope"
+done
+```
+
+**Loop iteration review questions:**
+1. Should function run for ALL iterations? → OK if yes
+2. Should function run for FIRST/LAST only? → Check for index guard
+3. Should function run for SOME iterations? → Check for condition filter
+
+**Red flags:**
+- Function called unconditionally in loop when AC says "only once"
+- No break/return after call when AC implies single execution
+- Missing mode/flag guard when AC specifies conditions
+
+#### Step 4: Mode Sensitivity
+
+If the function accepts configuration or mode options:
+- Is the correct mode passed at the call site?
+- Are all mode-specific paths exercised appropriately?
+
+**Output Format:**
+
+```markdown
+### Call-Site Review
+
+**New exported functions detected:** N
+
+| Function | Call Sites | Loop? | Conditions | AC Match |
+|----------|-----------|-------|------------|----------|
+| `newFunction()` | `file.ts:123` | No | `if (success)` | ✅ Matches AC-2 |
+| `anotherFunc()` | `run.ts:456` | Yes | None | ⚠️ Missing guard (AC-3 says "final only") |
+| `thirdFunc()` | Not called | - | - | ⚠️ Unused export |
+
+**Findings:**
+- [List any mismatches between call-site conditions and AC constraints]
+
+**Recommendations:**
+- [Specific fixes needed at call sites]
+```
+
+**Verdict Impact:**
+
+| Finding | Verdict Impact |
+|---------|----------------|
+| All call sites match AC | No impact |
+| Call site missing AC-required guard | `AC_NOT_MET` |
+| Function not called anywhere | `AC_MET_BUT_NOT_A_PLUS` (dead export) |
+| Call site in loop, AC unclear about iteration | `NEEDS_VERIFICATION` |
+
+See [call-site-review.md](references/call-site-review.md) for detailed methodology and examples.
+
 ### 3. QA vs AC
 
 For each AC item, mark as:
@@ -1357,6 +1471,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
 - [ ] **Test Quality Review** - Included if test files modified (or marked N/A)
 - [ ] **Anti-Pattern Detection** - Dependency audit (if package.json changed) + code patterns
+- [ ] **Call-Site Review** - Included if new exported functions detected (or marked N/A)
 - [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
@@ -1534,6 +1649,24 @@ You MUST include these sections:
 
 **Critical Issues:** X
 **Warnings:** Y
+
+---
+
+### Call-Site Review
+
+[Include if new exported functions detected, otherwise: "N/A - No new exported functions"]
+
+**New exported functions detected:** N
+
+| Function | Call Sites | Loop? | Conditions | AC Match |
+|----------|-----------|-------|------------|----------|
+| `[function]` | `[file:line]` | Yes/No | `[condition]` | ✅ Matches AC-N / ⚠️ [issue] |
+
+**Findings:**
+- [List any mismatches between call-site conditions and AC constraints]
+
+**Recommendations:**
+- [Specific fixes needed at call sites]
 
 ---
 
