@@ -8,7 +8,10 @@ Every `sequant run` execution produces a JSON log file in `.sequant/logs/`. Thes
 
 - Run configuration (phases, settings)
 - Issue execution details (timing, status)
-- Phase-level metrics (duration, errors)
+- Phase-level metrics (duration, errors, git diff stats)
+- Git commit SHAs (start/end of run, per-phase)
+- Per-file diff statistics (additions, deletions, status)
+- QA cache hit/miss metrics
 - Summary statistics
 
 ## Configuration
@@ -94,6 +97,8 @@ interface RunLog {
   config: RunConfig;
   issues: IssueLog[];
   summary: RunSummary;
+  startCommit?: string;    // Git SHA at run start
+  endCommit?: string;      // Git SHA at run end
 }
 
 interface RunConfig {
@@ -120,10 +125,26 @@ interface PhaseLog {
   durationSeconds: number;
   status: "success" | "failure" | "timeout" | "skipped";
   error?: string;
-  iterations?: number;     // For loop phase
-  filesModified?: string[];
+  iterations?: number;       // For loop phase
+  filesModified?: string[];  // Files changed (git diff --name-only)
   testsRun?: number;
   testsPassed?: number;
+  commitHash?: string;       // Git SHA after phase completes
+  fileDiffStats?: FileDiffStat[];  // Per-file diff breakdown
+  cacheMetrics?: CacheMetrics;     // QA cache hit/miss (qa phase only)
+}
+
+interface FileDiffStat {
+  path: string;              // File path relative to repo root
+  additions: number;         // Lines added
+  deletions: number;         // Lines deleted
+  status: "added" | "modified" | "deleted" | "renamed";
+}
+
+interface CacheMetrics {
+  hits: number;              // Cached checks reused
+  misses: number;            // Checks re-executed
+  skipped: number;           // Checks skipped (always fresh)
 }
 
 interface RunSummary {
@@ -168,6 +189,30 @@ jq 'select(.issues[].issueNumber == 42)' .sequant/logs/*.json
 
 ```bash
 jq '.issues[].phases[] | {phase, status, duration: .durationSeconds}' .sequant/logs/*.json
+```
+
+### Show Files Modified Per Phase
+
+```bash
+jq '.issues[].phases[] | select(.filesModified) | {phase, files: .filesModified | length}' .sequant/logs/*.json
+```
+
+### Show Per-File Diff Stats
+
+```bash
+jq '.issues[].phases[] | select(.fileDiffStats) | .fileDiffStats[] | {path, additions, deletions, status}' .sequant/logs/*.json
+```
+
+### Find Commit SHA for a Phase
+
+```bash
+jq '.issues[].phases[] | select(.commitHash) | {phase, commit: .commitHash[:8]}' .sequant/logs/*.json
+```
+
+### Show QA Cache Metrics
+
+```bash
+jq '.issues[].phases[] | select(.cacheMetrics) | {phase, cache: .cacheMetrics}' .sequant/logs/*.json
 ```
 
 ### Common Errors by Phase

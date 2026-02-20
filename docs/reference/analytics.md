@@ -34,6 +34,10 @@ Every `sequant run` execution records metrics to `.sequant/metrics.json`. This e
 | `metrics.filesChanged` | Number of files changed | Aggregate count |
 | `metrics.linesAdded` | Lines of code added | Aggregate count |
 | `metrics.qaIterations` | QA retry count | Performance metric |
+| `metrics.tokensUsed` | Total tokens (input + output) | Usage metric |
+| `metrics.inputTokens` | Input tokens consumed | Usage metric |
+| `metrics.outputTokens` | Output tokens generated | Usage metric |
+| `metrics.cacheTokens` | Cache tokens (creation + read) | Usage metric |
 
 ## What We DON'T Collect
 
@@ -124,15 +128,50 @@ interface MetricRun {
 }
 
 interface RunMetrics {
-  tokensUsed: number;      // Reserved (0 if unavailable)
+  tokensUsed: number;        // Total tokens (input + output)
   filesChanged: number;
   linesAdded: number;
   acceptanceCriteria: number;
   qaIterations: number;
+  inputTokens?: number;      // Input tokens consumed
+  outputTokens?: number;     // Output tokens generated
+  cacheTokens?: number;      // Cache tokens (creation + read)
 }
 
 type Phase = "spec" | "security-review" | "testgen" | "exec" | "test" | "qa" | "loop";
 ```
+
+## Token Usage Tracking
+
+Sequant captures token usage from Claude Code sessions via a `SessionEnd` hook. This populates `metrics.tokensUsed` (previously always 0) with actual consumption data.
+
+### How It Works
+
+1. A `SessionEnd` hook (`.claude/hooks/capture-tokens.sh`) parses the Claude Code transcript JSONL
+2. Token totals are written to `.sequant/.token-usage-<session-id>.json`
+3. After a run completes, `run.ts` reads and aggregates all token files
+4. Totals are recorded in metrics with input/output/cache breakdown
+5. Token files are cleaned up after reading
+
+### Viewing Token Usage
+
+```bash
+# See token averages in stats output
+sequant stats
+
+# Query token data with jq
+jq '.runs[] | select(.metrics.tokensUsed > 0) |
+  {date, tokens: .metrics.tokensUsed,
+   input: .metrics.inputTokens,
+   output: .metrics.outputTokens}' \
+  .sequant/metrics.json
+```
+
+### Limitations
+
+- Token data is per-run, not per-phase
+- Requires the `SessionEnd` hook to be registered in `.claude/settings.json`
+- Transcript must be available at session end
 
 ## Configuration
 
