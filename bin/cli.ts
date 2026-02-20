@@ -199,6 +199,10 @@ program
     "--no-rebase",
     "Skip pre-PR rebase onto origin/main (use when you want to handle rebasing manually)",
   )
+  .option(
+    "-f, --force",
+    "Force re-execution of completed issues (bypass pre-flight state guard)",
+  )
   .action(runCommand);
 
 program

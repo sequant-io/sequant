@@ -47,6 +47,7 @@ import {
 } from "../lib/workflow/git-diff-utils.js";
 import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
 import type { CacheMetrics } from "../lib/workflow/run-log-schema.js";
+import { reconcileStateAtStartup } from "../lib/workflow/state-utils.js";
 
 /**
  * Worktree information for an issue
@@ -136,6 +137,160 @@ function findExistingWorktree(branch: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Result of worktree freshness check
+ */
+interface WorktreeFreshnessResult {
+  /** True if worktree is stale (significantly behind main) */
+  isStale: boolean;
+  /** Number of commits behind origin/main */
+  commitsBehind: number;
+  /** True if worktree has uncommitted changes */
+  hasUncommittedChanges: boolean;
+  /** True if worktree has unpushed commits */
+  hasUnpushedCommits: boolean;
+}
+
+/**
+ * Check if a worktree is stale (behind origin/main) and should be recreated
+ *
+ * @param worktreePath - Path to the worktree
+ * @param verbose - Enable verbose output
+ * @returns Freshness check result
+ */
+function checkWorktreeFreshness(
+  worktreePath: string,
+  verbose: boolean,
+): WorktreeFreshnessResult {
+  const result: WorktreeFreshnessResult = {
+    isStale: false,
+    commitsBehind: 0,
+    hasUncommittedChanges: false,
+    hasUnpushedCommits: false,
+  };
+
+  // Fetch latest main to ensure accurate comparison
+  spawnSync("git", ["-C", worktreePath, "fetch", "origin", "main"], {
+    stdio: "pipe",
+    timeout: 30000,
+  });
+
+  // Check for uncommitted changes
+  const statusResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "status", "--porcelain"],
+    { stdio: "pipe" },
+  );
+  if (statusResult.status === 0) {
+    result.hasUncommittedChanges =
+      statusResult.stdout.toString().trim().length > 0;
+  }
+
+  // Get merge base with origin/main
+  const mergeBaseResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "merge-base", "HEAD", "origin/main"],
+    { stdio: "pipe" },
+  );
+  if (mergeBaseResult.status !== 0) {
+    // Can't determine merge base - not stale
+    return result;
+  }
+  const mergeBase = mergeBaseResult.stdout.toString().trim();
+
+  // Get origin/main HEAD
+  const mainHeadResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "rev-parse", "origin/main"],
+    { stdio: "pipe" },
+  );
+  if (mainHeadResult.status !== 0) {
+    return result;
+  }
+  const mainHead = mainHeadResult.stdout.toString().trim();
+
+  // Count commits behind main
+  if (mergeBase !== mainHead) {
+    const countResult = spawnSync(
+      "git",
+      ["-C", worktreePath, "rev-list", "--count", `${mergeBase}..${mainHead}`],
+      { stdio: "pipe" },
+    );
+    if (countResult.status === 0) {
+      result.commitsBehind = parseInt(countResult.stdout.toString().trim(), 10);
+      // Consider stale if more than 5 commits behind (configurable threshold)
+      result.isStale = result.commitsBehind > 5;
+    }
+  }
+
+  // Check for unpushed commits (work in progress)
+  const unpushedResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "log", "--oneline", "@{u}..HEAD"],
+    { stdio: "pipe" },
+  );
+  if (unpushedResult.status === 0) {
+    result.hasUnpushedCommits =
+      unpushedResult.stdout.toString().trim().length > 0;
+  }
+
+  if (verbose && result.isStale) {
+    console.log(
+      chalk.gray(
+        `    📊 Worktree is ${result.commitsBehind} commits behind origin/main`,
+      ),
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Remove and recreate a stale worktree
+ *
+ * @param existingPath - Path to existing worktree
+ * @param branch - Branch name
+ * @param verbose - Enable verbose output
+ * @returns true if worktree was removed
+ */
+function removeStaleWorktree(
+  existingPath: string,
+  branch: string,
+  verbose: boolean,
+): boolean {
+  if (verbose) {
+    console.log(chalk.gray(`    🗑️  Removing stale worktree...`));
+  }
+
+  // Remove the worktree
+  const removeResult = spawnSync(
+    "git",
+    ["worktree", "remove", "--force", existingPath],
+    { stdio: "pipe" },
+  );
+
+  if (removeResult.status !== 0) {
+    const error = removeResult.stderr.toString();
+    console.log(chalk.yellow(`    ⚠️  Could not remove worktree: ${error}`));
+    return false;
+  }
+
+  // Delete the branch so it can be recreated fresh
+  const deleteResult = spawnSync("git", ["branch", "-D", branch], {
+    stdio: "pipe",
+  });
+
+  if (deleteResult.status !== 0 && verbose) {
+    console.log(
+      chalk.gray(
+        `    ℹ️  Branch ${branch} not deleted (may not exist locally)`,
+      ),
+    );
+  }
+
+  return true;
 }
 
 /**
@@ -320,7 +475,50 @@ async function ensureWorktree(
   const worktreePath = path.join(worktreesDir, branch);
 
   // Check if worktree already exists
-  const existingPath = findExistingWorktree(branch);
+  let existingPath = findExistingWorktree(branch);
+  if (existingPath) {
+    // AC-3: Check if worktree is stale and needs recreation
+    const freshness = checkWorktreeFreshness(existingPath, verbose);
+
+    if (freshness.isStale) {
+      // AC-3: Handle stale worktrees - check for work in progress
+      if (freshness.hasUncommittedChanges) {
+        console.log(
+          chalk.yellow(
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main but has uncommitted changes`,
+          ),
+        );
+        console.log(
+          chalk.yellow(
+            `    ℹ️  Keeping existing worktree. Commit or stash changes, then re-run.`,
+          ),
+        );
+        // Continue with existing worktree
+      } else if (freshness.hasUnpushedCommits) {
+        console.log(
+          chalk.yellow(
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main but has unpushed commits`,
+          ),
+        );
+        console.log(
+          chalk.yellow(`    ℹ️  Keeping existing worktree with WIP commits.`),
+        );
+        // Continue with existing worktree
+      } else {
+        // Safe to recreate - no uncommitted/unpushed work
+        console.log(
+          chalk.yellow(
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main — recreating fresh`,
+          ),
+        );
+
+        if (removeStaleWorktree(existingPath, branch, verbose)) {
+          existingPath = null; // Will fall through to create new worktree
+        }
+      }
+    }
+  }
+
   if (existingPath) {
     if (verbose) {
       console.log(
@@ -1234,6 +1432,11 @@ interface RunOptions {
    * Use when you want to preserve branch state or handle rebasing manually.
    */
   noRebase?: boolean;
+  /**
+   * Force re-execution of issues even if they have completed status.
+   * Bypasses the pre-flight state guard that skips ready_for_merge/merged issues.
+   */
+  force?: boolean;
 }
 
 /**
@@ -2205,9 +2408,89 @@ export async function runCommand(
   if (stateManager) {
     console.log(chalk.gray(`  State tracking: enabled`));
   }
+  if (mergedOptions.force) {
+    console.log(chalk.yellow(`  Force mode: enabled (bypass state guard)`));
+  }
   console.log(
     chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
   );
+
+  // ============================================================================
+  // Pre-flight State Guard (#305)
+  // ============================================================================
+
+  // AC-5: Auto-cleanup at run start - reconcile stale ready_for_merge states
+  if (stateManager && !config.dryRun) {
+    try {
+      const reconcileResult = await reconcileStateAtStartup({
+        verbose: config.verbose,
+      });
+
+      if (reconcileResult.success && reconcileResult.advanced.length > 0) {
+        console.log(
+          chalk.gray(
+            `  State reconciled: ${reconcileResult.advanced.map((n) => `#${n}`).join(", ")} → merged`,
+          ),
+        );
+      }
+    } catch {
+      // AC-8: Graceful degradation - don't block execution on reconciliation failure
+      if (config.verbose) {
+        console.log(
+          chalk.yellow(`  ⚠️  State reconciliation failed, continuing...`),
+        );
+      }
+    }
+  }
+
+  // AC-1 & AC-2: Pre-flight state guard - skip completed issues unless --force
+  if (stateManager && !config.dryRun && !mergedOptions.force) {
+    const skippedIssues: number[] = [];
+    const activeIssues: number[] = [];
+
+    for (const issueNumber of issueNumbers) {
+      try {
+        const issueState = await stateManager.getIssueState(issueNumber);
+        if (
+          issueState &&
+          (issueState.status === "ready_for_merge" ||
+            issueState.status === "merged")
+        ) {
+          skippedIssues.push(issueNumber);
+          console.log(
+            chalk.yellow(
+              `  ⚠️  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
+            ),
+          );
+        } else {
+          activeIssues.push(issueNumber);
+        }
+      } catch {
+        // AC-8: Graceful degradation - if state check fails, include the issue
+        activeIssues.push(issueNumber);
+      }
+    }
+
+    // Update issueNumbers to only include active issues
+    if (skippedIssues.length > 0) {
+      issueNumbers = activeIssues;
+
+      if (issueNumbers.length === 0) {
+        console.log(
+          chalk.yellow(
+            `\n  All issues already completed. Use --force to re-run.`,
+          ),
+        );
+        return;
+      }
+
+      console.log(
+        chalk.gray(
+          `  Active issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`,
+        ),
+      );
+    }
+  }
 
   // Worktree isolation is enabled by default for multi-issue runs
   const useWorktreeIsolation =

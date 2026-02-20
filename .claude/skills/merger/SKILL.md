@@ -149,6 +149,9 @@ fi
 
 # Merge PR using squash
 gh pr merge <PR_NUMBER> --squash --delete-branch
+
+# REQUIRED: Update state to mark issue as merged (#305)
+npx tsx scripts/state/update.ts merged $ISSUE
 ```
 
 #### For conflicting changes (integration branch):
@@ -189,7 +192,31 @@ git pull origin main
 git worktree list  # Should not show the merged feature branch
 
 # Remote branch is deleted by --delete-branch flag
+
+# REQUIRED: Verify state was updated (#305)
+# The state should show status="merged" for the issue
+cat .sequant/state.json | jq '.issues["'$ISSUE'"].status'
 ```
+
+### Step 6a: Worktree Cleanup After Merge (REQUIRED - #305)
+
+**After each successful merge, ensure the worktree is removed:**
+
+```bash
+# Find and remove worktree for the issue
+worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}')
+if [[ -n "$worktree_path" ]]; then
+  echo "Removing worktree: $worktree_path"
+  git worktree remove "$worktree_path" --force
+else
+  echo "No worktree found for #$ISSUE (already cleaned up)"
+fi
+
+# Verify worktree removal
+git worktree list | grep -q "feature/$ISSUE" && echo "WARNING: Worktree still exists" || echo "✅ Worktree removed"
+```
+
+**Why this matters:** Leftover worktrees waste disk space and can cause confusion when re-running `sequant run` on the same issues. The state guard (#305) prevents re-execution, but the worktree should still be cleaned up.
 
 ## Dependency Detection
 
