@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-reconciliation at run start detects merged PRs/branches and advances state
   - Merger skill updated with state update (`merged`) and worktree cleanup steps
   - Graceful degradation: missing state, network failures, corrupted state all handled
-  - 397 lines of tests (reconciliation, merge detection, graceful degradation)
+  - `isIssueMergedIntoMain` uses merge-specific grep patterns to avoid false positives from non-merge commits
+  - 685 lines of tests: reconciliation, merge detection, worktree freshness, stale removal, graceful degradation
 - `ScopeAssessmentSettings` missing fields from `ScopeAssessmentConfig` (#249)
   - Added `trivialThresholds.maxACItems`, `trivialThresholds.maxDirectories`, `thresholds.directorySpread`
   - `convertSettingsToConfig()` merges user settings with defaults for partial overrides
