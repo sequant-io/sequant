@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Completed issues re-executed indefinitely, wasting API budget (#305)
+  - Pre-flight state guard skips `ready_for_merge`/`merged` issues at run start
+  - `--force` / `-f` flag bypasses the guard for intentional re-runs
+  - Stale worktree detection: recreates worktrees >5 commits behind `origin/main`
+  - Worktrees with uncommitted changes or unpushed commits are preserved with warning
+  - Auto-reconciliation at run start detects merged PRs/branches and advances state
+  - Merger skill updated with state update (`merged`) and worktree cleanup steps
+  - Graceful degradation: missing state, network failures, corrupted state all handled
+  - 397 lines of tests (reconciliation, merge detection, graceful degradation)
 - `ScopeAssessmentSettings` missing fields from `ScopeAssessmentConfig` (#249)
   - Added `trivialThresholds.maxACItems`, `trivialThresholds.maxDirectories`, `thresholds.directorySpread`
   - `convertSettingsToConfig()` merges user settings with defaults for partial overrides

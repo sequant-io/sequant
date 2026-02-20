@@ -180,7 +180,7 @@ npx sequant              # Or run via npx
 |---------|-------------|
 | `sequant init` | Initialize Sequant in a project (copies templates, creates `.claude/` and `.sequant/`) |
 | `sequant doctor` | Check installation health — prerequisites, closed-issue verification, config validation |
-| `sequant run <issues>` | Execute workflow (`-q` quality loop, `--chain`, `--resume`) |
+| `sequant run <issues>` | Execute workflow (`-q` quality loop, `--chain`, `--resume`, `--force`) |
 | `sequant status` | Show version, config, tracked issues with cleanup options |
 | `sequant update` | Update skill templates to latest versions |
 | `sequant state` | Manage workflow state (`init`, `rebuild`, `clean`) |
@@ -781,6 +781,15 @@ Shell scripts in `templates/scripts/`:
   - Pauses spinner once per streaming session instead of per-chunk
   - Eliminates truncation caused by ora's line-clearing during rapid
     pause/resume cycles in verbose mode
+- **Fix: pre-flight state guard and worktree lifecycle** (#305)
+  - Pre-flight state guard skips `ready_for_merge`/`merged` issues with warning
+  - `--force` flag bypasses the guard for re-execution
+  - Stale worktree detection: recreates worktrees >5 commits behind `origin/main`
+  - Preserves worktrees with uncommitted changes or unpushed commits
+  - Auto-reconciliation at run start: advances merged issues via `gh pr` and `git branch --merged`
+  - Merger skill updated with explicit state update and worktree cleanup steps
+  - Graceful degradation on missing state, network failures, or corrupted state
+  - 397 lines of tests covering reconciliation, merge detection, and edge cases
 - **Fix: chain mode with pre-existing worktrees** (#289)
   - Existing worktrees are rebased onto previous chain link in chain mode
   - Conflict detection with graceful abort and user-facing warnings
