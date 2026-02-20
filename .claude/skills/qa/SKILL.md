@@ -128,9 +128,10 @@ Before spawning quality check agents, determine the execution mode:
    - `--sequential` → Use sequential execution
 
 2. **If no flag, read project settings:**
-   ```bash
-   # Read agents.parallel from .sequant/settings.json
-   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   Use the Read tool to check project settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Parse JSON and extract agents.parallel (default: false)
    ```
 
 3. **Default:** Sequential (cost-optimized)
@@ -694,18 +695,14 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 
 **After running `npm test`, you MUST analyze test coverage for changed files:**
 
-```bash
-# Get changed source files (excluding tests)
+Use the Glob tool to check for corresponding test files:
+```
+# Get changed source files (excluding tests) from git
 changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
 
-# Check for corresponding test files
-for file in $changed; do
-  base=$(basename "$file" .ts | sed 's/\.tsx$//')
-  # Look for test files in __tests__/ or co-located
-  if ! find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
-    echo "NO TEST: $file"
-  fi
-done
+# For each changed file, use the Glob tool to find matching test files
+# Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
+# If no test file found, report "NO TEST: $file"
 ```
 
 **Required reporting format:**

@@ -102,18 +102,21 @@ Scan for improvements in these categories:
 - Type safety issues (`any` types, missing types)
 
 **Detection strategies:**
-```bash
-# Find 'any' types
-grep -r ": any" --include="*.ts" --include="*.tsx"
 
-# Find TODO/FIXME comments
-grep -r "TODO\|FIXME" --include="*.ts" --include="*.tsx"
+Use the dedicated tools for file content search:
+```
+# Find 'any' types - use the Grep tool
+Grep(pattern=": any", glob="*.ts")
+Grep(pattern=": any", glob="*.tsx")
 
-# Find large files (potential split candidates)
-find src -name "*.ts" -exec wc -l {} \; | sort -rn | head -20
+# Find TODO/FIXME comments - use the Grep tool
+Grep(pattern="TODO|FIXME", glob="*.ts")
+
+# Find large files (potential split candidates) - use Glob + Read tools
+Glob(pattern="src/**/*.ts")  # Then Read each file to check line count
 
 # Find duplicate code patterns
-# (Analyze similar function signatures across files)
+# (Analyze similar function signatures across files using Grep tool)
 ```
 
 #### Performance
@@ -124,12 +127,14 @@ find src -name "*.ts" -exec wc -l {} \; | sort -rn | head -20
 - Missing lazy loading
 
 **Detection strategies:**
-```bash
-# Find large dependencies
-grep -r "from ['\"]" --include="*.ts" | grep -E "lodash|moment|axios" | head -10
 
-# Find potential N+1 patterns
-grep -r "\.map\(.*await" --include="*.ts"
+Use the dedicated Grep tool for content search:
+```
+# Find large dependencies - use the Grep tool
+Grep(pattern="from ['\"].*lodash|moment|axios", glob="*.ts")
+
+# Find potential N+1 patterns - use the Grep tool
+Grep(pattern="\\.map\\(.*await", glob="*.ts")
 ```
 
 #### Missing Tests
@@ -155,9 +160,12 @@ done
 - Missing usage examples
 
 **Detection strategies:**
-```bash
-# Find exported functions without JSDoc
-grep -B5 "export function\|export const\|export class" --include="*.ts"
+
+Use the Grep tool to find exported functions, then Read to check for JSDoc:
+```
+# Find exported functions - use the Grep tool
+Grep(pattern="export (function|const|class)", glob="*.ts", output_mode="content", -B=5)
+# Then Read each file to check for JSDoc presence above exports
 ```
 
 #### Security Concerns
@@ -167,11 +175,13 @@ grep -B5 "export function\|export const\|export class" --include="*.ts"
 - Insecure dependencies
 
 **Detection strategies:**
-```bash
-# Find potential secrets
-grep -r "password\|secret\|api_key\|apikey" --include="*.ts" -i
 
-# Check for outdated dependencies
+Use the Grep tool for content search:
+```
+# Find potential secrets - use the Grep tool
+Grep(pattern="password|secret|api_key|apikey", glob="*.ts", -i=true)
+
+# Check for outdated dependencies (bash is appropriate for npm commands)
 npm audit --json 2>/dev/null | jq '.vulnerabilities | length'
 ```
 
@@ -182,12 +192,15 @@ npm audit --json 2>/dev/null | jq '.vulnerabilities | length'
 - God objects/functions
 
 **Detection strategies:**
-```bash
-# Find long functions
-# (Manual analysis based on function boundaries)
 
-# Find long files
-find src -name "*.ts" -exec wc -l {} \; | awk '$1 > 500'
+Use the Glob and Read tools for file analysis:
+```
+# Find long functions
+# (Use Read tool on each file, then analyze function boundaries)
+
+# Find long files - use Glob tool to discover files, then Read to check line counts
+Glob(pattern="src/**/*.ts")
+# Read each file and check if line count > 500
 ```
 
 ### 1.3 MCP Enhancement (Optional)

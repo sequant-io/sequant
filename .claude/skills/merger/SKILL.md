@@ -61,9 +61,10 @@ When processing multiple issues, determine the execution mode for validation che
    - `--sequential` → Validate issues one at a time
 
 2. **If no flag, read project settings:**
-   ```bash
-   # Read agents.parallel from .sequant/settings.json
-   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   Use the Read tool to check project settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Parse JSON and extract agents.parallel (default: false)
    ```
 
 3. **Default:** Sequential (cost-optimized)
@@ -195,7 +196,9 @@ git worktree list  # Should not show the merged feature branch
 
 # REQUIRED: Verify state was updated (#305)
 # The state should show status="merged" for the issue
-cat .sequant/state.json | jq '.issues["'$ISSUE'"].status'
+# Use the Read tool to check state, then parse JSON
+Read(file_path=".sequant/state.json")
+# Verify the issue status shows "merged"
 ```
 
 ### Step 6a: Worktree Cleanup After Merge (REQUIRED - #305)

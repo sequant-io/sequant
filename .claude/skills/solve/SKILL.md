@@ -90,7 +90,9 @@ gh issue view <issue-number> --json body --jq '.body' | grep -iE "(feature/|bran
 gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
 
 # Check if project has defaultBase configured
-cat .sequant/settings.json 2>/dev/null | jq -r '.run.defaultBase // empty'
+# Use the Read tool to check project settings
+Read(file_path=".sequant/settings.json")
+# Extract .run.defaultBase from the JSON
 ```
 
 **Recommend `--base <branch>` when:**

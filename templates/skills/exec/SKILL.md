@@ -710,10 +710,11 @@ npm run knip 2>/dev/null | grep -E "unused|Unused" || echo "No unused exports"
 
 When converting files to stubs, deleting content, or significantly changing file structure:
 
-```bash
-# Check if any tests depend on the modified file's content
-grep -r "filename.md" __tests__/
-grep -r "filename" __tests__/ | grep -v ".snap"
+Use the Grep tool to check if any tests depend on the modified file's content:
+```
+Grep(pattern="filename.md", path="__tests__/")
+Grep(pattern="filename", path="__tests__/")
+# Then filter out .snap files from results
 ```
 
 **If tests are found:**

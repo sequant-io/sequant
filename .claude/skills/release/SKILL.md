@@ -229,21 +229,31 @@ if (fs.existsSync(pluginPath)) {
 
 **IMPORTANT:** Keep `docs/what-weve-built.md` version references in sync and document new features.
 
+Get the new version, then use the Edit tool to update the file:
+
 ```bash
 new_version=$(node -p "require('./package.json').version")
+```
 
-if [ -f "docs/what-weve-built.md" ]; then
-  # Update title version
-  sed -i '' "s/Sequant v[0-9]*\.[0-9]*\.[0-9]*/Sequant v${new_version}/g" docs/what-weve-built.md
+Then use the **Edit tool** (not sed) to update `docs/what-weve-built.md`:
 
-  # Update ASCII art version
-  sed -i '' "s/SEQUANT v[0-9]*\.[0-9]*\.[0-9]*/SEQUANT v${new_version}/g" docs/what-weve-built.md
+```
+# Update title version - use Edit tool with replace_all=true
+Edit(file_path="docs/what-weve-built.md",
+     old_string="Sequant v<old_version>",
+     new_string="Sequant v${new_version}",
+     replace_all=true)
 
-  # Update "Current Version" line
-  sed -i '' "s/\*\*Current Version:\*\* [0-9]*\.[0-9]*\.[0-9]*/\*\*Current Version:\*\* ${new_version}/g" docs/what-weve-built.md
+# Update ASCII art version - use Edit tool with replace_all=true
+Edit(file_path="docs/what-weve-built.md",
+     old_string="SEQUANT v<old_version>",
+     new_string="SEQUANT v${new_version}",
+     replace_all=true)
 
-  echo "Updated what-weve-built.md to version ${new_version}"
-fi
+# Update "Current Version" line - use Edit tool
+Edit(file_path="docs/what-weve-built.md",
+     old_string="**Current Version:** <old_version>",
+     new_string="**Current Version:** ${new_version}")
 ```
 
 **Check for undocumented features:**

@@ -866,18 +866,14 @@ Do NOT silently skip checks. Always state which commands you intend to run and w
 
 **After running `npm test`, you MUST analyze test coverage for changed files:**
 
-```bash
-# Get changed source files (excluding tests)
+Use the Glob tool to check for corresponding test files:
+```
+# Get changed source files (excluding tests) from git
 changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
 
-# Check for corresponding test files
-for file in $changed; do
-  base=$(basename "$file" .ts | sed 's/\.tsx$//')
-  # Look for test files in __tests__/ or co-located
-  if ! find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
-    echo "NO TEST: $file"
-  fi
-done
+# For each changed file, use the Glob tool to find matching test files
+# Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
+# If no test file found, report "NO TEST: $file"
 ```
 
 **Required reporting format:**
@@ -1316,10 +1312,11 @@ npm run knip 2>/dev/null | grep -E "unused|Unused" || echo "No unused exports"
 
 When converting files to stubs, deleting content, or significantly changing file structure:
 
-```bash
-# Check if any tests depend on the modified file's content
-grep -r "filename.md" __tests__/
-grep -r "filename" __tests__/ | grep -v ".snap"
+Use the Grep tool to check if any tests depend on the modified file's content:
+```
+Grep(pattern="filename.md", path="__tests__/")
+Grep(pattern="filename", path="__tests__/")
+# Then filter out .snap files from results
 ```
 
 **If tests are found:**

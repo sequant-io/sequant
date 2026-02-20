@@ -78,7 +78,7 @@ Collect information about the issue:
 
 **From Codebase:**
 
-- Look for TODOs mentioning the issue: `grep -r "TODO.*#<issue-number>" .`
+- Look for TODOs mentioning the issue using the Grep tool: `Grep(pattern="TODO.*#<issue-number>")`
 - Check for test files related to the feature
 - Identify modified files (if branch exists)
 
