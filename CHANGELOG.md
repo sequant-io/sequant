@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `ScopeAssessmentSettings` missing fields from `ScopeAssessmentConfig` (#249)
+  - Added `trivialThresholds.maxACItems`, `trivialThresholds.maxDirectories`, `thresholds.directorySpread`
+  - `convertSettingsToConfig()` merges user settings with defaults for partial overrides
+  - `/spec` SKILL.md reads `.sequant/settings.json` before calling `performScopeAssessment`
+  - 18 tests (9 unit + 9 integration covering settings → config pipeline)
+  - Documentation: `docs/features/scope-assessment-settings.md`
 - Phase marker regex matches inside markdown code blocks (#269)
   - Pre-strips fenced code blocks and inline code before regex matching
   - Handles 3+ backtick/tilde fences per CommonMark spec

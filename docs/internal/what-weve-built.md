@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.15.2
+# What We've Built: Sequant v1.15.3
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -15,9 +15,9 @@ journey through planning, implementation, testing, and review
 |--------|-------|
 | Slash Commands | 18 |
 | CLI Commands | 10 |
-| Core Library Modules | 44 |
-| Test Files | 47 |
-| Documentation Files | 39 |
+| Core Library Modules | 45 |
+| Test Files | 53 |
+| Documentation Files | 38 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
 
@@ -221,7 +221,7 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `semgrep.ts` | Stack-aware Semgrep static analysis with custom rules support |
 | `templates.ts` | Copies skill templates to `.claude/`, handles variable substitution |
 | `manifest.ts` | Tracks installed skills and versions in `.sequant-manifest.json` |
-| `settings.ts` | Reads/writes `.sequant/settings.json` for persistent configuration |
+| `settings.ts` | Reads/writes `.sequant/settings.json` for persistent configuration (deep merge for nested objects) |
 | `config.ts` | Core configuration file operations |
 | `fs.ts` | Async file helpers (`exists`, `read`, `write`, `ensureDir`) |
 | `system.ts` | Validates prerequisites (`gh` CLI, `jq`), MCP server configuration |
@@ -377,6 +377,10 @@ Every PR goes through:
 ### Concepts
 - `concepts/what-is-sequant.md` — Elevator pitch, pipeline diagram, architecture overview
 - `concepts/workflow-phases.md` — Phase overview and selection
+
+### Features
+- `features/scope-assessment-settings.md` — Customizing scope thresholds
+- `features/package-manager-detection.md` — Auto-detection of npm/Bun/Yarn/pnpm
 
 ### Guides
 - `guides/customization.md` — Configuration options
@@ -729,6 +733,15 @@ Shell scripts in `templates/scripts/`:
 
 ### Recent Additions (v1.15.x)
 
+- **Scope assessment custom thresholds** (#249)
+  - `ScopeAssessmentSettings` aligned with `ScopeAssessmentConfig` (added
+    `trivialThresholds.maxACItems`, `trivialThresholds.maxDirectories`,
+    `thresholds.directorySpread`)
+  - `convertSettingsToConfig()` merges user settings with defaults
+  - SKILL.md reads `.sequant/settings.json` before calling `performScopeAssessment`
+  - Deep merge in `getSettings()` for nested threshold objects
+  - 18 tests (9 unit + 9 integration covering the full settings → config pipeline)
+  - Documentation: `docs/features/scope-assessment-settings.md`
 - **Pipeline observability: file tracking, git SHA, diff stats, token usage** (#278)
   - `filesModified` populated in all phase logs via `git diff --name-only`
   - `startCommit`/`endCommit` on RunLog, `commitHash` on PhaseLog
@@ -957,8 +970,8 @@ npm run build
 |------|----------|
 | Slash Commands | 18 |
 | CLI Commands | 10 |
-| Library Modules | 44 |
-| Test Files | 47 |
+| Library Modules | 45 |
+| Test Files | 53 |
 | Docs Files | 38 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
@@ -966,7 +979,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.15.2
+**Current Version:** 1.15.3
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -976,7 +989,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.15.2                                │
+│                              SEQUANT v1.15.3                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (10)                LIBRARIES (44)            │
@@ -1007,7 +1020,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 47  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 53  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1017,4 +1030,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-19 · `7d0f6c6` fix(#295): Rebase worktrees onto main before PR to prevent lockfile drift*
+*Last updated: 2026-02-20 · `c341c42` fix(#249): Align ScopeAssessmentSettings with ScopeAssessmentConfig*
