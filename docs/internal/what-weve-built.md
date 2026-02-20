@@ -729,6 +729,18 @@ Shell scripts in `templates/scripts/`:
 
 ### Recent Additions (v1.15.x)
 
+- **Pipeline observability: file tracking, git SHA, diff stats, token usage** (#278)
+  - `filesModified` populated in all phase logs via `git diff --name-only`
+  - `startCommit`/`endCommit` on RunLog, `commitHash` on PhaseLog
+  - Per-file `fileDiffStats` (additions, deletions, status) on PhaseLog
+  - Token usage capture via `SessionEnd` hook + transcript JSONL parsing
+  - `metrics.tokensUsed` now populated (was always 0); input/output/cache breakdown
+  - QA cache hit/miss metrics written by `quality-checks.sh`, read into phase logs
+  - `sequant logs` displays commit hashes, file counts, diff stats, cache metrics
+  - `sequant stats` includes token usage analytics with averages
+  - Shared `getGitDiffStats()` utility avoids redundant git operations
+  - All fields optional — backward compatible with existing logs
+  - 34 new unit tests (10 git-diff-utils, 24 token-utils)
 - **MCP fallback retry for cold-start failures** (#267)
   - Two-phase retry: cold-start retries (up to 2x within 60s) then MCP fallback
   - MCP fallback disables MCP servers on retry, addressing npx cold-cache failures
