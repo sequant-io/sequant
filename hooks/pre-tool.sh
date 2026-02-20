@@ -68,6 +68,8 @@ fi
 
 # === CATASTROPHIC BLOCKS ===
 # These should NEVER run in any automated context
+# Only check Bash commands — Write/Edit content may contain these as config strings
+if [[ "$TOOL_NAME" == "Bash" ]]; then
 
 # Secrets/credentials
 # Skip check for gh commands (comment/pr bodies may contain example text)
@@ -158,6 +160,8 @@ if echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
     echo "HOOK_BLOCKED: Workflow trigger" | tee -a /tmp/claude-hook.log >&2
     exit 2
 fi
+
+fi # end TOOL_NAME == "Bash" guard for catastrophic blocks
 
 # === SECURITY GUARDRAILS ===
 # Granular disable: Set CLAUDE_HOOKS_SECURITY=false to bypass security checks only
