@@ -117,10 +117,14 @@ await waitFor(() => expect(element).toBeVisible());
 **Problem:** Snapshots used for complex objects instead of specific assertions.
 
 **Detection:**
-```bash
-# Count snapshot files vs test files
-find . -name "*.snap" | wc -l
-find . -name "*.test.*" | wc -l
+Use the Glob tool to count snapshot and test files:
+```
+# Count snapshot files
+Glob(pattern="**/*.snap")  # Count results
+
+# Count test files
+Glob(pattern="**/*.test.*")  # Count results
+
 # Ratio > 0.5 may indicate overuse
 ```
 
