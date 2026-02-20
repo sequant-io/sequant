@@ -47,9 +47,9 @@ When invoked as `/loop <issue-number>`, your job is to:
 
 ### Step 1: Read Previous Phase Output
 
-```bash
-# Read the log file for this issue
-cat /tmp/claude-issue-<issue-number>.log
+Use the Read tool to read the log file for this issue:
+```
+Read(file_path="/tmp/claude-issue-<issue-number>.log")
 ```
 
 Parse the log to find:

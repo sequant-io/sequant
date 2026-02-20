@@ -120,9 +120,9 @@ recommendations=$(echo "$qa_comment" | sed -n '/### Required Fixes/,/###/p' | he
 
 When running standalone (interactive `/loop` invocation), read from the log file:
 
-```bash
-# Read the log file for this issue
-cat /tmp/claude-issue-<issue-number>.log
+Use the Read tool to read the log file for this issue:
+```
+Read(file_path="/tmp/claude-issue-<issue-number>.log")
 ```
 
 **If log file doesn't exist:**
