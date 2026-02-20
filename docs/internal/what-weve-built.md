@@ -789,7 +789,8 @@ Shell scripts in `templates/scripts/`:
   - Auto-reconciliation at run start: advances merged issues via `gh pr` and `git branch --merged`
   - Merger skill updated with explicit state update and worktree cleanup steps
   - Graceful degradation on missing state, network failures, or corrupted state
-  - 397 lines of tests covering reconciliation, merge detection, and edge cases
+  - Merge detection uses merge-specific grep patterns (avoids false positives from docs/changelog commits)
+  - 685 lines of tests: reconciliation, merge detection, worktree freshness (7 tests), stale removal (3 tests), false positive prevention
 - **Fix: chain mode with pre-existing worktrees** (#289)
   - Existing worktrees are rebased onto previous chain link in chain mode
   - Conflict detection with graceful abort and user-facing warnings
