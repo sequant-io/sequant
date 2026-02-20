@@ -7,7 +7,7 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import path from "path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -41,6 +41,12 @@ import {
 import { getResumablePhasesForIssue } from "../lib/workflow/phase-detection.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { PhaseSpinner } from "../lib/phase-spinner.js";
+import {
+  getGitDiffStats,
+  getCommitHash,
+} from "../lib/workflow/git-diff-utils.js";
+import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
+import type { CacheMetrics } from "../lib/workflow/run-log-schema.js";
 
 /**
  * Worktree information for an issue
@@ -224,6 +230,43 @@ export function getWorktreeDiffStats(worktreePath: string): {
     filesChanged: filesMatch ? parseInt(filesMatch[1], 10) : 0,
     linesAdded: insertionsMatch ? parseInt(insertionsMatch[1], 10) : 0,
   };
+}
+
+/**
+ * Read cache metrics from QA phase (AC-7)
+ *
+ * @param worktreePath - Path to the worktree
+ * @returns CacheMetrics or undefined if not available
+ */
+function readCacheMetrics(worktreePath?: string): CacheMetrics | undefined {
+  const cacheMetricsPath = worktreePath
+    ? path.join(worktreePath, ".sequant/.cache/qa/cache-metrics.json")
+    : ".sequant/.cache/qa/cache-metrics.json";
+
+  if (!existsSync(cacheMetricsPath)) {
+    return undefined;
+  }
+
+  try {
+    const content = readFileSync(cacheMetricsPath, "utf-8");
+    const data = JSON.parse(content);
+
+    if (
+      typeof data.hits === "number" &&
+      typeof data.misses === "number" &&
+      typeof data.skipped === "number"
+    ) {
+      return {
+        hits: data.hits,
+        misses: data.misses,
+        skipped: data.skipped,
+      };
+    }
+  } catch {
+    // Ignore parse errors
+  }
+
+  return undefined;
 }
 
 /**
@@ -2092,6 +2135,7 @@ export async function runCommand(
       logWriter = new LogWriter({
         logPath: mergedOptions.logPath ?? settings.run.logPath,
         verbose: config.verbose,
+        startCommit: getCommitHash(process.cwd()),
       });
       await logWriter.initialize(runConfig);
     } catch (err) {
@@ -2414,7 +2458,9 @@ export async function runCommand(
     // Finalize log
     let logPath: string | null = null;
     if (logWriter) {
-      logPath = await logWriter.finalize();
+      logPath = await logWriter.finalize({
+        endCommit: getCommitHash(process.cwd()),
+      });
     }
 
     // Calculate success/failure counts
@@ -2482,6 +2528,9 @@ export async function runCommand(
         if (mergedOptions.qualityLoop) cliFlags.push("--quality-loop");
         if (mergedOptions.testgen) cliFlags.push("--testgen");
 
+        // Read token usage from SessionEnd hook files (AC-5, AC-6)
+        const tokenUsage = getTokenUsageForRun(undefined, true); // cleanup after reading
+
         // Record the run
         await metricsWriter.recordRun({
           issues: issueNumbers,
@@ -2491,11 +2540,15 @@ export async function runCommand(
           model: process.env.ANTHROPIC_MODEL ?? "opus",
           flags: cliFlags,
           metrics: {
-            tokensUsed: 0, // Token tracking not available from SDK
+            tokensUsed: tokenUsage.tokensUsed,
             filesChanged: totalFilesChanged,
             linesAdded: totalLinesAdded,
             acceptanceCriteria: 0, // Would need to parse from issue
             qaIterations: totalQaIterations,
+            // Token breakdown (AC-6)
+            inputTokens: tokenUsage.inputTokens || undefined,
+            outputTokens: tokenUsage.outputTokens || undefined,
+            cacheTokens: tokenUsage.cacheTokens || undefined,
           },
         });
 
@@ -2763,6 +2816,7 @@ async function runIssueWithLogging(
       specAlreadyRan = true;
 
       // Log spec phase result
+      // Note: Spec runs in main repo, not worktree, so no git diff stats
       if (logWriter) {
         const phaseLog = createPhaseLogFromTiming(
           "spec",
@@ -2961,8 +3015,22 @@ async function runIssueWithLogging(
 
       phaseResults.push(result);
 
-      // Log phase result
+      // Log phase result with observability data (AC-1, AC-2, AC-3, AC-7)
       if (logWriter) {
+        // Capture git diff stats for worktree phases (AC-1, AC-3)
+        const diffStats = worktreePath
+          ? getGitDiffStats(worktreePath)
+          : undefined;
+
+        // Capture commit hash after phase (AC-2)
+        const commitHash = worktreePath
+          ? getCommitHash(worktreePath)
+          : undefined;
+
+        // Read cache metrics for QA phase (AC-7)
+        const cacheMetrics =
+          phase === "qa" ? readCacheMetrics(worktreePath) : undefined;
+
         const phaseLog = createPhaseLogFromTiming(
           phase,
           issueNumber,
@@ -2975,8 +3043,12 @@ async function runIssueWithLogging(
               : "failure",
           {
             error: result.error,
-            // Include verdict for QA phase (AC-6)
             verdict: result.verdict,
+            // Observability fields (AC-1, AC-2, AC-3, AC-7)
+            filesModified: diffStats?.filesModified,
+            fileDiffStats: diffStats?.fileDiffStats,
+            commitHash,
+            cacheMetrics,
           },
         );
         logWriter.logPhase(phaseLog);

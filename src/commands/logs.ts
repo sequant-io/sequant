@@ -162,6 +162,40 @@ function displayLogSummary(log: RunLog, filename: string): void {
       console.log(
         `      ${phaseStatus} ${phase.phase} ${phaseDuration}${error}`,
       );
+
+      // Show observability data (AC-9)
+      if (phase.commitHash) {
+        console.log(
+          chalk.gray(`        commit: ${phase.commitHash.slice(0, 8)}`),
+        );
+      }
+      if (phase.filesModified && phase.filesModified.length > 0) {
+        console.log(
+          chalk.gray(`        files: ${phase.filesModified.length} modified`),
+        );
+      }
+      if (phase.fileDiffStats && phase.fileDiffStats.length > 0) {
+        const totalAdditions = phase.fileDiffStats.reduce(
+          (sum, f) => sum + f.additions,
+          0,
+        );
+        const totalDeletions = phase.fileDiffStats.reduce(
+          (sum, f) => sum + f.deletions,
+          0,
+        );
+        console.log(
+          chalk.gray(
+            `        diff: +${totalAdditions}/-${totalDeletions} lines`,
+          ),
+        );
+      }
+      if (phase.cacheMetrics) {
+        console.log(
+          chalk.gray(
+            `        cache: ${phase.cacheMetrics.hits} hits, ${phase.cacheMetrics.misses} misses, ${phase.cacheMetrics.skipped} skipped`,
+          ),
+        );
+      }
     }
   }
 }

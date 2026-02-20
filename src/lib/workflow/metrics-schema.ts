@@ -46,7 +46,7 @@ export type MetricPhase = z.infer<typeof MetricPhaseSchema>;
  * Note: No file paths or code content - only aggregate counts
  */
 export const RunMetricsSchema = z.object({
-  /** Estimated tokens used (if available, 0 if not) */
+  /** Estimated tokens used (if available, 0 if not) - total of input + output */
   tokensUsed: z.number().int().nonnegative(),
   /** Number of files changed during the run */
   filesChanged: z.number().int().nonnegative(),
@@ -56,6 +56,12 @@ export const RunMetricsSchema = z.object({
   acceptanceCriteria: z.number().int().nonnegative(),
   /** Number of QA iterations needed */
   qaIterations: z.number().int().nonnegative(),
+  /** Input tokens used (AC-4 token breakdown) */
+  inputTokens: z.number().int().nonnegative().optional(),
+  /** Output tokens used (AC-4 token breakdown) */
+  outputTokens: z.number().int().nonnegative().optional(),
+  /** Cache tokens (creation + read) (AC-4 token breakdown) */
+  cacheTokens: z.number().int().nonnegative().optional(),
 });
 
 export type RunMetrics = z.infer<typeof RunMetricsSchema>;
@@ -148,6 +154,9 @@ export function createMetricRun(options: {
       linesAdded: options.metrics?.linesAdded ?? 0,
       acceptanceCriteria: options.metrics?.acceptanceCriteria ?? 0,
       qaIterations: options.metrics?.qaIterations ?? 0,
+      inputTokens: options.metrics?.inputTokens,
+      outputTokens: options.metrics?.outputTokens,
+      cacheTokens: options.metrics?.cacheTokens,
     },
   };
 }

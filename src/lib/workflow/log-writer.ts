@@ -44,6 +44,8 @@ export interface LogWriterOptions {
   verbose?: boolean;
   /** Log rotation settings */
   rotation?: RotationSettings;
+  /** Git commit SHA at run start (AC-2) */
+  startCommit?: string;
 }
 
 /**
@@ -56,12 +58,14 @@ export class LogWriter {
   private writeToUserLogs: boolean;
   private verbose: boolean;
   private rotation: RotationSettings;
+  private startCommit?: string;
 
   constructor(options: LogWriterOptions = {}) {
     this.logPath = options.logPath ?? LOG_PATHS.project;
     this.writeToUserLogs = options.writeToUserLogs ?? false;
     this.verbose = options.verbose ?? false;
     this.rotation = options.rotation ?? DEFAULT_ROTATION_SETTINGS;
+    this.startCommit = options.startCommit;
   }
 
   /**
@@ -70,7 +74,7 @@ export class LogWriter {
    * @param config - Run configuration
    */
   async initialize(config: RunConfig): Promise<void> {
-    this.runLog = createEmptyRunLog(config);
+    this.runLog = createEmptyRunLog(config, { startCommit: this.startCommit });
 
     // Ensure log directory exists
     await this.ensureLogDirectory(this.logPath);
@@ -179,9 +183,11 @@ export class LogWriter {
    *
    * Automatically rotates old logs if thresholds are exceeded.
    *
+   * @param options - Optional finalization options
+   * @param options.endCommit - Git commit SHA at run end (AC-2)
    * @returns Path to the written log file
    */
-  async finalize(): Promise<string> {
+  async finalize(options?: { endCommit?: string }): Promise<string> {
     if (!this.runLog) {
       throw new Error("LogWriter not initialized.");
     }
@@ -191,7 +197,9 @@ export class LogWriter {
       this.completeIssue();
     }
 
-    const finalLog = finalizeRunLog(this.runLog);
+    const finalLog = finalizeRunLog(this.runLog, {
+      endCommit: options?.endCommit,
+    });
     const filename = generateLogFilename(
       finalLog.runId,
       new Date(finalLog.startTime),
@@ -278,6 +286,9 @@ export function createPhaseLogFromTiming(
       | "testsRun"
       | "testsPassed"
       | "verdict"
+      | "commitHash"
+      | "fileDiffStats"
+      | "cacheMetrics"
     >
   >,
 ): PhaseLog {

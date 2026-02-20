@@ -66,6 +66,36 @@ export const QaVerdictSchema = z.enum([
 export type QaVerdict = z.infer<typeof QaVerdictSchema>;
 
 /**
+ * File diff statistics for a single file (AC-3)
+ */
+export const FileDiffStatSchema = z.object({
+  /** File path relative to repository root */
+  path: z.string(),
+  /** Number of lines added */
+  additions: z.number().int().nonnegative(),
+  /** Number of lines deleted */
+  deletions: z.number().int().nonnegative(),
+  /** Change status */
+  status: z.enum(["added", "modified", "deleted", "renamed"]),
+});
+
+export type FileDiffStat = z.infer<typeof FileDiffStatSchema>;
+
+/**
+ * Cache metrics for QA phase (AC-7)
+ */
+export const CacheMetricsSchema = z.object({
+  /** Number of cache hits */
+  hits: z.number().int().nonnegative(),
+  /** Number of cache misses */
+  misses: z.number().int().nonnegative(),
+  /** Number of skipped checks */
+  skipped: z.number().int().nonnegative(),
+});
+
+export type CacheMetrics = z.infer<typeof CacheMetricsSchema>;
+
+/**
  * Log entry for a single phase execution
  */
 export const PhaseLogSchema = z.object({
@@ -93,6 +123,12 @@ export const PhaseLogSchema = z.object({
   testsPassed: z.number().int().nonnegative().optional(),
   /** Parsed QA verdict (only for qa phase) */
   verdict: QaVerdictSchema.optional(),
+  /** Git commit SHA after phase completes (AC-2) */
+  commitHash: z.string().optional(),
+  /** Per-file diff statistics (AC-3) */
+  fileDiffStats: z.array(FileDiffStatSchema).optional(),
+  /** Cache metrics for QA phase (AC-7) */
+  cacheMetrics: CacheMetricsSchema.optional(),
 });
 
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
@@ -173,6 +209,10 @@ export const RunLogSchema = z.object({
   issues: z.array(IssueLogSchema),
   /** Summary statistics */
   summary: RunSummarySchema,
+  /** Git commit SHA at run start (AC-2) */
+  startCommit: z.string().optional(),
+  /** Git commit SHA at run end (AC-2) */
+  endCommit: z.string().optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
@@ -203,9 +243,13 @@ export function generateLogFilename(runId: string, startTime: Date): string {
  * Create an empty run log with initial values
  *
  * @param config - Run configuration
+ * @param options - Optional fields including startCommit
  * @returns Initial RunLog structure
  */
-export function createEmptyRunLog(config: RunConfig): Omit<RunLog, "endTime"> {
+export function createEmptyRunLog(
+  config: RunConfig,
+  options?: { startCommit?: string },
+): Omit<RunLog, "endTime"> {
   const runId = randomUUID();
   const startTime = new Date().toISOString();
 
@@ -221,6 +265,7 @@ export function createEmptyRunLog(config: RunConfig): Omit<RunLog, "endTime"> {
       failed: 0,
       totalDurationSeconds: 0,
     },
+    startCommit: options?.startCommit,
   };
 }
 
@@ -262,6 +307,9 @@ export function completePhaseLog(
       | "testsRun"
       | "testsPassed"
       | "verdict"
+      | "commitHash"
+      | "fileDiffStats"
+      | "cacheMetrics"
     >
   >,
 ): PhaseLog {
@@ -282,9 +330,13 @@ export function completePhaseLog(
  * Finalize a run log with summary statistics
  *
  * @param runLog - Partial run log
+ * @param options - Optional fields including endCommit
  * @returns Complete RunLog with endTime and summary
  */
-export function finalizeRunLog(runLog: Omit<RunLog, "endTime">): RunLog {
+export function finalizeRunLog(
+  runLog: Omit<RunLog, "endTime">,
+  options?: { endCommit?: string },
+): RunLog {
   const endTime = new Date();
   const startTime = new Date(runLog.startTime);
   const totalDurationSeconds = (endTime.getTime() - startTime.getTime()) / 1000;
@@ -305,5 +357,6 @@ export function finalizeRunLog(runLog: Omit<RunLog, "endTime">): RunLog {
       failed,
       totalDurationSeconds,
     },
+    endCommit: options?.endCommit ?? runLog.endCommit,
   };
 }

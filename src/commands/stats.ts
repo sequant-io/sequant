@@ -322,6 +322,13 @@ interface MetricsAnalytics {
   chainModeSuccessRate: number;
   singleIssueSuccessRate: number;
   insights: string[];
+  // Token breakdown (AC-10)
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheTokens: number;
+  avgInputTokens: number;
+  avgOutputTokens: number;
+  avgCacheTokens: number;
 }
 
 /**
@@ -361,6 +368,13 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
       chainModeSuccessRate: 0,
       singleIssueSuccessRate: 0,
       insights: [],
+      // Token breakdown
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheTokens: 0,
+      avgInputTokens: 0,
+      avgOutputTokens: 0,
+      avgCacheTokens: 0,
     };
   }
 
@@ -407,6 +421,20 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
     singleIssueSuccessRate,
   );
 
+  // Token breakdown (AC-10)
+  const totalInputTokens = runs.reduce(
+    (sum, r) => sum + (r.metrics.inputTokens ?? 0),
+    0,
+  );
+  const totalOutputTokens = runs.reduce(
+    (sum, r) => sum + (r.metrics.outputTokens ?? 0),
+    0,
+  );
+  const totalCacheTokens = runs.reduce(
+    (sum, r) => sum + (r.metrics.cacheTokens ?? 0),
+    0,
+  );
+
   return {
     totalRuns: runs.length,
     successCount,
@@ -420,6 +448,13 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
     chainModeSuccessRate,
     singleIssueSuccessRate,
     insights,
+    // Token breakdown
+    totalInputTokens,
+    totalOutputTokens,
+    totalCacheTokens,
+    avgInputTokens: runs.length > 0 ? totalInputTokens / runs.length : 0,
+    avgOutputTokens: runs.length > 0 ? totalOutputTokens / runs.length : 0,
+    avgCacheTokens: runs.length > 0 ? totalCacheTokens / runs.length : 0,
   };
 }
 
@@ -552,6 +587,38 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
 
   console.log(ui.keyValueTable(avgData));
 
+  // Token breakdown (AC-10)
+  const hasTokenBreakdown =
+    analytics.totalInputTokens > 0 ||
+    analytics.totalOutputTokens > 0 ||
+    analytics.totalCacheTokens > 0;
+
+  if (hasTokenBreakdown) {
+    console.log(ui.sectionHeader("Token Usage"));
+
+    const tokenData: Record<string, string | number> = {};
+    if (analytics.totalInputTokens > 0) {
+      tokenData["Input tokens"] = analytics.totalInputTokens.toLocaleString();
+      tokenData["Avg input/run"] = Math.round(
+        analytics.avgInputTokens,
+      ).toLocaleString();
+    }
+    if (analytics.totalOutputTokens > 0) {
+      tokenData["Output tokens"] = analytics.totalOutputTokens.toLocaleString();
+      tokenData["Avg output/run"] = Math.round(
+        analytics.avgOutputTokens,
+      ).toLocaleString();
+    }
+    if (analytics.totalCacheTokens > 0) {
+      tokenData["Cache tokens"] = analytics.totalCacheTokens.toLocaleString();
+      tokenData["Avg cache/run"] = Math.round(
+        analytics.avgCacheTokens,
+      ).toLocaleString();
+    }
+
+    console.log(ui.keyValueTable(tokenData));
+  }
+
   // Insights
   if (analytics.insights.length > 0) {
     console.log(ui.sectionHeader("Insights"));
@@ -589,6 +656,15 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
         chainModeSuccessRate: analytics.chainModeSuccessRate,
         singleIssueSuccessRate: analytics.singleIssueSuccessRate,
         insights: analytics.insights,
+        // Token breakdown (AC-10)
+        tokenBreakdown: {
+          totalInputTokens: analytics.totalInputTokens,
+          totalOutputTokens: analytics.totalOutputTokens,
+          totalCacheTokens: analytics.totalCacheTokens,
+          avgInputTokens: analytics.avgInputTokens,
+          avgOutputTokens: analytics.avgOutputTokens,
+          avgCacheTokens: analytics.avgCacheTokens,
+        },
         runs: metrics.runs,
       };
       console.log(JSON.stringify(output, null, 2));
