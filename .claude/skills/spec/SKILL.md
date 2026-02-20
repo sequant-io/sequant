@@ -298,8 +298,10 @@ await manager.updateScopeAssessment(issueNumber, assessment);
 **You MUST spawn sub-agents for context gathering.** Do NOT explore the codebase inline with Glob/Grep commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
 
 **Check agent execution mode first:**
-```bash
-parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+Use the Read tool to check project settings:
+```
+Read(file_path=".sequant/settings.json")
+# Parse JSON and extract agents.parallel (default: false)
 ```
 
 #### If parallel mode enabled:
@@ -337,8 +339,10 @@ Before creating the implementation plan, check if a custom base branch should be
    ```
 
 3. **Check if project has defaultBase configured**:
-   ```bash
-   cat .sequant/settings.json 2>/dev/null | jq -r '.run.defaultBase // empty'
+   Use the Read tool to check settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Extract .run.defaultBase from JSON
    ```
 
 4. **If feature branch context detected**, include in plan output:

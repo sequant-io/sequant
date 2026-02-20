@@ -128,9 +128,10 @@ Before spawning quality check agents, determine the execution mode:
    - `--sequential` → Use sequential execution
 
 2. **If no flag, read project settings:**
-   ```bash
-   # Read agents.parallel from .sequant/settings.json
-   parallel=$(cat .sequant/settings.json 2>/dev/null | jq -r '.agents.parallel // false')
+   Use the Read tool to check project settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Parse JSON and extract agents.parallel (default: false)
    ```
 
 3. **Default:** Sequential (cost-optimized)
