@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Skill prompts prefer Claude Code dedicated tools over bash for file operations (#265)
+  - `grep -r` → `Grep()`, `find` → `Glob()`, `sed -i` → `Edit()`, `cat` → `Read()`
+  - 21 files updated across `.claude/skills/` and `templates/skills/`
+
 ### Fixed
 
 - Completed issues re-executed indefinitely, wasting API budget (#305)
