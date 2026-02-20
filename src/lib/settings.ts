@@ -108,13 +108,40 @@ export interface ScopeThreshold {
 }
 
 /**
+ * Trivial issue thresholds for skipping scope assessment
+ */
+export interface TrivialThresholds {
+  /**
+   * Maximum AC items for trivial classification.
+   * Issues with fewer AC items are considered trivial.
+   * Default: 3
+   */
+  maxACItems: number;
+  /**
+   * Maximum directories touched for trivial classification.
+   * Issues affecting fewer directories are considered trivial.
+   * Default: 1
+   */
+  maxDirectories: number;
+}
+
+/**
  * Scope assessment settings
+ *
+ * Configuration for scope assessment during /spec phase.
+ * These settings control how issue scope is evaluated and
+ * what thresholds trigger warnings.
  */
 export interface ScopeAssessmentSettings {
   /** Whether scope assessment is enabled (default: true) */
   enabled: boolean;
   /** Skip assessment for trivial issues (default: true) */
   skipIfSimple: boolean;
+  /**
+   * Trivial issue thresholds (skip if below all).
+   * Issues that fall below all these thresholds are skipped.
+   */
+  trivialThresholds: TrivialThresholds;
   /** Thresholds for scope metrics */
   thresholds: {
     /** Feature count thresholds (default: yellow=2, red=3) */
@@ -123,6 +150,8 @@ export interface ScopeAssessmentSettings {
     acItems: ScopeThreshold;
     /** File estimate thresholds (default: yellow=8, red=13) */
     fileEstimate: ScopeThreshold;
+    /** Directory spread thresholds (default: yellow=3, red=5) */
+    directorySpread: ScopeThreshold;
   };
 }
 
@@ -158,15 +187,41 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
 };
 
 /**
+ * Default trivial thresholds for scope assessment
+ *
+ * Issues that fall below ALL of these thresholds are considered trivial
+ * and scope assessment is skipped.
+ */
+export const DEFAULT_TRIVIAL_THRESHOLDS: TrivialThresholds = {
+  /** Issues with 3 or fewer AC items are potentially trivial */
+  maxACItems: 3,
+  /** Issues touching only 1 directory are potentially trivial */
+  maxDirectories: 1,
+};
+
+/**
  * Default scope assessment settings
+ *
+ * These defaults match the values in DEFAULT_SCOPE_CONFIG from
+ * src/lib/scope/types.ts to ensure consistency.
  */
 export const DEFAULT_SCOPE_ASSESSMENT_SETTINGS: ScopeAssessmentSettings = {
+  /** Enable scope assessment by default */
   enabled: true,
+  /** Skip assessment for trivial issues by default */
   skipIfSimple: true,
+  /** Trivial issue thresholds - skip if below all */
+  trivialThresholds: DEFAULT_TRIVIAL_THRESHOLDS,
+  /** Thresholds for scope metrics */
   thresholds: {
+    /** 2 features = yellow warning, 3+ = red (split recommended) */
     featureCount: { yellow: 2, red: 3 },
+    /** 6-8 AC items = yellow, 9+ = red */
     acItems: { yellow: 6, red: 9 },
+    /** 8-12 files estimated = yellow, 13+ = red */
     fileEstimate: { yellow: 8, red: 13 },
+    /** 3-4 directories = yellow, 5+ = red */
+    directorySpread: { yellow: 3, red: 5 },
   },
 };
 
@@ -220,6 +275,10 @@ export async function getSettings(): Promise<SequantSettings> {
       scopeAssessment: {
         ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
         ...parsed.scopeAssessment,
+        trivialThresholds: {
+          ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.trivialThresholds,
+          ...parsed.scopeAssessment?.trivialThresholds,
+        },
         thresholds: {
           ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.thresholds,
           ...parsed.scopeAssessment?.thresholds,

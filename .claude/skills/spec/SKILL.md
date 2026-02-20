@@ -202,13 +202,18 @@ console.log(formatACLintResults(lintResults));
 # Run scope assessment (skip if --skip-scope-check flag is set)
 npx tsx -e "
 import { parseAcceptanceCriteria } from './src/lib/ac-parser.js';
-import { performScopeAssessment, formatScopeAssessment } from './src/lib/scope/index.js';
+import { performScopeAssessment, formatScopeAssessment, convertSettingsToConfig } from './src/lib/scope/index.js';
+import { getSettings } from './src/lib/settings.js';
 
 const issueBody = \`<ISSUE_BODY_HERE>\`;
 const issueTitle = '<ISSUE_TITLE>';
 
+// Load settings and convert to scope config
+const settings = await getSettings();
+const config = convertSettingsToConfig(settings.scopeAssessment);
+
 const criteria = parseAcceptanceCriteria(issueBody);
-const assessment = performScopeAssessment(criteria, issueBody, issueTitle);
+const assessment = performScopeAssessment(criteria, issueBody, issueTitle, config);
 console.log(formatScopeAssessment(assessment));
 "
 ```
@@ -269,9 +274,15 @@ After assessment, store results in workflow state for analytics:
 ```bash
 npx tsx -e "
 import { StateManager } from './src/lib/workflow/state-manager.js';
-import { performScopeAssessment } from './src/lib/scope/index.js';
+import { performScopeAssessment, convertSettingsToConfig } from './src/lib/scope/index.js';
+import { getSettings } from './src/lib/settings.js';
 
-// ... perform assessment ...
+// ... load settings and convert ...
+const settings = await getSettings();
+const config = convertSettingsToConfig(settings.scopeAssessment);
+
+// ... perform assessment with config ...
+// const assessment = performScopeAssessment(criteria, issueBody, issueTitle, config);
 
 const manager = new StateManager();
 await manager.updateScopeAssessment(issueNumber, assessment);
