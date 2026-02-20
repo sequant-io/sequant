@@ -800,6 +800,12 @@ Shell scripts in `templates/scripts/`:
     (syntax-only, comments, type annotations, import reorg, dead code)
   - Structured override format with risk assessment (None/Low/Medium)
   - Decision flow: overrides only for clear-cut zero-runtime-impact changes
+- **Skill prompt tool alignment** (#265)
+  - Audited all 18 `.claude/skills/` and 15 `templates/skills/` files
+  - Converted bash file operations to Claude Code dedicated tools:
+    `grep -r` → `Grep()`, `find` → `Glob()`, `sed -i` → `Edit()`, `cat` → `Read()`
+  - 21 files updated across 13 skills (assess, exec, fullsolve, improve, loop, merger, qa, release, security-review, solve, spec + templates)
+  - Preserves CLI output processing as bash (piped git/gh output, .sh scripts)
 - **Fix: phase marker regex matches inside code blocks** (#269)
   - `stripMarkdownCode()` pre-strips fenced blocks and inline code
     before phase marker regex matching
