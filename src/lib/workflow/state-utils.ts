@@ -727,3 +727,213 @@ export async function discoverUntrackedWorktrees(
     };
   }
 }
+
+// ============================================================================
+// Auto-Reconciliation for Run Start (#305)
+// ============================================================================
+
+export interface ReconcileOptions {
+  /** State file path (default: .sequant/state.json) */
+  statePath?: string;
+  /** Enable verbose logging */
+  verbose?: boolean;
+}
+
+export interface ReconcileResult {
+  /** Whether reconciliation was successful */
+  success: boolean;
+  /** Issues that were advanced from ready_for_merge to merged */
+  advanced: number[];
+  /** Issues checked but still ready_for_merge */
+  stillPending: number[];
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
+ * Check if a branch has been merged into main using git
+ *
+ * @param branchName - The branch name to check (e.g., "feature/33-some-title")
+ * @returns true if the branch is merged into main, false otherwise
+ */
+export function isBranchMergedIntoMain(branchName: string): boolean {
+  try {
+    // Get branches merged into main
+    const result = spawnSync("git", ["branch", "--merged", "main"], {
+      stdio: "pipe",
+      timeout: 10000,
+    });
+
+    if (result.status === 0 && result.stdout) {
+      const mergedBranches = result.stdout.toString();
+      // Check if our branch is in the list (handle both local and remote refs)
+      return (
+        mergedBranches.includes(branchName) ||
+        mergedBranches.includes(`remotes/origin/${branchName}`)
+      );
+    }
+  } catch {
+    // git command failed - return false
+  }
+
+  return false;
+}
+
+/**
+ * Check if a feature branch for an issue is merged into main
+ *
+ * Tries multiple detection methods:
+ * 1. Check if branch exists and is merged via `git branch --merged main`
+ * 2. Check for merge commits mentioning the issue
+ *
+ * @param issueNumber - The issue number to check
+ * @returns true if the issue's work is merged into main
+ */
+export function isIssueMergedIntoMain(issueNumber: number): boolean {
+  try {
+    // Method 1: Check if any feature branch for this issue is merged
+    const listResult = spawnSync("git", ["branch", "-a"], {
+      stdio: "pipe",
+      timeout: 10000,
+    });
+
+    if (listResult.status === 0 && listResult.stdout) {
+      const branches = listResult.stdout.toString();
+      // Find branches matching feature/<issue>-*
+      const branchPattern = new RegExp(`feature/${issueNumber}-[^\\s]+`, "g");
+      const matchedBranches = branches.match(branchPattern);
+
+      if (matchedBranches) {
+        for (const branch of matchedBranches) {
+          const cleanBranch = branch.replace(/^\*?\s*/, "").trim();
+          if (isBranchMergedIntoMain(cleanBranch)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    // Method 2: Check for merge commits mentioning the issue
+    const logResult = spawnSync(
+      "git",
+      [
+        "log",
+        "main",
+        "--oneline",
+        "-20",
+        "--grep",
+        `#${issueNumber}`,
+        "--grep",
+        `Merge #${issueNumber}`,
+      ],
+      {
+        stdio: "pipe",
+        timeout: 10000,
+      },
+    );
+
+    if (logResult.status === 0 && logResult.stdout) {
+      const commits = logResult.stdout.toString().trim();
+      if (commits.length > 0) {
+        return true;
+      }
+    }
+  } catch {
+    // git command failed - return false
+  }
+
+  return false;
+}
+
+/**
+ * Lightweight state reconciliation at run start
+ *
+ * Checks issues in `ready_for_merge` state and advances them to `merged`
+ * if their PRs are merged or their branches are in main.
+ *
+ * This prevents re-running already completed issues.
+ *
+ * @param options - Reconciliation options
+ * @returns Result with lists of advanced and still-pending issues
+ */
+export async function reconcileStateAtStartup(
+  options: ReconcileOptions = {},
+): Promise<ReconcileResult> {
+  const manager = new StateManager({
+    statePath: options.statePath,
+    verbose: options.verbose,
+  });
+
+  // Graceful degradation: if state file doesn't exist, skip
+  if (!manager.stateExists()) {
+    return {
+      success: true,
+      advanced: [],
+      stillPending: [],
+    };
+  }
+
+  try {
+    const state = await manager.getState();
+    const advanced: number[] = [];
+    const stillPending: number[] = [];
+
+    // Find issues in ready_for_merge state
+    for (const [issueNumStr, issueState] of Object.entries(state.issues)) {
+      if (issueState.status !== "ready_for_merge") {
+        continue;
+      }
+
+      const issueNum = parseInt(issueNumStr, 10);
+      let isMerged = false;
+
+      // Check 1: If we have PR info, check PR status via gh
+      if (issueState.pr?.number) {
+        const prStatus = checkPRMergeStatus(issueState.pr.number);
+        if (prStatus === "MERGED") {
+          isMerged = true;
+          if (options.verbose) {
+            console.log(
+              `  #${issueNum}: PR #${issueState.pr.number} is merged`,
+            );
+          }
+        }
+      }
+
+      // Check 2: If no PR or PR check failed, check git for merged branch
+      if (!isMerged) {
+        isMerged = isIssueMergedIntoMain(issueNum);
+        if (isMerged && options.verbose) {
+          console.log(`  #${issueNum}: Branch merged into main (git check)`);
+        }
+      }
+
+      if (isMerged) {
+        // Advance state to merged
+        issueState.status = "merged";
+        issueState.lastActivity = new Date().toISOString();
+        advanced.push(issueNum);
+      } else {
+        stillPending.push(issueNum);
+      }
+    }
+
+    // Save state if any issues were advanced
+    if (advanced.length > 0) {
+      await manager.saveState(state);
+    }
+
+    return {
+      success: true,
+      advanced,
+      stillPending,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      advanced: [],
+      stillPending: [],
+      error: String(error),
+    };
+  }
+}

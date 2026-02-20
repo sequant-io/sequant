@@ -11,6 +11,9 @@ import {
   cleanupStaleEntries,
   discoverUntrackedWorktrees,
   checkPRMergeStatus,
+  reconcileStateAtStartup,
+  isBranchMergedIntoMain,
+  isIssueMergedIntoMain,
 } from "./state-utils.js";
 import { StateManager } from "./state-manager.js";
 import { createIssueState, type WorkflowState } from "./state-schema.js";
@@ -585,6 +588,399 @@ describe("state-utils", () => {
       expect(result.merged).toEqual([]);
       expect(result.removed).toEqual([]);
       expect(result.orphaned).toEqual([]);
+    });
+  });
+
+  // ============================================================================
+  // Tests for #305: Pre-flight state guard and worktree lifecycle
+  // ============================================================================
+
+  describe("reconcileStateAtStartup (#305 AC-5)", () => {
+    beforeEach(() => {
+      mockSpawnSync.mockReset();
+    });
+
+    it("should return success when no state file exists", async () => {
+      const result = await reconcileStateAtStartup({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.advanced).toEqual([]);
+      expect(result.stillPending).toEqual([]);
+    });
+
+    it("should advance ready_for_merge issues to merged when PR is merged", async () => {
+      // Create state with a ready_for_merge issue that has a merged PR
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "42": {
+            ...createIssueState(42, "Issue with merged PR"),
+            status: "ready_for_merge",
+            pr: { number: 100, url: "https://github.com/test/repo/pull/100" },
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock gh to return merged status
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (
+          cmd === "gh" &&
+          args?.includes("pr") &&
+          args?.includes("view") &&
+          args?.includes("100")
+        ) {
+          return {
+            status: 0,
+            stdout: Buffer.from("MERGED\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("MERGED\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await reconcileStateAtStartup({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.advanced).toContain(42);
+      expect(result.stillPending).not.toContain(42);
+
+      // Verify state was updated
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["42"].status).toBe("merged");
+    });
+
+    it("should keep ready_for_merge issues pending when PR is still open", async () => {
+      // Create state with a ready_for_merge issue with open PR
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "43": {
+            ...createIssueState(43, "Issue with open PR"),
+            status: "ready_for_merge",
+            pr: { number: 101, url: "https://github.com/test/repo/pull/101" },
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock gh to return open status
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (cmd === "gh" && args?.includes("pr") && args?.includes("101")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("OPEN\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("OPEN\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // Mock git branch -a to return no matching branches
+        if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n  origin/main\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  origin/main\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        // Mock git log to return no merge commits
+        if (cmd === "git" && args?.includes("log")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await reconcileStateAtStartup({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.advanced).not.toContain(43);
+      expect(result.stillPending).toContain(43);
+
+      // Verify state was NOT changed
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["43"].status).toBe("ready_for_merge");
+    });
+
+    it("should not affect issues with other statuses", async () => {
+      // Create state with issues in various states
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "44": {
+            ...createIssueState(44, "In progress issue"),
+            status: "in_progress",
+          },
+          "45": {
+            ...createIssueState(45, "Not started issue"),
+            status: "not_started",
+          },
+          "46": {
+            ...createIssueState(46, "Already merged issue"),
+            status: "merged",
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      const result = await reconcileStateAtStartup({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.advanced).toEqual([]);
+      expect(result.stillPending).toEqual([]);
+
+      // Verify states were not changed
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["44"].status).toBe("in_progress");
+      expect(updatedState.issues["45"].status).toBe("not_started");
+      expect(updatedState.issues["46"].status).toBe("merged");
+    });
+
+    it("should detect merged issues via git branch check when no PR info (#305)", async () => {
+      // Create state with ready_for_merge issue WITHOUT PR info
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "47": {
+            ...createIssueState(47, "Issue merged directly"),
+            status: "ready_for_merge",
+            branch: "feature/47-some-feature",
+            // No PR info - was merged directly
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      // Mock git commands to show branch is merged
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        // Mock git branch -a to return the feature branch
+        if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(
+              "  main\n  feature/47-some-feature\n  origin/main\n",
+            ),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  feature/47-some-feature\n  origin/main\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        // Mock git branch --merged main to show our branch is merged
+        if (
+          cmd === "git" &&
+          args?.includes("--merged") &&
+          args?.includes("main")
+        ) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n  feature/47-some-feature\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  feature/47-some-feature\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      const result = await reconcileStateAtStartup({ statePath });
+
+      expect(result.success).toBe(true);
+      expect(result.advanced).toContain(47);
+
+      // Verify state was updated
+      const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(updatedState.issues["47"].status).toBe("merged");
+    });
+  });
+
+  describe("isBranchMergedIntoMain (#305)", () => {
+    beforeEach(() => {
+      mockSpawnSync.mockReset();
+    });
+
+    it("should return true when branch is in git branch --merged main output", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: Buffer.from("  main\n  feature/123-test\n"),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [
+          null,
+          Buffer.from("  main\n  feature/123-test\n"),
+          Buffer.from(""),
+        ],
+        signal: null,
+      });
+
+      expect(isBranchMergedIntoMain("feature/123-test")).toBe(true);
+    });
+
+    it("should return false when branch is not in merged output", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: Buffer.from("  main\n"),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from("  main\n"), Buffer.from("")],
+        signal: null,
+      });
+
+      expect(isBranchMergedIntoMain("feature/456-other")).toBe(false);
+    });
+
+    it("should return false when git command fails", () => {
+      mockSpawnSync.mockReturnValueOnce({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("error"),
+        pid: 0,
+        output: [null, Buffer.from(""), Buffer.from("error")],
+        signal: null,
+      });
+
+      expect(isBranchMergedIntoMain("feature/789-branch")).toBe(false);
+    });
+  });
+
+  describe("isIssueMergedIntoMain (#305)", () => {
+    beforeEach(() => {
+      mockSpawnSync.mockReset();
+    });
+
+    it("should return true when feature branch is merged", () => {
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        // First call: git branch -a
+        if (args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n  feature/50-test-feature\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  feature/50-test-feature\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        // Second call: git branch --merged main
+        if (args?.includes("--merged")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n  feature/50-test-feature\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  feature/50-test-feature\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      expect(isIssueMergedIntoMain(50)).toBe(true);
+    });
+
+    it("should return false when no feature branch exists for issue", () => {
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n  feature/99-other\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("  main\n  feature/99-other\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        if (args?.includes("log")) {
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      expect(isIssueMergedIntoMain(51)).toBe(false);
     });
   });
 });
