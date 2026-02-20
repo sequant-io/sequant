@@ -982,5 +982,92 @@ describe("state-utils", () => {
 
       expect(isIssueMergedIntoMain(51)).toBe(false);
     });
+
+    it("should not false-positive on non-merge commits mentioning the issue (#305)", () => {
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        // No feature branch exists
+        if (args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("  main\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // git log with merge-specific grep patterns should NOT match
+        // commits like "docs: update changelog for #52"
+        if (args?.includes("log")) {
+          // Verify the grep patterns are merge-specific
+          const grepArgs = (args as string[]).filter(
+            (a: string) => a !== "--grep",
+          );
+          const hasGenericGrep = grepArgs.some(
+            (a: string) => a === "#52" || a === `#52`,
+          );
+          expect(hasGenericGrep).toBe(false);
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      expect(isIssueMergedIntoMain(52)).toBe(false);
+    });
+
+    it("should detect merge via merge commit pattern (#305)", () => {
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        // No feature branch
+        if (args?.includes("-a")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("  main\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from("  main\n"), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // git log finds a merge commit
+        if (args?.includes("log")) {
+          return {
+            status: 0,
+            stdout: Buffer.from("abc1234 Merge #53: add feature\n"),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [
+              null,
+              Buffer.from("abc1234 Merge #53: add feature\n"),
+              Buffer.from(""),
+            ],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      expect(isIssueMergedIntoMain(53)).toBe(true);
+    });
   });
 });

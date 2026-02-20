@@ -20,6 +20,8 @@ import {
   executePhaseWithRetry,
   rebaseBeforePR,
   reinstallIfLockfileChanged,
+  checkWorktreeFreshness,
+  removeStaleWorktree,
 } from "./run.js";
 
 describe("run command", () => {
@@ -1382,6 +1384,197 @@ describe("pre-PR rebase", () => {
 
       const firstCall = mockSpawnSync.mock.calls[0];
       expect(firstCall[1]).toContain("abc123..HEAD");
+    });
+  });
+
+  // ============================================================================
+  // Tests for #305: Pre-flight state guard and worktree lifecycle
+  // ============================================================================
+
+  describe("checkWorktreeFreshness (#305 AC-3)", () => {
+    const mockResult = (
+      status: number,
+      stdout: string,
+    ): ReturnType<typeof spawnSync> => ({
+      status,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from(""),
+      pid: 1234,
+      signal: null,
+      output: [],
+    });
+
+    it("should detect stale worktree (>5 commits behind)", () => {
+      mockSpawnSync
+        // fetch origin main
+        .mockReturnValueOnce(mockResult(0, ""))
+        // git status --porcelain (clean)
+        .mockReturnValueOnce(mockResult(0, ""))
+        // merge-base
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        // rev-parse origin/main
+        .mockReturnValueOnce(mockResult(0, "def456"))
+        // rev-list --count (10 commits behind)
+        .mockReturnValueOnce(mockResult(0, "10"))
+        // log @{u}..HEAD (no unpushed)
+        .mockReturnValueOnce(mockResult(0, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.isStale).toBe(true);
+      expect(result.commitsBehind).toBe(10);
+      expect(result.hasUncommittedChanges).toBe(false);
+      expect(result.hasUnpushedCommits).toBe(false);
+    });
+
+    it("should not mark worktree as stale when <=5 commits behind", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(0, "def456"))
+        .mockReturnValueOnce(mockResult(0, "3"))
+        .mockReturnValueOnce(mockResult(0, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.isStale).toBe(false);
+      expect(result.commitsBehind).toBe(3);
+    });
+
+    it("should not mark worktree as stale when up to date", () => {
+      const sameCommit = "abc123";
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, sameCommit))
+        .mockReturnValueOnce(mockResult(0, sameCommit))
+        // no rev-list call since mergeBase === mainHead
+        .mockReturnValueOnce(mockResult(0, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.isStale).toBe(false);
+      expect(result.commitsBehind).toBe(0);
+    });
+
+    it("should detect uncommitted changes", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, " M src/file.ts\n"))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(0, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.hasUncommittedChanges).toBe(true);
+    });
+
+    it("should detect unpushed commits", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(0, "def456 some commit\n"));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.hasUnpushedCommits).toBe(true);
+    });
+
+    it("should handle merge-base failure gracefully", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(1, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.isStale).toBe(false);
+      expect(result.commitsBehind).toBe(0);
+    });
+
+    it("should handle rev-parse failure gracefully", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, ""))
+        .mockReturnValueOnce(mockResult(0, "abc123"))
+        .mockReturnValueOnce(mockResult(1, ""));
+
+      const result = checkWorktreeFreshness("/path/to/worktree", false);
+
+      expect(result.isStale).toBe(false);
+    });
+  });
+
+  describe("removeStaleWorktree (#305 AC-3)", () => {
+    const mockResult = (
+      status: number,
+      stdout = "",
+      stderr = "",
+    ): ReturnType<typeof spawnSync> => ({
+      status,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from(stderr),
+      pid: 1234,
+      signal: null,
+      output: [],
+    });
+
+    it("should remove worktree and delete branch successfully", () => {
+      mockSpawnSync
+        // git worktree remove --force
+        .mockReturnValueOnce(mockResult(0))
+        // git branch -D
+        .mockReturnValueOnce(mockResult(0));
+
+      const result = removeStaleWorktree(
+        "/path/to/worktree",
+        "feature/42-test",
+        false,
+      );
+
+      expect(result).toBe(true);
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["worktree", "remove", "--force", "/path/to/worktree"],
+        { stdio: "pipe" },
+      );
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["branch", "-D", "feature/42-test"],
+        { stdio: "pipe" },
+      );
+    });
+
+    it("should return false when worktree removal fails", () => {
+      mockSpawnSync.mockReturnValueOnce(
+        mockResult(1, "", "fatal: not a valid worktree"),
+      );
+
+      const result = removeStaleWorktree(
+        "/path/to/worktree",
+        "feature/42-test",
+        false,
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should succeed even if branch deletion fails", () => {
+      mockSpawnSync
+        .mockReturnValueOnce(mockResult(0))
+        .mockReturnValueOnce(mockResult(1, "", "error: branch not found"));
+
+      const result = removeStaleWorktree(
+        "/path/to/worktree",
+        "feature/42-test",
+        false,
+      );
+
+      expect(result).toBe(true);
     });
   });
 });

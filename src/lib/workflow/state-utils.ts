@@ -814,6 +814,8 @@ export function isIssueMergedIntoMain(issueNumber: number): boolean {
     }
 
     // Method 2: Check for merge commits mentioning the issue
+    // Use specific merge patterns to avoid false positives from
+    // unrelated commits that merely reference the issue number
     const logResult = spawnSync(
       "git",
       [
@@ -822,9 +824,11 @@ export function isIssueMergedIntoMain(issueNumber: number): boolean {
         "--oneline",
         "-20",
         "--grep",
-        `#${issueNumber}`,
-        "--grep",
         `Merge #${issueNumber}`,
+        "--grep",
+        `Merge.*#${issueNumber}`,
+        "--grep",
+        `(#${issueNumber})`,
       ],
       {
         stdio: "pipe",

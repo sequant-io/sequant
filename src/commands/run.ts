@@ -160,7 +160,7 @@ interface WorktreeFreshnessResult {
  * @param verbose - Enable verbose output
  * @returns Freshness check result
  */
-function checkWorktreeFreshness(
+export function checkWorktreeFreshness(
   worktreePath: string,
   verbose: boolean,
 ): WorktreeFreshnessResult {
@@ -255,7 +255,7 @@ function checkWorktreeFreshness(
  * @param verbose - Enable verbose output
  * @returns true if worktree was removed
  */
-function removeStaleWorktree(
+export function removeStaleWorktree(
   existingPath: string,
   branch: string,
   verbose: boolean,
