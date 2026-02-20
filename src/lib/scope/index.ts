@@ -76,6 +76,9 @@ export {
   formatCondensedAssessment,
 } from "./formatter.js";
 
+// Re-export settings converter
+export { convertSettingsToConfig } from "./settings-converter.js";
+
 /**
  * Perform complete scope assessment
  *
