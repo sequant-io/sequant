@@ -99,6 +99,10 @@ export interface IssueResult {
   abortReason?: string;
   loopTriggered?: boolean;
   durationSeconds?: number;
+  /** PR number if created after successful QA */
+  prNumber?: number;
+  /** PR URL if created after successful QA */
+  prUrl?: string;
 }
 
 /**

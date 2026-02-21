@@ -22,6 +22,7 @@ import {
   reinstallIfLockfileChanged,
   checkWorktreeFreshness,
   removeStaleWorktree,
+  createPR,
 } from "./run.js";
 
 describe("run command", () => {
@@ -1575,6 +1576,244 @@ describe("pre-PR rebase", () => {
       );
 
       expect(result).toBe(true);
+    });
+  });
+
+  describe("PR creation", () => {
+    describe("createPR", () => {
+      it("should detect and return existing PR", () => {
+        // gh pr view returns existing PR
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(
+            JSON.stringify({
+              number: 42,
+              url: "https://github.com/org/repo/pull/42",
+            }),
+          ),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        const result = createPR(
+          "/path/to/worktree",
+          123,
+          "Test issue",
+          "feature/123-test",
+          false,
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.prNumber).toBe(42);
+        expect(result.prUrl).toBe("https://github.com/org/repo/pull/42");
+      });
+
+      it("should push branch and create PR when no existing PR", () => {
+        // gh pr view fails (no existing PR)
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("no pull requests found"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // git push succeeds
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // gh pr create succeeds
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("https://github.com/org/repo/pull/99\n"),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        const result = createPR(
+          "/path/to/worktree",
+          123,
+          "Test issue",
+          "feature/123-test",
+          false,
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.prNumber).toBe(99);
+        expect(result.prUrl).toBe("https://github.com/org/repo/pull/99");
+
+        // Verify git push was called with correct args
+        expect(mockSpawnSync).toHaveBeenCalledWith(
+          "git",
+          [
+            "-C",
+            "/path/to/worktree",
+            "push",
+            "-u",
+            "origin",
+            "feature/123-test",
+          ],
+          expect.objectContaining({ stdio: "pipe" }),
+        );
+
+        // Verify gh pr create was called
+        expect(mockSpawnSync).toHaveBeenCalledWith(
+          "gh",
+          expect.arrayContaining([
+            "pr",
+            "create",
+            "--title",
+            expect.stringContaining("#123"),
+          ]),
+          expect.objectContaining({ cwd: "/path/to/worktree" }),
+        );
+      });
+
+      it("should return failure when git push fails", () => {
+        // gh pr view fails (no existing PR)
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("not found"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // git push fails
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("permission denied"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        const result = createPR(
+          "/path/to/worktree",
+          123,
+          "Test issue",
+          "feature/123-test",
+          false,
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("git push failed");
+      });
+
+      it("should return failure when gh pr create fails", () => {
+        // gh pr view fails (no existing PR)
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("not found"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // git push succeeds
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // gh pr create fails
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("GraphQL: something went wrong"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        const result = createPR(
+          "/path/to/worktree",
+          123,
+          "Test issue",
+          "feature/123-test",
+          false,
+        );
+
+        expect(result.success).toBe(false);
+        expect(result.error).toContain("gh pr create failed");
+      });
+
+      it("should handle PR already exists race condition", () => {
+        // gh pr view fails initially (no existing PR)
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("not found"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // git push succeeds
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // gh pr create fails with "already exists"
+        mockSpawnSync.mockReturnValueOnce({
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from("a pull request already exists"),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        // Retry gh pr view succeeds
+        mockSpawnSync.mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(
+            JSON.stringify({
+              number: 50,
+              url: "https://github.com/org/repo/pull/50",
+            }),
+          ),
+          stderr: Buffer.from(""),
+          signal: null,
+          pid: 0,
+          output: [],
+        });
+
+        const result = createPR(
+          "/path/to/worktree",
+          123,
+          "Test issue",
+          "feature/123-test",
+          false,
+        );
+
+        expect(result.success).toBe(true);
+        expect(result.prNumber).toBe(50);
+        expect(result.prUrl).toBe("https://github.com/org/repo/pull/50");
+      });
     });
   });
 });

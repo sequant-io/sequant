@@ -200,6 +200,10 @@ program
     "Skip pre-PR rebase onto origin/main (use when you want to handle rebasing manually)",
   )
   .option(
+    "--no-pr",
+    "Skip PR creation after successful QA (manual PR workflow)",
+  )
+  .option(
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard)",
   )

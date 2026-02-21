@@ -149,6 +149,10 @@ export const IssueLogSchema = z.object({
   phases: z.array(PhaseLogSchema),
   /** Total execution time in seconds */
   totalDurationSeconds: z.number().nonnegative(),
+  /** PR number if created after successful QA */
+  prNumber: z.number().int().positive().optional(),
+  /** PR URL if created after successful QA */
+  prUrl: z.string().optional(),
 });
 
 export type IssueLog = z.infer<typeof IssueLogSchema>;
