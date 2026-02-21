@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Feature documentation for `sequant run` PR creation (`docs/features/run-pr-creation.md`) (#322)
+
 ## [1.15.4] - 2026-02-21
 
 ### Fixed
