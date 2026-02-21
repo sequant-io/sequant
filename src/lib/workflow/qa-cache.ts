@@ -43,6 +43,7 @@ export const CHECK_TYPES = [
   "semgrep",
   "build",
   "tests",
+  "test-quality",
 ] as const;
 
 export type CheckType = (typeof CHECK_TYPES)[number];
@@ -146,6 +147,7 @@ const CHECK_INVALIDATION_PATTERNS: Record<CheckType, RegExp[]> = {
   semgrep: [/\.ts$/, /\.tsx$/, /\.js$/, /\.jsx$/, /semgrep.*\.ya?ml$/],
   build: [/\.ts$/, /\.tsx$/, /\.js$/, /\.jsx$/, /tsconfig.*\.json$/],
   tests: [/\.test\.[jt]sx?$/, /\.spec\.[jt]sx?$/, /jest\.config/],
+  "test-quality": [/\.test\.[jt]sx?$/, /\.spec\.[jt]sx?$/],
 };
 
 /**
