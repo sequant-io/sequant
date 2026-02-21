@@ -10,12 +10,14 @@ Combine agent outputs into a unified quality assessment:
 | Scope/Size Checker | Files changed, LOC, assessment | Medium - warning if very large |
 | Security Scanner | Critical/warning/info counts | High - blocking if criticals > 0 |
 | Semgrep Static Analysis | Critical/warning findings | High - blocking if criticals > 0 |
+| Test Tautology Detector | Tautological test count, percentage | High - blocking if >50% tautological |
 | RLS Checker (conditional) | Violations found | High - blocking if violations |
 
 **Synthesis Rules:**
 - **Any FAIL verdict** → Flag as blocker in manual review
 - **Security criticals (including Semgrep)** → Block merge, require fix before proceeding
 - **Build regression detected** → Block merge, require fix before proceeding
+- **Test tautology >50%** → Block merge, tests provide no regression protection
 - **All PASS** → Proceed with confidence to manual review
 - **WARN verdicts** → Note in review, verify manually
 
@@ -109,6 +111,71 @@ Semgrep uses stack-specific rulesets for targeted analysis:
 ### Custom Rules
 
 Projects can add custom rules in `.sequant/semgrep-rules.yaml`. These are loaded alongside stack rules automatically.
+
+## Test Tautology Detection
+
+Tautological tests are tests that pass but don't call any production code. They provide zero regression protection as they only assert on local values.
+
+### Detection Logic
+
+A test block is flagged as tautological if:
+1. It's an `it()` or `test()` block
+2. It contains zero calls to functions imported from source modules
+3. Source modules are relative imports (`./`, `../`) excluding mocks/fixtures/test libraries
+
+### Verdict Mapping
+
+| Tautology Result | QA Verdict Impact |
+|------------------|-------------------|
+| >50% of test blocks tautological | **BLOCKING** - `AC_NOT_MET` |
+| 1-50% of test blocks tautological | Warning - `AC_MET_BUT_NOT_A_PLUS` |
+| 0% tautological | No impact |
+| No test blocks in diff | No impact (skipped) |
+
+### Output Format
+
+```markdown
+### Test Quality Review
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Tautology Check | ⚠️ WARN | 2 tautological test blocks found (25%) |
+
+**Tautological Tests Found:**
+- `src/lib/foo.test.ts:45` - `it("should work")` - No production function calls
+- `src/lib/bar.test.ts:12` - `test("validates")` - No production function calls
+```
+
+### Example - Tautological vs Real Test
+
+```typescript
+// TAUTOLOGICAL — flags as warning/blocker
+import { executePhaseWithRetry } from "./run.js";
+it("should retry", () => {
+  const retry = true;
+  expect(retry).toBe(true);  // No production function called!
+});
+
+// REAL — this is fine
+import { executePhaseWithRetry } from "./run.js";
+it("should retry", async () => {
+  const result = await executePhaseWithRetry(123, "exec", config, ...);
+  expect(result.success).toBe(true);  // Calls production function
+});
+```
+
+### Implementation
+
+The `quality-checks.sh` script includes:
+- Tautology detector CLI: `scripts/qa/tautology-detector-cli.ts`
+- Detection library: `src/lib/test-tautology-detector.ts`
+
+**How it works:**
+1. Get test files from `git diff main...HEAD`
+2. For each test file, extract imports and test blocks
+3. Check if any imported production function is called within each test block
+4. Report tautological tests with file:line references
+5. Block if >50% of test blocks are tautological
 
 ## Verdict Criteria
 

@@ -163,6 +163,41 @@ it('calculates total', () => {
 });
 ```
 
+### 4. Tautological Tests (Automated Detection)
+
+**Problem:** Tests that pass but don't call any production code. These tests provide zero regression protection.
+
+**Detection:** Automated via `tautology-detector-cli.ts` — runs during QA quality checks.
+
+**Example - Tautological (BAD):**
+```typescript
+import { processData } from './processor';
+
+it('should process correctly', () => {
+  const result = true;  // Never calls processData!
+  expect(result).toBe(true);
+});
+```
+
+**Example - Real Test (GOOD):**
+```typescript
+import { processData } from './processor';
+
+it('should process correctly', () => {
+  const result = processData({ value: 42 });  // Actually calls production code
+  expect(result.success).toBe(true);
+});
+```
+
+**Detection Heuristic:**
+1. Extract imports from source modules (relative paths like `./`, `../`)
+2. Exclude test libraries (`vitest`, `jest`, `@testing-library`, etc.)
+3. Exclude mock/fixture imports (paths containing `mock`, `fixture`, `stub`, etc.)
+4. For each `it()` / `test()` block, check if any imported function is called
+5. Flag blocks where zero production functions are invoked
+
+**Blocking Threshold:** If >50% of test blocks in the diff are tautological, merge is blocked.
+
 ## Output Format
 
 Include this section in QA output when test files are modified:
@@ -172,6 +207,7 @@ Include this section in QA output when test files are modified:
 
 | Category | Status | Notes |
 |----------|--------|-------|
+| Tautology Check | ✅ OK | All tests call production code |
 | Behavior vs Implementation | ✅ OK | Tests assert on outputs |
 | Coverage Depth | ⚠️ WARN | Missing error path tests |
 | Mock Hygiene | ✅ OK | Minimal mocking |
@@ -186,6 +222,41 @@ Include this section in QA output when test files are modified:
 2. Reduce mocks in utils.test.ts to external dependencies only
 ```
 
+### Tautology Check Output (Automated)
+
+When tautological tests are detected:
+
+```markdown
+### Test Quality Review
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Tautology Check | ⚠️ WARN | 2 tautological test blocks found (25%) |
+
+**Tautological Tests Found:**
+- `src/lib/foo.test.ts:45` - `it("should work")` - No production function calls
+- `src/lib/bar.test.ts:12` - `test("validates input")` - No production function calls
+
+**Verdict Impact:** 25% tautological — warning only, review tests before merge
+```
+
+When >50% are tautological (blocking):
+
+```markdown
+### Test Quality Review
+
+| Category | Status | Notes |
+|----------|--------|-------|
+| Tautology Check | ❌ FAIL | 3 tautological test blocks found (75%) |
+
+**Tautological Tests Found:**
+- `src/lib/foo.test.ts:45` - `it("should work")` - No production function calls
+- `src/lib/foo.test.ts:52` - `it("should handle input")` - No production function calls
+- `src/lib/bar.test.ts:12` - `test("validates")` - No production function calls
+
+**Verdict Impact:** >50% tautological — blocks `READY_FOR_MERGE`
+```
+
 ## Verdict Impact
 
 | Test Quality | Verdict Impact |
@@ -195,5 +266,7 @@ Include this section in QA output when test files are modified:
 | Over-mocking (4+ mocks) | `AC_MET_BUT_NOT_A_PLUS` |
 | No error path tests | `AC_MET_BUT_NOT_A_PLUS` |
 | Tests mirror implementation | `AC_MET_BUT_NOT_A_PLUS` |
+| Tautological tests (1-50%) | `AC_MET_BUT_NOT_A_PLUS` |
+| **Tautological tests (>50%)** | `AC_NOT_MET` (blocker) |
 | Flaky tests introduced | `AC_NOT_MET` (blocker) |
 | Tests deleted without justification | `AC_NOT_MET` (blocker) |
