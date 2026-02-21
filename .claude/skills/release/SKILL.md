@@ -100,20 +100,20 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 ### Documentation Checks
 
 ```bash
-# 11. Check docs/what-weve-built.md is up to date
-if [ -f "docs/what-weve-built.md" ]; then
+# 11. Check docs/internal/what-weve-built.md is up to date
+if [ -f "docs/internal/what-weve-built.md" ]; then
   current=$(node -p "require('./package.json').version")
 
   # Check title version
-  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
   if [ "$title_version" != "$current" ]; then
-    echo "Warning: docs/what-weve-built.md title shows v${title_version}, expected v${current}"
+    echo "Warning: docs/internal/what-weve-built.md title shows v${title_version}, expected v${current}"
   fi
 
   # Check ASCII art version
-  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
   if [ "$ascii_version" != "$current" ]; then
-    echo "Warning: docs/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
+    echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
   fi
 fi
 ```
@@ -204,30 +204,23 @@ npm version prerelease --preid=beta --no-git-tag-version
 
 **IMPORTANT:** Keep plugin.json in sync with package.json.
 
-```bash
-# Get new version from package.json
-new_version=$(node -p "require('./package.json').version")
+Use the **Read tool** to read `.claude-plugin/plugin.json`, then use the **Edit tool** to update the version field:
 
-# Update plugin.json to match
-node -e "
-const fs = require('fs');
-const pluginPath = './.claude-plugin/plugin.json';
-if (fs.existsSync(pluginPath)) {
-  const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
-  plugin.version = '${new_version}';
-  fs.writeFileSync(pluginPath, JSON.stringify(plugin, null, 2) + '\n');
-  console.log('Updated plugin.json to version ${new_version}');
-} else {
-  console.log('No plugin.json found - skipping');
-}
-"
 ```
+Read(file_path=".claude-plugin/plugin.json")
+
+Edit(file_path=".claude-plugin/plugin.json",
+     old_string="\"version\": \"<old_version>\"",
+     new_string="\"version\": \"<new_version>\"")
+```
+
+If `.claude-plugin/plugin.json` does not exist, skip this step.
 
 **Why sync?** Sequant is distributed as both npm package and Claude Code plugin. Both must have matching versions to avoid user confusion and ensure compatibility.
 
 ### Step 4.6: Update what-weve-built.md
 
-**IMPORTANT:** Keep `docs/what-weve-built.md` version references in sync and document new features.
+**IMPORTANT:** Keep `docs/internal/what-weve-built.md` version references in sync and document new features.
 
 Get the new version, then use the Edit tool to update the file:
 
@@ -235,23 +228,23 @@ Get the new version, then use the Edit tool to update the file:
 new_version=$(node -p "require('./package.json').version")
 ```
 
-Then use the **Edit tool** (not sed) to update `docs/what-weve-built.md`:
+Then use the **Edit tool** (not sed) to update `docs/internal/what-weve-built.md`:
 
 ```
 # Update title version - use Edit tool with replace_all=true
-Edit(file_path="docs/what-weve-built.md",
+Edit(file_path="docs/internal/what-weve-built.md",
      old_string="Sequant v<old_version>",
      new_string="Sequant v${new_version}",
      replace_all=true)
 
 # Update ASCII art version - use Edit tool with replace_all=true
-Edit(file_path="docs/what-weve-built.md",
+Edit(file_path="docs/internal/what-weve-built.md",
      old_string="SEQUANT v<old_version>",
      new_string="SEQUANT v${new_version}",
      replace_all=true)
 
 # Update "Current Version" line - use Edit tool
-Edit(file_path="docs/what-weve-built.md",
+Edit(file_path="docs/internal/what-weve-built.md",
      old_string="**Current Version:** <old_version>",
      new_string="**Current Version:** ${new_version}")
 ```
@@ -289,7 +282,7 @@ echo "Package size: ${size}"
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json docs/what-weve-built.md
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json docs/internal/what-weve-built.md
 git commit -m "chore: release v${new_version}"
 git push origin main
 ```
@@ -323,6 +316,8 @@ For the title, use a short summary:
 
 ### Step 9: Publish to npm
 
+Attempt to publish:
+
 ```bash
 # Regular release
 npm publish
@@ -331,7 +326,15 @@ npm publish
 npm publish --tag beta
 ```
 
-**Note:** If 2FA is enabled, npm will prompt for OTP code.
+**If npm returns `EOTP` (2FA required):**
+
+Non-interactive environments cannot handle the OTP prompt. Ask the user to publish manually:
+
+```
+npm publish --otp=<code>
+```
+
+Do NOT attempt to pass OTP codes programmatically or retry `npm publish` in a loop. Hand off to the user and continue with post-release verification once they confirm.
 
 ## Post-Release Verification
 
@@ -362,7 +365,7 @@ Release v{version} Complete
   GitHub:   https://github.com/sequant-io/sequant/releases/tag/v{new}
   npm:      https://www.npmjs.com/package/sequant/v/{new}
   Plugin:   Version synced in .claude-plugin/plugin.json
-  Docs:     Version synced in docs/what-weve-built.md
+  Docs:     Version synced in docs/internal/what-weve-built.md
 
   Install (npm):
     npm install sequant@{new}
