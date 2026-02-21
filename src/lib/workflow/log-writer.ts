@@ -145,6 +145,17 @@ export class LogWriter {
   }
 
   /**
+   * Set PR info on the current issue (call before completeIssue)
+   */
+  setPRInfo(prNumber: number, prUrl: string): void {
+    if (!this.currentIssue) {
+      return;
+    }
+    this.currentIssue.prNumber = prNumber;
+    this.currentIssue.prUrl = prUrl;
+  }
+
+  /**
    * Complete the current issue and add it to the run log
    */
   completeIssue(): void {
@@ -166,6 +177,12 @@ export class LogWriter {
       status: this.currentIssue.status!,
       phases: this.currentIssue.phases!,
       totalDurationSeconds,
+      ...(this.currentIssue.prNumber != null && {
+        prNumber: this.currentIssue.prNumber,
+      }),
+      ...(this.currentIssue.prUrl != null && {
+        prUrl: this.currentIssue.prUrl,
+      }),
     };
 
     this.runLog.issues.push(issueLog);

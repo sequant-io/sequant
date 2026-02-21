@@ -24,6 +24,7 @@ allowed-tools:
   - Bash(git add:*)
   - Bash(git commit:*)
   - Bash(git log:*)
+  - Bash(git push:*)
   - Bash(git worktree:*)
   # Worktree management
   - Bash(./scripts/dev/new-feature.sh:*)
