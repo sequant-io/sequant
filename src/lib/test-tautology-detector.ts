@@ -273,7 +273,7 @@ export function extractTestBlocks(content: string): Array<{
 
 /**
  * Check if a position in the content is inside a non-code context:
- * string literal (single, double, or template), comment (// or /* ... *​/),
+ * string literal (single, double, or template), comment (line or block),
  * or a template expression's string context.
  *
  * Handles nested template literals: `` `outer ${`inner`} still outer` ``
