@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.4] - 2026-02-21
+
+### Fixed
+
+- PR creation restored in `sequant run` — v1.15.3 regression where PRs were no longer created after successful QA (#322)
+  - Added `createPR()` function with existing-PR detection, push, and race condition handling
+  - Added `--no-pr` flag to skip PR creation for manual workflows
+  - PR info recorded in run logs (`prNumber`, `prUrl`) and workflow state
+  - Added `Bash(git push:*)` to exec skill's allowed-tools
+  - Bug-labeled issues now use `fix()` prefix in auto-generated PR titles
+- Normalized Commander.js `--no-*` flags (`--no-pr`, `--no-rebase`, `--no-mcp`, `--no-retry`, `--no-log`, `--no-smart-tests`) which were silently ignored due to Commander's naming convention
+- Release skill: Unreleased section restoration, dynamic package name, doc path corrections, OTP handling
+
 ## [1.15.3] - 2026-02-21
 
 ### Added
