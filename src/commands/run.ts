@@ -2355,18 +2355,33 @@ export async function runCommand(
 
   // Settings provide defaults, env overrides settings, CLI overrides all
   // Note: phases are auto-detected per-issue unless --phases is explicitly set
+  // Commander.js converts --no-X to { X: false }, not { noX: true }.
+  // Normalize these so RunOptions fields (noLog, noMcp, etc.) work correctly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cliOpts = options as any;
+  const normalizedOptions: RunOptions = {
+    ...options,
+    ...(cliOpts.log === false && { noLog: true }),
+    ...(cliOpts.smartTests === false && { noSmartTests: true }),
+    ...(cliOpts.mcp === false && { noMcp: true }),
+    ...(cliOpts.retry === false && { noRetry: true }),
+    ...(cliOpts.rebase === false && { noRebase: true }),
+    ...(cliOpts.pr === false && { noPr: true }),
+  };
+
   const mergedOptions: RunOptions = {
     // Settings defaults (phases removed - now auto-detected)
-    sequential: options.sequential ?? settings.run.sequential,
-    timeout: options.timeout ?? settings.run.timeout,
-    logPath: options.logPath ?? settings.run.logPath,
-    qualityLoop: options.qualityLoop ?? settings.run.qualityLoop,
-    maxIterations: options.maxIterations ?? settings.run.maxIterations,
-    noSmartTests: options.noSmartTests ?? !settings.run.smartTests,
+    sequential: normalizedOptions.sequential ?? settings.run.sequential,
+    timeout: normalizedOptions.timeout ?? settings.run.timeout,
+    logPath: normalizedOptions.logPath ?? settings.run.logPath,
+    qualityLoop: normalizedOptions.qualityLoop ?? settings.run.qualityLoop,
+    maxIterations:
+      normalizedOptions.maxIterations ?? settings.run.maxIterations,
+    noSmartTests: normalizedOptions.noSmartTests ?? !settings.run.smartTests,
     // Env overrides
     ...envConfig,
     // CLI explicit options override all
-    ...options,
+    ...normalizedOptions,
   };
 
   // Determine if we should auto-detect phases from labels
