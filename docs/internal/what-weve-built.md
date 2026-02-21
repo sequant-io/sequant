@@ -15,9 +15,9 @@ journey through planning, implementation, testing, and review
 |--------|-------|
 | Slash Commands | 18 |
 | CLI Commands | 10 |
-| Core Library Modules | 45 |
-| Test Files | 53 |
-| Documentation Files | 38 |
+| Core Library Modules | 46 |
+| Test Files | 55 |
+| Documentation Files | 39 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
 
@@ -124,6 +124,7 @@ The four pillars of the Sequant workflow:
 
 **`/qa` details:**
 - Type safety, security scans, Semgrep static analysis
+- Test tautology detection (flags tests that don't call production code)
 - CI status awareness, build verification against main
 - Caches expensive checks (`--no-cache` to force fresh)
 - Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`,
@@ -256,6 +257,7 @@ State management and analytics live in `src/lib/workflow/`:
 | `metrics-schema.ts` | Schema for local analytics data |
 | `phase-detection.ts` | Phase marker parsing; powers `--resume` resumption |
 | `qa-cache.ts` | QA check result caching keyed by diff hash + config hash |
+| `test-tautology-detector.ts` | Detects tautological tests that pass without calling production code |
 
 ---
 
@@ -381,6 +383,7 @@ Every PR goes through:
 ### Features
 - `features/scope-assessment-settings.md` — Customizing scope thresholds
 - `features/package-manager-detection.md` — Auto-detection of npm/Bun/Yarn/pnpm
+- `features/test-tautology-detector.md` — Tautological test detection and QA integration
 
 ### Guides
 - `guides/customization.md` — Configuration options
@@ -653,7 +656,7 @@ Skills include rich guidance documents in `templates/skills/*/references/`:
 
 | Document | Purpose |
 |----------|---------|
-| `qa/references/quality-gates.md` | Verdict criteria (READY_FOR_MERGE, AC_NOT_MET, etc.) |
+| `qa/references/quality-gates.md` | Verdict criteria (READY_FOR_MERGE, AC_NOT_MET, etc.), tautology thresholds |
 | `qa/references/code-review-checklist.md` | Systematic review checklist |
 | `qa/references/code-quality-exemplars.md` | Examples of good vs bad code |
 | `qa/references/testing-requirements.md` | What tests are expected |
@@ -800,6 +803,15 @@ Shell scripts in `templates/scripts/`:
     (syntax-only, comments, type annotations, import reorg, dead code)
   - Structured override format with risk assessment (None/Low/Medium)
   - Decision flow: overrides only for clear-cut zero-runtime-impact changes
+- **Test tautology detector** (#298)
+  - Flags `it()`/`test()` blocks that never call imported production functions
+  - String-aware parser: nested template literals, `//` and `/* */` comments filtered
+  - JS-identifier boundaries (`[\w$]` lookahead/lookbehind) prevent substring false positives
+  - CLI: `scripts/qa/tautology-detector-cli.ts` (`--json`, `--verbose`)
+  - QA integration: `quality-checks.sh` section 10, >50% tautological blocks merge
+  - QA cache: `test-quality` check type in `qa-cache.ts`
+  - 52 unit tests + 5 CLI integration tests
+  - Documentation: `docs/features/test-tautology-detector.md`
 - **Skill prompt tool alignment** (#265)
   - Audited all 18 `.claude/skills/` and 15 `templates/skills/` files
   - Converted bash file operations to Claude Code dedicated tools:
@@ -986,9 +998,9 @@ npm run build
 |------|----------|
 | Slash Commands | 18 |
 | CLI Commands | 10 |
-| Library Modules | 45 |
-| Test Files | 53 |
-| Docs Files | 38 |
+| Library Modules | 46 |
+| Test Files | 55 |
+| Docs Files | 39 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
 | Hook Lines | 450+ |
@@ -1008,7 +1020,7 @@ npm run build
 │                              SEQUANT v1.15.3                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (18)              CLI (10)                LIBRARIES (44)            │
+│  SKILLS (18)              CLI (10)                LIBRARIES (45)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -1016,7 +1028,7 @@ npm run build
 │  /qa                      sequant status          metrics-writer.ts         │
 │  /fullsolve               sequant update          ac-parser.ts              │
 │  /solve                   sequant state           project-name.ts           │
-│  /loop                    sequant stats           ... and 37 more           │
+│  /loop                    sequant stats           ... and 38 more           │
 │  /testgen                 sequant logs                                      │
 │  /verify                  sequant dashboard       HOOKS (450+ lines)        │
 │  /docs                                            ─────────────────         │
@@ -1036,7 +1048,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 53  │  DOCS: 38   │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 55  │  DOCS: 39   │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1046,4 +1058,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-20 · `c341c42` fix(#249): Align ScopeAssessmentSettings with ScopeAssessmentConfig*
+*Last updated: 2026-02-21 · `5025e55` feat(#298): Add test tautology detector to QA quality gates*

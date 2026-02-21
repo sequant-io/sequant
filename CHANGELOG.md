@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Test tautology detector for QA quality gates (#298)
+  - Flags test blocks (`it()`/`test()`) that pass without calling any production code
+  - String-aware parser handles nested template literals, comments, aliased imports
+  - JS-identifier-aware matching (`[\w$]` boundaries) prevents false positives
+  - CLI wrapper (`scripts/qa/tautology-detector-cli.ts`) with `--json` and `--verbose` flags
+  - Integrated into `quality-checks.sh` — >50% tautological blocks `READY_FOR_MERGE`
+  - QA cache support via `test-quality` check type
+  - 52 unit tests + 5 CLI integration tests
+  - Documentation: `docs/features/test-tautology-detector.md`
+
 ### Changed
 
 - Skill prompts prefer Claude Code dedicated tools over bash for file operations (#265)
