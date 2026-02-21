@@ -245,6 +245,41 @@ describe("extractTestBlocks", () => {
     expect(blocks).toHaveLength(1);
     expect(blocks[0].description).toBe("outer test");
   });
+
+  it("handles nested template literals correctly", () => {
+    const content =
+      "const x = `outer ${`inner`} still outer`;\n" +
+      "it('real test after nested template', () => {\n" +
+      "  expect(1).toBe(1);\n" +
+      "});\n";
+    const blocks = extractTestBlocks(content);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].description).toBe("real test after nested template");
+  });
+
+  it("skips test blocks inside line comments", () => {
+    const content = `
+      // it('commented out test', () => { expect(true).toBe(true); });
+      it('real test', () => {
+        expect(1).toBe(1);
+      });
+    `;
+    const blocks = extractTestBlocks(content);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].description).toBe("real test");
+  });
+
+  it("skips test blocks inside block comments", () => {
+    const content = `
+      /* it('block commented test', () => { expect(true).toBe(true); }); */
+      it('real test', () => {
+        expect(1).toBe(1);
+      });
+    `;
+    const blocks = extractTestBlocks(content);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].description).toBe("real test");
+  });
 });
 
 describe("testBlockCallsProductionCode", () => {
@@ -317,6 +352,15 @@ describe("testBlockCallsProductionCode", () => {
       handler();
     }`;
     const imports = [{ name: "myHandler", modulePath: "./handlers" }];
+    expect(testBlockCallsProductionCode(body, imports)).toBe(true);
+  });
+
+  it("handles identifiers with special regex characters like $", () => {
+    const body = `{
+      const el = $(".selector");
+      expect(el).toBeDefined();
+    }`;
+    const imports = [{ name: "$", modulePath: "./jquery" }];
     expect(testBlockCallsProductionCode(body, imports)).toBe(true);
   });
 

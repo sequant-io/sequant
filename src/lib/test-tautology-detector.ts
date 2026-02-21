@@ -272,13 +272,21 @@ export function extractTestBlocks(content: string): Array<{
 }
 
 /**
- * Check if a position in the content is inside a string literal (single, double, or template).
- * Scans from the start of content to the given position tracking string state.
+ * Check if a position in the content is inside a non-code context:
+ * string literal (single, double, or template), comment (// or /* ... *​/),
+ * or a template expression's string context.
+ *
+ * Handles nested template literals: `` `outer ${`inner`} still outer` ``
+ * by tracking template expression depth via a stack.
  */
 function isInsideString(content: string, position: number): boolean {
   let inString = false;
   let stringChar = "";
   let escaped = false;
+  // Stack tracks brace depth inside template expressions.
+  // When we encounter `${`, we push 0. Nested `{` increments top.
+  // `}` at depth 0 pops the stack and re-enters the template literal.
+  const templateExprStack: number[] = [];
 
   for (let i = 0; i < position && i < content.length; i++) {
     const char = content[i];
@@ -293,19 +301,98 @@ function isInsideString(content: string, position: number): boolean {
       continue;
     }
 
-    if (!inString && (char === '"' || char === "'" || char === "`")) {
-      inString = true;
-      stringChar = char;
+    // Inside a template literal — handle ${...} expressions
+    if (inString && stringChar === "`") {
+      if (char === "$" && i + 1 < content.length && content[i + 1] === "{") {
+        // Enter template expression — temporarily leave string context
+        templateExprStack.push(0);
+        inString = false;
+        i++; // skip the `{`
+        continue;
+      }
+      if (char === "`") {
+        inString = false;
+        continue;
+      }
       continue;
     }
 
-    if (inString && char === stringChar) {
-      inString = false;
+    // Inside a non-template string
+    if (inString) {
+      if (char === stringChar) {
+        inString = false;
+      }
       continue;
+    }
+
+    // Not in any string — check if we're inside a template expression
+    if (templateExprStack.length > 0) {
+      if (char === "{") {
+        templateExprStack[templateExprStack.length - 1]++;
+      } else if (char === "}") {
+        if (templateExprStack[templateExprStack.length - 1] === 0) {
+          // Closing the template expression — re-enter the template literal
+          templateExprStack.pop();
+          inString = true;
+          stringChar = "`";
+        } else {
+          templateExprStack[templateExprStack.length - 1]--;
+        }
+      } else if (char === "`" || char === '"' || char === "'") {
+        inString = true;
+        stringChar = char;
+      } else if (
+        char === "/" &&
+        i + 1 < content.length &&
+        content[i + 1] === "/"
+      ) {
+        // Line comment — if position falls within it, return true
+        const eol = content.indexOf("\n", i);
+        const commentEnd = eol === -1 ? content.length : eol;
+        if (position <= commentEnd) return true;
+        i = commentEnd;
+      } else if (
+        char === "/" &&
+        i + 1 < content.length &&
+        content[i + 1] === "*"
+      ) {
+        // Block comment — if position falls within it, return true
+        const end = content.indexOf("*/", i + 2);
+        const commentEnd = end === -1 ? content.length : end + 1;
+        if (position <= commentEnd) return true;
+        i = commentEnd;
+      }
+      continue;
+    }
+
+    // Top-level code
+    if (char === "`" || char === '"' || char === "'") {
+      inString = true;
+      stringChar = char;
+    } else if (
+      char === "/" &&
+      i + 1 < content.length &&
+      content[i + 1] === "/"
+    ) {
+      // Line comment — if position falls within it, return true
+      const eol = content.indexOf("\n", i);
+      const commentEnd = eol === -1 ? content.length : eol;
+      if (position <= commentEnd) return true;
+      i = commentEnd;
+    } else if (
+      char === "/" &&
+      i + 1 < content.length &&
+      content[i + 1] === "*"
+    ) {
+      // Block comment — if position falls within it, return true
+      const end = content.indexOf("*/", i + 2);
+      const commentEnd = end === -1 ? content.length : end + 1;
+      if (position <= commentEnd) return true;
+      i = commentEnd;
     }
   }
 
-  return inString;
+  return inString || templateExprStack.length > 0;
 }
 
 /**
@@ -364,6 +451,13 @@ function extractBlockBody(content: string): string {
 }
 
 /**
+ * Escape special regex characters in a string for safe use in `new RegExp()`.
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
  * Check if a test block contains calls to any of the imported production functions
  */
 export function testBlockCallsProductionCode(
@@ -375,23 +469,12 @@ export function testBlockCallsProductionCode(
   }
 
   for (const fn of importedFunctions) {
-    // Check for direct function call: functionName(
-    const directCallPattern = new RegExp(`\\b${fn.name}\\s*\\(`, "g");
-    if (directCallPattern.test(body)) {
-      return true;
-    }
-
-    // Check for method call on namespace: namespace.method(
-    // This handles `import * as foo from './module'; foo.bar()`
-    const methodCallPattern = new RegExp(`\\b${fn.name}\\.\\w+\\s*\\(`, "g");
-    if (methodCallPattern.test(body)) {
-      return true;
-    }
-
-    // Check for function reference (passed as callback, assigned, etc.)
-    // e.g., array.map(validator), const handler = myFunc, [myFunc, other]
-    // Uses word boundary to avoid matching substrings in other identifiers
-    const referencePattern = new RegExp(`\\b${fn.name}\\b`, "g");
+    // Check for any reference to the imported name bounded by non-identifier chars.
+    // Uses [\w$] to match JS identifier characters (letters, digits, _, $).
+    // This catches direct calls (fn()), method calls (ns.method()),
+    // callback references (arr.map(fn)), and assignments (const x = fn).
+    const escaped = escapeRegex(fn.name);
+    const referencePattern = new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`);
     if (referencePattern.test(body)) {
       return true;
     }
