@@ -83,8 +83,9 @@ npm audit --audit-level=high || echo "Warning: audit issues found"
 npm whoami || { echo "Not logged in - run: npm login"; exit 1; }
 
 # 8. Version doesn't already exist
+pkg_name=$(node -p "require('./package.json').name")
 current=$(node -p "require('./package.json').version")
-npm view sequant@${current} version 2>/dev/null && { echo "Version already published"; exit 1; }
+npm view "${pkg_name}@${current}" version 2>/dev/null && { echo "Version already published"; exit 1; }
 
 # 9. Preview package contents
 npm pack --dry-run 2>&1 | tail -20
@@ -175,20 +176,22 @@ Categorize by conventional commit prefix:
 
 ### Step 3: Update CHANGELOG.md (if exists)
 
-If `CHANGELOG.md` exists, prepend new version section:
+If `CHANGELOG.md` exists, use the **Edit tool** to:
+
+1. Replace `## [Unreleased]` with `## [{new_version}] - {YYYY-MM-DD}`
+2. Insert a fresh `## [Unreleased]` section above the newly stamped version:
 
 ```markdown
+## [Unreleased]
+
 ## [1.4.0] - 2026-01-10
 
 ### Added
 - New feature X
-
-### Fixed
-- Bug fix Y
-
-### Changed
-- Change Z
+...
 ```
+
+This ensures the next development cycle has an `[Unreleased]` section ready for contributors.
 
 ### Step 4: Bump Version
 
