@@ -30,6 +30,18 @@ When invoked as `/merger <issue-numbers>`, you:
 5. Clean up worktrees after successful merge
 6. Provide detailed merge reports
 
+### Recommended Pre-Merge Check
+
+Before running `/merger`, use `sequant merge --check` to catch cross-issue gaps at zero AI cost:
+
+```bash
+sequant run 10 11 12          # implement
+sequant merge --check         # verify (deterministic checks)
+/merger 10 11 12              # merge (this command)
+```
+
+`sequant merge` detects merge conflicts, template mirroring gaps, file overlaps, and residual patterns before `/merger` attempts the actual merge. See `docs/reference/merge-command.md` for details.
+
 ## Usage
 
 ```bash
