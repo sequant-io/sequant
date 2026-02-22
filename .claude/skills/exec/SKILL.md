@@ -449,14 +449,16 @@ echo "Current branch: $CURRENT_BRANCH"
    ```bash
    # Get stored AC for this issue
    npx tsx -e "
-   import { StateManager } from './src/lib/workflow/state-manager.js';
+   import { StateManager } from './src/lib/workflow/state-manager.ts';
    const manager = new StateManager();
-   const state = await manager.getIssueState(<issue-number>);
-   if (state?.acceptanceCriteria) {
-     console.log(JSON.stringify(state.acceptanceCriteria, null, 2));
-   } else {
-     console.log('No AC found in state - check issue body');
-   }
+   (async () => {
+     const state = await manager.getIssueState(<issue-number>);
+     if (state?.acceptanceCriteria) {
+       console.log(JSON.stringify(state.acceptanceCriteria, null, 2));
+     } else {
+       console.log('No AC found in state - check issue body');
+     }
+   })();
    "
    ```
 
