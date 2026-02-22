@@ -821,7 +821,11 @@ See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detect
 **Detection:**
 ```bash
 # Find new exported functions (added lines only)
-new_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}')
+# Catches: export function foo, export async function foo,
+#          export const foo = () =>, export const foo = async () =>
+fn_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}')
+arrow_exports=$(git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $2}')
+new_exports=$(echo -e "${fn_exports}\n${arrow_exports}" | sed '/^$/d' | sort -u)
 export_count=$(echo "$new_exports" | grep -c . || echo 0)
 
 if [[ $export_count -gt 0 ]]; then
@@ -832,16 +836,15 @@ fi
 
 **If new exported functions found:**
 
-#### Step 1: Call-Site Inventory (AC-2)
+#### Step 1: Call-Site Inventory
 
-For each new exported function, identify ALL call sites:
+For each new exported function, identify ALL call sites using the Grep tool:
 
-```bash
+```
 # For each new function, find call sites
-for func in $new_exports; do
-  echo "=== Call sites for $func ==="
-  grep -rn "${func}(" --include="*.ts" --include="*.tsx" . | grep -v "\.test\." | grep -v "__tests__" | grep -v "export.*function ${func}"
-done
+# Use the Grep tool for each function name:
+Grep(pattern="${func}\\(", glob="*.{ts,tsx}", output_mode="content")
+# Then exclude test files, __tests__ dirs, and the export definition itself
 ```
 
 **Call site types:**
@@ -850,7 +853,7 @@ done
 - Callback: `.then(functionName)` or `array.map(functionName)`
 - Conditional: `condition && functionName(args)`
 
-#### Step 2: Condition Audit (AC-3)
+#### Step 2: Condition Audit
 
 For each call site, document the conditions that gate the call:
 
@@ -866,17 +869,16 @@ For each call site, document the conditions that gate the call:
 - AC says "not in Y mode" → Call site should have `if (!Y)` guard
 - AC says "for Z items" → Call site should filter for Z condition
 
-#### Step 3: Loop Awareness (AC-4)
+#### Step 3: Loop Awareness
 
 **Detect if function is called inside a loop:**
 
-```bash
-# Check context around each call site (5 lines before)
-for func in $new_exports; do
-  grep -rn "${func}(" --include="*.ts" --include="*.tsx" . -B 5 | \
-    grep -E "(for|while|forEach|\.map\(|\.filter\(|\.reduce\()" && \
-    echo "⚠️ $func called inside loop - verify iteration scope"
-done
+```
+# For each function, use the Grep tool with context to check surrounding lines:
+Grep(pattern="${func}\\(", glob="*.{ts,tsx}", output_mode="content", -B=5)
+# Then inspect the context lines for loop constructs:
+# for, while, forEach, .map(, .filter(, .reduce(
+# If a loop is found, flag: "function called inside loop - verify iteration scope"
 ```
 
 **Loop iteration review questions:**
