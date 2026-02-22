@@ -125,6 +125,7 @@ The four pillars of the Sequant workflow:
 **`/qa` details:**
 - Type safety, security scans, Semgrep static analysis
 - Test tautology detection (flags tests that don't call production code)
+- Call-site review (verifies new functions are called correctly, not just implemented correctly)
 - CI status awareness, build verification against main
 - Caches expensive checks (`--no-cache` to force fresh)
 - Verdicts: `READY_FOR_MERGE`, `AC_NOT_MET`,
@@ -662,6 +663,7 @@ Skills include rich guidance documents in `templates/skills/*/references/`:
 | `qa/references/code-quality-exemplars.md` | Examples of good vs bad code |
 | `qa/references/testing-requirements.md` | What tests are expected |
 | `qa/references/semgrep-rules.md` | Semgrep integration guide and custom rule documentation |
+| `qa/references/call-site-review.md` | Call-site review methodology for new exported functions |
 
 ### Planning
 
@@ -821,6 +823,17 @@ Shell scripts in `templates/scripts/`:
   - QA cache: `test-quality` check type in `qa-cache.ts`
   - 52 unit tests + 5 CLI integration tests
   - Documentation: `docs/features/test-tautology-detector.md`
+- **Call-site review check for QA** (#299)
+  - Detects new exported functions (declaration + arrow) in the diff
+  - For each: inventories call sites, audits conditions, flags loop iteration scope
+  - Compares call-site conditions against AC constraints
+  - Verdict impact: missing guards → `AC_NOT_MET`, unused exports → `AC_MET_BUT_NOT_A_PLUS`
+  - Reference: `qa/references/call-site-review.md` with #295 case study
+- **Exec guidance for non-exportable function testing** (#300)
+  - Decision tree: `@internal` export → dependency injection → integration test → document limitation
+  - Anti-pattern warning with real tautological test example from #267
+  - Four patterns with complete TypeScript code examples
+  - Complements QA tautology detector (#298): prevention (exec) + detection (QA)
 - **Skill prompt tool alignment** (#265)
   - Audited all 18 `.claude/skills/` and 15 `templates/skills/` files
   - Converted bash file operations to Claude Code dedicated tools:
@@ -1067,4 +1080,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-21 · `5025e55` feat(#298): Add test tautology detector to QA quality gates*
+*Last updated: 2026-02-22 · `9efcd81` feat(#299, #300): Call-site review for QA, non-exportable function testing guidance for exec*

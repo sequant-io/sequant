@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Call-site review check for QA skill (#299)
+  - Detects new exported functions (including arrow exports) in the diff
+  - Inventories all call sites, audits conditions, flags loop iteration scope
+  - Compares call-site conditions against AC constraints
+  - Uses dedicated Grep tool (consistent with #265 refactor)
+  - Reference doc: `.claude/skills/qa/references/call-site-review.md`
+- Exec skill guidance for testing non-exported functions (#300)
+  - Decision tree: @internal export → dependency injection → integration test → document limitation
+  - Anti-pattern warning against tautological tests (local-variable-only assertions)
+  - Code examples for all four patterns with real-world context
+  - Complements QA tautology detector (#298) as prevention layer
+
 ## [1.16.1] - 2026-02-22
 
 ### Fixed
