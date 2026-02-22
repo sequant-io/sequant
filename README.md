@@ -128,6 +128,7 @@ npx sequant run 123              # Single issue
 npx sequant run 1 2 3            # Batch (parallel)
 npx sequant run 123 --quality-loop
 npx sequant run 123 --base feature/dashboard  # Custom base branch
+npx sequant merge --check        # Verify batch before merging
 ```
 
 ---
@@ -155,6 +156,7 @@ npx sequant run 123 --base feature/dashboard  # Custom base branch
 
 | Command | Purpose |
 |---------|---------|
+| `/merger` | Multi-issue merge coordination |
 | `/testgen` | Generate test stubs from spec |
 | `/verify` | CLI/script execution verification |
 | `/setup` | Initialize Sequant in a project |
@@ -180,12 +182,13 @@ npx sequant update            # Update skill templates
 npx sequant doctor            # Check installation
 npx sequant status            # Show version and config
 npx sequant run <issues...>   # Execute workflow
+npx sequant merge <issues...> # Batch integration QA before merging
 npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
 npx sequant stats             # View local workflow analytics
 npx sequant dashboard         # Launch real-time workflow dashboard
 ```
 
-See [Run Command Options](docs/reference/run-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
+See [Run Command Options](docs/reference/run-command.md), [Merge Command](docs/reference/merge-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
 
 ---
 
