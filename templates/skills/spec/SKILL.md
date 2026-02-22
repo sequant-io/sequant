@@ -91,8 +91,8 @@ When called like `/spec <freeform description>`:
 ```bash
 # Extract AC from issue body and store in state
 npx tsx -e "
-import { extractAcceptanceCriteria } from './src/lib/ac-parser.js';
-import { StateManager } from './src/lib/workflow/state-manager.js';
+import { extractAcceptanceCriteria } from './src/lib/ac-parser.ts';
+import { StateManager } from './src/lib/workflow/state-manager.ts';
 
 const issueBody = \`<ISSUE_BODY_HERE>\`;
 const issueNumber = <ISSUE_NUMBER>;
@@ -103,13 +103,14 @@ console.log('Extracted AC:', JSON.stringify(ac, null, 2));
 
 if (ac.items.length > 0) {
   const manager = new StateManager();
-  // Initialize issue if not exists
-  const existing = await manager.getIssueState(issueNumber);
-  if (!existing) {
-    await manager.initializeIssue(issueNumber, issueTitle);
-  }
-  await manager.updateAcceptanceCriteria(issueNumber, ac);
-  console.log('AC stored in state for issue #' + issueNumber);
+  (async () => {
+    const existing = await manager.getIssueState(issueNumber);
+    if (!existing) {
+      await manager.initializeIssue(issueNumber, issueTitle);
+    }
+    await manager.updateAcceptanceCriteria(issueNumber, ac);
+    console.log('AC stored in state for issue #' + issueNumber);
+  })();
 }
 "
 ```
@@ -136,8 +137,8 @@ The parser supports multiple formats:
 ```bash
 # Lint AC for quality issues (skip if --skip-ac-lint flag is set)
 npx tsx -e "
-import { parseAcceptanceCriteria } from './src/lib/ac-parser.js';
-import { lintAcceptanceCriteria, formatACLintResults } from './src/lib/ac-linter.js';
+import { parseAcceptanceCriteria } from './src/lib/ac-parser.ts';
+import { lintAcceptanceCriteria, formatACLintResults } from './src/lib/ac-linter.ts';
 
 const issueBody = \`<ISSUE_BODY_HERE>\`;
 
