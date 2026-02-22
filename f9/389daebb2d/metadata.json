@@ -6,8 +6,15 @@
   "checkpoints_count": 1,
   "files_touched": [
     ".claude-plugin/plugin.json",
+    ".claude/skills/fullsolve/SKILL.md",
+    ".claude/skills/merger/SKILL.md",
+    ".claude/skills/solve/SKILL.md",
     "CHANGELOG.md",
-    "docs/internal/what-weve-built.md"
+    "docs/guides/workflow.md",
+    "docs/internal/what-weve-built.md",
+    "docs/reference/merge-command.md",
+    "templates/skills/fullsolve/SKILL.md",
+    "templates/skills/solve/SKILL.md"
   ],
   "sessions": [
     {
@@ -19,10 +26,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 49,
-    "cache_creation_tokens": 138251,
-    "cache_read_tokens": 2654504,
-    "output_tokens": 3907,
-    "api_call_count": 36
+    "input_tokens": 18,
+    "cache_creation_tokens": 94589,
+    "cache_read_tokens": 1067809,
+    "output_tokens": 3070,
+    "api_call_count": 12
   }
 }

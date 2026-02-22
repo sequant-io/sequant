@@ -2765,3 +2765,15 @@ done
 ---
 
 yes
+
+---
+
+published on npm
+
+---
+
+did we update the solve skill with the new merge suggestion? di we miss anything else?
+
+---
+
+yes fix all of them

@@ -118,3 +118,15 @@ done
 
 yes
 
+### Prompt 17
+
+published on npm
+
+### Prompt 18
+
+did we update the solve skill with the new merge suggestion? di we miss anything else?
+
+### Prompt 19
+
+yes fix all of them
+
