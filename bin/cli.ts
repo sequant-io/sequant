@@ -208,6 +208,7 @@ program
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard)",
   )
+  .option("--reflect", "Analyze run results and suggest improvements")
   .action(runCommand);
 
 program

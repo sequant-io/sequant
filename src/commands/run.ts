@@ -48,6 +48,7 @@ import {
 import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
 import type { CacheMetrics } from "../lib/workflow/run-log-schema.js";
 import { reconcileStateAtStartup } from "../lib/workflow/state-utils.js";
+import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 
 /**
  * Worktree information for an issue
@@ -1643,6 +1644,12 @@ interface RunOptions {
    * Bypasses the pre-flight state guard that skips ready_for_merge/merged issues.
    */
   force?: boolean;
+  /**
+   * Analyze run results and suggest workflow improvements.
+   * Displays observations about timing patterns, phase mismatches, and
+   * actionable suggestions after the summary output.
+   */
+  reflect?: boolean;
 }
 
 /**
@@ -3118,6 +3125,24 @@ export async function runCommand(
     if (logPath) {
       console.log(colors.muted(`  📝 Log: ${logPath}`));
       console.log("");
+    }
+
+    // Reflection analysis (--reflect flag)
+    if (mergedOptions.reflect && results.length > 0) {
+      const reflection = analyzeRun({
+        results,
+        issueInfoMap,
+        runLog: logWriter?.getRunLog() ?? null,
+        config: {
+          phases: config.phases,
+          qualityLoop: config.qualityLoop,
+        },
+      });
+      const reflectionOutput = formatReflection(reflection);
+      if (reflectionOutput) {
+        console.log(reflectionOutput);
+        console.log("");
+      }
     }
 
     // Suggest merge checks for multi-issue batches
