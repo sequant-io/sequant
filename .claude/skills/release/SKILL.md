@@ -106,13 +106,13 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
   current=$(node -p "require('./package.json').version")
 
   # Check title version
-  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
   if [ "$title_version" != "$current" ]; then
     echo "Warning: docs/internal/what-weve-built.md title shows v${title_version}, expected v${current}"
   fi
 
   # Check ASCII art version
-  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
   if [ "$ascii_version" != "$current" ]; then
     echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
   fi
@@ -263,7 +263,7 @@ if [ -f "CHANGELOG.md" ]; then
   unreleased_content=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | head -n -1)
 
   # Extract Added entries (these become what-weve-built features)
-  added_entries=$(echo "$unreleased_content" | sed -n '/^### Added/,/^### /p' | grep -E '^\s*-' | head -n -1)
+  added_entries=$(echo "$unreleased_content" | sed -n '/^### Added/,/^### /p' | grep -E '^\s*-' | head -n -1 || true)
 
   if [ -n "$added_entries" ]; then
     echo "Features to add to what-weve-built.md:"
@@ -327,7 +327,7 @@ fi
 npm pack --dry-run
 
 # Verify size is reasonable (warn if > 500KB)
-size=$(npm pack --dry-run 2>&1 | grep "total files" -A1 | tail -1)
+size=$(npm pack --dry-run 2>&1 | grep "total files" -A1 | tail -1 || true)
 echo "Package size: ${size}"
 ```
 

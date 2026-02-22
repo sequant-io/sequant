@@ -73,13 +73,13 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 comments_json=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]')
 exec_completed=$(echo "$comments_json" | \
   grep -o '{[^}]*}' | grep '"phase"' | \
-  jq -r 'select(.phase == "exec" and .status == "completed")' 2>/dev/null)
+  jq -r 'select(.phase == "exec" and .status == "completed")' 2>/dev/null || true)
 
 if [[ -z "$exec_completed" ]]; then
   # Check if any exec marker exists at all
   exec_any=$(echo "$comments_json" | \
     grep -o '{[^}]*}' | grep '"phase"' | \
-    jq -r 'select(.phase == "exec")' 2>/dev/null)
+    jq -r 'select(.phase == "exec")' 2>/dev/null || true)
 
   if [[ -n "$exec_any" ]]; then
     echo "⚠️ Exec phase not completed (status: $(echo "$exec_any" | jq -r '.status')). Run /exec first."
@@ -294,7 +294,7 @@ If no feature worktree exists (work was done directly on main):
 
 ```bash
 # 1. Check for worktree (indicates work may have started)
-worktree_path=$(git worktree list | grep -i "<issue-number>" | awk '{print $1}' | head -1)
+worktree_path=$(git worktree list | grep -i "<issue-number>" | awk '{print $1}' | head -1 || true)
 
 # 2. Check for commits on feature branch (vs main)
 commits_exist=$(git log --oneline main..HEAD 2>/dev/null | head -1)
@@ -406,7 +406,7 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
      grep -E '\|[^|]+\|\s*AC-[0-9]+:' | \
      grep -oE 'AC-[0-9]+:[^|]+' | \
      sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-     sort -u)
+     sort -u || true)
 
    # Count derived ACs
    derived_count=$(echo "$derived_acs" | grep -c "AC-" || echo "0")
@@ -607,7 +607,7 @@ CI status affects the final verdict through the standard verdict algorithm:
 
 **Add RLS check if admin files modified:**
 ```bash
-admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1)
+admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1 || true)
 ```
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
@@ -698,7 +698,7 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 Use the Glob tool to check for corresponding test files:
 ```
 # Get changed source files (excluding tests) from git
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
 
 # For each changed file, use the Glob tool to find matching test files
 # Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
@@ -742,7 +742,7 @@ changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep
 
 ```bash
 # Detect critical paths in changed files
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
 
 if [[ -n "$critical" ]]; then
@@ -787,7 +787,7 @@ See [test-quality-checklist.md](references/test-quality-checklist.md) for detail
 
 ```bash
 # Get changed TypeScript/JavaScript files
-changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 ```
 
 **Check for:**
@@ -823,8 +823,8 @@ See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detect
 # Find new exported functions (added lines only)
 # Catches: export function foo, export async function foo,
 #          export const foo = () =>, export const foo = async () =>
-fn_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}')
-arrow_exports=$(git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $2}')
+fn_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}' || true)
+arrow_exports=$(git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $2}' || true)
 new_exports=$(echo -e "${fn_exports}\n${arrow_exports}" | sed '/^$/d' | sort -u)
 export_count=$(echo "$new_exports" | grep -c . || echo 0)
 
@@ -1024,7 +1024,7 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 **Detect skill changes:**
 ```bash
-skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs)
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs || true)
 ```
 
 **If skills_changed > 0, add these adversarial prompts:**
@@ -1055,8 +1055,8 @@ skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*
 
 **Detect change type:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs)
-cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs)
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
+cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs || true)
 ```
 
 **If scripts/CLI changed, execute at least one smoke command:**
@@ -1097,7 +1097,7 @@ See [quality-gates.md](references/quality-gates.md) for detailed evidence requir
 
 **Detect skill changes:**
 ```bash
-skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$")
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" || true)
 skill_count=$(echo "$skills_changed" | grep -c . || echo 0)
 ```
 
@@ -1156,7 +1156,7 @@ For each extracted command type:
 # Verify each field exists
 
 # Get valid fields
-valid_fields=$(gh pr checks --help 2>/dev/null | grep -A 50 "JSON FIELDS" | grep -E "^\s+\w+" | awk '{print $1}')
+valid_fields=$(gh pr checks --help 2>/dev/null | grep -A 50 "JSON FIELDS" | grep -E "^\s+\w+" | awk '{print $1}' || true)
 
 # Check if "conclusion" is valid (spoiler: it's not)
 echo "$valid_fields" | grep -qw "conclusion" && echo "✅ conclusion exists" || echo "❌ conclusion NOT a valid field"
@@ -1282,10 +1282,10 @@ See [quality-gates.md](references/quality-gates.md) for detailed verdict criteri
 
 ```bash
 # Type safety
-type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs)
+type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs || true)
 
 # Deleted tests
-deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs)
+deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs || true)
 
 # Scope check
 files_changed=$(git diff main...HEAD --name-only | wc -l | xargs)
@@ -1346,11 +1346,11 @@ if [ ! -f "CHANGELOG.md" ]; then
 fi
 
 # Check if [Unreleased] section has entries
-unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep -E '^\s*-' | wc -l | xargs)
+unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep -E '^\s*-' | wc -l | xargs || true)
 
 # Determine if change is user-facing (new features, bug fixes, etc.)
 # Look at commit messages or file changes
-user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs):' | wc -l | xargs)
+user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs):' | wc -l | xargs || true)
 ```
 
 **Verification Logic:**
@@ -1409,7 +1409,7 @@ When an entry exists, verify it follows the format:
 
 **Detection:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^(scripts/|templates/scripts/)" | wc -l | xargs)
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^(scripts/|templates/scripts/)" | wc -l | xargs || true)
 if [[ $scripts_changed -gt 0 ]]; then
   echo "Script changes detected. Run /verify before READY_FOR_MERGE"
 fi

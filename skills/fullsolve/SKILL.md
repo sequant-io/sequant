@@ -101,7 +101,7 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 git log --oneline -5 --stat
 
 # Check for any existing work on this issue
-git branch -a | grep -i "<issue-number>"
+git branch -a | grep -i "<issue-number>" || true
 gh pr list --search "<issue-number>"
 ```
 
@@ -299,10 +299,10 @@ while test_iteration < 3:
 
 ```bash
 # Type safety
-git diff main...HEAD | grep -E ":\s*any[,)]|as any"
+git diff main...HEAD | grep -E ":\s*any[,)]|as any" || true
 
 # Deleted tests
-git diff main...HEAD --diff-filter=D --name-only | grep -E "\.test\."
+git diff main...HEAD --diff-filter=D --name-only | grep -E "\.test\." || true
 
 # Scope check
 git diff main...HEAD --name-only | wc -l

@@ -64,7 +64,7 @@ When invoked as `/exec`, your job is to:
 ```bash
 # Check for existing phase markers
 phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
-  grep -o '{[^}]*}' | grep '"phase"' | tail -1)
+  grep -o '{[^}]*}' | grep '"phase"' | tail -1 || true)
 
 if [[ -n "$phase_data" ]]; then
   phase=$(echo "$phase_data" | jq -r '.phase')
@@ -127,7 +127,7 @@ git log --oneline -3 --stat
 
 # Check for existing PRs or branches for this issue
 gh pr list --search "<issue-number>"
-git branch -a | grep -i "<issue-number>"
+git branch -a | grep -i "<issue-number>" || true
 ```
 
 **Why this matters:** After context restoration, PRs may have merged, branches may have changed, or work may already be complete. Always verify before creating duplicate work.

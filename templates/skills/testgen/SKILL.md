@@ -413,7 +413,7 @@ If an AC has verification method "N/A - Trivial", skip test generation and note 
 If generating file-based tests (Unit Test, Integration Test), find the worktree:
 
 ```bash
-git worktree list | grep -E "feature.*<issue-number>"
+git worktree list | grep -E "feature.*<issue-number>" || true
 ```
 
 Or check:

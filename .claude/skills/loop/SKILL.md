@@ -102,10 +102,10 @@ fi
 **Parsing QA comment:**
 ```bash
 # Extract verdict from QA comment
-verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $2}')
+verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $2}' || true)
 
 # Extract NOT_MET AC items
-not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET")
+not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET" || true)
 
 # Extract recommendations section
 recommendations=$(echo "$qa_comment" | sed -n '/### Required Fixes/,/###/p' | head -n -1)
@@ -185,7 +185,7 @@ Extract:
 
 Find the worktree for this issue:
 ```bash
-git worktree list | grep -E "feature.*<issue-number>"
+git worktree list | grep -E "feature.*<issue-number>" || true
 ```
 
 Or check:

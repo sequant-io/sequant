@@ -77,7 +77,7 @@ git log --oneline -3 --stat
 
 # Check for existing PRs or branches for this issue
 gh pr list --search "<issue-number>"
-git branch -a | grep -i "<issue-number>"
+git branch -a | grep -i "<issue-number>" || true
 ```
 
 **Why this matters:** After context restoration, PRs may have merged, branches may have changed, or work may already be complete. Always verify before creating duplicate work.
@@ -581,8 +581,8 @@ When converting files to stubs, deleting content, or significantly changing file
 
 ```bash
 # Check if any tests depend on the modified file's content
-grep -r "filename.md" __tests__/
-grep -r "filename" __tests__/ | grep -v ".snap"
+grep -r "filename.md" __tests__/ || true
+grep -r "filename" __tests__/ | grep -v ".snap" || true
 ```
 
 **If tests are found:**

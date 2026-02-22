@@ -65,7 +65,7 @@ git diff main...HEAD
 **Step 4:** Detect documentation-only changes:
 ```bash
 # Count non-documentation files changed
-non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs)
+non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs || true)
 ```
 
 **Decision Logic:**

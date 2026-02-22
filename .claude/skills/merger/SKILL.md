@@ -94,7 +94,7 @@ For each issue specified:
 
 ```bash
 # Find the worktree for the issue
-git worktree list --porcelain | grep -A2 "feature/$ISSUE"
+git worktree list --porcelain | grep -A2 "feature/$ISSUE" || true
 
 # Check PR status
 gh pr list --head "feature/$ISSUE-*" --json number,state,title
@@ -154,7 +154,7 @@ If overlapping files found:
 
 ```bash
 # IMPORTANT: Remove worktree BEFORE merge (prevents --delete-branch failure)
-worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}')
+worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}' || true)
 if [[ -n "$worktree_path" ]]; then
   git worktree remove "$worktree_path" --force
   git branch -D "feature/$ISSUE-"* 2>/dev/null || true
@@ -219,7 +219,7 @@ Read(file_path=".sequant/state.json")
 
 ```bash
 # Find and remove worktree for the issue
-worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}')
+worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}' || true)
 if [[ -n "$worktree_path" ]]; then
   echo "Removing worktree: $worktree_path"
   git worktree remove "$worktree_path" --force

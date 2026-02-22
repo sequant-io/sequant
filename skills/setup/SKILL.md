@@ -77,22 +77,22 @@ fi
 
 # 2. Try Cargo.toml
 if [ -z "$PROJECT_NAME" ] && [ -f "Cargo.toml" ]; then
-  PROJECT_NAME=$(grep -A5 '^\[package\]' Cargo.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/')
+  PROJECT_NAME=$(grep -A5 '^\[package\]' Cargo.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/' || true)
 fi
 
 # 3. Try pyproject.toml
 if [ -z "$PROJECT_NAME" ] && [ -f "pyproject.toml" ]; then
   # Try [project] section first (PEP 621)
-  PROJECT_NAME=$(grep -A5 '^\[project\]' pyproject.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/')
+  PROJECT_NAME=$(grep -A5 '^\[project\]' pyproject.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/' || true)
   # Fallback to [tool.poetry] section
   if [ -z "$PROJECT_NAME" ]; then
-    PROJECT_NAME=$(grep -A5 '^\[tool\.poetry\]' pyproject.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/')
+    PROJECT_NAME=$(grep -A5 '^\[tool\.poetry\]' pyproject.toml | grep '^name' | head -1 | sed 's/.*=\s*["'\'']\([^"'\'']*\)["'\''].*/\1/' || true)
   fi
 fi
 
 # 4. Try go.mod
 if [ -z "$PROJECT_NAME" ] && [ -f "go.mod" ]; then
-  MODULE_PATH=$(grep '^module ' go.mod | head -1 | awk '{print $2}')
+  MODULE_PATH=$(grep '^module ' go.mod | head -1 | awk '{print $2}' || true)
   PROJECT_NAME=$(basename "$MODULE_PATH")
 fi
 
