@@ -49,6 +49,7 @@ import {
   stateCleanCommand,
 } from "../src/commands/state.js";
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
+import { mergeCommand } from "../src/commands/merge.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -208,6 +209,24 @@ program
     "Force re-execution of completed issues (bypass pre-flight state guard)",
   )
   .action(runCommand);
+
+program
+  .command("merge")
+  .description(
+    "Batch-level integration QA — verify feature branches before merging",
+  )
+  .argument(
+    "[issues...]",
+    "Issue numbers to check (auto-detects from most recent run if omitted)",
+  )
+  .option("--check", "Run Phase 1 deterministic checks (default)")
+  .option("--scan", "Run Phase 1 + Phase 2 residual pattern detection")
+  .option("--review", "Run Phase 1 + 2 + 3 AI briefing")
+  .option("--all", "Run all phases")
+  .option("--post", "Post report to GitHub as PR comments")
+  .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Enable verbose output")
+  .action(mergeCommand);
 
 program
   .command("logs")
