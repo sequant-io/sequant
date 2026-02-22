@@ -7,9 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-02-22
+
+### Added
+
+- Batch-level integration QA command: `sequant merge --check` (#313, #324)
+  - Phase 1 deterministic checks: combined branch test, template mirroring, file overlap detection
+  - Phase 2 residual pattern detection with `--scan`
+  - Per-issue and batch-level verdicts (READY / NEEDS_ATTENTION / BLOCKED)
+  - `--post` flag to post merge readiness reports as PR comments
+  - `--json` output for CI/scripting integration
+  - Auto-detection of issues from most recent `sequant run` log
+
 ### Documentation
 
+- Merge command reference documentation (`docs/reference/merge-command.md`) (#313)
 - Feature documentation for `sequant run` PR creation (`docs/features/run-pr-creation.md`) (#322)
+- Background agent permission guidance for subagent-types
 
 ## [1.15.4] - 2026-02-21
 

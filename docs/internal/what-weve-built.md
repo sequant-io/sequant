@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.15.4
+# What We've Built: Sequant v1.16.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -14,7 +14,7 @@ journey through planning, implementation, testing, and review
 | Metric | Count |
 |--------|-------|
 | Slash Commands | 18 |
-| CLI Commands | 10 |
+| CLI Commands | 11 |
 | Core Library Modules | 46 |
 | Test Files | 55 |
 | Documentation Files | 39 |
@@ -170,7 +170,7 @@ Skills share common references in `skills/_shared/`:
 
 ## CLI Commands
 
-The `sequant` CLI provides **9 commands** for project management.
+The `sequant` CLI provides **10 commands** for project management.
 
 ```bash
 npm install -g sequant   # Install globally
@@ -187,6 +187,7 @@ npx sequant              # Or run via npx
 | `sequant state` | Manage workflow state (`init`, `rebuild`, `clean`) |
 | `sequant stats` | View local workflow analytics — success rates, timing, phase distribution |
 | `sequant logs` | View and manage log files with rotation |
+| `sequant merge` | Batch-level integration QA — verify feature branches before merging (`--check`, `--scan`, `--post`) |
 | `sequant dashboard` | Launch real-time workflow dashboard (Hono-powered) |
 
 ### Quick Examples
@@ -734,7 +735,15 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.15.x)
+### Recent Additions (v1.16.0)
+
+- **Batch-level integration QA** (`sequant merge`) (#313)
+  - Phase 1: combined branch test, template mirroring, file overlap detection
+  - Phase 2: residual pattern detection via `--scan`
+  - Per-issue and batch verdicts (READY / NEEDS_ATTENTION / BLOCKED)
+  - `--post` posts merge readiness reports to PRs, `--json` for CI
+  - Auto-detects issues from most recent `sequant run` log
+  - Worktree-aware: handles both remote and local-only branches
 
 - **Scope assessment custom thresholds** (#249)
   - `ScopeAssessmentSettings` aligned with `ScopeAssessmentConfig` (added
@@ -997,7 +1006,7 @@ npm run build
 | What | How Many |
 |------|----------|
 | Slash Commands | 18 |
-| CLI Commands | 10 |
+| CLI Commands | 11 |
 | Library Modules | 46 |
 | Test Files | 55 |
 | Docs Files | 39 |
@@ -1007,7 +1016,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.15.4
+**Current Version:** 1.16.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1017,10 +1026,10 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.15.4                                │
+│                              SEQUANT v1.16.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  SKILLS (18)              CLI (10)                LIBRARIES (45)            │
+│  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
 │  ───────────              ───────                 ──────────────            │
 │  /spec                    sequant init            stacks.ts                 │
 │  /exec                    sequant doctor          templates.ts              │
@@ -1030,8 +1039,8 @@ npm run build
 │  /solve                   sequant state           project-name.ts           │
 │  /loop                    sequant stats           ... and 38 more           │
 │  /testgen                 sequant logs                                      │
-│  /verify                  sequant dashboard       HOOKS (450+ lines)        │
-│  /docs                                            ─────────────────         │
+│  /verify                  sequant merge           HOOKS (450+ lines)        │
+│  /docs                    sequant dashboard       ─────────────────         │
 │  /assess                  DASHBOARD (1000+)       Security guardrails       │
 │  /clean                   ─────────────────       Secret detection          │
 │  /improve                 Hono + htmx + SSE       Conventional commits      │
