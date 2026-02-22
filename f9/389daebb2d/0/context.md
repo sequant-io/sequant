@@ -73,3 +73,48 @@ Let me chronologically analyze the conversation:
 
 2. I gathered context: fetched issue #313 details, found worktree at `/Users/tony/Projects/worktrees/feature/313-feat-run-add-batch-level-integration-qa-sequan`,...
 
+### Prompt 10
+
+smoke test
+
+### Prompt 11
+
+commit and push
+
+### Prompt 12
+
+The .claude/settings.json diff adds Entire CLI hooks and a
+  permissions deny rule, and .gitignore adds .entire/ to ignored paths.
+
+### Prompt 13
+
+release
+
+### Prompt 14
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/release
+
+# Release Skill
+
+Automates the full release workflow: version bump, git tag, GitHub release, and npm publish.
+
+## Usage
+
+```
+/release [patch|minor|major] [--prerelease <tag>] [--dry-run]
+```
+
+- `/release` - Interactive, asks for version type
+- `/release patch` - Patch release (1.3.1 → 1.3.2)
+- `/release minor` - Minor release (1.3.1 → 1.4.0)
+- `/release major` - Major release (1.3.1 → 2.0.0)
+- `/release min...
+
+### Prompt 15
+
+done
+
+### Prompt 16
+
+yes
+

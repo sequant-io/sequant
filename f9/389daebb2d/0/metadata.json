@@ -3,29 +3,33 @@
   "checkpoint_id": "f9389daebb2d",
   "session_id": "a478a8a8-ec4c-4346-9d6e-e3973702d0c4",
   "strategy": "manual-commit",
-  "created_at": "2026-02-22T01:32:08.171551Z",
+  "created_at": "2026-02-22T06:33:39.932832Z",
   "branch": "main",
   "checkpoints_count": 1,
   "files_touched": [
-    "docs/reference/merge-command.md"
+    ".claude-plugin/plugin.json",
+    "CHANGELOG.md",
+    "docs/internal/what-weve-built.md"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "4c6fdcda-c7c8-43fe-b6ba-efb9519c88fc",
+  "transcript_identifier_at_start": "62fdd521-d553-43c7-a5fc-997b7470d1f5",
+  "checkpoint_transcript_start": 1101,
+  "transcript_lines_at_start": 1101,
   "token_usage": {
-    "input_tokens": 226,
-    "cache_creation_tokens": 190745,
-    "cache_read_tokens": 10333922,
-    "output_tokens": 21282,
-    "api_call_count": 86
+    "input_tokens": 49,
+    "cache_creation_tokens": 138251,
+    "cache_read_tokens": 2654504,
+    "output_tokens": 3907,
+    "api_call_count": 36
   },
   "initial_attribution": {
-    "calculated_at": "2026-02-22T01:32:07.688695Z",
-    "agent_lines": 245,
-    "human_added": 2719,
-    "human_modified": 4,
+    "calculated_at": "2026-02-22T06:33:39.097799Z",
+    "agent_lines": 34,
+    "human_added": 80,
+    "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 2968,
-    "agent_percentage": 8.254716981132075
+    "total_committed": 114,
+    "agent_percentage": 29.82456140350877
   },
   "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/a478a8a8-ec4c-4346-9d6e-e3973702d0c4.jsonl"
 }
