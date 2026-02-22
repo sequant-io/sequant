@@ -508,6 +508,71 @@ echo "Current branch: $CURRENT_BRANCH"
 - Documents intentional deferrals
 - Enables better QA in `/qa` phase
 
+### 3f. CHANGELOG Update (REQUIRED for user-facing changes)
+
+**Purpose:** Ensure all user-facing changes are documented in the CHANGELOG before PR creation. This prevents documentation gaps and reduces release overhead.
+
+**When to update CHANGELOG:**
+
+| Change Type | CHANGELOG Required? | Section |
+|-------------|---------------------|---------|
+| New feature | ✅ Yes | `### Added` |
+| Bug fix | ✅ Yes | `### Fixed` |
+| Breaking change | ✅ Yes | `### Changed` or `### Removed` |
+| Performance improvement | ✅ Yes | `### Changed` |
+| Dependency update (security) | ✅ Yes | `### Fixed` or `### Security` |
+| Documentation only | ❌ No | - |
+| Internal refactor (no behavior change) | ❌ No | - |
+| Test-only changes | ❌ No | - |
+| CI/workflow changes | ❌ No | - |
+
+**How to update:**
+
+1. **Check if CHANGELOG.md exists:**
+   ```bash
+   if [ -f "CHANGELOG.md" ]; then
+     echo "CHANGELOG.md found - update required for user-facing changes"
+   else
+     echo "No CHANGELOG.md - skip CHANGELOG update"
+   fi
+   ```
+
+2. **If CHANGELOG.md exists and change is user-facing**, use the Edit tool to add an entry under `## [Unreleased]`:
+
+   ```markdown
+   ## [Unreleased]
+
+   ### Added
+
+   - Brief description of new feature (#<issue-number>)
+   ```
+
+3. **Entry format:**
+   - Start with a verb: "Add", "Fix", "Update", "Remove", "Improve"
+   - Keep it concise (1-2 lines)
+   - Include issue number as `(#123)`
+   - Group related changes in a single bullet with sub-bullets if needed
+
+**Example entries:**
+
+```markdown
+### Added
+
+- CHANGELOG update step in /exec skill (#320)
+  - Instructs /exec to add [Unreleased] entries during feature commits
+  - Includes change type classification table
+
+### Fixed
+
+- Race condition in parallel agent spawning (#315)
+```
+
+**If CHANGELOG doesn't exist:** Skip this step. Not all projects use CHANGELOG.md.
+
+**If change is not user-facing:** Skip this step but note in progress summary: "CHANGELOG: N/A (internal change)"
+
+---
+
 ### PR Creation and Verification
 
 After implementation is complete and all checks pass, create and verify the PR:

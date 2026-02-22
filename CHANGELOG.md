@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Consolidated documentation source-of-truth in workflow skills (#320)
+  - `/exec`: New CHANGELOG update step requiring `[Unreleased]` entries for user-facing changes
+  - `/qa`: New CHANGELOG quality gate blocks `READY_FOR_MERGE` without CHANGELOG entry
+  - `/release`: Enhanced Step 4.6 auto-generates what-weve-built.md bullets from CHANGELOG
 - Call-site review check for QA skill (#299)
   - Detects new exported functions (including arrow exports) in the diff
   - Inventories all call sites, audits conditions, flags loop iteration scope

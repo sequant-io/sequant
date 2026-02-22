@@ -1332,6 +1332,77 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 **Documentation:** Before merging, run `/docs <issue>` to generate feature documentation.
 ```
 
+### 10a. CHANGELOG Quality Gate (REQUIRED)
+
+**Purpose:** Verify user-facing changes have corresponding CHANGELOG entries before `READY_FOR_MERGE`.
+
+**Detection:**
+
+```bash
+# Check if CHANGELOG.md exists
+if [ ! -f "CHANGELOG.md" ]; then
+  echo "No CHANGELOG.md found - skip CHANGELOG check"
+  exit 0
+fi
+
+# Check if [Unreleased] section has entries
+unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep -E '^\s*-' | wc -l | xargs)
+
+# Determine if change is user-facing (new features, bug fixes, etc.)
+# Look at commit messages or file changes
+user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs):' | wc -l | xargs)
+```
+
+**Verification Logic:**
+
+| Condition | CHANGELOG Entry Required? | Action |
+|-----------|---------------------------|--------|
+| User-facing changes detected + CHANGELOG exists | ✅ Yes | Check for `[Unreleased]` entry |
+| User-facing changes + no entry | ⚠️ Block | Flag as missing CHANGELOG |
+| Non-user-facing changes (test, ci, chore) | ❌ No | Skip check |
+| No CHANGELOG.md in repo | ❌ No | Skip check |
+
+**If CHANGELOG entry is missing:**
+
+1. Do NOT give `READY_FOR_MERGE` verdict
+2. Set verdict to `AC_MET_BUT_NOT_A_PLUS` with note:
+   ```markdown
+   **CHANGELOG:** Missing entry for user-facing changes. Add entry to `## [Unreleased]` section before merging.
+   ```
+3. Include this in the draft review comment
+
+**CHANGELOG Entry Validation:**
+
+When an entry exists, verify it follows the format:
+- Starts with action verb (Add, Fix, Update, Remove, Improve)
+- Includes issue number `(#123)`
+- Is under the correct section (Added, Fixed, Changed, etc.)
+
+**Example validation:**
+
+```markdown
+### CHANGELOG Verification
+
+| Check | Status |
+|-------|--------|
+| CHANGELOG.md exists | ✅ Found |
+| User-facing changes | ✅ Yes (feat: commit detected) |
+| [Unreleased] entry | ✅ Present |
+| Entry format | ✅ Valid (includes issue number) |
+
+**Result:** CHANGELOG requirements met
+```
+
+**If CHANGELOG is not required:**
+
+```markdown
+### CHANGELOG Verification
+
+**Result:** N/A (non-user-facing changes only)
+```
+
+---
+
 ### 11. Script/CLI Execution Verification
 
 **REQUIRED for CLI/script features:** When `scripts/` files are modified, execution verification is required before `READY_FOR_MERGE`.
@@ -1478,6 +1549,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
+- [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 

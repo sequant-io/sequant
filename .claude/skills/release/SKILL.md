@@ -252,9 +252,64 @@ Edit(file_path="docs/internal/what-weve-built.md",
      new_string="**Current Version:** ${new_version}")
 ```
 
-**Check for undocumented features:**
+**Auto-generate feature bullets from CHANGELOG:**
 
-Review commits since last tag for `feat:` entries:
+Extract features from the `[Unreleased]` section of CHANGELOG.md:
+
+```bash
+# Extract [Unreleased] entries from CHANGELOG.md
+if [ -f "CHANGELOG.md" ]; then
+  # Get content between [Unreleased] and next version header
+  unreleased_content=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | head -n -1)
+
+  # Extract Added entries (these become what-weve-built features)
+  added_entries=$(echo "$unreleased_content" | sed -n '/^### Added/,/^### /p' | grep -E '^\s*-' | head -n -1)
+
+  if [ -n "$added_entries" ]; then
+    echo "Features to add to what-weve-built.md:"
+    echo "$added_entries"
+  else
+    echo "No new features in [Unreleased] section"
+  fi
+fi
+```
+
+**If CHANGELOG has features**, use the Edit tool to update `docs/internal/what-weve-built.md`:
+
+1. **Update the "Recent Additions" section header:**
+   ```
+   Edit(file_path="docs/internal/what-weve-built.md",
+        old_string="### Recent Additions (v<old_version>)",
+        new_string="### Recent Additions (v${new_version})")
+   ```
+
+2. **Add feature bullets under "Recent Additions":**
+   Transform CHANGELOG entries to what-weve-built format:
+
+   | CHANGELOG Format | what-weve-built Format |
+   |------------------|------------------------|
+   | `- Feature description (#123)` | `- **Feature Name** - Brief description` |
+   | `- Multi-line feature (#123)\n  - Sub-detail` | `- **Feature Name** - Brief description` |
+
+   Example transformation:
+   ```markdown
+   # From CHANGELOG:
+   - CHANGELOG update step in /exec skill (#320)
+     - Instructs /exec to add [Unreleased] entries during feature commits
+
+   # To what-weve-built:
+   - **CHANGELOG Automation** - Automatic CHANGELOG entry requirements in /exec and /qa
+   ```
+
+3. **Update counts in "At a Glance" table** if applicable:
+   - New skill added → increment skill count
+   - New command added → increment command count
+   - New MCP integration → increment integration count
+
+**Fallback to commit-based detection:**
+
+If CHANGELOG.md doesn't exist or has no `[Unreleased]` section, fall back to commit-based detection:
+
 ```bash
 last_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 if [ -n "$last_tag" ]; then
@@ -262,11 +317,6 @@ if [ -n "$last_tag" ]; then
   git log ${last_tag}..HEAD --oneline --no-merges | grep -E "^[a-f0-9]+ feat" || echo "  (none)"
 fi
 ```
-
-If there are new features:
-1. Update the "Recent Additions (vX.Y.Z)" section header to the new version
-2. Add bullet points for each significant feature
-3. Update counts in "At a Glance" table if applicable (commands, modules, etc.)
 
 **Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
 
