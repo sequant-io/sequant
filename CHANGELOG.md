@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.1] - 2026-02-22
+
+### Fixed
+
+- Upgrade diff to 8.0.3 for DoS fix (#328)
+- Upgrade hono to 4.12.1 for security patches (#326)
+- Use .ts extensions and async IIFEs in skill tsx -e templates
+- Apply same tsx -e fixes to spec skill template
+
 ## [1.16.0] - 2026-02-22
 
 ### Added
