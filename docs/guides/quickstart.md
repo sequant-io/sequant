@@ -49,6 +49,13 @@ npx sequant run 1 2 3         # Solve issues in parallel
 npx sequant run 123 --quality-loop  # Auto-fix until QA passes
 ```
 
+After batch completion, verify integration before merging:
+
+```bash
+npx sequant merge --check     # Detect conflicts, mirroring gaps, overlaps
+/merger 1 2 3                 # Merge all issues
+```
+
 ## Quick Reference
 
 | Command | Purpose |

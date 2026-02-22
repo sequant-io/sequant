@@ -6,7 +6,7 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 
 ```
 ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
-│  /spec  │───▶│/testgen │───▶│  /exec  │───▶│  /test  │───▶│   /qa   │───▶ Merge
+│  /spec  │───▶│/testgen │───▶│  /exec  │───▶│  /test  │───▶│   /qa   │───▶ Merge Check ───▶ Merge
 └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
      │              │              │              │              │
      ▼              ▼              ▼              ▼              ▼
@@ -174,6 +174,31 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 **When to use:**
 - For user-facing features
 - When documentation is required before merge
+
+## Phase 5: Merge Verification (Batch Only)
+
+**Command:** `sequant merge --check`
+
+**Purpose:** Catch cross-issue integration gaps before merging a batch of feature branches.
+
+**What it does:**
+1. Creates a temp branch and merges all feature branches to detect conflicts
+2. Runs `npm test && npm run build` on the combined state
+3. Checks `.claude/skills/` ↔ `templates/skills/` mirroring
+4. Detects files modified by multiple issues and classifies overlaps
+5. (With `--scan`) Finds residual patterns from removed code still present elsewhere
+
+**Outputs:**
+- Per-issue verdicts (PASS / WARN / FAIL)
+- Batch verdict (READY / NEEDS_ATTENTION / BLOCKED)
+- Optional PR comments (with `--post`)
+
+**When to use:**
+- After `sequant run` completes a multi-issue batch
+- Before `/merger` or manual merge of related feature branches
+- Not needed for single-issue workflows
+
+See [Merge Command Reference](../reference/merge-command.md) for full details.
 
 ## Phase Isolation: Why Fresh Conversations
 

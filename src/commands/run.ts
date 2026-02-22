@@ -3120,6 +3120,15 @@ export async function runCommand(
       console.log("");
     }
 
+    // Suggest merge checks for multi-issue batches
+    if (results.length > 1 && passed > 0 && !config.dryRun) {
+      console.log(
+        colors.muted("  💡 Verify batch integration before merging:"),
+      );
+      console.log(colors.muted("     sequant merge --check"));
+      console.log("");
+    }
+
     if (config.dryRun) {
       console.log(
         colors.warning(
