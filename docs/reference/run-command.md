@@ -49,7 +49,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
-| `--sequential` | Stop on first failure | `false` |
+| `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
 | `--chain` | Chain issues: each branches from previous (requires `--sequential`) | `false` |
 | `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
@@ -71,6 +71,31 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `test` | Run tests and verify |
 | `qa` | Quality review and approval |
 | `loop` | Quality iteration loop |
+
+## Execution Model
+
+Issues are always processed **one at a time** (serially). The `--sequential` flag controls **failure behavior**, not concurrency:
+
+| Mode | Flag | Behavior on Failure |
+|------|------|---------------------|
+| Default | _(none)_ | Continue to next issue |
+| Sequential | `--sequential` | Stop immediately |
+
+**Why not concurrent?** The Claude Agent SDK processes one agent session at a time. True concurrent execution (e.g., via listr2) is a potential future enhancement, but the current architecture runs issues serially regardless of the `--sequential` flag.
+
+**What `--sequential` actually controls:**
+
+```bash
+# Default: process all issues, continue if #101 fails
+npx sequant run 100 101 102
+#   ✓ #100 → ✗ #101 → ✓ #102  (all attempted)
+
+# Sequential: stop on first failure
+npx sequant run 100 101 102 --sequential
+#   ✓ #100 → ✗ #101  (stopped, #102 skipped)
+```
+
+> **Note:** The settings file and logs may show `"sequential": false` and `Mode: parallel`. This refers to the failure behavior described above — issues still run one at a time.
 
 ## Common Workflows
 
@@ -457,7 +482,7 @@ Settings hierarchy (highest priority wins):
 
   Stack: nextjs
   Phases: spec → exec → qa
-  Mode: parallel
+  Mode: continue-on-failure
   Issues: #42
 
   Issue #42

@@ -2608,7 +2608,9 @@ export async function runCommand(
     console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
   }
   console.log(
-    chalk.gray(`  Mode: ${config.sequential ? "sequential" : "parallel"}`),
+    chalk.gray(
+      `  Mode: ${config.sequential ? "stop-on-failure" : "continue-on-failure"}`,
+    ),
   );
   if (config.qualityLoop) {
     console.log(
@@ -2929,7 +2931,7 @@ export async function runCommand(
         }
       }
     } else {
-      // Parallel execution (for now, just run sequentially but don't stop on failure)
+      // Default mode: run issues serially but continue on failure (don't stop)
       // TODO: Add proper parallel execution with listr2
       for (const issueNumber of issueNumbers) {
         // Check if shutdown was triggered

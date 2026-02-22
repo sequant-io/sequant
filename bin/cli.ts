@@ -152,7 +152,7 @@ program
   .description("Execute workflow for GitHub issues using Claude Agent SDK")
   .argument("[issues...]", "Issue numbers to process")
   .option("--phases <list>", "Phases to run (default: spec,exec,qa)")
-  .option("--sequential", "Run issues sequentially")
+  .option("--sequential", "Stop on first issue failure (default: continue)")
   .option("-d, --dry-run", "Preview without execution")
   .option("-v, --verbose", "Verbose output with streaming")
   .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
