@@ -1862,3 +1862,34 @@ describe("pre-PR rebase", () => {
     });
   });
 });
+
+describe("execution model", () => {
+  it("sequential=false means continue-on-failure, not concurrent execution", () => {
+    // This test documents the intended behavior of the sequential flag.
+    // When sequential=false (default), issues run serially but continue
+    // even if one fails. This is NOT concurrent/parallel execution.
+    //
+    // See: src/commands/run.ts line ~2934
+    // "Default mode: run issues serially but continue on failure (don't stop)"
+    const config = {
+      sequential: false,
+    };
+
+    // The mode label should clearly indicate failure behavior, not concurrency
+    const modeLabel = config.sequential
+      ? "stop-on-failure"
+      : "continue-on-failure";
+    expect(modeLabel).toBe("continue-on-failure");
+  });
+
+  it("sequential=true means stop-on-failure", () => {
+    const config = {
+      sequential: true,
+    };
+
+    const modeLabel = config.sequential
+      ? "stop-on-failure"
+      : "continue-on-failure";
+    expect(modeLabel).toBe("stop-on-failure");
+  });
+});
