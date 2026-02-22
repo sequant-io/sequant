@@ -104,10 +104,10 @@ Scan for improvements in these categories:
 **Detection strategies:**
 ```bash
 # Find 'any' types
-grep -r ": any" --include="*.ts" --include="*.tsx"
+grep -r ": any" --include="*.ts" --include="*.tsx" || true
 
 # Find TODO/FIXME comments
-grep -r "TODO\|FIXME" --include="*.ts" --include="*.tsx"
+grep -r "TODO\|FIXME" --include="*.ts" --include="*.tsx" || true
 
 # Find large files (potential split candidates)
 find src -name "*.ts" -exec wc -l {} \; | sort -rn | head -20
@@ -126,10 +126,10 @@ find src -name "*.ts" -exec wc -l {} \; | sort -rn | head -20
 **Detection strategies:**
 ```bash
 # Find large dependencies
-grep -r "from ['\"]" --include="*.ts" | grep -E "lodash|moment|axios" | head -10
+grep -r "from ['\"]" --include="*.ts" | grep -E "lodash|moment|axios" | head -10 || true
 
 # Find potential N+1 patterns
-grep -r "\.map\(.*await" --include="*.ts"
+grep -r "\.map\(.*await" --include="*.ts" || true
 ```
 
 #### Missing Tests
@@ -157,7 +157,7 @@ done
 **Detection strategies:**
 ```bash
 # Find exported functions without JSDoc
-grep -B5 "export function\|export const\|export class" --include="*.ts"
+grep -B5 "export function\|export const\|export class" --include="*.ts" || true
 ```
 
 #### Security Concerns
@@ -169,7 +169,7 @@ grep -B5 "export function\|export const\|export class" --include="*.ts"
 **Detection strategies:**
 ```bash
 # Find potential secrets
-grep -r "password\|secret\|api_key\|apikey" --include="*.ts" -i
+grep -r "password\|secret\|api_key\|apikey" --include="*.ts" -i || true
 
 # Check for outdated dependencies
 npm audit --json 2>/dev/null | jq '.vulnerabilities | length'

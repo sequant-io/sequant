@@ -37,7 +37,7 @@ When invoked as `/spec`, your job is to:
 ```bash
 # Check for existing phase markers
 phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
-  grep -o '{[^}]*}' | grep '"phase"' | tail -1)
+  grep -o '{[^}]*}' | grep '"phase"' | tail -1 || true)
 
 if [[ -n "$phase_data" ]]; then
   phase=$(echo "$phase_data" | jq -r '.phase')
@@ -333,12 +333,12 @@ Before creating the implementation plan, check if a custom base branch should be
 
 1. **Check for feature branch references in issue body**:
    ```bash
-   gh issue view <issue> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)"
+   gh issue view <issue> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)" || true
    ```
 
 2. **Check issue labels for feature context**:
    ```bash
-   gh issue view <issue> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
+   gh issue view <issue> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)" || true
    ```
 
 3. **Check if project has defaultBase configured**:
@@ -740,7 +740,7 @@ Analyze the issue and recommend the optimal workflow phases:
 3. **Check project test infrastructure:**
    ```bash
    # Check for test framework in package.json
-   grep -E "jest|vitest|mocha" package.json
+   grep -E "jest|vitest|mocha" package.json || true
    ```
    - If no test framework detected → Skip testgen (no infrastructure)
 

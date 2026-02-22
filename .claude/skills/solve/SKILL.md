@@ -84,10 +84,10 @@ When analyzing issues, check if `--base` flag should be recommended.
 
 ```bash
 # Check for feature branch references in issue body
-gh issue view <issue-number> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)"
+gh issue view <issue-number> --json body --jq '.body' | grep -iE "(feature/|branch from|based on|part of.*feature)" || true
 
 # Check issue labels for feature context
-gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)"
+gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(dashboard|feature-|epic-)" || true
 
 # Check if project has defaultBase configured
 # Use the Read tool to check project settings
@@ -114,13 +114,13 @@ When analyzing multiple issues, determine if `--chain` flag should be recommende
 
 ```bash
 # Check for dependency keywords in issue body
-gh issue view <issue-number> --json body --jq '.body' | grep -iE "(depends on|blocked by|requires|after #|builds on)"
+gh issue view <issue-number> --json body --jq '.body' | grep -iE "(depends on|blocked by|requires|after #|builds on)" || true
 
 # Check for sequence labels
-gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(part-[0-9]|step-[0-9]|phase-[0-9])"
+gh issue view <issue-number> --json labels --jq '.labels[].name' | grep -iE "(part-[0-9]|step-[0-9]|phase-[0-9])" || true
 
 # Check for related issue references
-gh issue view <issue-number> --json body --jq '.body' | grep -oE "#[0-9]+"
+gh issue view <issue-number> --json body --jq '.body' | grep -oE "#[0-9]+" || true
 ```
 
 **Recommend `--chain` when:**

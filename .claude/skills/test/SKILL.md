@@ -165,7 +165,7 @@ Wait for server ready before proceeding.
 1. **Get changed source files:**
    ```bash
    # Get changed source files (excluding tests themselves)
-   changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
+   changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
    echo "Changed source files:"
    echo "$changed"
    ```

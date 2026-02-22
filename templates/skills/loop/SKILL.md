@@ -101,7 +101,7 @@ Extract:
 
 Find the worktree for this issue:
 ```bash
-git worktree list | grep -E "feature.*<issue-number>"
+git worktree list | grep -E "feature.*<issue-number>" || true
 ```
 
 Or check:

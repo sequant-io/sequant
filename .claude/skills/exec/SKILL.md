@@ -65,7 +65,7 @@ When invoked as `/exec`, your job is to:
 ```bash
 # Check for existing phase markers
 phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
-  grep -o '{[^}]*}' | grep '"phase"' | tail -1)
+  grep -o '{[^}]*}' | grep '"phase"' | tail -1 || true)
 
 if [[ -n "$phase_data" ]]; then
   phase=$(echo "$phase_data" | jq -r '.phase')
@@ -157,7 +157,7 @@ git log --oneline -3 --stat
 
 # Check for existing PRs or branches for this issue
 gh pr list --search "<issue-number>"
-git branch -a | grep -i "<issue-number>"
+git branch -a | grep -i "<issue-number>" || true
 ```
 
 **Why this matters:** After context restoration, PRs may have merged, branches may have changed, or work may already be complete. Always verify before creating duplicate work.
@@ -272,7 +272,7 @@ derived_acs=$(gh issue view <issue-number> --comments --json comments -q '.comme
   grep -E '\|[^|]+\|\s*AC-[0-9]+:' | \
   grep -oE 'AC-[0-9]+:[^|]+' | \
   sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-  sort -u)
+  sort -u || true)
 
 # Display extracted derived ACs
 if [[ -n "$derived_acs" ]]; then
@@ -937,7 +937,7 @@ Do NOT silently skip checks. Always state which commands you intend to run and w
 Use the Glob tool to check for corresponding test files:
 ```
 # Get changed source files (excluding tests) from git
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__')
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
 
 # For each changed file, use the Glob tool to find matching test files
 # Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
@@ -968,7 +968,7 @@ changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep
 
 ```bash
 # Detect critical paths in changed files
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
 
 if [[ -n "$critical" ]]; then
@@ -999,7 +999,7 @@ fi
 
 ```bash
 # Get changed shell scripts
-shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$')
+shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$' || true)
 
 for script in $shell_scripts; do
   echo "Checking: $script"
@@ -1013,9 +1013,9 @@ for script in $shell_scripts; do
   fi
 
   # 3. Unused function detection
-  funcs=$(grep -oE "^[a-zA-Z_]+\(\)" "$script" | sed 's/()//')
+  funcs=$(grep -oE "^[a-zA-Z_]+\(\)" "$script" | sed 's/()//' || true)
   for func in $funcs; do
-    calls=$(grep -c "\b${func}\b" "$script")
+    calls=$(grep -c "\b${func}\b" "$script" || echo "0")
     if [[ $calls -lt 2 ]]; then
       echo "⚠️ Function '$func' defined but possibly not called"
     fi

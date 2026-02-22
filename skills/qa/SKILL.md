@@ -128,7 +128,7 @@ If no feature worktree exists (work was done directly on main):
 
 **Add RLS check if admin files modified:**
 ```bash
-admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1)
+admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1 || true)
 ```
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
@@ -257,10 +257,10 @@ See [quality-gates.md](references/quality-gates.md) for detailed verdict criteri
 
 ```bash
 # Type safety
-type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs)
+type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs || true)
 
 # Deleted tests
-deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs)
+deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs || true)
 
 # Scope check
 files_changed=$(git diff main...HEAD --name-only | wc -l | xargs)
@@ -306,7 +306,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
 **Detection:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep "^scripts/" | wc -l | xargs)
+scripts_changed=$(git diff main...HEAD --name-only | grep "^scripts/" | wc -l | xargs || true)
 if [[ $scripts_changed -gt 0 ]]; then
   echo "Script changes detected. Run /verify before READY_FOR_MERGE"
 fi
