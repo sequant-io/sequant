@@ -12,21 +12,25 @@ This review is **triggered** when new exported functions are detected in the dif
 
 ```bash
 # Detect new exported functions (added lines only)
+# Catches: export function foo, export async function foo,
+#          export const foo = () =>, export const foo = async () =>
 git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//'
+git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//'
 ```
 
 ## Review Steps
 
-### Step 1: Inventory All Call Sites
+### Step 1: Call-Site Inventory
 
-For each new exported function, find where it's called:
+For each new exported function, find where it's called using the Grep tool:
 
 ```bash
-# Find call sites for a function
-grep -rn "functionName(" --include="*.ts" --include="*.tsx" . | grep -v "\.test\." | grep -v "__tests__"
+# Find call sites for a function (exclude test files)
+Grep(pattern="functionName\\(", glob="*.{ts,tsx}", output_mode="content")
+# Then exclude results from .test. files and __tests__ directories
 ```
 
-### Step 2: Analyze Call-Site Conditions
+### Step 2: Condition Audit
 
 For each call site, identify:
 
@@ -46,7 +50,7 @@ For each call site, identify:
    - Is the call wrapped in try/catch?
    - What happens if the function throws?
 
-### Step 3: AC Constraint Matching
+**AC Constraint Matching:**
 
 Compare call-site conditions against AC constraints:
 
@@ -57,7 +61,7 @@ Compare call-site conditions against AC constraints:
 | "Not in Z mode" | Is there a guard: `if (!Z)` or similar? |
 | "Final item only" | If in loop, is there an index check or break? |
 
-### Step 4: Loop Iteration Review
+### Step 3: Loop Awareness
 
 When a function is called inside a loop, answer:
 
@@ -67,6 +71,7 @@ When a function is called inside a loop, answer:
    - Should it run for SOME iterations? → Check for condition filter
 
 2. **Common patterns to verify:**
+
    ```typescript
    // LAST only - should have index check
    for (let i = 0; i < items.length; i++) {
@@ -95,7 +100,7 @@ When a function is called inside a loop, answer:
    - No break/return after the call when AC implies single execution
    - Missing mode/flag guard when AC specifies conditions
 
-### Step 5: Mode/Flag Sensitivity
+### Step 4: Mode Sensitivity
 
 If the function behaves differently based on mode flags:
 
@@ -143,12 +148,14 @@ If the function behaves differently based on mode flags:
 **AC:** "Rebase only the final branch in a chain"
 
 **Detection:**
+
 ```bash
-grep -rn "rebaseBeforePR(" --include="*.ts" .
+Grep(pattern="rebaseBeforePR\\(", glob="*.ts", output_mode="content")
 # Output: src/run.ts:2977:  await rebaseBeforePR(worktreePath)
 ```
 
 **Analysis:**
+
 ```typescript
 // Found in loop over all chain issues
 for (const result of chainResults) {
@@ -161,6 +168,7 @@ for (const result of chainResults) {
 **Finding:** No guard for "final only" — function called for every issue in chain.
 
 **Fix:** Add final-issue check:
+
 ```typescript
 for (let i = 0; i < chainResults.length; i++) {
   const result = chainResults[i];
@@ -176,12 +184,14 @@ for (let i = 0; i < chainResults.length; i++) {
 **AC:** "Send notification only when status is 'complete'"
 
 **Detection:**
+
 ```bash
-grep -rn "sendNotification(" --include="*.ts" .
+Grep(pattern="sendNotification\\(", glob="*.ts", output_mode="content")
 # Output: src/handlers.ts:89:  sendNotification(user.email, message)
 ```
 
 **Analysis:**
+
 ```typescript
 // Found with proper guard
 if (task.status === 'complete') {
