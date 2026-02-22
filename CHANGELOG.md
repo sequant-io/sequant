@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `--post` flag to post merge readiness reports as PR comments
   - `--json` output for CI/scripting integration
   - Auto-detection of issues from most recent `sequant run` log
+  - Overlap classification: additive vs conflicting based on git diff line-range analysis
+  - Per-PR scoped reports: `--post` now posts issue-specific findings to each PR instead of the full batch report
+  - GitHub API fallback for issue titles when no run log is available
+  - 48 tests across 2 test files (18 core + 30 extended)
+  - Internal benchmark documentation (`docs/internal/merge-check-benchmark.md`)
 
 ### Documentation
 
