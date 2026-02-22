@@ -1130,13 +1130,16 @@ it("retries up to maxRetries on failure", async () => {
 });
 ```
 
-**Pattern 2: Dependency Injection**
+**Pattern 2: Dependency Injection (often combined with Pattern 1)**
 
-When the function has internal dependencies that need mocking:
+When the function has internal dependencies that need mocking, DI requires the
+function to be exported so tests can pass in mock dependencies. Combine with
+`@internal` from Pattern 1 to signal it's not part of the public API:
 
 ```typescript
 // src/lib/retry.ts
 
+/** @internal Exported for testing - DI allows mocking internal dependencies */
 export function retry<T>(
   fn: () => Promise<T>,
   maxRetries: number,
