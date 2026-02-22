@@ -62,7 +62,7 @@
     "chokidar": "^5.0.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
-    "diff": "^7.0.0",
+    "diff": "^8.0.3",
     "gradient-string": "^3.0.0",
     "hono": "^4.12.1",
     "inquirer": "^12.3.2",
@@ -73,7 +73,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
-    "@types/diff": "^7.0.0",
     "@types/gradient-string": "^1.1.6",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^22.10.5",
