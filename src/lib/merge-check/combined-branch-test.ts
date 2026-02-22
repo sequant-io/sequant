@@ -81,6 +81,9 @@ export function runCombinedBranchTest(
   const batchFindings: CheckFinding[] = [];
   const mergeAttempts: MergeAttempt[] = [];
 
+  // Save current branch to restore in finally block
+  const originalBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot);
+
   try {
     // Fetch latest from remote
     git(["fetch", "origin"], repoRoot);
@@ -205,8 +208,9 @@ export function runCombinedBranchTest(
 
     return buildResult(branchResults, batchFindings, startTime);
   } finally {
-    // Clean up: delete temp branch and restore original state
-    git(["checkout", "main"], repoRoot);
+    // Clean up: restore original branch and delete temp branch
+    const restoreBranch = originalBranch.ok ? originalBranch.stdout : "main";
+    git(["checkout", restoreBranch], repoRoot);
     git(["branch", "-D", tempBranch], repoRoot);
   }
 }
