@@ -130,3 +130,15 @@ did we update the solve skill with the new merge suggestion? di we miss anything
 
 yes fix all of them
 
+### Prompt 20
+
+commit push
+
+### Prompt 21
+
+any other gaps
+
+### Prompt 22
+
+fix all of them
+

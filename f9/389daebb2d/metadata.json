@@ -10,9 +10,13 @@
     ".claude/skills/merger/SKILL.md",
     ".claude/skills/solve/SKILL.md",
     "CHANGELOG.md",
+    "README.md",
+    "docs/concepts/workflow-phases.md",
+    "docs/guides/quickstart.md",
     "docs/guides/workflow.md",
     "docs/internal/what-weve-built.md",
     "docs/reference/merge-command.md",
+    "src/commands/run.ts",
     "templates/skills/fullsolve/SKILL.md",
     "templates/skills/solve/SKILL.md"
   ],
@@ -26,10 +30,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 18,
-    "cache_creation_tokens": 94589,
-    "cache_read_tokens": 1067809,
-    "output_tokens": 3070,
-    "api_call_count": 12
+    "input_tokens": 19,
+    "cache_creation_tokens": 11560,
+    "cache_read_tokens": 1409343,
+    "output_tokens": 3750,
+    "api_call_count": 13
   }
 }

@@ -2777,3 +2777,15 @@ did we update the solve skill with the new merge suggestion? di we miss anything
 ---
 
 yes fix all of them
+
+---
+
+commit push
+
+---
+
+any other gaps
+
+---
+
+fix all of them
