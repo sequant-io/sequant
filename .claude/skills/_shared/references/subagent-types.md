@@ -105,11 +105,39 @@ Task(subagent_type="Explore", model="haiku",
 ```
 Task(subagent_type="general-purpose",
      model="haiku",
+     mode="acceptEdits",
      run_in_background=true,
      prompt="Implement the UserCard component...")
 ```
 
 Use `TaskOutput(task_id="...", block=true)` to wait for completion.
+
+**IMPORTANT: Background agents and permissions**
+
+Background agents cannot prompt for permission interactively. If a background
+agent hits a tool that requires approval (like Edit or Write), it will be
+**silently denied** and the agent will fail.
+
+Always set `mode` when spawning background agents that need to edit files:
+
+| Mode | Effect | When to use |
+|------|--------|-------------|
+| `"acceptEdits"` | Auto-approves Edit/Write, still prompts for Bash | **Default for background file-editing agents** |
+| `"bypassPermissions"` | Skips all permission checks | Only in isolated containers/CI |
+| (omitted) | Inherits parent session mode | Only if parent already auto-approves |
+
+```
+# WRONG — background agent will fail on Edit/Write
+Task(subagent_type="general-purpose",
+     run_in_background=true,
+     prompt="Fix the bug in src/lib/foo.ts...")
+
+# RIGHT — background agent can edit files
+Task(subagent_type="general-purpose",
+     mode="acceptEdits",
+     run_in_background=true,
+     prompt="Fix the bug in src/lib/foo.ts...")
+```
 
 ## Invalid Types (Do Not Use)
 
