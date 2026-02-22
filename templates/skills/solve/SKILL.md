@@ -477,6 +477,28 @@ npx sequant run 152 --quality-loop --max-iterations 5
 npx sequant run 152 --dry-run
 ```
 
+### Post-Run: Merge Verification
+
+After batch execution, run merge checks before merging:
+
+```bash
+# Verify feature branches are safe to merge (auto-detects issues from last run)
+npx sequant merge --check
+
+# Full scan including residual pattern detection
+npx sequant merge --scan
+
+# Post results to each PR
+npx sequant merge --check --post
+```
+
+**Recommended workflow:**
+```bash
+npx sequant run 152 153 154        # implement
+npx sequant merge --check          # verify cross-issue integration
+/merger 152 153 154                # merge
+```
+
 ### Custom Base Branch
 
 The `--base` flag specifies which branch to create worktrees from:

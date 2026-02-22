@@ -144,11 +144,14 @@ Claude: Looking critically...
 gh pr merge --squash
 ```
 
-Or use `/merger` for multi-issue integration:
+For multi-issue batches, run merge checks first, then merge:
 
+```bash
+sequant merge --check         # Verify cross-issue integration
+/merger 123 124 125           # Merge all issues
 ```
-/merger 123 124 125
-```
+
+`sequant merge --check` catches merge conflicts, template mirroring gaps, and file overlaps at zero AI cost. See [Merge Command Reference](../reference/merge-command.md).
 
 ## Phase 8: Smoke Test
 
@@ -238,7 +241,8 @@ gh pr merge --squash
 /fullsolve 123
 /fullsolve 124
 /fullsolve 125
-/merger 123 124 125   # Integrate and merge all
+sequant merge --check         # Verify cross-issue integration
+/merger 123 124 125           # Merge all issues
 ```
 
 ### Pattern: Quality Iteration

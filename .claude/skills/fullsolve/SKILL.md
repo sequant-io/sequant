@@ -803,6 +803,20 @@ For multiple issues, run `/fullsolve` on each sequentially:
 
 Each issue gets its own worktree, PR, and quality validation.
 
+### Post-Batch: Merge Verification
+
+After processing a batch, run `sequant merge` to catch cross-issue integration gaps before merging:
+
+```bash
+/fullsolve 218
+/fullsolve 219
+/fullsolve 220
+sequant merge --check         # Verify no cross-issue conflicts
+/merger 218 219 220           # Merge all issues
+```
+
+`sequant merge --check` detects merge conflicts, template mirroring gaps, and file overlaps at zero AI cost. See `docs/reference/merge-command.md`.
+
 ---
 
 ## State Tracking
