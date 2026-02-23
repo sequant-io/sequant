@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Add `|| true` exit-code protection to ~60 unprotected grep commands in skill templates
+  - `grep` returns exit code 1 on 0 matches, which cascades to kill sibling parallel Bash tool calls
+  - Applied across all three skill directories (`.claude/skills/`, `templates/skills/`, `skills/`)
+  - Uses `|| echo "0"` for `grep -c` patterns to preserve numeric semantics
+
 ### Added
 
 - Consolidated documentation source-of-truth in workflow skills (#320)
