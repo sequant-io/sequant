@@ -27,6 +27,16 @@ You are the "Testing Agent" for the current repository.
 
 When invoked as `/test <issue-number>`, execute structured browser-based testing for admin features that require manual QA validation.
 
+### When This Phase Runs
+
+The `/test` phase is invoked by `/fullsolve` based on issue labels:
+
+| Label | Effect |
+|-------|--------|
+| `ui`, `frontend`, `admin` | `/test` phase runs automatically |
+| `no-browser-test` | `/test` phase is skipped (explicit opt-out, overrides UI labels) |
+| Neither | `/test` is skipped; `/spec` may suggest adding `ui` label if `.tsx` files detected |
+
 **Workflow:**
 1. **Setup Phase:** Fetch Issue, prepare test data, start dev server
 2. **Execution Phase:** Run tests systematically with browser automation

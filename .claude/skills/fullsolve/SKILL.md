@@ -378,12 +378,23 @@ After successful `/exec`:
 - Build succeeding
 
 **→ IMMEDIATELY proceed to Phase 3 or 4 (do not wait for user input)**
-- If UI labels present → invoke `/test`
+- If UI labels (`ui`, `frontend`, `admin`) present AND no `no-browser-test` label → invoke `/test`
+- If `no-browser-test` label present → skip to `/qa` (explicit opt-out)
 - Otherwise → skip to `/qa`
 
 ## Phase 3: Testing (TEST)
 
-**Skip if:** Issue doesn't have `admin`, `ui`, or `frontend` labels (determined from `/spec` output)
+**Skip if:**
+- Issue doesn't have `admin`, `ui`, or `frontend` labels (determined from `/spec` output), OR
+- Issue has `no-browser-test` label (explicit opt-out, overrides UI labels)
+
+### Browser Testing Label Reference
+
+| Label | Effect |
+|-------|--------|
+| `ui`, `frontend`, `admin` | Always includes `/test` phase |
+| `no-browser-test` | Always skips `/test` phase (explicit opt-out) |
+| Neither | Auto-detection in `/spec` may suggest adding `ui` label |
 
 **Invoke the `/test` skill** for browser-based UI testing.
 
