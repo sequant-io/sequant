@@ -53,3 +53,15 @@ was this best practice and portable?
 ---
 
 commit this
+
+---
+
+push
+
+---
+
+docs
+
+---
+
+commit and push
