@@ -153,8 +153,8 @@ jobs:
 
       - name: Test plugin install
         run: |
-          echo "Testing claude plugin install..."
-          if claude plugin install sequant 2>&1; then
+          echo "Testing claude plugin install sequant@sequant..."
+          if claude plugin install sequant@sequant 2>&1; then
             echo "Plugin install succeeded!"
           else
             exit_code=$?
