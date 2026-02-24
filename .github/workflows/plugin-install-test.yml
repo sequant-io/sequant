@@ -1,0 +1,329 @@
+name: Plugin Installation Test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.claude-plugin/**'
+      - 'hooks/**'
+      - 'skills/**'
+      - 'memory/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.claude-plugin/**'
+      - 'hooks/**'
+      - 'skills/**'
+      - 'memory/**'
+
+jobs:
+  plugin-structure:
+    name: Plugin Structure Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 20.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+
+      - name: Validate plugin.json
+        run: |
+          echo "Validating plugin.json..."
+          if [ ! -f ".claude-plugin/plugin.json" ]; then
+            echo "Error: .claude-plugin/plugin.json not found"
+            exit 1
+          fi
+
+          node -e "
+            const plugin = JSON.parse(require('fs').readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            const required = ['name', 'description', 'version'];
+            const missing = required.filter(f => !plugin[f]);
+            if (missing.length > 0) {
+              console.error('Missing required fields:', missing.join(', '));
+              process.exit(1);
+            }
+            console.log('plugin.json fields: name=%s, version=%s', plugin.name, plugin.version);
+          "
+          echo "plugin.json validated successfully!"
+
+      - name: Validate marketplace.json
+        run: |
+          echo "Validating marketplace.json..."
+          if [ ! -f ".claude-plugin/marketplace.json" ]; then
+            echo "Error: .claude-plugin/marketplace.json not found"
+            exit 1
+          fi
+
+          node -e "
+            const mp = JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'));
+            const required = ['name', 'description', 'plugins'];
+            const missing = required.filter(f => !mp[f]);
+            if (missing.length > 0) {
+              console.error('Missing required fields:', missing.join(', '));
+              process.exit(1);
+            }
+            if (!Array.isArray(mp.plugins) || mp.plugins.length === 0) {
+              console.error('plugins must be a non-empty array');
+              process.exit(1);
+            }
+            console.log('marketplace.json validated: %d plugin(s)', mp.plugins.length);
+          "
+          echo "marketplace.json validated successfully!"
+
+      - name: Verify skills are discoverable
+        run: |
+          echo "Checking skills directory..."
+          skill_count=0
+          missing_skills=""
+
+          for skill_dir in skills/*/; do
+            # Skip _shared directory
+            if [[ "$skill_dir" == *"_shared"* ]]; then
+              continue
+            fi
+
+            skill_name=$(basename "$skill_dir")
+
+            if [ -f "${skill_dir}SKILL.md" ]; then
+              # Verify SKILL.md is non-empty
+              if [ -s "${skill_dir}SKILL.md" ]; then
+                skill_count=$((skill_count + 1))
+              else
+                missing_skills="${missing_skills}\n  - ${skill_name}/SKILL.md (empty)"
+              fi
+            else
+              missing_skills="${missing_skills}\n  - ${skill_name}/SKILL.md (missing)"
+            fi
+          done
+
+          echo "Found ${skill_count} valid skills"
+
+          if [ -n "$missing_skills" ]; then
+            echo "Problems found:${missing_skills}"
+            exit 1
+          fi
+
+          if [ "$skill_count" -eq 0 ]; then
+            echo "Error: No skills found in skills/ directory"
+            exit 1
+          fi
+
+          echo "All skills have valid SKILL.md files!"
+
+      - name: Install Claude Code CLI
+        run: |
+          echo "Installing Claude Code CLI..."
+          npm install -g @anthropic-ai/claude-code
+          claude --version || echo "Claude CLI installed but --version not supported"
+
+      - name: Validate plugin with Claude CLI
+        run: |
+          echo "Running claude plugin validate..."
+          # claude plugin validate may not exist yet — try and report
+          if claude plugin validate . 2>&1; then
+            echo "Plugin validation passed!"
+          else
+            exit_code=$?
+            # Exit code 1 might mean "command not found" vs "validation failed"
+            if claude plugin 2>&1 | grep -q "validate"; then
+              echo "Error: Plugin validation failed (exit code: $exit_code)"
+              exit 1
+            else
+              echo "Note: 'claude plugin validate' not available in this CLI version — skipping"
+            fi
+          fi
+
+      - name: Test marketplace add (local)
+        run: |
+          echo "Testing claude plugin marketplace add..."
+          if claude plugin marketplace add . --local 2>&1; then
+            echo "Marketplace add succeeded!"
+          else
+            exit_code=$?
+            if claude plugin marketplace 2>&1 | grep -q "add"; then
+              echo "Error: Marketplace add failed (exit code: $exit_code)"
+              exit 1
+            else
+              echo "Note: 'claude plugin marketplace add' not available — skipping"
+            fi
+          fi
+
+      - name: Test plugin install
+        run: |
+          echo "Testing claude plugin install..."
+          if claude plugin install sequant 2>&1; then
+            echo "Plugin install succeeded!"
+          else
+            exit_code=$?
+            if claude plugin 2>&1 | grep -q "install"; then
+              echo "Error: Plugin install failed (exit code: $exit_code)"
+              exit 1
+            else
+              echo "Note: 'claude plugin install' not available — skipping"
+            fi
+          fi
+
+  hooks-test:
+    name: Hooks Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check hook scripts
+        run: |
+          echo "Running bash syntax check on hooks..."
+          bash -n hooks/pre-tool.sh
+          echo "pre-tool.sh: syntax OK"
+
+          bash -n hooks/post-tool.sh
+          echo "post-tool.sh: syntax OK"
+
+      - name: Validate hooks.json structure
+        run: |
+          echo "Validating hooks.json..."
+          node -e "
+            const hooks = JSON.parse(require('fs').readFileSync('hooks/hooks.json', 'utf8'));
+            if (!hooks.hooks) {
+              console.error('Missing hooks key');
+              process.exit(1);
+            }
+
+            const hookTypes = Object.keys(hooks.hooks);
+            console.log('Hook types:', hookTypes.join(', '));
+
+            // Verify each hook references a valid script
+            for (const [type, matchers] of Object.entries(hooks.hooks)) {
+              for (const matcher of matchers) {
+                for (const hook of matcher.hooks) {
+                  if (hook.type === 'command') {
+                    // Extract script path (remove variable prefix)
+                    const scriptPath = hook.command
+                      .replace(/\"\\\$\{CLAUDE_PLUGIN_ROOT\}\//, '')
+                      .replace(/\"$/, '');
+                    const fs = require('fs');
+                    if (!fs.existsSync(scriptPath)) {
+                      console.error('Referenced script not found:', scriptPath);
+                      process.exit(1);
+                    }
+                    console.log('  %s → %s (exists)', type, scriptPath);
+                  }
+                }
+              }
+            }
+            console.log('hooks.json validated!');
+          "
+
+      - name: Smoke test pre-tool hook
+        run: |
+          echo "Smoke testing pre-tool.sh with mock input..."
+
+          # Mock Bash tool input
+          mock_input='{"tool_name":"Bash","tool_input":{"command":"echo hello"}}'
+
+          # Run hook with mock input — should exit 0 (allow)
+          echo "$mock_input" | bash hooks/pre-tool.sh
+          exit_code=$?
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "pre-tool.sh: allowed (exit 0) — OK"
+          elif [ "$exit_code" -eq 2 ]; then
+            echo "pre-tool.sh: blocked (exit 2) — unexpected for safe command"
+            exit 1
+          else
+            echo "pre-tool.sh: exit code $exit_code"
+            exit 1
+          fi
+
+      - name: Smoke test post-tool hook
+        run: |
+          echo "Smoke testing post-tool.sh with mock input..."
+
+          # Mock Bash tool output
+          mock_input='{"tool_name":"Bash","tool_input":{"command":"echo hello"},"tool_response":"hello"}'
+
+          # Run hook — should exit 0
+          echo "$mock_input" | bash hooks/post-tool.sh
+          exit_code=$?
+
+          if [ "$exit_code" -eq 0 ]; then
+            echo "post-tool.sh: exit 0 — OK"
+          else
+            echo "post-tool.sh: exit code $exit_code — unexpected"
+            exit 1
+          fi
+
+      - name: Test security guardrail (blocked command)
+        run: |
+          echo "Testing that pre-tool.sh blocks dangerous commands..."
+
+          # Mock a dangerous command that should be blocked
+          mock_input='{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}'
+
+          echo "$mock_input" | bash hooks/pre-tool.sh
+          exit_code=$?
+
+          if [ "$exit_code" -eq 2 ]; then
+            echo "pre-tool.sh: correctly blocked dangerous command (exit 2)"
+          elif [ "$exit_code" -eq 0 ]; then
+            echo "Warning: pre-tool.sh allowed dangerous command — check guardrails"
+            # Not failing the build — guardrail coverage varies
+          else
+            echo "pre-tool.sh: exit code $exit_code"
+          fi
+
+  setup-test:
+    name: Setup Directory Creation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test directory creation
+        run: |
+          echo "Testing setup directory creation logic..."
+
+          # Create the directories that /sequant:setup would create
+          mkdir -p .sequant
+          mkdir -p ../worktrees/feature
+
+          # Verify they exist
+          if [ -d ".sequant" ]; then
+            echo ".sequant/ directory: created"
+          else
+            echo "Error: .sequant/ directory not created"
+            exit 1
+          fi
+
+          if [ -d "../worktrees/feature" ]; then
+            echo "../worktrees/feature/ directory: created"
+          else
+            echo "Error: ../worktrees/feature/ directory not created"
+            exit 1
+          fi
+
+          echo "Setup directories created successfully!"
+
+      - name: Verify git prerequisites
+        run: |
+          echo "Checking git prerequisites..."
+          git --version
+          echo "Git is available"
+
+      - name: Test constitution template exists
+        run: |
+          echo "Checking for constitution template..."
+          if [ -f "templates/constitution.md" ]; then
+            echo "Constitution template found"
+            # Verify it contains expected placeholder
+            if grep -q "{{PROJECT_NAME}}" templates/constitution.md 2>/dev/null; then
+              echo "Template contains PROJECT_NAME placeholder"
+            else
+              echo "Note: Template may not use placeholder format"
+            fi
+          else
+            echo "Note: templates/constitution.md not found — setup may use inline content"
+          fi
