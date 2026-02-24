@@ -54,6 +54,7 @@ export interface IssueComment {
  * Markers that indicate a solve comment
  */
 const SOLVE_MARKERS = [
+  "## Solve Analysis",
   "## Solve Workflow for Issues:",
   "## Solve Workflow for Issue:",
   "### Recommended Workflow",
@@ -77,6 +78,12 @@ const QUALITY_LOOP_PATTERNS = [
   /quality\s*loop.*recommended/i,
   /enable.*quality\s*loop/i,
 ];
+
+/**
+ * Pattern to extract structured data from HTML comment markers
+ * Matches: <!-- solve:phases=exec,qa -->
+ */
+const SOLVE_HTML_MARKER_PATTERN = /<!--\s*solve:(\w[\w-]*)=([\w,.-]+)\s*-->/g;
 
 /**
  * Pattern to extract issue numbers from solve header
@@ -133,6 +140,59 @@ function parseWorkflowString(workflowString: string): Phase[] {
 }
 
 /**
+ * Structured data extracted from HTML comment markers in solve comments
+ */
+export interface SolveMarkers {
+  /** Recommended phases (from <!-- solve:phases=... -->) */
+  phases?: string[];
+  /** Whether to skip spec (from <!-- solve:skip-spec=... -->) */
+  skipSpec?: boolean;
+  /** Whether browser testing is needed (from <!-- solve:browser-test=... -->) */
+  browserTest?: boolean;
+  /** Whether quality loop is recommended (from <!-- solve:quality-loop=... -->) */
+  qualityLoop?: boolean;
+}
+
+/**
+ * Parse HTML comment markers from a solve comment body
+ *
+ * Extracts structured data from markers like:
+ * - `<!-- solve:phases=exec,qa -->`
+ * - `<!-- solve:skip-spec=true -->`
+ * - `<!-- solve:browser-test=false -->`
+ * - `<!-- solve:quality-loop=true -->`
+ *
+ * @param body - The comment body
+ * @returns Parsed markers
+ */
+export function parseSolveMarkers(body: string): SolveMarkers {
+  const markers: SolveMarkers = {};
+  const matches = body.matchAll(SOLVE_HTML_MARKER_PATTERN);
+
+  for (const match of matches) {
+    const key = match[1];
+    const value = match[2];
+
+    switch (key) {
+      case "phases":
+        markers.phases = value.split(",").filter(Boolean);
+        break;
+      case "skip-spec":
+        markers.skipSpec = value === "true";
+        break;
+      case "browser-test":
+        markers.browserTest = value === "true";
+        break;
+      case "quality-loop":
+        markers.qualityLoop = value === "true";
+        break;
+    }
+  }
+
+  return markers;
+}
+
+/**
  * Parse a solve comment to extract workflow information
  *
  * @param body - The solve comment body
@@ -145,8 +205,10 @@ export function parseSolveWorkflow(body: string): SolveWorkflowResult {
     issueNumbers: [],
   };
 
-  // Extract issue numbers from header
-  const headerMatch = body.match(/## Solve Workflow for Issues?:\s*([^\n]+)/i);
+  // Extract issue numbers from header (both old and new formats)
+  const headerMatch = body.match(
+    /## Solve (?:Workflow for Issues?|Analysis)(?::\s*|\s+for\s+)([^\n]+)/i,
+  );
   if (headerMatch) {
     const numberMatches = headerMatch[1].matchAll(ISSUE_NUMBER_PATTERN);
     for (const match of numberMatches) {
@@ -155,6 +217,22 @@ export function parseSolveWorkflow(body: string): SolveWorkflowResult {
         result.issueNumbers.push(num);
       }
     }
+  }
+
+  // Try HTML comment markers first (most reliable, machine-readable)
+  const markers = parseSolveMarkers(body);
+  if (markers.phases && markers.phases.length > 0) {
+    result.phases = markers.phases as Phase[];
+    result.workflowString = markers.phases.join(" → ");
+  }
+
+  if (markers.qualityLoop !== undefined) {
+    result.qualityLoop = markers.qualityLoop;
+  }
+
+  // If we got phases from markers, we're done
+  if (result.phases.length > 0) {
+    return result;
   }
 
   // Find workflow lines (e.g., "/spec 152" or "spec → exec → qa")
@@ -204,11 +282,13 @@ export function parseSolveWorkflow(body: string): SolveWorkflowResult {
     result.phases = parseWorkflowString(body);
   }
 
-  // Check for quality loop recommendation
-  for (const pattern of QUALITY_LOOP_PATTERNS) {
-    if (pattern.test(body)) {
-      result.qualityLoop = true;
-      break;
+  // Check for quality loop recommendation (if not already set by markers)
+  if (!result.qualityLoop) {
+    for (const pattern of QUALITY_LOOP_PATTERNS) {
+      if (pattern.test(body)) {
+        result.qualityLoop = true;
+        break;
+      }
     }
   }
 
