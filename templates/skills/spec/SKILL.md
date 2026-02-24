@@ -475,6 +475,43 @@ Content analysis **supplements** label detection - it can only ADD phases, never
 **Final phases:** spec → exec → test → security-review → qa
 ```
 
+### 4.5. Solve Comment Detection (AC-4, AC-5)
+
+**Before making your own phase recommendation**, check if `/solve` has already posted an analysis comment to this issue:
+
+```bash
+# Check for solve analysis comment on the issue
+solve_comment=$(gh issue view <issue-number> --json comments \
+  --jq '[.comments[].body | select(test("## Solve Analysis|<!-- solve:phases="))] | last // empty')
+```
+
+**If a solve analysis comment exists:**
+
+1. Parse the HTML comment markers to extract the recommended phases:
+   ```
+   <!-- solve:phases=exec,qa -->        → phases: ["exec", "qa"]
+   <!-- solve:skip-spec=true -->        → skip spec phase
+   <!-- solve:browser-test=false -->    → no browser testing needed
+   <!-- solve:quality-loop=true -->     → enable quality loop
+   ```
+
+2. **Use the solve recommendation as your starting point** for the phase recommendation in step 5.
+
+3. **You may override the solve recommendation**, but you MUST document why:
+   ```markdown
+   ## Recommended Workflow
+
+   **Phases:** spec → exec → test → qa
+   **Quality Loop:** enabled
+   **Reasoning:** Solve recommended `exec → qa`, but codebase analysis reveals UI components
+   are affected (found `.tsx` files in change scope), so browser testing is needed.
+   Overriding solve recommendation with explanation.
+   ```
+
+4. If the solve comment recommends `skip-spec=true`, acknowledge this in your output but proceed with spec since `/spec` was explicitly invoked.
+
+**If no solve analysis comment exists:** Proceed with your own analysis as normal (step 5).
+
 ### 5. Recommended Workflow
 
 Analyze the issue and recommend the optimal workflow phases:
