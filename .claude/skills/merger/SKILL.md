@@ -28,7 +28,8 @@ When invoked as `/merger <issue-numbers>`, you:
 3. Generate integration branches for incompatible changes
 4. Respect dependency ordering
 5. Clean up worktrees after successful merge
-6. Provide detailed merge reports
+6. Run post-merge smoketest (build, tests, CLI health)
+7. Provide detailed merge reports
 
 ### Recommended Pre-Merge Check
 
@@ -62,6 +63,9 @@ sequant merge --check         # verify (deterministic checks)
 
 # Force sequential validation (slower, lower token usage)
 /merger 10 12 --sequential
+
+# Skip post-merge smoketest
+/merger 10 12 --skip-smoketest
 ```
 
 ## Agent Execution Mode
@@ -233,6 +237,91 @@ git worktree list | grep -q "feature/$ISSUE" && echo "WARNING: Worktree still ex
 
 **Why this matters:** Leftover worktrees waste disk space and can cause confusion when re-running `sequant run` on the same issues. The state guard (#305) prevents re-execution, but the worktree should still be cleaned up.
 
+### Step 7: Post-Merge Smoketest
+
+**Skip if:** `--skip-smoketest` flag is set or `SEQUANT_MERGER_SKIP_SMOKETEST` environment variable is true.
+
+```bash
+# Check skip flag
+if [[ "$SKIP_SMOKETEST" == "true" ]]; then
+  echo "⏭️ Smoketest skipped (--skip-smoketest flag set)"
+  # Continue to output report
+fi
+```
+
+**After all merges complete and worktrees are cleaned up**, verify main is healthy:
+
+```bash
+# 1. Ensure we're on main with latest changes
+git checkout main
+git pull origin main
+
+# 2. Build verification
+echo "Running build..."
+npm run build 2>&1
+build_exit=$?
+
+# 3. Test suite
+echo "Running tests..."
+npm test 2>&1
+test_exit=$?
+
+# 4. CLI health check (if sequant CLI is available)
+echo "Running CLI health check..."
+npx sequant doctor 2>&1 || true
+doctor_exit=$?
+```
+
+#### Smoketest Output
+
+Report results in a structured table:
+
+```markdown
+### Post-Merge Smoketest
+
+| Check | Command | Result | Details |
+|-------|---------|--------|---------|
+| Build | `npm run build` | ✅ PASS / ❌ FAIL | [build output summary] |
+| Tests | `npm test` | ✅ PASS (N/N) / ❌ FAIL | [test count or failure summary] |
+| CLI Health | `npx sequant doctor` | ✅ PASS / ❌ FAIL / ⏭️ SKIP | [health check output] |
+
+**Smoketest Result:** ✅ ALL PASSED / ❌ FAILURES DETECTED
+```
+
+#### Failure Handling
+
+If any smoketest check fails, report clearly with suggested actions:
+
+```markdown
+### ❌ Smoketest Failures Detected
+
+| Check | Status | Suggested Action |
+|-------|--------|-----------------|
+| Build | ❌ FAIL | Run `npm run build` and investigate compilation errors |
+| Tests | ❌ FAIL (42/45) | Run `npm test -- --verbose` to identify failing tests |
+| CLI Health | ❌ FAIL | Run `npx sequant doctor` to identify configuration issues |
+
+**⚠️ Action Required:**
+- Investigate failures on main before proceeding with further work
+- Consider reverting the merge if failures are critical
+- Do NOT auto-rollback — manual investigation is recommended
+
+**Diagnostic commands:**
+\`\`\`bash
+# Investigate build failures
+npm run build 2>&1 | tail -50
+
+# Run specific failing tests
+npm test -- --verbose 2>&1
+
+# Check recent merge commit
+git log --oneline -3
+git diff HEAD~1 --stat
+\`\`\`
+```
+
+**Important:** Smoketest failures do NOT trigger automatic rollback. They are reported for human decision-making.
+
 ## Dependency Detection
 
 Parse dependencies from issue body or comments:
@@ -288,6 +377,15 @@ If dependencies found, enforce merge order.
 - Removed worktree: feature/12-*
 - Closed: PR #15, PR #16 (superseded by #17)
 
+### Post-Merge Smoketest
+| Check | Command | Result | Details |
+|-------|---------|--------|---------|
+| Build | `npm run build` | ✅ PASS | Compiled successfully |
+| Tests | `npm test` | ✅ PASS (45/45) | All tests passing |
+| CLI Health | `npx sequant doctor` | ✅ PASS | No issues detected |
+
+**Smoketest Result:** ✅ ALL PASSED
+
 ### Final Status
 **Result:** SUCCESS
 **Integration PR:** #17
@@ -321,6 +419,7 @@ Environment variables:
 - `SEQUANT_MERGER_DRY_RUN` - If true, only show what would happen
 - `SEQUANT_MERGER_NO_CLEANUP` - If true, keep worktrees after merge
 - `SEQUANT_MERGER_FORCE` - If true, proceed even with conflicts
+- `SEQUANT_MERGER_SKIP_SMOKETEST` - If true, skip post-merge smoketest
 
 ## State Tracking
 
@@ -360,6 +459,7 @@ npx tsx scripts/state/update.ts fail <issue-number> merger "Merge conflict or CI
 - [ ] **Resolution Strategy** - How conflicts were resolved (if any)
 - [ ] **Actions Taken** - Step-by-step log of what was done
 - [ ] **Cleanup Status** - Which worktrees/branches were removed
+- [ ] **Post-Merge Smoketest** - Build, test, and CLI health results (or "Skipped" if `--skip-smoketest`)
 - [ ] **Final Status** - SUCCESS/FAILURE with PR link
 
 **DO NOT respond until all items are verified.**
