@@ -298,7 +298,17 @@ npm run build
 
 ## Phase 3: Testing (TEST)
 
-**Skip if:** Issue doesn't have `admin`, `ui`, or `frontend` labels
+**Skip if:**
+- Issue doesn't have `admin`, `ui`, or `frontend` labels, OR
+- Issue has `no-browser-test` label (explicit opt-out, overrides UI labels)
+
+### Browser Testing Label Reference
+
+| Label | Effect |
+|-------|--------|
+| `ui`, `frontend`, `admin` | Always includes `/test` phase |
+| `no-browser-test` | Always skips `/test` phase (explicit opt-out) |
+| Neither | Auto-detection in `/spec` may suggest adding `ui` label |
 
 ### 3.1 Start Dev Server
 

@@ -285,16 +285,56 @@ Provide an overall verdict:
    - pending_count = ACs with status PENDING
    - not_met_count = ACs with status NOT_MET
 
-2. Determine verdict (in order):
+2. Browser testing enforcement check:
+   - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$'
+   - Check if /test phase ran: look for test phase marker in issue comments
+   - Check if issue has 'no-browser-test' label
+   - IF .tsx files changed AND /test did NOT run AND no 'no-browser-test' label:
+       → Force AC_MET_BUT_NOT_A_PLUS with note:
+         "Browser testing recommended: .tsx files were modified but no /test phase ran.
+          Add 'ui' label to enable browser testing, or 'no-browser-test' to opt out."
+
+3. Determine verdict (in order):
    - IF not_met_count > 0 OR partial_count > 0:
        → AC_NOT_MET (block merge)
    - ELSE IF pending_count > 0:
        → NEEDS_VERIFICATION (wait for verification)
+   - ELSE IF browser_test_missing (from step 2):
+       → AC_MET_BUT_NOT_A_PLUS (browser testing recommended)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
        → READY_FOR_MERGE (A+ implementation)
 ```
+
+**Browser Testing Enforcement:**
+
+Before finalizing the verdict, check for missing browser test coverage:
+
+```bash
+# Check if .tsx files were changed
+tsx_changed=$(git diff main...HEAD --name-only | grep '\.tsx$' || true)
+
+# Check if /test phase ran (look for test phase marker in issue comments)
+test_ran=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
+  grep -o '{"phase":"test"' || true)
+
+# Check for no-browser-test label
+no_browser_test=$(gh issue view <issue-number> --json labels --jq '.labels[].name' | \
+  grep 'no-browser-test' || true)
+
+if [[ -n "$tsx_changed" && -z "$test_ran" && -z "$no_browser_test" ]]; then
+  echo "⚠️ Browser testing recommended: .tsx files modified without /test phase"
+  # Force verdict to AC_MET_BUT_NOT_A_PLUS (cannot be READY_FOR_MERGE)
+fi
+```
+
+| Condition | Verdict Effect |
+|-----------|---------------|
+| `.tsx` changed + `/test` ran | Normal verdict |
+| `.tsx` changed + `no-browser-test` label | Normal verdict (explicit opt-out) |
+| `.tsx` changed + no `/test` + no opt-out | Force `AC_MET_BUT_NOT_A_PLUS` |
+| No `.tsx` changed | Normal verdict |
 
 **CRITICAL:** `PARTIALLY_MET` is NOT sufficient for merge. It MUST be treated as `NOT_MET` for verdict purposes.
 
