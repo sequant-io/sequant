@@ -171,6 +171,10 @@ git branch -a | grep -i "<issue-number>" || true
   - The current implementation plan (from issue comments or `/spec`)
 - If there is no plan:
   - Ask whether to quickly propose one (or suggest using `/spec` first).
+- **Check codebase conventions** (if `.sequant/conventions.json` exists):
+  - Read conventions to align generated code with codebase style
+  - Respect test file pattern, export style, async pattern, indentation, etc.
+  - Manual overrides in `manual` section take precedence over detected values
 
 ### Feature Worktree Workflow
 
