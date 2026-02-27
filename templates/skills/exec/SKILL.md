@@ -425,6 +425,11 @@ Once extracted, derived ACs should be:
 
 **If issues found:** Fix before proceeding with new implementation. Reference `references/shared/framework-gotchas.md` for common solutions.
 
+- **Check codebase conventions** (if `.sequant/conventions.json` exists):
+  - Read conventions to align generated code with codebase style
+  - Respect test file pattern, export style, async pattern, indentation, etc.
+  - Manual overrides in `manual` section take precedence over detected values
+
 ### Feature Worktree Workflow
 
 **Execution Phase:** Create and work in a feature worktree.
