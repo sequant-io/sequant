@@ -27,6 +27,8 @@
     "lint": "eslint src/ bin/ --max-warnings 0",
     "sync:skills": "cp -r templates/skills/* .claude/skills/",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
+    "prepare:marketplace": "./scripts/prepare-marketplace.sh",
+    "validate:marketplace": "./scripts/prepare-marketplace.sh --validate-only",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
