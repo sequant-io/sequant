@@ -1,7 +1,7 @@
 /**
  * Plugin version sync utilities
  *
- * Ensures plugin.json version stays in sync with package.json version.
+ * Ensures plugin.json and marketplace.json versions stay in sync with package.json version.
  * Used by CI validation and /release skill.
  */
 
@@ -12,6 +12,7 @@ export interface VersionSyncResult {
   inSync: boolean;
   packageVersion: string | null;
   pluginVersion: string | null;
+  marketplaceVersion?: string | null;
   error?: string;
 }
 
@@ -72,10 +73,35 @@ export function checkVersionSync(
       };
     }
 
+    // Also check marketplace.json if it exists
+    const marketplaceJsonPath = join(
+      projectRoot,
+      ".claude-plugin",
+      "marketplace.json",
+    );
+    let marketplaceVersion: string | null = null;
+    if (existsSync(marketplaceJsonPath)) {
+      const marketplaceJson = JSON.parse(
+        readFileSync(marketplaceJsonPath, "utf8"),
+      );
+      marketplaceVersion = marketplaceJson.plugins?.[0]?.version || null;
+
+      if (marketplaceVersion && marketplaceVersion !== packageVersion) {
+        return {
+          inSync: false,
+          packageVersion,
+          pluginVersion,
+          marketplaceVersion,
+          error: `marketplace.json plugins[0].version (${marketplaceVersion}) does not match package.json (${packageVersion})`,
+        };
+      }
+    }
+
     return {
       inSync: packageVersion === pluginVersion,
       packageVersion,
       pluginVersion,
+      marketplaceVersion,
     };
   } catch (e) {
     return {
@@ -102,10 +128,20 @@ export function getVersionMismatchMessage(result: VersionSyncResult): string {
     return `✗ Version sync check failed: ${result.error}`;
   }
 
-  return `✗ Version mismatch!
-  package.json: ${result.packageVersion}
-  plugin.json:  ${result.pluginVersion}
+  const lines = [
+    `✗ Version mismatch!`,
+    `  package.json:      ${result.packageVersion}`,
+    `  plugin.json:       ${result.pluginVersion}`,
+  ];
 
-Run the following to sync:
-  node -e "const p=require('./.claude-plugin/plugin.json');p.version='${result.packageVersion}';require('fs').writeFileSync('./.claude-plugin/plugin.json',JSON.stringify(p,null,2)+'\\n')"`;
+  if (result.marketplaceVersion) {
+    lines.push(`  marketplace.json:  ${result.marketplaceVersion}`);
+  }
+
+  lines.push(
+    ``,
+    `Run ./scripts/release.sh <version> to sync all version files.`,
+  );
+
+  return lines.join("\n");
 }

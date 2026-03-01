@@ -5,5 +5,17 @@
   "author": {
     "name": "sequant-io",
     "email": "hello@sequant.io"
-  }
+  },
+  "homepage": "https://github.com/sequant-io/sequant",
+  "repository": "https://github.com/sequant-io/sequant",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "github",
+    "issues",
+    "quality",
+    "testing",
+    "code-review",
+    "automation"
+  ]
 }

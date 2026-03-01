@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Marketplace submission tooling and plugin metadata enrichment (#248)
+  - `scripts/prepare-marketplace.sh` builds `external_plugins/sequant/` for official marketplace
+  - `npm run prepare:marketplace` and `npm run validate:marketplace` scripts
+  - `plugin.json` enriched with homepage, repository, license, and keywords
+  - `marketplace.json` included in version sync CI checks
+  - Deprecation notices in `sequant sync` and `sequant update` recommending plugin installation
+  - Installation docs updated with plugin-first approach
+  - Marketplace submission guide at `docs/internal/marketplace-submission.md`
+
 ### Fixed
 
 - Add `|| true` exit-code protection to ~60 unprotected grep commands in skill templates
