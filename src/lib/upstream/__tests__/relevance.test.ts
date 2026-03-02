@@ -11,6 +11,7 @@ import {
   determineImpact,
   getImpactFiles,
   generateTitle,
+  isOutOfScope,
   analyzeChange,
   analyzeRelease,
   getActionableFindings,
@@ -308,6 +309,46 @@ describe("generateTitle", () => {
   });
 });
 
+describe("isOutOfScope", () => {
+  const outOfScope = [
+    "PDF/document processing - users work with code and GitHub issues",
+    "Slack/OAuth integrations - workflow is GitHub-centric",
+    "Notebook editing - not a data science tool",
+    "IDE-specific features (VSCode, JetBrains) - sequant is CLI/terminal focused",
+    "Windows-specific fixes - sequant targets macOS/Linux",
+  ];
+
+  it("returns true for out-of-scope changes", () => {
+    expect(
+      isOutOfScope("Improved PDF/document processing support", outOfScope),
+    ).toBe(true);
+    expect(isOutOfScope("New Slack/OAuth integrations added", outOfScope)).toBe(
+      true,
+    );
+    expect(
+      isOutOfScope("Enhanced notebook editing experience", outOfScope),
+    ).toBe(true);
+  });
+
+  it("returns false for in-scope changes", () => {
+    expect(isOutOfScope("Added new Task tool feature", outOfScope)).toBe(false);
+    expect(isOutOfScope("Updated hook behavior", outOfScope)).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isOutOfScope("NOTEBOOK EDITING improvements", outOfScope)).toBe(
+      true,
+    );
+    expect(isOutOfScope("pdf/document processing update", outOfScope)).toBe(
+      true,
+    );
+  });
+
+  it("returns false for empty outOfScope list", () => {
+    expect(isOutOfScope("PDF export feature", [])).toBe(false);
+  });
+});
+
 describe("analyzeChange", () => {
   it("returns complete finding for relevant change", () => {
     const change = "Added new background execution mode for Task tool";
@@ -325,6 +366,23 @@ describe("analyzeChange", () => {
 
     expect(finding.category).toBe("no-action");
     expect(finding.matchedKeywords).toHaveLength(0);
+  });
+
+  it("returns no-action for out-of-scope changes", () => {
+    const baselineWithScope: Baseline = {
+      ...testBaseline,
+      outOfScope: [
+        "PDF/document processing - users work with code",
+        "IDE-specific features (VSCode, JetBrains) - CLI focused",
+      ],
+    };
+    const change = "Added PDF export for documents";
+    const finding = analyzeChange(change, baselineWithScope);
+
+    expect(finding.category).toBe("no-action");
+    expect(finding.impact).toBe("none");
+    expect(finding.matchedKeywords).toHaveLength(0);
+    expect(finding.matchedPatterns).toHaveLength(0);
   });
 });
 

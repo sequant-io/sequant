@@ -1,6 +1,6 @@
 ---
 name: upstream
-description: "Monitor Claude Code releases, assess compatibility with sequant, and auto-create issues for feature opportunities and breaking changes."
+description: "Monitor Claude Code releases, assess compatibility with sequant, and create issues for breaking changes and deprecations. Opportunities are noted in assessment reports for human triage."
 license: MIT
 metadata:
   author: sequant
@@ -28,8 +28,10 @@ When invoked as `/upstream`, your job is to:
 1. Fetch Claude Code release information from the public GitHub repo
 2. Analyze changes against sequant's current capabilities baseline
 3. Detect relevant changes using keyword matching and regex patterns
-4. Generate a structured compatibility assessment report
-5. Auto-create GitHub issues for actionable findings
+4. Skip out-of-scope changes (configured in baseline.json `outOfScope`)
+5. Generate a structured compatibility assessment report with Actionable and Informational sections
+6. Auto-create GitHub issues for breaking changes, deprecations, new tools, and hook changes
+7. List opportunities in the assessment report for human triage (no individual issues created)
 
 ## Invocation
 
@@ -106,7 +108,14 @@ Load the sequant capabilities baseline from `.sequant/upstream/baseline.json`:
     "hook": ["src/hooks/pre-tool-hook.ts"],
     "Task": [".claude/skills/**/*.md", "src/lib/workflow/*.ts"],
     "MCP": ["docs/mcp-integrations.md", ".claude/settings.json"]
-  }
+  },
+  "outOfScope": [
+    "PDF/document processing - users work with code and GitHub issues",
+    "Slack/OAuth integrations - workflow is GitHub-centric",
+    "Notebook editing - not a data science tool",
+    "IDE-specific features (VSCode, JetBrains) - sequant is CLI/terminal focused",
+    "Windows-specific fixes - sequant targets macOS/Linux"
+  ]
 }
 ```
 
@@ -151,7 +160,7 @@ Categorize each relevant change:
 | `deprecation` | Deprecated, removed, no longer supported | `upstream`, `bug` |
 | `new-tool` | Added tool, new tool, introducing | `upstream`, `enhancement` |
 | `hook-change` | Hook, PreToolUse, PostToolUse | `upstream`, `enhancement` |
-| `opportunity` | Keywords match but not above categories | `upstream`, `enhancement` |
+| `opportunity` | Keywords match but not above categories | (no issue — noted in assessment for human triage) |
 | `no-action` | Doesn't match patterns or keywords | (no issue) |
 
 **Step 4: Impact Mapping**
@@ -197,21 +206,17 @@ Create a summary issue with the full assessment:
 | Deprecations | N | [status] |
 | Opportunities | N | [status] |
 
-### Breaking Changes
+### Actionable
 
-[list or "None detected"]
+*Breaking changes, deprecations, and other items that affect sequant.*
 
-### New Tools
+[list of breaking, deprecation, new-tool, hook-change findings]
 
-[list with opportunity descriptions]
+### Informational
 
-### Deprecations
+*Opportunities noted for human triage. No individual issues auto-created.*
 
-[list with impact and migration notes]
-
-### Feature Opportunities
-
-[list with potential uses]
+[list of opportunity findings]
 
 ### No Action Required
 
@@ -224,7 +229,8 @@ Create a summary issue with the full assessment:
 
 **Output 2: Individual Issues (Actionable Findings)**
 
-For each actionable finding, create an issue:
+For each actionable finding (breaking, deprecation, new-tool, hook-change), create an issue.
+**Note:** Opportunities do NOT get individual issues — they are listed in the assessment report's Informational section for human triage.
 
 ```markdown
 ## feat: Leverage <feature> from Claude Code <version>
@@ -315,7 +321,7 @@ When `--dry-run` is specified:
 - [ ] Each change categorized
 - [ ] Duplicates checked before issue creation
 - [ ] Assessment report created (or dry-run output shown)
-- [ ] Individual issues created for actionable findings
+- [ ] Individual issues created for actionable findings (not opportunities)
 - [ ] Local report saved
 - [ ] Baseline updated with new version
 
