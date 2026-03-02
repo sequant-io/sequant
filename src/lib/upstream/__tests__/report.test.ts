@@ -142,12 +142,55 @@ describe("generateAssessmentReport", () => {
     expect(report).toContain("| New Tools | 1 |");
   });
 
-  it("includes breaking changes section", () => {
+  it("includes actionable section with breaking changes", () => {
     const report = generateAssessmentReport(mockAssessment);
 
-    expect(report).toContain("### Breaking Changes");
+    expect(report).toContain("### Actionable");
     expect(report).toContain("BREAKING: Removed old API");
     expect(report).toContain("**Issue created:** #250");
+  });
+
+  it("includes informational section for opportunities", () => {
+    const assessmentWithOpportunity: UpstreamAssessment = {
+      ...mockAssessment,
+      findings: [
+        ...mockAssessment.findings,
+        {
+          category: "opportunity",
+          title: "New background execution mode",
+          description: "Could improve parallel agent execution",
+          impact: "low",
+          matchedKeywords: ["background", "agent"],
+          matchedPatterns: [],
+          sequantFiles: [],
+        },
+      ],
+      summary: { ...mockAssessment.summary, opportunities: 1 },
+    };
+
+    const report = generateAssessmentReport(assessmentWithOpportunity);
+
+    expect(report).toContain("### Informational");
+    expect(report).toContain("No individual issues auto-created");
+    expect(report).toContain("New background execution mode");
+  });
+
+  it("shows 'None detected' when no opportunities exist", () => {
+    const report = generateAssessmentReport(mockAssessment);
+
+    expect(report).toContain("### Informational");
+    expect(report).toContain("None detected.");
+  });
+
+  it("shows opportunity action status as 'Noted for review'", () => {
+    const assessmentWithOpportunity: UpstreamAssessment = {
+      ...mockAssessment,
+      summary: { ...mockAssessment.summary, opportunities: 2 },
+    };
+
+    const report = generateAssessmentReport(assessmentWithOpportunity);
+
+    expect(report).toContain("| Opportunities | 2 | Noted for review |");
   });
 
   it("indicates dry run mode", () => {
