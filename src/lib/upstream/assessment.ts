@@ -315,10 +315,14 @@ export async function assessVersion(
     dryRun,
   );
 
-  // Create issues for actionable findings
-  for (let i = 0; i < actionableFindings.length; i++) {
+  // Create issues for actionable findings (excluding opportunities —
+  // opportunities are listed in the assessment but don't get individual issues)
+  const issueWorthy = actionableFindings.filter(
+    (f) => f.category !== "opportunity",
+  );
+  for (let i = 0; i < issueWorthy.length; i++) {
     const updatedFinding = await createOrLinkFinding(
-      actionableFindings[i],
+      issueWorthy[i],
       release.tagName,
       assessmentIssueNumber,
       dryRun,
@@ -492,6 +496,7 @@ function getDefaultBaseline(): Baseline {
       Task: [".claude/skills/**/*.md"],
       MCP: [".claude/settings.json"],
     },
+    outOfScope: [],
   };
 }
 

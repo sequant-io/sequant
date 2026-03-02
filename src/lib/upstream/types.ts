@@ -151,6 +151,8 @@ export interface Baseline {
   keywords: string[];
   /** Map of keywords to affected sequant files */
   dependencyMap: Record<string, string[]>;
+  /** Patterns for changes that are out of scope for sequant (skipped during analysis) */
+  outOfScope?: string[];
 }
 
 /**
