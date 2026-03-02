@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop auto-creating individual opportunity issues in upstream assessments (#259)
+  - Add `outOfScope` patterns to baseline.json for filtering irrelevant upstream changes
+  - Restructure assessment reports with Actionable / Informational sections
+  - Opportunities noted in assessment for human triage instead of auto-creating noisy issues
 - Add `|| true` exit-code protection to ~60 unprotected grep commands in skill templates
   - `grep` returns exit code 1 on 0 matches, which cascades to kill sibling parallel Bash tool calls
   - Applied across all three skill directories (`.claude/skills/`, `templates/skills/`, `skills/`)
