@@ -78,5 +78,12 @@
     "parallel": [".claude/skills/**/*.md"],
     "settings": [".claude/settings.json", ".claude/settings.local.json"],
     "config": [".claude/settings.json"]
-  }
+  },
+  "outOfScope": [
+    "PDF/document processing - users work with code and GitHub issues",
+    "Slack/OAuth integrations - workflow is GitHub-centric",
+    "Notebook editing - not a data science tool",
+    "IDE-specific features (VSCode, JetBrains) - sequant is CLI/terminal focused",
+    "Windows-specific fixes - sequant targets macOS/Linux"
+  ]
 }

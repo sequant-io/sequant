@@ -206,9 +206,38 @@ export function generateTitle(
 }
 
 /**
+ * Check if a change matches any out-of-scope patterns from the baseline.
+ * Out-of-scope changes are skipped entirely during analysis.
+ */
+export function isOutOfScope(
+  change: string,
+  outOfScope: string[] = [],
+): boolean {
+  const changeLower = change.toLowerCase();
+  return outOfScope.some((pattern) => {
+    // Use the descriptive part before " - " as the match pattern
+    const matchPart = pattern.split(" - ")[0].toLowerCase();
+    return changeLower.includes(matchPart);
+  });
+}
+
+/**
  * Analyze a single change against the baseline
  */
 export function analyzeChange(change: string, baseline: Baseline): Finding {
+  // Skip out-of-scope changes early
+  if (isOutOfScope(change, baseline.outOfScope)) {
+    return {
+      category: "no-action",
+      title: change,
+      description: change,
+      impact: "none",
+      matchedKeywords: [],
+      matchedPatterns: [],
+      sequantFiles: [],
+    };
+  }
+
   // Match keywords and patterns
   const matchedKeywords = matchKeywords(change, baseline.keywords);
   const matchedPatterns = matchPatterns(change);
