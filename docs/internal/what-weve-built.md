@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.16.1
+# What We've Built: Sequant v1.17.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
