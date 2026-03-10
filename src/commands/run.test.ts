@@ -13,8 +13,10 @@ const mockSpawnSync = vi.mocked(spawnSync);
 import {
   listWorktrees,
   getWorktreeChangedFiles,
+  getWorktreeDiffStats,
   parseRecommendedWorkflow,
   detectPhasesFromLabels,
+  determinePhasesForIssue,
   createCheckpointCommit,
   parseQaVerdict,
   executePhaseWithRetry,
@@ -1891,5 +1893,183 @@ describe("execution model", () => {
       ? "stop-on-failure"
       : "continue-on-failure";
     expect(modeLabel).toBe("stop-on-failure");
+  });
+});
+
+describe("getWorktreeDiffStats", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should parse git diff --stat output correctly", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " src/commands/run.ts | 50 +++++++++++++++++++++++++++++-----\n" +
+          " src/lib/utils.ts    | 12 ++++++\n" +
+          " 2 files changed, 52 insertions(+), 10 deletions(-)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(2);
+    expect(result.linesAdded).toBe(52);
+  });
+
+  it("should handle single file changed", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " src/index.ts | 5 +++++\n" + " 1 file changed, 5 insertions(+)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(5);
+  });
+
+  it("should handle insertions only (no deletions)", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " new-file.ts | 100 ++++\n" + " 1 file changed, 100 insertions(+)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(100);
+  });
+
+  it("should handle deletions only (no insertions)", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " old-file.ts | 30 -----\n" + " 1 file changed, 30 deletions(-)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(0);
+  });
+
+  it("should return zeros when git command fails", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal: not a git repository"),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/invalid/path");
+    expect(result.filesChanged).toBe(0);
+    expect(result.linesAdded).toBe(0);
+  });
+
+  it("should return zeros for empty output", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(0);
+    expect(result.linesAdded).toBe(0);
+  });
+});
+
+describe("determinePhasesForIssue", () => {
+  it("should return base phases unchanged with no options", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      [],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("should add testgen after spec when testgen option is true", () => {
+    const result = determinePhasesForIssue(["spec", "exec", "qa"], [], {
+      testgen: true,
+    } as any);
+    expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
+  });
+
+  it("should not add testgen when spec is not in phases", () => {
+    const result = determinePhasesForIssue(["exec", "qa"], [], {
+      testgen: true,
+    } as any);
+    expect(result).toEqual(["exec", "qa"]);
+  });
+
+  it("should not duplicate testgen if already present", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "testgen", "exec", "qa"],
+      [],
+      { testgen: true } as any,
+    );
+    expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
+  });
+
+  it("should add test phase before qa for UI labels", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      ["frontend"],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "test", "qa"]);
+  });
+
+  it("should add test phase at end when qa is not present", () => {
+    const result = determinePhasesForIssue(["spec", "exec"], ["ui"], {} as any);
+    expect(result).toEqual(["spec", "exec", "test"]);
+  });
+
+  it("should not duplicate test phase if already present", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "test", "qa"],
+      ["admin"],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "test", "qa"]);
+  });
+
+  it("should handle both testgen and UI labels together", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      ["frontend"],
+      { testgen: true } as any,
+    );
+    expect(result).toEqual(["spec", "testgen", "exec", "test", "qa"]);
+  });
+
+  it("should not modify original phases array", () => {
+    const original = ["spec", "exec", "qa"] as any[];
+    determinePhasesForIssue(original, ["ui"], { testgen: true } as any);
+    expect(original).toEqual(["spec", "exec", "qa"]);
   });
 });

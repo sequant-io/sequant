@@ -2255,7 +2255,7 @@ function hasUILabels(labels: string[]): boolean {
 /**
  * Determine phases to run based on options and issue labels
  */
-function determinePhasesForIssue(
+export function determinePhasesForIssue(
   basePhases: Phase[],
   labels: string[],
   options: RunOptions,
