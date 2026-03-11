@@ -6,10 +6,17 @@ vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+// Mock phase-detection for filterResumedPhases tests
+vi.mock("../lib/workflow/phase-detection.js", () => ({
+  getResumablePhasesForIssue: vi.fn(),
+}));
+
 const mockSpawnSync = vi.mocked(spawnSync);
 
 // We need to import the functions after mocking
 // Since listWorktrees and getWorktreeChangedFiles are exported, we can test them
+import { getResumablePhasesForIssue } from "../lib/workflow/phase-detection.js";
+
 import {
   listWorktrees,
   getWorktreeChangedFiles,
@@ -17,6 +24,7 @@ import {
   parseRecommendedWorkflow,
   detectPhasesFromLabels,
   determinePhasesForIssue,
+  filterResumedPhases,
   createCheckpointCommit,
   parseQaVerdict,
   executePhaseWithRetry,
@@ -26,6 +34,8 @@ import {
   removeStaleWorktree,
   createPR,
 } from "./run.js";
+
+const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
 
 describe("run command", () => {
   beforeEach(() => {
@@ -2070,6 +2080,51 @@ describe("determinePhasesForIssue", () => {
   it("should not modify original phases array", () => {
     const original = ["spec", "exec", "qa"] as any[];
     determinePhasesForIssue(original, ["ui"], { testgen: true } as any);
+    expect(original).toEqual(["spec", "exec", "qa"]);
+  });
+});
+
+describe("filterResumedPhases", () => {
+  beforeEach(() => {
+    mockGetResumablePhasesForIssue.mockReset();
+  });
+
+  it("should return all phases when resume is false", () => {
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, false);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+    expect(result.skipped).toEqual([]);
+    expect(mockGetResumablePhasesForIssue).not.toHaveBeenCalled();
+  });
+
+  it("should filter to resumable phases when resume is true", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue(["exec", "qa"]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual(["exec", "qa"]);
+    expect(result.skipped).toEqual(["spec"]);
+    expect(mockGetResumablePhasesForIssue).toHaveBeenCalledWith(42, phases);
+  });
+
+  it("should return empty phases when all are already completed", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue([]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual([]);
+    expect(result.skipped).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("should return all phases when none completed yet", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue(["spec", "exec", "qa"]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("should not modify original phases array", () => {
+    const original = ["spec", "exec", "qa"] as any[];
+    filterResumedPhases(42, original, false);
     expect(original).toEqual(["spec", "exec", "qa"]);
   });
 });
