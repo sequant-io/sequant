@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "1e43716fecdd",
+  "session_id": "f414b188-e44b-460e-8eb4-bad2c84b8941",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-11T22:42:44.482396Z",
+  "branch": "feature/318-refactor-run-split-3-459-line-monolith-into-focuse",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/features/solve-analysis-persistence.md"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "37e06ee8-47e2-4b73-9f5c-c71e97fc3b8f",
+  "token_usage": {
+    "input_tokens": 71,
+    "cache_creation_tokens": 209324,
+    "cache_read_tokens": 2785962,
+    "output_tokens": 14065,
+    "api_call_count": 47
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-11T22:42:44.244928Z",
+    "agent_lines": 113,
+    "human_added": 1307,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1420,
+    "agent_percentage": 7.95774647887324
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/f414b188-e44b-460e-8eb4-bad2c84b8941.jsonl"
+}

@@ -3,10 +3,11 @@
   "checkpoint_id": "1e43716fecdd",
   "strategy": "manual-commit",
   "branch": "feature/318-refactor-run-split-3-459-line-monolith-into-focuse",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "CHANGELOG.md",
     "README.md",
+    "docs/features/solve-analysis-persistence.md",
     "docs/internal/what-weve-built.md",
     "package.json",
     "src/commands/run.ts",
@@ -42,13 +43,20 @@
       "context": "/1e/43716fecdd/2/context.md",
       "content_hash": "/1e/43716fecdd/2/content_hash.txt",
       "prompt": "/1e/43716fecdd/2/prompt.txt"
+    },
+    {
+      "metadata": "/1e/43716fecdd/3/metadata.json",
+      "transcript": "/1e/43716fecdd/3/full.jsonl",
+      "context": "/1e/43716fecdd/3/context.md",
+      "content_hash": "/1e/43716fecdd/3/content_hash.txt",
+      "prompt": "/1e/43716fecdd/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 307,
-    "cache_creation_tokens": 460205,
-    "cache_read_tokens": 15551388,
-    "output_tokens": 70558,
-    "api_call_count": 208
+    "input_tokens": 378,
+    "cache_creation_tokens": 669529,
+    "cache_read_tokens": 18337350,
+    "output_tokens": 84623,
+    "api_call_count": 255
   }
 }
