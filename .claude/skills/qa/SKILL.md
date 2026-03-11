@@ -1250,7 +1250,7 @@ Provide an overall verdict:
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
 
 3. Browser testing enforcement check:
-   - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$'
+   - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
    - Check if /test phase ran: look for test phase marker in issue comments
    - Check if issue has 'no-browser-test' label
    - IF .tsx files changed AND /test did NOT run AND no 'no-browser-test' label:

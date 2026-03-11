@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Browser testing enforcement via issue labels (#173)
+  - `ui`/`frontend`/`admin` labels automatically include `/test` phase in `/fullsolve`
+  - `no-browser-test` label explicitly opts out of browser testing
+  - `/spec` warns when `.tsx` files detected without `ui` label
+  - `/qa` downgrades verdict for untested `.tsx` changes
 - Consolidated documentation source-of-truth in workflow skills (#320)
   - `/exec`: New CHANGELOG update step requiring `[Unreleased]` entries for user-facing changes
   - `/qa`: New CHANGELOG quality gate blocks `READY_FOR_MERGE` without CHANGELOG entry
