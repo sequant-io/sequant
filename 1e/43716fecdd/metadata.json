@@ -2,10 +2,13 @@
   "cli_version": "0.4.4",
   "checkpoint_id": "1e43716fecdd",
   "strategy": "manual-commit",
-  "branch": "feature/318-refactor-run-split-3-459-line-monolith-into-focuse",
-  "checkpoints_count": 4,
+  "branch": "main",
+  "checkpoints_count": 6,
   "files_touched": [
+    ".claude-plugin/marketplace.json",
+    ".claude-plugin/plugin.json",
     "CHANGELOG.md",
+    "PRIVACY.md",
     "README.md",
     "docs/features/solve-analysis-persistence.md",
     "docs/internal/what-weve-built.md",
@@ -50,13 +53,20 @@
       "context": "/1e/43716fecdd/3/context.md",
       "content_hash": "/1e/43716fecdd/3/content_hash.txt",
       "prompt": "/1e/43716fecdd/3/prompt.txt"
+    },
+    {
+      "metadata": "/1e/43716fecdd/4/metadata.json",
+      "transcript": "/1e/43716fecdd/4/full.jsonl",
+      "context": "/1e/43716fecdd/4/context.md",
+      "content_hash": "/1e/43716fecdd/4/content_hash.txt",
+      "prompt": "/1e/43716fecdd/4/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 378,
-    "cache_creation_tokens": 669529,
-    "cache_read_tokens": 18337350,
-    "output_tokens": 84623,
-    "api_call_count": 255
+    "input_tokens": 684,
+    "cache_creation_tokens": 747532,
+    "cache_read_tokens": 27037026,
+    "output_tokens": 106585,
+    "api_call_count": 381
   }
 }
