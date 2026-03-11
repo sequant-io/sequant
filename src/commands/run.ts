@@ -21,24 +21,20 @@ import {
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
-import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
-import {
-  type MetricPhase,
-  determineOutcome,
-} from "../lib/workflow/metrics-schema.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { getCommitHash } from "../lib/workflow/git-diff-utils.js";
-import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
 import { reconcileStateAtStartup } from "../lib/workflow/state-utils.js";
+import {
+  recordRunMetrics,
+  printRunSummary,
+} from "../lib/workflow/run-summary.js";
 
 // Import from extracted modules
 import {
   type WorktreeInfo,
-  getWorktreeDiffStats,
   ensureWorktrees,
   ensureWorktreesChain,
 } from "../lib/workflow/worktree-manager.js";
-import { formatDuration } from "../lib/workflow/phase-executor.js";
 import {
   sortByDependencies,
   getIssueInfo,
@@ -56,8 +52,6 @@ export {
   // From worktree-manager
   type WorktreeInfo,
   type WorktreeFreshnessResult,
-  type RebaseResult,
-  type PRCreationResult,
   slugify,
   getGitRoot,
   findExistingWorktree,
@@ -67,10 +61,6 @@ export {
   getWorktreeChangedFiles,
   getWorktreeDiffStats,
   readCacheMetrics,
-  createCheckpointCommit,
-  reinstallIfLockfileChanged,
-  rebaseBeforePR,
-  createPR,
   ensureWorktree,
   ensureWorktrees,
   ensureWorktreesChain,
@@ -112,6 +102,22 @@ export {
   executeBatch,
   runIssueWithLogging,
 } from "../lib/workflow/batch-executor.js";
+
+export {
+  // From pr-operations
+  type RebaseResult,
+  type PRCreationResult,
+  createCheckpointCommit,
+  reinstallIfLockfileChanged,
+  rebaseBeforePR,
+  createPR,
+} from "../lib/workflow/pr-operations.js";
+
+export {
+  // From run-summary
+  recordRunMetrics,
+  printRunSummary,
+} from "../lib/workflow/run-summary.js";
 
 /**
  * Main run command
@@ -773,100 +779,16 @@ export async function runCommand(
       });
     }
 
-    // Calculate success/failure counts
-    const passed = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
-
     // Record metrics (local analytics)
     if (!config.dryRun && results.length > 0) {
       try {
-        const metricsWriter = new MetricsWriter({ verbose: config.verbose });
-
-        // Calculate total duration
-        const totalDuration = results.reduce(
-          (sum, r) => sum + (r.durationSeconds ?? 0),
-          0,
-        );
-
-        // Get unique phases from all results
-        const allPhases = new Set<MetricPhase>();
-        for (const result of results) {
-          for (const phaseResult of result.phaseResults) {
-            // Only include phases that are valid MetricPhases
-            const phase = phaseResult.phase as MetricPhase;
-            if (
-              [
-                "spec",
-                "security-review",
-                "testgen",
-                "exec",
-                "test",
-                "qa",
-                "loop",
-              ].includes(phase)
-            ) {
-              allPhases.add(phase);
-            }
-          }
-        }
-
-        // Calculate aggregate metrics from worktrees
-        let totalFilesChanged = 0;
-        let totalLinesAdded = 0;
-        let totalQaIterations = 0;
-
-        for (const result of results) {
-          const worktreeInfo = worktreeMap.get(result.issueNumber);
-          if (worktreeInfo?.path) {
-            const stats = getWorktreeDiffStats(worktreeInfo.path);
-            totalFilesChanged += stats.filesChanged;
-            totalLinesAdded += stats.linesAdded;
-          }
-          // Count QA iterations (loop phases indicate retries)
-          if (result.loopTriggered) {
-            totalQaIterations += result.phaseResults.filter(
-              (p) => p.phase === "loop",
-            ).length;
-          }
-        }
-
-        // Build CLI flags for metrics
-        const cliFlags: string[] = [];
-        if (mergedOptions.sequential) cliFlags.push("--sequential");
-        if (mergedOptions.chain) cliFlags.push("--chain");
-        if (mergedOptions.qaGate) cliFlags.push("--qa-gate");
-        if (mergedOptions.qualityLoop) cliFlags.push("--quality-loop");
-        if (mergedOptions.testgen) cliFlags.push("--testgen");
-
-        // Read token usage from SessionEnd hook files (AC-5, AC-6)
-        const tokenUsage = getTokenUsageForRun(undefined, true); // cleanup after reading
-
-        // Record the run
-        await metricsWriter.recordRun({
-          issues: issueNumbers,
-          phases: Array.from(allPhases),
-          outcome: determineOutcome(passed, results.length),
-          duration: totalDuration,
-          model: process.env.ANTHROPIC_MODEL ?? "opus",
-          flags: cliFlags,
-          metrics: {
-            tokensUsed: tokenUsage.tokensUsed,
-            filesChanged: totalFilesChanged,
-            linesAdded: totalLinesAdded,
-            acceptanceCriteria: 0, // Would need to parse from issue
-            qaIterations: totalQaIterations,
-            // Token breakdown (AC-6)
-            inputTokens: tokenUsage.inputTokens || undefined,
-            outputTokens: tokenUsage.outputTokens || undefined,
-            cacheTokens: tokenUsage.cacheTokens || undefined,
-          },
+        await recordRunMetrics({
+          results,
+          issueNumbers,
+          config,
+          worktreeMap,
+          mergedOptions,
         });
-
-        if (config.verbose) {
-          console.log(
-            chalk.gray(`  📊 Metrics recorded to .sequant/metrics.json`),
-          );
-        }
       } catch (metricsError) {
         // Metrics recording errors shouldn't stop execution
         if (config.verbose) {
@@ -877,67 +799,13 @@ export async function runCommand(
       }
     }
 
-    // Summary
-    console.log("\n" + ui.divider());
-    console.log(colors.info("  Summary"));
-    console.log(ui.divider());
-
-    console.log(
-      colors.muted(
-        `\n  Results: ${colors.success(`${passed} passed`)}, ${colors.error(`${failed} failed`)}`,
-      ),
-    );
-
-    for (const result of results) {
-      const status = result.success
-        ? ui.statusIcon("success")
-        : ui.statusIcon("error");
-      const duration = result.durationSeconds
-        ? colors.muted(` (${formatDuration(result.durationSeconds)})`)
-        : "";
-      const phases = result.phaseResults
-        .map((p) =>
-          p.success ? colors.success(p.phase) : colors.error(p.phase),
-        )
-        .join(" → ");
-      const loopInfo = result.loopTriggered ? colors.warning(" [loop]") : "";
-      const prInfo = result.prUrl
-        ? colors.muted(` → PR #${result.prNumber}`)
-        : "";
-      console.log(
-        `  ${status} #${result.issueNumber}: ${phases}${loopInfo}${prInfo}${duration}`,
-      );
-    }
-
-    console.log("");
-
-    if (logPath) {
-      console.log(colors.muted(`  📝 Log: ${logPath}`));
-      console.log("");
-    }
-
-    // Suggest merge checks for multi-issue batches
-    if (results.length > 1 && passed > 0 && !config.dryRun) {
-      console.log(
-        colors.muted("  💡 Verify batch integration before merging:"),
-      );
-      console.log(colors.muted("     sequant merge --check"));
-      console.log("");
-    }
-
-    if (config.dryRun) {
-      console.log(
-        colors.warning(
-          "  ℹ️  This was a dry run. Use without --dry-run to execute.",
-        ),
-      );
-      console.log("");
-    }
-
-    // Set exit code if any failed
-    if (failed > 0 && !config.dryRun) {
-      exitCode = 1;
-    }
+    // Print summary and get exit code
+    exitCode = printRunSummary({
+      results,
+      logPath,
+      config,
+      mergedOptions,
+    });
   } finally {
     // Always dispose shutdown manager to clean up signal handlers
     shutdown.dispose();
