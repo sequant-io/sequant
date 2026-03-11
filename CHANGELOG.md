@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Browser testing enforcement via issue labels (#173)
+  - `ui`/`frontend`/`admin` labels automatically include `/test` phase in `/fullsolve`
+  - `no-browser-test` label explicitly opts out of browser testing
+  - `/spec` warns when `.tsx` files detected without `ui` label
+  - `/qa` downgrades verdict for untested `.tsx` changes
+
 ## [1.17.0] - 2026-03-04
 
 ### Added

@@ -701,12 +701,29 @@ Analyze the issue and recommend the optimal workflow phases:
 
 **Phase Selection Logic:**
 - **UI/Frontend changes** → Add `test` phase (browser testing)
+- **`no-browser-test` label** → Skip `test` phase (explicit opt-out, overrides UI labels)
 - **Bug fixes** → Skip `spec` if already well-defined
 - **Complex refactors** → Enable quality loop
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
 - **New features with testable ACs** → Add `testgen` phase after spec
 - **Refactors needing regression tests** → Add `testgen` phase
+
+#### Browser Testing Label Suggestion
+
+**When `.tsx` or `.jsx` file references are detected** in the issue body AND the issue does NOT have `ui`, `frontend`, or `admin` labels, include this warning in the spec output:
+
+```markdown
+> **Component files detected** — Issue body references `.tsx`/`.jsx` files or `components/` directory, but no `ui`/`frontend`/`admin` label is present.
+> - To enable browser testing: add the `ui` label → `gh issue edit <N> --add-label ui`
+> - To explicitly skip browser testing: add `no-browser-test` label → `gh issue edit <N> --add-label no-browser-test`
+> - Without either label, QA will note the missing browser test coverage.
+```
+
+**When NOT to show this warning:**
+- Issue already has `ui`, `frontend`, or `admin` label (browser testing already enabled)
+- Issue has `no-browser-test` label (explicit opt-out)
+- No `.tsx`/`.jsx`/`components/` references detected
 
 #### Testgen Phase Auto-Detection
 
