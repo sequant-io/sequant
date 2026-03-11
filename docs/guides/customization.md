@@ -88,6 +88,8 @@ allowed-tools:
   - Bash(gh workflow run:*)
 ---
 
+> **Note:** Skill `allowed-tools` do not override project or user-level `deny` rules. See [Permission Precedence](../reference/permissions.md) for how layers interact.
+
 # Deploy Skill
 
 When invoked as `/deploy`, deploy the application.

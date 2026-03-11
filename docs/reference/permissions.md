@@ -8,7 +8,7 @@ Permissions are defined at three levels:
 
 | Layer | Location | Scope |
 |-------|----------|-------|
-| **Tool-level** | `permissions.allow`, `permissions.deny` | Entire tool (e.g., `Bash`) |
+| **Tool-level** | `permissions.allow`, `permissions.ask`, `permissions.deny` | Entire tool (e.g., `Bash`) |
 | **Content-level** | `permissions.allow`, `permissions.ask`, `permissions.deny` | Specific tool invocations (e.g., `Bash(rm *)`) |
 | **Skill frontmatter** | `allowed-tools:` in `SKILL.md` | Tools available within a skill |
 
