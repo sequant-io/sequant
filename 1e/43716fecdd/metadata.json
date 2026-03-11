@@ -3,16 +3,14 @@
   "checkpoint_id": "1e43716fecdd",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 6,
+  "checkpoints_count": 5,
   "files_touched": [
-    ".claude-plugin/marketplace.json",
-    ".claude-plugin/plugin.json",
     "CHANGELOG.md",
-    "PRIVACY.md",
     "README.md",
     "docs/features/solve-analysis-persistence.md",
     "docs/internal/what-weve-built.md",
     "package.json",
+    "scripts/prepare-marketplace.ts",
     "src/commands/run.ts",
     "src/lib/workflow/batch-executor.test.ts",
     "src/lib/workflow/batch-executor.ts",
@@ -63,10 +61,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 684,
-    "cache_creation_tokens": 747532,
-    "cache_read_tokens": 27037026,
-    "output_tokens": 106585,
-    "api_call_count": 381
+    "input_tokens": 395,
+    "cache_creation_tokens": 679088,
+    "cache_read_tokens": 19343868,
+    "output_tokens": 88160,
+    "api_call_count": 266
   }
 }

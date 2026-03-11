@@ -221,3 +221,15 @@ https://your-company.com/privacy
 
 create one on github
 
+### Prompt 31
+
+submitted for review. When we bump the version will we run into package issues?
+
+### Prompt 32
+
+whats best practice
+
+### Prompt 33
+
+yes
+

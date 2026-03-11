@@ -2083,3 +2083,15 @@ https://your-company.com/privacy
 ---
 
 create one on github
+
+---
+
+submitted for review. When we bump the version will we run into package issues?
+
+---
+
+whats best practice
+
+---
+
+yes

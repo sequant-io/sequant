@@ -3,31 +3,32 @@
   "checkpoint_id": "1e43716fecdd",
   "session_id": "777e2782-6dbe-4682-ad99-160312b54d73",
   "strategy": "manual-commit",
-  "created_at": "2026-03-11T23:43:58.717496Z",
+  "created_at": "2026-03-11T23:47:37.166946Z",
   "branch": "main",
-  "checkpoints_count": 2,
+  "checkpoints_count": 1,
   "files_touched": [
-    ".claude-plugin/marketplace.json",
-    ".claude-plugin/plugin.json",
-    "CHANGELOG.md",
-    "PRIVACY.md"
+    "package.json",
+    "scripts/prepare-marketplace.ts"
   ],
   "agent": "Claude Code",
+  "transcript_identifier_at_start": "67f847f7-8ed9-4e60-ae6f-9e6b69fc1362",
+  "checkpoint_transcript_start": 680,
+  "transcript_lines_at_start": 680,
   "token_usage": {
-    "input_tokens": 306,
-    "cache_creation_tokens": 78003,
-    "cache_read_tokens": 8699676,
-    "output_tokens": 21962,
-    "api_call_count": 126
+    "input_tokens": 17,
+    "cache_creation_tokens": 9559,
+    "cache_read_tokens": 1006518,
+    "output_tokens": 3537,
+    "api_call_count": 11
   },
   "initial_attribution": {
-    "calculated_at": "2026-03-11T23:43:58.455849Z",
-    "agent_lines": 68,
-    "human_added": 7599,
+    "calculated_at": "2026-03-11T23:47:36.876124Z",
+    "agent_lines": 0,
+    "human_added": 240,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 7667,
-    "agent_percentage": 0.8869179600886918
+    "total_committed": 240,
+    "agent_percentage": 0
   },
   "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/777e2782-6dbe-4682-ad99-160312b54d73.jsonl"
 }
