@@ -23,12 +23,12 @@ import type {
   PhaseResult,
 } from "./types.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
+import { readCacheMetrics } from "./worktree-manager.js";
 import {
   createCheckpointCommit,
   rebaseBeforePR,
   createPR,
-  readCacheMetrics,
-} from "./worktree-manager.js";
+} from "./pr-operations.js";
 import { executePhaseWithRetry, formatDuration } from "./phase-executor.js";
 import {
   detectPhasesFromLabels,
