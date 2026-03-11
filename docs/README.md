@@ -48,6 +48,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Analytics](reference/analytics.md) — Usage tracking and metrics
 - [Logging](reference/logging.md) — Log configuration
 - [Telemetry](reference/telemetry.md) — Telemetry settings
+- [Permissions](reference/permissions.md) — Permission precedence and configuration
 - [Platform Requirements](reference/platform-requirements.md) — GitHub dependency and alternatives
 
 ### Stack-Specific Guides
