@@ -4,14 +4,15 @@ This document explains how Sequant plugin updates work, the versioning strategy,
 
 ## Versioning Strategy
 
-Sequant uses **synchronized versioning** between npm and plugin releases:
+Sequant uses **synchronized versioning** across all distribution files:
 
 | Source | Version Location | Example |
 |--------|-----------------|---------|
 | npm package | `package.json` | `"version": "1.11.0"` |
 | Claude Code plugin | `.claude-plugin/plugin.json` | `"version": "1.11.0"` |
+| Marketplace listing | `.claude-plugin/marketplace.json` → `plugins[0].version` | `"version": "1.11.0"` |
 
-**Both versions MUST match.** The CI pipeline enforces this check on every PR.
+**All versions MUST match.** The CI pipeline enforces this check on every PR via `plugin-version-sync.ts`.
 
 We follow [Semantic Versioning](https://semver.org/):
 

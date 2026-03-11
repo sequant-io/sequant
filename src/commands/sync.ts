@@ -67,6 +67,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
   if (!quiet) {
     console.log(chalk.blue("\n🔄 Syncing templates...\n"));
+    console.log(
+      chalk.yellow(
+        "📢 Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
+          "   /plugin install sequant@claude-plugin-directory\n" +
+          "   Plugin users get auto-updates without running sync manually.\n",
+      ),
+    );
   }
 
   // Check if initialized

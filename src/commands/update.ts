@@ -37,6 +37,13 @@ interface FileChange {
 
 export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.blue("\n🔄 Checking for updates...\n"));
+  console.log(
+    chalk.yellow(
+      "📢 Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
+        "   /plugin install sequant@claude-plugin-directory\n" +
+        "   Plugin users get auto-updates without running update manually.\n",
+    ),
+  );
 
   // Check if initialized
   const manifest = await getManifest();

@@ -31,7 +31,11 @@ describe("plugin-version-sync", () => {
 
   describe("checkVersionSync", () => {
     it("returns inSync: true when versions match", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("marketplace.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -56,7 +60,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("returns inSync: false when versions differ", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("marketplace.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -140,6 +148,55 @@ describe("plugin-version-sync", () => {
       expect(result.error).toBe("plugin.json missing version field");
     });
 
+    it("returns inSync: true when all three files match", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("package.json")) {
+          return JSON.stringify({ version: "1.11.0" });
+        }
+        if (path.includes("marketplace.json")) {
+          return JSON.stringify({
+            plugins: [{ version: "1.11.0" }],
+          });
+        }
+        if (path.includes("plugin.json")) {
+          return JSON.stringify({ version: "1.11.0" });
+        }
+        return "";
+      });
+
+      const result = checkVersionSync("/test/project");
+
+      expect(result.inSync).toBe(true);
+      expect(result.marketplaceVersion).toBe("1.11.0");
+    });
+
+    it("returns inSync: false when marketplace.json version differs", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("package.json")) {
+          return JSON.stringify({ version: "1.12.0" });
+        }
+        if (path.includes("marketplace.json")) {
+          return JSON.stringify({
+            plugins: [{ version: "1.11.0" }],
+          });
+        }
+        if (path.includes("plugin.json")) {
+          return JSON.stringify({ version: "1.12.0" });
+        }
+        return "";
+      });
+
+      const result = checkVersionSync("/test/project");
+
+      expect(result.inSync).toBe(false);
+      expect(result.error).toContain("marketplace.json");
+      expect(result.marketplaceVersion).toBe("1.11.0");
+    });
+
     it("returns error on invalid JSON", () => {
       mockExistsSync.mockReturnValue(true);
       mockReadFileSync.mockReturnValue("{ invalid json }");
@@ -151,7 +208,11 @@ describe("plugin-version-sync", () => {
     });
 
     it("handles prerelease versions", () => {
-      mockExistsSync.mockReturnValue(true);
+      mockExistsSync.mockImplementation((filePath) => {
+        const path = String(filePath);
+        if (path.includes("marketplace.json")) return false;
+        return true;
+      });
       mockReadFileSync.mockImplementation((filePath) => {
         const path = String(filePath);
         if (path.includes("package.json")) {
@@ -194,10 +255,25 @@ describe("plugin-version-sync", () => {
       const message = getVersionMismatchMessage(result);
 
       expect(message).toContain("✗ Version mismatch!");
-      expect(message).toContain("package.json: 1.12.0");
-      expect(message).toContain("plugin.json:  1.11.0");
-      expect(message).toContain("Run the following to sync:");
+      expect(message).toContain("package.json:");
       expect(message).toContain("1.12.0");
+      expect(message).toContain("plugin.json:");
+      expect(message).toContain("1.11.0");
+      expect(message).toContain("Run ./scripts/release.sh");
+    });
+
+    it("includes marketplace version in mismatch message when present", () => {
+      const result = {
+        inSync: false,
+        packageVersion: "1.12.0",
+        pluginVersion: "1.12.0",
+        marketplaceVersion: "1.11.0",
+      };
+
+      const message = getVersionMismatchMessage(result);
+
+      expect(message).toContain("marketplace.json:");
+      expect(message).toContain("1.11.0");
     });
 
     it("returns error message when check failed", () => {
