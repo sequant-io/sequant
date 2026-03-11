@@ -141,12 +141,79 @@ function findExistingWorktree(branch: string): string | null {
 }
 
 /**
+ * Detect the remote's default branch without a network call when possible.
+ *
+ * Resolution order:
+ * 1. `git symbolic-ref refs/remotes/origin/HEAD` (local, no network)
+ * 2. `git remote set-head origin --auto` then retry (network call)
+ * 3. Fallback to "main"
+ *
+ * @param verbose - Log which branch was detected
+ * @returns The detected default branch name (e.g., "main", "master")
+ * @internal Exported for testing
+ */
+export function detectDefaultBranch(verbose: boolean = false): string {
+  // Try reading the symbolic ref (no network call)
+  const result = spawnSync(
+    "git",
+    ["symbolic-ref", "refs/remotes/origin/HEAD"],
+    { stdio: "pipe" },
+  );
+  if (result.status === 0) {
+    const branch = result.stdout
+      .toString()
+      .trim()
+      .replace("refs/remotes/origin/", "");
+    if (verbose) {
+      console.log(
+        chalk.gray(`  Detected default branch: ${branch} (from origin/HEAD)`),
+      );
+    }
+    return branch;
+  }
+
+  // If not set, try refreshing it (requires network)
+  const autoResult = spawnSync(
+    "git",
+    ["remote", "set-head", "origin", "--auto"],
+    { stdio: "pipe" },
+  );
+  if (autoResult.status === 0) {
+    const retry = spawnSync(
+      "git",
+      ["symbolic-ref", "refs/remotes/origin/HEAD"],
+      { stdio: "pipe" },
+    );
+    if (retry.status === 0) {
+      const branch = retry.stdout
+        .toString()
+        .trim()
+        .replace("refs/remotes/origin/", "");
+      if (verbose) {
+        console.log(
+          chalk.gray(
+            `  Detected default branch: ${branch} (via remote set-head)`,
+          ),
+        );
+      }
+      return branch;
+    }
+  }
+
+  // Final fallback
+  if (verbose) {
+    console.log(chalk.gray(`  Detected default branch: main (fallback)`));
+  }
+  return "main";
+}
+
+/**
  * Result of worktree freshness check
  */
 interface WorktreeFreshnessResult {
   /** True if worktree is stale (significantly behind main) */
   isStale: boolean;
-  /** Number of commits behind origin/main */
+  /** Number of commits behind the base branch */
   commitsBehind: number;
   /** True if worktree has uncommitted changes */
   hasUncommittedChanges: boolean;
@@ -155,15 +222,17 @@ interface WorktreeFreshnessResult {
 }
 
 /**
- * Check if a worktree is stale (behind origin/main) and should be recreated
+ * Check if a worktree is stale (behind the base branch) and should be recreated
  *
  * @param worktreePath - Path to the worktree
  * @param verbose - Enable verbose output
+ * @param baseBranch - Base branch to compare against (default: "main")
  * @returns Freshness check result
  */
 export function checkWorktreeFreshness(
   worktreePath: string,
   verbose: boolean,
+  baseBranch: string = "main",
 ): WorktreeFreshnessResult {
   const result: WorktreeFreshnessResult = {
     isStale: false,
@@ -172,8 +241,10 @@ export function checkWorktreeFreshness(
     hasUnpushedCommits: false,
   };
 
-  // Fetch latest main to ensure accurate comparison
-  spawnSync("git", ["-C", worktreePath, "fetch", "origin", "main"], {
+  const baseRef = `origin/${baseBranch}`;
+
+  // Fetch latest base branch to ensure accurate comparison
+  spawnSync("git", ["-C", worktreePath, "fetch", "origin", baseBranch], {
     stdio: "pipe",
     timeout: 30000,
   });
@@ -189,10 +260,10 @@ export function checkWorktreeFreshness(
       statusResult.stdout.toString().trim().length > 0;
   }
 
-  // Get merge base with origin/main
+  // Get merge base with the base branch
   const mergeBaseResult = spawnSync(
     "git",
-    ["-C", worktreePath, "merge-base", "HEAD", "origin/main"],
+    ["-C", worktreePath, "merge-base", "HEAD", baseRef],
     { stdio: "pipe" },
   );
   if (mergeBaseResult.status !== 0) {
@@ -201,22 +272,22 @@ export function checkWorktreeFreshness(
   }
   const mergeBase = mergeBaseResult.stdout.toString().trim();
 
-  // Get origin/main HEAD
-  const mainHeadResult = spawnSync(
+  // Get base branch HEAD
+  const baseHeadResult = spawnSync(
     "git",
-    ["-C", worktreePath, "rev-parse", "origin/main"],
+    ["-C", worktreePath, "rev-parse", baseRef],
     { stdio: "pipe" },
   );
-  if (mainHeadResult.status !== 0) {
+  if (baseHeadResult.status !== 0) {
     return result;
   }
-  const mainHead = mainHeadResult.stdout.toString().trim();
+  const baseHead = baseHeadResult.stdout.toString().trim();
 
-  // Count commits behind main
-  if (mergeBase !== mainHead) {
+  // Count commits behind base branch
+  if (mergeBase !== baseHead) {
     const countResult = spawnSync(
       "git",
-      ["-C", worktreePath, "rev-list", "--count", `${mergeBase}..${mainHead}`],
+      ["-C", worktreePath, "rev-list", "--count", `${mergeBase}..${baseHead}`],
       { stdio: "pipe" },
     );
     if (countResult.status === 0) {
@@ -240,7 +311,7 @@ export function checkWorktreeFreshness(
   if (verbose && result.isStale) {
     console.log(
       chalk.gray(
-        `    📊 Worktree is ${result.commitsBehind} commits behind origin/main`,
+        `    📊 Worktree is ${result.commitsBehind} commits behind origin/${baseBranch}`,
       ),
     );
   }
@@ -479,14 +550,19 @@ async function ensureWorktree(
   let existingPath = findExistingWorktree(branch);
   if (existingPath) {
     // AC-3: Check if worktree is stale and needs recreation
-    const freshness = checkWorktreeFreshness(existingPath, verbose);
+    const detectedBase = baseBranch || detectDefaultBranch(verbose);
+    const freshness = checkWorktreeFreshness(
+      existingPath,
+      verbose,
+      detectedBase,
+    );
 
     if (freshness.isStale) {
       // AC-3: Handle stale worktrees - check for work in progress
       if (freshness.hasUncommittedChanges) {
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main but has uncommitted changes`,
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has uncommitted changes`,
           ),
         );
         console.log(
@@ -498,7 +574,7 @@ async function ensureWorktree(
       } else if (freshness.hasUnpushedCommits) {
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main but has unpushed commits`,
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has unpushed commits`,
           ),
         );
         console.log(
@@ -509,7 +585,7 @@ async function ensureWorktree(
         // Safe to recreate - no uncommitted/unpushed work
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind main — recreating fresh`,
+            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
           ),
         );
 
@@ -625,20 +701,22 @@ async function ensureWorktree(
   // Determine the base for the new branch
   // For custom base branches, use origin/<branch> if it's a remote-style reference
   // For local branches (chain mode), use as-is
+  const detectedDefault = detectDefaultBranch(verbose);
+  const effectiveBase = baseBranch || detectedDefault;
   const isLocalBranch =
-    baseBranch && !baseBranch.startsWith("origin/") && baseBranch !== "main";
+    baseBranch &&
+    !baseBranch.startsWith("origin/") &&
+    baseBranch !== detectedDefault;
   const baseRef = baseBranch
     ? isLocalBranch
       ? baseBranch
       : baseBranch.startsWith("origin/")
         ? baseBranch
         : `origin/${baseBranch}`
-    : "origin/main";
+    : `origin/${detectedDefault}`;
 
   // Fetch the base branch to ensure worktree starts from fresh baseline
-  const branchToFetch = baseBranch
-    ? baseBranch.replace(/^origin\//, "")
-    : "main";
+  const branchToFetch = effectiveBase.replace(/^origin\//, "");
   if (!isLocalBranch) {
     if (verbose) {
       console.log(chalk.gray(`    🔄 Fetching latest ${branchToFetch}...`));
@@ -815,7 +893,7 @@ async function ensureWorktrees(
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
-  const baseDisplay = baseBranch || "main";
+  const baseDisplay = baseBranch || detectDefaultBranch(verbose);
   console.log(chalk.blue(`\n  📂 Preparing worktrees from ${baseDisplay}...`));
 
   for (const issue of issues) {
@@ -859,7 +937,7 @@ async function ensureWorktreesChain(
 ): Promise<Map<number, WorktreeInfo>> {
   const worktrees = new Map<number, WorktreeInfo>();
 
-  const baseDisplay = baseBranch || "main";
+  const baseDisplay = baseBranch || detectDefaultBranch(verbose);
   console.log(
     chalk.blue(`\n  🔗 Preparing chained worktrees from ${baseDisplay}...`),
   );
@@ -1101,13 +1179,14 @@ export interface RebaseResult {
 }
 
 /**
- * Rebase the worktree branch onto origin/main before PR creation.
+ * Rebase the worktree branch onto the base branch before PR creation.
  * This ensures the branch is up-to-date and prevents lockfile drift.
  *
  * @param worktreePath Path to the worktree
  * @param issueNumber Issue number (for logging)
  * @param packageManager Package manager to use if reinstall needed
  * @param verbose Whether to show verbose output
+ * @param baseBranch Base branch to rebase onto (default: "main")
  * @returns RebaseResult indicating success/failure and whether reinstall was performed
  * @internal Exported for testing
  */
@@ -1116,19 +1195,22 @@ export function rebaseBeforePR(
   issueNumber: number,
   packageManager: string | undefined,
   verbose: boolean,
+  baseBranch: string = "main",
 ): RebaseResult {
+  const baseRef = `origin/${baseBranch}`;
+
   if (verbose) {
     console.log(
       chalk.gray(
-        `    🔄 Rebasing #${issueNumber} onto origin/main before PR...`,
+        `    🔄 Rebasing #${issueNumber} onto ${baseRef} before PR...`,
       ),
     );
   }
 
-  // Fetch latest main to ensure we're rebasing onto fresh state
+  // Fetch latest base branch to ensure we're rebasing onto fresh state
   const fetchResult = spawnSync(
     "git",
-    ["-C", worktreePath, "fetch", "origin", "main"],
+    ["-C", worktreePath, "fetch", "origin", baseBranch],
     {
       stdio: "pipe",
     },
@@ -1137,7 +1219,7 @@ export function rebaseBeforePR(
   if (fetchResult.status !== 0) {
     const error = fetchResult.stderr.toString();
     console.log(
-      chalk.yellow(`    ⚠️  Could not fetch origin/main: ${error.trim()}`),
+      chalk.yellow(`    ⚠️  Could not fetch ${baseRef}: ${error.trim()}`),
     );
     // Continue anyway - might work with local state
   }
@@ -1145,7 +1227,7 @@ export function rebaseBeforePR(
   // Perform the rebase
   const rebaseResult = spawnSync(
     "git",
-    ["-C", worktreePath, "rebase", "origin/main"],
+    ["-C", worktreePath, "rebase", baseRef],
     { stdio: "pipe" },
   );
 
@@ -1194,7 +1276,7 @@ export function rebaseBeforePR(
     }
   }
 
-  console.log(chalk.green(`    ✅ Branch rebased onto origin/main`));
+  console.log(chalk.green(`    ✅ Branch rebased onto ${baseRef}`));
 
   // Check if lockfile changed and reinstall if needed
   const reinstalled = reinstallIfLockfileChanged(
@@ -1628,7 +1710,7 @@ interface RunOptions {
    */
   noRetry?: boolean;
   /**
-   * Skip pre-PR rebase onto origin/main.
+   * Skip pre-PR rebase onto the base branch.
    * When true, branches are not rebased before creating the PR.
    * Use when you want to preserve branch state or handle rebasing manually.
    */
@@ -2398,9 +2480,11 @@ export async function runCommand(
   const autoDetectPhases = !options.phases && settings.run.autoDetectPhases;
   mergedOptions.autoDetectPhases = autoDetectPhases;
 
-  // Resolve base branch: CLI flag → settings.run.defaultBase → 'main'
+  // Resolve base branch: CLI flag → settings.run.defaultBase → auto-detect → 'main'
   const resolvedBaseBranch =
-    options.base ?? settings.run.defaultBase ?? undefined;
+    options.base ??
+    settings.run.defaultBase ??
+    detectDefaultBranch(mergedOptions.verbose ?? false);
 
   // Parse issue numbers (or use batch mode)
   let issueNumbers: number[];
@@ -2824,6 +2908,7 @@ export async function runCommand(
           worktreeMap,
           shutdown,
           manifest.packageManager,
+          resolvedBaseBranch,
         );
         results.push(...batchResults);
 
@@ -2868,6 +2953,7 @@ export async function runCommand(
           manifest.packageManager,
           // In chain mode, only the last issue should trigger pre-PR rebase
           mergedOptions.chain ? i === issueNumbers.length - 1 : undefined,
+          resolvedBaseBranch,
         );
         results.push(result);
 
@@ -2963,6 +3049,8 @@ export async function runCommand(
           shutdown,
           false, // Parallel mode doesn't support chain
           manifest.packageManager,
+          undefined,
+          resolvedBaseBranch,
         );
         results.push(result);
 
@@ -3193,6 +3281,7 @@ async function executeBatch(
   worktreeMap: Map<number, WorktreeInfo>,
   shutdownManager?: ShutdownManager,
   packageManager?: string,
+  baseBranch?: string,
 ): Promise<IssueResult[]> {
   const results: IssueResult[] = [];
 
@@ -3226,6 +3315,8 @@ async function executeBatch(
       shutdownManager,
       false, // Batch mode doesn't support chain
       packageManager,
+      undefined,
+      baseBranch,
     );
     results.push(result);
 
@@ -3260,6 +3351,7 @@ async function runIssueWithLogging(
   chainMode?: boolean,
   packageManager?: string,
   isLastInChain?: boolean,
+  baseBranch?: string,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -3577,7 +3669,7 @@ async function runIssueWithLogging(
       if (logWriter) {
         // Capture git diff stats for worktree phases (AC-1, AC-3)
         const diffStats = worktreePath
-          ? getGitDiffStats(worktreePath)
+          ? getGitDiffStats(worktreePath, baseBranch)
           : undefined;
 
         // Capture commit hash after phase (AC-2)
@@ -3710,10 +3802,10 @@ async function runIssueWithLogging(
     createCheckpointCommit(worktreePath, issueNumber, config.verbose);
   }
 
-  // Rebase onto origin/main before PR creation (unless --no-rebase)
+  // Rebase onto the base branch before PR creation (unless --no-rebase)
   // This ensures the branch is up-to-date and prevents lockfile drift
-  // AC-1: Non-chain mode rebases onto origin/main before PR
-  // AC-2: Chain mode rebases only the final branch onto origin/main before PR
+  // AC-1: Non-chain mode rebases onto the base branch before PR
+  // AC-2: Chain mode rebases only the final branch onto the base branch before PR
   //        (intermediate branches must stay based on their predecessor)
   const shouldRebase =
     success &&
@@ -3721,7 +3813,13 @@ async function runIssueWithLogging(
     !options.noRebase &&
     (!chainMode || isLastInChain);
   if (shouldRebase) {
-    rebaseBeforePR(worktreePath, issueNumber, packageManager, config.verbose);
+    rebaseBeforePR(
+      worktreePath,
+      issueNumber,
+      packageManager,
+      config.verbose,
+      baseBranch,
+    );
   }
 
   // Create PR after successful QA + rebase (unless --no-pr)

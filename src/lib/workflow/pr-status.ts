@@ -52,15 +52,19 @@ export function checkPRMergeStatus(prNumber: number): PRMergeStatus {
 }
 
 /**
- * Check if a branch has been merged into main using git
+ * Check if a branch has been merged into a base branch using git
  *
  * @param branchName - The branch name to check (e.g., "feature/33-some-title")
- * @returns true if the branch is merged into main, false otherwise
+ * @param baseBranch - The base branch to check against (default: "main")
+ * @returns true if the branch is merged into the base branch, false otherwise
  */
-export function isBranchMergedIntoMain(branchName: string): boolean {
+export function isBranchMergedIntoMain(
+  branchName: string,
+  baseBranch: string = "main",
+): boolean {
   try {
-    // Get branches merged into main
-    const result = spawnSync("git", ["branch", "--merged", "main"], {
+    // Get branches merged into the base branch
+    const result = spawnSync("git", ["branch", "--merged", baseBranch], {
       stdio: "pipe",
       timeout: 10000,
     });
@@ -81,16 +85,20 @@ export function isBranchMergedIntoMain(branchName: string): boolean {
 }
 
 /**
- * Check if a feature branch for an issue is merged into main
+ * Check if a feature branch for an issue is merged into a base branch
  *
  * Tries multiple detection methods:
- * 1. Check if branch exists and is merged via `git branch --merged main`
+ * 1. Check if branch exists and is merged via `git branch --merged <baseBranch>`
  * 2. Check for merge commits mentioning the issue
  *
  * @param issueNumber - The issue number to check
- * @returns true if the issue's work is merged into main
+ * @param baseBranch - The base branch to check against (default: "main")
+ * @returns true if the issue's work is merged into the base branch
  */
-export function isIssueMergedIntoMain(issueNumber: number): boolean {
+export function isIssueMergedIntoMain(
+  issueNumber: number,
+  baseBranch: string = "main",
+): boolean {
   try {
     // Method 1: Check if any feature branch for this issue is merged
     const listResult = spawnSync("git", ["branch", "-a"], {
@@ -107,7 +115,7 @@ export function isIssueMergedIntoMain(issueNumber: number): boolean {
       if (matchedBranches) {
         for (const branch of matchedBranches) {
           const cleanBranch = branch.replace(/^\*?\s*/, "").trim();
-          if (isBranchMergedIntoMain(cleanBranch)) {
+          if (isBranchMergedIntoMain(cleanBranch, baseBranch)) {
             return true;
           }
         }
@@ -121,7 +129,7 @@ export function isIssueMergedIntoMain(issueNumber: number): boolean {
       "git",
       [
         "log",
-        "main",
+        baseBranch,
         "--oneline",
         "-20",
         "--grep",

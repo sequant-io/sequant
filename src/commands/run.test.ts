@@ -33,6 +33,7 @@ import {
   checkWorktreeFreshness,
   removeStaleWorktree,
   createPR,
+  detectDefaultBranch,
 } from "./run.js";
 
 const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
@@ -1095,6 +1096,77 @@ Suggestions for improvement listed below.
   });
 });
 
+describe("detectDefaultBranch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should return branch from symbolic-ref when available", () => {
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from("refs/remotes/origin/master\n"),
+      stderr: Buffer.from(""),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("master");
+  });
+
+  it("should fallback to remote set-head --auto when symbolic-ref fails", () => {
+    // First call: symbolic-ref fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 128,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal: ref not found"),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    // Second call: remote set-head --auto succeeds
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+      pid: 2,
+      output: [],
+      signal: null,
+    });
+    // Third call: retry symbolic-ref succeeds
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from("refs/remotes/origin/develop\n"),
+      stderr: Buffer.from(""),
+      pid: 3,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("develop");
+  });
+
+  it("should fallback to 'main' when all methods fail", () => {
+    // symbolic-ref fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 128,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal"),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    // remote set-head --auto fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("error"),
+      pid: 2,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("main");
+  });
+});
+
 describe("pre-PR rebase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1237,6 +1309,57 @@ describe("pre-PR rebase", () => {
 
       expect(result.performed).toBe(true);
       expect(result.success).toBe(true);
+    });
+
+    it("should use custom base branch when provided", () => {
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValue({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR(
+        "/path/to/worktree",
+        123,
+        "npm",
+        false,
+        "master",
+      );
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(true);
+      // Verify fetch was called with "master" not "main"
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["-C", "/path/to/worktree", "fetch", "origin", "master"],
+        expect.any(Object),
+      );
+      // Verify rebase was called with "origin/master"
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["-C", "/path/to/worktree", "rebase", "origin/master"],
+        expect.any(Object),
+      );
     });
   });
 
