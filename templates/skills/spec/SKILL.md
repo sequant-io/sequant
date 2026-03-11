@@ -446,6 +446,22 @@ Analyze the issue body for file references and keywords:
 | References `middleware.ts` | May be auth-related | Consider `/security-review` |
 | Contains "breaking change" | Complex work | Enable quality loop |
 
+#### Step 3a: Browser Testing Label Suggestion
+
+**When `.tsx` or `.jsx` file references are detected** in the issue body AND the issue does NOT have `ui`, `frontend`, or `admin` labels, include this warning in the spec output:
+
+```markdown
+> **Component files detected** — Issue body references `.tsx`/`.jsx` files or `components/` directory, but no `ui`/`frontend`/`admin` label is present.
+> - To enable browser testing: add the `ui` label → `gh issue edit <N> --add-label ui`
+> - To explicitly skip browser testing: add `no-browser-test` label → `gh issue edit <N> --add-label no-browser-test`
+> - Without either label, QA will note the missing browser test coverage.
+```
+
+**When NOT to show this warning:**
+- Issue already has `ui`, `frontend`, or `admin` label (browser testing already enabled)
+- Issue has `no-browser-test` label (explicit opt-out)
+- No `.tsx`/`.jsx`/`components/` references detected
+
 #### Step 4: Merge Signals (AC-3)
 
 Content analysis **supplements** label detection - it can only ADD phases, never remove them.
