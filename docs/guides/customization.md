@@ -100,6 +100,8 @@ When invoked as `/deploy`, deploy the application.
 4. Verify deployment health
 ```
 
+> **Note:** Skill `allowed-tools` do not override project or user-level `deny` rules. See [Permission Precedence](../reference/permissions.md) for how layers interact.
+
 ## Customizing Hooks
 
 Hooks run before and after tool executions. Create custom hooks in `.claude/.local/hooks/`:
