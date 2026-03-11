@@ -4,6 +4,8 @@
 
 Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
 
+**[sequant.io](https://sequant.io)** — docs, guides, and getting started.
+
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 

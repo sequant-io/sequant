@@ -65,8 +65,9 @@ function getActionStatus(count: number, category: FindingCategory): string {
       return "Review needed";
     case "new-tool":
     case "hook-change":
-    case "opportunity":
       return "Issues created";
+    case "opportunity":
+      return "Noted for review";
     default:
       return "None";
   }
@@ -159,61 +160,38 @@ export function generateAssessmentReport(
   lines.push(`| No Action | ${summary.noAction} | None |`);
   lines.push("");
 
-  // Breaking Changes section
-  const breakingFindings = findings.filter((f) => f.category === "breaking");
-  lines.push("### Breaking Changes");
+  // Actionable section — breaking changes, deprecations, new tools, hook changes
+  const actionableCategories: FindingCategory[] = [
+    "breaking",
+    "deprecation",
+    "new-tool",
+    "hook-change",
+  ];
+  const actionableFindings = findings.filter((f) =>
+    actionableCategories.includes(f.category),
+  );
+  lines.push("### Actionable");
   lines.push("");
-  if (breakingFindings.length === 0) {
+  lines.push(
+    "*Breaking changes, deprecations, and other items that affect sequant.*",
+  );
+  lines.push("");
+  if (actionableFindings.length === 0) {
     lines.push("None detected.");
   } else {
-    breakingFindings.forEach((f, i) => {
+    actionableFindings.forEach((f, i) => {
       lines.push(formatFinding(f, i));
     });
   }
   lines.push("");
 
-  // Deprecations section
-  const deprecations = findings.filter((f) => f.category === "deprecation");
-  lines.push("### Deprecations");
-  lines.push("");
-  if (deprecations.length === 0) {
-    lines.push("None detected.");
-  } else {
-    deprecations.forEach((f, i) => {
-      lines.push(formatFinding(f, i));
-    });
-  }
-  lines.push("");
-
-  // New Tools section
-  const newTools = findings.filter((f) => f.category === "new-tool");
-  lines.push("### New Tools");
-  lines.push("");
-  if (newTools.length === 0) {
-    lines.push("None detected.");
-  } else {
-    newTools.forEach((f, i) => {
-      lines.push(formatFinding(f, i));
-    });
-  }
-  lines.push("");
-
-  // Hook Changes section
-  const hookChanges = findings.filter((f) => f.category === "hook-change");
-  lines.push("### Hook Changes");
-  lines.push("");
-  if (hookChanges.length === 0) {
-    lines.push("None detected.");
-  } else {
-    hookChanges.forEach((f, i) => {
-      lines.push(formatFinding(f, i));
-    });
-  }
-  lines.push("");
-
-  // Opportunities section
+  // Informational section — opportunities noted for human triage
   const opportunities = findings.filter((f) => f.category === "opportunity");
-  lines.push("### Feature Opportunities");
+  lines.push("### Informational");
+  lines.push("");
+  lines.push(
+    "*Opportunities noted for human triage. No individual issues auto-created.*",
+  );
   lines.push("");
   if (opportunities.length === 0) {
     lines.push("None detected.");

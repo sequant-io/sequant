@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `no-browser-test` label explicitly opts out of browser testing
   - `/spec` warns when `.tsx` files detected without `ui` label
   - `/qa` downgrades verdict for untested `.tsx` changes
+
+## [1.17.0] - 2026-03-04
+
+### Added
+
+- Project website at [sequant.io](https://sequant.io)
+- `--reflect` flag for post-run workflow analysis (#179)
+- Post-merge smoketest patterns for merger skill (#229)
 - Consolidated documentation source-of-truth in workflow skills (#320)
   - `/exec`: New CHANGELOG update step requiring `[Unreleased]` entries for user-facing changes
   - `/qa`: New CHANGELOG quality gate blocks `READY_FOR_MERGE` without CHANGELOG entry
@@ -22,13 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Detects new exported functions (including arrow exports) in the diff
   - Inventories all call sites, audits conditions, flags loop iteration scope
   - Compares call-site conditions against AC constraints
-  - Uses dedicated Grep tool (consistent with #265 refactor)
-  - Reference doc: `.claude/skills/qa/references/call-site-review.md`
 - Exec skill guidance for testing non-exported functions (#300)
   - Decision tree: @internal export → dependency injection → integration test → document limitation
   - Anti-pattern warning against tautological tests (local-variable-only assertions)
-  - Code examples for all four patterns with real-world context
-  - Complements QA tautology detector (#298) as prevention layer
+
+### Changed
+
+- Split state-utils.ts into focused modules (#319)
+- Clarify sequential vs default execution model in docs (#174)
+
+### Fixed
+
+- Stop auto-creating individual opportunity issues in upstream assessments (#259)
+- Add `|| true` exit-code protection to ~60 unprotected grep commands in skill templates
 
 ## [1.16.1] - 2026-02-22
 

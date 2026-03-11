@@ -6,15 +6,25 @@ vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
 }));
 
+// Mock phase-detection for filterResumedPhases tests
+vi.mock("../lib/workflow/phase-detection.js", () => ({
+  getResumablePhasesForIssue: vi.fn(),
+}));
+
 const mockSpawnSync = vi.mocked(spawnSync);
 
 // We need to import the functions after mocking
 // Since listWorktrees and getWorktreeChangedFiles are exported, we can test them
+import { getResumablePhasesForIssue } from "../lib/workflow/phase-detection.js";
+
 import {
   listWorktrees,
   getWorktreeChangedFiles,
+  getWorktreeDiffStats,
   parseRecommendedWorkflow,
   detectPhasesFromLabels,
+  determinePhasesForIssue,
+  filterResumedPhases,
   createCheckpointCommit,
   parseQaVerdict,
   executePhaseWithRetry,
@@ -23,7 +33,10 @@ import {
   checkWorktreeFreshness,
   removeStaleWorktree,
   createPR,
+  detectDefaultBranch,
 } from "./run.js";
+
+const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
 
 describe("run command", () => {
   beforeEach(() => {
@@ -1083,6 +1096,77 @@ Suggestions for improvement listed below.
   });
 });
 
+describe("detectDefaultBranch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should return branch from symbolic-ref when available", () => {
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from("refs/remotes/origin/master\n"),
+      stderr: Buffer.from(""),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("master");
+  });
+
+  it("should fallback to remote set-head --auto when symbolic-ref fails", () => {
+    // First call: symbolic-ref fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 128,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal: ref not found"),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    // Second call: remote set-head --auto succeeds
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+      pid: 2,
+      output: [],
+      signal: null,
+    });
+    // Third call: retry symbolic-ref succeeds
+    mockSpawnSync.mockReturnValueOnce({
+      status: 0,
+      stdout: Buffer.from("refs/remotes/origin/develop\n"),
+      stderr: Buffer.from(""),
+      pid: 3,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("develop");
+  });
+
+  it("should fallback to 'main' when all methods fail", () => {
+    // symbolic-ref fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 128,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal"),
+      pid: 1,
+      output: [],
+      signal: null,
+    });
+    // remote set-head --auto fails
+    mockSpawnSync.mockReturnValueOnce({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("error"),
+      pid: 2,
+      output: [],
+      signal: null,
+    });
+    expect(detectDefaultBranch()).toBe("main");
+  });
+});
+
 describe("pre-PR rebase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1225,6 +1309,57 @@ describe("pre-PR rebase", () => {
 
       expect(result.performed).toBe(true);
       expect(result.success).toBe(true);
+    });
+
+    it("should use custom base branch when provided", () => {
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValue({
+          status: 0,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        });
+
+      const result = rebaseBeforePR(
+        "/path/to/worktree",
+        123,
+        "npm",
+        false,
+        "master",
+      );
+
+      expect(result.performed).toBe(true);
+      expect(result.success).toBe(true);
+      // Verify fetch was called with "master" not "main"
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["-C", "/path/to/worktree", "fetch", "origin", "master"],
+        expect.any(Object),
+      );
+      // Verify rebase was called with "origin/master"
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "git",
+        ["-C", "/path/to/worktree", "rebase", "origin/master"],
+        expect.any(Object),
+      );
     });
   });
 
@@ -1891,5 +2026,228 @@ describe("execution model", () => {
       ? "stop-on-failure"
       : "continue-on-failure";
     expect(modeLabel).toBe("stop-on-failure");
+  });
+});
+
+describe("getWorktreeDiffStats", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should parse git diff --stat output correctly", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " src/commands/run.ts | 50 +++++++++++++++++++++++++++++-----\n" +
+          " src/lib/utils.ts    | 12 ++++++\n" +
+          " 2 files changed, 52 insertions(+), 10 deletions(-)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(2);
+    expect(result.linesAdded).toBe(52);
+  });
+
+  it("should handle single file changed", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " src/index.ts | 5 +++++\n" + " 1 file changed, 5 insertions(+)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(5);
+  });
+
+  it("should handle insertions only (no deletions)", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " new-file.ts | 100 ++++\n" + " 1 file changed, 100 insertions(+)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(100);
+  });
+
+  it("should handle deletions only (no insertions)", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(
+        " old-file.ts | 30 -----\n" + " 1 file changed, 30 deletions(-)\n",
+      ),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(1);
+    expect(result.linesAdded).toBe(0);
+  });
+
+  it("should return zeros when git command fails", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from("fatal: not a git repository"),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/invalid/path");
+    expect(result.filesChanged).toBe(0);
+    expect(result.linesAdded).toBe(0);
+  });
+
+  it("should return zeros for empty output", () => {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+      pid: 1,
+      signal: null,
+      output: [],
+    });
+
+    const result = getWorktreeDiffStats("/path/to/worktree");
+    expect(result.filesChanged).toBe(0);
+    expect(result.linesAdded).toBe(0);
+  });
+});
+
+describe("determinePhasesForIssue", () => {
+  it("should return base phases unchanged with no options", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      [],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("should add testgen after spec when testgen option is true", () => {
+    const result = determinePhasesForIssue(["spec", "exec", "qa"], [], {
+      testgen: true,
+    } as any);
+    expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
+  });
+
+  it("should not add testgen when spec is not in phases", () => {
+    const result = determinePhasesForIssue(["exec", "qa"], [], {
+      testgen: true,
+    } as any);
+    expect(result).toEqual(["exec", "qa"]);
+  });
+
+  it("should not duplicate testgen if already present", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "testgen", "exec", "qa"],
+      [],
+      { testgen: true } as any,
+    );
+    expect(result).toEqual(["spec", "testgen", "exec", "qa"]);
+  });
+
+  it("should add test phase before qa for UI labels", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      ["frontend"],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "test", "qa"]);
+  });
+
+  it("should add test phase at end when qa is not present", () => {
+    const result = determinePhasesForIssue(["spec", "exec"], ["ui"], {} as any);
+    expect(result).toEqual(["spec", "exec", "test"]);
+  });
+
+  it("should not duplicate test phase if already present", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "test", "qa"],
+      ["admin"],
+      {} as any,
+    );
+    expect(result).toEqual(["spec", "exec", "test", "qa"]);
+  });
+
+  it("should handle both testgen and UI labels together", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "exec", "qa"],
+      ["frontend"],
+      { testgen: true } as any,
+    );
+    expect(result).toEqual(["spec", "testgen", "exec", "test", "qa"]);
+  });
+
+  it("should not modify original phases array", () => {
+    const original = ["spec", "exec", "qa"] as any[];
+    determinePhasesForIssue(original, ["ui"], { testgen: true } as any);
+    expect(original).toEqual(["spec", "exec", "qa"]);
+  });
+});
+
+describe("filterResumedPhases", () => {
+  beforeEach(() => {
+    mockGetResumablePhasesForIssue.mockReset();
+  });
+
+  it("should return all phases when resume is false", () => {
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, false);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+    expect(result.skipped).toEqual([]);
+    expect(mockGetResumablePhasesForIssue).not.toHaveBeenCalled();
+  });
+
+  it("should filter to resumable phases when resume is true", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue(["exec", "qa"]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual(["exec", "qa"]);
+    expect(result.skipped).toEqual(["spec"]);
+    expect(mockGetResumablePhasesForIssue).toHaveBeenCalledWith(42, phases);
+  });
+
+  it("should return empty phases when all are already completed", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue([]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual([]);
+    expect(result.skipped).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("should return all phases when none completed yet", () => {
+    mockGetResumablePhasesForIssue.mockReturnValue(["spec", "exec", "qa"]);
+    const phases = ["spec", "exec", "qa"] as any[];
+    const result = filterResumedPhases(42, phases, true);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+    expect(result.skipped).toEqual([]);
+  });
+
+  it("should not modify original phases array", () => {
+    const original = ["spec", "exec", "qa"] as any[];
+    filterResumedPhases(42, original, false);
+    expect(original).toEqual(["spec", "exec", "qa"]);
   });
 });
