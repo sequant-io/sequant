@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/exec` skill warns but doesn't block (allows implementation to start)
   - Configurable threshold via `staleBranchThreshold` in `.sequant/settings.json`
   - Prevents wasted QA cycles on code that won't cleanly merge
+- Dependabot configuration for automated dependency updates (#327)
+  - Weekly npm dependency scanning with grouped PRs (production vs development)
+  - Dev dependencies limited to minor+patch updates to reduce noise
+  - PR limit of 10 to prevent overwhelming the repo
 
 ## [1.18.0] - 2026-03-11
 
