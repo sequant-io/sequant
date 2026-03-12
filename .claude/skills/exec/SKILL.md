@@ -633,6 +633,72 @@ echo "Current branch: $CURRENT_BRANCH"
 
 ---
 
+### 3g. CLI Wiring Checklist (When Option Interfaces Modified)
+
+**Purpose:** Prevent incomplete CLI implementations where option interface fields are added but never wired to CLI flags. This is a proactive check during implementation, complementing the verification in `/qa`.
+
+**When to apply:** Adding or modifying `RunOptions` or similar CLI option interfaces.
+
+**Origin:** Issue #305 — A `force` option was added to `RunOptions` and used in runtime logic, but `--force` was never registered in `bin/cli.ts`. This caused the feature to be unreachable by users.
+
+**Before committing changes that add option interface fields:**
+
+| Step | Action | Verification |
+|------|--------|--------------|
+| 1 | Add field to interface | `src/lib/workflow/batch-executor.ts` |
+| 2 | Register CLI flag | Add `.option("--flag-name", "description")` in `bin/cli.ts` |
+| 3 | Wire to handler | Ensure `options.flagName` passes to implementation |
+| 4 | Test CLI help | Run `npx tsx bin/cli.ts <command> --help` to verify flag appears |
+
+**Key File Map:**
+
+| Interface | Location | CLI Registration |
+|-----------|----------|------------------|
+| `RunOptions` | `src/lib/workflow/batch-executor.ts` | `run` command in `bin/cli.ts` |
+
+**Quick Verification Script:**
+
+```bash
+# List all RunOptions fields
+grep -E '^\s+\w+\??: ' src/lib/workflow/batch-executor.ts | head -30 || true
+
+# List all registered options for 'run' command
+grep -A 50 'command("run")' bin/cli.ts | grep '\.option(' | head -30 || true
+
+# Check if a specific field is registered (e.g., 'force')
+field_name="force"
+cli_flag=$(echo "$field_name" | sed 's/\([A-Z]\)/-\L\1/g')  # camelCase to kebab-case
+grep -q "\-\-$cli_flag" bin/cli.ts && echo "✅ --$cli_flag registered" || echo "❌ --$cli_flag NOT registered"
+```
+
+**Internal-only Field Exclusion:**
+
+Not all interface fields need CLI registration. Fields are internal-only if:
+- They have no `mergedOptions.X` runtime usage (set programmatically)
+- They're environment-controlled (e.g., `SEQUANT_*` env vars)
+- They're only used in type signatures, not at runtime
+
+**Detection:** If `grep "mergedOptions.$field"` returns no matches, the field is likely internal-only.
+
+**Self-Check Before Commit:**
+
+```markdown
+## CLI Wiring Self-Check
+
+| New Field | CLI Flag | Help Text | Wiring Status |
+|-----------|----------|-----------|---------------|
+| `newOption` | `--new-option` | "Description" | ✅ Complete |
+| `internalOnly` | N/A | N/A | ⏭️ Internal |
+```
+
+**If wiring is incomplete:**
+1. Add the missing `.option()` call in `bin/cli.ts`
+2. Update help text to describe the flag
+3. Run `npm run build` to verify no TypeScript errors
+4. Test with `--help` to confirm flag appears
+
+---
+
 ### PR Creation and Verification
 
 After implementation is complete and all checks pass, create and verify the PR:
@@ -1768,6 +1834,7 @@ npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
 - [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
+- [ ] **CLI Wiring Check** - If option interfaces modified, verified CLI flags are registered (Section 3g)
 - [ ] **Quality Plan Alignment** - Included if quality plan was available (or marked N/A if no quality plan)
 - [ ] **PR Status** - Created (with URL) or Failed (with error and manual instructions)
 - [ ] **Progress Update Draft** - Formatted comment for GitHub issue
