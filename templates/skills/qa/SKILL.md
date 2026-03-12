@@ -1015,6 +1015,117 @@ If the function accepts configuration or mode options:
 
 See [call-site-review.md](references/call-site-review.md) for detailed methodology and examples.
 
+### 2g. CLI Registration Verification (When Option Interfaces Modified)
+
+**When to apply:** `RunOptions` or similar CLI option interfaces are modified in the diff.
+
+**Purpose:** Detect new option interface fields that have runtime usage (via `mergedOptions.X`) but lack corresponding CLI registration (via `.option()` in `bin/cli.ts`). This class of bug is invisible to TypeScript, build, and unit tests—caught only by manual review or this check.
+
+**Origin:** Issue #305 — `force?: boolean` was added to `RunOptions`, checked at runtime with `mergedOptions.force`, and referenced in user-facing warnings ("use --force to re-run"), but `--force` was never registered in `bin/cli.ts`. The bug passed QA and was caught only by manual cross-reference.
+
+**Detection:**
+
+```bash
+# Check if option interfaces or CLI file were modified
+option_files=$(git diff main...HEAD --name-only | grep -E "batch-executor\.ts|run\.ts|cli\.ts" || true)
+option_modified=$(echo "$option_files" | grep -v "^$" | wc -l | xargs || echo "0")
+
+if [[ $option_modified -gt 0 ]]; then
+  echo "Option interface or CLI file modified - running CLI registration verification"
+fi
+```
+
+**Key File Map:**
+
+| Interface | Location | CLI Registration |
+|-----------|----------|------------------|
+| `RunOptions` | `src/lib/workflow/batch-executor.ts` | `run` command in `bin/cli.ts` |
+
+**Verification Logic:**
+
+1. **Extract new interface fields from diff:**
+   ```bash
+   # Get new fields added to RunOptions (or similar interfaces)
+   new_fields=$(git diff main...HEAD -- src/lib/workflow/batch-executor.ts | \
+     grep -E '^\+\s+\w+\??: ' | \
+     sed 's/.*+ *//' | \
+     sed 's/\?.*//' | \
+     sed 's/:.*//' | \
+     tr -d ' ' || true)
+   ```
+
+2. **Check for runtime usage (mergedOptions.X):**
+   ```bash
+   # For each new field, check if it's used at runtime
+   for field in $new_fields; do
+     runtime_usage=$(git diff main...HEAD | grep -E "mergedOptions\.$field|options\.$field" || true)
+     if [[ -n "$runtime_usage" ]]; then
+       echo "Field '$field' has runtime usage - verify CLI registration"
+     fi
+   done
+   ```
+
+3. **Verify CLI registration exists:**
+   ```bash
+   # Extract registered CLI options from bin/cli.ts
+   # Matches patterns like: --force, --dry-run, --timeout
+   registered=$(grep -oE '"\-\-[a-z-]+"' bin/cli.ts | tr -d '"' | sed 's/^--//' || true)
+
+   # Check if field has corresponding registration
+   # Note: CLI flags use kebab-case, interface fields use camelCase
+   # Example: fieldName → --field-name
+   ```
+
+4. **Internal-only field exclusion (AC-5):**
+
+   Fields without runtime `mergedOptions.X` usage are internal-only and don't need CLI registration:
+   - `autoDetectPhases` — set programmatically, not user-facing
+   - `worktreeIsolation` — environment-controlled
+   - Fields only used in type signatures without runtime access
+
+   **Detection:** If `grep "mergedOptions.$field"` returns no matches, the field is internal-only.
+
+**Output Format:**
+
+```markdown
+### CLI Registration Verification
+
+**Option files modified:** Yes/No
+
+| Interface Field | Runtime Usage | CLI Registered | Status |
+|----------------|--------------|----------------|--------|
+| `force` | `mergedOptions.force` (line 2447) | `--force` in bin/cli.ts | ✅ OK |
+| `newField` | `mergedOptions.newField` (line 500) | NOT REGISTERED | ❌ FAIL |
+| `internalOnly` | None (internal) | N/A | ⏭️ SKIP |
+
+**Verification Status:** Passed / Failed / N/A
+```
+
+**Verdict Gating (AC-4):**
+
+| Verification Status | Maximum Verdict |
+|---------------------|-----------------|
+| Passed | READY_FOR_MERGE |
+| N/A (no option changes) | READY_FOR_MERGE |
+| Failed | AC_NOT_MET |
+
+**CRITICAL:** If CLI registration verification = **Failed**, verdict CANNOT be `READY_FOR_MERGE`. Missing CLI registrations mean users cannot access the feature via command line.
+
+**If verification fails:**
+1. Flag the specific fields missing CLI registration
+2. Set verdict to `AC_NOT_MET`
+3. Include remediation steps:
+   ```markdown
+   **Remediation:**
+   1. Add to `bin/cli.ts` under the appropriate command:
+      ```typescript
+      .option("--field-name", "Description of what the flag does")
+      ```
+   2. Verify with `npx sequant <command> --help`
+   ```
+
+---
+
 ### 3. QA vs AC
 
 For each AC item, mark as:
@@ -1310,6 +1421,50 @@ done
 
 ---
 
+### 6b. Smoke Test (CONDITIONAL)
+
+**When to apply:** Feature changes workflow behavior (skills, CLI commands, scripts).
+
+**Detection:**
+```bash
+# Detect workflow-affecting changes
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/" | wc -l | xargs || true)
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
+cli_changed=$(git diff main...HEAD --name-only | grep -E "^(src/cli|bin)/" | wc -l | xargs || true)
+
+if [[ $((skills_changed + scripts_changed + cli_changed)) -gt 0 ]]; then
+  echo "Smoke test recommended for workflow changes"
+fi
+```
+
+**Smoke Test Checklist:**
+1. **Happy path:** Execute the primary use case
+2. **Edge cases:** Test graceful handling (missing deps, invalid input)
+3. **Error detection:** Verify errors are caught and reported
+
+**Output Format:**
+
+| Test | Command | Result | Notes |
+|------|---------|--------|-------|
+| Happy path | `[command]` | ✅/❌ | [observation] |
+| Edge case | `[command]` | ✅/❌ | [observation] |
+| Error handling | `[command]` | ✅/❌ | [observation] |
+
+**Smoke Test Status:**
+- **Complete:** All applicable tests passed
+- **Partial:** Some tests skipped or failed (document why)
+- **Not Required:** No workflow-affecting changes
+
+**Verdict Impact:**
+
+| Smoke Test Status | Verdict Impact |
+|-------------------|----------------|
+| Complete | No impact (positive signal) |
+| Partial | → `AC_MET_BUT_NOT_A_PLUS` (document gaps) |
+| Not Required | No impact |
+
+---
+
 ### 7. A+ Status Verdict
 
 Provide an overall verdict:
@@ -1335,6 +1490,7 @@ Provide an overall verdict:
    - skill_verification = status from Section 6a (Passed/Failed/Skipped/Not Required)
    - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
+   - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -1360,6 +1516,8 @@ Provide an overall verdict:
        → NEEDS_VERIFICATION (wait for verification)
    - ELSE IF quality_plan_status == "Partial":
        → AC_MET_BUT_NOT_A_PLUS (some quality dimensions incomplete - can merge with notes)
+   - ELSE IF smoke_test_status == "Partial":
+       → AC_MET_BUT_NOT_A_PLUS (smoke tests incomplete - document gaps before merge)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
@@ -1676,6 +1834,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
+- [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
@@ -1914,6 +2073,23 @@ You MUST include these sections:
 
 ---
 
+### CLI Registration Verification
+
+[Include if option interfaces or CLI file modified, otherwise: "N/A - No option interface changes"]
+
+**Option files modified:** Yes/No
+
+| Interface Field | Runtime Usage | CLI Registered | Status |
+|----------------|--------------|----------------|--------|
+| `[field]` | `[usage location]` | `--[flag]` in bin/cli.ts / NOT REGISTERED | ✅ OK / ❌ FAIL / ⏭️ SKIP |
+
+**Verification Status:** Passed / Failed / N/A
+
+**Remediation (if failed):**
+- Add `.option("--field-name", "description")` to bin/cli.ts
+
+---
+
 ### Skill Change Review
 
 [Include if skill files changed, otherwise omit]
@@ -1922,6 +2098,20 @@ You MUST include these sections:
 - [ ] **Fields verified:** For JSON commands, do field names match actual output?
 - [ ] **Patterns complete:** What variations might users write that aren't covered?
 - [ ] **Dependencies explicit:** What CLIs/tools does this skill assume are installed?
+
+---
+
+### Smoke Test
+
+[Include if workflow-affecting changes (skills, scripts, CLI), otherwise: "Not Required - No workflow-affecting changes"]
+
+| Test | Command | Result | Notes |
+|------|---------|--------|-------|
+| Happy path | `[command]` | ✅/❌ | [observation] |
+| Edge case | `[command]` | ✅/❌ | [observation] |
+| Error handling | `[command]` | ✅/❌ | [observation] |
+
+**Smoke Test Status:** Complete / Partial (document gaps) / Not Required
 
 ---
 
