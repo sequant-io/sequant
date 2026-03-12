@@ -95,6 +95,14 @@ export interface RunSettings {
    * Default: true
    */
   retry: boolean;
+  /**
+   * Threshold for stale branch detection in pre-flight checks.
+   * If feature branch is more than this many commits behind main,
+   * QA/test skills block execution and recommend rebase.
+   * exec skill warns but doesn't block.
+   * Default: 5
+   */
+  staleBranchThreshold: number;
 }
 
 /**
@@ -242,6 +250,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     rotation: DEFAULT_ROTATION_SETTINGS,
     mcp: true, // Enable MCP servers by default in headless mode
     retry: true, // Enable automatic retry with MCP fallback by default
+    staleBranchThreshold: 5, // Block QA/test if feature is >5 commits behind main
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,

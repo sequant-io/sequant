@@ -42,9 +42,126 @@ The `/test` phase is invoked by `/fullsolve` based on issue labels:
 2. **Execution Phase:** Run tests systematically with browser automation
 3. **Reporting Phase:** Generate test results and GitHub comment
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `test` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Skip issue fetch** - Use `SEQUANT_ISSUE` directly, orchestrator has context
+2. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path
+3. **Reduce GitHub comment frequency** - Defer progress updates to orchestrator
+4. **Trust dev server status** - Orchestrator may have started it already
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Fetch fresh issue context from GitHub
+- Locate or prompt for worktree
+- Post progress updates to GitHub
+- Start dev server if needed
+
+## Pre-flight: Stale Branch Detection
+
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator handles branch freshness checks.
+
+**Purpose:** Detect when the feature branch is significantly behind main before running browser tests. Testing stale code is wasteful because:
+- Test results may not apply to the merged state
+- Features may have conflicts that need resolution first
+- Time spent on testing is lost if rebase is required
+
+**Detection:**
+
+```bash
+# Ensure we have latest remote state
+git fetch origin 2>/dev/null || true
+
+# Count commits behind main
+behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+echo "Feature branch is $behind commits behind main"
+```
+
+**Threshold Configuration:**
+
+The stale branch threshold is configurable in `.sequant/settings.json`:
+
+```json
+{
+  "run": {
+    "staleBranchThreshold": 5
+  }
+}
+```
+
+Default: 5 commits
+
+**Behavior:**
+
+| Commits Behind | Action |
+|----------------|--------|
+| 0 | ✅ Proceed normally |
+| 1 to threshold | ⚠️ **Warning:** "Feature branch is N commits behind main. Consider rebasing before testing." |
+| > threshold | ❌ **Block:** "STALE_BRANCH: Feature branch is N commits behind main (threshold: T). Rebase required before testing." |
+
+**Implementation:**
+
+```bash
+# Read threshold from settings (default: 5)
+threshold=$(jq -r '.run.staleBranchThreshold // 5' .sequant/settings.json 2>/dev/null || echo "5")
+
+behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+
+if [[ $behind -gt $threshold ]]; then
+  echo "❌ STALE_BRANCH: Feature branch is $behind commits behind main (threshold: $threshold)"
+  echo "   Rebase required before testing:"
+  echo "   git fetch origin && git rebase origin/main"
+  # Exit with error - testing should not proceed
+  exit 1
+elif [[ $behind -gt 0 ]]; then
+  echo "⚠️ Warning: Feature branch is $behind commits behind main."
+  echo "   Consider rebasing before testing: git fetch origin && git rebase origin/main"
+  # Continue with warning
+fi
+```
+
+**Output Format:**
+
+```markdown
+### Stale Branch Check
+
+| Check | Value |
+|-------|-------|
+| Commits behind main | N |
+| Threshold | T |
+| Status | ✅ OK / ⚠️ Warning / ❌ Blocked |
+
+[Warning/blocking message if applicable]
+```
+
+**Verdict Impact:**
+
+| Status | Verdict Impact |
+|--------|----------------|
+| OK (0 behind) | No impact |
+| Warning (1 to threshold) | Note in test output, recommend rebase |
+| Blocked (> threshold) | **Cannot proceed** - rebase first |
+
 ## Phase 1: Setup
 
 ### 1.1 Fetch Issue Context
+
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Use `SEQUANT_ISSUE` for the issue number
+- Skip fetching issue context (orchestrator has already done this)
+- Parse any context passed in the orchestrator's prompt
+
+**If standalone:**
 
 ```bash
 gh issue view <issue-number> --json title,body,labels
@@ -133,6 +250,98 @@ Wait for server ready before proceeding.
 **Note:** If `{{DEV_URL}}` or `{{PM_RUN}}` are not replaced with actual values, the defaults are:
 - DEV_URL: `http://localhost:3000` (Next.js), `http://localhost:4321` (Astro), `http://localhost:5173` (Vite-based)
 - PM_RUN: `npm run` (or `bun run`, `yarn`, `pnpm run` based on lockfile)
+
+### 1.5 Test Coverage Analysis (REQUIRED)
+
+**Purpose:** Warn when new/modified source files lack corresponding test files.
+
+**Before executing tests**, analyze coverage for changed files:
+
+1. **Get changed source files:**
+   ```bash
+   # Get changed source files (excluding tests themselves)
+   changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
+   echo "Changed source files:"
+   echo "$changed"
+   ```
+
+2. **Check for corresponding test files:**
+   ```bash
+   # For each changed file, check if a test file exists
+   for file in $changed; do
+     base=$(basename "$file" | sed -E 's/\.(ts|tsx|js|jsx)$//')
+     dir=$(dirname "$file")
+
+     # Look for test files in common locations
+     test_found=false
+
+     # Check co-located test file
+     if ls "$dir/$base.test."* 2>/dev/null | grep -q .; then
+       test_found=true
+     fi
+
+     # Check __tests__ directory
+     if ls "$dir/__tests__/$base.test."* 2>/dev/null | grep -q .; then
+       test_found=true
+     fi
+
+     # Check root __tests__ with path structure
+     if ls "__tests__/${file%.ts*}.test."* 2>/dev/null | grep -q .; then
+       test_found=true
+     fi
+
+     if [ "$test_found" = false ]; then
+       echo "⚠️ NO TEST: $file"
+     fi
+   done
+   ```
+
+3. **Generate Coverage Warning Report:**
+
+   ```markdown
+   ### Test Coverage Analysis
+
+   | Source File | Has Test? | Notes |
+   |-------------|-----------|-------|
+   | `src/lib/feature.ts` | ⚠️ No | New file, no test coverage |
+   | `src/lib/utils.ts` | ✅ Yes | `src/lib/utils.test.ts` |
+   | `app/admin/page.tsx` | - | UI component (browser tested) |
+
+   **Coverage:** X/Y changed source files have corresponding tests
+
+   **Warning:** The following new/modified files lack test coverage:
+   - `src/lib/feature.ts` - Consider adding `src/lib/feature.test.ts`
+   ```
+
+4. **Coverage Tier Classification:**
+
+   | Tier | File Pattern | Coverage Recommendation |
+   |------|--------------|------------------------|
+   | **Critical** | `auth/*`, `payment/*`, `security/*`, `middleware/*` | ⚠️ Flag prominently if missing |
+   | **Standard** | `lib/*`, `utils/*`, `api/*`, `server/*` | Note if missing |
+   | **UI/Browser** | `app/**/page.tsx`, `components/*` | Browser testing covers these |
+   | **Config/Types** | `*.config.*`, `types/*`, `*.d.ts` | No test required |
+
+5. **Detection Heuristic for Critical Paths:**
+   ```bash
+   # Flag critical path changes without tests
+   critical=$(echo "$changed" | grep -E 'auth|payment|security|middleware|server-action' || true)
+   if [[ -n "$critical" ]]; then
+     echo "⚠️ CRITICAL PATH CHANGES - test coverage strongly recommended:"
+     echo "$critical"
+   fi
+   ```
+
+6. **Behavior:**
+   - **Warning-only**: Does NOT block test execution
+   - Include coverage analysis in test results report
+   - Recommend adding tests for uncovered critical paths
+   - Note UI files are covered by browser testing (this skill)
+
+**Why this matters:** Catching missing test coverage early:
+- Prevents regressions from shipping untested code
+- Ensures new logic has corresponding test validation
+- Highlights critical paths that need extra scrutiny
 
 ## Decision Point: Feature Implemented or Not?
 
@@ -369,6 +578,13 @@ Create structured test results:
 
 ### 3.2 GitHub Comment
 
+**If orchestrated (SEQUANT_ORCHESTRATOR is set):**
+- Skip posting GitHub comment (orchestrator handles summary)
+- Include test summary in output for orchestrator to capture
+- Let orchestrator aggregate results across phases
+
+**If standalone:**
+
 Draft comment for Issue #<N>:
 
 ```markdown
@@ -435,6 +651,8 @@ If no explicit tests, use AC as test cases:
 ```
 
 ## Browser Testing Best Practices
+
+**Reference:** See [Browser Testing Patterns](references/browser-testing-patterns.md) for comprehensive patterns including forms, modals, grids, async content, and troubleshooting.
 
 ### Snapshots vs. Screenshots
 
@@ -584,6 +802,33 @@ Testing session is complete when:
 Both can be used together:
 1. `/test` → Verify feature works for users
 2. `/qa` → Verify code quality and completeness
+
+---
+
+## State Tracking
+
+**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
+
+### State Updates (Standalone Only)
+
+When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
+
+**At skill start:**
+```bash
+npx tsx scripts/state/update.ts start <issue-number> test
+```
+
+**On successful completion:**
+```bash
+npx tsx scripts/state/update.ts complete <issue-number> test
+```
+
+**On failure:**
+```bash
+npx tsx scripts/state/update.ts fail <issue-number> test "X/Y tests failed"
+```
+
+**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
 
 ---
 

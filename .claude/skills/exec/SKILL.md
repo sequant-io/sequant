@@ -164,6 +164,66 @@ git branch -a | grep -i "<issue-number>" || true
 
 **If PR already merged:** The issue may be complete - verify and close if so.
 
+### 0a. Stale Branch Detection (Warning Only)
+
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator handles branch freshness checks.
+
+**Purpose:** Warn when starting implementation on a feature branch that is significantly behind main. This helps developers rebase early rather than discovering conflicts late in the workflow.
+
+**Note:** Unlike `/qa` and `/test`, `/exec` **warns but does not block** — starting implementation on a slightly stale branch is acceptable since rebasing can happen before PR creation.
+
+**Detection:**
+
+```bash
+# Ensure we have latest remote state
+git fetch origin 2>/dev/null || true
+
+# Count commits behind main (only if we're in a worktree, not on main)
+current_branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ "$current_branch" != "main" && "$current_branch" != "master" ]]; then
+  behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+  echo "Feature branch is $behind commits behind main"
+fi
+```
+
+**Threshold Configuration:**
+
+The stale branch threshold is configurable in `.sequant/settings.json`:
+
+```json
+{
+  "run": {
+    "staleBranchThreshold": 5
+  }
+}
+```
+
+Default: 5 commits
+
+**Behavior:**
+
+| Commits Behind | Action |
+|----------------|--------|
+| 0 | ✅ Proceed normally |
+| 1 to threshold | ℹ️ **Info:** "Feature branch is N commits behind main." |
+| > threshold | ⚠️ **Warning:** "Feature branch is N commits behind main (threshold: T). Consider rebasing before continuing: `git fetch origin && git rebase origin/main`" |
+
+**Important:** `/exec` never blocks on stale branches. It warns to help developers make informed decisions about rebasing.
+
+**Output Format:**
+
+```markdown
+### Stale Branch Check
+
+| Check | Value |
+|-------|-------|
+| Commits behind main | N |
+| Threshold | T |
+| Status | ✅ OK / ℹ️ Info / ⚠️ Warning |
+
+[Info/warning message if applicable]
+```
+
 ### 1. Check Implementation Readiness
 
 **FIRST STEP:** Review the issue readiness and proceed with implementation.
