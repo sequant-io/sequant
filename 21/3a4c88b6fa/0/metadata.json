@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "213a4c88b6fa",
+  "session_id": "4945b93f-f3e5-4217-83ef-a30b0ade1092",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-12T03:47:44.656299Z",
+  "branch": "feature/327-improve-infra-add-dependabot-for-automated-depende",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/dependabot.yml"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 24,
+    "cache_creation_tokens": 64307,
+    "cache_read_tokens": 1392005,
+    "output_tokens": 172,
+    "api_call_count": 20
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-12T03:47:44.525838Z",
+    "agent_lines": 15,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 15,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-327-improve-infra-add-dependabot-for-automated-depende/4945b93f-f3e5-4217-83ef-a30b0ade1092.jsonl"
+}
