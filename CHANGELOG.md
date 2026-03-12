@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-03-11
+
 ### Added
 
 - Marketplace submission tooling and plugin metadata enrichment (#248)
@@ -22,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `no-browser-test` label explicitly opts out of browser testing
   - `/spec` warns when `.tsx` files detected without `ui` label
   - `/qa` downgrades verdict for untested `.tsx` changes
+- Persist solve workflow analysis to issue comments (#172)
+- Plugin file sync for seamless updates (#248, #342)
+- Unit tests for exported utility functions (#317, #346)
+- Linux CI testing for plugin installation (#189, #339)
+- Permission precedence documentation (#242)
+- Privacy policy for marketplace submission
+
+### Changed
+
+- Split run.ts monolith into focused modules (#318, #347)
+- Convert prepare-marketplace from bash to TypeScript
+
+### Fixed
+
+- Auto-detect default branch instead of hardcoding origin/main (#343, #345)
+- Sync plugin.json and marketplace.json versions to 1.17.0
 
 ## [1.17.0] - 2026-03-04
 
@@ -849,7 +867,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git worktree helper scripts
 - Pre/post tool hooks
 
-[Unreleased]: https://github.com/sequant-io/sequant/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/sequant-io/sequant/compare/v1.18.0...HEAD
+[1.18.0]: https://github.com/sequant-io/sequant/compare/v1.17.0...v1.18.0
+[1.17.0]: https://github.com/sequant-io/sequant/compare/v1.16.1...v1.17.0
+[1.16.1]: https://github.com/sequant-io/sequant/compare/v1.16.0...v1.16.1
+[1.16.0]: https://github.com/sequant-io/sequant/compare/v1.15.4...v1.16.0
+[1.15.4]: https://github.com/sequant-io/sequant/compare/v1.15.3...v1.15.4
+[1.15.3]: https://github.com/sequant-io/sequant/compare/v1.14.0...v1.15.3
 [1.14.0]: https://github.com/sequant-io/sequant/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/sequant-io/sequant/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/sequant-io/sequant/compare/v1.11.0...v1.12.0
