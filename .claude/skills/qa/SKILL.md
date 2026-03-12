@@ -226,6 +226,93 @@ If diverged, recommend:
 git pull origin main  # Or merge origin/main if pull fails
 ```
 
+### Stale Branch Detection
+
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator handles branch freshness checks.
+
+**Purpose:** Detect when the feature branch is significantly behind main, which can lead to:
+- QA cycles wasted reviewing code that won't cleanly merge
+- False `READY_FOR_MERGE` verdicts that fail at merge time
+- Conflicts that require rework after QA approval
+
+**Detection:**
+
+```bash
+# Ensure we have latest remote state
+git fetch origin 2>/dev/null || true
+
+# Count commits behind main
+behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+echo "Feature branch is $behind commits behind main"
+```
+
+**Threshold Configuration:**
+
+The stale branch threshold is configurable in `.sequant/settings.json`:
+
+```json
+{
+  "run": {
+    "staleBranchThreshold": 5
+  }
+}
+```
+
+Default: 5 commits
+
+**Behavior:**
+
+| Commits Behind | Action |
+|----------------|--------|
+| 0 | ✅ Proceed normally |
+| 1 to threshold | ⚠️ **Warning:** "Feature branch is N commits behind main. Consider rebasing before QA." |
+| > threshold | ❌ **Block:** "STALE_BRANCH: Feature branch is N commits behind main (threshold: T). Rebase required before QA." |
+
+**Implementation:**
+
+```bash
+# Read threshold from settings (default: 5)
+threshold=$(jq -r '.run.staleBranchThreshold // 5' .sequant/settings.json 2>/dev/null || echo "5")
+
+behind=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+
+if [[ $behind -gt $threshold ]]; then
+  echo "❌ STALE_BRANCH: Feature branch is $behind commits behind main (threshold: $threshold)"
+  echo "   Rebase required before QA:"
+  echo "   git fetch origin && git rebase origin/main"
+  # Exit with error - QA should not proceed
+  exit 1
+elif [[ $behind -gt 0 ]]; then
+  echo "⚠️ Warning: Feature branch is $behind commits behind main."
+  echo "   Consider rebasing before QA: git fetch origin && git rebase origin/main"
+  # Continue with warning
+fi
+```
+
+**Output Format:**
+
+Include in QA output when branch is stale:
+
+```markdown
+### Stale Branch Check
+
+| Check | Value |
+|-------|-------|
+| Commits behind main | N |
+| Threshold | T |
+| Status | ✅ OK / ⚠️ Warning / ❌ Blocked |
+
+[Warning/blocking message if applicable]
+```
+
+**Verdict Impact:**
+
+| Status | Verdict Impact |
+|--------|----------------|
+| OK (0 behind) | No impact |
+| Warning (1 to threshold) | Note in findings, recommend rebase |
+| Blocked (> threshold) | **Cannot proceed** - rebase first |
+
 ### Feature Worktree Workflow
 
 **QA Phase:** Review code in the feature worktree.

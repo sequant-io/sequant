@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stale branch detection for pre-flight checks (#304)
+  - `/qa` and `/test` skills block execution when feature branch is >5 commits behind main
+  - `/exec` skill warns but doesn't block (allows implementation to start)
+  - Configurable threshold via `staleBranchThreshold` in `.sequant/settings.json`
+  - Prevents wasted QA cycles on code that won't cleanly merge
+
 ## [1.18.0] - 2026-03-11
 
 ### Added
