@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "d05226a65876",
+  "session_id": "95f53bc3-221e-4015-b887-024621c5f44a",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-12T04:19:17.856862Z",
+  "branch": "feature/307-feat-cli-wiring-completeness-qa-verification-exec-",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/exec/SKILL.md",
+    ".claude/skills/qa/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 48,
+    "cache_creation_tokens": 183195,
+    "cache_read_tokens": 4751302,
+    "output_tokens": 526,
+    "api_call_count": 44
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-12T04:19:17.367459Z",
+    "agent_lines": 195,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 195,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-307-feat-cli-wiring-completeness-qa-verification-exec-/95f53bc3-221e-4015-b887-024621c5f44a.jsonl"
+}
