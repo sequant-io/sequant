@@ -1223,6 +1223,50 @@ done
 
 ---
 
+### 6b. Smoke Test (CONDITIONAL)
+
+**When to apply:** Feature changes workflow behavior (skills, CLI commands, scripts).
+
+**Detection:**
+```bash
+# Detect workflow-affecting changes
+skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/" | wc -l | xargs || true)
+scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
+cli_changed=$(git diff main...HEAD --name-only | grep -E "^(src/cli|bin)/" | wc -l | xargs || true)
+
+if [[ $((skills_changed + scripts_changed + cli_changed)) -gt 0 ]]; then
+  echo "Smoke test recommended for workflow changes"
+fi
+```
+
+**Smoke Test Checklist:**
+1. **Happy path:** Execute the primary use case
+2. **Edge cases:** Test graceful handling (missing deps, invalid input)
+3. **Error detection:** Verify errors are caught and reported
+
+**Output Format:**
+
+| Test | Command | Result | Notes |
+|------|---------|--------|-------|
+| Happy path | `[command]` | ✅/❌ | [observation] |
+| Edge case | `[command]` | ✅/❌ | [observation] |
+| Error handling | `[command]` | ✅/❌ | [observation] |
+
+**Smoke Test Status:**
+- **Complete:** All applicable tests passed
+- **Partial:** Some tests skipped or failed (document why)
+- **Not Required:** No workflow-affecting changes
+
+**Verdict Impact:**
+
+| Smoke Test Status | Verdict Impact |
+|-------------------|----------------|
+| Complete | No impact (positive signal) |
+| Partial | → `AC_MET_BUT_NOT_A_PLUS` (document gaps) |
+| Not Required | No impact |
+
+---
+
 ### 7. A+ Status Verdict
 
 Provide an overall verdict:
@@ -1248,6 +1292,7 @@ Provide an overall verdict:
    - skill_verification = status from Section 6a (Passed/Failed/Skipped/Not Required)
    - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
+   - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -1273,6 +1318,8 @@ Provide an overall verdict:
        → NEEDS_VERIFICATION (wait for verification)
    - ELSE IF quality_plan_status == "Partial":
        → AC_MET_BUT_NOT_A_PLUS (some quality dimensions incomplete - can merge with notes)
+   - ELSE IF smoke_test_status == "Partial":
+       → AC_MET_BUT_NOT_A_PLUS (smoke tests incomplete - document gaps before merge)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
@@ -1589,6 +1636,7 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
+- [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
@@ -1835,6 +1883,20 @@ You MUST include these sections:
 - [ ] **Fields verified:** For JSON commands, do field names match actual output?
 - [ ] **Patterns complete:** What variations might users write that aren't covered?
 - [ ] **Dependencies explicit:** What CLIs/tools does this skill assume are installed?
+
+---
+
+### Smoke Test
+
+[Include if workflow-affecting changes (skills, scripts, CLI), otherwise: "Not Required - No workflow-affecting changes"]
+
+| Test | Command | Result | Notes |
+|------|---------|--------|-------|
+| Happy path | `[command]` | ✅/❌ | [observation] |
+| Edge case | `[command]` | ✅/❌ | [observation] |
+| Error handling | `[command]` | ✅/❌ | [observation] |
+
+**Smoke Test Status:** Complete / Partial (document gaps) / Not Required
 
 ---
 
