@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.17.0
+# What We've Built: Sequant v1.18.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -16,7 +16,7 @@ journey through planning, implementation, testing, and review
 | Slash Commands | 18 |
 | CLI Commands | 11 |
 | Core Library Modules | 46 |
-| Test Files | 55 |
+| Test Files | 56 |
 | Documentation Files | 39 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
@@ -340,7 +340,7 @@ Full execution logs with automatic rotation:
 
 ## Testing & Quality
 
-**47 test files** ensure reliability.
+**56 test files** ensure reliability.
 
 ### Test Coverage
 
@@ -737,7 +737,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.16.0)
+### Recent Additions (v1.18.0)
+
+- **Browser Testing Enforcement** - `ui`/`frontend`/`admin` labels auto-include `/test` phase; `no-browser-test` label opts out (#173)
+- **Solve Workflow Persistence** - `/solve` analysis posted as issue comments for cross-session context (#172)
+- **Plugin File Sync** - Seamless skill file updates on plugin upgrade (#248, #342)
+- **Marketplace Submission Tooling** - `prepare-marketplace` script, plugin metadata enrichment, marketplace validation (#248)
+- **Modular Run Command** - Split run.ts monolith into focused modules for maintainability (#318, #347)
+- **Auto-Detect Default Branch** - No longer hardcodes `origin/main`; works with any default branch (#343)
+
+### Earlier Additions (v1.16.0)
 
 - **Batch-level integration QA** (`sequant merge`) (#313)
   - Phase 1: combined branch test, template mirroring, file overlap detection
@@ -1021,7 +1030,7 @@ npm run build
 | Slash Commands | 18 |
 | CLI Commands | 11 |
 | Library Modules | 46 |
-| Test Files | 55 |
+| Test Files | 56 |
 | Docs Files | 39 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
@@ -1029,7 +1038,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.16.1
+**Current Version:** 1.18.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1039,7 +1048,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.16.1                                │
+│                              SEQUANT v1.18.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
@@ -1070,7 +1079,7 @@ npm run build
 │  Documentation tiers      Copy branch names       Generic                   │
 │                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  TEST FILES: 55  │  DOCS: 39   │  PLATFORMS: macOS, Linux, Windows WSL      │
+│  TEST FILES: 56  │  DOCS: 39   │  PLATFORMS: macOS, Linux, Windows WSL      │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1080,4 +1089,4 @@ npm run build
 
 ---
 
-*Last updated: 2026-02-22 · `9efcd81` feat(#299, #300): Call-site review for QA, non-exportable function testing guidance for exec*
+*Last updated: 2026-03-11 · v1.18.0 release*
