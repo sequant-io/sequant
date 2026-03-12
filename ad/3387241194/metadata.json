@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "ad3387241194",
+  "strategy": "manual-commit",
+  "branch": "feature/304-qa-skill-add-stale-worktree-detection-to-pre-fligh",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/exec/SKILL.md",
+    ".claude/skills/qa/SKILL.md",
+    ".claude/skills/test/SKILL.md",
+    "CHANGELOG.md",
+    "src/lib/settings.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/3387241194/0/metadata.json",
+      "transcript": "/ad/3387241194/0/full.jsonl",
+      "context": "/ad/3387241194/0/context.md",
+      "content_hash": "/ad/3387241194/0/content_hash.txt",
+      "prompt": "/ad/3387241194/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 47,
+    "cache_creation_tokens": 72497,
+    "cache_read_tokens": 4501524,
+    "output_tokens": 413,
+    "api_call_count": 43
+  }
+}
