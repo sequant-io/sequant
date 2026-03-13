@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "cc8d5dfc-3f29-4ac6-a2d7-17080324c763",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-13T21:13:43.336238Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "CHANGELOG.md",
+    "docs/features/codebase-conventions.md",
+    "docs/features/python-stack-support.md",
+    "templates/skills/exec/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 517,
+    "cache_creation_tokens": 249873,
+    "cache_read_tokens": 8877108,
+    "output_tokens": 22334,
+    "api_call_count": 116
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-13T21:13:42.713319Z",
+    "agent_lines": 184,
+    "human_added": 1273,
+    "human_modified": 76,
+    "human_removed": 0,
+    "total_committed": 1533,
+    "agent_percentage": 12.002609262883235
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/cc8d5dfc-3f29-4ac6-a2d7-17080324c763.jsonl"
+}
