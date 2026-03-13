@@ -50,6 +50,7 @@ import {
 } from "../src/commands/state.js";
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
+import { conventionsCommand } from "../src/commands/conventions.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -228,6 +229,13 @@ program
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .action(mergeCommand);
+
+program
+  .command("conventions")
+  .description("View and manage codebase conventions")
+  .option("--detect", "Re-run convention detection")
+  .option("--reset", "Clear detected conventions (keep manual)")
+  .action(conventionsCommand);
 
 program
   .command("logs")

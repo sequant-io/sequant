@@ -17,6 +17,7 @@ import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings } from "../lib/settings.js";
+import { detectAndSaveConventions } from "../lib/conventions-detector.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import {
   commandExists,
@@ -440,6 +441,17 @@ export async function initCommand(options: InitOptions): Promise<void> {
   settingsSpinner.start();
   await createDefaultSettings();
   settingsSpinner.succeed("Created default settings");
+
+  // Detect codebase conventions
+  const conventionsSpinner = ui.spinner("Detecting codebase conventions...");
+  conventionsSpinner.start();
+  try {
+    const conventions = await detectAndSaveConventions(process.cwd());
+    const count = Object.keys(conventions.detected).length;
+    conventionsSpinner.succeed(`Detected ${count} codebase conventions`);
+  } catch {
+    conventionsSpinner.warn("Could not detect conventions (non-blocking)");
+  }
 
   // Copy templates (with symlinks for scripts unless --no-symlinks)
   const templatesSpinner = ui.spinner("Copying templates...");
