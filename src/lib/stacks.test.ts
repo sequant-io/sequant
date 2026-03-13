@@ -586,6 +586,84 @@ describe("detectPackageManager", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("Python lockfile detection", () => {
+    it("detects uv.lock", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "uv.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("uv");
+    });
+
+    it("detects poetry.lock", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "poetry.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("poetry");
+    });
+
+    it("falls back to pip when pyproject.toml exists", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "pyproject.toml";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("pip");
+    });
+
+    it("falls back to pip when requirements.txt exists", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "requirements.txt";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("pip");
+    });
+  });
+
+  describe("Python priority", () => {
+    it("uv takes priority over poetry", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "uv.lock" || path === "poetry.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("uv");
+    });
+
+    it("poetry takes priority over pip", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "poetry.lock" || path === "pyproject.toml";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("poetry");
+    });
+  });
+
+  describe("JS takes priority over Python", () => {
+    it("npm takes priority over pip in mixed project", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "package.json" || path === "requirements.txt";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("npm");
+    });
+
+    it("bun takes priority over uv in mixed project", async () => {
+      mockFileExists.mockImplementation(async (path) => {
+        return path === "bun.lockb" || path === "uv.lock";
+      });
+
+      const result = await detectPackageManager();
+      expect(result).toBe("bun");
+    });
+  });
 });
 
 describe("getPackageManagerCommands", () => {
@@ -620,6 +698,30 @@ describe("getPackageManagerCommands", () => {
     expect(config.install).toBe("pnpm install");
     expect(config.installSilent).toBe("pnpm install --silent");
   });
+
+  it("returns correct pip commands", () => {
+    const config = getPackageManagerCommands("pip");
+    expect(config.run).toBe("python -m");
+    expect(config.exec).toBe("python -m");
+    expect(config.install).toBe("pip install");
+    expect(config.installSilent).toBe("pip install -q");
+  });
+
+  it("returns correct poetry commands", () => {
+    const config = getPackageManagerCommands("poetry");
+    expect(config.run).toBe("poetry run");
+    expect(config.exec).toBe("poetry run");
+    expect(config.install).toBe("poetry install");
+    expect(config.installSilent).toBe("poetry install -q");
+  });
+
+  it("returns correct uv commands", () => {
+    const config = getPackageManagerCommands("uv");
+    expect(config.run).toBe("uv run");
+    expect(config.exec).toBe("uvx");
+    expect(config.install).toBe("uv pip install");
+    expect(config.installSilent).toBe("uv pip install -q");
+  });
 });
 
 describe("PM_CONFIG", () => {
@@ -628,6 +730,9 @@ describe("PM_CONFIG", () => {
     expect(PM_CONFIG).toHaveProperty("bun");
     expect(PM_CONFIG).toHaveProperty("yarn");
     expect(PM_CONFIG).toHaveProperty("pnpm");
+    expect(PM_CONFIG).toHaveProperty("pip");
+    expect(PM_CONFIG).toHaveProperty("poetry");
+    expect(PM_CONFIG).toHaveProperty("uv");
   });
 });
 

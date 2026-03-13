@@ -52,7 +52,14 @@ const SKIP_DIRECTORIES = [
 /**
  * Supported package managers
  */
-export type PackageManager = "npm" | "bun" | "yarn" | "pnpm";
+export type PackageManager =
+  | "npm"
+  | "bun"
+  | "yarn"
+  | "pnpm"
+  | "pip"
+  | "poetry"
+  | "uv";
 
 /**
  * Package manager command configuration
@@ -92,6 +99,25 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     install: "pnpm install",
     installSilent: "pnpm install --silent",
   },
+  // Python package managers
+  pip: {
+    run: "python -m",
+    exec: "python -m",
+    install: "pip install",
+    installSilent: "pip install -q",
+  },
+  poetry: {
+    run: "poetry run",
+    exec: "poetry run",
+    install: "poetry install",
+    installSilent: "poetry install -q",
+  },
+  uv: {
+    run: "uv run",
+    exec: "uvx",
+    install: "uv pip install",
+    installSilent: "uv pip install -q",
+  },
 };
 
 /**
@@ -106,12 +132,23 @@ const LOCKFILE_PRIORITY: Array<{ file: string; pm: PackageManager }> = [
 ];
 
 /**
+ * Python lockfile to package manager mapping (priority order: uv > poetry > pip)
+ */
+const PYTHON_LOCKFILE_PRIORITY: Array<{ file: string; pm: PackageManager }> = [
+  { file: "uv.lock", pm: "uv" },
+  { file: "poetry.lock", pm: "poetry" },
+  // requirements.txt is a fallback when no lockfile is found
+];
+
+/**
  * Detect package manager from lockfiles
- * Priority: bun > yarn > pnpm > npm
+ * Priority: bun > yarn > pnpm > npm (for JS)
+ * Priority: uv > poetry > pip (for Python)
  * Falls back to npm if no lockfile found but package.json exists
+ * Falls back to pip if no lockfile found but pyproject.toml/requirements.txt exists
  */
 export async function detectPackageManager(): Promise<PackageManager | null> {
-  // Check lockfiles in priority order
+  // Check JS lockfiles in priority order
   for (const { file, pm } of LOCKFILE_PRIORITY) {
     if (await fileExists(file)) {
       return pm;
@@ -123,7 +160,22 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
     return "npm";
   }
 
-  // Not a Node.js project
+  // Check Python lockfiles in priority order
+  for (const { file, pm } of PYTHON_LOCKFILE_PRIORITY) {
+    if (await fileExists(file)) {
+      return pm;
+    }
+  }
+
+  // Fallback to pip if pyproject.toml or requirements.txt exists
+  if (
+    (await fileExists("pyproject.toml")) ||
+    (await fileExists("requirements.txt"))
+  ) {
+    return "pip";
+  }
+
+  // Not a recognized project type
   return null;
 }
 
