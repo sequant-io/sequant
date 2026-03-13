@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "04409b9d1cc6",
+  "strategy": "manual-commit",
+  "branch": "feature/352-fix-background-qa-sub-agents-silently-fail-on-bash",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/_shared/references/subagent-types.md",
+    ".claude/skills/qa/SKILL.md",
+    "CHANGELOG.md",
+    "templates/skills/qa/SKILL.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/04/409b9d1cc6/0/metadata.json",
+      "transcript": "/04/409b9d1cc6/0/full.jsonl",
+      "context": "/04/409b9d1cc6/0/context.md",
+      "content_hash": "/04/409b9d1cc6/0/content_hash.txt",
+      "prompt": "/04/409b9d1cc6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1966,
+    "cache_creation_tokens": 107305,
+    "cache_read_tokens": 3494647,
+    "output_tokens": 338,
+    "api_call_count": 34
+  }
+}

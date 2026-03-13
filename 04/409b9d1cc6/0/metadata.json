@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "04409b9d1cc6",
+  "session_id": "a30e9c2a-1f3c-47e2-afc4-0466049a3c0e",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-13T15:23:11.534848Z",
+  "branch": "feature/352-fix-background-qa-sub-agents-silently-fail-on-bash",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/_shared/references/subagent-types.md",
+    ".claude/skills/qa/SKILL.md",
+    "CHANGELOG.md",
+    "templates/skills/qa/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 1966,
+    "cache_creation_tokens": 107305,
+    "cache_read_tokens": 3494647,
+    "output_tokens": 338,
+    "api_call_count": 34
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-13T15:23:10.937201Z",
+    "agent_lines": 66,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 66,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-352-fix-background-qa-sub-agents-silently-fail-on-bash/a30e9c2a-1f3c-47e2-afc4-0466049a3c0e.jsonl"
+}
