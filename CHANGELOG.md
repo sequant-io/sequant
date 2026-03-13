@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Background QA sub-agents silently fail on Bash calls due to permission mode gap (#352)
+  - Changed QA quality check agents to use `mode="bypassPermissions"` instead of `acceptEdits`
+  - Added comprehensive Bash coverage table to `subagent-types.md` documentation
+  - Agents running `git diff`, `npm test`, etc. now execute successfully in background mode
+
 ### Added
 
 - Stale branch detection for pre-flight checks (#304)

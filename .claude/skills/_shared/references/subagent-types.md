@@ -115,16 +115,29 @@ Use `TaskOutput(task_id="...", block=true)` to wait for completion.
 **IMPORTANT: Background agents and permissions**
 
 Background agents cannot prompt for permission interactively. If a background
-agent hits a tool that requires approval (like Edit or Write), it will be
+agent hits a tool that requires approval (like Edit, Write, or Bash), it will be
 **silently denied** and the agent will fail.
 
-Always set `mode` when spawning background agents that need to edit files:
+Always set `mode` when spawning background agents:
 
-| Mode | Effect | When to use |
-|------|--------|-------------|
-| `"acceptEdits"` | Auto-approves Edit/Write, still prompts for Bash | **Default for background file-editing agents** |
-| `"bypassPermissions"` | Skips all permission checks | Only in isolated containers/CI |
-| (omitted) | Inherits parent session mode | Only if parent already auto-approves |
+### Permission Mode Reference
+
+| Mode | Edit/Write | Bash | When to Use |
+|------|------------|------|-------------|
+| `"acceptEdits"` | ✅ Auto-approved | ❌ **Denied** (prompts) | File-editing agents that don't need Bash |
+| `"bypassPermissions"` | ✅ Auto-approved | ✅ Auto-approved | **Agents that need Bash** (quality checks, git commands) |
+| (omitted) | ❌ Prompts | ❌ Prompts | Only if parent already auto-approves |
+
+### Choosing the Right Mode
+
+| Agent Task | Needs Edit/Write? | Needs Bash? | Recommended Mode |
+|------------|-------------------|-------------|------------------|
+| Quality checks (git diff, npm test) | No | **Yes** | `"bypassPermissions"` |
+| Security scans (npm audit, grep) | No | **Yes** | `"bypassPermissions"` |
+| File editing (fix bugs, refactor) | **Yes** | Maybe | `"acceptEdits"` or `"bypassPermissions"` |
+| Read-only exploration | No | No | (omit) or `"acceptEdits"` |
+
+**CRITICAL:** If your background agent runs `git diff`, `npm test`, `git status`, or any shell command, you MUST use `mode="bypassPermissions"`. The `acceptEdits` mode does NOT auto-approve Bash — those calls will silently fail.
 
 ```
 # WRONG — background agent will fail on Edit/Write
@@ -132,12 +145,30 @@ Task(subagent_type="general-purpose",
      run_in_background=true,
      prompt="Fix the bug in src/lib/foo.ts...")
 
-# RIGHT — background agent can edit files
+# RIGHT — background agent can edit files (but NOT run Bash)
 Task(subagent_type="general-purpose",
      mode="acceptEdits",
      run_in_background=true,
      prompt="Fix the bug in src/lib/foo.ts...")
+
+# RIGHT — background agent can run quality checks with Bash
+Task(subagent_type="general-purpose",
+     mode="bypassPermissions",
+     run_in_background=true,
+     prompt="Run git diff and npm test, report results...")
 ```
+
+### Security Considerations
+
+`bypassPermissions` is safe when:
+- Agent only reads/analyzes (quality checks, security scans)
+- Agent runs in an isolated worktree
+- Agent output is reviewed before any further action
+
+`bypassPermissions` requires caution when:
+- Agent could write to production files
+- Agent could push to remote repositories
+- Agent has access to secrets or credentials
 
 ## Invalid Types (Do Not Use)
 
