@@ -740,6 +740,9 @@ Shell scripts in `templates/scripts/`:
 ### Recent Additions (v1.19.0)
 
 - **Codebase Conventions Detection** - Auto-detects 8+ conventions (test patterns, export style, async patterns, TypeScript strictness) during `sequant init` (#233)
+  - Conventions stored in `.sequant/conventions.json` with manual override support
+  - New `sequant conventions` command (`--detect`, `--reset`)
+  - `/exec` skill template references conventions for style-aware code generation
 - **Python Stack Support** - Detects pip, pipenv, poetry, and conda environments for dependency management (#94)
 - **Stale Branch Detection** - Pre-flight checks block QA/test when feature branch is >5 commits behind main (#304)
 - **CLI Wiring Completeness Checks** - `/exec` and `/qa` verify all RunOptions fields have `.option()` registrations (#307)

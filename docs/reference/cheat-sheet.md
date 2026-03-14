@@ -100,6 +100,7 @@ sequant doctor              # Verify installation health
 | `sequant state [init\|rebuild\|clean]` | Manage workflow state |
 | `sequant stats` | View local workflow analytics |
 | `sequant dashboard` | Launch real-time workflow dashboard |
+| `sequant conventions` | View, detect, or reset codebase conventions |
 | `sequant logs` | View and manage log files |
 
 ---
@@ -222,6 +223,7 @@ Adds a security review phase before final QA.
 .claude/skills/          # Skill definitions (slash commands)
 .claude/settings.json    # Claude Code settings
 .sequant/settings.json   # Sequant configuration
+.sequant/conventions.json # Detected codebase conventions
 .sequant/state.json      # Workflow state tracking
 .sequant/metrics.json    # Local analytics data
 .sequant/logs/           # Run logs
