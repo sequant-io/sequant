@@ -21,7 +21,6 @@ import {
   DEFAULT_CONFIG,
   ExecutionConfig,
   IssueResult,
-  PhaseResult,
 } from "../lib/workflow/types.js";
 import { ShutdownManager } from "../lib/shutdown.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
@@ -54,7 +53,6 @@ import {
   runIssueWithLogging,
 } from "../lib/workflow/batch-executor.js";
 import type { RunOptions } from "../lib/workflow/batch-executor.js";
-import { determinePhasesForIssue } from "../lib/workflow/phase-mapper.js";
 
 // Re-export public API for backwards compatibility
 export {

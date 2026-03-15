@@ -26,12 +26,10 @@ import {
   filterResumedPhases,
 } from "./worktree-manager.js";
 import { executePhaseWithRetry } from "./phase-executor.js";
-import { parseQaVerdict, formatDuration } from "./phase-executor.js";
 import {
   detectPhasesFromLabels,
   parseRecommendedWorkflow,
   determinePhasesForIssue,
-  hasUILabels,
   BUG_LABELS,
 } from "./phase-mapper.js";
 
