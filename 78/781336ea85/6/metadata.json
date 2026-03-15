@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "25ae725a-e732-4f69-a451-e6a51128adbc",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-15T17:40:30.648496Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/getting-started/installation.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 599,
+    "cache_creation_tokens": 13907,
+    "cache_read_tokens": 190930,
+    "output_tokens": 1318,
+    "api_call_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-15T17:40:30.596359Z",
+    "agent_lines": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/25ae725a-e732-4f69-a451-e6a51128adbc.jsonl"
+}
