@@ -249,7 +249,7 @@ Wait for server ready before proceeding.
 
 **Note:** If `{{DEV_URL}}` or `{{PM_RUN}}` are not replaced with actual values, the defaults are:
 - DEV_URL: `http://localhost:3000` (Next.js), `http://localhost:4321` (Astro), `http://localhost:5173` (Vite-based)
-- PM_RUN: `npm run` (or `bun run`, `yarn`, `pnpm run` based on lockfile)
+- PM_RUN: `npm run` (or `bun run`, `yarn`, `pnpm run`, `poetry run`, `uv run`, `python -m` based on lockfile)
 
 ### 1.5 Test Coverage Analysis (REQUIRED)
 

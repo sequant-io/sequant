@@ -7,17 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-03-13
+
 ### Added
 
+- Codebase conventions detection during `sequant init` (#233)
+  - Detects 8+ conventions: test patterns, export style, async patterns, TypeScript strictness, indentation, semicolons, package manager, project structure
+  - Stores results in `.sequant/conventions.json` with manual override support
+  - New `sequant conventions` command to view, re-detect, or reset conventions
+  - `/exec` skill template references conventions for style-aware code generation
+- Python package manager support (#94)
+  - Detects pip, pipenv, poetry, and conda environments
+  - Dependency management integrated into project analysis
 - Stale branch detection for pre-flight checks (#304)
   - `/qa` and `/test` skills block execution when feature branch is >5 commits behind main
   - `/exec` skill warns but doesn't block (allows implementation to start)
   - Configurable threshold via `staleBranchThreshold` in `.sequant/settings.json`
   - Prevents wasted QA cycles on code that won't cleanly merge
+- CLI wiring completeness checks in `/exec` and `/qa` skills (#307)
 - Dependabot configuration for automated dependency updates (#327)
   - Weekly npm dependency scanning with grouped PRs (production vs development)
   - Dev dependencies limited to minor+patch updates to reduce noise
   - PR limit of 10 to prevent overwhelming the repo
+- QA smoke test template section for workflow changes (#348)
+
+### Fixed
+
+- Background QA sub-agents silently fail on Bash calls due to permission mode gap (#352)
+  - Changed QA quality check agents to use `mode="bypassPermissions"` instead of `acceptEdits`
+  - Added comprehensive Bash coverage table to `subagent-types.md` documentation
+  - Agents running `git diff`, `npm test`, etc. now execute successfully in background mode
 
 ## [1.18.0] - 2026-03-11
 

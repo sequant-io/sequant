@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.18.0
+# What We've Built: Sequant v1.19.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -16,7 +16,7 @@ journey through planning, implementation, testing, and review
 | Slash Commands | 18 |
 | CLI Commands | 11 |
 | Core Library Modules | 46 |
-| Test Files | 56 |
+| Test Files | 57 |
 | Documentation Files | 39 |
 | Stack Configurations | 9 |
 | Lines of TypeScript | ~36,600 |
@@ -737,7 +737,19 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.18.0)
+### Recent Additions (v1.19.0)
+
+- **Codebase Conventions Detection** - Auto-detects 8+ conventions (test patterns, export style, async patterns, TypeScript strictness) during `sequant init` (#233)
+  - Conventions stored in `.sequant/conventions.json` with manual override support
+  - New `sequant conventions` command (`--detect`, `--reset`)
+  - `/exec` skill template references conventions for style-aware code generation
+- **Python Stack Support** - Detects pip, pipenv, poetry, and conda environments for dependency management (#94)
+- **Stale Branch Detection** - Pre-flight checks block QA/test when feature branch is >5 commits behind main (#304)
+- **CLI Wiring Completeness Checks** - `/exec` and `/qa` verify all RunOptions fields have `.option()` registrations (#307)
+- **Dependabot Integration** - Automated weekly dependency scanning with grouped PRs (#327)
+- **QA Smoke Test Templates** - New template section for workflow change verification (#348)
+
+### Earlier Additions (v1.18.0)
 
 - **Browser Testing Enforcement** - `ui`/`frontend`/`admin` labels auto-include `/test` phase; `no-browser-test` label opts out (#173)
 - **Solve Workflow Persistence** - `/solve` analysis posted as issue comments for cross-session context (#172)
@@ -1030,7 +1042,7 @@ npm run build
 | Slash Commands | 18 |
 | CLI Commands | 11 |
 | Library Modules | 46 |
-| Test Files | 56 |
+| Test Files | 57 |
 | Docs Files | 39 |
 | Stack Configs | 9 |
 | Reference Docs | 11 |
@@ -1038,7 +1050,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.18.0
+**Current Version:** 1.19.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1048,7 +1060,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.18.0                                │
+│                              SEQUANT v1.19.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
