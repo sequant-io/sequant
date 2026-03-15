@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.0] - 2026-03-15
+
 ### Changed
 
 - Drop Node 18 support, require Node 20+ (#363)
