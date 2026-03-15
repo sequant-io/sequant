@@ -2,30 +2,7 @@
 
 Install and configure Sequant in your project.
 
-## Recommended: Claude Code Plugin
-
-The simplest way to install Sequant is as a Claude Code plugin. This gives you automatic updates without manual sync commands.
-
-```bash
-# In Claude Code
-/plugin install sequant@claude-plugin-directory
-```
-
-Plugin installation provides:
-- **Auto-updates** — new skills and fixes are applied automatically
-- **No manual sync** — no need to run `sequant sync` or `sequant update`
-- **Discoverable** — browse in `/plugin > Discover`
-
-After installing the plugin, initialize your project:
-
-```bash
-npx sequant init
-npx sequant doctor
-```
-
-## Alternative: npm Only
-
-If you prefer npm-only installation (for CLI tools like `sequant run`):
+## Quick Start
 
 ```bash
 # Initialize Sequant in your project
@@ -104,12 +81,6 @@ npx sequant init
 ```
 
 ## Updating
-
-### Plugin Users
-
-Plugin updates are automatic. No action needed.
-
-### npm Users
 
 To update Sequant templates while preserving your customizations:
 
