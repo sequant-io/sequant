@@ -31,14 +31,14 @@ gh auth login
 gh auth status
 ```
 
-### Node.js 18+
+### Node.js 20+
 
-Node.js 18 or higher is required for the CLI.
+Node.js 20 or higher is required for the CLI.
 
 ```bash
 # Check version
 node --version
-# Should output v18.x.x or higher
+# Should output v20.x.x or higher
 ```
 
 ### Git

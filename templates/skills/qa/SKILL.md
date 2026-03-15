@@ -635,8 +635,8 @@ Include CI status in the QA output:
 
 | Check | State | Bucket | Impact |
 |-------|-------|--------|--------|
-| `build (18.x)` | SUCCESS | pass | ✅ MET |
-| `build (20.x)` | PENDING | pending | ⏳ PENDING |
+| `build (20.x)` | SUCCESS | pass | ✅ MET |
+| `build (22.x)` | PENDING | pending | ⏳ PENDING |
 | `lint` | FAILURE | fail | ❌ NOT_MET |
 
 **CI Summary:** 1 passed, 1 pending, 1 failed

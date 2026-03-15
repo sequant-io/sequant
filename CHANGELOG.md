@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Drop Node 18 support, require Node 20+ (#363)
+  - Update `engines.node` from `>=18.0.0` to `>=20.0.0`
+  - Remove Node 18 from CI test matrix
+  - Upgrade vitest 3 to 4, commander 12 to 14, inquirer 12 to 13, ora 8 to 9
+
 ## [1.19.0] - 2026-03-13
 
 ### Added
