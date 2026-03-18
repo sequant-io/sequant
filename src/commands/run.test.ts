@@ -599,14 +599,15 @@ describe("chain mode", () => {
   });
 
   describe("chain mode validation", () => {
-    it("should require --sequential flag", () => {
-      // This tests the validation logic pattern
-      // --chain without --sequential should be rejected
+    it("should imply --sequential when --chain is set", () => {
+      // --chain automatically enables sequential mode
       const chainEnabled = true;
-      const sequentialEnabled = false;
+      let sequentialEnabled = false;
 
-      const isValid = !chainEnabled || sequentialEnabled;
-      expect(isValid).toBe(false);
+      if (chainEnabled && !sequentialEnabled) {
+        sequentialEnabled = true;
+      }
+      expect(sequentialEnabled).toBe(true);
     });
 
     it("should allow --chain with --sequential", () => {

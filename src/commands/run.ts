@@ -198,25 +198,15 @@ export async function runCommand(
     console.log(
       chalk.gray('Batch example: npx sequant run --batch "1 2" --batch "3"'),
     );
-    console.log(
-      chalk.gray("Chain example: npx sequant run 1 2 3 --sequential --chain"),
-    );
+    console.log(chalk.gray("Chain example: npx sequant run 1 2 3 --chain"));
     return;
   }
 
   // Validate chain mode requirements
   if (mergedOptions.chain) {
+    // Chain mode is inherently sequential — imply --sequential automatically
     if (!mergedOptions.sequential) {
-      console.log(chalk.red("❌ --chain requires --sequential flag"));
-      console.log(
-        chalk.gray(
-          "   Chain mode executes issues sequentially, each branching from the previous.",
-        ),
-      );
-      console.log(
-        chalk.gray("   Usage: npx sequant run 1 2 3 --sequential --chain"),
-      );
-      return;
+      mergedOptions.sequential = true;
     }
 
     if (batches) {

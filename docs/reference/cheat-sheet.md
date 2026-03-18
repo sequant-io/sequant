@@ -112,7 +112,7 @@ sequant doctor              # Verify installation health
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--sequential` | Run issues one at a time | off (parallel) |
-| `--chain` | Chain issues: each branches from previous (requires `--sequential`) | off |
+| `--chain` | Chain issues: each branches from previous (implies `--sequential`) | off |
 | `--qa-gate` | Wait for QA pass before next issue in chain (requires `--chain`) | off |
 | `--phases <list>` | Phases to run | `spec,exec,qa` |
 | `--resume` | Resume from last completed phase (reads GitHub markers) | off |

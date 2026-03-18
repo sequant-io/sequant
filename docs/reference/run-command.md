@@ -50,7 +50,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 |--------|-------------|---------|
 | `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
 | `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
-| `--chain` | Chain issues: each branches from previous (requires `--sequential`) | `false` |
+| `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
 | `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
@@ -184,7 +184,7 @@ After each issue passes QA, a checkpoint commit is automatically created. This s
 
 **Requirements:**
 
-- `--chain` requires `--sequential` (issues must run in order)
+- `--chain` implies `--sequential` (issues must run in order)
 - Cannot be combined with `--batch` mode
 
 **Warnings:**

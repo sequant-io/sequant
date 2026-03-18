@@ -178,7 +178,7 @@ program
   .option("--quiet", "Suppress version warnings and non-essential output")
   .option(
     "--chain",
-    "Chain issues: each branches from previous (requires --sequential)",
+    "Chain issues: each branches from previous (implies --sequential)",
   )
   .option(
     "--qa-gate",
