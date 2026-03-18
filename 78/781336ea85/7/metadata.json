@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "9ac20327-4710-4010-8d67-aa1005ac0afb",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-18T21:15:38.092255Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Sequant.itermcolors"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "7674f835-c2e9-4fe1-bb90-33e5a93018f4",
+  "token_usage": {
+    "input_tokens": 2665,
+    "cache_creation_tokens": 352493,
+    "cache_read_tokens": 8881141,
+    "output_tokens": 50248,
+    "api_call_count": 113
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-18T21:15:37.168947Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 14,
+    "human_removed": 221,
+    "total_committed": 14,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/9ac20327-4710-4010-8d67-aa1005ac0afb.jsonl"
+}

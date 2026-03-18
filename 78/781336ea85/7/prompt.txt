@@ -1,0 +1,294 @@
+I want to use loom to create a sequant demo. Can you help mew plan it out. Thinking of using it to create a simple landing page or whatever digital diy project that has been searched for the most or something similar. Maybe converse with claude code to help plan the project and set it up in github issues until completion. preferably something attainable in 5 issues. then we could run solve then demo sequant run chain and quality loop. then batch qa and merge after and hopefully have a working product. THinking we could post this on our sequant.io site and create social handles and post it everywhere that matters. How does that plan sound? any other ideas or efficiencies? we'd need to plan this out in depth and think about potential gaps and if it would be compelling enough to create a buzz around the product
+
+---
+
+Can you create a comprehensive issue for this in the sequant-landing dir. We'll do anything business or marketing related there since it's private and sepearte from sequant
+
+---
+
+are the 5 sub issues for the demo? if so, we should create a pre-demo repo
+
+---
+
+demo-landing\
+2. we should set it up on camera maybe during the real one in a claude code session. we should create an ideal setup prompt. We want to use claude code where it's strong on it's own and should case sequant as a tool that works with one of the already best coding LLMs\
+3. Maybe we should create it to test the flow. we could record the session via entire.io for us to review and better setup the actual demo. does that make sense?
+
+---
+
+That makes sense. Honestly, should we record this all in loom now too?
+
+---
+
+how do I set this up in a new terminal. I'm using cursor ide right now. Should I use a specific theme or changhe the font size now? how should I organize the window? how should I setup loom?
+
+---
+
+update the issue
+
+---
+
+Lets think about what the finished landing page should look like and what would be compelling
+
+---
+
+option D. let's think about what indie hackers would need
+
+---
+
+I don't think we need a real micro product or need to say we built a saas in 10min. THat's misleading. A production ready landing page or docs page could be nice. We could take advantage of the wave  of an existing project with a lot of buzz.  We could make a unoffical docs site or cheatsheet site for openclaw or a tracker for openclaw offshoot projects or a vc tracker that tracks funding for saas projects and what round or how much etc?
+
+---
+
+is there anyway to make this dynamic out of the gate where it can self grow when new projects are posted?
+
+---
+
+after these 5 issues, would anything be missing? Would we have a functioning site we could deploy?
+
+---
+
+both
+
+---
+
+Should we include part of this setup session conversation in the tutorial. Would help less technical users setup new projects?
+
+---
+
+yes
+
+---
+
+Could we use the entire.io log from this session?
+
+---
+
+can you access the entire session?
+
+---
+
+we have a .entire
+
+---
+
+yes
+
+---
+
+what ide adjustments do I need to make before recording the loom video?
+
+---
+
+can you make any of those adjustments via the cli?
+
+---
+
+both
+
+---
+
+I don't see iterm2 in my applications. how do I open the settings?
+
+---
+
+Should we make it sequant brand colors? see sequant-landing repo
+
+---
+
+its setup. now what do I do?
+
+---
+
+Can I record the terminal seperate from the narration?
+
+---
+
+can you provide a outline of what I should run through in the terminal
+
+---
+
+can you add it to the issue
+
+---
+
+also, whats best practice for not showing my personal setup? \
+ex. "(base) tony@Tambras-MacBook-Air ~ %"
+
+---
+
+thinking about calling it "Side Claw"
+
+---
+
+Also thinking about Clawbook, ClawDir, ForClaw, ClawSet, Open CLaw Eco, Claw Nest, Claw Grasp, Claw Store(Add marketplace functionality)
+
+---
+
+lets do side claw
+
+---
+
+Lets change the description to somthing along the lines of a directory of projects built for open claw
+
+---
+
+Should it just say "Projects built for open claw"? What do they call the add ons? apps? plugins? aomething else?
+
+---
+
+if clawhub exists. this project might be redundant
+
+---
+
+THinking of building this:\
+Here’s a concise product/landing-page brief you can hand to yourself or a designer/dev.
+
+***
+
+## 1. Product concept
+
+A Gmail-connected **job search cockpit** for laid‑off mid‑career professionals that acts like a personal recruiter: organizing recruiter emails, tracking applications, and drafting tailored resumes, cover letters, and follow‑ups — all invisible to employers.
+
+**Core idea:**  
+“Your private recruiter-grade control center for your job search, built on top of your existing Gmail.”
+
+***
+
+## 2. Target user
+
+- Laid‑off mid‑career professionals (approx. 30–55).  
+- Have 8–20+ years experience, often in tech/knowledge work.  
+- Currently hunting for a similar or adjacent role, feeling overwhelmed by:  
+  - Recruiter email chaos  
+  - Constant resume/cover-letter tailoring  
+  - Tracking dozens of applications and follow-ups manually  
+
+**Primary pains to call out:**
+
+- “My inbox is a mess of recruiters, job alerts, and automated rejections.”  
+- “Customizing my resum role is exhausting.”  
+- “I lose track of where I’ve applied and when I should follow up.”  
+- “I’m worried employers will judge me if they know I’m using AI.”
+
+***
+
+## 3. Value proposition
+
+**One-liner (for hero section):**  
+“Your invisible recruiter for your job search — built on top of Gmail.”
+
+**Supporting promise:**  
+“Connect your Gmail and we’ll organize your job search, tailor your outreach, and keep you on track — without employers ever seeing our name.”
+
+**Key benefits:**
+
+1. **Clarity:** Turn recruiter emails and job alerts into a clean pipeline of applications and next steps.  
+2. **Leverage:** AI-generated resumes, cover letters, and follow-up emails tailored to each role and your voice.  
+3. **Stealth:** All messages come from your existing email; no “sent via X” branding.  
+4. **Momentum:** Daily plan with exactly what to apply to, who to follow up with, and how.
+
+***
+
+## 4. Core features to describe
+
+You’re not promising a full product yet, just the **ined inbox (on top of Gmail)**  
+   - Auto-detect recruiter and employer emails, group them by company and role.  
+   - Mark each thread as an “Application” with a stage (saved, applied, interview, offer).  
+
+2. **Application dashboard**  
+   - Kanban/board view of all applications: company, role, stage, last contact, next action.  
+   - Quick filters: “needs follow-up,” “interview scheduled,” “waiting on response.”  
+
+3. **AI resumes & cover letters**  
+   - Paste a job description or link; get a tailored resume variant and cover letter.  
+   - Optimized for ATS and mid‑career positioning, with your tone and strengths.  
+
+4. **AI email assistant (stealth)**  
+   - Drafts outreach, thank-you notes, and follow-ups from your real email.  
+   - Suggests replies inside each thread; you review and send with one click.  
+
+5. **Calendar + prep**  
+   - Detects interview invites, adds them to your calendar.  
+   - Generates prep notes: company overview, suggested stories, and questions to ask.
+
+***
+e structure
+
+**Hero section**
+
+- Headline:  
+  “Your invisible recruiter for your job search.”  
+- Subheadline:  
+  “For laid‑off mid‑career professionals who want a structured, AI‑powered job search — without employers knowing you’re using it.”  
+- Primary CTA:  
+  “Join the early access list” (email + short form).  
+
+**Problem section**
+
+- Short bullets or mini cards:  
+  - “Recruiter emails everywhere, no clear pipeline.”  
+  - “Custom resumes and cover letters for every role.”  
+  - “Missed follow-ups and lost opportunities.”  
+  - “AI tools help, but everything is scattered.”
+
+**Solution section**
+
+- One sentence intro: “We turn your Gmail into a job search cockpit.”  
+- 3–4 columns with icon + title + 1–2 sentence copy:  
+  - “Organized pipeline, not chaos”  
+  - “Tailored resumes & cover letters in clicks”  
+  - “Smart follow-ups and reminders”  
+  - “Completely invisible to employers”
+
+**How it works (3 steps)**
+
+1. Connect your Gmail.  
+ 
+3. You approve AI-generated resumes, cover letters, and emails — we keep you on track.
+
+**Social proof / trust (even if lightweight for now)**
+
+- Small text: “Currently interviewing laid‑off professionals for early access.”  
+- Optionally: “Built by laid‑off engineers and recruiters” if that’s true later.
+
+**Signup form**
+
+- Fields:  
+  - Email  
+  - Current/most recent role  
+  - Industry  
+  - “When were you laid off?” (dropdown: last month / last 3 months / last 6+ months / not laid off)  
+- Optional: “I’m open to a 15‑minute call to share feedback” (checkbox).
+
+***
+
+## 6. Success metrics for the test
+
+- Landing page visitor → email signup conversion (from targeted traffic).  
+- % who check the “willing to talk” box.  
+- Reply rate when you send a short follow-up asking about their job search.
+
+***
+
+## 7. Copy tone & design notes
+
+- Tone: calm, competent, empathetic; not hype-y or “growth hacker.”  
+- Emphasize **support and structure**, not “spam 500 companies woard + inbox + subtle AI “assistant” presence (not robots everywhere).  
+- Make “invisible to employers” and “built for laid‑off mid‑career” highly visible above the fold.
+
+***
+
+If you want, next step I can draft the exact hero + problem + solution copy in about ~300–400 words that you can paste directly into a Next.js landing page.\
+\
+---\
+\
+could it work?
+
+---
+
+thinking of building this product. Take a look at our '/Users/tony/Projects/job-scout'
+
+---
+
+I'd drop side claw. I'd build the landing page to get email signups for beta testing out product. that would help validate it before building it out all the way and pivoting
