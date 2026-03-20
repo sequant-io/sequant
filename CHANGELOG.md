@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-03-19
+
+### Fixed
+
+- `--chain` flag now implies `--sequential` instead of requiring it
+- Align ASCII box-drawing diagrams in docs
+
+### Documentation
+
+- Remove unstable plugin install recommendation from installation page
+
 ## [1.20.0] - 2026-03-15
 
 ### Changed
