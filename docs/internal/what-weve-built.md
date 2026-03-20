@@ -39,10 +39,10 @@ journey through planning, implementation, testing, and review
 ┌─────────────────────────────────────────────────────────────────────┐
 │                           Claude Code                               │
 │                                                                     │
-│   /spec ──────► /exec ──────► /test ──────► /qa ──────► PR Ready   │
-│   (Plan)       (Build)      (Verify)      (Review)                 │
+│   /spec ──────► /exec ──────► /test ──────► /qa ──────► PR Ready    │
+│   (Plan)       (Build)      (Verify)      (Review)                  │
 │                                                                     │
-│   ─────────────── or just: /fullsolve 123 ──────────────           │
+│   ─────────────── or just: /fullsolve 123 ──────────────            │
 └─────────────────────────────────────────────────────────────────────┘
                                 │
                     ┌───────────┼───────────┐
