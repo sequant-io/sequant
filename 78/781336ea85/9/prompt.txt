@@ -1,0 +1,13 @@
+How do I fix this graphic? some of the ascii isnt aligned. can I manually edit?\
+
+---
+
+[Image: source: /Users/tony/Desktop/Screenshot 2026-03-19 at 6.58.07 PM.png]
+
+---
+
+Are there any other diagrams across docs that need a review?
+
+---
+
+commit push

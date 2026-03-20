@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "a79cb6d5-fa67-4c89-904c-60344dc6467b",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-20T00:22:31.476152Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/concepts/what-is-sequant.md",
+    "docs/internal/what-weve-built.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 31,
+    "cache_creation_tokens": 36382,
+    "cache_read_tokens": 761349,
+    "output_tokens": 10669,
+    "api_call_count": 23
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-20T00:22:31.242857Z",
+    "agent_lines": 17,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 17,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/a79cb6d5-fa67-4c89-904c-60344dc6467b.jsonl"
+}
