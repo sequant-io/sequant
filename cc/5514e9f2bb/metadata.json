@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "cc5514e9f2bb",
+  "strategy": "manual-commit",
+  "branch": "feature/371-generate-and-consume-agents-md-for-cross-tool-comp",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/lib/agents-md.test.ts",
+    "src/lib/agents-md.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cc/5514e9f2bb/0/metadata.json",
+      "transcript": "/cc/5514e9f2bb/0/full.jsonl",
+      "context": "/cc/5514e9f2bb/0/context.md",
+      "content_hash": "/cc/5514e9f2bb/0/content_hash.txt",
+      "prompt": "/cc/5514e9f2bb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 31,
+    "cache_creation_tokens": 55327,
+    "cache_read_tokens": 1538976,
+    "output_tokens": 6993,
+    "api_call_count": 27
+  }
+}
