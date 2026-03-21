@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
+  - `sequant init` now generates AGENTS.md alongside CLAUDE.md
+  - `sequant sync` regenerates AGENTS.md when templates are updated
+  - `sequant doctor` checks AGENTS.md presence and consistency with CLAUDE.md
+  - `sequant conventions --format agents-md` outputs conventions in AGENTS.md format
+  - `--no-agents-md` flag to skip AGENTS.md generation during init
+
 ## [1.20.1] - 2026-03-19
 
 ### Fixed
