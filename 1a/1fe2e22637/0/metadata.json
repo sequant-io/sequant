@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "1a1fe2e22637",
+  "session_id": "ece0980f-9ddb-48b4-b6c4-02197f32e7c2",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-21T18:26:40.654601Z",
+  "branch": "feature/371-generate-and-consume-agents-md-for-cross-tool-comp",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "bin/cli.ts",
+    "src/commands/conventions.ts",
+    "src/commands/doctor.test.ts",
+    "src/commands/doctor.ts",
+    "src/commands/init.ts",
+    "src/commands/sync.ts",
+    "src/lib/agents-md.test.ts",
+    "src/lib/agents-md.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 81,
+    "cache_creation_tokens": 118836,
+    "cache_read_tokens": 6977265,
+    "output_tokens": 25095,
+    "api_call_count": 73
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-21T18:26:40.205304Z",
+    "agent_lines": 637,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 637,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-371-generate-and-consume-agents-md-for-cross-tool-comp/ece0980f-9ddb-48b4-b6c4-02197f32e7c2.jsonl"
+}
