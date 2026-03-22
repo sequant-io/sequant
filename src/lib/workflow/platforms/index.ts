@@ -17,6 +17,13 @@ export type {
   Comment,
 } from "./platform-provider.js";
 
+export { GitHubProvider } from "./github.js";
+export type {
+  PRMergeStatus,
+  ClosedIssueRaw,
+  CreatePRCliResult,
+} from "./github.js";
+
 const PLATFORMS: Record<string, () => PlatformProvider> = {
   github: () => new GitHubProvider(),
 };

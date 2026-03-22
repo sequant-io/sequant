@@ -4,6 +4,7 @@
 
 import { execSync } from "child_process";
 import fs from "fs";
+import { GitHubProvider } from "./workflow/platforms/github.js";
 
 /**
  * Check if a command exists on the system
@@ -25,12 +26,8 @@ export function commandExists(cmd: string): boolean {
  * Check if gh CLI is authenticated
  */
 export function isGhAuthenticated(): boolean {
-  try {
-    execSync("gh auth status", { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
+  const github = new GitHubProvider();
+  return github.checkAuthSync();
 }
 
 /**

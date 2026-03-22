@@ -18,11 +18,10 @@
  */
 
 import { spawnSync } from "child_process";
+import { GitHubProvider } from "./platforms/github.js";
+import type { PRMergeStatus } from "./platforms/github.js";
 
-/**
- * PR merge status from GitHub
- */
-export type PRMergeStatus = "MERGED" | "CLOSED" | "OPEN" | null;
+export type { PRMergeStatus };
 
 /**
  * Check the merge status of a PR using the gh CLI
@@ -31,24 +30,8 @@ export type PRMergeStatus = "MERGED" | "CLOSED" | "OPEN" | null;
  * @returns "MERGED" | "CLOSED" | "OPEN" | null (null if PR not found or gh unavailable)
  */
 export function checkPRMergeStatus(prNumber: number): PRMergeStatus {
-  try {
-    const result = spawnSync(
-      "gh",
-      ["pr", "view", String(prNumber), "--json", "state", "-q", ".state"],
-      { stdio: "pipe", timeout: 10000 },
-    );
-
-    if (result.status === 0 && result.stdout) {
-      const state = result.stdout.toString().trim().toUpperCase();
-      if (state === "MERGED") return "MERGED";
-      if (state === "CLOSED") return "CLOSED";
-      if (state === "OPEN") return "OPEN";
-    }
-  } catch {
-    // gh not available or error - return null
-  }
-
-  return null;
+  const github = new GitHubProvider();
+  return github.getPRMergeStatusSync(prNumber);
 }
 
 /**
