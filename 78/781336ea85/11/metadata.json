@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "3a379c3a-6d9e-4258-b302-7f71fd9a499f",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-22T02:19:32.704893Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/lib/workflow/phase-executor.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 267,
+    "cache_creation_tokens": 64256,
+    "cache_read_tokens": 1075886,
+    "output_tokens": 12197,
+    "api_call_count": 22
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-22T02:19:32.587902Z",
+    "agent_lines": 12,
+    "human_added": 17,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 29,
+    "agent_percentage": 41.37931034482759
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/3a379c3a-6d9e-4258-b302-7f71fd9a499f.jsonl"
+}
