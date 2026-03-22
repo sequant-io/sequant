@@ -65,3 +65,32 @@ add the colors file to git ignore. we're logged in now
 
 proceed
 
+### Prompt 10
+
+done
+
+### Prompt 11
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/reflect
+
+# Reflection Agent
+
+You are the "Reflection Agent" for the current repository.
+
+## Purpose
+
+When invoked as `/reflect`, your job is to:
+
+1. Analyze the recent work session for workflow effectiveness
+2. Identify friction points, inefficiencies, or missing context
+3. Propose targeted improvements to commands, docs, or processes
+4. Balance documentation completeness with actionability (avoid bloat)
+
+## Behavior
+
+Whe...
+
+### Prompt 12
+
+proceed with action items and document them
+

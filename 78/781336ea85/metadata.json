@@ -25,7 +25,8 @@
     "docs/reference/run-command.md",
     "src/commands/run.test.ts",
     "src/commands/run.ts",
-    "src/lib/workflow/batch-executor.ts"
+    "src/lib/workflow/batch-executor.ts",
+    "src/lib/workflow/phase-executor.ts"
   ],
   "sessions": [
     {
@@ -114,10 +115,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 14855,
-    "cache_creation_tokens": 1650310,
-    "cache_read_tokens": 44565310,
-    "output_tokens": 171314,
-    "api_call_count": 624
+    "input_tokens": 14864,
+    "cache_creation_tokens": 1658364,
+    "cache_read_tokens": 45292266,
+    "output_tokens": 175290,
+    "api_call_count": 630
   }
 }
