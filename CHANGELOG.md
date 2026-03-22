@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sequant conventions --format agents-md` outputs conventions in AGENTS.md format
   - `--no-agents-md` flag to skip AGENTS.md generation during init
 
+## [1.20.2] - 2026-03-21
+
+### Fixed
+
+- `security-review` and `loop` phases crash with exit code 1 in worktree-isolated workflows due to SDK session resume from mismatched working directory
+
+### Security
+
+- Pin GitHub Actions to commit SHAs to prevent tag hijacking
+
 ## [1.20.1] - 2026-03-19
 
 ### Fixed
