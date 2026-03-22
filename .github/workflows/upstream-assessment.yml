@@ -65,8 +65,11 @@ jobs:
 
       - name: Check if already assessed
         id: check
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
         run: |
-          VERSION="${{ inputs.version || steps.latest.outputs.version }}"
+          VERSION="${INPUT_VERSION:-$LATEST_VERSION}"
           if [ -f ".sequant/upstream/${VERSION}.md" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT
             echo "Version $VERSION already assessed"
@@ -77,16 +80,20 @@ jobs:
 
       - name: Determine assessment mode
         id: mode
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_SINCE: ${{ inputs.since }}
+          BASELINE_LAST: ${{ steps.baseline.outputs.last }}
         run: |
-          if [ -n "${{ inputs.since }}" ]; then
+          if [ -n "$INPUT_SINCE" ]; then
             echo "mode=since" >> $GITHUB_OUTPUT
-            echo "version=${{ inputs.since }}" >> $GITHUB_OUTPUT
-          elif [ -n "${{ inputs.version }}" ]; then
+            echo "version=$INPUT_SINCE" >> $GITHUB_OUTPUT
+          elif [ -n "$INPUT_VERSION" ]; then
             echo "mode=single" >> $GITHUB_OUTPUT
-            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          elif [ "${{ steps.baseline.outputs.last }}" != "none" ]; then
+            echo "version=$INPUT_VERSION" >> $GITHUB_OUTPUT
+          elif [ "$BASELINE_LAST" != "none" ]; then
             echo "mode=since" >> $GITHUB_OUTPUT
-            echo "version=${{ steps.baseline.outputs.last }}" >> $GITHUB_OUTPUT
+            echo "version=$BASELINE_LAST" >> $GITHUB_OUTPUT
           else
             echo "mode=latest" >> $GITHUB_OUTPUT
             echo "version=" >> $GITHUB_OUTPUT
@@ -96,14 +103,14 @@ jobs:
         if: steps.check.outputs.skip == 'false' || inputs.since != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ steps.mode.outputs.mode }}
+          VERSION: ${{ steps.mode.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          MODE="${{ steps.mode.outputs.mode }}"
-          VERSION="${{ steps.mode.outputs.version }}"
-          DRY_RUN="${{ inputs.dry_run }}"
 
           # Build assessment options
           OPTIONS=""
-          if [ "$DRY_RUN" = "true" ]; then
+          if [ "$DRY_RUN" = "true" ] || [ "$DRY_RUN" = "True" ]; then
             OPTIONS="$OPTIONS --dry-run"
           fi
 
@@ -120,6 +127,9 @@ jobs:
 
       - name: Commit report and baseline
         if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true'
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          LATEST_VERSION: ${{ steps.latest.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -129,17 +139,22 @@ jobs:
             echo "No changes to commit"
           else
             git add .sequant/upstream/
-            VERSION="${{ inputs.version || steps.latest.outputs.version }}"
+            VERSION="${INPUT_VERSION:-$LATEST_VERSION}"
             git commit -m "docs: Upstream assessment for $VERSION"
             git push
             echo "Committed and pushed assessment report"
           fi
 
       - name: Summary
+        env:
+          ASSESS_MODE: ${{ steps.mode.outputs.mode }}
+          ASSESS_VERSION: ${{ steps.mode.outputs.version || steps.latest.outputs.version }}
+          ASSESS_DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          ASSESS_SKIPPED: ${{ steps.check.outputs.skip }}
         run: |
           echo "## Upstream Assessment Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Mode:** ${{ steps.mode.outputs.mode }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Version:** ${{ steps.mode.outputs.version || steps.latest.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Dry Run:** ${{ inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Skipped:** ${{ steps.check.outputs.skip }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode:** $ASSESS_MODE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $ASSESS_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dry Run:** $ASSESS_DRY_RUN" >> $GITHUB_STEP_SUMMARY
+          echo "- **Skipped:** $ASSESS_SKIPPED" >> $GITHUB_STEP_SUMMARY

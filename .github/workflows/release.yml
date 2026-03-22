@@ -41,25 +41,31 @@ jobs:
           npm run validate:skills
 
       - name: Update version in package.json
-        run: npm version ${{ inputs.version }} --no-git-tag-version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version
 
       - name: Sync plugin.json version
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           node -e "
             const fs = require('fs');
             const pluginPath = './.claude-plugin/plugin.json';
             const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
-            plugin.version = '${{ inputs.version }}';
+            plugin.version = process.env.VERSION;
             fs.writeFileSync(pluginPath, JSON.stringify(plugin, null, 2) + '\n');
-            console.log('Updated plugin.json to version ${{ inputs.version }}');
+            console.log('Updated plugin.json to version ' + process.env.VERSION);
           "
 
       - name: Commit version bump
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json .claude-plugin/plugin.json
-          git commit -m "chore: bump version to ${{ inputs.version }}"
+          git commit -m "chore: bump version to $VERSION"
           git push
 
       - name: Create GitHub Release
