@@ -51,6 +51,11 @@ export interface ExecutionConfig {
    * When false (--no-retry flag), no retry attempts are made.
    */
   retry?: boolean;
+  /**
+   * Agent driver to use for phase execution.
+   * Default: "claude-code"
+   */
+  agent?: string;
 }
 
 /**

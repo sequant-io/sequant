@@ -11,7 +11,7 @@
  * ```
  */
 
-import { execSync } from "child_process";
+import { GitHubProvider } from "./platforms/github.js";
 import {
   type Phase,
   type PhaseMarker,
@@ -235,19 +235,11 @@ export function isPhaseCompletedOrPast(
  * @returns Latest phase marker, or null if no markers found or on error
  */
 export function getIssuePhase(issueNumber: number): PhaseMarker | null {
-  try {
-    const output = execSync(
-      `gh issue view ${issueNumber} --json comments --jq '[.comments[].body]'`,
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-    );
-
-    const bodies: string[] = JSON.parse(output);
-    const comments = bodies.map((body) => ({ body }));
-    return detectPhaseFromComments(comments);
-  } catch {
-    // GitHub CLI failure — fall through to normal execution
-    return null;
-  }
+  const github = new GitHubProvider();
+  const bodies = github.fetchIssueCommentBodiesSync(String(issueNumber));
+  if (bodies.length === 0) return null;
+  const comments = bodies.map((body) => ({ body }));
+  return detectPhaseFromComments(comments);
 }
 
 /**
@@ -259,18 +251,10 @@ export function getIssuePhase(issueNumber: number): PhaseMarker | null {
  * @returns Array of completed phase names, or empty array on error
  */
 export function getCompletedPhases(issueNumber: number): Phase[] {
-  try {
-    const output = execSync(
-      `gh issue view ${issueNumber} --json comments --jq '[.comments[].body]'`,
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-    );
-
-    const bodies: string[] = JSON.parse(output);
-    const comments = bodies.map((body) => ({ body }));
-    return getCompletedPhasesFromComments(comments);
-  } catch {
-    return [];
-  }
+  const github = new GitHubProvider();
+  const bodies = github.fetchIssueCommentBodiesSync(String(issueNumber));
+  const comments = bodies.map((body) => ({ body }));
+  return getCompletedPhasesFromComments(comments);
 }
 
 /**
@@ -287,17 +271,8 @@ export function getResumablePhasesForIssue(
   issueNumber: number,
   requestedPhases: readonly string[],
 ): string[] {
-  try {
-    const output = execSync(
-      `gh issue view ${issueNumber} --json comments --jq '[.comments[].body]'`,
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-    );
-
-    const bodies: string[] = JSON.parse(output);
-    const comments = bodies.map((body) => ({ body }));
-    return getResumablePhases(requestedPhases, comments);
-  } catch {
-    // On error, return all phases (no filtering)
-    return [...requestedPhases];
-  }
+  const github = new GitHubProvider();
+  const bodies = github.fetchIssueCommentBodiesSync(String(issueNumber));
+  const comments = bodies.map((body) => ({ body }));
+  return getResumablePhases(requestedPhases, comments);
 }

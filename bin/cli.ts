@@ -211,6 +211,10 @@ program
     "Force re-execution of completed issues (bypass pre-flight state guard)",
   )
   .option("--reflect", "Analyze run results and suggest improvements")
+  .option(
+    "--agent <name>",
+    'Agent driver for phase execution (default: "claude-code")',
+  )
   .action(runCommand);
 
 program

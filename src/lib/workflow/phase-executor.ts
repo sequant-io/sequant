@@ -1,18 +1,20 @@
 /**
  * Phase execution engine for workflow orchestration.
  *
- * Handles executing individual phases via the Claude Agent SDK,
+ * Handles executing individual phases via an AgentDriver interface,
  * including cold-start retry logic and MCP fallback strategies.
+ *
+ * The SDK import has been moved to ClaudeCodeDriver — this module
+ * is agent-agnostic.
  */
 
 import chalk from "chalk";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { getMcpServersConfig } from "../system.js";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
 import { readAgentsMd } from "../agents-md.js";
+import { getDriver } from "./drivers/index.js";
+import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
 
 /**
  * Natural language prompts for each phase
@@ -113,7 +115,7 @@ async function getPhasePrompt(
 }
 
 /**
- * Execute a single phase for an issue using Claude Agent SDK
+ * Execute a single phase for an issue using the configured AgentDriver.
  */
 async function executePhase(
   issueNumber: number,
@@ -151,260 +153,152 @@ async function executePhase(
   const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
 
-  // Track stderr for error diagnostics (declared outside try for catch access)
-  let capturedStderr = "";
-
-  try {
-    // Check if shutdown is in progress
-    if (shutdownManager?.shuttingDown) {
-      return {
-        phase,
-        success: false,
-        durationSeconds: 0,
-        error: "Shutdown in progress",
-      };
-    }
-
-    // Create abort controller for timeout
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => {
-      abortController.abort();
-    }, config.phaseTimeout * 1000);
-
-    // Register abort controller with shutdown manager for graceful shutdown
-    if (shutdownManager) {
-      shutdownManager.setAbortController(abortController);
-    }
-
-    let resultSessionId: string | undefined;
-    let resultMessage: SDKResultMessage | undefined;
-    let lastError: string | undefined;
-    let capturedOutput = "";
-
-    // Build environment with worktree isolation variables
-    const env: Record<string, string> = {
-      ...process.env,
-      CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
+  // Check if shutdown is in progress
+  if (shutdownManager?.shuttingDown) {
+    return {
+      phase,
+      success: false,
+      durationSeconds: 0,
+      error: "Shutdown in progress",
     };
+  }
 
-    // Set worktree isolation environment variables
-    if (shouldUseWorktree) {
-      env.SEQUANT_WORKTREE = worktreePath;
-      env.SEQUANT_ISSUE = String(issueNumber);
-    }
+  // Create abort controller for timeout
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => {
+    abortController.abort();
+  }, config.phaseTimeout * 1000);
 
-    // Set orchestration context for skills to detect they're part of a workflow
-    // Skills can check these to skip redundant pre-flight checks
-    env.SEQUANT_ORCHESTRATOR = "sequant-run";
-    env.SEQUANT_PHASE = phase;
+  // Register abort controller with shutdown manager for graceful shutdown
+  if (shutdownManager) {
+    shutdownManager.setAbortController(abortController);
+  }
 
-    // Execute using Claude Agent SDK
-    // Safety: never resume a session when worktree isolation is active.
-    // Even if THIS phase doesn't use the worktree, a previous phase may have
-    // created the session there. Resuming from a different cwd crashes the SDK
-    // (exit code 1). ISOLATED_PHASES prevents this by design, but this guard
-    // catches edge cases (e.g. a new phase added without updating ISOLATED_PHASES).
-    const canResume = sessionId && !worktreePath;
+  // Build environment with worktree isolation variables
+  const env: Record<string, string> = {
+    ...process.env,
+    CLAUDE_HOOKS_SMART_TESTS: config.noSmartTests ? "false" : "true",
+  };
 
-    // Get MCP servers config if enabled
-    // Reads from Claude Desktop config and passes to SDK for headless MCP support
-    const mcpServers = config.mcp ? getMcpServersConfig() : undefined;
+  // Set worktree isolation environment variables
+  if (shouldUseWorktree) {
+    env.SEQUANT_WORKTREE = worktreePath;
+    env.SEQUANT_ISSUE = String(issueNumber);
+  }
 
-    // Track whether we're actively streaming verbose output
-    // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
-    // (Issue #283: ora's stop() clears the current line, which can truncate output when
-    // pause/resume is called for every chunk in rapid succession)
-    let verboseStreamingActive = false;
+  // Set orchestration context for skills to detect they're part of a workflow
+  // Skills can check these to skip redundant pre-flight checks
+  env.SEQUANT_ORCHESTRATOR = "sequant-run";
+  env.SEQUANT_PHASE = phase;
 
-    const queryInstance = query({
-      prompt,
-      options: {
-        abortController,
-        cwd,
-        // Load project settings including skills
-        settingSources: ["project"],
-        // Use Claude Code's system prompt and tools
-        systemPrompt: { type: "preset", preset: "claude_code" },
-        tools: { type: "preset", preset: "claude_code" },
-        // Bypass permissions for headless execution
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-        // Resume from previous session if provided (but not when switching directories)
-        ...(canResume ? { resume: sessionId } : {}),
-        // Configure smart tests and worktree isolation via environment
-        env,
-        // Pass MCP servers for headless mode (AC-2)
-        ...(mcpServers ? { mcpServers } : {}),
-        // Capture stderr for debugging (helps diagnose early exit failures)
-        stderr: (data: string) => {
-          capturedStderr += data;
-          // Write stderr in verbose mode
-          if (config.verbose) {
-            // Pause spinner once to avoid truncation (Issue #283)
-            if (!verboseStreamingActive) {
-              spinner?.pause();
-              verboseStreamingActive = true;
-            }
-            process.stderr.write(chalk.red(data));
+  // Track whether we're actively streaming verbose output
+  // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
+  // (Issue #283: ora's stop() clears the current line, which can truncate output when
+  // pause/resume is called for every chunk in rapid succession)
+  let verboseStreamingActive = false;
+
+  // Safety: never resume a session when worktree isolation is active.
+  // Even if THIS phase doesn't use the worktree, a previous phase may have
+  // created the session there. Resuming from a different cwd crashes the SDK
+  // (exit code 1). ISOLATED_PHASES prevents this by design, but this guard
+  // catches edge cases (e.g. a new phase added without updating ISOLATED_PHASES).
+  const canResume = sessionId && !worktreePath;
+
+  // Build AgentExecutionConfig for the driver
+  const agentConfig: AgentExecutionConfig = {
+    cwd,
+    env,
+    abortSignal: abortController.signal,
+    phaseTimeout: config.phaseTimeout,
+    verbose: config.verbose,
+    mcp: config.mcp,
+    sessionId: canResume ? sessionId : undefined,
+    onOutput: config.verbose
+      ? (text: string) => {
+          if (!verboseStreamingActive) {
+            spinner?.pause();
+            verboseStreamingActive = true;
           }
-        },
-      },
-    });
-
-    // Stream and process messages
-    for await (const message of queryInstance) {
-      // Capture session ID from system init message
-      if (message.type === "system" && message.subtype === "init") {
-        resultSessionId = message.session_id;
-      }
-
-      // Capture output from assistant messages
-      if (message.type === "assistant") {
-        // Extract text content from the message
-        const content = message.message.content as Array<{
-          type: string;
-          text?: string;
-        }>;
-        const textContent = content
-          .filter((c) => c.type === "text" && c.text)
-          .map((c) => c.text)
-          .join("");
-        if (textContent) {
-          capturedOutput += textContent;
-          // Show streaming output in verbose mode
-          if (config.verbose) {
-            // Pause spinner once at start of streaming to avoid truncation
-            // (Issue #283: repeated pause/resume causes ora to clear lines between chunks)
-            if (!verboseStreamingActive) {
-              spinner?.pause();
-              verboseStreamingActive = true;
-            }
-            process.stdout.write(chalk.gray(textContent));
+          process.stdout.write(chalk.gray(text));
+        }
+      : undefined,
+    onStderr: config.verbose
+      ? (data: string) => {
+          if (!verboseStreamingActive) {
+            spinner?.pause();
+            verboseStreamingActive = true;
           }
+          process.stderr.write(chalk.red(data));
         }
-      }
+      : undefined,
+  };
 
-      // Capture the final result
-      if (message.type === "result") {
-        resultMessage = message;
-      }
-    }
+  // Resolve driver from config or default
+  const driver: AgentDriver = getDriver(config.agent);
 
-    // Resume spinner after streaming completes (if we paused it)
-    if (verboseStreamingActive) {
-      spinner?.resume();
-      verboseStreamingActive = false;
-    }
+  const agentResult = await driver.executePhase(prompt, agentConfig);
 
-    clearTimeout(timeoutId);
+  // Resume spinner after execution completes (if we paused it)
+  if (verboseStreamingActive) {
+    spinner?.resume();
+  }
 
-    // Clear abort controller from shutdown manager
-    if (shutdownManager) {
-      shutdownManager.clearAbortController();
-    }
+  clearTimeout(timeoutId);
 
-    const durationSeconds = (Date.now() - startTime) / 1000;
+  // Clear abort controller from shutdown manager
+  if (shutdownManager) {
+    shutdownManager.clearAbortController();
+  }
 
-    // Check result status
-    if (resultMessage) {
-      if (resultMessage.subtype === "success") {
-        // For QA phase, check the verdict to determine actual success
-        // SDK "success" just means the query completed - we need to parse the verdict
-        if (phase === "qa" && capturedOutput) {
-          const verdict = parseQaVerdict(capturedOutput);
-          // Only READY_FOR_MERGE and NEEDS_VERIFICATION are considered passing
-          // NEEDS_VERIFICATION is external verification, not a code quality issue
-          if (
-            verdict &&
-            verdict !== "READY_FOR_MERGE" &&
-            verdict !== "NEEDS_VERIFICATION"
-          ) {
-            return {
-              phase,
-              success: false,
-              durationSeconds,
-              error: `QA verdict: ${verdict}`,
-              sessionId: resultSessionId,
-              output: capturedOutput,
-              verdict, // Include parsed verdict
-            };
-          }
-          // Pass case - include verdict for logging
-          return {
-            phase,
-            success: true,
-            durationSeconds,
-            sessionId: resultSessionId,
-            output: capturedOutput,
-            verdict: verdict ?? undefined, // Include if found
-          };
-        }
+  const durationSeconds = (Date.now() - startTime) / 1000;
 
-        return {
-          phase,
-          success: true,
-          durationSeconds,
-          sessionId: resultSessionId,
-          output: capturedOutput,
-        };
-      } else {
-        // Handle error subtypes
-        const errorSubtype = resultMessage.subtype;
-        if (errorSubtype === "error_max_turns") {
-          lastError = "Max turns reached";
-        } else if (errorSubtype === "error_during_execution") {
-          lastError =
-            resultMessage.errors?.join(", ") || "Error during execution";
-        } else if (errorSubtype === "error_max_budget_usd") {
-          lastError = "Budget limit exceeded";
-        } else {
-          lastError = `Error: ${errorSubtype}`;
-        }
-
+  // Map AgentPhaseResult to PhaseResult
+  if (agentResult.success) {
+    // For QA phase, check the verdict to determine actual success
+    // Agent "success" just means the execution completed — we need to parse the verdict
+    if (phase === "qa" && agentResult.output) {
+      const verdict = parseQaVerdict(agentResult.output);
+      if (
+        verdict &&
+        verdict !== "READY_FOR_MERGE" &&
+        verdict !== "NEEDS_VERIFICATION"
+      ) {
         return {
           phase,
           success: false,
           durationSeconds,
-          error: lastError,
-          sessionId: resultSessionId,
+          error: `QA verdict: ${verdict}`,
+          sessionId: agentResult.sessionId,
+          output: agentResult.output,
+          verdict,
         };
       }
-    }
-
-    // No result message received
-    return {
-      phase,
-      success: false,
-      durationSeconds: (Date.now() - startTime) / 1000,
-      error: "No result received from Claude",
-      sessionId: resultSessionId,
-    };
-  } catch (err) {
-    const durationSeconds = (Date.now() - startTime) / 1000;
-    const error = err instanceof Error ? err.message : String(err);
-
-    // Check if it was an abort (timeout)
-    if (error.includes("abort") || error.includes("AbortError")) {
       return {
         phase,
-        success: false,
+        success: true,
         durationSeconds,
-        error: `Timeout after ${config.phaseTimeout}s`,
+        sessionId: agentResult.sessionId,
+        output: agentResult.output,
+        verdict: verdict ?? undefined,
       };
     }
 
-    // Include stderr in error message if available (helps diagnose early exit failures)
-    const stderrSuffix = capturedStderr
-      ? `\nStderr: ${capturedStderr.slice(0, 500)}`
-      : "";
-
     return {
       phase,
-      success: false,
+      success: true,
       durationSeconds,
-      error: error + stderrSuffix,
+      sessionId: agentResult.sessionId,
+      output: agentResult.output,
     };
   }
+
+  return {
+    phase,
+    success: false,
+    durationSeconds,
+    error: agentResult.error,
+    sessionId: agentResult.sessionId,
+  };
 }
 
 /**

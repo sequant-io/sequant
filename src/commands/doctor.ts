@@ -5,6 +5,7 @@
 import chalk from "chalk";
 import { execSync } from "child_process";
 import { ui, colors } from "../lib/cli-ui.js";
+import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -70,17 +71,8 @@ export function checkClosedIssues(): ClosedIssue[] {
   const sevenDaysAgoISO = sevenDaysAgo.toISOString();
 
   // Fetch closed issues from last 7 days
-  let closedIssues: ClosedIssue[];
-  try {
-    const output = execSync(
-      `gh issue list --state closed --json number,title,closedAt,labels --limit 100`,
-      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
-    );
-    closedIssues = JSON.parse(output) as ClosedIssue[];
-  } catch {
-    // gh command failed - return empty (graceful degradation)
-    return [];
-  }
+  const github = new GitHubProvider();
+  const closedIssues = github.listClosedIssuesSync(100) as ClosedIssue[];
 
   // Filter to last 7 days
   const recentIssues = closedIssues.filter(
