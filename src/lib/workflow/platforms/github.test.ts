@@ -85,4 +85,48 @@ describe("GitHubProvider", () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe("getPRHeadBranchSync", () => {
+    it("returns branch name on success", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: "feature/123-my-feature\n",
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      const result = provider.getPRHeadBranchSync(123);
+      expect(result).toBe("feature/123-my-feature");
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        ["pr", "view", "123", "--json", "headRefName", "--jq", ".headRefName"],
+        expect.objectContaining({ stdio: "pipe", timeout: 10000 }),
+      );
+    });
+
+    it("returns null on failure", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "error",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      expect(provider.getPRHeadBranchSync(999)).toBeNull();
+    });
+
+    it("returns null on empty output", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: "",
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      expect(provider.getPRHeadBranchSync(456)).toBeNull();
+    });
+  });
 });
