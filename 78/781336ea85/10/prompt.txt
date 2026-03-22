@@ -1,0 +1,22 @@
+how do we check for this:\
+https://thehackernews.com/2026/03/trivy-security-scanner-github-actions.html
+
+---
+
+Should I do this for all of my repos?
+
+---
+
+How should I approach this
+
+---
+
+yes
+
+---
+
+Is this safe to commit. we're in a public open source repo
+
+---
+
+yes
