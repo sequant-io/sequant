@@ -58,3 +58,56 @@ done
 
 proceed
 
+### Prompt 11
+
+done
+
+### Prompt 12
+
+it's not synced with whats on github. We made some subtle changes
+
+### Prompt 13
+
+should we rebuild
+
+### Prompt 14
+
+look at the changes we made in the sequant repo
+
+### Prompt 15
+
+do some investigating. use subagents if needed
+
+### Prompt 16
+
+yes
+
+### Prompt 17
+
+ran it but the docs are still stale:\
+https://sequant.io/docs/
+
+### Prompt 18
+
+I need pro and I'm on the free tier. any alternative?
+
+### Prompt 19
+
+this is from the incognito window diagram:\
+"                         ┌──────────────┐
+                         │ GitHub Issue  │
+                         │    #123       │
+                         └──────┬───────┘
+                                │
+                         ┌──────▼───────┐
+                         │    /spec     │  Runs in main repo.
+                         │     Plan...
+
+### Prompt 20
+
+yes
+
+### Prompt 21
+
+That worked. Can you document what to do in the future for doc syncing in the sequant-landing repo?
+

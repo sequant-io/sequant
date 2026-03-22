@@ -580,3 +580,86 @@ done
 ---
 
 proceed
+
+---
+
+done
+
+---
+
+it's not synced with whats on github. We made some subtle changes
+
+---
+
+should we rebuild
+
+---
+
+look at the changes we made in the sequant repo
+
+---
+
+do some investigating. use subagents if needed
+
+---
+
+yes
+
+---
+
+ran it but the docs are still stale:\
+https://sequant.io/docs/
+
+---
+
+I need pro and I'm on the free tier. any alternative?
+
+---
+
+this is from the incognito window diagram:\
+"                         ┌──────────────┐
+                         │ GitHub Issue  │
+                         │    #123       │
+                         └──────┬───────┘
+                                │
+                         ┌──────▼───────┐
+                         │    /spec     │  Runs in main repo.
+                         │     Plan     │  Reads issue, lints AC,
+                         │              │  posts plan to GitHub.
+                         └──────┬───────┘
+                                │
+               ┌────────────────▼─────────────────────┐
+               │           WORKTREE                    │
+               │    isolated branch + dependencies     │
+               │                                       │
+               │         ┌         │
+               │         │ commit, push,│              │
+               │         │ create PR    │              │
+               │         └──────┬───────┘              │
+               │                │                      │
+               │         ┌──────▼───────┐              │
+               │         │     /qa      │◄──┐          │
+               │         │    Review    │   │          │
+               │         │              │   │          │
+               │         │ Type safety, │   │ /loop    │
+               │         │ security,    │   │ auto-fix │
+               │         │ scope, tests │   │ (up to   │
+               │         └──────┬───────┘   │  3x)     │
+               │                │           │          │
+               │           Pass? ───NO─────�─────────────┘
+                                │
+                         ┌──────▼───────┐
+                         │    Merge     │  PR lands on main.
+                         │   + Clean    │  Worktree removed.
+                         └──────────────┘
+                                │
+                                ▼
+                         Code on main
+
+---
+
+yes
+
+---
+
+That worked. Can you document what to do in the future for doc syncing in the sequant-landing repo?

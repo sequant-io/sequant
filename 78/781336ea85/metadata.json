@@ -3,13 +3,14 @@
   "checkpoint_id": "78781336ea85",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 12,
+  "checkpoints_count": 11,
   "files_touched": [
     ".claude-plugin/plugin.json",
     ".claude/projects/-Users-tony-Projects-sequant/memory/feedback_background_agent_bash.md",
     "CHANGELOG.md",
     "Sequant.itermcolors",
     "bin/cli.ts",
+    "docs/concepts/what-is-sequant.md",
     "docs/features/codebase-conventions.md",
     "docs/features/python-stack-support.md",
     "docs/getting-started/installation.md",
@@ -94,10 +95,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 14727,
-    "cache_creation_tokens": 1485193,
-    "cache_read_tokens": 40458373,
-    "output_tokens": 154063,
-    "api_call_count": 562
+    "input_tokens": 14765,
+    "cache_creation_tokens": 1618080,
+    "cache_read_tokens": 42547044,
+    "output_tokens": 159272,
+    "api_call_count": 589
   }
 }
