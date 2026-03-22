@@ -435,8 +435,9 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; 
     PR_NUM=$(echo "$TOOL_INPUT" | grep -oE 'gh pr merge [0-9]+' | grep -oE '[0-9]+')
 
     if [[ -n "$PR_NUM" ]]; then
-        # Get the branch name for this PR
-        BRANCH_NAME=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
+        # Get the branch name for this PR (via GitHubProvider helper, fallback to gh CLI)
+        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+        BRANCH_NAME=$(npx tsx "$REPO_ROOT/scripts/pr-head-branch.ts" "$PR_NUM" 2>/dev/null || gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
 
         if [[ -n "$BRANCH_NAME" ]]; then
             # Check if a worktree exists for this branch

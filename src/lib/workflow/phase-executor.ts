@@ -121,7 +121,7 @@ async function executePhase(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  _sessionId?: string,
+  sessionId?: string,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
   spinner?: PhaseSpinner,
@@ -197,6 +197,13 @@ async function executePhase(
   // pause/resume is called for every chunk in rapid succession)
   let verboseStreamingActive = false;
 
+  // Safety: never resume a session when worktree isolation is active.
+  // Even if THIS phase doesn't use the worktree, a previous phase may have
+  // created the session there. Resuming from a different cwd crashes the SDK
+  // (exit code 1). ISOLATED_PHASES prevents this by design, but this guard
+  // catches edge cases (e.g. a new phase added without updating ISOLATED_PHASES).
+  const canResume = sessionId && !worktreePath;
+
   // Build AgentExecutionConfig for the driver
   const agentConfig: AgentExecutionConfig = {
     cwd,
@@ -205,6 +212,7 @@ async function executePhase(
     phaseTimeout: config.phaseTimeout,
     verbose: config.verbose,
     mcp: config.mcp,
+    sessionId: canResume ? sessionId : undefined,
     onOutput: config.verbose
       ? (text: string) => {
           if (!verboseStreamingActive) {

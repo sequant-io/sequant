@@ -60,6 +60,8 @@ export class ClaudeCodeDriver implements AgentDriver {
           tools: { type: "preset", preset: "claude_code" },
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
+          // Resume from previous session if provided
+          ...(config.sessionId ? { resume: config.sessionId } : {}),
           env: config.env,
           ...(mcpServers ? { mcpServers } : {}),
           stderr: (data: string) => {

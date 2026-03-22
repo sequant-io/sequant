@@ -168,6 +168,33 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   /**
+   * Get the head branch name for a PR by number.
+   * Used by hooks/pre-tool.sh for pre-merge worktree cleanup.
+   */
+  getPRHeadBranchSync(prNumber: number): string | null {
+    const result = spawnSync(
+      "gh",
+      [
+        "pr",
+        "view",
+        String(prNumber),
+        "--json",
+        "headRefName",
+        "--jq",
+        ".headRefName",
+      ],
+      { stdio: "pipe", timeout: 10000 },
+    );
+
+    if (result.status === 0 && result.stdout) {
+      const branch = result.stdout.toString().trim();
+      return branch || null;
+    }
+
+    return null;
+  }
+
+  /**
    * Create a PR via `gh pr create` CLI, returning raw result.
    * Used by worktree-manager.ts which needs access to stdout for URL extraction.
    */

@@ -16,6 +16,8 @@ export interface AgentExecutionConfig {
   phaseTimeout: number;
   verbose: boolean;
   mcp: boolean;
+  /** Resume a previous session (driver-specific; ignored if unsupported) */
+  sessionId?: string;
   /** Callback for streaming output */
   onOutput?: (text: string) => void;
   /** Callback for stderr */
