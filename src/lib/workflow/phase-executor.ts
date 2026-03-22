@@ -32,14 +32,15 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 
 /**
  * Phases that require worktree isolation.
- * Spec runs in main repo since it's planning-only.
- * security-review and loop must be isolated because they need to read/modify
- * worktree code, and running them in main directory with a session created
- * in the worktree causes the SDK to crash (cwd mismatch on session resume).
+ * Only `spec` runs in the main repo (planning-only, no file changes).
+ * All other phases must run in the worktree because:
+ * 1. They need to read/modify the worktree code
+ * 2. Resuming a session created in a different cwd crashes the SDK
  */
 const ISOLATED_PHASES: Phase[] = [
   "exec",
   "security-review",
+  "testgen",
   "test",
   "qa",
   "loop",
@@ -198,8 +199,12 @@ async function executePhase(
     env.SEQUANT_PHASE = phase;
 
     // Execute using Claude Agent SDK
-    // Note: Don't resume sessions when switching to worktree (different cwd breaks resume)
-    const canResume = sessionId && !shouldUseWorktree;
+    // Safety: never resume a session when worktree isolation is active.
+    // Even if THIS phase doesn't use the worktree, a previous phase may have
+    // created the session there. Resuming from a different cwd crashes the SDK
+    // (exit code 1). ISOLATED_PHASES prevents this by design, but this guard
+    // catches edge cases (e.g. a new phase added without updating ISOLATED_PHASES).
+    const canResume = sessionId && !worktreePath;
 
     // Get MCP servers config if enabled
     // Reads from Claude Desktop config and passes to SDK for headless MCP support
