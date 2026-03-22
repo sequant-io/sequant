@@ -31,10 +31,19 @@ const PHASE_PROMPTS: Record<Phase, string> = {
 };
 
 /**
- * Phases that require worktree isolation (exec, test, qa)
- * Spec runs in main repo since it's planning-only
+ * Phases that require worktree isolation.
+ * Spec runs in main repo since it's planning-only.
+ * security-review and loop must be isolated because they need to read/modify
+ * worktree code, and running them in main directory with a session created
+ * in the worktree causes the SDK to crash (cwd mismatch on session resume).
  */
-const ISOLATED_PHASES: Phase[] = ["exec", "test", "qa"];
+const ISOLATED_PHASES: Phase[] = [
+  "exec",
+  "security-review",
+  "test",
+  "qa",
+  "loop",
+];
 
 /**
  * Cold-start retry threshold in seconds.
