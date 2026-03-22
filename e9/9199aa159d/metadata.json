@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "e99199aa159d",
+  "strategy": "manual-commit",
+  "branch": "feature/368-extract-agentdriver-interface-from-phase-executor-",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "bin/cli.ts",
+    "src/commands/run.ts",
+    "src/lib/workflow/batch-executor.ts",
+    "src/lib/workflow/drivers/agent-driver.ts",
+    "src/lib/workflow/drivers/claude-code.test.ts",
+    "src/lib/workflow/drivers/claude-code.ts",
+    "src/lib/workflow/drivers/index.test.ts",
+    "src/lib/workflow/drivers/index.ts",
+    "src/lib/workflow/phase-executor.ts",
+    "src/lib/workflow/platforms/github.test.ts",
+    "src/lib/workflow/platforms/github.ts",
+    "src/lib/workflow/platforms/index.test.ts",
+    "src/lib/workflow/platforms/index.ts",
+    "src/lib/workflow/platforms/platform-provider.ts",
+    "src/lib/workflow/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e9/9199aa159d/0/metadata.json",
+      "transcript": "/e9/9199aa159d/0/full.jsonl",
+      "context": "/e9/9199aa159d/0/context.md",
+      "content_hash": "/e9/9199aa159d/0/content_hash.txt",
+      "prompt": "/e9/9199aa159d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 65,
+    "cache_creation_tokens": 129150,
+    "cache_read_tokens": 5974449,
+    "output_tokens": 26554,
+    "api_call_count": 59
+  }
+}

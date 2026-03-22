@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "e99199aa159d",
+  "session_id": "b7522425-6490-472f-b53b-593fe653203a",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-22T03:10:04.149878Z",
+  "branch": "feature/368-extract-agentdriver-interface-from-phase-executor-",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "bin/cli.ts",
+    "src/commands/run.ts",
+    "src/lib/workflow/batch-executor.ts",
+    "src/lib/workflow/drivers/agent-driver.ts",
+    "src/lib/workflow/drivers/claude-code.test.ts",
+    "src/lib/workflow/drivers/claude-code.ts",
+    "src/lib/workflow/drivers/index.test.ts",
+    "src/lib/workflow/drivers/index.ts",
+    "src/lib/workflow/phase-executor.ts",
+    "src/lib/workflow/platforms/github.test.ts",
+    "src/lib/workflow/platforms/github.ts",
+    "src/lib/workflow/platforms/index.test.ts",
+    "src/lib/workflow/platforms/index.ts",
+    "src/lib/workflow/platforms/platform-provider.ts",
+    "src/lib/workflow/types.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 65,
+    "cache_creation_tokens": 129150,
+    "cache_read_tokens": 5974449,
+    "output_tokens": 26554,
+    "api_call_count": 59
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-22T03:10:03.823033Z",
+    "agent_lines": 816,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 816,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-368-extract-agentdriver-interface-from-phase-executor-/b7522425-6490-472f-b53b-593fe653203a.jsonl"
+}
