@@ -61,3 +61,7 @@ proceed
 
 add the colors file to git ignore. we're logged in now
 
+### Prompt 9
+
+proceed
+

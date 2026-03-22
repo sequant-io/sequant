@@ -11,7 +11,6 @@
     ".github/workflows/plugin-install-test.yml",
     ".github/workflows/release.yml",
     ".github/workflows/upstream-assessment.yml",
-    ".gitignore",
     "CHANGELOG.md",
     "Sequant.itermcolors",
     "bin/cli.ts",
@@ -114,10 +113,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 14911,
-    "cache_creation_tokens": 1640089,
-    "cache_read_tokens": 43409387,
-    "output_tokens": 165216,
-    "api_call_count": 613
+    "input_tokens": 14922,
+    "cache_creation_tokens": 1647862,
+    "cache_read_tokens": 44231248,
+    "output_tokens": 167129,
+    "api_call_count": 624
   }
 }

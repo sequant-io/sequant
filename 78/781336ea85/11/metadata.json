@@ -3,31 +3,33 @@
   "checkpoint_id": "78781336ea85",
   "session_id": "3a379c3a-6d9e-4258-b302-7f71fd9a499f",
   "strategy": "manual-commit",
-  "created_at": "2026-03-22T02:36:56.761731Z",
+  "created_at": "2026-03-22T02:52:06.427913Z",
   "branch": "main",
   "checkpoints_count": 1,
   "files_touched": [
-    ".gitignore"
+    ".claude-plugin/plugin.json",
+    "CHANGELOG.md",
+    "docs/internal/what-weve-built.md"
   ],
   "agent": "Claude Code",
-  "transcript_identifier_at_start": "03808bd6-9070-498d-af31-d011349a4bf0",
-  "checkpoint_transcript_start": 173,
-  "transcript_lines_at_start": 173,
+  "transcript_identifier_at_start": "cc41a0a0-3326-4562-8604-c9cd2293603b",
+  "checkpoint_transcript_start": 210,
+  "transcript_lines_at_start": 210,
   "token_usage": {
-    "input_tokens": 7,
-    "cache_creation_tokens": 1562,
-    "cache_read_tokens": 343108,
-    "output_tokens": 826,
-    "api_call_count": 5
+    "input_tokens": 18,
+    "cache_creation_tokens": 9335,
+    "cache_read_tokens": 1164969,
+    "output_tokens": 2739,
+    "api_call_count": 16
   },
   "initial_attribution": {
-    "calculated_at": "2026-03-22T02:36:56.634485Z",
-    "agent_lines": 0,
-    "human_added": 1,
+    "calculated_at": "2026-03-22T02:52:06.114556Z",
+    "agent_lines": 23,
+    "human_added": 858,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 1,
-    "agent_percentage": 0
+    "total_committed": 881,
+    "agent_percentage": 2.6106696935300793
   },
   "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/3a379c3a-6d9e-4258-b302-7f71fd9a499f.jsonl"
 }
