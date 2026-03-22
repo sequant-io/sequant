@@ -1,16 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 
-// Mock child_process (used by getResumablePhasesForIssue)
+// Mock child_process (used by getResumablePhasesForIssue via GitHubProvider)
 vi.mock("child_process", () => ({
   spawnSync: vi.fn(),
   execSync: vi.fn(),
 }));
 
-const mockExecSync = vi.mocked(execSync);
+const mockSpawnSync = vi.mocked(spawnSync);
 
 import { filterResumedPhases } from "../run.js";
 import type { Phase } from "../../lib/workflow/types.js";
+
+/** Helper: mock spawnSync to return comment bodies JSON */
+function mockCommentBodies(bodies: string[]) {
+  mockSpawnSync.mockReturnValue({
+    status: 0,
+    stdout: JSON.stringify(bodies),
+    stderr: "",
+    pid: 0,
+    output: [],
+    signal: null,
+  } as never);
+}
+
+function mockSpawnSyncFailure() {
+  mockSpawnSync.mockReturnValue({
+    status: 1,
+    stdout: "",
+    stderr: "error",
+    pid: 0,
+    output: [],
+    signal: null,
+  } as never);
+}
 
 describe("filterResumedPhases (--resume integration)", () => {
   beforeEach(() => {
@@ -24,51 +47,49 @@ describe("filterResumedPhases (--resume integration)", () => {
 
       expect(result.phases).toEqual(["spec", "exec", "qa"]);
       expect(result.skipped).toEqual([]);
-      // getResumablePhasesForIssue should NOT be called
-      expect(mockExecSync).not.toHaveBeenCalled();
+      // spawnSync should NOT be called
+      expect(mockSpawnSync).not.toHaveBeenCalled();
     });
 
     it("calls getResumablePhasesForIssue when resume is true", () => {
       // Mock gh CLI returning no completed phases
-      mockExecSync.mockReturnValue(
-        JSON.stringify(["No phase markers"]) as unknown as Buffer,
-      );
+      mockCommentBodies(["No phase markers"]);
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       filterResumedPhases(123, phases, true);
 
-      expect(mockExecSync).toHaveBeenCalledTimes(1);
-      expect(mockExecSync).toHaveBeenCalledWith(
-        expect.stringContaining("gh issue view 123"),
-        expect.objectContaining({ encoding: "utf-8" }),
+      expect(mockSpawnSync).toHaveBeenCalledTimes(1);
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        expect.arrayContaining(["issue", "view", "123"]),
+        expect.any(Object),
       );
     });
   });
 
   describe("AC-2: getResumablePhasesForIssue is called with correct args", () => {
     it("passes issue number and phases to the underlying gh CLI call", () => {
-      mockExecSync.mockReturnValue(
-        JSON.stringify(["Some comment body"]) as unknown as Buffer,
-      );
+      mockCommentBodies(["Some comment body"]);
 
       const phases: Phase[] = ["exec", "qa"];
       filterResumedPhases(456, phases, true);
 
       // Verify gh issue view is called with the correct issue number
-      const call = mockExecSync.mock.calls[0];
-      expect(call[0]).toContain("gh issue view 456");
-      expect(call[0]).toContain("--json comments");
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        expect.arrayContaining(["issue", "view", "456", "--json", "comments"]),
+        expect.any(Object),
+      );
     });
   });
 
   describe("AC-3: completed phases are filtered from the execution list", () => {
     it("filters out phases that have completed markers", () => {
       // Simulate GitHub comments with spec and exec completed
-      const commentsJson = JSON.stringify([
+      mockCommentBodies([
         'Some text <!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         'More text <!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
       ]);
-      mockExecSync.mockReturnValue(commentsJson as unknown as Buffer);
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       const result = filterResumedPhases(789, phases, true);
@@ -78,8 +99,7 @@ describe("filterResumedPhases (--resume integration)", () => {
     });
 
     it("returns all phases when no phases are completed", () => {
-      const commentsJson = JSON.stringify(["A comment with no phase markers"]);
-      mockExecSync.mockReturnValue(commentsJson as unknown as Buffer);
+      mockCommentBodies(["A comment with no phase markers"]);
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       const result = filterResumedPhases(100, phases, true);
@@ -89,12 +109,11 @@ describe("filterResumedPhases (--resume integration)", () => {
     });
 
     it("returns empty phases when all phases are completed", () => {
-      const commentsJson = JSON.stringify([
+      mockCommentBodies([
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T12:00:00.000Z"} -->',
       ]);
-      mockExecSync.mockReturnValue(commentsJson as unknown as Buffer);
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       const result = filterResumedPhases(200, phases, true);
@@ -104,11 +123,10 @@ describe("filterResumedPhases (--resume integration)", () => {
     });
 
     it("keeps failed phases for retry", () => {
-      const commentsJson = JSON.stringify([
+      mockCommentBodies([
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"2025-01-15T11:00:00.000Z","error":"Build failed"} -->',
       ]);
-      mockExecSync.mockReturnValue(commentsJson as unknown as Buffer);
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       const result = filterResumedPhases(300, phases, true);
@@ -120,9 +138,7 @@ describe("filterResumedPhases (--resume integration)", () => {
 
     it("returns all phases when gh CLI call fails", () => {
       // getResumablePhasesForIssue catches errors and returns all phases
-      mockExecSync.mockImplementation(() => {
-        throw new Error("gh: command not found");
-      });
+      mockSpawnSyncFailure();
 
       const phases: Phase[] = ["spec", "exec", "qa"];
       const result = filterResumedPhases(400, phases, true);

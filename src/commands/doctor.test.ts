@@ -4,6 +4,7 @@ import * as childProcess from "child_process";
 // Mock child_process for checkClosedIssues
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
+  spawnSync: vi.fn(),
 }));
 
 // Mock fs functions
@@ -91,6 +92,7 @@ const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
 const mockGetMcpServersConfig = vi.mocked(getMcpServersConfig);
 const mockExecSync = vi.mocked(childProcess.execSync);
+const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockCheckAgentsMdConsistency = vi.mocked(checkAgentsMdConsistency);
 
@@ -137,8 +139,16 @@ describe("doctor command", () => {
     // Default: AGENTS.md exists and is consistent
     mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n\nSome content");
     mockCheckAgentsMdConsistency.mockReturnValue(null);
-    // Default: no closed issues (empty array from gh issue list)
-    mockExecSync.mockReturnValue("[]");
+    // Default: no closed issues (empty array from gh issue list via spawnSync)
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout: "[]",
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    } as never);
+    mockExecSync.mockReturnValue("");
   });
 
   afterEach(() => {
@@ -410,8 +420,31 @@ describe("doctor command", () => {
   });
 
   describe("closed issue verification", () => {
+    /** Helper: mock spawnSync to return gh issue list JSON */
+    function mockIssueList(issues: unknown[]) {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: JSON.stringify(issues),
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+    }
+
+    function mockIssueListFailure() {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "error",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+    }
+
     it("passes when no recently closed issues exist", async () => {
-      mockExecSync.mockReturnValue("[]");
+      mockIssueList([]);
 
       await doctorCommand();
 
@@ -425,19 +458,21 @@ describe("doctor command", () => {
     it("passes when closed issues have commits in main", async () => {
       const now = new Date();
       const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
+      mockIssueList([
+        {
+          number: 42,
+          title: "Test issue",
+          closedAt: twoDaysAgo.toISOString(),
+          labels: [],
+        },
+      ]);
+      // git log returns a commit for issue #42
       mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          return JSON.stringify([
-            {
-              number: 42,
-              title: "Test issue",
-              closedAt: twoDaysAgo.toISOString(),
-              labels: [],
-            },
-          ]);
-        }
-        // git log returns a commit for issue #42
-        if (cmd.includes("git log") && cmd.includes("#42")) {
+        if (
+          typeof cmd === "string" &&
+          cmd.includes("git log") &&
+          cmd.includes("#42")
+        ) {
           return "abc123 feat(#42): implement test feature";
         }
         return "";
@@ -455,23 +490,16 @@ describe("doctor command", () => {
     it("warns when closed issue has no commit in main", async () => {
       const now = new Date();
       const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          return JSON.stringify([
-            {
-              number: 78,
-              title: "Lost work issue",
-              closedAt: twoDaysAgo.toISOString(),
-              labels: [],
-            },
-          ]);
-        }
-        // git log returns empty (no commit found)
-        if (cmd.includes("git log")) {
-          return "";
-        }
-        return "";
-      });
+      mockIssueList([
+        {
+          number: 78,
+          title: "Lost work issue",
+          closedAt: twoDaysAgo.toISOString(),
+          labels: [],
+        },
+      ]);
+      // git log returns empty (no commit found)
+      mockExecSync.mockImplementation(() => "");
 
       await doctorCommand();
 
@@ -484,19 +512,14 @@ describe("doctor command", () => {
     it("skips issues with wontfix label", async () => {
       const now = new Date();
       const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          return JSON.stringify([
-            {
-              number: 99,
-              title: "Wontfix issue",
-              closedAt: twoDaysAgo.toISOString(),
-              labels: [{ name: "wontfix" }],
-            },
-          ]);
-        }
-        return "";
-      });
+      mockIssueList([
+        {
+          number: 99,
+          title: "Wontfix issue",
+          closedAt: twoDaysAgo.toISOString(),
+          labels: [{ name: "wontfix" }],
+        },
+      ]);
 
       await doctorCommand();
 
@@ -512,19 +535,14 @@ describe("doctor command", () => {
     it("skips issues with duplicate label", async () => {
       const now = new Date();
       const twoDaysAgo = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000);
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          return JSON.stringify([
-            {
-              number: 100,
-              title: "Duplicate issue",
-              closedAt: twoDaysAgo.toISOString(),
-              labels: [{ name: "duplicate" }],
-            },
-          ]);
-        }
-        return "";
-      });
+      mockIssueList([
+        {
+          number: 100,
+          title: "Duplicate issue",
+          closedAt: twoDaysAgo.toISOString(),
+          labels: [{ name: "duplicate" }],
+        },
+      ]);
 
       await doctorCommand();
 
@@ -535,19 +553,14 @@ describe("doctor command", () => {
     it("skips issues older than 7 days", async () => {
       const now = new Date();
       const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          return JSON.stringify([
-            {
-              number: 50,
-              title: "Old issue",
-              closedAt: tenDaysAgo.toISOString(),
-              labels: [],
-            },
-          ]);
-        }
-        return "";
-      });
+      mockIssueList([
+        {
+          number: 50,
+          title: "Old issue",
+          closedAt: tenDaysAgo.toISOString(),
+          labels: [],
+        },
+      ]);
 
       await doctorCommand();
 
@@ -558,7 +571,6 @@ describe("doctor command", () => {
 
     it("skips check when gh is not available", async () => {
       mockCommandExists.mockImplementation((cmd: string) => cmd !== "gh");
-      mockExecSync.mockReturnValue("[]");
 
       await doctorCommand();
 
@@ -569,7 +581,6 @@ describe("doctor command", () => {
 
     it("skips check when gh is not authenticated", async () => {
       mockIsGhAuthenticated.mockReturnValue(false);
-      mockExecSync.mockReturnValue("[]");
 
       await doctorCommand();
 
@@ -579,8 +590,6 @@ describe("doctor command", () => {
     });
 
     it("skips check when --skip-issue-check flag is used", async () => {
-      mockExecSync.mockReturnValue("[]");
-
       await doctorCommand({ skipIssueCheck: true });
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
@@ -589,12 +598,7 @@ describe("doctor command", () => {
     });
 
     it("handles gh command failure gracefully", async () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        if (cmd.includes("gh issue list")) {
-          throw new Error("gh command failed");
-        }
-        return "";
-      });
+      mockIssueListFailure();
 
       await doctorCommand();
 

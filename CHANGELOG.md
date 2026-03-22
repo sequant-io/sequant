@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Extract AgentDriver and PlatformProvider interfaces from phase-executor (#368)
+  - `AgentDriver` interface decouples workflow orchestration from agent execution
+  - `PlatformProvider` interface decouples orchestration from platform operations
+  - `ClaudeCodeDriver` wraps existing Claude Agent SDK calls — no behavior change
+  - `GitHubProvider` consolidates all orchestration-layer `gh` CLI calls — no behavior change
+  - All `gh` calls in phase-detection, pr-status, system, doctor, and worktree-manager now delegate to `GitHubProvider`
+  - `--agent <name>` CLI flag for `sequant run`
+  - Driver and platform registries for future backend extensibility
 - Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
   - `sequant init` now generates AGENTS.md alongside CLAUDE.md
   - `sequant sync` regenerates AGENTS.md when templates are updated

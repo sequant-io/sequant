@@ -19,12 +19,14 @@ vi.mock("child_process", async (importOriginal) => {
   return {
     ...actual,
     execSync: vi.fn(actual.execSync),
+    spawnSync: vi.fn(actual.spawnSync),
   };
 });
 
-// Get mocked execSync for configuring in tests
-import { execSync } from "child_process";
+// Get mocked functions for configuring in tests
+import { execSync, spawnSync } from "child_process";
 const mockExecSync = vi.mocked(execSync);
+const mockSpawnSync = vi.mocked(spawnSync);
 
 describe("formatPhaseMarker", () => {
   it("produces valid HTML comment with JSON", () => {
@@ -425,26 +427,47 @@ describe("isPhaseCompletedOrPast", () => {
 });
 
 describe("gh CLI wrapper functions", () => {
+  function mockSpawnSyncSuccess(stdout: string) {
+    mockSpawnSync.mockReturnValue({
+      status: 0,
+      stdout,
+      stderr: "",
+      pid: 0,
+      output: [],
+      signal: null,
+    } as never);
+  }
+
+  function mockSpawnSyncFailure() {
+    mockSpawnSync.mockReturnValue({
+      status: 1,
+      stdout: "",
+      stderr: "error",
+      pid: 0,
+      output: [],
+      signal: null,
+    } as never);
+  }
+
   beforeEach(() => {
     mockExecSync.mockReset();
+    mockSpawnSync.mockReset();
   });
 
   describe("getIssuePhase", () => {
-    it("returns null when execSync throws (AC-1)", () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error("gh CLI not available");
-      });
+    it("returns null when spawnSync fails (AC-1)", () => {
+      mockSpawnSyncFailure();
 
       const result = getIssuePhase(123);
       expect(result).toBeNull();
     });
 
-    it("returns correct marker when execSync returns valid JSON (AC-4)", () => {
+    it("returns correct marker when spawnSync returns valid JSON (AC-4)", () => {
       const commentBodies = [
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"exec","status":"in_progress","timestamp":"2025-01-15T11:00:00.000Z"} -->',
       ];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const result = getIssuePhase(42);
 
@@ -455,7 +478,7 @@ describe("gh CLI wrapper functions", () => {
 
     it("returns null when no phase markers found", () => {
       const commentBodies = ["Just a regular comment", "Another comment"];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const result = getIssuePhase(42);
       expect(result).toBeNull();
@@ -463,22 +486,20 @@ describe("gh CLI wrapper functions", () => {
   });
 
   describe("getCompletedPhases", () => {
-    it("returns empty array when execSync throws (AC-2)", () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error("Network error");
-      });
+    it("returns empty array when spawnSync fails (AC-2)", () => {
+      mockSpawnSyncFailure();
 
       const result = getCompletedPhases(456);
       expect(result).toEqual([]);
     });
 
-    it("returns correct phases when execSync returns valid JSON (AC-5)", () => {
+    it("returns correct phases when spawnSync returns valid JSON (AC-5)", () => {
       const commentBodies = [
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2025-01-15T12:00:00.000Z"} -->',
       ];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const result = getCompletedPhases(42);
 
@@ -489,7 +510,7 @@ describe("gh CLI wrapper functions", () => {
       const commentBodies = [
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"in_progress","timestamp":"2025-01-15T10:00:00.000Z"} -->',
       ];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const result = getCompletedPhases(42);
       expect(result).toEqual([]);
@@ -497,10 +518,8 @@ describe("gh CLI wrapper functions", () => {
   });
 
   describe("getResumablePhasesForIssue", () => {
-    it("returns all requested phases when execSync throws (AC-3)", () => {
-      mockExecSync.mockImplementation(() => {
-        throw new Error("GitHub API error");
-      });
+    it("returns all requested phases when spawnSync fails (AC-3)", () => {
+      mockSpawnSyncFailure();
 
       const requestedPhases = ["spec", "exec", "qa"];
       const result = getResumablePhasesForIssue(789, requestedPhases);
@@ -508,12 +527,12 @@ describe("gh CLI wrapper functions", () => {
       expect(result).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("filters out completed phases when execSync returns valid JSON", () => {
+    it("filters out completed phases when spawnSync returns valid JSON", () => {
       const commentBodies = [
         '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
         '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
       ];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const requestedPhases = ["spec", "exec", "qa"];
       const result = getResumablePhasesForIssue(42, requestedPhases);
@@ -523,7 +542,7 @@ describe("gh CLI wrapper functions", () => {
 
     it("returns all phases when no markers found", () => {
       const commentBodies = ["Just a regular comment"];
-      mockExecSync.mockReturnValue(JSON.stringify(commentBodies));
+      mockSpawnSyncSuccess(JSON.stringify(commentBodies));
 
       const requestedPhases = ["spec", "exec", "qa"];
       const result = getResumablePhasesForIssue(42, requestedPhases);

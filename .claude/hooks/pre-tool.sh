@@ -436,6 +436,9 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; 
 
     if [[ -n "$PR_NUM" ]]; then
         # Get the branch name for this PR
+        # Note: calls gh directly (not via GitHubProvider) because hooks are bash
+        # and can't use TypeScript classes without unacceptable latency overhead.
+        # See GitHubProvider.getPRHeadBranchSync() for the TypeScript equivalent.
         BRANCH_NAME=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
 
         if [[ -n "$BRANCH_NAME" ]]; then
