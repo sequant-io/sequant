@@ -1,0 +1,186 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for generic 1`] = `
+"# AGENTS.md
+
+## Project Overview
+
+**test-generic-project** is built with **Generic**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| \`npm run build\` | Build the project |
+| \`npm test\` | Run tests |
+| \`npm run lint\` | Lint the codebase |
+
+## Code Conventions
+
+Follow existing project patterns and naming conventions.
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+\`\`\`bash
+npx sequant run <issue-number>
+\`\`\`
+
+This runs a structured workflow: spec → exec → qa.
+"
+`;
+
+exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for go 1`] = `
+"# AGENTS.md
+
+## Project Overview
+
+**test-go-project** is built with **Go**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| \`go build ./...\` | Build the project |
+| \`go test ./...\` | Run tests |
+| \`golangci-lint run\` | Lint the codebase |
+
+## Code Conventions
+
+Follow existing project patterns and naming conventions.
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+\`\`\`bash
+npx sequant run <issue-number>
+\`\`\`
+
+This runs a structured workflow: spec → exec → qa.
+"
+`;
+
+exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for nextjs 1`] = `
+"# AGENTS.md
+
+## Project Overview
+
+**test-nextjs-project** is built with **Next.js**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| \`npm run build\` | Build the project |
+| \`npm test\` | Run tests |
+| \`npm run lint\` | Lint the codebase |
+
+## Code Conventions
+
+Follow existing project patterns and naming conventions.
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+\`\`\`bash
+npx sequant run <issue-number>
+\`\`\`
+
+This runs a structured workflow: spec → exec → qa.
+"
+`;
+
+exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for python 1`] = `
+"# AGENTS.md
+
+## Project Overview
+
+**test-python-project** is built with **Python**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| \`python -m build\` | Build the project |
+| \`pytest\` | Run tests |
+| \`ruff check .\` | Lint the codebase |
+
+## Code Conventions
+
+Follow existing project patterns and naming conventions.
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+\`\`\`bash
+npx sequant run <issue-number>
+\`\`\`
+
+This runs a structured workflow: spec → exec → qa.
+"
+`;
+
+exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for rust 1`] = `
+"# AGENTS.md
+
+## Project Overview
+
+**test-rust-project** is built with **Rust**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| \`cargo build --release\` | Build the project |
+| \`cargo test\` | Run tests |
+| \`cargo clippy\` | Lint the codebase |
+
+## Code Conventions
+
+Follow existing project patterns and naming conventions.
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+\`\`\`bash
+npx sequant run <issue-number>
+\`\`\`
+
+This runs a structured workflow: spec → exec → qa.
+"
+`;

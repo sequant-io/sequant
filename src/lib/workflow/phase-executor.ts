@@ -12,6 +12,7 @@ import { getMcpServersConfig } from "../system.js";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
+import { readAgentsMd } from "../agents-md.js";
 
 /**
  * Natural language prompts for each phase
@@ -77,10 +78,28 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Get the prompt for a phase with the issue number substituted
+ * Get the prompt for a phase with the issue number substituted.
+ * Includes AGENTS.md content as context so non-Claude agents
+ * receive project conventions and workflow instructions.
  */
-function getPhasePrompt(phase: Phase, issueNumber: number): string {
-  return PHASE_PROMPTS[phase].replace(/\{issue\}/g, String(issueNumber));
+async function getPhasePrompt(
+  phase: Phase,
+  issueNumber: number,
+): Promise<string> {
+  const basePrompt = PHASE_PROMPTS[phase].replace(
+    /\{issue\}/g,
+    String(issueNumber),
+  );
+
+  // Include AGENTS.md content in the prompt context for non-Claude agent compatibility.
+  // Claude reads CLAUDE.md natively, but other agents (Aider, Codex, Gemini CLI)
+  // rely on AGENTS.md for project context.
+  const agentsMd = await readAgentsMd();
+  if (agentsMd) {
+    return `Project context (from AGENTS.md):\n\n${agentsMd}\n\n---\n\n${basePrompt}`;
+  }
+
+  return basePrompt;
 }
 
 /**
@@ -109,7 +128,7 @@ async function executePhase(
     };
   }
 
-  const prompt = getPhasePrompt(phase, issueNumber);
+  const prompt = await getPhasePrompt(phase, issueNumber);
 
   if (config.verbose) {
     console.log(chalk.gray(`    Prompt: ${prompt}`));

@@ -21,6 +21,12 @@ import {
   getVersionWarning,
 } from "../lib/version-check.js";
 import { areSkillsOutdated } from "./sync.js";
+import {
+  readAgentsMd,
+  checkAgentsMdConsistency,
+  AGENTS_MD_PATH,
+} from "../lib/agents-md.js";
+import { readFile } from "../lib/fs.js";
 
 interface Check {
   name: string;
@@ -224,6 +230,52 @@ export async function doctorCommand(
       name: "Skills Version",
       status: "pass",
       message: `Up to date (${skillsStatus.packageVersion})`,
+    });
+  }
+
+  // Check: AGENTS.md presence and consistency
+  const agentsMdContent = await readAgentsMd();
+  if (agentsMdContent) {
+    // Check consistency with CLAUDE.md if both exist
+    if (await fileExists("CLAUDE.md")) {
+      try {
+        const claudeMdContent = await readFile("CLAUDE.md");
+        const inconsistency = checkAgentsMdConsistency(
+          agentsMdContent,
+          claudeMdContent,
+        );
+        if (inconsistency) {
+          checks.push({
+            name: "AGENTS.md",
+            status: "warn",
+            message: `Out of sync with CLAUDE.md: ${inconsistency}. Run: sequant sync --force`,
+          });
+        } else {
+          checks.push({
+            name: "AGENTS.md",
+            status: "pass",
+            message: "Present and consistent with CLAUDE.md",
+          });
+        }
+      } catch {
+        checks.push({
+          name: "AGENTS.md",
+          status: "pass",
+          message: "Present (could not verify consistency)",
+        });
+      }
+    } else {
+      checks.push({
+        name: "AGENTS.md",
+        status: "pass",
+        message: "Present",
+      });
+    }
+  } else if (manifest) {
+    checks.push({
+      name: "AGENTS.md",
+      status: "warn",
+      message: `Missing ${AGENTS_MD_PATH} - run: sequant init --force (or sequant sync --force)`,
     });
   }
 

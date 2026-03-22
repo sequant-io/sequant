@@ -14,6 +14,13 @@ import {
 import { copyTemplates, type CopyTemplatesOptions } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 import { writeFile, readFile, fileExists } from "../lib/fs.js";
+import {
+  generateAgentsMd,
+  writeAgentsMd,
+  AGENTS_MD_PATH,
+} from "../lib/agents-md.js";
+import { getProjectName } from "../lib/project-name.js";
+import { getStackConfig } from "../lib/stacks.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
@@ -121,6 +128,31 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // Update version markers
   await updateSkillsVersion();
   await updateManifest();
+
+  // Regenerate AGENTS.md if it exists
+  if (await fileExists(AGENTS_MD_PATH)) {
+    try {
+      const stackConfig = getStackConfig(manifest.stack);
+      const projectName = await getProjectName();
+      const agentsMdContent = await generateAgentsMd({
+        projectName,
+        stack: manifest.stack,
+        buildCommand: stackConfig.variables.BUILD_COMMAND,
+        testCommand: stackConfig.variables.TEST_COMMAND,
+        lintCommand: stackConfig.variables.LINT_COMMAND,
+      });
+      await writeAgentsMd(agentsMdContent);
+      if (!quiet) {
+        console.log(chalk.blue("📄 Regenerated AGENTS.md"));
+      }
+    } catch {
+      if (!quiet) {
+        console.log(
+          chalk.yellow("⚠️  Could not regenerate AGENTS.md (non-blocking)"),
+        );
+      }
+    }
+  }
 
   if (!quiet) {
     console.log(chalk.green(`\n✅ Synced to v${packageVersion}`));

@@ -10,12 +10,20 @@ vi.mock("child_process", () => ({
 vi.mock("../lib/fs.js", () => ({
   fileExists: vi.fn(),
   isExecutable: vi.fn(),
+  readFile: vi.fn(),
 }));
 
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
   getPackageVersion: vi.fn(() => "1.0.0"),
+}));
+
+// Mock agents-md module
+vi.mock("../lib/agents-md.js", () => ({
+  readAgentsMd: vi.fn(),
+  checkAgentsMdConsistency: vi.fn(),
+  AGENTS_MD_PATH: "AGENTS.md",
 }));
 
 // Mock sync module
@@ -60,7 +68,7 @@ vi.mock("../lib/system.js", () => ({
 }));
 
 import { doctorCommand, checkClosedIssues } from "./doctor.js";
-import { fileExists, isExecutable } from "../lib/fs.js";
+import { fileExists, isExecutable, readFile } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
   commandExists,
@@ -70,9 +78,11 @@ import {
   checkOptionalMcpServers,
   getMcpServersConfig,
 } from "../lib/system.js";
+import { readAgentsMd, checkAgentsMdConsistency } from "../lib/agents-md.js";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
+const mockReadFile = vi.mocked(readFile);
 const mockGetManifest = vi.mocked(getManifest);
 const mockCommandExists = vi.mocked(commandExists);
 const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
@@ -81,6 +91,8 @@ const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
 const mockGetMcpServersConfig = vi.mocked(getMcpServersConfig);
 const mockExecSync = vi.mocked(childProcess.execSync);
+const mockReadAgentsMd = vi.mocked(readAgentsMd);
+const mockCheckAgentsMdConsistency = vi.mocked(checkAgentsMdConsistency);
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -97,6 +109,9 @@ describe("doctor command", () => {
     // Default: all files exist, all commands work
     mockFileExists.mockResolvedValue(true);
     mockIsExecutable.mockResolvedValue(true);
+    mockReadFile.mockResolvedValue(
+      "# Project\n\n## Commit Rules\n\n- Some rules",
+    );
     mockGetManifest.mockResolvedValue({
       version: "0.1.0",
       stack: "nextjs",
@@ -119,6 +134,9 @@ describe("doctor command", () => {
       "chrome-devtools": { command: "npx", args: ["mcp-chrome-devtools"] },
       context7: { command: "npx", args: ["@context7/mcp"] },
     });
+    // Default: AGENTS.md exists and is consistent
+    mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n\nSome content");
+    mockCheckAgentsMdConsistency.mockReturnValue(null);
     // Default: no closed issues (empty array from gh issue list)
     mockExecSync.mockReturnValue("[]");
   });

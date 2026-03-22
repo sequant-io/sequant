@@ -10,10 +10,12 @@ import {
   CONVENTIONS_PATH,
 } from "../lib/conventions-detector.js";
 import { fileExists, writeFile } from "../lib/fs.js";
+import { formatConventionsAsAgentsMd } from "../lib/agents-md.js";
 
 interface ConventionsOptions {
   detect?: boolean;
   reset?: boolean;
+  format?: string;
 }
 
 export async function conventionsCommand(
@@ -26,6 +28,11 @@ export async function conventionsCommand(
 
   if (options.detect) {
     await handleDetect();
+    return;
+  }
+
+  if (options.format === "agents-md") {
+    await handleFormatAgentsMd();
     return;
   }
 
@@ -65,6 +72,21 @@ async function handleReset(): Promise<void> {
       console.log(chalk.gray(`  ${key}: ${value}`));
     }
   }
+}
+
+async function handleFormatAgentsMd(): Promise<void> {
+  const conventions = await loadConventions();
+  if (!conventions) {
+    console.log(chalk.yellow("No conventions detected yet."));
+    console.log(
+      chalk.gray(
+        "Run 'sequant conventions --detect' first to detect conventions.",
+      ),
+    );
+    return;
+  }
+
+  console.log(formatConventionsAsAgentsMd(conventions));
 }
 
 async function handleShow(): Promise<void> {

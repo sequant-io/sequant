@@ -105,6 +105,7 @@ program
     "--no-symlinks",
     "Use copies instead of symlinks for scripts/dev/ files",
   )
+  .option("--no-agents-md", "Skip AGENTS.md generation")
   .action(initCommand);
 
 program
@@ -235,6 +236,7 @@ program
   .description("View and manage codebase conventions")
   .option("--detect", "Re-run convention detection")
   .option("--reset", "Clear detected conventions (keep manual)")
+  .option("--format <format>", "Output format (agents-md for AGENTS.md format)")
   .action(conventionsCommand);
 
 program

@@ -19,6 +19,7 @@ import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings } from "../lib/settings.js";
 import { detectAndSaveConventions } from "../lib/conventions-detector.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
+import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -71,6 +72,7 @@ interface InitOptions {
   interactive?: boolean;
   skipSetup?: boolean;
   noSymlinks?: boolean;
+  agentsMd?: boolean;
 }
 
 /**
@@ -376,6 +378,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(chalk.gray("  └── logs/           (workflow run logs)"));
   console.log(chalk.gray("  scripts/dev/"));
   console.log(chalk.gray("  └── *.sh            (worktree helpers)"));
+  if (options.agentsMd !== false) {
+    console.log(
+      chalk.gray("  AGENTS.md           (universal agent instructions)"),
+    );
+  }
 
   if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([
@@ -498,6 +505,30 @@ export async function initCommand(options: InitOptions): Promise<void> {
   manifestSpinner.start();
   await createManifest(stack!, packageManager ?? undefined);
   manifestSpinner.succeed("Created manifest");
+
+  // Generate AGENTS.md (unless --no-agents-md)
+  if (options.agentsMd !== false) {
+    const agentsSpinner = ui.spinner("Generating AGENTS.md...");
+    agentsSpinner.start();
+    try {
+      const stackConfig = getStackConfig(stack!);
+      const { getProjectName } = await import("../lib/project-name.js");
+      const projectName = await getProjectName();
+      const agentsMdContent = await generateAgentsMd({
+        projectName,
+        stack: stack!,
+        buildCommand: stackConfig.variables.BUILD_COMMAND,
+        testCommand: stackConfig.variables.TEST_COMMAND,
+        lintCommand: stackConfig.variables.LINT_COMMAND,
+      });
+      await writeAgentsMd(agentsMdContent);
+      agentsSpinner.succeed("Generated AGENTS.md");
+    } catch {
+      agentsSpinner.warn("Could not generate AGENTS.md (non-blocking)");
+    }
+  } else {
+    console.log(chalk.gray("Skipping AGENTS.md generation (--no-agents-md)"));
+  }
 
   // Build optional suggestions section
   const optionalSuggestions = suggestions.filter((s) =>
