@@ -38,6 +38,41 @@ vi.mock("./sync.js", () => ({
   ),
 }));
 
+// Mock settings (for Aider CLI check)
+vi.mock("../lib/settings.js", () => ({
+  getSettings: vi.fn(() =>
+    Promise.resolve({
+      version: "1.0",
+      run: {
+        logJson: true,
+        logPath: ".sequant/logs",
+        autoDetectPhases: true,
+        timeout: 1800,
+        sequential: false,
+        qualityLoop: false,
+        maxIterations: 3,
+        smartTests: true,
+        rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+        mcp: true,
+        retry: true,
+        staleBranchThreshold: 5,
+      },
+    }),
+  ),
+}));
+
+// Mock MCP server (for MCP server health check)
+vi.mock("../mcp/server.js", () => ({
+  createServer: vi.fn(() => ({
+    close: vi.fn(() => Promise.resolve()),
+  })),
+}));
+
+// Mock version module (used by MCP server health check)
+vi.mock("../lib/version.js", () => ({
+  getVersion: vi.fn(() => "1.0.0"),
+}));
+
 // Mock system functions
 vi.mock("../lib/system.js", () => ({
   commandExists: vi.fn(),
