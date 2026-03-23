@@ -221,7 +221,7 @@ function killProcessGroup(proc: ReturnType<typeof spawn>): void {
     if (proc.pid) {
       process.kill(-proc.pid, "SIGTERM");
     }
-  } catch (_groupKillErr) {
+  } catch {
     // Process group may already be gone (e.g. already exited) — fall back to direct kill
     if (!proc.killed) {
       proc.kill("SIGTERM");
