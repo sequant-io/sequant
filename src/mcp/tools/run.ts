@@ -156,6 +156,7 @@ export function spawnAsync(
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
+    let settled = false;
 
     const proc = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
@@ -163,18 +164,33 @@ export function spawnAsync(
       detached: true,
     });
 
-    // Timeout handling
+    const settle = (
+      outcome: { ok: true; result: SpawnResult } | { ok: false; error: Error },
+    ) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", onAbort);
+      if (outcome.ok) {
+        resolve(outcome.result);
+      } else {
+        reject(outcome.error);
+      }
+    };
+
     const timeoutId = setTimeout(() => {
       killProcessGroup(proc);
-      reject(new Error(`Process timed out after ${options.timeout}ms`));
+      settle({
+        ok: false,
+        error: new Error(`Process timed out after ${options.timeout}ms`),
+      });
     }, options.timeout);
 
-    // Client-initiated cancellation via AbortSignal
     const onAbort = () => {
       killProcessGroup(proc);
-      clearTimeout(timeoutId);
-      reject(new Error("Cancelled by client"));
+      settle({ ok: false, error: new Error("Cancelled by client") });
     };
+
     if (options.signal) {
       if (options.signal.aborted) {
         killProcessGroup(proc);
@@ -185,11 +201,6 @@ export function spawnAsync(
       options.signal.addEventListener("abort", onAbort, { once: true });
     }
 
-    const cleanup = () => {
-      clearTimeout(timeoutId);
-      options.signal?.removeEventListener("abort", onAbort);
-    };
-
     proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
     });
@@ -199,21 +210,23 @@ export function spawnAsync(
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {
-      cleanup();
       if (err.code === "ENOENT") {
-        reject(
-          new Error(
+        settle({
+          ok: false,
+          error: new Error(
             `Command not found: ${command}. Ensure it is installed and in PATH.`,
           ),
-        );
+        });
       } else {
-        reject(new Error(`Failed to spawn process: ${err.message}`));
+        settle({
+          ok: false,
+          error: new Error(`Failed to spawn process: ${err.message}`),
+        });
       }
     });
 
     proc.on("close", (code: number | null) => {
-      cleanup();
-      resolve({ exitCode: code, stdout, stderr });
+      settle({ ok: true, result: { exitCode: code, stdout, stderr } });
     });
   });
 }
@@ -221,25 +234,32 @@ export function spawnAsync(
 const SIGKILL_GRACE_MS = 5000;
 
 function killProcessGroup(proc: ReturnType<typeof spawn>): void {
-  const sendSignal = (signal: NodeJS.Signals) => {
-    try {
-      if (proc.pid) {
-        process.kill(-proc.pid, signal);
-      }
-    } catch {
-      // Process group may already be gone — fall back to direct kill
-      if (!proc.killed) {
-        proc.kill(signal);
-      }
-    }
-  };
+  let exited = false;
+  proc.on("close", () => {
+    exited = true;
+  });
 
-  sendSignal("SIGTERM");
+  sendSignal(proc, "SIGTERM");
 
-  // Escalate to SIGKILL if process doesn't exit
   setTimeout(() => {
-    if (!proc.killed) {
-      sendSignal("SIGKILL");
+    if (!exited) {
+      sendSignal(proc, "SIGKILL");
     }
   }, SIGKILL_GRACE_MS).unref();
+}
+
+function sendSignal(
+  proc: ReturnType<typeof spawn>,
+  signal: NodeJS.Signals,
+): void {
+  try {
+    if (proc.pid) {
+      process.kill(-proc.pid, signal);
+    }
+  } catch {
+    // Process group may already be gone — fall back to direct kill
+    if (!proc.killed) {
+      proc.kill(signal);
+    }
+  }
 }
