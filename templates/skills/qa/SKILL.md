@@ -889,6 +889,7 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' 
 | Error Handling | Empty catch block | ⚠️ Medium |
 | Security | Hardcoded secrets | ❌ High |
 | Security | SQL concatenation | ❌ High |
+| Security | Server binds all interfaces (`0.0.0.0`) | ❌ High |
 | Memory | Uncleared interval/timeout | ⚠️ Medium |
 | A11y | Image without alt | ⚠️ Low |
 
@@ -903,7 +904,61 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' 
 
 See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detection commands and full criteria.
 
-### 2f. Call-Site Review (When New Functions Added)
+### 2f. Product Review (When New User-Facing Features Added)
+
+**When to apply:** New CLI commands, MCP tools, configuration options, or other features that end users interact with directly.
+
+**Detection:**
+```bash
+# Detect user-facing changes
+cli_added=$(git diff main...HEAD -- bin/cli.ts | grep -E '^\+.*\.command\(' | wc -l | xargs || true)
+new_commands=$(git diff main...HEAD --name-only | grep -E '^src/commands/' | wc -l | xargs || true)
+mcp_added=$(git diff main...HEAD --name-only | grep -E '^src/mcp/' | wc -l | xargs || true)
+config_changed=$(git diff main...HEAD --name-only | grep -E 'settings|config' | wc -l | xargs || true)
+
+if [[ $((cli_added + new_commands + mcp_added + config_changed)) -gt 0 ]]; then
+  echo "User-facing changes detected - running product review"
+fi
+```
+
+**If user-facing changes detected, answer these questions:**
+
+| Question | What to check |
+|----------|---------------|
+| **First-time setup:** Can a new user go from zero to working? | List every prerequisite. Try the setup path mentally. |
+| **Per-environment differences:** Does this work the same everywhere? | macOS/Linux/Windows, different clients/tools, CI vs local |
+| **What does the user see?** | Walk through the actual UX — wait times, output format, progress indicators |
+| **What happens after?** | Where's the output? What does the user do next? |
+| **Failure modes the user will hit:** | Not code edge cases — real scenarios (wrong directory, missing auth, timeout) |
+
+**Output Format:**
+
+```markdown
+### Product Review
+
+**User-facing changes:** [list new commands/tools/options]
+
+| Question | Finding |
+|----------|---------|
+| First-time setup | [All prerequisites identified? Setup path clear?] |
+| Per-environment | [Any client/platform differences?] |
+| User sees | [Wait times, output format, progress] |
+| After completion | [Where output goes, next steps] |
+| Likely failure modes | [Real user scenarios] |
+
+**Gaps found:** [list any gaps, or "None"]
+```
+
+**Verdict Impact:**
+
+| Finding | Verdict Impact |
+|---------|----------------|
+| No gaps | No impact |
+| Missing prerequisites in docs | `AC_MET_BUT_NOT_A_PLUS` |
+| Feature silently fails in common environment | `AC_NOT_MET` (e.g., wrong cwd, missing auth) |
+| Poor UX but functional | Note in findings |
+
+### 2g. Call-Site Review (When New Functions Added)
 
 **When to apply:** New exported functions are detected in the diff.
 
@@ -1019,7 +1074,7 @@ If the function accepts configuration or mode options:
 
 See [call-site-review.md](references/call-site-review.md) for detailed methodology and examples.
 
-### 2g. CLI Registration Verification (When Option Interfaces Modified)
+### 2h. CLI Registration Verification (When Option Interfaces Modified)
 
 **When to apply:** `RunOptions` or similar CLI option interfaces are modified in the diff.
 
@@ -1138,6 +1193,23 @@ For each AC item, mark as:
 - `NOT_MET`
 
 Provide a sentence or two explaining why.
+
+#### AC Literal Verification (REQUIRED)
+
+**Before marking any AC as MET**, verify the implementation matches the AC text literally, not just in spirit:
+
+1. **Extract specific technical claims** from the AC text (commands, flags, function names, config keys, UI elements)
+2. **Search the implementation** for each claim using Grep or Read — do not assume presence
+3. **If the AC mentions a flag** (e.g., `--file <relevant-files>`), verify that flag appears in the code
+4. **If the AC says "works end-to-end"**, trace the full call chain from entry point to execution
+
+**Example:** If AC says *"shells out to `aider --yes --no-auto-commits --message '<prompt>' --file <relevant-files>`"*:
+- Verify `--yes` is in args array ✅
+- Verify `--no-auto-commits` is in args array ✅
+- Verify `--message` is in args array ✅
+- Verify `--file` is in args array — **if missing, AC is NOT MET** ❌
+
+Do NOT mark MET based on "the general intent is satisfied." The AC text is the contract — verify it literally.
 
 ### 3a. AC Status Persistence — REQUIRED
 
