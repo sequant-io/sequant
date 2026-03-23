@@ -314,14 +314,12 @@ git pull origin main
 
 # 2. Build verification — capture post-merge error count
 echo "Running build..."
-post_build_output=$(npm run build 2>&1 || true)
-build_exit=$?
+post_build_output=$(npm run build 2>&1); build_exit=$?
 POST_BUILD_ERRORS=$(echo "$post_build_output" | grep -c "error TS" || echo "0")
 
 # 3. Test suite — capture post-merge test counts
 echo "Running tests..."
-post_test_output=$(npm test 2>&1 || true)
-test_exit=$?
+post_test_output=$(npm test 2>&1); test_exit=$?
 POST_TEST_PASSES=$(echo "$post_test_output" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
 POST_TEST_FAILURES=$(echo "$post_test_output" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+' || echo "0")
 
