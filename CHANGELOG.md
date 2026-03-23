@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Improve `sequant_run` MCP tool to return structured JSON with per-issue summaries (#391)
+  - Each issue includes status, phases completed, QA verdict, and duration
+  - Raw output preserved as secondary `rawOutput` field
+  - Response size enforced at 64 KB with progressive truncation
+  - Graceful fallback to raw output when run log is unavailable
 - Add baseline comparison to `/merger` to detect regressions before merging (#397)
   - Captures build error count and test pass/fail counts on main before merge
   - Compares post-merge metrics against baseline to detect new failures

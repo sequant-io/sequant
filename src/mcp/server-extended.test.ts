@@ -95,9 +95,13 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
       expect(data.status).toBe("success");
-      expect(data.issues).toEqual([100]);
+      // AC-1: structured response with issues array and summary object
+      expect(Array.isArray(data.issues)).toBe(true);
+      expect(data.summary).toBeDefined();
+      expect(data.summary.total).toBeDefined();
       expect(data.phases).toBeDefined();
-      expect(data.output).toBeDefined();
+      // AC-3: raw output as secondary field
+      expect(data.rawOutput).toBeDefined();
     });
 
     // === FAILURE PATHS ===
@@ -179,7 +183,7 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         const data = JSON.parse(
           (result.content as Array<{ type: string; text: string }>)[0].text,
         );
-        expect(data.output.length).toBeLessThanOrEqual(2000);
+        expect(data.rawOutput.length).toBeLessThanOrEqual(2000);
       });
     });
   });
