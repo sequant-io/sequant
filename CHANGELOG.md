@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Timeout handling preserved with process group cleanup (no orphan processes)
   - ENOENT and other spawn errors handled with descriptive messages
 
+### Fixed
+
+- Fix MCP server `sequant_run` using nested `npx` invocation that could resolve to a different cached version (#389)
+  - Resolves CLI binary from `process.argv` to ensure version consistency
+  - Falls back to `__dirname`-relative resolution, then `npx` as last resort
+
 ### Added
 
 - Add baseline comparison to `/merger` to detect regressions before merging (#397)

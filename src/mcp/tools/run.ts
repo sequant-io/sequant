@@ -8,6 +8,38 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { spawn } from "child_process";
+import { resolve, dirname } from "path";
+import { existsSync } from "fs";
+
+/**
+ * Resolve the CLI binary path to avoid nested npx version mismatches (#389).
+ *
+ * Priority:
+ * 1. process.argv[1] — the script currently running (works for npx, global, local node)
+ * 2. __dirname-relative resolution — fallback for bundled/compiled entry points
+ * 3. "npx" + "sequant" — last resort if nothing else resolves
+ *
+ * Returns [command, prefixArgs] where the full invocation is:
+ *   spawnAsync(command, [...prefixArgs, "run", ...userArgs])
+ */
+export function resolveCliBinary(): [string, string[]] {
+  // Try process.argv — most reliable across npx, global install, and local node
+  const nodeExe = process.argv[0];
+  const scriptPath = process.argv[1];
+
+  if (scriptPath && existsSync(scriptPath)) {
+    return [nodeExe, [scriptPath]];
+  }
+
+  // Fallback: resolve relative to this file's location (dist/src/mcp/tools/run.js → dist/bin/cli.js)
+  const cliPath = resolve(dirname(__dirname), "..", "..", "bin", "cli.js");
+  if (existsSync(cliPath)) {
+    return [process.execPath, [cliPath]];
+  }
+
+  // Last resort: fall back to npx (original behavior)
+  return ["npx", ["sequant"]];
+}
 
 const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
@@ -63,8 +95,11 @@ export function registerRunTool(server: McpServer): void {
         };
       }
 
+      // Resolve CLI binary to avoid nested npx version mismatch (#389)
+      const [command, prefixArgs] = resolveCliBinary();
+
       // Build command arguments
-      const args = ["sequant", "run", ...issues.map(String)];
+      const args = [...prefixArgs, "run", ...issues.map(String)];
       if (phases) {
         args.push("--phases", phases);
       }
@@ -77,7 +112,7 @@ export function registerRunTool(server: McpServer): void {
       args.push("--log-json");
 
       try {
-        const result = await spawnAsync("npx", args, {
+        const result = await spawnAsync(command, args, {
           timeout: 1800000, // 30 min default
           env: {
             ...process.env,
