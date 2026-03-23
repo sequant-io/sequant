@@ -1194,6 +1194,23 @@ For each AC item, mark as:
 
 Provide a sentence or two explaining why.
 
+#### AC Literal Verification (REQUIRED)
+
+**Before marking any AC as MET**, verify the implementation matches the AC text literally, not just in spirit:
+
+1. **Extract specific technical claims** from the AC text (commands, flags, function names, config keys, UI elements)
+2. **Search the implementation** for each claim using Grep or Read — do not assume presence
+3. **If the AC mentions a flag** (e.g., `--file <relevant-files>`), verify that flag appears in the code
+4. **If the AC says "works end-to-end"**, trace the full call chain from entry point to execution
+
+**Example:** If AC says *"shells out to `aider --yes --no-auto-commits --message '<prompt>' --file <relevant-files>`"*:
+- Verify `--yes` is in args array ✅
+- Verify `--no-auto-commits` is in args array ✅
+- Verify `--message` is in args array ✅
+- Verify `--file` is in args array — **if missing, AC is NOT MET** ❌
+
+Do NOT mark MET based on "the general intent is satisfied." The AC text is the contract — verify it literally.
+
 ### 3a. AC Status Persistence — REQUIRED
 
 **After evaluating each AC item**, update the status in workflow state using the state CLI:
