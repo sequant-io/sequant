@@ -50,6 +50,7 @@ import {
 } from "../src/commands/state.js";
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
+import { serveCommand } from "../src/commands/serve.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
 import { getManifest } from "../src/lib/manifest.js";
 
@@ -270,6 +271,17 @@ program
   .option("--no-open", "Don't automatically open browser")
   .option("-v, --verbose", "Enable verbose logging")
   .action(dashboardCommand);
+
+program
+  .command("serve")
+  .description("Start MCP server for workflow orchestration")
+  .option(
+    "--transport <type>",
+    "Transport type: stdio (default) or sse",
+    "stdio",
+  )
+  .option("--port <port>", "Port for SSE transport (default: 3100)", parseInt)
+  .action(serveCommand);
 
 // State management command with subcommands
 const stateCmd = program
