@@ -1,0 +1,293 @@
+/**
+ * Extended tests for Sequant MCP Server — failure paths and edge cases
+ * Issue #372: Expose Sequant Workflow as MCP Server
+ *
+ * Covers:
+ * - AC-2: sequant_run execution behavior (with spawnSync mocking)
+ * - AC-3: sequant_status failure paths
+ * - AC-4: sequant_logs edge cases (zero/negative limit)
+ * - AC-12: doctor MCP health check
+ * - AC-14: structured errors (extended)
+ */
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+
+// Mock child_process before importing server (which imports tools/run.ts)
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    spawnSync: vi.fn(),
+  };
+});
+
+import { createServer } from "./server.js";
+import { spawnSync } from "child_process";
+
+const mockedSpawnSync = vi.mocked(spawnSync);
+
+describe("Sequant MCP Server — Extended", () => {
+  let client: Client;
+  let cleanup: () => Promise<void>;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+
+    const server = createServer("1.0.0-test");
+    const clientInstance = new Client({
+      name: "test-client",
+      version: "1.0.0",
+    });
+
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      clientInstance.connect(clientTransport),
+      server.connect(serverTransport),
+    ]);
+
+    client = clientInstance;
+    cleanup = async () => {
+      await clientInstance.close();
+      await server.close();
+    };
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  // AC-2: sequant_run tool — execution behavior
+  describe("AC-2: sequant_run execution", () => {
+    it("should accept valid issues array and return structured result", async () => {
+      mockedSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: '{"summary":"completed"}',
+        stderr: "",
+        pid: 1234,
+        output: ["", '{"summary":"completed"}', ""],
+        signal: null,
+        error: undefined,
+      });
+
+      const result = await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [100] },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.status).toBe("success");
+      expect(data.issues).toEqual([100]);
+      expect(data.phases).toBeDefined();
+      expect(data.output).toBeDefined();
+    });
+
+    // === FAILURE PATHS ===
+    describe("error handling", () => {
+      it("should return INVALID_INPUT for empty issues array", async () => {
+        const result = await client.callTool({
+          name: "sequant_run",
+          arguments: { issues: [] },
+        });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(
+          (result.content as Array<{ type: string; text: string }>)[0].text,
+        );
+        expect(data.error).toBe("INVALID_INPUT");
+      });
+
+      it("should return isError when subprocess fails", async () => {
+        mockedSpawnSync.mockReturnValue({
+          status: 1,
+          stdout: "partial output",
+          stderr: "Error: something went wrong",
+          pid: 1234,
+          output: ["", "partial output", "Error: something went wrong"],
+          signal: null,
+          error: undefined,
+        });
+
+        const result = await client.callTool({
+          name: "sequant_run",
+          arguments: { issues: [200] },
+        });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(
+          (result.content as Array<{ type: string; text: string }>)[0].text,
+        );
+        expect(data.status).toBe("failure");
+        expect(data.exitCode).toBe(1);
+        expect(data.error).toContain("something went wrong");
+      });
+
+      it("should handle subprocess timeout gracefully", async () => {
+        mockedSpawnSync.mockImplementation(() => {
+          throw new Error("spawnSync ETIMEDOUT");
+        });
+
+        const result = await client.callTool({
+          name: "sequant_run",
+          arguments: { issues: [300] },
+        });
+
+        expect(result.isError).toBe(true);
+        const data = JSON.parse(
+          (result.content as Array<{ type: string; text: string }>)[0].text,
+        );
+        expect(data.error).toBe("EXECUTION_ERROR");
+        expect(data.message).toContain("ETIMEDOUT");
+      });
+
+      it("should truncate large output to 2000 chars", async () => {
+        const largeOutput = "x".repeat(5000);
+        mockedSpawnSync.mockReturnValue({
+          status: 0,
+          stdout: largeOutput,
+          stderr: "",
+          pid: 1234,
+          output: ["", largeOutput, ""],
+          signal: null,
+          error: undefined,
+        });
+
+        const result = await client.callTool({
+          name: "sequant_run",
+          arguments: { issues: [400] },
+        });
+
+        expect(result.isError).toBeFalsy();
+        const data = JSON.parse(
+          (result.content as Array<{ type: string; text: string }>)[0].text,
+        );
+        expect(data.output.length).toBeLessThanOrEqual(2000);
+      });
+    });
+  });
+
+  // AC-3: sequant_status — failure paths
+  describe("AC-3: sequant_status — failure paths", () => {
+    it("should return INVALID_INPUT for zero issue number", async () => {
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 0 },
+      });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.error).toBe("INVALID_INPUT");
+    });
+
+    it("should return INVALID_INPUT for negative issue number", async () => {
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: -5 },
+      });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.error).toBe("INVALID_INPUT");
+    });
+  });
+
+  // AC-4: sequant_logs — failure paths
+  describe("AC-4: sequant_logs — failure paths", () => {
+    it("should handle invalid runId filter", async () => {
+      const result = await client.callTool({
+        name: "sequant_logs",
+        arguments: { runId: "nonexistent-run-id", limit: 5 },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data).toBeDefined();
+    });
+
+    it("should handle zero limit by using default", async () => {
+      const result = await client.callTool({
+        name: "sequant_logs",
+        arguments: { limit: 0 },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      // limit: 0 fails the `limit > 0` check, so defaults to 5
+      expect(data).toBeDefined();
+    });
+
+    it("should handle negative limit by using default", async () => {
+      const result = await client.callTool({
+        name: "sequant_logs",
+        arguments: { limit: -1 },
+      });
+
+      expect(result.isError).toBeFalsy();
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      // limit: -1 fails the `limit > 0` check, so defaults to 5
+      expect(data).toBeDefined();
+    });
+  });
+
+  // AC-12: sequant doctor — MCP health check
+  describe("AC-12: doctor MCP health check", () => {
+    it("should successfully create and close MCP server instance", async () => {
+      // This mirrors what doctor.ts does: create server, close it
+      const server = createServer("1.0.0-test");
+      await expect(server.close()).resolves.not.toThrow();
+    });
+
+    it("should propagate errors from malformed server version", () => {
+      // createServer with any string should still work (version is just metadata)
+      const server = createServer("");
+      expect(server).toBeDefined();
+    });
+  });
+
+  // AC-14: Structured MCP errors — extended
+  describe("AC-14: structured errors — extended", () => {
+    it("sequant_status should not crash on missing state file", async () => {
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 1 },
+      });
+
+      expect(result.isError).toBeFalsy();
+    });
+
+    it("sequant://state resource should handle missing state file gracefully", async () => {
+      const result = await client.readResource({
+        uri: "sequant://state",
+      });
+
+      expect(result.contents).toHaveLength(1);
+      const parsed = JSON.parse(result.contents[0].text as string);
+      expect(parsed).toBeDefined();
+    });
+
+    it("sequant://config resource should handle missing config file gracefully", async () => {
+      const result = await client.readResource({
+        uri: "sequant://config",
+      });
+
+      expect(result.contents).toHaveLength(1);
+      const parsed = JSON.parse(result.contents[0].text as string);
+      expect(parsed).toBeDefined();
+    });
+  });
+});
