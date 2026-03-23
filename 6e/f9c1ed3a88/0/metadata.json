@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "6ef9c1ed3a88",
+  "session_id": "030ac5a1-aeff-4a0e-9040-26fcc6537608",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-23T01:02:44.936999Z",
+  "branch": "feature/372-expose-sequant-workflow-as-mcp-server",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/mcp-server.integration.test.ts",
+    "__tests__/mcp-server.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 380,
+    "cache_creation_tokens": 27952,
+    "cache_read_tokens": 434909,
+    "output_tokens": 5510,
+    "api_call_count": 15
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-23T01:02:44.86941Z",
+    "agent_lines": 0,
+    "human_added": 205,
+    "human_modified": 1955,
+    "human_removed": 0,
+    "total_committed": 2160,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-372-expose-sequant-workflow-as-mcp-server/030ac5a1-aeff-4a0e-9040-26fcc6537608.jsonl"
+}

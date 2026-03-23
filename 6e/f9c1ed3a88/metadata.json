@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "6ef9c1ed3a88",
+  "strategy": "manual-commit",
+  "branch": "feature/372-expose-sequant-workflow-as-mcp-server",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/mcp-server.integration.test.ts",
+    "__tests__/mcp-server.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6e/f9c1ed3a88/0/metadata.json",
+      "transcript": "/6e/f9c1ed3a88/0/full.jsonl",
+      "context": "/6e/f9c1ed3a88/0/context.md",
+      "content_hash": "/6e/f9c1ed3a88/0/content_hash.txt",
+      "prompt": "/6e/f9c1ed3a88/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 380,
+    "cache_creation_tokens": 27952,
+    "cache_read_tokens": 434909,
+    "output_tokens": 5510,
+    "api_call_count": 15
+  }
+}
