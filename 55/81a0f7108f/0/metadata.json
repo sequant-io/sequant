@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "5581a0f7108f",
+  "session_id": "7792fa6b-dd63-4b8d-a529-b50bea10d739",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-23T22:24:06.548578Z",
+  "branch": "feature/391-mcp-server-improve-sequant-run-output-structure",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/mcp/server-extended.test.ts",
+    "src/mcp/tools/run.test.ts",
+    "src/mcp/tools/run.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 39,
+    "cache_creation_tokens": 71205,
+    "cache_read_tokens": 2228091,
+    "output_tokens": 16547,
+    "api_call_count": 35
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-23T22:24:06.311201Z",
+    "agent_lines": 589,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 589,
+    "agent_percentage": 100
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-391-mcp-server-improve-sequant-run-output-structure/7792fa6b-dd63-4b8d-a529-b50bea10d739.jsonl"
+}

@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "5581a0f7108f",
+  "strategy": "manual-commit",
+  "branch": "feature/391-mcp-server-improve-sequant-run-output-structure",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/mcp/server-extended.test.ts",
+    "src/mcp/tools/run.test.ts",
+    "src/mcp/tools/run.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/55/81a0f7108f/0/metadata.json",
+      "transcript": "/55/81a0f7108f/0/full.jsonl",
+      "context": "/55/81a0f7108f/0/context.md",
+      "content_hash": "/55/81a0f7108f/0/content_hash.txt",
+      "prompt": "/55/81a0f7108f/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 39,
+    "cache_creation_tokens": 71205,
+    "cache_read_tokens": 2228091,
+    "output_tokens": 16547,
+    "api_call_count": 35
+  }
+}
