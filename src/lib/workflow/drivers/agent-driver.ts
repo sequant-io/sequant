@@ -22,6 +22,8 @@ export interface AgentExecutionConfig {
   onOutput?: (text: string) => void;
   /** Callback for stderr */
   onStderr?: (text: string) => void;
+  /** Relevant files for the phase (used by file-oriented drivers like Aider) */
+  files?: string[];
 }
 
 /**

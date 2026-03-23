@@ -168,6 +168,35 @@ describe("AiderDriver", () => {
       expect(args).toContain("--map-tokens");
       expect(args).toContain("2048");
     });
+
+    it("should pass --file flags when files are provided", async () => {
+      const proc = createMockProcess({ exitCode: 0 });
+      mockSpawn.mockReturnValue(proc as never);
+
+      const driver = new AiderDriver();
+      await driver.executePhase("prompt", {
+        ...makeConfig(),
+        files: ["src/foo.ts", "src/bar.ts"],
+      });
+
+      const args = mockSpawn.mock.calls[0][1] as string[];
+      const fileFlags = args.reduce((acc, arg, i) => {
+        if (arg === "--file") acc.push(args[i + 1]);
+        return acc;
+      }, [] as string[]);
+      expect(fileFlags).toEqual(["src/foo.ts", "src/bar.ts"]);
+    });
+
+    it("should not include --file when files is empty", async () => {
+      const proc = createMockProcess({ exitCode: 0 });
+      mockSpawn.mockReturnValue(proc as never);
+
+      const driver = new AiderDriver();
+      await driver.executePhase("prompt", { ...makeConfig(), files: [] });
+
+      const args = mockSpawn.mock.calls[0][1] as string[];
+      expect(args).not.toContain("--file");
+    });
   });
 
   // AC-4: --no-auto-commits flag always present

@@ -28,7 +28,7 @@ export class AiderDriver implements AgentDriver {
     prompt: string,
     config: AgentExecutionConfig,
   ): Promise<AgentPhaseResult> {
-    const args = this.buildArgs(prompt);
+    const args = this.buildArgs(prompt, config.files);
 
     return new Promise<AgentPhaseResult>((resolve) => {
       let capturedOutput = "";
@@ -132,7 +132,7 @@ export class AiderDriver implements AgentDriver {
   }
 
   /** Build the CLI argument list for aider. */
-  private buildArgs(prompt: string): string[] {
+  private buildArgs(prompt: string, files?: string[]): string[] {
     const args = [
       "--yes",
       "--no-auto-commits",
@@ -151,6 +151,13 @@ export class AiderDriver implements AgentDriver {
 
     if (this.settings?.extraArgs) {
       args.push(...this.settings.extraArgs);
+    }
+
+    // Pass relevant files for context (e.g., changed files from git diff)
+    if (files?.length) {
+      for (const file of files) {
+        args.push("--file", file);
+      }
     }
 
     return args;

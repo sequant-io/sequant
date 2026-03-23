@@ -9,6 +9,7 @@
  */
 
 import chalk from "chalk";
+import { execSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
@@ -17,8 +18,8 @@ import { getDriver } from "./drivers/index.js";
 import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
 
 /**
- * Natural language prompts for each phase
- * These prompts will invoke the corresponding skills via natural language
+ * Natural language prompts for each phase.
+ * Claude Code invokes the corresponding skills via natural language.
  */
 const PHASE_PROMPTS: Record<Phase, string> = {
   spec: "Review GitHub issue #{issue} and create an implementation plan with verification criteria. Run the /spec {issue} workflow.",
@@ -30,6 +31,44 @@ const PHASE_PROMPTS: Record<Phase, string> = {
   test: "Execute structured browser-based testing for GitHub issue #{issue}. Run the /test {issue} workflow.",
   qa: "Review the implementation for GitHub issue #{issue} against acceptance criteria. Run the /qa {issue} workflow.",
   loop: "Parse test/QA findings for GitHub issue #{issue} and iterate until quality gates pass. Run the /loop {issue} workflow.",
+};
+
+/**
+ * Self-contained prompts for non-Claude agents (Aider, Codex, etc.).
+ * These agents don't have a skill system, so prompts must include
+ * full instructions rather than skill invocations.
+ */
+const AIDER_PHASE_PROMPTS: Record<Phase, string> = {
+  spec: `Read GitHub issue #{issue} using 'gh issue view #{issue}'.
+Create a spec comment on the issue with:
+1. Implementation plan
+2. Acceptance criteria as a checklist
+3. Risk assessment
+Post the comment using 'gh issue comment #{issue} --body "<comment>"'.`,
+  "security-review": `Perform a security review for GitHub issue #{issue}.
+Read the issue with 'gh issue view #{issue}'.
+Check for auth, permissions, injection, and sensitive data issues.
+Post findings as a comment on the issue.`,
+  testgen: `Generate test stubs for GitHub issue #{issue}.
+Read the spec comments on the issue with 'gh issue view #{issue} --comments'.
+Create test files with describe/it blocks covering the acceptance criteria.
+Use the project's existing test framework.`,
+  exec: `Implement the feature described in GitHub issue #{issue}.
+Read the issue and any spec comments with 'gh issue view #{issue} --comments'.
+Follow the implementation plan from the spec.
+Write tests for new functionality.
+Ensure the build passes with 'npm test' and 'npm run build'.`,
+  test: `Test the implementation for GitHub issue #{issue}.
+Run 'npm test' and verify all tests pass.
+Check for edge cases and error handling.`,
+  qa: `Review the changes for GitHub issue #{issue}.
+Run 'npm test' and 'npm run build' to verify everything works.
+Check each acceptance criterion from the issue comments.
+Output a verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
+with format "### Verdict: <VERDICT>" followed by an explanation.`,
+  loop: `Review test and QA findings for GitHub issue #{issue}.
+Fix any issues identified in the QA feedback.
+Re-run 'npm test' and 'npm run build' until all quality gates pass.`,
 };
 
 /**
@@ -91,17 +130,18 @@ export function formatDuration(seconds: number): string {
 
 /**
  * Get the prompt for a phase with the issue number substituted.
+ * Selects self-contained prompts for non-Claude agents.
  * Includes AGENTS.md content as context so non-Claude agents
  * receive project conventions and workflow instructions.
  */
 async function getPhasePrompt(
   phase: Phase,
   issueNumber: number,
+  agent?: string,
 ): Promise<string> {
-  const basePrompt = PHASE_PROMPTS[phase].replace(
-    /\{issue\}/g,
-    String(issueNumber),
-  );
+  const prompts =
+    agent && agent !== "claude-code" ? AIDER_PHASE_PROMPTS : PHASE_PROMPTS;
+  const basePrompt = prompts[phase].replace(/\{issue\}/g, String(issueNumber));
 
   // Include AGENTS.md content in the prompt context for non-Claude agent compatibility.
   // Claude reads CLAUDE.md natively, but other agents (Aider, Codex, Gemini CLI)
@@ -140,7 +180,7 @@ async function executePhase(
     };
   }
 
-  const prompt = await getPhasePrompt(phase, issueNumber);
+  const prompt = await getPhasePrompt(phase, issueNumber, config.agent);
 
   if (config.verbose) {
     console.log(chalk.gray(`    Prompt: ${prompt}`));
@@ -152,6 +192,23 @@ async function executePhase(
   // Determine working directory and environment
   const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
+
+  // Resolve file context for file-oriented drivers (e.g., Aider --file)
+  let files: string[] | undefined;
+  if (config.agent && config.agent !== "claude-code") {
+    try {
+      const output = execSync("git diff --name-only main...HEAD", {
+        cwd,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      if (output) {
+        files = output.split("\n").filter(Boolean);
+      }
+    } catch {
+      // No changed files or git error — proceed without file context
+    }
+  }
 
   // Check if shutdown is in progress
   if (shutdownManager?.shuttingDown) {
@@ -213,6 +270,7 @@ async function executePhase(
     verbose: config.verbose,
     mcp: config.mcp,
     sessionId: canResume ? sessionId : undefined,
+    files,
     onOutput: config.verbose
       ? (text: string) => {
           if (!verboseStreamingActive) {
