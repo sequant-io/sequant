@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "b12321faff9d",
+  "strategy": "manual-commit",
+  "branch": "feature/369-add-aider-as-second-agent-backend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "src/lib/workflow/drivers/aider-integration.test.ts",
+    "src/lib/workflow/drivers/aider-settings.test.ts",
+    "src/lib/workflow/drivers/aider.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b1/2321faff9d/0/metadata.json",
+      "transcript": "/b1/2321faff9d/0/full.jsonl",
+      "context": "/b1/2321faff9d/0/context.md",
+      "content_hash": "/b1/2321faff9d/0/content_hash.txt",
+      "prompt": "/b1/2321faff9d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 32772,
+    "cache_read_tokens": 419536,
+    "output_tokens": 8546,
+    "api_call_count": 14
+  }
+}
