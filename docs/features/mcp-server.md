@@ -245,6 +245,14 @@ The underlying `sequant run` command failed. Check:
 
 Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — ask "What's the sequant status for issue #42?" at any time to check progress. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
 
+### Workflow uses a different sequant version than expected
+
+If `sequant_run` behaves differently than your local `sequant run`, you may have multiple cached versions. The MCP server automatically reuses its own binary for child processes (since v1.21), so this should not happen with current versions. If it does:
+
+1. Clear the npx cache: `npx clear-npx-cache` or `rm -rf ~/.npm/_npx`
+2. Pin a version in your MCP config: `"args": ["sequant@1.21.0", "serve"]`
+3. Or use a local install instead of npx: `"command": "node", "args": ["dist/bin/cli.js", "serve"]`
+
 ### Client reports a timeout
 
 Some clients have tool call time limits (the server's own timeout is 30 minutes). Run phases individually instead of a full workflow:
@@ -261,4 +269,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation) on 2026-03-23.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency) on 2026-03-23.*
