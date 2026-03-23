@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "b12321faff9d",
+  "session_id": "79bf07bd-0c9b-4d47-a5dc-78dad290c655",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-23T00:15:48.68848Z",
+  "branch": "feature/369-add-aider-as-second-agent-backend",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/commands/doctor.ts",
+    "src/commands/run.ts",
+    "src/lib/settings.ts",
+    "src/lib/workflow/drivers/aider-integration.test.ts",
+    "src/lib/workflow/drivers/aider-settings.test.ts",
+    "src/lib/workflow/drivers/aider.test.ts",
+    "src/lib/workflow/drivers/aider.ts",
+    "src/lib/workflow/drivers/index.ts",
+    "src/lib/workflow/phase-executor.ts",
+    "src/lib/workflow/types.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 66,
+    "cache_creation_tokens": 122558,
+    "cache_read_tokens": 5776898,
+    "output_tokens": 23997,
+    "api_call_count": 60
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-23T00:15:48.287073Z",
+    "agent_lines": 182,
+    "human_added": 487,
+    "human_modified": 312,
+    "human_removed": 0,
+    "total_committed": 981,
+    "agent_percentage": 18.55249745158002
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-369-add-aider-as-second-agent-backend/79bf07bd-0c9b-4d47-a5dc-78dad290c655.jsonl"
+}
