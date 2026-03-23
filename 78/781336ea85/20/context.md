@@ -30,3 +30,7 @@ any gaps?
 
 Are they faster to fix than create new issues?
 
+### Prompt 5
+
+were those fixes best practice and good desgn?i
+

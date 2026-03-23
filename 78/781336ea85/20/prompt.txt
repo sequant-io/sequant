@@ -870,3 +870,7 @@ any gaps?
 ---
 
 Are they faster to fix than create new issues?
+
+---
+
+were those fixes best practice and good desgn?i
