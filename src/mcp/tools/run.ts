@@ -2,11 +2,28 @@
  * sequant_run MCP tool
  *
  * Execute workflow phases for GitHub issues.
+ * Uses async spawn to keep the MCP server responsive during execution.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
+
+const runToolInputSchema = {
+  issues: z.array(z.number()).describe("GitHub issue numbers to process"),
+  phases: z
+    .string()
+    .optional()
+    .describe("Comma-separated phases (default: spec,exec,qa)"),
+  qualityLoop: z
+    .boolean()
+    .optional()
+    .describe("Enable auto-retry on QA failure"),
+  agent: z
+    .string()
+    .optional()
+    .describe("Agent driver for phase execution (default: configured default)"),
+};
 
 export function registerRunTool(server: McpServer): void {
   server.registerTool(
@@ -15,25 +32,22 @@ export function registerRunTool(server: McpServer): void {
       title: "Sequant Run",
       description:
         "Run structured AI workflow phases (spec, exec, qa) for GitHub issues with quality gates",
-      inputSchema: {
-        issues: z.array(z.number()).describe("GitHub issue numbers to process"),
-        phases: z
-          .string()
-          .optional()
-          .describe("Comma-separated phases (default: spec,exec,qa)"),
-        qualityLoop: z
-          .boolean()
-          .optional()
-          .describe("Enable auto-retry on QA failure"),
-        agent: z
-          .string()
-          .optional()
-          .describe(
-            "Agent driver for phase execution (default: configured default)",
-          ),
-      },
+      inputSchema: runToolInputSchema,
     },
-    async ({ issues, phases, qualityLoop, agent }) => {
+    (async (
+      {
+        issues,
+        phases,
+        qualityLoop,
+        agent,
+      }: {
+        issues: number[];
+        phases?: string;
+        qualityLoop?: boolean;
+        agent?: string;
+      },
+      extra: { signal: AbortSignal },
+    ) => {
       if (!issues || issues.length === 0) {
         return {
           content: [
@@ -63,30 +77,26 @@ export function registerRunTool(server: McpServer): void {
       args.push("--log-json");
 
       try {
-        const result = spawnSync("npx", args, {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
+        const result = await spawnAsync("npx", args, {
           timeout: 1800000, // 30 min default
           env: {
             ...process.env,
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
+          signal: extra.signal,
         });
 
-        const output = result.stdout || "";
-        const stderr = result.stderr || "";
-
-        if (result.status !== 0) {
+        if (result.exitCode !== 0) {
           return {
             content: [
               {
                 type: "text" as const,
                 text: JSON.stringify({
                   status: "failure",
-                  exitCode: result.status,
+                  exitCode: result.exitCode,
                   issues: issues,
-                  output: output.slice(-2000),
-                  error: stderr.slice(-1000),
+                  output: result.stdout.slice(-2000),
+                  error: result.stderr.slice(-1000),
                 }),
               },
             ],
@@ -102,7 +112,7 @@ export function registerRunTool(server: McpServer): void {
                 status: "success",
                 issues: issues,
                 phases: phases || "spec,exec,qa",
-                output: output.slice(-2000),
+                output: result.stdout.slice(-2000),
               }),
             },
           ],
@@ -121,6 +131,100 @@ export function registerRunTool(server: McpServer): void {
           isError: true,
         };
       }
-    },
+    }) as Parameters<typeof server.registerTool>[2],
   );
+}
+
+export interface SpawnResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SpawnOptions {
+  timeout: number;
+  env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
+}
+
+/** @internal Exported for testing only */
+export function spawnAsync(
+  command: string,
+  args: string[],
+  options: SpawnOptions,
+): Promise<SpawnResult> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+
+    const proc = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: options.env,
+      detached: true,
+    });
+
+    // Timeout handling
+    const timeoutId = setTimeout(() => {
+      killProcessGroup(proc);
+      reject(new Error(`Process timed out after ${options.timeout}ms`));
+    }, options.timeout);
+
+    // Client-initiated cancellation via AbortSignal
+    if (options.signal) {
+      if (options.signal.aborted) {
+        killProcessGroup(proc);
+        clearTimeout(timeoutId);
+        reject(new Error("Cancelled by client"));
+        return;
+      }
+      options.signal.addEventListener(
+        "abort",
+        () => {
+          killProcessGroup(proc);
+          clearTimeout(timeoutId);
+          reject(new Error("Cancelled by client"));
+        },
+        { once: true },
+      );
+    }
+
+    proc.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(timeoutId);
+      if (err.code === "ENOENT") {
+        reject(
+          new Error(
+            `Command not found: ${command}. Ensure it is installed and in PATH.`,
+          ),
+        );
+      } else {
+        reject(new Error(`Failed to spawn process: ${err.message}`));
+      }
+    });
+
+    proc.on("close", (code: number | null) => {
+      clearTimeout(timeoutId);
+      resolve({ exitCode: code, stdout, stderr });
+    });
+  });
+}
+
+function killProcessGroup(proc: ReturnType<typeof spawn>): void {
+  try {
+    if (proc.pid) {
+      process.kill(-proc.pid, "SIGTERM");
+    }
+  } catch {
+    // Process group may already be gone (e.g. already exited) — fall back to direct kill
+    if (!proc.killed) {
+      proc.kill("SIGTERM");
+    }
+  }
 }

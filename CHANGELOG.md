@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)
+  - Server remains responsive during workflow execution (status/logs callable)
+  - Timeout handling preserved with process group cleanup (no orphan processes)
+  - ENOENT and other spawn errors handled with descriptive messages
+
 ### Added
 
 - Add baseline comparison to `/merger` to detect regressions before merging (#397)

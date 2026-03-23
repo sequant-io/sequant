@@ -1,9 +1,10 @@
 /**
  * Extended tests for Sequant MCP Server — failure paths and edge cases
  * Issue #372: Expose Sequant Workflow as MCP Server
+ * Updated for #388: spawn (async) instead of spawnSync
  *
  * Covers:
- * - AC-2: sequant_run execution behavior (with spawnSync mocking)
+ * - AC-2: sequant_run execution behavior (with spawn mocking)
  * - AC-3: sequant_status failure paths
  * - AC-4: sequant_logs edge cases (zero/negative limit)
  * - AC-12: doctor MCP health check
@@ -13,18 +14,53 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { spawnSync } from "child_process";
+import { EventEmitter } from "events";
+import { spawn } from "child_process";
 
 // Mock child_process before importing server (which imports tools/run.ts)
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
   return {
     ...actual,
-    spawnSync: vi.fn(),
+    spawn: vi.fn(),
   };
 });
 
-const mockedSpawnSync = vi.mocked(spawnSync);
+const mockedSpawn = vi.mocked(spawn);
+
+/** Create a mock ChildProcess that resolves with given exit code, stdout, stderr */
+function createMockProcess(opts: {
+  exitCode?: number | null;
+  stdout?: string;
+  stderr?: string;
+  error?: Error;
+}) {
+  const proc = new EventEmitter() as ReturnType<typeof spawn>;
+  const stdoutEmitter = new EventEmitter();
+  const stderrEmitter = new EventEmitter();
+  (proc as unknown as Record<string, unknown>).stdout = stdoutEmitter;
+  (proc as unknown as Record<string, unknown>).stderr = stderrEmitter;
+  (proc as unknown as Record<string, unknown>).pid = 12345;
+  (proc as unknown as Record<string, unknown>).killed = false;
+  (proc as unknown as Record<string, unknown>).kill = vi.fn();
+
+  // Schedule async emission of data and close events
+  queueMicrotask(() => {
+    if (opts.stdout) {
+      stdoutEmitter.emit("data", Buffer.from(opts.stdout));
+    }
+    if (opts.stderr) {
+      stderrEmitter.emit("data", Buffer.from(opts.stderr));
+    }
+    if (opts.error) {
+      proc.emit("error", opts.error);
+    } else {
+      proc.emit("close", opts.exitCode ?? 0);
+    }
+  });
+
+  return proc;
+}
 
 // Check if MCP SDK is available (dynamic import to avoid hard failure)
 const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
@@ -75,15 +111,12 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
   // AC-2: sequant_run tool — execution behavior
   describe("AC-2: sequant_run execution", () => {
     it("should accept valid issues array and return structured result", async () => {
-      mockedSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: '{"summary":"completed"}',
-        stderr: "",
-        pid: 1234,
-        output: ["", '{"summary":"completed"}', ""],
-        signal: null,
-        error: undefined,
-      });
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stdout: '{"summary":"completed"}',
+        }),
+      );
 
       const result = await client.callTool({
         name: "sequant_run",
@@ -116,15 +149,13 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
       });
 
       it("should return isError when subprocess fails", async () => {
-        mockedSpawnSync.mockReturnValue({
-          status: 1,
-          stdout: "partial output",
-          stderr: "Error: something went wrong",
-          pid: 1234,
-          output: ["", "partial output", "Error: something went wrong"],
-          signal: null,
-          error: undefined,
-        });
+        mockedSpawn.mockImplementation(() =>
+          createMockProcess({
+            exitCode: 1,
+            stdout: "partial output",
+            stderr: "Error: something went wrong",
+          }),
+        );
 
         const result = await client.callTool({
           name: "sequant_run",
@@ -140,10 +171,10 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         expect(data.error).toContain("something went wrong");
       });
 
-      it("should handle subprocess timeout gracefully", async () => {
-        mockedSpawnSync.mockImplementation(() => {
-          throw new Error("spawnSync ETIMEDOUT");
-        });
+      it("should handle subprocess spawn error gracefully", async () => {
+        const error = new Error("spawn ENOENT");
+        (error as NodeJS.ErrnoException).code = "ENOENT";
+        mockedSpawn.mockImplementation(() => createMockProcess({ error }));
 
         const result = await client.callTool({
           name: "sequant_run",
@@ -155,20 +186,17 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
           (result.content as Array<{ type: string; text: string }>)[0].text,
         );
         expect(data.error).toBe("EXECUTION_ERROR");
-        expect(data.message).toContain("ETIMEDOUT");
+        expect(data.message).toContain("Command not found");
       });
 
       it("should truncate large output to 2000 chars", async () => {
         const largeOutput = "x".repeat(5000);
-        mockedSpawnSync.mockReturnValue({
-          status: 0,
-          stdout: largeOutput,
-          stderr: "",
-          pid: 1234,
-          output: ["", largeOutput, ""],
-          signal: null,
-          error: undefined,
-        });
+        mockedSpawn.mockImplementation(() =>
+          createMockProcess({
+            exitCode: 0,
+            stdout: largeOutput,
+          }),
+        );
 
         const result = await client.callTool({
           name: "sequant_run",
