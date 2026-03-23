@@ -11,18 +11,29 @@
  * - AC-6: sequant://config resource
  * - AC-13: Tool schemas match specification
  * - AC-14: Structured MCP errors for invalid inputs
+ *
+ * Guarded: Skips if @modelcontextprotocol/sdk is not installed (#396)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { createServer } from "./server.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-describe("Sequant MCP Server", () => {
-  let client: Client;
+// Check if MCP SDK is available (dynamic import to avoid hard failure)
+const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
+  .then(() => true)
+  .catch(() => false);
+
+describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any;
   let cleanup: () => Promise<void>;
 
   beforeEach(async () => {
+    const { createServer } = await import("./server.js");
+    const { Client } =
+      await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } =
+      await import("@modelcontextprotocol/sdk/inMemory.js");
+
     const server = createServer("1.0.0-test");
     const clientInstance = new Client({
       name: "test-client",
@@ -51,7 +62,9 @@ describe("Sequant MCP Server", () => {
   describe("AC-13: tools/list", () => {
     it("should list all three tools with correct names", async () => {
       const result = await client.listTools();
-      const toolNames = result.tools.map((t) => t.name).sort();
+      const toolNames = result.tools
+        .map((t: { name: string }) => t.name)
+        .sort();
 
       expect(toolNames).toEqual([
         "sequant_logs",
@@ -62,7 +75,9 @@ describe("Sequant MCP Server", () => {
 
     it("sequant_run should have correct input schema", async () => {
       const result = await client.listTools();
-      const runTool = result.tools.find((t) => t.name === "sequant_run");
+      const runTool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_run",
+      );
 
       expect(runTool).toBeDefined();
       expect(runTool!.description).toContain("workflow phases");
@@ -76,7 +91,9 @@ describe("Sequant MCP Server", () => {
 
     it("sequant_status should have correct input schema", async () => {
       const result = await client.listTools();
-      const statusTool = result.tools.find((t) => t.name === "sequant_status");
+      const statusTool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_status",
+      );
 
       expect(statusTool).toBeDefined();
       expect(statusTool!.description).toContain("workflow state");
@@ -88,7 +105,9 @@ describe("Sequant MCP Server", () => {
 
     it("sequant_logs should have correct input schema", async () => {
       const result = await client.listTools();
-      const logsTool = result.tools.find((t) => t.name === "sequant_logs");
+      const logsTool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_logs",
+      );
 
       expect(logsTool).toBeDefined();
       expect(logsTool!.description).toContain("run logs");
@@ -103,7 +122,7 @@ describe("Sequant MCP Server", () => {
   describe("AC-5, AC-6: resources/list", () => {
     it("should list state and config resources", async () => {
       const result = await client.listResources();
-      const uris = result.resources.map((r) => r.uri).sort();
+      const uris = result.resources.map((r: { uri: string }) => r.uri).sort();
 
       expect(uris).toEqual(["sequant://config", "sequant://state"]);
     });

@@ -39,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sequant conventions --format agents-md` outputs conventions in AGENTS.md format
   - `--no-agents-md` flag to skip AGENTS.md generation during init
 
+### Fixed
+
+- Lazy-load MCP SDK to prevent build and runtime failures when SDK is not installed (#396)
+  - `bin/cli.ts` lazy-loads `serve.ts` via dynamic `import()` — non-MCP commands no longer require the SDK
+  - `sequant serve` shows a clear error message with install instructions when SDK is missing
+  - `npm run build` passes without SDK installed (ambient type declarations as fallback)
+  - MCP tests skip gracefully when SDK is not installed
+  - `@modelcontextprotocol/sdk` moved from `dependencies` to optional `peerDependencies`
+
 ## [1.20.3] - 2026-03-21
 
 ### Fixed

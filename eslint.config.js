@@ -39,6 +39,7 @@ export default tseslint.config(
       "templates/",
       "**/*.js",
       "**/*.test.ts",
+      "**/*.d.ts",
     ],
   },
 );

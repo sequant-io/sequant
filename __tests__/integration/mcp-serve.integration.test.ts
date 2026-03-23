@@ -20,6 +20,11 @@ import {
   addSequantToMcpConfig,
 } from "../../src/lib/mcp-config.js";
 
+// Check if MCP SDK is available — integration tests need the serve command to work (#396)
+const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
+  .then(() => true)
+  .catch(() => false);
+
 const TEST_DIR = `/tmp/sequant-mcp-test-${process.pid}-${Date.now()}`;
 
 // Track spawned processes for cleanup
@@ -108,7 +113,7 @@ afterAll(() => {
   }
 });
 
-describe("MCP Server — Integration", () => {
+describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
   // AC-7: SSE transport with --transport sse --port
   describe("AC-7: SSE transport", () => {
     it("should start SSE server and respond to health check", async () => {
