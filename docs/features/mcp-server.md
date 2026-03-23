@@ -13,6 +13,9 @@ Use Sequant from Claude Desktop, Cursor, VS Code, or any MCP-compatible AI tool.
    - **API access:** set `ANTHROPIC_API_KEY` in your shell environment
 4. **A GitHub repo with issues** — Sequant operates on GitHub issue numbers
 5. **Sequant initialized** — run `npx sequant init` in your project root
+6. **`@modelcontextprotocol/sdk`** — install if not already present: `npm install @modelcontextprotocol/sdk`
+
+> **Note:** The MCP SDK is an optional dependency. All other Sequant commands (`run`, `doctor`, `init`, etc.) work without it. Only `sequant serve` requires the SDK.
 
 ### Add the MCP config
 
@@ -212,6 +215,16 @@ Binds to `127.0.0.1` (localhost only). No authentication — local use only.
 
 ## Troubleshooting
 
+### "MCP server requires @modelcontextprotocol/sdk"
+
+The MCP SDK is an optional peer dependency. Install it:
+
+```bash
+npm install @modelcontextprotocol/sdk
+```
+
+This only affects `sequant serve`. All other commands (`run`, `doctor`, `init`, etc.) work without the SDK.
+
 ### Tools don't appear in my editor
 
 1. Run `npx sequant serve` from the command line — if it errors, fix that first
@@ -247,4 +260,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK) on 2026-03-23.*
