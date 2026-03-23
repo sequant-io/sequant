@@ -2,11 +2,12 @@
  * sequant_run MCP tool
  *
  * Execute workflow phases for GitHub issues.
+ * Uses async spawn to keep the MCP server responsive during execution.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 
 export function registerRunTool(server: McpServer): void {
   server.registerTool(
@@ -63,9 +64,7 @@ export function registerRunTool(server: McpServer): void {
       args.push("--log-json");
 
       try {
-        const result = spawnSync("npx", args, {
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
+        const result = await spawnAsync("npx", args, {
           timeout: 1800000, // 30 min default
           env: {
             ...process.env,
@@ -73,20 +72,17 @@ export function registerRunTool(server: McpServer): void {
           },
         });
 
-        const output = result.stdout || "";
-        const stderr = result.stderr || "";
-
-        if (result.status !== 0) {
+        if (result.exitCode !== 0) {
           return {
             content: [
               {
                 type: "text" as const,
                 text: JSON.stringify({
                   status: "failure",
-                  exitCode: result.status,
+                  exitCode: result.exitCode,
                   issues: issues,
-                  output: output.slice(-2000),
-                  error: stderr.slice(-1000),
+                  output: result.stdout.slice(-2000),
+                  error: result.stderr.slice(-1000),
                 }),
               },
             ],
@@ -102,7 +98,7 @@ export function registerRunTool(server: McpServer): void {
                 status: "success",
                 issues: issues,
                 phases: phases || "spec,exec,qa",
-                output: output.slice(-2000),
+                output: result.stdout.slice(-2000),
               }),
             },
           ],
@@ -123,4 +119,78 @@ export function registerRunTool(server: McpServer): void {
       }
     },
   );
+}
+
+export interface SpawnResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SpawnOptions {
+  timeout: number;
+  env?: NodeJS.ProcessEnv;
+}
+
+/** @internal Exported for testing only */
+export function spawnAsync(
+  command: string,
+  args: string[],
+  options: SpawnOptions,
+): Promise<SpawnResult> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+
+    const proc = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: options.env,
+      detached: true,
+    });
+
+    // Timeout handling
+    const timeoutId = setTimeout(() => {
+      killProcessGroup(proc);
+      reject(new Error(`Process timed out after ${options.timeout}ms`));
+    }, options.timeout);
+
+    proc.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    proc.on("error", (err: NodeJS.ErrnoException) => {
+      clearTimeout(timeoutId);
+      if (err.code === "ENOENT") {
+        reject(
+          new Error(
+            `Command not found: ${command}. Ensure it is installed and in PATH.`,
+          ),
+        );
+      } else {
+        reject(new Error(`Failed to spawn process: ${err.message}`));
+      }
+    });
+
+    proc.on("close", (code: number | null) => {
+      clearTimeout(timeoutId);
+      resolve({ exitCode: code, stdout, stderr });
+    });
+  });
+}
+
+function killProcessGroup(proc: ReturnType<typeof spawn>): void {
+  try {
+    if (proc.pid) {
+      process.kill(-proc.pid, "SIGTERM");
+    }
+  } catch {
+    // Process group may already be gone — fall back to direct kill
+    if (!proc.killed) {
+      proc.kill("SIGTERM");
+    }
+  }
 }
