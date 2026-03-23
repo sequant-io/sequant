@@ -1,0 +1,42 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "6da78a605666",
+  "strategy": "manual-commit",
+  "branch": "feature/370-github-actions-integration-for-ci-cd-driven-workfl",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "sequant-action/action.yml",
+    "sequant-action/examples/comment-trigger.yml",
+    "sequant-action/examples/manual-dispatch.yml",
+    "sequant-action/examples/solve-on-label.yml",
+    "src/lib/ci/config.test.ts",
+    "src/lib/ci/config.ts",
+    "src/lib/ci/index.ts",
+    "src/lib/ci/inputs.test.ts",
+    "src/lib/ci/inputs.ts",
+    "src/lib/ci/labels.test.ts",
+    "src/lib/ci/labels.ts",
+    "src/lib/ci/outputs.test.ts",
+    "src/lib/ci/outputs.ts",
+    "src/lib/ci/triggers.test.ts",
+    "src/lib/ci/triggers.ts",
+    "src/lib/ci/types.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/6d/a78a605666/0/metadata.json",
+      "transcript": "/6d/a78a605666/0/full.jsonl",
+      "context": "/6d/a78a605666/0/context.md",
+      "content_hash": "/6d/a78a605666/0/content_hash.txt",
+      "prompt": "/6d/a78a605666/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 44,
+    "cache_creation_tokens": 97699,
+    "cache_read_tokens": 2658948,
+    "output_tokens": 27705,
+    "api_call_count": 36
+  }
+}
