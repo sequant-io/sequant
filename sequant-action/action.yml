@@ -27,6 +27,10 @@ inputs:
   api-key:
     description: "API key for the selected agent (pass via secrets)"
     required: true
+  sequant-version:
+    description: "Sequant version to install (npm version range)"
+    required: false
+    default: "^1"
 
 outputs:
   success:
@@ -124,12 +128,22 @@ runs:
         INPUT_AGENT: ${{ inputs.agent }}
         INPUT_TIMEOUT: ${{ inputs.timeout }}
         INPUT_QUALITY_LOOP: ${{ inputs.quality-loop }}
+        INPUT_VERSION: ${{ inputs.sequant-version }}
         ISSUES: ${{ steps.resolve.outputs.issues }}
-        ANTHROPIC_API_KEY: ${{ inputs.api-key }}
-        OPENAI_API_KEY: ${{ inputs.api-key }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
         GH_TOKEN: ${{ github.token }}
       run: |
         START_TIME=$(date +%s)
+
+        # Set the API key for the selected agent only
+        case "$INPUT_AGENT" in
+          aider|codex)
+            export OPENAI_API_KEY="$INPUT_API_KEY"
+            ;;
+          *)
+            export ANTHROPIC_API_KEY="$INPUT_API_KEY"
+            ;;
+        esac
 
         # Build CLI flags
         FLAGS="--phases $INPUT_PHASES --agent $INPUT_AGENT --timeout $INPUT_TIMEOUT --no-mcp"
@@ -137,11 +151,11 @@ runs:
           FLAGS="$FLAGS --quality-loop"
         fi
 
-        echo "Running: npx sequant@latest run $ISSUES $FLAGS"
+        echo "Running: npx sequant@$INPUT_VERSION run $ISSUES $FLAGS"
 
         # Run sequant — capture exit code
         set +e
-        npx sequant@latest run $ISSUES $FLAGS 2>&1
+        npx "sequant@$INPUT_VERSION" run $ISSUES $FLAGS 2>&1
         EXIT_CODE=$?
         set -e
 

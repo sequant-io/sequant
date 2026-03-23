@@ -46,7 +46,10 @@ jobs:
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          PHASES=$(echo "$COMMENT_BODY" | grep -oP '@sequant\s+run\s+\K[\w,-]+' || echo "spec,exec,qa")
+          PHASES=$(echo "$COMMENT_BODY" | sed -n 's/.*@sequant[[:space:]]\+run[[:space:]]\+\([a-zA-Z,_-]\+\).*/\1/p' | head -1)
+          if [[ -z "$PHASES" ]]; then
+            PHASES="spec,exec,qa"
+          fi
           echo "phases=$PHASES" >> "$GITHUB_OUTPUT"
           echo "Parsed phases: $PHASES"
 
