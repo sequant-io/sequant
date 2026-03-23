@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All `gh` calls in phase-detection, pr-status, system, doctor, and worktree-manager now delegate to `GitHubProvider`
   - `--agent <name>` CLI flag for `sequant run`
   - Driver and platform registries for future backend extensibility
+- GitHub Actions integration for CI/CD-driven workflows (#370)
+  - Composite action (`sequant-action/action.yml`) runs sequant workflows as CI steps
+  - Trigger detection: `workflow_dispatch`, `issues` (label-based), `issue_comment` (`@sequant run`)
+  - Label lifecycle: `sequant:solve` → `sequant:solving` → `sequant:done` / `sequant:failed`
+  - Phase override labels: `sequant:spec-only`, `sequant:exec`, `sequant:qa`
+  - Repo-level configuration via `.github/sequant.yml` or `.sequant/ci.json`
+  - Structured outputs: `issue`, `success`, `phases`, `pr-url`, `duration`
+  - Run logs uploaded as GitHub Actions artifacts
+  - Concurrency control per issue via native Actions concurrency groups
+  - `--no-mcp` enforced in CI mode; API keys masked via `::add-mask::`
+  - Example workflows: label trigger, manual dispatch, comment trigger
 - Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
   - `sequant init` now generates AGENTS.md alongside CLAUDE.md
   - `sequant sync` regenerates AGENTS.md when templates are updated
