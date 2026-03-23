@@ -8,6 +8,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { spawn } from "child_process";
+import { registerRun, unregisterRun } from "../run-registry.js";
 
 const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
@@ -76,6 +77,11 @@ export function registerRunTool(server: McpServer): void {
       }
       args.push("--log-json");
 
+      // Register all issues as active runs for real-time status polling
+      for (const issue of issues) {
+        registerRun(issue, process.pid);
+      }
+
       try {
         const result = await spawnAsync("npx", args, {
           timeout: 1800000, // 30 min default
@@ -130,6 +136,10 @@ export function registerRunTool(server: McpServer): void {
           ],
           isError: true,
         };
+      } finally {
+        for (const issue of issues) {
+          unregisterRun(issue);
+        }
       }
     }) as Parameters<typeof server.registerTool>[2],
   );

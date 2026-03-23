@@ -16,6 +16,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
+import { registerRun, unregisterRun, clearRegistry } from "./run-registry.js";
 
 // Mock child_process before importing server (which imports tools/run.ts)
 vi.mock("child_process", async (importOriginal) => {
@@ -105,6 +106,7 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
   });
 
   afterEach(async () => {
+    clearRegistry();
     await cleanup();
   });
 
@@ -329,6 +331,107 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
       expect(result.contents).toHaveLength(1);
       const parsed = JSON.parse(result.contents[0].text as string);
       expect(parsed).toBeDefined();
+    });
+  });
+
+  // #394: Real-time progress reporting — isRunning in sequant_status
+  describe("#394: sequant_status isRunning", () => {
+    it("should return isRunning: false for untracked issue with no active run", async () => {
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 99999 },
+      });
+
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.isRunning).toBe(false);
+    });
+
+    it("should return isRunning: true when a run is registered for the issue", async () => {
+      registerRun(42, 12345);
+
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 42 },
+      });
+
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.isRunning).toBe(true);
+    });
+
+    it("should return isRunning: false after run is unregistered", async () => {
+      registerRun(42, 12345);
+      unregisterRun(42);
+
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 42 },
+      });
+
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.isRunning).toBe(false);
+    });
+
+    it("should register/unregister runs during sequant_run lifecycle", async () => {
+      // Use a slow mock process to verify isRunning is true during execution
+      const proc = new EventEmitter() as ReturnType<typeof spawn>;
+      const stdoutEmitter = new EventEmitter();
+      const stderrEmitter = new EventEmitter();
+      (proc as unknown as Record<string, unknown>).stdout = stdoutEmitter;
+      (proc as unknown as Record<string, unknown>).stderr = stderrEmitter;
+      (proc as unknown as Record<string, unknown>).pid = 12345;
+      (proc as unknown as Record<string, unknown>).killed = false;
+      (proc as unknown as Record<string, unknown>).kill = vi.fn();
+
+      mockedSpawn.mockImplementation(() => proc);
+
+      // Start the run (it will block until mock process closes)
+      const runPromise = client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [55] },
+      });
+
+      // Give the event loop a tick so registerRun fires
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Check status mid-run — should show isRunning: true
+      const midRunStatus = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 55 },
+      });
+      const midData = JSON.parse(
+        (midRunStatus.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(midData.isRunning).toBe(true);
+
+      // Now complete the process
+      proc.emit("close", 0);
+      await runPromise;
+
+      // Check status after run — should show isRunning: false
+      const postRunStatus = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 55 },
+      });
+      const postData = JSON.parse(
+        (postRunStatus.content as Array<{ type: string; text: string }>)[0]
+          .text,
+      );
+      expect(postData.isRunning).toBe(false);
+    });
+
+    it("should include polling guidance in status tool description", async () => {
+      const result = await client.listTools();
+      const statusTool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_status",
+      );
+
+      expect(statusTool!.description).toContain("Poll every 5-10 seconds");
     });
   });
 });

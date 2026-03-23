@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StateManager } from "../../lib/workflow/state-manager.js";
+import { isRunning } from "../run-registry.js";
 
 export function registerStatusTool(server: McpServer): void {
   server.registerTool(
@@ -14,7 +15,9 @@ export function registerStatusTool(server: McpServer): void {
     {
       title: "Sequant Status",
       description:
-        "Get the current workflow state, phase progress, and QA verdict for a tracked issue",
+        "Get the current workflow state, phase progress, and QA verdict for a tracked issue. " +
+        "Returns isRunning: true when a sequant_run is actively executing. " +
+        "Poll every 5-10 seconds during active runs for phase-level progress updates.",
       inputSchema: {
         issue: z.number().describe("GitHub issue number"),
       },
@@ -47,6 +50,7 @@ export function registerStatusTool(server: McpServer): void {
                 text: JSON.stringify({
                   issue,
                   status: "not_tracked",
+                  isRunning: isRunning(issue),
                   message: `Issue #${issue} is not currently tracked in workflow state`,
                 }),
               },
@@ -62,6 +66,7 @@ export function registerStatusTool(server: McpServer): void {
                 issue,
                 title: issueState.title,
                 status: issueState.status,
+                isRunning: isRunning(issue),
                 currentPhase: issueState.currentPhase,
                 phases: issueState.phases,
                 worktree: issueState.worktree,

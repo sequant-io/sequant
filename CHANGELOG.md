@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add real-time progress reporting for MCP workflow runs (#394)
+  - `sequant_status` now returns `isRunning: true` while a `sequant_run` is executing
+  - Active run registry tracks spawned processes by issue number with automatic cleanup
+  - Tool description includes polling guidance (5-10 second interval)
 - Add baseline comparison to `/merger` to detect regressions before merging (#397)
   - Captures build error count and test pass/fail counts on main before merge
   - Compares post-merge metrics against baseline to detect new failures
