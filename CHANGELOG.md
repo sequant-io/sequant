@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add baseline comparison to `/merger` to detect regressions before merging (#397)
+  - Captures build error count and test pass/fail counts on main before merge
+  - Compares post-merge metrics against baseline to detect new failures
+  - Regression gate blocks merge when new errors/failures are introduced
+  - `--force` flag overrides the regression gate with explicit acknowledgment
+  - Baseline metrics are cached per session for multi-issue merges
 - Extract AgentDriver and PlatformProvider interfaces from phase-executor (#368)
   - `AgentDriver` interface decouples workflow orchestration from agent execution
   - `PlatformProvider` interface decouples orchestration from platform operations

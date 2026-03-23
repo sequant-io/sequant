@@ -23,13 +23,14 @@ You are the "Merger Agent" for handling post-QA integration of completed worktre
 ## Purpose
 
 When invoked as `/merger <issue-numbers>`, you:
-1. Validate QA status for all specified issues
-2. Detect file conflicts between worktrees
-3. Generate integration branches for incompatible changes
-4. Respect dependency ordering
-5. Clean up worktrees after successful merge
-6. Run post-merge smoketest (build, tests, CLI health)
-7. Provide detailed merge reports
+1. Capture baseline metrics on main (build errors, test counts)
+2. Validate QA status for all specified issues
+3. Detect file conflicts between worktrees
+4. Generate integration branches for incompatible changes
+5. Respect dependency ordering
+6. Clean up worktrees after successful merge
+7. Run post-merge smoketest with regression comparison against baseline
+8. Provide detailed merge reports
 
 ### Recommended Pre-Merge Check
 
@@ -66,6 +67,9 @@ sequant merge --check         # verify (deterministic checks)
 
 # Skip post-merge smoketest
 /merger 10 12 --skip-smoketest
+
+# Force merge even if regression is detected (bypasses regression gate)
+/merger 10 12 --force
 ```
 
 ## Agent Execution Mode
@@ -91,6 +95,58 @@ When processing multiple issues, determine the execution mode for validation che
 | Parallel | ~Nx (N=issues) | ~50% faster | Unlimited plans, batch merges |
 
 ## Workflow
+
+### Step 0: Baseline Capture (REQUIRED)
+
+**Purpose:** Capture build error count and test pass/fail counts on main **before** any merge, so post-merge results can be compared to detect regressions.
+
+**Skip if:** `--skip-smoketest` flag is set (no comparison needed if smoketest is skipped).
+
+**Session caching:** If baseline has already been captured in this `/merger` invocation (e.g., when merging multiple issues), reuse the cached values instead of re-running build and tests.
+
+```bash
+# Check if baseline is already cached (multi-issue merge scenario)
+if [[ -n "$BASELINE_BUILD_ERRORS" && -n "$BASELINE_TEST_FAILURES" ]]; then
+  echo "♻️ Using cached baseline metrics (captured earlier in this session)"
+  echo "  Build errors: $BASELINE_BUILD_ERRORS"
+  echo "  Test failures: $BASELINE_TEST_FAILURES"
+  echo "  Test passes: $BASELINE_TEST_PASSES"
+else
+  echo "📊 Capturing baseline metrics on main..."
+
+  # Ensure we're on main with latest changes
+  git checkout main
+  git pull origin main
+
+  # 1. Capture build error count
+  build_output=$(npm run build 2>&1 || true)
+  BASELINE_BUILD_ERRORS=$(echo "$build_output" | grep -c "error TS" || echo "0")
+  echo "  Baseline build errors: $BASELINE_BUILD_ERRORS"
+
+  # 2. Capture test pass/fail counts
+  test_output=$(npm test 2>&1 || true)
+
+  # Parse vitest output format: "Tests  X passed | Y failed" or "Tests  X passed"
+  BASELINE_TEST_PASSES=$(echo "$test_output" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
+  BASELINE_TEST_FAILURES=$(echo "$test_output" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+' || echo "0")
+  echo "  Baseline test passes: $BASELINE_TEST_PASSES"
+  echo "  Baseline test failures: $BASELINE_TEST_FAILURES"
+
+  echo "✅ Baseline captured"
+fi
+```
+
+**Output format (include in merge report):**
+
+```markdown
+### Baseline Metrics (main before merge)
+
+| Metric | Count |
+|--------|-------|
+| Build errors (TS) | $BASELINE_BUILD_ERRORS |
+| Test passes | $BASELINE_TEST_PASSES |
+| Test failures | $BASELINE_TEST_FAILURES |
+```
 
 ### Step 1: Pre-Merge Validation
 
@@ -237,7 +293,7 @@ git worktree list | grep -q "feature/$ISSUE" && echo "WARNING: Worktree still ex
 
 **Why this matters:** Leftover worktrees waste disk space and can cause confusion when re-running `sequant run` on the same issues. The state guard (#305) prevents re-execution, but the worktree should still be cleaned up.
 
-### Step 7: Post-Merge Smoketest
+### Step 7: Post-Merge Smoketest with Regression Comparison
 
 **Skip if:** `--skip-smoketest` flag is set or `SEQUANT_MERGER_SKIP_SMOKETEST` environment variable is true.
 
@@ -249,32 +305,52 @@ if [[ "$SKIP_SMOKETEST" == "true" ]]; then
 fi
 ```
 
-**After all merges complete and worktrees are cleaned up**, verify main is healthy:
+**After all merges complete and worktrees are cleaned up**, verify main is healthy and compare against baseline:
 
 ```bash
 # 1. Ensure we're on main with latest changes
 git checkout main
 git pull origin main
 
-# 2. Build verification
+# 2. Build verification — capture post-merge error count
 echo "Running build..."
-npm run build 2>&1
+post_build_output=$(npm run build 2>&1 || true)
 build_exit=$?
+POST_BUILD_ERRORS=$(echo "$post_build_output" | grep -c "error TS" || echo "0")
 
-# 3. Test suite
+# 3. Test suite — capture post-merge test counts
 echo "Running tests..."
-npm test 2>&1
+post_test_output=$(npm test 2>&1 || true)
 test_exit=$?
+POST_TEST_PASSES=$(echo "$post_test_output" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
+POST_TEST_FAILURES=$(echo "$post_test_output" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+' || echo "0")
 
 # 4. CLI health check (if sequant CLI is available)
 echo "Running CLI health check..."
 npx sequant doctor 2>&1 || true
 doctor_exit=$?
+
+# 5. Regression comparison against baseline
+REGRESSION_DETECTED=false
+
+BUILD_DELTA=$((POST_BUILD_ERRORS - BASELINE_BUILD_ERRORS))
+TEST_FAIL_DELTA=$((POST_TEST_FAILURES - BASELINE_TEST_FAILURES))
+TEST_PASS_DELTA=$((POST_TEST_PASSES - BASELINE_TEST_PASSES))
+
+if [[ $BUILD_DELTA -gt 0 ]]; then
+  echo "❌ REGRESSION: $BUILD_DELTA new build error(s) introduced"
+  REGRESSION_DETECTED=true
+fi
+
+if [[ $TEST_FAIL_DELTA -gt 0 ]]; then
+  echo "❌ REGRESSION: $TEST_FAIL_DELTA new test failure(s) introduced"
+  REGRESSION_DETECTED=true
+fi
 ```
 
-#### Smoketest Output
+#### Smoketest & Regression Output
 
-Report results in a structured table:
+Report results including regression comparison:
 
 ```markdown
 ### Post-Merge Smoketest
@@ -285,42 +361,99 @@ Report results in a structured table:
 | Tests | `npm test` | ✅ PASS (N/N) / ❌ FAIL | [test count or failure summary] |
 | CLI Health | `npx sequant doctor` | ✅ PASS / ❌ FAIL / ⏭️ SKIP | [health check output] |
 
-**Smoketest Result:** ✅ ALL PASSED / ❌ FAILURES DETECTED
+### Regression Check
+
+| Metric | Baseline (main) | Post-merge | Delta | Status |
+|--------|----------------|------------|-------|--------|
+| Build errors | $BASELINE_BUILD_ERRORS | $POST_BUILD_ERRORS | +$BUILD_DELTA / 0 | ✅ No regression / ❌ REGRESSION |
+| Test failures | $BASELINE_TEST_FAILURES | $POST_TEST_FAILURES | +$TEST_FAIL_DELTA / 0 | ✅ No regression / ❌ REGRESSION |
+| Test passes | $BASELINE_TEST_PASSES | $POST_TEST_PASSES | +$TEST_PASS_DELTA | ✅ Tests added / ⚠️ Tests removed |
+
+**Regression Result:** ✅ NO REGRESSIONS / ❌ REGRESSIONS DETECTED
 ```
 
-#### Failure Handling
+#### Regression Gate
 
-If any smoketest check fails, report clearly with suggested actions:
+**If regressions are detected:**
+
+```bash
+if [[ "$REGRESSION_DETECTED" == "true" ]]; then
+  if [[ "$FORCE_MERGE" == "true" ]]; then
+    echo "⚠️ REGRESSION DETECTED but --force flag set. Proceeding with merge."
+    echo "⚠️ Acknowledgment: Merging despite $BUILD_DELTA new build error(s) and $TEST_FAIL_DELTA new test failure(s)."
+  else
+    echo "❌ REGRESSION DETECTED — merge is blocked."
+    echo ""
+    echo "New build errors: $BUILD_DELTA"
+    echo "New test failures: $TEST_FAIL_DELTA"
+    echo ""
+    echo "To override this gate, re-run with --force:"
+    echo "  /merger <issues> --force"
+    echo ""
+    echo "To investigate:"
+    echo "  npm run build 2>&1 | grep 'error TS'"
+    echo "  npm test -- --verbose 2>&1"
+    # Do NOT proceed — report regression and halt
+  fi
+fi
+```
+
+**Regression gate behavior:**
+
+| Scenario | `--force` not set | `--force` set |
+|----------|-------------------|---------------|
+| No regressions | ✅ Proceed | ✅ Proceed |
+| New build errors | ❌ Block merge, report | ⚠️ Warn, proceed |
+| New test failures | ❌ Block merge, report | ⚠️ Warn, proceed |
+| Both | ❌ Block merge, report | ⚠️ Warn, proceed |
+
+**Important:** The regression gate does NOT trigger automatic rollback. It blocks further action and reports for human decision-making. Use `--force` only when you've confirmed the regressions are acceptable (e.g., known flaky tests).
+
+#### Failure Handling (Non-Regression)
+
+If smoketest checks fail but are NOT regressions (same count as baseline), report as pre-existing:
 
 ```markdown
-### ❌ Smoketest Failures Detected
+### ℹ️ Pre-existing Failures (not regressions)
 
-| Check | Status | Suggested Action |
-|-------|--------|-----------------|
-| Build | ❌ FAIL | Run `npm run build` and investigate compilation errors |
-| Tests | ❌ FAIL (42/45) | Run `npm test -- --verbose` to identify failing tests |
-| CLI Health | ❌ FAIL | Run `npx sequant doctor` to identify configuration issues |
+| Check | Status | Notes |
+|-------|--------|-------|
+| Build | ⚠️ $BASELINE_BUILD_ERRORS errors | Same as baseline — pre-existing |
+| Tests | ⚠️ $BASELINE_TEST_FAILURES failures | Same as baseline — pre-existing |
+
+These failures existed on main before this merge. They are not caused by the merged PR(s).
+```
+
+If smoketest checks fail AND are regressions, report with diagnostic commands:
+
+```markdown
+### ❌ Regressions Detected
+
+| Check | Baseline | Post-merge | New Failures |
+|-------|----------|------------|--------------|
+| Build errors | $BASELINE_BUILD_ERRORS | $POST_BUILD_ERRORS | +$BUILD_DELTA |
+| Test failures | $BASELINE_TEST_FAILURES | $POST_TEST_FAILURES | +$TEST_FAIL_DELTA |
 
 **⚠️ Action Required:**
-- Investigate failures on main before proceeding with further work
-- Consider reverting the merge if failures are critical
-- Do NOT auto-rollback — manual investigation is recommended
+- Investigate new failures introduced by this merge
+- Consider reverting the merge if regressions are critical
+- Use `--force` to override if regressions are acceptable
 
 **Diagnostic commands:**
 \`\`\`bash
-# Investigate build failures
-npm run build 2>&1 | tail -50
+# Investigate new build errors
+npm run build 2>&1 | grep "error TS"
 
-# Run specific failing tests
+# Run failing tests with verbose output
 npm test -- --verbose 2>&1
 
-# Check recent merge commit
+# Check what the merge changed
 git log --oneline -3
 git diff HEAD~1 --stat
 \`\`\`
 ```
 
-**Important:** Smoketest failures do NOT trigger automatic rollback. They are reported for human decision-making.
+**Important:** Regression detection does NOT trigger automatic rollback. It reports for human decision-making.
 
 ## Dependency Detection
 
@@ -366,16 +499,24 @@ If dependencies found, enforce merge order.
 **PR:** #17
 
 ### Actions Taken
-1. Created integration branch from main
-2. Merged #10 changes (no conflicts)
-3. Merged #12 changes (resolved 1 conflict in route.ts)
-4. Tests passed (45 tests)
-5. Build succeeded
+1. Captured baseline metrics on main
+2. Created integration branch from main
+3. Merged #10 changes (no conflicts)
+4. Merged #12 changes (resolved 1 conflict in route.ts)
+5. Tests passed (45 tests)
+6. Build succeeded
 
 ### Cleanup
 - Removed worktree: feature/10-*
 - Removed worktree: feature/12-*
 - Closed: PR #15, PR #16 (superseded by #17)
+
+### Baseline Metrics (main before merge)
+| Metric | Count |
+|--------|-------|
+| Build errors (TS) | 0 |
+| Test passes | 42 |
+| Test failures | 0 |
 
 ### Post-Merge Smoketest
 | Check | Command | Result | Details |
@@ -384,7 +525,14 @@ If dependencies found, enforce merge order.
 | Tests | `npm test` | ✅ PASS (45/45) | All tests passing |
 | CLI Health | `npx sequant doctor` | ✅ PASS | No issues detected |
 
-**Smoketest Result:** ✅ ALL PASSED
+### Regression Check
+| Metric | Baseline (main) | Post-merge | Delta | Status |
+|--------|----------------|------------|-------|--------|
+| Build errors | 0 | 0 | 0 | ✅ No regression |
+| Test failures | 0 | 0 | 0 | ✅ No regression |
+| Test passes | 42 | 45 | +3 | ✅ Tests added |
+
+**Regression Result:** ✅ NO REGRESSIONS
 
 ### Final Status
 **Result:** SUCCESS
@@ -418,8 +566,8 @@ If dependencies found, enforce merge order.
 Environment variables:
 - `SEQUANT_MERGER_DRY_RUN` - If true, only show what would happen
 - `SEQUANT_MERGER_NO_CLEANUP` - If true, keep worktrees after merge
-- `SEQUANT_MERGER_FORCE` - If true, proceed even with conflicts
-- `SEQUANT_MERGER_SKIP_SMOKETEST` - If true, skip post-merge smoketest
+- `SEQUANT_MERGER_FORCE` - If true, proceed even with conflicts or regressions (bypasses regression gate)
+- `SEQUANT_MERGER_SKIP_SMOKETEST` - If true, skip post-merge smoketest (also skips baseline capture)
 
 ## State Tracking
 
@@ -454,12 +602,15 @@ npx tsx scripts/state/update.ts fail <issue-number> merger "Merge conflict or CI
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **Baseline Metrics** - Build errors, test passes/failures on main before merge (or "Skipped" if `--skip-smoketest`)
 - [ ] **Pre-Merge Validation** - Status of each issue/worktree/PR
 - [ ] **Conflict Analysis** - Table of overlapping files and status
 - [ ] **Resolution Strategy** - How conflicts were resolved (if any)
 - [ ] **Actions Taken** - Step-by-step log of what was done
 - [ ] **Cleanup Status** - Which worktrees/branches were removed
 - [ ] **Post-Merge Smoketest** - Build, test, and CLI health results (or "Skipped" if `--skip-smoketest`)
+- [ ] **Regression Check** - Baseline vs post-merge comparison table (or "Skipped" if `--skip-smoketest`)
+- [ ] **Regression Gate** - Whether regressions were detected and what action was taken
 - [ ] **Final Status** - SUCCESS/FAILURE with PR link
 
 **DO NOT respond until all items are verified.**
