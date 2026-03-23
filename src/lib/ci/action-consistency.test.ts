@@ -103,18 +103,78 @@ describe("action.yml consistency with TypeScript constants", () => {
   });
 
   describe("security", () => {
-    it("does not interpolate inputs directly in run blocks", () => {
-      // Extract all run: blocks
-      const runBlocks = actionYml.match(
-        /^\s+run:\s*\|[\s\S]*?(?=^\s+(?:-|[a-z])|\z)/gm,
-      );
-      if (!runBlocks) return;
+    // Extract run: block contents by splitting on YAML step boundaries.
+    // Each run: | block ends at the next step (- ), top-level key, or EOF.
+    function extractRunBlocks(yml: string): string[] {
+      const blocks: string[] = [];
+      const lines = yml.split("\n");
+      let inRunBlock = false;
+      let runIndent = 0;
+      let currentBlock: string[] = [];
 
+      for (const line of lines) {
+        if (/^\s+run:\s*\|/.test(line)) {
+          inRunBlock = true;
+          runIndent = line.search(/\S/);
+          currentBlock = [];
+          continue;
+        }
+
+        if (inRunBlock) {
+          // End of run block: line at same or lesser indent that isn't blank
+          const lineIndent = line.search(/\S/);
+          if (line.trim() && lineIndent <= runIndent) {
+            blocks.push(currentBlock.join("\n"));
+            inRunBlock = false;
+            continue;
+          }
+          currentBlock.push(line);
+        }
+      }
+
+      // Capture last block if file ends inside a run block
+      if (inRunBlock && currentBlock.length > 0) {
+        blocks.push(currentBlock.join("\n"));
+      }
+
+      return blocks;
+    }
+
+    const runBlocks = extractRunBlocks(actionYml);
+
+    it("finds run blocks to test (sanity check)", () => {
+      // action.yml has multiple run: | blocks — if this fails, the
+      // extraction logic is broken and the security tests are vacuous.
+      expect(runBlocks.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("does not interpolate inputs directly in run blocks", () => {
       for (const block of runBlocks) {
         // ${{ inputs.* }} should NOT appear inside run: blocks
         // (they should be passed via env: bindings instead)
         const inputRefs = block.match(/\$\{\{\s*inputs\./g);
         expect(inputRefs).toBeNull();
+      }
+    });
+
+    it("does not interpolate untrusted event data in run blocks", () => {
+      // User-controlled event fields that must never be in run: blocks:
+      // - github.event.comment.body (arbitrary user text)
+      // - github.event.issue.title (arbitrary user text)
+      // - github.event.issue.body (arbitrary user text)
+      // - github.event.pull_request.title/body (arbitrary user text)
+      const dangerousPatterns = [
+        /\$\{\{\s*github\.event\.comment\.body/,
+        /\$\{\{\s*github\.event\.issue\.title/,
+        /\$\{\{\s*github\.event\.issue\.body/,
+        /\$\{\{\s*github\.event\.pull_request\.title/,
+        /\$\{\{\s*github\.event\.pull_request\.body/,
+      ];
+
+      for (const block of runBlocks) {
+        for (const pattern of dangerousPatterns) {
+          expect(block).not.toMatch(pattern);
+        }
       }
     });
   });
