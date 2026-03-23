@@ -39,11 +39,14 @@ jobs:
       - uses: actions/checkout@v4
 
       # Parse phases from comment body
+      # SECURITY: Use env binding — never interpolate untrusted input
+      # (github.event.comment.body) directly into shell scripts.
       - id: parse
         shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          COMMENT="${{ github.event.comment.body }}"
-          PHASES=$(echo "$COMMENT" | grep -oP '@sequant\s+run\s+\K[\w,-]+' || echo "spec,exec,qa")
+          PHASES=$(echo "$COMMENT_BODY" | grep -oP '@sequant\s+run\s+\K[\w,-]+' || echo "spec,exec,qa")
           echo "phases=$PHASES" >> "$GITHUB_OUTPUT"
           echo "Parsed phases: $PHASES"
 
