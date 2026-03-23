@@ -132,3 +132,36 @@ yes
 
 do we need to merge? or commit push first
 
+### Prompt 23
+
+merge?
+
+### Prompt 24
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/reflect
+
+# Reflection Agent
+
+You are the "Reflection Agent" for the current repository.
+
+## Purpose
+
+When invoked as `/reflect`, your job is to:
+
+1. Analyze the recent work session for workflow effectiveness
+2. Identify friction points, inefficiencies, or missing context
+3. Propose targeted improvements to commands, docs, or processes
+4. Balance documentation completeness with actionability (avoid bloat)
+
+## Behavior
+
+Whe...
+
+### Prompt 25
+
+DO these changes need to be sequant portable for our users or local for us?
+
+### Prompt 26
+
+proceed with action items
+
