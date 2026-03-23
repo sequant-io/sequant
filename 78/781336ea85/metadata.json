@@ -3,7 +3,7 @@
   "checkpoint_id": "78781336ea85",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 26,
+  "checkpoints_count": 27,
   "files_touched": [
     ".claude-plugin/plugin.json",
     ".claude/hooks/pre-tool.sh",
@@ -21,6 +21,7 @@
     ".sequant/settings.json",
     "CHANGELOG.md",
     "Sequant.itermcolors",
+    "__tests__/integration/mcp-serve.integration.test.ts",
     "bin/cli.ts",
     "docs/concepts/what-is-sequant.md",
     "docs/features/codebase-conventions.md",
@@ -180,13 +181,20 @@
       "context": "/78/781336ea85/18/context.md",
       "content_hash": "/78/781336ea85/18/content_hash.txt",
       "prompt": "/78/781336ea85/18/prompt.txt"
+    },
+    {
+      "metadata": "/78/781336ea85/19/metadata.json",
+      "transcript": "/78/781336ea85/19/full.jsonl",
+      "context": "/78/781336ea85/19/context.md",
+      "content_hash": "/78/781336ea85/19/content_hash.txt",
+      "prompt": "/78/781336ea85/19/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 28816,
-    "cache_creation_tokens": 3836287,
-    "cache_read_tokens": 119288356,
-    "output_tokens": 398935,
-    "api_call_count": 1216
+    "input_tokens": 28847,
+    "cache_creation_tokens": 3882130,
+    "cache_read_tokens": 120562256,
+    "output_tokens": 406259,
+    "api_call_count": 1243
   }
 }

@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "78781336ea85",
+  "session_id": "a1f905d0-36d5-4e00-932d-950edbc84036",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-23T13:55:07.36221Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/mcp-serve.integration.test.ts"
+  ],
+  "agent": "Claude Code",
+  "transcript_identifier_at_start": "013d39d3-8350-4e42-8cfb-c01ec04cddbe",
+  "token_usage": {
+    "input_tokens": 31,
+    "cache_creation_tokens": 45843,
+    "cache_read_tokens": 1273900,
+    "output_tokens": 7324,
+    "api_call_count": 27
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-23T13:55:07.239553Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 17,
+    "human_removed": 5,
+    "total_committed": 17,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/a1f905d0-36d5-4e00-932d-950edbc84036.jsonl"
+}
