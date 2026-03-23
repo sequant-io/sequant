@@ -281,10 +281,8 @@ program
   )
   .option("--port <port>", "Port for SSE transport (default: 3100)", parseInt)
   .action(async (options: Record<string, unknown>) => {
-    try {
-      const { serveCommand } = await import("../src/commands/serve.js");
-      return serveCommand(options);
-    } catch {
+    const mod = await import("../src/commands/serve.js").catch(() => null);
+    if (!mod) {
       console.error(
         chalk.red(
           "Error: MCP server requires @modelcontextprotocol/sdk\n" +
@@ -293,6 +291,7 @@ program
       );
       process.exit(1);
     }
+    return mod.serveCommand(options);
   });
 
 // State management command with subcommands
