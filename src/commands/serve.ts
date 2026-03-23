@@ -95,9 +95,9 @@ async function startSSE(
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  httpServer.listen(port, () => {
-    console.log(`Sequant MCP server started (SSE) on port ${port}`);
-    console.log(`  SSE endpoint: http://localhost:${port}/sse`);
-    console.log(`  Health check: http://localhost:${port}/health`);
+  httpServer.listen(port, "127.0.0.1", () => {
+    console.log(`Sequant MCP server started (SSE) on 127.0.0.1:${port}`);
+    console.log(`  SSE endpoint: http://127.0.0.1:${port}/sse`);
+    console.log(`  Health check: http://127.0.0.1:${port}/health`);
   });
 }
