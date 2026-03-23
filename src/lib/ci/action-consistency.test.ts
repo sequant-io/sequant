@@ -78,6 +78,12 @@ describe("action.yml consistency with TypeScript constants", () => {
     it("defines api-key input", () => {
       expect(actionYml).toMatch(/^\s+api-key:\s*$/m);
     });
+
+    it("defines sequant-version input with pinned default", () => {
+      expect(actionYml).toMatch(/^\s+sequant-version:\s*$/m);
+      // Default must be a pinned range, not "latest"
+      expect(actionYml).not.toContain('default: "latest"');
+    });
   });
 
   describe("required outputs", () => {
@@ -155,6 +161,24 @@ describe("action.yml consistency with TypeScript constants", () => {
         const inputRefs = block.match(/\$\{\{\s*inputs\./g);
         expect(inputRefs).toBeNull();
       }
+    });
+
+    it("does not set api-key as both ANTHROPIC and OPENAI env vars", () => {
+      // The API key should only be set for the selected agent's env var,
+      // not blindly exported as both. Leaking a secret to an unrelated
+      // env var is unnecessary exposure.
+      const envSection = actionYml.match(/env:[\s\S]*?(?=^\s+run:)/gm);
+      if (!envSection) return;
+      const envText = envSection.join("\n");
+      // Both ANTHROPIC_API_KEY and OPENAI_API_KEY should NOT appear
+      // as static env bindings to the same input
+      const anthropicBindings = (
+        envText.match(/ANTHROPIC_API_KEY:.*inputs\.api-key/g) || []
+      ).length;
+      const openaiBindings = (
+        envText.match(/OPENAI_API_KEY:.*inputs\.api-key/g) || []
+      ).length;
+      expect(anthropicBindings + openaiBindings).toBeLessThanOrEqual(1);
     });
 
     it("does not interpolate untrusted event data in run blocks", () => {
