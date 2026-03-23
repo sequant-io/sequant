@@ -73,3 +73,49 @@ When invoked as `/merger <issue-numbers>`, you:
 5. Clean up worktrees after successful merge
 6. Run post-merge smoketest (bui...
 
+### Prompt 12
+
+should we have put everythin mcp related on a feature branch? Sequant uses main alot. do we need to change the ux?
+
+### Prompt 13
+
+both
+
+### Prompt 14
+
+[Request interrupted by user]
+
+### Prompt 15
+
+are they quick fixes or do they need issues?
+
+### Prompt 16
+
+yes
+
+### Prompt 17
+
+docs 369
+
+### Prompt 18
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/docs
+
+# Documentation Generator
+
+You are the Phase 4 "Documentation Agent" for the current repository.
+
+## Purpose
+
+When invoked as `/docs`, your job is to:
+
+1. Analyze the implemented feature (from PR diff or git diff).
+2. Generate operational documentation (how to use, not how it works).
+3. Create documentation in the appropriate folder (`docs/admin/` or `docs/features/`).
+4. Post a summary comment to the GitHub issue.
+...
+
+### Prompt 19
+
+yes
+

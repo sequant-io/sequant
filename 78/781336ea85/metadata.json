@@ -3,7 +3,7 @@
   "checkpoint_id": "78781336ea85",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 23,
+  "checkpoints_count": 22,
   "files_touched": [
     ".claude-plugin/plugin.json",
     ".claude/hooks/pre-tool.sh",
@@ -22,8 +22,8 @@
     "Sequant.itermcolors",
     "bin/cli.ts",
     "docs/concepts/what-is-sequant.md",
+    "docs/features/aider-agent-backend.md",
     "docs/features/codebase-conventions.md",
-    "docs/features/mcp-server.md",
     "docs/features/python-stack-support.md",
     "docs/getting-started/installation.md",
     "docs/internal/what-weve-built.md",
@@ -159,10 +159,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 30076,
-    "cache_creation_tokens": 2644658,
-    "cache_read_tokens": 91421858,
-    "output_tokens": 308113,
-    "api_call_count": 1012
+    "input_tokens": 28718,
+    "cache_creation_tokens": 2359450,
+    "cache_read_tokens": 79097400,
+    "output_tokens": 268228,
+    "api_call_count": 907
   }
 }

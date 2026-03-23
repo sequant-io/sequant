@@ -3,29 +3,31 @@
   "checkpoint_id": "78781336ea85",
   "session_id": "cbe103de-5ae3-4cdd-b487-b2150ffe4a43",
   "strategy": "manual-commit",
-  "created_at": "2026-03-23T05:50:09.708737Z",
+  "created_at": "2026-03-23T05:55:45.393083Z",
   "branch": "main",
-  "checkpoints_count": 2,
+  "checkpoints_count": 1,
   "files_touched": [
-    "docs/features/mcp-server.md",
-    "src/commands/doctor.test.ts"
+    "docs/features/aider-agent-backend.md"
   ],
   "agent": "Claude Code",
+  "transcript_identifier_at_start": "1f93b0a6-208d-4390-bb54-272020ed51b4",
+  "checkpoint_transcript_start": 950,
+  "transcript_lines_at_start": 950,
   "token_usage": {
-    "input_tokens": 1697,
-    "cache_creation_tokens": 299900,
-    "cache_read_tokens": 15456467,
-    "output_tokens": 45914,
-    "api_call_count": 122
+    "input_tokens": 339,
+    "cache_creation_tokens": 14692,
+    "cache_read_tokens": 3132009,
+    "output_tokens": 6029,
+    "api_call_count": 17
   },
   "initial_attribution": {
-    "calculated_at": "2026-03-23T05:50:09.021108Z",
-    "agent_lines": 370,
-    "human_added": 5434,
+    "calculated_at": "2026-03-23T05:55:44.82896Z",
+    "agent_lines": 149,
+    "human_added": 0,
     "human_modified": 0,
     "human_removed": 0,
-    "total_committed": 5804,
-    "agent_percentage": 6.3749138525155065
+    "total_committed": 149,
+    "agent_percentage": 100
   },
   "transcript_path": ".claude/projects/-Users-tony-Projects-sequant/cbe103de-5ae3-4cdd-b487-b2150ffe4a43.jsonl"
 }

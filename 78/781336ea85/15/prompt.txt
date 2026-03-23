@@ -2608,3 +2608,466 @@ npx tsx scripts/state/update.ts fail <issue-number> merger "Merge conflict or CI
 - [ ] **Final Status** - SUCCESS/FAILURE with PR link
 
 **DO NOT respond until all items are verified.**
+
+---
+
+should we have put everythin mcp related on a feature branch? Sequant uses main alot. do we need to change the ux?
+
+---
+
+both
+
+---
+
+[Request interrupted by user]
+
+---
+
+are they quick fixes or do they need issues?
+
+---
+
+yes
+
+---
+
+docs 369
+
+---
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/docs
+
+# Documentation Generator
+
+You are the Phase 4 "Documentation Agent" for the current repository.
+
+## Purpose
+
+When invoked as `/docs`, your job is to:
+
+1. Analyze the implemented feature (from PR diff or git diff).
+2. Generate operational documentation (how to use, not how it works).
+3. Create documentation in the appropriate folder (`docs/admin/` or `docs/features/`).
+4. Post a summary comment to the GitHub issue.
+
+## Behavior
+
+Invocation:
+
+- `/docs 123`:
+  - Treat `123` as the GitHub issue number.
+  - Analyze the implementation to understand what was built.
+  - Generate admin-facing or user-facing documentation.
+
+### 1. Gather Context
+
+**Step 1:** Read the GitHub issue and comments for feature context:
+```bash
+gh issue view <issue-number> --json title,body,labels 
+```
+
+**Step 2:** Check for existing PR:
+```bash
+gh pr list --search "head:feature/<issue-number>" --json number,headRefName 
+```
+
+**Step 3:** Analyze the implementation diff:
+```bash
+# If PR exists:
+gh pr diff <pr-number>
+
+# If no PR, use git diff from feature branch:
+git diff main...HEAD --name-only
+git diff main...HEAD
+```
+
+**Step 4:** Detect documentation-only changes:
+```bash
+# Count non-documentation files changed
+non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs || true)
+```
+
+**Decision Logic:**
+```
+IF non_doc_files == 0 THEN
+  # Documentation-only issue detected
+  # Skip template generation, post confirmation comment instead
+  # See Section 2a: Documentation-Only Early Exit
+ELSE
+  # Continue with normal documentation generation
+END IF
+```
+
+### 2a. Documentation-Only Early Exit
+
+When only documentation files (`.md`, `.mdx`, or files in `docs/`) were modified, skip template generation and post a confirmation comment instead.
+
+**Detection criteria - ALL of these must be true:**
+- `git diff main...HEAD --name-only` returns files
+- All changed files match: `*.md`, `*.mdx`, or `docs/*`
+
+**Early exit action:**
+
+1. **Post confirmation comment to GitHub issue:**
+   ```bash
+   gh issue comment <issue-number> --body "$(cat <<'EOF'
+   ## Documentation Review Complete
+
+   This issue contains **documentation-only changes**. No additional documentation generation required.
+
+   ### Files Modified:
+   [List of changed .md/.mdx/docs/ files]
+
+   ### Status:
+   ✅ Documentation changes are ready for review and merge.
+
+   ---
+   Ready to merge!
+   EOF
+   )"
+   ```
+
+2. **Exit without generating template documentation.**
+
+**Skip to end of workflow** - do not proceed to Section 2 (Auto-Detect Documentation Type) or beyond.
+
+### 2. Auto-Detect Documentation Type
+
+Determine documentation type based on changed files:
+
+**Admin Documentation** (`docs/admin/`):
+- Files in `app/admin/`
+- Files in `components/admin/`
+- Files in `lib/admin/`
+- Admin-related API routes
+
+**Developer Tool Documentation** (`docs/features/`):
+- Files in `src/commands/`, `bin/`, `src/mcp/`
+- CLI commands, MCP tools, scripts
+- Configuration options, SDK integrations
+
+**User-Facing Documentation** (`docs/features/`):
+- Files in `app/[city]/`
+- Files in `components/` (non-admin)
+- Public-facing pages or features
+
+**Decision Logic:**
+```
+IF any file path contains "/admin/" THEN
+  type = "admin"
+  output_dir = "docs/admin/"
+  template = "admin" (Section 3a)
+ELSE IF any file path matches "src/commands/|bin/|src/mcp/|scripts/" THEN
+  type = "developer-tool"
+  output_dir = "docs/features/"
+  template = "developer-tool" (Section 3b)
+ELSE
+  type = "feature"
+  output_dir = "docs/features/"
+  template = "admin" (Section 3a — generic enough for UI features)
+END IF
+```
+
+### 3a. Admin/UI Documentation Template
+
+Use this template for admin pages and UI features:
+
+```markdown
+# [Feature Name]
+
+**Quick Start:** [1-2 sentence summary of what this feature does and why to use it]
+
+## Access
+
+- **URL:** `/admin/[route]` or `/[route]`
+- **Menu:** Admin → [Section] → [Feature]
+- **Permissions:** [Required role or access level]
+
+## Usage
+
+### [Primary Action]
+
+1. Navigate to [location]
+2. [Step 2...]
+3. [Step 3...]
+
+### [Secondary Action] (if applicable)
+
+1. [Steps...]
+
+## Options & Settings
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| [Option 1] | [What it does] | [Default value] |
+| [Option 2] | [What it does] | [Default value] |
+
+## Common Workflows
+
+### [Workflow 1: e.g., "Review and Approve Items"]
+
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Troubleshooting
+
+### [Common Issue 1]
+
+**Symptoms:** [What the user sees]
+
+**Solution:** [How to fix it]
+
+---
+
+*Generated for Issue #[number] on [date]*
+```
+
+### 3b. Developer Tool Documentation Template
+
+Use this template for CLI commands, MCP tools, scripts, and developer-facing features. Structure around the user's journey, not the API surface.
+
+```markdown
+# [Feature Name]
+
+[1-2 sentence summary: what it does and why you'd use it.]
+
+## Prerequisites
+
+[Everything needed before this works. Be exhaustive — list tools, auth, config. Include verification commands.]
+
+1. **[Requirement 1]** — `verification command`
+2. **[Requirement 2]** — `verification command`
+
+## Setup
+
+[Step-by-step to go from zero to working. If setup differs per environment/client/platform, show each separately with clear labels.]
+
+## What You Can Do
+
+[Real examples of usage in natural language or command form. Show the most common actions first.]
+
+## What to Expect
+
+[Set expectations: how long things take, what output looks like, where results go. Address "it looks like nothing is happening" if applicable.]
+
+## [Command/Tool] Reference
+
+[Parameter tables, flags, options. Put this AFTER the narrative sections — users need context before reference.]
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+
+## Troubleshooting
+
+[Real failure scenarios users will hit. Lead with what they see, then the fix.]
+
+### [Problem user sees]
+
+[Cause and solution]
+
+---
+
+*Generated for Issue #[number] on [date]*
+```
+
+**Key differences from admin template:**
+- No "Access / URL / Menu / Permissions" section (not applicable to CLI tools)
+- Prerequisites section is mandatory (CLI tools have more dependencies)
+- "What to Expect" section addresses timing, output location, async behavior
+- Setup may vary per environment — show each variant
+- Reference tables come after narrative, not before
+
+### 4. Content Guidelines
+
+**For admin/UI features — focus on operational usage:**
+
+- "Click the 'Approve' button to publish the item"
+- NOT: "The `approveItem` function updates the database"
+
+- "Wait for the green success message"
+- NOT: "The API returns a 200 status code"
+
+**For developer tools — focus on the user's journey:**
+
+- "Run `sequant serve` to start the MCP server"
+- NOT: "The `serveCommand` function creates an MCP server instance"
+
+- "This takes 10–20 minutes. Your editor will appear idle — that's normal."
+- NOT: "The tool uses `spawnSync` with a 30-minute timeout"
+
+**Be specific and actionable:**
+
+- "Navigate to Admin → Items → Review Queue"
+- NOT: "Go to the review page"
+
+**Document common workflows end-to-end:**
+
+- "To approve an item: 1. Open Review Queue, 2. Click item name, 3. Review details, 4. Click Approve"
+- NOT: "Use the approve button"
+
+### 5. File Naming Convention
+
+Generate filename from feature name:
+- Use lowercase with hyphens
+- Be descriptive but concise
+- Match the primary feature purpose
+
+Examples:
+- `review-queue.md` - For review admin page
+- `bulk-edit-operations.md` - For bulk editing feature
+- `settings-configuration.md` - For settings admin
+- `feature-gallery.md` - For gallery feature
+
+### 6. Output and Summary
+
+After generating documentation:
+
+1. **Create the documentation file:**
+   - Write to `docs/admin/[feature-name].md` or `docs/features/[feature-name].md`
+   - Ensure directory exists (create with `.gitkeep` if needed)
+
+2. **Post summary comment to GitHub issue:**
+   ```bash
+   gh issue comment <issue-number> --body "$(cat <<'EOF'
+   ## Documentation Generated
+
+   **File:** `docs/[admin|features]/[filename].md`
+
+   ### Sections Included:
+   - Quick Start
+   - Access (URL, menu, permissions)
+   - Usage (step-by-step workflows)
+   - Options & Settings
+   - Common Workflows
+   - Troubleshooting
+
+   ### Next Steps:
+   1. Review generated documentation for accuracy
+   2. Add screenshots if helpful (optional)
+   3. Merge PR to deploy documentation
+
+   ---
+   Ready to merge!
+   EOF
+   )"
+   ```
+
+### 7. Quality Checklist
+
+Before completing, verify:
+
+- [ ] Documentation is operational (how to use, not how it works)
+- [ ] All user-facing actions are documented
+- [ ] Steps are numbered and specific
+- [ ] Options/settings are in table format
+- [ ] At least 1-2 troubleshooting items included
+- [ ] Filename follows naming convention
+- [ ] Correct folder (`docs/admin/` vs `docs/features/`)
+- [ ] Summary comment posted to issue
+
+**Note:** For documentation-only issues (detected in Step 4), skip this checklist and use the simplified confirmation comment from Section 2a instead.
+
+## Workflow Integration
+
+The `/docs` command is the final step before merging:
+
+```
+/spec → /exec → /test (optional) → /qa → /docs
+```
+
+**After /qa passes:**
+- Run `/docs <issue>` to generate feature documentation
+- Review generated docs for accuracy
+- Add screenshots if helpful
+- Merge PR
+
+## Example Output
+
+For Issue #180 (City Configuration UI):
+
+**File:** `docs/admin/city-configuration.md`
+
+```markdown
+# City Configuration
+
+**Quick Start:** Add and manage cities through the Admin CMS. Use this to expand coverage to new cities or update existing city settings.
+
+## Access
+
+- **URL:** `/admin/cities`
+- **Menu:** Admin → Cities
+- **Permissions:** Admin access required
+
+## Usage
+
+### Adding a New Item
+
+1. Navigate to Admin → Items
+2. Click the "Add Item" button (top right)
+3. Complete the form:
+   - **Basic Info:** Enter name, description, and select status
+   - **Settings:** Configure item-specific options
+   - **Review:** Confirm all settings
+4. Click "Create" to save
+
+### Editing an Existing Item
+
+1. Navigate to Admin → Items
+2. Click on the item to open details
+3. Click "Edit" in the details panel
+4. Update settings as needed
+5. Click "Save Changes"
+
+## Options & Settings
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| Status | Item visibility (active, draft, archived) | draft |
+| Category | Item categorization | None |
+| Priority | Display order priority | Normal |
+
+## Common Workflows
+
+### Publish an Item
+
+1. Add item via form (status: draft)
+2. Review and approve in Review Queue
+3. Change status to "active"
+4. Item appears on public pages
+
+## Troubleshooting
+
+### Item doesn't appear on page
+
+**Symptoms:** Item was added but doesn't show
+
+**Solution:** Check item status is set to "active" in Admin → Items → [Item] → Settings
+
+---
+
+*Generated for Issue #180 on 2025-11-25*
+```
+
+---
+
+## Output Verification
+
+**Before responding, verify your output includes ALL of these:**
+
+- [ ] **Documentation File** - Created in correct directory (docs/admin/ or docs/features/)
+- [ ] **Quick Start Section** - 1-2 sentence summary
+- [ ] **Access Section** - URL, menu path, permissions
+- [ ] **Usage Section** - Step-by-step workflows
+- [ ] **Options Table** - Settings with descriptions and defaults
+- [ ] **Troubleshooting** - At least 1-2 common issues
+- [ ] **GitHub Comment** - Summary posted to issue
+
+**DO NOT respond until all items are verified.**
+
+
+ARGUMENTS: 369
+
+---
+
+yes
