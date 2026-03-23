@@ -8,11 +8,12 @@
  * - AC-4: sequant_logs edge cases (zero/negative limit)
  * - AC-12: doctor MCP health check
  * - AC-14: structured errors (extended)
+ *
+ * Guarded: Skips if @modelcontextprotocol/sdk is not installed (#396)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { spawnSync } from "child_process";
 
 // Mock child_process before importing server (which imports tools/run.ts)
 vi.mock("child_process", async (importOriginal) => {
@@ -23,17 +24,29 @@ vi.mock("child_process", async (importOriginal) => {
   };
 });
 
-import { createServer } from "./server.js";
-import { spawnSync } from "child_process";
-
 const mockedSpawnSync = vi.mocked(spawnSync);
 
-describe("Sequant MCP Server — Extended", () => {
-  let client: Client;
+// Check if MCP SDK is available (dynamic import to avoid hard failure)
+const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
+  .then(() => true)
+  .catch(() => false);
+
+describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let client: any;
   let cleanup: () => Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let createServerFn: any;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+
+    const { createServer } = await import("./server.js");
+    createServerFn = createServer;
+    const { Client } =
+      await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } =
+      await import("@modelcontextprotocol/sdk/inMemory.js");
 
     const server = createServer("1.0.0-test");
     const clientInstance = new Client({
@@ -248,13 +261,13 @@ describe("Sequant MCP Server — Extended", () => {
   describe("AC-12: doctor MCP health check", () => {
     it("should successfully create and close MCP server instance", async () => {
       // This mirrors what doctor.ts does: create server, close it
-      const server = createServer("1.0.0-test");
+      const server = createServerFn("1.0.0-test");
       await expect(server.close()).resolves.not.toThrow();
     });
 
     it("should propagate errors from malformed server version", () => {
       // createServer with any string should still work (version is just metadata)
-      const server = createServer("");
+      const server = createServerFn("");
       expect(server).toBeDefined();
     });
   });

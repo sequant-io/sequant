@@ -50,7 +50,6 @@ import {
 } from "../src/commands/state.js";
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
-import { serveCommand } from "../src/commands/serve.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
 import { getManifest } from "../src/lib/manifest.js";
 
@@ -281,7 +280,20 @@ program
     "stdio",
   )
   .option("--port <port>", "Port for SSE transport (default: 3100)", parseInt)
-  .action(serveCommand);
+  .action(async (options: Record<string, unknown>) => {
+    try {
+      const { serveCommand } = await import("../src/commands/serve.js");
+      return serveCommand(options);
+    } catch {
+      console.error(
+        chalk.red(
+          "Error: MCP server requires @modelcontextprotocol/sdk\n" +
+            "Install it with: npm install @modelcontextprotocol/sdk",
+        ),
+      );
+      process.exit(1);
+    }
+  });
 
 // State management command with subcommands
 const stateCmd = program
