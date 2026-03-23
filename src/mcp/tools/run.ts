@@ -170,6 +170,11 @@ export function spawnAsync(
     }, options.timeout);
 
     // Client-initiated cancellation via AbortSignal
+    const onAbort = () => {
+      killProcessGroup(proc);
+      clearTimeout(timeoutId);
+      reject(new Error("Cancelled by client"));
+    };
     if (options.signal) {
       if (options.signal.aborted) {
         killProcessGroup(proc);
@@ -177,16 +182,13 @@ export function spawnAsync(
         reject(new Error("Cancelled by client"));
         return;
       }
-      options.signal.addEventListener(
-        "abort",
-        () => {
-          killProcessGroup(proc);
-          clearTimeout(timeoutId);
-          reject(new Error("Cancelled by client"));
-        },
-        { once: true },
-      );
+      options.signal.addEventListener("abort", onAbort, { once: true });
     }
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      options.signal?.removeEventListener("abort", onAbort);
+    };
 
     proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
@@ -197,7 +199,7 @@ export function spawnAsync(
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {
-      clearTimeout(timeoutId);
+      cleanup();
       if (err.code === "ENOENT") {
         reject(
           new Error(
@@ -210,21 +212,34 @@ export function spawnAsync(
     });
 
     proc.on("close", (code: number | null) => {
-      clearTimeout(timeoutId);
+      cleanup();
       resolve({ exitCode: code, stdout, stderr });
     });
   });
 }
 
+const SIGKILL_GRACE_MS = 5000;
+
 function killProcessGroup(proc: ReturnType<typeof spawn>): void {
-  try {
-    if (proc.pid) {
-      process.kill(-proc.pid, "SIGTERM");
+  const sendSignal = (signal: NodeJS.Signals) => {
+    try {
+      if (proc.pid) {
+        process.kill(-proc.pid, signal);
+      }
+    } catch {
+      // Process group may already be gone — fall back to direct kill
+      if (!proc.killed) {
+        proc.kill(signal);
+      }
     }
-  } catch {
-    // Process group may already be gone (e.g. already exited) — fall back to direct kill
+  };
+
+  sendSignal("SIGTERM");
+
+  // Escalate to SIGKILL if process doesn't exit
+  setTimeout(() => {
     if (!proc.killed) {
-      proc.kill("SIGTERM");
+      sendSignal("SIGKILL");
     }
-  }
+  }, SIGKILL_GRACE_MS).unref();
 }
