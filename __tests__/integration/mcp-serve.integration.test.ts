@@ -87,22 +87,34 @@ function httpGet(url: string): Promise<{
   });
 }
 
+function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals) {
+  try {
+    // Send signal to the entire process group (negative PID)
+    // This mirrors how terminals deliver signals (e.g., Ctrl+C sends SIGINT to the group)
+    process.kill(-child.pid!, signal);
+  } catch {
+    // Process group may already be gone — fall back to direct kill
+    if (!child.killed) {
+      child.kill(signal);
+    }
+  }
+}
+
 function spawnServe(args: string[]): ChildProcess {
   const binPath = path.resolve(__dirname, "../../bin/cli.ts");
   const child = spawn("npx", ["tsx", binPath, "serve", ...args], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env },
+    detached: true, // Create a new process group so signals propagate to all children
   });
   spawnedProcesses.push(child);
   return child;
 }
 
 afterEach(() => {
-  // Kill any lingering processes
+  // Kill any lingering process groups
   for (const proc of spawnedProcesses) {
-    if (!proc.killed) {
-      proc.kill("SIGKILL");
-    }
+    killProcessGroup(proc, "SIGKILL");
   }
   spawnedProcesses.length = 0;
 });
@@ -128,7 +140,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       expect(data.status).toBe("ok");
       expect(data.transport).toBe("sse");
 
-      child.kill("SIGTERM");
+      killProcessGroup(child, "SIGTERM");
     }, 15000);
 
     it("should serve SSE endpoint at /sse with event-stream content type", async () => {
@@ -162,7 +174,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       expect(status).toBe(200);
       expect(headers["content-type"]).toContain("text/event-stream");
 
-      child.kill("SIGTERM");
+      killProcessGroup(child, "SIGTERM");
     }, 15000);
 
     it("should return 404 for unknown routes", async () => {
@@ -174,7 +186,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       const { status } = await httpGet(`http://localhost:${port}/unknown`);
       expect(status).toBe(404);
 
-      child.kill("SIGTERM");
+      killProcessGroup(child, "SIGTERM");
     }, 15000);
   });
 
@@ -190,7 +202,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
         child.on("exit", (code) => resolve(code));
       });
 
-      child.kill("SIGTERM");
+      killProcessGroup(child, "SIGTERM");
       const exitCode = await exitPromise;
       // Process exits cleanly (code 0 or null from signal)
       expect(exitCode === 0 || exitCode === null).toBe(true);
@@ -206,7 +218,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
         child.on("exit", (code) => resolve(code));
       });
 
-      child.kill("SIGINT");
+      killProcessGroup(child, "SIGINT");
       const exitCode = await exitPromise;
       expect(exitCode === 0 || exitCode === null).toBe(true);
     }, 15000);
@@ -306,7 +318,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
           exitPromise,
           new Promise<null>((resolve) =>
             setTimeout(() => {
-              child.kill("SIGKILL");
+              killProcessGroup(child, "SIGKILL");
               resolve(null);
             }, 5000),
           ),
