@@ -3,9 +3,10 @@
   "checkpoint_id": "78781336ea85",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 13,
+  "checkpoints_count": 18,
   "files_touched": [
     ".claude-plugin/plugin.json",
+    ".claude/hooks/pre-tool.sh",
     ".claude/projects/-Users-tony-Projects-sequant/memory/feedback_background_agent_bash.md",
     ".github/dependabot.yml",
     ".github/workflows/ci.yml",
@@ -23,10 +24,19 @@
     "docs/reference/cheat-sheet.md",
     "docs/reference/conventions-command.md",
     "docs/reference/run-command.md",
+    "scripts/pr-head-branch.ts",
+    "src/commands/__tests__/run-resume.test.ts",
+    "src/commands/doctor.test.ts",
     "src/commands/run.test.ts",
     "src/commands/run.ts",
     "src/lib/workflow/batch-executor.ts",
-    "src/lib/workflow/phase-executor.ts"
+    "src/lib/workflow/drivers/agent-driver.ts",
+    "src/lib/workflow/drivers/claude-code.ts",
+    "src/lib/workflow/phase-detection.test.ts",
+    "src/lib/workflow/phase-executor.ts",
+    "src/lib/workflow/platforms/github.test.ts",
+    "src/lib/workflow/platforms/github.ts",
+    "src/lib/workflow/types.ts"
   ],
   "sessions": [
     {
@@ -112,13 +122,20 @@
       "context": "/78/781336ea85/11/context.md",
       "content_hash": "/78/781336ea85/11/content_hash.txt",
       "prompt": "/78/781336ea85/11/prompt.txt"
+    },
+    {
+      "metadata": "/78/781336ea85/12/metadata.json",
+      "transcript": "/78/781336ea85/12/full.jsonl",
+      "context": "/78/781336ea85/12/context.md",
+      "content_hash": "/78/781336ea85/12/content_hash.txt",
+      "prompt": "/78/781336ea85/12/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14864,
-    "cache_creation_tokens": 1658364,
-    "cache_read_tokens": 45292266,
-    "output_tokens": 175290,
-    "api_call_count": 630
+    "input_tokens": 28286,
+    "cache_creation_tokens": 2152091,
+    "cache_read_tokens": 70393350,
+    "output_tokens": 241644,
+    "api_call_count": 824
   }
 }
