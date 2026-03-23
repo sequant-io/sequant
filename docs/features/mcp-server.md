@@ -138,7 +138,8 @@ Once set up, talk to your AI assistant naturally:
 
 - **It looks idle.** Your editor won't show progress while the workflow runs. This is normal — phases are executing in the background.
 - **It takes time.** A full spec+exec+qa cycle typically takes 10–20 minutes per issue. Don't assume it's stuck.
-- **Check progress** by asking for `sequant_status` on the issue.
+- **Check progress** by asking for `sequant_status` on the issue. The server stays responsive while a run is in progress — status checks and log queries return immediately.
+- **Cancel if needed.** Your MCP client can abort a running `sequant_run` call. The subprocess and its children are cleaned up automatically (SIGTERM, then SIGKILL after 5 seconds if needed).
 
 ### After a run
 
@@ -153,7 +154,7 @@ Once set up, talk to your AI assistant naturally:
 |---|---|---|
 | **Context** | Separate terminal window | Your AI already has file context |
 | **Invocation** | Exact commands and flags | Natural language |
-| **Progress** | Real-time phase output | Silent until done (check with `sequant_status`) |
+| **Progress** | Real-time phase output | Silent until done (check with `sequant_status` any time) |
 | **Best for** | Batch runs, CI, scripting | Single issues while working in the editor |
 
 They use the same engine. MCP is a different door into the same workflow.
@@ -242,11 +243,11 @@ The underlying `sequant run` command failed. Check:
 
 ### Nothing happens for a long time
 
-Expected. Workflows take 5–30 minutes. Ask "What's the sequant status for issue #42?" to check progress. Or run individual phases for faster feedback.
+Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — ask "What's the sequant status for issue #42?" at any time to check progress. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
 
 ### Client reports a timeout
 
-Some clients have tool call time limits. Run phases individually instead of a full workflow:
+Some clients have tool call time limits (the server's own timeout is 30 minutes). Run phases individually instead of a full workflow:
 
 > "Use sequant to run only the spec phase for issue #42"
 
@@ -260,4 +261,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK) on 2026-03-23.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation) on 2026-03-23.*
