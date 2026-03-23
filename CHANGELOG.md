@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All `gh` calls in phase-detection, pr-status, system, doctor, and worktree-manager now delegate to `GitHubProvider`
   - `--agent <name>` CLI flag for `sequant run`
   - Driver and platform registries for future backend extensibility
+- Expose Sequant workflow as MCP server (#372)
+  - `sequant serve` starts MCP server (stdio transport by default)
+  - `sequant serve --transport sse --port 3100` for HTTP/SSE transport
+  - `sequant_run` tool: execute workflow phases for GitHub issues
+  - `sequant_status` tool: get workflow state for tracked issues
+  - `sequant_logs` tool: get structured run logs and metrics
+  - `sequant://state` and `sequant://config` MCP resources
+  - `sequant doctor` checks MCP server health
+  - `sequant init` detects MCP clients and offers config setup
 - Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
   - `sequant init` now generates AGENTS.md alongside CLAUDE.md
   - `sequant sync` regenerates AGENTS.md when templates are updated
