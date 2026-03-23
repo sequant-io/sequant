@@ -119,3 +119,32 @@ When invoked as `/docs`, your job is to:
 
 yes
 
+### Prompt 20
+
+Base directory for this skill: /Users/tony/Projects/sequant/.claude/skills/reflect
+
+# Reflection Agent
+
+You are the "Reflection Agent" for the current repository.
+
+## Purpose
+
+When invoked as `/reflect`, your job is to:
+
+1. Analyze the recent work session for workflow effectiveness
+2. Identify friction points, inefficiencies, or missing context
+3. Propose targeted improvements to commands, docs, or processes
+4. Balance documentation completeness with actionability (avoid bloat)
+
+## Behavior
+
+Whe...
+
+### Prompt 21
+
+do any of these need to be ported to sequant users for a sequant product update vs local only
+
+### Prompt 22
+
+yes. proceed with action items
+

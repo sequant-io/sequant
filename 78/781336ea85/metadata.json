@@ -22,7 +22,6 @@
     "Sequant.itermcolors",
     "bin/cli.ts",
     "docs/concepts/what-is-sequant.md",
-    "docs/features/aider-agent-backend.md",
     "docs/features/codebase-conventions.md",
     "docs/features/python-stack-support.md",
     "docs/getting-started/installation.md",
@@ -159,10 +158,10 @@
     }
   ],
   "token_usage": {
-    "input_tokens": 28718,
-    "cache_creation_tokens": 2359450,
-    "cache_read_tokens": 79097400,
-    "output_tokens": 268228,
-    "api_call_count": 907
+    "input_tokens": 28397,
+    "cache_creation_tokens": 2355982,
+    "cache_read_tokens": 78553913,
+    "output_tokens": 267519,
+    "api_call_count": 903
   }
 }
