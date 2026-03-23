@@ -1,0 +1,39 @@
+my current sequant run keeps opening this window in my browser:\
+https://accounts.google.com/v3/signin/accountchooser?access_type=offline&REDACTED.apps.googleusercontent.com&prompt=consent&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth2callback&response_type=code&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.readonly+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdocuments+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fspreadsheets+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fpresentations+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar+https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcalendar.events&dsh=S1177526497%3A1774223788583933&o2v=2&service=lso&flowName=GeneralOAuthFlow&opparams=%253F&continue=https%3A%2F%2Faccounts.google.com%2Fsignin%2Foauth%2Fconsent%3Fauthuser%3Dunknown%26part%REDACTED%26flowName%3DGeneralOAuthFlow%26as%3DS1177526497%253A1774223788583933%26client_id%3D1054745146689-629ssvo6spu40dd1ke4c1bg417nrtv4l.apps.googleusercontent.com%26requestPath%3D%252Fsignin%252Foauth%252Fconsent%23&app_domain=http%3A%2F%2Flocalhost%3A3000\
+\
+can you investigate?
+
+---
+
+It keep prompting me to login to jobagent app. can you check that repo. is it related?
+
+---
+
+yes
+
+---
+
+MCP servers like sequential-thinking or context7 available during runs but not      
+  google-drive\
+\
+I don't want this to affect users. Was this the right fix or was that a local langraph agent trying to run from the job... dir?
+
+---
+
+Maybe its from a cowork run. I could disable the workflow
+
+---
+
+can you see my cowork runs?
+
+---
+
+are we using it for anything job-scout related?
+
+---
+
+lets do that
+
+---
+
+do we need to commit anything?
