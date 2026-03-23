@@ -9,6 +9,22 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { spawn } from "child_process";
 
+const runToolInputSchema = {
+  issues: z.array(z.number()).describe("GitHub issue numbers to process"),
+  phases: z
+    .string()
+    .optional()
+    .describe("Comma-separated phases (default: spec,exec,qa)"),
+  qualityLoop: z
+    .boolean()
+    .optional()
+    .describe("Enable auto-retry on QA failure"),
+  agent: z
+    .string()
+    .optional()
+    .describe("Agent driver for phase execution (default: configured default)"),
+};
+
 export function registerRunTool(server: McpServer): void {
   server.registerTool(
     "sequant_run",
@@ -16,25 +32,22 @@ export function registerRunTool(server: McpServer): void {
       title: "Sequant Run",
       description:
         "Run structured AI workflow phases (spec, exec, qa) for GitHub issues with quality gates",
-      inputSchema: {
-        issues: z.array(z.number()).describe("GitHub issue numbers to process"),
-        phases: z
-          .string()
-          .optional()
-          .describe("Comma-separated phases (default: spec,exec,qa)"),
-        qualityLoop: z
-          .boolean()
-          .optional()
-          .describe("Enable auto-retry on QA failure"),
-        agent: z
-          .string()
-          .optional()
-          .describe(
-            "Agent driver for phase execution (default: configured default)",
-          ),
-      },
+      inputSchema: runToolInputSchema,
     },
-    async ({ issues, phases, qualityLoop, agent }) => {
+    (async (
+      {
+        issues,
+        phases,
+        qualityLoop,
+        agent,
+      }: {
+        issues: number[];
+        phases?: string;
+        qualityLoop?: boolean;
+        agent?: string;
+      },
+      extra: { signal: AbortSignal },
+    ) => {
       if (!issues || issues.length === 0) {
         return {
           content: [
@@ -70,6 +83,7 @@ export function registerRunTool(server: McpServer): void {
             ...process.env,
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
+          signal: extra.signal,
         });
 
         if (result.exitCode !== 0) {
@@ -117,7 +131,7 @@ export function registerRunTool(server: McpServer): void {
           isError: true,
         };
       }
-    },
+    }) as Parameters<typeof server.registerTool>[2],
   );
 }
 
@@ -130,6 +144,7 @@ export interface SpawnResult {
 export interface SpawnOptions {
   timeout: number;
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }
 
 /** @internal Exported for testing only */
@@ -153,6 +168,25 @@ export function spawnAsync(
       killProcessGroup(proc);
       reject(new Error(`Process timed out after ${options.timeout}ms`));
     }, options.timeout);
+
+    // Client-initiated cancellation via AbortSignal
+    if (options.signal) {
+      if (options.signal.aborted) {
+        killProcessGroup(proc);
+        clearTimeout(timeoutId);
+        reject(new Error("Cancelled by client"));
+        return;
+      }
+      options.signal.addEventListener(
+        "abort",
+        () => {
+          killProcessGroup(proc);
+          clearTimeout(timeoutId);
+          reject(new Error("Cancelled by client"));
+        },
+        { once: true },
+      );
+    }
 
     proc.stdout.on("data", (data: Buffer) => {
       stdout += data.toString();
@@ -187,8 +221,8 @@ function killProcessGroup(proc: ReturnType<typeof spawn>): void {
     if (proc.pid) {
       process.kill(-proc.pid, "SIGTERM");
     }
-  } catch {
-    // Process group may already be gone — fall back to direct kill
+  } catch (_groupKillErr) {
+    // Process group may already be gone (e.g. already exited) — fall back to direct kill
     if (!proc.killed) {
       proc.kill("SIGTERM");
     }

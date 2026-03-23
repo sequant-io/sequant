@@ -9,6 +9,7 @@
  * - AC-6: Tests updated for async
  * - Derived AC-7: Handle ENOENT with descriptive error
  * - Derived AC-8: No orphan processes on timeout/cancel
+ * - AC-3: MCP cancellation via AbortSignal
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -480,6 +481,90 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       expect(
         (callOpts.env as Record<string, string>).SEQUANT_ORCHESTRATOR,
       ).toBe("mcp-server");
+    });
+  });
+
+  describe("AC-3: AbortSignal cancellation", () => {
+    it("should reject with cancellation error when signal is aborted", async () => {
+      const { spawnAsync } = await import("../src/mcp/tools/run.js");
+      // Create a process that hangs (never closes)
+      mockedSpawn.mockImplementation(() => {
+        const proc = new EventEmitter() as ReturnType<typeof spawn>;
+        const stdoutEmitter = new EventEmitter();
+        const stderrEmitter = new EventEmitter();
+        (proc as unknown as Record<string, unknown>).stdout = stdoutEmitter;
+        (proc as unknown as Record<string, unknown>).stderr = stderrEmitter;
+        (proc as unknown as Record<string, unknown>).pid = 99999;
+        (proc as unknown as Record<string, unknown>).killed = false;
+        (proc as unknown as Record<string, unknown>).kill = vi.fn();
+        return proc;
+      });
+
+      const controller = new AbortController();
+      const promise = spawnAsync("npx", ["sequant", "run", "1"], {
+        timeout: 60000,
+        signal: controller.signal,
+      });
+
+      // Abort after a tick
+      queueMicrotask(() => controller.abort());
+
+      await expect(promise).rejects.toThrow("Cancelled by client");
+    });
+
+    it("should kill process group when signal is aborted", async () => {
+      const { spawnAsync } = await import("../src/mcp/tools/run.js");
+      const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+      mockedSpawn.mockImplementation(() => {
+        const proc = new EventEmitter() as ReturnType<typeof spawn>;
+        const stdoutEmitter = new EventEmitter();
+        const stderrEmitter = new EventEmitter();
+        (proc as unknown as Record<string, unknown>).stdout = stdoutEmitter;
+        (proc as unknown as Record<string, unknown>).stderr = stderrEmitter;
+        (proc as unknown as Record<string, unknown>).pid = 55555;
+        (proc as unknown as Record<string, unknown>).killed = false;
+        (proc as unknown as Record<string, unknown>).kill = vi.fn();
+        return proc;
+      });
+
+      const controller = new AbortController();
+      const promise = spawnAsync("npx", ["sequant", "run", "1"], {
+        timeout: 60000,
+        signal: controller.signal,
+      });
+
+      queueMicrotask(() => controller.abort());
+
+      await expect(promise).rejects.toThrow("Cancelled by client");
+      expect(killSpy).toHaveBeenCalledWith(-55555, "SIGTERM");
+      killSpy.mockRestore();
+    });
+
+    it("should reject immediately when signal is already aborted", async () => {
+      const { spawnAsync } = await import("../src/mcp/tools/run.js");
+
+      mockedSpawn.mockImplementation(() => {
+        const proc = new EventEmitter() as ReturnType<typeof spawn>;
+        const stdoutEmitter = new EventEmitter();
+        const stderrEmitter = new EventEmitter();
+        (proc as unknown as Record<string, unknown>).stdout = stdoutEmitter;
+        (proc as unknown as Record<string, unknown>).stderr = stderrEmitter;
+        (proc as unknown as Record<string, unknown>).pid = 77777;
+        (proc as unknown as Record<string, unknown>).killed = false;
+        (proc as unknown as Record<string, unknown>).kill = vi.fn();
+        return proc;
+      });
+
+      const controller = new AbortController();
+      controller.abort(); // Already aborted
+
+      await expect(
+        spawnAsync("npx", ["sequant", "run", "1"], {
+          timeout: 60000,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow("Cancelled by client");
     });
   });
 
