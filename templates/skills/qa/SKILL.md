@@ -1273,6 +1273,7 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 2. "Do the tests actually test the feature's primary purpose, or just pass?"
 3. "What's the most likely way this feature could break in production?"
 4. "Am I giving a positive verdict because the code looks clean, or because I verified it works?"
+5. "Are there 'design choices' I'm excusing that are actually bad practices?" (e.g., no version pinning, leaking secrets to unnecessary env vars, non-portable shell in example code, no input validation). Would I accept this in a code review from a junior developer?
 
 **Include this section in your output:**
 

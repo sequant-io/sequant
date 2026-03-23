@@ -127,8 +127,9 @@ else
   test_output=$(npm test 2>&1 || true)
 
   # Parse vitest output format: "Tests  X passed | Y failed" or "Tests  X passed"
-  BASELINE_TEST_PASSES=$(echo "$test_output" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
-  BASELINE_TEST_FAILURES=$(echo "$test_output" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+' || echo "0")
+  # Use tail -1 to get the Tests line (not Test Files line) from vitest output
+  BASELINE_TEST_PASSES=$(echo "$test_output" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || echo "0")
+  BASELINE_TEST_FAILURES=$(echo "$test_output" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+' || echo "0")
   echo "  Baseline test passes: $BASELINE_TEST_PASSES"
   echo "  Baseline test failures: $BASELINE_TEST_FAILURES"
 
@@ -320,8 +321,8 @@ POST_BUILD_ERRORS=$(echo "$post_build_output" | grep -c "error TS" || echo "0")
 # 3. Test suite — capture post-merge test counts
 echo "Running tests..."
 post_test_output=$(npm test 2>&1); test_exit=$?
-POST_TEST_PASSES=$(echo "$post_test_output" | grep -oE '[0-9]+ passed' | grep -oE '[0-9]+' || echo "0")
-POST_TEST_FAILURES=$(echo "$post_test_output" | grep -oE '[0-9]+ failed' | grep -oE '[0-9]+' || echo "0")
+POST_TEST_PASSES=$(echo "$post_test_output" | grep -oE '[0-9]+ passed' | tail -1 | grep -oE '[0-9]+' || echo "0")
+POST_TEST_FAILURES=$(echo "$post_test_output" | grep -oE '[0-9]+ failed' | tail -1 | grep -oE '[0-9]+' || echo "0")
 
 # 4. CLI health check (if sequant CLI is available)
 echo "Running CLI health check..."
