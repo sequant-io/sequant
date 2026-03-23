@@ -438,6 +438,18 @@ describe("#389: resolveCliBinary", () => {
     expect(prefixArgs).toEqual(["sequant"]);
   });
 
+  it("should use __dirname-relative path when argv[1] does not exist but cli.js does", () => {
+    mockedExistsSync.mockImplementation((p) => {
+      // argv[1] does not exist, but the __dirname-relative cli.js does
+      return String(p).endsWith("bin/cli.js");
+    });
+
+    const [cmd, prefixArgs] = resolveCliBinary();
+    expect(cmd).toBe(process.execPath);
+    expect(prefixArgs).toHaveLength(1);
+    expect(prefixArgs[0]).toMatch(/bin\/cli\.js$/);
+  });
+
   it("should try __dirname-relative path when argv[1] does not exist", () => {
     const checkedPaths: string[] = [];
     mockedExistsSync.mockImplementation((p) => {
