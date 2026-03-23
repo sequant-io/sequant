@@ -1,0 +1,226 @@
+name: "Sequant Workflow"
+description: "Run structured AI coding workflows with quality gates"
+branding:
+  icon: "git-branch"
+  color: "orange"
+
+inputs:
+  issues:
+    description: "Issue numbers to process (space-separated)"
+    required: false
+  phases:
+    description: "Workflow phases to execute (comma-separated)"
+    required: false
+    default: "spec,exec,qa"
+  agent:
+    description: "Agent backend (claude-code, aider, codex)"
+    required: false
+    default: "claude-code"
+  timeout:
+    description: "Phase timeout in seconds"
+    required: false
+    default: "1800"
+  quality-loop:
+    description: "Enable quality loop with auto-retry"
+    required: false
+    default: "false"
+  api-key:
+    description: "API key for the selected agent (pass via secrets)"
+    required: true
+  sequant-version:
+    description: "Sequant version to install (npm version range)"
+    required: false
+    default: "^1"
+
+outputs:
+  success:
+    description: "Whether all phases passed"
+    value: ${{ steps.run.outputs.success }}
+  pr-url:
+    description: "URL of created PR (if applicable)"
+    value: ${{ steps.run.outputs.pr-url }}
+  summary:
+    description: "JSON summary of phase results"
+    value: ${{ steps.run.outputs.phases }}
+  issue:
+    description: "Issue number(s) processed"
+    value: ${{ steps.resolve.outputs.issues }}
+  duration:
+    description: "Total duration in seconds"
+    value: ${{ steps.run.outputs.duration }}
+
+runs:
+  using: "composite"
+  steps:
+    # Step 1: Set up Node.js
+    - uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+
+    # Step 2: Resolve issue numbers from inputs or event context
+    # SECURITY: All user-controlled values are passed via env bindings,
+    # never interpolated directly into shell scripts.
+    - id: resolve
+      shell: bash
+      env:
+        INPUT_ISSUES: ${{ inputs.issues }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_ISSUE_NUMBER: ${{ github.event.issue.number }}
+      run: |
+        # Resolve issue numbers: explicit input takes precedence over event context
+        if [[ -n "$INPUT_ISSUES" ]]; then
+          ISSUES="$INPUT_ISSUES"
+        elif [[ "$EVENT_NAME" == "issues" ]]; then
+          ISSUES="$EVENT_ISSUE_NUMBER"
+        elif [[ "$EVENT_NAME" == "issue_comment" ]]; then
+          ISSUES="$EVENT_ISSUE_NUMBER"
+        else
+          echo "::error::No issue numbers provided and cannot detect from event context"
+          exit 1
+        fi
+        # Validate: only allow numeric issue numbers separated by spaces/commas
+        VALIDATED=$(echo "$ISSUES" | grep -oE '[0-9]+' | tr '\n' ' ' | sed 's/ $//')
+        if [[ -z "$VALIDATED" ]]; then
+          echo "::error::No valid issue numbers found in: $ISSUES"
+          exit 1
+        fi
+        echo "issues=$VALIDATED" >> "$GITHUB_OUTPUT"
+        echo "Resolved issues: $VALIDATED"
+
+    # Step 3: Validate auth
+    - id: auth
+      shell: bash
+      run: |
+        gh auth status 2>&1 || {
+          echo "::error::GitHub CLI authentication failed. Ensure GH_TOKEN or GITHUB_TOKEN is set."
+          exit 1
+        }
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    # Step 4: Mask the API key so it never appears in logs
+    - shell: bash
+      env:
+        API_KEY: ${{ inputs.api-key }}
+      run: echo "::add-mask::$API_KEY"
+
+    # Step 5: Label management (start)
+    - shell: bash
+      env:
+        ISSUES: ${{ steps.resolve.outputs.issues }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for ISSUE in $ISSUES; do
+          gh issue edit "$ISSUE" --add-label "sequant:solving" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:solve" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:spec-only" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:exec" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:qa" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:done" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:failed" 2>/dev/null || true
+        done
+
+    # Step 6: Run sequant workflow
+    - id: run
+      shell: bash
+      env:
+        INPUT_PHASES: ${{ inputs.phases }}
+        INPUT_AGENT: ${{ inputs.agent }}
+        INPUT_TIMEOUT: ${{ inputs.timeout }}
+        INPUT_QUALITY_LOOP: ${{ inputs.quality-loop }}
+        INPUT_VERSION: ${{ inputs.sequant-version }}
+        ISSUES: ${{ steps.resolve.outputs.issues }}
+        INPUT_API_KEY: ${{ inputs.api-key }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        START_TIME=$(date +%s)
+
+        # Set the API key for the selected agent only
+        case "$INPUT_AGENT" in
+          aider|codex)
+            export OPENAI_API_KEY="$INPUT_API_KEY"
+            ;;
+          *)
+            export ANTHROPIC_API_KEY="$INPUT_API_KEY"
+            ;;
+        esac
+
+        # Build CLI flags
+        FLAGS="--phases $INPUT_PHASES --agent $INPUT_AGENT --timeout $INPUT_TIMEOUT --no-mcp"
+        if [[ "$INPUT_QUALITY_LOOP" == "true" ]]; then
+          FLAGS="$FLAGS --quality-loop"
+        fi
+
+        echo "Running: npx sequant@$INPUT_VERSION run $ISSUES $FLAGS"
+
+        # Run sequant — capture exit code
+        set +e
+        npx "sequant@$INPUT_VERSION" run $ISSUES $FLAGS 2>&1
+        EXIT_CODE=$?
+        set -e
+
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - START_TIME))
+
+        # Set outputs
+        if [[ $EXIT_CODE -eq 0 ]]; then
+          echo "success=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "success=false" >> "$GITHUB_OUTPUT"
+        fi
+        echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
+
+        # Try to extract PR URL from sequant state
+        PR_URL=""
+        for ISSUE in $ISSUES; do
+          ISSUE_PR=$(gh pr list --search "$ISSUE" --json url --jq '.[0].url' 2>/dev/null || true)
+          if [[ -n "$ISSUE_PR" ]]; then
+            PR_URL="$ISSUE_PR"
+          fi
+        done
+        echo "pr-url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+        # Build phase summary JSON
+        echo "phases=[{\"overall_success\": $([ $EXIT_CODE -eq 0 ] && echo true || echo false)}]" >> "$GITHUB_OUTPUT"
+
+        # Post summary to issue
+        for ISSUE in $ISSUES; do
+          SUMMARY="### Sequant CI Run\n\n"
+          SUMMARY+="| Field | Value |\n|-------|-------|\n"
+          SUMMARY+="| Phases | $INPUT_PHASES |\n"
+          SUMMARY+="| Agent | $INPUT_AGENT |\n"
+          SUMMARY+="| Duration | ${DURATION}s |\n"
+          SUMMARY+="| Success | $([ $EXIT_CODE -eq 0 ] && echo '✅ Yes' || echo '❌ No') |\n"
+          if [[ -n "$PR_URL" ]]; then
+            SUMMARY+="| PR | $PR_URL |\n"
+          fi
+          gh issue comment "$ISSUE" --body "$(echo -e "$SUMMARY")" 2>/dev/null || true
+        done
+
+        exit $EXIT_CODE
+
+    # Step 7: Label management (outcome)
+    - if: always()
+      shell: bash
+      env:
+        ISSUES: ${{ steps.resolve.outputs.issues }}
+        RUN_SUCCESS: ${{ steps.run.outputs.success }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for ISSUE in $ISSUES; do
+          gh issue edit "$ISSUE" --remove-label "sequant:solving" 2>/dev/null || true
+          if [[ "$RUN_SUCCESS" == "true" ]]; then
+            gh issue edit "$ISSUE" --add-label "sequant:done" 2>/dev/null || true
+          else
+            gh issue edit "$ISSUE" --add-label "sequant:failed" 2>/dev/null || true
+          fi
+        done
+
+    # Step 8: Upload run logs as artifacts
+    - if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: sequant-logs-${{ github.run_id }}
+        path: .sequant/logs/
+        if-no-files-found: ignore
+        retention-days: 30

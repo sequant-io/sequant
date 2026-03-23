@@ -1,0 +1,60 @@
+# Example: Trigger Sequant from an issue comment
+#
+# When someone comments "@sequant run spec,exec,qa" on an issue,
+# this workflow parses the command and runs the requested phases.
+#
+# Supported commands:
+#   @sequant run spec,exec,qa    — full workflow
+#   @sequant run spec             — spec only
+#   @sequant run exec,qa          — skip spec
+#
+# Setup:
+#   1. Copy this file to .github/workflows/sequant-comment.yml
+#   2. Add ANTHROPIC_API_KEY to your repo's Actions secrets
+#   3. Comment "@sequant run <phases>" on any issue
+
+name: Sequant Comment Trigger
+
+on:
+  issue_comment:
+    types: [created]
+
+# Only one Sequant run per issue at a time
+concurrency:
+  group: sequant-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  parse-and-run:
+    # Only run for @sequant commands (not every comment)
+    if: contains(github.event.comment.body, '@sequant run')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Parse phases from comment body
+      # SECURITY: Use env binding — never interpolate untrusted input
+      # (github.event.comment.body) directly into shell scripts.
+      - id: parse
+        shell: bash
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          PHASES=$(echo "$COMMENT_BODY" | sed -n 's/.*@sequant[[:space:]]\+run[[:space:]]\+\([a-zA-Z,_-]\+\).*/\1/p' | head -1)
+          if [[ -z "$PHASES" ]]; then
+            PHASES="spec,exec,qa"
+          fi
+          echo "phases=$PHASES" >> "$GITHUB_OUTPUT"
+          echo "Parsed phases: $PHASES"
+
+      - uses: sequant-io/sequant-action@v1
+        with:
+          issues: ${{ github.event.issue.number }}
+          phases: ${{ steps.parse.outputs.phases }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}

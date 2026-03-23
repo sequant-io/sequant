@@ -29,6 +29,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `settings.json` supports `run.agent: "aider"` with Aider-specific config (model, editFormat, extraArgs)
   - `sequant doctor` checks Aider CLI availability when configured as default agent
   - Timeout enforcement, abort signal support, and verbose streaming
+- GitHub Actions integration for CI/CD-driven workflows (#370)
+  - Composite action (`sequant-action/action.yml`) runs sequant workflows as CI steps
+  - Trigger detection: `workflow_dispatch`, `issues` (label-based), `issue_comment` (`@sequant run`)
+  - Label lifecycle: `sequant:solve` → `sequant:solving` → `sequant:done` / `sequant:failed`
+  - Phase override labels: `sequant:spec-only`, `sequant:exec`, `sequant:qa`
+  - Repo-level configuration via `.github/sequant.yml` or `.sequant/ci.json`
+  - Structured outputs: `issue`, `success`, `phases`, `pr-url`, `duration`
+  - Run logs uploaded as GitHub Actions artifacts
+  - Concurrency control per issue via native Actions concurrency groups
+  - `--no-mcp` enforced in CI mode; API keys masked via `::add-mask::`
+  - Example workflows: label trigger, manual dispatch, comment trigger
 - Expose Sequant workflow as MCP server (#372)
   - `sequant serve` starts MCP server (stdio transport by default)
   - `sequant serve --transport sse --port 3100` for HTTP/SSE transport

@@ -1,0 +1,60 @@
+# Example: Manually dispatch a Sequant workflow
+#
+# Trigger from the GitHub Actions UI with custom inputs:
+#   - Issue numbers (space-separated for batch processing)
+#   - Phases to execute
+#   - Agent backend selection
+#   - Phase timeout
+#
+# Setup:
+#   1. Copy this file to .github/workflows/sequant-dispatch.yml
+#   2. Add ANTHROPIC_API_KEY to your repo's Actions secrets
+#   3. Go to Actions tab → "Sequant Dispatch" → "Run workflow"
+
+name: Sequant Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      issues:
+        description: "Issue numbers (space-separated)"
+        required: true
+      phases:
+        description: "Phases to run (comma-separated)"
+        default: "spec,exec,qa"
+      agent:
+        description: "Agent backend"
+        default: "claude-code"
+        type: choice
+        options:
+          - claude-code
+          - aider
+          - codex
+      timeout:
+        description: "Phase timeout (seconds)"
+        default: "1800"
+
+# Only one Sequant dispatch at a time
+concurrency:
+  group: sequant-dispatch
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: sequant-io/sequant-action@v1
+        with:
+          issues: ${{ github.event.inputs.issues }}
+          phases: ${{ github.event.inputs.phases }}
+          agent: ${{ github.event.inputs.agent }}
+          timeout: ${{ github.event.inputs.timeout }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
