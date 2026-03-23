@@ -100,6 +100,16 @@ vi.mock("../lib/wizard.js", () => ({
   shouldRunSetupWizard: vi.fn(() => false),
 }));
 
+// Mock mcp-config (no detected clients in tests)
+vi.mock("../lib/mcp-config.js", () => ({
+  detectMcpClients: vi.fn(() => []),
+  addSequantToMcpConfig: vi.fn(() => true),
+  getSequantMcpConfig: vi.fn(() => ({
+    command: "npx",
+    args: ["sequant@latest", "serve"],
+  })),
+}));
+
 // Mock inquirer
 vi.mock("inquirer", () => ({
   default: {

@@ -530,6 +530,50 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(chalk.gray("Skipping AGENTS.md generation (--no-agents-md)"));
   }
 
+  // Offer MCP server configuration for detected clients
+  const { detectMcpClients, addSequantToMcpConfig } =
+    await import("../lib/mcp-config.js");
+  const mcpClients = detectMcpClients();
+  const detectedClients = mcpClients.filter((c) => c.exists);
+
+  if (detectedClients.length > 0) {
+    console.log(
+      chalk.blue(
+        `\nDetected ${detectedClients.length} MCP-compatible client(s):`,
+      ),
+    );
+    for (const client of detectedClients) {
+      console.log(chalk.gray(`   • ${client.name}`));
+    }
+
+    let addMcp = skipPrompts;
+    if (!skipPrompts) {
+      const { confirm } = await inquirer.prompt([
+        {
+          type: "confirm",
+          name: "confirm",
+          message:
+            "Add Sequant MCP server to detected clients? (enables AI tools to use Sequant)",
+          default: true,
+        },
+      ]);
+      addMcp = confirm;
+    }
+
+    if (addMcp) {
+      for (const client of detectedClients) {
+        const added = addSequantToMcpConfig(client.configPath);
+        if (added) {
+          ui.printStatus("success", `Added Sequant MCP to ${client.name}`);
+        } else {
+          console.log(
+            chalk.gray(`   ${client.name}: already configured (skipped)`),
+          );
+        }
+      }
+    }
+  }
+
   // Build optional suggestions section
   const optionalSuggestions = suggestions.filter((s) =>
     s.startsWith("Optional"),

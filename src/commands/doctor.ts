@@ -471,6 +471,26 @@ export async function doctorCommand(
     });
   }
 
+  // Check: Sequant MCP server health
+  try {
+    // Verify MCP server can be created (validates SDK availability)
+    const { createServer } = await import("../mcp/server.js");
+    const { getVersion } = await import("../lib/version.js");
+    const mcpServerInstance = createServer(getVersion());
+    await mcpServerInstance.close();
+    checks.push({
+      name: "MCP Server",
+      status: "pass",
+      message: "Sequant MCP server can be started (sequant serve)",
+    });
+  } catch (error) {
+    checks.push({
+      name: "MCP Server",
+      status: "warn",
+      message: `Sequant MCP server unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
   // Check: Closed issue verification (only if gh available, authenticated, and not skipped)
   if (!options.skipIssueCheck && ghAvailable && ghAuthenticated && gitExists) {
     const missingCommitIssues = checkClosedIssues();
