@@ -102,6 +102,7 @@ npm audit --json 2>/dev/null | jq '.vulnerabilities | length'
 | **Security** | Hardcoded secret | `(api[_-]?key\|secret\|password)\s*[:=]\s*['"][^'"]+['"]` | Use env variable | ❌ High |
 | **Security** | SQL concatenation | `\+.*SELECT\|SELECT.*\+\|'.*\$\{.*\}.*SELECT` | Use parameterized query | ❌ High |
 | **Security** | eval usage | `eval\(` | Remove eval, use safe alternative | ❌ High |
+| **Security** | Server binds all interfaces | `.listen(port)` without explicit host | Bind to `127.0.0.1` for local-only servers | ❌ High |
 | **Memory** | Uncleared interval | `setInterval\(` without corresponding `clearInterval` | Clear in cleanup | ⚠️ Medium |
 | **Memory** | Uncleared timeout | `setTimeout\(` in component without cleanup | Clear in useEffect cleanup | ⚠️ Low |
 | **A11y** | Image without alt | `<img[^>]*(?!alt=)[^>]*>` | Add descriptive alt | ⚠️ Low |
@@ -124,6 +125,9 @@ grep -ni -E '(api[_-]?key|secret|password|token)\s*[:=]\s*['"'"'"][^'"'"'"]+['"'
 
 # SQL concatenation
 grep -n -E "(\+\s*['\"].*SELECT|SELECT.*['\"].*\+|\`.*\$\{.*\}.*SELECT)" $changed_files 2>/dev/null
+
+# Server binding to all interfaces (0.0.0.0)
+grep -n -E '\.listen\(\s*(port|[0-9]+)\s*[,)]' $changed_files 2>/dev/null | grep -v -E '127\.0\.0\.1|localhost'
 
 # Uncleared intervals (check for setInterval without corresponding clear)
 for f in $changed_files; do
