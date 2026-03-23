@@ -234,7 +234,9 @@ async function executePhase(
   };
 
   // Resolve driver from config or default
-  const driver: AgentDriver = getDriver(config.agent);
+  const driver: AgentDriver = getDriver(config.agent, {
+    aiderSettings: config.aiderSettings,
+  });
 
   const agentResult = await driver.executePhase(prompt, agentConfig);
 

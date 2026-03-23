@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All `gh` calls in phase-detection, pr-status, system, doctor, and worktree-manager now delegate to `GitHubProvider`
   - `--agent <name>` CLI flag for `sequant run`
   - Driver and platform registries for future backend extensibility
+- Add Aider as second agent backend (#369)
+  - `AiderDriver` implements `AgentDriver` interface — shells out to `aider` CLI
+  - `npx sequant run 123 --agent aider` executes workflows using Aider
+  - `settings.json` supports `run.agent: "aider"` with Aider-specific config (model, editFormat, extraArgs)
+  - `sequant doctor` checks Aider CLI availability when configured as default agent
+  - Timeout enforcement, abort signal support, and verbose streaming
 - Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
   - `sequant init` now generates AGENTS.md alongside CLAUDE.md
   - `sequant sync` regenerates AGENTS.md when templates are updated

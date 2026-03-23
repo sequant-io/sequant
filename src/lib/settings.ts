@@ -54,6 +54,18 @@ export interface AgentSettings {
 }
 
 /**
+ * Aider-specific settings for the aider agent driver.
+ */
+export interface AiderSettings {
+  /** Model to use (e.g., "claude-3-sonnet", "gpt-4o") */
+  model?: string;
+  /** Edit format (e.g., "diff", "whole", "udiff") */
+  editFormat?: string;
+  /** Extra CLI arguments passed to aider */
+  extraArgs?: string[];
+}
+
+/**
  * Run command settings
  */
 export interface RunSettings {
@@ -103,6 +115,15 @@ export interface RunSettings {
    * Default: 5
    */
   staleBranchThreshold: number;
+  /**
+   * Agent driver for phase execution.
+   * Default: "claude-code". Set to "aider" to use Aider CLI.
+   */
+  agent?: string;
+  /**
+   * Aider-specific configuration. Only used when agent is "aider".
+   */
+  aider?: AiderSettings;
 }
 
 /**
@@ -257,6 +278,37 @@ export const DEFAULT_SETTINGS: SequantSettings = {
 };
 
 /**
+ * Validate aider-specific settings.
+ * Throws on invalid types to catch config errors at load time.
+ */
+export function validateAiderSettings(
+  aider: unknown,
+): AiderSettings | undefined {
+  if (aider == null) return undefined;
+  if (typeof aider !== "object" || Array.isArray(aider)) {
+    throw new Error("settings.run.aider must be an object");
+  }
+  const obj = aider as Record<string, unknown>;
+  if (obj.model !== undefined && typeof obj.model !== "string") {
+    throw new Error("settings.run.aider.model must be a string");
+  }
+  if (obj.editFormat !== undefined && typeof obj.editFormat !== "string") {
+    throw new Error("settings.run.aider.editFormat must be a string");
+  }
+  if (obj.extraArgs !== undefined) {
+    if (
+      !Array.isArray(obj.extraArgs) ||
+      !obj.extraArgs.every((a) => typeof a === "string")
+    ) {
+      throw new Error(
+        "settings.run.aider.extraArgs must be an array of strings",
+      );
+    }
+  }
+  return obj as unknown as AiderSettings;
+}
+
+/**
  * Get the current project settings
  *
  * Returns default settings if no settings file exists.
@@ -270,12 +322,18 @@ export async function getSettings(): Promise<SequantSettings> {
     const content = await readFile(SETTINGS_PATH);
     const parsed = JSON.parse(content) as Partial<SequantSettings>;
 
+    // Validate aider settings if present
+    const aiderSettings = validateAiderSettings(
+      (parsed.run as Record<string, unknown> | undefined)?.aider,
+    );
+
     // Merge with defaults to ensure all fields exist
     return {
       version: parsed.version ?? DEFAULT_SETTINGS.version,
       run: {
         ...DEFAULT_SETTINGS.run,
         ...parsed.run,
+        ...(aiderSettings !== undefined ? { aider: aiderSettings } : {}),
       },
       agents: {
         ...DEFAULT_AGENT_SETTINGS,

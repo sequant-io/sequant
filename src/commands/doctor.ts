@@ -17,6 +17,7 @@ import {
   getMcpServersConfig,
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
+import { getSettings } from "../lib/settings.js";
 import {
   checkVersionThorough,
   getVersionWarning,
@@ -384,6 +385,25 @@ export async function doctorCommand(
       message:
         "claude CLI not installed - see: https://docs.anthropic.com/en/docs/claude-code",
     });
+  }
+
+  // Check: Aider CLI (when configured as agent)
+  const settings = await getSettings();
+  if (settings.run.agent === "aider") {
+    if (commandExists("aider")) {
+      checks.push({
+        name: "Aider CLI",
+        status: "pass",
+        message: "aider CLI is installed (configured as default agent)",
+      });
+    } else {
+      checks.push({
+        name: "Aider CLI",
+        status: "fail",
+        message:
+          "aider CLI not installed but configured as default agent - install: pip install aider-chat",
+      });
+    }
   }
 
   // Check 12: jq installed (optional but recommended)

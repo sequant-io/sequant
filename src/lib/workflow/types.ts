@@ -56,6 +56,10 @@ export interface ExecutionConfig {
    * Default: "claude-code"
    */
   agent?: string;
+  /**
+   * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
+   */
+  aiderSettings?: AiderSettings;
 }
 
 /**
@@ -77,6 +81,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
 };
 
 // Import and re-export QaVerdict from run-log-schema (single source of truth)
+import type { AiderSettings } from "../settings.js";
 import type { QaVerdict } from "./run-log-schema.js";
 export type { QaVerdict } from "./run-log-schema.js";
 
