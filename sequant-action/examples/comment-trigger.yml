@@ -1,0 +1,54 @@
+# Example: Trigger Sequant from an issue comment
+#
+# When someone comments "@sequant run spec,exec,qa" on an issue,
+# this workflow parses the command and runs the requested phases.
+#
+# Supported commands:
+#   @sequant run spec,exec,qa    — full workflow
+#   @sequant run spec             — spec only
+#   @sequant run exec,qa          — skip spec
+#
+# Setup:
+#   1. Copy this file to .github/workflows/sequant-comment.yml
+#   2. Add ANTHROPIC_API_KEY to your repo's Actions secrets
+#   3. Comment "@sequant run <phases>" on any issue
+
+name: Sequant Comment Trigger
+
+on:
+  issue_comment:
+    types: [created]
+
+# Only one Sequant run per issue at a time
+concurrency:
+  group: sequant-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  parse-and-run:
+    # Only run for @sequant commands (not every comment)
+    if: contains(github.event.comment.body, '@sequant run')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Parse phases from comment body
+      - id: parse
+        shell: bash
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          PHASES=$(echo "$COMMENT" | grep -oP '@sequant\s+run\s+\K[\w,-]+' || echo "spec,exec,qa")
+          echo "phases=$PHASES" >> "$GITHUB_OUTPUT"
+          echo "Parsed phases: $PHASES"
+
+      - uses: sequant-io/sequant-action@v1
+        with:
+          issues: ${{ github.event.issue.number }}
+          phases: ${{ steps.parse.outputs.phases }}
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
