@@ -25,6 +25,25 @@ vi.mock("child_process", async (importOriginal) => {
   };
 });
 
+// Mock fs so resolveCliBinary falls through to npx fallback,
+// and readLatestRunLog returns null (fallback response path)
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn(() => false),
+  };
+});
+
+vi.mock("fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs/promises")>();
+  return {
+    ...actual,
+    readdir: vi.fn(() => Promise.resolve([])),
+    readFile: vi.fn(() => Promise.resolve("")),
+  };
+});
+
 const mockedSpawn = vi.mocked(spawn);
 
 /** Create a mock ChildProcess that emits events asynchronously */
@@ -169,8 +188,8 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       const data = JSON.parse(
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
-      expect(data.output.length).toBeLessThanOrEqual(2000);
-      expect(data.output).toBe("x".repeat(2000));
+      expect(data.rawOutput.length).toBeLessThanOrEqual(2000);
+      expect(data.rawOutput).toBe("x".repeat(2000));
     });
 
     it("should return full output when it's smaller than 2000 chars", async () => {
@@ -187,7 +206,7 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       const data = JSON.parse(
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
-      expect(data.output).toBe("hello world");
+      expect(data.rawOutput).toBe("hello world");
     });
 
     it("should handle empty output gracefully", async () => {
@@ -201,7 +220,7 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       const data = JSON.parse(
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
-      expect(data.output).toBe("");
+      expect(data.rawOutput).toBe("");
     });
   });
 
@@ -262,7 +281,9 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
       expect(data.status).toBe("success");
-      expect(data.issues).toEqual([111]);
+      // Fallback response has empty issues array (no log file to parse)
+      expect(data.issues).toEqual([]);
+      expect(data.summary.total).toBe(1);
     });
 
     it("should return error for empty issues array", async () => {
@@ -621,7 +642,7 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       const data = JSON.parse(
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
-      expect(data.output).toBe("standard output");
+      expect(data.rawOutput).toBe("standard output");
       expect(data.error).toBe("error output");
     });
 
@@ -643,7 +664,7 @@ describe.skipIf(!mcpSdkAvailable)("sequant_run tool async refactor", () => {
       const data = JSON.parse(
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
-      expect(data.output).toContain("out1out2");
+      expect(data.rawOutput).toContain("out1out2");
     });
   });
 });

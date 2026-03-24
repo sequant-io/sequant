@@ -2,14 +2,57 @@
  * sequant_run MCP tool
  *
  * Execute workflow phases for GitHub issues.
+ * Returns structured JSON with per-issue summaries parsed from run logs.
  * Uses async spawn to keep the MCP server responsive during execution.
  */
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { spawn } from "child_process";
-import { resolve, dirname } from "path";
+import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
+import { readdir, readFile } from "fs/promises";
+import { homedir } from "os";
+import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
+import type { RunLog } from "../../lib/workflow/run-log-schema.js";
+
+/** Maximum total response size in bytes (64 KB) */
+const MAX_RESPONSE_SIZE = 64 * 1024;
+
+/** Maximum raw output size before truncation */
+const MAX_RAW_OUTPUT = 2000;
+
+/** Maximum age of a log file to be considered for the current run (ms) */
+const MAX_LOG_AGE_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Per-issue summary in the structured response
+ */
+interface RunToolIssueSummary {
+  issueNumber: number;
+  status: "success" | "failure" | "partial";
+  phases: Array<{ phase: string; status: string; durationSeconds: number }>;
+  verdict?: string;
+  durationSeconds: number;
+}
+
+/**
+ * Structured response from sequant_run
+ */
+interface RunToolResponse {
+  status: "success" | "failure";
+  exitCode?: number;
+  issues: RunToolIssueSummary[];
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    durationSeconds: number;
+  };
+  phases: string;
+  rawOutput?: string;
+  error?: string;
+}
 
 /**
  * Resolve the CLI binary path to avoid nested npx version mismatches (#389).
@@ -39,6 +82,182 @@ export function resolveCliBinary(): [string, string[]] {
 
   // Last resort: fall back to npx (original behavior)
   return ["npx", ["sequant"]];
+}
+
+/**
+ * Resolve the log directory path (project-level or user-level)
+ */
+function resolveLogDir(): string {
+  const projectPath = LOG_PATHS.project;
+  if (existsSync(projectPath)) {
+    return projectPath;
+  }
+
+  const userPath = LOG_PATHS.user.replace("~", homedir());
+  if (existsSync(userPath)) {
+    return userPath;
+  }
+
+  return projectPath;
+}
+
+/**
+ * Find and parse the most recent run log file.
+ *
+ * When runStartTime is provided, only log files created within
+ * MAX_LOG_AGE_MS of that timestamp are considered, preventing
+ * stale logs from a previous run being returned.
+ */
+export async function readLatestRunLog(
+  runStartTime?: Date,
+): Promise<RunLog | null> {
+  try {
+    const logDir = resolveLogDir();
+
+    const entries = await readdir(logDir);
+    let logFiles = entries
+      .filter((f) => f.startsWith("run-") && f.endsWith(".json"))
+      .sort()
+      .reverse();
+
+    if (logFiles.length === 0) return null;
+
+    // Filter by recency if a run start time is provided
+    if (runStartTime) {
+      logFiles = logFiles.filter((f) => {
+        // Filename format: run-YYYY-MM-DDTHH-MM-SS-<uuid>.json
+        const match = f.match(
+          /^run-(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-/,
+        );
+        if (!match) return false;
+        const fileTime = new Date(
+          `${match[1]}T${match[2]}:${match[3]}:${match[4]}Z`,
+        );
+        // Accept files created around or after the run started
+        return fileTime.getTime() >= runStartTime.getTime() - MAX_LOG_AGE_MS;
+      });
+      if (logFiles.length === 0) return null;
+    }
+
+    const content = await readFile(join(logDir, logFiles[0]), "utf-8");
+    return RunLogSchema.parse(JSON.parse(content));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build a structured response from a parsed RunLog
+ */
+export function buildStructuredResponse(
+  runLog: RunLog,
+  rawOutput: string,
+  overallStatus: "success" | "failure",
+  exitCode?: number | null,
+  errorOutput?: string,
+): RunToolResponse {
+  const issues: RunToolIssueSummary[] = runLog.issues.map((issue) => {
+    // Find QA verdict from phase logs
+    const qaPhase = issue.phases.find((p) => p.phase === "qa");
+    const verdict = qaPhase?.verdict;
+
+    return {
+      issueNumber: issue.issueNumber,
+      status: issue.status,
+      phases: issue.phases.map((p) => ({
+        phase: p.phase,
+        status: p.status,
+        durationSeconds: p.durationSeconds,
+      })),
+      ...(verdict ? { verdict } : {}),
+      durationSeconds: issue.totalDurationSeconds,
+    };
+  });
+
+  const phasesRan = [
+    ...new Set(runLog.issues.flatMap((i) => i.phases.map((p) => p.phase))),
+  ].join(",");
+
+  const response: RunToolResponse = {
+    status: overallStatus,
+    ...(exitCode != null && exitCode !== 0 ? { exitCode } : {}),
+    issues,
+    summary: {
+      total: runLog.summary.totalIssues,
+      passed: runLog.summary.passed,
+      failed: runLog.summary.failed,
+      durationSeconds: runLog.summary.totalDurationSeconds,
+    },
+    phases: phasesRan || runLog.config.phases.join(","),
+    rawOutput: rawOutput.slice(-MAX_RAW_OUTPUT),
+    ...(errorOutput ? { error: errorOutput.slice(-1000) } : {}),
+  };
+
+  return enforceResponseSizeLimit(response);
+}
+
+/**
+ * Enforce response size limit by progressively truncating rawOutput.
+ * Uses Buffer.byteLength for accurate UTF-8 byte measurement.
+ */
+function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
+  let json = JSON.stringify(response);
+  let byteLength = Buffer.byteLength(json, "utf-8");
+
+  if (byteLength <= MAX_RESPONSE_SIZE) {
+    return response;
+  }
+
+  // Progressively truncate rawOutput to fit
+  const rawOutput = response.rawOutput || "";
+  if (rawOutput.length > 0) {
+    const excess = byteLength - MAX_RESPONSE_SIZE;
+    // Over-trim slightly: multi-byte chars mean char count < byte count
+    const newLength = Math.max(0, rawOutput.length - excess - 200);
+
+    response.rawOutput =
+      newLength > 0 ? rawOutput.slice(-newLength) : undefined;
+
+    json = JSON.stringify(response);
+    byteLength = Buffer.byteLength(json, "utf-8");
+  }
+
+  // If still too large (structured data itself is huge), truncate error field
+  if (byteLength > MAX_RESPONSE_SIZE && response.error) {
+    const excess = byteLength - MAX_RESPONSE_SIZE;
+    const newLength = Math.max(0, response.error.length - excess - 200);
+    response.error =
+      newLength > 0 ? response.error.slice(-newLength) : undefined;
+  }
+
+  return response;
+}
+
+/**
+ * Build a fallback response when no log file is available
+ */
+function buildFallbackResponse(
+  stdout: string,
+  issueNumbers: number[],
+  overallStatus: "success" | "failure",
+  phases: string,
+  exitCode?: number | null,
+  stderr?: string,
+): RunToolResponse {
+  return {
+    status: overallStatus,
+    ...(exitCode != null && exitCode !== 0 ? { exitCode } : {}),
+    issues: [],
+    summary: {
+      total: issueNumbers.length,
+      passed: overallStatus === "success" ? issueNumbers.length : 0,
+      failed: overallStatus === "failure" ? issueNumbers.length : 0,
+      durationSeconds: 0,
+    },
+    phases,
+    rawOutput: stdout.slice(-MAX_RAW_OUTPUT),
+    ...(stderr ? { error: stderr.slice(-1000) } : {}),
+  };
 }
 
 const runToolInputSchema = {
@@ -111,6 +330,9 @@ export function registerRunTool(server: McpServer): void {
       }
       args.push("--log-json");
 
+      const phasesStr = phases || "spec,exec,qa";
+      const runStartTime = new Date();
+
       try {
         const result = await spawnAsync(command, args, {
           timeout: 1800000, // 30 min default
@@ -121,36 +343,43 @@ export function registerRunTool(server: McpServer): void {
           signal: extra.signal,
         });
 
-        if (result.exitCode !== 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  status: "failure",
-                  exitCode: result.exitCode,
-                  issues: issues,
-                  output: result.stdout.slice(-2000),
-                  error: result.stderr.slice(-1000),
-                }),
-              },
-            ],
-            isError: true,
-          };
+        const stdout = result.stdout || "";
+        const stderr = result.stderr || "";
+        const overallStatus: "success" | "failure" =
+          result.exitCode === 0 ? "success" : "failure";
+
+        // Try to read structured log file for rich per-issue data
+        const runLog = await readLatestRunLog(runStartTime);
+
+        let response: RunToolResponse;
+        if (runLog) {
+          response = buildStructuredResponse(
+            runLog,
+            stdout,
+            overallStatus,
+            result.exitCode,
+            stderr || undefined,
+          );
+        } else {
+          // Fallback: no log file available
+          response = buildFallbackResponse(
+            stdout,
+            issues,
+            overallStatus,
+            phasesStr,
+            result.exitCode,
+            stderr || undefined,
+          );
         }
 
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({
-                status: "success",
-                issues: issues,
-                phases: phases || "spec,exec,qa",
-                output: result.stdout.slice(-2000),
-              }),
+              text: JSON.stringify(response),
             },
           ],
+          ...(result.exitCode !== 0 ? { isError: true } : {}),
         };
       } catch (error) {
         return {

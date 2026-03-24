@@ -172,6 +172,30 @@ Execute workflow phases for GitHub issues.
 | `qualityLoop` | `boolean` | No | `false` | Auto-retry on QA failure |
 | `agent` | `string` | No | configured default | Agent backend to use |
 
+**Response** (structured JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `"success" \| "failure"` | Overall run result |
+| `exitCode` | `number` | Process exit code (omitted on success) |
+| `issues` | `RunToolIssueSummary[]` | Per-issue summaries (see below) |
+| `summary` | `object` | `{ total, passed, failed, durationSeconds }` |
+| `phases` | `string` | Comma-separated phases that ran |
+| `rawOutput` | `string` | Tail of stdout (max 2000 chars, truncated to fit 64 KB limit) |
+| `error` | `string` | Tail of stderr on failure |
+
+Each item in `issues`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `issueNumber` | `number` | GitHub issue number |
+| `status` | `"success" \| "failure" \| "partial"` | Issue result |
+| `phases` | `Array<{ phase, status, durationSeconds }>` | Phase-level detail |
+| `verdict` | `string` | QA verdict (only present when QA ran) |
+| `durationSeconds` | `number` | Total time for this issue |
+
+When the structured run log is unavailable (e.g., process crashed before writing it), a fallback response is returned with an empty `issues` array and the raw output preserved.
+
 ### `sequant_status`
 
 Get current workflow state for a tracked issue.
