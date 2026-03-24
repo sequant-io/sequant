@@ -39,6 +39,7 @@ vi.mock("fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs/promises")>();
   return {
     ...actual,
+    access: vi.fn(() => Promise.reject(new Error("ENOENT"))),
     readdir: vi.fn(() => Promise.resolve([])),
     readFile: vi.fn(() => Promise.resolve("")),
   };
