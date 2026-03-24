@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "child_process";
 
 // Mock child_process
@@ -34,6 +34,7 @@ import {
   removeStaleWorktree,
   createPR,
   detectDefaultBranch,
+  logNonFatalWarning,
 } from "./run.js";
 
 const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
@@ -2250,5 +2251,42 @@ describe("filterResumedPhases", () => {
     const original = ["spec", "exec", "qa"] as any[];
     filterResumedPhases(42, original, false);
     expect(original).toEqual(["spec", "exec", "qa"]);
+  });
+});
+
+describe("logNonFatalWarning", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it("should always log the warning message regardless of verbose", () => {
+    logNonFatalWarning("warning message", new Error("details"), false);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    expect(consoleSpy.mock.calls[0][0]).toContain("warning message");
+  });
+
+  it("should log error details only in verbose mode", () => {
+    const error = new Error("something broke");
+    logNonFatalWarning("warning message", error, true);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(2);
+    expect(consoleSpy.mock.calls[0][0]).toContain("warning message");
+    expect(consoleSpy.mock.calls[1][0]).toContain("something broke");
+  });
+
+  it("should not log error details when verbose is false", () => {
+    logNonFatalWarning("warning message", new Error("secret"), false);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    // Only the warning, not the error detail
+    const allOutput = consoleSpy.mock.calls.map((c) => c[0]).join(" ");
+    expect(allOutput).not.toContain("secret");
   });
 });
