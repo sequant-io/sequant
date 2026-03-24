@@ -19,6 +19,68 @@ describe("mcp-config", () => {
       expect(config.command).toBe("npx");
       expect(config.args).toEqual(["sequant@latest", "serve"]);
     });
+
+    it("should include cwd for claude-desktop", () => {
+      const config = getSequantMcpConfig({
+        projectDir: "/my/project",
+        clientType: "claude-desktop",
+      });
+      expect(config.cwd).toBe("/my/project");
+    });
+
+    it("should include cwd for vscode-continue", () => {
+      const config = getSequantMcpConfig({
+        projectDir: "/my/project",
+        clientType: "vscode-continue",
+      });
+      expect(config.cwd).toBe("/my/project");
+    });
+
+    it("should omit cwd for cursor", () => {
+      const config = getSequantMcpConfig({
+        projectDir: "/my/project",
+        clientType: "cursor",
+      });
+      expect(config.cwd).toBeUndefined();
+    });
+
+    it("should fall back to process.cwd() when projectDir is omitted for claude-desktop", () => {
+      const config = getSequantMcpConfig({
+        clientType: "claude-desktop",
+      });
+      expect(config.cwd).toBe(process.cwd());
+    });
+
+    it("should omit cwd when no clientType is given", () => {
+      const config = getSequantMcpConfig({ projectDir: "/my/project" });
+      expect(config.cwd).toBeUndefined();
+    });
+
+    describe("env.ANTHROPIC_API_KEY", () => {
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+
+      afterEach(() => {
+        if (originalEnv !== undefined) {
+          process.env.ANTHROPIC_API_KEY = originalEnv;
+        } else {
+          delete process.env.ANTHROPIC_API_KEY;
+        }
+      });
+
+      it("should include env when ANTHROPIC_API_KEY is set", () => {
+        process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+        const config = getSequantMcpConfig();
+        expect(config.env).toEqual({
+          ANTHROPIC_API_KEY: "sk-ant-test-key",
+        });
+      });
+
+      it("should omit env when ANTHROPIC_API_KEY is not set", () => {
+        delete process.env.ANTHROPIC_API_KEY;
+        const config = getSequantMcpConfig();
+        expect(config.env).toBeUndefined();
+      });
+    });
   });
 
   describe("detectMcpClients", () => {
@@ -31,12 +93,22 @@ describe("mcp-config", () => {
       expect(names).toContain("VS Code + Continue");
     });
 
-    it("should have configPath for each client", () => {
+    it("should have configPath and clientType for each client", () => {
       const clients = detectMcpClients();
       for (const client of clients) {
         expect(client.configPath).toBeTruthy();
         expect(typeof client.exists).toBe("boolean");
+        expect(client.clientType).toBeTruthy();
       }
+    });
+
+    it("should assign correct clientType to each client", () => {
+      const clients = detectMcpClients();
+      const byName = Object.fromEntries(clients.map((c) => [c.name, c]));
+
+      expect(byName["Claude Desktop"].clientType).toBe("claude-desktop");
+      expect(byName["Cursor"].clientType).toBe("cursor");
+      expect(byName["VS Code + Continue"].clientType).toBe("vscode-continue");
     });
   });
 
@@ -93,6 +165,22 @@ describe("mcp-config", () => {
 
       const content = JSON.parse(fs.readFileSync(testConfig, "utf-8"));
       expect(content.mcpServers.sequant).toBeDefined();
+    });
+
+    it("should include cwd when clientType is claude-desktop", () => {
+      const result = addSequantToMcpConfig(testConfig, "claude-desktop");
+      expect(result).toBe(true);
+
+      const content = JSON.parse(fs.readFileSync(testConfig, "utf-8"));
+      expect(content.mcpServers.sequant.cwd).toBe(process.cwd());
+    });
+
+    it("should omit cwd when clientType is cursor", () => {
+      const result = addSequantToMcpConfig(testConfig, "cursor");
+      expect(result).toBe(true);
+
+      const content = JSON.parse(fs.readFileSync(testConfig, "utf-8"));
+      expect(content.mcpServers.sequant.cwd).toBeUndefined();
     });
   });
 });
