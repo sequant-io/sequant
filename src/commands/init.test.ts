@@ -212,6 +212,7 @@ import {
   getNonInteractiveReason,
 } from "../lib/tty.js";
 import inquirer from "inquirer";
+import { detectMcpClients, addSequantToMcpConfig } from "../lib/mcp-config.js";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
@@ -226,6 +227,8 @@ const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockShouldUseInteractiveMode = vi.mocked(shouldUseInteractiveMode);
 const mockGetNonInteractiveReason = vi.mocked(getNonInteractiveReason);
 const mockInquirerPrompt = vi.mocked(inquirer.prompt);
+const mockDetectMcpClients = vi.mocked(detectMcpClients);
+const mockAddSequantToMcpConfig = vi.mocked(addSequantToMcpConfig);
 
 describe("init command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -627,7 +630,7 @@ describe("init command", () => {
       expect(mockInquirerPrompt).not.toHaveBeenCalled();
     });
 
-    // === ERROR HANDLING ===
+    // === ERROR HANDLING (multi-stack) ===
     describe("error handling", () => {
       it("requires at least one stack selection", async () => {
         // Given: Multi-stack detection
@@ -658,6 +661,84 @@ describe("init command", () => {
         // When/Then: Should not crash, falls back to single-stack
         await expect(initCommand({ yes: true })).resolves.not.toThrow();
       });
+    });
+  });
+
+  describe("MCP config behavior (#392)", () => {
+    const fakeClients = [
+      {
+        name: "Claude Desktop",
+        clientType: "claude-desktop" as const,
+        configPath: "/fake/claude.json",
+        exists: true,
+      },
+      {
+        name: "Cursor",
+        clientType: "cursor" as const,
+        configPath: "/fake/cursor.json",
+        exists: true,
+      },
+    ];
+
+    it("does NOT auto-add MCP config with --yes alone", async () => {
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+
+      await initCommand({ yes: true, stack: "generic" });
+
+      expect(mockAddSequantToMcpConfig).not.toHaveBeenCalled();
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("Skipping MCP config");
+    });
+
+    it("auto-adds MCP config with --yes --mcp", async () => {
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+
+      await initCommand({ yes: true, mcp: true, stack: "generic" });
+
+      expect(mockAddSequantToMcpConfig).toHaveBeenCalledTimes(2);
+      expect(mockAddSequantToMcpConfig).toHaveBeenCalledWith(
+        "/fake/claude.json",
+        "claude-desktop",
+      );
+      expect(mockAddSequantToMcpConfig).toHaveBeenCalledWith(
+        "/fake/cursor.json",
+        "cursor",
+      );
+    });
+
+    it("prompts user in interactive mode when MCP clients detected", async () => {
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+      mockShouldUseInteractiveMode.mockReturnValue(true);
+
+      // Setup prompts: stack selection, dev URL, confirmation, then MCP prompt
+      mockInquirerPrompt
+        .mockResolvedValueOnce({ selectedStack: "generic" })
+        .mockResolvedValueOnce({ inputDevUrl: "http://localhost:3000" })
+        .mockResolvedValueOnce({ confirm: true })
+        .mockResolvedValueOnce({ confirm: true }); // MCP confirm
+
+      await initCommand({ interactive: true });
+
+      // The MCP prompt should have been called
+      const promptCalls = mockInquirerPrompt.mock.calls;
+      const mcpPrompt = promptCalls.find((call) => {
+        const questions = Array.isArray(call[0]) ? call[0] : [call[0]];
+        return questions.some(
+          (q: Record<string, unknown>) =>
+            typeof q.message === "string" && q.message.includes("MCP server"),
+        );
+      });
+      expect(mcpPrompt).toBeDefined();
+    });
+
+    it("does NOT auto-add MCP config in non-interactive mode without --mcp", async () => {
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI");
+
+      await initCommand({});
+
+      expect(mockAddSequantToMcpConfig).not.toHaveBeenCalled();
     });
   });
 });
