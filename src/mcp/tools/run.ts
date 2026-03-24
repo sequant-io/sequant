@@ -15,6 +15,7 @@ import { readdir, readFile } from "fs/promises";
 import { homedir } from "os";
 import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
+import { registerRun, unregisterRun } from "../run-registry.js";
 
 /** Maximum total response size in bytes (64 KB) */
 const MAX_RESPONSE_SIZE = 64 * 1024;
@@ -259,7 +260,6 @@ function buildFallbackResponse(
     ...(stderr ? { error: stderr.slice(-1000) } : {}),
   };
 }
-
 const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
   phases: z
@@ -333,6 +333,11 @@ export function registerRunTool(server: McpServer): void {
       const phasesStr = phases || "spec,exec,qa";
       const runStartTime = new Date();
 
+      // Register all issues as active runs for real-time status polling
+      for (const issue of issues) {
+        registerRun(issue);
+      }
+
       try {
         const result = await spawnAsync(command, args, {
           timeout: 1800000, // 30 min default
@@ -394,6 +399,10 @@ export function registerRunTool(server: McpServer): void {
           ],
           isError: true,
         };
+      } finally {
+        for (const issue of issues) {
+          unregisterRun(issue);
+        }
       }
     }) as Parameters<typeof server.registerTool>[2],
   );

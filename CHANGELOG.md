@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add real-time progress reporting for MCP workflow runs (#394)
+  - `sequant_status` now returns `isRunning: true` while a `sequant_run` is executing
+  - Active run registry tracks spawned processes by issue number with automatic cleanup
+  - Tool description includes polling guidance (5-10 second interval)
 - Improve `sequant_run` MCP tool to return structured JSON with per-issue summaries (#391)
   - Each issue includes status, phases completed, QA verdict, and duration
   - Raw output preserved as secondary `rawOutput` field
