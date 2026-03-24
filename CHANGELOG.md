@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Health endpoint now reports `connected: boolean` for connection status
   - Automatic cleanup of transport reference on client disconnect
 
+### Fixed
+
+- Fix MCP config generation producing identical configs for all clients (#395)
+  - Claude Desktop and VS Code + Continue configs now include `cwd` (absolute project path)
+  - Cursor config omits `cwd` (runs from workspace root)
+  - `env.ANTHROPIC_API_KEY` is only included when the env var is actually set
+  - `sequant init` generates per-client configs with correct fields
+
 ### Changed
 
 - Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)

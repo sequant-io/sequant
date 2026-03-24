@@ -9,20 +9,49 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 
+export type McpClientType = "claude-desktop" | "cursor" | "vscode-continue";
+
 export interface McpClientInfo {
   name: string;
+  clientType: McpClientType;
   configPath: string;
   exists: boolean;
 }
 
 /**
- * Sequant MCP server configuration entry
+ * Clients that need an explicit cwd because they don't run from the project directory.
  */
-export function getSequantMcpConfig(): Record<string, unknown> {
-  return {
+const CLIENTS_NEEDING_CWD: ReadonlySet<McpClientType> = new Set([
+  "claude-desktop",
+  "vscode-continue",
+]);
+
+/**
+ * Sequant MCP server configuration entry.
+ *
+ * @param options.projectDir - Absolute project path (used as cwd for clients that need it)
+ * @param options.clientType - Target client; determines whether cwd/env are included
+ */
+export function getSequantMcpConfig(options?: {
+  projectDir?: string;
+  clientType?: McpClientType;
+}): Record<string, unknown> {
+  const config: Record<string, unknown> = {
     command: "npx",
     args: ["sequant@latest", "serve"],
   };
+
+  // Add cwd for clients that don't run from the project directory
+  if (options?.clientType && CLIENTS_NEEDING_CWD.has(options.clientType)) {
+    config.cwd = options.projectDir ?? process.cwd();
+  }
+
+  // Only include ANTHROPIC_API_KEY when it is actually set
+  if (process.env.ANTHROPIC_API_KEY) {
+    config.env = { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY };
+  }
+
+  return config;
 }
 
 /**
@@ -54,6 +83,7 @@ export function detectMcpClients(): McpClientInfo[] {
 
   clients.push({
     name: "Claude Desktop",
+    clientType: "claude-desktop",
     configPath: claudeDesktopConfig,
     exists: fs.existsSync(claudeDesktopConfig),
   });
@@ -62,6 +92,7 @@ export function detectMcpClients(): McpClientInfo[] {
   const cursorConfig = path.join(process.cwd(), ".cursor", "mcp.json");
   clients.push({
     name: "Cursor",
+    clientType: "cursor",
     configPath: cursorConfig,
     exists: fs.existsSync(path.join(process.cwd(), ".cursor")),
   });
@@ -70,6 +101,7 @@ export function detectMcpClients(): McpClientInfo[] {
   const vscodeConfig = path.join(home, ".continue", "config.json");
   clients.push({
     name: "VS Code + Continue",
+    clientType: "vscode-continue",
     configPath: vscodeConfig,
     exists: fs.existsSync(vscodeConfig),
   });
@@ -81,8 +113,14 @@ export function detectMcpClients(): McpClientInfo[] {
  * Add Sequant MCP server to a client's config file.
  * Returns true if written, false if already configured.
  */
-export function addSequantToMcpConfig(configPath: string): boolean {
-  const sequantConfig = getSequantMcpConfig();
+export function addSequantToMcpConfig(
+  configPath: string,
+  clientType?: McpClientType,
+): boolean {
+  const sequantConfig = getSequantMcpConfig({
+    projectDir: process.cwd(),
+    clientType,
+  });
 
   let config: Record<string, unknown> = {};
   if (fs.existsSync(configPath)) {
