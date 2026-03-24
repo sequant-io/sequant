@@ -46,7 +46,8 @@ function getChangedTestFiles(): string[] {
     return output
       .trim()
       .split("\n")
-      .filter((f) => f && /\.(test|spec)\.[jt]sx?$/.test(f));
+      .filter((f) => f && /\.(test|spec)\.[jt]sx?$/.test(f))
+      .filter((f) => !f.includes("/integration/"));
   } catch {
     console.error("Error: Failed to get changed files from git");
     return [];

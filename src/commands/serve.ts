@@ -88,7 +88,21 @@ async function startSSE(
           sseTransport = null;
         });
 
-        await server.connect(sseTransport);
+        try {
+          await server.connect(sseTransport);
+        } catch {
+          clientConnected = false;
+          sseTransport = null;
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "connection_failed",
+                message: "Failed to establish MCP transport connection",
+              }),
+            );
+          }
+        }
       } else if (
         url.pathname === "/messages" &&
         req.method === "POST" &&
