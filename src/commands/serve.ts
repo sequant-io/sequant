@@ -59,15 +59,50 @@ async function startSSE(
   port: number,
 ): Promise<void> {
   let sseTransport: SSEServerTransport | null = null;
+  let clientConnected = false;
 
   const httpServer = createHttpServer(
     async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url || "/", `http://localhost:${port}`);
 
       if (url.pathname === "/sse" && req.method === "GET") {
+        // Reject if a client is already connected
+        if (clientConnected) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "conflict",
+              message: "Another SSE client is already connected",
+            }),
+          );
+          return;
+        }
+
         // SSE endpoint - create transport and connect
         sseTransport = new SSEServerTransport("/messages", res);
-        await server.connect(sseTransport);
+        clientConnected = true;
+
+        // Clean up on client disconnect
+        res.on("close", () => {
+          clientConnected = false;
+          sseTransport = null;
+        });
+
+        try {
+          await server.connect(sseTransport);
+        } catch {
+          clientConnected = false;
+          sseTransport = null;
+          if (!res.headersSent) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: "connection_failed",
+                message: "Failed to establish MCP transport connection",
+              }),
+            );
+          }
+        }
       } else if (
         url.pathname === "/messages" &&
         req.method === "POST" &&
@@ -77,7 +112,13 @@ async function startSSE(
         await sseTransport.handlePostMessage(req, res);
       } else if (url.pathname === "/health" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", transport: "sse" }));
+        res.end(
+          JSON.stringify({
+            status: "ok",
+            transport: "sse",
+            connected: clientConnected,
+          }),
+        );
       } else {
         res.writeHead(404);
         res.end("Not found");
