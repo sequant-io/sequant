@@ -293,4 +293,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency) on 2026-03-23.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format) on 2026-03-24.*
