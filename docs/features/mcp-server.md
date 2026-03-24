@@ -154,7 +154,7 @@ Once set up, talk to your AI assistant naturally:
 |---|---|---|
 | **Context** | Separate terminal window | Your AI already has file context |
 | **Invocation** | Exact commands and flags | Natural language |
-| **Progress** | Real-time phase output | Silent until done (check with `sequant_status` any time) |
+| **Progress** | Real-time phase output | Poll `sequant_status` every 5–10s (`isRunning` + current phase) |
 | **Best for** | Batch runs, CI, scripting | Single issues while working in the editor |
 
 They use the same engine. MCP is a different door into the same workflow.
@@ -204,9 +204,21 @@ Get current workflow state for a tracked issue.
 |-----------|------|----------|-------------|
 | `issue` | `number` | Yes | GitHub issue number |
 
-Returns: status, current phase, phase progress, worktree path, PR number, and `isRunning` indicator.
+**Response** (JSON):
 
-The `isRunning` field is `true` while a `sequant_run` is actively executing for that issue, and `false` otherwise. Poll every 5–10 seconds during active runs for phase-level progress updates.
+| Field | Type | Description |
+|-------|------|-------------|
+| `issue` | `number` | Queried issue number |
+| `title` | `string` | Issue title (from state file) |
+| `status` | `string` | Workflow status (`not_tracked`, `in_progress`, `ready_for_merge`, etc.) |
+| `isRunning` | `boolean` | `true` while a `sequant_run` is actively executing for this issue |
+| `currentPhase` | `string` | Phase currently executing (`spec`, `exec`, `qa`) |
+| `phases` | `object` | Per-phase status breakdown |
+| `worktree` | `string` | Path to the feature worktree |
+| `pr` | `number` | PR number (if created) |
+| `lastActivity` | `string` | ISO timestamp of last state change |
+
+**Polling for progress:** During an active run, poll `sequant_status` every 5–10 seconds for phase-level progress updates. The `isRunning` field transitions to `false` once the run completes, errors, or is cancelled.
 
 ### `sequant_logs`
 
@@ -295,4 +307,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format) on 2026-03-24.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting) on 2026-03-24.*
