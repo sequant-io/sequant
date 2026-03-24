@@ -47,6 +47,8 @@ export interface StateManagerOptions {
   statePath?: string;
   /** Enable verbose logging */
   verbose?: boolean;
+  /** Lock acquisition timeout in ms (default: 5000) */
+  lockTimeout?: number;
 }
 
 /**
@@ -56,10 +58,90 @@ export class StateManager {
   private statePath: string;
   private verbose: boolean;
   private cachedState: WorkflowState | null = null;
+  private lockTimeout: number;
 
   constructor(options: StateManagerOptions = {}) {
     this.statePath = options.statePath ?? STATE_FILE_PATH;
     this.verbose = options.verbose ?? false;
+    this.lockTimeout = options.lockTimeout ?? 5000;
+  }
+
+  /**
+   * Execute a callback while holding an exclusive file lock.
+   *
+   * Ensures that concurrent processes serialize their read-modify-write
+   * cycles on state.json. The cache is cleared before executing the
+   * callback so the latest on-disk state is read.
+   */
+  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    const lockPath = this.statePath + ".lock";
+    await this.acquireLock(lockPath);
+    try {
+      // Clear cache so we read the latest on-disk state
+      this.clearCache();
+      return await fn();
+    } finally {
+      this.releaseLock(lockPath);
+    }
+  }
+
+  private async acquireLock(lockPath: string): Promise<void> {
+    const start = Date.now();
+    const retryDelay = 50; // ms
+
+    // Ensure directory exists for lock file
+    const dir = path.dirname(lockPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    while (true) {
+      try {
+        // O_EXCL: fail atomically if file already exists
+        const fd = fs.openSync(lockPath, "wx");
+        fs.writeSync(fd, String(process.pid));
+        fs.closeSync(fd);
+        return; // Lock acquired
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "EEXIST") throw err;
+
+        // Check for stale lock (older than timeout)
+        try {
+          const stat = fs.statSync(lockPath);
+          const age = Date.now() - stat.mtimeMs;
+          if (age > this.lockTimeout) {
+            // Stale lock — remove and retry
+            try {
+              fs.unlinkSync(lockPath);
+            } catch {
+              // Another process may have removed it
+            }
+            continue;
+          }
+        } catch {
+          // Lock file disappeared between open and stat — retry
+          continue;
+        }
+
+        if (Date.now() - start > this.lockTimeout) {
+          throw new Error(
+            `Timeout acquiring state lock after ${this.lockTimeout}ms`,
+          );
+        }
+
+        // Wait and retry
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      }
+    }
+  }
+
+  private releaseLock(lockPath: string): void {
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      // Ignore — lock may have been cleaned up by stale detection
+    }
   }
 
   /**
@@ -193,14 +275,16 @@ export class StateManager {
       maxIterations?: number;
     },
   ): Promise<void> {
-    const state = await this.getState();
+    await this.withLock(async () => {
+      const state = await this.getState();
 
-    // Create new issue state
-    const issueState = createIssueState(issueNumber, title, options);
+      // Create new issue state
+      const issueState = createIssueState(issueNumber, title, options);
 
-    state.issues[String(issueNumber)] = issueState;
+      state.issues[String(issueNumber)] = issueState;
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Initialized issue #${issueNumber}: ${title}`);
@@ -219,44 +303,50 @@ export class StateManager {
       iteration?: number;
     },
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    // Update phase state
-    const phaseState = createPhaseState(status);
+      // Update phase state
+      const phaseState = createPhaseState(status);
 
-    if (status === "completed" || status === "failed" || status === "skipped") {
-      phaseState.completedAt = new Date().toISOString();
-    }
+      if (
+        status === "completed" ||
+        status === "failed" ||
+        status === "skipped"
+      ) {
+        phaseState.completedAt = new Date().toISOString();
+      }
 
-    if (options?.error) {
-      phaseState.error = options.error;
-    }
+      if (options?.error) {
+        phaseState.error = options.error;
+      }
 
-    if (options?.iteration !== undefined) {
-      phaseState.iteration = options.iteration;
-    }
+      if (options?.iteration !== undefined) {
+        phaseState.iteration = options.iteration;
+      }
 
-    // Preserve startedAt if already set
-    const existingPhase = issueState.phases[phase];
-    if (existingPhase?.startedAt && status !== "pending") {
-      phaseState.startedAt = existingPhase.startedAt;
-    }
+      // Preserve startedAt if already set
+      const existingPhase = issueState.phases[phase];
+      if (existingPhase?.startedAt && status !== "pending") {
+        phaseState.startedAt = existingPhase.startedAt;
+      }
 
-    issueState.phases[phase] = phaseState;
-    issueState.currentPhase = phase;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.phases[phase] = phaseState;
+      issueState.currentPhase = phase;
+      issueState.lastActivity = new Date().toISOString();
 
-    // Update issue status based on phase status
-    if (status === "in_progress" && issueState.status === "not_started") {
-      issueState.status = "in_progress";
-    }
+      // Update issue status based on phase status
+      if (status === "in_progress" && issueState.status === "not_started") {
+        issueState.status = "in_progress";
+      }
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Phase ${phase} → ${status} for issue #${issueNumber}`);
@@ -270,17 +360,19 @@ export class StateManager {
     issueNumber: number,
     status: IssueStatus,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.status = status;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.status = status;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Issue #${issueNumber} status → ${status}`);
@@ -291,17 +383,19 @@ export class StateManager {
    * Update PR information for an issue
    */
   async updatePRInfo(issueNumber: number, pr: PRInfo): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.pr = pr;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.pr = pr;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 PR #${pr.number} linked to issue #${issueNumber}`);
@@ -316,18 +410,20 @@ export class StateManager {
     worktree: string,
     branch: string,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.worktree = worktree;
-    issueState.branch = branch;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.worktree = worktree;
+      issueState.branch = branch;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Worktree updated for issue #${issueNumber}: ${worktree}`);
@@ -338,17 +434,19 @@ export class StateManager {
    * Update session ID for an issue (for resume)
    */
   async updateSessionId(issueNumber: number, sessionId: string): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.sessionId = sessionId;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.sessionId = sessionId;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
   }
 
   /**
@@ -358,19 +456,21 @@ export class StateManager {
     issueNumber: number,
     iteration: number,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    if (issueState.loop) {
-      issueState.loop.iteration = iteration;
-    }
-    issueState.lastActivity = new Date().toISOString();
+      if (issueState.loop) {
+        issueState.loop.iteration = iteration;
+      }
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Loop iteration ${iteration} for issue #${issueNumber}`);
@@ -381,15 +481,17 @@ export class StateManager {
    * Remove an issue from state
    */
   async removeIssue(issueNumber: number): Promise<void> {
-    const state = await this.getState();
+    await this.withLock(async () => {
+      const state = await this.getState();
 
-    if (!state.issues[String(issueNumber)]) {
-      return; // Already removed
-    }
+      if (!state.issues[String(issueNumber)]) {
+        return; // Already removed
+      }
 
-    delete state.issues[String(issueNumber)];
+      delete state.issues[String(issueNumber)];
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 Removed issue #${issueNumber} from state`);
@@ -407,17 +509,19 @@ export class StateManager {
     issueNumber: number,
     acceptanceCriteria: AcceptanceCriteria,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.acceptanceCriteria = acceptanceCriteria;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.acceptanceCriteria = acceptanceCriteria;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(
@@ -448,42 +552,44 @@ export class StateManager {
     status: ACStatus,
     notes?: string,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    if (!issueState.acceptanceCriteria) {
-      throw new Error(`Issue #${issueNumber} has no acceptance criteria`);
-    }
+      if (!issueState.acceptanceCriteria) {
+        throw new Error(`Issue #${issueNumber} has no acceptance criteria`);
+      }
 
-    // Find and update the AC item
-    const acItem = issueState.acceptanceCriteria.items.find(
-      (item) => item.id === acId,
-    );
-
-    if (!acItem) {
-      throw new Error(
-        `AC "${acId}" not found in issue #${issueNumber}. ` +
-          `Available IDs: ${issueState.acceptanceCriteria.items.map((i) => i.id).join(", ")}`,
+      // Find and update the AC item
+      const acItem = issueState.acceptanceCriteria.items.find(
+        (item) => item.id === acId,
       );
-    }
 
-    acItem.status = status;
-    acItem.verifiedAt = new Date().toISOString();
-    if (notes !== undefined) {
-      acItem.notes = notes;
-    }
+      if (!acItem) {
+        throw new Error(
+          `AC "${acId}" not found in issue #${issueNumber}. ` +
+            `Available IDs: ${issueState.acceptanceCriteria.items.map((i) => i.id).join(", ")}`,
+        );
+      }
 
-    // Recalculate summary counts
-    issueState.acceptanceCriteria = updateAcceptanceCriteriaSummary(
-      issueState.acceptanceCriteria,
-    );
-    issueState.lastActivity = new Date().toISOString();
+      acItem.status = status;
+      acItem.verifiedAt = new Date().toISOString();
+      if (notes !== undefined) {
+        acItem.notes = notes;
+      }
 
-    await this.saveState(state);
+      // Recalculate summary counts
+      issueState.acceptanceCriteria = updateAcceptanceCriteriaSummary(
+        issueState.acceptanceCriteria,
+      );
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(`📊 AC ${acId} → ${status} for issue #${issueNumber}`);
@@ -501,17 +607,19 @@ export class StateManager {
     issueNumber: number,
     scopeAssessment: ScopeAssessment,
   ): Promise<void> {
-    const state = await this.getState();
-    const issueState = state.issues[String(issueNumber)];
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
 
-    if (!issueState) {
-      throw new Error(`Issue #${issueNumber} not found in state`);
-    }
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
 
-    issueState.scopeAssessment = scopeAssessment;
-    issueState.lastActivity = new Date().toISOString();
+      issueState.scopeAssessment = scopeAssessment;
+      issueState.lastActivity = new Date().toISOString();
 
-    await this.saveState(state);
+      await this.saveState(state);
+    });
 
     if (this.verbose) {
       console.log(
