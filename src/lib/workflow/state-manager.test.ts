@@ -627,4 +627,86 @@ describe("StateManager", () => {
       expect(retrieved).toBeNull();
     });
   });
+
+  describe("concurrent writes", () => {
+    it("should not lose data from concurrent writes to different fields", async () => {
+      // Setup: create an issue with AC
+      await manager.initializeIssue(42, "Test Issue");
+      const items = [
+        createAcceptanceCriterion("AC-1", "First", "manual"),
+        createAcceptanceCriterion("AC-2", "Second", "manual"),
+      ];
+      const ac = createAcceptanceCriteria(items);
+      await manager.updateAcceptanceCriteria(42, ac);
+
+      // Simulate concurrent writes: one updates AC, the other updates phase
+      // Use separate manager instances (like separate processes would)
+      const managerA = new StateManager({ statePath });
+      const managerB = new StateManager({ statePath });
+
+      await Promise.all([
+        managerA.updateACStatus(42, "AC-1", "met", "done"),
+        managerB.updatePhaseStatus(42, "exec", "completed"),
+      ]);
+
+      // Both changes should be present
+      const finalManager = new StateManager({ statePath });
+      const state = await finalManager.getState();
+      const issue = state.issues["42"];
+
+      expect(issue.phases["exec"]?.status).toBe("completed");
+      expect(
+        issue.acceptanceCriteria?.items.find((i) => i.id === "AC-1")?.status,
+      ).toBe("met");
+    });
+
+    it("should serialize rapid sequential writes without corruption", async () => {
+      // Many writes in quick succession should all succeed
+      const mgr = new StateManager({ statePath });
+      await mgr.initializeIssue(1, "Issue 1");
+
+      const writes = Array.from({ length: 10 }, (_, i) =>
+        mgr.initializeIssue(i + 2, `Issue ${i + 2}`),
+      );
+      await Promise.all(writes);
+
+      const freshMgr = new StateManager({ statePath });
+      const state = await freshMgr.getState();
+      // All 11 issues (1 + 10) should be present
+      expect(Object.keys(state.issues).length).toBe(11);
+    });
+
+    it("should recover from stale lock files", async () => {
+      // Create a stale lock file
+      const lockPath = statePath + ".lock";
+      fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+      fs.writeFileSync(lockPath, "99999", { flag: "wx" });
+
+      // Backdate the lock file to make it stale
+      const pastTime = new Date(Date.now() - 10000);
+      fs.utcTimesSync?.(lockPath, pastTime, pastTime);
+      // fs.utcTimesSync may not exist; fall back to lutimesSync
+      try {
+        fs.utimesSync(lockPath, pastTime, pastTime);
+      } catch {
+        // On some systems this may fail; the lock timeout will handle it
+      }
+
+      // Should still be able to acquire lock (stale detection or timeout)
+      const mgr = new StateManager({ statePath, lockTimeout: 1000 });
+      await mgr.initializeIssue(42, "Test Issue");
+
+      const state = await mgr.getState();
+      expect(state.issues["42"]).toBeDefined();
+    });
+
+    it("should clean up lock file after operation", async () => {
+      const lockPath = statePath + ".lock";
+
+      await manager.initializeIssue(42, "Test Issue");
+
+      // Lock file should not exist after operation completes
+      expect(fs.existsSync(lockPath)).toBe(false);
+    });
+  });
 });

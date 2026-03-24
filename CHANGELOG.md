@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix concurrent state writes silently discarding changes (#409)
+  - Add file locking (`O_EXCL`) around read-modify-write cycles in `StateManager`
+  - Stale lock detection with configurable timeout prevents deadlocks
+  - No API changes; existing CLI and callers work without modification
 - Fix MCP config generation producing identical configs for all clients (#395)
   - Claude Desktop and VS Code + Continue configs now include `cwd` (absolute project path)
   - Cursor config omits `cwd` (runs from workspace root)
