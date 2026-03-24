@@ -35,6 +35,18 @@ import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
 import { reconcileStateAtStartup } from "../lib/workflow/state-utils.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 
+/** @internal Log a non-fatal warning: one-line summary always, detail in verbose. */
+export function logNonFatalWarning(
+  message: string,
+  error: unknown,
+  verbose: boolean,
+): void {
+  console.log(chalk.yellow(message));
+  if (verbose) {
+    console.log(chalk.gray(`    ${error}`));
+  }
+}
+
 // Extracted modules
 import {
   detectDefaultBranch,
@@ -428,13 +440,13 @@ export async function runCommand(
           ),
         );
       }
-    } catch {
+    } catch (error) {
       // AC-8: Graceful degradation - don't block execution on reconciliation failure
-      if (config.verbose) {
-        console.log(
-          chalk.yellow(`  ⚠️  State reconciliation failed, continuing...`),
-        );
-      }
+      logNonFatalWarning(
+        `  ⚠️  State reconciliation failed, continuing...`,
+        error,
+        config.verbose,
+      );
     }
   }
 
@@ -460,8 +472,13 @@ export async function runCommand(
         } else {
           activeIssues.push(issueNumber);
         }
-      } catch {
+      } catch (error) {
         // AC-8: Graceful degradation - if state check fails, include the issue
+        logNonFatalWarning(
+          `  ⚠️  State lookup failed for #${issueNumber}, including anyway...`,
+          error,
+          config.verbose,
+        );
         activeIssues.push(issueNumber);
       }
     }
@@ -851,11 +868,11 @@ export async function runCommand(
         }
       } catch (metricsError) {
         // Metrics recording errors shouldn't stop execution
-        if (config.verbose) {
-          console.log(
-            chalk.yellow(`  ⚠️  Metrics recording error: ${metricsError}`),
-          );
-        }
+        logNonFatalWarning(
+          `  ⚠️  Metrics recording failed, continuing...`,
+          metricsError,
+          config.verbose,
+        );
       }
     }
 
