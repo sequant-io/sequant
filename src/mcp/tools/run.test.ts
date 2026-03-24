@@ -6,22 +6,33 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as fs from "fs";
+import { existsSync } from "fs";
+import { readdir, readFile } from "fs/promises";
 import { buildStructuredResponse, readLatestRunLog } from "./run.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
 
-// Mock fs module for readLatestRunLog tests
+// Mock fs.existsSync (still used synchronously in resolveLogDir)
 vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs")>();
   return {
     ...actual,
     existsSync: vi.fn(actual.existsSync),
-    readdirSync: vi.fn(actual.readdirSync),
-    readFileSync: vi.fn(actual.readFileSync),
   };
 });
 
-const mockedFs = vi.mocked(fs);
+// Mock fs/promises for async I/O
+vi.mock("fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs/promises")>();
+  return {
+    ...actual,
+    readdir: vi.fn(actual.readdir),
+    readFile: vi.fn(actual.readFile),
+  };
+});
+
+const mockedExistsSync = vi.mocked(existsSync);
+const mockedReaddir = vi.mocked(readdir);
+const mockedReadFile = vi.mocked(readFile);
 
 function makeRunLog(overrides?: Partial<RunLog>): RunLog {
   return {
@@ -238,7 +249,7 @@ describe("buildStructuredResponse", () => {
     expect(response.phases).toContain("qa");
   });
 
-  // AC-4: Response size limits
+  // AC-4: Response size limits (uses Buffer.byteLength for accurate measurement)
   it("should enforce 64KB response size limit by truncating rawOutput", () => {
     const runLog = makeRunLog();
     // Create output larger than 64KB
@@ -246,7 +257,21 @@ describe("buildStructuredResponse", () => {
     const response = buildStructuredResponse(runLog, hugeOutput, "success");
 
     const responseJson = JSON.stringify(response);
-    expect(responseJson.length).toBeLessThanOrEqual(64 * 1024);
+    expect(Buffer.byteLength(responseJson, "utf-8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
+  });
+
+  it("should enforce size limit for multi-byte content", () => {
+    const runLog = makeRunLog();
+    // Each emoji is 4 bytes in UTF-8 but 2 chars (surrogate pair) in JS
+    const emojiOutput = "\u{1F600}".repeat(20_000);
+    const response = buildStructuredResponse(runLog, emojiOutput, "success");
+
+    const responseJson = JSON.stringify(response);
+    expect(Buffer.byteLength(responseJson, "utf-8")).toBeLessThanOrEqual(
+      64 * 1024,
+    );
   });
 
   // Edge case: empty run (0 issues)
@@ -307,6 +332,13 @@ describe("buildStructuredResponse", () => {
 
     expect(response.exitCode).toBeUndefined();
   });
+
+  it("should not include exitCode when null", () => {
+    const runLog = makeRunLog();
+    const response = buildStructuredResponse(runLog, "", "success", null);
+
+    expect(response.exitCode).toBeUndefined();
+  });
 });
 
 // AC-5 (derived): Graceful fallback when log file unavailable
@@ -315,43 +347,101 @@ describe("readLatestRunLog", () => {
     vi.clearAllMocks();
   });
 
-  it("should return null when log directory does not exist", () => {
-    mockedFs.existsSync.mockReturnValue(false);
+  it("should return null when log directory does not exist", async () => {
+    mockedExistsSync.mockReturnValue(false);
 
-    const result = readLatestRunLog();
+    const result = await readLatestRunLog();
     expect(result).toBeNull();
   });
 
-  it("should return null when log directory is empty", () => {
-    mockedFs.existsSync.mockReturnValue(true);
-    mockedFs.readdirSync.mockReturnValue([]);
+  it("should return null when log directory is empty", async () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([]);
 
-    const result = readLatestRunLog();
+    const result = await readLatestRunLog();
     expect(result).toBeNull();
   });
 
-  it("should return null when log file is corrupt", () => {
-    mockedFs.existsSync.mockReturnValue(true);
+  it("should return null when log file is corrupt", async () => {
+    mockedExistsSync.mockReturnValue(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mockedFs.readdirSync.mockReturnValue(["run-2026-03-23-abc.json"] as any);
-    mockedFs.readFileSync.mockReturnValue("not valid json{{{");
+    mockedReaddir.mockResolvedValue([
+      "run-2026-03-23T10-00-00-abc.json",
+    ] as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue("not valid json{{{" as any);
 
-    const result = readLatestRunLog();
+    const result = await readLatestRunLog();
     expect(result).toBeNull();
   });
 
-  it("should parse and return the most recent valid log file", () => {
+  it("should parse and return the most recent valid log file", async () => {
     const runLog = makeRunLog();
-    mockedFs.existsSync.mockReturnValue(true);
-    mockedFs.readdirSync.mockReturnValue([
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       "run-2026-03-23T10-00-00-abc.json" as any,
     ]);
-    mockedFs.readFileSync.mockReturnValue(JSON.stringify(runLog));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue(JSON.stringify(runLog) as any);
 
-    const result = readLatestRunLog();
+    const result = await readLatestRunLog();
     expect(result).not.toBeNull();
     expect(result!.runId).toBe("550e8400-e29b-41d4-a716-446655440000");
     expect(result!.issues).toHaveLength(2);
+  });
+
+  it("should filter out stale log files when runStartTime is provided", async () => {
+    const runLog = makeRunLog();
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "run-2026-03-23T10-00-00-abc.json" as any, // 10:00 — recent
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "run-2026-03-22T08-00-00-old.json" as any, // yesterday — stale
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue(JSON.stringify(runLog) as any);
+
+    // Run started at 10:00 — only the 10:00 log should match
+    const runStartTime = new Date("2026-03-23T10:00:00.000Z");
+    const result = await readLatestRunLog(runStartTime);
+    expect(result).not.toBeNull();
+  });
+
+  it("should return null when all log files are stale", async () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "run-2026-03-22T08-00-00-old.json" as any,
+    ]);
+
+    // Run started now — yesterday's log is too old
+    const runStartTime = new Date("2026-03-23T10:00:00.000Z");
+    const result = await readLatestRunLog(runStartTime);
+    expect(result).toBeNull();
+  });
+
+  it("should return all files when no runStartTime is provided", async () => {
+    const runLog = makeRunLog();
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "run-2026-03-22T08-00-00-old.json" as any,
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue(JSON.stringify(runLog) as any);
+
+    // No runStartTime — should include all files
+    const result = await readLatestRunLog();
+    expect(result).not.toBeNull();
+  });
+
+  it("should handle readdir rejection gracefully", async () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockRejectedValue(new Error("EACCES: permission denied"));
+
+    const result = await readLatestRunLog();
+    expect(result).toBeNull();
   });
 });

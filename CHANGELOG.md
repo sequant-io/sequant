@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)
+  - Server remains responsive during workflow execution (status/logs callable)
+  - Timeout handling preserved with process group cleanup (no orphan processes)
+  - ENOENT and other spawn errors handled with descriptive messages
+
+### Fixed
+
+- Fix MCP server `sequant_run` using nested `npx` invocation that could resolve to a different cached version (#389)
+  - Resolves CLI binary from `process.argv` to ensure version consistency
+  - Falls back to `__dirname`-relative resolution, then `npx` as last resort
+
 ### Added
 
 - Improve `sequant_run` MCP tool to return structured JSON with per-issue summaries (#391)
