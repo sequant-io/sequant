@@ -114,7 +114,7 @@ Detected 2 MCP-compatible client(s):
 Add Sequant MCP server to detected clients? (Y/n)
 ```
 
-Note: this currently doesn't set `cwd` for Claude Desktop — you may need to add it manually.
+Sequant detects each client type and generates the appropriate config — including `cwd` for Claude Desktop and VS Code + Continue.
 
 ## What You Can Ask
 
