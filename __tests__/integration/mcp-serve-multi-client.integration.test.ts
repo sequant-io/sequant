@@ -1,3 +1,4 @@
+// @tautology-skip: integration tests exercise production code via process spawn + HTTP
 /**
  * Integration tests for MCP Server SSE multi-client handling
  * Issue #390: SSE Transport Improvements — Multi-Client
