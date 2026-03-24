@@ -11,7 +11,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { spawn } from "child_process";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
-import { readdir, readFile } from "fs/promises";
+import { access, readdir, readFile } from "fs/promises";
 import { homedir } from "os";
 import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
@@ -87,15 +87,21 @@ export function resolveCliBinary(): [string, string[]] {
 /**
  * Resolve the log directory path (project-level or user-level)
  */
-function resolveLogDir(): string {
+async function resolveLogDir(): Promise<string> {
   const projectPath = LOG_PATHS.project;
-  if (existsSync(projectPath)) {
+  try {
+    await access(projectPath);
     return projectPath;
+  } catch {
+    // project path doesn't exist, try user path
   }
 
   const userPath = LOG_PATHS.user.replace("~", homedir());
-  if (existsSync(userPath)) {
+  try {
+    await access(userPath);
     return userPath;
+  } catch {
+    // user path doesn't exist either
   }
 
   return projectPath;
@@ -112,8 +118,7 @@ export async function readLatestRunLog(
   runStartTime?: Date,
 ): Promise<RunLog | null> {
   try {
-    const logDir = resolveLogDir();
-    if (!existsSync(logDir)) return null;
+    const logDir = await resolveLogDir();
 
     const entries = await readdir(logDir);
     let logFiles = entries
@@ -200,6 +205,7 @@ export function buildStructuredResponse(
 /**
  * Enforce response size limit by progressively truncating rawOutput.
  * Uses Buffer.byteLength for accurate UTF-8 byte measurement.
+ * Returns a new object — does not mutate the input.
  */
 function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
   let json = JSON.stringify(response);
@@ -209,29 +215,53 @@ function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
     return response;
   }
 
+  let trimmedRawOutput = response.rawOutput;
+  let trimmedError = response.error;
+
   // Progressively truncate rawOutput to fit
-  const rawOutput = response.rawOutput || "";
+  const rawOutput = trimmedRawOutput || "";
   if (rawOutput.length > 0) {
     const excess = byteLength - MAX_RESPONSE_SIZE;
     // Over-trim slightly: multi-byte chars mean char count < byte count
     const newLength = Math.max(0, rawOutput.length - excess - 200);
+    trimmedRawOutput = newLength > 0 ? rawOutput.slice(-newLength) : undefined;
 
-    response.rawOutput =
-      newLength > 0 ? rawOutput.slice(-newLength) : undefined;
-
-    json = JSON.stringify(response);
+    const partial = { ...response, rawOutput: trimmedRawOutput };
+    json = JSON.stringify(partial);
     byteLength = Buffer.byteLength(json, "utf-8");
   }
 
   // If still too large (structured data itself is huge), truncate error field
-  if (byteLength > MAX_RESPONSE_SIZE && response.error) {
+  if (byteLength > MAX_RESPONSE_SIZE && trimmedError) {
     const excess = byteLength - MAX_RESPONSE_SIZE;
-    const newLength = Math.max(0, response.error.length - excess - 200);
-    response.error =
-      newLength > 0 ? response.error.slice(-newLength) : undefined;
+    const newLength = Math.max(0, trimmedError.length - excess - 200);
+    trimmedError = newLength > 0 ? trimmedError.slice(-newLength) : undefined;
   }
 
-  return response;
+  let result = {
+    ...response,
+    rawOutput: trimmedRawOutput,
+    error: trimmedError,
+  };
+
+  // Last resort: if structured issues data itself is too large, trim issues from the front
+  json = JSON.stringify(result);
+  byteLength = Buffer.byteLength(json, "utf-8");
+  if (byteLength > MAX_RESPONSE_SIZE && result.issues.length > 1) {
+    const trimmedIssues = [...result.issues];
+    while (
+      trimmedIssues.length > 1 &&
+      Buffer.byteLength(
+        JSON.stringify({ ...result, issues: trimmedIssues }),
+        "utf-8",
+      ) > MAX_RESPONSE_SIZE
+    ) {
+      trimmedIssues.shift();
+    }
+    result = { ...result, issues: trimmedIssues };
+  }
+
+  return result;
 }
 
 /**
