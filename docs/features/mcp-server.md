@@ -114,7 +114,19 @@ Detected 2 MCP-compatible client(s):
 Add Sequant MCP server to detected clients? (Y/n)
 ```
 
-Sequant detects each client type and generates the appropriate config — including `cwd` for Claude Desktop and VS Code + Continue.
+Sequant detects each client type and generates the appropriate config — including `cwd` for Claude Desktop and VS Code + Continue, and `env.ANTHROPIC_API_KEY` only when the key is set in your environment.
+
+**Non-interactive mode:** `sequant init --yes` skips MCP configuration by default to avoid silently writing to client configs. To opt in:
+
+```bash
+sequant init --yes --mcp   # auto-add MCP config to all detected clients
+```
+
+Without `--mcp`, you'll see:
+
+```
+Skipping MCP config (use --mcp to auto-add in non-interactive mode)
+```
 
 ## What You Can Ask
 
@@ -335,4 +347,4 @@ Only one SSE client can connect at a time. If you see `409 Conflict`:
 2. Disconnect the existing client, or wait for it to time out
 3. Verify with `GET /health` — `connected: false` means the slot is free
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status) on 2026-03-24.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24.*

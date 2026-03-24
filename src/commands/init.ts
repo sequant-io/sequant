@@ -73,6 +73,7 @@ interface InitOptions {
   skipSetup?: boolean;
   noSymlinks?: boolean;
   agentsMd?: boolean;
+  mcp?: boolean;
 }
 
 /**
@@ -546,8 +547,18 @@ export async function initCommand(options: InitOptions): Promise<void> {
       console.log(chalk.gray(`   • ${client.name}`));
     }
 
-    let addMcp = skipPrompts;
-    if (!skipPrompts) {
+    let addMcp = false;
+    if (skipPrompts) {
+      // --yes alone skips MCP config; --yes --mcp explicitly opts in
+      addMcp = !!options.mcp;
+      if (!addMcp) {
+        console.log(
+          chalk.gray(
+            "   Skipping MCP config (use --mcp to auto-add in non-interactive mode)",
+          ),
+        );
+      }
+    } else {
       const { confirm } = await inquirer.prompt([
         {
           type: "confirm",

@@ -106,6 +106,10 @@ program
     "Use copies instead of symlinks for scripts/dev/ files",
   )
   .option("--no-agents-md", "Skip AGENTS.md generation")
+  .option(
+    "--mcp",
+    "Add Sequant MCP server to detected clients (use with --yes)",
+  )
   .action(initCommand);
 
 program

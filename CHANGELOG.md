@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cursor config omits `cwd` (runs from workspace root)
   - `env.ANTHROPIC_API_KEY` is only included when the env var is actually set
   - `sequant init` generates per-client configs with correct fields
+- Fix `sequant init --yes` silently adding MCP config to all detected clients (#392)
+  - `--yes` alone now skips MCP config (opt-in required)
+  - Add `--mcp` flag to explicitly opt in: `sequant init --yes --mcp`
+  - Interactive mode continues to prompt per usual
 
 ### Changed
 
