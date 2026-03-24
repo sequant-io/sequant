@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "55f951e8c3c4",
+  "session_id": "9ce20383-19f7-41e1-9f3b-a8f1fa3edd0f",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-24T20:25:05.52574Z",
+  "branch": "feature/404-default-execution-mode-is-serial-despite-being-lab",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/parallel-execution.integration.test.ts",
+    "__tests__/parallel-execution.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 43638,
+    "cache_read_tokens": 374828,
+    "output_tokens": 7831,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-24T20:25:05.437931Z",
+    "agent_lines": 106,
+    "human_added": 289,
+    "human_modified": 340,
+    "human_removed": 0,
+    "total_committed": 735,
+    "agent_percentage": 14.421768707482993
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-404-default-execution-mode-is-serial-despite-being-lab/9ce20383-19f7-41e1-9f3b-a8f1fa3edd0f.jsonl"
+}

@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "55f951e8c3c4",
+  "strategy": "manual-commit",
+  "branch": "feature/404-default-execution-mode-is-serial-despite-being-lab",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/parallel-execution.integration.test.ts",
+    "__tests__/parallel-execution.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/55/f951e8c3c4/0/metadata.json",
+      "transcript": "/55/f951e8c3c4/0/full.jsonl",
+      "context": "/55/f951e8c3c4/0/context.md",
+      "content_hash": "/55/f951e8c3c4/0/content_hash.txt",
+      "prompt": "/55/f951e8c3c4/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 18,
+    "cache_creation_tokens": 43638,
+    "cache_read_tokens": 374828,
+    "output_tokens": 7831,
+    "api_call_count": 12
+  }
+}
