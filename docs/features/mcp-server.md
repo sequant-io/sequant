@@ -248,9 +248,29 @@ Binds to `127.0.0.1` (localhost only). No authentication — local use only.
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /sse` | MCP protocol connection |
+| `GET /sse` | MCP protocol connection (single client) |
 | `POST /messages` | Client-to-server messages |
-| `GET /health` | Health check (`{"status":"ok"}`) |
+| `GET /health` | Health check with connection status |
+
+### Single-client connection model
+
+The SSE transport accepts **one client at a time**. If a second client tries to connect while one is already active, it receives a `409 Conflict`:
+
+```json
+{ "error": "conflict", "message": "Another SSE client is already connected" }
+```
+
+The first client is not disturbed. When a client disconnects (or the network drops), the slot is freed and a new client can connect.
+
+### Health endpoint
+
+`GET /health` returns connection status:
+
+```json
+{ "status": "ok", "transport": "sse", "connected": true }
+```
+
+The `connected` field is `true` when an SSE client is actively connected, `false` otherwise. Use this to check if the server is available before connecting.
 
 ## Troubleshooting
 
@@ -307,4 +327,12 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting) on 2026-03-24.*
+### Second client gets 409 Conflict
+
+Only one SSE client can connect at a time. If you see `409 Conflict`:
+
+1. Check if another tool or tab already has an active SSE connection
+2. Disconnect the existing client, or wait for it to time out
+3. Verify with `GET /health` — `connected: false` means the slot is free
+
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status) on 2026-03-24.*
