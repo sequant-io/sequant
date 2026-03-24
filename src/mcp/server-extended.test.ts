@@ -2,6 +2,7 @@
  * Extended tests for Sequant MCP Server — failure paths and edge cases
  * Issue #372: Expose Sequant Workflow as MCP Server
  * Updated for #388: spawn (async) instead of spawnSync
+ * Updated for #389: resolveCliBinary — no nested npx
  *
  * Covers:
  * - AC-2: sequant_run execution behavior (with spawn mocking)
@@ -9,6 +10,7 @@
  * - AC-4: sequant_logs edge cases (zero/negative limit)
  * - AC-12: doctor MCP health check
  * - AC-14: structured errors (extended)
+ * - #389: binary resolution — no nested npx
  *
  * Guarded: Skips if @modelcontextprotocol/sdk is not installed (#396)
  */
@@ -16,6 +18,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
+import { existsSync } from "fs";
 import { registerRun, unregisterRun, clearRegistry } from "./run-registry.js";
 
 // Mock child_process before importing server (which imports tools/run.ts)
@@ -27,7 +30,20 @@ vi.mock("child_process", async (importOriginal) => {
   };
 });
 
+// Mock fs.existsSync for resolveCliBinary tests
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  return {
+    ...actual,
+    existsSync: vi.fn(actual.existsSync),
+  };
+});
+
 const mockedSpawn = vi.mocked(spawn);
+const mockedExistsSync = vi.mocked(existsSync);
+
+// Import resolveCliBinary for direct unit testing
+const { resolveCliBinary } = await import("./tools/run.js");
 
 /** Create a mock ChildProcess that resolves with given exit code, stdout, stderr */
 function createMockProcess(opts: {
@@ -77,6 +93,11 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+
+    // Default: process.argv[1] exists so resolveCliBinary uses node + script
+    mockedExistsSync.mockImplementation((p) => {
+      return String(p) === process.argv[1];
+    });
 
     const { createServer } = await import("./server.js");
     createServerFn = createServer;
@@ -130,9 +151,13 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
       expect(data.status).toBe("success");
-      expect(data.issues).toEqual([100]);
+      // AC-1: structured response with issues array and summary object
+      expect(Array.isArray(data.issues)).toBe(true);
+      expect(data.summary).toBeDefined();
+      expect(data.summary.total).toBeDefined();
       expect(data.phases).toBeDefined();
-      expect(data.output).toBeDefined();
+      // AC-3: raw output as secondary field
+      expect(data.rawOutput).toBeDefined();
     });
 
     // === FAILURE PATHS ===
@@ -209,8 +234,59 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         const data = JSON.parse(
           (result.content as Array<{ type: string; text: string }>)[0].text,
         );
-        expect(data.output.length).toBeLessThanOrEqual(2000);
+        expect(data.rawOutput.length).toBeLessThanOrEqual(2000);
       });
+    });
+  });
+
+  // #389: sequant_run should NOT use npx — verify binary resolution via MCP
+  describe("#389: binary resolution — no nested npx", () => {
+    it("should not invoke 'npx' when process.argv[1] exists", async () => {
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({ exitCode: 0, stdout: '{"summary":"ok"}' }),
+      );
+
+      await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [389] },
+      });
+
+      expect(mockedSpawn).toHaveBeenCalledTimes(1);
+      const [cmd] = mockedSpawn.mock.calls[0];
+      expect(cmd).not.toBe("npx");
+    });
+
+    it("should pass current script as first arg when process.argv[1] exists", async () => {
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({ exitCode: 0, stdout: "{}" }),
+      );
+
+      await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [100] },
+      });
+
+      const [cmd, args] = mockedSpawn.mock.calls[0];
+      expect(cmd).toBe(process.argv[0]);
+      expect(args![0]).toBe(process.argv[1]);
+      expect(args).toContain("run");
+    });
+
+    it("should fall back to npx when neither argv[1] nor dist/bin/cli.js exist", async () => {
+      mockedExistsSync.mockReturnValue(false);
+
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({ exitCode: 0, stdout: "{}" }),
+      );
+
+      await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [100] },
+      });
+
+      const [cmd, args] = mockedSpawn.mock.calls[0];
+      expect(cmd).toBe("npx");
+      expect(args![0]).toBe("sequant");
     });
   });
 
@@ -433,5 +509,65 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
 
       expect(statusTool!.description).toContain("Poll every 5-10 seconds");
     });
+  });
+});
+
+// #389: Direct unit tests for resolveCliBinary (no MCP SDK dependency)
+describe("#389: resolveCliBinary", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should use process.argv when argv[1] exists on disk", () => {
+    mockedExistsSync.mockImplementation((p) => {
+      return String(p) === process.argv[1];
+    });
+
+    const [cmd, prefixArgs] = resolveCliBinary();
+    expect(cmd).toBe(process.argv[0]);
+    expect(prefixArgs).toEqual([process.argv[1]]);
+  });
+
+  it("should not use 'npx' when argv[1] exists", () => {
+    mockedExistsSync.mockImplementation((p) => {
+      return String(p) === process.argv[1];
+    });
+
+    const [cmd] = resolveCliBinary();
+    expect(cmd).not.toBe("npx");
+  });
+
+  it("should fall back to npx when no paths exist", () => {
+    mockedExistsSync.mockReturnValue(false);
+
+    const [cmd, prefixArgs] = resolveCliBinary();
+    expect(cmd).toBe("npx");
+    expect(prefixArgs).toEqual(["sequant"]);
+  });
+
+  it("should use __dirname-relative path when argv[1] does not exist but cli.js does", () => {
+    mockedExistsSync.mockImplementation((p) => {
+      // argv[1] does not exist, but the __dirname-relative cli.js does
+      return String(p).endsWith("bin/cli.js");
+    });
+
+    const [cmd, prefixArgs] = resolveCliBinary();
+    expect(cmd).toBe(process.execPath);
+    expect(prefixArgs).toHaveLength(1);
+    expect(prefixArgs[0]).toMatch(/bin\/cli\.js$/);
+  });
+
+  it("should try __dirname-relative path when argv[1] does not exist", () => {
+    const checkedPaths: string[] = [];
+    mockedExistsSync.mockImplementation((p) => {
+      checkedPaths.push(String(p));
+      return false;
+    });
+
+    resolveCliBinary();
+
+    // Should have checked at least 2 paths: argv[1] and the __dirname-relative path
+    expect(checkedPaths.length).toBeGreaterThanOrEqual(2);
+    expect(checkedPaths.some((p) => p.includes("cli.js"))).toBe(true);
   });
 });

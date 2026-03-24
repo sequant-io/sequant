@@ -14,12 +14,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Timeout handling preserved with process group cleanup (no orphan processes)
   - ENOENT and other spawn errors handled with descriptive messages
 
+### Fixed
+
+- Fix MCP server `sequant_run` using nested `npx` invocation that could resolve to a different cached version (#389)
+  - Resolves CLI binary from `process.argv` to ensure version consistency
+  - Falls back to `__dirname`-relative resolution, then `npx` as last resort
+
 ### Added
 
 - Add real-time progress reporting for MCP workflow runs (#394)
   - `sequant_status` now returns `isRunning: true` while a `sequant_run` is executing
   - Active run registry tracks spawned processes by issue number with automatic cleanup
   - Tool description includes polling guidance (5-10 second interval)
+- Improve `sequant_run` MCP tool to return structured JSON with per-issue summaries (#391)
+  - Each issue includes status, phases completed, QA verdict, and duration
+  - Raw output preserved as secondary `rawOutput` field
+  - Response size enforced at 64 KB with progressive truncation
+  - Graceful fallback to raw output when run log is unavailable
 - Add baseline comparison to `/merger` to detect regressions before merging (#397)
   - Captures build error count and test pass/fail counts on main before merge
   - Compares post-merge metrics against baseline to detect new failures
