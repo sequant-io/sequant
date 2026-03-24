@@ -23,17 +23,16 @@ describe("Run Registry", () => {
 
   describe("AC-5: registry tracks spawned processes by issue number", () => {
     it("should register and track a run", () => {
-      registerRun(42, 1234);
+      registerRun(42);
 
       expect(isRunning(42)).toBe(true);
       const runs = getActiveRuns();
-      expect(runs.get(42)).toEqual(expect.objectContaining({ pid: 1234 }));
       expect(runs.get(42)!.startedAt).toBeDefined();
     });
 
     it("should track multiple concurrent runs", () => {
-      registerRun(42, 1234);
-      registerRun(100, 5678);
+      registerRun(42);
+      registerRun(100);
 
       expect(isRunning(42)).toBe(true);
       expect(isRunning(100)).toBe(true);
@@ -41,12 +40,13 @@ describe("Run Registry", () => {
     });
 
     it("should replace run if same issue registered again", () => {
-      registerRun(42, 1234);
-      registerRun(42, 9999);
+      const before = new Date().toISOString();
+      registerRun(42);
+      registerRun(42);
 
       expect(isRunning(42)).toBe(true);
-      expect(getActiveRuns().get(42)!.pid).toBe(9999);
       expect(getActiveRuns().size).toBe(1);
+      expect(getActiveRuns().get(42)!.startedAt >= before).toBe(true);
     });
   });
 
@@ -56,7 +56,7 @@ describe("Run Registry", () => {
     });
 
     it("should return false after unregisterRun", () => {
-      registerRun(42, 1234);
+      registerRun(42);
       expect(isRunning(42)).toBe(true);
 
       unregisterRun(42);
@@ -68,8 +68,8 @@ describe("Run Registry", () => {
     });
 
     it("should clear all runs", () => {
-      registerRun(1, 100);
-      registerRun(2, 200);
+      registerRun(1);
+      registerRun(2);
       clearRegistry();
 
       expect(isRunning(1)).toBe(false);

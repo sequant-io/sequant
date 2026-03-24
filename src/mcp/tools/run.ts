@@ -335,7 +335,7 @@ export function registerRunTool(server: McpServer): void {
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
-        registerRun(issue, process.pid);
+        registerRun(issue);
       }
 
       try {

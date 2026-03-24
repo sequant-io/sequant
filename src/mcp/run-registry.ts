@@ -8,7 +8,6 @@
  */
 
 export interface ActiveRun {
-  pid: number;
   startedAt: string;
 }
 
@@ -18,8 +17,8 @@ const activeRuns = new Map<number, ActiveRun>();
  * Register an active run for an issue.
  * If a run is already registered for this issue, it is replaced.
  */
-export function registerRun(issue: number, pid: number): void {
-  activeRuns.set(issue, { pid, startedAt: new Date().toISOString() });
+export function registerRun(issue: number): void {
+  activeRuns.set(issue, { startedAt: new Date().toISOString() });
 }
 
 /**

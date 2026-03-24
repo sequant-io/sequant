@@ -204,7 +204,9 @@ Get current workflow state for a tracked issue.
 |-----------|------|----------|-------------|
 | `issue` | `number` | Yes | GitHub issue number |
 
-Returns: status, current phase, phase progress, worktree path, PR number.
+Returns: status, current phase, phase progress, worktree path, PR number, and `isRunning` indicator.
+
+The `isRunning` field is `true` while a `sequant_run` is actively executing for that issue, and `false` otherwise. Poll every 5–10 seconds during active runs for phase-level progress updates.
 
 ### `sequant_logs`
 
@@ -267,7 +269,7 @@ The underlying `sequant run` command failed. Check:
 
 ### Nothing happens for a long time
 
-Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — ask "What's the sequant status for issue #42?" at any time to check progress. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
+Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — call `sequant_status` on the issue at any time to check progress. The response includes `isRunning: true` while the workflow is executing, along with the current phase. Poll every 5–10 seconds for live updates. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
 
 ### Workflow uses a different sequant version than expected
 

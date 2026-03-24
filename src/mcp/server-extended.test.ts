@@ -425,7 +425,7 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
     });
 
     it("should return isRunning: true when a run is registered for the issue", async () => {
-      registerRun(42, 12345);
+      registerRun(42);
 
       const result = await client.callTool({
         name: "sequant_status",
@@ -439,7 +439,7 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
     });
 
     it("should return isRunning: false after run is unregistered", async () => {
-      registerRun(42, 12345);
+      registerRun(42);
       unregisterRun(42);
 
       const result = await client.callTool({
