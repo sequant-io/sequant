@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add multi-client SSE connection handling to MCP server (#390)
+  - Reject second SSE client with 409 Conflict when one is already connected
+  - Health endpoint now reports `connected: boolean` for connection status
+  - Automatic cleanup of transport reference on client disconnect
+
 ### Changed
 
 - Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)

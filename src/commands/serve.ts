@@ -59,14 +59,35 @@ async function startSSE(
   port: number,
 ): Promise<void> {
   let sseTransport: SSEServerTransport | null = null;
+  let clientConnected = false;
 
   const httpServer = createHttpServer(
     async (req: IncomingMessage, res: ServerResponse) => {
       const url = new URL(req.url || "/", `http://localhost:${port}`);
 
       if (url.pathname === "/sse" && req.method === "GET") {
+        // Reject if a client is already connected
+        if (clientConnected) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              error: "conflict",
+              message: "Another SSE client is already connected",
+            }),
+          );
+          return;
+        }
+
         // SSE endpoint - create transport and connect
         sseTransport = new SSEServerTransport("/messages", res);
+        clientConnected = true;
+
+        // Clean up on client disconnect
+        res.on("close", () => {
+          clientConnected = false;
+          sseTransport = null;
+        });
+
         await server.connect(sseTransport);
       } else if (
         url.pathname === "/messages" &&
@@ -77,7 +98,13 @@ async function startSSE(
         await sseTransport.handlePostMessage(req, res);
       } else if (url.pathname === "/health" && req.method === "GET") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ status: "ok", transport: "sse" }));
+        res.end(
+          JSON.stringify({
+            status: "ok",
+            transport: "sse",
+            connected: clientConnected,
+          }),
+        );
       } else {
         res.writeHead(404);
         res.end("Not found");
