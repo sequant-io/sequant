@@ -562,7 +562,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
     if (addMcp) {
       for (const client of detectedClients) {
-        const added = addSequantToMcpConfig(client.configPath);
+        const added = addSequantToMcpConfig(
+          client.configPath,
+          client.clientType,
+        );
         if (added) {
           ui.printStatus("success", `Added Sequant MCP to ${client.name}`);
         } else {

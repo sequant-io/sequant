@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix MCP config generation producing identical configs for all clients (#395)
+  - Claude Desktop and VS Code + Continue configs now include `cwd` (absolute project path)
+  - Cursor config omits `cwd` (runs from workspace root)
+  - `env.ANTHROPIC_API_KEY` is only included when the env var is actually set
+  - `sequant init` generates per-client configs with correct fields
+
 ### Changed
 
 - Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)
