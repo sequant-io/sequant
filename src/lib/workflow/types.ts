@@ -35,8 +35,8 @@ export interface ExecutionConfig {
   skipVerification: boolean;
   /** Run issues sequentially */
   sequential: boolean;
-  /** Force parallel even with dependencies */
-  forceParallel: boolean;
+  /** Max concurrent issues in parallel mode (default: 3) */
+  concurrency: number;
   /** Verbose output */
   verbose: boolean;
   /** Disable smart test detection */
@@ -72,7 +72,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   maxIterations: 3,
   skipVerification: false,
   sequential: false,
-  forceParallel: false,
+  concurrency: 3,
   verbose: false,
   noSmartTests: false,
   dryRun: false,

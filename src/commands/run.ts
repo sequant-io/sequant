@@ -10,6 +10,7 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
+import pLimit from "p-limit";
 import { getManifest } from "../lib/manifest.js";
 import { getSettings } from "../lib/settings.js";
 import { LogWriter } from "../lib/workflow/log-writer.js";
@@ -165,6 +166,7 @@ export async function runCommand(
   const mergedOptions: RunOptions = {
     // Settings defaults (phases removed - now auto-detected)
     sequential: normalizedOptions.sequential ?? settings.run.sequential,
+    concurrency: normalizedOptions.concurrency ?? settings.run.concurrency,
     timeout: normalizedOptions.timeout ?? settings.run.timeout,
     logPath: normalizedOptions.logPath ?? settings.run.logPath,
     qualityLoop: normalizedOptions.qualityLoop ?? settings.run.qualityLoop,
@@ -252,6 +254,20 @@ export async function runCommand(
     }
   }
 
+  // Validate concurrency value
+  if (
+    mergedOptions.concurrency !== undefined &&
+    (mergedOptions.concurrency < 1 ||
+      !Number.isInteger(mergedOptions.concurrency))
+  ) {
+    console.log(
+      chalk.red(
+        `❌ Invalid --concurrency value: ${mergedOptions.concurrency}. Must be a positive integer.`,
+      ),
+    );
+    return;
+  }
+
   // Validate QA gate requirements
   if (mergedOptions.qaGate && !mergedOptions.chain) {
     console.log(chalk.red("❌ --qa-gate requires --chain flag"));
@@ -302,6 +318,7 @@ export async function runCommand(
     ...DEFAULT_CONFIG,
     phases: explicitPhases ?? DEFAULT_PHASES,
     sequential: mergedOptions.sequential ?? false,
+    concurrency: mergedOptions.concurrency ?? DEFAULT_CONFIG.concurrency,
     dryRun: mergedOptions.dryRun ?? false,
     verbose: mergedOptions.verbose ?? false,
     phaseTimeout: mergedOptions.timeout ?? DEFAULT_CONFIG.phaseTimeout,
@@ -386,7 +403,7 @@ export async function runCommand(
   }
   console.log(
     chalk.gray(
-      `  Mode: ${config.sequential ? "stop-on-failure" : "continue-on-failure"}`,
+      `  Mode: ${config.sequential ? "sequential (stop-on-failure)" : `parallel (concurrency: ${config.concurrency})`}`,
     ),
   );
   if (config.qualityLoop) {
@@ -715,51 +732,116 @@ export async function runCommand(
         }
       }
     } else {
-      // Default mode: run issues serially but continue on failure (don't stop)
-      // TODO: Add proper parallel execution with listr2
-      for (const issueNumber of issueNumbers) {
-        // Check if shutdown was triggered
-        if (shutdown.shuttingDown) {
-          break;
+      // Default mode: run issues concurrently with configurable concurrency limit
+      const limit = pLimit(config.concurrency);
+
+      // Track progress for concurrent issues
+      const issueStatus = new Map<number, "running" | "done" | "failed">();
+      for (const num of issueNumbers) {
+        issueStatus.set(num, "running");
+      }
+
+      const updateProgress = () => {
+        if (mergedOptions.quiet) return;
+        const parts = issueNumbers.map((num) => {
+          const status = issueStatus.get(num);
+          if (status === "done") return colors.success(`#${num} ✓`);
+          if (status === "failed") return colors.error(`#${num} ✗`);
+          return colors.warning(`#${num} ⏳`);
+        });
+        // Use carriage return to update in place on TTY
+        const line = `  Progress: ${parts.join("  ")}`;
+        if (process.stdout.isTTY) {
+          process.stdout.write(`\r${line}`);
         }
+      };
 
-        const issueInfo = issueInfoMap.get(issueNumber) ?? {
-          title: `Issue #${issueNumber}`,
-          labels: [],
-        };
-        const worktreeInfo = worktreeMap.get(issueNumber);
+      updateProgress();
 
-        // Start issue logging
-        if (logWriter) {
-          logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
-        }
+      const settledResults = await Promise.allSettled(
+        issueNumbers.map((issueNumber) =>
+          limit(async () => {
+            // Check if shutdown was triggered before starting
+            if (shutdown.shuttingDown) {
+              return {
+                issueNumber,
+                success: false,
+                phaseResults: [],
+                durationSeconds: 0,
+                loopTriggered: false,
+              } as IssueResult;
+            }
 
-        const result = await runIssueWithLogging(
-          issueNumber,
-          config,
-          logWriter,
-          stateManager,
-          issueInfo.title,
-          issueInfo.labels,
-          mergedOptions,
-          worktreeInfo?.path,
-          worktreeInfo?.branch,
-          shutdown,
-          false, // Parallel mode doesn't support chain
-          manifest.packageManager,
-          undefined,
-          resolvedBaseBranch,
-        );
-        results.push(result);
+            const issueInfo = issueInfoMap.get(issueNumber) ?? {
+              title: `Issue #${issueNumber}`,
+              labels: [],
+            };
+            const worktreeInfo = worktreeMap.get(issueNumber);
 
-        // Record PR info in log before completing issue
-        if (logWriter && result.prNumber && result.prUrl) {
-          logWriter.setPRInfo(result.prNumber, result.prUrl);
-        }
+            // Start issue logging
+            if (logWriter) {
+              logWriter.startIssue(
+                issueNumber,
+                issueInfo.title,
+                issueInfo.labels,
+              );
+            }
 
-        // Complete issue logging
-        if (logWriter) {
-          logWriter.completeIssue();
+            const result = await runIssueWithLogging(
+              issueNumber,
+              config,
+              logWriter,
+              stateManager,
+              issueInfo.title,
+              issueInfo.labels,
+              mergedOptions,
+              worktreeInfo?.path,
+              worktreeInfo?.branch,
+              shutdown,
+              false, // Parallel mode doesn't support chain
+              manifest.packageManager,
+              undefined,
+              resolvedBaseBranch,
+            );
+
+            // Record PR info in log before completing issue
+            if (logWriter && result.prNumber && result.prUrl) {
+              logWriter.setPRInfo(result.prNumber, result.prUrl, issueNumber);
+            }
+
+            // Complete issue logging
+            if (logWriter) {
+              logWriter.completeIssue(issueNumber);
+            }
+
+            // Update progress
+            issueStatus.set(issueNumber, result.success ? "done" : "failed");
+            updateProgress();
+
+            return result;
+          }),
+        ),
+      );
+
+      // Clear the progress line
+      if (process.stdout.isTTY && !mergedOptions.quiet) {
+        process.stdout.write("\n");
+      }
+
+      // Collect results from settled promises
+      for (const settled of settledResults) {
+        if (settled.status === "fulfilled") {
+          results.push(settled.value);
+        } else {
+          // This shouldn't happen since runIssueWithLogging catches errors,
+          // but handle it gracefully
+          results.push({
+            issueNumber: 0,
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+          });
         }
       }
     }

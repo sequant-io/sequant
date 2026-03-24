@@ -109,6 +109,11 @@ export interface RunOptions {
    */
   reflect?: boolean;
   /**
+   * Max concurrent issues in parallel mode (default: 3).
+   * Only applies when --sequential is not set.
+   */
+  concurrency?: number;
+  /**
    * Agent driver for phase execution.
    * Default: "claude-code"
    */

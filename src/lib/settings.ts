@@ -79,6 +79,8 @@ export interface RunSettings {
   timeout: number;
   /** Run issues sequentially by default */
   sequential: boolean;
+  /** Max concurrent issues in parallel mode (default: 3) */
+  concurrency: number;
   /** Enable quality loop by default */
   qualityLoop: boolean;
   /** Max iterations for quality loop */
@@ -265,6 +267,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     autoDetectPhases: true,
     timeout: 1800,
     sequential: false,
+    concurrency: 3,
     qualityLoop: false,
     maxIterations: 3,
     smartTests: true,

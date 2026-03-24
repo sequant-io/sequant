@@ -255,7 +255,7 @@ describe("LogWriter", () => {
 
       expect(() => {
         writer.logPhase(mockPhaseLog);
-      }).toThrow("No current issue");
+      }).toThrow("No active issue");
     });
 
     it("should log to console in verbose mode", async () => {
@@ -346,7 +346,7 @@ describe("LogWriter", () => {
 
       expect(() => {
         writer.completeIssue();
-      }).toThrow("No current issue to complete");
+      }).toThrow("No run log");
     });
   });
 
