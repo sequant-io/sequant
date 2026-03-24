@@ -59,6 +59,8 @@ export interface TautologyFileResult {
   parseSuccess: boolean;
   /** Error message if parsing failed */
   parseError?: string;
+  /** Whether the file was skipped via @tautology-skip pragma */
+  skipped?: boolean;
 }
 
 /**
@@ -484,12 +486,37 @@ export function testBlockCallsProductionCode(
 }
 
 /**
+ * Check if a file opts out of tautology detection via pragma comment.
+ *
+ * Recognized pragmas (must appear in the first 10 lines):
+ *   // @tautology-skip: <reason>
+ *   // @tautology-skip
+ */
+export function hasTautologySkipPragma(content: string): boolean {
+  const headerLines = content.split("\n").slice(0, 10);
+  return headerLines.some((line) => /\/\/\s*@tautology-skip/.test(line));
+}
+
+/**
  * Analyze a single test file for tautological tests
  */
 export function analyzeTestFile(
   content: string,
   filePath: string,
 ): TautologyFileResult {
+  if (hasTautologySkipPragma(content)) {
+    return {
+      filePath,
+      totalTests: 0,
+      tautologicalCount: 0,
+      tautologicalPercentage: 0,
+      testBlocks: [],
+      importedFunctions: [],
+      parseSuccess: true,
+      skipped: true,
+    };
+  }
+
   try {
     const importedFunctions = extractImports(content);
     const testBlocks = extractTestBlocks(content);
@@ -545,9 +572,11 @@ export function detectTautologicalTests(
     analyzeTestFile(file.content, file.path),
   );
 
-  const totalFiles = fileResults.length;
-  const totalTests = fileResults.reduce((sum, r) => sum + r.totalTests, 0);
-  const totalTautological = fileResults.reduce(
+  // Exclude skipped files from summary counts
+  const analyzed = fileResults.filter((r) => !r.skipped);
+  const totalFiles = analyzed.length;
+  const totalTests = analyzed.reduce((sum, r) => sum + r.totalTests, 0);
+  const totalTautological = analyzed.reduce(
     (sum, r) => sum + r.tautologicalCount,
     0,
   );
@@ -579,7 +608,22 @@ export function formatTautologyResults(results: TautologyResults): string {
   lines.push("| Category | Status | Notes |");
   lines.push("|----------|--------|-------|");
 
-  if (results.summary.totalTests === 0) {
+  // Skipped files (via @tautology-skip pragma)
+  const skippedFiles = results.fileResults.filter((r) => r.skipped);
+  if (skippedFiles.length > 0) {
+    lines.push(
+      `| Tautology Check | ⏭️ SKIP | ${skippedFiles.length} file(s) skipped via @tautology-skip |`,
+    );
+    lines.push("");
+    lines.push("**Skipped (@tautology-skip):**");
+    for (const file of skippedFiles) {
+      lines.push(`- \`${file.filePath}\``);
+    }
+    lines.push("");
+    if (results.summary.totalTests === 0) {
+      return lines.join("\n");
+    }
+  } else if (results.summary.totalTests === 0) {
     lines.push("| Tautology Check | ⏭️ SKIP | No test blocks found |");
     return lines.join("\n");
   }
