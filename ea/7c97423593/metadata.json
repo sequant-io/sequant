@@ -1,0 +1,28 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "ea7c97423593",
+  "strategy": "manual-commit",
+  "branch": "feature/409-state-manager-concurrent-writes-to-state-json-caus",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/lib/workflow/state-manager.test.ts",
+    "src/lib/workflow/state-manager.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/7c97423593/0/metadata.json",
+      "transcript": "/ea/7c97423593/0/full.jsonl",
+      "context": "/ea/7c97423593/0/context.md",
+      "content_hash": "/ea/7c97423593/0/content_hash.txt",
+      "prompt": "/ea/7c97423593/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 74032,
+    "cache_read_tokens": 2190635,
+    "output_tokens": 13386,
+    "api_call_count": 34
+  }
+}
