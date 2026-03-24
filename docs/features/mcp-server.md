@@ -154,7 +154,7 @@ Once set up, talk to your AI assistant naturally:
 |---|---|---|
 | **Context** | Separate terminal window | Your AI already has file context |
 | **Invocation** | Exact commands and flags | Natural language |
-| **Progress** | Real-time phase output | Silent until done (check with `sequant_status` any time) |
+| **Progress** | Real-time phase output | Poll `sequant_status` every 5–10s (`isRunning` + current phase) |
 | **Best for** | Batch runs, CI, scripting | Single issues while working in the editor |
 
 They use the same engine. MCP is a different door into the same workflow.
@@ -204,7 +204,21 @@ Get current workflow state for a tracked issue.
 |-----------|------|----------|-------------|
 | `issue` | `number` | Yes | GitHub issue number |
 
-Returns: status, current phase, phase progress, worktree path, PR number.
+**Response** (JSON):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `issue` | `number` | Queried issue number |
+| `title` | `string` | Issue title (from state file) |
+| `status` | `string` | Workflow status (`not_tracked`, `in_progress`, `ready_for_merge`, etc.) |
+| `isRunning` | `boolean` | `true` while a `sequant_run` is actively executing for this issue |
+| `currentPhase` | `string` | Phase currently executing (`spec`, `exec`, `qa`) |
+| `phases` | `object` | Per-phase status breakdown |
+| `worktree` | `string` | Path to the feature worktree |
+| `pr` | `number` | PR number (if created) |
+| `lastActivity` | `string` | ISO timestamp of last state change |
+
+**Polling for progress:** During an active run, poll `sequant_status` every 5–10 seconds for phase-level progress updates. The `isRunning` field transitions to `false` once the run completes, errors, or is cancelled.
 
 ### `sequant_logs`
 
@@ -267,7 +281,7 @@ The underlying `sequant run` command failed. Check:
 
 ### Nothing happens for a long time
 
-Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — ask "What's the sequant status for issue #42?" at any time to check progress. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
+Expected. Workflows take 5–30 minutes. Unlike earlier versions, the server stays responsive during runs — call `sequant_status` on the issue at any time to check progress. The response includes `isRunning: true` while the workflow is executing, along with the current phase. Poll every 5–10 seconds for live updates. If you need to stop a run, cancel the tool call from your editor and the subprocess will be terminated cleanly.
 
 ### Workflow uses a different sequant version than expected
 
@@ -293,4 +307,4 @@ If `sequant_run` returns errors about missing config or git repo, the server is 
 
 ---
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format) on 2026-03-24.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting) on 2026-03-24.*
