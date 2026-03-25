@@ -51,6 +51,12 @@
       "transcript": "/4b/aacefdbcab/2/full.jsonl",
       "content_hash": "/4b/aacefdbcab/2/content_hash.txt",
       "prompt": "/4b/aacefdbcab/2/prompt.txt"
+    },
+    {
+      "metadata": "/4b/aacefdbcab/3/metadata.json",
+      "transcript": "/4b/aacefdbcab/3/full.jsonl",
+      "content_hash": "/4b/aacefdbcab/3/content_hash.txt",
+      "prompt": ""
     }
   ],
   "token_usage": {
