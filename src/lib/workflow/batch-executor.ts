@@ -391,9 +391,7 @@ export async function runIssueWithLogging(
 
   // In parallel mode, suppress per-issue terminal output to prevent interleaving.
   // The caller (run.ts) handles progress display via updateProgress().
-  const log = config.parallel
-    ? (..._args: unknown[]) => {}
-    : console.log.bind(console);
+  const log = config.parallel ? () => {} : console.log.bind(console);
 
   log(chalk.blue(`\n  Issue #${issueNumber}`));
   if (worktreePath) {
