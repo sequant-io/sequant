@@ -102,14 +102,28 @@ export type {
   MergedPhaseResult,
 } from "./lib/phase-signal.js";
 
+// Assess comment parser exports (unified from solve + assess)
 export {
+  isAssessComment,
+  findAssessComment,
+  parseAssessMarkers,
+  parseAssessWorkflow,
+  assessWorkflowToSignals,
+  assessCoversIssue,
+  // Backward-compatible aliases (deprecated)
   isSolveComment,
   findSolveComment,
+  parseSolveMarkers,
   parseSolveWorkflow,
   solveWorkflowToSignals,
   solveCoversIssue,
-} from "./lib/solve-comment-parser.js";
+} from "./lib/assess-comment-parser.js";
 export type {
+  AssessWorkflowResult,
+  AssessMarkers,
+  AssessAction,
+  // Backward-compatible type aliases
   SolveWorkflowResult,
+  SolveMarkers,
   IssueComment,
-} from "./lib/solve-comment-parser.js";
+} from "./lib/assess-comment-parser.js";
