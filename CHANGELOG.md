@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add MCP progress notifications for `sequant_run` tool (#421)
+  - Emit `notifications/progress` during phase transitions when client provides `progressToken`
+  - Prevents client-side timeouts via SDK's `resetTimeoutOnProgress` support
+  - Backward compatible: no notifications when no `progressToken` provided
 - Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
   - Always creates `.mcp.json` in project root (no `--mcp` flag required)
   - Merges into existing `.mcp.json` preserving other server entries

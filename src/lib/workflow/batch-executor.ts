@@ -32,6 +32,17 @@ import {
   BUG_LABELS,
 } from "./phase-mapper.js";
 
+/**
+ * Emit a structured progress line to stderr for MCP progress notifications.
+ * Only emits when running under an orchestrator (e.g., MCP server).
+ * The MCP handler parses these lines to send `notifications/progress`.
+ */
+function emitProgressLine(issue: number, phase: string): void {
+  if (!process.env.SEQUANT_ORCHESTRATOR) return;
+  const line = `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+  process.stderr.write(line);
+}
+
 export interface RunOptions {
   phases?: string;
   sequential?: boolean;
@@ -456,6 +467,7 @@ export async function runIssueWithLogging(
             shutdownManager,
           });
       specSpinner?.start();
+      emitProgressLine(issueNumber, "spec");
 
       // Track spec phase start in state
       if (stateManager) {
@@ -662,6 +674,7 @@ export async function runIssueWithLogging(
             iteration: useQualityLoop ? iteration : undefined,
           });
       phaseSpinner?.start();
+      emitProgressLine(issueNumber, phase);
 
       // Track phase start in state
       if (stateManager) {
@@ -780,6 +793,7 @@ export async function runIssueWithLogging(
                 iteration,
               });
           loopSpinner?.start();
+          emitProgressLine(issueNumber, "loop");
 
           const loopResult = await executePhaseWithRetry(
             issueNumber,
