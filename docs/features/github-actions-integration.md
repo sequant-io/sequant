@@ -52,6 +52,8 @@ jobs:
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
+> **Migrating from `sequant:solve`?** The `sequant:solve` label still works (backward compatible) but is deprecated. Rename your workflow file and update the trigger condition to `sequant:assess`.
+
 ### Option B: Manual dispatch
 
 Trigger from the Actions UI with custom inputs — useful for batch processing or selecting specific phases.
@@ -169,12 +171,13 @@ jobs:
 
 Use phase-specific labels to run only part of the workflow:
 
-| Label | Phases run |
-|-------|-----------|
-| `sequant:assess` | spec, exec, qa |
-| `sequant:spec-only` | spec |
-| `sequant:exec` | exec |
-| `sequant:qa` | qa |
+| Label | Phases run | Notes |
+|-------|-----------|-------|
+| `sequant:assess` | spec, exec, qa | Primary trigger label |
+| `sequant:solve` | spec, exec, qa | Deprecated — use `sequant:assess` |
+| `sequant:spec-only` | spec | |
+| `sequant:exec` | exec | |
+| `sequant:qa` | qa | |
 
 Or with comment triggers: `@sequant run exec,qa` (skip spec).
 
@@ -191,7 +194,7 @@ Each issue gets its own worktree, phases, and PR.
 ## What to Expect
 
 - **Duration:** 10-30 minutes per issue depending on complexity and phases
-- **Labels change during the run:** `sequant:assess` is replaced by `sequant:solving`, then `sequant:done` or `sequant:failed`
+- **Labels change during the run:** `sequant:assess` (or `sequant:solve`) is replaced by `sequant:solving`, then `sequant:done` or `sequant:failed`
 - **Results are posted as issue comments** with a summary table showing phases, duration, and outcome
 - **Run logs are uploaded as artifacts** (retained for 30 days) — find them in the Actions run details under "Artifacts"
 - **Concurrency is enforced** — only one Sequant run per issue at a time; additional runs queue
@@ -236,10 +239,10 @@ Use outputs in downstream steps:
 ### Label lifecycle
 
 ```
-sequant:assess (trigger)
+sequant:assess (trigger)          — or sequant:solve (deprecated)
     |
     v
-sequant:solving (in progress)
+sequant:solving (in progress)     — both trigger labels are removed at start
     |
     +---> sequant:done (success, PR created)
     |
@@ -321,4 +324,4 @@ Set the workflow timeout higher than the sum of all phase timeouts.
 
 ---
 
-*Generated for Issue #370 on 2026-03-23*
+*Updated for Issue #438 on 2026-03-25 — migrated primary trigger label from `sequant:solve` to `sequant:assess`*

@@ -112,6 +112,7 @@ runs:
       run: |
         for ISSUE in $ISSUES; do
           gh issue edit "$ISSUE" --add-label "sequant:solving" 2>/dev/null || true
+          gh issue edit "$ISSUE" --remove-label "sequant:assess" 2>/dev/null || true
           gh issue edit "$ISSUE" --remove-label "sequant:solve" 2>/dev/null || true
           gh issue edit "$ISSUE" --remove-label "sequant:spec-only" 2>/dev/null || true
           gh issue edit "$ISSUE" --remove-label "sequant:exec" 2>/dev/null || true

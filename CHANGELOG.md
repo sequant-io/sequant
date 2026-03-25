@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `"assess"` signal source and `sequant:assess` CI trigger label with backward-compatible `"solve"` / `sequant:solve` deprecation (#438)
 - Optimize QA skill re-runs by diffing against prior findings (#377)
   - Add `commitSHA` field to phase markers for incremental QA baseline tracking
   - Add QA run context cache (`lastQACommitSHA`, `acStatuses`) for re-run optimization

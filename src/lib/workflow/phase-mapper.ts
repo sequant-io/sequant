@@ -50,7 +50,7 @@ export const SECURITY_LABELS = [
 ];
 
 /**
- * Detect phases based on issue labels (like /solve logic)
+ * Detect phases based on issue labels (like /assess logic)
  */
 export function detectPhasesFromLabels(labels: string[]): {
   phases: Phase[];
