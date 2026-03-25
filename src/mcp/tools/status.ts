@@ -21,10 +21,15 @@ export function registerStatusTool(server: McpServer): void {
       description:
         "Get the current workflow state, phase progress, and QA verdict for a tracked issue. " +
         "Reconciles with GitHub on every call for accurate status. " +
-        "Returns isRunning: true when a sequant_run is actively executing. " +
-        "Poll every 5-10 seconds during active runs for phase-level progress updates.",
+        "Use this to check whether an issue needs work before calling sequant_run. " +
+        "Returns isRunning: true when a sequant_run is actively executing — " +
+        "poll every 5-10 seconds during active runs for phase-level progress updates.",
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
       inputSchema: {
-        issue: z.number().describe("GitHub issue number"),
+        issue: z.number().describe("GitHub issue number to check status for"),
       },
     },
     async ({ issue }) => {

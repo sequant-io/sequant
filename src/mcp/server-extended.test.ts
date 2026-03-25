@@ -507,7 +507,7 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
         (t: { name: string }) => t.name === "sequant_status",
       );
 
-      expect(statusTool!.description).toContain("Poll every 5-10 seconds");
+      expect(statusTool!.description).toContain("poll every 5-10 seconds");
     });
   });
 });
