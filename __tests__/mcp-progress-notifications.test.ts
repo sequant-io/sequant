@@ -3,7 +3,7 @@
  *
  * Tests AC-1 (progressToken capture), AC-3 (total calculation),
  * AC-4 (backward compatibility), AC-6 (error resilience),
- * and the parsePhaseStart helper.
+ * and the parseProgressLine / createLineBuffer helpers.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -97,39 +97,91 @@ const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
   .catch(() => false);
 
 /** Progress event collected from onprogress callback */
-interface ProgressEvent {
+interface ProgressNotification {
   progress: number;
   total: number;
   message?: string;
 }
 
-describe("parsePhaseStart", () => {
-  it("should parse a standard phase start line", async () => {
-    const { parsePhaseStart } = await import("../src/mcp/tools/run.js");
-    const result = parsePhaseStart("\u23F3     spec (1/3)...");
-    expect(result).toEqual({ phase: "spec", phaseIndex: 1, totalPhases: 3 });
+/** Helper: build a SEQUANT_PROGRESS line as the batch executor emits it */
+function progressLine(issue: number, phase: string): string {
+  return `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+}
+
+describe("parseProgressLine", () => {
+  it("should parse a valid progress line", async () => {
+    const { parseProgressLine } = await import("../src/mcp/tools/run.js");
+    const result = parseProgressLine(
+      'SEQUANT_PROGRESS:{"issue":123,"phase":"spec"}',
+    );
+    expect(result).toEqual({ issue: 123, phase: "spec" });
   });
 
-  it("should parse phase start with ANSI color codes", async () => {
-    const { parsePhaseStart } = await import("../src/mcp/tools/run.js");
-    const result = parsePhaseStart("\x1b[36m\u23F3 exec (2/3)...\x1b[39m");
-    expect(result).toEqual({ phase: "exec", phaseIndex: 2, totalPhases: 3 });
+  it("should return null for non-progress lines", async () => {
+    const { parseProgressLine } = await import("../src/mcp/tools/run.js");
+    expect(parseProgressLine("random log line")).toBeNull();
+    expect(parseProgressLine("")).toBeNull();
+    expect(parseProgressLine("SEQUANT_OTHER:{}")).toBeNull();
   });
 
-  it("should return null for non-phase output", async () => {
-    const { parsePhaseStart } = await import("../src/mcp/tools/run.js");
-    expect(parsePhaseStart("random log line")).toBeNull();
-    expect(parsePhaseStart("")).toBeNull();
+  it("should return null for malformed JSON", async () => {
+    const { parseProgressLine } = await import("../src/mcp/tools/run.js");
+    expect(parseProgressLine("SEQUANT_PROGRESS:{bad json}")).toBeNull();
   });
 
-  it("should return null for phase completion lines (checkmark)", async () => {
-    const { parsePhaseStart } = await import("../src/mcp/tools/run.js");
-    expect(parsePhaseStart("\u2713 spec (1/3) (10s)")).toBeNull();
+  it("should return null for JSON missing required fields", async () => {
+    const { parseProgressLine } = await import("../src/mcp/tools/run.js");
+    expect(parseProgressLine('SEQUANT_PROGRESS:{"issue":123}')).toBeNull();
+    expect(parseProgressLine('SEQUANT_PROGRESS:{"phase":"spec"}')).toBeNull();
+    expect(
+      parseProgressLine(
+        'SEQUANT_PROGRESS:{"issue":"not-a-number","phase":"spec"}',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("createLineBuffer", () => {
+  it("should yield complete lines", async () => {
+    const { createLineBuffer } = await import("../src/mcp/tools/run.js");
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("line1\nline2\n");
+    expect(lines).toEqual(["line1", "line2"]);
   });
 
-  it("should return null for phase failure lines (cross)", async () => {
-    const { parsePhaseStart } = await import("../src/mcp/tools/run.js");
-    expect(parsePhaseStart("\u2717 exec (2/3) (5s): error")).toBeNull();
+  it("should buffer incomplete lines across chunks", async () => {
+    const { createLineBuffer } = await import("../src/mcp/tools/run.js");
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("partial");
+    expect(lines).toEqual([]);
+
+    buffer(" complete\n");
+    expect(lines).toEqual(["partial complete"]);
+  });
+
+  it("should handle multiple chunks building one line", async () => {
+    const { createLineBuffer } = await import("../src/mcp/tools/run.js");
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("SEQUANT_");
+    buffer("PROGRESS:");
+    buffer('{"issue":1,"phase":"spec"}\n');
+
+    expect(lines).toEqual(['SEQUANT_PROGRESS:{"issue":1,"phase":"spec"}']);
+  });
+
+  it("should skip empty lines", async () => {
+    const { createLineBuffer } = await import("../src/mcp/tools/run.js");
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("line1\n\nline2\n");
+    expect(lines).toEqual(["line1", "line2"]);
   });
 });
 
@@ -173,12 +225,12 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
 
   describe("AC-1: progressToken capture from extra._meta", () => {
     it("should capture progressToken and emit notifications when present", async () => {
-      const progressEvents: ProgressEvent[] = [];
+      const progressEvents: ProgressNotification[] = [];
 
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: ["\u23F3     spec (1/3)...\n"],
+          stderrChunks: [progressLine(421, "spec")],
         }),
       );
 
@@ -186,7 +238,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         { name: "sequant_run", arguments: { issues: [421] } },
         undefined,
         {
-          onprogress: (evt: ProgressEvent) => {
+          onprogress: (evt: ProgressNotification) => {
             progressEvents.push(evt);
           },
           timeout: 10000,
@@ -216,14 +268,47 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
     });
   });
 
-  describe("AC-3: Progress total = issue count × phase count", () => {
-    it("should calculate total as 6 for 2 issues × 3 default phases", async () => {
-      const progressEvents: ProgressEvent[] = [];
+  describe("AC-2: Issue number from structured progress lines", () => {
+    it("should include correct issue number from progress event", async () => {
+      const messages: string[] = [];
 
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: ["\u23F3     spec (1/3)...\n"],
+          stderrChunks: [progressLine(421, "spec")],
+        }),
+      );
+
+      await client.callTool(
+        { name: "sequant_run", arguments: { issues: [421] } },
+        undefined,
+        {
+          onprogress: (evt: ProgressNotification) => {
+            if (evt.message) messages.push(evt.message);
+          },
+          timeout: 10000,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toContain("421");
+      expect(messages[0]).toContain("spec");
+    });
+
+    it("should attribute correct issue numbers in parallel runs", async () => {
+      const messages: string[] = [];
+
+      // Simulate parallel interleaved output: issue 100 spec, issue 200 spec, issue 100 exec
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stderrChunks: [
+            progressLine(100, "spec"),
+            progressLine(200, "spec"),
+            progressLine(100, "exec"),
+          ],
         }),
       );
 
@@ -231,7 +316,41 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         { name: "sequant_run", arguments: { issues: [100, 200] } },
         undefined,
         {
-          onprogress: (evt: ProgressEvent) => {
+          onprogress: (evt: ProgressNotification) => {
+            if (evt.message) messages.push(evt.message);
+          },
+          timeout: 10000,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(messages).toHaveLength(3);
+      expect(messages[0]).toContain("100");
+      expect(messages[0]).toContain("spec");
+      expect(messages[1]).toContain("200");
+      expect(messages[1]).toContain("spec");
+      expect(messages[2]).toContain("100");
+      expect(messages[2]).toContain("exec");
+    });
+  });
+
+  describe("AC-3: Progress total = issue count × phase count", () => {
+    it("should calculate total as 6 for 2 issues × 3 default phases", async () => {
+      const progressEvents: ProgressNotification[] = [];
+
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stderrChunks: [progressLine(100, "spec")],
+        }),
+      );
+
+      await client.callTool(
+        { name: "sequant_run", arguments: { issues: [100, 200] } },
+        undefined,
+        {
+          onprogress: (evt: ProgressNotification) => {
             progressEvents.push(evt);
           },
           timeout: 10000,
@@ -246,12 +365,12 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
     });
 
     it("should calculate total as 2 for 1 issue × 2 custom phases", async () => {
-      const progressEvents: ProgressEvent[] = [];
+      const progressEvents: ProgressNotification[] = [];
 
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: ["\u23F3     spec (1/2)...\n"],
+          stderrChunks: [progressLine(100, "spec")],
         }),
       );
 
@@ -262,7 +381,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         },
         undefined,
         {
-          onprogress: (evt: ProgressEvent) => {
+          onprogress: (evt: ProgressNotification) => {
             progressEvents.push(evt);
           },
           timeout: 10000,
@@ -276,12 +395,12 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
     });
 
     it("should handle single-phase runs", async () => {
-      const progressEvents: ProgressEvent[] = [];
+      const progressEvents: ProgressNotification[] = [];
 
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: ["\u23F3     exec (1/1)...\n"],
+          stderrChunks: [progressLine(100, "exec")],
         }),
       );
 
@@ -289,7 +408,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         { name: "sequant_run", arguments: { issues: [100], phases: "exec" } },
         undefined,
         {
-          onprogress: (evt: ProgressEvent) => {
+          onprogress: (evt: ProgressNotification) => {
             progressEvents.push(evt);
           },
           timeout: 10000,
@@ -308,10 +427,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: [
-            "\u23F3     spec (1/3)...\n",
-            "\u23F3     exec (2/3)...\n",
-          ],
+          stderrChunks: [progressLine(421, "spec"), progressLine(421, "exec")],
         }),
       );
 
@@ -330,10 +446,10 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stdoutChunks: [
-            "\u23F3     spec (1/3)...\n",
-            "\u23F3     exec (2/3)...\n",
-            "\u23F3     qa (3/3)...\n",
+          stderrChunks: [
+            progressLine(421, "spec"),
+            progressLine(421, "exec"),
+            progressLine(421, "qa"),
           ],
         }),
       );
@@ -352,6 +468,98 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         (result.content as Array<{ type: string; text: string }>)[0].text,
       );
       expect(data.status).toBe("success");
+    });
+  });
+
+  describe("Line buffering (chunk boundary safety)", () => {
+    it("should handle progress line split across stderr chunks", async () => {
+      const progressEvents: ProgressNotification[] = [];
+
+      const fullLine = `SEQUANT_PROGRESS:{"issue":421,"phase":"spec"}\n`;
+      const split1 = fullLine.slice(0, 20);
+      const split2 = fullLine.slice(20);
+
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stderrChunks: [split1, split2],
+        }),
+      );
+
+      await client.callTool(
+        { name: "sequant_run", arguments: { issues: [421] } },
+        undefined,
+        {
+          onprogress: (evt: ProgressNotification) => {
+            progressEvents.push(evt);
+          },
+          timeout: 10000,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(progressEvents).toHaveLength(1);
+      expect(progressEvents[0].progress).toBe(1);
+    });
+
+    it("should handle multiple progress lines in one chunk", async () => {
+      const progressEvents: ProgressNotification[] = [];
+
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stderrChunks: [
+            progressLine(421, "spec") +
+              progressLine(421, "exec") +
+              progressLine(421, "qa"),
+          ],
+        }),
+      );
+
+      await client.callTool(
+        { name: "sequant_run", arguments: { issues: [421] } },
+        undefined,
+        {
+          onprogress: (evt: ProgressNotification) => {
+            progressEvents.push(evt);
+          },
+          timeout: 10000,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(progressEvents).toHaveLength(3);
+      expect(progressEvents.map((e) => e.progress)).toEqual([1, 2, 3]);
+    });
+
+    it("should ignore non-progress stderr lines", async () => {
+      const progressEvents: ProgressNotification[] = [];
+
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({
+          exitCode: 0,
+          stderrChunks: [
+            "some warning\n" + progressLine(421, "spec") + "another warning\n",
+          ],
+        }),
+      );
+
+      await client.callTool(
+        { name: "sequant_run", arguments: { issues: [421] } },
+        undefined,
+        {
+          onprogress: (evt: ProgressNotification) => {
+            progressEvents.push(evt);
+          },
+          timeout: 10000,
+        },
+      );
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(progressEvents).toHaveLength(1);
     });
   });
 });

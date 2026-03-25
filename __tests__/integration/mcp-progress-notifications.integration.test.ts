@@ -40,13 +40,18 @@ vi.mock("fs/promises", async (importOriginal) => {
 const mockedSpawn = vi.mocked(spawn);
 
 /** Progress event from onprogress callback */
-interface ProgressEvent {
+interface ProgressNotification {
   progress: number;
   total: number;
   message?: string;
 }
 
-/** Create a mock ChildProcess with controllable stdout chunks for phase simulation */
+/** Helper: build a SEQUANT_PROGRESS line as the batch executor emits it */
+function progressLine(issue: number, phase: string): string {
+  return `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+}
+
+/** Create a mock ChildProcess with controllable stderr chunks for progress simulation */
 function createMockProcessWithPhaseOutput(opts: {
   exitCode?: number | null;
   stdout?: string;
@@ -130,19 +135,16 @@ describe.skipIf(!mcpSdkAvailable)(
     });
 
     describe("AC-2: Phase transitions emit notifications/progress", () => {
-      it("should emit progress notifications for each phase start on stdout", async () => {
-        const progressEvents: ProgressEvent[] = [];
+      it("should emit progress notifications for each phase start on stderr", async () => {
+        const progressEvents: ProgressNotification[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: [
-              "\u23F3     spec (1/3)...\n",
-              "\u2713     spec (1/3) (10s)\n",
-              "\u23F3     exec (2/3)...\n",
-              "\u2713     exec (2/3) (20s)\n",
-              "\u23F3     qa (3/3)...\n",
-              "\u2713     qa (3/3) (5s)\n",
+            stderrChunks: [
+              progressLine(421, "spec"),
+              progressLine(421, "exec"),
+              progressLine(421, "qa"),
             ],
           }),
         );
@@ -151,7 +153,7 @@ describe.skipIf(!mcpSdkAvailable)(
           { name: "sequant_run", arguments: { issues: [421] } },
           undefined,
           {
-            onprogress: (evt: ProgressEvent) => {
+            onprogress: (evt: ProgressNotification) => {
               progressEvents.push(evt);
             },
             timeout: 10000,
@@ -160,7 +162,7 @@ describe.skipIf(!mcpSdkAvailable)(
 
         await new Promise((r) => setTimeout(r, 50));
 
-        // Should emit 3 notifications (one per phase START, not completions)
+        // Should emit 3 notifications (one per phase)
         expect(progressEvents).toHaveLength(3);
         expect(progressEvents[0]).toMatchObject({
           progress: 1,
@@ -185,10 +187,10 @@ describe.skipIf(!mcpSdkAvailable)(
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: [
-              "\u23F3     spec (1/3)...\n",
-              "\u23F3     exec (2/3)...\n",
-              "\u23F3     qa (3/3)...\n",
+            stderrChunks: [
+              progressLine(421, "spec"),
+              progressLine(421, "exec"),
+              progressLine(421, "qa"),
             ],
           }),
         );
@@ -197,7 +199,7 @@ describe.skipIf(!mcpSdkAvailable)(
           { name: "sequant_run", arguments: { issues: [421] } },
           undefined,
           {
-            onprogress: (evt: ProgressEvent) => {
+            onprogress: (evt: ProgressNotification) => {
               progressValues.push(evt.progress);
             },
             timeout: 10000,
@@ -209,13 +211,13 @@ describe.skipIf(!mcpSdkAvailable)(
         expect(progressValues).toEqual([1, 2, 3]);
       });
 
-      it("should include issue number in progress message", async () => {
+      it("should include correct issue number in progress message", async () => {
         const messages: string[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: ["\u23F3     spec (1/3)...\n"],
+            stderrChunks: [progressLine(421, "spec")],
           }),
         );
 
@@ -223,7 +225,7 @@ describe.skipIf(!mcpSdkAvailable)(
           { name: "sequant_run", arguments: { issues: [421] } },
           undefined,
           {
-            onprogress: (evt: ProgressEvent) => {
+            onprogress: (evt: ProgressNotification) => {
               if (evt.message) messages.push(evt.message);
             },
             timeout: 10000,
@@ -237,26 +239,18 @@ describe.skipIf(!mcpSdkAvailable)(
         expect(messages[0]).toContain("spec");
       });
 
-      it("validates assumption: PhaseSpinner format is parseable", async () => {
-        const { parsePhaseStart } = await import("../../src/mcp/tools/run.js");
+      it("validates assumption: parseProgressLine parses batch executor format", async () => {
+        const { parseProgressLine } =
+          await import("../../src/mcp/tools/run.js");
 
-        // PhaseSpinner start format: "⏳     <phase> (<N>/<M>)..."
-        expect(parsePhaseStart("\u23F3     spec (1/3)...")).toEqual({
-          phase: "spec",
-          phaseIndex: 1,
-          totalPhases: 3,
-        });
+        // Standard format from batch executor
+        expect(
+          parseProgressLine('SEQUANT_PROGRESS:{"issue":123,"phase":"spec"}'),
+        ).toEqual({ issue: 123, phase: "spec" });
 
-        // PhaseSpinner with minimal whitespace
-        expect(parsePhaseStart("\u23F3 exec (2/3)...")).toEqual({
-          phase: "exec",
-          phaseIndex: 2,
-          totalPhases: 3,
-        });
-
-        // Completion lines should NOT match
-        expect(parsePhaseStart("\u2713     spec (1/3) (10s)")).toBeNull();
-        expect(parsePhaseStart("\u2717     exec (2/3) (5s): error")).toBeNull();
+        // Non-progress lines should NOT match
+        expect(parseProgressLine("some random log")).toBeNull();
+        expect(parseProgressLine("")).toBeNull();
       });
     });
 
@@ -265,10 +259,10 @@ describe.skipIf(!mcpSdkAvailable)(
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: [
-              "\u23F3     spec (1/3)...\n",
-              "\u23F3     exec (2/3)...\n",
-              "\u23F3     qa (3/3)...\n",
+            stderrChunks: [
+              progressLine(421, "spec"),
+              progressLine(421, "exec"),
+              progressLine(421, "qa"),
             ],
           }),
         );
@@ -313,13 +307,13 @@ describe.skipIf(!mcpSdkAvailable)(
     });
 
     describe("Error scenarios", () => {
-      it("should handle subprocess with no phase patterns", async () => {
-        const progressEvents: ProgressEvent[] = [];
+      it("should handle subprocess with no progress lines", async () => {
+        const progressEvents: ProgressNotification[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: ["some random warning\n", "another log line\n"],
+            stderrChunks: ["some random warning\n", "another log line\n"],
           }),
         );
 
@@ -327,7 +321,7 @@ describe.skipIf(!mcpSdkAvailable)(
           { name: "sequant_run", arguments: { issues: [421] } },
           undefined,
           {
-            onprogress: (evt: ProgressEvent) => {
+            onprogress: (evt: ProgressNotification) => {
               progressEvents.push(evt);
             },
             timeout: 10000,
@@ -340,16 +334,16 @@ describe.skipIf(!mcpSdkAvailable)(
         expect(progressEvents).toHaveLength(0);
       });
 
-      it("should handle partial/malformed phase output", async () => {
-        const progressEvents: ProgressEvent[] = [];
+      it("should handle mixed progress and non-progress stderr output", async () => {
+        const progressEvents: ProgressNotification[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: [
-              "\u23F3 spec\n", // missing (N/M)
-              "random noise\n",
-              "\u23F3     exec (2/3)...\n", // valid
+            stderrChunks: [
+              "warning: something\n",
+              progressLine(421, "exec"),
+              "error detail\n",
             ],
           }),
         );
@@ -358,7 +352,7 @@ describe.skipIf(!mcpSdkAvailable)(
           { name: "sequant_run", arguments: { issues: [421] } },
           undefined,
           {
-            onprogress: (evt: ProgressEvent) => {
+            onprogress: (evt: ProgressNotification) => {
               progressEvents.push(evt);
             },
             timeout: 10000,
@@ -368,18 +362,18 @@ describe.skipIf(!mcpSdkAvailable)(
         await new Promise((r) => setTimeout(r, 50));
 
         expect(result.isError).toBeFalsy();
-        // Only the valid line should trigger a notification
+        // Only the valid progress line should trigger a notification
         expect(progressEvents).toHaveLength(1);
       });
 
       it("should handle concurrent runs with separate progress tracking", async () => {
-        const events1: ProgressEvent[] = [];
-        const events2: ProgressEvent[] = [];
+        const events1: ProgressNotification[] = [];
+        const events2: ProgressNotification[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stdoutChunks: ["\u23F3     spec (1/3)...\n"],
+            stderrChunks: [progressLine(100, "spec")],
           }),
         );
 
@@ -389,7 +383,7 @@ describe.skipIf(!mcpSdkAvailable)(
             { name: "sequant_run", arguments: { issues: [100] } },
             undefined,
             {
-              onprogress: (evt: ProgressEvent) => {
+              onprogress: (evt: ProgressNotification) => {
                 events1.push(evt);
               },
               timeout: 10000,
@@ -399,7 +393,7 @@ describe.skipIf(!mcpSdkAvailable)(
             { name: "sequant_run", arguments: { issues: [200] } },
             undefined,
             {
-              onprogress: (evt: ProgressEvent) => {
+              onprogress: (evt: ProgressNotification) => {
                 events2.push(evt);
               },
               timeout: 10000,

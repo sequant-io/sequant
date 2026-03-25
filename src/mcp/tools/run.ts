@@ -265,40 +265,47 @@ function buildFallbackResponse(
     ...(stderr ? { error: stderr.slice(-1000) } : {}),
   };
 }
-/**
- * Strip ANSI escape codes from a string.
- */
-function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, "");
+/** Prefix used by the batch executor to emit structured progress lines. */
+const PROGRESS_LINE_PREFIX = "SEQUANT_PROGRESS:";
+
+/** Parsed progress event from a SEQUANT_PROGRESS line. */
+export interface ProgressEvent {
+  issue: number;
+  phase: string;
 }
 
 /**
- * Regex to detect phase start lines from PhaseSpinner output.
- *
- * Matches patterns like:
- *   "⏳     spec (1/3)..."     (TextSpinner start)
- *   "⏳ spec (1/3)..."         (minimal prefix)
- *
- * The hourglass (⏳) indicates a phase start — we only emit progress
- * on starts, not on completions (✓) or failures (✗).
+ * Parse a SEQUANT_PROGRESS line emitted by the batch executor.
+ * Returns the parsed event or null if the line isn't a progress line.
  */
-const PHASE_START_PATTERN = /\u23F3\s+(\w+)\s+\((\d+)\/(\d+)\)/;
+export function parseProgressLine(line: string): ProgressEvent | null {
+  if (!line.startsWith(PROGRESS_LINE_PREFIX)) return null;
+  try {
+    const json = JSON.parse(line.slice(PROGRESS_LINE_PREFIX.length));
+    if (typeof json.issue === "number" && typeof json.phase === "string") {
+      return { issue: json.issue, phase: json.phase };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Parse a chunk of subprocess output for phase start patterns.
- * Returns match info or null if no phase start found.
+ * Create a line buffer that accumulates stream chunks and yields complete lines.
+ * Handles the case where a single `data` event spans partial lines.
  */
-export function parsePhaseStart(
-  chunk: string,
-): { phase: string; phaseIndex: number; totalPhases: number } | null {
-  const clean = stripAnsi(chunk);
-  const match = clean.match(PHASE_START_PATTERN);
-  if (!match) return null;
-  return {
-    phase: match[1],
-    phaseIndex: parseInt(match[2], 10),
-    totalPhases: parseInt(match[3], 10),
+export function createLineBuffer(
+  onLine: (line: string) => void,
+): (chunk: string) => void {
+  let buffer = "";
+  return (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop()!; // keep incomplete tail
+    for (const line of lines) {
+      if (line.length > 0) onLine(line);
+    }
   };
 }
 
@@ -390,8 +397,9 @@ export function registerRunTool(server: McpServer): void {
        * Emit a progress notification if the client provided a progressToken.
        * Failures are caught to avoid aborting the run (AC-6).
        */
-      const emitProgress = (message: string): void => {
+      const emitProgress = (event: ProgressEvent): void => {
         if (progressToken === undefined) return;
+        currentStep++;
         try {
           // Fire-and-forget: don't await to avoid blocking the output stream
           void extra
@@ -401,7 +409,7 @@ export function registerRunTool(server: McpServer): void {
                 progressToken,
                 progress: currentStep,
                 total: totalSteps,
-                message,
+                message: `Issue #${event.issue}: ${event.phase} phase started (${currentStep}/${totalSteps})`,
               },
             })
             .catch(() => {
@@ -413,23 +421,17 @@ export function registerRunTool(server: McpServer): void {
       };
 
       /**
-       * Handle a chunk of subprocess output, checking for phase transitions.
-       * Called for both stdout and stderr to handle all spinner modes.
+       * Handle a complete line of subprocess stderr, checking for progress events.
+       * The batch executor emits SEQUANT_PROGRESS:{json} lines at each phase start.
        */
-      const handleOutputChunk = (chunk: string): void => {
-        const parsed = parsePhaseStart(chunk);
-        if (!parsed) return;
-        currentStep++;
-        // Deduce which issue is active from the step counter
-        const issueIdx = Math.min(
-          Math.floor((currentStep - 1) / phaseList.length),
-          issues.length - 1,
-        );
-        const issueNumber = issues[issueIdx];
-        emitProgress(
-          `Issue #${issueNumber}: ${parsed.phase} phase started (${currentStep}/${totalSteps})`,
-        );
+      const handleLine = (line: string): void => {
+        const event = parseProgressLine(line);
+        if (event) emitProgress(event);
       };
+
+      // Line-buffer stderr to handle chunk boundaries correctly
+      const stderrLineBuffer =
+        progressToken !== undefined ? createLineBuffer(handleLine) : undefined;
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -444,8 +446,7 @@ export function registerRunTool(server: McpServer): void {
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
           signal: extra.signal,
-          onStdout: progressToken !== undefined ? handleOutputChunk : undefined,
-          onStderr: progressToken !== undefined ? handleOutputChunk : undefined,
+          onStderr: stderrLineBuffer,
         });
 
         const stdout = result.stdout || "";
