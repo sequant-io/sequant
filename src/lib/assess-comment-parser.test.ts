@@ -337,7 +337,7 @@ describe("assess-comment-parser", () => {
 
 describe("assess-to-phase-signal integration", () => {
   describe("AC-8: assessWorkflowToSignals", () => {
-    it("should convert assess workflow to phase signals with source 'solve'", () => {
+    it("should convert assess workflow to phase signals with source 'assess'", () => {
       const workflow: AssessWorkflowResult = {
         phases: ["spec", "exec", "qa"],
         qualityLoop: false,
@@ -348,7 +348,7 @@ describe("assess-to-phase-signal integration", () => {
       expect(signals).toHaveLength(3);
       expect(signals[0]).toEqual({
         phase: "spec",
-        source: "solve",
+        source: "assess",
         confidence: "high",
         reason: "Recommended by /assess command: spec → exec → qa",
       });
@@ -366,7 +366,7 @@ describe("assess-to-phase-signal integration", () => {
       expect(signals).toHaveLength(3);
       expect(signals[2]).toEqual({
         phase: "quality-loop",
-        source: "solve",
+        source: "assess",
         confidence: "high",
         reason: "Quality loop recommended by /assess command",
       });

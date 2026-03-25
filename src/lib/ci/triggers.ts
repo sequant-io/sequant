@@ -25,6 +25,7 @@ const VALID_PHASES = new Set<string>([
  * Map trigger labels to their corresponding phase lists.
  */
 const LABEL_PHASE_MAP: Record<string, Phase[]> = {
+  [TRIGGER_LABELS.ASSESS]: ["spec", "exec", "qa"],
   [TRIGGER_LABELS.SOLVE]: ["spec", "exec", "qa"],
   [TRIGGER_LABELS.SPEC_ONLY]: ["spec"],
   [TRIGGER_LABELS.EXEC]: ["exec"],

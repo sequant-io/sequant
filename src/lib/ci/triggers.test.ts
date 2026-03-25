@@ -17,7 +17,23 @@ describe("detectTrigger", () => {
   });
 
   describe("label triggers", () => {
-    it("detects sequant:solve label as full workflow", () => {
+    it("detects sequant:assess label as full workflow", () => {
+      const context: GitHubContext = {
+        eventName: "issues",
+        payload: {
+          action: "labeled",
+          issue: { number: 42 },
+          label: { name: "sequant:assess" },
+        },
+      };
+      const result = detectTrigger(context);
+      expect(result.trigger).toBe("label");
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
+      expect(result.issue).toBe(42);
+      expect(result.label).toBe("sequant:assess");
+    });
+
+    it("detects sequant:solve label as full workflow (backward compat)", () => {
       const context: GitHubContext = {
         eventName: "issues",
         payload: {

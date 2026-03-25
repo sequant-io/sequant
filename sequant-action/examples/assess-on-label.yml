@@ -1,14 +1,14 @@
 # Example: Trigger Sequant workflow when an issue is labeled
 #
-# When a user adds the "sequant:solve" label to an issue, this workflow
+# When a user adds the "sequant:assess" label to an issue, this workflow
 # runs the full spec → exec → qa pipeline and creates a PR on success.
 #
 # Setup:
-#   1. Copy this file to .github/workflows/sequant-solve.yml
+#   1. Copy this file to .github/workflows/sequant-assess.yml
 #   2. Add ANTHROPIC_API_KEY to your repo's Actions secrets
-#   3. Label any issue with "sequant:solve" to trigger
+#   3. Label any issue with "sequant:assess" to trigger
 
-name: AI Solve Issue
+name: AI Assess Issue
 
 on:
   issues:
@@ -20,9 +20,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  solve:
+  assess:
     # Only run when the specific label is added
-    if: github.event.label.name == 'sequant:solve'
+    if: github.event.label.name == 'sequant:assess'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

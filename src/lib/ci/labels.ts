@@ -13,6 +13,16 @@ import { LIFECYCLE_LABELS, TRIGGER_LABELS } from "./types.js";
 const TRIGGER_LABEL_SET: Set<string> = new Set(Object.values(TRIGGER_LABELS));
 
 /**
+ * Trigger label aliases — labels that trigger the same workflow.
+ * When one is used, all aliases should also be removed to prevent
+ * stale labels during migration (e.g. sequant:solve → sequant:assess).
+ */
+const TRIGGER_ALIASES: ReadonlyMap<string, readonly string[]> = new Map([
+  [TRIGGER_LABELS.ASSESS, [TRIGGER_LABELS.SOLVE]],
+  [TRIGGER_LABELS.SOLVE, [TRIGGER_LABELS.ASSESS]],
+]);
+
+/**
  * Get labels to add when a workflow run starts.
  */
 export function getStartLabels(): string[] {
@@ -26,9 +36,13 @@ export function getStartLabels(): string[] {
 export function getStartRemoveLabels(triggerLabel?: string): string[] {
   const labels: string[] = [];
 
-  // Remove the trigger label
+  // Remove the trigger label and any aliases (e.g. assess ↔ solve)
   if (triggerLabel && TRIGGER_LABEL_SET.has(triggerLabel)) {
     labels.push(triggerLabel);
+    const aliases = TRIGGER_ALIASES.get(triggerLabel);
+    if (aliases) {
+      labels.push(...aliases);
+    }
   }
 
   // Remove any stale outcome labels from prior runs

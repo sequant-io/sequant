@@ -407,9 +407,6 @@ export function parseSolveWorkflow(body: string): AssessWorkflowResult {
 
 /**
  * Convert assess workflow result to phase signals
- *
- * Uses source 'solve' internally for backward compatibility with
- * the phase signal priority system.
  */
 export function assessWorkflowToSignals(
   workflow: AssessWorkflowResult,
@@ -419,7 +416,7 @@ export function assessWorkflowToSignals(
   for (const phase of workflow.phases) {
     signals.push({
       phase,
-      source: "solve",
+      source: "assess",
       confidence: "high",
       reason: `Recommended by /assess command: ${workflow.workflowString || phase}`,
     });
@@ -428,7 +425,7 @@ export function assessWorkflowToSignals(
   if (workflow.qualityLoop) {
     signals.push({
       phase: "quality-loop",
-      source: "solve",
+      source: "assess",
       confidence: "high",
       reason: "Quality loop recommended by /assess command",
     });
