@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add MCP progress notifications for `sequant_run` tool (#421)
+  - Emit `notifications/progress` during phase transitions when client provides `progressToken`
+  - Prevents client-side timeouts via SDK's `resetTimeoutOnProgress` support
+  - Backward compatible: no notifications when no `progressToken` provided
 - Add parallel execution as default mode for multi-issue runs (#404)
   - Issues now run concurrently using `Promise.allSettled` + `p-limit`
   - Configurable concurrency via `--concurrency <n>` flag (default: 3)

@@ -8,6 +8,11 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type {
+  ServerNotification,
+  ServerRequest,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { spawn } from "child_process";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
@@ -260,6 +265,46 @@ function buildFallbackResponse(
     ...(stderr ? { error: stderr.slice(-1000) } : {}),
   };
 }
+/**
+ * Strip ANSI escape codes from a string.
+ */
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+/**
+ * Regex to detect phase start lines from PhaseSpinner output.
+ *
+ * Matches patterns like:
+ *   "⏳     spec (1/3)..."     (TextSpinner start)
+ *   "⏳ spec (1/3)..."         (minimal prefix)
+ *
+ * The hourglass (⏳) indicates a phase start — we only emit progress
+ * on starts, not on completions (✓) or failures (✗).
+ */
+const PHASE_START_PATTERN = /\u23F3\s+(\w+)\s+\((\d+)\/(\d+)\)/;
+
+/**
+ * Parse a chunk of subprocess output for phase start patterns.
+ * Returns match info or null if no phase start found.
+ */
+export function parsePhaseStart(
+  chunk: string,
+): { phase: string; phaseIndex: number; totalPhases: number } | null {
+  const clean = stripAnsi(chunk);
+  const match = clean.match(PHASE_START_PATTERN);
+  if (!match) return null;
+  return {
+    phase: match[1],
+    phaseIndex: parseInt(match[2], 10),
+    totalPhases: parseInt(match[3], 10),
+  };
+}
+
+/** Type alias for the tool handler's extra parameter */
+type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
 const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
   phases: z
@@ -297,7 +342,7 @@ export function registerRunTool(server: McpServer): void {
         qualityLoop?: boolean;
         agent?: string;
       },
-      extra: { signal: AbortSignal },
+      extra: ToolHandlerExtra,
     ) => {
       if (!issues || issues.length === 0) {
         return {
@@ -331,7 +376,60 @@ export function registerRunTool(server: McpServer): void {
       args.push("--log-json");
 
       const phasesStr = phases || "spec,exec,qa";
+      const phaseList = phasesStr.split(",");
+      const totalSteps = issues.length * phaseList.length;
       const runStartTime = new Date();
+
+      // Extract progress token for MCP progress notifications (AC-1)
+      const progressToken = extra._meta?.progressToken;
+
+      // Track progress across phase transitions
+      let currentStep = 0;
+
+      /**
+       * Emit a progress notification if the client provided a progressToken.
+       * Failures are caught to avoid aborting the run (AC-6).
+       */
+      const emitProgress = (message: string): void => {
+        if (progressToken === undefined) return;
+        try {
+          // Fire-and-forget: don't await to avoid blocking the output stream
+          void extra
+            .sendNotification({
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress: currentStep,
+                total: totalSteps,
+                message,
+              },
+            })
+            .catch(() => {
+              // Swallow notification delivery errors (AC-6)
+            });
+        } catch {
+          // Swallow synchronous errors (AC-6)
+        }
+      };
+
+      /**
+       * Handle a chunk of subprocess output, checking for phase transitions.
+       * Called for both stdout and stderr to handle all spinner modes.
+       */
+      const handleOutputChunk = (chunk: string): void => {
+        const parsed = parsePhaseStart(chunk);
+        if (!parsed) return;
+        currentStep++;
+        // Deduce which issue is active from the step counter
+        const issueIdx = Math.min(
+          Math.floor((currentStep - 1) / phaseList.length),
+          issues.length - 1,
+        );
+        const issueNumber = issues[issueIdx];
+        emitProgress(
+          `Issue #${issueNumber}: ${parsed.phase} phase started (${currentStep}/${totalSteps})`,
+        );
+      };
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -346,6 +444,8 @@ export function registerRunTool(server: McpServer): void {
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
           signal: extra.signal,
+          onStdout: progressToken !== undefined ? handleOutputChunk : undefined,
+          onStderr: progressToken !== undefined ? handleOutputChunk : undefined,
         });
 
         const stdout = result.stdout || "";
@@ -418,6 +518,10 @@ export interface SpawnOptions {
   timeout: number;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  /** Called with each stderr chunk (real-time, before process exits) */
+  onStderr?: (chunk: string) => void;
+  /** Called with each stdout chunk (real-time, before process exits) */
+  onStdout?: (chunk: string) => void;
 }
 
 /** @internal Exported for testing only */
@@ -475,11 +579,15 @@ export function spawnAsync(
     }
 
     proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
+      const chunk = data.toString();
+      stdout += chunk;
+      options.onStdout?.(chunk);
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      options.onStderr?.(chunk);
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {
