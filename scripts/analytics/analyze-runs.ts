@@ -20,9 +20,6 @@ import {
   RunLogSchema,
   type RunLog,
   type PhaseLog,
-  type IssueLog,
-  type QaVerdict,
-  type Phase,
 } from "../../src/lib/workflow/run-log-schema.js";
 
 // ---------------------------------------------------------------------------
