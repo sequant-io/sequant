@@ -15,7 +15,10 @@ export function registerResources(server: McpServer): void {
     "state",
     "sequant://state",
     {
-      description: "Current Sequant workflow state (.sequant/state.json)",
+      description:
+        "Dashboard view of all tracked GitHub issues and their workflow progress. " +
+        "Contains per-issue phase status (spec/exec/qa), worktree paths, PR links, and QA verdicts. " +
+        "Read this to understand which issues are in-flight before starting new work.",
       mimeType: "application/json",
     },
     async () => {
@@ -64,7 +67,10 @@ export function registerResources(server: McpServer): void {
     "config",
     "sequant://config",
     {
-      description: "Current Sequant configuration (.sequant/settings.json)",
+      description:
+        "Current Sequant workflow settings including default phases, timeout limits, " +
+        "quality loop configuration, and agent preferences. " +
+        "Read this to understand how sequant_run will behave before invoking it.",
       mimeType: "application/json",
     },
     async () => {

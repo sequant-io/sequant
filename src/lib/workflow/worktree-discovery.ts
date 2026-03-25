@@ -18,7 +18,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { spawnSync } from "child_process";
 import { StateManager } from "./state-manager.js";
-import { type Phase } from "./state-schema.js";
+import { type Phase } from "./types.js";
 import { RunLogSchema, LOG_PATHS } from "./run-log-schema.js";
 
 export interface DiscoverOptions {

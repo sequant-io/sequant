@@ -19,20 +19,10 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-/**
- * Available workflow phases
- */
-export const PhaseSchema = z.enum([
-  "spec",
-  "security-review",
-  "testgen",
-  "exec",
-  "test",
-  "qa",
-  "loop",
-]);
-
-export type Phase = z.infer<typeof PhaseSchema>;
+// Import canonical Phase types from types.ts (single source of truth)
+import { PhaseSchema, type Phase } from "./types.js";
+export { PhaseSchema };
+export type { Phase } from "./types.js";
 
 /**
  * Phase execution status

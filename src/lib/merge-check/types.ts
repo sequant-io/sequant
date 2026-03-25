@@ -4,6 +4,8 @@
  * Shared type definitions for batch-level integration QA checks.
  */
 
+import { z } from "zod";
+
 /**
  * Information about a feature branch in a batch
  */
@@ -23,14 +25,18 @@ export interface BranchInfo {
 }
 
 /**
- * Per-issue verdict from a check
+ * Per-issue verdict from a check (Zod schema + inferred type)
  */
-export type CheckVerdict = "PASS" | "WARN" | "FAIL";
+export const CHECK_VERDICTS = ["PASS", "WARN", "FAIL"] as const;
+export const CheckVerdictSchema = z.enum(CHECK_VERDICTS);
+export type CheckVerdict = z.infer<typeof CheckVerdictSchema>;
 
 /**
- * Batch-level verdict
+ * Batch-level verdict (Zod schema + inferred type)
  */
-export type BatchVerdict = "READY" | "NEEDS_ATTENTION" | "BLOCKED";
+export const BATCH_VERDICTS = ["READY", "NEEDS_ATTENTION", "BLOCKED"] as const;
+export const BatchVerdictSchema = z.enum(BATCH_VERDICTS);
+export type BatchVerdict = z.infer<typeof BatchVerdictSchema>;
 
 /**
  * A single finding from a check

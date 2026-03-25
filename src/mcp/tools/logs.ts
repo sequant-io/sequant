@@ -41,16 +41,29 @@ export function registerLogsTool(server: McpServer): void {
     "sequant_logs",
     {
       title: "Sequant Logs",
-      description: "Get structured run logs for recent workflow executions",
+      description:
+        "Get structured run logs for recent workflow executions. " +
+        "Each log contains per-issue phase results (duration, status, errors) and QA verdicts. " +
+        "Use after a sequant_run completes or fails to understand what happened. " +
+        "Logs are stored as run-<ISO-timestamp>-<uuid>.json files.",
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
       inputSchema: {
         runId: z
           .string()
           .optional()
-          .describe("Specific run ID (optional, defaults to latest)"),
+          .describe(
+            "Specific run ID prefix to filter by (e.g. 'run-2026-03-24'). " +
+              "Omit to return the most recent runs.",
+          ),
         limit: z
           .number()
           .optional()
-          .describe("Number of recent runs to return (default: 5)"),
+          .describe(
+            "Number of recent runs to return (default: 5, max: all available)",
+          ),
       },
     },
     async ({ runId, limit }) => {

@@ -12,7 +12,6 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
 import { StateManager } from "./state-manager.js";
-import type { Phase as StatePhase } from "./state-schema.js";
 import { Phase, ExecutionConfig, PhaseResult, IssueResult } from "./types.js";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
@@ -223,8 +222,8 @@ export function sortByDependencies(issueNumbers: number[]): number[] {
   }
 
   // Note: inDegree counts how many issues depend on each issue
-  // We want to process issues that nothing depends on last
-  // So we sort by: issues nothing depends on first, then dependent issues
+  // We want to process issues that have no dependencies first,
+  // so dependent issues come after their prerequisites
   const sorted: number[] = [];
   const queue: number[] = [];
 
@@ -669,7 +668,7 @@ export async function runIssueWithLogging(
         try {
           await stateManager.updatePhaseStatus(
             issueNumber,
-            phase as StatePhase,
+            phase as Phase,
             "in_progress",
           );
         } catch {
@@ -753,7 +752,7 @@ export async function runIssueWithLogging(
               : "failed";
           await stateManager.updatePhaseStatus(
             issueNumber,
-            phase as StatePhase,
+            phase as Phase,
             phaseStatus,
             { error: result.error },
           );

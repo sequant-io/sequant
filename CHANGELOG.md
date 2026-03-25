@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
+
 ### Added
 
 - Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
@@ -14,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Merges into existing `.mcp.json` preserving other server entries
   - Skips if sequant entry already exists
   - `--mcp` flag retains existing behavior for global client configs
+- Add server instructions and tool annotations to MCP server for LLM discoverability (#420)
+  - Server-level instructions explaining workflow, tool relationships, and usage patterns
+  - Tool annotations (`readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`) for client approval decisions
+  - Improved tool and resource descriptions with usage guidance and cross-tool relationships
+  - `phases` parameter now enumerates valid values (`spec`, `exec`, `qa`)
+- Reconcile `sequant status` with GitHub on every read (#423)
+  - Batch GraphQL query fetches live issue/PR state in a single API call
+  - Auto-heals unambiguous drift: merged PRs, closed issues, missing worktrees
+  - Flags ambiguous drift (e.g., deleted worktree with open issue) to the user
+  - Next-action hints per issue row (e.g., `→ gh pr merge 419`)
+  - Relative timestamps and `Last synced` footer
+  - `--offline` flag preserves pure local-state behavior
+  - MCP `sequant_status` tool returns reconciled data
+  - Graceful degradation when GitHub is unreachable
 - Add parallel execution as default mode for multi-issue runs (#404)
   - Issues now run concurrently using `Promise.allSettled` + `p-limit`
   - Configurable concurrency via `--concurrency <n>` flag (default: 3)
@@ -27,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unify Phase type definitions into single source of truth (#401)
+  - Canonical `PhaseSchema` (Zod) + `Phase` type now live in `types.ts`
+  - `state-schema.ts` and `run-log-schema.ts` re-export from the canonical source
+  - Eliminate `Phase as StatePhase` aliased import in `batch-executor.ts`
+  - Add `as const` + Zod schemas for merge-check verdict types
+  - Fix misleading topological sort comment in `batch-executor.ts`
 - Fix concurrent state writes silently discarding changes (#409)
   - Add file locking (`O_EXCL`) around read-modify-write cycles in `StateManager`
   - Stale lock detection with configurable timeout prevents deadlocks
