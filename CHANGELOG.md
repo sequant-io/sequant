@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
+
 ### Added
 
 - Add parallel execution as default mode for multi-issue runs (#404)

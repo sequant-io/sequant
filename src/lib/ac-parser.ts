@@ -4,6 +4,7 @@
  * Extracts acceptance criteria from GitHub issue markdown.
  * Supports checkbox format: `- [ ] **AC-1:** Description`
  * Also supports alternate formats: `- [ ] **B2:** Description`
+ * And bold-wrapped format: `- [ ] **AC-1: Description**`
  *
  * @example
  * ```typescript
@@ -39,13 +40,16 @@ import {
  * - `- [x] **AC-1:** Description`
  * - `- [ ] **B2:** Description`
  * - `- [ ] **AC1:** Description`
+ * - `- [ ] **AC-1: Description**` (bold wraps ID + description)
  */
 const AC_PATTERNS = [
   // Pattern 1: `- [ ] **AC-1:** Description` or `- [x] **AC-1:** Description`
   /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]+-?\d+):\*\*\s*(.+)$/gim,
   // Pattern 2: `- [ ] **B2:** Description` (letter + number without hyphen)
   /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]\d+):\*\*\s*(.+)$/gim,
-  // Pattern 3: `- [ ] AC-1: Description` (no bold)
+  // Pattern 3: `- [ ] **AC-1: Description.** optional text` (bold wraps ID + description)
+  /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]+-?\d+):\s*(.+?)\*\*\s*(.*)$/gim,
+  // Pattern 4: `- [ ] AC-1: Description` (no bold)
   /^-\s*\[[x\s]\]\s*([A-Za-z]+-?\d+):\s*(.+)$/gim,
 ];
 
@@ -118,9 +122,14 @@ function parseACLine(line: string): { id: string; description: string } | null {
     pattern.lastIndex = 0;
     const match = pattern.exec(line);
     if (match) {
+      // Combine groups 2 and 3 for bold-wrapped format (Pattern 3)
+      // where group 3 captures optional text after closing **
+      const description = match[3]
+        ? `${match[2].trim()} ${match[3].trim()}`.trim()
+        : match[2].trim();
       return {
         id: match[1].toUpperCase(),
-        description: match[2].trim(),
+        description,
       };
     }
   }
