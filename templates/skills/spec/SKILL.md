@@ -449,24 +449,24 @@ Ask the user to confirm or adjust:
 
 **Before** determining the recommended workflow, analyze the issue content for phase-relevant signals:
 
-#### Step 1: Check for Solve Comment (AC-4)
+#### Step 1: Check for Assess Comment (AC-4)
 
-First, check if a `/solve` comment already exists for this issue:
+First, check if an `/assess` comment already exists for this issue:
 
 ```bash
-# Check issue comments for solve workflow
-gh issue view <issue-number> --json comments --jq '.comments[].body' | grep -l "## Solve Workflow for Issues:" || true
+# Check issue comments for assess workflow (includes legacy /solve format for backward compat)
+gh issue view <issue-number> --json comments --jq '.comments[].body' | grep -l "## Assess Analysis\|## Solve Workflow for Issues:" || true
 ```
 
-**If solve comment found:**
-- Extract phases from the solve workflow (e.g., `spec → exec → test → qa`)
-- Use solve recommendations as the primary source (after labels)
-- Skip content analysis for phases (solve already analyzed)
-- Include in output: `"Solve comment found - using /solve workflow recommendations"`
+**If assess comment found:**
+- Extract phases from the assess workflow (e.g., `spec → exec → test → qa`)
+- Use assess recommendations as the primary source (after labels)
+- Skip content analysis for phases (assess already analyzed)
+- Include in output: `"Assess comment found - using /assess workflow recommendations"`
 
 #### Step 2: Analyze Title for Keywords (AC-1)
 
-If no solve comment, analyze the issue title for phase-relevant keywords:
+If no assess comment, analyze the issue title for phase-relevant keywords:
 
 | Pattern | Detection | Suggested Phase |
 |---------|-----------|-----------------|
@@ -513,7 +513,7 @@ Content analysis **supplements** label detection - it can only ADD phases, never
 
 **Priority order (highest first):**
 1. **Labels** (explicit, highest priority)
-2. **Solve comment** (if exists)
+2. **Assess comment** (if exists)
 3. **Title keywords**
 4. **Body patterns** (lowest priority)
 
@@ -536,42 +536,42 @@ Content analysis **supplements** label detection - it can only ADD phases, never
 **Final phases:** spec → exec → test → security-review → qa
 ```
 
-### 4.5. Solve Comment Detection (AC-4, AC-5)
+### 4.5. Assess Comment Detection (AC-4, AC-5)
 
-**Before making your own phase recommendation**, check if `/solve` has already posted an analysis comment to this issue:
+**Before making your own phase recommendation**, check if `/assess` has already posted an analysis comment to this issue:
 
 ```bash
-# Check for solve analysis comment on the issue
-solve_comment=$(gh issue view <issue-number> --json comments \
-  --jq '[.comments[].body | select(test("## Solve Analysis|<!-- solve:phases="))] | last // empty')
+# Check for assess analysis comment on the issue (includes legacy /solve format for backward compat)
+assess_comment=$(gh issue view <issue-number> --json comments \
+  --jq '[.comments[].body | select(test("## Assess Analysis|## Solve Analysis|<!-- assess:phases=|<!-- solve:phases="))] | last // empty')
 ```
 
-**If a solve analysis comment exists:**
+**If an assess analysis comment exists:**
 
 1. Parse the HTML comment markers to extract the recommended phases:
    ```
-   <!-- solve:phases=exec,qa -->        → phases: ["exec", "qa"]
-   <!-- solve:skip-spec=true -->        → skip spec phase
-   <!-- solve:browser-test=false -->    → no browser testing needed
-   <!-- solve:quality-loop=true -->     → enable quality loop
+   <!-- assess:phases=exec,qa -->        → phases: ["exec", "qa"]
+   <!-- assess:skip-spec=true -->        → skip spec phase
+   <!-- assess:browser-test=false -->    → no browser testing needed
+   <!-- assess:quality-loop=true -->     → enable quality loop
    ```
 
-2. **Use the solve recommendation as your starting point** for the phase recommendation in step 5.
+2. **Use the assess recommendation as your starting point** for the phase recommendation in step 5.
 
-3. **You may override the solve recommendation**, but you MUST document why:
+3. **You may override the assess recommendation**, but you MUST document why:
    ```markdown
    ## Recommended Workflow
 
    **Phases:** spec → exec → test → qa
    **Quality Loop:** enabled
-   **Reasoning:** Solve recommended `exec → qa`, but codebase analysis reveals UI components
+   **Reasoning:** Assess recommended `exec → qa`, but codebase analysis reveals UI components
    are affected (found `.tsx` files in change scope), so browser testing is needed.
-   Overriding solve recommendation with explanation.
+   Overriding assess recommendation with explanation.
    ```
 
-4. If the solve comment recommends `skip-spec=true`, acknowledge this in your output but proceed with spec since `/spec` was explicitly invoked.
+4. If the assess comment recommends `skip-spec=true`, acknowledge this in your output but proceed with spec since `/spec` was explicitly invoked.
 
-**If no solve analysis comment exists:** Proceed with your own analysis as normal (step 5).
+**If no assess analysis comment exists:** Proceed with your own analysis as normal (step 5).
 
 ### 5. Recommended Workflow
 
@@ -700,7 +700,7 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
 - [ ] **Design Review** - All 4 questions answered (abbreviated to Q1+Q3 for simple-fix/typo/docs-only labels)
-- [ ] **Content Analysis** - Title/body analysis results (or "Solve comment found" if using /solve)
+- [ ] **Content Analysis** - Title/body analysis results (or "Assess comment found" if using /assess)
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, Signal Sources, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults
@@ -770,10 +770,10 @@ You MUST include these sections in order:
 
 ## Content Analysis
 
-<!-- If solve comment found: -->
-**Source:** Solve comment found - using /solve workflow recommendations
+<!-- If assess comment found: -->
+**Source:** Assess comment found - using /assess workflow recommendations
 
-<!-- If no solve comment, show analysis: -->
+<!-- If no assess comment, show analysis: -->
 ### Signal Sources
 
 | Phase | Source | Confidence | Reason |
