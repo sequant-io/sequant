@@ -76,7 +76,6 @@ sequant doctor              # Verify installation health
 
 | Command | Purpose |
 |---------|---------|
-| `/assess <issue>` | Triage issue, recommend next phase |
 | `/improve` | Discover codebase improvements, create issues |
 | `/reflect` | Analyze workflow effectiveness |
 | `/security-review` | Deep security analysis for sensitive features |

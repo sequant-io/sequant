@@ -167,7 +167,6 @@ npx sequant merge --check        # Verify batch before merging
 
 | Command | Purpose |
 |---------|---------|
-| `/assess` | Issue triage and status assessment |
 | `/docs` | Generate feature documentation |
 | `/clean` | Repository cleanup |
 | `/improve` | Codebase analysis and improvement discovery |
