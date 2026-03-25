@@ -160,6 +160,24 @@ Once set up, talk to your AI assistant naturally:
 - **Run QA separately if needed:** "Use sequant to QA issue #42"
 - **Merge when ready** through your normal review process.
 
+## How Your AI Discovers Sequant
+
+When your MCP client connects, Sequant provides metadata that helps the LLM decide when and how to use each tool — without explicit prompting.
+
+**Server instructions** describe the recommended workflow: check `sequant_status` first, then `sequant_run` if needed, poll status during runs, and review `sequant_logs` on failure. This means the LLM follows the correct tool sequence even if you just say "handle issue #42."
+
+**Tool annotations** tell clients about each tool's behavior:
+
+| Tool | Read-only | Idempotent | Destructive | Open-world |
+|------|-----------|------------|-------------|------------|
+| `sequant_status` | Yes | Yes | — | — |
+| `sequant_logs` | Yes | Yes | — | — |
+| `sequant_run` | No | No | No | Yes |
+
+What this means in practice:
+- **`sequant_status` and `sequant_logs`** are marked read-only and idempotent — your client may auto-approve these calls without prompting you.
+- **`sequant_run`** is marked as non-destructive (it creates worktrees and PRs, doesn't delete anything) but not idempotent (running twice creates duplicate work). Most clients will ask for confirmation before executing it.
+
 ## MCP vs CLI
 
 | | CLI (`sequant run 42`) | MCP (from your editor) |
@@ -238,15 +256,15 @@ Get structured run logs for recent executions.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `runId` | `string` | No | latest | Specific run ID |
-| `limit` | `number` | No | `5` | Number of runs to return |
+| `runId` | `string` | No | latest | Run ID prefix to filter by (e.g. `run-2026-03-24`) |
+| `limit` | `number` | No | `5` | Number of recent runs to return |
 
 ### Resources
 
 | Resource | URI | Description |
 |----------|-----|-------------|
-| State | `sequant://state` | All tracked issues, phase progress, AC status |
-| Config | `sequant://config` | Project settings and configuration |
+| State | `sequant://state` | Dashboard view of all tracked issues and their workflow progress — phase status, worktree paths, PR links, QA verdicts |
+| Config | `sequant://config` | Current workflow settings — default phases, timeout limits, quality loop configuration, agent preferences |
 
 ## SSE Transport
 
@@ -347,4 +365,4 @@ Only one SSE client can connect at a time. If you see `409 Conflict`:
 2. Disconnect the existing client, or wait for it to time out
 3. Verify with `GET /health` — `connected: false` means the slot is free
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions) on 2026-03-25.*

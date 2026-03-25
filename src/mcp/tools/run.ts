@@ -265,7 +265,11 @@ const runToolInputSchema = {
   phases: z
     .string()
     .optional()
-    .describe("Comma-separated phases (default: spec,exec,qa)"),
+    .describe(
+      "Comma-separated workflow phases to execute. " +
+        "Valid values: 'spec' (plan and review AC), 'exec' (implement in worktree), 'qa' (code review and verification). " +
+        "Default: 'spec,exec,qa'. Example: 'spec,exec' to skip QA.",
+    ),
   qualityLoop: z
     .boolean()
     .optional()
@@ -282,7 +286,17 @@ export function registerRunTool(server: McpServer): void {
     {
       title: "Sequant Run",
       description:
-        "Run structured AI workflow phases (spec, exec, qa) for GitHub issues with quality gates",
+        "Execute structured AI workflow phases for GitHub issues. " +
+        "Runs spec (plan) → exec (implement) → qa (review) in sequence, creating worktrees and PRs. " +
+        "Long-running: up to 30 minutes per issue. Returns structured JSON with per-issue phase results. " +
+        "Check sequant_status first to avoid re-running completed issues. " +
+        "Example: {issues: [123], phases: 'spec,exec'}",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       inputSchema: runToolInputSchema,
     },
     (async (
