@@ -11,8 +11,13 @@ import { StateManager } from "../lib/workflow/state-manager.js";
 import {
   rebuildStateFromLogs,
   cleanupStaleEntries,
-  checkPRMergeStatus,
 } from "../lib/workflow/state-utils.js";
+import {
+  reconcileState,
+  getNextActionHint,
+  formatRelativeTime,
+  type ReconcileResult,
+} from "../lib/workflow/reconcile.js";
 import type {
   IssueState,
   IssueStatus,
@@ -36,29 +41,49 @@ export interface StatusCommandOptions {
   maxAge?: number;
   /** Remove all orphaned entries (both merged and abandoned) in one step */
   all?: boolean;
+  /** Skip GitHub API queries (offline mode) */
+  offline?: boolean;
 }
 
 /**
- * Auto-detect merged PRs and update state for issues stuck at ready_for_merge.
- * Queries GitHub for each ready_for_merge issue that has a PR number.
+ * Run reconciliation and display warnings.
+ * Returns the reconcile result for use in display.
  */
-async function refreshMergedStatuses(
+async function runReconciliation(
   stateManager: StateManager,
-  issues: IssueState[],
-): Promise<void> {
-  const readyIssues = issues.filter(
-    (i) => i.status === "ready_for_merge" && i.pr?.number,
-  );
+  options: StatusCommandOptions,
+): Promise<ReconcileResult> {
+  const result = await reconcileState({
+    offline: options.offline,
+    stateManager,
+  });
 
-  if (readyIssues.length === 0) return;
+  if (!options.json) {
+    // Show reconciliation warnings
+    if (result.warnings.length > 0) {
+      console.log(chalk.yellow("\n  ⚠️  Drift detected:"));
+      for (const w of result.warnings) {
+        console.log(chalk.yellow(`    #${w.issueNumber}: ${w.description}`));
+      }
+    }
 
-  for (const issue of readyIssues) {
-    const prStatus = checkPRMergeStatus(issue.pr!.number);
-    if (prStatus === "MERGED") {
-      issue.status = "merged";
-      await stateManager.updateIssueStatus(issue.number, "merged");
+    // Show healed drift
+    if (result.healed.length > 0) {
+      for (const h of result.healed) {
+        console.log(chalk.gray(`  ✓ Auto-healed: ${h.description}`));
+      }
+    }
+
+    if (!result.githubReachable && !options.offline) {
+      console.log(
+        chalk.yellow(
+          "\n  ⚠️  GitHub unreachable — showing cached data. Use --offline to suppress this warning.",
+        ),
+      );
     }
   }
+
+  return result;
 }
 
 /**
@@ -156,29 +181,10 @@ function formatIssueState(issue: IssueState): string {
   }
 
   // Last activity
-  const lastActivity = new Date(issue.lastActivity);
-  const relativeTime = getRelativeTime(lastActivity);
+  const relativeTime = formatRelativeTime(issue.lastActivity);
   lines.push(chalk.gray(`    Last activity: ${relativeTime}`));
 
   return lines.join("\n");
-}
-
-/**
- * Get relative time string
- */
-function getRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  const diffMin = Math.floor(diffSec / 60);
-  const diffHour = Math.floor(diffMin / 60);
-  const diffDay = Math.floor(diffHour / 24);
-
-  if (diffSec < 60) return "just now";
-  if (diffMin < 60) return `${diffMin} minute${diffMin > 1 ? "s" : ""} ago`;
-  if (diffHour < 24) return `${diffHour} hour${diffHour > 1 ? "s" : ""} ago`;
-  if (diffDay < 7) return `${diffDay} day${diffDay > 1 ? "s" : ""} ago`;
-  return date.toLocaleDateString();
 }
 
 /**
@@ -226,11 +232,18 @@ function displayIssueSummary(issues: IssueState[]): void {
         issue.title.length > 30
           ? issue.title.substring(0, 27) + "..."
           : issue.title;
+      const hint = getNextActionHint(issue);
+      const hintDisplay = hint
+        ? chalk.gray(
+            `→ ${hint.length > 30 ? hint.substring(0, 27) + "..." : hint}`,
+          )
+        : "";
       rows.push([
         `#${issue.number}`,
         title,
         colorStatus(issue.status),
         issue.currentPhase || "-",
+        hintDisplay,
       ]);
     }
   }
@@ -244,6 +257,7 @@ function displayIssueSummary(issues: IssueState[]): void {
           { header: "Title", width: 32 },
           { header: "Status", width: 20 },
           { header: "Phase", width: 10 },
+          { header: "Next", width: 34 },
         ],
       }),
   );
@@ -335,12 +349,23 @@ export async function statusCommand(
   const stateManager = new StateManager();
   if (stateManager.stateExists()) {
     try {
+      // Reconcile state with GitHub before displaying
+      const reconcileResult = await runReconciliation(stateManager, options);
+
+      // Re-read state after reconciliation (may have been updated)
+      stateManager.clearCache();
       const allIssues = await stateManager.getAllIssueStates();
       const issues = Object.values(allIssues);
 
       if (issues.length > 0) {
-        await refreshMergedStatuses(stateManager, issues);
         displayIssueSummary(issues);
+      }
+
+      // Last synced footer
+      if (reconcileResult.lastSynced) {
+        const syncedAgo = formatRelativeTime(reconcileResult.lastSynced);
+        const offlineNote = options.offline ? " (offline)" : "";
+        console.log(chalk.gray(`\n  Last synced: ${syncedAgo}${offlineNote}`));
       }
     } catch {
       // Ignore state read errors
@@ -370,19 +395,30 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
   }
 
   try {
+    // Reconcile state with GitHub before displaying
+    const reconcileResult = await runReconciliation(stateManager, options);
+    stateManager.clearCache();
+
     if (options.issue !== undefined) {
       // Show single issue details
       const issueState = await stateManager.getIssueState(options.issue);
 
-      if (issueState) {
-        await refreshMergedStatuses(stateManager, [issueState]);
-      }
-
       if (options.json) {
-        console.log(JSON.stringify(issueState, null, 2));
+        const jsonData = issueState
+          ? {
+              ...issueState,
+              nextAction: getNextActionHint(issueState),
+              lastSynced: reconcileResult.lastSynced,
+            }
+          : null;
+        console.log(JSON.stringify(jsonData, null, 2));
       } else if (issueState) {
         console.log(chalk.bold(`\n📊 Issue #${options.issue} State\n`));
         console.log(formatIssueState(issueState));
+        const hint = getNextActionHint(issueState);
+        if (hint) {
+          console.log(chalk.cyan(`\n    Next: ${hint}`));
+        }
       } else {
         console.log(
           chalk.yellow(`\nIssue #${options.issue} not found in state.`),
@@ -393,13 +429,36 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
       const allIssues = await stateManager.getAllIssueStates();
       const issues = Object.values(allIssues);
 
-      await refreshMergedStatuses(stateManager, issues);
-
       if (options.json) {
-        console.log(JSON.stringify({ issues: allIssues }, null, 2));
+        // Enrich JSON output with next-action hints and lastSynced
+        const enriched: Record<string, unknown> = {};
+        for (const [key, issue] of Object.entries(
+          (await stateManager.getState()).issues,
+        )) {
+          enriched[key] = {
+            ...issue,
+            nextAction: getNextActionHint(issue),
+          };
+        }
+        console.log(
+          JSON.stringify(
+            {
+              issues: enriched,
+              lastSynced: reconcileResult.lastSynced,
+              githubReachable: reconcileResult.githubReachable,
+            },
+            null,
+            2,
+          ),
+        );
       } else {
         console.log(chalk.bold("\n📊 Workflow State\n"));
         displayIssueSummary(issues);
+
+        // Last synced footer
+        const syncedAgo = formatRelativeTime(reconcileResult.lastSynced);
+        const offlineNote = options.offline ? " (offline)" : "";
+        console.log(chalk.gray(`\n  Last synced: ${syncedAgo}${offlineNote}`));
       }
     }
   } catch (error) {

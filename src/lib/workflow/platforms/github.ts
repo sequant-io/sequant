@@ -43,6 +43,32 @@ export interface CreatePRCliResult {
   exitCode: number | null;
 }
 
+/**
+ * Info returned for an issue in a batch query.
+ */
+export interface BatchIssueInfo {
+  number: number;
+  title: string;
+  state: "OPEN" | "CLOSED";
+}
+
+/**
+ * Info returned for a PR in a batch query.
+ */
+export interface BatchPRInfo {
+  number: number;
+  state: "OPEN" | "MERGED" | "CLOSED";
+}
+
+/**
+ * Result of a batch GitHub query.
+ */
+export interface BatchGitHubResult {
+  issues: Record<number, BatchIssueInfo>;
+  pullRequests: Record<number, BatchPRInfo>;
+  error?: string;
+}
+
 export class GitHubProvider implements PlatformProvider {
   name = "github";
 
@@ -215,6 +241,109 @@ export class GitHubProvider implements PlatformProvider {
       stderr: result.stderr?.toString() ?? "",
       exitCode: result.status,
     };
+  }
+
+  /**
+   * Batch fetch issue and PR status in a single GraphQL call.
+   * Returns a map keyed by issue/PR number.
+   */
+  batchFetchIssueAndPRStatus(
+    issueNumbers: number[],
+    prNumbers: number[],
+  ): BatchGitHubResult {
+    if (issueNumbers.length === 0 && prNumbers.length === 0) {
+      return { issues: {}, pullRequests: {}, error: undefined };
+    }
+
+    try {
+      // Build GraphQL query with aliases for each issue and PR
+      const issueFields = issueNumbers
+        .map((n) => `issue_${n}: issue(number: ${n}) { number title state }`)
+        .join("\n    ");
+      const prFields = prNumbers
+        .map((n) => `pr_${n}: pullRequest(number: ${n}) { number state }`)
+        .join("\n    ");
+
+      const query = `query {
+  repository(owner: "{owner}", name: "{repo}") {
+    ${issueFields}
+    ${prFields}
+  }
+}`;
+
+      // Get repo owner/name
+      const repoResult = spawnSync(
+        "gh",
+        ["repo", "view", "--json", "owner,name"],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+      );
+
+      if (repoResult.status !== 0 || !repoResult.stdout) {
+        return {
+          issues: {},
+          pullRequests: {},
+          error: "Failed to determine repository",
+        };
+      }
+
+      const repo = JSON.parse(repoResult.stdout) as {
+        owner: { login: string };
+        name: string;
+      };
+      const filledQuery = query
+        .replace("{owner}", repo.owner.login)
+        .replace("{repo}", repo.name);
+
+      const result = spawnSync(
+        "gh",
+        ["api", "graphql", "-f", `query=${filledQuery}`],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+
+      if (result.status !== 0 || !result.stdout) {
+        const stderr = result.stderr?.trim() ?? "Unknown error";
+        return { issues: {}, pullRequests: {}, error: stderr };
+      }
+
+      const data = JSON.parse(result.stdout) as {
+        data?: {
+          repository?: Record<
+            string,
+            { number: number; title?: string; state: string }
+          >;
+        };
+        errors?: Array<{ message: string }>;
+      };
+
+      const issues: Record<number, BatchIssueInfo> = {};
+      const pullRequests: Record<number, BatchPRInfo> = {};
+
+      const repoData = data.data?.repository ?? {};
+
+      for (const [key, value] of Object.entries(repoData)) {
+        if (!value) continue;
+        if (key.startsWith("issue_")) {
+          issues[value.number] = {
+            number: value.number,
+            title: value.title ?? "",
+            state: value.state as "OPEN" | "CLOSED",
+          };
+        } else if (key.startsWith("pr_")) {
+          pullRequests[value.number] = {
+            number: value.number,
+            state: value.state as "OPEN" | "MERGED" | "CLOSED",
+          };
+        }
+      }
+
+      return { issues, pullRequests, error: undefined };
+    } catch (err) {
+      return {
+        issues: {},
+        pullRequests: {},
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   // ─── Async interface methods (PlatformProvider) ────────────────────

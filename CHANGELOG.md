@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reconcile `sequant status` with GitHub on every read (#423)
+  - Batch GraphQL query fetches live issue/PR state in a single API call
+  - Auto-heals unambiguous drift: merged PRs, closed issues, missing worktrees
+  - Flags ambiguous drift (e.g., deleted worktree with open issue) to the user
+  - Next-action hints per issue row (e.g., `→ gh pr merge 419`)
+  - Relative timestamps and `Last synced` footer
+  - `--offline` flag preserves pure local-state behavior
+  - MCP `sequant_status` tool returns reconciled data
+  - Graceful degradation when GitHub is unreachable
 - Add parallel execution as default mode for multi-issue runs (#404)
   - Issues now run concurrently using `Promise.allSettled` + `p-limit`
   - Configurable concurrency via `--concurrency <n>` flag (default: 3)
