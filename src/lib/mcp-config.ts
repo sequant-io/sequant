@@ -135,8 +135,12 @@ export function addSequantToMcpConfig(
     }
   }
 
-  // Initialize mcpServers if needed
-  if (!config.mcpServers || typeof config.mcpServers !== "object") {
+  // Initialize mcpServers if needed (Array.isArray guard: typeof [] === "object")
+  if (
+    !config.mcpServers ||
+    typeof config.mcpServers !== "object" ||
+    Array.isArray(config.mcpServers)
+  ) {
     config.mcpServers = {};
   }
 
@@ -194,8 +198,12 @@ export function createProjectMcpJson(
     }
   }
 
-  // Initialize mcpServers if needed
-  if (!config.mcpServers || typeof config.mcpServers !== "object") {
+  // Initialize mcpServers if needed (Array.isArray guard: typeof [] === "object")
+  if (
+    !config.mcpServers ||
+    typeof config.mcpServers !== "object" ||
+    Array.isArray(config.mcpServers)
+  ) {
     config.mcpServers = {};
   }
 

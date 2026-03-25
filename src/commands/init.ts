@@ -384,9 +384,22 @@ export async function initCommand(options: InitOptions): Promise<void> {
       chalk.gray("  AGENTS.md           (universal agent instructions)"),
     );
   }
-  console.log(
-    chalk.gray("  .mcp.json           (Claude Code MCP server config)"),
-  );
+  // Only show .mcp.json in preview if sequant isn't already configured there
+  const mcpJsonExists = await fileExists(".mcp.json");
+  let mcpJsonAlreadyConfigured = false;
+  if (mcpJsonExists) {
+    try {
+      const mcpContent = JSON.parse(await readFile(".mcp.json"));
+      mcpJsonAlreadyConfigured = !!mcpContent?.mcpServers?.sequant;
+    } catch {
+      // Corrupt file — will be recreated, show in preview
+    }
+  }
+  if (!mcpJsonAlreadyConfigured) {
+    console.log(
+      chalk.gray("  .mcp.json           (Claude Code MCP server config)"),
+    );
+  }
 
   if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([

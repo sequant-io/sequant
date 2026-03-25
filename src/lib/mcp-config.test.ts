@@ -305,5 +305,24 @@ describe("mcp-config", () => {
       );
       expect(content.mcpServers.sequant.command).toBe("npx");
     });
+
+    it("should handle mcpServers being an array instead of object", () => {
+      const existing = { mcpServers: ["not", "an", "object"] };
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify(existing),
+      );
+
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: false, merged: true, skipped: false });
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      // Array replaced with proper object
+      expect(Array.isArray(content.mcpServers)).toBe(false);
+      expect(content.mcpServers.sequant.command).toBe("npx");
+    });
   });
 });
