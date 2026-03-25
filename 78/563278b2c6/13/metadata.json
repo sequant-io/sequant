@@ -1,0 +1,38 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "78563278b2c6",
+  "session_id": "f9dbd972-460e-446d-a0a8-fa154ee77bea",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T15:31:13.307665Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/features/assess-unification.md",
+    "docs/features/mcp-server.md",
+    "docs/features/spec-design-review.md"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "60f3d529802a",
+  "checkpoint_transcript_start": 421,
+  "transcript_lines_at_start": 421,
+  "token_usage": {
+    "input_tokens": 1455,
+    "cache_creation_tokens": 68728,
+    "cache_read_tokens": 11047772,
+    "output_tokens": 24268,
+    "api_call_count": 73
+  },
+  "session_metrics": {
+    "turn_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T15:31:12.214015Z",
+    "agent_lines": 229,
+    "human_added": 31,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 260,
+    "agent_percentage": 88.07692307692308
+  }
+}

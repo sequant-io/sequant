@@ -3,7 +3,7 @@
   "checkpoint_id": "78563278b2c6",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "docs/features/assess-unification.md",
     "docs/features/mcp-server.md",
@@ -87,13 +87,19 @@
       "transcript": "/78/563278b2c6/12/full.jsonl",
       "content_hash": "/78/563278b2c6/12/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/78/563278b2c6/13/metadata.json",
+      "transcript": "/78/563278b2c6/13/full.jsonl",
+      "content_hash": "/78/563278b2c6/13/content_hash.txt",
+      "prompt": "/78/563278b2c6/13/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 17,
-    "cache_creation_tokens": 36776,
-    "cache_read_tokens": 183702,
-    "output_tokens": 3910,
-    "api_call_count": 9
+    "input_tokens": 1472,
+    "cache_creation_tokens": 105504,
+    "cache_read_tokens": 11231474,
+    "output_tokens": 28178,
+    "api_call_count": 82
   }
 }

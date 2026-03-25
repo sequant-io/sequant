@@ -1,0 +1,48 @@
+<task-notification>
+<task-id>b222njtac</task-id>
+<tool-use-id>toolu_012JkbaGjjWfaoMpui3uoZ7W</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/f9dbd972-460e-446d-a0a8-fa154ee77bea/tasks/b222njtac.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suite to check for regressions" completed (exit code 0)</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-502/-Users-tony-Projects-sequant/f9dbd972-460e-446d-a0a8-fa154ee77bea/tasks/b222njtac.output
+
+---
+
+any gaps?
+
+---
+
+solve had a lot of touch points also in the sequant landing repo. We need to make a plan to address all touch points and make sure its a complete overhaul. I'm thinking we'll release this with the new mcp and do a major release bump
+
+---
+
+yes. do we need a major update for the mcp as well or does it follow the rest of the code base?
+
+---
+
+I wasn't asking if mcp needed a seperate bump but moreso a seperate update because of the solve and assessment swap
+
+---
+
+can you move 440 to the sequant landing repo?
+
+---
+
+what about 325? ready for merge?
+
+---
+
+yes
+
+---
+
+docs 325
+
+---
+
+any other recent merges that need docs/
+
+---
+
+both
