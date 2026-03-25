@@ -96,14 +96,25 @@ export function classifyDrift(
 
   // Check worktree missing
   if (issue.worktree && worktreeExists === false) {
-    // If issue is open and no PR → ambiguous
-    if ((!githubIssue || githubIssue.state === "OPEN") && !issue.pr?.number) {
-      return {
-        issueNumber: num,
-        type: "ambiguous",
-        action: "flag_missing_worktree",
-        description: `Worktree deleted but issue #${num} still open with no PR`,
-      };
+    if (!issue.pr?.number) {
+      if (githubIssue?.state === "OPEN") {
+        // Confirmed open on GitHub, no PR → ambiguous
+        return {
+          issueNumber: num,
+          type: "ambiguous",
+          action: "flag_missing_worktree",
+          description: `Worktree deleted but issue #${num} still open on GitHub with no PR`,
+        };
+      }
+      if (!githubIssue) {
+        // GitHub data unavailable → ambiguous (can't determine if safe to clear)
+        return {
+          issueNumber: num,
+          type: "ambiguous",
+          action: "flag_missing_worktree",
+          description: `Worktree deleted for issue #${num} but GitHub state unknown (API unreachable)`,
+        };
+      }
     }
     // Otherwise just clear worktree (unambiguous)
     return {

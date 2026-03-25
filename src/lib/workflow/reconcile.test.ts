@@ -613,6 +613,22 @@ describe("Reconciliation Engine", () => {
       expect(drift).not.toBeNull();
       expect(drift!.type).toBe("ambiguous");
       expect(drift!.action).toBe("flag_missing_worktree");
+      expect(drift!.description).toContain("still open on GitHub");
+    });
+
+    it("should classify deleted worktree with unknown GitHub state as ambiguous drift", () => {
+      const issue = makeIssue({
+        number: 804,
+        status: "in_progress",
+        worktree: "/tmp/nonexistent",
+      });
+
+      // No githubIssue — GitHub unreachable or partial response
+      const drift = classifyDrift(issue, undefined, undefined, false);
+      expect(drift).not.toBeNull();
+      expect(drift!.type).toBe("ambiguous");
+      expect(drift!.action).toBe("flag_missing_worktree");
+      expect(drift!.description).toContain("GitHub state unknown");
     });
 
     it("should classify no drift when state matches reality", () => {
