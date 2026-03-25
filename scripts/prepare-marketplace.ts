@@ -223,7 +223,7 @@ Or browse in \`/plugin > Discover\`.
 | \`/test\` | Browser-based UI testing |
 | \`/qa\` | Code review and AC validation |
 | \`/fullsolve\` | End-to-end issue resolution |
-| \`/solve\` | Generate recommended workflow for issues |
+| \`/assess\` | Triage issue, recommend workflow (6-action vocabulary) |
 
 ## Documentation
 
