@@ -74,6 +74,8 @@ export const PhaseMarkerSchema = z.object({
   pr: z.number().int().positive().optional(),
   /** Error message if phase failed */
   error: z.string().optional(),
+  /** Git HEAD SHA at time of phase completion (used for incremental QA) */
+  commitSHA: z.string().optional(),
 });
 
 export type PhaseMarker = z.infer<typeof PhaseMarkerSchema>;

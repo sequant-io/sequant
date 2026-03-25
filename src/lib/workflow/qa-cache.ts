@@ -76,6 +76,32 @@ export const CachedCheckResultSchema = z.object({
 export type CachedCheckResult = z.infer<typeof CachedCheckResultSchema>;
 
 /**
+ * Schema for QA run context - stores metadata from the last QA run
+ * for incremental re-run optimization
+ */
+export const QARunContextSchema = z.object({
+  /** Git HEAD SHA at the time of QA completion */
+  lastQACommitSHA: z.string(),
+  /** Diff hash (main...HEAD) at the time of QA */
+  lastQADiffHash: z.string(),
+  /** Map of AC ID → status from the last QA run */
+  acStatuses: z.record(
+    z.string(),
+    z.enum(["met", "not_met", "partially_met", "pending", "blocked"]),
+  ),
+  /** ISO 8601 timestamp of last QA completion */
+  timestamp: z.string().datetime(),
+});
+
+export type QARunContext = z.infer<typeof QARunContextSchema>;
+
+/**
+ * Checks that are always re-run on every QA invocation, regardless of cache.
+ * These are either cheap or can regress independently of code changes.
+ */
+export const ALWAYS_RERUN_CHECKS: readonly string[] = ["build"] as const;
+
+/**
  * Schema for the complete cache file
  */
 export const QACacheSchema = z.object({
@@ -85,6 +111,8 @@ export const QACacheSchema = z.object({
   lastUpdated: z.string().datetime(),
   /** Cached check results keyed by check type */
   checks: z.record(z.string(), CachedCheckResultSchema),
+  /** QA run context for incremental re-runs (optional for backward compat) */
+  runContext: QARunContextSchema.optional(),
 });
 
 export type QACacheState = z.infer<typeof QACacheSchema>;
@@ -458,6 +486,77 @@ export class QACache {
     const emptyState = this.createEmptyState();
     await this.saveState(emptyState);
     this.log("Cleared all cache");
+  }
+
+  /**
+   * Get the QA run context from the last QA run
+   */
+  async getRunContext(): Promise<QARunContext | undefined> {
+    const state = await this.getState();
+    return state.runContext;
+  }
+
+  /**
+   * Set the QA run context after a QA run completes
+   */
+  async setRunContext(context: QARunContext): Promise<void> {
+    const state = await this.getState();
+    state.runContext = context;
+    await this.saveState(state);
+    this.log("Saved QA run context");
+  }
+
+  /**
+   * Compute hash of git diff between a specific commit and HEAD.
+   * Used for incremental QA to detect changes since last QA run.
+   *
+   * @param sinceCommit - The commit SHA to diff from
+   * @returns Hash of the diff, or null if the commit is invalid/missing
+   */
+  computeIncrementalDiffHash(sinceCommit: string): string | null {
+    if (!/^[a-f0-9]{4,40}$/.test(sinceCommit)) {
+      this.log(`Invalid commit SHA format: ${sinceCommit}`);
+      return null;
+    }
+    try {
+      const diff = execSync(`git diff ${sinceCommit}...HEAD`, {
+        encoding: "utf-8",
+        maxBuffer: 10 * 1024 * 1024,
+      });
+
+      return crypto
+        .createHash("sha256")
+        .update(diff)
+        .digest("hex")
+        .slice(0, 16);
+    } catch {
+      this.log(`Failed to compute incremental diff from ${sinceCommit}`);
+      return null;
+    }
+  }
+
+  /**
+   * Get files changed since a specific commit.
+   * Used for incremental QA to determine which checks need re-running.
+   *
+   * @param sinceCommit - The commit SHA to diff from
+   * @returns Array of changed file paths, or null if the commit is invalid
+   */
+  getChangedFilesSince(sinceCommit: string): string[] | null {
+    if (!/^[a-f0-9]{4,40}$/.test(sinceCommit)) {
+      this.log(`Invalid commit SHA format: ${sinceCommit}`);
+      return null;
+    }
+    try {
+      const output = execSync(`git diff ${sinceCommit}...HEAD --name-only`, {
+        encoding: "utf-8",
+      });
+
+      return output.trim().split("\n").filter(Boolean);
+    } catch {
+      this.log(`Failed to get changed files since ${sinceCommit}`);
+      return null;
+    }
   }
 
   /**

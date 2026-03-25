@@ -672,4 +672,191 @@ describe("QACache", () => {
       expect(result.result?.passed).toBe(false);
     });
   });
+
+  describe("runContext", () => {
+    it("should return undefined when no run context exists", async () => {
+      const context = await cache.getRunContext();
+      expect(context).toBeUndefined();
+    });
+
+    it("should save and retrieve run context", async () => {
+      const context = {
+        lastQACommitSHA: "abc123def456",
+        lastQADiffHash: "fedcba9876543210",
+        acStatuses: {
+          "AC-1": "met" as const,
+          "AC-2": "not_met" as const,
+          "AC-3": "met" as const,
+        },
+        timestamp: "2025-01-15T12:00:00.000Z",
+      };
+
+      await cache.setRunContext(context);
+      const retrieved = await cache.getRunContext();
+
+      expect(retrieved).toBeDefined();
+      expect(retrieved!.lastQACommitSHA).toBe("abc123def456");
+      expect(retrieved!.lastQADiffHash).toBe("fedcba9876543210");
+      expect(retrieved!.acStatuses["AC-1"]).toBe("met");
+      expect(retrieved!.acStatuses["AC-2"]).toBe("not_met");
+      expect(retrieved!.timestamp).toBe("2025-01-15T12:00:00.000Z");
+    });
+
+    it("should overwrite existing run context", async () => {
+      const context1 = {
+        lastQACommitSHA: "old111",
+        lastQADiffHash: "oldhash",
+        acStatuses: { "AC-1": "not_met" as const },
+        timestamp: "2025-01-15T10:00:00.000Z",
+      };
+      const context2 = {
+        lastQACommitSHA: "new222",
+        lastQADiffHash: "newhash",
+        acStatuses: { "AC-1": "met" as const },
+        timestamp: "2025-01-15T14:00:00.000Z",
+      };
+
+      await cache.setRunContext(context1);
+      await cache.setRunContext(context2);
+      const retrieved = await cache.getRunContext();
+
+      expect(retrieved!.lastQACommitSHA).toBe("new222");
+      expect(retrieved!.acStatuses["AC-1"]).toBe("met");
+    });
+
+    it("should persist run context alongside check cache", async () => {
+      // Set both check cache and run context
+      await cache.set("type-safety", { passed: true, message: "OK" });
+      await cache.setRunContext({
+        lastQACommitSHA: "abc123",
+        lastQADiffHash: "hash123",
+        acStatuses: { "AC-1": "met" as const },
+        timestamp: "2025-01-15T12:00:00.000Z",
+      });
+
+      // Both should be retrievable
+      const checkResult = await cache.get("type-safety");
+      expect(checkResult.hit).toBe(true);
+
+      const context = await cache.getRunContext();
+      expect(context!.lastQACommitSHA).toBe("abc123");
+    });
+
+    it("should clear run context when clearAll is called", async () => {
+      await cache.setRunContext({
+        lastQACommitSHA: "abc123",
+        lastQADiffHash: "hash123",
+        acStatuses: { "AC-1": "met" as const },
+        timestamp: "2025-01-15T12:00:00.000Z",
+      });
+
+      await cache.clearAll();
+      const context = await cache.getRunContext();
+      expect(context).toBeUndefined();
+    });
+  });
+
+  describe("computeIncrementalDiffHash", () => {
+    it("should compute hash for valid commit SHA", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd === "git diff abc123...HEAD") {
+          return "incremental diff content";
+        }
+        return "";
+      });
+
+      const hash = cache.computeIncrementalDiffHash("abc123");
+      expect(hash).not.toBeNull();
+      expect(hash).toMatch(/^[a-f0-9]{16}$/);
+    });
+
+    it("should return null for invalid commit SHA", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.startsWith("git diff invalid")) {
+          throw new Error("fatal: bad revision");
+        }
+        return "";
+      });
+
+      const hash = cache.computeIncrementalDiffHash("invalid");
+      expect(hash).toBeNull();
+    });
+
+    it("should reject SHA with shell injection characters", () => {
+      const hash = cache.computeIncrementalDiffHash("abc123; rm -rf /");
+      expect(hash).toBeNull();
+      expect(mockedExecSync).not.toHaveBeenCalled();
+    });
+
+    it("should reject SHA that is too short", () => {
+      const hash = cache.computeIncrementalDiffHash("abc");
+      expect(hash).toBeNull();
+      expect(mockedExecSync).not.toHaveBeenCalled();
+    });
+
+    it("should return consistent hash for same diff", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd === "git diff abc123...HEAD") {
+          return "same content";
+        }
+        return "";
+      });
+
+      const hash1 = cache.computeIncrementalDiffHash("abc123");
+      const hash2 = cache.computeIncrementalDiffHash("abc123");
+      expect(hash1).toBe(hash2);
+    });
+  });
+
+  describe("getChangedFilesSince", () => {
+    it("should return changed files for valid commit", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd === "git diff abc123...HEAD --name-only") {
+          return "src/file1.ts\nsrc/file2.ts\npackage.json\n";
+        }
+        return "";
+      });
+
+      const files = cache.getChangedFilesSince("abc123");
+      expect(files).not.toBeNull();
+      expect(files).toEqual(["src/file1.ts", "src/file2.ts", "package.json"]);
+    });
+
+    it("should return empty array when no changes", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd === "git diff abc123...HEAD --name-only") {
+          return "";
+        }
+        return "";
+      });
+
+      const files = cache.getChangedFilesSince("abc123");
+      expect(files).not.toBeNull();
+      expect(files).toEqual([]);
+    });
+
+    it("should return null for invalid commit SHA", () => {
+      mockedExecSync.mockImplementation((cmd: string) => {
+        if (cmd.startsWith("git diff invalid")) {
+          throw new Error("fatal: bad revision");
+        }
+        return "";
+      });
+
+      const files = cache.getChangedFilesSince("invalid");
+      expect(files).toBeNull();
+    });
+
+    it("should reject SHA with shell injection characters", () => {
+      const files = cache.getChangedFilesSince("abc123; rm -rf /");
+      expect(files).toBeNull();
+      expect(mockedExecSync).not.toHaveBeenCalled();
+    });
+
+    it("should reject SHA that is too short", () => {
+      const files = cache.getChangedFilesSince("abc");
+      expect(files).toBeNull();
+      expect(mockedExecSync).not.toHaveBeenCalled();
+    });
+  });
 });
