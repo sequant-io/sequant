@@ -171,7 +171,7 @@ Once set up, talk to your AI assistant naturally:
 
 ### During a run
 
-- **Progress notifications.** If your MCP client supports progress tokens (Claude Desktop, Cursor, and most SDK-based clients do), you'll receive real-time phase transition updates automatically — no polling needed. The server sends `notifications/progress` at each phase start, which also prevents client-side timeouts.
+- **Progress notifications.** If your MCP client supports progress tokens (Claude Desktop, Cursor, and most SDK-based clients do), you'll receive real-time phase updates automatically — no polling needed. The server sends `notifications/progress` at phase start, completion, and failure. Messages include timing and error details (e.g., `#42: exec ✓ (120s)` or `#42: qa ✗ — timeout`). Each progress notification also resets the server-side spawn timeout, so long-running but progressing workflows won't be killed.
 - **It takes time.** A full spec+exec+qa cycle typically takes 10–20 minutes per issue. Don't assume it's stuck.
 - **Check progress manually** by asking for `sequant_status` on the issue. The server stays responsive while a run is in progress — status checks and log queries return immediately.
 - **Cancel if needed.** Your MCP client can abort a running `sequant_run` call. The subprocess and its children are cleaned up automatically (SIGTERM, then SIGKILL after 5 seconds if needed).
@@ -225,7 +225,13 @@ Execute workflow phases for GitHub issues.
 | `qualityLoop` | `boolean` | No | `false` | Auto-retry on QA failure |
 | `agent` | `string` | No | configured default | Agent backend to use |
 
-**Progress notifications:** When the client sends a `progressToken` in `_meta`, the server emits `notifications/progress` at each phase start. Each notification includes the issue number, phase name, current step, and total steps. Most MCP clients send progress tokens automatically and use them to prevent tool-call timeouts — no configuration needed.
+**Progress notifications:** When the client sends a `progressToken` in `_meta`, the server emits `notifications/progress` at each phase boundary — start, completion, and failure. Each notification includes:
+
+- `progress` — completed phases so far (increments on complete/failed events only)
+- `total` — total expected phases (issues × phases)
+- `message` — human-readable status (e.g., `#42: spec started`, `#42: exec ✓ (120s)`, `#42: qa ✗ — timeout`)
+
+Progress notifications also reset the server-side spawn timeout (30-minute per-phase ceiling, 2-hour absolute maximum), preventing premature process kills on long-running but progressing workflows. When no `progressToken` is provided, the server falls back to a fixed 30-minute timeout with identical behavior to previous versions.
 
 **Response** (structured JSON):
 
@@ -372,10 +378,11 @@ If `sequant_run` behaves differently than your local `sequant run`, you may have
 
 ### Client reports a timeout
 
-Most clients reset their timeout automatically when they receive progress notifications — and the server sends these at every phase transition. If you still hit timeouts:
+The server resets its own spawn timeout on each progress event (30-minute per-phase ceiling, 2-hour absolute max), and most clients also reset their client-side timeout when they receive `notifications/progress`. If you still hit timeouts:
 
 1. Check that your client supports `resetTimeoutOnProgress` (Claude Desktop and Cursor do)
-2. Run phases individually instead of a full workflow:
+2. For multi-issue runs exceeding 2 hours, split into smaller batches
+3. Run phases individually instead of a full workflow:
    > "Use sequant to run only the spec phase for issue #42"
 
 ### Sequant can't find the project (Claude Desktop)
@@ -396,4 +403,4 @@ Only one SSE client can connect at a time. If you see `409 Conflict`:
 2. Disconnect the existing client, or wait for it to time out
 3. Verify with `GET /health` — `connected: false` means the slot is free
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions), #421 (progress notifications for sequant_run), #423 (status reconciliation with GitHub) on 2026-03-25.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions), #421 (progress notifications for sequant_run), #423 (status reconciliation with GitHub) on 2026-03-25. Updated for #435 (progress event lifecycle, timeout reset, event-appropriate messages) on 2026-03-25.*

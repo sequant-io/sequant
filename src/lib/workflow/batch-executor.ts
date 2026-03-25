@@ -36,10 +36,27 @@ import {
  * Emit a structured progress line to stderr for MCP progress notifications.
  * Only emits when running under an orchestrator (e.g., MCP server).
  * The MCP handler parses these lines to send `notifications/progress`.
+ *
+ * @param issue - GitHub issue number
+ * @param phase - Phase name (e.g., "spec", "exec", "qa")
+ * @param event - Phase lifecycle event: "start", "complete", or "failed"
+ * @param extra - Optional fields: durationSeconds (on complete), error (on failed)
  */
-function emitProgressLine(issue: number, phase: string): void {
+export function emitProgressLine(
+  issue: number,
+  phase: string,
+  event: "start" | "complete" | "failed" = "start",
+  extra?: { durationSeconds?: number; error?: string },
+): void {
   if (!process.env.SEQUANT_ORCHESTRATOR) return;
-  const line = `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+  const payload: Record<string, unknown> = { issue, phase, event };
+  if (extra?.durationSeconds !== undefined) {
+    payload.durationSeconds = extra.durationSeconds;
+  }
+  if (extra?.error !== undefined) {
+    payload.error = extra.error;
+  }
+  const line = `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
   process.stderr.write(line);
 }
 
@@ -467,7 +484,7 @@ export async function runIssueWithLogging(
             shutdownManager,
           });
       specSpinner?.start();
-      emitProgressLine(issueNumber, "spec");
+      emitProgressLine(issueNumber, "spec", "start");
 
       // Track spec phase start in state
       if (stateManager) {
@@ -512,6 +529,20 @@ export async function runIssueWithLogging(
 
       phaseResults.push(specResult);
       specAlreadyRan = true;
+
+      // Emit completion/failure progress event (AC-8)
+      const specDurationSec = Math.round(
+        (specEndTime.getTime() - specStartTime.getTime()) / 1000,
+      );
+      if (specResult.success) {
+        emitProgressLine(issueNumber, "spec", "complete", {
+          durationSeconds: specDurationSec,
+        });
+      } else {
+        emitProgressLine(issueNumber, "spec", "failed", {
+          error: specResult.error ?? "unknown",
+        });
+      }
 
       // Log spec phase result
       // Note: Spec runs in main repo, not worktree, so no git diff stats
@@ -674,7 +705,7 @@ export async function runIssueWithLogging(
             iteration: useQualityLoop ? iteration : undefined,
           });
       phaseSpinner?.start();
-      emitProgressLine(issueNumber, phase);
+      emitProgressLine(issueNumber, phase, "start");
 
       // Track phase start in state
       if (stateManager) {
@@ -715,6 +746,20 @@ export async function runIssueWithLogging(
       }
 
       phaseResults.push(result);
+
+      // Emit completion/failure progress event (AC-8)
+      const phaseDurationSec = Math.round(
+        (phaseEndTime.getTime() - phaseStartTime.getTime()) / 1000,
+      );
+      if (result.success) {
+        emitProgressLine(issueNumber, phase, "complete", {
+          durationSeconds: phaseDurationSec,
+        });
+      } else {
+        emitProgressLine(issueNumber, phase, "failed", {
+          error: result.error ?? "unknown",
+        });
+      }
 
       // Log phase result with observability data (AC-1, AC-2, AC-3, AC-7)
       if (logWriter) {
@@ -793,8 +838,9 @@ export async function runIssueWithLogging(
                 iteration,
               });
           loopSpinner?.start();
-          emitProgressLine(issueNumber, "loop");
+          emitProgressLine(issueNumber, "loop", "start");
 
+          const loopStartTime = new Date();
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
@@ -804,7 +850,22 @@ export async function runIssueWithLogging(
             shutdownManager,
             loopSpinner,
           );
+          const loopEndTime = new Date();
           phaseResults.push(loopResult);
+
+          // Emit loop completion/failure progress event (AC-8)
+          const loopDurationSec = Math.round(
+            (loopEndTime.getTime() - loopStartTime.getTime()) / 1000,
+          );
+          if (loopResult.success) {
+            emitProgressLine(issueNumber, "loop", "complete", {
+              durationSeconds: loopDurationSec,
+            });
+          } else {
+            emitProgressLine(issueNumber, "loop", "failed", {
+              error: loopResult.error ?? "unknown",
+            });
+          }
 
           if (loopResult.sessionId) {
             sessionId = loopResult.sessionId;

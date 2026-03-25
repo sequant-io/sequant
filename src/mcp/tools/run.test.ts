@@ -1,15 +1,27 @@
 /**
- * Unit tests for sequant_run structured output (Issue #391)
+ * Unit tests for sequant_run MCP tool (Issues #391, #435)
  *
- * Tests buildStructuredResponse and readLatestRunLog directly
- * without MCP server infrastructure.
+ * Tests buildStructuredResponse, readLatestRunLog, and progress notification
+ * functions (parseProgressLine, createLineBuffer, formatProgressMessage)
+ * directly without MCP server infrastructure.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { existsSync } from "fs";
 import { readdir, readFile } from "fs/promises";
-import { buildStructuredResponse, readLatestRunLog } from "./run.js";
+import {
+  buildStructuredResponse,
+  readLatestRunLog,
+  parseProgressLine,
+  createLineBuffer,
+  formatProgressMessage,
+  spawnAsync,
+  PHASE_TIMEOUT,
+  MAX_TOTAL_TIMEOUT,
+} from "./run.js";
+import type { ProgressEvent } from "./run.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
+import { emitProgressLine } from "../../lib/workflow/batch-executor.js";
 
 // Mock fs.existsSync (still used synchronously in resolveLogDir)
 vi.mock("fs", async (importOriginal) => {
@@ -444,5 +456,351 @@ describe("readLatestRunLog", () => {
 
     const result = await readLatestRunLog();
     expect(result).toBeNull();
+  });
+});
+
+// ── Issue #435: Progress notification tests ──────────────────────────
+
+describe("parseProgressLine", () => {
+  it("should parse a valid start event", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":325,"phase":"spec","event":"start"}';
+    const result = parseProgressLine(line);
+    expect(result).toEqual({
+      issue: 325,
+      phase: "spec",
+      event: "start",
+    });
+  });
+
+  it("should parse a valid complete event with durationSeconds", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":325,"phase":"spec","event":"complete","durationSeconds":45}';
+    const result = parseProgressLine(line);
+    expect(result).toEqual({
+      issue: 325,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 45,
+    });
+  });
+
+  it("should parse a valid failed event with error", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":325,"phase":"exec","event":"failed","error":"timeout"}';
+    const result = parseProgressLine(line);
+    expect(result).toEqual({
+      issue: 325,
+      phase: "exec",
+      event: "failed",
+      error: "timeout",
+    });
+  });
+
+  it("should return null for non-progress lines", () => {
+    expect(parseProgressLine("some random stderr output")).toBeNull();
+    expect(parseProgressLine("")).toBeNull();
+    expect(parseProgressLine("SEQUANT_OTHER:data")).toBeNull();
+  });
+
+  it("should return null for invalid JSON after prefix", () => {
+    expect(parseProgressLine("SEQUANT_PROGRESS:{invalid json}")).toBeNull();
+  });
+
+  it("should return null when required fields are missing", () => {
+    // Missing event field (required in new schema)
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"issue":1,"phase":"spec"}'),
+    ).toBeNull();
+    // Missing phase field
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"issue":1,"event":"start"}'),
+    ).toBeNull();
+    // Missing issue field
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"phase":"spec","event":"start"}'),
+    ).toBeNull();
+  });
+
+  it("should return null for invalid event type", () => {
+    expect(
+      parseProgressLine(
+        'SEQUANT_PROGRESS:{"issue":1,"phase":"spec","event":"unknown"}',
+      ),
+    ).toBeNull();
+  });
+
+  it("should ignore non-numeric durationSeconds", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":1,"phase":"spec","event":"complete","durationSeconds":"fast"}';
+    const result = parseProgressLine(line);
+    expect(result).toEqual({
+      issue: 1,
+      phase: "spec",
+      event: "complete",
+    });
+    expect(result?.durationSeconds).toBeUndefined();
+  });
+});
+
+describe("createLineBuffer", () => {
+  it("should yield complete lines from a single chunk", () => {
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("line1\nline2\n");
+    expect(lines).toEqual(["line1", "line2"]);
+  });
+
+  it("should handle partial chunks across multiple calls", () => {
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("SEQUANT_PRO");
+    expect(lines).toEqual([]); // no complete line yet
+
+    buffer("GRESS:{}\n");
+    expect(lines).toEqual(["SEQUANT_PROGRESS:{}"]);
+  });
+
+  it("should handle multiple lines in a single chunk", () => {
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("a\nb\nc\n");
+    expect(lines).toEqual(["a", "b", "c"]);
+  });
+
+  it("should skip empty lines", () => {
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("a\n\nb\n");
+    // empty string between \n\n should be skipped
+    expect(lines).toEqual(["a", "b"]);
+  });
+
+  it("should hold incomplete trailing content until next chunk", () => {
+    const lines: string[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line));
+
+    buffer("hello\nworld");
+    expect(lines).toEqual(["hello"]);
+    // "world" is buffered, not emitted
+
+    buffer(" end\n");
+    expect(lines).toEqual(["hello", "world end"]);
+  });
+});
+
+describe("formatProgressMessage", () => {
+  it("should format start events", () => {
+    const event: ProgressEvent = {
+      issue: 325,
+      phase: "spec",
+      event: "start",
+    };
+    expect(formatProgressMessage(event)).toBe("#325: spec started");
+  });
+
+  it("should format complete events with duration", () => {
+    const event: ProgressEvent = {
+      issue: 325,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 45,
+    };
+    expect(formatProgressMessage(event)).toBe("#325: spec \u2713 (45s)");
+  });
+
+  it("should format complete events without duration", () => {
+    const event: ProgressEvent = {
+      issue: 325,
+      phase: "exec",
+      event: "complete",
+    };
+    expect(formatProgressMessage(event)).toBe("#325: exec \u2713");
+  });
+
+  it("should format failed events with error", () => {
+    const event: ProgressEvent = {
+      issue: 384,
+      phase: "exec",
+      event: "failed",
+      error: "timeout",
+    };
+    expect(formatProgressMessage(event)).toBe(
+      "#384: exec \u2717 \u2014 timeout",
+    );
+  });
+
+  it("should format failed events without error", () => {
+    const event: ProgressEvent = {
+      issue: 384,
+      phase: "qa",
+      event: "failed",
+    };
+    expect(formatProgressMessage(event)).toBe("#384: qa \u2717");
+  });
+});
+
+describe("spawnAsync timeout reset (AC-4)", () => {
+  it("should export PHASE_TIMEOUT and MAX_TOTAL_TIMEOUT constants", () => {
+    expect(PHASE_TIMEOUT).toBe(1_800_000); // 30 minutes
+    expect(MAX_TOTAL_TIMEOUT).toBe(7_200_000); // 2 hours
+  });
+
+  it("should kill process after timeout with no progress", async () => {
+    // Use a very short timeout for testing
+    await expect(
+      spawnAsync("sleep", ["10"], {
+        timeout: 100, // 100ms timeout
+      }),
+    ).rejects.toThrow("Process timed out after 100ms");
+  });
+
+  it("should reset timeout when SEQUANT_PROGRESS lines arrive on stderr", async () => {
+    let progressCalls = 0;
+
+    // This process emits SEQUANT_PROGRESS lines on stderr every 100ms
+    // and runs for ~500ms total. With a 300ms timeout and progress
+    // resets, it should complete successfully instead of timing out.
+    // Without progress resets, it would time out at 300ms.
+    const result = await spawnAsync(
+      "bash",
+      [
+        "-c",
+        'for i in 1 2 3 4 5; do echo "SEQUANT_PROGRESS:{\"issue\":1,\"phase\":\"spec\",\"event\":\"start\"}" >&2; sleep 0.1; done; echo done',
+      ],
+      {
+        timeout: 300,
+        onProgress: () => {
+          progressCalls++;
+        },
+      },
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe("done");
+    // spawnAsync detects progress lines internally and calls onProgress
+    expect(progressCalls).toBeGreaterThan(0);
+  }, 5000);
+
+  it("should respect MAX_TOTAL_TIMEOUT even with progress resets", async () => {
+    // With onProgress set, maxTotal = MAX_TOTAL_TIMEOUT (2 hours)
+    // This test verifies the timeout message mentions progress when onProgress is set
+    await expect(
+      spawnAsync("sleep", ["10"], {
+        timeout: 50,
+        onProgress: () => {},
+      }),
+    ).rejects.toThrow("no progress for 50ms");
+  });
+
+  it("should behave identically without onProgress (AC-5)", async () => {
+    // Without onProgress, the original single-timeout behavior is preserved
+    await expect(
+      spawnAsync("sleep", ["10"], {
+        timeout: 50,
+      }),
+    ).rejects.toThrow("Process timed out after 50ms");
+  });
+
+  it("should kill process when maxTotalTimeout ceiling is exceeded despite progress", async () => {
+    // Process emits progress every 50ms and would run for ~500ms.
+    // Per-phase timeout (500ms) alone would let it complete.
+    // But the absolute ceiling (200ms) forces termination even though
+    // progress resets keep the per-phase timer alive.
+    const startTime = Date.now();
+    await expect(
+      spawnAsync(
+        "bash",
+        [
+          "-c",
+          'for i in 1 2 3 4 5 6 7 8 9 10; do echo "SEQUANT_PROGRESS:{\"issue\":1,\"phase\":\"spec\",\"event\":\"start\"}" >&2; sleep 0.05; done; echo done',
+        ],
+        {
+          timeout: 500, // per-phase: generous (would not expire alone)
+          maxTotalTimeout: 200, // absolute ceiling: 200ms
+          onProgress: () => {},
+        },
+      ),
+    ).rejects.toThrow("timed out");
+    const elapsed = Date.now() - startTime;
+    // Process was killed around the 200ms ceiling, not at 500ms per-phase
+    expect(elapsed).toBeLessThan(400);
+  }, 5000);
+});
+
+describe("emitProgressLine (AC-8)", () => {
+  const originalEnv = process.env.SEQUANT_ORCHESTRATOR;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+    } else {
+      process.env.SEQUANT_ORCHESTRATOR = originalEnv;
+    }
+  });
+
+  it("should emit start event to stderr when orchestrated", () => {
+    process.env.SEQUANT_ORCHESTRATOR = "mcp-server";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    emitProgressLine(325, "spec", "start");
+
+    expect(writeSpy).toHaveBeenCalledOnce();
+    const output = writeSpy.mock.calls[0][0] as string;
+    const parsed = parseProgressLine(output.trim());
+    expect(parsed).toEqual({
+      issue: 325,
+      phase: "spec",
+      event: "start",
+    });
+  });
+
+  it("should emit complete event with durationSeconds", () => {
+    process.env.SEQUANT_ORCHESTRATOR = "mcp-server";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    emitProgressLine(325, "spec", "complete", { durationSeconds: 45 });
+
+    const output = writeSpy.mock.calls[0][0] as string;
+    const parsed = parseProgressLine(output.trim());
+    expect(parsed).toEqual({
+      issue: 325,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 45,
+    });
+  });
+
+  it("should emit failed event with error", () => {
+    process.env.SEQUANT_ORCHESTRATOR = "mcp-server";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    emitProgressLine(325, "exec", "failed", { error: "timeout" });
+
+    const output = writeSpy.mock.calls[0][0] as string;
+    const parsed = parseProgressLine(output.trim());
+    expect(parsed).toEqual({
+      issue: 325,
+      phase: "exec",
+      event: "failed",
+      error: "timeout",
+    });
+  });
+
+  it("should not emit when SEQUANT_ORCHESTRATOR is not set", () => {
+    delete process.env.SEQUANT_ORCHESTRATOR;
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    emitProgressLine(325, "spec", "start");
+
+    expect(writeSpy).not.toHaveBeenCalled();
   });
 });
