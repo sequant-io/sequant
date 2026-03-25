@@ -272,6 +272,10 @@ Get current workflow state for a tracked issue.
 | `worktree` | `string` | Path to the feature worktree |
 | `pr` | `number` | PR number (if created) |
 | `lastActivity` | `string` | ISO timestamp of last state change |
+| `lastSynced` | `string` | ISO timestamp of last GitHub reconciliation |
+| `githubReachable` | `boolean` | Whether GitHub was reachable during reconciliation |
+
+**GitHub reconciliation:** Every `sequant_status` call reconciles local state with GitHub before responding — checking PR status, merge state, and issue labels. This means status is always fresh, even if external changes happened (manual merges, label changes, closed issues). The `lastSynced` and `githubReachable` fields in the response confirm when reconciliation last ran and whether GitHub was reachable.
 
 **Polling for progress:** During an active run, poll `sequant_status` every 5–10 seconds for phase-level progress updates. The `isRunning` field transitions to `false` once the run completes, errors, or is cancelled.
 
@@ -392,4 +396,4 @@ Only one SSE client can connect at a time. If you see `409 Conflict`:
 2. Disconnect the existing client, or wait for it to time out
 3. Verify with `GET /health` — `connected: false` means the slot is free
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions), #421 (progress notifications for sequant_run) on 2026-03-25.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions), #421 (progress notifications for sequant_run), #423 (status reconciliation with GitHub) on 2026-03-25.*
