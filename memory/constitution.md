@@ -56,8 +56,7 @@ This document defines the core principles and patterns for AI-assisted developme
 ### Supporting Commands
 | Command | Purpose |
 |---------|---------|
-| `/solve` | Generate recommended workflow for GitHub issues |
-| `/assess` | Issue triage and status assessment |
+| `/assess` | Issue triage, status assessment, and workflow recommendation (6-action vocabulary) |
 | `/test` | Browser-based UI testing (requires chrome-devtools MCP) |
 | `/verify` | CLI/script execution verification |
 | `/testgen` | Generate test stubs from spec criteria |
