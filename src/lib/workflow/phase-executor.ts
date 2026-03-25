@@ -29,8 +29,12 @@ const PHASE_PROMPTS: Record<Phase, string> = {
     "Generate test stubs for GitHub issue #{issue} based on the specification. Run the /testgen {issue} workflow.",
   exec: "Implement the feature for GitHub issue #{issue} following the spec. Run the /exec {issue} workflow.",
   test: "Execute structured browser-based testing for GitHub issue #{issue}. Run the /test {issue} workflow.",
+  verify:
+    "Verify the implementation for GitHub issue #{issue} by running commands and capturing output. Run the /verify {issue} workflow.",
   qa: "Review the implementation for GitHub issue #{issue} against acceptance criteria. Run the /qa {issue} workflow.",
   loop: "Parse test/QA findings for GitHub issue #{issue} and iterate until quality gates pass. Run the /loop {issue} workflow.",
+  merger:
+    "Integrate and merge completed worktrees for GitHub issue #{issue}. Run the /merger {issue} workflow.",
 };
 
 /**
@@ -61,6 +65,8 @@ Ensure the build passes with 'npm test' and 'npm run build'.`,
   test: `Test the implementation for GitHub issue #{issue}.
 Run 'npm test' and verify all tests pass.
 Check for edge cases and error handling.`,
+  verify: `Verify the implementation for GitHub issue #{issue}.
+Run relevant commands and capture their output for review.`,
   qa: `Review the changes for GitHub issue #{issue}.
 Run 'npm test' and 'npm run build' to verify everything works.
 Check each acceptance criterion from the issue comments.
@@ -69,6 +75,8 @@ with format "### Verdict: <VERDICT>" followed by an explanation.`,
   loop: `Review test and QA findings for GitHub issue #{issue}.
 Fix any issues identified in the QA feedback.
 Re-run 'npm test' and 'npm run build' until all quality gates pass.`,
+  merger: `Integrate and merge completed worktrees for GitHub issue #{issue}.
+Ensure all branches are up to date and merge cleanly.`,
 };
 
 /**

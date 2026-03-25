@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unify Phase type definitions into single source of truth (#401)
+  - Canonical `PhaseSchema` (Zod) + `Phase` type now live in `types.ts`
+  - `state-schema.ts` and `run-log-schema.ts` re-export from the canonical source
+  - Eliminate `Phase as StatePhase` aliased import in `batch-executor.ts`
+  - Add `as const` + Zod schemas for merge-check verdict types
+  - Fix misleading topological sort comment in `batch-executor.ts`
 - Fix concurrent state writes silently discarding changes (#409)
   - Add file locking (`O_EXCL`) around read-modify-write cycles in `StateManager`
   - Stale lock detection with configurable timeout prevents deadlocks

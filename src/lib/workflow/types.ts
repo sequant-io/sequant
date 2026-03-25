@@ -2,17 +2,31 @@
  * Core types for workflow execution
  */
 
+import { z } from "zod";
+import type { AiderSettings } from "../settings.js";
+
 /**
- * Available workflow phases
+ * Canonical Zod schema for all workflow phases.
+ *
+ * This is the single source of truth — state-schema.ts and run-log-schema.ts
+ * both reference this definition. Add new phases here only.
  */
-export type Phase =
-  | "spec"
-  | "security-review"
-  | "testgen"
-  | "exec"
-  | "test"
-  | "qa"
-  | "loop";
+export const PhaseSchema = z.enum([
+  "spec",
+  "security-review",
+  "exec",
+  "testgen",
+  "test",
+  "verify",
+  "qa",
+  "loop",
+  "merger",
+]);
+
+/**
+ * Available workflow phases (inferred from PhaseSchema)
+ */
+export type Phase = z.infer<typeof PhaseSchema>;
 
 /**
  * Default phases for workflow execution
@@ -83,8 +97,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   retry: true,
 };
 
-// Import and re-export QaVerdict from run-log-schema (single source of truth)
-import type { AiderSettings } from "../settings.js";
+// Re-export QaVerdict from run-log-schema (single source of truth)
 import type { QaVerdict } from "./run-log-schema.js";
 export type { QaVerdict } from "./run-log-schema.js";
 

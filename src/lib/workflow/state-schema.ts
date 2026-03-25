@@ -19,21 +19,12 @@
 
 import { z } from "zod";
 import { ScopeAssessmentSchema } from "../scope/types.js";
+import { PhaseSchema } from "./types.js";
 
 /**
  * Workflow phases in order of execution
  */
-export const WORKFLOW_PHASES = [
-  "spec",
-  "security-review",
-  "exec",
-  "testgen",
-  "test",
-  "verify",
-  "qa",
-  "loop",
-  "merger",
-] as const;
+export const WORKFLOW_PHASES = PhaseSchema.options;
 
 /**
  * Phase status - tracks individual phase progress
@@ -63,22 +54,9 @@ export const IssueStatusSchema = z.enum([
 
 export type IssueStatus = z.infer<typeof IssueStatusSchema>;
 
-/**
- * Phase type
- */
-export const PhaseSchema = z.enum([
-  "spec",
-  "security-review",
-  "exec",
-  "testgen",
-  "test",
-  "verify",
-  "qa",
-  "loop",
-  "merger",
-]);
-
-export type Phase = z.infer<typeof PhaseSchema>;
+// Re-export canonical Phase types from types.ts (single source of truth)
+export { PhaseSchema };
+export type { Phase } from "./types.js";
 
 /**
  * Phase marker stored in GitHub issue comments for cross-session detection.
