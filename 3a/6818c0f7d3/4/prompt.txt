@@ -1,0 +1,22 @@
+whats left from 373?
+
+---
+
+Lets reassess. should we do 375 sonner?
+
+---
+
+Create a follow up issue for the clean up and update the gitlab issue
+
+---
+
+/reflect
+
+---
+
+yes
+
+---
+
+Can you add this to the release issue:\
+Future session: After 2.0 ships, clean up the release scope memory
