@@ -44,10 +44,24 @@ export { discoverUntrackedWorktrees } from "./worktree-discovery.js";
 export type {
   CleanupOptions,
   CleanupResult,
-  ReconcileOptions,
-  ReconcileResult,
+  ReconcileOptions as StartupReconcileOptions,
+  ReconcileResult as StartupReconcileResult,
 } from "./state-cleanup.js";
 export {
   cleanupStaleEntries,
   reconcileStateAtStartup,
 } from "./state-cleanup.js";
+
+// Re-export reconciliation engine
+export type {
+  ReconcileOptions,
+  ReconcileResult,
+  DriftAction,
+  DriftType,
+} from "./reconcile.js";
+export {
+  reconcileState,
+  classifyDrift,
+  getNextActionHint,
+  formatRelativeTime,
+} from "./reconcile.js";

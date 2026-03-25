@@ -254,6 +254,8 @@ export const WorkflowStateSchema = z.object({
   version: z.literal(1),
   /** When the state file was last updated */
   lastUpdated: z.string().datetime(),
+  /** When state was last reconciled with GitHub */
+  lastSynced: z.string().datetime().optional(),
   /** State for all tracked issues, keyed by issue number */
   issues: z.record(z.string(), IssueStateSchema),
 });
