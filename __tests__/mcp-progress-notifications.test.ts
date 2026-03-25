@@ -104,17 +104,26 @@ interface ProgressNotification {
 }
 
 /** Helper: build a SEQUANT_PROGRESS line as the batch executor emits it */
-function progressLine(issue: number, phase: string): string {
-  return `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+function progressLine(
+  issue: number,
+  phase: string,
+  event: "start" | "complete" | "failed" = "start",
+  extra?: { durationSeconds?: number; error?: string },
+): string {
+  const payload: Record<string, unknown> = { issue, phase, event };
+  if (extra?.durationSeconds !== undefined)
+    payload.durationSeconds = extra.durationSeconds;
+  if (extra?.error !== undefined) payload.error = extra.error;
+  return `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
 }
 
 describe("parseProgressLine", () => {
-  it("should parse a valid progress line", async () => {
+  it("should parse a valid progress line with event field", async () => {
     const { parseProgressLine } = await import("../src/mcp/tools/run.js");
     const result = parseProgressLine(
-      'SEQUANT_PROGRESS:{"issue":123,"phase":"spec"}',
+      'SEQUANT_PROGRESS:{"issue":123,"phase":"spec","event":"start"}',
     );
-    expect(result).toEqual({ issue: 123, phase: "spec" });
+    expect(result).toEqual({ issue: 123, phase: "spec", event: "start" });
   });
 
   it("should return null for non-progress lines", async () => {
@@ -131,11 +140,22 @@ describe("parseProgressLine", () => {
 
   it("should return null for JSON missing required fields", async () => {
     const { parseProgressLine } = await import("../src/mcp/tools/run.js");
-    expect(parseProgressLine('SEQUANT_PROGRESS:{"issue":123}')).toBeNull();
-    expect(parseProgressLine('SEQUANT_PROGRESS:{"phase":"spec"}')).toBeNull();
+    // Missing event field
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"issue":123,"phase":"spec"}'),
+    ).toBeNull();
+    // Missing phase field
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"issue":123,"event":"start"}'),
+    ).toBeNull();
+    // Missing issue field
+    expect(
+      parseProgressLine('SEQUANT_PROGRESS:{"phase":"spec","event":"start"}'),
+    ).toBeNull();
+    // Non-numeric issue
     expect(
       parseProgressLine(
-        'SEQUANT_PROGRESS:{"issue":"not-a-number","phase":"spec"}',
+        'SEQUANT_PROGRESS:{"issue":"not-a-number","phase":"spec","event":"start"}',
       ),
     ).toBeNull();
   });
@@ -230,7 +250,10 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(421, "spec")],
+          stderrChunks: [
+            progressLine(421, "spec", "start"),
+            progressLine(421, "spec", "complete", { durationSeconds: 10 }),
+          ],
         }),
       );
 
@@ -248,9 +271,12 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       // Allow fire-and-forget notification to propagate
       await new Promise((r) => setTimeout(r, 50));
 
-      expect(progressEvents.length).toBeGreaterThanOrEqual(1);
-      expect(progressEvents[0].progress).toBe(1);
+      expect(progressEvents.length).toBeGreaterThanOrEqual(2);
+      // Start event: progress stays at 0 (only complete/failed increment)
+      expect(progressEvents[0].progress).toBe(0);
       expect(progressEvents[0].total).toBe(3);
+      // Complete event: progress increments to 1
+      expect(progressEvents[1].progress).toBe(1);
     });
 
     it("should handle missing _meta gracefully", async () => {
@@ -275,7 +301,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(421, "spec")],
+          stderrChunks: [progressLine(421, "spec", "start")],
         }),
       );
 
@@ -305,9 +331,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         createMockProcess({
           exitCode: 0,
           stderrChunks: [
-            progressLine(100, "spec"),
-            progressLine(200, "spec"),
-            progressLine(100, "exec"),
+            progressLine(100, "spec", "start"),
+            progressLine(200, "spec", "start"),
+            progressLine(100, "exec", "start"),
           ],
         }),
       );
@@ -342,7 +368,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(100, "spec")],
+          stderrChunks: [progressLine(100, "spec", "start")],
         }),
       );
 
@@ -370,7 +396,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(100, "spec")],
+          stderrChunks: [progressLine(100, "spec", "start")],
         }),
       );
 
@@ -400,7 +426,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(100, "exec")],
+          stderrChunks: [progressLine(100, "exec", "start")],
         }),
       );
 
@@ -427,7 +453,10 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       mockedSpawn.mockImplementation(() =>
         createMockProcess({
           exitCode: 0,
-          stderrChunks: [progressLine(421, "spec"), progressLine(421, "exec")],
+          stderrChunks: [
+            progressLine(421, "spec", "start"),
+            progressLine(421, "exec", "start"),
+          ],
         }),
       );
 
@@ -447,9 +476,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         createMockProcess({
           exitCode: 0,
           stderrChunks: [
-            progressLine(421, "spec"),
-            progressLine(421, "exec"),
-            progressLine(421, "qa"),
+            progressLine(421, "spec", "start"),
+            progressLine(421, "exec", "start"),
+            progressLine(421, "qa", "start"),
           ],
         }),
       );
@@ -475,7 +504,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
     it("should handle progress line split across stderr chunks", async () => {
       const progressEvents: ProgressNotification[] = [];
 
-      const fullLine = `SEQUANT_PROGRESS:{"issue":421,"phase":"spec"}\n`;
+      const fullLine = progressLine(421, "spec", "complete", {
+        durationSeconds: 5,
+      });
       const split1 = fullLine.slice(0, 20);
       const split2 = fullLine.slice(20);
 
@@ -500,6 +531,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(progressEvents).toHaveLength(1);
+      // Complete event increments progress
       expect(progressEvents[0].progress).toBe(1);
     });
 
@@ -510,9 +542,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         createMockProcess({
           exitCode: 0,
           stderrChunks: [
-            progressLine(421, "spec") +
-              progressLine(421, "exec") +
-              progressLine(421, "qa"),
+            progressLine(421, "spec", "complete", { durationSeconds: 10 }) +
+              progressLine(421, "exec", "complete", { durationSeconds: 20 }) +
+              progressLine(421, "qa", "complete", { durationSeconds: 30 }),
           ],
         }),
       );
@@ -531,6 +563,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
       await new Promise((r) => setTimeout(r, 50));
 
       expect(progressEvents).toHaveLength(3);
+      // Complete events increment progress: 1, 2, 3
       expect(progressEvents.map((e) => e.progress)).toEqual([1, 2, 3]);
     });
 
@@ -541,7 +574,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Progress Notifications (#421)", () => {
         createMockProcess({
           exitCode: 0,
           stderrChunks: [
-            "some warning\n" + progressLine(421, "spec") + "another warning\n",
+            "some warning\n" +
+              progressLine(421, "spec", "start") +
+              "another warning\n",
           ],
         }),
       );

@@ -47,8 +47,17 @@ interface ProgressNotification {
 }
 
 /** Helper: build a SEQUANT_PROGRESS line as the batch executor emits it */
-function progressLine(issue: number, phase: string): string {
-  return `SEQUANT_PROGRESS:${JSON.stringify({ issue, phase })}\n`;
+function progressLine(
+  issue: number,
+  phase: string,
+  event: "start" | "complete" | "failed" = "start",
+  extra?: { durationSeconds?: number; error?: string },
+): string {
+  const payload: Record<string, unknown> = { issue, phase, event };
+  if (extra?.durationSeconds !== undefined)
+    payload.durationSeconds = extra.durationSeconds;
+  if (extra?.error !== undefined) payload.error = extra.error;
+  return `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
 }
 
 /** Create a mock ChildProcess with controllable stderr chunks for progress simulation */
@@ -135,16 +144,19 @@ describe.skipIf(!mcpSdkAvailable)(
     });
 
     describe("AC-2: Phase transitions emit notifications/progress", () => {
-      it("should emit progress notifications for each phase start on stderr", async () => {
+      it("should emit progress notifications for each phase event on stderr", async () => {
         const progressEvents: ProgressNotification[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
             stderrChunks: [
-              progressLine(421, "spec"),
-              progressLine(421, "exec"),
-              progressLine(421, "qa"),
+              progressLine(421, "spec", "start"),
+              progressLine(421, "spec", "complete", { durationSeconds: 10 }),
+              progressLine(421, "exec", "start"),
+              progressLine(421, "exec", "complete", { durationSeconds: 20 }),
+              progressLine(421, "qa", "start"),
+              progressLine(421, "qa", "complete", { durationSeconds: 15 }),
             ],
           }),
         );
@@ -162,35 +174,33 @@ describe.skipIf(!mcpSdkAvailable)(
 
         await new Promise((r) => setTimeout(r, 50));
 
-        // Should emit 3 notifications (one per phase)
-        expect(progressEvents).toHaveLength(3);
-        expect(progressEvents[0]).toMatchObject({
-          progress: 1,
-          total: 3,
-        });
+        // 6 events: 3 starts + 3 completes
+        expect(progressEvents).toHaveLength(6);
+        // Start events don't increment progress
+        expect(progressEvents[0]).toMatchObject({ progress: 0, total: 3 });
         expect(progressEvents[0].message).toContain("spec");
-        expect(progressEvents[1]).toMatchObject({
-          progress: 2,
-          total: 3,
-        });
-        expect(progressEvents[1].message).toContain("exec");
-        expect(progressEvents[2]).toMatchObject({
-          progress: 3,
-          total: 3,
-        });
-        expect(progressEvents[2].message).toContain("qa");
+        expect(progressEvents[0].message).toContain("started");
+        // Complete events increment progress
+        expect(progressEvents[1]).toMatchObject({ progress: 1, total: 3 });
+        expect(progressEvents[1].message).toContain("spec");
+        // Exec start (still progress=1)
+        expect(progressEvents[2]).toMatchObject({ progress: 1, total: 3 });
+        // Exec complete (progress=2)
+        expect(progressEvents[3]).toMatchObject({ progress: 2, total: 3 });
+        // QA complete (progress=3)
+        expect(progressEvents[5]).toMatchObject({ progress: 3, total: 3 });
       });
 
-      it("should include incrementing progress counter", async () => {
+      it("should include incrementing progress counter on complete events", async () => {
         const progressValues: number[] = [];
 
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
             stderrChunks: [
-              progressLine(421, "spec"),
-              progressLine(421, "exec"),
-              progressLine(421, "qa"),
+              progressLine(421, "spec", "complete", { durationSeconds: 10 }),
+              progressLine(421, "exec", "complete", { durationSeconds: 20 }),
+              progressLine(421, "qa", "complete", { durationSeconds: 15 }),
             ],
           }),
         );
@@ -217,7 +227,7 @@ describe.skipIf(!mcpSdkAvailable)(
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stderrChunks: [progressLine(421, "spec")],
+            stderrChunks: [progressLine(421, "spec", "start")],
           }),
         );
 
@@ -243,10 +253,17 @@ describe.skipIf(!mcpSdkAvailable)(
         const { parseProgressLine } =
           await import("../../src/mcp/tools/run.js");
 
-        // Standard format from batch executor
+        // New format requires event field
+        expect(
+          parseProgressLine(
+            'SEQUANT_PROGRESS:{"issue":123,"phase":"spec","event":"start"}',
+          ),
+        ).toEqual({ issue: 123, phase: "spec", event: "start" });
+
+        // Old format (without event) returns null
         expect(
           parseProgressLine('SEQUANT_PROGRESS:{"issue":123,"phase":"spec"}'),
-        ).toEqual({ issue: 123, phase: "spec" });
+        ).toBeNull();
 
         // Non-progress lines should NOT match
         expect(parseProgressLine("some random log")).toBeNull();
@@ -260,9 +277,9 @@ describe.skipIf(!mcpSdkAvailable)(
           createMockProcessWithPhaseOutput({
             exitCode: 0,
             stderrChunks: [
-              progressLine(421, "spec"),
-              progressLine(421, "exec"),
-              progressLine(421, "qa"),
+              progressLine(421, "spec", "start"),
+              progressLine(421, "exec", "start"),
+              progressLine(421, "qa", "start"),
             ],
           }),
         );
@@ -342,7 +359,7 @@ describe.skipIf(!mcpSdkAvailable)(
             exitCode: 0,
             stderrChunks: [
               "warning: something\n",
-              progressLine(421, "exec"),
+              progressLine(421, "exec", "start"),
               "error detail\n",
             ],
           }),
@@ -373,7 +390,7 @@ describe.skipIf(!mcpSdkAvailable)(
         mockedSpawn.mockImplementation(() =>
           createMockProcessWithPhaseOutput({
             exitCode: 0,
-            stderrChunks: [progressLine(100, "spec")],
+            stderrChunks: [progressLine(100, "spec", "start")],
           }),
         );
 

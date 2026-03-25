@@ -292,6 +292,9 @@ const PROGRESS_LINE_PREFIX = "SEQUANT_PROGRESS:";
 export interface ProgressEvent {
   issue: number;
   phase: string;
+  event: "start" | "complete" | "failed";
+  durationSeconds?: number;
+  error?: string;
 }
 
 /**
@@ -302,12 +305,50 @@ export function parseProgressLine(line: string): ProgressEvent | null {
   if (!line.startsWith(PROGRESS_LINE_PREFIX)) return null;
   try {
     const json = JSON.parse(line.slice(PROGRESS_LINE_PREFIX.length));
-    if (typeof json.issue === "number" && typeof json.phase === "string") {
-      return { issue: json.issue, phase: json.phase };
+    if (
+      typeof json.issue === "number" &&
+      typeof json.phase === "string" &&
+      typeof json.event === "string" &&
+      (json.event === "start" ||
+        json.event === "complete" ||
+        json.event === "failed")
+    ) {
+      const result: ProgressEvent = {
+        issue: json.issue,
+        phase: json.phase,
+        event: json.event,
+      };
+      if (typeof json.durationSeconds === "number") {
+        result.durationSeconds = json.durationSeconds;
+      }
+      if (typeof json.error === "string") {
+        result.error = json.error;
+      }
+      return result;
     }
     return null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Build a human-readable message for a progress notification (AC-3).
+ * @internal Exported for testing only.
+ */
+export function formatProgressMessage(event: ProgressEvent): string {
+  const prefix = `#${event.issue}`;
+  switch (event.event) {
+    case "start":
+      return `${prefix}: ${event.phase} started`;
+    case "complete": {
+      const dur = event.durationSeconds ? ` (${event.durationSeconds}s)` : "";
+      return `${prefix}: ${event.phase} \u2713${dur}`;
+    }
+    case "failed": {
+      const reason = event.error ? ` \u2014 ${event.error}` : "";
+      return `${prefix}: ${event.phase} \u2717${reason}`;
+    }
   }
 }
 
@@ -424,16 +465,19 @@ export function registerRunTool(server: McpServer): void {
       // Extract progress token for MCP progress notifications (AC-1)
       const progressToken = extra._meta?.progressToken;
 
-      // Track progress across phase transitions
-      let currentStep = 0;
+      // Track progress: only complete/failed events increment the counter
+      let completedSteps = 0;
 
       /**
        * Emit a progress notification if the client provided a progressToken.
+       * Only complete/failed events increment the progress counter.
        * Failures are caught to avoid aborting the run (AC-6).
        */
       const emitProgress = (event: ProgressEvent): void => {
         if (progressToken === undefined) return;
-        currentStep++;
+        if (event.event === "complete" || event.event === "failed") {
+          completedSteps++;
+        }
         try {
           // Fire-and-forget: don't await to avoid blocking the output stream
           void extra
@@ -441,9 +485,9 @@ export function registerRunTool(server: McpServer): void {
               method: "notifications/progress",
               params: {
                 progressToken,
-                progress: currentStep,
+                progress: completedSteps,
                 total: totalSteps,
-                message: `Issue #${event.issue}: ${event.phase} phase started (${currentStep}/${totalSteps})`,
+                message: formatProgressMessage(event),
               },
             })
             .catch(() => {
@@ -456,16 +500,20 @@ export function registerRunTool(server: McpServer): void {
 
       /**
        * Handle a complete line of subprocess stderr, checking for progress events.
-       * The batch executor emits SEQUANT_PROGRESS:{json} lines at each phase start.
+       * The batch executor emits SEQUANT_PROGRESS:{json} lines at phase boundaries.
        */
       const handleLine = (line: string): void => {
         const event = parseProgressLine(line);
         if (event) emitProgress(event);
       };
 
-      // Line-buffer stderr to handle chunk boundaries correctly
-      const stderrLineBuffer =
-        progressToken !== undefined ? createLineBuffer(handleLine) : undefined;
+      // Line-buffer stderr to handle chunk boundaries correctly.
+      // When a progressToken is present, we also enable spawnAsync's
+      // internal progress detection for timeout reset (AC-4).
+      const hasProgressToken = progressToken !== undefined;
+      const stderrLineBuffer = hasProgressToken
+        ? createLineBuffer(handleLine)
+        : undefined;
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -474,13 +522,17 @@ export function registerRunTool(server: McpServer): void {
 
       try {
         const result = await spawnAsync(command, args, {
-          timeout: 1800000, // 30 min default
+          timeout: PHASE_TIMEOUT,
           env: {
             ...process.env,
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
           signal: extra.signal,
           onStderr: stderrLineBuffer,
+          // Enable timeout reset on progress events when client
+          // provided a progressToken (AC-4). spawnAsync detects
+          // SEQUANT_PROGRESS lines from stderr internally.
+          onProgress: hasProgressToken ? () => {} : undefined,
         });
 
         const stdout = result.stdout || "";
@@ -549,6 +601,12 @@ export interface SpawnResult {
   stderr: string;
 }
 
+/** Per-phase timeout ceiling (30 minutes) */
+export const PHASE_TIMEOUT = 1_800_000;
+
+/** Absolute maximum run duration (2 hours), even with progress resets */
+export const MAX_TOTAL_TIMEOUT = 7_200_000;
+
 export interface SpawnOptions {
   timeout: number;
   env?: NodeJS.ProcessEnv;
@@ -557,6 +615,18 @@ export interface SpawnOptions {
   onStderr?: (chunk: string) => void;
   /** Called with each stdout chunk (real-time, before process exits) */
   onStdout?: (chunk: string) => void;
+  /**
+   * Called when a progress event is detected from stderr.
+   * When set, enables resettable timeout: the per-phase timeout resets on
+   * each SEQUANT_PROGRESS line, but the absolute ceiling still applies.
+   */
+  onProgress?: () => void;
+  /**
+   * Override the absolute timeout ceiling (defaults to MAX_TOTAL_TIMEOUT).
+   * Only applies when onProgress is set. Useful for testing.
+   * @internal
+   */
+  maxTotalTimeout?: number;
 }
 
 /** @internal Exported for testing only */
@@ -590,13 +660,57 @@ export function spawnAsync(
       }
     };
 
-    const timeoutId = setTimeout(() => {
-      killProcessGroup(proc);
-      settle({
-        ok: false,
-        error: new Error(`Process timed out after ${options.timeout}ms`),
-      });
-    }, options.timeout);
+    // Resettable timeout: resets on progress events (AC-4).
+    // Uses options.timeout as the per-phase ceiling and MAX_TOTAL_TIMEOUT
+    // as the absolute ceiling to prevent infinite runs.
+    const runStart = Date.now();
+    const maxTotal = options.onProgress
+      ? (options.maxTotalTimeout ?? MAX_TOTAL_TIMEOUT)
+      : options.timeout;
+
+    const scheduleTimeout = (): ReturnType<typeof setTimeout> => {
+      const elapsed = Date.now() - runStart;
+      const remaining = Math.min(options.timeout, maxTotal - elapsed);
+      if (remaining <= 0) {
+        // Already exceeded max total — kill immediately
+        killProcessGroup(proc);
+        settle({
+          ok: false,
+          error: new Error(
+            `Process exceeded maximum total timeout of ${maxTotal}ms`,
+          ),
+        });
+        return setTimeout(() => {}, 0); // dummy handle
+      }
+      return setTimeout(() => {
+        killProcessGroup(proc);
+        const msg = options.onProgress
+          ? `Process timed out: no progress for ${options.timeout}ms (total elapsed: ${Date.now() - runStart}ms)`
+          : `Process timed out after ${options.timeout}ms`;
+        settle({ ok: false, error: new Error(msg) });
+      }, remaining);
+    };
+
+    let timeoutId = scheduleTimeout();
+
+    // When progress monitoring is enabled, detect SEQUANT_PROGRESS lines
+    // from stderr and reset the timeout on each one. This keeps the timeout
+    // reset logic co-located with the timer inside spawnAsync (AC-4).
+    const resetTimeout = () => {
+      if (!settled) {
+        clearTimeout(timeoutId);
+        timeoutId = scheduleTimeout();
+      }
+    };
+
+    const progressLineBuffer = options.onProgress
+      ? createLineBuffer((line) => {
+          if (line.startsWith(PROGRESS_LINE_PREFIX)) {
+            resetTimeout();
+            options.onProgress!();
+          }
+        })
+      : undefined;
 
     const onAbort = () => {
       killProcessGroup(proc);
@@ -623,6 +737,7 @@ export function spawnAsync(
       const chunk = data.toString();
       stderr += chunk;
       options.onStderr?.(chunk);
+      progressLineBuffer?.(chunk);
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {

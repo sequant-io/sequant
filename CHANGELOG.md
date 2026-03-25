@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
 - Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
+- Add MCP progress notifications for `sequant_run` with timeout reset (#435)
+  - Batch executor emits start, complete, and failed events via `SEQUANT_PROGRESS:` lines
+  - Event-appropriate messages: `#N: phase started`, `#N: phase ✓ (Ns)`, `#N: phase ✗ — error`
+  - Spawn timeout resets on each progress event (30min per-phase, 2hr absolute ceiling)
+  - Only complete/failed events increment the progress counter; start events are informational
 - Add `"assess"` signal source and `sequant:assess` CI trigger label with backward-compatible `"solve"` / `sequant:solve` deprecation (#438)
 - Optimize QA skill re-runs by diffing against prior findings (#377)
   - Add `commitSHA` field to phase markers for incremental QA baseline tracking
