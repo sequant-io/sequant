@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
+- Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
 - Add `"assess"` signal source and `sequant:assess` CI trigger label with backward-compatible `"solve"` / `sequant:solve` deprecation (#438)
 - Optimize QA skill re-runs by diffing against prior findings (#377)
   - Add `commitSHA` field to phase markers for incremental QA baseline tracking

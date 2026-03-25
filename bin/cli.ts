@@ -271,6 +271,10 @@ program
   .option("-p, --path <path>", "Custom log directory path")
   .option("--csv", "Output as CSV")
   .option("--json", "Output as JSON")
+  .option(
+    "--detailed",
+    "Show detailed analytics (QA verdicts, trends, label segmentation)",
+  )
   .action(statsCommand);
 
 program
