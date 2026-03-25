@@ -172,7 +172,7 @@ function suggestImprovements(
         "All issues ran identical phases despite different requirements",
       );
       suggestions.push(
-        "Use `/solve` first to get per-issue phase recommendations",
+        "Use `/assess` first to get per-issue phase recommendations",
       );
     }
   }

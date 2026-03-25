@@ -125,8 +125,8 @@ your-project/
 ├── .claude/
 │   ├── skills/              ◄── 18 slash commands (markdown prompts)
 │   │   ├── spec/SKILL.md         /spec, /exec, /qa, /fullsolve,
-│   │   ├── exec/SKILL.md         /test, /testgen, /loop, /solve,
-│   │   ├── qa/SKILL.md           /verify, /docs, /assess, /clean,
+│   │   ├── exec/SKILL.md         /test, /testgen, /loop, /assess,
+│   │   ├── qa/SKILL.md           /verify, /docs, /clean,
 │   │   └── ...                   /improve, /reflect, /merger,
 │   │                             /security-review, /upstream
 │   ├── hooks/               ◄── 2 Claude Code hooks

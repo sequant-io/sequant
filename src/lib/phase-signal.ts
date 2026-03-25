@@ -3,7 +3,7 @@
  *
  * Provides types for tracking where phase recommendations come from
  * and logic for merging signals with priority:
- * Labels > Solve Comment > Title > Body
+ * Labels > Assess Comment > Title > Body
  *
  * @example
  * ```typescript
@@ -25,14 +25,16 @@ import type { Phase } from "./workflow/types.js";
 /**
  * Source of a phase signal, ordered by priority (highest first)
  */
-export type SignalSource = "label" | "solve" | "title" | "body";
+export type SignalSource = "label" | "assess" | "solve" | "title" | "body";
 
 /**
  * Priority order for signal sources (higher = takes precedence)
  */
 export const SIGNAL_PRIORITY: Record<SignalSource, number> = {
   label: 4, // Highest priority - explicit labels
-  solve: 3, // Solve command analysis
+  assess: 3, // Assess command analysis
+  /** @deprecated Use `assess` instead */
+  solve: 3, // Solve command analysis (backward compat)
   title: 2, // Title keyword detection
   body: 1, // Body pattern detection (lowest)
 };
@@ -75,7 +77,7 @@ export interface MergedPhaseResult {
 /**
  * Merge phase signals with priority-based deduplication
  *
- * Priority order: Labels > Solve > Title > Body
+ * Priority order: Labels > Assess > Title > Body
  * When multiple signals suggest the same phase, the highest-priority
  * source wins. Signals can only ADD phases, never remove.
  *

@@ -151,7 +151,7 @@ npx sequant merge --check        # Verify batch before merging
 | Command | Purpose |
 |---------|---------|
 | `/fullsolve` | Complete pipeline in one command |
-| `/solve` | Recommend optimal workflow for issue |
+| `/assess` | Triage issue, recommend workflow (6-action vocabulary) |
 | `/loop` | Fix iteration when checks fail |
 
 ### Integration
@@ -167,7 +167,6 @@ npx sequant merge --check        # Verify batch before merging
 
 | Command | Purpose |
 |---------|---------|
-| `/assess` | Issue triage and status assessment |
 | `/docs` | Generate feature documentation |
 | `/clean` | Repository cleanup |
 | `/improve` | Codebase analysis and improvement discovery |

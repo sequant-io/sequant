@@ -38,7 +38,7 @@ sequant doctor              # Verify installation health
 
 | Goal | Command |
 |------|---------|
-| Not sure where to start? | `/solve 123` |
+| Not sure where to start? | `/assess 123` |
 | Solve an issue end-to-end | `/fullsolve 123` |
 | Step-by-step workflow | `/spec 123` → `/exec 123` → `/qa 123` |
 | Headless batch run | `npx sequant run 1 2 3 --quality-loop` |
@@ -61,7 +61,7 @@ sequant doctor              # Verify installation health
 | Command | Purpose |
 |---------|---------|
 | `/fullsolve <issue>` | Full pipeline: spec → exec → test → qa with auto-fix |
-| `/solve <issues...>` | Recommend optimal workflow for issue(s) |
+| `/assess <issues...>` | Triage issue, recommend workflow (6-action vocabulary) |
 | `/loop` | Re-run quality checks, fix failures, iterate |
 
 **Testing & Docs**
@@ -76,7 +76,6 @@ sequant doctor              # Verify installation health
 
 | Command | Purpose |
 |---------|---------|
-| `/assess <issue>` | Triage issue, recommend next phase |
 | `/improve` | Discover codebase improvements, create issues |
 | `/reflect` | Analyze workflow effectiveness |
 | `/security-review` | Deep security analysis for sensitive features |

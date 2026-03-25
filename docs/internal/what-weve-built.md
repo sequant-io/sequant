@@ -138,7 +138,7 @@ For when you want to go hands-off:
 | Command | Purpose | What It Does |
 |---------|---------|--------------|
 | `/fullsolve` | **End-to-End** | Orchestrates spec→exec→test→qa with auto-fix loops |
-| `/solve` | **Advisor** | Recommends optimal workflow, outputs CLI commands |
+| `/assess` | **Advisor** | Triages issue, recommends workflow with 6-action vocabulary |
 | `/loop` | **Quality Loop** | Parses findings, applies fixes, re-validates |
 
 ### Testing & Verification
@@ -237,8 +237,8 @@ The engine room lives in `src/lib/`. These modules power everything.
 | `ac-parser.ts` | Extracts acceptance criteria from markdown (AC-1, B2, etc.) |
 | `ac-linter.ts` | Flags vague, unmeasurable, incomplete, or open-ended AC before implementation |
 | `content-analyzer.ts` | Analyzes issue title/body for phase-relevant keywords (UI, security, complexity patterns) |
-| `phase-signal.ts` | Phase signal types and priority-based merging (Labels > Solve > Title > Body) |
-| `solve-comment-parser.ts` | Detects and parses `/solve` workflow recommendations from issue comments |
+| `phase-signal.ts` | Phase signal types and priority-based merging (Labels > Assess > Title > Body) |
+| `assess-comment-parser.ts` | Detects and parses `/assess` workflow recommendations from issue comments (also supports legacy `/solve` markers) |
 | `project-name.ts` | Auto-detects project name from package.json, Cargo.toml, pyproject.toml, go.mod, git remote |
 
 ### Workflow Subsystem
@@ -752,7 +752,7 @@ Shell scripts in `templates/scripts/`:
 ### Earlier Additions (v1.18.0)
 
 - **Browser Testing Enforcement** - `ui`/`frontend`/`admin` labels auto-include `/test` phase; `no-browser-test` label opts out (#173)
-- **Solve Workflow Persistence** - `/solve` analysis posted as issue comments for cross-session context (#172)
+- **Assess Workflow Persistence** - `/assess` analysis posted as issue comments for cross-session context (#172)
 - **Plugin File Sync** - Seamless skill file updates on plugin upgrade (#248, #342)
 - **Marketplace Submission Tooling** - `prepare-marketplace` script, plugin metadata enrichment, marketplace validation (#248)
 - **Modular Run Command** - Split run.ts monolith into focused modules for maintainability (#318, #347)
@@ -916,7 +916,7 @@ Shell scripts in `templates/scripts/`:
   - `--no-cache` to force fresh run
   - Graceful degradation on corrupted cache; 36 unit tests
 - **Testgen auto-detection**
-  - `/spec` and `/solve` recommend `--testgen` for testable ACs
+  - `/spec` and `/assess` recommend `--testgen` for testable ACs
 - **Enhanced CLI UI**
   - Spinners (`ora`), boxes (`boxen`), tables (`cli-table3`)
   - Graceful degradation for CI, non-TTY, Windows legacy
@@ -1070,7 +1070,7 @@ npm run build
 │  /test                    sequant run             state-manager.ts          │
 │  /qa                      sequant status          metrics-writer.ts         │
 │  /fullsolve               sequant update          ac-parser.ts              │
-│  /solve                   sequant state           project-name.ts           │
+│  /assess                  sequant state           project-name.ts           │
 │  /loop                    sequant stats           ... and 38 more           │
 │  /testgen                 sequant logs                                      │
 │  /verify                  sequant merge           HOOKS (450+ lines)        │
