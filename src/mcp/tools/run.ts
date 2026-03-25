@@ -77,7 +77,27 @@ export function resolveCliBinary(): [string, string[]] {
   const scriptPath = process.argv[1];
 
   if (scriptPath && existsSync(scriptPath)) {
-    return [nodeExe, [scriptPath]];
+    // If the entry point is a .ts file (e.g. running via `npx tsx bin/cli.ts serve`),
+    // the child process won't have tsx's loader hooks. Prefer the compiled dist output,
+    // or fall through to use tsx explicitly.
+    if (!scriptPath.endsWith(".ts")) {
+      return [nodeExe, [scriptPath]];
+    }
+
+    // Try compiled dist equivalent: bin/cli.ts → dist/bin/cli.js
+    const distPath = resolve(
+      dirname(scriptPath),
+      "..",
+      "dist",
+      "bin",
+      "cli.js",
+    );
+    if (existsSync(distPath)) {
+      return [process.execPath, [distPath]];
+    }
+
+    // Use tsx to run the .ts file directly
+    return ["npx", ["tsx", scriptPath]];
   }
 
   // Fallback: resolve relative to this file's location (dist/src/mcp/tools/run.js → dist/bin/cli.js)
