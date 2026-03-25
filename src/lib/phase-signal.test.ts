@@ -11,14 +11,18 @@ import {
 describe("phase-signal", () => {
   describe("SIGNAL_PRIORITY", () => {
     it("should have labels as highest priority", () => {
-      expect(SIGNAL_PRIORITY.label).toBeGreaterThan(SIGNAL_PRIORITY.solve);
+      expect(SIGNAL_PRIORITY.label).toBeGreaterThan(SIGNAL_PRIORITY.assess);
       expect(SIGNAL_PRIORITY.label).toBeGreaterThan(SIGNAL_PRIORITY.title);
       expect(SIGNAL_PRIORITY.label).toBeGreaterThan(SIGNAL_PRIORITY.body);
     });
 
-    it("should have solve higher than content", () => {
-      expect(SIGNAL_PRIORITY.solve).toBeGreaterThan(SIGNAL_PRIORITY.title);
-      expect(SIGNAL_PRIORITY.solve).toBeGreaterThan(SIGNAL_PRIORITY.body);
+    it("should have assess higher than content", () => {
+      expect(SIGNAL_PRIORITY.assess).toBeGreaterThan(SIGNAL_PRIORITY.title);
+      expect(SIGNAL_PRIORITY.assess).toBeGreaterThan(SIGNAL_PRIORITY.body);
+    });
+
+    it("should have assess and solve at same priority (backward compat)", () => {
+      expect(SIGNAL_PRIORITY.assess).toBe(SIGNAL_PRIORITY.solve);
     });
 
     it("should have title higher than body", () => {

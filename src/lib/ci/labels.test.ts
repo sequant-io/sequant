@@ -14,7 +14,14 @@ describe("getStartLabels", () => {
 });
 
 describe("getStartRemoveLabels", () => {
-  it("removes trigger label and stale outcome labels", () => {
+  it("removes sequant:assess trigger label and stale outcome labels", () => {
+    const labels = getStartRemoveLabels("sequant:assess");
+    expect(labels).toContain("sequant:assess");
+    expect(labels).toContain("sequant:done");
+    expect(labels).toContain("sequant:failed");
+  });
+
+  it("removes sequant:solve trigger label (backward compat)", () => {
     const labels = getStartRemoveLabels("sequant:solve");
     expect(labels).toContain("sequant:solve");
     expect(labels).toContain("sequant:done");
@@ -26,6 +33,7 @@ describe("getStartRemoveLabels", () => {
     expect(labels).toContain("sequant:done");
     expect(labels).toContain("sequant:failed");
     expect(labels).not.toContain("sequant:solve");
+    expect(labels).not.toContain("sequant:assess");
   });
 
   it("ignores non-trigger labels", () => {
@@ -51,7 +59,17 @@ describe("getFailureLabels", () => {
 });
 
 describe("labelCommands", () => {
-  it("generates start commands with trigger label", () => {
+  it("generates start commands with sequant:assess trigger label", () => {
+    const cmds = labelCommands(42, "start", "sequant:assess");
+    expect(cmds).toContainEqual(
+      expect.stringContaining('--add-label "sequant:solving"'),
+    );
+    expect(cmds).toContainEqual(
+      expect.stringContaining('--remove-label "sequant:assess"'),
+    );
+  });
+
+  it("generates start commands with sequant:solve trigger label (backward compat)", () => {
     const cmds = labelCommands(42, "start", "sequant:solve");
     expect(cmds).toContainEqual(
       expect.stringContaining('--add-label "sequant:solving"'),
