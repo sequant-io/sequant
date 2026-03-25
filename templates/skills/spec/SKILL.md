@@ -391,6 +391,51 @@ For each major decision:
 
 See [parallel-groups.md](references/parallel-groups.md) for parallelization format.
 
+### 2.5. Design Review (REQUIRED)
+
+**Purpose:** Make design decisions explicit before implementation starts. This forces evaluation of *how* to build, not just *what* to build — catching wrong-layer, over-engineered, or pattern-mismatched approaches before code is written.
+
+**Why this matters:** Repeated pattern across issues: implementation passes QA functionally but uses the wrong design — wrong layer, hacky shortcut, over-engineered approach. The fix cycle is expensive. Making design explicit here prevents it.
+
+**Complexity Scaling:**
+- **Simple issues** (`simple-fix`, `typo`, `docs-only` labels): Abbreviated — answer Q1 and Q3 only
+- **Standard issues**: Answer all 4 questions
+- **Complex issues** (`complex`, `refactor`, `breaking` labels): Answer all 4 questions with detailed rationale
+
+**Answer these questions:**
+
+1. **Where does this logic belong?** — Which module/layer owns this change? Name the specific directory, file, or abstraction layer. If it spans layers, explain why.
+
+2. **What's the simplest correct approach?** — Actively reject over-engineering. What's the minimum implementation that satisfies all AC? What alternatives did you consider and reject?
+
+3. **What existing pattern does this follow?** — Name the specific pattern in the codebase. Confirm it fits this use case. If no existing pattern fits, explain why a new approach is needed.
+
+4. **What would a senior reviewer challenge?** — Anticipate design pushback. What's the most likely "why didn't you just...?" or "this should be in X instead" feedback?
+
+**Example (standard issue):**
+
+```markdown
+## Design Review
+
+1. **Where does this logic belong?** Spec skill's SKILL.md prompt files — purely prompt engineering, not TypeScript. Same layer as Feature Quality Planning and AC Checklist sections.
+
+2. **What's the simplest correct approach?** Add markdown prompt text to SKILL.md. Reuse the existing complexity scaling pattern from Feature Quality Planning. No code, no new files, no abstractions.
+
+3. **What existing pattern does this follow?** Mirrors Feature Quality Planning exactly: required section, purpose statement, complexity scaling table, question format.
+
+4. **What would a senior reviewer challenge?** (1) "Why after Implementation Plan, not before?" — Design review needs the plan as input to evaluate. (2) "Won't this bloat output?" — Adds ~15 lines for standard, ~5 for simple-fix.
+```
+
+**Example (simple-fix issue, abbreviated):**
+
+```markdown
+## Design Review
+
+1. **Where does this logic belong?** `src/lib/utils.ts` — utility function, same layer as existing helpers.
+
+3. **What existing pattern does this follow?** Same pattern as `formatDuration()` in the same file — pure function, no side effects, single responsibility.
+```
+
 ### 3. Plan Review
 
 Ask the user to confirm or adjust:
@@ -654,6 +699,7 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
+- [ ] **Design Review** - All 4 questions answered (abbreviated to Q1+Q3 for simple-fix/typo/docs-only labels)
 - [ ] **Content Analysis** - Title/body analysis results (or "Solve comment found" if using /solve)
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, Signal Sources, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
@@ -697,6 +743,20 @@ You MUST include these sections in order:
 
 ### Phase 2: [Phase Name]
 <!-- Continue for all phases -->
+
+---
+
+## Design Review
+
+1. **Where does this logic belong?** [Module/layer that owns this change]
+
+2. **What's the simplest correct approach?** [Minimum implementation, rejected alternatives]
+
+3. **What existing pattern does this follow?** [Named pattern, confirmation it fits]
+
+4. **What would a senior reviewer challenge?** [Anticipated pushback]
+
+<!-- For simple-fix/typo/docs-only: only Q1 and Q3 required -->
 
 ---
 
