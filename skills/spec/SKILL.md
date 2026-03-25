@@ -222,6 +222,21 @@ For each major decision:
 
 See [parallel-groups.md](references/parallel-groups.md) for parallelization format.
 
+### 2.5. Design Review (REQUIRED)
+
+**Purpose:** Make design decisions explicit before implementation starts — catch wrong-layer, over-engineered, or pattern-mismatched approaches before code is written.
+
+**Complexity Scaling:**
+- **Simple issues** (`simple-fix`, `typo`, `docs-only` labels): Answer Q1 and Q3 only
+- **Standard/Complex issues**: Answer all 4 questions
+
+**Questions:**
+
+1. **Where does this logic belong?** — Which module/layer owns this change?
+2. **What's the simplest correct approach?** — Reject over-engineering. Minimum implementation that satisfies all AC.
+3. **What existing pattern does this follow?** — Name the specific pattern, confirm it fits.
+4. **What would a senior reviewer challenge?** — Anticipate "why didn't you just...?" feedback.
+
 ### 3. Plan Review
 
 Ask the user to confirm or adjust:
@@ -331,6 +346,7 @@ gh issue edit <issue-number> --add-label "planned"
 - [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
+- [ ] **Design Review** - All 4 questions answered (abbreviated to Q1+Q3 for simple-fix/typo/docs-only labels)
 - [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
 - [ ] **Open Questions** - Any ambiguities with recommended defaults
@@ -367,6 +383,20 @@ You MUST include these sections in order:
 
 ### Phase 2: [Phase Name]
 <!-- Continue for all phases -->
+
+---
+
+## Design Review
+
+1. **Where does this logic belong?** [Module/layer that owns this change]
+
+2. **What's the simplest correct approach?** [Minimum implementation, rejected alternatives]
+
+3. **What existing pattern does this follow?** [Named pattern, confirmation it fits]
+
+4. **What would a senior reviewer challenge?** [Anticipated pushback]
+
+<!-- For simple-fix/typo/docs-only: only Q1 and Q3 required -->
 
 ---
 
