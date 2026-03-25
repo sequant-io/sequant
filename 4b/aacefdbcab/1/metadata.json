@@ -1,0 +1,59 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "4baacefdbcab",
+  "session_id": "589faeb8-e853-4be7-b41f-222bb4205ab7",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T22:58:38.434921Z",
+  "branch": "feature/437-data-driven-workflow-optimization-systematic-a",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/ISSUE_TEMPLATE/plugin-feedback.yml",
+    "docs/README.md",
+    "docs/concepts/what-is-sequant.md",
+    "docs/internal/what-weve-built.md",
+    "scripts/prepare-marketplace.ts",
+    "src/lib/ci/triggers.ts",
+    "src/lib/workflow/phase-mapper.ts",
+    ".claude/skills/spec/SKILL.md",
+    "README.md",
+    "docs/features/assess-unification.md",
+    "sequant-action/examples/assess-on-label.yml",
+    "src/lib/assess-comment-parser.test.ts",
+    "src/lib/assess-comment-parser.ts",
+    "src/lib/ci/labels.ts",
+    "CHANGELOG.md",
+    "docs/features/github-actions-integration.md",
+    "src/lib/ci/triggers.test.ts",
+    "src/lib/ci/types.ts",
+    "src/lib/workflow/run-reflect.ts",
+    "templates/skills/spec/SKILL.md",
+    "docs/reference/cheat-sheet.md",
+    "memory/constitution.md",
+    "sequant-action/action.yml",
+    "sequant-action/examples/solve-on-label.yml",
+    "src/lib/ci/labels.test.ts",
+    "src/lib/phase-signal.test.ts",
+    "src/lib/phase-signal.ts"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "96d7c3cd477e",
+  "token_usage": {
+    "input_tokens": 31,
+    "cache_creation_tokens": 36913,
+    "cache_read_tokens": 618779,
+    "output_tokens": 11092,
+    "api_call_count": 19
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T22:58:38.373407Z",
+    "agent_lines": 0,
+    "human_added": 1377,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1377,
+    "agent_percentage": 0
+  }
+}

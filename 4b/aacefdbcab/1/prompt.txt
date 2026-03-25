@@ -1,0 +1,14 @@
+what should be merged first between these:\
+437 435 438 439 440
+
+---
+
+/solve 402 434 443 447 448
+
+---
+
+/assess 402 434 443 447 448
+
+---
+
+use the assess skill?
