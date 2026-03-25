@@ -58,7 +58,8 @@ export interface ShutdownManagerOptions {
 export class ShutdownManager {
   private cleanupTasks: CleanupTask[] = [];
   private _isShuttingDown = false;
-  private abortController: AbortController | null = null;
+  /** Active abort controllers — supports concurrent phase execution (#404) */
+  private abortControllers = new Set<AbortController>();
   private forceExitTimeout: number;
   private output: (message: string) => void;
   private errorOutput: (message: string) => void;
@@ -98,20 +99,37 @@ export class ShutdownManager {
   }
 
   /**
-   * Set the abort controller for the current phase
+   * Register an abort controller for a running phase.
    *
-   * When shutdown is triggered, this controller will be aborted
-   * to cancel any in-flight operations.
+   * When shutdown is triggered, ALL registered controllers are aborted,
+   * supporting concurrent phase execution.
    */
-  setAbortController(controller: AbortController): void {
-    this.abortController = controller;
+  addAbortController(controller: AbortController): void {
+    this.abortControllers.add(controller);
   }
 
   /**
-   * Clear the abort controller (e.g., after phase completes)
+   * Unregister a specific abort controller after a phase completes.
+   *
+   * Only removes the given controller — others remain active.
+   */
+  removeAbortController(controller: AbortController): void {
+    this.abortControllers.delete(controller);
+  }
+
+  /**
+   * @deprecated Use addAbortController/removeAbortController for concurrent safety.
+   */
+  setAbortController(controller: AbortController): void {
+    this.abortControllers.clear();
+    this.abortControllers.add(controller);
+  }
+
+  /**
+   * @deprecated Use removeAbortController(controller) instead.
    */
   clearAbortController(): void {
-    this.abortController = null;
+    this.abortControllers.clear();
   }
 
   /**
@@ -164,10 +182,16 @@ export class ShutdownManager {
       chalk.yellow(`\n⚠️  Received ${signal}, shutting down gracefully...`),
     );
 
-    // Abort in-flight phase immediately
-    if (this.abortController) {
-      this.abortController.abort();
-      this.output(chalk.green("✓ Aborted active phase"));
+    // Abort all in-flight phases immediately
+    if (this.abortControllers.size > 0) {
+      const count = this.abortControllers.size;
+      for (const controller of this.abortControllers) {
+        controller.abort();
+      }
+      this.abortControllers.clear();
+      this.output(
+        chalk.green(`✓ Aborted ${count} active phase${count > 1 ? "s" : ""}`),
+      );
     }
 
     // Set up force exit timeout
@@ -207,7 +231,7 @@ export class ShutdownManager {
     process.removeListener("SIGINT", this.sigintHandler);
     process.removeListener("SIGTERM", this.sigtermHandler);
     this.cleanupTasks = [];
-    this.abortController = null;
+    this.abortControllers.clear();
   }
 }
 

@@ -53,6 +53,9 @@ export interface LogWriterOptions {
  */
 export class LogWriter {
   private runLog: Omit<RunLog, "endTime"> | null = null;
+  /** Active issues being tracked concurrently, keyed by issue number */
+  private activeIssues: Map<number, Partial<IssueLog>> = new Map();
+  /** @deprecated Single-issue slot for backwards compatibility — use activeIssues */
   private currentIssue: Partial<IssueLog> | null = null;
   private logPath: string;
   private writeToUserLogs: boolean;
@@ -101,7 +104,7 @@ export class LogWriter {
       throw new Error("LogWriter not initialized. Call initialize() first.");
     }
 
-    this.currentIssue = {
+    const issueData: Partial<IssueLog> = {
       issueNumber,
       title,
       labels,
@@ -109,6 +112,10 @@ export class LogWriter {
       status: "success" as IssueStatus,
       totalDurationSeconds: 0,
     };
+
+    this.activeIssues.set(issueNumber, issueData);
+    // Keep currentIssue in sync for callers that don't pass issueNumber
+    this.currentIssue = issueData;
 
     if (this.verbose) {
       console.log(`📝 Started logging issue #${issueNumber}`);
@@ -121,20 +128,22 @@ export class LogWriter {
    * @param phaseLog - Complete phase log entry
    */
   logPhase(phaseLog: PhaseLog): void {
-    if (!this.currentIssue) {
-      throw new Error("No current issue. Call startIssue() first.");
+    // Route to the correct issue by issueNumber, falling back to currentIssue
+    const issue =
+      this.activeIssues.get(phaseLog.issueNumber) ?? this.currentIssue;
+    if (!issue) {
+      throw new Error(
+        `No active issue #${phaseLog.issueNumber}. Call startIssue() first.`,
+      );
     }
 
-    this.currentIssue.phases = [...(this.currentIssue.phases ?? []), phaseLog];
+    issue.phases = [...(issue.phases ?? []), phaseLog];
 
     // Update issue status based on phase result
     if (phaseLog.status === "failure") {
-      this.currentIssue.status = "failure";
-    } else if (
-      phaseLog.status === "timeout" &&
-      this.currentIssue.status !== "failure"
-    ) {
-      this.currentIssue.status = "partial";
+      issue.status = "failure";
+    } else if (phaseLog.status === "timeout" && issue.status !== "failure") {
+      issue.status = "partial";
     }
 
     if (this.verbose) {
@@ -147,46 +156,69 @@ export class LogWriter {
   /**
    * Set PR info on the current issue (call before completeIssue)
    */
-  setPRInfo(prNumber: number, prUrl: string): void {
-    if (!this.currentIssue) {
+  setPRInfo(prNumber: number, prUrl: string, issueNumber?: number): void {
+    const issue = issueNumber
+      ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
+      : this.currentIssue;
+    if (!issue) {
       return;
     }
-    this.currentIssue.prNumber = prNumber;
-    this.currentIssue.prUrl = prUrl;
+    issue.prNumber = prNumber;
+    issue.prUrl = prUrl;
   }
 
   /**
    * Complete the current issue and add it to the run log
    */
-  completeIssue(): void {
-    if (!this.runLog || !this.currentIssue) {
-      throw new Error("No current issue to complete.");
+  completeIssue(issueNumber?: number): void {
+    if (!this.runLog) {
+      throw new Error("No run log. Call initialize() first.");
+    }
+
+    // Resolve the issue to complete
+    const issue = issueNumber
+      ? this.activeIssues.get(issueNumber)
+      : this.currentIssue;
+    if (!issue) {
+      throw new Error(
+        issueNumber
+          ? `No active issue #${issueNumber} to complete.`
+          : "No current issue to complete.",
+      );
     }
 
     // Calculate total duration from phases
     const totalDurationSeconds =
-      this.currentIssue.phases?.reduce(
+      issue.phases?.reduce(
         (sum: number, p: PhaseLog) => sum + p.durationSeconds,
         0,
       ) ?? 0;
 
     const issueLog: IssueLog = {
-      issueNumber: this.currentIssue.issueNumber!,
-      title: this.currentIssue.title!,
-      labels: this.currentIssue.labels!,
-      status: this.currentIssue.status!,
-      phases: this.currentIssue.phases!,
+      issueNumber: issue.issueNumber!,
+      title: issue.title!,
+      labels: issue.labels!,
+      status: issue.status!,
+      phases: issue.phases!,
       totalDurationSeconds,
-      ...(this.currentIssue.prNumber != null && {
-        prNumber: this.currentIssue.prNumber,
+      ...(issue.prNumber != null && {
+        prNumber: issue.prNumber,
       }),
-      ...(this.currentIssue.prUrl != null && {
-        prUrl: this.currentIssue.prUrl,
+      ...(issue.prUrl != null && {
+        prUrl: issue.prUrl,
       }),
     };
 
     this.runLog.issues.push(issueLog);
-    this.currentIssue = null;
+
+    // Clean up from activeIssues map
+    if (issue.issueNumber != null) {
+      this.activeIssues.delete(issue.issueNumber);
+    }
+    // Clear currentIssue if it was the one completed
+    if (this.currentIssue === issue) {
+      this.currentIssue = null;
+    }
 
     if (this.verbose) {
       console.log(
@@ -209,7 +241,11 @@ export class LogWriter {
       throw new Error("LogWriter not initialized.");
     }
 
-    // Complete any pending issue
+    // Complete any pending issues (Map-based concurrent tracking)
+    for (const issueNum of [...this.activeIssues.keys()]) {
+      this.completeIssue(issueNum);
+    }
+    // Fallback: complete legacy currentIssue if not already handled
     if (this.currentIssue) {
       this.completeIssue();
     }

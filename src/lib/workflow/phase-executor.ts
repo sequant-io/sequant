@@ -229,8 +229,9 @@ async function executePhase(
   }, config.phaseTimeout * 1000);
 
   // Register abort controller with shutdown manager for graceful shutdown
+  // Uses add/remove to support concurrent phase execution (#404)
   if (shutdownManager) {
-    shutdownManager.setAbortController(abortController);
+    shutdownManager.addAbortController(abortController);
   }
 
   // Build environment with worktree isolation variables
@@ -307,9 +308,9 @@ async function executePhase(
 
   clearTimeout(timeoutId);
 
-  // Clear abort controller from shutdown manager
+  // Remove this specific abort controller from shutdown manager
   if (shutdownManager) {
-    shutdownManager.clearAbortController();
+    shutdownManager.removeAbortController(abortController);
   }
 
   const durationSeconds = (Date.now() - startTime) / 1000;

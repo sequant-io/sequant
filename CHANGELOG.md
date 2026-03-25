@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add parallel execution as default mode for multi-issue runs (#404)
+  - Issues now run concurrently using `Promise.allSettled` + `p-limit`
+  - Configurable concurrency via `--concurrency <n>` flag (default: 3)
+  - Real-time progress indicator showing per-issue status
+  - LogWriter supports concurrent issue tracking via Map-based routing
+  - Removed unused `forceParallel` from `ExecutionConfig`
 - Add multi-client SSE connection handling to MCP server (#390)
   - Reject second SSE client with 409 Conflict when one is already connected
   - Health endpoint now reports `connected: boolean` for connection status
