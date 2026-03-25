@@ -1,0 +1,50 @@
+is there a way to run these issues through qa loop via sequant run?\
+325,377,384,378
+
+---
+
+they already ran through sequant run. I just want to qa
+
+---
+
+any  gaps?
+
+---
+
+fix all 384 gaps
+
+---
+
+merge 384
+
+---
+
+fix all 377 gaps. plan the fix first. best practices. good design
+
+---
+
+yes
+
+---
+
+merge
+
+---
+
+merge 378
+
+---
+
+/reflect
+
+---
+
+complete action items
+
+---
+
+325 is being worked on in another session let's leave it alone
+
+---
+
+commit push
