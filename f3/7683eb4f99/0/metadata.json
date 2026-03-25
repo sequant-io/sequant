@@ -1,0 +1,30 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "f37683eb4f99",
+  "session_id": "2193413b-a499-4f0b-b5aa-8a9fea411f0c",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T00:23:40.903395Z",
+  "branch": "feature/413-spec-skill-add-design-review-section-before-implem",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".claude/skills/spec/SKILL.md"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 13,
+    "cache_creation_tokens": 64042,
+    "cache_read_tokens": 426827,
+    "output_tokens": 6182,
+    "api_call_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T00:23:40.685292Z",
+    "agent_lines": 0,
+    "human_added": 150,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 150,
+    "agent_percentage": 0
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-413-spec-skill-add-design-review-section-before-implem/2193413b-a499-4f0b-b5aa-8a9fea411f0c.jsonl"
+}
