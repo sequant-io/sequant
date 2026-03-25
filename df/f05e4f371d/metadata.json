@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "dff05e4f371d",
+  "strategy": "manual-commit",
+  "branch": "feature/423-sequant-status-reconcile-on-read-with-github-as-so",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/status-reconcile.integration.test.ts",
+    "src/lib/workflow/reconcile.test.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/df/f05e4f371d/0/metadata.json",
+      "transcript": "/df/f05e4f371d/0/full.jsonl",
+      "context": "/df/f05e4f371d/0/context.md",
+      "content_hash": "/df/f05e4f371d/0/content_hash.txt",
+      "prompt": "/df/f05e4f371d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 36472,
+    "cache_read_tokens": 354742,
+    "output_tokens": 10873,
+    "api_call_count": 12
+  }
+}

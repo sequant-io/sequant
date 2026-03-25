@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "dff05e4f371d",
+  "session_id": "0ddd2e9f-509c-4301-b19b-3d70befc8761",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T01:40:49.85688Z",
+  "branch": "feature/423-sequant-status-reconcile-on-read-with-github-as-so",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/status-reconcile.integration.test.ts",
+    "src/lib/workflow/reconcile.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 16,
+    "cache_creation_tokens": 36472,
+    "cache_read_tokens": 354742,
+    "output_tokens": 10873,
+    "api_call_count": 12
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T01:40:49.67461Z",
+    "agent_lines": 221,
+    "human_added": 443,
+    "human_modified": 589,
+    "human_removed": 0,
+    "total_committed": 1253,
+    "agent_percentage": 17.637669592976856
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-423-sequant-status-reconcile-on-read-with-github-as-so/0ddd2e9f-509c-4301-b19b-3d70befc8761.jsonl"
+}
