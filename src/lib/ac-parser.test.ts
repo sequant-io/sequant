@@ -64,6 +64,68 @@ describe("AC Parser", () => {
       expect(criteria[1].id).toBe("AC-2");
     });
 
+    it("should parse bold-wrapped ID + description format", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] **AC-1: Stdio E2E — tool discovery.** A test spawns the MCP server
+- [ ] **AC-2: Error handling for invalid input.** The server returns an error
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(2);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe(
+        "Stdio E2E — tool discovery. A test spawns the MCP server",
+      );
+      expect(criteria[1].id).toBe("AC-2");
+      expect(criteria[1].description).toBe(
+        "Error handling for invalid input. The server returns an error",
+      );
+    });
+
+    it("should parse bold-wrapped format with no text after closing bold", () => {
+      const issueBody = `
+- [ ] **AC-1: Description only inside bold.**
+- [ ] **AC-2: Another criterion.**
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(2);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe("Description only inside bold.");
+      expect(criteria[1].id).toBe("AC-2");
+      expect(criteria[1].description).toBe("Another criterion.");
+    });
+
+    it("should parse bold-wrapped format from issue #414 (10 ACs)", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] **AC-1: Stdio E2E — tool discovery.** A test spawns the server via stdio
+- [ ] **AC-2: Stdio E2E — tool execution.** A test calls a tool
+- [ ] **AC-3: Stdio E2E — resource listing.** Resources are listed
+- [ ] **AC-4: HTTP+SSE E2E — tool discovery.** Same as AC-1 over HTTP
+- [ ] **AC-5: HTTP+SSE E2E — tool execution.** Same as AC-2 over HTTP
+- [ ] **AC-6: HTTP+SSE E2E — resource listing.** Same as AC-3 over HTTP
+- [ ] **AC-7: Graceful shutdown.** SIGINT stops the server cleanly
+- [ ] **AC-8: CI matrix.** Tests run in CI on Node 18 and 20
+- [ ] **AC-9: Timeout guard.** Each test has a timeout
+- [ ] **AC-10: No mocks.** Tests use real MCP client SDK
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(10);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[9].id).toBe("AC-10");
+      expect(criteria[0].description).toBe(
+        "Stdio E2E — tool discovery. A test spawns the server via stdio",
+      );
+    });
+
     it("should handle format without bold markers", () => {
       const issueBody = `
 - [ ] AC-1: User can login
