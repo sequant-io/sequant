@@ -10,6 +10,8 @@ import {
   detectMcpClients,
   addSequantToMcpConfig,
   getSequantMcpConfig,
+  isSequantInProjectMcpJson,
+  createProjectMcpJson,
 } from "./mcp-config.js";
 
 describe("mcp-config", () => {
@@ -67,9 +69,9 @@ describe("mcp-config", () => {
         }
       });
 
-      it("should include env when ANTHROPIC_API_KEY is set", () => {
+      it("should include env when ANTHROPIC_API_KEY is set and clientType is given", () => {
         process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
-        const config = getSequantMcpConfig();
+        const config = getSequantMcpConfig({ clientType: "claude-desktop" });
         expect(config.env).toEqual({
           ANTHROPIC_API_KEY: "sk-ant-test-key",
         });
@@ -77,6 +79,12 @@ describe("mcp-config", () => {
 
       it("should omit env when ANTHROPIC_API_KEY is not set", () => {
         delete process.env.ANTHROPIC_API_KEY;
+        const config = getSequantMcpConfig({ clientType: "claude-desktop" });
+        expect(config.env).toBeUndefined();
+      });
+
+      it("should omit env when no clientType is given even if ANTHROPIC_API_KEY is set", () => {
+        process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
         const config = getSequantMcpConfig();
         expect(config.env).toBeUndefined();
       });
@@ -181,6 +189,185 @@ describe("mcp-config", () => {
 
       const content = JSON.parse(fs.readFileSync(testConfig, "utf-8"));
       expect(content.mcpServers.sequant.cwd).toBeUndefined();
+    });
+  });
+
+  describe("isSequantInProjectMcpJson", () => {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      "sequant-mcp-check-test-" + Date.now(),
+    );
+
+    beforeEach(() => {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should return false when .mcp.json does not exist", () => {
+      expect(isSequantInProjectMcpJson(tmpDir)).toBe(false);
+    });
+
+    it("should return true when sequant entry exists", () => {
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            sequant: { command: "npx", args: ["sequant@latest", "serve"] },
+          },
+        }),
+      );
+      expect(isSequantInProjectMcpJson(tmpDir)).toBe(true);
+    });
+
+    it("should return false when .mcp.json has no sequant entry", () => {
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify({ mcpServers: { other: {} } }),
+      );
+      expect(isSequantInProjectMcpJson(tmpDir)).toBe(false);
+    });
+
+    it("should return false for corrupt .mcp.json", () => {
+      fs.writeFileSync(path.join(tmpDir, ".mcp.json"), "not json{{{");
+      expect(isSequantInProjectMcpJson(tmpDir)).toBe(false);
+    });
+  });
+
+  describe("createProjectMcpJson", () => {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      "sequant-mcp-project-test-" + Date.now(),
+    );
+
+    beforeEach(() => {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should create .mcp.json when it does not exist", () => {
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: true, merged: false, skipped: false });
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      expect(content.mcpServers.sequant.command).toBe("npx");
+      expect(content.mcpServers.sequant.args).toEqual([
+        "sequant@latest",
+        "serve",
+      ]);
+    });
+
+    it("should NOT include cwd or env in .mcp.json config", () => {
+      createProjectMcpJson(tmpDir);
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      expect(content.mcpServers.sequant.cwd).toBeUndefined();
+      expect(content.mcpServers.sequant.env).toBeUndefined();
+    });
+
+    it("should skip when sequant entry already exists", () => {
+      const existing = {
+        mcpServers: {
+          sequant: { command: "npx", args: ["sequant@latest", "serve"] },
+        },
+      };
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify(existing),
+      );
+
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: false, merged: false, skipped: true });
+    });
+
+    it("should merge into existing .mcp.json without sequant entry", () => {
+      const existing = {
+        mcpServers: {
+          "other-server": { command: "node", args: ["server.js"] },
+        },
+      };
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify(existing),
+      );
+
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: false, merged: true, skipped: false });
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      // Existing server preserved
+      expect(content.mcpServers["other-server"]).toEqual({
+        command: "node",
+        args: ["server.js"],
+      });
+      // Sequant added
+      expect(content.mcpServers.sequant.command).toBe("npx");
+    });
+
+    it("should NOT leak ANTHROPIC_API_KEY into .mcp.json", () => {
+      const originalKey = process.env.ANTHROPIC_API_KEY;
+      try {
+        process.env.ANTHROPIC_API_KEY = "sk-ant-secret-key-should-not-leak";
+        createProjectMcpJson(tmpDir);
+
+        const content = JSON.parse(
+          fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+        );
+        expect(content.mcpServers.sequant.env).toBeUndefined();
+        expect(JSON.stringify(content)).not.toContain("sk-ant-secret-key");
+      } finally {
+        if (originalKey !== undefined) {
+          process.env.ANTHROPIC_API_KEY = originalKey;
+        } else {
+          delete process.env.ANTHROPIC_API_KEY;
+        }
+      }
+    });
+
+    it("should handle corrupt .mcp.json gracefully", () => {
+      fs.writeFileSync(path.join(tmpDir, ".mcp.json"), "not valid json{{{");
+
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: false, merged: true, skipped: false });
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      expect(content.mcpServers.sequant.command).toBe("npx");
+    });
+
+    it("should handle mcpServers being an array instead of object", () => {
+      const existing = { mcpServers: ["not", "an", "object"] };
+      fs.writeFileSync(
+        path.join(tmpDir, ".mcp.json"),
+        JSON.stringify(existing),
+      );
+
+      const result = createProjectMcpJson(tmpDir);
+
+      expect(result).toEqual({ created: false, merged: true, skipped: false });
+
+      const content = JSON.parse(
+        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
+      );
+      // Array replaced with proper object
+      expect(Array.isArray(content.mcpServers)).toBe(false);
+      expect(content.mcpServers.sequant.command).toBe("npx");
     });
   });
 });

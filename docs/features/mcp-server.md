@@ -19,7 +19,24 @@ Use Sequant from Claude Desktop, Cursor, VS Code, or any MCP-compatible AI tool.
 
 ### Add the MCP config
 
-Pick your client and add the config. Each client is slightly different.
+**Claude Code** — `.mcp.json` in your project root:
+
+`sequant init` creates this automatically. If you already ran init, the file is ready — no manual setup needed. The config is project-scoped and version-controlled, so team members get it automatically.
+
+```json
+{
+  "mcpServers": {
+    "sequant": {
+      "command": "npx",
+      "args": ["sequant@latest", "serve"]
+    }
+  }
+}
+```
+
+No `cwd` or `env` needed — Claude Code runs from the project root and inherits your shell environment.
+
+**Other clients** — pick your client and add the config manually. Each is slightly different.
 
 **Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
@@ -103,10 +120,22 @@ npx @modelcontextprotocol/inspector npx sequant serve
 
 ### Automatic setup
 
-If you'd rather not edit config files, `sequant init` detects installed clients and offers to configure them:
+`sequant init` creates `.mcp.json` automatically — no flags needed:
 
 ```
 $ npx sequant init
+Will create:
+  .mcp.json           (Claude Code MCP server config)
+  ...
+✔ Created .mcp.json (Claude Code MCP config)
+```
+
+If `.mcp.json` already exists with a `sequant` entry, init skips it. If `.mcp.json` exists with other servers but no `sequant` entry, init merges sequant in without touching your existing servers.
+
+**Global client configs (Claude Desktop, Cursor, VS Code):** Use the `--mcp` flag to also write to global client config files:
+
+```
+$ npx sequant init --mcp
 ...
 Detected 2 MCP-compatible client(s):
    • Claude Desktop
@@ -116,16 +145,10 @@ Add Sequant MCP server to detected clients? (Y/n)
 
 Sequant detects each client type and generates the appropriate config — including `cwd` for Claude Desktop and VS Code + Continue, and `env.ANTHROPIC_API_KEY` only when the key is set in your environment.
 
-**Non-interactive mode:** `sequant init --yes` skips MCP configuration by default to avoid silently writing to client configs. To opt in:
+**Non-interactive mode:** `sequant init --yes` creates `.mcp.json` but skips global client configs to avoid silently writing to user-level files. To opt in to global configs:
 
 ```bash
-sequant init --yes --mcp   # auto-add MCP config to all detected clients
-```
-
-Without `--mcp`, you'll see:
-
-```
-Skipping MCP config (use --mcp to auto-add in non-interactive mode)
+sequant init --yes --mcp   # .mcp.json + global client configs
 ```
 
 ## What You Can Ask
