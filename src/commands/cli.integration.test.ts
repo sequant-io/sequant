@@ -67,27 +67,44 @@ describe("CLI version integration", () => {
   });
 
   it("status command shows correct package version", () => {
-    let output: string;
+    // Retry once — CI runners occasionally kill the child process via signal
+    // (e.g., OOM or resource pressure), producing empty stdout.
+    let output = "";
+    const maxAttempts = 2;
 
-    try {
-      output = execSync(`node ${cliPath} status`, execOptions);
-    } catch (error) {
-      const execError = error as {
-        status: number | null;
-        stdout: string;
-        stderr: string;
-      };
-      // Status may exit with non-zero if not initialized, but shouldn't crash
-      output = execError.stdout || "";
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        output = execSync(`node ${cliPath} status`, execOptions);
+        break;
+      } catch (error) {
+        const execError = error as {
+          status: number | null;
+          stdout: string;
+          stderr: string;
+          signal?: string;
+        };
+        output = execError.stdout || "";
 
-      if (execError.status !== null && execError.status !== 0) {
-        // If it exited with error, make sure we still got output
-        if (!output) {
+        // Process killed by signal (status is null) — retry if possible
+        if (execError.status === null) {
+          if (attempt < maxAttempts) continue;
+          throw new Error(
+            `CLI status killed by signal ${execError.signal || "unknown"} after ${maxAttempts} attempts.\n` +
+              `stdout: ${JSON.stringify(output)}\n` +
+              `stderr: ${execError.stderr}`,
+          );
+        }
+
+        // Non-zero exit with no stdout — crash
+        if (execError.status !== 0 && !output) {
           throw new Error(
             `CLI status crashed with exit code ${execError.status}.\n` +
               `stderr: ${execError.stderr}`,
           );
         }
+
+        // Non-zero exit but has stdout — use it (status may exit non-zero if not initialized)
+        break;
       }
     }
 
