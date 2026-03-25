@@ -356,4 +356,117 @@ describe("statsCommand", () => {
       expect(parsed.commonFailures["exec: Build failed"]).toBe(1);
     });
   });
+
+  describe("--detailed flag", () => {
+    const mockLogWithQa: RunLog = {
+      version: 1,
+      runId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
+      startTime: "2026-02-10T10:00:00.000Z",
+      endTime: "2026-02-10T10:30:00.000Z",
+      config: {
+        phases: ["spec", "exec", "qa"],
+        sequential: false,
+        qualityLoop: false,
+        maxIterations: 3,
+      },
+      issues: [
+        {
+          issueNumber: 100,
+          title: "Issue with QA pass",
+          labels: ["enhancement"],
+          status: "success",
+          phases: [
+            {
+              phase: "qa",
+              issueNumber: 100,
+              startTime: "2026-02-10T10:20:00.000Z",
+              endTime: "2026-02-10T10:25:00.000Z",
+              durationSeconds: 300,
+              status: "success",
+              verdict: "READY_FOR_MERGE",
+            },
+          ],
+          totalDurationSeconds: 1500,
+        },
+        {
+          issueNumber: 101,
+          title: "Issue with QA fail then pass",
+          labels: ["bug"],
+          status: "success",
+          phases: [
+            {
+              phase: "qa",
+              issueNumber: 101,
+              startTime: "2026-02-10T10:10:00.000Z",
+              endTime: "2026-02-10T10:15:00.000Z",
+              durationSeconds: 300,
+              status: "failure",
+              verdict: "AC_NOT_MET",
+              error: "AC_NOT_MET",
+            },
+            {
+              phase: "qa",
+              issueNumber: 101,
+              startTime: "2026-02-10T10:25:00.000Z",
+              endTime: "2026-02-10T10:30:00.000Z",
+              durationSeconds: 300,
+              status: "success",
+              verdict: "READY_FOR_MERGE",
+            },
+          ],
+          totalDurationSeconds: 1800,
+        },
+      ],
+      summary: {
+        totalIssues: 2,
+        passed: 2,
+        failed: 0,
+        totalDurationSeconds: 1800,
+      },
+    };
+
+    beforeEach(() => {
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue([
+        "run-2026-02-10-aaa.json",
+      ]);
+      (fs.readFileSync as ReturnType<typeof vi.fn>).mockImplementation(() =>
+        JSON.stringify(mockLogWithQa),
+      );
+    });
+
+    it("should display QA verdict section when --detailed is set", async () => {
+      await statsCommand({ detailed: true });
+
+      // Should display QA section header
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("QA Verdicts"),
+      );
+    });
+
+    it("should display weekly trends when --detailed is set", async () => {
+      await statsCommand({ detailed: true });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Weekly Trends"),
+      );
+    });
+
+    it("should display label segmentation when --detailed is set", async () => {
+      await statsCommand({ detailed: true });
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Success by Label"),
+      );
+    });
+
+    it("should not display detailed sections without --detailed", async () => {
+      await statsCommand({});
+
+      const allCalls = consoleSpy.mock.calls.flat().join(" ");
+      expect(allCalls).not.toContain("QA Verdicts");
+      expect(allCalls).not.toContain("Weekly Trends");
+      expect(allCalls).not.toContain("Success by Label");
+    });
+  });
 });

@@ -26,6 +26,27 @@ interface StatsOptions {
   path?: string;
   csv?: boolean;
   json?: boolean;
+  detailed?: boolean;
+}
+
+/**
+ * Detailed analytics computed from run logs
+ */
+interface DetailedAnalytics {
+  qaVerdictDistribution: Record<string, number>;
+  firstPassQaRate: number;
+  totalQaPhases: number;
+  weeklyTrends: {
+    week: string;
+    runs: number;
+    issues: number;
+    successRate: number;
+  }[];
+  labelSegments: {
+    label: string;
+    issues: number;
+    successRate: number;
+  }[];
 }
 
 /**
@@ -632,6 +653,188 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
 }
 
 /**
+ * Calculate detailed analytics from run logs
+ */
+function calculateDetailedAnalytics(logs: RunLog[]): DetailedAnalytics {
+  const allIssues = logs.flatMap((l) => l.issues);
+
+  // QA verdict distribution
+  const qaVerdictDistribution: Record<string, number> = {};
+  let totalQaPhases = 0;
+
+  for (const issue of allIssues) {
+    for (const phase of issue.phases) {
+      if (phase.phase === "qa") {
+        totalQaPhases++;
+        const verdict = phase.verdict ?? "no_verdict";
+        qaVerdictDistribution[verdict] =
+          (qaVerdictDistribution[verdict] ?? 0) + 1;
+      }
+    }
+  }
+
+  // First-pass QA rate: group by issue, check if first QA attempt was READY_FOR_MERGE
+  const qaByIssue = new Map<
+    number,
+    { verdict?: string; startTime: string }[]
+  >();
+  for (const issue of allIssues) {
+    const issueQa = issue.phases
+      .filter((p) => p.phase === "qa")
+      .map((p) => ({ verdict: p.verdict, startTime: p.startTime }));
+    if (issueQa.length > 0) {
+      const existing = qaByIssue.get(issue.issueNumber) ?? [];
+      existing.push(...issueQa);
+      qaByIssue.set(issue.issueNumber, existing);
+    }
+  }
+
+  let firstPassSuccess = 0;
+  let totalIssuesWithQa = 0;
+  for (const [, phases] of qaByIssue) {
+    totalIssuesWithQa++;
+    const sorted = phases.sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+    if (sorted[0]?.verdict === "READY_FOR_MERGE") {
+      firstPassSuccess++;
+    }
+  }
+
+  // Weekly trends
+  const weekBuckets = new Map<
+    string,
+    { runs: number; issues: number; successes: number }
+  >();
+  for (const log of logs) {
+    const d = new Date(log.startTime);
+    const day = d.getUTCDay();
+    const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), diff),
+    );
+    const week = monday.toISOString().slice(0, 10);
+
+    const existing = weekBuckets.get(week) ?? {
+      runs: 0,
+      issues: 0,
+      successes: 0,
+    };
+    existing.runs++;
+    existing.issues += log.issues.length;
+    existing.successes += log.issues.filter(
+      (i) => i.status === "success",
+    ).length;
+    weekBuckets.set(week, existing);
+  }
+
+  const weeklyTrends = [...weekBuckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, data]) => ({
+      week,
+      runs: data.runs,
+      issues: data.issues,
+      successRate: data.issues > 0 ? (data.successes / data.issues) * 100 : 0,
+    }));
+
+  // Label segmentation
+  const labelAcc = new Map<string, { issues: number; successes: number }>();
+  for (const issue of allIssues) {
+    for (const label of issue.labels) {
+      const existing = labelAcc.get(label) ?? { issues: 0, successes: 0 };
+      existing.issues++;
+      if (issue.status === "success") existing.successes++;
+      labelAcc.set(label, existing);
+    }
+  }
+
+  const labelSegments = [...labelAcc.entries()]
+    .map(([label, data]) => ({
+      label,
+      issues: data.issues,
+      successRate: data.issues > 0 ? (data.successes / data.issues) * 100 : 0,
+    }))
+    .sort((a, b) => b.issues - a.issues)
+    .slice(0, 10);
+
+  return {
+    qaVerdictDistribution,
+    firstPassQaRate:
+      totalIssuesWithQa > 0 ? (firstPassSuccess / totalIssuesWithQa) * 100 : 0,
+    totalQaPhases,
+    weeklyTrends,
+    labelSegments,
+  };
+}
+
+/**
+ * Display detailed analytics
+ */
+function displayDetailedAnalytics(detailed: DetailedAnalytics): void {
+  // QA Verdicts
+  console.log(ui.sectionHeader("QA Verdicts"));
+  console.log(
+    `  First-pass QA rate: ${colors.accent(detailed.firstPassQaRate.toFixed(1) + "%")}`,
+  );
+  console.log(`  Total QA phases:    ${detailed.totalQaPhases}\n`);
+
+  for (const [verdict, count] of Object.entries(
+    detailed.qaVerdictDistribution,
+  ).sort((a, b) => b[1] - a[1])) {
+    const pct =
+      detailed.totalQaPhases > 0
+        ? ((count / detailed.totalQaPhases) * 100).toFixed(1)
+        : "0";
+    const bar = ui.progressBar(count, detailed.totalQaPhases, 10);
+    console.log(
+      `  ${verdict.padEnd(26)} ${String(count).padStart(3)}  (${pct}%)  ${bar}`,
+    );
+  }
+
+  // Weekly Trends
+  if (detailed.weeklyTrends.length > 0) {
+    console.log(ui.sectionHeader("Weekly Trends"));
+
+    const rows = detailed.weeklyTrends.map((w) => [
+      w.week,
+      String(w.runs),
+      String(w.issues),
+      `${w.successRate.toFixed(0)}%`,
+    ]);
+
+    console.log(
+      ui.table(rows, {
+        columns: [
+          { header: "Week", width: 12 },
+          { header: "Runs", width: 6 },
+          { header: "Issues", width: 8 },
+          { header: "Success", width: 9 },
+        ],
+      }),
+    );
+  }
+
+  // Label Segmentation
+  if (detailed.labelSegments.length > 0) {
+    console.log(ui.sectionHeader("Success by Label"));
+
+    for (const seg of detailed.labelSegments) {
+      const bar = ui.progressBar(Math.round(seg.successRate), 100, 10);
+      const rateStr =
+        seg.successRate >= 80
+          ? colors.success(`${seg.successRate.toFixed(0)}%`)
+          : seg.successRate >= 60
+            ? colors.warning(`${seg.successRate.toFixed(0)}%`)
+            : colors.error(`${seg.successRate.toFixed(0)}%`);
+
+      console.log(
+        `  ${seg.label.padEnd(20)} ${String(seg.issues).padStart(3)} issues  ${rateStr}  ${bar}`,
+      );
+    }
+  }
+}
+
+/**
  * Main stats command
  */
 export async function statsCommand(options: StatsOptions): Promise<void> {
@@ -735,36 +938,53 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
   if (metrics && metrics.runs.length > 0) {
     const analytics = calculateMetricsAnalytics(metrics);
     displayMetricsAnalytics(analytics);
-    return;
+  } else {
+    // Fall back to run logs display
+    const logDir = resolveLogPath(options.path);
+    const logFiles = listLogFiles(logDir);
+
+    if (logFiles.length === 0) {
+      console.log(ui.headerBox("SEQUANT ANALYTICS"));
+      console.log(colors.muted("\n  Local data only - no telemetry\n"));
+      console.log(colors.warning("  No data found."));
+      console.log(
+        colors.muted("  Run `npx sequant run <issues>` to collect metrics."),
+      );
+      console.log("");
+      return;
+    }
+
+    const logs = logFiles
+      .map((filename) => {
+        const filePath = path.join(logDir, filename);
+        return parseLogFile(filePath);
+      })
+      .filter((log): log is RunLog => log !== null);
+
+    if (logs.length === 0) {
+      console.log(colors.warning("\n  No valid log files found.\n"));
+      return;
+    }
+
+    const stats = calculateStats(logs);
+    displayStats(stats, logDir);
   }
 
-  // Fall back to run logs display
-  const logDir = resolveLogPath(options.path);
-  const logFiles = listLogFiles(logDir);
+  // Detailed analytics from run logs (--detailed flag)
+  if (options.detailed) {
+    const logDir = resolveLogPath(options.path);
+    const logFiles = listLogFiles(logDir);
+    const logs = logFiles
+      .map((filename) => {
+        const filePath = path.join(logDir, filename);
+        return parseLogFile(filePath);
+      })
+      .filter((log): log is RunLog => log !== null);
 
-  if (logFiles.length === 0) {
-    console.log(ui.headerBox("SEQUANT ANALYTICS"));
-    console.log(colors.muted("\n  Local data only - no telemetry\n"));
-    console.log(colors.warning("  No data found."));
-    console.log(
-      colors.muted("  Run `npx sequant run <issues>` to collect metrics."),
-    );
-    console.log("");
-    return;
+    if (logs.length > 0) {
+      const detailed = calculateDetailedAnalytics(logs);
+      displayDetailedAnalytics(detailed);
+      console.log("");
+    }
   }
-
-  const logs = logFiles
-    .map((filename) => {
-      const filePath = path.join(logDir, filename);
-      return parseLogFile(filePath);
-    })
-    .filter((log): log is RunLog => log !== null);
-
-  if (logs.length === 0) {
-    console.log(colors.warning("\n  No valid log files found.\n"));
-    return;
-  }
-
-  const stats = calculateStats(logs);
-  displayStats(stats, logDir);
 }
