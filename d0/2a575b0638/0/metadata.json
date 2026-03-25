@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.4.4",
+  "checkpoint_id": "d02a575b0638",
+  "session_id": "5181ffff-6e77-4255-9529-ed02afebef60",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-25T01:41:27.220841Z",
+  "branch": "feature/421-mcp-server-add-progress-notifications-for-sequant-",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "__tests__/integration/mcp-progress-notifications.integration.test.ts",
+    "__tests__/mcp-progress-notifications.test.ts"
+  ],
+  "agent": "Claude Code",
+  "token_usage": {
+    "input_tokens": 22,
+    "cache_creation_tokens": 51241,
+    "cache_read_tokens": 698104,
+    "output_tokens": 10110,
+    "api_call_count": 16
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-25T01:41:27.113636Z",
+    "agent_lines": 371,
+    "human_added": 257,
+    "human_modified": 263,
+    "human_removed": 0,
+    "total_committed": 891,
+    "agent_percentage": 41.63860830527497
+  },
+  "transcript_path": ".claude/projects/-Users-tony-Projects-worktrees-feature-421-mcp-server-add-progress-notifications-for-sequant-/5181ffff-6e77-4255-9529-ed02afebef60.jsonl"
+}
