@@ -27,9 +27,9 @@ From GitHub issue to merge-ready PR — verified at every step.
 | Category | Commands |
 |----------|----------|
 | **Core Workflow** | `/spec` · `/exec` · `/test` · `/qa` |
-| **Automation** | `/fullsolve` · `/solve` · `/loop` |
+| **Automation** | `/fullsolve` · `/assess` · `/loop` |
 | **Integration** | `/testgen` · `/verify` · `/merger` |
-| **Utilities** | `/assess` · `/docs` · `/clean` · `/improve` · `/security-review` · `/reflect` |
+| **Utilities** | `/docs` · `/clean` · `/improve` · `/security-review` · `/reflect` |
 
 > Command documentation is in `.claude/skills/<command>/SKILL.md`. Individual reference pages coming soon.
 

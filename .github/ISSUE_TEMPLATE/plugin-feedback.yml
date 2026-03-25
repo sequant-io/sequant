@@ -80,7 +80,6 @@ body:
         - /docs
         - /release
         - /clean
-        - /solve
         - /testgen
         - /reflect
         - /security-review

@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/solve` becomes a deprecated alias that redirects to `/assess`
   - New `assess-comment-parser.ts` with unified parser for both `assess:` and legacy `solve:` markers
   - Full backward compatibility: all `solve*` exports preserved as deprecated aliases
+  - All documentation, README, cheat sheet, marketplace, and issue template references updated from `/solve` to `/assess` (#440)
+  - GitHub Actions label trigger updated: `sequant:solve` → `sequant:assess` (#440)
 
 ### Added
 

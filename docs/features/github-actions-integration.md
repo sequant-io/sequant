@@ -18,12 +18,12 @@ Copy one of the example workflows below into `.github/workflows/` in your reposi
 
 ### Option A: Label trigger (recommended)
 
-The simplest setup. Label an issue with `sequant:solve` and the action runs the full workflow.
+The simplest setup. Label an issue with `sequant:assess` and the action runs the full workflow.
 
-Create `.github/workflows/sequant-solve.yml`:
+Create `.github/workflows/sequant-assess.yml`:
 
 ```yaml
-name: AI Solve Issue
+name: AI Assess Issue
 
 on:
   issues:
@@ -34,8 +34,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  solve:
-    if: github.event.label.name == 'sequant:solve'
+  assess:
+    if: github.event.label.name == 'sequant:assess'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -157,10 +157,10 @@ jobs:
 
 ## What You Can Do
 
-### Solve an issue from a label
+### Assess an issue from a label
 
 1. Open any GitHub issue
-2. Add the label `sequant:solve`
+2. Add the label `sequant:assess`
 3. The action runs spec, exec, and QA phases
 4. On success: a PR appears linked to the issue
 5. On failure: findings are posted as an issue comment
@@ -171,7 +171,7 @@ Use phase-specific labels to run only part of the workflow:
 
 | Label | Phases run |
 |-------|-----------|
-| `sequant:solve` | spec, exec, qa |
+| `sequant:assess` | spec, exec, qa |
 | `sequant:spec-only` | spec |
 | `sequant:exec` | exec |
 | `sequant:qa` | qa |
@@ -191,7 +191,7 @@ Each issue gets its own worktree, phases, and PR.
 ## What to Expect
 
 - **Duration:** 10-30 minutes per issue depending on complexity and phases
-- **Labels change during the run:** `sequant:solve` is replaced by `sequant:solving`, then `sequant:done` or `sequant:failed`
+- **Labels change during the run:** `sequant:assess` is replaced by `sequant:assessing`, then `sequant:done` or `sequant:failed`
 - **Results are posted as issue comments** with a summary table showing phases, duration, and outcome
 - **Run logs are uploaded as artifacts** (retained for 30 days) — find them in the Actions run details under "Artifacts"
 - **Concurrency is enforced** — only one Sequant run per issue at a time; additional runs queue
@@ -236,10 +236,10 @@ Use outputs in downstream steps:
 ### Label lifecycle
 
 ```
-sequant:solve (trigger)
+sequant:assess (trigger)
     |
     v
-sequant:solving (in progress)
+sequant:assessing (in progress)
     |
     +---> sequant:done (success, PR created)
     |
