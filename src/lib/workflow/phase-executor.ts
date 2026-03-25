@@ -141,8 +141,10 @@ export function formatDuration(seconds: number): string {
  * Selects self-contained prompts for non-Claude agents.
  * Includes AGENTS.md content as context so non-Claude agents
  * receive project conventions and workflow instructions.
+ *
+ * @internal Exported for testing only
  */
-async function getPhasePrompt(
+export async function getPhasePrompt(
   phase: Phase,
   issueNumber: number,
   agent?: string,
