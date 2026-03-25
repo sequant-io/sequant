@@ -384,6 +384,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
       chalk.gray("  AGENTS.md           (universal agent instructions)"),
     );
   }
+  console.log(
+    chalk.gray("  .mcp.json           (Claude Code MCP server config)"),
+  );
 
   if (!skipPrompts) {
     const { confirm } = await inquirer.prompt([
@@ -531,9 +534,21 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(chalk.gray("Skipping AGENTS.md generation (--no-agents-md)"));
   }
 
-  // Offer MCP server configuration for detected clients
-  const { detectMcpClients, addSequantToMcpConfig } =
+  // Create .mcp.json for Claude Code (always, regardless of --mcp flag)
+  const { createProjectMcpJson, detectMcpClients, addSequantToMcpConfig } =
     await import("../lib/mcp-config.js");
+  const mcpJsonResult = createProjectMcpJson();
+  if (mcpJsonResult.created) {
+    ui.printStatus("success", "Created .mcp.json (Claude Code MCP config)");
+  } else if (mcpJsonResult.merged) {
+    ui.printStatus("success", "Added Sequant to existing .mcp.json");
+  } else {
+    console.log(
+      chalk.gray("   .mcp.json: sequant already configured (skipped)"),
+    );
+  }
+
+  // Offer MCP server configuration for detected clients (global configs)
   const mcpClients = detectMcpClients();
   const detectedClients = mcpClients.filter((c) => c.exists);
 

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
+  - Always creates `.mcp.json` in project root (no `--mcp` flag required)
+  - Merges into existing `.mcp.json` preserving other server entries
+  - Skips if sequant entry already exists
+  - `--mcp` flag retains existing behavior for global client configs
 - Add server instructions and tool annotations to MCP server for LLM discoverability (#420)
   - Server-level instructions explaining workflow, tool relationships, and usage patterns
   - Tool annotations (`readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`) for client approval decisions

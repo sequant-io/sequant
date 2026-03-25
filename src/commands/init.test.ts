@@ -108,6 +108,12 @@ vi.mock("../lib/mcp-config.js", () => ({
     command: "npx",
     args: ["sequant@latest", "serve"],
   })),
+  isSequantInProjectMcpJson: vi.fn(() => false),
+  createProjectMcpJson: vi.fn(() => ({
+    created: true,
+    merged: false,
+    skipped: false,
+  })),
 }));
 
 // Mock inquirer
@@ -212,7 +218,11 @@ import {
   getNonInteractiveReason,
 } from "../lib/tty.js";
 import inquirer from "inquirer";
-import { detectMcpClients, addSequantToMcpConfig } from "../lib/mcp-config.js";
+import {
+  detectMcpClients,
+  addSequantToMcpConfig,
+  createProjectMcpJson,
+} from "../lib/mcp-config.js";
 
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
@@ -229,6 +239,7 @@ const mockGetNonInteractiveReason = vi.mocked(getNonInteractiveReason);
 const mockInquirerPrompt = vi.mocked(inquirer.prompt);
 const mockDetectMcpClients = vi.mocked(detectMcpClients);
 const mockAddSequantToMcpConfig = vi.mocked(addSequantToMcpConfig);
+const mockCreateProjectMcpJson = vi.mocked(createProjectMcpJson);
 
 describe("init command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -739,6 +750,78 @@ describe("init command", () => {
       await initCommand({});
 
       expect(mockAddSequantToMcpConfig).not.toHaveBeenCalled();
+    });
+  });
+
+  describe(".mcp.json creation (#418)", () => {
+    it("creates .mcp.json by default without --mcp flag", async () => {
+      await initCommand({ yes: true, stack: "generic" });
+
+      expect(mockCreateProjectMcpJson).toHaveBeenCalled();
+    });
+
+    it("creates .mcp.json with --yes flag", async () => {
+      await initCommand({ yes: true, stack: "generic" });
+
+      expect(mockCreateProjectMcpJson).toHaveBeenCalled();
+    });
+
+    it("creates .mcp.json even without --mcp flag in non-interactive mode", async () => {
+      mockShouldUseInteractiveMode.mockReturnValue(false);
+      mockGetNonInteractiveReason.mockReturnValue("running in CI");
+
+      await initCommand({});
+
+      expect(mockCreateProjectMcpJson).toHaveBeenCalled();
+    });
+
+    it("creates .mcp.json AND writes global configs with --mcp", async () => {
+      const fakeClients = [
+        {
+          name: "Claude Desktop",
+          clientType: "claude-desktop" as const,
+          configPath: "/fake/claude.json",
+          exists: true,
+        },
+      ];
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+
+      await initCommand({ yes: true, mcp: true, stack: "generic" });
+
+      // .mcp.json created
+      expect(mockCreateProjectMcpJson).toHaveBeenCalled();
+      // Global client config also written
+      expect(mockAddSequantToMcpConfig).toHaveBeenCalledWith(
+        "/fake/claude.json",
+        "claude-desktop",
+      );
+    });
+
+    it("does NOT write global configs without --mcp with --yes", async () => {
+      const fakeClients = [
+        {
+          name: "Claude Desktop",
+          clientType: "claude-desktop" as const,
+          configPath: "/fake/claude.json",
+          exists: true,
+        },
+      ];
+      mockDetectMcpClients.mockReturnValue(fakeClients);
+
+      await initCommand({ yes: true, stack: "generic" });
+
+      // .mcp.json created
+      expect(mockCreateProjectMcpJson).toHaveBeenCalled();
+      // Global client config NOT written
+      expect(mockAddSequantToMcpConfig).not.toHaveBeenCalled();
+    });
+
+    it("always shows .mcp.json in preview", async () => {
+      await initCommand({ yes: true, stack: "generic" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain(".mcp.json");
+      expect(output).toContain("Claude Code MCP server config");
     });
   });
 });
