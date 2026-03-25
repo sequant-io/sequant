@@ -97,15 +97,22 @@ fi
 
 **Phase Marker Emission:**
 
-When posting the QA review comment to GitHub, append a phase marker at the end:
+When posting the QA review comment to GitHub, append a phase marker at the end.
+
+**IMPORTANT:** Always include the `commitSHA` field with the current HEAD SHA. This enables incremental re-runs by recording the baseline commit for future QA runs.
+
+```bash
+# Get current HEAD SHA for the phase marker
+COMMIT_SHA=$(git rev-parse HEAD)
+```
 
 ```markdown
-<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"<ISO-8601>"} -->
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"<ISO-8601>","commitSHA":"<HEAD-SHA>"} -->
 ```
 
 If QA determines AC_NOT_MET, emit:
 ```markdown
-<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"<ISO-8601>","error":"AC_NOT_MET"} -->
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"<ISO-8601>","error":"AC_NOT_MET","commitSHA":"<HEAD-SHA>"} -->
 ```
 
 Include this marker in every `gh issue comment` that represents QA completion.
@@ -560,6 +567,134 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
 
 ---
 
+### Phase 0c: Incremental Re-Run Detection (CONDITIONAL)
+
+**When to apply:** On QA re-runs (when a prior QA phase marker exists in issue comments).
+
+**Purpose:** Optimize QA re-runs by detecting what changed since the last QA run and skipping checks whose inputs haven't changed. This significantly reduces token usage and execution time on iterative QA cycles.
+
+**Detection:**
+
+```bash
+# Step 1: Check for prior QA run context in cache
+prior_context=$(npx tsx scripts/qa/qa-cache-cli.ts get-run-context 2>/dev/null || true)
+
+# Step 2: If no cache context found, fall through to full QA run
+if [[ -z "$prior_context" ]] || echo "$prior_context" | grep -q "No QA run context"; then
+  echo "No prior QA context found — running full QA"
+  INCREMENTAL_MODE=false
+else
+  LAST_QA_SHA=$(echo "$prior_context" | jq -r '.lastQACommitSHA')
+  LAST_QA_HASH=$(echo "$prior_context" | jq -r '.lastQADiffHash')
+
+  # Step 3: Validate the commit SHA still exists in git history
+  if ! git cat-file -t "$LAST_QA_SHA" &>/dev/null; then
+    echo "Warning: Last QA commit SHA ($LAST_QA_SHA) not found in history — running full QA"
+    INCREMENTAL_MODE=false
+  else
+    # Step 4: Get files changed since last QA
+    changed_files=$(npx tsx scripts/qa/qa-cache-cli.ts changed-since "$LAST_QA_SHA" 2>/dev/null || true)
+
+    if [[ "$changed_files" == "NO_CHANGES" ]]; then
+      echo "No changes since last QA — all checks can use cached results"
+      INCREMENTAL_MODE=true
+      NO_FILE_CHANGES=true
+    else
+      echo "Changes detected since last QA ($LAST_QA_SHA):"
+      echo "$changed_files" | head -20
+      INCREMENTAL_MODE=true
+      NO_FILE_CHANGES=false
+    fi
+  fi
+fi
+```
+
+**Skip Logic (when INCREMENTAL_MODE=true):**
+
+| Check / Item | Skip Condition | Re-run Condition |
+|-------------|----------------|------------------|
+| Quality checks (type-safety, security, etc.) | Existing diff-hash cache handles this | Hash mismatch -> re-run |
+| Build verification | **Never skip** (always re-run) | Always — cheap and can regress |
+| CI status | **Never skip** (always re-run) | Always — external state changes |
+| AC items with prior status `met` | Skip if NO_FILE_CHANGES=true | Any file changes since last QA |
+| AC items with prior status `not_met` | **Never skip** | Always re-evaluate |
+| AC items with prior status `partially_met` | **Never skip** | Always re-evaluate |
+| AC items with prior status `pending`/`blocked` | **Never skip** | Always re-evaluate |
+
+**AC Re-evaluation Rules:**
+
+When `INCREMENTAL_MODE=true`:
+
+1. **Load prior AC statuses** from run context:
+   ```bash
+   # Extract AC statuses from prior context
+   ac_statuses=$(echo "$prior_context" | jq -r '.acStatuses | to_entries[] | "\(.key)=\(.value)"')
+   ```
+
+2. **For each AC item:**
+   - If prior status is `met` AND `NO_FILE_CHANGES=true`:
+     - **Skip full re-evaluation** — output "Cached: previously MET, no file changes"
+     - Mark as `MET (cached)` in output
+   - If prior status is `met` AND files changed:
+     - **Re-evaluate** — changes may have caused regression
+   - If prior status is `not_met` or `partially_met`:
+     - **Always re-evaluate** — this is the primary purpose of re-runs
+   - If prior status is `pending` or `blocked`:
+     - **Always re-evaluate** — status may have changed
+
+3. **`--no-cache` flag behavior:**
+   - When `--no-cache` is passed, set `INCREMENTAL_MODE=false`
+   - This forces full re-evaluation of ALL checks and AC items
+   - Run context is still saved at the end for future re-runs
+
+**Output Format (Incremental QA Summary):**
+
+When `INCREMENTAL_MODE=true`, prepend this section to the QA output:
+
+```markdown
+### Incremental QA Summary
+
+**Last QA:** <timestamp> (commit: <sha-short>)
+**Changes since last QA:** N files
+
+| Check / AC | Status | Re-run? | Reason |
+|------------|--------|---------|--------|
+| type-safety | PASS | Cached | Diff hash unchanged |
+| security | PASS | Cached | Diff hash unchanged |
+| build | PASS | Re-run | Always fresh |
+| CI status | PASS | Re-run | Always fresh |
+| AC-1 | MET | Cached | Previously MET, no file changes |
+| AC-2 | MET | Re-evaluated | Was NOT_MET |
+| AC-3 | MET | Re-evaluated | Files changed since last QA |
+
+**Summary:** X checks cached, Y re-evaluated, Z always-fresh
+```
+
+**Run Context Persistence:**
+
+After QA completes (regardless of incremental mode), save the run context:
+
+```bash
+# Get current HEAD SHA
+current_sha=$(git rev-parse HEAD)
+# Get current diff hash
+current_hash=$(npx tsx scripts/qa/qa-cache-cli.ts hash)
+
+# Build AC statuses JSON from QA results
+# Example: {"AC-1":"met","AC-2":"not_met","AC-3":"met"}
+ac_json='{"AC-1":"met","AC-2":"not_met"}'  # Replace with actual results
+
+# Save run context
+echo "{
+  \"lastQACommitSHA\": \"$current_sha\",
+  \"lastQADiffHash\": \"$current_hash\",
+  \"acStatuses\": $ac_json,
+  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
+}" | npx tsx scripts/qa/qa-cache-cli.ts set-run-context
+```
+
+---
+
 ### Phase 1: CI Status Check — REQUIRED
 
 **Purpose:** Check GitHub CI status before finalizing verdict. CI-dependent AC items (e.g., "Tests pass in CI") should reflect actual CI status, not just local test results.
@@ -889,6 +1024,7 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' 
 | Error Handling | Empty catch block | ⚠️ Medium |
 | Security | Hardcoded secrets | ❌ High |
 | Security | SQL concatenation | ❌ High |
+| Security | Server binds all interfaces (`0.0.0.0`) | ❌ High |
 | Memory | Uncleared interval/timeout | ⚠️ Medium |
 | A11y | Image without alt | ⚠️ Low |
 
@@ -903,7 +1039,61 @@ changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' 
 
 See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detection commands and full criteria.
 
-### 2f. Call-Site Review (When New Functions Added)
+### 2f. Product Review (When New User-Facing Features Added)
+
+**When to apply:** New CLI commands, MCP tools, configuration options, or other features that end users interact with directly.
+
+**Detection:**
+```bash
+# Detect user-facing changes
+cli_added=$(git diff main...HEAD -- bin/cli.ts | grep -E '^\+.*\.command\(' | wc -l | xargs || true)
+new_commands=$(git diff main...HEAD --name-only | grep -E '^src/commands/' | wc -l | xargs || true)
+mcp_added=$(git diff main...HEAD --name-only | grep -E '^src/mcp/' | wc -l | xargs || true)
+config_changed=$(git diff main...HEAD --name-only | grep -E 'settings|config' | wc -l | xargs || true)
+
+if [[ $((cli_added + new_commands + mcp_added + config_changed)) -gt 0 ]]; then
+  echo "User-facing changes detected - running product review"
+fi
+```
+
+**If user-facing changes detected, answer these questions:**
+
+| Question | What to check |
+|----------|---------------|
+| **First-time setup:** Can a new user go from zero to working? | List every prerequisite. Try the setup path mentally. |
+| **Per-environment differences:** Does this work the same everywhere? | macOS/Linux/Windows, different clients/tools, CI vs local |
+| **What does the user see?** | Walk through the actual UX — wait times, output format, progress indicators |
+| **What happens after?** | Where's the output? What does the user do next? |
+| **Failure modes the user will hit:** | Not code edge cases — real scenarios (wrong directory, missing auth, timeout) |
+
+**Output Format:**
+
+```markdown
+### Product Review
+
+**User-facing changes:** [list new commands/tools/options]
+
+| Question | Finding |
+|----------|---------|
+| First-time setup | [All prerequisites identified? Setup path clear?] |
+| Per-environment | [Any client/platform differences?] |
+| User sees | [Wait times, output format, progress] |
+| After completion | [Where output goes, next steps] |
+| Likely failure modes | [Real user scenarios] |
+
+**Gaps found:** [list any gaps, or "None"]
+```
+
+**Verdict Impact:**
+
+| Finding | Verdict Impact |
+|---------|----------------|
+| No gaps | No impact |
+| Missing prerequisites in docs | `AC_MET_BUT_NOT_A_PLUS` |
+| Feature silently fails in common environment | `AC_NOT_MET` (e.g., wrong cwd, missing auth) |
+| Poor UX but functional | Note in findings |
+
+### 2g. Call-Site Review (When New Functions Added)
 
 **When to apply:** New exported functions are detected in the diff.
 
@@ -1019,7 +1209,7 @@ If the function accepts configuration or mode options:
 
 See [call-site-review.md](references/call-site-review.md) for detailed methodology and examples.
 
-### 2g. CLI Registration Verification (When Option Interfaces Modified)
+### 2h. CLI Registration Verification (When Option Interfaces Modified)
 
 **When to apply:** `RunOptions` or similar CLI option interfaces are modified in the diff.
 
@@ -1139,6 +1329,23 @@ For each AC item, mark as:
 
 Provide a sentence or two explaining why.
 
+#### AC Literal Verification (REQUIRED)
+
+**Before marking any AC as MET**, verify the implementation matches the AC text literally, not just in spirit:
+
+1. **Extract specific technical claims** from the AC text (commands, flags, function names, config keys, UI elements)
+2. **Search the implementation** for each claim using Grep or Read — do not assume presence
+3. **If the AC mentions a flag** (e.g., `--file <relevant-files>`), verify that flag appears in the code
+4. **If the AC says "works end-to-end"**, trace the full call chain from entry point to execution
+
+**Example:** If AC says *"shells out to `aider --yes --no-auto-commits --message '<prompt>' --file <relevant-files>`"*:
+- Verify `--yes` is in args array ✅
+- Verify `--no-auto-commits` is in args array ✅
+- Verify `--message` is in args array ✅
+- Verify `--file` is in args array — **if missing, AC is NOT MET** ❌
+
+Do NOT mark MET based on "the general intent is satisfied." The AC text is the contract — verify it literally.
+
 ### 3a. AC Status Persistence — REQUIRED
 
 **After evaluating each AC item**, update the status in workflow state using the state CLI:
@@ -1201,6 +1408,7 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 2. "Do the tests actually test the feature's primary purpose, or just pass?"
 3. "What's the most likely way this feature could break in production?"
 4. "Am I giving a positive verdict because the code looks clean, or because I verified it works?"
+5. "Are there 'design choices' I'm excusing that are actually bad practices?" (e.g., no version pinning, leaking secrets to unnecessary env vars, non-portable shell in example code, no input validation). Would I accept this in a code review from a junior developer?
 
 **Include this section in your output:**
 
@@ -1892,6 +2100,21 @@ You MUST include these sections:
 
 **Derived ACs:** X/Y addressed
 **Quality Plan Status:** Complete / Partial / Not Addressed
+
+---
+
+### Incremental QA Summary
+
+[Include if INCREMENTAL_MODE=true from Phase 0c, otherwise: "N/A - First QA run"]
+
+**Last QA:** <timestamp> (commit: <sha-short>)
+**Changes since last QA:** N files
+
+| Check / AC | Status | Re-run? | Reason |
+|------------|--------|---------|--------|
+| [check/AC] | [status] | Cached / Re-run / Re-evaluated | [reason] |
+
+**Summary:** X checks cached, Y re-evaluated, Z always-fresh
 
 ---
 

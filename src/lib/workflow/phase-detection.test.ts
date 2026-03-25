@@ -3,6 +3,7 @@ import {
   formatPhaseMarker,
   parsePhaseMarkers,
   detectPhaseFromComments,
+  detectPriorQAFindings,
   getPhaseMap,
   getCompletedPhasesFromComments,
   getResumablePhases,
@@ -549,5 +550,131 @@ describe("gh CLI wrapper functions", () => {
 
       expect(result).toEqual(["spec", "exec", "qa"]);
     });
+  });
+});
+
+describe("detectPriorQAFindings", () => {
+  it("returns null when no QA markers exist", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"spec","status":"completed","timestamp":"2025-01-15T10:00:00.000Z"} -->',
+      },
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T11:00:00.000Z"} -->',
+      },
+    ];
+    expect(detectPriorQAFindings(comments)).toBeNull();
+  });
+
+  it("detects QA marker without commitSHA", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T12:00:00.000Z"} -->',
+      },
+    ];
+    const result = detectPriorQAFindings(comments);
+    expect(result).not.toBeNull();
+    expect(result!.commitSHA).toBeNull();
+    expect(result!.timestamp).toBe("2025-01-15T12:00:00.000Z");
+    expect(result!.status).toBe("completed");
+  });
+
+  it("detects QA marker with commitSHA", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T12:00:00.000Z","commitSHA":"abc123def456"} -->',
+      },
+    ];
+    const result = detectPriorQAFindings(comments);
+    expect(result).not.toBeNull();
+    expect(result!.commitSHA).toBe("abc123def456");
+    expect(result!.timestamp).toBe("2025-01-15T12:00:00.000Z");
+  });
+
+  it("returns latest QA marker when multiple exist", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2025-01-15T10:00:00.000Z","commitSHA":"old123"} -->',
+      },
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T14:00:00.000Z","commitSHA":"new456"} -->',
+      },
+    ];
+    const result = detectPriorQAFindings(comments);
+    expect(result).not.toBeNull();
+    expect(result!.commitSHA).toBe("new456");
+    expect(result!.status).toBe("completed");
+  });
+
+  it("ignores non-QA markers even if more recent", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T10:00:00.000Z","commitSHA":"qa123"} -->',
+      },
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2025-01-15T15:00:00.000Z","commitSHA":"exec789"} -->',
+      },
+    ];
+    const result = detectPriorQAFindings(comments);
+    expect(result).not.toBeNull();
+    expect(result!.commitSHA).toBe("qa123");
+  });
+
+  it("returns null for empty comments array", () => {
+    expect(detectPriorQAFindings([])).toBeNull();
+  });
+
+  it("detects failed QA marker status", () => {
+    const comments = [
+      {
+        body: '<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2025-01-15T12:00:00.000Z","error":"AC_NOT_MET","commitSHA":"fail789"} -->',
+      },
+    ];
+    const result = detectPriorQAFindings(comments);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("failed");
+    expect(result!.commitSHA).toBe("fail789");
+  });
+});
+
+describe("PhaseMarker commitSHA support", () => {
+  it("parses markers with commitSHA field", () => {
+    const body =
+      '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T12:00:00.000Z","commitSHA":"abc123"} -->';
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].commitSHA).toBe("abc123");
+  });
+
+  it("formats markers with commitSHA field", () => {
+    const marker: PhaseMarker = {
+      phase: "qa",
+      status: "completed",
+      timestamp: "2025-01-15T12:00:00.000Z",
+      commitSHA: "abc123def456",
+    };
+    const result = formatPhaseMarker(marker);
+    expect(result).toContain('"commitSHA":"abc123def456"');
+  });
+
+  it("roundtrips commitSHA through format and parse", () => {
+    const marker: PhaseMarker = {
+      phase: "qa",
+      status: "completed",
+      timestamp: "2025-01-15T12:00:00.000Z",
+      commitSHA: "deadbeef12345",
+    };
+    const formatted = formatPhaseMarker(marker);
+    const parsed = parsePhaseMarkers(formatted);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].commitSHA).toBe("deadbeef12345");
+  });
+
+  it("handles markers without commitSHA (backward compat)", () => {
+    const body =
+      '<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"2025-01-15T12:00:00.000Z"} -->';
+    const markers = parsePhaseMarkers(body);
+    expect(markers).toHaveLength(1);
+    expect(markers[0].commitSHA).toBeUndefined();
   });
 });

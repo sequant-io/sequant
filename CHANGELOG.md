@@ -7,12 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optimize QA skill re-runs by diffing against prior findings (#377)
+  - Add `commitSHA` field to phase markers for incremental QA baseline tracking
+  - Add QA run context cache (`lastQACommitSHA`, `acStatuses`) for re-run optimization
+  - Add `detectPriorQAFindings()` helper to extract prior QA state from issue comments
+  - Add `computeIncrementalDiffHash()` and `getChangedFilesSince()` for incremental diffs
+  - Add `set-run-context`, `get-run-context`, and `changed-since` CLI commands to qa-cache-cli
+  - Add Phase 0c "Incremental Re-Run Detection" to QA skill with skip/re-run logic
+  - Previously MET AC items are skipped when no files changed since last QA
+  - `--no-cache` flag forces full re-run regardless of prior findings
+  - Add Incremental QA Summary table to QA output template
+
 ### Fixed
 
 - Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
 
 ### Added
 
+- Add MCP progress notifications for `sequant_run` tool (#421)
+  - Emit `notifications/progress` during phase transitions when client provides `progressToken`
+  - Prevents client-side timeouts via SDK's `resetTimeoutOnProgress` support
+  - Backward compatible: no notifications when no `progressToken` provided
 - Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
   - Always creates `.mcp.json` in project root (no `--mcp` flag required)
   - Merges into existing `.mcp.json` preserving other server entries

@@ -8,6 +8,11 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type {
+  ServerNotification,
+  ServerRequest,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import { spawn } from "child_process";
 import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
@@ -260,6 +265,53 @@ function buildFallbackResponse(
     ...(stderr ? { error: stderr.slice(-1000) } : {}),
   };
 }
+/** Prefix used by the batch executor to emit structured progress lines. */
+const PROGRESS_LINE_PREFIX = "SEQUANT_PROGRESS:";
+
+/** Parsed progress event from a SEQUANT_PROGRESS line. */
+export interface ProgressEvent {
+  issue: number;
+  phase: string;
+}
+
+/**
+ * Parse a SEQUANT_PROGRESS line emitted by the batch executor.
+ * Returns the parsed event or null if the line isn't a progress line.
+ */
+export function parseProgressLine(line: string): ProgressEvent | null {
+  if (!line.startsWith(PROGRESS_LINE_PREFIX)) return null;
+  try {
+    const json = JSON.parse(line.slice(PROGRESS_LINE_PREFIX.length));
+    if (typeof json.issue === "number" && typeof json.phase === "string") {
+      return { issue: json.issue, phase: json.phase };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a line buffer that accumulates stream chunks and yields complete lines.
+ * Handles the case where a single `data` event spans partial lines.
+ */
+export function createLineBuffer(
+  onLine: (line: string) => void,
+): (chunk: string) => void {
+  let buffer = "";
+  return (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop()!; // keep incomplete tail
+    for (const line of lines) {
+      if (line.length > 0) onLine(line);
+    }
+  };
+}
+
+/** Type alias for the tool handler's extra parameter */
+type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
+
 const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
   phases: z
@@ -311,7 +363,7 @@ export function registerRunTool(server: McpServer): void {
         qualityLoop?: boolean;
         agent?: string;
       },
-      extra: { signal: AbortSignal },
+      extra: ToolHandlerExtra,
     ) => {
       if (!issues || issues.length === 0) {
         return {
@@ -345,7 +397,55 @@ export function registerRunTool(server: McpServer): void {
       args.push("--log-json");
 
       const phasesStr = phases || "spec,exec,qa";
+      const phaseList = phasesStr.split(",");
+      const totalSteps = issues.length * phaseList.length;
       const runStartTime = new Date();
+
+      // Extract progress token for MCP progress notifications (AC-1)
+      const progressToken = extra._meta?.progressToken;
+
+      // Track progress across phase transitions
+      let currentStep = 0;
+
+      /**
+       * Emit a progress notification if the client provided a progressToken.
+       * Failures are caught to avoid aborting the run (AC-6).
+       */
+      const emitProgress = (event: ProgressEvent): void => {
+        if (progressToken === undefined) return;
+        currentStep++;
+        try {
+          // Fire-and-forget: don't await to avoid blocking the output stream
+          void extra
+            .sendNotification({
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress: currentStep,
+                total: totalSteps,
+                message: `Issue #${event.issue}: ${event.phase} phase started (${currentStep}/${totalSteps})`,
+              },
+            })
+            .catch(() => {
+              // Swallow notification delivery errors (AC-6)
+            });
+        } catch {
+          // Swallow synchronous errors (AC-6)
+        }
+      };
+
+      /**
+       * Handle a complete line of subprocess stderr, checking for progress events.
+       * The batch executor emits SEQUANT_PROGRESS:{json} lines at each phase start.
+       */
+      const handleLine = (line: string): void => {
+        const event = parseProgressLine(line);
+        if (event) emitProgress(event);
+      };
+
+      // Line-buffer stderr to handle chunk boundaries correctly
+      const stderrLineBuffer =
+        progressToken !== undefined ? createLineBuffer(handleLine) : undefined;
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -360,6 +460,7 @@ export function registerRunTool(server: McpServer): void {
             SEQUANT_ORCHESTRATOR: "mcp-server",
           },
           signal: extra.signal,
+          onStderr: stderrLineBuffer,
         });
 
         const stdout = result.stdout || "";
@@ -432,6 +533,10 @@ export interface SpawnOptions {
   timeout: number;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  /** Called with each stderr chunk (real-time, before process exits) */
+  onStderr?: (chunk: string) => void;
+  /** Called with each stdout chunk (real-time, before process exits) */
+  onStdout?: (chunk: string) => void;
 }
 
 /** @internal Exported for testing only */
@@ -489,11 +594,15 @@ export function spawnAsync(
     }
 
     proc.stdout.on("data", (data: Buffer) => {
-      stdout += data.toString();
+      const chunk = data.toString();
+      stdout += chunk;
+      options.onStdout?.(chunk);
     });
 
     proc.stderr.on("data", (data: Buffer) => {
-      stderr += data.toString();
+      const chunk = data.toString();
+      stderr += chunk;
+      options.onStderr?.(chunk);
     });
 
     proc.on("error", (err: NodeJS.ErrnoException) => {

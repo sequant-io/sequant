@@ -23,6 +23,7 @@ import {
   CHECK_TYPES,
   type CheckType,
   type CachedCheckResult,
+  type QARunContext,
 } from "../../src/lib/workflow/qa-cache.js";
 
 const cache = new QACache({
@@ -57,6 +58,15 @@ async function main(): Promise<void> {
     case "hash":
       handleHash();
       break;
+    case "set-run-context":
+      await handleSetRunContext();
+      break;
+    case "get-run-context":
+      await handleGetRunContext();
+      break;
+    case "changed-since":
+      handleChangedSince(args[1]);
+      break;
     case "help":
     case "--help":
     case "-h":
@@ -77,12 +87,15 @@ USAGE:
   npx tsx scripts/qa/qa-cache-cli.ts <command> [options]
 
 COMMANDS:
-  check <type>    Check if valid cached result exists (exit 0 = hit, 1 = miss)
-  get <type>      Get cached result as JSON (exit 1 if not found)
-  set <type>      Set cached result (reads JSON from stdin)
-  clear [type]    Clear cache (specific check or all if no type given)
-  status          Show cache status for all check types
-  hash            Show current diff hash
+  check <type>      Check if valid cached result exists (exit 0 = hit, 1 = miss)
+  get <type>        Get cached result as JSON (exit 1 if not found)
+  set <type>        Set cached result (reads JSON from stdin)
+  clear [type]      Clear cache (specific check or all if no type given)
+  status            Show cache status for all check types
+  hash              Show current diff hash
+  set-run-context   Save QA run context (reads JSON from stdin)
+  get-run-context   Get last QA run context as JSON (exit 1 if not found)
+  changed-since <sha>  List files changed since a commit SHA
 
 CHECK TYPES:
   ${CHECK_TYPES.join(", ")}
@@ -214,6 +227,74 @@ async function handleStatus(): Promise<void> {
 function handleHash(): void {
   const hash = cache.computeDiffHash();
   console.log(hash);
+}
+
+async function handleSetRunContext(): Promise<void> {
+  let input = "";
+  for await (const chunk of process.stdin) {
+    input += chunk;
+  }
+
+  if (!input.trim()) {
+    console.error("Error: no input provided (expected JSON on stdin)");
+    process.exit(2);
+  }
+
+  let context: QARunContext;
+  try {
+    context = JSON.parse(input);
+  } catch {
+    console.error("Error: invalid JSON input");
+    process.exit(2);
+  }
+
+  if (
+    typeof context.lastQACommitSHA !== "string" ||
+    typeof context.lastQADiffHash !== "string" ||
+    typeof context.acStatuses !== "object" ||
+    typeof context.timestamp !== "string"
+  ) {
+    console.error(
+      "Error: run context must have lastQACommitSHA, lastQADiffHash, acStatuses, and timestamp",
+    );
+    process.exit(2);
+  }
+
+  await cache.setRunContext(context);
+  console.log("Saved QA run context");
+}
+
+async function handleGetRunContext(): Promise<void> {
+  const context = await cache.getRunContext();
+
+  if (context) {
+    console.log(JSON.stringify(context, null, 2));
+    process.exit(0);
+  } else {
+    console.error("No QA run context found");
+    process.exit(1);
+  }
+}
+
+function handleChangedSince(sha: string | undefined): void {
+  if (!sha) {
+    console.error("Error: commit SHA required");
+    process.exit(2);
+  }
+
+  const files = cache.getChangedFilesSince(sha);
+  if (files === null) {
+    console.error(`Error: could not compute diff from ${sha}`);
+    process.exit(1);
+  }
+
+  if (files.length === 0) {
+    console.log("NO_CHANGES");
+  } else {
+    for (const file of files) {
+      console.log(file);
+    }
+  }
 }
 
 main().catch((error) => {

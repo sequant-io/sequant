@@ -227,6 +227,58 @@ export function isPhaseCompletedOrPast(
 }
 
 /**
+ * Result of detecting prior QA findings from issue comments.
+ */
+export interface PriorQAFindings {
+  /** The commit SHA from the last QA phase marker (if present) */
+  commitSHA: string | null;
+  /** ISO 8601 timestamp of the last QA completion */
+  timestamp: string;
+  /** Status of the last QA run */
+  status: string;
+}
+
+/**
+ * Detect the most recent QA phase marker from issue comments.
+ *
+ * Extracts the commit SHA and metadata from the latest QA phase marker,
+ * enabling incremental re-runs by identifying what changed since last QA.
+ *
+ * @param comments - Array of objects with a `body` string field
+ * @returns Prior QA findings, or null if no QA phase markers found
+ */
+export function detectPriorQAFindings(
+  comments: { body: string }[],
+): PriorQAFindings | null {
+  const allMarkers: PhaseMarker[] = [];
+
+  for (const comment of comments) {
+    const markers = parsePhaseMarkers(comment.body);
+    for (const marker of markers) {
+      if (marker.phase === "qa") {
+        allMarkers.push(marker);
+      }
+    }
+  }
+
+  if (allMarkers.length === 0) {
+    return null;
+  }
+
+  // Sort by timestamp descending, return latest
+  allMarkers.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+
+  const latest = allMarkers[0];
+  return {
+    commitSHA: latest.commitSHA ?? null,
+    timestamp: latest.timestamp,
+    status: latest.status,
+  };
+}
+
+/**
  * Get the current phase status for an issue from GitHub comments.
  *
  * Calls `gh` CLI to fetch comments and parse phase markers.

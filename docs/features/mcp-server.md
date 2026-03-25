@@ -171,9 +171,9 @@ Once set up, talk to your AI assistant naturally:
 
 ### During a run
 
-- **It looks idle.** Your editor won't show progress while the workflow runs. This is normal — phases are executing in the background.
+- **Progress notifications.** If your MCP client supports progress tokens (Claude Desktop, Cursor, and most SDK-based clients do), you'll receive real-time phase transition updates automatically — no polling needed. The server sends `notifications/progress` at each phase start, which also prevents client-side timeouts.
 - **It takes time.** A full spec+exec+qa cycle typically takes 10–20 minutes per issue. Don't assume it's stuck.
-- **Check progress** by asking for `sequant_status` on the issue. The server stays responsive while a run is in progress — status checks and log queries return immediately.
+- **Check progress manually** by asking for `sequant_status` on the issue. The server stays responsive while a run is in progress — status checks and log queries return immediately.
 - **Cancel if needed.** Your MCP client can abort a running `sequant_run` call. The subprocess and its children are cleaned up automatically (SIGTERM, then SIGKILL after 5 seconds if needed).
 
 ### After a run
@@ -207,7 +207,7 @@ What this means in practice:
 |---|---|---|
 | **Context** | Separate terminal window | Your AI already has file context |
 | **Invocation** | Exact commands and flags | Natural language |
-| **Progress** | Real-time phase output | Poll `sequant_status` every 5–10s (`isRunning` + current phase) |
+| **Progress** | Real-time phase output | Automatic progress notifications (or poll `sequant_status`) |
 | **Best for** | Batch runs, CI, scripting | Single issues while working in the editor |
 
 They use the same engine. MCP is a different door into the same workflow.
@@ -224,6 +224,8 @@ Execute workflow phases for GitHub issues.
 | `phases` | `string` | No | `spec,exec,qa` | Comma-separated phases |
 | `qualityLoop` | `boolean` | No | `false` | Auto-retry on QA failure |
 | `agent` | `string` | No | configured default | Agent backend to use |
+
+**Progress notifications:** When the client sends a `progressToken` in `_meta`, the server emits `notifications/progress` at each phase start. Each notification includes the issue number, phase name, current step, and total steps. Most MCP clients send progress tokens automatically and use them to prevent tool-call timeouts — no configuration needed.
 
 **Response** (structured JSON):
 
@@ -366,9 +368,11 @@ If `sequant_run` behaves differently than your local `sequant run`, you may have
 
 ### Client reports a timeout
 
-Some clients have tool call time limits (the server's own timeout is 30 minutes). Run phases individually instead of a full workflow:
+Most clients reset their timeout automatically when they receive progress notifications — and the server sends these at every phase transition. If you still hit timeouts:
 
-> "Use sequant to run only the spec phase for issue #42"
+1. Check that your client supports `resetTimeoutOnProgress` (Claude Desktop and Cursor do)
+2. Run phases individually instead of a full workflow:
+   > "Use sequant to run only the spec phase for issue #42"
 
 ### Sequant can't find the project (Claude Desktop)
 
@@ -388,4 +392,4 @@ Only one SSE client can connect at a time. If you see `409 Conflict`:
 2. Disconnect the existing client, or wait for it to time out
 3. Verify with `GET /health` — `connected: false` means the slot is free
 
-*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions) on 2026-03-25.*
+*Generated for Issue #372 / PR #387 on 2026-03-23. Updated for #396 (optional SDK), #388 (async execution, cancellation), #389 (version consistency), #391 (structured response format), #394 (real-time progress reporting), #390 (SSE multi-client rejection, health connection status), #392 (non-interactive MCP opt-in), #395 (per-client config generation) on 2026-03-24. Updated for #420 (server instructions, tool annotations, improved descriptions), #421 (progress notifications for sequant_run) on 2026-03-25.*
