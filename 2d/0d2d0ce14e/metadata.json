@@ -3,7 +3,7 @@
   "checkpoint_id": "2d0d2d0ce14e",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 7,
+  "checkpoints_count": 17,
   "files_touched": [
     "docs/features/phase-executor-tests.md",
     "docs/features/qa-incremental-rerun.md"
@@ -68,13 +68,19 @@
       "transcript": "/2d/0d2d0ce14e/9/full.jsonl",
       "content_hash": "/2d/0d2d0ce14e/9/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/2d/0d2d0ce14e/10/metadata.json",
+      "transcript": "/2d/0d2d0ce14e/10/full.jsonl",
+      "content_hash": "/2d/0d2d0ce14e/10/content_hash.txt",
+      "prompt": "/2d/0d2d0ce14e/10/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 3792,
-    "cache_creation_tokens": 884891,
-    "cache_read_tokens": 17946113,
-    "output_tokens": 71231,
-    "api_call_count": 240
+    "input_tokens": 3864,
+    "cache_creation_tokens": 956103,
+    "cache_read_tokens": 20140120,
+    "output_tokens": 82248,
+    "api_call_count": 287
   }
 }
