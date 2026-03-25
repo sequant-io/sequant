@@ -214,6 +214,11 @@ program
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard)",
   )
+  .option(
+    "--concurrency <n>",
+    "Max concurrent issues in parallel mode (default: 3)",
+    parseInt,
+  )
   .option("--reflect", "Analyze run results and suggest improvements")
   .option(
     "--agent <name>",

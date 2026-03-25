@@ -91,15 +91,52 @@ describe("ShutdownManager", () => {
       const mgr = createManager();
       const abortController = new AbortController();
 
-      mgr.setAbortController(abortController);
+      mgr.addAbortController(abortController);
       expect(abortController.signal.aborted).toBe(false);
 
       await mgr.gracefulShutdown("SIGINT");
 
       expect(abortController.signal.aborted).toBe(true);
       expect(mockOutput).toHaveBeenCalledWith(
-        expect.stringContaining("Aborted active phase"),
+        expect.stringContaining("Aborted 1 active phase"),
       );
+    });
+
+    it("should abort ALL concurrent controllers on shutdown", async () => {
+      const mgr = createManager();
+      const controller1 = new AbortController();
+      const controller2 = new AbortController();
+      const controller3 = new AbortController();
+
+      mgr.addAbortController(controller1);
+      mgr.addAbortController(controller2);
+      mgr.addAbortController(controller3);
+
+      await mgr.gracefulShutdown("SIGINT");
+
+      expect(controller1.signal.aborted).toBe(true);
+      expect(controller2.signal.aborted).toBe(true);
+      expect(controller3.signal.aborted).toBe(true);
+      expect(mockOutput).toHaveBeenCalledWith(
+        expect.stringContaining("Aborted 3 active phases"),
+      );
+    });
+
+    it("should only remove specific controller via removeAbortController", async () => {
+      const mgr = createManager();
+      const controller1 = new AbortController();
+      const controller2 = new AbortController();
+
+      mgr.addAbortController(controller1);
+      mgr.addAbortController(controller2);
+      mgr.removeAbortController(controller1);
+
+      await mgr.gracefulShutdown("SIGINT");
+
+      // controller1 was removed before shutdown — not aborted
+      expect(controller1.signal.aborted).toBe(false);
+      // controller2 was still registered — aborted
+      expect(controller2.signal.aborted).toBe(true);
     });
 
     it("should execute cleanup tasks in LIFO order", async () => {
@@ -233,18 +270,25 @@ describe("ShutdownManager", () => {
   });
 
   describe("abort controller management", () => {
-    it("should set and clear abort controller", () => {
+    it("should add and remove abort controllers", () => {
+      const mgr = createManager();
+      const controller = new AbortController();
+
+      mgr.addAbortController(controller);
+      mgr.removeAbortController(controller);
+      // After remove, graceful shutdown should not abort anything
+    });
+
+    it("should support deprecated setAbortController/clearAbortController", () => {
       const mgr = createManager();
       const controller = new AbortController();
 
       mgr.setAbortController(controller);
-      // Can't directly test the internal state, but we can test behavior
-
       mgr.clearAbortController();
-      // After clear, graceful shutdown should not abort anything
+      // Deprecated API still works
     });
 
-    it("should not error when aborting with no controller set", async () => {
+    it("should not error when aborting with no controllers registered", async () => {
       const mgr = createManager();
 
       // Should not throw
