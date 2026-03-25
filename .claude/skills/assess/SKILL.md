@@ -1,10 +1,10 @@
 ---
 name: assess
-description: "Issue triage and status assessment - analyze current state and recommend next workflow phase."
+description: "Issue triage and status assessment - analyze current state, detect health signals, and recommend next action with full workflow plan."
 license: MIT
 metadata:
   author: sequant
-  version: "1.0"
+  version: "2.0"
 allowed-tools:
   - Read
   - Glob
@@ -13,68 +13,67 @@ allowed-tools:
   - Bash(gh *)
 ---
 
-# Issue Assessment & Triage
+# Unified Issue Assessment & Triage
 
 You are the "Assessment Agent" for the current repository.
 
 ## Purpose
 
-When invoked as `/assess`, your job is to:
+When invoked as `/assess <issue-numbers>`, your job is to:
 
-1. Analyze the current state of a GitHub issue
-2. Determine what phase it's in (planning, implementation, QA, complete, blocked)
-3. Detect what artifacts exist (plan comments, branches, PRs, worktrees)
-4. Identify blockers, missing information, or staleness
-5. Show AC coverage status if applicable
-6. **Recommend** the next appropriate slash command (but don't execute it)
+1. Gather issue context (GitHub, git, codebase)
+2. Run health checks to surface red flags
+3. Recommend exactly ONE action from a fixed vocabulary
+4. If the action is PROCEED, output the full workflow plan with CLI command
+5. Show reasoning for the recommendation
 
-## Behavior
+**This command is read-only** — it analyzes and recommends but never takes action.
 
-Invocation:
+## Invocation
 
-- `/assess 123`:
-  - Treat `123` as the GitHub issue number
-  - Fetch issue details, comments, and related artifacts
-- `/assess <description>`:
-  - Treat the text as context about what to assess
+- `/assess 123` — Assess a single issue
+- `/assess 152 153` — Assess multiple issues (each independently)
+- `/solve 123` — Alias for `/assess` (deprecated, will show notice)
 
-### When to Use This Command
+## Fixed Action Vocabulary
 
-**Good use cases:**
-- Picking up an unfamiliar issue ("What's the status of #147?")
-- Resuming work after days/weeks away ("Where did I leave off?")
-- Handoff scenarios ("What did the previous dev complete?")
-- Daily triage ("Which issues are ready for next steps?")
-- Debugging stalled issues ("Why isn't this progressing?")
+Every `/assess` output recommends exactly ONE of these actions:
 
-**Not needed for:**
-- Active work on an issue you just touched (you know the state)
-- Simple "implement this feature" requests (just use `/spec` → `/exec`)
-- Issues where the next step is obvious
+| Action | Meaning | When |
+|--------|---------|------|
+| **PROCEED** | Ready for work — here's the workflow | Issue is clear, codebase matches, no blockers |
+| **CLOSE** | Issue is outdated, resolved, or duplicate | Resolved by another PR, references don't exist, duplicates closed issue |
+| **MERGE** | Overlaps with another open issue | Two issues cover 70%+ same scope, or one is a subset of the other |
+| **REWRITE** | Existing PR/branch needs a fresh start | PR too far behind main, touched files diverged, stale abandoned PR |
+| **CLARIFY** | Issue needs more information before work | No ACs, ambiguous requirements, missing repro steps, multiple valid interpretations |
+| **PARK** | Valid but not actionable right now | Blocked on external dep, blocked on another issue, explicitly deferred |
 
 ## Assessment Process
 
-### 1. Issue Context Gathering
-
-Collect information about the issue:
+### Step 1: Context Gathering
 
 **From GitHub:**
 
+```bash
+gh issue view <issue-number> --json title,body,labels,state,comments,assignees
+```
+
 - Issue title, body, labels, status
 - Acceptance Criteria (explicit or inferred)
-- **All comments** (read every comment to gather complete context):
-  - Look for plan drafts, progress updates, QA reviews
-  - Comments often contain clarifications, updates, or additional AC added after the initial issue description
-  - Review discussion about implementation details, edge cases, or requirements mentioned in comments
-  - Check for feedback from previous review cycles or iterations
+- **All comments** — read every comment for plan drafts, progress updates, QA reviews, clarifications, additional AC
 - Last activity timestamp
 - Assigned developer(s)
 
 **From Git:**
-- Check if branch exists: `git branch -a | grep <issue-number>`
-- Check if worktree exists: `git worktree list | grep <issue-number>`
-- Check for related PRs: `gh pr list --search "in:title <issue-number>"`
-- If branch exists, check commit history: `git log --oneline feature/<issue-number>*`
+
+```bash
+git branch -a | grep <issue-number> || true
+git worktree list | grep <issue-number> || true
+gh pr list --search "in:title <issue-number>" || true
+```
+
+- If branch exists: `git log --oneline feature/<issue-number>*`
+- If PR exists: `gh pr view <pr-number> --json state,mergeable,commits`
 
 **From Codebase:**
 
@@ -82,379 +81,362 @@ Collect information about the issue:
 - Check for test files related to the feature
 - Identify modified files (if branch exists)
 
-### 2. Phase Detection
+### Step 2: Health Checks
 
-Determine the current phase:
+Surface red flags that inform the action recommendation:
 
-**Planning Phase** - Issue needs a plan:
+#### Codebase Match
+| Signal | Detection | Implication |
+|--------|-----------|-------------|
+| Referenced files/APIs don't exist | Glob/Grep for paths mentioned in issue body | Issue may be outdated |
+| Referenced files changed recently | `git log` on mentioned paths | May have been addressed |
+| Described behavior now works differently | Codebase analysis | Verify still relevant |
 
-- No plan comment exists
-- AC are unclear or missing
-- No technical approach documented
-- **Indicators:** Issue just opened, labeled "needs planning", no detailed comments
+#### PR / Branch Health
+| Signal | Detection | Implication |
+|--------|-----------|-------------|
+| PR has merge conflicts | `gh pr view` status | Needs rebase or rewrite |
+| PR is far behind main (100+ commits) | `git rev-list --count main..pr-branch` | Likely needs rewrite |
+| PR touched files that diverged on main | `git diff --name-only` cross-reference | Rebase will be painful |
+| PR/branch stale (30+ days no activity) | Timestamps | Consider fresh start |
+| Draft PR with partial work | PR status | Assess whether to continue |
+| Worktree with uncommitted work | `git worktree list` + status check | Abandoned work, clean up |
 
-**Implementation Phase** - Issue is being coded:
+#### Overlap / Redundancy
+| Signal | Detection | Implication |
+|--------|-----------|-------------|
+| Another open issue covers similar scope | Compare titles/bodies of open issues | Consider merging |
+| Duplicates a closed issue | Compare against recently closed | Close as duplicate |
+| Solved as side effect of another PR | Cross-reference changed files | Verify and close |
 
-- Plan exists (in comments or inferred)
-- Branch/worktree exists with commits
-- Some AC partially met
-- **Indicators:** Branch exists, recent commits, labeled "in progress"
+#### Staleness / Blockers
+| Signal | Detection | Implication |
+|--------|-----------|-------------|
+| No activity in 14+ days | Timestamps | Flag as stale |
+| Blocked on another issue | Issue body/comments mention dependencies | Park until unblocked |
+| Blocked on external dependency | Comments indicate external blocker | Park with reason |
+| Open questions unanswered | Comment thread analysis | Clarify before proceeding |
 
-**QA Phase** - Implementation complete, needs review:
-- Branch has commits
-- Developer claims implementation complete
-- No QA review exists yet
-- **Indicators:** PR open, labeled "ready for review", implementation comment exists
+### Step 3: Action Selection
 
-**Blocked Phase** - Issue is stuck:
-- No activity for 7+ days
-- Open questions in comments
-- Dependency on another issue
-- **Indicators:** Labeled "blocked", comments mention blockers, stale
+Based on health checks and context, select the most appropriate action:
 
-**Complete Phase** - Issue is done:
-- PR merged
-- AC all met (based on QA review)
-- Issue closed
-- **Indicators:** Closed, PR merged, labeled "completed"
+**Priority order when multiple signals conflict:**
+1. Most actionable action wins
+2. Note secondary signals in the Health section
 
-**Unclear Phase** - Can't determine state:
-- Insufficient information
-- Conflicting indicators
-- **Action:** Request clarification
+**Decision tree:**
+- No ACs, vague requirements → **CLARIFY**
+- Blocked on dependency → **PARK**
+- Resolved by another PR → **CLOSE**
+- Duplicates or 70%+ overlaps → **MERGE**
+- PR 100+ commits behind or files diverged → **REWRITE**
+- Clear requirements, codebase matches → **PROCEED**
 
-### 3. Artifact Detection
+### Step 4: Phase Detection (for PROCEED only)
 
-List what exists:
+Determine the current phase and recommended workflow:
 
-**Planning Artifacts:**
-- [ ] AC checklist in issue or comments
-- [ ] Implementation plan (phases/steps)
-- [ ] Architecture decisions documented
-- [ ] Open questions identified
+**Phase Detection:**
+- **Planning** — No plan comment, AC unclear → recommend `/spec` first
+- **Implementation** — Plan exists, branch with commits → resume `/exec`
+- **QA** — Implementation complete, no QA review → run `/qa`
+- **Blocked** — No activity 7+ days, open questions, dependency
+- **Complete** — PR merged, AC all met, issue closed
 
-**Implementation Artifacts:**
-- [ ] Feature branch: `feature/<issue-number>-<slug>`
-- [ ] Worktree: `../worktrees/feature/<branch-name>/`
-- [ ] Commits on branch: X commits since branching
-- [ ] Modified files: [list key files]
-- [ ] Tests written: [test file paths]
+**Workflow Selection (from labels):**
 
-**QA Artifacts:**
-- [ ] PR open: #<pr-number>
-- [ ] QA review comment exists
-- [ ] Test results: [passing/failing]
-- [ ] Build status: [passing/failing]
+| Issue Type | Labels | Workflow |
+|------------|--------|----------|
+| UI Feature | ui, frontend, admin | spec → exec → test → qa |
+| UI Feature (testable) | ui + enhancement | spec → testgen → exec → test → qa |
+| Backend Feature | backend, api | spec → exec → qa |
+| New Feature (testable) | enhancement, feature | spec → testgen → exec → qa |
+| Bug Fix | bug, fix | exec → qa (or full if complex) |
+| Complex Feature | complex, refactor | `--quality-loop` or fullsolve |
+| Documentation | docs | exec → qa |
 
-**Blockers/Issues:**
-- [ ] Open questions in comments
-- [ ] Failed tests or build
-- [ ] Dependency on issue #<other-issue>
-- [ ] Missing resources or access
-- [ ] Stale (no activity in X days)
+**Quality Loop Detection:**
+- **Recommend `-q`** for most issues (enhancement, feature, refactor, complex, multi-file changes)
+- **Skip `-q`** only for simple bug fixes (`bug`/`fix` label only) or docs-only changes
 
-### 4. AC Coverage Analysis
+**Flag Detection:**
+- `--chain` — When multiple issues have explicit dependencies
+- `--qa-gate` — When chain has 3+ issues with tight dependencies
+- `--base <branch>` — When issue references a feature branch
+- `--testgen` — When ACs need automated tests (enhancement/feature labels)
 
-If AC exist, assess coverage:
+### Step 5: Conflict Detection
 
-**For each AC item:**
-- `MET` - Evidence suggests complete
-- `IN_PROGRESS` - Partially implemented
-- `NOT_STARTED` - No evidence of work
-- `UNCLEAR` - Can't determine from available info
-
-**Example:**
-```
-AC Coverage:
-- AC-1: Display fact-check queue in admin panel - MET
-- AC-2: Allow editors to approve/reject items - IN_PROGRESS
-- AC-3: Send email notifications on approval - NOT_STARTED
-- AC-4: Log all actions in audit log - UNCLEAR (no audit log visible)
-
-Coverage: 1/4 complete, 1/4 in progress, 1/4 not started, 1/4 unclear
-```
-
-### 5. Staleness Check
-
-Flag if issue is stale:
-
-- **Fresh:** Activity within 3 days
-- **Aging:** 3-7 days since last activity
-- **Stale:** 7-14 days since last activity
-- **Abandoned:** 14+ days since last activity
-
-For stale/abandoned issues, identify:
-- Last actor (who touched it last)
-- Last action type (commit, comment, label change)
-- Likely cause of staleness (blocked, low priority, forgotten)
-
-## Output Structure
-
-Produce a structured assessment:
-
-### Issue Summary
-- **Issue:** #123 - <title>
-- **Status:** <Open|Closed> | <labels>
-- **Last Activity:** X days ago (<timestamp>)
-- **Phase:** <Planning|Implementation|QA|Blocked|Complete|Unclear>
-
-### Acceptance Criteria
-- AC-1: ... [MET|IN_PROGRESS|NOT_STARTED|UNCLEAR]
-- AC-2: ... [MET|IN_PROGRESS|NOT_STARTED|UNCLEAR]
-- ...
-- **Coverage:** X/Y complete
-
-(If AC don't exist or are unclear, note: "AC not clearly defined")
-
-### Artifacts Found
-**Planning:**
-- [x] Plan comment in issue #<comment-id>
-- [ ] Architecture decisions documented
-
-**Implementation:**
-- [x] Branch: `feature/123-issue-slug` (5 commits)
-- [x] Worktree: `../worktrees/feature/123-issue-slug/`
-- [x] Modified files: `components/admin/FactCheckQueue.tsx`, `lib/queries/fact-checks.ts`
-- [ ] Tests written
-
-**QA:**
-- [ ] PR open
-- [ ] QA review complete
-
-### Blockers & Issues
-- [ ] None identified
-- [x] Stale (10 days since last commit)
-- [x] Missing tests
-- [ ] Depends on issue #<other>
-
-### Label Review
-
-Analyze current labels vs issue content and suggest updates when mismatches are detected:
-
-**Current Labels:** `enhancement`, `admin`
-**Suggested Labels:** `enhancement`, `admin`, `refactor`
-**Reason:** Issue body mentions structural changes across multiple files
-**Quality Loop Impact:** Will auto-enable due to `refactor` label
-
-**Suggested Action:**
 ```bash
-gh issue edit <N> --add-label refactor
+# List open worktrees
+git worktree list --porcelain 2>/dev/null | grep "^worktree" | cut -d' ' -f2 || true
+
+# For each worktree, get changed files
+git -C <worktree-path> diff --name-only main...HEAD 2>/dev/null || true
 ```
+
+If overlap detected with files this issue likely touches, include in output.
+
+## Output Format
+
+**Design Principle:** The action is the headline. Supporting context follows in priority order. Scannable in under 5 seconds.
+
+### When action is PROCEED
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ PROCEED — <one-line reason>
+
+Health:
+  ✓ References match codebase
+  ✓ No conflicting PRs or worktrees
+  ✓ No overlapping issues detected
+
+AC Coverage: <N> criteria identified
+  - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
+  - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run <ISSUES> <FLAGS>                            │
+╰──────────────────────────────────────────────────────────────╯
+
+#<N>  <Title truncated> ·········· <labels> → <workflow>
+
+┌─ Flags ──────────────────────────────────────────────────────┐
+│  -q  quality-loop   ✓/✗  <one-line reasoning>                │
+│  --chain            ✓/✗  <one-line reasoning>                │
+│  --qa-gate          ✓/✗  <one-line reasoning>                │
+│  --base             ✓/✗  <one-line reasoning>                │
+│  --testgen          ✓/✗  <one-line reasoning>                │
+└──────────────────────────────────────────────────────────────┘
+
+Why this workflow:
+  • <reason 1>
+  • <reason 2>
+  • <reason 3>
+
+<!-- CONDITIONAL: Only if alternatives worth showing -->
+Also consider:
+  <flag>     <one-line explanation>
+
+<!-- CONDITIONAL: Only if conflict detected -->
+⚠ Conflict risk: #<N> (open) modifies <path> — coordinate or wait
+
+Label Review:
+  Current: <labels>
+  Suggested: <labels if changes needed>
+  Reason: <why, if applicable>
+
+Confidence: <High|Medium|Low>
+  <information gaps if any>
+
+<!-- assess:phases=<comma-separated> -->
+<!-- assess:action=PROCEED -->
+<!-- assess:skip-spec=<true/false> -->
+<!-- assess:browser-test=<true/false> -->
+<!-- assess:quality-loop=<true/false> -->
+
+*Generated by `/assess`*
+```
+
+### When action is CLOSE
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ CLOSE — <reason with evidence>
+
+Health:
+  ⚠ <signal that triggered CLOSE>
+  ℹ Verify with issue author before closing
+
+Confidence: <High|Medium|Low>
+
+<!-- assess:action=CLOSE -->
+
+*Generated by `/assess`*
+```
+
+### When action is MERGE
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ MERGE — Significant overlap with #<other>.
+  <description of overlap>
+
+Health:
+  ⚠ <overlap signals>
+
+Confidence: <High|Medium|Low>
+
+<!-- assess:action=MERGE -->
+
+*Generated by `/assess`*
+```
+
+### When action is REWRITE
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ REWRITE — <reason>
+  <details about PR/branch state>
+
+Health:
+  ⚠ <PR/branch health signals>
+
+AC Coverage: <N> criteria (from prior work)
+  - <AC>  <status>
+
+If restarting:
+  npx sequant run <N> <flags>
+
+Confidence: <High|Medium|Low>
+
+<!-- assess:action=REWRITE -->
+
+*Generated by `/assess`*
+```
+
+### When action is CLARIFY
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ CLARIFY — <what's missing>
+  Need: <specific information required>
+
+Health:
+  ⚠ <clarity signals>
+
+Confidence: <High|Medium|Low>
+
+<!-- assess:action=CLARIFY -->
+
+*Generated by `/assess`*
+```
+
+### When action is PARK
+
+```
+#<N> — <Title>
+Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+
+→ PARK — <reason>
+  Resume after: <condition>
+
+Health:
+  ⚠ <blocker signals>
+
+Confidence: <High|Medium|Low>
+
+<!-- assess:action=PARK -->
+
+*Generated by `/assess`*
+```
+
+## Multi-Issue Support
+
+When given multiple issues (`/assess 152 153`), assess each independently with its own action recommendation:
+
+```
+─── Issue 1 of 2 ───────────────────────────────────────────
+
+#152 — Add user dashboard
+→ PROCEED — Issue is clear, codebase matches.
+[... full PROCEED output ...]
+
+─── Issue 2 of 2 ───────────────────────────────────────────
+
+#153 — Update auth middleware
+→ REWRITE — PR #91 is 200+ commits behind main.
+[... full REWRITE output ...]
+```
+
+## Label Review
+
+Analyze current labels vs issue content and suggest updates:
 
 **Label Detection Hints:**
-- `refactor` - Keywords: "refactor", "restructure", "reorganize", "cleanup", "migration"
-- `complex` - Keywords: "complex", "major", "large-scale", "breaking"
-- `ui`/`frontend` - Keywords: "component", "UI", "page", "form", "button", "modal"
-- `backend` - Keywords: "API", "database", "query", "server", "endpoint"
-- `cli` - Keywords: "command", "CLI", "script", "terminal"
-- `docs` - Keywords: "documentation", "README", "guide", "tutorial"
-- `security` - Keywords: "auth", "permission", "vulnerability", "secret", "token"
-- `bug` - Keywords: "fix", "broken", "error", "crash", "doesn't work"
+- `refactor` — Keywords: "refactor", "restructure", "reorganize", "cleanup", "migration"
+- `complex` — Keywords: "complex", "major", "large-scale", "breaking"
+- `ui`/`frontend` — Keywords: "component", "UI", "page", "form", "button", "modal"
+- `backend` — Keywords: "API", "database", "query", "server", "endpoint"
+- `cli` — Keywords: "command", "CLI", "script", "terminal"
+- `docs` — Keywords: "documentation", "README", "guide", "tutorial"
+- `security` — Keywords: "auth", "permission", "vulnerability", "secret", "token"
+- `bug` — Keywords: "fix", "broken", "error", "crash", "doesn't work"
 
 **When to Suggest Label Updates:**
 - Issue body contains keywords not reflected in current labels
-- Complexity dropdown selection doesn't match actual labels
-- Quality loop would benefit from additional labels (complex/refactor/breaking)
-- Area dropdown selection doesn't match current labels (ui/backend/cli/docs)
+- Complexity doesn't match labels (complex/refactor/breaking)
+- Quality loop would benefit from additional labels
+- Area doesn't match current labels (ui/backend/cli/docs)
 
-### Recommendation
-
-Based on the assessment, recommend one of:
-
-**If Phase = Planning:**
-```
-RECOMMENDATION: Run `/spec 123`
-- Issue needs a clear plan and AC before implementation
-- This will establish AC checklist and technical approach
-```
-
-**If Phase = Implementation (not started):**
-```
-RECOMMENDATION: Run `/exec 123`
-- Plan exists and AC are clear
-- Ready to begin implementation
-- This will create feature worktree and start coding
-```
-
-**If Phase = Implementation (in progress):**
-```
-RECOMMENDATION: Continue `/exec 123`
-- Implementation is underway (5 commits on branch)
-- Worktree exists at: ../worktrees/feature/123-issue-slug/
-- AC coverage: 1/4 complete, 2/4 in progress
-- Navigate to worktree and continue implementation
-```
-
-**If Phase = QA:**
-```
-RECOMMENDATION: Run `/qa 123`
-- Implementation appears complete
-- Branch has 12 commits, last commit 2 days ago
-- No QA review exists yet
-- Review code and validate against AC
-```
-
-**If Phase = Blocked:**
-```
-RECOMMENDATION: Resolve blockers first
-- Issue depends on #145 (not yet merged)
-- Open question in comments: "Should we use email or in-app notifications?"
-- Suggest: Review #145 status, clarify notification approach with team
-- Once unblocked, run `/exec 123` to continue
-```
-
-**If Phase = Complete:**
-```
-RECOMMENDATION: No action needed
-- PR #156 merged 3 days ago
-- All AC met (per QA review)
-- Issue can be closed
-```
-
-**If Phase = Unclear:**
-```
-RECOMMENDATION: Gather more information
-- Unable to determine current state
-- Missing information: [list what's unclear]
-- Suggest: Review issue comments, check with team, or run `/spec 123` to establish baseline
-```
-
-### Context for Next Command
-
-Provide relevant context to help the next command:
-
-**Key Files to Review:**
-- List the main components/files involved
-- Point to relevant data layer code
-- Reference architecture documentation if exists
-
-**Similar Patterns:**
-- Reference similar features in the codebase
-- Point to reusable patterns
-
-**Potential Risks:**
-- Identify any error handling gaps
-- Note external integrations not yet tested
-- Flag potential database migrations needed
-
-## Examples
-
-### Example 1: Fresh Issue Needs Planning
-
-```
-Issue Summary
-- Issue: #147 - Add fact-check queue to admin panel
-- Status: Open | needs-planning, admin
-- Last Activity: 2 hours ago
-- Phase: Planning
-
-Acceptance Criteria
-AC not clearly defined in issue
-Inferred AC from description:
-- Display pending fact-check items in queue
-- Allow approval/rejection actions
-- Send notifications on status change
-
-Artifacts Found
-Planning: None
-Implementation: None
-QA: None
-
-Blockers & Issues
-- [ ] No blockers
-
-Recommendation
-RECOMMENDATION: Run `/spec 147`
-- Issue is fresh but lacks detailed AC and plan
-- Need to establish clear requirements before implementation
-```
-
-### Example 2: Implementation In Progress, Stale
-
-```
-Issue Summary
-- Issue: #145 - Fix data validation edge cases
-- Status: Open | in-progress, bug
-- Last Activity: 10 days ago
-- Phase: Implementation (Stale)
-
-Acceptance Criteria
-- AC-1: Handle basic validation - MET
-- AC-2: Handle edge cases (empty, null, special chars) - IN_PROGRESS
-- AC-3: Add validation tests - NOT_STARTED
-Coverage: 1/3 complete
-
-Artifacts Found
-Implementation:
-- [x] Branch: feature/145-validation-fixes (3 commits)
-- [x] Worktree: ../worktrees/feature/145-validation-fixes/
-- [x] Modified: lib/utils/validation.ts
-- [ ] Tests not found
-
-Blockers & Issues
-- [x] Stale (10 days since last commit)
-- [x] Missing tests
-- [ ] No known blockers
-
-Recommendation
-RECOMMENDATION: Resume `/exec 145`
-- Implementation is 1/3 complete but stale
-- Worktree still exists, resume work there
-- Focus on AC-2 (edge cases) and AC-3 (tests)
-- Add tests before considering complete
-```
-
-### Example 3: Ready for QA
-
-```
-Issue Summary
-- Issue: #148 - Add bulk publishing to content updates
-- Status: Open | ready-for-review
-- Last Activity: 1 day ago
-- Phase: QA
-
-Acceptance Criteria
-- AC-1: Multi-select in content updates list - UNCLEAR
-- AC-2: Bulk publish action button - UNCLEAR
-- AC-3: Confirmation dialog - UNCLEAR
-- AC-4: Success/error feedback - UNCLEAR
-Coverage: Unclear (need QA review to validate)
-
-Artifacts Found
-Implementation:
-- [x] Branch: feature/148-bulk-publishing (15 commits)
-- [x] Modified: components/admin/news/ContentUpdatesList.tsx, lib/admin/bulk-actions.ts
-- [x] Tests: __tests__/bulk-publishing.test.ts
-QA:
-- [ ] No PR yet
-- [ ] No QA review
-
-Blockers & Issues
-- [ ] No blockers
-- Developer marked as "ready for review" in last comment
-
-Recommendation
-RECOMMENDATION: Run `/qa 148`
-- Implementation appears complete (15 commits, tests added)
-- Developer believes AC are met
-- Need QA review to validate and assess A+ status
-- Create PR if not exists, review code and test against AC
+**Suggested Action (when applicable):**
+```bash
+gh issue edit <N> --add-label <label>
 ```
 
 ## Meta-Assessment
 
 After providing the assessment, briefly note:
 
-- **Confidence Level:** How certain are you about the phase detection? (High/Medium/Low)
+- **Confidence Level:** How certain are you about the recommendation? (High/Medium/Low)
 - **Information Gaps:** What information would improve this assessment?
 - **Alternative Interpretations:** Are there other ways to interpret the current state?
 
+## Persist Analysis to Issue Comments
+
+**After displaying output**, prompt the user to save:
+
+```
+Save this assessment to the issue? [Y/n]
+```
+
+Use the `AskUserQuestion` tool with options "Yes (Recommended)" and "No".
+
+**If user confirms (Y):**
+
+Post the structured comment with machine-readable HTML markers to each analyzed issue using `gh issue comment`.
+
+**If user declines (N):** Skip posting.
+
+### Machine-Readable Markers
+
+| Marker | Values | Consumed By |
+|--------|--------|-------------|
+| `<!-- assess:phases=... -->` | Comma-separated phase names | `/spec` phase detection |
+| `<!-- assess:action=... -->` | PROCEED/CLOSE/MERGE/REWRITE/CLARIFY/PARK | Action detection |
+| `<!-- assess:skip-spec=... -->` | `true`/`false` | `/spec` skip logic |
+| `<!-- assess:browser-test=... -->` | `true`/`false` | `/spec` test phase |
+| `<!-- assess:quality-loop=... -->` | `true`/`false` | `/spec` quality loop |
+
+## State Tracking
+
+When analyzing issues, initialize state tracking:
+
+```bash
+TITLE=$(gh issue view <issue-number> --json title -q '.title')
+npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
+```
+
+Note: `/assess` only initializes issues — actual phase tracking happens during workflow execution.
+
 ## Notes
 
-- This command is **read-only** - it analyzes but doesn't make changes
+- This command is **read-only** — it analyzes but doesn't make changes
 - It recommends but doesn't execute the next command
-- Keep the assessment concise - aim for clarity, not exhaustiveness
-- When in doubt about phase, say so - better to acknowledge uncertainty
+- Keep the assessment concise — aim for clarity, not exhaustiveness
+- When in doubt about the action, say so — better to acknowledge uncertainty
 - Use this to orient yourself, then proceed with the appropriate workflow command
 
 ---
@@ -463,12 +445,13 @@ After providing the assessment, briefly note:
 
 **Before responding, verify your output includes ALL of these:**
 
-- [ ] **Issue Summary** - Issue number, title, status, last activity, phase
-- [ ] **AC Coverage** - Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR
-- [ ] **Artifacts Found** - Planning, implementation, and QA artifacts listed
-- [ ] **Blockers & Issues** - Any blockers or staleness identified
-- [ ] **Label Review** - Current vs suggested labels based on issue content analysis
-- [ ] **Recommendation** - Specific next command to run with rationale
-- [ ] **Confidence Level** - High/Medium/Low with information gaps noted
+- [ ] **Action Headline** — `→ ACTION — reason` as the first prominent line after issue summary
+- [ ] **Health Checks** — Signals that informed the action recommendation
+- [ ] **AC Coverage** — Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR (for PROCEED/REWRITE)
+- [ ] **Workflow Plan** — Full CLI command with flags table (for PROCEED only)
+- [ ] **Label Review** — Current vs suggested labels based on issue content analysis
+- [ ] **Confidence Level** — High/Medium/Low with information gaps noted
+- [ ] **HTML Markers** — Machine-readable `<!-- assess:... -->` markers
+- [ ] **Reasoning** — Why this action was recommended
 
 **DO NOT respond until all items are verified.**

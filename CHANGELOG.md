@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
 
+### Changed
+
+- Unify `/assess` and `/solve` into single triage command with 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK) (#325)
+  - `/assess` now includes health checks, workflow recommendations, and lifecycle signals
+  - `/solve` becomes a deprecated alias that redirects to `/assess`
+  - New `assess-comment-parser.ts` with unified parser for both `assess:` and legacy `solve:` markers
+  - Full backward compatibility: all `solve*` exports preserved as deprecated aliases
+
 ### Added
 
 - Add MCP progress notifications for `sequant_run` tool (#421)
