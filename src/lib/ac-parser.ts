@@ -143,6 +143,7 @@ function parseACLine(line: string): { id: string; description: string } | null {
  * Supports multiple formats:
  * - `- [ ] **AC-1:** Description`
  * - `- [ ] **B2:** Description`
+ * - `- [ ] **AC-1: Description**` (bold wraps ID + description)
  * - `- [ ] AC-1: Description`
  *
  * @param issueBody - The full GitHub issue body markdown
