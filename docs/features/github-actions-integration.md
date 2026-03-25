@@ -18,12 +18,12 @@ Copy one of the example workflows below into `.github/workflows/` in your reposi
 
 ### Option A: Label trigger (recommended)
 
-The simplest setup. Label an issue with `sequant:solve` and the action runs the full workflow.
+The simplest setup. Label an issue with `sequant:assess` and the action runs the full workflow.
 
-Create `.github/workflows/sequant-solve.yml`:
+Create `.github/workflows/sequant-assess.yml`:
 
 ```yaml
-name: AI Solve Issue
+name: AI Assess Issue
 
 on:
   issues:
@@ -34,8 +34,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  solve:
-    if: github.event.label.name == 'sequant:solve'
+  assess:
+    if: github.event.label.name == 'sequant:assess'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -51,6 +51,8 @@ jobs:
           issues: ${{ github.event.issue.number }}
           api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
+
+> **Migrating from `sequant:solve`?** The `sequant:solve` label still works (backward compatible) but is deprecated. Rename your workflow file and update the trigger condition to `sequant:assess`.
 
 ### Option B: Manual dispatch
 
@@ -157,10 +159,10 @@ jobs:
 
 ## What You Can Do
 
-### Solve an issue from a label
+### Assess an issue from a label
 
 1. Open any GitHub issue
-2. Add the label `sequant:solve`
+2. Add the label `sequant:assess`
 3. The action runs spec, exec, and QA phases
 4. On success: a PR appears linked to the issue
 5. On failure: findings are posted as an issue comment
@@ -169,12 +171,13 @@ jobs:
 
 Use phase-specific labels to run only part of the workflow:
 
-| Label | Phases run |
-|-------|-----------|
-| `sequant:solve` | spec, exec, qa |
-| `sequant:spec-only` | spec |
-| `sequant:exec` | exec |
-| `sequant:qa` | qa |
+| Label | Phases run | Notes |
+|-------|-----------|-------|
+| `sequant:assess` | spec, exec, qa | Primary trigger label |
+| `sequant:solve` | spec, exec, qa | Deprecated — use `sequant:assess` |
+| `sequant:spec-only` | spec | |
+| `sequant:exec` | exec | |
+| `sequant:qa` | qa | |
 
 Or with comment triggers: `@sequant run exec,qa` (skip spec).
 
@@ -191,7 +194,7 @@ Each issue gets its own worktree, phases, and PR.
 ## What to Expect
 
 - **Duration:** 10-30 minutes per issue depending on complexity and phases
-- **Labels change during the run:** `sequant:solve` is replaced by `sequant:solving`, then `sequant:done` or `sequant:failed`
+- **Labels change during the run:** `sequant:assess` (or `sequant:solve`) is replaced by `sequant:solving`, then `sequant:done` or `sequant:failed`
 - **Results are posted as issue comments** with a summary table showing phases, duration, and outcome
 - **Run logs are uploaded as artifacts** (retained for 30 days) — find them in the Actions run details under "Artifacts"
 - **Concurrency is enforced** — only one Sequant run per issue at a time; additional runs queue
@@ -236,10 +239,10 @@ Use outputs in downstream steps:
 ### Label lifecycle
 
 ```
-sequant:solve (trigger)
+sequant:assess (trigger)          — or sequant:solve (deprecated)
     |
     v
-sequant:solving (in progress)
+sequant:solving (in progress)     — both trigger labels are removed at start
     |
     +---> sequant:done (success, PR created)
     |
@@ -321,4 +324,4 @@ Set the workflow timeout higher than the sum of all phase timeouts.
 
 ---
 
-*Generated for Issue #370 on 2026-03-23*
+*Updated for Issue #438 on 2026-03-25 — migrated primary trigger label from `sequant:solve` to `sequant:assess`*

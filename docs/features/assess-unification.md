@@ -104,8 +104,39 @@ if (comment) {
   // workflow.action: "PROCEED" | "CLOSE" | "MERGE" | ...
   // workflow.phases: ["spec", "exec", "qa"]
   // workflow.qualityLoop: true
+
+  const signals = assessWorkflowToSignals(workflow);
+  // signals[0].source === "assess" (new primary signal source)
 }
 ```
+
+### Signal Source & Priority
+
+The phase signal system uses `"assess"` as the primary signal source (priority 3). The deprecated `"solve"` source is preserved at the same priority for backward compatibility.
+
+```typescript
+import type { SignalSource } from "sequant";
+
+// SignalSource = "label" | "assess" | "solve" | "title" | "body"
+// Priority:       4         3          3          2         1
+```
+
+- `assessWorkflowToSignals()` emits `source: "assess"`
+- `solveWorkflowToSignals()` (deprecated) emits `source: "solve"`
+- Both resolve to priority 3 in `mergePhaseSignals()`
+
+### CI Trigger Labels
+
+The CI system accepts both `sequant:assess` (preferred) and `sequant:solve` (deprecated) as trigger labels for the full spec → exec → qa workflow.
+
+```typescript
+import { TRIGGER_LABELS } from "sequant";
+
+TRIGGER_LABELS.ASSESS  // "sequant:assess" (primary)
+TRIGGER_LABELS.SOLVE   // "sequant:solve"  (deprecated)
+```
+
+When either label triggers a run, both labels are removed from the issue to prevent re-triggering.
 
 **Deprecated aliases still work:**
 ```typescript
@@ -140,4 +171,4 @@ Both `<!-- solve:... -->` and `<!-- assess:... -->` markers are parsed. If a com
 
 ---
 
-*Generated for Issue #325 on 2026-03-25*
+*Updated for Issue #438 on 2026-03-25 — added signal source, priority, and CI trigger label documentation*
