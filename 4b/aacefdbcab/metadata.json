@@ -1,0 +1,23 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "4baacefdbcab",
+  "strategy": "manual-commit",
+  "branch": "feature/437-data-driven-workflow-optimization-systematic-a",
+  "checkpoints_count": 1,
+  "files_touched": null,
+  "sessions": [
+    {
+      "metadata": "/4b/aacefdbcab/0/metadata.json",
+      "transcript": "/4b/aacefdbcab/0/full.jsonl",
+      "content_hash": "/4b/aacefdbcab/0/content_hash.txt",
+      "prompt": "/4b/aacefdbcab/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 681,
+    "cache_creation_tokens": 518572,
+    "cache_read_tokens": 12602242,
+    "output_tokens": 47601,
+    "api_call_count": 117
+  }
+}
