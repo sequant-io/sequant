@@ -154,6 +154,68 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
     });
   });
 
+  // #420 AC-5: sequant_run description content
+  describe("#420 AC-5: sequant_run description content", () => {
+    it("should describe phases, example input, and usage guidance", async () => {
+      const result = await client.listTools();
+      const tool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_run",
+      );
+      const desc = tool!.description!;
+
+      // Phase explanations
+      expect(desc).toContain("spec");
+      expect(desc).toContain("exec");
+      expect(desc).toContain("qa");
+
+      // Example input
+      expect(desc).toContain("Example");
+      expect(desc).toContain("issues");
+
+      // Cross-tool guidance (when to use)
+      expect(desc).toContain("sequant_status");
+    });
+  });
+
+  // #420 AC-6: sequant_status description content
+  describe("#420 AC-6: sequant_status description content", () => {
+    it("should explain relationship to sequant_run and polling guidance", async () => {
+      const result = await client.listTools();
+      const tool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_status",
+      );
+      const desc = tool!.description!;
+
+      // Cross-tool relationship
+      expect(desc).toContain("sequant_run");
+
+      // Polling guidance
+      expect(desc).toContain("poll");
+    });
+  });
+
+  // #420 AC-7: sequant_logs description content
+  describe("#420 AC-7: sequant_logs description content", () => {
+    it("should describe log insights, when to check, and runId format", async () => {
+      const result = await client.listTools();
+      const tool = result.tools.find(
+        (t: { name: string }) => t.name === "sequant_logs",
+      );
+      const desc = tool!.description!;
+
+      // What insights logs provide
+      expect(desc).toContain("phase results");
+      expect(desc).toContain("QA verdicts");
+
+      // When to check
+      expect(desc).toContain("sequant_run");
+
+      // runId format info
+      expect(desc).toContain("run-");
+      expect(desc).toContain(".json");
+    });
+  });
+
   // AC-13: Tool schemas match specification
   describe("AC-13: tools/list", () => {
     it("should list all three tools with correct names", async () => {
