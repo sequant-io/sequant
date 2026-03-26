@@ -284,7 +284,6 @@ npx sequant run 123 --quality-loop
       const markers = parseSolveMarkers(body);
 
       expect(markers.phases).toEqual(["spec", "exec", "test", "qa"]);
-      expect(markers.browserTest).toBe(true);
       expect(markers.qualityLoop).toBe(true);
     });
 

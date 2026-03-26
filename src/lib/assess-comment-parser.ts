@@ -150,8 +150,6 @@ const VALID_ACTIONS: AssessAction[] = [
 export interface AssessMarkers {
   /** Recommended phases */
   phases?: string[];
-  /** Whether browser testing is needed */
-  browserTest?: boolean;
   /** Whether quality loop is recommended */
   qualityLoop?: boolean;
   /** The recommended action */
@@ -254,9 +252,6 @@ function applyMarker(markers: AssessMarkers, key: string, value: string): void {
   switch (key) {
     case "phases":
       markers.phases = value.split(",").filter(Boolean);
-      break;
-    case "browser-test":
-      markers.browserTest = value === "true";
       break;
     case "quality-loop":
       markers.qualityLoop = value === "true";

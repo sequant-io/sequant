@@ -143,12 +143,6 @@ describe("assess-comment-parser", () => {
         expect(markers.qualityLoop).toBe(false);
       });
 
-      it("should parse <!-- assess:browser-test=true --> marker", () => {
-        const body = "<!-- assess:browser-test=true -->";
-        const markers = parseAssessMarkers(body);
-        expect(markers.browserTest).toBe(true);
-      });
-
       it("should still parse legacy <!-- solve:phases=... --> markers", () => {
         const body = "<!-- solve:phases=exec,qa -->";
         const markers = parseAssessMarkers(body);
