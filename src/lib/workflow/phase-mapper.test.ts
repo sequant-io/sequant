@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectPhasesFromLabels,
+  hasUILabels,
   DOCS_LABELS,
   BUG_LABELS,
 } from "./phase-mapper.js";
@@ -74,6 +75,53 @@ describe("detectPhasesFromLabels", () => {
       const result = detectPhasesFromLabels(["complex"]);
       expect(result.qualityLoop).toBe(true);
     });
+  });
+});
+
+describe("exact matching regression (AC-4)", () => {
+  it("'docstring' does NOT match docs pipeline", () => {
+    const result = detectPhasesFromLabels(["docstring"]);
+    // Should get standard phases, not the docs shortcut
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("'debugging' does NOT match bug pipeline", () => {
+    const result = detectPhasesFromLabels(["debugging"]);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("'patchwork' does NOT match bug pipeline", () => {
+    const result = detectPhasesFromLabels(["patchwork"]);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("'webinar' does NOT match UI pipeline", () => {
+    const result = detectPhasesFromLabels(["webinar"]);
+    // Should get standard phases, not UI phases with test
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("'complexity' does NOT enable quality loop", () => {
+    const result = detectPhasesFromLabels(["complexity"]);
+    expect(result.qualityLoop).toBe(false);
+  });
+
+  it("'insecurity' does NOT trigger security-review phase", () => {
+    const result = detectPhasesFromLabels(["insecurity"]);
+    expect(result.phases).not.toContain("security-review");
+  });
+});
+
+describe("hasUILabels exact matching (AC-5)", () => {
+  it("returns true for exact UI label", () => {
+    expect(hasUILabels(["ui"])).toBe(true);
+    expect(hasUILabels(["frontend"])).toBe(true);
+    expect(hasUILabels(["admin"])).toBe(true);
+  });
+
+  it("returns false for substring collisions", () => {
+    expect(hasUILabels(["webinar"])).toBe(false);
+    expect(hasUILabels(["stadium"])).toBe(false);
   });
 });
 
