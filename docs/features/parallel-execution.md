@@ -92,6 +92,49 @@ CLI flag > `settings.json` > default (3)
 4. Log data is routed to the correct issue via the LogWriter's Map-based tracking
 5. Results are collected after all promises settle
 
+## Choosing Between Parallel and Chain Mode
+
+Parallel worktrees are the default for multi-issue runs. Chain mode (`--chain`) is available for dependent issues but has trade-offs.
+
+### Success Rate Comparison
+
+| Mode | Success Rate | Sample Size | Notes |
+|------|-------------|-------------|-------|
+| Single issue | 72% | n=50+ | Baseline |
+| Parallel | 67% | n=50+ | Close to single-issue baseline |
+| Chain (`--chain`) | 50% | n=4 | Small sample, but failure compounding is structural |
+
+### Trade-offs
+
+| Dimension | Parallel (default) | Chain (`--chain`) |
+|-----------|-------------------|-------------------|
+| **Failure isolation** | Issues fail independently | One failure stops the chain |
+| **Merge complexity** | Each PR merges to main independently | PRs must merge in order |
+| **Code review** | Smaller, focused PRs | Later PRs include prior changes |
+| **Recovery** | Re-run single failed issue | May need to re-run entire chain |
+| **Speed** | Concurrent execution | Sequential only |
+
+### When to Use Each Mode
+
+**Use parallel (default)** when:
+- Issues are independent or loosely related
+- You want maximum throughput
+- You want failure isolation (one issue failing doesn't block others)
+
+**Use chain (`--chain`)** when:
+- Issues have explicit dependencies (issue B builds on issue A's code)
+- You're building a feature incrementally (auth → login → logout)
+- You need each issue to see the previous issue's changes
+
+### Spec Phase Reliability
+
+The spec phase has a higher transient failure rate (~8.6%) than other phases, primarily due to GitHub API rate limits and transient network issues. To mitigate this, `sequant run` includes automatic spec retry with a 5-second backoff. This is enabled by default when `retry: true` (the default) and applies only to the spec phase.
+
+To disable all retries:
+```bash
+sequant run 42 --no-retry
+```
+
 ## Troubleshooting
 
 ### Terminal output looks garbled
@@ -120,4 +163,5 @@ CLI flag > `settings.json` > default (3)
 
 ---
 
+*Updated for Issue #452 on 2026-03-26 (parallel vs chain decision framework, spec retry)*
 *Generated for Issue #404 on 2026-03-24*
