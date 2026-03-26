@@ -118,6 +118,12 @@ export interface PhaseResult {
   output?: string;
   /** Parsed QA verdict (only for qa phase) */
   verdict?: QaVerdict;
+  /** Last N lines of stderr captured from the agent process (#447) */
+  stderrTail?: string[];
+  /** Last N lines of stdout captured from the agent process (#447) */
+  stdoutTail?: string[];
+  /** Process exit code from the agent driver (#447) */
+  exitCode?: number;
 }
 
 /**

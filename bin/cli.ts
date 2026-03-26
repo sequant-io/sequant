@@ -263,6 +263,7 @@ program
   .option("--failed", "Show only failed runs")
   .option("--rotate", "Rotate logs (delete oldest to meet thresholds)")
   .option("-d, --dry-run", "Show what would be rotated without deleting")
+  .option("-v, --verbose", "Show full error context (all stderr lines)")
   .action(logsCommand);
 
 program

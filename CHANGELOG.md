@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Capture structured error context for phase failures — stderr/stdout tail (last 50 lines), exit code, and error category (#447)
+  - Add `errorContext` field to PhaseLog schema with `stderrTail`, `stdoutTail`, `exitCode`, and `category`
+  - `sequant logs --failed` shows error category and stderr tail (5 lines default, 50 with `--verbose`)
+  - `sequant stats` groups failures by category (`context_overflow`, `api_error`, `hook_failure`, `build_error`, `timeout`, `unknown`)
+  - Backward-compatible: old logs without `errorContext` continue to work
 - Add lighter workflow pipeline for documentation issues (#451)
   - Docs-labeled issues skip spec phase, running exec → qa directly (like bug fixes)
   - Propagate `SEQUANT_ISSUE_TYPE=docs` env var to skills for adaptive behavior

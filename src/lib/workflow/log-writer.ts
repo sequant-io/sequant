@@ -342,6 +342,7 @@ export function createPhaseLogFromTiming(
       | "commitHash"
       | "fileDiffStats"
       | "cacheMetrics"
+      | "errorContext"
     >
   >,
 ): PhaseLog {

@@ -342,6 +342,12 @@ async function executePhase(
   const durationSeconds = (Date.now() - startTime) / 1000;
 
   // Map AgentPhaseResult to PhaseResult
+  const tails = {
+    stderrTail: agentResult.stderrTail,
+    stdoutTail: agentResult.stdoutTail,
+    exitCode: agentResult.exitCode,
+  };
+
   if (agentResult.success) {
     // For QA phase, check the verdict to determine actual success
     // Agent "success" just means the execution completed — we need to parse the verdict
@@ -360,6 +366,7 @@ async function executePhase(
           sessionId: agentResult.sessionId,
           output: agentResult.output,
           verdict,
+          ...tails,
         };
       }
       return {
@@ -369,6 +376,7 @@ async function executePhase(
         sessionId: agentResult.sessionId,
         output: agentResult.output,
         verdict: verdict ?? undefined,
+        ...tails,
       };
     }
 
@@ -378,6 +386,7 @@ async function executePhase(
       durationSeconds,
       sessionId: agentResult.sessionId,
       output: agentResult.output,
+      ...tails,
     };
   }
 
@@ -387,6 +396,7 @@ async function executePhase(
     durationSeconds,
     error: agentResult.error,
     sessionId: agentResult.sessionId,
+    ...tails,
   };
 }
 

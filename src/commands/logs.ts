@@ -29,6 +29,7 @@ interface LogsOptions {
   failed?: boolean;
   rotate?: boolean;
   dryRun?: boolean;
+  verbose?: boolean;
 }
 
 /**
@@ -106,7 +107,11 @@ function formatTime(isoString: string): string {
 /**
  * Display a single log summary
  */
-function displayLogSummary(log: RunLog, filename: string): void {
+function displayLogSummary(
+  log: RunLog,
+  filename: string,
+  options?: { verbose?: boolean },
+): void {
   const passed = log.summary.passed;
   const failed = log.summary.failed;
   const total = log.summary.totalIssues;
@@ -162,6 +167,29 @@ function displayLogSummary(log: RunLog, filename: string): void {
       console.log(
         `      ${phaseStatus} ${phase.phase} ${phaseDuration}${error}`,
       );
+
+      // Show error context when available (#447 AC-3)
+      if (phase.errorContext) {
+        const ctx = phase.errorContext;
+        console.log(
+          chalk.gray(`        category: ${chalk.yellow(ctx.category)}`),
+        );
+        if (ctx.stderrTail && ctx.stderrTail.length > 0) {
+          const maxLines = options?.verbose ? ctx.stderrTail.length : 5;
+          const lines = ctx.stderrTail.slice(-maxLines);
+          console.log(chalk.gray("        stderr tail:"));
+          for (const line of lines) {
+            console.log(chalk.gray(`          ${line}`));
+          }
+          if (!options?.verbose && ctx.stderrTail.length > 5) {
+            console.log(
+              chalk.gray(
+                `          ... ${ctx.stderrTail.length - 5} more lines (use --verbose to see all)`,
+              ),
+            );
+          }
+        }
+      }
 
       // Show observability data (AC-9)
       if (phase.commitHash) {
@@ -343,7 +371,7 @@ export async function logsCommand(options: LogsOptions): Promise<void> {
   } else {
     // Human-readable output
     for (const { log, filename } of filteredLogs) {
-      displayLogSummary(log, filename);
+      displayLogSummary(log, filename, { verbose: options.verbose });
     }
 
     // Summary
