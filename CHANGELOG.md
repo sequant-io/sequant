@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fix label matching to use exact equality instead of substring `includes()` for phase detection (#461)
 - Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
 
 ### Changed
