@@ -441,7 +441,7 @@ if [[ -n "$shell_scripts" ]]; then
       unused_count=0
       for func in $funcs; do
         # Count calls (excluding the definition line)
-        call_count=$(grep -c "\b${func}\b" "$script" 2>/dev/null || echo "0")
+        call_count=$(grep -c "\b${func}\b" "$script" 2>/dev/null || true)
         if [[ $call_count -lt 2 ]]; then  # Only definition, no calls
           echo "   ⚠️  Function '$func' defined but possibly not called"
           unused_count=$((unused_count + 1))

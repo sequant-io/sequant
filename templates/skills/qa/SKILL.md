@@ -535,7 +535,7 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
      sort -u || true)
 
    # Count derived ACs
-   derived_count=$(echo "$derived_acs" | grep -c "AC-" || echo "0")
+   derived_count=$(echo "$derived_acs" | grep -c "AC-" || true)
    echo "Found $derived_count derived ACs"
    ```
 
@@ -851,7 +851,7 @@ deletions=$(echo "$diff_stats" | grep -o '[0-9]* deletion' | grep -o '[0-9]*' ||
 total_changes=$((${additions:-0} + ${deletions:-0}))
 
 # 3. Check if package.json changed
-pkg_changed=$(git diff origin/main...HEAD --name-only | grep -c '^package\.json$' || echo "0")
+pkg_changed=$(git diff origin/main...HEAD --name-only | grep -c '^package\.json$' || true)
 
 # 4. Check security-sensitive paths (reuses existing heuristic from anti-pattern detection)
 security_paths=$(git diff origin/main...HEAD --name-only | grep -iE 'auth|payment|security|server-action|middleware|admin' || true)
@@ -888,16 +888,16 @@ Run these checks directly (no sub-agents needed):
 
 ```bash
 # Type safety: check for 'any' additions
-any_count=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -c 'any' || echo "0")
+any_count=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -cw 'any' || true)
 
 # Deleted tests check
-deleted_tests=$(git diff origin/main...HEAD --name-only --diff-filter=D | grep -cE '\.(test|spec)\.' || echo "0")
+deleted_tests=$(git diff origin/main...HEAD --name-only --diff-filter=D | grep -cE '\.(test|spec)\.' || true)
 
 # Scope: files changed count
 files_changed=$(git diff origin/main...HEAD --name-only | wc -l | tr -d ' ')
 
 # Security scan (lightweight — just check for obvious patterns in added lines)
-security_issues=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -ciE 'eval\(|innerHTML|dangerouslySetInnerHTML|exec\(|password.*=.*["']|secret.*=.*["']|api.?key.*=.*["']' || echo "0")
+security_issues=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -ciE 'eval\(|innerHTML|dangerouslySetInnerHTML|exec\(|password.*=.*["']|secret.*=.*["']|api.?key.*=.*["']' || true)
 
 echo "Inline checks: any=$any_count, deleted_tests=$deleted_tests, files=$files_changed, security_issues=$security_issues"
 ```
