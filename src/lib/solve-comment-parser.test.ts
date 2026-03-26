@@ -284,20 +284,13 @@ npx sequant run 123 --quality-loop
       const markers = parseSolveMarkers(body);
 
       expect(markers.phases).toEqual(["spec", "exec", "test", "qa"]);
-      expect(markers.skipSpec).toBe(false);
       expect(markers.browserTest).toBe(true);
       expect(markers.qualityLoop).toBe(true);
-    });
-
-    it("should handle skip-spec=true", () => {
-      const markers = parseSolveMarkers("<!-- solve:skip-spec=true -->");
-      expect(markers.skipSpec).toBe(true);
     });
 
     it("should return empty object for no markers", () => {
       const markers = parseSolveMarkers("No markers here");
       expect(markers.phases).toBeUndefined();
-      expect(markers.skipSpec).toBeUndefined();
     });
 
     it("should handle markers with extra whitespace", () => {
@@ -308,7 +301,6 @@ npx sequant run 123 --quality-loop
     it("should ignore unknown marker keys", () => {
       const markers = parseSolveMarkers("<!-- solve:unknown-key=value -->");
       expect(markers.phases).toBeUndefined();
-      expect(markers.skipSpec).toBeUndefined();
     });
   });
 

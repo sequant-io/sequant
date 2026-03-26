@@ -175,7 +175,6 @@ Cleanup:
 <!-- assess:action=<ACTION> -->
 <!-- assess:phases=<csv> -->
 <!-- assess:quality-loop=<bool> -->
-<!-- assess:skip-spec=<bool> -->
 ```
 
 #### Run Column Symbols
@@ -224,9 +223,9 @@ Cleanup:
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 461 460 -q --phases exec,qa                      │
 │  npx sequant run 458 443 -q                                  │
-│  npx sequant run 412 -q --skip-spec          # resume        │
+│  npx sequant run 412 -q --phases exec,qa     # resume        │
 │  npx sequant run 405 -q                      # restart       │
 ╰──────────────────────────────────────────────────────────────╯
 
@@ -264,7 +263,7 @@ When every issue is PROCEED with no warnings, the output is minimal:
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 461 460 -q --phases exec,qa                      │
 │  npx sequant run 443 -q                                      │
 ╰──────────────────────────────────────────────────────────────╯
 
