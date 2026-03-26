@@ -8,6 +8,7 @@
 
 import { spawn } from "child_process";
 import { execSync } from "child_process";
+import { RingBuffer } from "../ring-buffer.js";
 import type {
   AgentDriver,
   AgentExecutionConfig,
@@ -33,6 +34,8 @@ export class AiderDriver implements AgentDriver {
     return new Promise<AgentPhaseResult>((resolve) => {
       let capturedOutput = "";
       let capturedStderr = "";
+      const stderrBuffer = new RingBuffer(50);
+      const stdoutBuffer = new RingBuffer(50);
 
       const proc = spawn("aider", args, {
         cwd: config.cwd,
@@ -59,6 +62,10 @@ export class AiderDriver implements AgentDriver {
       proc.stdout.on("data", (data: Buffer) => {
         const text = data.toString();
         capturedOutput += text;
+        const lines = text.split("\n").filter((l) => l.length > 0);
+        for (const line of lines) {
+          stdoutBuffer.push(line);
+        }
         if (config.verbose) {
           config.onOutput?.(text);
         }
@@ -67,6 +74,10 @@ export class AiderDriver implements AgentDriver {
       proc.stderr.on("data", (data: Buffer) => {
         const text = data.toString();
         capturedStderr += text;
+        const lines = text.split("\n").filter((l) => l.length > 0);
+        for (const line of lines) {
+          stderrBuffer.push(line);
+        }
         config.onStderr?.(text);
       });
 
@@ -78,12 +89,16 @@ export class AiderDriver implements AgentDriver {
             output: capturedOutput,
             error:
               "Aider CLI not found. Install it with: pip install aider-chat",
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           });
         } else {
           resolve({
             success: false,
             output: capturedOutput,
             error: `Failed to start aider: ${err.message}`,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           });
         }
       });
@@ -99,6 +114,8 @@ export class AiderDriver implements AgentDriver {
             error: isTimeout
               ? `Timeout after ${config.phaseTimeout}s`
               : `Process killed by signal: ${signal}`,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           });
           return;
         }
@@ -107,6 +124,8 @@ export class AiderDriver implements AgentDriver {
           resolve({
             success: true,
             output: capturedOutput,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           });
         } else {
           const stderrSuffix = capturedStderr
@@ -116,6 +135,8 @@ export class AiderDriver implements AgentDriver {
             success: false,
             output: capturedOutput,
             error: `Aider exited with code ${code}${stderrSuffix}`,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           });
         }
       });

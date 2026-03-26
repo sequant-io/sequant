@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Capture structured error context for phase failures — stderr/stdout tail (last 50 lines), exit code, and error category (#447)
+  - Add `errorContext` field to PhaseLog schema with `stderrTail`, `stdoutTail`, `exitCode`, and `category`
+  - `sequant logs --failed` shows error category and stderr tail (5 lines default, 50 with `--verbose`)
+  - `sequant stats` groups failures by category (`context_overflow`, `api_error`, `hook_failure`, `build_error`, `timeout`, `unknown`)
+  - Backward-compatible: old logs without `errorContext` continue to work
 - Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
 - Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
 - Add MCP progress notifications for `sequant_run` with timeout reset (#435)

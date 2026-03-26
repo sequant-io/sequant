@@ -13,6 +13,8 @@ import { spawnSync } from "child_process";
 import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
 import { StateManager } from "./state-manager.js";
 import { Phase, ExecutionConfig, PhaseResult, IssueResult } from "./types.js";
+import { classifyError } from "./error-classifier.js";
+import type { ErrorContext } from "./run-log-schema.js";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
@@ -547,6 +549,15 @@ export async function runIssueWithLogging(
       // Log spec phase result
       // Note: Spec runs in main repo, not worktree, so no git diff stats
       if (logWriter) {
+        // Build errorContext from captured stderr/stdout tails (#447)
+        let specErrorContext: ErrorContext | undefined;
+        if (!specResult.success && specResult.stderrTail) {
+          specErrorContext = {
+            stderrTail: specResult.stderrTail ?? [],
+            stdoutTail: specResult.stdoutTail ?? [],
+            category: classifyError(specResult.stderrTail ?? []),
+          };
+        }
         const phaseLog = createPhaseLogFromTiming(
           "spec",
           issueNumber,
@@ -557,7 +568,7 @@ export async function runIssueWithLogging(
             : specResult.error?.includes("Timeout")
               ? "timeout"
               : "failure",
-          { error: specResult.error },
+          { error: specResult.error, errorContext: specErrorContext },
         );
         logWriter.logPhase(phaseLog);
       }
@@ -777,6 +788,16 @@ export async function runIssueWithLogging(
         const cacheMetrics =
           phase === "qa" ? readCacheMetrics(worktreePath) : undefined;
 
+        // Build errorContext from captured stderr/stdout tails (#447)
+        let errorContext: ErrorContext | undefined;
+        if (!result.success && result.stderrTail) {
+          errorContext = {
+            stderrTail: result.stderrTail ?? [],
+            stdoutTail: result.stdoutTail ?? [],
+            category: classifyError(result.stderrTail ?? []),
+          };
+        }
+
         const phaseLog = createPhaseLogFromTiming(
           phase,
           issueNumber,
@@ -795,6 +816,7 @@ export async function runIssueWithLogging(
             fileDiffStats: diffStats?.fileDiffStats,
             commitHash,
             cacheMetrics,
+            errorContext,
           },
         );
         logWriter.logPhase(phaseLog);

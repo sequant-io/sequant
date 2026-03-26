@@ -86,6 +86,32 @@ export const CacheMetricsSchema = z.object({
 export type CacheMetrics = z.infer<typeof CacheMetricsSchema>;
 
 /**
+ * Structured error context captured from phase failures (#447).
+ *
+ * Provides stderr/stdout tails and a categorized error type
+ * for better failure diagnostics and analytics.
+ */
+export const ErrorContextSchema = z.object({
+  /** Last N lines of stderr before process exit */
+  stderrTail: z.array(z.string()),
+  /** Last N lines of stdout before process exit */
+  stdoutTail: z.array(z.string()),
+  /** Process exit code */
+  exitCode: z.number().int().optional(),
+  /** Classified error category */
+  category: z.enum([
+    "context_overflow",
+    "api_error",
+    "hook_failure",
+    "build_error",
+    "timeout",
+    "unknown",
+  ]),
+});
+
+export type ErrorContext = z.infer<typeof ErrorContextSchema>;
+
+/**
  * Log entry for a single phase execution
  */
 export const PhaseLogSchema = z.object({
@@ -119,6 +145,8 @@ export const PhaseLogSchema = z.object({
   fileDiffStats: z.array(FileDiffStatSchema).optional(),
   /** Cache metrics for QA phase (AC-7) */
   cacheMetrics: CacheMetricsSchema.optional(),
+  /** Structured error context for failed phases (#447) */
+  errorContext: ErrorContextSchema.optional(),
 });
 
 export type PhaseLog = z.infer<typeof PhaseLogSchema>;
@@ -304,6 +332,7 @@ export function completePhaseLog(
       | "commitHash"
       | "fileDiffStats"
       | "cacheMetrics"
+      | "errorContext"
     >
   >,
 ): PhaseLog {

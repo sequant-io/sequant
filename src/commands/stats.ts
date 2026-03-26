@@ -169,10 +169,13 @@ function calculateStats(logs: RunLog[]): AggregateStats {
         existing.count++;
         phaseDurations.set(phase.phase, existing);
 
-        // Track failure patterns
-        if (phase.status === "failure" && phase.error) {
-          // Normalize error message (truncate and clean)
-          const errorKey = `${phase.phase}: ${phase.error.slice(0, 100)}`;
+        // Track failure patterns — prefer errorContext category (#447 AC-4)
+        if (phase.status === "failure") {
+          const errorKey = phase.errorContext?.category
+            ? `${phase.phase}: [${phase.errorContext.category}]`
+            : phase.error
+              ? `${phase.phase}: ${phase.error.slice(0, 100)}`
+              : `${phase.phase}: unknown`;
           commonFailures.set(errorKey, (commonFailures.get(errorKey) ?? 0) + 1);
         }
       }

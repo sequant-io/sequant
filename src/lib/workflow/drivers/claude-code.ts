@@ -8,6 +8,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import { getMcpServersConfig } from "../../system.js";
+import { RingBuffer } from "../ring-buffer.js";
 import type {
   AgentDriver,
   AgentExecutionConfig,
@@ -45,6 +46,8 @@ export class ClaudeCodeDriver implements AgentDriver {
     let resultMessage: SDKResultMessage | undefined;
     let capturedOutput = "";
     let capturedStderr = "";
+    const stderrBuffer = new RingBuffer(50);
+    const stdoutBuffer = new RingBuffer(50);
 
     try {
       // Get MCP servers config if enabled
@@ -66,6 +69,11 @@ export class ClaudeCodeDriver implements AgentDriver {
           ...(mcpServers ? { mcpServers } : {}),
           stderr: (data: string) => {
             capturedStderr += data;
+            // Split on newlines and push each line to the ring buffer
+            const lines = data.split("\n").filter((l) => l.length > 0);
+            for (const line of lines) {
+              stderrBuffer.push(line);
+            }
             config.onStderr?.(data);
           },
         },
@@ -88,6 +96,10 @@ export class ClaudeCodeDriver implements AgentDriver {
             .join("");
           if (textContent) {
             capturedOutput += textContent;
+            const lines = textContent.split("\n").filter((l) => l.length > 0);
+            for (const line of lines) {
+              stdoutBuffer.push(line);
+            }
             config.onOutput?.(textContent);
           }
         }
@@ -106,6 +118,8 @@ export class ClaudeCodeDriver implements AgentDriver {
             success: true,
             output: capturedOutput,
             sessionId: resultSessionId,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
           };
         }
 
@@ -127,6 +141,8 @@ export class ClaudeCodeDriver implements AgentDriver {
           output: capturedOutput,
           sessionId: resultSessionId,
           error,
+          stderrTail: stderrBuffer.getLines(),
+          stdoutTail: stdoutBuffer.getLines(),
         };
       }
 
@@ -135,6 +151,8 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         error: "No result received from Claude",
+        stderrTail: stderrBuffer.getLines(),
+        stdoutTail: stdoutBuffer.getLines(),
       };
     } catch (err) {
       clearTimeout(timeoutId);
@@ -145,6 +163,8 @@ export class ClaudeCodeDriver implements AgentDriver {
           success: false,
           output: capturedOutput,
           error: `Timeout after ${config.phaseTimeout}s`,
+          stderrTail: stderrBuffer.getLines(),
+          stdoutTail: stdoutBuffer.getLines(),
         };
       }
 
@@ -157,6 +177,8 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         error: error + stderrSuffix,
+        stderrTail: stderrBuffer.getLines(),
+        stdoutTail: stdoutBuffer.getLines(),
       };
     }
   }
