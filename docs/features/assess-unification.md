@@ -42,26 +42,72 @@ Every assessment recommends exactly one of six actions:
 
 ## Output Format
 
-The action is always the headline — scannable in under 5 seconds:
+`/assess` uses two output modes depending on how many issues you pass.
+
+### Batch Mode (2+ issues)
+
+A scannable dashboard — one row per issue, one command block, compressed annotations:
 
 ```
-#152 — Add user dashboard
-Status: Open | Labels: ui, enhancement | Last activity: 3 days ago
+ #    Action     Reason                              Run
+ 462  PARK       Manual measurement task              ‖
+ 461  PROCEED    Exact label matching                  exec → qa
+ 460  PROCEED    batch-executor tests                  exec → qa
+ 458  PROCEED    Parallel UX + race condition          spec → exec → qa
+ 447  CLOSE      PR #457 merged                        —
+────────────────────────────────────────────────────────────────
 
--> PROCEED — Issue is clear, codebase matches, ready for work.
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 458 -q                                      │
+╰──────────────────────────────────────────────────────────────╯
 
-Health:
-  [check] References match codebase
-  [check] No conflicting PRs or worktrees
-  [check] No overlapping issues detected
+────────────────────────────────────────────────────────────────
+Order: 460 → 461 (batch-executor.ts)
+
+⚠ #458  Dual concern (UX + race) across 4 files
+────────────────────────────────────────────────────────────────
+Cleanup:
+  gh issue close 447                   # PR #457 merged
+────────────────────────────────────────────────────────────────
 ```
 
-For **PROCEED**, the output also includes:
-- AC coverage (MET/IN_PROGRESS/NOT_STARTED/UNCLEAR per item)
-- Full workflow recommendation with `npx sequant run` command
-- Flags table (-q, --chain, --qa-gate, --base, --testgen) with reasoning
-- Label review with suggestions
-- Confidence level
+**Run column symbols:**
+
+| Symbol | Meaning |
+|--------|---------|
+| `spec → exec → qa` | Full workflow |
+| `exec → qa` | Skip spec (bug, docs, or spec exists) |
+| `◂ exec → qa` | Resume existing work (branch has commits) |
+| `◂ qa` | PR needs review/QA |
+| `⟳ spec → exec → qa` | Restart (stale PR abandoned) |
+| `→ #N` | Merge into target issue |
+| `?` | Needs info first |
+| `‖` | Blocked/deferred |
+| `—` | No action needed |
+
+Commands are grouped by compatible workflow. Annotations only appear when non-obvious — silence means healthy.
+
+### Single Mode (1 issue)
+
+More detail since you're focused on one issue:
+
+```
+#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ PROCEED — Both root causes confirmed in codebase
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run 458 -q                                      │
+╰──────────────────────────────────────────────────────────────╯
+
+spec → exec → qa · 8 ACs · -q (dual concern)
+────────────────────────────────────────────────────────────────
+```
+
+Single mode includes a workflow summary line with AC count and flag reasoning. Warnings and conflict detection appear below when applicable.
 
 ## Health Checks
 
@@ -171,4 +217,4 @@ Both `<!-- solve:... -->` and `<!-- assess:... -->` markers are parsed. If a com
 
 ---
 
-*Updated for Issue #438 on 2026-03-25 — added signal source, priority, and CI trigger label documentation*
+*Updated on 2026-03-26 — v3.0 output redesign: batch dashboard mode, single focused mode, separator lines, compressed annotations*
