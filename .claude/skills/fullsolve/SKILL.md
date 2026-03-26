@@ -603,8 +603,8 @@ Post completion comment to issue with:
 **IMPORTANT:** Merge the PR first, then clean up the worktree.
 
 ```bash
-# 1. Merge PR (--delete-branch deletes remote; local deletion will fail but that's OK)
-gh pr merge <N> --squash --delete-branch
+# 1. Merge PR (without --delete-branch; cleanup happens after success)
+gh pr merge <N> --squash
 
 # 2. Clean up worktree (removes local worktree + branch)
 ./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
@@ -612,7 +612,7 @@ gh pr merge <N> --squash --delete-branch
 # 3. Issue auto-closes if commit message contains "Fixes #N"
 ```
 
-**Why this order matters:** The cleanup script checks if the PR is merged before proceeding. The `--delete-branch` flag will fail to delete the local branch (worktree conflict) but successfully deletes the remote branch. The cleanup script then handles the local branch removal.
+**Why this order matters:** The cleanup script checks if the PR is merged before proceeding. Merging without `--delete-branch` avoids worktree lock conflicts. The post-tool hook and cleanup script handle branch removal after merge succeeds. If the merge fails, the worktree is preserved so work isn't lost.
 
 ### 5.4 Post-Merge Verification
 

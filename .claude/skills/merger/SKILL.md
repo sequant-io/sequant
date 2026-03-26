@@ -214,15 +214,19 @@ If overlapping files found:
 #### For clean merges (no conflicts):
 
 ```bash
-# IMPORTANT: Remove worktree BEFORE merge (prevents --delete-branch failure)
+# Merge PR first (without --delete-branch to avoid worktree lock conflicts)
+gh pr merge <PR_NUMBER> --squash
+
+# Only clean up worktree AFTER merge succeeds
+# If merge fails, the worktree is preserved so work isn't lost
 worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}' || true)
 if [[ -n "$worktree_path" ]]; then
   git worktree remove "$worktree_path" --force
   git branch -D "feature/$ISSUE-"* 2>/dev/null || true
 fi
 
-# Merge PR using squash
-gh pr merge <PR_NUMBER> --squash --delete-branch
+# Delete remote branch (previously handled by --delete-branch)
+gh api repos/{owner}/{repo}/git/refs/heads/$(gh pr view <PR_NUMBER> --json headRefName --jq '.headRefName') -X DELETE 2>/dev/null || true
 
 # REQUIRED: Update state to mark issue as merged (#305)
 npx tsx scripts/state/update.ts merged $ISSUE
@@ -265,7 +269,7 @@ git pull origin main
 # Verify worktree was cleaned up
 git worktree list  # Should not show the merged feature branch
 
-# Remote branch is deleted by --delete-branch flag
+# Remote branch is deleted explicitly after merge (see Step 5)
 
 # REQUIRED: Verify state was updated (#305)
 # The state should show status="merged" for the issue

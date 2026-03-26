@@ -207,10 +207,11 @@ Consider breaking long chains into smaller batches.
 Option A: Sequential merge to main (recommended)
 ```bash
 # Merge each PR in order, rebasing as needed
-gh pr merge 1 --squash --delete-branch
+gh pr merge 1 --squash
 # Update PR 2's base after 1 is merged
-gh pr merge 2 --squash --delete-branch
-gh pr merge 3 --squash --delete-branch
+gh pr merge 2 --squash
+gh pr merge 3 --squash
+# Worktrees and branches are cleaned up automatically by the post-tool hook
 ```
 
 Option B: Single combined review
