@@ -316,6 +316,26 @@ Per Quality Plan:
 
 **If no Quality Plan found:** Proceed with standard implementation but note in progress update that quality planning was not available.
 
+#### 2.1b2 Codebase Conventions (RECOMMENDED)
+
+**Before generating code**, check for codebase conventions detected during `sequant init`:
+
+```bash
+# Read conventions file if it exists
+cat .sequant/conventions.json 2>/dev/null || echo "No conventions detected"
+```
+
+**If `.sequant/conventions.json` exists**, use the detected conventions to align generated code:
+- **testFilePattern** → Name test files accordingly (e.g., `*.test.ts` vs `*.spec.ts`)
+- **exportStyle** → Use named or default exports to match codebase style
+- **asyncPattern** → Prefer async/await or promise chains as appropriate
+- **indentation** → Match existing indentation style
+- **semicolons** → Include or omit semicolons per convention
+
+**Manual overrides** in the `manual` section take precedence over detected values.
+
+**If no conventions file exists:** Proceed normally — conventions are optional enhancement.
+
 #### 2.1c Derived AC Extraction (REQUIRED when Quality Plan exists)
 
 **Purpose:** Extract derived ACs from the spec comment's Derived ACs table so they can be tracked alongside original ACs during implementation.
@@ -567,6 +587,51 @@ echo "Current branch: $CURRENT_BRANCH"
 - Ensures nothing is forgotten
 - Documents intentional deferrals
 - Enables better QA in `/qa` phase
+
+### 3e2. Simulate QA Before PR (REQUIRED)
+
+**Purpose:** Prevent first-pass QA failures by simulating the QA reviewer's perspective before creating a PR. Root cause analysis of multi-attempt QA issues (#448) found that the majority of first-pass failures stem from gaps exec could have caught with deliberate self-verification.
+
+**Top failure patterns exec must check for (from analysis of 6 multi-attempt issues):**
+
+| Pattern | Frequency | What to check |
+|---------|-----------|---------------|
+| Test coverage gaps | 50% (3/6 issues) | Changed files have corresponding tests |
+| Incomplete self-verification | 17% (1/6 issues) | Each AC verified against literal wording, not just spirit |
+| Lint/build not run pre-PR | 17% (1/6 issues) | `npm run lint` + `npm run build` pass locally |
+
+*Note: Remaining 33% were QA detection issues, addressed separately in QA skill.*
+
+**Simulate QA Checklist (answer each before creating PR):**
+
+1. **Test-to-Change Alignment:** For each source file you modified:
+   ```bash
+   # List changed source files (excluding tests)
+   changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.(test|spec)\.' || true)
+
+   # For each, verify a corresponding test exists and covers the change
+   for file in $changed; do
+     base=$(basename "$file" | sed 's/\.[^.]*$//')
+     test_exists=$(find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | head -1 || true)
+     if [[ -z "$test_exists" ]]; then
+       echo "WARNING NO TEST: $file"
+     fi
+   done
+   ```
+   - If critical files lack tests, add tests before PR creation
+   - If tests exist but don't cover the specific change, note as known gap
+
+2. **QA Reviewer Perspective:** Ask yourself:
+   - "If I were reviewing this PR for the first time, what would I flag?"
+   - "Are there any 'I'll fix it later' shortcuts that QA will catch?"
+   - "Did I actually run the feature, or just verify it compiles?"
+
+**If any check reveals a gap:**
+- Fix the gap before creating the PR
+- Re-run build/lint/tests after fixing
+- Update the AC verification table
+
+**Do NOT skip this step.** This single checkpoint addresses the most common first-pass QA failure patterns.
 
 ### 3f. CHANGELOG Update (REQUIRED for user-facing changes)
 
@@ -1704,6 +1769,8 @@ The goal is to satisfy AC with the smallest, safest change possible.
 2. "If this feature broke tomorrow, would the current tests catch it?"
 3. "What's the weakest part of this implementation?"
 4. "Am I reporting success metrics without honest self-evaluation?"
+5. "For each changed source file, does a corresponding test file exist? If not, why is that acceptable?"
+6. "Did I run `npm run lint` and fix all errors, or am I hoping CI will pass?"
 
 **Include this section in your output:**
 

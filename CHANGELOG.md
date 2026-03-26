@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
+  - Add "Simulate QA Before PR" checkpoint to exec skill (test coverage, AC literal verification, lint check)
+  - Fix QA false negatives for prompt-only and cross-repo implementations
+  - Add safety check before QA early exit to prevent "NOT FOUND" on valid implementations
+
 ### Added
 
 - Add lighter workflow pipeline for documentation issues (#451)
