@@ -1,0 +1,352 @@
+wasnt assess suposed to get shorter after the assess issue we just completed? I liked solve because it was more concise and assumed that my goal was to batch if I added multiple issues. We need some content design to structure this data in a ideal way for the end user
+
+---
+
+wasnt assess suposed to get shorter after the assess issue we just completed? I liked solve because it was more concise and assumed that my goal was to batch if I added multiple issues. We need some content design to structure this data in a ideal way for the end user:\
+\
+assess 462 461 460 458 447 443 434 405                                                                       
+
+⏺ Skill(assess)
+  ⎿  Successfully loaded skill · 5 tools allowed
+
+⏺ I'll gather context for all 8 issues in parallel.
+
+  Bash(gh issue view 462 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  Running…
+  ⎿  {
+       "assignees": [],
+       "body": "## Problem\n\n#451 implemented a lighter workflow pipeline for documentation issues to imp
+     … +16 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 461 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  Waiting…
+  ⎿  {
+       "assignees": [],
+       "body": "## Problem\n\nAll label detection in `phase-mapper.ts` uses `label.includes(targetLabel)`,
+     … +15 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 460 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  {
+       "assignees": [],
+       "body": "## Problem\n\n`batch-executor.ts` has no test file. The `isDocs` shortcut (from #451) andexpand)
+
+⏺ Bash(gh issue view 458 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  {
+       "assignees": [],
+       "body": "## Summary\n\nRunning `sequant run` with multiple issues in parallel mode produces **zero
+     … +54 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 447 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  {"assignees":[],"body":"## Problem\n\nAnalysis from #437 found that 60.6% of all phase failures (43 o
+     f 71) are generic \"Claude Code process exited with code 1\" errors. The actual failure reason (conte
+     xt overflow, API error, hook failure, syntax error) is lost, making diagnosis impossible from logs al
+     … +291 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 443 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  {
+       "assignees": [],
+       "body": "## Summary\n\nAfter #368 consolidated orchestration-layer `gh` calls into `GitHubProvider`
+     … +19 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 434 --json title,bodyts,assignees 2>&1)
+  ⎿  {
+       "assignees": [],
+       "body": "## Problem\n\nWhen reviewing QA results for multiple issues, `sequant_logs` only returns p
+     … +14 lines (ctrl+o to expand)
+
+⏺ Bash(gh issue view 405 --json title,body,labels,state,comments,assignees 2>&1)
+  ⎿  {
+       "assignees": [],
+       "body": "## Problem\n\n`src/commands/run.test.ts` is 2,254 lines with 12 top-level `vi.mock()` decl
+     … +33 lines (ctrl+o to expand)
+
+⏺ Now let me check branches, PRs, worktrees, and codebase signals for all issues.
+
+⏺ Bash(git branch -a 2>/dev/null | grep -E '(462|461|460|458|447|443|434|405)' || echo "No matching branches")
+  ⎿  + feature/447-improve-error-capture-for-tooling-failures-60-of-a
+       remotes/origin/feature/447-improve-error-capture-for-tooling-failures-60-of-a
+
+⏺ Bash(git worktree list 2>/dev/null | grep -E '(462|461|460|458|447|443|434|405)' || echo "No matching
+      worktrees")
+  ⎿  /Users/tony/Projects/worktrees/feature/447-improve-error-capture-for-toolindd855e
+     4 [feature/447-improve-error-capture-for-tooling-failures-60-of-a]
+
+⏺ Bash(gh pr list --search "462 OR 461 OR 460 OR 458 OR 447 OR 443 OR 434 OR 405 in:title" --json
+      number,title,state,headRefName,mergeable 2>&1)
+  ⎿  []
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Bash(git log --oneline -30 --all 2>/dev/null | head -30)
+  ⎿  dd855e4 chore(#447): resolve CHANGELOG conflict with main
+     c91378a feat(#448): improve first-pass QA rate with exec self-verification and QA detection fixes (#4
+     56)
+     … +18 lines (ctrl+o to expand)
+
+⏺ Let me check #447's worktree state and verify codebase references for the other issues.
+
+⏺ Bash(git -C /Users/tony/Projects/worktrees/feature/447-improve-error-capture-for-tooling-failures-60-of-a log
+       --oneline main..HEAD 2>/dev/null | head -10)
+  ⎿  dd855e4 chore(#447): resolve CHANGELOG conflict with main
+     c9940ea docs(#447): add error capture feature documentation
+     12d5d98 fix(#447): add word boundaries to HTTP status regetCode through pipeline
+     7d2c288 feat(#447): structured error capture for phase failures
+
+⏺ Bash(git -C /Users/tony/Projects/worktrees/feature/447-improve-error-capture-for-tooling-failures-60-of-a
+      status --short 2>/dev/null)
+  ⎿  (No output)
+
+⏺ Bash(gh pr list --head "feature/447" --json number,title,state 2>&1; gh pr list --search "447 in:title"
+      --json number,title,state 2>&1)
+  ⎿  []
+     [
+       {
+     … +5 lines (ctrl+o to expand)
+
+⏺ Bash(git rev-list --count main..feature/447-improve-error-capture-for-tooling-failures-60-of-a 2>/dev/null ||
+       echo "N/A")
+  ⎿  4
+
+  Searched for 6 patterns (ctrl+o to expand)
+
+⏺ Let me verify #447's merged PR and check codebase references for other issues.
+
+⏺ Bash(gh pr view 457 --json state,mergedAt,headRefName 2>&1)
+  ⎿  {
+       "headRefName": "feature/447-improve-error-capture-for-tooling-failures-60-of-a",
+       "mergedAt": "2026-03-26T05:57:36Z",
+     … +2 lines (ctrl+o to expand)
+
+⏺ Bash(git log --oneline --all --grep=" | head -5)
+  ⎿  7d2c288 feat(#447): structured error capture for phase failures
+
+  Searched for 4 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Let me check remaining codebase signals and open worktrees for conflict detection.
+
+⏺ Bash(git worktree list --porcelain 2>/dev/null | grep "^worktree" | cut -d' ' -f2)
+  ⎿  /Users/tony/Projects/sequant
+     /Users/tony/Projects/worktrees/feature/254-feat-qa-smoke-test-template
+     /Users/tony/Projects/worktrees/feature/393-add-mcp-server-feature-to-sequant-landing
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+
+⏺ Bash(gh issue view 447 --json state -q '.state' 2>&1)
+  ⎿  CLOSED
+
+⏺ Bash(git log --oneline main | grep -c "" | head -1)
+  ⎿  555
+
+⏺ Let me check a few final details — the merge-check and worktree-discovery files referenced by #443.
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+⏺ Bash(# Check if #447 worktree was cleaned up after merge (it still shows in worktree list but issue is
+      CLOSED)
+      git -C /Users/tony/Pure/447-impr…)
+  ⎿  Error: Exit code 128
+
+⏺ Bash(# Check for batch-executor.test.ts existence (issue #460)
+      ls src/lib/workflow/batch-executor.test.ts 2>/dev/null || echo "Does not exist")
+  ⎿  Cancelled: parallel tool call Bash(# Check if #447 worktree was cleaned up …) errored
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Bash(# Initialize state for all issues
+      for issue in 462 461 460 458 447 443 434 405; do…)
+  ⎿  📊 Initialized issue #462: Track docs pipeline success rate measurement (AC-4 from #451)
+     📊 Initialized issue #462: Track docs pipeline success rate measurement (AC-4 from #451)
+     📊 Initialized issue #461: Use exact label matching instead of substring includes() for phase detecti
+     … +15 lines (ctrl+o to expand)
+  ⎿  (timeout 30s)
+
+⏺ Now I have all the context. Here's the assessment:
+
+  ---
+
+  ┌───────┬─────────┬─────────────────────────────────── │ PARK    │ Manual measurement — not automatable │
+  ├───────┼─────────┼──────────────────────────────────────┤
+  │ #461  │ PROCEED │ exec → qa  -q                        │
+  ├───────┼─────────┼──────────────────────────────────────┤
+  │ #460  │ PROCEED │ exec → qa  -q                        │
+  ├───────┼─────────┼──────────────────────────────────────┤
+  │ #458  │ PROCEED │ spec → exec → qa  -q                 │
+  ├───────┼─────────┼──────────────────────────────────────┤
+  │ #447  │ CLOSE   │ PR #457 mer──────────────
+
+  #462 — Track docs pipeline success rate measurement (AC-4 from #451)
+  Status: Open | Labels: documentation, cli | Last activity: 0 days ago
+
+  → PARK — Requires running 5+ real docs issues through sequant run and recording results manually. This is a
+  measurement task, not an implementation task.
+    Resume after: 5+ docs-labeled issues have been run through the pipeline post-#451 merge.
+
+  Health:
+    ⚠ Not automatable — ACs require manual execution of real docs issues and human observation of results
+    ⚠ No docs-labeled issues currently queued to run through the pipeline
+
+  Confidence: High
+
+  Generated by /assess
+
+  ─── Issue 2 of 8 ───────────────────────────────────────────
+
+  #461 — Use exact label matching instead of substring includes() for phase detection
+  Status: Open | Labels: enhancement, cli | Last activity: 0 days ago
+
+  → PROCEED — CoClear ACs, straightforward fix.
+
+  ✓ All clear
+
+  AC Coverage: 4 criteria identified
+  - Replace label.includes() with exact equality in phase-mapper.ts     NOT_STARTED
+  - Update batch-executor.ts inline checks to exact matching     NOT_STARTED
+  - Update existing tests for exact matching     NOT_STARTED
+  - Regression tests: "docstring" ≠ docs, "debugging" ≠ bug     NOT_STARTED
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  npx sequant run 461 -q --skip-spec                          │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #461  Use exact label matching ········ enhancement, cli → exec → qa
+
+  ⚠ Conflict risk: #460 (open) also modifies batch-executor.ts — coordinate or seq exist. Clear ACs for testing isSimpleBugFix, isDocs, and
+  issueConfig.issueType wiring. Test-only change, low risk.
+
+  ✓ All clear
+
+  AC Coverage: 4 criteria identified
+  - batch-executor.test.ts exists with label shortcut tests     NOT_STARTED
+  - Test verifies issueConfig.issueType set to "docs"     NOT_STARTED
+  - Test verifies no issueType state leak for non-docs labels     NOT_STARTED
+  - Test verifies bug labels take precedence over docs labels     NOT_STARTED
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  npx sequant run 460 -q --skip-spec                          │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #460  Add batch-executor tests ········ enhancement, cli → exec → qa
+
+────────
+
+  #458 — Parallel run UX freeze + reconcileState race condition on shared state file
+  Status: Open | Labels: bug, enhancement, cli | Last activity: 0 days ago
+
+  → PROCEED — Both root causes confirmed: reconcileState() has no withLock() (verified via grep), and parallel
+  mode suppresses all intermediate output. Well-scoped with 8 ACs across UX + bug fix.
+
+  Health:
+    ⚠ Complex — dual concern (UX + race condition) across 4 files; touches critical path (state management,
+  parallel execution)
+
+  AC Coverage: 8 criteria identified
+  - Per-phase status line in parallel mode     NOT_STARTED
+  - Heartbeat if no event within 60s     NOT_STARTED
+  - Per-issue output buffering (no interleave)     NOT_STARTED
+  - reconcileState() wrapped in withLock()     NOT_STARTED
+  - getState/saveState made private or documented as lock-unaware     NOT_STARTED
+  - Unit test for concurrent reconcileState + updatePhaseStatus     NOT_STARTED
+  - Parallel run shows per-phase progress within 10snt_status during active run doesn't regress state     NOT_STARTED
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  npx sequant run 458 -q                                      │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #458  Parallel UX freeze + race ······ bug, enhancement, cli → spec → exec → qa
+
+  ┌─ Flags ──────────────────────────────────────────────────────┐
+  │  -q  Dual concern (UX + race condition) across state mgmt    │
+  └───────────────────────────────────────────────itHub. All 7 ACs (4 original + 3 derived) met
+  per QA review. Worktree cleaned up.
+
+  Health:
+    ⚠ Stale worktree branch feature/447-improve-error-capture-for-tooling-failures-60-of-a still exists locally
+   — can be pruned
+
+  Confidence: High
+
+  Generated by /assess
+
+  ─── Issue 6 of 8 ───────────────────────────────────────────
+
+  #443 — Consolidate remaining gh CLI calls into GitHubProvider
+  Status: Open | Labels: refactor | Last activity: 14+ days ago
+
+  → PROCEED — Partially resolved: merge-check/index.ts and worktree-discovery.ts no longer have direct gh calls
+   (already migrated). 7 calls remain in src/lib/upstream/ (assessment.ts: 4, issues.ts: 3). ACs still valid.
+
+  Health:
+    ⚠ Scope reduced — 2 of 9 original calls already consolidated; update AC to reflect remaining 7 in upstream/
+    ✓ Codebase matches — remaining calls confirmed via grep
+
+  AC Coverage: 3 criteria identified
+  - Npass     NOT_STARTED
+  - Skills/hooks out of scope     MET (no changes needed)
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  npx sequant run 443 -q                                      │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #443  Consolidate gh CLI calls ········ refactor → spec → exec → qa
+
+  ┌─ Flags ──────────────────────────────────────────────────────┐
+  │  -q  Upstream module has different repo context than user's   │
+  └─────────────────────────────────────────────�d proposed schema. Enhancement to MCP sequant_logs tool to embed
+  condensed QA verdict alongside phase results.
+
+  ✓ All clear
+
+  AC Coverage: 3 criteria inferred (no explicit checkboxes)
+  - QA phase log includes verdict field     NOT_STARTED
+  - QA phase log includes summary (acMet, acTotal, gaps, suggestions)     NOT_STARTED
+  - Old logs without verdict render gracefully     NOT_STARTED
+
+  ╭──────────────────────────────────────────────────────────────╮
+  │  npx sequant run 434 -q                                      │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #434  QA verdict in sequant_logs ······ enhancement → spec → exec → qa
+
+  ┌─ Flags ────────────────────�n the issue body — spec phase should formalize them. Alternative "pointer only" approach
+  mentioned but not decided.
+
+  Generated by /assess
+
+  ─── Issue 8 of 8 ───────────────────────────────────────────
+
+  #405 — run.test.ts over-mocking limits integration confidence
+  Status: Open | Labels: refactor, qa | Last activity: 30+ days ago
+
+  → PROCEED — run.test.ts confirmed at 2,293 lines. Issue asks for complementary integration test layer, not a
+  rewrite. Clear ACs for retry, timeout, and pipeline coverage.
+
+  Health:
+    ⚠ Stale — no activity in 30+ days, but issue remains valid (file unchanged)
+
+  AC Coverage: 4 criteria identified
+  - At minimum 1 integration test for runCommand → phase-executor pipeline     NOT_STARTED
+  - Phase retry behavior has test coverage     NOT_STARTED
+  - Timeout handling has test coverage     NOT_STARTED
+  - Existing 2,293-line test suite continues to pass     MET
+
+  ╭                     │
+  ╰──────────────────────────────────────────────────────────────╯
+
+  #405  Integration tests for run.ts ···· refactor, qa → spec → exec → qa
+
+  ┌─ Flags ──────────────────────────────────────────────────────┐
+  │  -q  Integration tests touching real state manager + executor │
+  └──────────────────────────────────────────────────────────────┘
+
+  ⚠ Conflict risk: #458 (open) modifies batch-executor.ts and run.ts — coordinate or wait
+
+  Generated by /assess
+
+  ---
+  Recommended sequencing given conflicts:
+  1. #460 first (tests for current behavior) → #461 (change behavior, update tests)
+  2. #458 (cri
+
+---
+
+I like it. We also need to think about edge cases like deprecated issues, issues with PRs that are deprecated or need review, dependencies, single issue, more planning needed, tags etc. I know we account for some of of this.
