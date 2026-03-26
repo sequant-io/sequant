@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add spec phase retry with 5s backoff for transient failures (#452)
+  - Named constants `SPEC_RETRY_BACKOFF_MS` and `SPEC_EXTRA_RETRIES` for retry configuration
+  - Retry logging with phase name and backoff duration
+  - Only applies to spec phase; other phases unchanged
+- Add parallel vs chain mode decision framework documentation (#452)
+  - Success rate comparison table, trade-off matrix, and when-to-use guidance
+  - Performance warning for chain mode citing 50% success rate
+
 - Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
 - Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
 - Add MCP progress notifications for `sequant_run` with timeout reset (#435)

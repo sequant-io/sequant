@@ -187,6 +187,10 @@ After each issue passes QA, a checkpoint commit is automatically created. This s
 - `--chain` implies `--sequential` (issues must run in order)
 - Cannot be combined with `--batch` mode
 
+**Performance Warning:**
+
+Chain mode has a significantly lower success rate (~50%) compared to parallel mode (~67%) due to failure compounding — if any issue in the chain fails, all subsequent issues are skipped. Use chain mode only when issues have genuine dependencies.
+
 **Warnings:**
 
 A warning is shown for chains longer than 5 issues. Long chains:
