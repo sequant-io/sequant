@@ -807,6 +807,27 @@ CI status affects the final verdict through the standard verdict algorithm:
 
 **Execution mode:** Respect the agent execution mode determined above (see "Agent Execution Mode" section).
 
+#### Documentation Issue Detection
+
+Check if this is a documentation-only issue by reading the `SEQUANT_ISSUE_TYPE` environment variable:
+
+```bash
+issue_type="${SEQUANT_ISSUE_TYPE:-}"
+```
+
+**If `SEQUANT_ISSUE_TYPE=docs`**, use the lighter docs QA pipeline:
+
+- **Skip** type safety sub-agent (no TypeScript changes expected)
+- **Skip** security scan sub-agent (no runtime code changes)
+- **Keep** scope/size check (still useful for docs)
+- **Focus review on:** content accuracy, completeness, formatting, and link validity
+
+**Docs QA sub-agents (1 agent instead of 3):**
+
+1. `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run scope and size checks on the current branch vs main. Check for broken links in changed markdown files. Report: files count, diff size, broken links, size assessment.")`
+
+**If `SEQUANT_ISSUE_TYPE` is not set or is not `docs`**, use the standard pipeline below.
+
 #### If parallel mode enabled:
 
 **Spawn ALL THREE agents in a SINGLE message (one Tool call per agent, all in same response):**

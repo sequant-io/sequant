@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add lighter workflow pipeline for documentation issues (#451)
+  - Docs-labeled issues skip spec phase, running exec → qa directly (like bug fixes)
+  - Propagate `SEQUANT_ISSUE_TYPE=docs` env var to skills for adaptive behavior
+  - QA skill uses lighter sub-agent pipeline for docs (1 agent instead of 3)
 - Add spec phase retry with 5s backoff for transient failures (#452)
   - Named constants `SPEC_RETRY_BACKOFF_MS` and `SPEC_EXTRA_RETRIES` for retry configuration
   - Retry logging with phase name and backoff duration

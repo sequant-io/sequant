@@ -76,6 +76,11 @@ export interface ExecutionConfig {
    * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
    */
   aiderSettings?: AiderSettings;
+  /**
+   * Issue type detected from labels (e.g., "docs").
+   * Propagated as SEQUANT_ISSUE_TYPE env var to skills.
+   */
+  issueType?: string;
 }
 
 /**
