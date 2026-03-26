@@ -32,6 +32,7 @@ import {
   parseRecommendedWorkflow,
   determinePhasesForIssue,
   BUG_LABELS,
+  DOCS_LABELS,
 } from "./phase-mapper.js";
 
 /**
@@ -468,10 +469,19 @@ export async function runIssueWithLogging(
       BUG_LABELS.some((bugLabel) => label.includes(bugLabel)),
     );
 
+    // Check if labels indicate documentation-only work (skip spec)
+    const isDocs = lowerLabels.some((label) =>
+      DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+    );
+
     if (isSimpleBugFix) {
       // Simple bug fix: skip spec, go straight to exec → qa
       phases = ["exec", "qa"];
       log(chalk.gray(`    Bug fix detected: ${phases.join(" → ")}`));
+    } else if (isDocs) {
+      // Documentation issue: skip spec, lighter pipeline
+      phases = ["exec", "qa"];
+      log(chalk.gray(`    Docs issue detected: ${phases.join(" → ")}`));
     } else {
       // Run spec first to get recommended workflow
       log(chalk.gray(`    Running spec to determine workflow...`));
@@ -678,6 +688,15 @@ export async function runIssueWithLogging(
     }
   }
 
+  // Build per-issue config with issue type metadata for skill env propagation
+  const lowerLabelsForType = labels.map((l) => l.toLowerCase());
+  const issueIsDocs = lowerLabelsForType.some((label) =>
+    DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+  );
+  const issueConfig: ExecutionConfig = issueIsDocs
+    ? { ...config, issueType: "docs" }
+    : config;
+
   let iteration = 0;
   const useQualityLoop = config.qualityLoop || detectedQualityLoop;
   const maxIterations = useQualityLoop ? config.maxIterations : 1;
@@ -736,7 +755,7 @@ export async function runIssueWithLogging(
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
-        config,
+        issueConfig,
         sessionId,
         worktreePath,
         shutdownManager,
@@ -868,7 +887,7 @@ export async function runIssueWithLogging(
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
-            config,
+            issueConfig,
             sessionId,
             worktreePath,
             shutdownManager,

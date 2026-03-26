@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
+  - Add "Simulate QA Before PR" checkpoint to exec skill (test coverage, AC literal verification, lint check)
+  - Fix QA false negatives for prompt-only and cross-repo implementations
+  - Add safety check before QA early exit to prevent "NOT FOUND" on valid implementations
+
 ### Added
 
 - Capture structured error context for phase failures — stderr/stdout tail (last 50 lines), exit code, and error category (#447)
@@ -14,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sequant logs --failed` shows error category and stderr tail (5 lines default, 50 with `--verbose`)
   - `sequant stats` groups failures by category (`context_overflow`, `api_error`, `hook_failure`, `build_error`, `timeout`, `unknown`)
   - Backward-compatible: old logs without `errorContext` continue to work
+- Add lighter workflow pipeline for documentation issues (#451)
+  - Docs-labeled issues skip spec phase, running exec → qa directly (like bug fixes)
+  - Propagate `SEQUANT_ISSUE_TYPE=docs` env var to skills for adaptive behavior
+  - QA skill uses lighter sub-agent pipeline for docs (1 agent instead of 3)
+- Add spec phase retry with 5s backoff for transient failures (#452)
+  - Named constants `SPEC_RETRY_BACKOFF_MS` and `SPEC_EXTRA_RETRIES` for retry configuration
+  - Retry logging with phase name and backoff duration
+  - Only applies to spec phase; other phases unchanged
+- Add parallel vs chain mode decision framework documentation (#452)
+  - Success rate comparison table, trade-off matrix, and when-to-use guidance
+  - Performance warning for chain mode citing 50% success rate
+
 - Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
 - Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
 - Add MCP progress notifications for `sequant_run` with timeout reset (#435)

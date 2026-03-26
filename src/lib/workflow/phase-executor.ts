@@ -104,6 +104,17 @@ const ISOLATED_PHASES: Phase[] = [
 const COLD_START_THRESHOLD_SECONDS = 60;
 const COLD_START_MAX_RETRIES = 2;
 
+/**
+ * Spec-specific retry configuration.
+ * Spec failures have a higher failure rate (~8.6%) than other phases due to
+ * transient GitHub API issues and rate limits. One extra retry with backoff
+ * recovers most of these without user intervention.
+ */
+/** @internal Exported for testing only */
+export const SPEC_RETRY_BACKOFF_MS = 5000;
+/** @internal Exported for testing only */
+export const SPEC_EXTRA_RETRIES = 1;
+
 export function parseQaVerdict(output: string): QaVerdict | null {
   if (!output) return null;
 
@@ -261,6 +272,11 @@ async function executePhase(
   env.SEQUANT_ORCHESTRATOR = "sequant-run";
   env.SEQUANT_PHASE = phase;
 
+  // Propagate issue type for skills to adapt behavior (e.g., lighter QA for docs)
+  if (config.issueType) {
+    env.SEQUANT_ISSUE_TYPE = config.issueType;
+  }
+
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
   // (Issue #283: ora's stop() clears the current line, which can truncate output when
@@ -408,6 +424,9 @@ export async function executePhaseWithRetry(
   spinner?: PhaseSpinner,
   /** @internal Injected for testing — defaults to module-level executePhase */
   executePhaseFn: typeof executePhase = executePhase,
+  /** @internal Injected for testing — defaults to setTimeout-based delay */
+  delayFn: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
 ): Promise<PhaseResult & { sessionId?: string }> {
   // Skip retry logic if explicitly disabled
   if (config.retry === false) {
@@ -438,8 +457,18 @@ export async function executePhaseWithRetry(
 
     const duration = lastResult.durationSeconds ?? 0;
 
-    // Success or genuine failure (took long enough to be real work)
-    if (lastResult.success || duration >= COLD_START_THRESHOLD_SECONDS) {
+    // Success → return immediately
+    if (lastResult.success) {
+      return lastResult;
+    }
+
+    // Genuine failure (took long enough to be real work) → skip cold-start retries.
+    // For spec phase, break to allow Phase 3 (spec-specific retry) to run.
+    // For other phases, return immediately — no further retries.
+    if (duration >= COLD_START_THRESHOLD_SECONDS) {
+      if (phase === "spec") {
+        break;
+      }
       return lastResult;
     }
 
@@ -492,7 +521,49 @@ export async function executePhaseWithRetry(
       return retryResult;
     }
 
-    // Both attempts failed - return original error for better diagnostics
+    // Update lastResult for Phase 3 (spec retry)
+    lastResult = retryResult;
+
+    // Non-spec phases: return original error after MCP fallback exhausted
+    if (phase !== "spec") {
+      return {
+        ...lastResult!,
+        error: originalError,
+      };
+    }
+  }
+
+  // Phase 3: Spec-specific retry — spec has a higher transient failure rate
+  // than other phases (~8.6%), so one extra retry with backoff recovers most cases.
+  if (phase === "spec" && !lastResult!.success) {
+    for (let i = 0; i < SPEC_EXTRA_RETRIES; i++) {
+      console.log(
+        chalk.yellow(
+          `\n    ⟳ Spec phase failed, retrying with ${SPEC_RETRY_BACKOFF_MS}ms backoff... (spec retry ${i + 1}/${SPEC_EXTRA_RETRIES})`,
+        ),
+      );
+
+      await delayFn(SPEC_RETRY_BACKOFF_MS);
+
+      const specRetryResult = await executePhaseFn(
+        issueNumber,
+        phase,
+        config,
+        sessionId,
+        worktreePath,
+        shutdownManager,
+        spinner,
+      );
+
+      if (specRetryResult.success) {
+        console.log(chalk.green(`    ✓ Spec phase succeeded on retry`));
+        return specRetryResult;
+      }
+
+      lastResult = specRetryResult;
+    }
+
+    // All spec retries exhausted — return with original error for diagnostics
     return {
       ...lastResult!,
       error: originalError,
