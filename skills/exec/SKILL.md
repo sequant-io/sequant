@@ -590,23 +590,21 @@ echo "Current branch: $CURRENT_BRANCH"
 
 ### 3e2. Simulate QA Before PR (REQUIRED)
 
-**Purpose:** Prevent first-pass QA failures by simulating the QA reviewer's perspective before creating a PR. Root cause analysis shows 62% of QA failures are caused by gaps that exec could have caught with deliberate self-verification.
+**Purpose:** Prevent first-pass QA failures by simulating the QA reviewer's perspective before creating a PR. Root cause analysis of multi-attempt QA issues (#448) found that the majority of first-pass failures stem from gaps exec could have caught with deliberate self-verification.
 
-**Top 3 failure patterns exec must check for:**
+**Top failure patterns exec must check for (from analysis of 6 multi-attempt issues):**
 
 | Pattern | Frequency | What to check |
 |---------|-----------|---------------|
-| Test coverage gaps | 35% of failures | Changed files have corresponding tests |
-| Incomplete AC evidence | 30% of failures | Each AC has file:line proof, not just assertions |
-| Lint/build issues | 20% of failures | `npm run lint` + `npm run build` pass locally |
+| Test coverage gaps | 50% (3/6 issues) | Changed files have corresponding tests |
+| Incomplete self-verification | 17% (1/6 issues) | Each AC verified against literal wording, not just spirit |
+| Lint/build not run pre-PR | 17% (1/6 issues) | `npm run lint` + `npm run build` pass locally |
+
+*Note: Remaining 33% were QA detection issues, addressed separately in QA skill.*
 
 **Simulate QA Checklist (answer each before creating PR):**
 
-1. **AC Literal Verification:** For each AC, re-read the original AC text word-by-word. Does the implementation satisfy the *literal wording*, not just the spirit?
-   - Common miss: AC says "tests for X" but tests only cover Y (a related but different file)
-   - Common miss: AC says "config option" but option is only in TypeScript interface, not wired to CLI
-
-2. **Test-to-Change Alignment:** For each source file you modified:
+1. **Test-to-Change Alignment:** For each source file you modified:
    ```bash
    # List changed source files (excluding tests)
    changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.(test|spec)\.' || true)
@@ -623,7 +621,7 @@ echo "Current branch: $CURRENT_BRANCH"
    - If critical files lack tests, add tests before PR creation
    - If tests exist but don't cover the specific change, note as known gap
 
-3. **QA Reviewer Perspective:** Ask yourself:
+2. **QA Reviewer Perspective:** Ask yourself:
    - "If I were reviewing this PR for the first time, what would I flag?"
    - "Are there any 'I'll fix it later' shortcuts that QA will catch?"
    - "Did I actually run the feature, or just verify it compiles?"
