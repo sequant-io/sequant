@@ -1,0 +1,30 @@
+this is running but hung and not showing updates. I thought we just fixed this. Look at out .entire logs
+
+---
+
+this is running but hung and not showing updates. I thought we just fixed this. Look at out .entire logs\
+(base) tony@Tambras-MacBook-Air sequant % npx sequant run 461 460 -q
+╭──────────────────╮
+│ SEQUANT WORKFLOW │
+╰──────────────────╯
+  Stack: generic
+  Phases: auto-detect from labels
+  Mode: parallel (concurrency: 3)
+  Quality loop: enabled (max 3 iterations)
+  Logging: JSON (run 338b52b0...)
+  State tracking: enabled
+  Issues: #461, #460
+  Worktree isolation: enabled
+  Base branch: main
+
+  📂 Preparing worktrees from main...
+  Worktrees: 2 created, 0 reused
+  Progress: #461 ⏳  #460 ⏳
+
+---
+
+It's executing but we still need visibility, updates, status. Our updates worked perfectly before we changed status for the mcp. its def a regression
+
+---
+
+update the issue
