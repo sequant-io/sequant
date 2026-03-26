@@ -466,12 +466,12 @@ export async function runIssueWithLogging(
     // Check if labels indicate a simple bug/fix (skip spec entirely)
     const lowerLabels = labels.map((l) => l.toLowerCase());
     const isSimpleBugFix = lowerLabels.some((label) =>
-      BUG_LABELS.some((bugLabel) => label.includes(bugLabel)),
+      BUG_LABELS.some((bugLabel) => label === bugLabel),
     );
 
     // Check if labels indicate documentation-only work (skip spec)
     const isDocs = lowerLabels.some((label) =>
-      DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+      DOCS_LABELS.some((docsLabel) => label === docsLabel),
     );
 
     if (isSimpleBugFix) {
@@ -691,7 +691,7 @@ export async function runIssueWithLogging(
   // Build per-issue config with issue type metadata for skill env propagation
   const lowerLabelsForType = labels.map((l) => l.toLowerCase());
   const issueIsDocs = lowerLabelsForType.some((label) =>
-    DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+    DOCS_LABELS.some((docsLabel) => label === docsLabel),
   );
   const issueConfig: ExecutionConfig = issueIsDocs
     ? { ...config, issueType: "docs" }

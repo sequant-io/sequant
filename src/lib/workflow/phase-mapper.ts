@@ -60,27 +60,27 @@ export function detectPhasesFromLabels(labels: string[]): {
 
   // Check for bug/fix labels → exec → qa (skip spec)
   const isBugFix = lowerLabels.some((label) =>
-    BUG_LABELS.some((bugLabel) => label.includes(bugLabel)),
+    BUG_LABELS.some((bugLabel) => label === bugLabel),
   );
 
   // Check for docs labels → exec → qa (skip spec)
   const isDocs = lowerLabels.some((label) =>
-    DOCS_LABELS.some((docsLabel) => label.includes(docsLabel)),
+    DOCS_LABELS.some((docsLabel) => label === docsLabel),
   );
 
   // Check for UI labels → add test phase
   const isUI = lowerLabels.some((label) =>
-    UI_LABELS.some((uiLabel) => label.includes(uiLabel)),
+    UI_LABELS.some((uiLabel) => label === uiLabel),
   );
 
   // Check for complex labels → enable quality loop
   const isComplex = lowerLabels.some((label) =>
-    COMPLEX_LABELS.some((complexLabel) => label.includes(complexLabel)),
+    COMPLEX_LABELS.some((complexLabel) => label === complexLabel),
   );
 
   // Check for security labels → add security-review phase
   const isSecurity = lowerLabels.some((label) =>
-    SECURITY_LABELS.some((secLabel) => label.includes(secLabel)),
+    SECURITY_LABELS.some((secLabel) => label === secLabel),
   );
 
   // Build phase list
@@ -172,7 +172,7 @@ export function parseRecommendedWorkflow(output: string): {
  */
 export function hasUILabels(labels: string[]): boolean {
   return labels.some((label) =>
-    UI_LABELS.some((uiLabel) => label.toLowerCase().includes(uiLabel)),
+    UI_LABELS.some((uiLabel) => label.toLowerCase() === uiLabel),
   );
 }
 
