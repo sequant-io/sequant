@@ -87,6 +87,12 @@ All existing flags continue to work unchanged:
 | `--all` | Remove all orphaned entries |
 | `--offline` | Skip GitHub queries (pure local state) |
 
+## Concurrent Access Safety
+
+Reconciliation is safe to run during an active `sequant run`. The entire read-modify-write cycle (including GitHub API calls) is wrapped in a file lock, so it never overwrites phase updates from a running workflow.
+
+This means you can call `sequant status` or `sequant_status` (MCP) while issues are executing without risking state regression.
+
 ## MCP Tool
 
 The `sequant_status` MCP tool uses the same reconciliation pipeline. Every call reconciles with GitHub before returning data.
@@ -122,4 +128,5 @@ Response includes:
 
 ---
 
+*Updated for Issue #458 on 2026-03-26 (concurrent access safety)*
 *Generated for Issue #423 on 2026-03-25*
