@@ -272,6 +272,11 @@ async function executePhase(
   env.SEQUANT_ORCHESTRATOR = "sequant-run";
   env.SEQUANT_PHASE = phase;
 
+  // Propagate issue type for skills to adapt behavior (e.g., lighter QA for docs)
+  if (config.issueType) {
+    env.SEQUANT_ISSUE_TYPE = config.issueType;
+  }
+
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
   // (Issue #283: ora's stop() clears the current line, which can truncate output when
