@@ -4,7 +4,7 @@ description: "Issue triage and status assessment - analyze current state, detect
 license: MIT
 metadata:
   author: sequant
-  version: "2.0"
+  version: "3.0"
 allowed-tools:
   - Read
   - Glob
@@ -23,442 +23,453 @@ When invoked as `/assess <issue-numbers>`, your job is to:
 
 1. Gather issue context (GitHub, git, codebase)
 2. Run health checks to surface red flags
-3. Recommend exactly ONE action from a fixed vocabulary
-4. If the action is PROCEED, output the full workflow plan with CLI command
-5. Show reasoning for the recommendation
+3. Recommend exactly ONE action per issue from a fixed vocabulary
+4. Output a scannable dashboard (batch) or focused summary (single)
+5. Provide copy-pasteable CLI commands for actionable issues
 
 **This command is read-only** — it analyzes and recommends but never takes action.
 
 ## Invocation
 
-- `/assess 123` — Assess a single issue
-- `/assess 152 153` — Assess multiple issues (each independently)
+- `/assess 123` — Assess a single issue (detailed mode)
+- `/assess 152 153 154` — Assess multiple issues (dashboard mode)
 - `/solve 123` — Alias for `/assess` (deprecated, will show notice)
 
 ## Fixed Action Vocabulary
 
-Every `/assess` output recommends exactly ONE of these actions:
+Every issue gets exactly ONE action:
 
-| Action | Meaning | When |
-|--------|---------|------|
-| **PROCEED** | Ready for work — here's the workflow | Issue is clear, codebase matches, no blockers |
-| **CLOSE** | Issue is outdated, resolved, or duplicate | Resolved by another PR, references don't exist, duplicates closed issue |
-| **MERGE** | Overlaps with another open issue | Two issues cover 70%+ same scope, or one is a subset of the other |
-| **REWRITE** | Existing PR/branch needs a fresh start | PR too far behind main, touched files diverged, stale abandoned PR |
-| **CLARIFY** | Issue needs more information before work | No ACs, ambiguous requirements, missing repro steps, multiple valid interpretations |
-| **PARK** | Valid but not actionable right now | Blocked on external dep, blocked on another issue, explicitly deferred |
+| Action | When |
+|--------|------|
+| **PROCEED** | Clear requirements, codebase matches, no blockers |
+| **CLOSE** | Resolved by another PR, duplicate, outdated |
+| **MERGE** | Two issues cover 70%+ same scope |
+| **REWRITE** | Existing PR/branch too stale, needs fresh start |
+| **CLARIFY** | No ACs, ambiguous requirements, unresolved questions |
+| **PARK** | Blocked on dependency, deferred, not automatable |
 
 ## Assessment Process
 
 ### Step 1: Context Gathering
 
-**From GitHub:**
+**From GitHub (parallel for all issues):**
 
 ```bash
-gh issue view <issue-number> --json title,body,labels,state,comments,assignees
+gh issue view <N> --json title,body,labels,state,comments,assignees
 ```
 
-- Issue title, body, labels, status
+- Title, body, labels, status, all comments
 - Acceptance Criteria (explicit or inferred)
-- **All comments** — read every comment for plan drafts, progress updates, QA reviews, clarifications, additional AC
 - Last activity timestamp
-- Assigned developer(s)
 
-**From Git:**
+**From Git (parallel):**
 
 ```bash
-git branch -a | grep <issue-number> || true
-git worktree list | grep <issue-number> || true
-gh pr list --search "in:title <issue-number>" || true
+git branch -a | grep <N> || true
+git worktree list | grep <N> || true
+gh pr list --search "<N> in:title" --json number,title,state,headRefName,mergeable || true
 ```
 
-- If branch exists: `git log --oneline feature/<issue-number>*`
-- If PR exists: `gh pr view <pr-number> --json state,mergeable,commits`
+- If branch exists: `git log --oneline main..<branch>`
+- If PR exists: `gh pr view <pr> --json state,mergedAt,mergeable,commits`
 
 **From Codebase:**
 
-- Look for TODOs mentioning the issue using the Grep tool: `Grep(pattern="TODO.*#<issue-number>")`
-- Check for test files related to the feature
-- Identify modified files (if branch exists)
+- Grep for TODOs: `Grep(pattern="TODO.*#<N>")`
+- Check files referenced in issue body exist
+- Identify modified files if branch exists
 
 ### Step 2: Health Checks
 
-Surface red flags that inform the action recommendation:
+Surface red flags. Only track signals that change the recommendation.
 
-#### Codebase Match
 | Signal | Detection | Implication |
 |--------|-----------|-------------|
-| Referenced files/APIs don't exist | Glob/Grep for paths mentioned in issue body | Issue may be outdated |
-| Referenced files changed recently | `git log` on mentioned paths | May have been addressed |
-| Described behavior now works differently | Codebase analysis | Verify still relevant |
-
-#### PR / Branch Health
-| Signal | Detection | Implication |
-|--------|-----------|-------------|
-| PR has merge conflicts | `gh pr view` status | Needs rebase or rewrite |
-| PR is far behind main (100+ commits) | `git rev-list --count main..pr-branch` | Likely needs rewrite |
-| PR touched files that diverged on main | `git diff --name-only` cross-reference | Rebase will be painful |
-| PR/branch stale (30+ days no activity) | Timestamps | Consider fresh start |
-| Draft PR with partial work | PR status | Assess whether to continue |
-| Worktree with uncommitted work | `git worktree list` + status check | Abandoned work, clean up |
-
-#### Overlap / Redundancy
-| Signal | Detection | Implication |
-|--------|-----------|-------------|
-| Another open issue covers similar scope | Compare titles/bodies of open issues | Consider merging |
-| Duplicates a closed issue | Compare against recently closed | Close as duplicate |
-| Solved as side effect of another PR | Cross-reference changed files | Verify and close |
-
-#### Staleness / Blockers
-| Signal | Detection | Implication |
-|--------|-----------|-------------|
-| No activity in 14+ days | Timestamps | Flag as stale |
-| Blocked on another issue | Issue body/comments mention dependencies | Park until unblocked |
-| Blocked on external dependency | Comments indicate external blocker | Park with reason |
-| Open questions unanswered | Comment thread analysis | Clarify before proceeding |
+| Referenced files don't exist | Glob/Grep | Issue may be outdated → CLOSE |
+| PR has merge conflicts | `gh pr view` | Needs rebase → REWRITE |
+| PR 100+ commits behind | `git rev-list --count` | Likely needs fresh start → REWRITE |
+| Another issue covers same scope | Compare open issues | Consider → MERGE |
+| Duplicate of closed issue | Compare recently closed | → CLOSE |
+| No ACs, vague requirements | Issue body analysis | → CLARIFY |
+| Open questions unanswered | Comment thread | → CLARIFY |
+| Blocked on another issue | Body/comments mention deps | → PARK |
+| No activity 14+ days | Timestamps | Flag as stale (warning only) |
+| Stale worktree/branch from merged PR | Worktree list + PR state | → Cleanup annotation |
 
 ### Step 3: Action Selection
 
-Based on health checks and context, select the most appropriate action:
+**Decision tree (priority order):**
+1. No ACs, vague requirements → **CLARIFY**
+2. Blocked on dependency → **PARK**
+3. Resolved by another PR → **CLOSE**
+4. 70%+ overlap with open issue → **MERGE**
+5. PR 100+ commits behind or files diverged → **REWRITE**
+6. Clear requirements, codebase matches → **PROCEED**
 
-**Priority order when multiple signals conflict:**
-1. Most actionable action wins
-2. Note secondary signals in the Health section
+### Step 4: Workflow Detection (PROCEED/REWRITE only)
 
-**Decision tree:**
-- No ACs, vague requirements → **CLARIFY**
-- Blocked on dependency → **PARK**
-- Resolved by another PR → **CLOSE**
-- Duplicates or 70%+ overlaps → **MERGE**
-- PR 100+ commits behind or files diverged → **REWRITE**
-- Clear requirements, codebase matches → **PROCEED**
+**Phase selection from labels:**
 
-### Step 4: Phase Detection (for PROCEED only)
+| Labels | Workflow |
+|--------|----------|
+| bug, fix, hotfix | `exec → qa` |
+| docs, documentation | `exec → qa` |
+| ui, frontend + enhancement | `spec → exec → test → qa` |
+| security, auth | `spec → sec → exec → qa` |
+| complex, refactor, breaking | `spec → exec → qa` + `-q` |
+| enhancement, feature (default) | `spec → exec → qa` |
 
-Determine the current phase and recommended workflow:
+**Skip spec when:** bug/docs label, OR spec comment already exists on issue.
 
-**Phase Detection:**
-- **Planning** — No plan comment, AC unclear → recommend `/spec` first
-- **Implementation** — Plan exists, branch with commits → resume `/exec`
-- **QA** — Implementation complete, no QA review → run `/qa`
-- **Blocked** — No activity 7+ days, open questions, dependency
-- **Complete** — PR merged, AC all met, issue closed
+**Resume detection:** Branch exists with commits ahead of main → mark as resume (`◂`).
 
-**Workflow Selection (from labels):**
+**PR review detection:** Open PR with implementation complete → mark as review-needed (`◂ qa`).
 
-| Issue Type | Labels | Workflow |
-|------------|--------|----------|
-| UI Feature | ui, frontend, admin | spec → exec → test → qa |
-| UI Feature (testable) | ui + enhancement | spec → testgen → exec → test → qa |
-| Backend Feature | backend, api | spec → exec → qa |
-| New Feature (testable) | enhancement, feature | spec → testgen → exec → qa |
-| Bug Fix | bug, fix | exec → qa (or full if complex) |
-| Complex Feature | complex, refactor | `--quality-loop` or fullsolve |
-| Documentation | docs | exec → qa |
+**Quality loop (`-q`):** Recommend for everything except simple bug fixes and docs-only.
 
-**Quality Loop Detection:**
-- **Recommend `-q`** for most issues (enhancement, feature, refactor, complex, multi-file changes)
-- **Skip `-q`** only for simple bug fixes (`bug`/`fix` label only) or docs-only changes
-
-**Flag Detection:**
-- `--chain` — When multiple issues have explicit dependencies
-- `--qa-gate` — When chain has 3+ issues with tight dependencies
-- `--base <branch>` — When issue references a feature branch
-- `--testgen` — When ACs need automated tests (enhancement/feature labels)
+**Other flags:**
+- `--chain` — Multiple issues with explicit dependencies
+- `--qa-gate` — Chain with 3+ tightly coupled issues
+- `--base <branch>` — Issue references a feature branch
 
 ### Step 5: Conflict Detection
 
 ```bash
-# List open worktrees
 git worktree list --porcelain 2>/dev/null | grep "^worktree" | cut -d' ' -f2 || true
-
-# For each worktree, get changed files
-git -C <worktree-path> diff --name-only main...HEAD 2>/dev/null || true
 ```
 
-If overlap detected with files this issue likely touches, include in output.
+For each active worktree, check `git diff --name-only main...HEAD` for file overlap with assessed issues.
+
+---
 
 ## Output Format
 
-**Design Principle:** The action is the headline. Supporting context follows in priority order. Scannable in under 5 seconds.
+### Batch Mode (2+ issues)
 
-### When action is PROCEED
+**Design principle:** Dashboard first. Copy-pasteable commands. Silence means healthy.
+
+```
+ #    Action     Reason                              Run
+<N>   <ACTION>   <short reason>                       <workflow or symbol>
+<N>   <ACTION>   <short reason>                       <workflow or symbol>
+...
+────────────────────────────────────────────────────────────────
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run <N1> <N2> <flags>                           │
+│  npx sequant run <N3> <flags>              # resume          │
+╰──────────────────────────────────────────────────────────────╯
+
+────────────────────────────────────────────────────────────────
+Order: <N> → <N> (<shared file>) · <N> → <N> (<dependency>)
+
+⚠ #<N>  <warning>
+⚠ #<N>  <warning>
+────────────────────────────────────────────────────────────────
+Cleanup:
+  <executable command>                 # reason
+  <executable command>                 # reason
+────────────────────────────────────────────────────────────────
+
+<!-- For posting to individual issues, use standard marker format: -->
+<!-- assess:action=<ACTION> -->
+<!-- assess:phases=<csv> -->
+<!-- assess:quality-loop=<bool> -->
+<!-- assess:skip-spec=<bool> -->
+```
+
+#### Run Column Symbols
+
+| Symbol | Meaning | Example |
+|--------|---------|---------|
+| `spec → exec → qa` | Full workflow | Standard feature |
+| `exec → qa` | Skip spec | Bug, docs, or spec exists |
+| `◂ exec → qa` | Resume existing work | Branch has commits |
+| `◂ qa` | PR needs review/QA | Open PR, impl done |
+| `⟳ spec → exec → qa` | Restart (fresh) | Stale PR abandoned |
+| `→ #N` | Merge into target | Overlapping issue |
+| `?` | Needs info first | Missing ACs |
+| `‖` | Blocked/deferred | Dependency or manual |
+| `—` | No action needed | Already closed/merged |
+
+#### Command Block Rules
+
+1. Only PROCEED and REWRITE issues get commands
+2. Group by identical phases + flags → same line
+3. Resume issues get `# resume` comment
+4. Rewrite issues get `# restart` comment
+5. Chain mode issues use `--chain` flag
+6. If ALL issues share the same workflow, emit a single command
+
+#### Annotation Rules
+
+- **`Order:`** — Only when sequencing matters (shared files or dependencies). Format: `A → B (reason)` joined by ` · `
+- **`⚠` warnings** — Only non-obvious signals (complexity, staleness, dual concerns). One line each. Prefix with issue number.
+- **`Cleanup:`** — Only when actionable (stale branches, merged-but-open issues, label changes). Show as executable commands with `# reason` comments.
+- **Omit entire section** (including its separator) when no annotations of that type exist.
+- **"All clear" is silence** — no annotation means no issues.
+
+#### Batch Example (mixed states)
+
+```
+ #    Action     Reason                              Run
+ 462  PARK       Manual measurement task              ‖
+ 461  PROCEED    Exact label matching                  exec → qa
+ 460  PROCEED    batch-executor tests                  exec → qa
+ 458  PROCEED    Parallel UX + race condition          spec → exec → qa
+ 447  CLOSE      PR #457 merged                        —
+ 443  PROCEED    Consolidate gh calls                  spec → exec → qa
+ 412  PROCEED    Auth token refresh                    ◂ exec → qa
+ 405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
+────────────────────────────────────────────────────────────────
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 458 443 -q                                  │
+│  npx sequant run 412 -q --skip-spec          # resume        │
+│  npx sequant run 405 -q                      # restart       │
+╰──────────────────────────────────────────────────────────────╯
+
+────────────────────────────────────────────────────────────────
+Order: 460 → 461 (batch-executor.ts)
+
+⚠ #458  Dual concern (UX + race) across 4 files
+⚠ #405  Stale 30+ days, ACs still valid
+────────────────────────────────────────────────────────────────
+Cleanup:
+  git worktree remove .../447-...      # merged, stale worktree
+  gh issue close 447                   # PR #457 merged
+  gh issue edit 461 --add-label cli    # missing label
+────────────────────────────────────────────────────────────────
+
+<!-- #462 assess:action=PARK -->
+<!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #460 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #447 assess:action=CLOSE -->
+<!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #412 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
+```
+
+#### Batch Example (all clean)
+
+When every issue is PROCEED with no warnings, the output is minimal:
+
+```
+ #    Action     Reason                              Run
+ 461  PROCEED    Exact label matching                  exec → qa
+ 460  PROCEED    batch-executor tests                  exec → qa
+ 443  PROCEED    Consolidate gh calls                  spec → exec → qa
+────────────────────────────────────────────────────────────────
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 443 -q                                      │
+╰──────────────────────────────────────────────────────────────╯
+
+────────────────────────────────────────────────────────────────
+
+<!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #460 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+```
+
+---
+
+### Single Mode (1 issue)
+
+More context since you're focused on one issue. Separators between every section.
+
+#### PROCEED
 
 ```
 #<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
 
 → PROCEED — <one-line reason>
 
-<!-- CONDITIONAL: When ALL health checks pass, show single collapsed line. When ANY check has ⚠, expand individual signals. -->
-✓ All clear
-<!-- OR when warnings exist: -->
-Health:
-  ⚠ <warning signal>
-  ✓ <related passing check for context>
-
-AC Coverage: <N> criteria identified
-  - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
-  - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
-
-<!-- CLI command: issues as positional args, omit default phases (spec,exec,qa), only non-default flags -->
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run <N1> <N2> <NON-DEFAULT-FLAGS>               │
+│  npx sequant run <N> <flags>                                 │
 ╰──────────────────────────────────────────────────────────────╯
 
-#<N>  <Title truncated> ·········· <labels> → <workflow>
+<phases> · <N> ACs · <flag reasoning>
+────────────────────────────────────────────────────────────────
+⚠ <warning if any>
+⚠ Conflict: #<N> also modifies <path>
+────────────────────────────────────────────────────────────────
 
-<!-- CONDITIONAL: Only show if at least one flag is enabled. List ONLY enabled flags (omit disabled). No flags → omit entire table. -->
-┌─ Flags ──────────────────────────────────────────────────────┐
-│  <flag>  <one-line reasoning>                                 │
-└──────────────────────────────────────────────────────────────┘
-
-<!-- CONDITIONAL: Only if alternatives worth showing -->
-Also consider:
-  <flag>     <one-line explanation>
-
-<!-- CONDITIONAL: Only if conflict detected -->
-⚠ Conflict risk: #<N> (open) modifies <path> — coordinate or wait
-
-<!-- CONDITIONAL: Only show when label changes are suggested. Omit entirely when no changes needed. -->
-Label Review:
-  Suggested: +<label> -<label>
-  Reason: <why>
-
-<!-- CONDITIONAL: Only show when confidence is not High, or when there are information gaps. Omit for High confidence with no gaps. -->
-Confidence: <Medium|Low>
-  <information gaps>
-
-<!-- assess:phases=<comma-separated> -->
 <!-- assess:action=PROCEED -->
-<!-- assess:skip-spec=<true/false> -->
-<!-- assess:browser-test=<true/false> -->
-<!-- assess:quality-loop=<true/false> -->
-
-*Generated by `/assess`*
+<!-- assess:phases=<csv> -->
+<!-- assess:quality-loop=<bool> -->
 ```
 
-### When action is CLOSE
+If no warnings exist, omit the warning section and its separator:
+
+```
+#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ PROCEED — Both root causes confirmed in codebase
+
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run 458 -q                                      │
+╰──────────────────────────────────────────────────────────────╯
+
+spec → exec → qa · 8 ACs · -q (dual concern)
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PROCEED -->
+<!-- assess:phases=spec,exec,qa -->
+<!-- assess:quality-loop=true -->
+```
+
+#### CLOSE
 
 ```
 #<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
 
 → CLOSE — <reason with evidence>
-
-Health:
-  ⚠ <signal that triggered CLOSE>
-  ℹ Verify with issue author before closing
-
-Confidence: <High|Medium|Low>
+────────────────────────────────────────────────────────────────
+Cleanup:
+  <executable commands>                # reason
+────────────────────────────────────────────────────────────────
 
 <!-- assess:action=CLOSE -->
-
-*Generated by `/assess`*
 ```
 
-### When action is MERGE
+#### CLARIFY
 
 ```
 #<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
-
-→ MERGE — Significant overlap with #<other>.
-  <description of overlap>
-
-Health:
-  ⚠ <overlap signals>
-
-Confidence: <High|Medium|Low>
-
-<!-- assess:action=MERGE -->
-
-*Generated by `/assess`*
-```
-
-### When action is REWRITE
-
-```
-#<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
-
-→ REWRITE — <reason>
-  <details about PR/branch state>
-
-Health:
-  ⚠ <PR/branch health signals>
-
-AC Coverage: <N> criteria (from prior work)
-  - <AC>  <status>
-
-If restarting:
-  npx sequant run <N> <flags>
-
-Confidence: <High|Medium|Low>
-
-<!-- assess:action=REWRITE -->
-
-*Generated by `/assess`*
-```
-
-### When action is CLARIFY
-
-```
-#<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
 
 → CLARIFY — <what's missing>
-  Need: <specific information required>
 
-Health:
-  ⚠ <clarity signals>
-
-Confidence: <High|Medium|Low>
+Need: <specific information required>
+  <details about why this blocks work>
+────────────────────────────────────────────────────────────────
 
 <!-- assess:action=CLARIFY -->
-
-*Generated by `/assess`*
 ```
 
-### When action is PARK
+#### PARK
 
 ```
 #<N> — <Title>
-Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
 
 → PARK — <reason>
   Resume after: <condition>
-
-Health:
-  ⚠ <blocker signals>
-
-Confidence: <High|Medium|Low>
+────────────────────────────────────────────────────────────────
 
 <!-- assess:action=PARK -->
-
-*Generated by `/assess`*
 ```
 
-## Multi-Issue Support
-
-When given multiple issues (`/assess 152 153`), assess each independently with its own action recommendation.
-
-**When 2+ issues are assessed**, start with a scannable summary table before per-issue details:
+#### MERGE
 
 ```
-Issue   Action    Workflow
-#152    PROCEED   spec → exec → qa  -q
-#153    REWRITE   PR 200+ commits behind main
+#<N> — <Title>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
+
+→ MERGE → #<target> — <overlap description>
+  This issue: <scope summary>
+  Target:     <scope summary>
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=MERGE -->
 ```
 
-Then show per-issue details:
+#### REWRITE
 
 ```
-─── Issue 1 of 2 ───────────────────────────────────────────
+#<N> — <Title>
+<State> · <labels>
+────────────────────────────────────────────────────────────────
 
-#152 — Add user dashboard
-→ PROCEED — Issue is clear, codebase matches.
-[... full PROCEED output ...]
+→ REWRITE — <reason>
 
-─── Issue 2 of 2 ───────────────────────────────────────────
+╭──────────────────────────────────────────────────────────────╮
+│  npx sequant run <N> <flags>                 # fresh start   │
+╰──────────────────────────────────────────────────────────────╯
 
-#153 — Update auth middleware
-→ REWRITE — PR #91 is 200+ commits behind main.
-[... full REWRITE output ...]
+<phases> · <N> ACs
+────────────────────────────────────────────────────────────────
+⚠ <stale/diverged details>
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=REWRITE -->
+<!-- assess:phases=<csv> -->
+<!-- assess:quality-loop=<bool> -->
 ```
 
-## Label Review
+---
 
-Analyze current labels vs issue content and suggest updates:
+## Section Visibility Rules
 
-**Label Detection Hints:**
-- `refactor` — Keywords: "refactor", "restructure", "reorganize", "cleanup", "migration"
-- `complex` — Keywords: "complex", "major", "large-scale", "breaking"
-- `ui`/`frontend` — Keywords: "component", "UI", "page", "form", "button", "modal"
-- `backend` — Keywords: "API", "database", "query", "server", "endpoint"
-- `cli` — Keywords: "command", "CLI", "script", "terminal"
-- `docs` — Keywords: "documentation", "README", "guide", "tutorial"
-- `security` — Keywords: "auth", "permission", "vulnerability", "secret", "token"
-- `bug` — Keywords: "fix", "broken", "error", "crash", "doesn't work"
+| Section | Show when |
+|---------|-----------|
+| Command block | At least one PROCEED or REWRITE issue |
+| `Order:` | File conflicts or dependencies require sequencing |
+| `⚠` warnings | Non-obvious signals exist |
+| `Cleanup:` | Stale branches, merged-but-open issues, or label changes |
+| Separators | Between sections that are both shown; omit if adjacent section is omitted |
 
-**When to Suggest Label Updates:**
-- Issue body contains keywords not reflected in current labels
-- Complexity doesn't match labels (complex/refactor/breaking)
-- Quality loop would benefit from additional labels
-- Area doesn't match current labels (ui/backend/cli/docs)
+Every separator and section is conditional. If there are no warnings and no cleanup, the output is just: table → separator → command block → separator → markers.
 
-**Suggested Action (when applicable):**
-```bash
-gh issue edit <N> --add-label <label>
-```
-
-## Meta-Assessment
-
-After providing the assessment, briefly note:
-
-- **Confidence Level:** How certain are you about the recommendation? (High/Medium/Low) — **For PROCEED:** omit when High with no information gaps (per template conditional)
-- **Information Gaps:** What information would improve this assessment? — omit when none
-- **Alternative Interpretations:** Are there other ways to interpret the current state? — omit when none
-
-## Persist Analysis to Issue Comments
-
-**After displaying output**, prompt the user to save:
-
-```
-Save this assessment to the issue? [Y/n]
-```
-
-Use the `AskUserQuestion` tool with options "Yes (Recommended)" and "No".
-
-**If user confirms (Y):**
-
-Post the structured comment with machine-readable HTML markers to each analyzed issue using `gh issue comment`.
-
-**If user declines (N):** Skip posting.
-
-### Machine-Readable Markers
-
-| Marker | Values | Consumed By |
-|--------|--------|-------------|
-| `<!-- assess:phases=... -->` | Comma-separated phase names | `/spec` phase detection |
-| `<!-- assess:action=... -->` | PROCEED/CLOSE/MERGE/REWRITE/CLARIFY/PARK | Action detection |
-| `<!-- assess:skip-spec=... -->` | `true`/`false` | `/spec` skip logic |
-| `<!-- assess:browser-test=... -->` | `true`/`false` | `/spec` test phase |
-| `<!-- assess:quality-loop=... -->` | `true`/`false` | `/spec` quality loop |
+---
 
 ## State Tracking
 
-When analyzing issues, initialize state tracking:
+Initialize state for each assessed issue:
 
 ```bash
-TITLE=$(gh issue view <issue-number> --json title -q '.title')
-npx tsx scripts/state/update.ts init <issue-number> "$TITLE"
+TITLE=$(gh issue view <N> --json title -q '.title')
+npx tsx scripts/state/update.ts init <N> "$TITLE"
 ```
 
 Note: `/assess` only initializes issues — actual phase tracking happens during workflow execution.
 
+## Persist Analysis
+
+After displaying output, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
+
+If confirmed, post a structured comment to each issue via `gh issue comment`. Each posted comment should include:
+- The action headline (`→ ACTION — reason`)
+- The workflow (for PROCEED/REWRITE)
+- Standard HTML markers on separate lines:
+  ```
+  <!-- assess:action=PROCEED -->
+  <!-- assess:phases=spec,exec,qa -->
+  <!-- assess:quality-loop=true -->
+  ```
+
 ## Notes
 
-- This command is **read-only** — it analyzes but doesn't make changes
-- It recommends but doesn't execute the next command
-- Keep the assessment concise — aim for clarity, not exhaustiveness
-- When in doubt about the action, say so — better to acknowledge uncertainty
-- Use this to orient yourself, then proceed with the appropriate workflow command
+- This command is **read-only** — analyzes but doesn't make changes
+- Batch mode should be scannable in under 5 seconds
+- Downstream tools own detail — spec owns AC breakdown, qa owns health
+- When in doubt, acknowledge uncertainty in the reason column
 
 ---
 
 ## Output Verification
 
-**Before responding, verify your output includes ALL of these:**
+**Before responding, verify:**
 
-- [ ] **Action Headline** — `→ ACTION — reason` as the first prominent line after issue summary
-- [ ] **Health Checks** — `✓ All clear` when clean, expanded only when ⚠ warnings exist
-- [ ] **AC Coverage** — Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR (for PROCEED/REWRITE)
-- [ ] **Workflow Plan** — CLI command with positional args, non-default flags only (for PROCEED)
-- [ ] **Flags Table** — Only enabled flags shown; omitted entirely when none enabled (for PROCEED)
-- [ ] **Label Review** — Only shown when label changes are suggested (for PROCEED)
-- [ ] **Confidence** — Only shown when not High or when information gaps exist (for PROCEED)
-- [ ] **Multi-Issue Summary** — Summary table at top when 2+ issues assessed
-- [ ] **HTML Markers** — Machine-readable `<!-- assess:... -->` markers
-
-**DO NOT respond until all items are verified.**
+- [ ] Every issue has exactly one action in the table
+- [ ] Run column uses correct symbol for the action/state
+- [ ] Command block only contains PROCEED and REWRITE issues
+- [ ] Commands are grouped by compatible workflow
+- [ ] Separators appear between every shown section
+- [ ] Annotations omitted when not applicable (silence = healthy)
+- [ ] HTML markers present for every assessed issue
+- [ ] Batch mode: table is the primary output, no per-issue detail sections
+- [ ] Single mode: focused summary with separators between sections
