@@ -72,8 +72,11 @@ export class StateManager {
    * Ensures that concurrent processes serialize their read-modify-write
    * cycles on state.json. The cache is cleared before executing the
    * callback so the latest on-disk state is read.
+   *
+   * External callers (e.g., reconcileState) should use this to wrap
+   * any read-modify-write cycle that includes getState() + saveState().
    */
-  private async withLock<T>(fn: () => Promise<T>): Promise<T> {
+  async withLock<T>(fn: () => Promise<T>): Promise<T> {
     const lockPath = this.statePath + ".lock";
     await this.acquireLock(lockPath);
     try {
@@ -152,7 +155,11 @@ export class StateManager {
   }
 
   /**
-   * Read the current workflow state
+   * Read the current workflow state.
+   *
+   * **Warning:** This method does NOT acquire a lock. For concurrent access
+   * (e.g., reconcileState), wrap your read-modify-write cycle in withLock()
+   * to prevent interleaving with other state mutations.
    *
    * Returns empty state if file doesn't exist.
    * Throws on parse errors.
@@ -184,7 +191,11 @@ export class StateManager {
   }
 
   /**
-   * Write state to disk using atomic write
+   * Write state to disk using atomic write.
+   *
+   * **Warning:** This method does NOT acquire a lock. For concurrent access
+   * (e.g., reconcileState), wrap your read-modify-write cycle in withLock()
+   * to prevent interleaving with other state mutations.
    *
    * Writes to a temp file first, then renames to prevent corruption
    * if the process is interrupted during write.

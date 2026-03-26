@@ -212,7 +212,12 @@ export function formatRelativeTime(isoTimestamp: string | undefined): string {
 export async function reconcileState(
   options: ReconcileOptions = {},
 ): Promise<ReconcileResult> {
-  const stateManager = options.stateManager ?? new StateManager();
+  const stateManager =
+    options.stateManager ??
+    new StateManager({
+      // Increase lock timeout for reconcile — GitHub API calls may be slow
+      lockTimeout: 30_000,
+    });
   const now = new Date().toISOString();
 
   if (!stateManager.stateExists()) {
@@ -226,123 +231,132 @@ export async function reconcileState(
   }
 
   try {
-    const state = await stateManager.getState();
-    const issues = Object.values(state.issues);
+    // Wrap the entire read-modify-write cycle (including GitHub API calls)
+    // in a single lock to prevent concurrent updatePhaseStatus from
+    // interleaving and causing state regression. (#458 AC-4)
+    return await stateManager.withLock(async () => {
+      const state = await stateManager.getState();
+      const issues = Object.values(state.issues);
 
-    if (issues.length === 0) {
-      state.lastSynced = now;
-      await stateManager.saveState(state);
+      if (issues.length === 0) {
+        state.lastSynced = now;
+        await stateManager.saveState(state);
+        return {
+          success: true,
+          healed: [],
+          warnings: [],
+          lastSynced: now,
+          githubReachable: !options.offline,
+        };
+      }
+
+      // Collect issue and PR numbers to query
+      const issueNumbers = issues.map((i) => i.number);
+      const prNumbers = issues
+        .filter((i) => i.pr?.number)
+        .map((i) => i.pr!.number);
+
+      // Batch fetch from GitHub (unless offline)
+      let githubIssues: Record<number, BatchIssueInfo> = {};
+      let githubPRs: Record<number, BatchPRInfo> = {};
+      let githubReachable = false;
+
+      if (!options.offline) {
+        const github = new GitHubProvider();
+        const batchResult = github.batchFetchIssueAndPRStatus(
+          issueNumbers,
+          prNumbers,
+        );
+
+        if (!batchResult.error) {
+          githubIssues = batchResult.issues;
+          githubPRs = batchResult.pullRequests;
+          githubReachable = true;
+        }
+        // On error: graceful degradation — proceed with cached data
+      }
+
+      // Check filesystem for worktrees
+      const worktreeExists: Record<number, boolean> = {};
+      for (const issue of issues) {
+        if (issue.worktree) {
+          worktreeExists[issue.number] = fs.existsSync(issue.worktree);
+        }
+      }
+
+      // Classify and apply drift
+      const healed: DriftAction[] = [];
+      const warnings: DriftAction[] = [];
+      let stateModified = false;
+
+      for (const issue of issues) {
+        const issueKey = String(issue.number);
+        const ghIssue = githubIssues[issue.number];
+        const ghPR = issue.pr?.number ? githubPRs[issue.pr.number] : undefined;
+        const wtExists = issue.worktree
+          ? worktreeExists[issue.number]
+          : undefined;
+
+        // Update title from GitHub if available
+        if (ghIssue?.title && ghIssue.title !== issue.title) {
+          state.issues[issueKey].title = ghIssue.title;
+          stateModified = true;
+        }
+
+        const drift = classifyDrift(issue, ghIssue, ghPR, wtExists);
+
+        // Always clear missing worktrees independently of other drift
+        if (
+          issue.worktree &&
+          wtExists === false &&
+          drift?.type !== "ambiguous"
+        ) {
+          state.issues[issueKey].worktree = undefined;
+          stateModified = true;
+        }
+
+        if (!drift) continue;
+
+        if (drift.type === "unambiguous") {
+          // Auto-heal
+          switch (drift.action) {
+            case "update_to_merged":
+              state.issues[issueKey].status = "merged" as IssueStatus;
+              state.issues[issueKey].lastActivity = now;
+              stateModified = true;
+              break;
+            case "update_to_abandoned":
+              state.issues[issueKey].status = "abandoned" as IssueStatus;
+              state.issues[issueKey].lastActivity = now;
+              stateModified = true;
+              break;
+            case "clear_worktree":
+              state.issues[issueKey].worktree = undefined;
+              state.issues[issueKey].lastActivity = now;
+              stateModified = true;
+              break;
+          }
+          healed.push(drift);
+        } else {
+          // Flag to user
+          warnings.push(drift);
+        }
+      }
+
+      // Persist if changed
+      if (stateModified || githubReachable) {
+        state.lastSynced = now;
+        await stateManager.saveState(state);
+      }
+
       return {
         success: true,
-        healed: [],
-        warnings: [],
+        healed,
+        warnings,
         lastSynced: now,
-        githubReachable: !options.offline,
+        githubReachable,
       };
-    }
-
-    // Collect issue and PR numbers to query
-    const issueNumbers = issues.map((i) => i.number);
-    const prNumbers = issues
-      .filter((i) => i.pr?.number)
-      .map((i) => i.pr!.number);
-
-    // Batch fetch from GitHub (unless offline)
-    let githubIssues: Record<number, BatchIssueInfo> = {};
-    let githubPRs: Record<number, BatchPRInfo> = {};
-    let githubReachable = false;
-
-    if (!options.offline) {
-      const github = new GitHubProvider();
-      const batchResult = github.batchFetchIssueAndPRStatus(
-        issueNumbers,
-        prNumbers,
-      );
-
-      if (!batchResult.error) {
-        githubIssues = batchResult.issues;
-        githubPRs = batchResult.pullRequests;
-        githubReachable = true;
-      }
-      // On error: graceful degradation — proceed with cached data
-    }
-
-    // Check filesystem for worktrees
-    const worktreeExists: Record<number, boolean> = {};
-    for (const issue of issues) {
-      if (issue.worktree) {
-        worktreeExists[issue.number] = fs.existsSync(issue.worktree);
-      }
-    }
-
-    // Classify and apply drift
-    const healed: DriftAction[] = [];
-    const warnings: DriftAction[] = [];
-    let stateModified = false;
-
-    for (const issue of issues) {
-      const issueKey = String(issue.number);
-      const ghIssue = githubIssues[issue.number];
-      const ghPR = issue.pr?.number ? githubPRs[issue.pr.number] : undefined;
-      const wtExists = issue.worktree
-        ? worktreeExists[issue.number]
-        : undefined;
-
-      // Update title from GitHub if available
-      if (ghIssue?.title && ghIssue.title !== issue.title) {
-        state.issues[issueKey].title = ghIssue.title;
-        stateModified = true;
-      }
-
-      const drift = classifyDrift(issue, ghIssue, ghPR, wtExists);
-
-      // Always clear missing worktrees independently of other drift
-      if (issue.worktree && wtExists === false && drift?.type !== "ambiguous") {
-        state.issues[issueKey].worktree = undefined;
-        stateModified = true;
-      }
-
-      if (!drift) continue;
-
-      if (drift.type === "unambiguous") {
-        // Auto-heal
-        switch (drift.action) {
-          case "update_to_merged":
-            state.issues[issueKey].status = "merged" as IssueStatus;
-            state.issues[issueKey].lastActivity = now;
-            stateModified = true;
-            break;
-          case "update_to_abandoned":
-            state.issues[issueKey].status = "abandoned" as IssueStatus;
-            state.issues[issueKey].lastActivity = now;
-            stateModified = true;
-            break;
-          case "clear_worktree":
-            state.issues[issueKey].worktree = undefined;
-            state.issues[issueKey].lastActivity = now;
-            stateModified = true;
-            break;
-        }
-        healed.push(drift);
-      } else {
-        // Flag to user
-        warnings.push(drift);
-      }
-    }
-
-    // Persist if changed
-    if (stateModified || githubReachable) {
-      state.lastSynced = now;
-      await stateManager.saveState(state);
-    }
-
-    return {
-      success: true,
-      healed,
-      warnings,
-      lastSynced: now,
-      githubReachable,
-    };
+    });
   } catch (error) {
     return {
       success: false,

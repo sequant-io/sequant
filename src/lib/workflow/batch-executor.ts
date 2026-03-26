@@ -36,6 +36,17 @@ import {
 } from "./phase-mapper.js";
 
 /**
+ * Callback type for per-phase progress updates.
+ * Used by parallel mode in run.ts to render phase status to the terminal.
+ */
+export type ProgressCallback = (
+  issue: number,
+  phase: string,
+  event: "start" | "complete" | "failed",
+  extra?: { durationSeconds?: number; error?: string },
+) => void;
+
+/**
  * Emit a structured progress line to stderr for MCP progress notifications.
  * Only emits when running under an orchestrator (e.g., MCP server).
  * The MCP handler parses these lines to send `notifications/progress`.
@@ -346,6 +357,7 @@ export async function executeBatch(
   shutdownManager?: ShutdownManager,
   packageManager?: string,
   baseBranch?: string,
+  onProgress?: ProgressCallback,
 ): Promise<IssueResult[]> {
   const results: IssueResult[] = [];
 
@@ -381,6 +393,7 @@ export async function executeBatch(
       packageManager,
       undefined,
       baseBranch,
+      onProgress,
     );
     results.push(result);
 
@@ -413,6 +426,7 @@ export async function runIssueWithLogging(
   packageManager?: string,
   isLastInChain?: boolean,
   baseBranch?: string,
+  onProgress?: ProgressCallback,
 ): Promise<IssueResult> {
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
@@ -497,6 +511,11 @@ export async function runIssueWithLogging(
           });
       specSpinner?.start();
       emitProgressLine(issueNumber, "spec", "start");
+      try {
+        onProgress?.(issueNumber, "spec", "start");
+      } catch {
+        /* progress errors must not halt */
+      }
 
       // Track spec phase start in state
       if (stateManager) {
@@ -547,13 +566,21 @@ export async function runIssueWithLogging(
         (specEndTime.getTime() - specStartTime.getTime()) / 1000,
       );
       if (specResult.success) {
-        emitProgressLine(issueNumber, "spec", "complete", {
-          durationSeconds: specDurationSec,
-        });
+        const extra = { durationSeconds: specDurationSec };
+        emitProgressLine(issueNumber, "spec", "complete", extra);
+        try {
+          onProgress?.(issueNumber, "spec", "complete", extra);
+        } catch {
+          /* progress errors must not halt */
+        }
       } else {
-        emitProgressLine(issueNumber, "spec", "failed", {
-          error: specResult.error ?? "unknown",
-        });
+        const extra = { error: specResult.error ?? "unknown" };
+        emitProgressLine(issueNumber, "spec", "failed", extra);
+        try {
+          onProgress?.(issueNumber, "spec", "failed", extra);
+        } catch {
+          /* progress errors must not halt */
+        }
       }
 
       // Log spec phase result
@@ -737,6 +764,11 @@ export async function runIssueWithLogging(
           });
       phaseSpinner?.start();
       emitProgressLine(issueNumber, phase, "start");
+      try {
+        onProgress?.(issueNumber, phase, "start");
+      } catch {
+        /* progress errors must not halt */
+      }
 
       // Track phase start in state
       if (stateManager) {
@@ -783,13 +815,21 @@ export async function runIssueWithLogging(
         (phaseEndTime.getTime() - phaseStartTime.getTime()) / 1000,
       );
       if (result.success) {
-        emitProgressLine(issueNumber, phase, "complete", {
-          durationSeconds: phaseDurationSec,
-        });
+        const extra = { durationSeconds: phaseDurationSec };
+        emitProgressLine(issueNumber, phase, "complete", extra);
+        try {
+          onProgress?.(issueNumber, phase, "complete", extra);
+        } catch {
+          /* progress errors must not halt */
+        }
       } else {
-        emitProgressLine(issueNumber, phase, "failed", {
-          error: result.error ?? "unknown",
-        });
+        const extra = { error: result.error ?? "unknown" };
+        emitProgressLine(issueNumber, phase, "failed", extra);
+        try {
+          onProgress?.(issueNumber, phase, "failed", extra);
+        } catch {
+          /* progress errors must not halt */
+        }
       }
 
       // Log phase result with observability data (AC-1, AC-2, AC-3, AC-7)
@@ -882,6 +922,11 @@ export async function runIssueWithLogging(
               });
           loopSpinner?.start();
           emitProgressLine(issueNumber, "loop", "start");
+          try {
+            onProgress?.(issueNumber, "loop", "start");
+          } catch {
+            /* progress errors must not halt */
+          }
 
           const loopStartTime = new Date();
           const loopResult = await executePhaseWithRetry(
@@ -901,13 +946,21 @@ export async function runIssueWithLogging(
             (loopEndTime.getTime() - loopStartTime.getTime()) / 1000,
           );
           if (loopResult.success) {
-            emitProgressLine(issueNumber, "loop", "complete", {
-              durationSeconds: loopDurationSec,
-            });
+            const extra = { durationSeconds: loopDurationSec };
+            emitProgressLine(issueNumber, "loop", "complete", extra);
+            try {
+              onProgress?.(issueNumber, "loop", "complete", extra);
+            } catch {
+              /* progress errors must not halt */
+            }
           } else {
-            emitProgressLine(issueNumber, "loop", "failed", {
-              error: loopResult.error ?? "unknown",
-            });
+            const extra = { error: loopResult.error ?? "unknown" };
+            emitProgressLine(issueNumber, "loop", "failed", extra);
+            try {
+              onProgress?.(issueNumber, "loop", "failed", extra);
+            } catch {
+              /* progress errors must not halt */
+            }
           }
 
           if (loopResult.sessionId) {
