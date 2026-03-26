@@ -36,28 +36,20 @@ This keeps worktrees separate from the main repo while allowing easy access.
 
 Worktrees lock their branches - you can't delete a branch that's checked out in a worktree.
 
-### Option A: Remove worktrees first (recommended)
+### Recommended: Merge first, clean up after
 
 ```bash
-# 1. Remove the worktree
-git worktree remove /path/to/worktree
-
-# 2. Merge with branch cleanup
-gh pr merge <N> --squash --delete-branch
-```
-
-### Option B: Merge first, clean up after
-
-```bash
-# 1. Merge WITHOUT --delete-branch
+# 1. Merge (without --delete-branch to avoid worktree lock conflicts)
 gh pr merge <N> --squash
 
 # 2. Remove the worktree
-git worktree remove /path/to/worktree
+git worktree remove /path/to/worktree --force
 
-# 3. Delete local branch manually
+# 3. Delete local branch
 git branch -D feature/<N>-*
 ```
+
+The post-tool hook handles this automatically for merges run inside Claude Code. If the merge fails, the worktree is preserved so work isn't lost.
 
 ### Batch cleanup
 

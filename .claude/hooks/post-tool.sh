@@ -343,4 +343,31 @@ if [[ -n "${CLAUDE_HOOKS_WEBHOOK_URL:-}" ]]; then
     fi
 fi
 
+# === POST-MERGE WORKTREE CLEANUP ===
+# Clean up worktree AFTER `gh pr merge` succeeds (not before).
+# Previous approach removed worktree pre-merge, which lost work if merge failed.
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; then
+    # Only clean up if merge succeeded (output contains merge confirmation)
+    if echo "$TOOL_OUTPUT" | grep -qiE '(merged|Merged pull request|Pull request .* merged)'; then
+        PR_NUM=$(echo "$TOOL_INPUT" | grep -oE 'gh pr merge [0-9]+' | grep -oE '[0-9]+')
+
+        if [[ -n "$PR_NUM" ]]; then
+            BRANCH_NAME=$(gh pr view "$PR_NUM" --json headRefName --jq '.headRefName' 2>/dev/null || true)
+
+            if [[ -n "$BRANCH_NAME" ]]; then
+                # Note: worktree line is 2 lines before branch line in porcelain output
+                WORKTREE_PATH=$(git worktree list --porcelain 2>/dev/null | grep -B2 "branch refs/heads/$BRANCH_NAME" | grep "^worktree " | sed 's/^worktree //' || true)
+
+                if [[ -n "$WORKTREE_PATH" && -d "$WORKTREE_PATH" ]]; then
+                    git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
+                    echo "POST-MERGE: Removed worktree $WORKTREE_PATH for branch $BRANCH_NAME" >> /tmp/claude-hook.log
+                fi
+
+                # Clean up local branch
+                git branch -D "$BRANCH_NAME" 2>/dev/null || true
+            fi
+        fi
+    fi
+fi
+
 exit 0
