@@ -835,12 +835,6 @@ export async function runCommand(
         );
       }, HEARTBEAT_INTERVAL_MS);
 
-      // Wrap onPhaseProgress to reset heartbeat timer on every event
-      const onProgress: ProgressCallback = (issue, phase, event, extra) => {
-        lastProgressTime = Date.now();
-        onPhaseProgress(issue, phase, event, extra);
-      };
-
       updateProgress();
 
       const settledResults = await Promise.allSettled(
@@ -887,7 +881,7 @@ export async function runCommand(
               manifest.packageManager,
               undefined,
               resolvedBaseBranch,
-              onProgress,
+              onPhaseProgress,
             );
 
             // Record PR info in log before completing issue
