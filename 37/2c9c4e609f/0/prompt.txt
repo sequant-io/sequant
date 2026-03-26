@@ -1,0 +1,52 @@
+Project context (from AGENTS.md):
+
+# AGENTS.md
+
+## Project Overview
+
+**sequant** is built with **Generic**.
+
+## Development Commands
+
+| Command | Purpose |
+|---------|---------|
+| `npm run build` | Build the project |
+| `npm test` | Run tests |
+| `npm run lint` | Lint the codebase |
+
+## Code Conventions
+
+- **testFilePattern**: *.test.ts
+- **exportStyle**: named
+- **asyncPattern**: async/await
+- **typescriptStrict**: enabled
+- **sourceStructure**: src/
+- **packageManager**: npm
+- **indentation**: 2 spaces
+- **semicolons**: required
+
+## Directory Structure
+
+Follow existing project conventions for file placement and naming.
+
+## Workflow
+
+This project uses [Sequant](https://github.com/sequant-io/sequant) for structured AI-assisted development.
+
+To work on a GitHub issue:
+
+```bash
+npx sequant run <issue-number>
+```
+
+This runs a structured workflow: spec → exec → qa.
+
+## Project-Specific Instructions
+
+## Commit Rules
+
+- Do NOT add `Co-Authored-By` lines to any commits in this repository.
+
+---
+
+Review GitHub issue #460 and create an implementation plan with verification criteria. Run the /spec 460 workflow.
