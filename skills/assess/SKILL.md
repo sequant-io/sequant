@@ -119,6 +119,8 @@ Surface red flags. Only track signals that change the recommendation.
 | complex, refactor, breaking, major | `spec → exec → qa` + `-q` |
 | enhancement, feature (default) | `spec → exec → qa` |
 
+**Valid phases (from `PhaseSchema` in `src/lib/workflow/types.ts`):** `spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`
+
 **Skip spec when:** bug/docs label, OR spec comment already exists on issue.
 
 **Resume detection:** Branch exists with commits ahead of main → mark as resume (`◂`).
