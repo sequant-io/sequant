@@ -20,6 +20,7 @@ import { spawnSync } from "child_process";
 import { StateManager } from "./state-manager.js";
 import { type Phase } from "./types.js";
 import { RunLogSchema, LOG_PATHS } from "./run-log-schema.js";
+import { GitHubProvider } from "./platforms/github.js";
 
 export interface DiscoverOptions {
   /** State file path (default: .sequant/state.json) */
@@ -93,30 +94,19 @@ function parseIssueNumberFromBranch(branch: string): number | null {
   return null;
 }
 
+/** Shared GitHubProvider instance for issue title lookups. */
+const ghProvider = new GitHubProvider();
+
 /**
- * Fetch issue title from GitHub using gh CLI
+ * Fetch issue title from GitHub using GitHubProvider.
  *
  * Returns placeholder if gh is not available or fetch fails.
  */
 function fetchIssueTitle(issueNumber: number): string {
-  try {
-    const result = spawnSync(
-      "gh",
-      ["issue", "view", String(issueNumber), "--json", "title", "-q", ".title"],
-      { stdio: "pipe", timeout: 10000 },
-    );
-
-    if (result.status === 0 && result.stdout) {
-      const title = result.stdout.toString().trim();
-      if (title) {
-        return title;
-      }
-    }
-  } catch {
-    // gh not available or error - use placeholder
-  }
-
-  return `(title unavailable for #${issueNumber})`;
+  return (
+    ghProvider.fetchIssueTitleSync(String(issueNumber)) ??
+    `(title unavailable for #${issueNumber})`
+  );
 }
 
 /**

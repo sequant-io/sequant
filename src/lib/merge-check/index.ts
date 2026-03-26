@@ -9,6 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { spawnSync } from "child_process";
+import { GitHubProvider } from "../workflow/platforms/github.js";
 import {
   RunLogSchema,
   type RunLog,
@@ -174,7 +175,9 @@ export function resolveBranches(
 
     const info = issueInfo.get(issueNumber);
     const title =
-      info?.title ?? fetchIssueTitle(issueNumber) ?? `Issue #${issueNumber}`;
+      info?.title ??
+      ghProvider.fetchIssueTitleSync(String(issueNumber)) ??
+      `Issue #${issueNumber}`;
 
     branches.push({
       issueNumber,
@@ -189,21 +192,8 @@ export function resolveBranches(
   return branches;
 }
 
-/**
- * Fetch issue title from GitHub via gh CLI.
- * Returns null if gh is not available or the issue doesn't exist.
- */
-function fetchIssueTitle(issueNumber: number): string | null {
-  const result = spawnSync(
-    "gh",
-    ["issue", "view", String(issueNumber), "--json", "title", "--jq", ".title"],
-    { stdio: "pipe", encoding: "utf-8", timeout: 10_000 },
-  );
-  if (result.status !== 0 || !result.stdout?.trim()) {
-    return null;
-  }
-  return result.stdout.trim();
-}
+/** Shared GitHubProvider instance for issue title lookups. */
+const ghProvider = new GitHubProvider();
 
 /**
  * Determine which checks to run based on command options.

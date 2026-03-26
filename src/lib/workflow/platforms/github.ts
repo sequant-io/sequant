@@ -346,6 +346,206 @@ export class GitHubProvider implements PlatformProvider {
     }
   }
 
+  // ─── Repo-aware sync helpers (for upstream / utility callers) ──────
+
+  /**
+   * Fetch just the title of an issue by number.
+   * Used by merge-check and worktree-discovery.
+   */
+  fetchIssueTitleSync(issueId: string): string | null {
+    try {
+      const result = spawnSync(
+        "gh",
+        ["issue", "view", issueId, "--json", "title", "--jq", ".title"],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+      );
+      if (result.status !== 0 || !result.stdout?.trim()) return null;
+      return result.stdout.trim();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Check if the `gh` CLI binary is installed (not auth, just available).
+   * Used by upstream/assessment.ts for pre-flight checks.
+   */
+  checkGhInstalledSync(): boolean {
+    try {
+      const result = spawnSync("gh", ["--version"], {
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 5000,
+      });
+      return result.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Fetch a single release from a specific repo.
+   * If `version` is omitted, fetches the latest release.
+   * Used by upstream/assessment.ts.
+   */
+  fetchReleaseSync(
+    repo: string,
+    version?: string,
+  ): Record<string, unknown> | null {
+    try {
+      const args = ["release", "view"];
+      if (version) args.push(version);
+      args.push("--repo", repo, "--json", "tagName,name,body,publishedAt");
+      const result = spawnSync("gh", args, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 15000,
+      });
+      if (result.status !== 0 || !result.stdout) return null;
+      return JSON.parse(result.stdout) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * List releases from a specific repo.
+   * Used by upstream/assessment.ts.
+   */
+  listReleasesSync(
+    repo: string,
+    limit: number = 50,
+  ): Array<{ tagName: string; publishedAt: string }> {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "release",
+          "list",
+          "--repo",
+          repo,
+          "--limit",
+          String(limit),
+          "--json",
+          "tagName,publishedAt",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      if (result.status !== 0 || !result.stdout) return [];
+      return JSON.parse(result.stdout) as Array<{
+        tagName: string;
+        publishedAt: string;
+      }>;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Search issues in a specific repo by labels and search query.
+   * Used by upstream/issues.ts for duplicate detection.
+   */
+  searchIssuesSync(
+    repo: string,
+    labels: string[],
+    search: string,
+    limit: number = 10,
+  ): Array<{ number: number; title: string }> {
+    try {
+      const args = ["issue", "list", "--repo", repo];
+      for (const label of labels) {
+        args.push("--label", label);
+      }
+      args.push(
+        "--search",
+        search,
+        "--json",
+        "number,title",
+        "--limit",
+        String(limit),
+      );
+      const result = spawnSync("gh", args, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 15000,
+      });
+      if (result.status !== 0 || !result.stdout) return [];
+      return JSON.parse(result.stdout) as Array<{
+        number: number;
+        title: string;
+      }>;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Create an issue in a specific repo using a body file.
+   * Used by upstream/issues.ts.
+   */
+  createIssueWithBodyFileSync(
+    repo: string,
+    title: string,
+    bodyFile: string,
+    labels: string[],
+  ): { number: number; url: string } | null {
+    try {
+      const args = [
+        "issue",
+        "create",
+        "--repo",
+        repo,
+        "--title",
+        title,
+        "--body-file",
+        bodyFile,
+      ];
+      for (const label of labels) {
+        args.push("--label", label);
+      }
+      const result = spawnSync("gh", args, {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: 30000,
+      });
+      if (result.status !== 0 || !result.stdout) return null;
+      const url = result.stdout.trim();
+      const numberMatch = url.match(/\/issues\/(\d+)$/);
+      const number = numberMatch ? parseInt(numberMatch[1], 10) : 0;
+      return { number, url };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Add a comment to an issue in a specific repo using a body file.
+   * Used by upstream/issues.ts.
+   */
+  commentOnIssueWithBodyFileSync(
+    repo: string,
+    issueNumber: number,
+    bodyFile: string,
+  ): boolean {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "issue",
+          "comment",
+          String(issueNumber),
+          "--repo",
+          repo,
+          "--body-file",
+          bodyFile,
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      return result.status === 0;
+    } catch {
+      return false;
+    }
+  }
+
   // ─── Async interface methods (PlatformProvider) ────────────────────
 
   async fetchIssue(id: string): Promise<Issue> {

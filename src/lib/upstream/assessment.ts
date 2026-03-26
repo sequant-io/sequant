@@ -3,9 +3,9 @@
  * Coordinates release fetching, analysis, and output generation
  */
 
-import { spawn } from "node:child_process";
 import { readFile, writeFile, access, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { GitHubProvider } from "../workflow/platforms/github.js";
 import type {
   AssessmentOptions,
   Baseline,
@@ -40,40 +40,8 @@ export function validateVersion(version: string): void {
   }
 }
 
-/**
- * Execute a command safely using spawn with argument arrays
- * This prevents command injection by not using shell interpolation
- */
-async function execCommand(
-  command: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
+/** Shared GitHubProvider instance for upstream gh CLI calls. */
+const ghProvider = new GitHubProvider();
 
 /**
  * Check if gh CLI is available and authenticated
@@ -84,10 +52,7 @@ export async function checkGhCliAvailable(): Promise<{
   authenticated: boolean;
   error?: string;
 }> {
-  try {
-    // Check if gh is installed
-    await execCommand("gh", ["--version"]);
-  } catch {
+  if (!ghProvider.checkGhInstalledSync()) {
     return {
       available: false,
       authenticated: false,
@@ -96,17 +61,15 @@ export async function checkGhCliAvailable(): Promise<{
     };
   }
 
-  try {
-    // Check if gh is authenticated
-    await execCommand("gh", ["auth", "status"]);
-    return { available: true, authenticated: true };
-  } catch {
+  if (!ghProvider.checkAuthSync()) {
     return {
       available: true,
       authenticated: false,
       error: "GitHub CLI is not authenticated. Run: gh auth login",
     };
   }
+
+  return { available: true, authenticated: true };
 }
 
 /**
@@ -127,20 +90,8 @@ export async function fetchRelease(
       validateVersion(version);
     }
 
-    // Build args array safely - no shell interpolation
-    const args = ["release", "view"];
-    if (version) {
-      args.push(version);
-    }
-    args.push(
-      "--repo",
-      "anthropics/claude-code",
-      "--json",
-      "tagName,name,body,publishedAt",
-    );
-
-    const { stdout } = await execCommand("gh", args);
-    return JSON.parse(stdout) as ReleaseData;
+    const data = ghProvider.fetchReleaseSync("anthropics/claude-code", version);
+    return data as ReleaseData | null;
   } catch (error) {
     console.error("Error fetching release:", error);
     return null;
@@ -159,21 +110,7 @@ export async function listReleases(
       throw new Error("Limit must be an integer between 1 and 100");
     }
 
-    const { stdout } = await execCommand("gh", [
-      "release",
-      "list",
-      "--repo",
-      "anthropics/claude-code",
-      "--limit",
-      String(limit),
-      "--json",
-      "tagName,publishedAt",
-    ]);
-
-    return JSON.parse(stdout) as Array<{
-      tagName: string;
-      publishedAt: string;
-    }>;
+    return ghProvider.listReleasesSync("anthropics/claude-code", limit);
   } catch (error) {
     console.error("Error listing releases:", error);
     return [];

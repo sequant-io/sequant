@@ -6,10 +6,10 @@
  * command injection. No shell interpolation is used.
  */
 
-import { spawn } from "node:child_process";
 import { writeFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GitHubProvider } from "../workflow/platforms/github.js";
 import type {
   DuplicateCheckResult,
   Finding,
@@ -36,40 +36,8 @@ function validateRepoParams(owner: string, repo: string): void {
   }
 }
 
-/**
- * Execute a command safely using spawn with argument arrays
- * This prevents command injection by not using shell interpolation
- */
-async function execCommand(
-  command: string,
-  args: string[],
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-
-    proc.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-      } else {
-        reject(new Error(`Command failed with exit code ${code}: ${stderr}`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(err);
-    });
-  });
-}
+/** Shared GitHubProvider instance for upstream gh CLI calls. */
+const ghProvider = new GitHubProvider();
 
 /**
  * Check if a similar upstream issue already exists
@@ -83,29 +51,13 @@ export async function checkForDuplicate(
     validateRepoParams(owner, repo);
 
     // Search for existing upstream issues with similar title
-    // Extract key terms from title for search
     const searchTerms = extractSearchTerms(title);
-
-    // Use spawn with argument arrays - no shell interpolation
-    const { stdout } = await execCommand("gh", [
-      "issue",
-      "list",
-      "--repo",
+    const issues = ghProvider.searchIssuesSync(
       `${owner}/${repo}`,
-      "--label",
-      "upstream",
-      "--search",
+      ["upstream"],
       searchTerms,
-      "--json",
-      "number,title",
-      "--limit",
-      "10",
-    ]);
-
-    const issues = JSON.parse(stdout) as Array<{
-      number: number;
-      title: string;
-    }>;
+      10,
+    );
 
     // Check for similarity
     for (const issue of issues) {
@@ -210,31 +162,18 @@ export async function createIssue(
   try {
     await writeFile(tempFile, params.body, "utf-8");
 
-    // Build args array
-    const args = [
-      "issue",
-      "create",
-      "--repo",
+    const result = ghProvider.createIssueWithBodyFileSync(
       `${owner}/${repo}`,
-      "--title",
       params.title,
-      "--body-file",
       tempFile,
-    ];
+      params.labels,
+    );
 
-    // Add labels
-    for (const label of params.labels) {
-      args.push("--label", label);
+    if (!result) {
+      throw new Error("Failed to create issue");
     }
 
-    const { stdout } = await execCommand("gh", args);
-
-    // Parse issue URL from output
-    const url = stdout.trim();
-    const numberMatch = url.match(/\/issues\/(\d+)$/);
-    const number = numberMatch ? parseInt(numberMatch[1], 10) : 0;
-
-    return { number, url };
+    return result;
   } finally {
     // Clean up temp file
     try {
@@ -267,15 +206,15 @@ export async function addIssueComment(
   try {
     await writeFile(tempFile, comment, "utf-8");
 
-    await execCommand("gh", [
-      "issue",
-      "comment",
-      String(issueNumber),
-      "--repo",
+    const success = ghProvider.commentOnIssueWithBodyFileSync(
       `${owner}/${repo}`,
-      "--body-file",
+      issueNumber,
       tempFile,
-    ]);
+    );
+
+    if (!success) {
+      throw new Error(`Failed to comment on issue #${issueNumber}`);
+    }
   } finally {
     // Clean up temp file
     try {
