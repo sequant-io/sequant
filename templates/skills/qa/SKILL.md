@@ -833,9 +833,86 @@ CI status affects the final verdict through the standard verdict algorithm:
 
 ---
 
+### Small-Diff Fast Path (Size Gate)
+
+**Purpose:** Skip sub-agent spawning for trivial diffs to save ~30s latency and reduce token cost.
+
+**Evaluate the size gate BEFORE spawning any quality check sub-agents:**
+
+```bash
+# 1. Read threshold from settings (default: 100)
+threshold=$(cat .sequant/settings.json 2>/dev/null | grep -o '"smallDiffThreshold"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' || echo "100")
+if [ -z "$threshold" ]; then threshold=100; fi
+
+# 2. Compute diff size (additions + deletions)
+diff_stats=$(git diff origin/main...HEAD --stat | tail -1 || true)
+additions=$(echo "$diff_stats" | grep -o '[0-9]* insertion' | grep -o '[0-9]*' || echo "0")
+deletions=$(echo "$diff_stats" | grep -o '[0-9]* deletion' | grep -o '[0-9]*' || echo "0")
+total_changes=$((${additions:-0} + ${deletions:-0}))
+
+# 3. Check if package.json changed
+pkg_changed=$(git diff origin/main...HEAD --name-only | grep -c '^package\.json$' || echo "0")
+
+# 4. Check security-sensitive paths (reuses existing heuristic from anti-pattern detection)
+security_paths=$(git diff origin/main...HEAD --name-only | grep -iE 'auth|payment|security|server-action|middleware|admin' || true)
+security_sensitive="false"
+if [ -n "$security_paths" ]; then security_sensitive="true"; fi
+
+echo "Size gate: $total_changes lines changed (threshold: $threshold), pkg_changed=$pkg_changed, security=$security_sensitive"
+```
+
+**Size gate decision:**
+
+| Condition | Result |
+|-----------|--------|
+| `total_changes < threshold` AND `pkg_changed == 0` AND `security_sensitive == false` | `SMALL_DIFF=true` — use inline checks |
+| Any condition fails | `SMALL_DIFF=false` — use sub-agents (standard pipeline) |
+| Size gate evaluation errors (e.g., git fails) | `SMALL_DIFF=false` — fall back to full pipeline (AC-5) |
+
+**Log the decision (AC-6):**
+
+```markdown
+### Size Gate
+
+| Check | Value |
+|-------|-------|
+| Diff size | N lines (threshold: T) |
+| package.json changed | Yes/No |
+| Security-sensitive paths | Yes/No [list if yes] |
+| Decision | **Inline checks** / **Sub-agents** |
+```
+
+#### If `SMALL_DIFF=true`: Inline Quality Checks
+
+Run these checks directly (no sub-agents needed):
+
+```bash
+# Type safety: check for 'any' additions
+any_count=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -c 'any' || echo "0")
+
+# Deleted tests check
+deleted_tests=$(git diff origin/main...HEAD --name-only --diff-filter=D | grep -cE '\.(test|spec)\.' || echo "0")
+
+# Scope: files changed count
+files_changed=$(git diff origin/main...HEAD --name-only | wc -l | tr -d ' ')
+
+# Security scan (lightweight — just check for obvious patterns in added lines)
+security_issues=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -ciE 'eval\(|innerHTML|dangerouslySetInnerHTML|exec\(|password.*=.*["']|secret.*=.*["']|api.?key.*=.*["']' || echo "0")
+
+echo "Inline checks: any=$any_count, deleted_tests=$deleted_tests, files=$files_changed, security_issues=$security_issues"
+```
+
+**After inline checks, skip to the output template** (the sub-agent section below is not executed).
+
+#### If `SMALL_DIFF=false`: Use Sub-Agents (Standard Pipeline)
+
+Proceed to the standard Quality Checks section below.
+
+---
+
 ### Quality Checks (Multi-Agent) — REQUIRED
 
-**You MUST spawn sub-agents for quality checks.** Do NOT run these checks inline with bash commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
+**When `SMALL_DIFF=false`**, you MUST spawn sub-agents for quality checks. Do NOT run these checks inline with bash commands. Sub-agents provide parallel execution, better context isolation, and consistent reporting.
 
 **Execution mode:** Respect the agent execution mode determined above (see "Agent Execution Mode" section).
 
@@ -2080,7 +2157,34 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 
 **Before responding, verify your output includes ALL of these:**
 
-### Standard QA (Implementation Exists)
+### Simple Fix Mode (`SMALL_DIFF=true`)
+
+When the size gate determined `SMALL_DIFF=true`, use the **simplified output template**. The following sections are **omitted** (not marked N/A — completely absent):
+
+- Quality Plan Verification
+- Incremental QA Summary
+- Call-Site Review
+- Product Review
+- Smoke Test
+- CLI Registration Verification
+- Skill Command Verification
+- Script Verification Override
+- Skill Change Review
+
+**Required sections for simple fix mode:**
+
+- [ ] **Size Gate** - Size gate decision table with threshold, diff size, and decision
+- [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, NOT_MET, PENDING, or N/A
+- [ ] **Quality Metrics** - Type issues, deleted tests, files changed, additions/deletions (from inline checks)
+- [ ] **Code Review Findings** - Strengths, issues, suggestions
+- [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
+- [ ] **Anti-Pattern Detection** - Code patterns check (lightweight)
+- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included
+- [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
+- [ ] **Documentation Check** - README/docs updated if feature adds new functionality
+- [ ] **Next Steps** - Clear, actionable recommendations
+
+### Standard QA (Implementation Exists, `SMALL_DIFF=false`)
 
 - [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, NOT_MET, PENDING, or N/A
@@ -2116,6 +2220,103 @@ When early exit is triggered (no commits, no uncommitted changes, no PR):
 **DO NOT respond until all applicable items are verified.**
 
 ## Output Template
+
+### Simple Fix Template (`SMALL_DIFF=true`)
+
+When the size gate triggers simple fix mode, use this shorter template:
+
+```markdown
+## QA Review for Issue #<N> (Simple Fix)
+
+### Size Gate
+
+| Check | Value |
+|-------|-------|
+| Diff size | N lines (threshold: T) |
+| package.json changed | No |
+| Security-sensitive paths | No |
+| Decision | **Inline checks** |
+
+### AC Coverage
+
+| AC | Description | Status | Notes |
+|----|-------------|--------|-------|
+| AC-1 | [description] | MET/NOT_MET | [explanation] |
+
+**Coverage:** X/Y AC items fully met
+
+---
+
+### Quality Metrics
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Type issues (`any`) | X | OK/WARN |
+| Deleted tests | X | OK/WARN |
+| Files changed | X | OK/WARN |
+| Lines added | +X | - |
+| Lines deleted | -X | - |
+| Security patterns | X | OK/WARN |
+
+---
+
+### Code Review
+
+**Strengths:**
+- [Positive findings]
+
+**Issues:**
+- [Problems found]
+
+**Suggestions:**
+- [Improvements recommended]
+
+---
+
+### Test Coverage Analysis
+
+| Changed File | Tier | Has Tests? | Test File |
+|--------------|------|------------|-----------|
+| `[file]` | Critical/Standard/Optional | Yes/No | `[test file or -]` |
+
+**Coverage:** X/Y changed source files have corresponding tests
+
+---
+
+### Anti-Pattern Detection
+
+| File:Line | Category | Pattern | Suggestion |
+|-----------|----------|---------|------------|
+| [location] | [category] | [pattern] | [fix] |
+
+---
+
+### Self-Evaluation
+
+- **Verified working:** [Yes/No]
+- **Test efficacy:** [High/Medium/Low]
+- **Likely failure mode:** [description]
+- **Verdict confidence:** [High/Medium/Low]
+
+---
+
+### Verdict: [READY_FOR_MERGE | AC_MET_BUT_NOT_A_PLUS | NEEDS_VERIFICATION | AC_NOT_MET]
+
+[Explanation of verdict]
+
+### Documentation
+
+- [ ] N/A - Simple fix, no documentation needed
+- [ ] README/docs updated
+
+### Next Steps
+
+1. [Action item]
+```
+
+---
+
+### Standard Template (`SMALL_DIFF=false`)
 
 You MUST include these sections:
 
