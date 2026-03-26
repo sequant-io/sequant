@@ -112,11 +112,11 @@ Surface red flags. Only track signals that change the recommendation.
 
 | Labels | Workflow |
 |--------|----------|
-| bug, fix, hotfix | `exec → qa` |
-| docs, documentation | `exec → qa` |
-| ui, frontend + enhancement | `spec → exec → test → qa` |
-| security, auth | `spec → sec → exec → qa` |
-| complex, refactor, breaking | `spec → exec → qa` + `-q` |
+| bug, fix, hotfix, patch | `exec → qa` |
+| docs, documentation, readme | `exec → qa` |
+| ui, frontend, admin, web, browser | `spec → exec → test → qa` |
+| security, auth, authentication, permissions | `spec → security-review → exec → qa` |
+| complex, refactor, breaking, major | `spec → exec → qa` + `-q` |
 | enhancement, feature (default) | `spec → exec → qa` |
 
 **Skip spec when:** bug/docs label, OR spec comment already exists on issue.
@@ -128,8 +128,8 @@ Surface red flags. Only track signals that change the recommendation.
 **Quality loop (`-q`):** Recommend for everything except simple bug fixes and docs-only.
 
 **Other flags:**
-- `--chain` — Multiple issues with explicit dependencies
-- `--qa-gate` — Chain with 3+ tightly coupled issues
+- `--chain` — Chain issues: each branches from previous (implies --sequential)
+- `--qa-gate` — Pause chain on QA failure, preventing downstream issues from building on broken code (requires --chain)
 - `--base <branch>` — Issue references a feature branch
 
 ### Step 5: Conflict Detection
@@ -175,7 +175,6 @@ Cleanup:
 <!-- assess:action=<ACTION> -->
 <!-- assess:phases=<csv> -->
 <!-- assess:quality-loop=<bool> -->
-<!-- assess:skip-spec=<bool> -->
 ```
 
 #### Run Column Symbols
@@ -224,9 +223,9 @@ Cleanup:
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 461 460 -q --phases exec,qa                      │
 │  npx sequant run 458 443 -q                                  │
-│  npx sequant run 412 -q --skip-spec          # resume        │
+│  npx sequant run 412 -q --phases exec,qa     # resume        │
 │  npx sequant run 405 -q                      # restart       │
 ╰──────────────────────────────────────────────────────────────╯
 
@@ -264,7 +263,7 @@ When every issue is PROCEED with no warnings, the output is minimal:
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 461 460 -q --phases exec,qa                      │
 │  npx sequant run 443 -q                                      │
 ╰──────────────────────────────────────────────────────────────╯
 
