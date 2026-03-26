@@ -66,7 +66,10 @@ import {
   executeBatch,
   runIssueWithLogging,
 } from "../lib/workflow/batch-executor.js";
-import type { RunOptions } from "../lib/workflow/batch-executor.js";
+import type {
+  RunOptions,
+  ProgressCallback,
+} from "../lib/workflow/batch-executor.js";
 
 // Re-export public API for backwards compatibility
 export {
@@ -798,6 +801,40 @@ export async function runCommand(
         }
       };
 
+      // Per-phase progress callback for parallel mode (AC-1, AC-3)
+      const parallelStartTime = Date.now();
+      const onPhaseProgress: ProgressCallback = (
+        issue,
+        phase,
+        event,
+        extra,
+      ) => {
+        if (mergedOptions.quiet) return;
+        let line: string;
+        if (event === "start") {
+          line = `  ${colors.warning("●")} #${issue}: ${phase} started`;
+        } else if (event === "complete") {
+          const dur =
+            extra?.durationSeconds != null
+              ? ` (${formatElapsedTime(extra.durationSeconds)})`
+              : "";
+          line = `  ${colors.success("●")} #${issue}: ${phase} ✓${dur}`;
+        } else {
+          line = `  ${colors.error("●")} #${issue}: ${phase} ✗`;
+        }
+        console.log(line);
+      };
+
+      // 60-second heartbeat timer so the terminal never appears frozen (AC-2)
+      const HEARTBEAT_INTERVAL_MS = 60_000;
+      const heartbeatTimer = setInterval(() => {
+        if (mergedOptions.quiet) return;
+        const elapsedSec = Math.round((Date.now() - parallelStartTime) / 1000);
+        console.log(
+          `  ${colors.warning("⏳")} Still running... (${formatElapsedTime(elapsedSec)} elapsed)`,
+        );
+      }, HEARTBEAT_INTERVAL_MS);
+
       updateProgress();
 
       const settledResults = await Promise.allSettled(
@@ -844,6 +881,7 @@ export async function runCommand(
               manifest.packageManager,
               undefined,
               resolvedBaseBranch,
+              onPhaseProgress,
             );
 
             // Record PR info in log before completing issue
@@ -868,6 +906,9 @@ export async function runCommand(
           }),
         ),
       );
+
+      // Clean up heartbeat timer
+      clearInterval(heartbeatTimer);
 
       // Clear the progress line
       if (process.stdout.isTTY && !mergedOptions.quiet) {

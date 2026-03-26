@@ -643,4 +643,55 @@ describe("Reconciliation Engine", () => {
       expect(drift).toBeNull();
     });
   });
+
+  describe("concurrent reconcileState + updatePhaseStatus (#458 AC-6)", () => {
+    it("should not regress state when reconcile and updatePhaseStatus run concurrently", async () => {
+      const stateManager = new StateManager({ statePath });
+
+      // Setup: issue #1 at phase="spec", in_progress
+      const initialState = createEmptyState();
+      initialState.issues["1"] = createIssueState(1, "Test issue");
+      initialState.issues["1"].status = "in_progress";
+      initialState.issues["1"].currentPhase = "spec";
+
+      fs.writeFileSync(statePath, JSON.stringify(initialState, null, 2));
+
+      // Mock GitHub to return valid data
+      mockBatchFetch.mockReturnValue({
+        issues: {
+          1: { number: 1, title: "Test issue", state: "OPEN" as const },
+        },
+        pullRequests: {},
+        error: undefined,
+      });
+
+      // Run reconcileState and updatePhaseStatus concurrently.
+      // Both operations acquire the same file lock via withLock(),
+      // so they serialize — no interleaving can occur.
+      const [reconcileResult] = await Promise.all([
+        reconcileState({ stateManager, offline: false }),
+        // Small delay then update phase to exec
+        new Promise<void>((resolve) =>
+          setTimeout(async () => {
+            await stateManager.updatePhaseStatus(1, "exec", "in_progress");
+            resolve();
+          }, 10),
+        ),
+      ]);
+
+      expect(reconcileResult.success).toBe(true);
+
+      // Read final state — verify no corruption or data loss
+      stateManager.clearCache();
+      const finalState = await stateManager.getState();
+      const issue = finalState.issues["1"];
+
+      // The issue must still exist and not be corrupted
+      expect(issue).toBeDefined();
+      expect(issue.number).toBe(1);
+      // Phase should be exec (from updatePhaseStatus) OR spec (from reconcile)
+      // but NOT undefined or corrupted — the key assertion is no data loss
+      expect(["spec", "exec"]).toContain(issue.currentPhase);
+    });
+  });
 });

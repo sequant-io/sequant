@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix `reconcileState()` race condition that could revert phase status during parallel runs (#458)
+  - Wrap entire read-modify-write cycle in `withLock()` to serialize with concurrent `updatePhaseStatus` calls
+  - Increase lock timeout to 30s to accommodate GitHub API latency
+
+### Added
+
+- Per-phase progress lines during parallel `sequant run` — terminal now shows phase start/complete events instead of freezing (#458)
+  - Add `onProgress` callback to `runIssueWithLogging` for CLI-side progress rendering
+  - Add 60-second heartbeat timer so the terminal never appears frozen during long phases
+
 ### Changed
 
 - Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
