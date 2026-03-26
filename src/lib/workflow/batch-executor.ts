@@ -36,16 +36,6 @@ import {
 } from "./phase-mapper.js";
 
 /**
- * Emit a structured progress line to stderr for MCP progress notifications.
- * Only emits when running under an orchestrator (e.g., MCP server).
- * The MCP handler parses these lines to send `notifications/progress`.
- *
- * @param issue - GitHub issue number
- * @param phase - Phase name (e.g., "spec", "exec", "qa")
- * @param event - Phase lifecycle event: "start", "complete", or "failed"
- * @param extra - Optional fields: durationSeconds (on complete), error (on failed)
- */
-/**
  * Callback type for per-phase progress updates.
  * Used by parallel mode in run.ts to render phase status to the terminal.
  */
@@ -56,6 +46,16 @@ export type ProgressCallback = (
   extra?: { durationSeconds?: number; error?: string },
 ) => void;
 
+/**
+ * Emit a structured progress line to stderr for MCP progress notifications.
+ * Only emits when running under an orchestrator (e.g., MCP server).
+ * The MCP handler parses these lines to send `notifications/progress`.
+ *
+ * @param issue - GitHub issue number
+ * @param phase - Phase name (e.g., "spec", "exec", "qa")
+ * @param event - Phase lifecycle event: "start", "complete", or "failed"
+ * @param extra - Optional fields: durationSeconds (on complete), error (on failed)
+ */
 export function emitProgressLine(
   issue: number,
   phase: string,
