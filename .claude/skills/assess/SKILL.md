@@ -190,33 +190,28 @@ Status: <Open|Closed> | Labels: <labels> | Last activity: <X days ago>
 
 → PROCEED — <one-line reason>
 
+<!-- CONDITIONAL: When ALL health checks pass, show single collapsed line. When ANY check has ⚠, expand individual signals. -->
+✓ All clear
+<!-- OR when warnings exist: -->
 Health:
-  ✓ References match codebase
-  ✓ No conflicting PRs or worktrees
-  ✓ No overlapping issues detected
+  ⚠ <warning signal>
+  ✓ <related passing check for context>
 
 AC Coverage: <N> criteria identified
   - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
   - <AC description>     <MET|IN_PROGRESS|NOT_STARTED|UNCLEAR>
 
+<!-- CLI command: issues as positional args, omit default phases (spec,exec,qa), only non-default flags -->
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run <ISSUES> <FLAGS>                            │
+│  npx sequant run <N1> <N2> <NON-DEFAULT-FLAGS>               │
 ╰──────────────────────────────────────────────────────────────╯
 
 #<N>  <Title truncated> ·········· <labels> → <workflow>
 
+<!-- CONDITIONAL: Only show if at least one flag is enabled. List ONLY enabled flags (omit disabled). No flags → omit entire table. -->
 ┌─ Flags ──────────────────────────────────────────────────────┐
-│  -q  quality-loop   ✓/✗  <one-line reasoning>                │
-│  --chain            ✓/✗  <one-line reasoning>                │
-│  --qa-gate          ✓/✗  <one-line reasoning>                │
-│  --base             ✓/✗  <one-line reasoning>                │
-│  --testgen          ✓/✗  <one-line reasoning>                │
+│  <flag>  <one-line reasoning>                                 │
 └──────────────────────────────────────────────────────────────┘
-
-Why this workflow:
-  • <reason 1>
-  • <reason 2>
-  • <reason 3>
 
 <!-- CONDITIONAL: Only if alternatives worth showing -->
 Also consider:
@@ -225,13 +220,14 @@ Also consider:
 <!-- CONDITIONAL: Only if conflict detected -->
 ⚠ Conflict risk: #<N> (open) modifies <path> — coordinate or wait
 
+<!-- CONDITIONAL: Only show when label changes are suggested. Omit entirely when no changes needed. -->
 Label Review:
-  Current: <labels>
-  Suggested: <labels if changes needed>
-  Reason: <why, if applicable>
+  Suggested: +<label> -<label>
+  Reason: <why>
 
-Confidence: <High|Medium|Low>
-  <information gaps if any>
+<!-- CONDITIONAL: Only show when confidence is not High, or when there are information gaps. Omit for High confidence with no gaps. -->
+Confidence: <Medium|Low>
+  <information gaps>
 
 <!-- assess:phases=<comma-separated> -->
 <!-- assess:action=PROCEED -->
@@ -345,7 +341,17 @@ Confidence: <High|Medium|Low>
 
 ## Multi-Issue Support
 
-When given multiple issues (`/assess 152 153`), assess each independently with its own action recommendation:
+When given multiple issues (`/assess 152 153`), assess each independently with its own action recommendation.
+
+**When 2+ issues are assessed**, start with a scannable summary table before per-issue details:
+
+```
+Issue   Action    Workflow
+#152    PROCEED   spec → exec → qa  -q
+#153    REWRITE   PR 200+ commits behind main
+```
+
+Then show per-issue details:
 
 ```
 ─── Issue 1 of 2 ───────────────────────────────────────────
@@ -446,12 +452,13 @@ Note: `/assess` only initializes issues — actual phase tracking happens during
 **Before responding, verify your output includes ALL of these:**
 
 - [ ] **Action Headline** — `→ ACTION — reason` as the first prominent line after issue summary
-- [ ] **Health Checks** — Signals that informed the action recommendation
+- [ ] **Health Checks** — `✓ All clear` when clean, expanded only when ⚠ warnings exist
 - [ ] **AC Coverage** — Each AC marked MET/IN_PROGRESS/NOT_STARTED/UNCLEAR (for PROCEED/REWRITE)
-- [ ] **Workflow Plan** — Full CLI command with flags table (for PROCEED only)
-- [ ] **Label Review** — Current vs suggested labels based on issue content analysis
-- [ ] **Confidence Level** — High/Medium/Low with information gaps noted
+- [ ] **Workflow Plan** — CLI command with positional args, non-default flags only (for PROCEED)
+- [ ] **Flags Table** — Only enabled flags shown; omitted entirely when none enabled (for PROCEED)
+- [ ] **Label Review** — Only shown when label changes are suggested (for PROCEED)
+- [ ] **Confidence** — Only shown when not High or when information gaps exist (for PROCEED)
+- [ ] **Multi-Issue Summary** — Summary table at top when 2+ issues assessed
 - [ ] **HTML Markers** — Machine-readable `<!-- assess:... -->` markers
-- [ ] **Reasoning** — Why this action was recommended
 
 **DO NOT respond until all items are verified.**
