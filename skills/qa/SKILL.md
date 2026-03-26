@@ -535,7 +535,7 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
      sort -u || true)
 
    # Count derived ACs
-   derived_count=$(echo "$derived_acs" | grep -c "AC-" || echo "0")
+   derived_count=$(echo "$derived_acs" | grep -c "AC-" || true)
    echo "Found $derived_count derived ACs"
    ```
 

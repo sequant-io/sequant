@@ -1206,7 +1206,7 @@ for script in $shell_scripts; do
   # 3. Unused function detection
   funcs=$(grep -oE "^[a-zA-Z_]+\(\)" "$script" | sed 's/()//' || true)
   for func in $funcs; do
-    calls=$(grep -c "\b${func}\b" "$script" || echo "0")
+    calls=$(grep -c "\b${func}\b" "$script" || true)
     if [[ $calls -lt 2 ]]; then
       echo "⚠️ Function '$func' defined but possibly not called"
     fi

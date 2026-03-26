@@ -120,7 +120,7 @@ else
 
   # 1. Capture build error count
   build_output=$(npm run build 2>&1 || true)
-  BASELINE_BUILD_ERRORS=$(echo "$build_output" | grep -c "error TS" || echo "0")
+  BASELINE_BUILD_ERRORS=$(echo "$build_output" | grep -c "error TS" || true)
   echo "  Baseline build errors: $BASELINE_BUILD_ERRORS"
 
   # 2. Capture test pass/fail counts
@@ -320,7 +320,7 @@ git pull origin main
 # 2. Build verification — capture post-merge error count
 echo "Running build..."
 post_build_output=$(npm run build 2>&1); build_exit=$?
-POST_BUILD_ERRORS=$(echo "$post_build_output" | grep -c "error TS" || echo "0")
+POST_BUILD_ERRORS=$(echo "$post_build_output" | grep -c "error TS" || true)
 
 # 3. Test suite — capture post-merge test counts
 echo "Running tests..."
