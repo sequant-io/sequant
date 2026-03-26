@@ -40,8 +40,15 @@ async function startStdio(
   const transport = new StdioServerTransport();
 
   // Handle graceful shutdown
+  let shuttingDown = false;
   const shutdown = async () => {
-    await server.close();
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await server.close();
+    } catch {
+      /* best-effort */
+    }
     process.exit(0);
   };
 
@@ -127,9 +134,20 @@ async function startSSE(
   );
 
   // Handle graceful shutdown
+  let shuttingDown = false;
   const shutdown = async () => {
-    await server.close();
-    httpServer.close();
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await server.close();
+    } catch {
+      /* best-effort */
+    }
+    try {
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    } catch {
+      /* best-effort */
+    }
     process.exit(0);
   };
 
