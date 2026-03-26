@@ -187,6 +187,18 @@ export interface ScopeAssessmentSettings {
 }
 
 /**
+ * QA skill settings
+ */
+export interface QASettings {
+  /**
+   * Diff size threshold (additions + deletions) for the small-diff fast path.
+   * Diffs below this threshold skip sub-agent spawning and use inline checks.
+   * Default: 100
+   */
+  smallDiffThreshold: number;
+}
+
+/**
  * Full settings schema
  */
 export interface SequantSettings {
@@ -198,6 +210,8 @@ export interface SequantSettings {
   agents: AgentSettings;
   /** Scope assessment settings */
   scopeAssessment: ScopeAssessmentSettings;
+  /** QA skill settings */
+  qa: QASettings;
 }
 
 /**
@@ -257,6 +271,13 @@ export const DEFAULT_SCOPE_ASSESSMENT_SETTINGS: ScopeAssessmentSettings = {
 };
 
 /**
+ * Default QA settings
+ */
+export const DEFAULT_QA_SETTINGS: QASettings = {
+  smallDiffThreshold: 100,
+};
+
+/**
  * Default settings
  */
 export const DEFAULT_SETTINGS: SequantSettings = {
@@ -278,6 +299,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
+  qa: DEFAULT_QA_SETTINGS,
 };
 
 /**
@@ -353,6 +375,10 @@ export async function getSettings(): Promise<SequantSettings> {
           ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.thresholds,
           ...parsed.scopeAssessment?.thresholds,
         },
+      },
+      qa: {
+        ...DEFAULT_QA_SETTINGS,
+        ...parsed.qa,
       },
     };
   } catch {

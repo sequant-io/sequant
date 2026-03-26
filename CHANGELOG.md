@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add small-diff fast path to `/qa` skill to skip sub-agent spawning for trivial changes (#465)
+  - Diffs below configurable threshold (default: 100 lines) use inline quality checks instead of 3 sub-agents
+  - Simplified output template omits N/A-heavy sections for small fixes
+  - Threshold configurable via `qa.smallDiffThreshold` in `.sequant/settings.json`
+
 ### Fixed
 
 - Fix `reconcileState()` race condition that could revert phase status during parallel runs (#458)
