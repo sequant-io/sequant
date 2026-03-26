@@ -143,12 +143,6 @@ describe("assess-comment-parser", () => {
         expect(markers.qualityLoop).toBe(false);
       });
 
-      it("should parse <!-- assess:skip-spec=true --> marker", () => {
-        const body = "<!-- assess:skip-spec=true -->";
-        const markers = parseAssessMarkers(body);
-        expect(markers.skipSpec).toBe(true);
-      });
-
       it("should parse <!-- assess:browser-test=true --> marker", () => {
         const body = "<!-- assess:browser-test=true -->";
         const markers = parseAssessMarkers(body);

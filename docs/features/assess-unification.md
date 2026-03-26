@@ -58,7 +58,7 @@ A scannable dashboard — one row per issue, one command block, compressed annot
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --skip-spec                      │
+│  npx sequant run 461 460 -q --phases exec,qa                      │
 │  npx sequant run 458 -q                                      │
 ╰──────────────────────────────────────────────────────────────╯
 

@@ -746,8 +746,7 @@ assess_comment=$(gh issue view <issue-number> --json comments \
 
 1. Parse the HTML comment markers to extract the recommended phases:
    ```
-   <!-- assess:phases=exec,qa -->        → phases: ["exec", "qa"]
-   <!-- assess:skip-spec=true -->        → skip spec phase
+   <!-- assess:phases=exec,qa -->        → phases: ["exec", "qa"] (spec not included = skip spec)
    <!-- assess:browser-test=false -->    → no browser testing needed
    <!-- assess:quality-loop=true -->     → enable quality loop
    ```
@@ -765,7 +764,7 @@ assess_comment=$(gh issue view <issue-number> --json comments \
    Overriding assess recommendation with explanation.
    ```
 
-4. If the assess comment recommends `skip-spec=true`, acknowledge this in your output but proceed with spec since `/spec` was explicitly invoked.
+4. If the assess comment recommends phases that don't include `spec` (e.g., `phases=exec,qa`), acknowledge this in your output but proceed with spec since `/spec` was explicitly invoked.
 
 **If no assess analysis comment exists:** Proceed with your own analysis as normal (step 5).
 
