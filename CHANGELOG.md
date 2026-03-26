@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add lighter workflow pipeline for documentation issues (#451)
+  - Docs-labeled issues skip spec phase, running exec → qa directly (like bug fixes)
+  - Propagate `SEQUANT_ISSUE_TYPE=docs` env var to skills for adaptive behavior
+  - QA skill uses lighter sub-agent pipeline for docs (1 agent instead of 3)
+
 - Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
 - Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
 - Add MCP progress notifications for `sequant_run` with timeout reset (#435)
