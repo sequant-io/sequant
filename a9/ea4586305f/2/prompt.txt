@@ -1,0 +1,102 @@
+getting some flaky tests failures. can you investigate:\
+                                                          
+  Regression Check
+
+  ┌────────────┬──────────┬────────────┬───────┬───────────────────────────────────────────────────────────┐   
+  │   Metric   │ Baseline │ Post-merge │ Delta │                          Status                           │
+  ├────────────┼──────────┼────────────┼───────┼───────────────────────────────────────────────────────────┤   
+  │ Build      │ 0        │ 0          │ 0     │ ✅ No regression                                          │
+  │ errors     │          │            �───────────────────────────────────────────────────────┤   
+  │ Test       │ 2165     │ 2158       │ -7    │ ✅ Offset by flakes, +18 new tests added                  │
+  │ passes     │          │            │       │                                                           │   
+  └────────────┴──────────┴────────────┴───────┴───────────────────────────────────────────────────────────┘
+                                                                                                               
+  Regression Result: ✅ NO REGRESSIONS (failures are in unrelated flaky tests)                                 
+  
+  Final Status                                         ghfgh
+
+---
+
+How do we fix the flaky tests. plan
+
+---
+
+<task-notification>
+<task-id>bdk2trbcb</task-id>
+<tool-use-id>toolu_01P6ZhjxfbnbsRhYomZQfRgU</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/7b37f204-d12d-402f-8397-67ef993b197c/tasks/bdk2trbcb.output</output-file>
+<status>killed</status>
+<summary>Background command "cat &gt; /tmp/signal_test.js &lt;&lt; 'EOF'
+// Test what happens when SIGTERM arrives while async handler is running
+
+const http = require('http');
+
+let responseObject = null;
+
+const server = http.createServer(async (req, res) =&gt; {
+  responseObject = res;
+  
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  res.write('data: hello\n\n');
+});
+
+server.listen(3333, () =&gt; {
+  console.log('Server listening on 3333');
+});
+
+const shutdown = async () =&gt; {
+  console.log('SIGTERM received, entering async shutdown handler');
+  
+  try {
+    // Simulate what server.close() does - closes transport first
+    if (responseObject &amp;&amp; !responseObject.destroyed) {
+      console.log('Attempting to end response');
+      responseObject.end();
+    }
+    
+    // Then close http server
+    await new Promise((resolve, reject) =&gt; {
+      server.close((err) =&gt; {
+        if (err) reject(err);
+        else resolve(undefined);
+      });
+    });
+    
+    console.log('Clean shutdown complete, exiting with code 0');
+    process.exit(0);
+  } catch (err) {
+    console.error('Error during shutdown:', err);
+    process.exit(1);
+  }
+};
+
+process.on('SIGTERM', shutdown);
+
+// Simulate a client connecting
+setTimeout(() =&gt; {
+  const req = http.request('http://localhost:3333/', (res) =&gt; {
+    console.log('Client connected');
+    res.on('data', () =&gt; {});
+    res.on('end', () =&gt; console.log('Client disconnected'));
+  });
+  req.on('error', () =&gt; {});
+  req.end();
+}, 100);
+
+// After 1 second, kill this process group to test signal handling
+setTimeout(() =&gt; {
+  console.log('Simulating kill signal in 2 seconds...');
+}, 1000);
+EOF
+node /tmp/signal_test.js
+" was stopped</summary>
+</task-notification>
+Read the output file to retrieve the result: /private/tmp/claude-502/-Users-tony-Projects-sequant/7b37f204-d12d-402f-8397-67ef993b197c/tasks/bdk2trbcb.output
+
+---
+
+any gaps?
