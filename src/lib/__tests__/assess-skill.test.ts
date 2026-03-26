@@ -61,11 +61,13 @@ describe("assess skill phase vocabulary", () => {
     );
     expect(tableSection).not.toBeNull();
 
-    const phaseRefs = tableSection![0].match(/`([a-z-]+)`/g) || [];
-    const phasesInTable = phaseRefs
+    const workflowRefs = tableSection![0].match(/`([^`]+)`/g) || [];
+    const phasesInTable = workflowRefs
       .map((s) => s.replace(/`/g, ""))
-      .filter((s) => !s.startsWith("-")); // exclude flags like -q
+      .filter((s) => !s.startsWith("-")) // exclude flags like -q
+      .flatMap((s) => s.split(" → ")); // split "exec → qa" into ["exec", "qa"]
 
+    expect(phasesInTable.length).toBeGreaterThan(0);
     for (const phase of phasesInTable) {
       expect(validPhases).toContain(phase);
     }
@@ -111,8 +113,9 @@ describe("assess skill CLI flag accuracy", () => {
     );
     expect(otherFlagsSection).not.toBeNull();
 
-    const flagRefs = otherFlagsSection![0].match(/`(--[a-z][a-z-]*)`/g) || [];
-    const referencedFlags = flagRefs.map((s) => s.replace(/`/g, ""));
+    const flagRefs =
+      otherFlagsSection![0].match(/`(--[a-z][a-z-]*)[` ]/g) || [];
+    const referencedFlags = flagRefs.map((s) => s.replace(/`/g, "").trim());
 
     for (const flag of referencedFlags) {
       expect(validRunFlags).toContain(flag);
