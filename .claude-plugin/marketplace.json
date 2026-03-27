@@ -1,7 +1,5 @@
 {
-  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "sequant",
-  "description": "Sequant plugin marketplace - structured workflow system for Claude Code",
   "owner": {
     "name": "sequant-io",
     "email": "hello@sequant.io"
