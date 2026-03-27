@@ -11,10 +11,19 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ## Quick Start
 
-### Install
+### Option A: Plugin (interactive users)
+
+In Claude Code:
+```
+/plugin install sequant@sequant-io/sequant
+/sequant:setup
+```
+
+You get skills, hooks, and MCP tools — no npm required.
+
+### Option B: npm (power users / CI)
 
 ```bash
-# In your project directory
 npm install sequant
 npx sequant init     # Install skills to your project
 npx sequant doctor   # Verify setup
