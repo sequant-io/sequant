@@ -117,9 +117,15 @@ jobs:
           "
           echo "MCP server config validated!"
 
-      - name: Check version sync
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build marketplace package
+        run: npm run prepare:marketplace
+
+      - name: Check version sync (including dist output)
         run: |
-          echo "Checking version sync across files..."
+          echo "Checking version sync across all files..."
           node -e "
             const fs = require('fs');
             const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -131,6 +137,13 @@ jobs:
               'plugin.json': plugin.version,
               'marketplace.json': mp.plugins[0]?.version
             };
+
+            // Also check dist output if it exists (built by prepare:marketplace)
+            const distPluginPath = 'dist/marketplace/external_plugins/sequant/.claude-plugin/plugin.json';
+            if (fs.existsSync(distPluginPath)) {
+              const distPlugin = JSON.parse(fs.readFileSync(distPluginPath, 'utf8'));
+              versions['dist/plugin.json'] = distPlugin.version;
+            }
 
             console.log('Versions:', JSON.stringify(versions, null, 2));
 

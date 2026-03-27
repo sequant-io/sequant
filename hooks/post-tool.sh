@@ -39,9 +39,18 @@ else
 fi
 
 _TMPDIR="${TMPDIR:-/tmp}"
-TIMING_LOG="${_TMPDIR}/claude-timing.log"
-QUALITY_LOG="${_TMPDIR}/claude-quality.log"
-TESTS_LOG="${_TMPDIR}/claude-tests.log"
+
+# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
+if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+  _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
+  mkdir -p "$_LOG_DIR"
+else
+  _LOG_DIR="${_TMPDIR}"
+fi
+
+TIMING_LOG="${_LOG_DIR}/claude-timing.log"
+QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
+TESTS_LOG="${_LOG_DIR}/claude-tests.log"
 PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
 
 # === AGENT ID DETECTION ===

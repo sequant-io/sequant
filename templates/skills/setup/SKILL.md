@@ -307,7 +307,8 @@ Use the Write tool to create `.sequant-manifest.json`:
 
 ```bash
 mkdir -p .claude/memory
-cp "${CLAUDE_PLUGIN_ROOT}/memory/constitution.md" .claude/memory/constitution.md
+CONST_SRC="${CLAUDE_PLUGIN_ROOT:-./templates}/memory/constitution.md"
+cp "$CONST_SRC" .claude/memory/constitution.md
 ```
 
 ### 9. Replace Project Name Placeholder

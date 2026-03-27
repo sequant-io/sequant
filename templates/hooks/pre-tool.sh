@@ -34,8 +34,17 @@ else
 fi
 
 _TMPDIR="${TMPDIR:-/tmp}"
-TIMING_LOG="${_TMPDIR}/claude-timing.log"
-HOOK_LOG="${_TMPDIR}/claude-hook.log"
+
+# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
+if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+  _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
+  mkdir -p "$_LOG_DIR"
+else
+  _LOG_DIR="${_TMPDIR}"
+fi
+
+TIMING_LOG="${_LOG_DIR}/claude-timing.log"
+HOOK_LOG="${_LOG_DIR}/claude-hook.log"
 PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
 
 # === AGENT ID DETECTION ===
@@ -274,7 +283,7 @@ fi
 # --- Worktree Validation (AC-8) ---
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
-QUALITY_LOG="${_TMPDIR}/claude-quality.log"
+QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
 if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     CWD=$(pwd)
     if ! echo "$CWD" | grep -qE 'worktrees/feature/'; then
