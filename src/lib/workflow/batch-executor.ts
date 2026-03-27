@@ -10,24 +10,20 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
-import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
-import { StateManager } from "./state-manager.js";
+import { createPhaseLogFromTiming } from "./log-writer.js";
 import {
   Phase,
   ExecutionConfig,
   PhaseResult,
   IssueResult,
   type RunOptions,
-  type ProgressCallback,
   type IssueExecutionContext,
   type BatchExecutionContext,
 } from "./types.js";
 import { classifyError } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
-import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
-import type { WorktreeInfo } from "./worktree-manager.js";
 import {
   createCheckpointCommit,
   rebaseBeforePR,
