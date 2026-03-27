@@ -58,13 +58,31 @@ jobs:
             console.log('Updated plugin.json to version ' + process.env.VERSION);
           "
 
+      - name: Sync marketplace.json version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const mpPath = './.claude-plugin/marketplace.json';
+            const mp = JSON.parse(fs.readFileSync(mpPath, 'utf8'));
+            if (mp.plugins && mp.plugins[0]) {
+              mp.plugins[0].version = process.env.VERSION;
+            }
+            fs.writeFileSync(mpPath, JSON.stringify(mp, null, 2) + '\n');
+            console.log('Updated marketplace.json to version ' + process.env.VERSION);
+          "
+
+      - name: Build marketplace package
+        run: npm run prepare:marketplace
+
       - name: Commit version bump
         env:
           VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json .claude-plugin/plugin.json
+          git add package.json package-lock.json .claude-plugin/plugin.json .claude-plugin/marketplace.json
           git commit -m "chore: bump version to $VERSION"
           git push
 

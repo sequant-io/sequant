@@ -9,6 +9,8 @@ on:
       - 'hooks/**'
       - 'skills/**'
       - 'memory/**'
+      - 'templates/mcp.json'
+      - '.mcp.json'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +19,8 @@ on:
       - 'hooks/**'
       - 'skills/**'
       - 'memory/**'
+      - 'templates/mcp.json'
+      - '.mcp.json'
 
 jobs:
   plugin-structure:
@@ -47,6 +51,12 @@ jobs:
               console.error('Missing required fields:', missing.join(', '));
               process.exit(1);
             }
+            // Verify no component path overrides (Claude Code auto-discovers)
+            const badFields = ['skills', 'hooks', 'memory', 'commands'].filter(f => plugin[f]);
+            if (badFields.length > 0) {
+              console.error('plugin.json should NOT have component path overrides:', badFields.join(', '));
+              process.exit(1);
+            }
             console.log('plugin.json fields: name=%s, version=%s', plugin.name, plugin.version);
           "
           echo "plugin.json validated successfully!"
@@ -74,6 +84,76 @@ jobs:
             console.log('marketplace.json validated: %d plugin(s)', mp.plugins.length);
           "
           echo "marketplace.json validated successfully!"
+
+      - name: Validate MCP server config template
+        run: |
+          echo "Validating MCP server config template..."
+          if [ ! -f "templates/mcp.json" ]; then
+            echo "Error: templates/mcp.json not found — plugin users won't get MCP tools"
+            exit 1
+          fi
+
+          node -e "
+            const mcp = JSON.parse(require('fs').readFileSync('templates/mcp.json', 'utf8'));
+            // Plugin .mcp.json uses flat format (server name as top-level key)
+            const server = mcp.sequant;
+            if (!server) {
+              console.error('Missing sequant server entry');
+              process.exit(1);
+            }
+            if (server.command !== 'npx') {
+              console.error('MCP server must use npx command, got:', server.command);
+              process.exit(1);
+            }
+            if (!server.args || !server.args.includes('serve')) {
+              console.error('MCP server args must include serve');
+              process.exit(1);
+            }
+            if (server.cwd) {
+              console.error('MCP server must NOT have hardcoded cwd');
+              process.exit(1);
+            }
+            console.log('MCP config: command=%s args=%s', server.command, JSON.stringify(server.args));
+          "
+          echo "MCP server config validated!"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build marketplace package
+        run: npm run prepare:marketplace
+
+      - name: Check version sync (including dist output)
+        run: |
+          echo "Checking version sync across all files..."
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            const plugin = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'));
+            const mp = JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json', 'utf8'));
+
+            const versions = {
+              'package.json': pkg.version,
+              'plugin.json': plugin.version,
+              'marketplace.json': mp.plugins[0]?.version
+            };
+
+            // Also check dist output if it exists (built by prepare:marketplace)
+            const distPluginPath = 'dist/marketplace/external_plugins/sequant/.claude-plugin/plugin.json';
+            if (fs.existsSync(distPluginPath)) {
+              const distPlugin = JSON.parse(fs.readFileSync(distPluginPath, 'utf8'));
+              versions['dist/plugin.json'] = distPlugin.version;
+            }
+
+            console.log('Versions:', JSON.stringify(versions, null, 2));
+
+            const unique = new Set(Object.values(versions).filter(Boolean));
+            if (unique.size > 1) {
+              console.error('Version mismatch detected!');
+              process.exit(1);
+            }
+            console.log('All versions in sync: %s', pkg.version);
+          "
 
       - name: Verify skills are discoverable
         run: |
@@ -124,49 +204,30 @@ jobs:
       - name: Validate plugin with Claude CLI
         run: |
           echo "Running claude plugin validate..."
-          # claude plugin validate may not exist yet — try and report
-          if claude plugin validate . 2>&1; then
-            echo "Plugin validation passed!"
-          else
-            exit_code=$?
-            # Exit code 1 might mean "command not found" vs "validation failed"
-            if claude plugin 2>&1 | grep -q "validate"; then
-              echo "Error: Plugin validation failed (exit code: $exit_code)"
-              exit 1
-            else
-              echo "Note: 'claude plugin validate' not available in this CLI version — skipping"
-            fi
-          fi
+          claude plugin validate .
 
       - name: Test marketplace add (local)
         run: |
           echo "Testing claude plugin marketplace add..."
-          if claude plugin marketplace add ./ --scope local 2>&1; then
-            echo "Marketplace add succeeded!"
+          claude plugin marketplace add ./ --scope local
+
+      - name: Test plugin loads with --plugin-dir
+        run: |
+          echo "Testing claude --plugin-dir . loads plugin..."
+          # Verify plugin loads: skills, hooks, and MCP config are discovered
+          output=$(claude --plugin-dir . --print "list available skills" 2>&1 || true)
+          if echo "$output" | grep -qi "sequant\|assess\|spec\|exec"; then
+            echo "Plugin loaded successfully — skills discovered"
           else
-            exit_code=$?
-            if claude plugin marketplace 2>&1 | grep -q "add"; then
-              echo "Error: Marketplace add failed (exit code: $exit_code)"
-              exit 1
-            else
-              echo "Note: 'claude plugin marketplace add' not available — skipping"
-            fi
+            echo "Warning: Could not verify skill discovery (may need interactive session)"
+            echo "Output: $output"
+            # Non-blocking — validate and install tests are the primary gates
           fi
 
       - name: Test plugin install
         run: |
           echo "Testing claude plugin install sequant@sequant..."
-          if claude plugin install sequant@sequant 2>&1; then
-            echo "Plugin install succeeded!"
-          else
-            exit_code=$?
-            if claude plugin 2>&1 | grep -q "install"; then
-              echo "Error: Plugin install failed (exit code: $exit_code)"
-              exit 1
-            else
-              echo "Note: 'claude plugin install' not available — skipping"
-            fi
-          fi
+          claude plugin install sequant@sequant
 
   hooks-test:
     name: Hooks Validation
@@ -218,6 +279,18 @@ jobs:
             }
             console.log('hooks.json validated!');
           "
+
+      - name: Check hook scripts use portable temp paths
+        run: |
+          echo "Checking for portable temp path usage..."
+          for script in hooks/pre-tool.sh hooks/post-tool.sh; do
+            bare_count=$(grep -c '="/tmp/' "$script" 2>/dev/null || true)
+            portable_count=$(grep -c 'TMPDIR:-/tmp' "$script" 2>/dev/null || true)
+            echo "$script: $portable_count portable refs, $bare_count bare /tmp refs"
+            if [ "$bare_count" -gt 0 ]; then
+              echo "Warning: $script has $bare_count bare /tmp/ references — should use \${TMPDIR:-/tmp}"
+            fi
+          done
 
       - name: Smoke test pre-tool hook
         run: |

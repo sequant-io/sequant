@@ -515,7 +515,7 @@ Cannot generate test files - no feature worktree exists for Issue #<N>.
 
 **Options:**
 1. Run `/exec <issue>` first (creates worktree automatically)
-2. Create worktree manually: `${CLAUDE_PLUGIN_ROOT}/scripts/new-feature.sh <issue>`
+2. Create worktree manually: `./scripts/dev/new-feature.sh <issue>`
 3. Use the browser/manual test scenarios from this comment
 ```
 
