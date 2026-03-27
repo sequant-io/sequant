@@ -20,6 +20,7 @@ import {
   type RunOptions,
   type ProgressCallback,
   type IssueExecutionContext,
+  type BatchExecutionContext,
 } from "./types.js";
 import { classifyError } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
@@ -48,6 +49,7 @@ export type {
   RunOptions,
   ProgressCallback,
   IssueExecutionContext,
+  BatchExecutionContext,
 } from "./types.js";
 
 /**
@@ -265,17 +267,20 @@ export function getEnvConfig(): Partial<RunOptions> {
 
 export async function executeBatch(
   issueNumbers: number[],
-  config: ExecutionConfig,
-  logWriter: LogWriter | null,
-  stateManager: StateManager | null,
-  options: RunOptions,
-  issueInfoMap: Map<number, { title: string; labels: string[] }>,
-  worktreeMap: Map<number, WorktreeInfo>,
-  shutdownManager?: ShutdownManager,
-  packageManager?: string,
-  baseBranch?: string,
-  onProgress?: ProgressCallback,
+  batchCtx: BatchExecutionContext,
 ): Promise<IssueResult[]> {
+  const {
+    config,
+    options,
+    issueInfoMap,
+    worktreeMap,
+    logWriter,
+    stateManager,
+    shutdownManager,
+    packageManager,
+    baseBranch,
+    onProgress,
+  } = batchCtx;
   const results: IssueResult[] = [];
 
   for (const issueNumber of issueNumbers) {

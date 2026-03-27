@@ -70,6 +70,7 @@ import type {
   RunOptions,
   ProgressCallback,
   IssueExecutionContext,
+  BatchExecutionContext,
 } from "../lib/workflow/batch-executor.js";
 
 // Re-export public API for backwards compatibility
@@ -150,35 +151,24 @@ export function normalizeCommanderOptions(options: RunOptions): RunOptions {
  */
 async function executeOneIssue(args: {
   issueNumber: number;
-  config: ExecutionConfig;
-  mergedOptions: RunOptions;
-  issueInfoMap: Map<number, { title: string; labels: string[] }>;
-  worktreeMap: Map<number, WorktreeInfo>;
-  logWriter: LogWriter | null;
-  stateManager: StateManager | null;
-  shutdown: ShutdownManager;
-  packageManager?: string;
-  baseBranch?: string;
+  batchCtx: BatchExecutionContext;
   chain?: { enabled: boolean; isLast: boolean };
-  onProgress?: ProgressCallback;
   /** When set, pass issueNumber to logWriter.setPRInfo/completeIssue (parallel mode) */
   parallelIssueNumber?: number;
 }): Promise<IssueResult> {
+  const { issueNumber, batchCtx, chain, parallelIssueNumber } = args;
   const {
-    issueNumber,
     config,
-    mergedOptions,
+    options,
     issueInfoMap,
     worktreeMap,
     logWriter,
     stateManager,
-    shutdown,
+    shutdownManager,
     packageManager,
     baseBranch,
-    chain,
     onProgress,
-    parallelIssueNumber,
-  } = args;
+  } = batchCtx;
 
   const issueInfo = issueInfoMap.get(issueNumber) ?? {
     title: `Issue #${issueNumber}`,
@@ -196,8 +186,8 @@ async function executeOneIssue(args: {
     title: issueInfo.title,
     labels: issueInfo.labels,
     config,
-    options: mergedOptions,
-    services: { logWriter, stateManager, shutdownManager: shutdown },
+    options,
+    services: { logWriter, stateManager, shutdownManager },
     worktree: worktreeInfo
       ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
       : undefined,
@@ -703,6 +693,19 @@ export async function runCommand(
     }
   }
 
+  // Shared context for all execution paths
+  const batchCtx: BatchExecutionContext = {
+    config,
+    options: mergedOptions,
+    issueInfoMap,
+    worktreeMap,
+    logWriter,
+    stateManager,
+    shutdownManager: shutdown,
+    packageManager: manifest.packageManager,
+    baseBranch: resolvedBaseBranch,
+  };
+
   // Execute with graceful shutdown handling
   const results: IssueResult[] = [];
   let exitCode = 0;
@@ -718,18 +721,7 @@ export async function runCommand(
           ),
         );
 
-        const batchResults = await executeBatch(
-          batch,
-          config,
-          logWriter,
-          stateManager,
-          mergedOptions,
-          issueInfoMap,
-          worktreeMap,
-          shutdown,
-          manifest.packageManager,
-          resolvedBaseBranch,
-        );
+        const batchResults = await executeBatch(batch, batchCtx);
         results.push(...batchResults);
 
         // Check if batch failed and we should stop
@@ -750,15 +742,7 @@ export async function runCommand(
 
         const result = await executeOneIssue({
           issueNumber,
-          config,
-          mergedOptions,
-          issueInfoMap,
-          worktreeMap,
-          logWriter,
-          stateManager,
-          shutdown,
-          packageManager: manifest.packageManager,
-          baseBranch: resolvedBaseBranch,
+          batchCtx,
           chain: mergedOptions.chain
             ? { enabled: true, isLast: i === issueNumbers.length - 1 }
             : undefined,
@@ -928,16 +912,7 @@ export async function runCommand(
 
             const result = await executeOneIssue({
               issueNumber,
-              config,
-              mergedOptions,
-              issueInfoMap,
-              worktreeMap,
-              logWriter,
-              stateManager,
-              shutdown,
-              packageManager: manifest.packageManager,
-              baseBranch: resolvedBaseBranch,
-              onProgress: onPhaseProgress,
+              batchCtx: { ...batchCtx, onProgress: onPhaseProgress },
               parallelIssueNumber: issueNumber,
             });
 

@@ -7,6 +7,7 @@ import type { AiderSettings } from "../settings.js";
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
+import type { WorktreeInfo } from "./worktree-manager.js";
 
 /**
  * Canonical Zod schema for all workflow phases.
@@ -277,6 +278,23 @@ export type ProgressCallback = (
   event: "start" | "complete" | "failed",
   extra?: { durationSeconds?: number; error?: string },
 ) => void;
+
+/**
+ * Shared context for executing a batch of issues.
+ * Replaces 11 positional parameters in executeBatch (#402).
+ */
+export interface BatchExecutionContext {
+  config: ExecutionConfig;
+  options: RunOptions;
+  issueInfoMap: Map<number, { title: string; labels: string[] }>;
+  worktreeMap: Map<number, WorktreeInfo>;
+  logWriter: LogWriter | null;
+  stateManager: StateManager | null;
+  shutdownManager?: ShutdownManager;
+  packageManager?: string;
+  baseBranch?: string;
+  onProgress?: ProgressCallback;
+}
 
 /**
  * Context object for executing a single issue through the workflow.
