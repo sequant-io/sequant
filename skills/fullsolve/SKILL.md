@@ -165,7 +165,7 @@ mcp__sequential-thinking__sequentialthinking({
 ### 1.4 Create Feature Worktree
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/scripts/new-feature.sh <issue-number>
+./scripts/dev/new-feature.sh <issue-number>
 ```
 
 **State after Phase 1:**
@@ -393,7 +393,7 @@ Post completion comment to issue with:
 gh pr merge <N> --squash
 
 # 2. Clean up worktree (removes local worktree + branch)
-${CLAUDE_PLUGIN_ROOT}/scripts/cleanup-worktree.sh feature/<issue-number>-*
+./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
 
 # 3. Issue auto-closes if commit message contains "Fixes #N"
 ```
