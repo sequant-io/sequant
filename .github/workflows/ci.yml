@@ -169,7 +169,7 @@ jobs:
           # Check required fields
           node -e "
             const mp = JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'));
-            const required = ['name', 'plugins'];
+            const required = ['name', 'description', 'plugins'];
             const missing = required.filter(f => !mp[f]);
             if (missing.length > 0) {
               console.error('Missing required fields:', missing.join(', '));
@@ -179,7 +179,7 @@ jobs:
               console.error('plugins must be a non-empty array');
               process.exit(1);
             }
-            console.log('Required fields present: name, plugins');
+            console.log('Required fields present: name, description, plugins');
           "
 
           echo "marketplace.json validated successfully!"
