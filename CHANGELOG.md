@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Simplify run command execution path and parameter passing (#402)
+  - Replace 15 positional parameters in `runIssueWithLogging` with `IssueExecutionContext` object
+  - Replace 11 positional parameters in `executeBatch` with `BatchExecutionContext` object
+  - Unify duplicated sequential/parallel issue loops into `executeOneIssue` helper
+  - Replace `as any` cast for Commander.js `--no-X` flags with typed `normalizeCommanderOptions()`
+  - Centralize shared workflow types in `src/lib/workflow/types.ts`
+
 ### Added
 
 - Add small-diff fast path to `/qa` skill to skip sub-agent spawning for trivial changes (#465)
@@ -23,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Per-phase progress lines during parallel `sequant run` — terminal now shows phase start/complete events instead of freezing (#458)
-  - Add `onProgress` callback to `runIssueWithLogging` for CLI-side progress rendering
+  - Add `onProgress` callback to `IssueExecutionContext` for CLI-side progress rendering
   - Add 60-second heartbeat timer so the terminal never appears frozen during long phases
 
 ### Changed

@@ -35,6 +35,7 @@ import {
   createPR,
   detectDefaultBranch,
   logNonFatalWarning,
+  normalizeCommanderOptions,
 } from "./run.js";
 
 const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
@@ -2289,5 +2290,61 @@ describe("logNonFatalWarning", () => {
     // Only the warning, not the error detail
     const allOutput = consoleSpy.mock.calls.map((c) => c[0]).join(" ");
     expect(allOutput).not.toContain("secret");
+  });
+});
+
+describe("normalizeCommanderOptions (#402 AC-4)", () => {
+  it("should convert log=false to noLog=true", () => {
+    const result = normalizeCommanderOptions({ log: false } as any);
+    expect(result.noLog).toBe(true);
+  });
+
+  it("should convert mcp=false to noMcp=true", () => {
+    const result = normalizeCommanderOptions({ mcp: false } as any);
+    expect(result.noMcp).toBe(true);
+  });
+
+  it("should convert retry=false to noRetry=true", () => {
+    const result = normalizeCommanderOptions({ retry: false } as any);
+    expect(result.noRetry).toBe(true);
+  });
+
+  it("should convert rebase=false to noRebase=true", () => {
+    const result = normalizeCommanderOptions({ rebase: false } as any);
+    expect(result.noRebase).toBe(true);
+  });
+
+  it("should convert pr=false to noPr=true", () => {
+    const result = normalizeCommanderOptions({ pr: false } as any);
+    expect(result.noPr).toBe(true);
+  });
+
+  it("should convert smartTests=false to noSmartTests=true", () => {
+    const result = normalizeCommanderOptions({ smartTests: false } as any);
+    expect(result.noSmartTests).toBe(true);
+  });
+
+  it("should not set no-flags when positive flags are present", () => {
+    const result = normalizeCommanderOptions({
+      verbose: true,
+      sequential: true,
+    });
+    expect(result.noLog).toBeUndefined();
+    expect(result.noMcp).toBeUndefined();
+    expect(result.noRetry).toBeUndefined();
+    expect(result.noRebase).toBeUndefined();
+    expect(result.noPr).toBeUndefined();
+    expect(result.noSmartTests).toBeUndefined();
+  });
+
+  it("should pass through other options unchanged", () => {
+    const result = normalizeCommanderOptions({
+      verbose: true,
+      sequential: true,
+      timeout: 300,
+    });
+    expect(result.verbose).toBe(true);
+    expect(result.sequential).toBe(true);
+    expect(result.timeout).toBe(300);
   });
 });

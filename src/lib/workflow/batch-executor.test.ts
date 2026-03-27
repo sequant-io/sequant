@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ExecutionConfig, PhaseResult } from "./types.js";
+import type {
+  ExecutionConfig,
+  PhaseResult,
+  IssueExecutionContext,
+} from "./types.js";
 import type { RunOptions } from "./batch-executor.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
@@ -86,6 +90,29 @@ function makeOptions(overrides: Partial<RunOptions> = {}): RunOptions {
   };
 }
 
+/** Build an IssueExecutionContext for testing */
+function makeCtx(
+  overrides: {
+    issueNumber?: number;
+    config?: Partial<ExecutionConfig>;
+    title?: string;
+    labels?: string[];
+    options?: Partial<RunOptions>;
+  } = {},
+): IssueExecutionContext {
+  return {
+    issueNumber: overrides.issueNumber ?? 1,
+    title: overrides.title ?? "Test issue",
+    labels: overrides.labels ?? [],
+    config: makeConfig(overrides.config),
+    options: makeOptions(overrides.options),
+    services: {
+      logWriter: null,
+      stateManager: null,
+    },
+  };
+}
+
 /** Build a successful PhaseResult */
 function successResult(phase: string): PhaseResult {
   return {
@@ -105,13 +132,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-1: isSimpleBugFix shortcut", () => {
     it("skips spec for 'bug' label → phases are [exec, qa]", async () => {
       await runIssueWithLogging(
-        42,
-        makeConfig(),
-        null, // logWriter
-        null, // stateManager
-        "Fix crash",
-        ["bug"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 42,
+          title: "Fix crash",
+          labels: ["bug"],
+        }),
       );
 
       // executePhaseWithRetry should be called for exec and qa (no spec)
@@ -121,13 +146,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("skips spec for 'fix' label", async () => {
       await runIssueWithLogging(
-        43,
-        makeConfig(),
-        null,
-        null,
-        "Fix typo",
-        ["fix"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 43,
+          title: "Fix typo",
+          labels: ["fix"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -136,13 +159,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("skips spec for 'hotfix' label", async () => {
       await runIssueWithLogging(
-        44,
-        makeConfig(),
-        null,
-        null,
-        "Hotfix deploy",
-        ["hotfix"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 44,
+          title: "Hotfix deploy",
+          labels: ["hotfix"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -151,13 +172,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("skips spec for 'patch' label", async () => {
       await runIssueWithLogging(
-        45,
-        makeConfig(),
-        null,
-        null,
-        "Patch release",
-        ["patch"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 45,
+          title: "Patch release",
+          labels: ["patch"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -168,13 +187,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-1: isDocs shortcut", () => {
     it("skips spec for 'docs' label → phases are [exec, qa]", async () => {
       await runIssueWithLogging(
-        50,
-        makeConfig(),
-        null,
-        null,
-        "Update readme",
-        ["docs"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 50,
+          title: "Update readme",
+          labels: ["docs"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -183,13 +200,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("skips spec for 'documentation' label", async () => {
       await runIssueWithLogging(
-        51,
-        makeConfig(),
-        null,
-        null,
-        "Add docs",
-        ["documentation"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 51,
+          title: "Add docs",
+          labels: ["documentation"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -198,13 +213,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("skips spec for 'readme' label", async () => {
       await runIssueWithLogging(
-        52,
-        makeConfig(),
-        null,
-        null,
-        "Update README",
-        ["readme"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 52,
+          title: "Update README",
+          labels: ["readme"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -215,13 +228,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-2: issueConfig.issueType set to 'docs' for docs labels", () => {
     it("passes issueType 'docs' to executePhaseWithRetry when docs label present", async () => {
       await runIssueWithLogging(
-        60,
-        makeConfig(),
-        null,
-        null,
-        "Docs update",
-        ["docs"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 60,
+          title: "Docs update",
+          labels: ["docs"],
+        }),
       );
 
       // The 3rd argument to executePhaseWithRetry is the config
@@ -233,13 +244,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("passes issueType 'docs' for 'documentation' label", async () => {
       await runIssueWithLogging(
-        61,
-        makeConfig(),
-        null,
-        null,
-        "Add documentation",
-        ["documentation"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 61,
+          title: "Add documentation",
+          labels: ["documentation"],
+        }),
       );
 
       for (const call of mockExecutePhase.mock.calls) {
@@ -250,13 +259,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("passes issueType 'docs' for 'readme' label", async () => {
       await runIssueWithLogging(
-        62,
-        makeConfig(),
-        null,
-        null,
-        "Update README",
-        ["readme"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 62,
+          title: "Update README",
+          labels: ["readme"],
+        }),
       );
 
       for (const call of mockExecutePhase.mock.calls) {
@@ -269,13 +276,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-3: no issueType when non-docs labels present", () => {
     it("does not set issueType for 'enhancement' label", async () => {
       await runIssueWithLogging(
-        70,
-        makeConfig(),
-        null,
-        null,
-        "Add feature",
-        ["enhancement"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 70,
+          title: "Add feature",
+          labels: ["enhancement"],
+        }),
       );
 
       // With autoDetectPhases and 'enhancement', spec runs first.
@@ -291,13 +296,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("does not set issueType for 'bug' label (bug shortcut, not docs)", async () => {
       await runIssueWithLogging(
-        71,
-        makeConfig(),
-        null,
-        null,
-        "Fix bug",
-        ["bug"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 71,
+          title: "Fix bug",
+          labels: ["bug"],
+        }),
       );
 
       for (const call of mockExecutePhase.mock.calls) {
@@ -308,13 +311,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("does not set issueType for empty labels", async () => {
       await runIssueWithLogging(
-        72,
-        makeConfig(),
-        null,
-        null,
-        "Something",
-        [],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 72,
+          title: "Something",
+          labels: [],
+        }),
       );
 
       for (const call of mockExecutePhase.mock.calls) {
@@ -327,13 +328,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-4: bug labels take precedence over docs labels in phase selection", () => {
     it("uses bug shortcut phases when both bug and docs labels present", async () => {
       await runIssueWithLogging(
-        80,
-        makeConfig(),
-        null,
-        null,
-        "Fix docs bug",
-        ["bug", "docs"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 80,
+          title: "Fix docs bug",
+          labels: ["bug", "docs"],
+        }),
       );
 
       // Bug shortcut fires first (if/else chain), so phases = [exec, qa]
@@ -343,16 +342,14 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("still sets issueType to 'docs' even when bug shortcut fires", async () => {
       await runIssueWithLogging(
-        81,
-        makeConfig(),
-        null,
-        null,
-        "Fix docs bug",
-        ["bug", "docs"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 81,
+          title: "Fix docs bug",
+          labels: ["bug", "docs"],
+        }),
       );
 
-      // issueConfig is built independently at L691-698, so docs label still sets issueType
+      // issueConfig is built independently, so docs label still sets issueType
       for (const call of mockExecutePhase.mock.calls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
@@ -363,13 +360,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("AC-5 (derived): case-insensitive label matching", () => {
     it("detects uppercase 'BUG' label as bug shortcut", async () => {
       await runIssueWithLogging(
-        90,
-        makeConfig(),
-        null,
-        null,
-        "Fix crash",
-        ["BUG"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 90,
+          title: "Fix crash",
+          labels: ["BUG"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -378,13 +373,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("detects uppercase 'DOCS' label and sets issueType", async () => {
       await runIssueWithLogging(
-        91,
-        makeConfig(),
-        null,
-        null,
-        "Update docs",
-        ["DOCS"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 91,
+          title: "Update docs",
+          labels: ["DOCS"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -398,13 +391,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("detects mixed-case 'Documentation' label", async () => {
       await runIssueWithLogging(
-        92,
-        makeConfig(),
-        null,
-        null,
-        "Add docs",
-        ["Documentation"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 92,
+          title: "Add docs",
+          labels: ["Documentation"],
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -415,13 +406,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   describe("exact matching (#461): substring labels do NOT trigger shortcuts", () => {
     it("'dispatch' label does not trigger bug shortcut despite containing 'patch'", async () => {
       await runIssueWithLogging(
-        110,
-        makeConfig(),
-        null,
-        null,
-        "Dispatch event",
-        ["dispatch"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 110,
+          title: "Dispatch event",
+          labels: ["dispatch"],
+        }),
       );
 
       // #461 switched to exact match — "dispatch" no longer matches "patch"
@@ -432,13 +421,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("'redocs-system' label does not trigger docs shortcut despite containing 'doc'", async () => {
       await runIssueWithLogging(
-        111,
-        makeConfig(),
-        null,
-        null,
-        "Redocs system",
-        ["redocs-system"],
-        makeOptions(),
+        makeCtx({
+          issueNumber: 111,
+          title: "Redocs system",
+          labels: ["redocs-system"],
+        }),
       );
 
       // #461 switched to exact match — "redocs-system" no longer matches "doc"
@@ -452,13 +439,13 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       // Use ["qa"] only — bug shortcut would produce ["exec", "qa"],
       // so this distinguishes explicit phases from shortcut
       await runIssueWithLogging(
-        100,
-        makeConfig({ phases: ["qa"] }),
-        null,
-        null,
-        "Bug fix",
-        ["bug"],
-        makeOptions({ autoDetectPhases: false }),
+        makeCtx({
+          issueNumber: 100,
+          config: { phases: ["qa"] },
+          title: "Bug fix",
+          labels: ["bug"],
+          options: { autoDetectPhases: false },
+        }),
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
@@ -467,13 +454,13 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
 
     it("runs spec when autoDetectPhases is false even with bug label", async () => {
       await runIssueWithLogging(
-        101,
-        makeConfig({ phases: ["spec", "exec", "qa"] }),
-        null,
-        null,
-        "Bug fix",
-        ["bug"],
-        makeOptions({ autoDetectPhases: false }),
+        makeCtx({
+          issueNumber: 101,
+          config: { phases: ["spec", "exec", "qa"] },
+          title: "Bug fix",
+          labels: ["bug"],
+          options: { autoDetectPhases: false },
+        }),
       );
 
       // Should use explicit phases including spec

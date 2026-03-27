@@ -10,15 +10,20 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
-import { LogWriter, createPhaseLogFromTiming } from "./log-writer.js";
-import { StateManager } from "./state-manager.js";
-import { Phase, ExecutionConfig, PhaseResult, IssueResult } from "./types.js";
+import { createPhaseLogFromTiming } from "./log-writer.js";
+import {
+  Phase,
+  ExecutionConfig,
+  PhaseResult,
+  IssueResult,
+  type RunOptions,
+  type IssueExecutionContext,
+  type BatchExecutionContext,
+} from "./types.js";
 import { classifyError } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
-import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
-import type { WorktreeInfo } from "./worktree-manager.js";
 import {
   createCheckpointCommit,
   rebaseBeforePR,
@@ -35,16 +40,13 @@ import {
   DOCS_LABELS,
 } from "./phase-mapper.js";
 
-/**
- * Callback type for per-phase progress updates.
- * Used by parallel mode in run.ts to render phase status to the terminal.
- */
-export type ProgressCallback = (
-  issue: number,
-  phase: string,
-  event: "start" | "complete" | "failed",
-  extra?: { durationSeconds?: number; error?: string },
-) => void;
+// Re-export types moved to types.ts (#402)
+export type {
+  RunOptions,
+  ProgressCallback,
+  IssueExecutionContext,
+  BatchExecutionContext,
+} from "./types.js";
 
 /**
  * Emit a structured progress line to stderr for MCP progress notifications.
@@ -72,93 +74,6 @@ export function emitProgressLine(
   }
   const line = `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
   process.stderr.write(line);
-}
-
-export interface RunOptions {
-  phases?: string;
-  sequential?: boolean;
-  dryRun?: boolean;
-  verbose?: boolean;
-  timeout?: number;
-  logJson?: boolean;
-  noLog?: boolean;
-  logPath?: string;
-  qualityLoop?: boolean;
-  maxIterations?: number;
-  batch?: string[];
-  smartTests?: boolean;
-  noSmartTests?: boolean;
-  testgen?: boolean;
-  autoDetectPhases?: boolean;
-  /** Enable automatic worktree creation for issue isolation */
-  worktreeIsolation?: boolean;
-  /** Reuse existing worktrees instead of creating new ones */
-  reuseWorktrees?: boolean;
-  /** Suppress version warnings and non-essential output */
-  quiet?: boolean;
-  /** Chain issues: each branches from previous (requires --sequential) */
-  chain?: boolean;
-  /**
-   * Wait for QA pass before starting next issue in chain mode.
-   * When enabled, the chain pauses if QA fails, preventing downstream issues
-   * from building on potentially broken code.
-   */
-  qaGate?: boolean;
-  /**
-   * Base branch for worktree creation.
-   * Resolution priority: this CLI flag → settings.run.defaultBase → 'main'
-   */
-  base?: string;
-  /**
-   * Disable MCP servers in headless mode.
-   * When true, MCPs are not passed to the SDK (faster/cheaper runs).
-   * Resolution priority: this CLI flag → settings.run.mcp → default (true)
-   */
-  noMcp?: boolean;
-  /**
-   * Resume from last completed phase.
-   * Reads phase markers from GitHub issue comments and skips completed phases.
-   */
-  resume?: boolean;
-  /**
-   * Disable automatic retry with MCP fallback.
-   * When true, no retry attempts are made on phase failure.
-   * Useful for debugging to see the actual failure without retry masking it.
-   */
-  noRetry?: boolean;
-  /**
-   * Skip pre-PR rebase onto the base branch.
-   * When true, branches are not rebased before creating the PR.
-   * Use when you want to preserve branch state or handle rebasing manually.
-   */
-  noRebase?: boolean;
-  /**
-   * Skip PR creation after successful QA.
-   * When true, branches are pushed but no PR is created.
-   * Useful for manual workflows where PRs are created separately.
-   */
-  noPr?: boolean;
-  /**
-   * Force re-execution of issues even if they have completed status.
-   * Bypasses the pre-flight state guard that skips ready_for_merge/merged issues.
-   */
-  force?: boolean;
-  /**
-   * Analyze run results and suggest workflow improvements.
-   * Displays observations about timing patterns, phase mismatches, and
-   * actionable suggestions after the summary output.
-   */
-  reflect?: boolean;
-  /**
-   * Max concurrent issues in parallel mode (default: 3).
-   * Only applies when --sequential is not set.
-   */
-  concurrency?: number;
-  /**
-   * Agent driver for phase execution.
-   * Default: "claude-code"
-   */
-  agent?: string;
 }
 
 export async function getIssueInfo(
@@ -348,17 +263,20 @@ export function getEnvConfig(): Partial<RunOptions> {
 
 export async function executeBatch(
   issueNumbers: number[],
-  config: ExecutionConfig,
-  logWriter: LogWriter | null,
-  stateManager: StateManager | null,
-  options: RunOptions,
-  issueInfoMap: Map<number, { title: string; labels: string[] }>,
-  worktreeMap: Map<number, WorktreeInfo>,
-  shutdownManager?: ShutdownManager,
-  packageManager?: string,
-  baseBranch?: string,
-  onProgress?: ProgressCallback,
+  batchCtx: BatchExecutionContext,
 ): Promise<IssueResult[]> {
+  const {
+    config,
+    options,
+    issueInfoMap,
+    worktreeMap,
+    logWriter,
+    stateManager,
+    shutdownManager,
+    packageManager,
+    baseBranch,
+    onProgress,
+  } = batchCtx;
   const results: IssueResult[] = [];
 
   for (const issueNumber of issueNumbers) {
@@ -378,23 +296,21 @@ export async function executeBatch(
       logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
     }
 
-    const result = await runIssueWithLogging(
+    const ctx: IssueExecutionContext = {
       issueNumber,
+      title: issueInfo.title,
+      labels: issueInfo.labels,
       config,
-      logWriter,
-      stateManager,
-      issueInfo.title,
-      issueInfo.labels,
       options,
-      worktreeInfo?.path,
-      worktreeInfo?.branch,
-      shutdownManager,
-      false, // Batch mode doesn't support chain
+      services: { logWriter, stateManager, shutdownManager },
+      worktree: worktreeInfo
+        ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
+        : undefined,
       packageManager,
-      undefined,
       baseBranch,
       onProgress,
-    );
+    };
+    const result = await runIssueWithLogging(ctx);
     results.push(result);
 
     // Record PR info in log before completing issue
@@ -412,22 +328,26 @@ export async function executeBatch(
 }
 
 export async function runIssueWithLogging(
-  issueNumber: number,
-  config: ExecutionConfig,
-  logWriter: LogWriter | null,
-  stateManager: StateManager | null,
-  issueTitle: string,
-  labels: string[],
-  options: RunOptions,
-  worktreePath?: string,
-  branch?: string,
-  shutdownManager?: ShutdownManager,
-  chainMode?: boolean,
-  packageManager?: string,
-  isLastInChain?: boolean,
-  baseBranch?: string,
-  onProgress?: ProgressCallback,
+  ctx: IssueExecutionContext,
 ): Promise<IssueResult> {
+  // Destructure context for use throughout the function
+  const {
+    issueNumber,
+    config,
+    options,
+    title: issueTitle,
+    labels,
+    services: { logWriter, stateManager, shutdownManager },
+    worktree,
+    chain,
+    packageManager,
+    baseBranch,
+    onProgress,
+  } = ctx;
+  const worktreePath = worktree?.path;
+  const branch = worktree?.branch;
+  const chainMode = chain?.enabled;
+  const isLastInChain = chain?.isLast;
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
   let loopTriggered = false;
