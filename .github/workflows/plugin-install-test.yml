@@ -139,7 +139,7 @@ jobs:
       - name: Test marketplace add (local)
         run: |
           echo "Testing claude plugin marketplace add..."
-          if claude plugin marketplace add . --scope local 2>&1; then
+          if claude plugin marketplace add ./ --scope local 2>&1; then
             echo "Marketplace add succeeded!"
           else
             exit_code=$?
