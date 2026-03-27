@@ -1,6 +1,5 @@
 {
   "name": "sequant",
-  "description": "Structured workflow system for Claude Code",
   "owner": {
     "name": "sequant-io",
     "email": "hello@sequant.io"
