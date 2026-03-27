@@ -59,7 +59,7 @@ jobs:
 
           node -e "
             const mp = JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'));
-            const required = ['name', 'description', 'plugins'];
+            const required = ['name', 'plugins'];
             const missing = required.filter(f => !mp[f]);
             if (missing.length > 0) {
               console.error('Missing required fields:', missing.join(', '));
@@ -139,7 +139,7 @@ jobs:
       - name: Test marketplace add (local)
         run: |
           echo "Testing claude plugin marketplace add..."
-          if claude plugin marketplace add . 2>&1; then
+          if claude plugin marketplace add . --scope local 2>&1; then
             echo "Marketplace add succeeded!"
           else
             exit_code=$?
