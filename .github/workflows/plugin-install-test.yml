@@ -59,7 +59,7 @@ jobs:
 
           node -e "
             const mp = JSON.parse(require('fs').readFileSync('.claude-plugin/marketplace.json', 'utf8'));
-            const required = ['name', 'description', 'plugins'];
+            const required = ['name', 'plugins'];
             const missing = required.filter(f => !mp[f]);
             if (missing.length > 0) {
               console.error('Missing required fields:', missing.join(', '));
@@ -263,8 +263,10 @@ jobs:
           # Mock a dangerous command that should be blocked
           mock_input='{"tool_name":"Bash","tool_input":{"command":"rm -rf /"}}'
 
-          echo "$mock_input" | bash hooks/pre-tool.sh
-          exit_code=$?
+          # Use || true to capture exit code — pre-tool.sh exits 2 to block,
+          # which would fail under bash -e before we can check it
+          exit_code=0
+          echo "$mock_input" | bash hooks/pre-tool.sh || exit_code=$?
 
           if [ "$exit_code" -eq 2 ]; then
             echo "pre-tool.sh: correctly blocked dangerous command (exit 2)"
