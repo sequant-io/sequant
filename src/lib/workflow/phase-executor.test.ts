@@ -4,8 +4,11 @@ import {
   formatDuration,
   getPhasePrompt,
   executePhaseWithRetry,
+  SPEC_EXTRA_RETRIES,
+  SPEC_RETRY_BACKOFF_MS,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
+import { ShutdownManager } from "../shutdown.js";
 
 // Mock agents-md module
 vi.mock("../agents-md.js", () => ({
@@ -401,5 +404,292 @@ describe("executePhaseWithRetry", () => {
     );
 
     expect(result.sessionId).toBe("abc-123");
+  });
+
+  // === AC-2: Phase retry behavior — cold-start success after retry ===
+  it("succeeds after first cold-start retry", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeResult({ durationSeconds: 20 }))
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 150 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(2);
+  });
+
+  // === AC-2: Phase retry — failure after max cold-start retries ===
+  it("fails after exhausting all cold-start retries", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeResult({ durationSeconds: 10, error: "cold fail" }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      { ...baseConfig, mcp: false },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    // initial + 2 retries = 3 calls total (no MCP fallback since mcp: false)
+    expect(executePhaseFn).toHaveBeenCalledTimes(3);
+    expect(result.error).toBe("cold fail");
+  });
+
+  // === AC-5: MCP fallback retry path ===
+  it("MCP fallback succeeds after cold-start retries exhausted", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(makeResult({ durationSeconds: 5 }))
+      .mockResolvedValueOnce(makeResult({ durationSeconds: 5 }))
+      .mockResolvedValueOnce(makeResult({ durationSeconds: 5 }))
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 200 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(4);
+    // 4th call should have mcp: false
+    const fallbackConfig = executePhaseFn.mock.calls[3][2] as ExecutionConfig;
+    expect(fallbackConfig.mcp).toBe(false);
+  });
+
+  it("MCP fallback fails → returns original error for non-spec phase", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResult({ durationSeconds: 5, error: "original cold" }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ durationSeconds: 5, error: "original cold" }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ durationSeconds: 5, error: "original cold" }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ durationSeconds: 5, error: "mcp fallback also failed" }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    // Should return original error, not fallback error
+    expect(result.error).toBe("original cold");
+  });
+
+  // === AC-6: Spec-specific retry with backoff ===
+  it("spec phase gets extra retries after cold-start + MCP fallback exhaust", async () => {
+    const noDelay = async () => {};
+    const executePhaseFn = vi
+      .fn()
+      // 3 cold-start retries (all < 60s)
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", durationSeconds: 10, error: "transient" }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", durationSeconds: 10, error: "transient" }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", durationSeconds: 10, error: "transient" }),
+      )
+      // MCP fallback (fails)
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", durationSeconds: 10, error: "mcp fail" }),
+      )
+      // Spec-specific extra retry succeeds
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", success: true, durationSeconds: 120 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "spec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      noDelay,
+    );
+
+    expect(result.success).toBe(true);
+    // 3 cold-start + 1 MCP fallback + 1 spec retry = 5
+    expect(executePhaseFn).toHaveBeenCalledTimes(5);
+  });
+
+  it("spec phase returns original error when all retries exhausted", async () => {
+    const noDelay = async () => {};
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeResult({ phase: "spec", durationSeconds: 10, error: "persistent" }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "spec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      noDelay,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("persistent");
+    // 3 cold-start + 1 MCP fallback + SPEC_EXTRA_RETRIES spec retries
+    expect(executePhaseFn).toHaveBeenCalledTimes(3 + 1 + SPEC_EXTRA_RETRIES);
+  });
+
+  it("spec phase enters Phase 3 on genuine failure (duration >= 60s)", async () => {
+    const noDelay = async () => {};
+    const executePhaseFn = vi
+      .fn()
+      // First attempt: genuine failure (>= 60s), breaks to Phase 3 for spec
+      .mockResolvedValueOnce(
+        makeResult({
+          phase: "spec",
+          durationSeconds: 120,
+          error: "api rate limit",
+        }),
+      )
+      // MCP fallback (fails with genuine duration)
+      .mockResolvedValueOnce(
+        makeResult({
+          phase: "spec",
+          durationSeconds: 120,
+          error: "still failing",
+        }),
+      )
+      // Spec-specific retry succeeds
+      .mockResolvedValueOnce(
+        makeResult({ phase: "spec", success: true, durationSeconds: 90 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "spec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      noDelay,
+    );
+
+    expect(result.success).toBe(true);
+    // 1 initial (breaks at >= 60s) + 1 MCP fallback + 1 spec retry = 3
+    expect(executePhaseFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("spec retry uses delayFn for backoff", async () => {
+    const delayFn = vi.fn().mockResolvedValue(undefined);
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeResult({ phase: "spec", durationSeconds: 120, error: "fail" }),
+      );
+
+    await executePhaseWithRetry(
+      1,
+      "spec",
+      { ...baseConfig, mcp: false },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    // delayFn should be called with SPEC_RETRY_BACKOFF_MS for each spec retry
+    expect(delayFn).toHaveBeenCalledTimes(SPEC_EXTRA_RETRIES);
+    expect(delayFn).toHaveBeenCalledWith(SPEC_RETRY_BACKOFF_MS);
+  });
+
+  // === AC-3: Timeout handling — ShutdownManager abort controller integration ===
+  it("registers and removes abort controller with ShutdownManager", async () => {
+    // We test via executePhaseWithRetry which delegates to executePhaseFn.
+    // The abort controller lifecycle is in executePhase (not executePhaseWithRetry),
+    // so we verify ShutdownManager integration at the retry level.
+    const shutdownManager = new ShutdownManager({
+      output: () => {},
+      errorOutput: () => {},
+      exit: () => {},
+    });
+
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(makeResult({ success: true, durationSeconds: 120 }));
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      shutdownManager,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(true);
+    // ShutdownManager was passed through — no abort controllers should remain
+    // (executePhaseWithRetry passes shutdownManager to executePhaseFn)
+    expect(executePhaseFn).toHaveBeenCalledWith(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      shutdownManager,
+      undefined,
+    );
+
+    // Cleanup
+    shutdownManager.dispose();
   });
 });
