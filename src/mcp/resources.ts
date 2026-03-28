@@ -6,7 +6,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as fs from "fs";
-import { STATE_FILE_PATH } from "../lib/workflow/state-schema.js";
+import { StateManager } from "../lib/workflow/state-manager.js";
 import { SETTINGS_PATH } from "../lib/settings.js";
 
 export function registerResources(server: McpServer): void {
@@ -23,7 +23,8 @@ export function registerResources(server: McpServer): void {
     },
     async () => {
       try {
-        if (!fs.existsSync(STATE_FILE_PATH)) {
+        const stateManager = new StateManager();
+        if (!stateManager.stateExists()) {
           return {
             contents: [
               {
@@ -35,13 +36,26 @@ export function registerResources(server: McpServer): void {
           };
         }
 
-        const content = fs.readFileSync(STATE_FILE_PATH, "utf-8");
+        // Use getAllIssueStates() which applies TTL filtering
+        const filteredIssues = await stateManager.getAllIssueStates();
+        const state = await stateManager.getState();
+        const output = {
+          version: state.version,
+          lastUpdated: state.lastUpdated,
+          lastSynced: state.lastSynced,
+          issues: Object.fromEntries(
+            Object.entries(filteredIssues).map(([k, v]) => [
+              String(v.number),
+              v,
+            ]),
+          ),
+        };
         return {
           contents: [
             {
               uri: "sequant://state",
               mimeType: "application/json",
-              text: content,
+              text: JSON.stringify(output, null, 2),
             },
           ],
         };

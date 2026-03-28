@@ -144,7 +144,10 @@ program
   .option("--cleanup", "Clean up stale/orphaned entries")
   .option("--dry-run", "Preview cleanup without changes")
   .option("--max-age <days>", "Remove entries older than N days", parseInt)
-  .option("--all", "Remove all orphaned entries (merged and abandoned)")
+  .option(
+    "--all",
+    "Show all entries including expired; with --cleanup removes all orphaned",
+  )
   .option("--offline", "Skip GitHub queries (pure local state)")
   .action((issue, options) => {
     // Support positional arg: `sequant status 42` → --issue 42

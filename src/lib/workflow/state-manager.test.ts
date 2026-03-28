@@ -2,7 +2,7 @@
  * Tests for StateManager
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -12,7 +12,10 @@ import {
   createIssueState,
   createAcceptanceCriterion,
   createAcceptanceCriteria,
+  isTerminalStatus,
+  isExpired,
   type WorkflowState,
+  type IssueState,
 } from "./state-schema.js";
 
 describe("StateManager", () => {
@@ -708,5 +711,183 @@ describe("StateManager", () => {
       // Lock file should not exist after operation completes
       expect(fs.existsSync(lockPath)).toBe(false);
     });
+  });
+
+  describe("resolvedAt", () => {
+    it("should set resolvedAt when transitioning to merged", async () => {
+      await manager.initializeIssue(42, "Test Issue");
+      await manager.updateIssueStatus(42, "in_progress");
+      await manager.updateIssueStatus(42, "merged");
+
+      const state = await manager.getIssueState(42);
+      expect(state!.resolvedAt).toBeDefined();
+      expect(new Date(state!.resolvedAt!).getTime()).toBeGreaterThan(0);
+    });
+
+    it("should set resolvedAt when transitioning to abandoned", async () => {
+      await manager.initializeIssue(42, "Test Issue");
+      await manager.updateIssueStatus(42, "abandoned");
+
+      const state = await manager.getIssueState(42);
+      expect(state!.resolvedAt).toBeDefined();
+    });
+
+    it("should not overwrite resolvedAt on subsequent terminal transitions", async () => {
+      await manager.initializeIssue(42, "Test Issue");
+      await manager.updateIssueStatus(42, "merged");
+
+      const state1 = await manager.getIssueState(42);
+      const firstResolvedAt = state1!.resolvedAt;
+
+      // Wait a tick to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      // Clear cache so we re-read
+      manager.clearCache();
+      await manager.updateIssueStatus(42, "abandoned");
+
+      const state2 = await manager.getIssueState(42);
+      expect(state2!.resolvedAt).toBe(firstResolvedAt);
+    });
+
+    it("should not set resolvedAt for non-terminal statuses", async () => {
+      await manager.initializeIssue(42, "Test Issue");
+      await manager.updateIssueStatus(42, "in_progress");
+
+      const state = await manager.getIssueState(42);
+      expect(state!.resolvedAt).toBeUndefined();
+    });
+  });
+
+  describe("TTL filtering", () => {
+    beforeEach(() => {
+      // Mock getSettings to control TTL
+      vi.doMock("../settings.js", () => ({
+        getSettings: vi.fn().mockResolvedValue({
+          run: { resolvedIssueTTL: 7 },
+        }),
+      }));
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("should filter out expired resolved issues from getAllIssueStates", async () => {
+      // Create an issue and manually set it as resolved 10 days ago
+      await manager.initializeIssue(42, "Old merged");
+      const state = await manager.getState();
+      state.issues["42"].status = "merged";
+      state.issues["42"].resolvedAt = new Date(
+        Date.now() - 10 * 86_400_000,
+      ).toISOString();
+      await manager.saveState(state);
+      manager.clearCache();
+
+      // Also create an active issue
+      await manager.initializeIssue(43, "Active issue");
+
+      const filtered = await manager.getAllIssueStates();
+      expect(filtered[43]).toBeDefined();
+      // Issue 42 should be filtered out (10 days > 7 day TTL)
+      expect(filtered[42]).toBeUndefined();
+    });
+
+    it("should include resolved issues within TTL window", async () => {
+      await manager.initializeIssue(42, "Recent merged");
+      const state = await manager.getState();
+      state.issues["42"].status = "merged";
+      state.issues["42"].resolvedAt = new Date(
+        Date.now() - 3 * 86_400_000,
+      ).toISOString();
+      await manager.saveState(state);
+      manager.clearCache();
+
+      const filtered = await manager.getAllIssueStates();
+      expect(filtered[42]).toBeDefined();
+    });
+
+    it("getAllIssueStatesUnfiltered should return all issues regardless of TTL", async () => {
+      // Write state directly to disk to bypass saveState's lazy pruning
+      await manager.initializeIssue(42, "Old merged");
+      const state = await manager.getState();
+      state.issues["42"].status = "merged";
+      state.issues["42"].resolvedAt = new Date(
+        Date.now() - 10 * 86_400_000,
+      ).toISOString();
+      // Write directly to file, bypassing saveState's lazy cleanup
+      const dir = path.dirname(statePath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      state.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+      manager.clearCache();
+
+      const all = await manager.getAllIssueStatesUnfiltered();
+      expect(all[42]).toBeDefined();
+      expect(all[42].status).toBe("merged");
+    });
+  });
+});
+
+describe("isTerminalStatus", () => {
+  it("should return true for merged", () => {
+    expect(isTerminalStatus("merged")).toBe(true);
+  });
+
+  it("should return true for abandoned", () => {
+    expect(isTerminalStatus("abandoned")).toBe(true);
+  });
+
+  it("should return false for in_progress", () => {
+    expect(isTerminalStatus("in_progress")).toBe(false);
+  });
+
+  it("should return false for not_started", () => {
+    expect(isTerminalStatus("not_started")).toBe(false);
+  });
+});
+
+describe("isExpired", () => {
+  const now = Date.now();
+
+  it("should return false when ttlDays is 0 (opt-out)", () => {
+    const entry = {
+      ...createIssueState(1, "t"),
+      resolvedAt: new Date(now - 100 * 86_400_000).toISOString(),
+      status: "merged" as const,
+    };
+    expect(isExpired(entry, 0, now)).toBe(false);
+  });
+
+  it("should return false when resolvedAt is not set", () => {
+    const entry = createIssueState(1, "t");
+    expect(isExpired(entry, 7, now)).toBe(false);
+  });
+
+  it("should return true when ttlDays is -1 (immediate prune)", () => {
+    const entry = {
+      ...createIssueState(1, "t"),
+      resolvedAt: new Date().toISOString(),
+      status: "merged" as const,
+    };
+    expect(isExpired(entry, -1, now)).toBe(true);
+  });
+
+  it("should return true when age exceeds TTL", () => {
+    const entry = {
+      ...createIssueState(1, "t"),
+      resolvedAt: new Date(now - 10 * 86_400_000).toISOString(),
+      status: "merged" as const,
+    };
+    expect(isExpired(entry, 7, now)).toBe(true);
+  });
+
+  it("should return false when age is within TTL", () => {
+    const entry = {
+      ...createIssueState(1, "t"),
+      resolvedAt: new Date(now - 3 * 86_400_000).toISOString(),
+      status: "merged" as const,
+    };
+    expect(isExpired(entry, 7, now)).toBe(false);
   });
 });

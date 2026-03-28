@@ -153,6 +153,9 @@ export async function cleanupStaleEntries(
             // Mark as abandoned (kept for review)
             orphaned.push(issueNum);
             issueState.status = "abandoned";
+            if (!issueState.resolvedAt) {
+              issueState.resolvedAt = new Date().toISOString();
+            }
             if (options.verbose) {
               console.log(`   → Marked as abandoned (kept for review)`);
             }
@@ -304,6 +307,9 @@ export async function reconcileStateAtStartup(
         // Advance state to merged
         issueState.status = "merged";
         issueState.lastActivity = new Date().toISOString();
+        if (!issueState.resolvedAt) {
+          issueState.resolvedAt = new Date().toISOString();
+        }
         advanced.push(issueNum);
       } else {
         stillPending.push(issueNum);

@@ -18,10 +18,11 @@ import {
   formatRelativeTime,
   type ReconcileResult,
 } from "../lib/workflow/reconcile.js";
-import type {
-  IssueState,
-  IssueStatus,
-  Phase,
+import {
+  isTerminalStatus,
+  type IssueState,
+  type IssueStatus,
+  type Phase,
 } from "../lib/workflow/state-schema.js";
 
 export interface StatusCommandOptions {
@@ -87,9 +88,21 @@ async function runReconciliation(
 }
 
 /**
- * Color-code issue status
+ * Format age in days from an ISO timestamp
  */
-function colorStatus(status: IssueStatus): string {
+function formatAgeDays(isoTimestamp: string | undefined): string {
+  if (!isoTimestamp) return "";
+  const age = Date.now() - new Date(isoTimestamp).getTime();
+  const days = Math.floor(age / 86_400_000);
+  if (days < 1) return "today";
+  return `${days}d ago`;
+}
+
+/**
+ * Color-code issue status, with age indicator for resolved issues
+ */
+function colorStatus(status: IssueStatus, resolvedAt?: string): string {
+  const age = resolvedAt ? ` (${formatAgeDays(resolvedAt)})` : "";
   switch (status) {
     case "not_started":
       return chalk.gray(status);
@@ -100,11 +113,11 @@ function colorStatus(status: IssueStatus): string {
     case "ready_for_merge":
       return chalk.green(status);
     case "merged":
-      return chalk.green(status);
+      return chalk.green(status + age);
     case "blocked":
       return chalk.yellow(status);
     case "abandoned":
-      return chalk.red(status);
+      return chalk.red(status + age);
     default:
       return status;
   }
@@ -146,7 +159,7 @@ function formatIssueState(issue: IssueState): string {
   );
 
   // Status and current phase
-  const status = colorStatus(issue.status);
+  const status = colorStatus(issue.status, issue.resolvedAt);
   const currentPhase = issue.currentPhase
     ? chalk.cyan(issue.currentPhase)
     : chalk.gray("none");
@@ -241,7 +254,7 @@ function displayIssueSummary(issues: IssueState[]): void {
       rows.push([
         `#${issue.number}`,
         title,
-        colorStatus(issue.status),
+        colorStatus(issue.status, issue.resolvedAt),
         issue.currentPhase || "-",
         hintDisplay,
       ]);
@@ -425,8 +438,10 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
         );
       }
     } else {
-      // Show all issues
-      const allIssues = await stateManager.getAllIssueStates();
+      // Show all issues (--all bypasses TTL filtering)
+      const allIssues = options.all
+        ? await stateManager.getAllIssueStatesUnfiltered()
+        : await stateManager.getAllIssueStates();
       const issues = Object.values(allIssues);
 
       if (options.json) {
