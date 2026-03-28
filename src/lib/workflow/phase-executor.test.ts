@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   parseQaVerdict,
+  parseQaSummary,
   formatDuration,
   getPhasePrompt,
   executePhaseWithRetry,
@@ -95,6 +96,170 @@ Some analysis here.
 
 All acceptance criteria met.`;
     expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+  });
+});
+
+describe("parseQaSummary", () => {
+  it("returns null for empty string", () => {
+    expect(parseQaSummary("")).toBeNull();
+  });
+
+  it("returns null when no AC table found", () => {
+    expect(parseQaSummary("Some random QA output without AC table")).toBeNull();
+  });
+
+  it("parses standard AC coverage table (5-column format)", () => {
+    const output = `### AC Coverage
+
+| AC | Source | Description | Status | Notes |
+|----|--------|-------------|--------|-------|
+| AC-1 | Original | Expose verdict | MET | Works correctly |
+| AC-2 | Original | Add qaSummary | MET | Schema added |
+| AC-3 | Original | Parse AC data | NOT_MET | Missing parser |
+
+**Coverage:** 2/3 AC items fully met`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 2,
+      acTotal: 3,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
+  it("parses compact AC table (4-column format)", () => {
+    const output = `### AC Coverage
+
+| AC | Description | Status | Notes |
+|----|-------------|--------|-------|
+| AC-1 | Feature works | MET | Done |
+| AC-2 | Tests pass | MET | All green |
+
+**Coverage:** 2/2 AC items fully met`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 2,
+      acTotal: 2,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
+  it("counts PARTIALLY_MET and PENDING as not met", () => {
+    const output = `| AC-1 | Original | Implement | MET | Done |
+| AC-2 | Original | Tests | PARTIALLY_MET | Partial |
+| AC-3 | Original | Docs | PENDING | Waiting |
+| AC-4 | Original | Review | N/A | Skipped |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 4,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
+  it("extracts gaps from Issues section", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- Missing error handling for edge case
+- No input validation on user data
+
+**Suggestions:**
+- Consider adding retry logic`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 1,
+      gaps: [
+        "Missing error handling for edge case",
+        "No input validation on user data",
+      ],
+      suggestions: ["Consider adding retry logic"],
+    });
+  });
+
+  it("extracts suggestions from Suggestions section", () => {
+    const output = `| AC-1 | Desc | MET | Done |
+
+**Suggestions:**
+- Add SHA format regex validation
+- Consider caching parsed results`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 1,
+      gaps: [],
+      suggestions: [
+        "Add SHA format regex validation",
+        "Consider caching parsed results",
+      ],
+    });
+  });
+
+  it("skips 'None' entries in Issues and Suggestions", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- None
+
+**Suggestions:**
+- None`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 1,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
+  it("handles full realistic QA output", () => {
+    const output = `## QA Review for Issue #434
+
+### AC Coverage
+
+| AC | Source | Description | Status | Notes |
+|----|--------|-------------|--------|-------|
+| AC-1 | Original | Expose verdict field | MET | Already stored, now exposed |
+| AC-2 | Original | Add qaSummary schema | MET | Schema added to run-log-schema.ts |
+| AC-3 | Original | Parse AC data from output | MET | parseQaSummary function added |
+| AC-4 | Derived | Backward compatibility | MET | Old logs parse fine |
+
+**Coverage:** 4/4 AC items fully met
+
+### Code Review
+
+**Strengths:**
+- Clean implementation following existing patterns
+
+**Issues:**
+- Minor: consider adding jsdoc to buildSummary
+
+**Suggestions:**
+- Consider adding debug logging for parse failures
+- Extract regex patterns to named constants
+
+### Verdict: READY_FOR_MERGE`;
+
+    const result = parseQaSummary(output);
+    expect(result).not.toBeNull();
+    expect(result!.acMet).toBe(4);
+    expect(result!.acTotal).toBe(4);
+    expect(result!.gaps).toEqual([
+      "Minor: consider adding jsdoc to buildSummary",
+    ]);
+    expect(result!.suggestions).toEqual([
+      "Consider adding debug logging for parse failures",
+      "Extract regex patterns to named constants",
+    ]);
   });
 });
 

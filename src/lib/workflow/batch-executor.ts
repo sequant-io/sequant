@@ -792,6 +792,7 @@ export async function runIssueWithLogging(
           {
             error: result.error,
             verdict: result.verdict,
+            qaSummary: result.qaSummary,
             // Observability fields (AC-1, AC-2, AC-3, AC-7)
             filesModified: diffStats?.filesModified,
             fileDiffStats: diffStats?.fileDiffStats,

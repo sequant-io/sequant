@@ -13,6 +13,7 @@ import { execSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
+import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
@@ -133,6 +134,73 @@ export function parseQaVerdict(output: string): QaVerdict | null {
   // Normalize to uppercase with underscores
   const verdict = verdictMatch[1].toUpperCase().replace(/-/g, "_") as QaVerdict;
   return verdict;
+}
+
+/**
+ * Parse condensed QA summary from QA phase output (#434).
+ *
+ * Extracts AC coverage counts, gaps (from "Issues" section),
+ * and suggestions from the structured QA review markdown.
+ *
+ * @internal Exported for testing only
+ */
+export function parseQaSummary(output: string): QaSummary | null {
+  if (!output) return null;
+
+  // Parse AC statuses from the AC Coverage table rows
+  // Format: | AC-N | ... | MET/NOT_MET/PARTIALLY_MET/PENDING/N/A | ... |
+  const acStatusPattern =
+    /\|\s*AC-\d+\s*\|[^|]*\|[^|]*\|\s*(MET|NOT_MET|PARTIALLY_MET|PENDING|N\/A)\s*\|/gi;
+  const acMatches = [...output.matchAll(acStatusPattern)];
+
+  if (acMatches.length === 0) {
+    // Try the compact table format: | AC-N | description | MET | notes |
+    const compactPattern =
+      /\|\s*AC-\d+\s*\|[^|]*\|\s*(MET|NOT_MET|PARTIALLY_MET|PENDING|N\/A)\s*\|/gi;
+    const compactMatches = [...output.matchAll(compactPattern)];
+    if (compactMatches.length === 0) return null;
+    return buildSummary(compactMatches, output);
+  }
+
+  return buildSummary(acMatches, output);
+}
+
+function buildSummary(
+  acMatches: RegExpMatchArray[],
+  output: string,
+): QaSummary {
+  const acTotal = acMatches.length;
+  const acMet = acMatches.filter((m) => m[1].toUpperCase() === "MET").length;
+
+  // Extract gaps from "**Issues:**" section (bulleted list items)
+  const gaps: string[] = [];
+  const issuesMatch = output.match(/\*\*Issues:\*\*\s*\n((?:\s*-\s+.+\n?)*)/);
+  if (issuesMatch) {
+    const lines = issuesMatch[1].trim().split("\n");
+    for (const line of lines) {
+      const trimmed = line.replace(/^\s*-\s+/, "").trim();
+      if (trimmed && trimmed !== "None") {
+        gaps.push(trimmed);
+      }
+    }
+  }
+
+  // Extract suggestions from "**Suggestions:**" section (bulleted list items)
+  const suggestions: string[] = [];
+  const suggestionsMatch = output.match(
+    /\*\*Suggestions:\*\*\s*\n((?:\s*-\s+.+\n?)*)/,
+  );
+  if (suggestionsMatch) {
+    const lines = suggestionsMatch[1].trim().split("\n");
+    for (const line of lines) {
+      const trimmed = line.replace(/^\s*-\s+/, "").trim();
+      if (trimmed && trimmed !== "None") {
+        suggestions.push(trimmed);
+      }
+    }
+  }
+
+  return { acMet, acTotal, gaps, suggestions };
 }
 
 /**
@@ -353,6 +421,7 @@ async function executePhase(
     // Agent "success" just means the execution completed — we need to parse the verdict
     if (phase === "qa" && agentResult.output) {
       const verdict = parseQaVerdict(agentResult.output);
+      const qaSummary = parseQaSummary(agentResult.output) ?? undefined;
       if (
         verdict &&
         verdict !== "READY_FOR_MERGE" &&
@@ -366,6 +435,7 @@ async function executePhase(
           sessionId: agentResult.sessionId,
           output: agentResult.output,
           verdict,
+          qaSummary,
           ...tails,
         };
       }
@@ -376,6 +446,7 @@ async function executePhase(
         sessionId: agentResult.sessionId,
         output: agentResult.output,
         verdict: verdict ?? undefined,
+        qaSummary,
         ...tails,
       };
     }

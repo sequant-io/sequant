@@ -143,6 +143,8 @@ export function registerLogsTool(server: McpServer): void {
                       status: p.status,
                       durationSeconds: p.durationSeconds,
                       error: p.error,
+                      ...(p.verdict && { verdict: p.verdict }),
+                      ...(p.qaSummary && { qaSummary: p.qaSummary }),
                     })),
                   })),
                 })),

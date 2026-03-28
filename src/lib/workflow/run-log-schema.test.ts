@@ -4,6 +4,7 @@ import {
   PhaseStatusSchema,
   IssueStatusSchema,
   PhaseLogSchema,
+  QaSummarySchema,
   IssueLogSchema,
   RunConfigSchema,
   RunLogSchema,
@@ -121,6 +122,58 @@ describe("Zod Schemas", () => {
       expect(() =>
         PhaseLogSchema.parse({ ...validPhaseLog, startTime: "invalid" }),
       ).toThrow();
+    });
+
+    it("accepts phase log with qaSummary (#434)", () => {
+      const withQaSummary = {
+        ...validPhaseLog,
+        phase: "qa",
+        verdict: "READY_FOR_MERGE",
+        qaSummary: {
+          acMet: 3,
+          acTotal: 3,
+          gaps: [],
+          suggestions: ["Consider adding SHA format regex validation"],
+        },
+      };
+      expect(() => PhaseLogSchema.parse(withQaSummary)).not.toThrow();
+    });
+
+    it("accepts phase log without qaSummary (backward compat, #434)", () => {
+      const withoutQaSummary = {
+        ...validPhaseLog,
+        phase: "qa",
+        verdict: "READY_FOR_MERGE",
+      };
+      const parsed = PhaseLogSchema.parse(withoutQaSummary);
+      expect(parsed.qaSummary).toBeUndefined();
+    });
+  });
+
+  describe("QaSummarySchema (#434)", () => {
+    it("accepts valid summary", () => {
+      const valid = { acMet: 3, acTotal: 5, gaps: ["Gap 1"], suggestions: [] };
+      expect(() => QaSummarySchema.parse(valid)).not.toThrow();
+    });
+
+    it("accepts zero counts", () => {
+      const zero = { acMet: 0, acTotal: 0, gaps: [], suggestions: [] };
+      expect(() => QaSummarySchema.parse(zero)).not.toThrow();
+    });
+
+    it("rejects negative acMet", () => {
+      expect(() =>
+        QaSummarySchema.parse({
+          acMet: -1,
+          acTotal: 3,
+          gaps: [],
+          suggestions: [],
+        }),
+      ).toThrow();
+    });
+
+    it("rejects missing fields", () => {
+      expect(() => QaSummarySchema.parse({ acMet: 3 })).toThrow();
     });
   });
 
