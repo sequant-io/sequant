@@ -1,0 +1,5 @@
+claude --print "what skills do you have from sequant?"
+
+---
+
+/sequant:setup
