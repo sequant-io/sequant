@@ -39,7 +39,10 @@ import {
   createIssueState,
   createPhaseState,
   updateAcceptanceCriteriaSummary,
+  isTerminalStatus,
+  isExpired,
 } from "./state-schema.js";
+import { getSettings } from "../settings.js";
 import type { ScopeAssessment } from "../scope/types.js";
 
 export interface StateManagerOptions {
@@ -207,6 +210,26 @@ export class StateManager {
     // Update lastUpdated timestamp
     state.lastUpdated = new Date().toISOString();
 
+    // Lazy disk cleanup: prune expired entries before writing
+    try {
+      const settings = await getSettings();
+      const ttlDays = settings.run.resolvedIssueTTL ?? 7;
+      const pruned: string[] = [];
+      for (const [key, entry] of Object.entries(state.issues)) {
+        if (isExpired(entry, ttlDays)) {
+          pruned.push(key);
+          delete state.issues[key];
+        }
+      }
+      if (pruned.length > 0 && this.verbose) {
+        console.log(
+          `📊 Pruned ${pruned.length} expired issue(s): ${pruned.map((k) => `#${k}`).join(", ")}`,
+        );
+      }
+    } catch {
+      // Settings read failure should not block state writes
+    }
+
     // Ensure directory exists
     const dir = path.dirname(this.statePath);
     if (!fs.existsSync(dir)) {
@@ -254,9 +277,28 @@ export class StateManager {
   }
 
   /**
-   * Get all issue states
+   * Get all issue states, filtering out expired resolved issues based on TTL.
+   *
+   * Uses `run.resolvedIssueTTL` from settings (default: 7 days).
+   * Expired entries are hidden in-memory; disk cleanup happens lazily on next write.
    */
   async getAllIssueStates(): Promise<Record<number, IssueState>> {
+    const state = await this.getState();
+    const settings = await getSettings();
+    const ttlDays = settings.run.resolvedIssueTTL ?? 7;
+    const result: Record<number, IssueState> = {};
+    for (const [key, value] of Object.entries(state.issues)) {
+      if (!isExpired(value, ttlDays)) {
+        result[parseInt(key, 10)] = value;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Get all issue states without TTL filtering (for --all escape hatch).
+   */
+  async getAllIssueStatesUnfiltered(): Promise<Record<number, IssueState>> {
     const state = await this.getState();
     const result: Record<number, IssueState> = {};
     for (const [key, value] of Object.entries(state.issues)) {
@@ -381,6 +423,11 @@ export class StateManager {
 
       issueState.status = status;
       issueState.lastActivity = new Date().toISOString();
+
+      // Record resolvedAt on first transition to terminal status
+      if (isTerminalStatus(status) && !issueState.resolvedAt) {
+        issueState.resolvedAt = new Date().toISOString();
+      }
 
       await this.saveState(state);
     });

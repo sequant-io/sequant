@@ -12,6 +12,8 @@ import {
   reconcileState,
   getNextActionHint,
 } from "../../lib/workflow/reconcile.js";
+import { isExpired } from "../../lib/workflow/state-schema.js";
+import { getSettings } from "../../lib/settings.js";
 
 export function registerStatusTool(server: McpServer): void {
   server.registerTool(
@@ -56,6 +58,29 @@ export function registerStatusTool(server: McpServer): void {
         stateManager.clearCache();
 
         const issueState = await stateManager.getIssueState(issue);
+
+        // Respect TTL: treat expired resolved issues as not tracked
+        if (issueState) {
+          const settings = await getSettings();
+          const ttlDays = settings.run.resolvedIssueTTL ?? 7;
+          if (isExpired(issueState, ttlDays)) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    issue,
+                    status: "not_tracked",
+                    isRunning: isRunning(issue),
+                    lastSynced: reconcileResult.lastSynced,
+                    githubReachable: reconcileResult.githubReachable,
+                    message: `Issue #${issue} was resolved and has expired (TTL: ${ttlDays} days)`,
+                  }),
+                },
+              ],
+            };
+          }
+        }
 
         if (!issueState) {
           return {

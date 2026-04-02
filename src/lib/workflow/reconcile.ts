@@ -323,11 +323,17 @@ export async function reconcileState(
             case "update_to_merged":
               state.issues[issueKey].status = "merged" as IssueStatus;
               state.issues[issueKey].lastActivity = now;
+              if (!state.issues[issueKey].resolvedAt) {
+                state.issues[issueKey].resolvedAt = now;
+              }
               stateModified = true;
               break;
             case "update_to_abandoned":
               state.issues[issueKey].status = "abandoned" as IssueStatus;
               state.issues[issueKey].lastActivity = now;
+              if (!state.issues[issueKey].resolvedAt) {
+                state.issues[issueKey].resolvedAt = now;
+              }
               stateModified = true;
               break;
             case "clear_worktree":

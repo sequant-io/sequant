@@ -118,6 +118,14 @@ export interface RunSettings {
    */
   staleBranchThreshold: number;
   /**
+   * TTL in days for resolved issues on the dashboard.
+   * After this period, resolved issues are auto-pruned on next read.
+   * - Default: 7 (one week)
+   * - 0: Never auto-prune (manual cleanup only)
+   * - -1: Prune immediately (resolved issues never shown)
+   */
+  resolvedIssueTTL: number;
+  /**
    * Agent driver for phase execution.
    * Default: "claude-code". Set to "aider" to use Aider CLI.
    */
@@ -296,6 +304,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     mcp: true, // Enable MCP servers by default in headless mode
     retry: true, // Enable automatic retry with MCP fallback by default
     staleBranchThreshold: 5, // Block QA/test if feature is >5 commits behind main
+    resolvedIssueTTL: 7, // Auto-prune resolved issues after 7 days
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,

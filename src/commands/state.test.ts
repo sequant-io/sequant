@@ -92,6 +92,52 @@ describe("state command", () => {
       expect(result3.removed).toHaveLength(0);
     });
 
+    it("state clean force-removes merged entries even without orphaned worktree", async () => {
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "100": {
+            ...createIssueState(100, "Merged without worktree"),
+            status: "merged",
+            resolvedAt: new Date().toISOString(),
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      const result = await cleanupStaleEntries({ statePath });
+      expect(result.success).toBe(true);
+      expect(result.removed).toContain(100);
+      expect(result.merged).toContain(100);
+
+      // Verify entry was actually removed from disk
+      const after = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(after.issues["100"]).toBeUndefined();
+    });
+
+    it("state clean force-removes abandoned entries even without orphaned worktree", async () => {
+      const state: WorkflowState = {
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        issues: {
+          "200": {
+            ...createIssueState(200, "Abandoned without worktree"),
+            status: "abandoned",
+            resolvedAt: new Date().toISOString(),
+          },
+        },
+      };
+      fs.writeFileSync(statePath, JSON.stringify(state));
+
+      const result = await cleanupStaleEntries({ statePath });
+      expect(result.success).toBe(true);
+      expect(result.removed).toContain(200);
+
+      const after = JSON.parse(fs.readFileSync(statePath, "utf-8"));
+      expect(after.issues["200"]).toBeUndefined();
+    });
+
     it("state rebuild should be idempotent - running twice yields same result", async () => {
       // First rebuild with no logs
       const result1 = await rebuildStateFromLogs({ logPath, statePath });

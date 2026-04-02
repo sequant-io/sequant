@@ -216,6 +216,8 @@ export const IssueStateSchema = z.object({
   scopeAssessment: ScopeAssessmentSchema.optional(),
   /** Claude session ID (for resume) */
   sessionId: z.string().optional(),
+  /** When the issue transitioned to a terminal status (merged/abandoned/closed) */
+  resolvedAt: z.string().datetime().optional(),
   /** Most recent activity timestamp */
   lastActivity: z.string().datetime(),
   /** When this issue was first tracked */
@@ -354,4 +356,33 @@ export function updateAcceptanceCriteriaSummary(
     blocked: ac.items.filter((i) => i.status === "blocked").length,
   };
   return { ...ac, summary };
+}
+
+/** Terminal statuses that indicate an issue is resolved */
+const TERMINAL_STATUSES: IssueStatus[] = ["merged", "abandoned"];
+
+/**
+ * Check if an issue status is terminal (resolved)
+ */
+export function isTerminalStatus(status: IssueStatus): boolean {
+  return TERMINAL_STATUSES.includes(status);
+}
+
+/**
+ * Check if a resolved issue has expired based on TTL.
+ *
+ * @param entry - The issue state to check
+ * @param ttlDays - TTL in days. 0 = never auto-prune, -1 = prune immediately
+ * @param now - Current time (for testing)
+ */
+export function isExpired(
+  entry: IssueState,
+  ttlDays: number,
+  now: number = Date.now(),
+): boolean {
+  if (ttlDays === 0) return false; // opt-out
+  if (!entry.resolvedAt) return false; // not resolved
+  if (ttlDays < 0) return true; // prune immediately
+  const age = now - new Date(entry.resolvedAt).getTime();
+  return age > ttlDays * 86_400_000;
 }
