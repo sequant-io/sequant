@@ -107,8 +107,8 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
 };
 
 // Re-export QaVerdict from run-log-schema (single source of truth)
-import type { QaVerdict } from "./run-log-schema.js";
-export type { QaVerdict } from "./run-log-schema.js";
+import type { QaVerdict, QaSummary } from "./run-log-schema.js";
+export type { QaVerdict, QaSummary } from "./run-log-schema.js";
 
 /**
  * Result of executing a single phase
@@ -122,6 +122,8 @@ export interface PhaseResult {
   output?: string;
   /** Parsed QA verdict (only for qa phase) */
   verdict?: QaVerdict;
+  /** Condensed QA summary with AC coverage (#434) */
+  summary?: QaSummary;
   /** Last N lines of stderr captured from the agent process (#447) */
   stderrTail?: string[];
   /** Last N lines of stdout captured from the agent process (#447) */

@@ -112,6 +112,26 @@ export const ErrorContextSchema = z.object({
 export type ErrorContext = z.infer<typeof ErrorContextSchema>;
 
 /**
+ * Condensed QA verdict summary for structured log output (#434).
+ *
+ * Provides AC coverage counts, gaps, and suggestions so that
+ * `sequant_logs` consumers can review QA results without
+ * fetching issue comments separately.
+ */
+export const QaSummarySchema = z.object({
+  /** Number of acceptance criteria marked MET */
+  acMet: z.number().int().nonnegative(),
+  /** Total number of acceptance criteria evaluated */
+  acTotal: z.number().int().nonnegative(),
+  /** List of gaps identified during QA */
+  gaps: z.array(z.string()),
+  /** List of improvement suggestions from QA */
+  suggestions: z.array(z.string()),
+});
+
+export type QaSummary = z.infer<typeof QaSummarySchema>;
+
+/**
  * Log entry for a single phase execution
  */
 export const PhaseLogSchema = z.object({
@@ -139,6 +159,8 @@ export const PhaseLogSchema = z.object({
   testsPassed: z.number().int().nonnegative().optional(),
   /** Parsed QA verdict (only for qa phase) */
   verdict: QaVerdictSchema.optional(),
+  /** Condensed QA summary with AC coverage (#434) */
+  summary: QaSummarySchema.optional(),
   /** Git commit SHA after phase completes (AC-2) */
   commitHash: z.string().optional(),
   /** Per-file diff statistics (AC-3) */
@@ -329,6 +351,7 @@ export function completePhaseLog(
       | "testsRun"
       | "testsPassed"
       | "verdict"
+      | "summary"
       | "commitHash"
       | "fileDiffStats"
       | "cacheMetrics"

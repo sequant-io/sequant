@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Include QA verdict summary in `sequant_logs` MCP tool response (#434)
+  - Expose existing `verdict` field and new `summary` (acMet, acTotal, gaps, suggestions)
+  - Parse AC coverage data from QA output via `parseQaSummary()` — handles 3/4/5-column tables, emoji statuses, `PARTIAL` shorthand
+  - Eliminates need to separately fetch issue comments for batch QA review
 - Add small-diff fast path to `/qa` skill to skip sub-agent spawning for trivial changes (#465)
   - Diffs below configurable threshold (default: 100 lines) use inline quality checks instead of 3 sub-agents
   - Simplified output template omits N/A-heavy sections for small fixes

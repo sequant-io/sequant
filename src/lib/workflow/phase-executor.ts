@@ -13,6 +13,7 @@ import { execSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
+import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
@@ -133,6 +134,104 @@ export function parseQaVerdict(output: string): QaVerdict | null {
   // Normalize to uppercase with underscores
   const verdict = verdictMatch[1].toUpperCase().replace(/-/g, "_") as QaVerdict;
   return verdict;
+}
+
+/**
+ * Parse condensed QA summary from QA phase output (#434).
+ *
+ * Handles multiple AC table formats produced by the QA skill:
+ * - 5-column: | AC-N | source | desc | STATUS | notes |
+ * - 4-column: | AC-N | desc | STATUS | notes |
+ * - 3-column: | AC-N | desc | STATUS |
+ *
+ * Status cells may contain emoji prefixes (✅ MET), shorthand
+ * (PARTIAL), or trailing text (MET — explanation).
+ *
+ * @internal Exported for testing only
+ */
+export function parseQaSummary(output: string): QaSummary | null {
+  if (!output) return null;
+
+  // Anchored pattern: cell content starts with optional emoji, then status keyword
+  // Uses alternation (not character class) to avoid ESLint no-misleading-character-class
+  const STATUS_CELL =
+    /^(?:\u2705|\u274C|\u26A0\uFE0F|\u2B50|\u2139\uFE0F|\u2753|\u2757)?\s*(MET|NOT_MET|PARTIALLY_MET|PARTIAL|PENDING|N\/A)\b/i;
+
+  const lines = output.split("\n");
+  const acRows = lines.filter((line) => /^\s*\|\s*\*?\*?AC-\d+/.test(line));
+
+  if (acRows.length === 0) return null;
+
+  let acMet = 0;
+  let acTotal = 0;
+
+  for (const row of acRows) {
+    const cells = row
+      .split("|")
+      .map((c) => c.trim())
+      .filter(Boolean);
+
+    // Scan cells right-to-left to find the status cell
+    let found = false;
+    for (let i = cells.length - 1; i >= 1; i--) {
+      const match = cells[i].match(STATUS_CELL);
+      if (match) {
+        const status = match[1].toUpperCase();
+        acTotal++;
+        if (status === "MET") acMet++;
+        found = true;
+        break;
+      }
+    }
+    // Row with AC-N but no parseable status is skipped
+    if (!found) continue;
+  }
+
+  if (acTotal === 0) return null;
+
+  const gaps = parseListSection(output, /\*\*(?:Issues|Gaps)/);
+  const suggestions = parseListSection(output, /\*\*Suggestions/);
+
+  return { acMet, acTotal, gaps, suggestions };
+}
+
+/**
+ * Parse a markdown bullet list section, filtering out "None" variants.
+ */
+function parseListSection(output: string, headerPattern: RegExp): string[] {
+  const items: string[] = [];
+  const lines = output.split("\n");
+
+  let inSection = false;
+  for (const line of lines) {
+    if (headerPattern.test(line)) {
+      // If the header line itself contains a bullet (inline), capture it
+      inSection = true;
+      continue;
+    }
+
+    if (inSection) {
+      // Section ends at next markdown header or bold label
+      if (/^#{1,4}\s/.test(line) || /^\*\*[^*]+\*\*:/.test(line)) {
+        break;
+      }
+
+      const bulletMatch = line.match(/^\s*[-*]\s+(.+)/);
+      if (bulletMatch) {
+        const trimmed = bulletMatch[1].trim();
+        // Filter "None", "None found", "None — text", etc.
+        if (trimmed && !/^None\b/i.test(trimmed)) {
+          items.push(trimmed);
+        }
+      } else if (line.trim() === "") {
+        continue;
+      } else {
+        break;
+      }
+    }
+  }
+
+  return items;
 }
 
 /**
@@ -353,6 +452,7 @@ async function executePhase(
     // Agent "success" just means the execution completed — we need to parse the verdict
     if (phase === "qa" && agentResult.output) {
       const verdict = parseQaVerdict(agentResult.output);
+      const summary = parseQaSummary(agentResult.output) ?? undefined;
       if (
         verdict &&
         verdict !== "READY_FOR_MERGE" &&
@@ -366,6 +466,7 @@ async function executePhase(
           sessionId: agentResult.sessionId,
           output: agentResult.output,
           verdict,
+          summary,
           ...tails,
         };
       }
@@ -376,6 +477,7 @@ async function executePhase(
         sessionId: agentResult.sessionId,
         output: agentResult.output,
         verdict: verdict ?? undefined,
+        summary,
         ...tails,
       };
     }
