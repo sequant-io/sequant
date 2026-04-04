@@ -36,7 +36,7 @@ describe("state command", () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  describe("idempotency (AC-4)", () => {
+  describe("idempotency (AC-4)", { timeout: 30000 }, () => {
     it("state init should be idempotent - running twice yields same result", async () => {
       // Run discovery twice with the same state
       const result1 = await discoverUntrackedWorktrees({ statePath });
@@ -151,7 +151,7 @@ describe("state command", () => {
     });
   });
 
-  describe("clear output (AC-5)", () => {
+  describe("clear output (AC-5)", { timeout: 30000 }, () => {
     it("discoverUntrackedWorktrees returns structured data for output", async () => {
       const result = await discoverUntrackedWorktrees({ statePath });
 

@@ -9,7 +9,7 @@
  */
 
 import { execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync } from "fs";
@@ -32,14 +32,7 @@ const execOptions: ExecSyncOptionsWithStringEncoding = {
 };
 
 describe("CLI version integration", () => {
-  beforeAll(() => {
-    // Build the project before running integration tests
-    // This ensures dist/ exists for the tests
-    execSync("npm run build", {
-      cwd: projectRoot,
-      stdio: "ignore",
-    });
-  }, 30000); // 30 second timeout for build
+  // Build handled by vitest globalSetup (vitest.global-setup.ts)
 
   it("--version reports correct version from package.json", () => {
     let output: string;

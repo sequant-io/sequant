@@ -129,10 +129,20 @@ afterEach(async () => {
   }
   activeClients.length = 0;
 
-  // Kill any manually spawned server processes
-  for (const proc of spawnedProcesses) {
-    killProcessGroup(proc, "SIGKILL");
-  }
+  // Kill any manually spawned server processes and wait for exit
+  // so ports are fully released before the next test
+  const exitPromises = spawnedProcesses.map(
+    (proc) =>
+      new Promise<void>((resolve) => {
+        if (proc.exitCode !== null || proc.killed) {
+          resolve();
+        } else {
+          proc.on("exit", () => resolve());
+        }
+        killProcessGroup(proc, "SIGKILL");
+      }),
+  );
+  await Promise.all(exitPromises);
   spawnedProcesses.length = 0;
 });
 

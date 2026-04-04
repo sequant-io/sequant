@@ -129,10 +129,20 @@ function spawnServe(args: string[]): ChildProcess {
   return child;
 }
 
-afterEach(() => {
-  for (const proc of spawnedProcesses) {
-    killProcessGroup(proc, "SIGKILL");
-  }
+afterEach(async () => {
+  // Kill processes and wait for exit so ports are fully released
+  const exitPromises = spawnedProcesses.map(
+    (proc) =>
+      new Promise<void>((resolve) => {
+        if (proc.exitCode !== null || proc.killed) {
+          resolve();
+        } else {
+          proc.on("exit", () => resolve());
+        }
+        killProcessGroup(proc, "SIGKILL");
+      }),
+  );
+  await Promise.all(exitPromises);
   spawnedProcesses.length = 0;
 });
 

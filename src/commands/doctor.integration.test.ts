@@ -8,7 +8,7 @@
  */
 
 import { execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -24,13 +24,7 @@ const execOptions: ExecSyncOptionsWithStringEncoding = {
 };
 
 describe("doctor command integration", { timeout: 60000 }, () => {
-  beforeAll(() => {
-    // Build the project before running integration tests
-    execSync("npm run build", {
-      cwd: projectRoot,
-      stdio: "ignore",
-    });
-  }, 30000); // 30 second timeout for build
+  // Build handled by vitest globalSetup (vitest.global-setup.ts)
 
   it("runs without crashing", () => {
     let output: string;

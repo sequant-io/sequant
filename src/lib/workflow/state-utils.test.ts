@@ -275,10 +275,10 @@ describe("state-utils", () => {
     });
   });
 
-  describe("discoverUntrackedWorktrees", () => {
+  describe("discoverUntrackedWorktrees", { timeout: 30000 }, () => {
     // Note: These tests run against the actual git worktree list output
-    // in the test environment. The function will scan actual worktrees.
-    // For proper isolation, integration tests would use a controlled git repo.
+    // and call `gh api` per worktree for issue titles. Timeout is raised
+    // to accommodate multiple sequential GitHub API calls.
 
     it("should return success when called", async () => {
       // This test verifies the function runs without error

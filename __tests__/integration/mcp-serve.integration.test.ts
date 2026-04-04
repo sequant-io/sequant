@@ -111,11 +111,21 @@ function spawnServe(args: string[]): ChildProcess {
   return child;
 }
 
-afterEach(() => {
-  // Kill any lingering process groups
-  for (const proc of spawnedProcesses) {
-    killProcessGroup(proc, "SIGKILL");
-  }
+afterEach(async () => {
+  // Kill any lingering process groups and wait for them to exit
+  // so ports are fully released before the next test
+  const exitPromises = spawnedProcesses.map(
+    (proc) =>
+      new Promise<void>((resolve) => {
+        if (proc.exitCode !== null || proc.killed) {
+          resolve();
+        } else {
+          proc.on("exit", () => resolve());
+        }
+        killProcessGroup(proc, "SIGKILL");
+      }),
+  );
+  await Promise.all(exitPromises);
   spawnedProcesses.length = 0;
 });
 
