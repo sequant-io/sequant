@@ -1,0 +1,34 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "887ceeeb65f6",
+  "session_id": "941c70e7-6cd1-4fcf-a050-8db117795064",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-05T22:43:37.416633Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/internal/what-weve-built.md",
+    "package-lock.json",
+    "package.json",
+    ".claude-plugin/plugin.json"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "f17648be763a",
+  "token_usage": {
+    "input_tokens": 53,
+    "cache_creation_tokens": 13215,
+    "cache_read_tokens": 78415,
+    "output_tokens": 1493,
+    "api_call_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-05T22:43:37.400268Z",
+    "agent_lines": 21,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 21,
+    "agent_percentage": 100
+  }
+}

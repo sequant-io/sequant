@@ -1,0 +1,52 @@
+Why did this fail?\
+base) tony@Tambras-MacBook-Air workout % npx sequant run 125 -q --testgen 
+⚠️  Running sequant from local node_modules
+   For latest version: npx sequant@latest
+   To remove local: npm uninstall sequant
+
+╭──────────────────╮
+│ SEQUANT WORKFLOW │
+╰──────────────────╯
+  ⚠️  sequant 1.20.3 is available (you have 1.20.0)
+   Run: npm update sequant
+   Note: You have sequant as a local dependency. npx uses your node_modules version.
+
+  Stack: nextjs
+  Phases: auto-detect from labels
+  Mode: continue-on-failure
+  Quality loop: enabled (max 3 iterations)
+  Testgen: enabled
+  Logging: JSON (run bf4b66d0...)
+  State tracking: enabled
+  Issues: #125
+  Worktree isolation: enabled
+  Base branch: main
+
+  📂 Preparing worktrees from main...
+  Worktrees: 1 created, 0 reused
+
+  Issue #125
+    Worktree: /Users/tony/Projects/worktrees/feature/125-onboarding-flow-ai-program-generation
+    Running spec to determine workflow...
+�estgen (2/5) (4m 4s)
+✔     exec (3/5) (23m 52s)
+✔     test (4/5) (4m 38s)
+✖     qa (5/5) (5m 19s): QA verdict: AC_NOT_MET
+
+    ⚠️ Phase failed with MCP enabled, retrying without MCP...
+✖     loop (5/5) (51s): Claude Code process exited with code 1
+    Quality loop iteration 2/3
+
+    ⚠️ Phase failed with MCP enabled, retrying without MCP...
+✖     testgen (2/5) (47s): Claude Code process exited with code 1
+
+    ⚠️ Phase failed with MCP enabled, retrying without MCP...
+✖     loop (2/5) (49s): Claude Code process exited with code 1
+    Quality loop iteration 3/3
+
+    ⚠️ Phase failed with MCP enabled, retrying without MCP...
+✖     testgen (2/5) (49s): Claude Code process exited with code 1
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━�n
