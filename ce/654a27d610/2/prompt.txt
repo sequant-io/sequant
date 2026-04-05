@@ -1,0 +1,5 @@
+what else before the 2.0 launch?
+
+---
+
+We'll need changelog update and potentially an updated readme with a 2.0 is here message maybe?
