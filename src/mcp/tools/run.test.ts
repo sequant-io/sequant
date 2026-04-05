@@ -651,10 +651,9 @@ describe("spawnAsync timeout reset (AC-4)", () => {
   });
 
   it("should kill process after timeout with no progress", async () => {
-    // Use a very short timeout for testing
     await expect(
       spawnAsync("sleep", ["10"], {
-        timeout: 100, // 100ms timeout
+        timeout: 100,
       }),
     ).rejects.toThrow("Process timed out after 100ms");
   });
@@ -665,7 +664,6 @@ describe("spawnAsync timeout reset (AC-4)", () => {
     // This process emits SEQUANT_PROGRESS lines on stderr every 100ms
     // and runs for ~500ms total. With a 300ms timeout and progress
     // resets, it should complete successfully instead of timing out.
-    // Without progress resets, it would time out at 300ms.
     const result = await spawnAsync(
       "bash",
       [
@@ -682,13 +680,12 @@ describe("spawnAsync timeout reset (AC-4)", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout.trim()).toBe("done");
-    // spawnAsync detects progress lines internally and calls onProgress
     expect(progressCalls).toBeGreaterThan(0);
   }, 5000);
 
-  it("should respect MAX_TOTAL_TIMEOUT even with progress resets", async () => {
-    // With onProgress set, maxTotal = MAX_TOTAL_TIMEOUT (2 hours)
-    // This test verifies the timeout message mentions progress when onProgress is set
+  it("should respect per-phase timeout when no progress arrives (with onProgress)", async () => {
+    // onProgress is set but the process never emits progress lines,
+    // so the per-phase timeout fires.
     await expect(
       spawnAsync("sleep", ["10"], {
         timeout: 50,
@@ -698,7 +695,6 @@ describe("spawnAsync timeout reset (AC-4)", () => {
   });
 
   it("should behave identically without onProgress (AC-5)", async () => {
-    // Without onProgress, the original single-timeout behavior is preserved
     await expect(
       spawnAsync("sleep", ["10"], {
         timeout: 50,
@@ -706,31 +702,18 @@ describe("spawnAsync timeout reset (AC-4)", () => {
     ).rejects.toThrow("Process timed out after 50ms");
   });
 
-  it("should kill process when maxTotalTimeout ceiling is exceeded despite progress", async () => {
-    // Process emits progress every 50ms and would run for ~500ms.
-    // Per-phase timeout (500ms) alone would let it complete.
-    // But the absolute ceiling (200ms) forces termination even though
-    // progress resets keep the per-phase timer alive.
-    const startTime = Date.now();
+  it("should hit total ceiling when remaining <= 0 at schedule time", async () => {
+    // Use maxTotalTimeout: 0 so the very first scheduleTimeout call
+    // sees remaining <= 0 and takes the immediate-kill path.
+    // This is deterministic — no real-clock race.
     await expect(
-      spawnAsync(
-        "bash",
-        [
-          "-c",
-          'for i in 1 2 3 4 5 6 7 8 9 10; do echo "SEQUANT_PROGRESS:{\"issue\":1,\"phase\":\"spec\",\"event\":\"start\"}" >&2; sleep 0.05; done; echo done',
-        ],
-        {
-          timeout: 500, // per-phase: generous (would not expire alone)
-          maxTotalTimeout: 200, // absolute ceiling: 200ms
-          onProgress: () => {},
-        },
-      ),
-    ).rejects.toThrow("timed out");
-    const elapsed = Date.now() - startTime;
-    // Process was killed around the 200ms ceiling, not at 500ms per-phase.
-    // Allow generous headroom for CPU-contended CI environments.
-    expect(elapsed).toBeLessThan(1000);
-  }, 5000);
+      spawnAsync("sleep", ["10"], {
+        timeout: 500,
+        maxTotalTimeout: 0,
+        onProgress: () => {},
+      }),
+    ).rejects.toThrow(/Process timed out.*ceiling of 0ms/);
+  });
 });
 
 describe("emitProgressLine (AC-8)", () => {

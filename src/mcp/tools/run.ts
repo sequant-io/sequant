@@ -674,12 +674,10 @@ export function spawnAsync(
       if (remaining <= 0) {
         // Already exceeded max total — kill immediately
         killProcessGroup(proc);
-        settle({
-          ok: false,
-          error: new Error(
-            `Process exceeded maximum total timeout of ${maxTotal}ms`,
-          ),
-        });
+        const msg = options.onProgress
+          ? `Process timed out: total elapsed ${elapsed}ms exceeded ceiling of ${maxTotal}ms`
+          : `Process timed out after ${maxTotal}ms`;
+        settle({ ok: false, error: new Error(msg) });
         return setTimeout(() => {}, 0); // dummy handle
       }
       return setTimeout(() => {
@@ -691,7 +689,8 @@ export function spawnAsync(
       }, remaining);
     };
 
-    let timeoutId = scheduleTimeout();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    timeoutId = scheduleTimeout();
 
     // When progress monitoring is enabled, detect SEQUANT_PROGRESS lines
     // from stderr and reset the timeout on each one. This keeps the timeout
