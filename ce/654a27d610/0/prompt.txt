@@ -1,0 +1,4 @@
+should we add Add branch verification check to fullsolve skill (verify git branch
+  --show-current before commit)?\
+\
+can you research?
