@@ -1,6 +1,6 @@
 # Sequant
 
-**Workflow automation for [Claude Code](https://claude.ai/code).**
+**Workflow automation for AI coding agents.**
 
 Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
 
@@ -64,8 +64,9 @@ Or step-by-step:
 
 ### Prerequisites
 
-**Required:**
-- [Claude Code](https://claude.ai/code) — AI coding assistant
+**Required (one of):**
+- [Claude Code](https://claude.ai/code) — default agent
+- [Aider](https://aider.chat/) — alternative via `--agent aider`
 - [GitHub CLI](https://cli.github.com/) — run `gh auth login`
 - Git (for worktree-based isolation)
 
@@ -83,7 +84,7 @@ Or step-by-step:
 
 ## How It Works
 
-Sequant adds slash commands to Claude Code that enforce a structured workflow:
+Sequant enforces a structured workflow through slash commands (interactive) or CLI (headless):
 
 ```
 ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐
@@ -133,9 +134,9 @@ When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
 
 ## Two Ways to Use
 
-### Interactive (Claude Code)
+### Interactive (Slash Commands)
 
-Type commands directly in Claude Code chat:
+Type commands in Claude Code or any MCP-connected client:
 
 ```
 /fullsolve 123              # Complete pipeline
