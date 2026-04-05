@@ -9,6 +9,16 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
+### What's new in 2.0
+
+- **MCP server** — `sequant serve` exposes workflow orchestration as MCP tools (`sequant_run`, `sequant_status`, `sequant_logs`). Any MCP client can drive Sequant headlessly.
+- **`/assess` unification** — `/solve` is merged into `/assess` with a 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK). `/solve` still works as an alias.
+- **Parallel execution** — multi-issue runs are concurrent by default with `--concurrency`.
+- **Multi-agent** — `--agent aider` as an alternative backend, with a driver interface for future agents.
+- **GitHub Actions** — label-triggered and comment-triggered CI workflows out of the box.
+
+Upgrading from v1.x? See the [migration guide](CHANGELOG.md#migration-from-v1x).
+
 ## Quick Start
 
 ### Option A: Plugin (interactive users)

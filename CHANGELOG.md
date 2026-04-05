@@ -7,214 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [2.0.0] - 2026-04-05
 
-- Simplify run command execution path and parameter passing (#402)
-  - Replace 15 positional parameters in `runIssueWithLogging` with `IssueExecutionContext` object
-  - Replace 11 positional parameters in `executeBatch` with `BatchExecutionContext` object
-  - Unify duplicated sequential/parallel issue loops into `executeOneIssue` helper
-  - Replace `as any` cast for Commander.js `--no-X` flags with typed `normalizeCommanderOptions()`
-  - Centralize shared workflow types in `src/lib/workflow/types.ts`
+### Breaking Changes
 
-### Added
+- **`/solve` merged into `/assess`** — `/solve` still works as a deprecated alias but will be removed in v3.0 (#325)
+- **GitHub Actions label** `sequant:solve` renamed to `sequant:assess` — both accepted during transition, `sequant:solve` removed in v3.0 (#438)
+- **TypeScript API:** `findSolveComment` → `findAssessComment` (old name still exported as deprecated alias) (#325)
+- **`SignalSource` type:** `"solve"` deprecated in favor of `"assess"` — both accepted, `"solve"` removed in v3.0 (#438)
 
-- Include QA verdict summary in `sequant_logs` MCP tool response (#434)
-  - Expose existing `verdict` field and new `summary` (acMet, acTotal, gaps, suggestions)
-  - Parse AC coverage data from QA output via `parseQaSummary()` — handles 3/4/5-column tables, emoji statuses, `PARTIAL` shorthand
-  - Eliminates need to separately fetch issue comments for batch QA review
-- Add small-diff fast path to `/qa` skill to skip sub-agent spawning for trivial changes (#465)
-  - Diffs below configurable threshold (default: 100 lines) use inline quality checks instead of 3 sub-agents
-  - Simplified output template omits N/A-heavy sections for small fixes
-  - Threshold configurable via `qa.smallDiffThreshold` in `.sequant/settings.json`
+### Migration from v1.x
 
-### Fixed
+**Commands:** `/solve` → Use `/assess` instead (`/solve` still works as alias)
 
-- Fix `reconcileState()` race condition that could revert phase status during parallel runs (#458)
-  - Wrap entire read-modify-write cycle in `withLock()` to serialize with concurrent `updatePhaseStatus` calls
-  - Increase lock timeout to 30s to accommodate GitHub API latency
+**GitHub Actions:** Label `sequant:solve` → `sequant:assess` (both accepted; `sequant:solve` removed in v3.0)
+
+**TypeScript API:**
+```typescript
+// Old
+import { findSolveComment } from "sequant"
+// New
+import { findAssessComment } from "sequant"
+```
+Old names are still exported as deprecated aliases. `SignalSource` type `"solve"` → `"assess"` (both accepted; `"solve"` removed in v3.0).
 
 ### Added
 
-- Per-phase progress lines during parallel `sequant run` — terminal now shows phase start/complete events instead of freezing (#458)
-  - Add `onProgress` callback to `IssueExecutionContext` for CLI-side progress rendering
-  - Add 60-second heartbeat timer so the terminal never appears frozen during long phases
+#### MCP Server
 
-### Changed
-
-- Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
-  - Add "Simulate QA Before PR" checkpoint to exec skill (test coverage, AC literal verification, lint check)
-  - Fix QA false negatives for prompt-only and cross-repo implementations
-  - Add safety check before QA early exit to prevent "NOT FOUND" on valid implementations
-
-### Added
-
-- Capture structured error context for phase failures — stderr/stdout tail (last 50 lines), exit code, and error category (#447)
-  - Add `errorContext` field to PhaseLog schema with `stderrTail`, `stdoutTail`, `exitCode`, and `category`
-  - `sequant logs --failed` shows error category and stderr tail (5 lines default, 50 with `--verbose`)
-  - `sequant stats` groups failures by category (`context_overflow`, `api_error`, `hook_failure`, `build_error`, `timeout`, `unknown`)
-  - Backward-compatible: old logs without `errorContext` continue to work
-- Add lighter workflow pipeline for documentation issues (#451)
-  - Docs-labeled issues skip spec phase, running exec → qa directly (like bug fixes)
-  - Propagate `SEQUANT_ISSUE_TYPE=docs` env var to skills for adaptive behavior
-  - QA skill uses lighter sub-agent pipeline for docs (1 agent instead of 3)
-- Add spec phase retry with 5s backoff for transient failures (#452)
-  - Named constants `SPEC_RETRY_BACKOFF_MS` and `SPEC_EXTRA_RETRIES` for retry configuration
-  - Retry logging with phase name and backoff duration
-  - Only applies to spec phase; other phases unchanged
-- Add parallel vs chain mode decision framework documentation (#452)
-  - Success rate comparison table, trade-off matrix, and when-to-use guidance
-  - Performance warning for chain mode citing 50% success rate
-
-- Add `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
-- Add `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines, failure forensics, and first-pass QA rate (#437)
-- Add MCP progress notifications for `sequant_run` with timeout reset (#435)
-  - Batch executor emits start, complete, and failed events via `SEQUANT_PROGRESS:` lines
-  - Event-appropriate messages: `#N: phase started`, `#N: phase ✓ (Ns)`, `#N: phase ✗ — error`
-  - Spawn timeout resets on each progress event (30min per-phase, 2hr absolute ceiling)
-  - Only complete/failed events increment the progress counter; start events are informational
-- Add `"assess"` signal source and `sequant:assess` CI trigger label with backward-compatible `"solve"` / `sequant:solve` deprecation (#438)
-- Optimize QA skill re-runs by diffing against prior findings (#377)
-  - Add `commitSHA` field to phase markers for incremental QA baseline tracking
-  - Add QA run context cache (`lastQACommitSHA`, `acStatuses`) for re-run optimization
-  - Add `detectPriorQAFindings()` helper to extract prior QA state from issue comments
-  - Add `computeIncrementalDiffHash()` and `getChangedFilesSince()` for incremental diffs
-  - Add `set-run-context`, `get-run-context`, and `changed-since` CLI commands to qa-cache-cli
-  - Add Phase 0c "Incremental Re-Run Detection" to QA skill with skip/re-run logic
-  - Previously MET AC items are skipped when no files changed since last QA
-  - `--no-cache` flag forces full re-run regardless of prior findings
-  - Add Incremental QA Summary table to QA output template
-
-### Fixed
-
-- Fix label matching to use exact equality instead of substring `includes()` for phase detection (#461)
-- Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
-
-### Changed
-
-- Unify `/assess` and `/solve` into single triage command with 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK) (#325)
-  - `/assess` now includes health checks, workflow recommendations, and lifecycle signals
-  - `/solve` becomes a deprecated alias that redirects to `/assess`
-  - New `assess-comment-parser.ts` with unified parser for both `assess:` and legacy `solve:` markers
-  - Full backward compatibility: all `solve*` exports preserved as deprecated aliases
-  - All documentation, README, cheat sheet, marketplace, and issue template references updated from `/solve` to `/assess` (#440)
-  - GitHub Actions label trigger updated: `sequant:solve` → `sequant:assess` (#440)
-
-### Added
-
-- Add MCP progress notifications for `sequant_run` tool (#421)
-  - Emit `notifications/progress` during phase transitions when client provides `progressToken`
-  - Prevents client-side timeouts via SDK's `resetTimeoutOnProgress` support
-  - Backward compatible: no notifications when no `progressToken` provided
-- Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
-  - Always creates `.mcp.json` in project root (no `--mcp` flag required)
-  - Merges into existing `.mcp.json` preserving other server entries
-  - Skips if sequant entry already exists
-  - `--mcp` flag retains existing behavior for global client configs
-- Add server instructions and tool annotations to MCP server for LLM discoverability (#420)
-  - Server-level instructions explaining workflow, tool relationships, and usage patterns
-  - Tool annotations (`readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`) for client approval decisions
-  - Improved tool and resource descriptions with usage guidance and cross-tool relationships
-  - `phases` parameter now enumerates valid values (`spec`, `exec`, `qa`)
-- Reconcile `sequant status` with GitHub on every read (#423)
-  - Batch GraphQL query fetches live issue/PR state in a single API call
-  - Auto-heals unambiguous drift: merged PRs, closed issues, missing worktrees
-  - Flags ambiguous drift (e.g., deleted worktree with open issue) to the user
-  - Next-action hints per issue row (e.g., `→ gh pr merge 419`)
-  - Relative timestamps and `Last synced` footer
-  - `--offline` flag preserves pure local-state behavior
-  - MCP `sequant_status` tool returns reconciled data
-  - Graceful degradation when GitHub is unreachable
-- Add parallel execution as default mode for multi-issue runs (#404)
-  - Issues now run concurrently using `Promise.allSettled` + `p-limit`
-  - Configurable concurrency via `--concurrency <n>` flag (default: 3)
-  - Real-time progress indicator showing per-issue status
-  - LogWriter supports concurrent issue tracking via Map-based routing
-  - Removed unused `forceParallel` from `ExecutionConfig`
-- Add multi-client SSE connection handling to MCP server (#390)
-  - Reject second SSE client with 409 Conflict when one is already connected
-  - Health endpoint now reports `connected: boolean` for connection status
-  - Automatic cleanup of transport reference on client disconnect
-
-### Fixed
-
-- Unify Phase type definitions into single source of truth (#401)
-  - Canonical `PhaseSchema` (Zod) + `Phase` type now live in `types.ts`
-  - `state-schema.ts` and `run-log-schema.ts` re-export from the canonical source
-  - Eliminate `Phase as StatePhase` aliased import in `batch-executor.ts`
-  - Add `as const` + Zod schemas for merge-check verdict types
-  - Fix misleading topological sort comment in `batch-executor.ts`
-- Fix concurrent state writes silently discarding changes (#409)
-  - Add file locking (`O_EXCL`) around read-modify-write cycles in `StateManager`
-  - Stale lock detection with configurable timeout prevents deadlocks
-  - No API changes; existing CLI and callers work without modification
-- Surface non-fatal warning messages in all modes, not just verbose (#403)
-  - State reconciliation, state lookup, and metrics recording failures now always show a one-line warning
-  - Verbose mode continues to show additional error details
-- Fix MCP config generation producing identical configs for all clients (#395)
-  - Claude Desktop and VS Code + Continue configs now include `cwd` (absolute project path)
-  - Cursor config omits `cwd` (runs from workspace root)
-  - `env.ANTHROPIC_API_KEY` is only included when the env var is actually set
-  - `sequant init` generates per-client configs with correct fields
-- Fix `sequant init --yes` silently adding MCP config to all detected clients (#392)
-  - `--yes` alone now skips MCP config (opt-in required)
-  - Add `--mcp` flag to explicitly opt in: `sequant init --yes --mcp`
-  - Interactive mode continues to prompt per usual
-
-### Changed
-
-- Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool (#388)
-  - Server remains responsive during workflow execution (status/logs callable)
-  - Timeout handling preserved with process group cleanup (no orphan processes)
-  - ENOENT and other spawn errors handled with descriptive messages
-
-### Fixed
-
-- Fix MCP server `sequant_run` using nested `npx` invocation that could resolve to a different cached version (#389)
-  - Resolves CLI binary from `process.argv` to ensure version consistency
-  - Falls back to `__dirname`-relative resolution, then `npx` as last resort
-
-### Added
-
-- Add real-time progress reporting for MCP workflow runs (#394)
-  - `sequant_status` now returns `isRunning: true` while a `sequant_run` is executing
-  - Active run registry tracks spawned processes by issue number with automatic cleanup
-  - Tool description includes polling guidance (5-10 second interval)
-- Improve `sequant_run` MCP tool to return structured JSON with per-issue summaries (#391)
-  - Each issue includes status, phases completed, QA verdict, and duration
-  - Raw output preserved as secondary `rawOutput` field
-  - Response size enforced at 64 KB with progressive truncation
-  - Graceful fallback to raw output when run log is unavailable
-- Add baseline comparison to `/merger` to detect regressions before merging (#397)
-  - Captures build error count and test pass/fail counts on main before merge
-  - Compares post-merge metrics against baseline to detect new failures
-  - Regression gate blocks merge when new errors/failures are introduced
-  - `--force` flag overrides the regression gate with explicit acknowledgment
-  - Baseline metrics are cached per session for multi-issue merges
-- Extract AgentDriver and PlatformProvider interfaces from phase-executor (#368)
-  - `AgentDriver` interface decouples workflow orchestration from agent execution
-  - `PlatformProvider` interface decouples orchestration from platform operations
-  - `ClaudeCodeDriver` wraps existing Claude Agent SDK calls — no behavior change
-  - `GitHubProvider` consolidates all orchestration-layer `gh` CLI calls — no behavior change
-  - All `gh` calls in phase-detection, pr-status, system, doctor, and worktree-manager now delegate to `GitHubProvider`
-  - `--agent <name>` CLI flag for `sequant run`
-  - Driver and platform registries for future backend extensibility
-- Add Aider as second agent backend (#369)
-  - `AiderDriver` implements `AgentDriver` interface — shells out to `aider` CLI
-  - `npx sequant run 123 --agent aider` executes workflows using Aider
-  - `settings.json` supports `run.agent: "aider"` with Aider-specific config (model, editFormat, extraArgs)
-  - `sequant doctor` checks Aider CLI availability when configured as default agent
-  - Timeout enforcement, abort signal support, and verbose streaming
-- GitHub Actions integration for CI/CD-driven workflows (#370)
-  - Composite action (`sequant-action/action.yml`) runs sequant workflows as CI steps
-  - Trigger detection: `workflow_dispatch`, `issues` (label-based), `issue_comment` (`@sequant run`)
-  - Label lifecycle: `sequant:solve` → `sequant:solving` → `sequant:done` / `sequant:failed`
-  - Phase override labels: `sequant:spec-only`, `sequant:exec`, `sequant:qa`
-  - Repo-level configuration via `.github/sequant.yml` or `.sequant/ci.json`
-  - Structured outputs: `issue`, `success`, `phases`, `pr-url`, `duration`
-  - Run logs uploaded as GitHub Actions artifacts
-  - Concurrency control per issue via native Actions concurrency groups
-  - `--no-mcp` enforced in CI mode; API keys masked via `::add-mask::`
-  - Example workflows: label trigger, manual dispatch, comment trigger
 - Expose Sequant workflow as MCP server (#372)
   - `sequant serve` starts MCP server (stdio transport by default)
   - `sequant serve --transport sse --port 3100` for HTTP/SSE transport
@@ -224,21 +44,98 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sequant://state` and `sequant://config` MCP resources
   - `sequant doctor` checks MCP server health
   - `sequant init` detects MCP clients and offers config setup
+- Add server instructions and tool annotations for LLM discoverability (#420)
+  - Server-level instructions explaining workflow, tool relationships, and usage patterns
+  - Tool annotations (`readOnlyHint`, `idempotentHint`, `destructiveHint`, `openWorldHint`) for client approval decisions
+  - `phases` parameter now enumerates valid values (`spec`, `exec`, `qa`)
+- Create `.mcp.json` by default during `sequant init` for Claude Code MCP integration (#418)
+  - Always creates `.mcp.json` in project root (no `--mcp` flag required)
+  - Merges into existing `.mcp.json` preserving other server entries
+- Add multi-client SSE connection handling — reject second client with 409 Conflict (#390)
+- Structured JSON responses with per-issue summaries for `sequant_run` (#391)
+  - Each issue includes status, phases completed, QA verdict, and duration
+  - Response size enforced at 64 KB with progressive truncation
+- Real-time progress reporting — `sequant_status` returns `isRunning: true` during execution (#394)
+- MCP progress notifications with timeout reset during phase transitions (#421, #435)
+  - Spawn timeout resets on each progress event (30min per-phase, 2hr absolute ceiling)
+- Include QA verdict summary in `sequant_logs` response (#434)
+
+#### /assess Unification
+
+- Unify `/assess` and `/solve` into single triage command with 6-action vocabulary: PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK (#325)
+  - Health checks: codebase mismatches, stale PRs, overlapping issues
+  - Workflow recommendations absorbed from `/solve` (PROCEED path)
+  - Multi-issue support
+  - Full backward compatibility layer
+
+#### Workflow Execution
+
+- Parallel execution as default mode for multi-issue runs (#404)
+  - Issues run concurrently using `Promise.allSettled` + `p-limit`
+  - Configurable concurrency via `--concurrency <n>` flag (default: 3)
+  - Real-time progress indicator showing per-issue status
+- Per-phase progress lines during parallel `sequant run` (#458)
+  - Terminal shows phase start/complete events instead of freezing
+  - 60-second heartbeat timer so the terminal never appears frozen
+- Lighter workflow pipeline for documentation issues (#451)
+  - Docs-labeled issues skip spec phase, running exec → qa directly
+  - QA skill uses lighter sub-agent pipeline for docs (1 agent instead of 3)
+- Spec phase retry with 5s backoff for transient failures (#452)
+- Capture structured error context for phase failures (#447)
+  - `sequant logs --failed` shows error category and stderr tail
+  - `sequant stats` groups failures by category (`context_overflow`, `api_error`, `hook_failure`, `build_error`, `timeout`, `unknown`)
+
+#### Quality & QA
+
+- Optimize QA skill re-runs by diffing against prior findings (#377)
+  - Previously MET AC items are skipped when no files changed since last QA
+  - `--no-cache` flag forces full re-run regardless of prior findings
+- Small-diff fast path for `/qa` — diffs below threshold use inline checks instead of 3 sub-agents (#465)
+  - Threshold configurable via `qa.smallDiffThreshold` in `.sequant/settings.json`
+- Baseline comparison in `/merger` to detect regressions before merging (#397)
+
+#### Multi-Agent & CI
+
+- Extract AgentDriver and PlatformProvider interfaces from phase-executor (#368)
+  - `--agent <name>` CLI flag for `sequant run`
+  - Driver and platform registries for future backend extensibility
+- Aider as second agent backend (#369)
+  - `npx sequant run 123 --agent aider` executes workflows using Aider
+  - `settings.json` supports `run.agent: "aider"` with Aider-specific config
+- GitHub Actions integration for CI/CD-driven workflows (#370)
+  - Composite action, label lifecycle, phase override labels, structured outputs
+  - Concurrency control per issue via native Actions concurrency groups
 - Generate and consume AGENTS.md for cross-tool agent compatibility (#371)
-  - `sequant init` now generates AGENTS.md alongside CLAUDE.md
-  - `sequant sync` regenerates AGENTS.md when templates are updated
-  - `sequant doctor` checks AGENTS.md presence and consistency with CLAUDE.md
-  - `sequant conventions --format agents-md` outputs conventions in AGENTS.md format
-  - `--no-agents-md` flag to skip AGENTS.md generation during init
+
+#### Analytics
+
+- `sequant stats --detailed` for QA verdict distribution, temporal trends, and per-label segmentation (#437)
+- `scripts/analytics/analyze-runs.ts` for bulk run log analysis with baselines and failure forensics (#437)
+- Reconcile `sequant status` with GitHub on every read (#423)
+  - Batch GraphQL query fetches live issue/PR state in a single API call
+  - Auto-heals unambiguous drift: merged PRs, closed issues, missing worktrees
+  - `--offline` flag preserves pure local-state behavior
+
+### Changed
+
+- Simplify run command execution path and parameter passing (#402)
+  - Replace positional parameters with `IssueExecutionContext` and `BatchExecutionContext` objects
+  - Centralize shared workflow types in `src/lib/workflow/types.ts`
+- Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
+- Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool — server stays responsive during execution (#388)
 
 ### Fixed
 
-- Lazy-load MCP SDK to prevent build and runtime failures when SDK is not installed (#396)
-  - `bin/cli.ts` lazy-loads `serve.ts` via dynamic `import()` — non-MCP commands no longer require the SDK
-  - `sequant serve` shows a clear error message with install instructions when SDK is missing
-  - `npm run build` passes without SDK installed (ambient type declarations as fallback)
-  - MCP tests skip gracefully when SDK is not installed
-  - `@modelcontextprotocol/sdk` moved from `dependencies` to optional `peerDependencies`
+- Fix `reconcileState()` race condition that could revert phase status during parallel runs (#458)
+- Fix label matching to use exact equality instead of substring `includes()` for phase detection (#461)
+- Fix AC parser not recognizing bold-wrapped ID format `**AC-1: description**` (#422)
+- Unify Phase type definitions into single source of truth (#401)
+- Fix concurrent state writes silently discarding changes via file locking (#409)
+- Surface non-fatal warning messages in all modes, not just verbose (#403)
+- Fix MCP config generation producing identical configs for all clients (#395)
+- Fix `sequant init --yes` silently adding MCP config to all detected clients (#392)
+- Fix MCP server `sequant_run` using nested `npx` that could resolve to a different cached version (#389)
+- Lazy-load MCP SDK to prevent build failures when SDK is not installed (#396)
 
 ## [1.20.3] - 2026-03-21
 
