@@ -1,0 +1,5 @@
+I'm working on completing the issue but I'm wondering if this catch was valid and a edge case or is it something we should address for sequant users
+
+---
+
+yes
