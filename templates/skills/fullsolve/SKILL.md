@@ -143,7 +143,14 @@ When posting progress comments after each phase, append the appropriate marker:
 ### 0.1 Git State Verification
 
 ```bash
-# Check current branch and recent commits
+# Check current branch — warn if on main/master
+CURRENT_BRANCH=$(git branch --show-current)
+echo "Current branch: $CURRENT_BRANCH"
+if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+  echo "⚠️  WARNING: On $CURRENT_BRANCH — will need feature branch before committing"
+fi
+
+# Check recent commits
 git log --oneline -5 --stat
 
 # Check for any existing work on this issue
@@ -411,6 +418,30 @@ while qa_iteration < 2:
 - Ready for merge
 
 ## Phase 5: Pull Request (PR)
+
+### 5.0 Branch Verification Gate
+
+**CRITICAL: Verify you are on the correct feature branch before committing or creating a PR.**
+
+```bash
+CURRENT_BRANCH=$(git branch --show-current)
+echo "Current branch: $CURRENT_BRANCH"
+
+# HARD GATE: Must be on a feature branch, not main/master
+if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+  echo "❌ ERROR: On $CURRENT_BRANCH — commits must NOT land on main."
+  echo "   Fix: git checkout feature/<issue-number>-* or create a new branch."
+  exit 1
+fi
+
+# Soft check: branch should match the issue number
+if ! echo "$CURRENT_BRANCH" | grep -q "<issue-number>"; then
+  echo "⚠️  WARNING: Branch '$CURRENT_BRANCH' does not contain issue number <issue-number>."
+  echo "   Verify this is the correct branch before continuing."
+fi
+```
+
+**Why this matters:** Sub-agents and shell context resets can silently switch the working directory back to main. Without this check, commits land on main instead of the feature branch, requiring messy recovery (cherry-picks, force pushes, re-created PRs).
 
 ### 5.1 Create PR (if not exists)
 

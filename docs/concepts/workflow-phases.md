@@ -82,9 +82,10 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 **What it does:**
 1. Creates a git worktree for the issue
 2. Implements changes according to the plan
-3. Runs tests after each change
-4. Creates commits with progress updates
-5. Pushes the branch and creates a PR
+3. Verifies the current branch before each commit (hard gate — blocks if on main/master)
+4. Runs tests after each change
+5. Creates commits with progress updates
+6. Pushes the branch and creates a PR
 
 **Outputs:**
 - Feature branch with implementation

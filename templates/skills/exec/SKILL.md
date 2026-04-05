@@ -1681,6 +1681,22 @@ When retrying a failed agent, use the error recovery template from [prompt-templ
 
 Before each commit, self-check against these standards:
 
+### 0. Branch Verification
+
+**CRITICAL:** Verify you are on the correct feature branch, not main/master.
+
+```bash
+CURRENT_BRANCH=$(git branch --show-current)
+if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+  echo "❌ ERROR: On $CURRENT_BRANCH — do NOT commit here."
+  echo "   Navigate to the feature worktree or create a branch first."
+  exit 1
+fi
+echo "✓ On branch: $CURRENT_BRANCH"
+```
+
+**Why:** Sub-agents and shell context resets can silently switch the working directory back to main. Without this check, commits land on main instead of the feature branch.
+
 ### 1. Scope Check
 Does this change directly address an AC item?
 - **Yes** → Proceed
