@@ -43,6 +43,7 @@ This guide covers the full Sequant workflow, including post-QA patterns used by 
 **What happens:**
 - Creates isolated git worktree (`feature/123-issue-title`)
 - Implements changes per the spec
+- Verifies current branch before each commit (blocks if on main/master)
 - Runs tests after changes
 - Creates commits with progress
 - Creates PR

@@ -75,6 +75,32 @@ Common issues and solutions when using Sequant.
    ./scripts/new-feature.sh <issue-number>
    ```
 
+### Commits landed on main instead of feature branch
+
+**Problem:** After running `/exec` or `/fullsolve`, commits ended up on `main` instead of the feature branch. This can happen when sub-agents or shell context resets silently switch the working directory back to the main repo root.
+
+**Prevention:** Both `/exec` and `/fullsolve` now include branch verification gates that block commits on main/master. If you see the error "On main — do NOT commit here", navigate to the correct worktree before continuing.
+
+**Recovery if it already happened:**
+
+1. Check which commits need to move:
+   ```bash
+   git log --oneline main ^origin/main
+   ```
+
+2. Switch to the feature branch and cherry-pick:
+   ```bash
+   git checkout feature/<issue-number>-*
+   git cherry-pick <commit-hash>
+   ```
+
+3. Remove the commits from main:
+   ```bash
+   git checkout main
+   git reset --soft origin/main
+   git stash  # save any uncommitted changes
+   ```
+
 ---
 
 ## Project Type Support

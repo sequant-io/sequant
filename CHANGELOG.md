@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Branch verification gates** in `/fullsolve` and `/exec` skills — prevents commits from landing on main/master when sub-agents or shell context resets silently switch the working directory
+  - `/fullsolve` Phase 0.1: Soft warning if on main during pre-flight
+  - `/fullsolve` Phase 5.0: Hard gate (`exit 1`) before commit/PR if not on a feature branch
+  - `/exec` Quality Standard #0: Hard gate before every commit if not on a feature branch
+
 ## [2.0.0] - 2026-04-05
 
 ### Breaking Changes
