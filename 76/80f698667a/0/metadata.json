@@ -1,0 +1,45 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "7680f698667a",
+  "session_id": "00e693c4-5a7a-4617-8930-16abbc0c4535",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-05T22:35:53.432979Z",
+  "branch": "main",
+  "checkpoints_count": 7,
+  "files_touched": [
+    "README.md",
+    "bin/cli.ts",
+    "docs/concepts/what-is-sequant.md",
+    "docs/features/package-manager-detection.md",
+    "docs/getting-started/installation.md",
+    "docs/reference/cheat-sheet.md",
+    "docs/troubleshooting.md",
+    "src/lib/stacks.ts",
+    "src/lib/version-check.test.ts",
+    "src/lib/version-check.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "c65b64aafad0",
+  "checkpoint_transcript_start": 43,
+  "transcript_lines_at_start": 43,
+  "token_usage": {
+    "input_tokens": 1942,
+    "cache_creation_tokens": 243283,
+    "cache_read_tokens": 4487228,
+    "output_tokens": 19169,
+    "api_call_count": 73
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-05T22:35:53.238554Z",
+    "agent_lines": 155,
+    "human_added": 4,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 159,
+    "agent_percentage": 97.48427672955975
+  }
+}

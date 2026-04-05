@@ -1,0 +1,31 @@
+Yes. We'll also need to update our cli suggestions and flow where it makese sense
+
+---
+
+<task-notification>
+<task-id>blg2xa0gi</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/00e693c4-5a7a-4617-8930-16abbc0c4535/tasks/blg2xa0gi.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+run docs
+
+---
+
+what was this issue number?
+
+---
+
+docs 487
+
+---
+
+should this be added to the 2.0 release?
+
+---
+
+I havent fully released it yet
