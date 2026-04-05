@@ -8,11 +8,14 @@
 ## Installation & Setup
 
 ```bash
-# Install globally
-npm install -g sequant
-
-# Or run via npx (no install needed)
+# Run via npx (no install needed)
 npx sequant init
+
+# Or install globally
+npm install -g sequant       # npm
+pnpm add -g sequant          # pnpm
+yarn global add sequant      # yarn
+bun add -g sequant           # bun
 ```
 
 #### Update & sync
@@ -28,7 +31,7 @@ sequant doctor              # Verify installation health
 | Scenario | Command |
 |----------|---------|
 | First time setup | `sequant init` |
-| New Sequant version released | `npm update -g sequant && sequant update` |
+| New Sequant version released | Update with your package manager, then `sequant update` |
 | CI/automation template sync | `sequant sync` |
 | Something seems off | `sequant doctor` |
 

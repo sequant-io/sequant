@@ -53,7 +53,7 @@ Sequant will:
 
 Stack selection is saved to `.sequant/stack.json` for future reference
 
-## npm Installation Options
+## Installation Options
 
 ### Recommended: npx (No Install)
 
@@ -68,17 +68,22 @@ Using `npx` ensures you always run the latest version.
 ### Global Installation
 
 ```bash
-npm install -g sequant
-sequant init
-sequant doctor
+npm install -g sequant       # npm
+pnpm add -g sequant          # pnpm
+yarn global add sequant      # yarn
+bun add -g sequant           # bun
 ```
 
 ### Local Installation (package.json)
 
 ```bash
-npm install --save-dev sequant
-npx sequant init
+npm install --save-dev sequant   # npm
+pnpm add -D sequant              # pnpm
+yarn add -D sequant              # yarn
+bun add -D sequant               # bun
 ```
+
+Then run `npx sequant init` to set up skills.
 
 ## Updating
 

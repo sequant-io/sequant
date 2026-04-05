@@ -130,6 +130,10 @@ Old names are still exported as deprecated aliases. `SignalSource` type `"solve"
   - Centralize shared workflow types in `src/lib/workflow/types.ts`
 - Improve first-pass QA rate with exec pre-PR self-verification and QA implementation detection fixes (#448)
 - Replace `spawnSync` with async `spawn` in MCP `sequant_run` tool — server stays responsive during execution (#388)
+- CLI messages now use the detected package manager instead of hardcoding `npm` (#487)
+  - Version update suggestions, uninstall hints, and MCP SDK install errors adapt to the project's PM
+  - Added `addPkg`, `removePkg`, `updatePkg` to `PackageManagerConfig` for npm, pnpm, yarn, and bun
+  - Documentation updated to show all package managers for install commands
 
 ### Fixed
 

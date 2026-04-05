@@ -2,6 +2,7 @@
  * Stack detection and configuration
  */
 
+import { existsSync } from "fs";
 import { readdir } from "fs/promises";
 import { fileExists, readFile } from "./fs.js";
 
@@ -67,8 +68,11 @@ export type PackageManager =
 export interface PackageManagerConfig {
   run: string; // e.g., "npm run", "bun run", "yarn"
   exec: string; // e.g., "npx", "bunx", "yarn dlx"
-  install: string; // e.g., "npm install", "bun install"
+  install: string; // e.g., "npm install", "bun install" (all deps)
   installSilent: string; // e.g., "npm install --silent", "bun install --silent"
+  addPkg: string; // e.g., "npm install", "pnpm add" (add a specific package)
+  removePkg: string; // e.g., "npm uninstall", "pnpm remove"
+  updatePkg: string; // e.g., "npm update", "pnpm update"
 }
 
 /**
@@ -80,24 +84,36 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "npx",
     install: "npm install",
     installSilent: "npm install --silent",
+    addPkg: "npm install",
+    removePkg: "npm uninstall",
+    updatePkg: "npm update",
   },
   bun: {
     run: "bun run",
     exec: "bunx",
     install: "bun install",
     installSilent: "bun install --silent",
+    addPkg: "bun add",
+    removePkg: "bun remove",
+    updatePkg: "bun update",
   },
   yarn: {
     run: "yarn",
     exec: "yarn dlx",
     install: "yarn install",
     installSilent: "yarn install --silent",
+    addPkg: "yarn add",
+    removePkg: "yarn remove",
+    updatePkg: "yarn upgrade",
   },
   pnpm: {
     run: "pnpm run",
     exec: "pnpm dlx",
     install: "pnpm install",
     installSilent: "pnpm install --silent",
+    addPkg: "pnpm add",
+    removePkg: "pnpm remove",
+    updatePkg: "pnpm update",
   },
   // Python package managers
   pip: {
@@ -105,18 +121,27 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "python -m",
     install: "pip install",
     installSilent: "pip install -q",
+    addPkg: "pip install",
+    removePkg: "pip uninstall",
+    updatePkg: "pip install --upgrade",
   },
   poetry: {
     run: "poetry run",
     exec: "poetry run",
     install: "poetry install",
     installSilent: "poetry install -q",
+    addPkg: "poetry add",
+    removePkg: "poetry remove",
+    updatePkg: "poetry update",
   },
   uv: {
     run: "uv run",
     exec: "uvx",
     install: "uv pip install",
     installSilent: "uv pip install -q",
+    addPkg: "uv pip install",
+    removePkg: "uv pip uninstall",
+    updatePkg: "uv pip install --upgrade",
   },
 };
 
@@ -177,6 +202,19 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
 
   // Not a recognized project type
   return null;
+}
+
+/**
+ * Synchronous version of detectPackageManager for use in startup code.
+ * Only checks JS lockfiles (not Python) since sequant is a Node.js tool.
+ */
+export function detectPackageManagerSync(): PackageManager {
+  for (const { file, pm } of LOCKFILE_PRIORITY) {
+    if (existsSync(file)) {
+      return pm;
+    }
+  }
+  return "npm";
 }
 
 /**

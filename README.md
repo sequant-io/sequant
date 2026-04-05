@@ -31,17 +31,19 @@ In Claude Code:
 
 You get skills, hooks, and MCP tools — no npm required.
 
-### Option B: npm (power users / CI)
+### Option B: Package install (power users / CI)
 
 ```bash
-npm install sequant
-npx sequant init     # Install skills to your project
-npx sequant doctor   # Verify setup
+npm install sequant          # npm
+pnpm add sequant             # pnpm
+yarn add sequant             # yarn
+bun add sequant              # bun
 ```
 
-To update:
+Then initialize:
 ```bash
-npm update sequant
+npx sequant init     # Install skills to your project
+npx sequant doctor   # Verify setup
 ```
 
 ### Start Using

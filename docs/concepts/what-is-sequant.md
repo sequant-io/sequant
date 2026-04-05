@@ -322,7 +322,6 @@ methodically — plan first, build in isolation, review before merging.
 ## Quick Start
 
 ```bash
-npm install sequant
 npx sequant init
 npx sequant doctor
 ```

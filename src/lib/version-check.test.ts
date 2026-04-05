@@ -3,13 +3,17 @@ import fs from "fs";
 import path from "path";
 
 // Mock fs module
+const { mockExistsSync } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+}));
 vi.mock("fs", () => ({
   default: {
-    existsSync: vi.fn(),
+    existsSync: mockExistsSync,
     readFileSync: vi.fn(),
     writeFileSync: vi.fn(),
     mkdirSync: vi.fn(),
   },
+  existsSync: mockExistsSync,
 }));
 
 // Mock global fetch
@@ -103,13 +107,23 @@ describe("version-check utilities", () => {
       expect(warning).not.toContain("npm update");
     });
 
-    it("returns npm update command for local installs", () => {
+    it("returns update command for local installs using detected package manager", () => {
+      // Default (no lockfile) → npm
       const warning = getVersionWarning("1.0.0", "1.5.3", true);
       expect(warning).toContain("1.5.3 is available");
       expect(warning).toContain("you have 1.0.0");
-      expect(warning).toContain("npm update sequant");
+      expect(warning).toContain("update sequant");
       expect(warning).toContain("local dependency");
       expect(warning).not.toContain("npx sequant@latest");
+    });
+
+    it("returns pnpm update command when pnpm lockfile exists", () => {
+      mockExistsSync.mockImplementation(
+        (p: string) => typeof p === "string" && p.includes("pnpm-lock"),
+      );
+      const warning = getVersionWarning("1.0.0", "1.5.3", true);
+      expect(warning).toContain("pnpm update sequant");
+      mockExistsSync.mockReset();
     });
   });
 

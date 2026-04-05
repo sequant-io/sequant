@@ -14,6 +14,10 @@ import { initCommand } from "../src/commands/init.js";
 import { isLocalNodeModulesInstall } from "../src/lib/version-check.js";
 import { configureUI, banner } from "../src/lib/cli-ui.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
+import {
+  detectPackageManagerSync,
+  getPackageManagerCommands,
+} from "../src/lib/stacks.js";
 
 // Read version from package.json dynamically
 // Works from both source (bin/) and compiled (dist/bin/) locations
@@ -73,11 +77,12 @@ configureUI({
 // Warn if running from local node_modules (not npx cache or global)
 // This helps users who accidentally have a stale local install
 if (!process.argv.includes("--quiet") && isLocalNodeModulesInstall()) {
+  const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
   console.warn(
     chalk.yellow(
       "⚠️  Running sequant from local node_modules\n" +
         "   For latest version: npx sequant@latest\n" +
-        "   To remove local: npm uninstall sequant\n",
+        `   To remove local: ${pmCommands.removePkg} sequant\n`,
     ),
   );
 }
@@ -301,10 +306,11 @@ program
   .action(async (options: Record<string, unknown>) => {
     const mod = await import("../src/commands/serve.js").catch(() => null);
     if (!mod) {
+      const pmCmds = getPackageManagerCommands(detectPackageManagerSync());
       console.error(
         chalk.red(
           "Error: MCP server requires @modelcontextprotocol/sdk\n" +
-            "Install it with: npm install @modelcontextprotocol/sdk",
+            `Install it with: ${pmCmds.addPkg} @modelcontextprotocol/sdk`,
         ),
       );
       process.exit(1);

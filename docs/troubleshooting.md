@@ -160,7 +160,10 @@ Common issues and solutions when using Sequant.
 
 3. Reinstall globally:
    ```bash
-   npm install -g sequant
+   npm install -g sequant       # npm
+   pnpm add -g sequant          # pnpm
+   yarn global add sequant      # yarn
+   bun add -g sequant           # bun
    ```
 
 ### Permission errors during install
@@ -324,10 +327,9 @@ Common issues and solutions when using Sequant.
 
 1. Update sequant to latest version:
    ```bash
-   npm update sequant
-   # or remove local and use npx
-   npm uninstall sequant
    npx sequant@latest run 123
+   # or update your local install with your package manager
+   # npm update sequant / pnpm update sequant / yarn upgrade sequant / bun update sequant
    ```
 
 2. Try running without MCP servers to isolate the issue:

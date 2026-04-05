@@ -8,6 +8,10 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  detectPackageManagerSync,
+  getPackageManagerCommands,
+} from "./stacks.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -210,8 +214,8 @@ export function isOutdated(
 /**
  * Get the version warning message
  *
- * For local node_modules installs, recommends `npm update sequant`
- * For npx usage, recommends `npx sequant@latest`
+ * For local node_modules installs, recommends the correct update command
+ * for the project's package manager. For npx usage, recommends `npx sequant@latest`.
  */
 export function getVersionWarning(
   currentVersion: string,
@@ -221,8 +225,10 @@ export function getVersionWarning(
   const isLocalInstall = isLocal ?? isLocalNodeModulesInstall();
 
   if (isLocalInstall) {
+    const pm = detectPackageManagerSync();
+    const pmConfig = getPackageManagerCommands(pm);
     return `sequant ${latestVersion} is available (you have ${currentVersion})
-   Run: npm update sequant
+   Run: ${pmConfig.updatePkg} sequant
    Note: You have sequant as a local dependency. npx uses your node_modules version.`;
   }
 
