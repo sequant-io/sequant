@@ -1,4 +1,4 @@
-# What We've Built: Sequant v1.20.3
+# What We've Built: Sequant v2.0.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,7 +737,20 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v1.19.0)
+### Recent Additions (v2.0.0)
+
+- **MCP Server** - `sequant serve` exposes workflow as MCP tools for any MCP client (#372)
+- **/assess Unification** - `/solve` merged into `/assess` with 6-action vocabulary (#325)
+- **Parallel Execution** - Multi-issue runs concurrent by default with `--concurrency` (#404)
+- **Aider Agent Backend** - `--agent aider` as alternative to Claude Code (#369)
+- **GitHub Actions** - Label-triggered and comment-triggered CI workflows (#370)
+- **PM-Aware CLI** - CLI messages adapt to npm/pnpm/yarn/bun based on lockfile detection (#487)
+- **QA Optimization** - Diff-based re-runs and small-diff fast path (#377, #465)
+- **Status Reconciliation** - `sequant status` syncs with GitHub on every read (#423)
+- **Structured Error Capture** - `sequant logs --failed` shows categorized failures (#447)
+- **Plugin Distribution** - First-class Claude Code plugin with marketplace listing (#476)
+
+### Earlier Additions (v1.19.0)
 
 - **Codebase Conventions Detection** - Auto-detects 8+ conventions (test patterns, export style, async patterns, TypeScript strictness) during `sequant init` (#233)
   - Conventions stored in `.sequant/conventions.json` with manual override support
@@ -1050,7 +1063,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 1.20.3
+**Current Version:** 2.0.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1060,7 +1073,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v1.20.3                                │
+│                              SEQUANT v2.0.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
