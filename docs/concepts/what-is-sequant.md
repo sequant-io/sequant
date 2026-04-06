@@ -1,7 +1,7 @@
 # What Is Sequant
 
-Sequant is workflow automation for Claude Code. It turns GitHub issues into
-merge-ready pull requests through structured phases and quality gates.
+Sequant is workflow automation for AI coding agents. It turns GitHub issues
+into merge-ready pull requests through structured phases and quality gates.
 
 You write issues. Sequant plans, builds, tests, and reviews them — each step
 with guardrails that catch problems before they reach your codebase.
@@ -10,9 +10,9 @@ with guardrails that catch problems before they reach your codebase.
 
 ## The Problem
 
-Claude Code is remarkably capable. Give it a well-scoped issue and it can
-plan, implement, and test a feature in minutes. But capability alone doesn't
-guarantee consistency.
+AI coding agents are remarkably capable. Give one a well-scoped issue and it
+can plan, implement, and test a feature in minutes. But capability alone
+doesn't guarantee consistency.
 
 Without structure, AI-assisted development has a "results may vary" quality:
 
@@ -22,10 +22,10 @@ Without structure, AI-assisted development has a "results may vary" quality:
 - There's nothing tracking which issues are planned, in progress, or reviewed
 - Each session starts from scratch with no memory of prior work
 
-These aren't flaws in Claude Code. They're the natural consequence of
-working without a process. Human developers solve this with methodologies,
-code review, CI/CD, and project management. AI-assisted development needs
-the same discipline.
+These aren't flaws in the agent. They're the natural consequence of working
+without a process. Human developers solve this with methodologies, code
+review, CI/CD, and project management. AI-assisted development needs the
+same discipline.
 
 Sequant provides that discipline.
 
@@ -33,10 +33,10 @@ Sequant provides that discipline.
 
 ## How It Works
 
-Sequant installs slash commands into Claude Code that enforce a phased
-workflow. Each issue moves through plan, build, and review — with an
-isolated worktree keeping your main branch clean and a quality loop
-that catches problems before merge.
+Sequant enforces a phased workflow through slash commands, an MCP server,
+and a headless CLI. Each issue moves through plan, build, and review — with
+an isolated worktree keeping your main branch clean and a quality loop that
+catches problems before merge.
 
 ```text
                          ┌──────────────┐
@@ -117,7 +117,7 @@ entire workflow auditable by reading issue comments.
 ## What Sequant Installs
 
 Sequant is not a platform or a service. It's a set of files that live
-in your project and extend Claude Code's capabilities.
+in your project.
 
 ```text
 your-project/
@@ -133,6 +133,8 @@ your-project/
 │   │   ├── pre-tool.sh           Security guardrails, timing
 │   │   └── post-tool.sh          Quality observability, formatting
 │   └── settings.json        ◄── Hook configuration
+│
+├── .mcp.json                ◄── MCP server config (for MCP clients)
 │
 ├── .sequant/
 │   ├── state.json           ◄── Workflow state per issue
@@ -211,9 +213,9 @@ continuously to keep everything safe, tracked, and connected:
   │ 18 slash  │  │ Pre-tool: │  │ .sequant/ │  │            │
   │ commands  │  │ blocks    │  │ tracks    │  │ Plans,     │
   │ that tell │  │ secrets,  │  │ phase     │  │ verdicts,  │
-  │ Claude    │  │ unsafe    │  │ progress, │  │ and phase  │
-  │ Code what │  │ commands  │  │ metrics,  │  │ markers    │
-  │ to do in  │  │           │  │ run logs  │  │ that carry │
+  │ the agent │  │ unsafe    │  │ progress, │  │ and phase  │
+  │ what to   │  │ commands  │  │ metrics,  │  │ markers    │
+  │ do in     │  │           │  │ run logs  │  │ that carry │
   │ each      │  │ Post-tool:│  │           │  │ context    │
   │ phase     │  │ formats,  │  │ Updated   │  │ between    │
   │           │  │ observes  │  │ at phase  │  │ sessions   │
@@ -221,7 +223,7 @@ continuously to keep everything safe, tracked, and connected:
   └───────────┘  └───────────┘  └───────────┘  └────────────┘
 ```
 
-- **Skills** are markdown prompts — they tell Claude Code exactly what to
+- **Skills** are markdown prompts — they tell the agent exactly what to
   do in each phase. The intelligence lives in the prompts.
 - **Hooks** fire on every tool call. Pre-tool hooks block secrets,
   destructive commands, and edits outside the worktree. Post-tool hooks
@@ -256,9 +258,9 @@ a PR merges, the worktree is cleaned up and the code lands on main.
 
 ---
 
-## Two Ways to Use It
+## Three Ways to Use It
 
-### Interactive — Inside Claude Code
+### Interactive — Slash commands in Claude Code
 
 Type slash commands directly. Review plans before building. Step through
 at your own pace.
@@ -271,15 +273,28 @@ at your own pace.
 
 ### Headless — From the CLI
 
-Run the full pipeline without the Claude Code UI. Batch multiple issues.
-Let it iterate overnight.
+Run the full pipeline from the terminal. Batch multiple issues. Choose
+your agent. Let it iterate overnight.
 
 ```bash
 npx sequant run 123                    # Single issue, full pipeline
 npx sequant run 1 2 3                  # Three issues in parallel
+npx sequant run 123 --agent aider      # Use Aider instead of Claude Code
 npx sequant run 123 --quality-loop     # Auto-fix on QA failure
 npx sequant run 123 --resume           # Pick up where you left off
 ```
+
+### MCP Server — From any MCP client
+
+Run `sequant serve` to expose workflow orchestration as MCP tools. Claude
+Desktop, Cursor, VS Code, or any MCP-compatible tool can drive Sequant
+without switching to a terminal.
+
+```bash
+npx sequant serve
+```
+
+Tools exposed: `sequant_run`, `sequant_status`, `sequant_logs`.
 
 ---
 
@@ -312,10 +327,20 @@ quality checks. The output is predictable because the process is
 consistent — not because every issue is simple, but because every
 issue is treated with the same rigor.
 
-Sequant doesn't make Claude Code less flexible. It makes the workflow
-around it more structured. You still get the full power of Claude Code
-inside each phase. Sequant just ensures that power is applied
+Sequant doesn't make your agent less flexible. It makes the workflow
+around it more structured. You still get the full power of your chosen
+agent inside each phase. Sequant just ensures that power is applied
 methodically — plan first, build in isolation, review before merging.
+
+## Supported Agents
+
+| Agent | How to use | Notes |
+| --- | --- | --- |
+| **Claude Code** (default) | `npx sequant run 123` | Slash commands + hooks + MCP |
+| **Aider** | `npx sequant run 123 --agent aider` | Model-agnostic — use Claude, GPT-4o, Gemini, or local models |
+| **Any MCP client** | `npx sequant serve` | Claude Desktop, Cursor, VS Code, etc. |
+
+The agent interface is extensible — see [Aider Agent Backend](../features/aider-agent-backend.md) for how backends are implemented.
 
 ---
 
