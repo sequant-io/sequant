@@ -423,6 +423,19 @@ describe("getPhasePrompt", () => {
     const result = await getPhasePrompt("qa", 7);
     expect(result).toContain("/qa 7");
   });
+
+  it("appends promptContext when provided (#488)", async () => {
+    mockReadAgentsMd.mockResolvedValue(null);
+    const result = await getPhasePrompt(
+      "loop",
+      42,
+      undefined,
+      "QA Verdict: AC_NOT_MET\n\nFailed: AC-1, AC-3",
+    );
+    expect(result).toContain("/loop 42");
+    expect(result).toContain("QA Verdict: AC_NOT_MET");
+    expect(result).toContain("Failed: AC-1, AC-3");
+  });
 });
 
 describe("executePhaseWithRetry", () => {
@@ -933,5 +946,70 @@ describe("executePhaseWithRetry", () => {
 
     // Cleanup
     shutdownManager.dispose();
+  });
+
+  // #488: Loop phase must not be misclassified as cold-start
+  it("skips cold-start retries for loop phase (single attempt only)", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(makeResult({ phase: "loop", durationSeconds: 49 }));
+
+    const result = await executePhaseWithRetry(
+      1,
+      "loop",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    // Should only be called once — no cold-start retries
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+  });
+
+  it("skips MCP fallback for loop phase", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(makeResult({ phase: "loop", durationSeconds: 49 }));
+
+    const result = await executePhaseWithRetry(
+      1,
+      "loop",
+      { ...baseConfig, mcp: true },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    // Should only be called once — no MCP fallback
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+  });
+
+  it("loop phase still returns success on first attempt", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(
+        makeResult({ phase: "loop", success: true, durationSeconds: 120 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "loop",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
   });
 });
