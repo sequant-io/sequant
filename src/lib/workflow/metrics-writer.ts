@@ -89,7 +89,9 @@ export class MetricsWriter {
       return metrics;
     } catch (error) {
       if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in metrics file: ${error.message}`);
+        throw new Error(`Invalid JSON in metrics file: ${error.message}`, {
+          cause: error,
+        });
       }
       throw error;
     }

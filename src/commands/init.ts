@@ -562,7 +562,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       console.log(chalk.gray(`   • ${client.name}`));
     }
 
-    let addMcp = false;
+    let addMcp: boolean;
     if (skipPrompts) {
       // --yes alone skips MCP config; --yes --mcp explicitly opts in
       addMcp = !!options.mcp;

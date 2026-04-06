@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade TypeScript from 5.x to 6.0, ESLint from 9.x to 10.x, and typescript-eslint to 8.58.0 (#490)
+- Tighten Node.js engine requirement from `>=20.0.0` to `>=20.19.0` (per ESLint 10 requirements)
+- Fix 10 lint errors caught by new ESLint 10 rules (`no-useless-assignment`, `preserve-caught-error`)
+
 ## [2.0.1] - 2026-04-06
 
 ### Added

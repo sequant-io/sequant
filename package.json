@@ -64,7 +64,7 @@
   },
   "homepage": "https://sequant.io",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.19.0"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"
@@ -93,17 +93,17 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.2",
+    "@eslint/js": "^10.0.1",
     "@types/gradient-string": "^1.1.6",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^25.4.0",
-    "@typescript-eslint/eslint-plugin": "^8.52.0",
-    "@typescript-eslint/parser": "^8.52.0",
-    "eslint": "^9.39.2",
+    "@typescript-eslint/eslint-plugin": "^8.58.0",
+    "@typescript-eslint/parser": "^8.58.0",
+    "eslint": "^10.1.0",
     "globals": "^17.0.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.52.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.0",
     "vitest": "^4.1.0"
   }
 }

@@ -149,7 +149,7 @@ export function resolveBranches(
 
     // Get modified files from the branch
     const worktreePath = worktreePaths.get(branch);
-    let filesModified: string[] = [];
+    let filesModified: string[];
 
     if (worktreePath) {
       // Use worktree for diff
@@ -231,7 +231,7 @@ export async function runMergeChecks(
   repoRoot: string,
 ): Promise<MergeReport> {
   const logDir = resolveLogDir();
-  let runLog: RunLog | null = null;
+  let runLog: RunLog | null;
 
   // Auto-detect issues from most recent run log if none specified
   if (issueNumbers.length === 0) {
