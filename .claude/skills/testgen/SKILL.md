@@ -17,7 +17,7 @@ allowed-tools:
   - Bash(git worktree list:*)
   - Bash(ls:*)
   - Bash(mkdir:*)
-  - Task(general-purpose)
+  - Agent(sequant-testgen)
 ---
 
 # Test Generation Command
@@ -43,7 +43,7 @@ When invoked as `/testgen <issue-number>`, your job is to:
 
 **Purpose:** Test stub generation is highly mechanical and benefits from using haiku sub-agents to minimize token cost.
 
-**Pattern:** Use `Task(subagent_type="general-purpose", model="haiku")` for:
+**Pattern:** Use `Agent(subagent_type="sequant-testgen")` for:
 1. Parsing verification criteria from /spec comments
 2. Generating individual test stubs from templates
 3. Writing test file content
@@ -58,7 +58,7 @@ When invoked as `/testgen <issue-number>`, your job is to:
 **Step 1: Parse Verification Criteria (use haiku)**
 
 ```javascript
-Task(subagent_type="general-purpose", model="haiku", prompt=`
+Agent(subagent_type="sequant-testgen", prompt=`
 Parse the following /spec comment and extract verification criteria.
 
 For each AC, extract:
@@ -91,7 +91,7 @@ ${specComment}
 
 ```javascript
 // For each AC with Unit Test or Integration Test verification method
-Task(subagent_type="general-purpose", model="haiku", prompt=`
+Agent(subagent_type="sequant-testgen", prompt=`
 Generate a Jest test stub for the following verification criteria.
 
 AC: ${ac.acNumber}: ${ac.description}
@@ -137,7 +137,7 @@ When multiple ACs need test stubs, spawn haiku agents in parallel:
 // Spawn all stub generation agents in a single message
 const stubPromises = criteria
   .filter(ac => ac.verificationMethod === 'Unit Test' || ac.verificationMethod === 'Integration Test')
-  .map(ac => Task(subagent_type="general-purpose", model="haiku", prompt=`Generate test stub for ${ac.acNumber}...`))
+  .map(ac => Agent(subagent_type="sequant-testgen", prompt=`Generate test stub for ${ac.acNumber}...`))
 
 // Collect results
 // Main agent writes all files

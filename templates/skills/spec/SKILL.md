@@ -13,7 +13,7 @@ allowed-tools:
   - Bash(gh label:*)
   - Bash(git worktree:*)
   - Bash(git -C:*)
-  - Task(Explore)
+  - Agent(sequant-explorer)
   - AgentOutputTool
 ---
 
@@ -83,6 +83,11 @@ When called like `/spec <freeform description>`:
 - Usage: `/spec 123 --skip-ac-lint`
 - Effect: Skips the AC Quality Check step
 - Use when: AC are intentionally high-level or you want to defer linting
+
+**Flag:** `--skip-scope-check`
+- Usage: `/spec 123 --skip-scope-check`
+- Effect: Skips the Scope Assessment step
+- Use when: Issue scope is intentionally complex or you want to defer assessment
 
 ### AC Extraction and Storage — REQUIRED
 
@@ -190,6 +195,103 @@ console.log(formatACLintResults(lintResults));
 - Output: `AC Quality Check: Skipped (--skip-ac-lint flag set)`
 - Continue directly to plan generation
 
+### Scope Assessment — REQUIRED (unless --skip-scope-check)
+
+**After AC Quality Check**, run scope assessment to detect overscoped issues:
+
+```bash
+# Run scope assessment (skip if --skip-scope-check flag is set)
+npx tsx -e "
+import { parseAcceptanceCriteria } from './src/lib/ac-parser.ts';
+import { performScopeAssessment, formatScopeAssessment, convertSettingsToConfig } from './src/lib/scope/index.ts';
+import { getSettings } from './src/lib/settings.ts';
+
+const issueBody = \`<ISSUE_BODY_HERE>\`;
+const issueTitle = '<ISSUE_TITLE>';
+
+(async () => {
+  const settings = await getSettings();
+  const config = convertSettingsToConfig(settings.scopeAssessment);
+
+  const criteria = parseAcceptanceCriteria(issueBody);
+  const assessment = performScopeAssessment(criteria, issueBody, issueTitle, config);
+  console.log(formatScopeAssessment(assessment));
+})();
+"
+```
+
+**Why this matters:**
+- Bundled features (3+ distinct features) should be separate issues
+- Missing non-goals lead to scope creep during implementation
+- High AC counts increase complexity and error rates
+
+**Scope Metrics:**
+
+| Metric | Green | Yellow | Red |
+|--------|-------|--------|-----|
+| Feature count | 1 | 2 | 3+ |
+| AC items | 1-5 | 6-8 | 9+ |
+| Directory spread | 1-2 | 3-4 | 5+ |
+
+**Non-Goals Section:**
+
+Every `/spec` output MUST include a Non-Goals section. If the issue lacks one, output a warning:
+
+```markdown
+## Non-Goals
+
+⚠️ **Non-Goals section not found.** Consider adding scope boundaries.
+
+Example format:
+- [ ] [Adjacent feature we're deferring]
+- [ ] [Scope boundary we're respecting]
+- [ ] [Future work that's out of scope]
+```
+
+**Scope Verdicts:**
+
+| Verdict | Meaning | Action |
+|---------|---------|--------|
+| ✅ SCOPE_OK | Single focused feature | Proceed normally |
+| ⚠️ SCOPE_WARNING | Moderate complexity | Consider narrowing; quality loop auto-enabled |
+| ❌ SCOPE_SPLIT_RECOMMENDED | Multiple features bundled | Strongly recommend splitting |
+
+**Quality Loop Auto-Enable:**
+
+If scope verdict is SCOPE_WARNING or SCOPE_SPLIT_RECOMMENDED:
+- Quality loop is automatically enabled
+- Include note in Recommended Workflow section:
+  ```markdown
+  **Quality Loop:** enabled (auto-enabled due to scope concerns)
+  ```
+
+**If `--skip-scope-check` flag is set:**
+- Output: `Scope Assessment: Skipped (--skip-scope-check flag set)`
+- Continue to plan generation
+
+**Store in State:**
+
+After assessment, store results in workflow state for analytics:
+
+```bash
+npx tsx -e "
+import { StateManager } from './src/lib/workflow/state-manager.ts';
+import { performScopeAssessment, convertSettingsToConfig } from './src/lib/scope/index.ts';
+import { getSettings } from './src/lib/settings.ts';
+
+(async () => {
+  const settings = await getSettings();
+  const config = convertSettingsToConfig(settings.scopeAssessment);
+
+  // ... perform assessment with config ...
+  // const assessment = performScopeAssessment(criteria, issueBody, issueTitle, config);
+
+  const manager = new StateManager();
+  await manager.updateScopeAssessment(issueNumber, assessment);
+})();
+"
+```
+
 ### Feature Worktree Workflow
 
 **Planning Phase:** No worktree needed. Planning happens in the main repository directory. The worktree will be created during the execution phase (`/exec`).
@@ -209,21 +311,21 @@ Read(file_path=".sequant/settings.json")
 
 **Spawn ALL THREE agents in a SINGLE message:**
 
-1. `Task(subagent_type="Explore", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+1. `Agent(subagent_type="sequant-explorer", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
 
-2. `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+2. `Agent(subagent_type="sequant-explorer", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
 
-3. `Task(subagent_type="Explore", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+3. `Agent(subagent_type="sequant-explorer", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
 
 #### If sequential mode (default):
 
 **Spawn each agent ONE AT A TIME, waiting for each to complete:**
 
-1. **First:** `Task(subagent_type="Explore", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+1. **First:** `Agent(subagent_type="sequant-explorer", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
 
-2. **After #1 completes:** `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+2. **After #1 completes:** `Agent(subagent_type="sequant-explorer", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
 
-3. **After #2 completes:** `Task(subagent_type="Explore", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+3. **After #2 completes:** `Agent(subagent_type="sequant-explorer", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
 
 ### Feature Branch Context Detection
 
@@ -348,9 +450,9 @@ Before creating the implementation plan, scan for potential conflicts with in-fl
 
 ## Output Structure
 
-### 1. AC Checklist with Verification Criteria
+### 1. AC Checklist with Verification Criteria (REQUIRED)
 
-Restate AC as a checklist with verification for each:
+**Every AC MUST have an explicit Verification Method.** Restate AC as a checklist with verification for each:
 
 ```markdown
 ### AC-1: [Description]
@@ -368,6 +470,64 @@ Restate AC as a checklist with verification for each:
 **Assumptions to Validate:**
 - [ ] [Assumption that must be true]
 ```
+
+#### Verification Method Decision Framework
+
+**REQUIRED:** Choose the most appropriate verification method for each AC:
+
+| AC Type | Verification Method | When to Use |
+|---------|---------------------|-------------|
+| Pure logic/calculation | **Unit Test** | Functions with clear input/output, no side effects |
+| API endpoint | **Integration Test** | HTTP handlers, database queries, external service calls |
+| User workflow | **Browser Test** | Multi-step UI interactions, form submissions |
+| Visual appearance | **Manual Test** | Styling, layout, animations (hard to automate) |
+| CLI command | **Integration Test** | Script execution, file operations, stdout verification |
+| Error handling | **Unit Test** + **Integration Test** | Both isolated behavior and realistic scenarios |
+| Performance | **Manual Test** + **Integration Test** | Timing thresholds, load testing |
+
+#### Verification Method Examples
+
+**Good (specific and testable):**
+```markdown
+**AC-1:** User can submit the registration form
+**Verification Method:** Browser Test
+**Test Scenario:**
+- Given: User on /register page
+- When: Fill form fields, click Submit
+- Then: Redirect to /dashboard, success toast appears
+```
+
+**Bad (vague, no clear verification):**
+```markdown
+**AC-1:** Registration should work properly
+**Verification Method:** ??? (cannot determine)
+```
+
+#### Flags for Missing Verification Methods
+
+If you cannot determine a verification method for an AC:
+
+1. **Flag the AC as unclear:**
+   ```markdown
+   **AC-3:** System handles errors gracefully
+   **Verification Method:** ⚠️ UNCLEAR - needs specific error scenarios
+   **Suggested Refinement:** List specific error types and expected responses
+   ```
+
+2. **Include in Open Questions:**
+   ```markdown
+   ## Open Questions
+
+   1. **AC-3 verification method unclear**
+      - Question: What specific error scenarios should be tested?
+      - Recommendation: Define 3-5 error types with expected behavior
+      - Impact: Without this, QA cannot objectively validate
+   ```
+
+**Why this matters:** AC without verification methods:
+- Cannot be objectively validated in `/qa`
+- Lead to subjective "does it work?" assessments
+- Cause rework when expectations don't match implementation
 
 See [verification-criteria.md](references/verification-criteria.md) for detailed examples including the #452 hooks failure case.
 
@@ -436,7 +596,134 @@ See [parallel-groups.md](references/parallel-groups.md) for parallelization form
 3. **What existing pattern does this follow?** Same pattern as `formatDuration()` in the same file — pure function, no side effects, single responsibility.
 ```
 
-### 3. Plan Review
+### 3. Feature Quality Planning (REQUIRED)
+
+**Purpose:** Systematically consider professional implementation requirements beyond the minimum AC. This prevents gaps that slip through exec and QA because they were never planned.
+
+**Why this matters:** Spec currently plans the "minimum to satisfy AC" rather than "complete professional implementation." Gaps found in manual review are omissions from incomplete planning, not failures.
+
+**Complexity Scaling:**
+- **Simple issues** (`simple-fix`, `typo`, `docs-only` labels): Use abbreviated checklist (Completeness + one relevant section)
+- **Standard issues**: Complete all applicable sections
+- **Complex issues** (`complex`, `refactor`, `breaking` labels): Complete all sections with detailed items
+
+```markdown
+## Feature Quality Planning
+
+### Completeness Check
+- [ ] All AC items have corresponding implementation steps
+- [ ] Integration points with existing features identified
+- [ ] No partial implementations or TODOs planned
+- [ ] State management considered (if applicable)
+- [ ] Data flow is complete end-to-end
+
+### Error Handling
+- [ ] Invalid input scenarios identified
+- [ ] API/external service failures handled
+- [ ] Edge cases documented (empty, null, max values)
+- [ ] Error messages are user-friendly
+- [ ] Graceful degradation planned
+
+### Code Quality
+- [ ] Types fully defined (no `any` planned)
+- [ ] Follows existing patterns in codebase
+- [ ] Error boundaries where needed
+- [ ] No magic strings/numbers
+- [ ] Consistent naming conventions
+
+### Test Coverage Plan
+- [ ] Unit tests for business logic
+- [ ] Integration tests for data flow
+- [ ] Edge case tests identified
+- [ ] Mocking strategy appropriate
+- [ ] Critical paths have test coverage
+
+### Best Practices
+- [ ] Logging for debugging/observability
+- [ ] Accessibility considerations (if UI)
+- [ ] Performance implications considered
+- [ ] Security reviewed (auth, validation, sanitization)
+- [ ] Documentation updated (if behavior changes)
+
+### Polish (UI features only)
+- [ ] Loading states planned
+- [ ] Error states have UI
+- [ ] Empty states handled
+- [ ] Responsive design considered
+- [ ] Keyboard navigation works
+
+### Derived ACs
+
+Based on quality planning, identify additional ACs needed:
+
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| Error Handling | AC-N: Handle [specific error] with [specific response] | High/Medium/Low |
+| Test Coverage | AC-N+1: Add tests for [specific scenario] | High/Medium/Low |
+| Best Practices | AC-N+2: Add logging for [specific operation] | High/Medium/Low |
+
+**Note:** Derived ACs are numbered sequentially after original ACs and follow the same format.
+```
+
+**Section Applicability:**
+
+| Issue Type | Sections Required |
+|------------|-------------------|
+| Bug fix | Completeness, Error Handling, Test Coverage |
+| New feature | All sections |
+| Refactor | Completeness, Code Quality, Test Coverage |
+| UI change | All sections including Polish |
+| Backend/API | Completeness, Error Handling, Code Quality, Test Coverage, Best Practices |
+| CLI/Script | Completeness, Error Handling, Test Coverage, Best Practices |
+| Docs only | Completeness only |
+
+**Example (API endpoint feature):**
+
+```markdown
+## Feature Quality Planning
+
+### Completeness Check
+- [x] All AC items have corresponding implementation steps
+- [x] Integration points: Auth middleware, database queries, response serializer
+- [x] No partial implementations planned
+- [ ] State management: N/A (stateless API)
+- [x] Data flow: Request → Validate → Query → Transform → Response
+
+### Error Handling
+- [x] Invalid input: Return 400 with validation errors
+- [x] Auth failure: Return 401 with "Unauthorized" message
+- [x] Not found: Return 404 with resource ID
+- [x] Server error: Return 500, log full error, return generic message
+- [x] Rate limit: Return 429 with retry-after header
+
+### Code Quality
+- [x] Types: Define RequestDTO, ResponseDTO, ErrorResponse
+- [x] Patterns: Follow existing controller pattern in `src/api/`
+- [ ] Error boundaries: N/A (API, not UI)
+- [x] No magic strings: Use constants for error messages
+
+### Test Coverage Plan
+- [x] Unit: Validation logic, data transformation
+- [x] Integration: Full request/response cycle
+- [x] Edge cases: Empty results, max pagination, invalid IDs
+- [x] Mocking: Mock database, not HTTP layer
+
+### Best Practices
+- [x] Logging: Log request ID, duration, status code
+- [ ] Accessibility: N/A (API)
+- [x] Performance: Add database index for query field
+- [x] Security: Validate input, sanitize output, check auth
+
+### Derived ACs
+
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| Error Handling | AC-6: Return 429 with retry-after header on rate limit | Medium |
+| Best Practices | AC-7: Log request ID and duration for observability | High |
+| Test Coverage | AC-8: Add integration test for auth failure path | High |
+```
+
+### 4. Plan Review
 
 Ask the user to confirm or adjust:
 - The AC checklist (with verification criteria)
@@ -444,97 +731,6 @@ Ask the user to confirm or adjust:
 - The assumptions to validate
 
 **Do NOT start implementation** - this is planning-only.
-
-### 4. Content Analysis (AC-1, AC-2, AC-3, AC-4)
-
-**Before** determining the recommended workflow, analyze the issue content for phase-relevant signals:
-
-#### Step 1: Check for Assess Comment (AC-4)
-
-First, check if an `/assess` comment already exists for this issue:
-
-```bash
-# Check issue comments for assess workflow (includes legacy /solve format for backward compat)
-gh issue view <issue-number> --json comments --jq '.comments[].body' | grep -l "## Assess Analysis\|## Solve Workflow for Issues:" || true
-```
-
-**If assess comment found:**
-- Extract phases from the assess workflow (e.g., `spec → exec → test → qa`)
-- Use assess recommendations as the primary source (after labels)
-- Skip content analysis for phases (assess already analyzed)
-- Include in output: `"Assess comment found - using /assess workflow recommendations"`
-
-#### Step 2: Analyze Title for Keywords (AC-1)
-
-If no assess comment, analyze the issue title for phase-relevant keywords:
-
-| Pattern | Detection | Suggested Phase |
-|---------|-----------|-----------------|
-| `extract`, `component` | UI work | Add `/test` |
-| `refactor.*ui`, `ui refactor` | UI work | Add `/test` |
-| `frontend`, `dashboard` | UI work | Add `/test` |
-| `auth`, `permission`, `security` | Security-sensitive | Add `/security-review` |
-| `password`, `credential`, `token` | Security-sensitive | Add `/security-review` |
-| `refactor`, `migration`, `restructure` | Complex work | Enable quality loop |
-| `breaking change` | Complex work | Enable quality loop |
-
-#### Step 3: Analyze Body for Patterns (AC-2)
-
-Analyze the issue body for file references and keywords:
-
-| Pattern | Detection | Suggested Phase |
-|---------|-----------|-----------------|
-| References `.tsx` or `.jsx` files | UI work likely | Add `/test` |
-| References `components/` directory | UI work | Add `/test` |
-| References `scripts/` or `bin/` | CLI work | May need `/verify` |
-| References `auth/` directory | Security-sensitive | Add `/security-review` |
-| References `middleware.ts` | May be auth-related | Consider `/security-review` |
-| Contains "breaking change" | Complex work | Enable quality loop |
-
-#### Step 3a: Browser Testing Label Suggestion
-
-**When `.tsx` or `.jsx` file references are detected** in the issue body AND the issue does NOT have `ui`, `frontend`, or `admin` labels, include this warning in the spec output:
-
-```markdown
-> **Component files detected** — Issue body references `.tsx`/`.jsx` files or `components/` directory, but no `ui`/`frontend`/`admin` label is present.
-> - To enable browser testing: add the `ui` label → `gh issue edit <N> --add-label ui`
-> - To explicitly skip browser testing: add `no-browser-test` label → `gh issue edit <N> --add-label no-browser-test`
-> - Without either label, QA will note the missing browser test coverage.
-```
-
-**When NOT to show this warning:**
-- Issue already has `ui`, `frontend`, or `admin` label (browser testing already enabled)
-- Issue has `no-browser-test` label (explicit opt-out)
-- No `.tsx`/`.jsx`/`components/` references detected
-
-#### Step 4: Merge Signals (AC-3)
-
-Content analysis **supplements** label detection - it can only ADD phases, never remove them.
-
-**Priority order (highest first):**
-1. **Labels** (explicit, highest priority)
-2. **Assess comment** (if exists)
-3. **Title keywords**
-4. **Body patterns** (lowest priority)
-
-**Output format:**
-
-```markdown
-## Content Analysis
-
-### Signal Sources
-
-| Phase | Source | Confidence | Reason |
-|-------|--------|------------|--------|
-| /test | title | high | "Extract component" detected |
-| /security-review | body | medium | References auth/ directory |
-
-### Merged Recommendations
-
-**From labels:** /test (ui label)
-**From content:** /security-review (added)
-**Final phases:** spec → exec → test → security-review → qa
-```
 
 ### 4.5. Assess Comment Detection (AC-4, AC-5)
 
@@ -581,20 +777,90 @@ Analyze the issue and recommend the optimal workflow phases:
 
 **Phases:** spec → exec → qa
 **Quality Loop:** disabled
-**Signal Sources:** [labels | solve | content]
 **Reasoning:** [Brief explanation of why these phases were chosen]
 ```
 
 **Phase Selection Logic:**
 - **UI/Frontend changes** → Add `test` phase (browser testing)
+- **`no-browser-test` label** → Skip `test` phase (explicit opt-out, overrides UI labels)
 - **Bug fixes** → Skip `spec` if already well-defined
 - **Complex refactors** → Enable quality loop
 - **Security-sensitive** → Add `security-review` phase
 - **Documentation only** → Skip `spec`, just `exec → qa`
+- **New features with testable ACs** → Add `testgen` phase after spec
+- **Refactors needing regression tests** → Add `testgen` phase
 
-**Content Analysis Integration:**
-- Include content-detected phases in the workflow
-- Note signal source in reasoning (e.g., "Added /test based on title keyword 'extract component'")
+#### Browser Testing Label Suggestion
+
+**When `.tsx` or `.jsx` file references are detected** in the issue body AND the issue does NOT have `ui`, `frontend`, or `admin` labels, include this warning in the spec output:
+
+```markdown
+> **Component files detected** — Issue body references `.tsx`/`.jsx` files or `components/` directory, but no `ui`/`frontend`/`admin` label is present.
+> - To enable browser testing: add the `ui` label → `gh issue edit <N> --add-label ui`
+> - To explicitly skip browser testing: add `no-browser-test` label → `gh issue edit <N> --add-label no-browser-test`
+> - Without either label, QA will note the missing browser test coverage.
+```
+
+**When NOT to show this warning:**
+- Issue already has `ui`, `frontend`, or `admin` label (browser testing already enabled)
+- Issue has `no-browser-test` label (explicit opt-out)
+- No `.tsx`/`.jsx`/`components/` references detected
+
+#### Testgen Phase Auto-Detection
+
+**When to recommend `testgen` phase:**
+
+| Condition | Recommend testgen? | Reasoning |
+|-----------|-------------------|-----------|
+| ACs have "Unit Test" verification method | ✅ Yes | Tests should be stubbed before implementation |
+| ACs have "Integration Test" verification method | ✅ Yes | Complex integration tests benefit from early structure |
+| Issue is a new feature (not bug fix) with >2 AC items | ✅ Yes | Features need test coverage |
+| Issue has `enhancement` or `feature` label | ✅ Yes | New functionality needs tests |
+| Project has test framework (Jest, Vitest, etc.) | ✅ Yes | Infrastructure exists to run tests |
+| Issue is a simple bug fix (`bug` label only) | ❌ No | Bug fixes typically have targeted tests |
+| Issue is docs-only (`docs` label) | ❌ No | Documentation doesn't need unit tests |
+| All ACs have "Manual Test" or "Browser Test" verification | ❌ No | These don't generate code stubs |
+
+**Detection Logic:**
+
+1. **Check verification methods in AC items:**
+   - Count ACs with "Unit Test" → If >0, recommend testgen
+   - Count ACs with "Integration Test" → If >0, recommend testgen
+
+2. **Check issue labels:**
+   ```bash
+   gh issue view <issue> --json labels --jq '.labels[].name'
+   ```
+   - If `bug` or `fix` is the ONLY label → Skip testgen
+   - If `docs` is present → Skip testgen
+   - If `enhancement`, `feature`, `refactor` → Consider testgen
+
+3. **Check project test infrastructure:**
+   ```bash
+   # Check for test framework in package.json
+   grep -E "jest|vitest|mocha" package.json || true
+   ```
+   - If no test framework detected → Skip testgen (no infrastructure)
+
+**Example output when testgen is recommended:**
+
+```markdown
+## Recommended Workflow
+
+**Phases:** spec → testgen → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** ACs include Unit Test verification methods; testgen will create stubs before implementation
+```
+
+**Example output when testgen is NOT recommended:**
+
+```markdown
+## Recommended Workflow
+
+**Phases:** spec → exec → qa
+**Quality Loop:** disabled
+**Reasoning:** Bug fix with targeted scope; existing tests sufficient
+```
 
 ### 6. Label Review
 
@@ -694,16 +960,25 @@ npx tsx scripts/state/update.ts fail <issue-number> spec "Error description"
 **Before responding, verify your output includes ALL of these:**
 
 - [ ] **AC Quality Check** - Lint results (or "Skipped" if --skip-ac-lint)
+- [ ] **Scope Assessment** - Verdict and metrics (or "Skipped" if --skip-scope-check)
+- [ ] **Non-Goals Section** - Listed or warning if missing
 - [ ] **AC Checklist** - Numbered AC items (AC-1, AC-2, etc.) with descriptions
-- [ ] **Verification Criteria** - Each AC has Verification Method and Test Scenario
+- [ ] **Verification Criteria (REQUIRED)** - Each AC MUST have:
+  - Explicit Verification Method (Unit Test, Integration Test, Browser Test, or Manual Test)
+  - Test Scenario with Given/When/Then format
+  - If unclear, flag as "⚠️ UNCLEAR" and add to Open Questions
 - [ ] **Conflict Risk Analysis** - Check for in-flight work, include if conflicts found
 - [ ] **Implementation Plan** - 3-7 concrete steps with codebase references
 - [ ] **Design Review** - All 4 questions answered (abbreviated to Q1+Q3 for simple-fix/typo/docs-only labels)
-- [ ] **Content Analysis** - Title/body analysis results (or "Assess comment found" if using /assess)
-- [ ] **Recommended Workflow** - Phases, Quality Loop setting, Signal Sources, and Reasoning
+- [ ] **Feature Quality Planning** - Quality dimensions checklist completed (abbreviated for simple-fix/typo/docs-only labels)
+- [ ] **Recommended Workflow** - Phases, Quality Loop setting, and Reasoning (auto-enable quality loop if scope is yellow/red)
 - [ ] **Label Review** - Current vs recommended labels based on plan analysis
-- [ ] **Open Questions** - Any ambiguities with recommended defaults
+- [ ] **Open Questions** - Any ambiguities with recommended defaults (including unclear verification methods)
 - [ ] **Issue Comment Draft** - Formatted for GitHub posting
+
+**CRITICAL:** Do NOT output AC items without verification methods. Either:
+1. Assign a verification method from the decision framework, or
+2. Flag as "⚠️ UNCLEAR" and include in Open Questions
 
 **DO NOT respond until all items are verified.**
 
@@ -715,6 +990,26 @@ You MUST include these sections in order:
 ## AC Quality Check
 
 [Output from AC linter, or "Skipped (--skip-ac-lint flag set)"]
+
+---
+
+## Scope Assessment
+
+### Non-Goals (Required)
+
+[List non-goals from issue, or warning if missing]
+
+### Scope Metrics
+
+| Metric | Value | Status |
+|--------|-------|--------|
+| Feature count | [N] | [✅/⚠️/❌] |
+| AC items | [N] | [✅/⚠️/❌] |
+| Directory spread | [N] | [✅/⚠️/❌] |
+
+### Scope Verdict
+
+[✅/⚠️/❌] **[SCOPE_OK/SCOPE_WARNING/SCOPE_SPLIT_RECOMMENDED]** - [Recommendation]
 
 ---
 
@@ -730,6 +1025,20 @@ You MUST include these sections in order:
 - Then: [Expected outcome]
 
 ### AC-2: [Description]
+
+**Verification Method:** [Choose from decision framework]
+
+**Test Scenario:**
+- Given: [Initial state]
+- When: [Action]
+- Then: [Expected outcome]
+
+### AC-N: [Unclear AC example]
+
+**Verification Method:** ⚠️ UNCLEAR - [reason why verification is unclear]
+
+**Suggested Refinement:** [How to make this AC testable]
+
 <!-- Continue for all AC items -->
 
 ---
@@ -759,6 +1068,44 @@ You MUST include these sections in order:
 
 ---
 
+## Feature Quality Planning
+
+### Completeness Check
+- [ ] All AC items have corresponding implementation steps
+- [ ] Integration points identified
+- [ ] No partial implementations planned
+
+### Error Handling
+- [ ] Invalid input scenarios identified
+- [ ] External service failures handled
+- [ ] Edge cases documented
+
+### Code Quality
+- [ ] Types fully defined (no `any`)
+- [ ] Follows existing patterns
+- [ ] No magic strings/numbers
+
+### Test Coverage Plan
+- [ ] Unit tests for business logic
+- [ ] Edge case tests identified
+- [ ] Critical paths covered
+
+### Best Practices
+- [ ] Logging for observability
+- [ ] Security reviewed
+- [ ] Documentation updated
+
+### Polish (UI only)
+- [ ] Loading/error/empty states
+- [ ] Responsive design
+
+### Derived ACs
+| Source | Derived AC | Priority |
+|--------|-----------|----------|
+| [Section] | AC-N: [Description] | High/Medium/Low |
+
+---
+
 ## Open Questions
 
 1. **[Question]**
@@ -767,31 +1114,10 @@ You MUST include these sections in order:
 
 ---
 
-## Content Analysis
-
-<!-- If assess comment found: -->
-**Source:** Assess comment found - using /assess workflow recommendations
-
-<!-- If no assess comment, show analysis: -->
-### Signal Sources
-
-| Phase | Source | Confidence | Reason |
-|-------|--------|------------|--------|
-| /test | title | high | "[matched keyword]" detected |
-| /security-review | body | medium | References [pattern] |
-
-### Merged Recommendations
-
-**From labels:** [label-detected phases]
-**From content:** [content-detected phases]
-
----
-
 ## Recommended Workflow
 
 **Phases:** exec → qa
 **Quality Loop:** disabled
-**Signal Sources:** [labels | solve | content]
 **Reasoning:** [Why these phases based on issue analysis]
 
 ---

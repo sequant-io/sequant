@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Declarative agent definitions in `.claude/agents/` for sequant subagents (#484)
+  - `sequant-explorer` — read-only codebase exploration for `/spec`
+  - `sequant-qa-checker` — quality checks with bypassPermissions for `/qa`
+  - `sequant-implementer` — implementation agent for `/exec` parallel groups
+  - `sequant-testgen` — test stub generation for `/testgen`
+- `templates/agents/` directory so `sequant init` copies agent definitions to new projects
+- Custom agents section in `subagent-types.md` reference documentation
+
 ### Changed
+
+- Migrate all `Task()` invocations to `Agent()` across skill files (#484)
+- Skill spawn sites now reference custom agents by name instead of duplicating inline parameters
 
 - Upgrade TypeScript from 5.x to 6.0, ESLint from 9.x to 10.x, and typescript-eslint to 8.58.0 (#490)
 - Tighten Node.js engine requirement from `>=20.0.0` to `>=20.19.0` (per ESLint 10 requirements)
