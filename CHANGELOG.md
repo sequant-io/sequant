@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-04-06
+
 ### Added
 
 - **Branch verification gates** in `/fullsolve` and `/exec` skills — prevents commits from landing on main/master when sub-agents or shell context resets silently switch the working directory
