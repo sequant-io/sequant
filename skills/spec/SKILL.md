@@ -51,11 +51,11 @@ When called like `/spec <freeform description>`:
 
 **Spawn ALL THREE agents in a SINGLE message:**
 
-1. `Task(subagent_type="Explore", model="haiku", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
+1. `Agent(subagent_type="sequant-explorer", prompt="Find similar features for [FEATURE]. Check components/admin/, lib/queries/, docs/patterns/. Report: file paths, patterns, recommendations.")`
 
-2. `Task(subagent_type="Explore", model="haiku", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
+2. `Agent(subagent_type="sequant-explorer", prompt="Explore [CODEBASE AREA] for [FEATURE]. Find: main components, data flow, key files. Report structure.")`
 
-3. `Task(subagent_type="Explore", model="haiku", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
+3. `Agent(subagent_type="sequant-explorer", prompt="Inspect database for [FEATURE]. Check: table schema, RLS policies, existing queries. Report findings.")`
 
 ### In-Flight Work Analysis (Conflict Detection)
 

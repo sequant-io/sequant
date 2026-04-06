@@ -1,10 +1,10 @@
 # Claude Code Subagent Types
 
-Reference for valid subagent types when spawning agents via the `Task` tool.
+Reference for valid subagent types when spawning agents via the `Agent` tool.
 
-## Valid Types
+## Built-in Types
 
-Claude Code supports exactly **4 subagent types**:
+Claude Code supports exactly **4 built-in subagent types**:
 
 | Type | Purpose | Tools Available |
 |------|---------|-----------------|
@@ -13,54 +13,121 @@ Claude Code supports exactly **4 subagent types**:
 | `Explore` | Codebase exploration, file search, pattern finding | Read-only tools |
 | `Plan` | Architecture planning, implementation design | Read-only tools |
 
-## When to Use Each
+## Custom Agents (Sequant)
 
-### `Bash`
-Best for: Single command execution, git operations, build commands
+Sequant defines **4 custom agents** in `.claude/agents/`. These centralize model, permissions, effort, and tool restrictions that were previously duplicated inline.
+
+| Agent Name | Based On | Model | Permission Mode | Used By |
+|------------|----------|-------|-----------------|---------|
+| `sequant-explorer` | Explore | haiku | (default) | `/spec` |
+| `sequant-qa-checker` | general-purpose | haiku | bypassPermissions | `/qa` |
+| `sequant-implementer` | general-purpose | (inherits) | bypassPermissions | `/exec` |
+| `sequant-testgen` | general-purpose | haiku | (default) | `/testgen` |
+
+### sequant-explorer
+
+Read-only codebase exploration for the `/spec` phase. No Bash, Edit, or Write access.
 
 ```
-Task(subagent_type="Bash", prompt="Run npm test and report results")
+Agent(subagent_type="sequant-explorer",
+     prompt="Find similar features in components/. Report patterns.")
 ```
 
-### `general-purpose`
-Best for: Implementation tasks, quality checks, multi-file operations
+### sequant-qa-checker
+
+Quality check agent for the `/qa` phase. Has `bypassPermissions` for Bash access (git diff, npm test). Effort: low.
 
 ```
-Task(subagent_type="general-purpose",
+Agent(subagent_type="sequant-qa-checker",
      prompt="Run type safety checks on the diff. Report: type issues, verdict.")
 ```
 
-**Use cases:**
-- Quality checks (type safety, security scan, scope analysis)
-- Implementation tasks requiring edits
-- Tasks needing both file reading and command execution
+### sequant-implementer
 
-### `Explore`
-Best for: Codebase search, pattern discovery, schema inspection
+Implementation agent for `/exec` parallel groups. Inherits model from parent (user-configurable). Has `bypassPermissions` for full tool access.
 
 ```
-Task(subagent_type="Explore",
-     prompt="Find similar components in components/admin/. Report patterns.")
+Agent(subagent_type="sequant-implementer",
+     prompt="Implement the UserCard component in components/admin/...")
+```
+
+### sequant-testgen
+
+Test stub generator for the `/testgen` phase. Has Write access but no Bash access.
+
+```
+Agent(subagent_type="sequant-testgen",
+     prompt="Generate test stubs for AC-1: User authentication...")
+```
+
+### Agent Definition Location
+
+Custom agents are defined in `.claude/agents/*.md` with YAML frontmatter:
+
+```markdown
+---
+name: sequant-qa-checker
+description: Quality check agent for sequant QA phase.
+model: haiku
+permissionMode: bypassPermissions
+effort: low
+maxTurns: 15
+tools:
+  - Read
+  - Grep
+  - Glob
+  - Bash
+  - Edit
+---
+
+[Agent behavioral instructions here]
+```
+
+### Agent Resolution Priority
+
+Claude Code resolves agent names in this order:
+1. Managed settings
+2. `--agents` CLI flag
+3. `.claude/agents/` (project-level) — sequant's agents live here
+4. `~/.claude/agents/` (user-level) — users can override here
+5. Plugin agents
+
+## When to Use Each
+
+### Built-in `Bash`
+Best for: Single command execution, git operations, build commands
+
+```
+Agent(subagent_type="Bash", prompt="Run npm test and report results")
+```
+
+### Built-in `general-purpose`
+Best for: Custom tasks that don't fit a sequant agent profile
+
+```
+Agent(subagent_type="general-purpose",
+     prompt="Analyze the error logs and suggest fixes.")
 ```
 
 **Use cases:**
-- Finding existing patterns before implementing new features
-- Searching for file locations
-- Understanding codebase structure
-- Schema and database inspection
+- One-off tasks outside the sequant workflow
+- Tasks needing a specific model/permission combination
 
-### `Plan`
+### Built-in `Explore`
+Best for: Ad-hoc codebase search outside the `/spec` workflow
+
+```
+Agent(subagent_type="Explore",
+     prompt="Find all API routes in the project.")
+```
+
+### Built-in `Plan`
 Best for: Designing implementation approaches, architectural decisions
 
 ```
-Task(subagent_type="Plan",
+Agent(subagent_type="Plan",
      prompt="Design the implementation approach for adding user auth.")
 ```
-
-**Use cases:**
-- Creating implementation plans
-- Evaluating architectural trade-offs
-- Breaking down complex features
 
 ## Model Selection
 
@@ -72,40 +139,40 @@ Task(subagent_type="Plan",
 
 **Default:** Use `haiku` unless the task requires deep reasoning.
 
+Custom agents set their model in the agent definition, so you don't need to specify it inline:
+
 ```
-Task(subagent_type="general-purpose",
-     model="haiku",
+# Model comes from .claude/agents/sequant-qa-checker.md (haiku)
+Agent(subagent_type="sequant-qa-checker",
      prompt="...")
 ```
 
 ## Common Patterns
 
-### Parallel Quality Checks
+### Parallel Quality Checks (via /qa)
 ```
-Task(subagent_type="general-purpose", model="haiku",
+Agent(subagent_type="sequant-qa-checker",
      prompt="Check type safety on diff vs main. Report issues count.")
 
-Task(subagent_type="general-purpose", model="haiku",
+Agent(subagent_type="sequant-qa-checker",
      prompt="Check for deleted tests in diff. Report count.")
 
-Task(subagent_type="general-purpose", model="haiku",
+Agent(subagent_type="sequant-qa-checker",
      prompt="Run security scan on changed files. Report findings.")
 ```
 
-### Context Gathering (Spec Phase)
+### Context Gathering (via /spec)
 ```
-Task(subagent_type="Explore", model="haiku",
+Agent(subagent_type="sequant-explorer",
      prompt="Find similar features in components/. Report patterns.")
 
-Task(subagent_type="Explore", model="haiku",
+Agent(subagent_type="sequant-explorer",
      prompt="Explore database schema for user tables. Report structure.")
 ```
 
-### Background Execution
+### Background Execution (via /exec)
 ```
-Task(subagent_type="general-purpose",
-     model="haiku",
-     mode="acceptEdits",
+Agent(subagent_type="sequant-implementer",
      run_in_background=true,
      prompt="Implement the UserCard component...")
 ```
@@ -114,11 +181,9 @@ Use `TaskOutput(task_id="...", block=true)` to wait for completion.
 
 **IMPORTANT: Background agents and permissions**
 
-Background agents cannot prompt for permission interactively. If a background
-agent hits a tool that requires approval (like Edit, Write, or Bash), it will be
-**silently denied** and the agent will fail.
-
-Always set `mode` when spawning background agents:
+Background agents cannot prompt for permission interactively. Custom agents with
+`permissionMode: bypassPermissions` in their definition handle this automatically.
+For built-in types, set `mode` explicitly when spawning background agents.
 
 ### Permission Mode Reference
 
@@ -128,35 +193,21 @@ Always set `mode` when spawning background agents:
 | `"bypassPermissions"` | ✅ Auto-approved | ✅ Auto-approved | **Agents that need Bash** (quality checks, git commands) |
 | (omitted) | ❌ Prompts | ❌ Prompts | Only if parent already auto-approves |
 
-### Choosing the Right Mode
+**Note:** Sequant's custom agents (`sequant-qa-checker`, `sequant-implementer`) have
+`permissionMode` set in their agent definitions, so you don't need to specify `mode`
+inline when spawning them.
 
-| Agent Task | Needs Edit/Write? | Needs Bash? | Recommended Mode |
-|------------|-------------------|-------------|------------------|
-| Quality checks (git diff, npm test) | No | **Yes** | `"bypassPermissions"` |
-| Security scans (npm audit, grep) | No | **Yes** | `"bypassPermissions"` |
-| File editing (fix bugs, refactor) | **Yes** | Maybe | `"acceptEdits"` or `"bypassPermissions"` |
-| Read-only exploration | No | No | (omit) or `"acceptEdits"` |
+### Choosing the Right Agent
 
-**CRITICAL:** If your background agent runs `git diff`, `npm test`, `git status`, or any shell command, you MUST use `mode="bypassPermissions"`. The `acceptEdits` mode does NOT auto-approve Bash — those calls will silently fail.
+| Task | Recommended Agent | Why |
+|------|-------------------|-----|
+| Quality checks (git diff, npm test) | `sequant-qa-checker` | bypassPermissions + haiku + effort:low |
+| Codebase exploration | `sequant-explorer` | Read-only, haiku, focused tools |
+| Implementation subtask | `sequant-implementer` | Full access, inherits model |
+| Test stub generation | `sequant-testgen` | Write access, no Bash, haiku |
+| One-off custom task | `general-purpose` | Flexible, specify model/mode inline |
 
-```
-# WRONG — background agent will fail on Edit/Write
-Task(subagent_type="general-purpose",
-     run_in_background=true,
-     prompt="Fix the bug in src/lib/foo.ts...")
-
-# RIGHT — background agent can edit files (but NOT run Bash)
-Task(subagent_type="general-purpose",
-     mode="acceptEdits",
-     run_in_background=true,
-     prompt="Fix the bug in src/lib/foo.ts...")
-
-# RIGHT — background agent can run quality checks with Bash
-Task(subagent_type="general-purpose",
-     mode="bypassPermissions",
-     run_in_background=true,
-     prompt="Run git diff and npm test, report results...")
-```
+**CRITICAL:** If your background agent runs `git diff`, `npm test`, `git status`, or any shell command, use `sequant-qa-checker` or `sequant-implementer` (both have bypassPermissions). Do NOT use `general-purpose` without `mode="bypassPermissions"` — Bash calls will silently fail.
 
 ### Security Considerations
 
@@ -174,16 +225,17 @@ Task(subagent_type="general-purpose",
 
 These types do **not exist** and will cause silent failures:
 
-- ~~`quality-checker`~~ → Use `general-purpose`
-- ~~`pattern-scout`~~ → Use `Explore`
-- ~~`schema-inspector`~~ → Use `Explore`
-- ~~`code-reviewer`~~ → Use `general-purpose`
-- ~~`implementation`~~ → Use `general-purpose`
+- ~~`quality-checker`~~ → Use `sequant-qa-checker` or `general-purpose`
+- ~~`pattern-scout`~~ → Use `sequant-explorer` or `Explore`
+- ~~`schema-inspector`~~ → Use `sequant-explorer` or `Explore`
+- ~~`code-reviewer`~~ → Use `sequant-qa-checker` or `general-purpose`
+- ~~`implementation`~~ → Use `sequant-implementer` or `general-purpose`
 
 See issue #170 for context on this fix.
 
 ## References
 
-- [Claude Code Task Tool Documentation](https://docs.anthropic.com/claude-code)
+- [Claude Code Custom Subagents](https://code.claude.com/docs/en/sub-agents)
+- Agent definitions: `.claude/agents/*.md`
 - `/exec` skill parallel execution: `templates/skills/exec/SKILL.md`
 - `/qa` skill quality checks: `templates/skills/qa/SKILL.md`
