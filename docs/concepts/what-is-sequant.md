@@ -129,7 +129,7 @@ your-project/
 │   │   ├── qa/SKILL.md           /verify, /docs, /clean,
 │   │   └── ...                   /improve, /reflect, /merger,
 │   │                             /security-review, /upstream
-│   ├── hooks/               ◄── 2 Claude Code hooks
+│   ├── hooks/               ◄── 2 agent hooks
 │   │   ├── pre-tool.sh           Security guardrails, timing
 │   │   └── post-tool.sh          Quality observability, formatting
 │   └── settings.json        ◄── Hook configuration
@@ -260,7 +260,7 @@ a PR merges, the worktree is cleaned up and the code lands on main.
 
 ## Three Ways to Use It
 
-### Interactive — Slash commands in Claude Code
+### Interactive — Slash commands in your agent
 
 Type slash commands directly. Review plans before building. Step through
 at your own pace.
@@ -279,7 +279,7 @@ your agent. Let it iterate overnight.
 ```bash
 npx sequant run 123                    # Single issue, full pipeline
 npx sequant run 1 2 3                  # Three issues in parallel
-npx sequant run 123 --agent aider      # Use Aider instead of Claude Code
+npx sequant run 123 --agent aider      # Use Aider instead of the default agent
 npx sequant run 123 --quality-loop     # Auto-fix on QA failure
 npx sequant run 123 --resume           # Pick up where you left off
 ```
@@ -351,7 +351,7 @@ npx sequant init
 npx sequant doctor
 ```
 
-Then in Claude Code:
+Then in your agent:
 
 ```text
 /fullsolve 123

@@ -24,7 +24,7 @@ gh issue view 123
 
 ## Step 2: Plan with `/spec`
 
-Open Claude Code in your project, then run:
+Open your coding agent in your project, then run:
 
 ```bash
 /spec 123

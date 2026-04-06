@@ -1,19 +1,19 @@
 # Two Modes of Operation
 
-Sequant offers two ways to work: interactive in Claude Code chat, or autonomous via headless CLI.
+Sequant offers two ways to work: interactive in your agent's chat, or autonomous via headless CLI.
 
 ## Mode Comparison
 
 | Aspect | Interactive | Autonomous |
 |--------|-------------|------------|
-| **Interface** | Claude Code chat | Terminal CLI |
+| **Interface** | Agent chat | Terminal CLI |
 | **Control** | Review each phase | Hands-off |
 | **Best for** | Complex issues, learning | Batch processing |
 | **Iteration** | Manual `/loop` | Automatic quality loop |
 
 ## Interactive Mode
 
-Use slash commands in Claude Code chat for step-by-step control.
+Use slash commands in your agent for step-by-step control.
 
 ### Commands
 
