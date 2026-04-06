@@ -85,6 +85,22 @@ export interface ExecutionConfig {
    * Propagated as SEQUANT_ISSUE_TYPE env var to skills.
    */
   issueType?: string;
+  /**
+   * Additional context appended to the phase prompt.
+   * Used by the quality loop to pass QA findings directly to the /loop skill
+   * so it doesn't need to reconstruct context from GitHub comments.
+   */
+  promptContext?: string;
+  /**
+   * Last QA verdict from a preceding phase.
+   * Propagated as SEQUANT_LAST_VERDICT env var to skills.
+   */
+  lastVerdict?: string;
+  /**
+   * Failed AC descriptions from a preceding QA phase.
+   * Propagated as SEQUANT_FAILED_ACS env var to skills.
+   */
+  failedAcs?: string;
 }
 
 /**

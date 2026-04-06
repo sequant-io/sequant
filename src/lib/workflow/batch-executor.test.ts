@@ -5,6 +5,7 @@ import type {
   IssueExecutionContext,
 } from "./types.js";
 import type { RunOptions } from "./batch-executor.js";
+import { buildLoopContext } from "./batch-executor.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
@@ -467,5 +468,75 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
       expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
+  });
+});
+
+// #488: buildLoopContext — pure function, no mocking needed
+describe("buildLoopContext", () => {
+  function makeResult(overrides: Partial<PhaseResult> = {}): PhaseResult {
+    return {
+      phase: "qa",
+      success: false,
+      ...overrides,
+    };
+  }
+
+  it("includes verdict when present", () => {
+    const result = buildLoopContext(makeResult({ verdict: "AC_NOT_MET" }));
+    expect(result).toContain("QA Verdict: AC_NOT_MET");
+  });
+
+  it("includes gaps as bullet list", () => {
+    const result = buildLoopContext(
+      makeResult({
+        summary: {
+          acMet: 1,
+          acTotal: 3,
+          gaps: ["gap1", "gap2"],
+          suggestions: [],
+        },
+      }),
+    );
+    expect(result).toContain("- gap1");
+    expect(result).toContain("- gap2");
+  });
+
+  it("includes suggestions", () => {
+    const result = buildLoopContext(
+      makeResult({
+        summary: {
+          acMet: 2,
+          acTotal: 3,
+          gaps: [],
+          suggestions: ["fix X"],
+        },
+      }),
+    );
+    expect(result).toContain("- fix X");
+  });
+
+  it("includes error message", () => {
+    const result = buildLoopContext(
+      makeResult({ error: "QA verdict: AC_NOT_MET" }),
+    );
+    expect(result).toContain("Error: QA verdict: AC_NOT_MET");
+  });
+
+  it("truncates long output to 2000 chars", () => {
+    const longOutput = "x".repeat(5000);
+    const result = buildLoopContext(makeResult({ output: longOutput }));
+    expect(result).toContain("Last output:");
+    expect(result).not.toContain("x".repeat(2001));
+    expect(result).toContain("x".repeat(2000));
+  });
+
+  it("handles minimal result with no optional fields", () => {
+    const result = buildLoopContext(makeResult());
+    expect(result).toContain('Previous phase "qa" failed.');
+    expect(result).not.toContain("QA Verdict:");
+    expect(result).not.toContain("QA Gaps:");
+    expect(result).not.toContain("Suggestions:");
+    expect(result).not.toContain("Error:");
+    expect(result).not.toContain("Last output:");
   });
 });

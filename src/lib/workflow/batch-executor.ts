@@ -58,6 +58,46 @@ export type {
  * @param event - Phase lifecycle event: "start", "complete", or "failed"
  * @param extra - Optional fields: durationSeconds (on complete), error (on failed)
  */
+
+/**
+ * Build enriched prompt context for the /loop phase from a failed phase result (#488).
+ * Passes QA verdict, failed ACs, and error directly so the /loop skill doesn't need
+ * to reconstruct context from GitHub comments (which fails in subprocess).
+ *
+ * @internal Exported for testing only
+ */
+export function buildLoopContext(failedResult: PhaseResult): string {
+  const parts: string[] = [`Previous phase "${failedResult.phase}" failed.`];
+
+  if (failedResult.verdict) {
+    parts.push(`QA Verdict: ${failedResult.verdict}`);
+  }
+
+  if (failedResult.summary?.gaps?.length) {
+    parts.push(
+      `QA Gaps:\n${failedResult.summary.gaps.map((gap) => `- ${gap}`).join("\n")}`,
+    );
+  }
+
+  if (failedResult.summary?.suggestions?.length) {
+    parts.push(
+      `Suggestions:\n${failedResult.summary.suggestions.map((s) => `- ${s}`).join("\n")}`,
+    );
+  }
+
+  if (failedResult.error) {
+    parts.push(`Error: ${failedResult.error}`);
+  }
+
+  // Include tail of output for additional context (truncated to avoid prompt bloat)
+  if (failedResult.output) {
+    const tail = failedResult.output.slice(-2000);
+    parts.push(`Last output:\n${tail}`);
+  }
+
+  return parts.join("\n\n");
+}
+
 export function emitProgressLine(
   issue: number,
   phase: string,
@@ -849,11 +889,21 @@ export async function runIssueWithLogging(
             /* progress errors must not halt */
           }
 
+          // Build enriched config for loop phase with QA context (#488).
+          // Pass verdict, failed ACs, and error directly so the /loop skill
+          // doesn't need to reconstruct context from GitHub comments.
+          const loopConfig: ExecutionConfig = {
+            ...issueConfig,
+            lastVerdict: result.verdict ?? undefined,
+            failedAcs: result.summary?.gaps?.join("; ") ?? undefined,
+            promptContext: buildLoopContext(result),
+          };
+
           const loopStartTime = new Date();
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
-            issueConfig,
+            loopConfig,
             sessionId,
             worktreePath,
             shutdownManager,

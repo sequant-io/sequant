@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `/fullsolve` Phase 5.0: Hard gate (`exit 1`) before commit/PR if not on a feature branch
   - `/exec` Quality Standard #0: Hard gate before every commit if not on a feature branch
 
+### Fixed
+
+- Fix quality loop retry misclassification — loop phase failures no longer trigger cold-start retries or MCP fallback, reducing wasted Claude Code spawns from 9+ to 1 per iteration (#488)
+
 ## [2.0.0] - 2026-04-05
 
 ### Breaking Changes
