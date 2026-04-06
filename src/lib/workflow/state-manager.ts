@@ -133,6 +133,7 @@ export class StateManager {
         if (Date.now() - start > this.lockTimeout) {
           throw new Error(
             `Timeout acquiring state lock after ${this.lockTimeout}ms`,
+            { cause: err },
           );
         }
 
@@ -187,7 +188,9 @@ export class StateManager {
       return state;
     } catch (error) {
       if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in state file: ${error.message}`);
+        throw new Error(`Invalid JSON in state file: ${error.message}`, {
+          cause: error,
+        });
       }
       throw error;
     }

@@ -206,7 +206,7 @@ export async function runSetupWizard(
   }
 
   // Ask if user wants to set up missing dependencies
-  let setupDeps = false;
+  let setupDeps: boolean;
   try {
     const response = await inquirer.prompt([
       {
@@ -256,7 +256,7 @@ export async function runSetupWizard(
     }
     console.log();
 
-    let action = "skip";
+    let action: string;
     try {
       const response = await inquirer.prompt([
         {

@@ -361,7 +361,7 @@ export function listWorktrees(): Array<{
   }> = [];
 
   let currentPath = "";
-  let currentBranch = "";
+  let currentBranch: string;
 
   for (const line of lines) {
     if (line.startsWith("worktree ")) {
@@ -373,7 +373,6 @@ export function listWorktrees(): Array<{
       const issue = issueMatch ? parseInt(issueMatch[1], 10) : null;
       worktrees.push({ path: currentPath, branch: currentBranch, issue });
       currentPath = "";
-      currentBranch = "";
     }
   }
 
