@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.0.0
+# What We've Built: Sequant v2.0.1
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,8 +737,10 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.0.0)
+### Recent Additions (v2.0.1)
 
+- **Branch Verification Gates** - Prevents commits from landing on main/master when sub-agents silently switch cwd
+- **Quality Loop Fix** - Loop phase failures no longer misclassified as cold-start, reducing wasted spawns from 9+ to 1 (#488)
 - **MCP Server** - `sequant serve` exposes workflow as MCP tools for any MCP client (#372)
 - **/assess Unification** - `/solve` merged into `/assess` with 6-action vocabulary (#325)
 - **Parallel Execution** - Multi-issue runs concurrent by default with `--concurrency` (#404)
@@ -1063,7 +1065,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.0.0
+**Current Version:** 2.0.1
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1073,7 +1075,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.0.0                                │
+│                              SEQUANT v2.0.1                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
