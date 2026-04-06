@@ -1,0 +1,73 @@
+done
+
+---
+
+do we need to change this in the readme?\
+Workflow automation for Claude Code.
+
+Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
+
+sequant.io — docs, guides, and getting started.
+
+---
+
+We expanded past just claude code with 2.0
+
+---
+
+I like that. Do we need to mention anything about open source or change our tags(like on npm)?
+
+---
+
+yes
+
+---
+
+ahould we do research for better tags?
+
+---
+
+Based on the research, could we benefit from any other copy changes on the read me or sequant-landing repo?
+
+---
+
+For the lading site, look at issue 117 which is in progress. See if there's overlap between your reccomendations
+
+---
+
+yes. plan first
+
+---
+
+yes
+
+---
+
+Do all of these commands need to be featured on sequant landing? Do any need to be removed or added?\
+The 15 skills in the grid:                                                                                                   
+                                                                                                                             
+  Core Workflow (peach)                                                                                                        
+  1. Spec — Plan implementation, extract AC                                                                                    
+  2. Test — Browser-based UI verification                                                                                      
+  3. Exec — Implement in isolated worktree                  
+  4. QA — Code review, security scanning, merge verdicts                                                                       
+                                                                                                                               
+  Automation (green)                                                                                                   
+  5. Fullsolve — Full pipeline: spec → exec → test → qa                                                                        
+  6. Loop — Parse failures, iterate fixes                                                                                      
+                                                                                                                               
+  Testing & Verification (green-dark)                                                                                          
+  7. Testgen — Generate test stubs from spec                                                                                   
+  8. Verify — CLI/script execution verification                                                                                
+  9. Docs — Generate user-facing docs before merge
+                                                                                                                           & Utilities (orange)                                                                                                
+  10. Assess — Issue triage, recommend next action                                                                             
+  11. Clean — Safe repo cleanup                                                                                                
+  12. Improve — Discover improvements, create issues                                                                           
+  13. Reflect — Workflow effectiveness analysis
+  14. Security — Deep security audit                                                                                           
+  15. Setup — Initialize Sequant in a project
+
+---
+
+I've never used setup or verify. are they legit?
