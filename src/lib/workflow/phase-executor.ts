@@ -258,10 +258,16 @@ export async function getPhasePrompt(
   phase: Phase,
   issueNumber: number,
   agent?: string,
+  promptContext?: string,
 ): Promise<string> {
   const prompts =
     agent && agent !== "claude-code" ? AIDER_PHASE_PROMPTS : PHASE_PROMPTS;
-  const basePrompt = prompts[phase].replace(/\{issue\}/g, String(issueNumber));
+  let basePrompt = prompts[phase].replace(/\{issue\}/g, String(issueNumber));
+
+  // Append phase-specific context (e.g., QA findings for loop phase)
+  if (promptContext) {
+    basePrompt += `\n\n---\n\n${promptContext}`;
+  }
 
   // Include AGENTS.md content in the prompt context for non-Claude agent compatibility.
   // Claude reads CLAUDE.md natively, but other agents (Aider, Codex, Gemini CLI)
@@ -288,7 +294,12 @@ async function executePhase(
 ): Promise<PhaseResult & { sessionId?: string }> {
   const startTime = Date.now();
 
-  const prompt = await getPhasePrompt(phase, issueNumber, config.agent);
+  const prompt = await getPhasePrompt(
+    phase,
+    issueNumber,
+    config.agent,
+    config.promptContext,
+  );
 
   if (config.dryRun) {
     // Dry run - show the prompt that would be sent, then return
@@ -374,6 +385,14 @@ async function executePhase(
   // Propagate issue type for skills to adapt behavior (e.g., lighter QA for docs)
   if (config.issueType) {
     env.SEQUANT_ISSUE_TYPE = config.issueType;
+  }
+
+  // Pass QA context to loop phase so it doesn't need to reconstruct from GitHub (#488)
+  if (config.lastVerdict) {
+    env.SEQUANT_LAST_VERDICT = config.lastVerdict;
+  }
+  if (config.failedAcs) {
+    env.SEQUANT_FAILED_ACS = config.failedAcs;
   }
 
   // Track whether we're actively streaming verbose output
@@ -543,10 +562,16 @@ export async function executePhaseWithRetry(
     );
   }
 
+  // Skip cold-start retries for `loop` phase (#488).
+  // Loop is always a re-run after a failed QA — never a first boot.
+  // Failures at 47-51s are genuine skill failures, not cold-start issues.
+  // Without this guard, 2 cold-start retries + 1 MCP fallback = 3 wasted spawns per loop.
+  const skipColdStartRetry = phase === "loop";
+
   let lastResult: PhaseResult & { sessionId?: string };
 
-  // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
-  for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
+  if (skipColdStartRetry) {
+    // Single attempt — no cold-start retry loop
     lastResult = await executePhaseFn(
       issueNumber,
       phase,
@@ -557,31 +582,48 @@ export async function executePhaseWithRetry(
       spinner,
     );
 
-    const duration = lastResult.durationSeconds ?? 0;
-
-    // Success → return immediately
     if (lastResult.success) {
       return lastResult;
     }
+  } else {
+    // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
+    for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
+      lastResult = await executePhaseFn(
+        issueNumber,
+        phase,
+        config,
+        sessionId,
+        worktreePath,
+        shutdownManager,
+        spinner,
+      );
 
-    // Genuine failure (took long enough to be real work) → skip cold-start retries.
-    // For spec phase, break to allow Phase 3 (spec-specific retry) to run.
-    // For other phases, return immediately — no further retries.
-    if (duration >= COLD_START_THRESHOLD_SECONDS) {
-      if (phase === "spec") {
-        break;
+      const duration = lastResult.durationSeconds ?? 0;
+
+      // Success → return immediately
+      if (lastResult.success) {
+        return lastResult;
       }
-      return lastResult;
-    }
 
-    // Cold-start failure detected — retry
-    if (attempt < COLD_START_MAX_RETRIES) {
-      if (config.verbose) {
-        console.log(
-          chalk.yellow(
-            `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
-          ),
-        );
+      // Genuine failure (took long enough to be real work) → skip cold-start retries.
+      // For spec phase, break to allow Phase 3 (spec-specific retry) to run.
+      // For other phases, return immediately — no further retries.
+      if (duration >= COLD_START_THRESHOLD_SECONDS) {
+        if (phase === "spec") {
+          break;
+        }
+        return lastResult;
+      }
+
+      // Cold-start failure detected — retry
+      if (attempt < COLD_START_MAX_RETRIES) {
+        if (config.verbose) {
+          console.log(
+            chalk.yellow(
+              `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+            ),
+          );
+        }
       }
     }
   }
@@ -590,8 +632,9 @@ export async function executePhaseWithRetry(
   const originalError = lastResult!.error;
 
   // Phase 2: MCP fallback - if MCP is enabled and we're still failing, try without MCP
-  // This handles npx-based MCP servers that fail on first run due to cold-cache issues
-  if (config.mcp && !lastResult!.success) {
+  // This handles npx-based MCP servers that fail on first run due to cold-cache issues.
+  // Skip for `loop` phase — MCP is never the cause of loop failures (#488).
+  if (config.mcp && !lastResult!.success && !skipColdStartRetry) {
     console.log(
       chalk.yellow(
         `\n    ⚠️ Phase failed with MCP enabled, retrying without MCP...`,
