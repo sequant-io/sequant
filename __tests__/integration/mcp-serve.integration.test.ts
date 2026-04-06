@@ -117,11 +117,20 @@ afterEach(async () => {
   const exitPromises = spawnedProcesses.map(
     (proc) =>
       new Promise<void>((resolve) => {
-        if (proc.exitCode !== null || proc.killed) {
+        // Check signalCode too: signal-killed processes have exitCode=null
+        // but signalCode set. Without this, we'd register an exit listener
+        // that never fires because the event already emitted. (#492)
+        if (proc.exitCode !== null || proc.killed || proc.signalCode !== null) {
           resolve();
-        } else {
-          proc.on("exit", () => resolve());
+          return;
         }
+        // Timeout prevents 60s hang if exit event was already emitted
+        // between our check above and the listener registration
+        const timeout = setTimeout(() => resolve(), 5000);
+        proc.on("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
         killProcessGroup(proc, "SIGKILL");
       }),
   );
