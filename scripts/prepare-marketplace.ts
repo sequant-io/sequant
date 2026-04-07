@@ -93,12 +93,18 @@ function main(): void {
     process.exit(1);
   }
 
-  if (marketplaceVersion && version !== marketplaceVersion) {
-    console.error(
-      `❌ Version mismatch: package.json (${version}) != marketplace.json (${marketplaceVersion})`,
+  if (existsSync(marketplaceJsonPath) && marketplaceVersion !== version) {
+    const marketplaceJson = JSON.parse(
+      readFileSync(marketplaceJsonPath, "utf8"),
     );
-    console.error("   Update .claude-plugin/marketplace.json version.");
-    process.exit(1);
+    marketplaceJson.plugins[0].version = version;
+    writeFileSync(
+      marketplaceJsonPath,
+      JSON.stringify(marketplaceJson, null, 2) + "\n",
+    );
+    console.log(
+      `📝 Updated marketplace.json version: ${marketplaceVersion} → ${version}`,
+    );
   }
 
   if (validateOnly) {
