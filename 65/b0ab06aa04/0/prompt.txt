@@ -63,3 +63,7 @@ yes
 <status>failed</status>
 <summary>Background command "Run vitest" failed with exit code 1</summary>
 </task-notification>
+
+---
+
+yes
