@@ -39,7 +39,7 @@ allowed-tools:
   - mcp__context7__*  # Library documentation lookup - falls back to web search if unavailable
   - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
   # Task management
-  - Task(general-purpose)
+  - Agent(sequant-implementer)
   - TodoWrite
 ---
 
@@ -1522,8 +1522,10 @@ Look in the issue comments (especially from `/spec`) for:
    3. Default to `haiku` if no annotation
 
 3. **Spawn parallel agents with the appropriate model in a SINGLE message:**
+   Note: `sequant-implementer` intentionally omits `model` in its agent definition
+   so the skill can override per-invocation (e.g., `model="haiku"` for subtasks).
    ```
-   Task(subagent_type="general-purpose",
+   Agent(subagent_type="sequant-implementer",
         model="haiku",
         run_in_background=true,
         prompt="Implement: Create types/metrics.ts with MetricEvent interface.
@@ -1626,14 +1628,14 @@ Use `[template: X]` annotation to force a specific template:
 
 Instead of a generic prompt:
 ```
-Task(subagent_type="general-purpose",
+Agent(subagent_type="sequant-implementer",
      model="haiku",
      prompt="Create MetricsCard component in components/admin/")
 ```
 
 Use a structured template prompt:
 ```
-Task(subagent_type="general-purpose",
+Agent(subagent_type="sequant-implementer",
      model="haiku",
      prompt="## Task: Create React Component
 
