@@ -335,7 +335,7 @@ echo "Package size: ${size}"
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json docs/internal/what-weve-built.md
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md
 git commit -m "chore: release v${new_version}"
 git push origin main
 ```
