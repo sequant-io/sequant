@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Worktree isolation for parallel agent groups** — each parallel `/exec` agent gets its own sub-worktree, eliminating file conflicts structurally (#485)
+  - New `agents.isolateParallel` setting (default: `false`, opt-in for v1)
+  - New `--isolate-parallel` CLI flag for `sequant run`
+  - Sub-worktree creation with node_modules symlink (~550ms per agent)
+  - Merge-back via `git merge --no-ff` with conflict detection and reporting
+  - Automatic cleanup of sub-worktrees after merge-back or on failure
+  - Orphaned sub-worktree cleanup in `scripts/cleanup-worktree.sh`
 - Declarative agent definitions in `.claude/agents/` for sequant subagents (#484)
   - `sequant-explorer` — read-only codebase exploration for `/spec`
   - `sequant-qa-checker` — quality checks with bypassPermissions for `/qa`

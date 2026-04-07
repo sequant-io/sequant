@@ -228,6 +228,10 @@ program
     "Max concurrent issues in parallel mode (default: 3)",
     parseInt,
   )
+  .option(
+    "--isolate-parallel",
+    "Isolate parallel agent groups in separate worktrees (prevents file conflicts)",
+  )
   .option("--reflect", "Analyze run results and suggest improvements")
   .option(
     "--agent <name>",

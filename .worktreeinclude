@@ -1,0 +1,7 @@
+# Files to copy into sub-worktrees for parallel agent isolation.
+# One path per line. Paths are relative to the worktree root.
+# Lines starting with # are comments.
+.env
+.env.local
+.env.development
+.claude/settings.local.json

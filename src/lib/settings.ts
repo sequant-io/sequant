@@ -51,6 +51,14 @@ export interface AgentSettings {
    * Default: "haiku"
    */
   model: "haiku" | "sonnet" | "opus";
+  /**
+   * Isolate parallel agent groups in separate worktrees.
+   * When true, each agent in a parallel group gets its own sub-worktree,
+   * eliminating file conflicts structurally. Changes are merged back
+   * into the issue worktree after all agents complete.
+   * Default: false (opt-in for v1)
+   */
+  isolateParallel: boolean;
 }
 
 /**
@@ -237,6 +245,7 @@ export const DEFAULT_ROTATION_SETTINGS: RotationSettings = {
 export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   parallel: false,
   model: "haiku",
+  isolateParallel: false,
 };
 
 /**

@@ -1507,9 +1507,41 @@ Look in the issue comments (especially from `/spec`) for:
 
 **If Parallel Groups exist:**
 
+0. **Check isolation mode (AC-20):**
+   ```bash
+   # Check env var first (set by --isolate-parallel CLI flag via phase-executor),
+   # then fall back to settings.json
+   ISOLATE="${SEQUANT_ISOLATE_PARALLEL:-}"
+   if [ -z "$ISOLATE" ]; then
+     ISOLATE=$(cat .sequant/settings.json 2>/dev/null | grep -o '"isolateParallel":[^,}]*' | grep -o 'true\|false' || echo "false")
+   fi
+   echo "Parallel isolation mode: ${ISOLATE}"
+   ```
+
+   **If isolation is enabled (`isolateParallel: true` or `--isolate-parallel`):**
+   - Create sub-worktrees BEFORE spawning agents (see step 1b below)
+   - Each agent gets its own working directory
+   - After agents complete, merge changes back (see step 5b below)
+
+   **If isolation is disabled (default):**
+   - All agents share the issue worktree (current behavior)
+   - Skip steps 1b and 5b
+
 1. **Create group marker before spawning agents:**
    ```bash
    touch /tmp/claude-parallel-group-1.marker
+   ```
+
+1b. **Create sub-worktrees (isolation mode only):**
+   ```bash
+   # Uses the tested TypeScript API via CLI wrapper.
+   # Creates sub-worktree, symlinks node_modules, copies env files from .worktreeinclude.
+   WORKTREE_PATH="[issue worktree path]"
+   for i in 0 1 2; do  # adjust for number of agents
+     result=$(npx tsx scripts/worktree-isolation.ts create "${WORKTREE_PATH}" $i)
+     AGENT_PATH=$(echo "$result" | jq -r '.path')
+     echo "Agent ${i}: ${AGENT_PATH}"
+   done
    ```
 
 2. **Determine model for each task:**
@@ -1524,14 +1556,21 @@ Look in the issue comments (especially from `/spec`) for:
 3. **Spawn parallel agents with the appropriate model in a SINGLE message:**
    Note: `sequant-implementer` intentionally omits `model` in its agent definition
    so the skill can override per-invocation (e.g., `model="haiku"` for subtasks).
+
+   **Working directory:** Use the sub-worktree path when isolation is enabled,
+   otherwise use the issue worktree path.
+
    ```
    Agent(subagent_type="sequant-implementer",
         model="haiku",
         run_in_background=true,
         prompt="Implement: Create types/metrics.ts with MetricEvent interface.
-                Working directory: [worktree path]
-                After completion, report what files were created/modified.")
+                Working directory: [sub-worktree path or issue worktree path]
+                After completion, commit your changes and report what files were created/modified.")
    ```
+
+   **Important (isolation mode):** Tell agents to commit their changes in the
+   sub-worktree. This is required for merge-back to work.
 
 4. **Wait for all agents to complete:**
    ```
@@ -1543,6 +1582,31 @@ Look in the issue comments (especially from `/spec`) for:
    rm /tmp/claude-parallel-group-1.marker
    npx prettier --write [files modified by agents]
    ```
+
+5b. **Merge back and clean up sub-worktrees (isolation mode only):**
+   ```bash
+   WORKTREE_PATH="[issue worktree path]"
+
+   # Merge all agent branches back into the issue branch.
+   # Uses the tested TypeScript API — handles conflict detection,
+   # partial merges, and structured error reporting.
+   MERGE_RESULT=$(npx tsx scripts/worktree-isolation.ts merge-all "${WORKTREE_PATH}")
+   MERGED=$(echo "$MERGE_RESULT" | jq -r '.merged')
+   CONFLICTS=$(echo "$MERGE_RESULT" | jq -r '.conflicts')
+   echo "Merge-back: ${MERGED} merged, ${CONFLICTS} conflicts"
+
+   if [ "$CONFLICTS" -gt 0 ]; then
+     echo "⚠️ Conflicts detected — flagged for next iteration:"
+     echo "$MERGE_RESULT" | jq -r '.results[] | select(.success == false) | "  Agent \(.agentIndex): \(.error)"'
+   fi
+
+   # Clean up sub-worktrees and orphaned branches
+   npx tsx scripts/worktree-isolation.ts cleanup "${WORKTREE_PATH}"
+   ```
+
+   **If all merges succeed:** Proceed normally.
+   **If conflicts occur:** Report conflicting files. The next `/exec` iteration
+   can resolve them. Non-conflicting agents' changes are preserved.
 
 6. **Proceed to next group or sequential tasks**
 

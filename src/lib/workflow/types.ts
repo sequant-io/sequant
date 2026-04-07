@@ -77,6 +77,11 @@ export interface ExecutionConfig {
    */
   agent?: string;
   /**
+   * Isolate parallel agent groups in separate worktrees.
+   * Propagated as SEQUANT_ISOLATE_PARALLEL env var to exec skill.
+   */
+  isolateParallel?: boolean;
+  /**
    * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
    */
   aiderSettings?: AiderSettings;
@@ -253,6 +258,12 @@ export interface RunOptions {
    * Default: "claude-code"
    */
   agent?: string;
+  /**
+   * Isolate parallel agent groups in separate worktrees.
+   * When true, each agent in a parallel group gets its own sub-worktree.
+   * Resolution priority: CLI flag → settings.agents.isolateParallel → false
+   */
+  isolateParallel?: boolean;
 }
 
 /**
