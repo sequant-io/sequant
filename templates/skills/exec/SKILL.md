@@ -1522,6 +1522,8 @@ Look in the issue comments (especially from `/spec`) for:
    3. Default to `haiku` if no annotation
 
 3. **Spawn parallel agents with the appropriate model in a SINGLE message:**
+   Note: `sequant-implementer` intentionally omits `model` in its agent definition
+   so the skill can override per-invocation (e.g., `model="haiku"` for subtasks).
    ```
    Agent(subagent_type="sequant-implementer",
         model="haiku",

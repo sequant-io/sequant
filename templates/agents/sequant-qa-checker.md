@@ -10,7 +10,6 @@ tools:
   - Grep
   - Glob
   - Bash
-  - Edit
 ---
 
 You are a quality check agent for the sequant development workflow.
