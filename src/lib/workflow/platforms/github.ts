@@ -507,7 +507,12 @@ export class GitHubProvider implements PlatformProvider {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 30000,
       });
-      if (result.status !== 0 || !result.stdout) return null;
+      if (result.status !== 0 || !result.stdout) {
+        if (result.stderr) {
+          console.error(`gh issue create failed: ${result.stderr.trim()}`);
+        }
+        return null;
+      }
       const url = result.stdout.trim();
       const numberMatch = url.match(/\/issues\/(\d+)$/);
       const number = numberMatch ? parseInt(numberMatch[1], 10) : 0;
