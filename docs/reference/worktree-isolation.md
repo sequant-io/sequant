@@ -98,6 +98,21 @@ The CLI flag overrides the settings value.
 When `isolateParallel` is `false` (default), parallel agents share the issue
 worktree exactly as before. No sub-worktrees are created.
 
+## `.worktreeinclude` File
+
+The `.worktreeinclude` file at the repository root lists files to copy into
+sub-worktrees (one path per line, `#` for comments):
+
+```
+.env
+.env.local
+.env.development
+.claude/settings.local.json
+```
+
+If the file doesn't exist, the module falls back to a hardcoded default list
+matching the same files above.
+
 ## Cleanup
 
 ### Normal Cleanup

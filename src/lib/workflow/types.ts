@@ -77,6 +77,11 @@ export interface ExecutionConfig {
    */
   agent?: string;
   /**
+   * Isolate parallel agent groups in separate worktrees.
+   * Propagated as SEQUANT_ISOLATE_PARALLEL env var to exec skill.
+   */
+  isolateParallel?: boolean;
+  /**
    * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
    */
   aiderSettings?: AiderSettings;

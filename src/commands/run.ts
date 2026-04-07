@@ -427,6 +427,7 @@ export async function runCommand(
     retry: retryEnabled,
     agent: mergedOptions.agent ?? settings.run.agent,
     aiderSettings: settings.run.aider,
+    isolateParallel: mergedOptions.isolateParallel,
   };
 
   // Propagate verbose mode to UI config so spinners use text-only mode.

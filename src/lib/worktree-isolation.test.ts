@@ -18,12 +18,19 @@ vi.mock("fs", () => ({
   mkdirSync: vi.fn(),
   symlinkSync: vi.fn(),
   copyFileSync: vi.fn(),
+  readFileSync: vi.fn(),
   readdirSync: vi.fn(),
   rmdirSync: vi.fn(),
 }));
 
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, symlinkSync, copyFileSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  symlinkSync,
+  copyFileSync,
+  readFileSync,
+} from "fs";
 import {
   agentBranchName,
   createSubWorktree,
@@ -31,7 +38,9 @@ import {
   mergeAllSubWorktrees,
   cleanupSubWorktree,
   formatMergeResult,
+  getIncludeFiles,
   SUB_WORKTREE_DIR,
+  WORKTREE_INCLUDE_FILE,
   type SubWorktreeInfo,
   type MergeBackResult,
 } from "./worktree-isolation.js";
@@ -41,6 +50,7 @@ const mockExistsSync = vi.mocked(existsSync);
 const mockMkdirSync = vi.mocked(mkdirSync);
 const mockSymlinkSync = vi.mocked(symlinkSync);
 const mockCopyFileSync = vi.mocked(copyFileSync);
+const mockReadFileSync = vi.mocked(readFileSync);
 
 describe("worktree-isolation", () => {
   beforeEach(() => {
@@ -64,6 +74,51 @@ describe("worktree-isolation", () => {
     it("uses directory prefix when no issue number pattern", () => {
       const branch = agentBranchName("/worktrees/feature/custom-branch", 0);
       expect(branch).toBe("exec-agent-custom-bra-0");
+    });
+  });
+
+  describe("getIncludeFiles", () => {
+    it("returns defaults when .worktreeinclude does not exist", () => {
+      mockExistsSync.mockReturnValue(false);
+
+      const files = getIncludeFiles("/some/worktree");
+
+      expect(files).toContain(".env");
+      expect(files).toContain(".env.local");
+      expect(files).toContain(".claude/settings.local.json");
+    });
+
+    it("reads from .worktreeinclude when it exists", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        "# Comment\n.env\n.env.production\n\ncustom/config.json\n",
+      );
+
+      const files = getIncludeFiles("/some/worktree");
+
+      expect(files).toEqual([".env", ".env.production", "custom/config.json"]);
+    });
+
+    it("skips comments and blank lines", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockReturnValue(
+        "# header\n\n.env\n# another\n.env.local\n",
+      );
+
+      const files = getIncludeFiles("/some/worktree");
+
+      expect(files).toEqual([".env", ".env.local"]);
+    });
+
+    it("falls back to defaults on read error", () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadFileSync.mockImplementation(() => {
+        throw new Error("permission denied");
+      });
+
+      const files = getIncludeFiles("/some/worktree");
+
+      expect(files).toContain(".env");
     });
   });
 

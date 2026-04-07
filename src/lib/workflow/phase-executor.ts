@@ -395,6 +395,11 @@ async function executePhase(
     env.SEQUANT_FAILED_ACS = config.failedAcs;
   }
 
+  // Propagate parallel isolation mode to exec skill (#485)
+  if (config.isolateParallel) {
+    env.SEQUANT_ISOLATE_PARALLEL = "true";
+  }
+
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
   // (Issue #283: ora's stop() clears the current line, which can truncate output when

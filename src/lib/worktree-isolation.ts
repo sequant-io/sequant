@@ -13,10 +13,11 @@ import {
   mkdirSync,
   symlinkSync,
   copyFileSync,
+  readFileSync,
   readdirSync,
   rmdirSync,
 } from "fs";
-import { join, basename } from "path";
+import { join, basename, dirname } from "path";
 
 /** Result of creating a sub-worktree */
 export interface SubWorktreeInfo {
@@ -59,11 +60,39 @@ export interface MergeBackResult {
 export const SUB_WORKTREE_DIR = ".exec-agents";
 
 /**
- * Environment files to copy into sub-worktrees.
+ * Default files to copy into sub-worktrees when no .worktreeinclude exists.
  * Matches the pattern in scripts/dev/new-feature.sh.
  */
-const ENV_FILES = [".env", ".env.local", ".env.development"];
-const SETTINGS_FILE = ".claude/settings.local.json";
+const DEFAULT_INCLUDE_FILES = [
+  ".env",
+  ".env.local",
+  ".env.development",
+  ".claude/settings.local.json",
+];
+
+/** Name of the worktree include file */
+export const WORKTREE_INCLUDE_FILE = ".worktreeinclude";
+
+/**
+ * Read the list of files to copy into sub-worktrees.
+ *
+ * Reads from .worktreeinclude if it exists (one path per line, # comments),
+ * otherwise returns the hardcoded default list.
+ */
+export function getIncludeFiles(worktreePath: string): string[] {
+  const includeFile = join(worktreePath, WORKTREE_INCLUDE_FILE);
+  if (!existsSync(includeFile)) {
+    return DEFAULT_INCLUDE_FILES;
+  }
+  try {
+    return readFileSync(includeFile, "utf-8")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+  } catch {
+    return DEFAULT_INCLUDE_FILES;
+  }
+}
 
 /**
  * Run a git command and return stdout, trimmed.
@@ -156,22 +185,18 @@ export function createSubWorktree(
       symlinkSync(issueNodeModules, agentNodeModules);
     }
 
-    // Copy environment files (AC-7)
-    for (const envFile of ENV_FILES) {
-      const src = join(issueWorktreePath, envFile);
+    // Copy files listed in .worktreeinclude (AC-7)
+    const includeFiles = getIncludeFiles(issueWorktreePath);
+    for (const filePath of includeFiles) {
+      const src = join(issueWorktreePath, filePath);
       if (existsSync(src)) {
-        copyFileSync(src, join(agentPath, envFile));
+        const dest = join(agentPath, filePath);
+        const destDir = dirname(dest);
+        if (!existsSync(destDir)) {
+          mkdirSync(destDir, { recursive: true });
+        }
+        copyFileSync(src, dest);
       }
-    }
-
-    // Copy .claude/settings.local.json
-    const settingsSrc = join(issueWorktreePath, SETTINGS_FILE);
-    if (existsSync(settingsSrc)) {
-      const settingsDir = join(agentPath, ".claude");
-      if (!existsSync(settingsDir)) {
-        mkdirSync(settingsDir, { recursive: true });
-      }
-      copyFileSync(settingsSrc, join(agentPath, SETTINGS_FILE));
     }
 
     return { path: agentPath, branch, agentIndex };

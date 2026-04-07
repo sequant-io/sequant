@@ -1509,8 +1509,12 @@ Look in the issue comments (especially from `/spec`) for:
 
 0. **Check isolation mode (AC-20):**
    ```bash
-   # Check CLI flag or setting
-   ISOLATE=$(cat .sequant/settings.json 2>/dev/null | grep -o '"isolateParallel":[^,}]*' | grep -o 'true\|false' || echo "false")
+   # Check env var first (set by --isolate-parallel CLI flag via phase-executor),
+   # then fall back to settings.json
+   ISOLATE="${SEQUANT_ISOLATE_PARALLEL:-}"
+   if [ -z "$ISOLATE" ]; then
+     ISOLATE=$(cat .sequant/settings.json 2>/dev/null | grep -o '"isolateParallel":[^,}]*' | grep -o 'true\|false' || echo "false")
+   fi
    echo "Parallel isolation mode: ${ISOLATE}"
    ```
 
@@ -1530,19 +1534,13 @@ Look in the issue comments (especially from `/spec`) for:
 
 1b. **Create sub-worktrees (isolation mode only):**
    ```bash
-   # For each agent in the group, create an isolated sub-worktree
+   # Uses the tested TypeScript API via CLI wrapper.
+   # Creates sub-worktree, symlinks node_modules, copies env files from .worktreeinclude.
    WORKTREE_PATH="[issue worktree path]"
    for i in 0 1 2; do  # adjust for number of agents
-     BRANCH="exec-agent-[issue]-${i}"
-     AGENT_PATH="${WORKTREE_PATH}/.exec-agents/agent-${i}"
-     mkdir -p "${WORKTREE_PATH}/.exec-agents"
-     git worktree add "${AGENT_PATH}" -b "${BRANCH}"
-     # Symlink node_modules for speed (~13ms vs ~30s npm install)
-     ln -sf "${WORKTREE_PATH}/node_modules" "${AGENT_PATH}/node_modules"
-     # Copy env files
-     for f in .env .env.local .env.development; do
-       [ -f "${WORKTREE_PATH}/${f}" ] && cp "${WORKTREE_PATH}/${f}" "${AGENT_PATH}/${f}"
-     done
+     result=$(npx tsx scripts/worktree-isolation.ts create "${WORKTREE_PATH}" $i)
+     AGENT_PATH=$(echo "$result" | jq -r '.path')
+     echo "Agent ${i}: ${AGENT_PATH}"
    done
    ```
 
@@ -1584,40 +1582,25 @@ Look in the issue comments (especially from `/spec`) for:
    npx prettier --write [files modified by agents]
    ```
 
-5b. **Merge back sub-worktrees (isolation mode only):**
+5b. **Merge back and clean up sub-worktrees (isolation mode only):**
    ```bash
    WORKTREE_PATH="[issue worktree path]"
 
-   # Merge each agent's branch back into the issue branch
-   for i in 0 1 2; do
-     BRANCH="exec-agent-[issue]-${i}"
-     AGENT_PATH="${WORKTREE_PATH}/.exec-agents/agent-${i}"
+   # Merge all agent branches back into the issue branch.
+   # Uses the tested TypeScript API — handles conflict detection,
+   # partial merges, and structured error reporting.
+   MERGE_RESULT=$(npx tsx scripts/worktree-isolation.ts merge-all "${WORKTREE_PATH}")
+   MERGED=$(echo "$MERGE_RESULT" | jq -r '.merged')
+   CONFLICTS=$(echo "$MERGE_RESULT" | jq -r '.conflicts')
+   echo "Merge-back: ${MERGED} merged, ${CONFLICTS} conflicts"
 
-     # Check if agent has commits
-     CHANGES=$(git -C "${WORKTREE_PATH}" log "${BRANCH}" --not HEAD --oneline 2>/dev/null || true)
-     if [ -z "$CHANGES" ]; then
-       echo "Agent ${i}: no changes to merge"
-       continue
-     fi
+   if [ "$CONFLICTS" -gt 0 ]; then
+     echo "⚠️ Conflicts detected — flagged for next iteration:"
+     echo "$MERGE_RESULT" | jq -r '.results[] | select(.success == false) | "  Agent \(.agentIndex): \(.error)"'
+   fi
 
-     # Attempt merge
-     if git -C "${WORKTREE_PATH}" merge --no-ff "${BRANCH}" -m "Merge exec-agent-${i}"; then
-       echo "Agent ${i}: merged successfully"
-     else
-       # Conflict detected — abort and report
-       CONFLICTS=$(git -C "${WORKTREE_PATH}" diff --name-only --diff-filter=U || true)
-       echo "Agent ${i}: CONFLICT in: ${CONFLICTS}"
-       git -C "${WORKTREE_PATH}" merge --abort
-       echo "⚠️ Agent ${i} changes not merged — flagged for next iteration"
-     fi
-
-     # Clean up sub-worktree
-     git worktree remove "${AGENT_PATH}" --force 2>/dev/null || true
-     git branch -D "${BRANCH}" 2>/dev/null || true
-   done
-
-   # Remove .exec-agents directory
-   rmdir "${WORKTREE_PATH}/.exec-agents" 2>/dev/null || true
+   # Clean up sub-worktrees and orphaned branches
+   npx tsx scripts/worktree-isolation.ts cleanup "${WORKTREE_PATH}"
    ```
 
    **If all merges succeed:** Proceed normally.
