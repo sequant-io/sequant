@@ -33,7 +33,7 @@ export async function dashboardCommand(
   const shouldOpen = !options.noOpen;
   const verbose = options.verbose ?? false;
 
-  console.log(chalk.bold("\n📊 Sequant Dashboard\n"));
+  console.log(chalk.bold("\nSequant Dashboard\n"));
 
   try {
     // Dynamic import to avoid loading dashboard code unless needed

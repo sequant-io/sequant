@@ -112,7 +112,7 @@ async function updateGitignore(): Promise<boolean> {
  * Log a default value being used in non-interactive mode
  */
 function logDefault(label: string, value: string): void {
-  console.log(chalk.blue(`📦 ${label}: ${value} (default)`));
+  console.log(chalk.blue(`${label}: ${value} (default)`));
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -170,13 +170,13 @@ export async function initCommand(options: InitOptions): Promise<void> {
     (options.skipSetup && warnings.length > 0)
   ) {
     if (wizardRemainingIssues.length > 0) {
-      console.log(chalk.yellow("⚠️  Remaining setup issues:\n"));
+      console.log(chalk.yellow("!  Remaining setup issues:\n"));
       for (const issue of wizardRemainingIssues) {
         console.log(chalk.yellow(`   • ${issue}`));
       }
       console.log();
     } else if (warnings.length > 0) {
-      console.log(chalk.yellow("⚠️  Prerequisites:\n"));
+      console.log(chalk.yellow("!  Prerequisites:\n"));
       for (const warning of warnings) {
         console.log(chalk.yellow(`   • ${warning}`));
       }
@@ -194,7 +194,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   if (configExists && !options.force) {
     console.log(
       chalk.yellow(
-        "⚠️  Sequant appears to be already initialized (.claude/settings.json exists)",
+        "!  Sequant appears to be already initialized (.claude/settings.json exists)",
       ),
     );
     console.log(chalk.gray("   Use --force to reinitialize\n"));
@@ -227,7 +227,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       // Multi-stack project detected - show checkbox selection
       console.log(
         chalk.blue(
-          `\n🔍 Detected ${allDetectedStacks.length} stacks in this project:`,
+          `\nDetected ${allDetectedStacks.length} stacks in this project:`,
         ),
       );
       for (const ds of allDetectedStacks) {
@@ -345,7 +345,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Detect package manager
   const packageManager = await detectPackageManager();
   if (packageManager) {
-    console.log(chalk.blue(`📦 Package Manager: ${packageManager}`));
+    console.log(chalk.blue(`Package Manager: ${packageManager}`));
   }
 
   // Get stack config for default dev URL
@@ -487,7 +487,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     const fallbacks = symlinkResults.filter((r) => r.fallbackToCopy);
     if (fallbacks.length > 0) {
       console.log(
-        chalk.yellow("⚠️  Some scripts were copied instead of symlinked:"),
+        chalk.yellow("!  Some scripts were copied instead of symlinked:"),
       );
       for (const fb of fallbacks) {
         console.log(chalk.gray(`   ${fb.path}: ${fb.reason}`));
@@ -496,7 +496,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     const skipped = symlinkResults.filter((r) => r.skipped);
     if (skipped.length > 0) {
       console.log(
-        chalk.yellow("⚠️  Some scripts were skipped (existing files found):"),
+        chalk.yellow("!  Some scripts were skipped (existing files found):"),
       );
       for (const s of skipped) {
         console.log(chalk.gray(`   ${s.path}: ${s.reason}`));
@@ -616,7 +616,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const hasRemainingIssues =
     wizardRemainingIssues.length > 0 || warnings.length > 0;
   const prereqReminder = hasRemainingIssues
-    ? `\n${chalk.yellow("⚠️  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
+    ? `\n${chalk.yellow("!  Remember to install missing dependencies before using issue workflows.")}\n${chalk.gray("   Run 'sequant doctor' to verify your setup.\n")}`
     : "";
 
   // Success message with boxed output

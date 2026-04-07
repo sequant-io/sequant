@@ -57,7 +57,7 @@ export async function stateInitCommand(
   options: StateInitOptions = {},
 ): Promise<void> {
   if (!options.json) {
-    console.log(chalk.bold("\n🔍 Discovering untracked worktrees...\n"));
+    console.log(chalk.bold("\nDiscovering untracked worktrees...\n"));
   }
 
   const discoverOptions: DiscoverOptions = {
@@ -146,7 +146,7 @@ export async function stateRebuildCommand(
   options: StateRebuildOptions = {},
 ): Promise<void> {
   if (!options.json) {
-    console.log(chalk.bold("\n🔄 Rebuilding state from scratch...\n"));
+    console.log(chalk.bold("\nRebuilding state from scratch...\n"));
 
     if (!options.force) {
       console.log(
@@ -388,7 +388,7 @@ export async function stateCommand(
     case "clean":
       return stateCleanCommand(options);
     default:
-      console.log(chalk.bold("\n📊 sequant state - Manage workflow state\n"));
+      console.log(chalk.bold("\nsequant state - Manage workflow state\n"));
       console.log("Available subcommands:");
       console.log(
         chalk.gray("  init     Populate state for untracked worktrees"),

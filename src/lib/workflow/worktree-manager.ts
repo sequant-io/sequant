@@ -285,7 +285,7 @@ export function checkWorktreeFreshness(
   if (verbose && result.isStale) {
     console.log(
       chalk.gray(
-        `    📊 Worktree is ${result.commitsBehind} commits behind origin/${baseBranch}`,
+        `    Worktree is ${result.commitsBehind} commits behind origin/${baseBranch}`,
       ),
     );
   }
@@ -319,7 +319,7 @@ export function removeStaleWorktree(
 
   if (removeResult.status !== 0) {
     const error = removeResult.stderr.toString();
-    console.log(chalk.yellow(`    ⚠️  Could not remove worktree: ${error}`));
+    console.log(chalk.yellow(`    !  Could not remove worktree: ${error}`));
     return false;
   }
 
@@ -537,7 +537,7 @@ export async function ensureWorktree(
       if (freshness.hasUncommittedChanges) {
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has uncommitted changes`,
+            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has uncommitted changes`,
           ),
         );
         console.log(
@@ -549,7 +549,7 @@ export async function ensureWorktree(
       } else if (freshness.hasUnpushedCommits) {
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has unpushed commits`,
+            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} but has unpushed commits`,
           ),
         );
         console.log(
@@ -560,7 +560,7 @@ export async function ensureWorktree(
         // Safe to recreate - no uncommitted/unpushed work
         console.log(
           chalk.yellow(
-            `    ⚠️  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
+            `    !  Worktree is ${freshness.commitsBehind} commits behind ${detectedBase} — recreating fresh`,
           ),
         );
 
@@ -573,9 +573,7 @@ export async function ensureWorktree(
 
   if (existingPath) {
     if (verbose) {
-      console.log(
-        chalk.gray(`    📂 Reusing existing worktree: ${existingPath}`),
-      );
+      console.log(chalk.gray(`    Reusing existing worktree: ${existingPath}`));
     }
 
     // In chain mode, rebase existing worktree onto previous chain link
@@ -583,7 +581,7 @@ export async function ensureWorktree(
       if (verbose) {
         console.log(
           chalk.gray(
-            `    🔄 Rebasing existing worktree onto chain base (${baseBranch})...`,
+            `    Rebasing existing worktree onto chain base (${baseBranch})...`,
           ),
         );
       }
@@ -604,7 +602,7 @@ export async function ensureWorktree(
         ) {
           console.log(
             chalk.yellow(
-              `    ⚠️  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+              `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
             ),
           );
           console.log(
@@ -619,7 +617,7 @@ export async function ensureWorktree(
           });
         } else {
           console.log(
-            chalk.yellow(`    ⚠️  Rebase failed: ${rebaseError.trim()}`),
+            chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`),
           );
           console.log(
             chalk.yellow(
@@ -639,7 +637,7 @@ export async function ensureWorktree(
 
       if (verbose) {
         console.log(
-          chalk.green(`    ✅ Existing worktree rebased onto ${baseBranch}`),
+          chalk.green(`    ✔ Existing worktree rebased onto ${baseBranch}`),
         );
       }
 
@@ -694,7 +692,7 @@ export async function ensureWorktree(
   const branchToFetch = effectiveBase.replace(/^origin\//, "");
   if (!isLocalBranch) {
     if (verbose) {
-      console.log(chalk.gray(`    🔄 Fetching latest ${branchToFetch}...`));
+      console.log(chalk.gray(`    Fetching latest ${branchToFetch}...`));
     }
     const fetchResult = spawnSync("git", ["fetch", "origin", branchToFetch], {
       stdio: "pipe",
@@ -702,7 +700,7 @@ export async function ensureWorktree(
     if (fetchResult.status !== 0 && verbose) {
       console.log(
         chalk.yellow(
-          `    ⚠️  Could not fetch origin/${branchToFetch}, using local state`,
+          `    !  Could not fetch origin/${branchToFetch}, using local state`,
         ),
       );
     }
@@ -750,7 +748,7 @@ export async function ensureWorktree(
     if (verbose) {
       console.log(
         chalk.gray(
-          `    🔄 Rebasing existing branch onto previous chain link (${baseRef})...`,
+          `    Rebasing existing branch onto previous chain link (${baseRef})...`,
         ),
       );
     }
@@ -773,7 +771,7 @@ export async function ensureWorktree(
       ) {
         console.log(
           chalk.yellow(
-            `    ⚠️  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+            `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
           ),
         );
         console.log(
@@ -788,7 +786,7 @@ export async function ensureWorktree(
         });
       } else {
         console.log(
-          chalk.yellow(`    ⚠️  Rebase failed: ${rebaseError.trim()}`),
+          chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`),
         );
         console.log(
           chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
@@ -797,7 +795,7 @@ export async function ensureWorktree(
     } else {
       rebased = true;
       if (verbose) {
-        console.log(chalk.green(`    ✅ Branch rebased onto ${baseRef}`));
+        console.log(chalk.green(`    ✔ Branch rebased onto ${baseRef}`));
       }
     }
   }
@@ -831,7 +829,7 @@ export async function ensureWorktree(
   const nodeModulesPath = path.join(worktreePath, "node_modules");
   if (!existsSync(nodeModulesPath)) {
     if (verbose) {
-      console.log(chalk.gray(`    📦 Installing dependencies...`));
+      console.log(chalk.gray(`    Installing dependencies...`));
     }
     // Use detected package manager or default to npm
     const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
@@ -844,7 +842,7 @@ export async function ensureWorktree(
   }
 
   if (verbose) {
-    console.log(chalk.green(`    ✅ Worktree ready: ${worktreePath}`));
+    console.log(chalk.green(`    ✔ Worktree ready: ${worktreePath}`));
   }
 
   return {
@@ -869,7 +867,7 @@ export async function ensureWorktrees(
   const worktrees = new Map<number, WorktreeInfo>();
 
   const baseDisplay = baseBranch || detectDefaultBranch(verbose);
-  console.log(chalk.blue(`\n  📂 Preparing worktrees from ${baseDisplay}...`));
+  console.log(chalk.blue(`\n  Preparing worktrees from ${baseDisplay}...`));
 
   for (const issue of issues) {
     const worktree = await ensureWorktree(
@@ -914,7 +912,7 @@ export async function ensureWorktreesChain(
 
   const baseDisplay = baseBranch || detectDefaultBranch(verbose);
   console.log(
-    chalk.blue(`\n  🔗 Preparing chained worktrees from ${baseDisplay}...`),
+    chalk.blue(`\n  Preparing chained worktrees from ${baseDisplay}...`),
   );
 
   // First issue starts from the specified base branch (or main)
@@ -991,7 +989,7 @@ export function createCheckpointCommit(
   if (statusResult.status !== 0) {
     if (verbose) {
       console.log(
-        chalk.yellow(`    ⚠️  Could not check git status for checkpoint`),
+        chalk.yellow(`    !  Could not check git status for checkpoint`),
       );
     }
     return false;
@@ -1015,7 +1013,7 @@ export function createCheckpointCommit(
   if (addResult.status !== 0) {
     if (verbose) {
       console.log(
-        chalk.yellow(`    ⚠️  Could not stage changes for checkpoint`),
+        chalk.yellow(`    !  Could not stage changes for checkpoint`),
       );
     }
     return false;
@@ -1037,7 +1035,7 @@ passed QA in chain mode. It serves as a recovery point if later issues fail.`;
     const error = commitResult.stderr.toString();
     if (verbose) {
       console.log(
-        chalk.yellow(`    ⚠️  Could not create checkpoint commit: ${error}`),
+        chalk.yellow(`    !  Could not create checkpoint commit: ${error}`),
       );
     }
     return false;
@@ -1090,7 +1088,7 @@ export function reinstallIfLockfileChanged(
     if (result.status === 0 && result.stdout.toString().trim().length > 0) {
       lockfileChanged = true;
       if (verbose) {
-        console.log(chalk.gray(`    📦 Lockfile changed: ${lockfile}`));
+        console.log(chalk.gray(`    Lockfile changed: ${lockfile}`));
       }
       break;
     }
@@ -1098,14 +1096,14 @@ export function reinstallIfLockfileChanged(
 
   if (!lockfileChanged) {
     if (verbose) {
-      console.log(chalk.gray(`    📦 No lockfile changes detected`));
+      console.log(chalk.gray(`    No lockfile changes detected`));
     }
     return false;
   }
 
   // Re-run install to sync node_modules with updated lockfile
   console.log(
-    chalk.blue(`    📦 Reinstalling dependencies (lockfile changed)...`),
+    chalk.blue(`    Reinstalling dependencies (lockfile changed)...`),
   );
 
   const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
@@ -1120,12 +1118,12 @@ export function reinstallIfLockfileChanged(
   if (installResult.status !== 0) {
     const error = installResult.stderr.toString();
     console.log(
-      chalk.yellow(`    ⚠️  Dependency reinstall failed: ${error.trim()}`),
+      chalk.yellow(`    !  Dependency reinstall failed: ${error.trim()}`),
     );
     return false;
   }
 
-  console.log(chalk.green(`    ✅ Dependencies reinstalled`));
+  console.log(chalk.green(`    ✔ Dependencies reinstalled`));
   return true;
 }
 
@@ -1152,9 +1150,7 @@ export function rebaseBeforePR(
 
   if (verbose) {
     console.log(
-      chalk.gray(
-        `    🔄 Rebasing #${issueNumber} onto ${baseRef} before PR...`,
-      ),
+      chalk.gray(`    Rebasing #${issueNumber} onto ${baseRef} before PR...`),
     );
   }
 
@@ -1170,7 +1166,7 @@ export function rebaseBeforePR(
   if (fetchResult.status !== 0) {
     const error = fetchResult.stderr.toString();
     console.log(
-      chalk.yellow(`    ⚠️  Could not fetch ${baseRef}: ${error.trim()}`),
+      chalk.yellow(`    !  Could not fetch ${baseRef}: ${error.trim()}`),
     );
     // Continue anyway - might work with local state
   }
@@ -1192,7 +1188,7 @@ export function rebaseBeforePR(
     ) {
       console.log(
         chalk.yellow(
-          `    ⚠️  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+          `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
         ),
       );
       console.log(
@@ -1213,7 +1209,7 @@ export function rebaseBeforePR(
         error: "Rebase conflict - manual resolution required",
       };
     } else {
-      console.log(chalk.yellow(`    ⚠️  Rebase failed: ${rebaseError.trim()}`));
+      console.log(chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`));
       console.log(
         chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
       );
@@ -1227,7 +1223,7 @@ export function rebaseBeforePR(
     }
   }
 
-  console.log(chalk.green(`    ✅ Branch rebased onto ${baseRef}`));
+  console.log(chalk.green(`    ✔ Branch rebased onto ${baseRef}`));
 
   // Check if lockfile changed and reinstall if needed
   const reinstalled = reinstallIfLockfileChanged(
@@ -1299,7 +1295,7 @@ export function createPR(
 
   if (pushResult.status !== 0) {
     const pushError = pushResult.stderr?.toString().trim() ?? "Unknown error";
-    console.log(chalk.yellow(`    ⚠️  git push failed: ${pushError}`));
+    console.log(chalk.yellow(`    !  git push failed: ${pushError}`));
     return {
       attempted: true,
       success: false,
@@ -1309,7 +1305,7 @@ export function createPR(
 
   // Step 3: Create PR
   if (verbose) {
-    console.log(chalk.gray(`    📝 Creating PR for #${issueNumber}...`));
+    console.log(chalk.gray(`    Creating PR for #${issueNumber}...`));
   }
 
   const isBug = labels?.some((l) => /^bug/i.test(l));
@@ -1347,7 +1343,7 @@ export function createPR(
         };
       }
     }
-    console.log(chalk.yellow(`    ⚠️  PR creation failed: ${prError}`));
+    console.log(chalk.yellow(`    !  PR creation failed: ${prError}`));
     return {
       attempted: true,
       success: false,
@@ -1364,7 +1360,7 @@ export function createPR(
   if (prUrlMatch) {
     const prNumber = parseInt(prUrlMatch[1], 10);
     const prUrl = prUrlMatch[0];
-    console.log(chalk.green(`    ✅ PR #${prNumber} created: ${prUrl}`));
+    console.log(chalk.green(`    ✔ PR #${prNumber} created: ${prUrl}`));
     return {
       attempted: true,
       success: true,
@@ -1378,7 +1374,7 @@ export function createPR(
 
   if (viewInfo) {
     console.log(
-      chalk.green(`    ✅ PR #${viewInfo.number} created: ${viewInfo.url}`),
+      chalk.green(`    ✔ PR #${viewInfo.number} created: ${viewInfo.url}`),
     );
     return {
       attempted: true,
@@ -1391,7 +1387,7 @@ export function createPR(
   // PR was created but we couldn't parse the URL
   console.log(
     chalk.yellow(
-      `    ⚠️  PR created but could not extract URL from output: ${prOutput}`,
+      `    !  PR created but could not extract URL from output: ${prOutput}`,
     ),
   );
   return {

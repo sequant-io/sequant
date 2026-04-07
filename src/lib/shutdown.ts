@@ -179,7 +179,7 @@ export class ShutdownManager {
     this._isShuttingDown = true;
 
     this.output(
-      chalk.yellow(`\n⚠️  Received ${signal}, shutting down gracefully...`),
+      chalk.yellow(`\n!  Received ${signal}, shutting down gracefully...`),
     );
 
     // Abort all in-flight phases immediately

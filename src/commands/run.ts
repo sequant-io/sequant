@@ -227,7 +227,7 @@ export async function runCommand(
       if (versionResult.isOutdated && versionResult.latestVersion) {
         console.log(
           chalk.yellow(
-            `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+            `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
           ),
         );
         console.log("");
@@ -328,7 +328,7 @@ export async function runCommand(
     if (issueNumbers.length > 5) {
       console.log(
         chalk.yellow(
-          `  ⚠️  Warning: Chain has ${issueNumbers.length} issues (recommended max: 5)`,
+          `  !  Warning: Chain has ${issueNumbers.length} issues (recommended max: 5)`,
         ),
       );
       console.log(
@@ -464,7 +464,7 @@ export async function runCommand(
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.log(
         chalk.yellow(
-          `  ⚠️ Log initialization failed, continuing without logging: ${errorMessage}`,
+          `  ! Log initialization failed, continuing without logging: ${errorMessage}`,
         ),
       );
       logWriter = null;
@@ -489,49 +489,54 @@ export async function runCommand(
     });
   }
 
-  // Display configuration
-  console.log(chalk.gray(`  Stack: ${manifest.stack}`));
+  // Display configuration (columnar alignment)
+  const pad = (label: string) => label.padEnd(15);
+  console.log(chalk.gray(`  ${pad("Stack")}${manifest.stack}`));
   if (autoDetectPhases) {
-    console.log(chalk.gray(`  Phases: auto-detect from labels`));
+    console.log(chalk.gray(`  ${pad("Phases")}auto-detect from labels`));
   } else {
-    console.log(chalk.gray(`  Phases: ${config.phases.join(" → ")}`));
+    console.log(
+      chalk.gray(`  ${pad("Phases")}${config.phases.join(" \u2192 ")}`),
+    );
   }
   console.log(
     chalk.gray(
-      `  Mode: ${config.sequential ? "sequential (stop-on-failure)" : `parallel (concurrency: ${config.concurrency})`}`,
+      `  ${pad("Mode")}${config.sequential ? "sequential (stop-on-failure)" : `parallel (concurrency: ${config.concurrency})`}`,
     ),
   );
   if (config.qualityLoop) {
     console.log(
       chalk.gray(
-        `  Quality loop: enabled (max ${config.maxIterations} iterations)`,
+        `  ${pad("Quality loop")}enabled (max ${config.maxIterations} iterations)`,
       ),
     );
   }
   if (mergedOptions.testgen) {
-    console.log(chalk.gray(`  Testgen: enabled`));
+    console.log(chalk.gray(`  ${pad("Testgen")}enabled`));
   }
   if (config.noSmartTests) {
-    console.log(chalk.gray(`  Smart tests: disabled`));
+    console.log(chalk.gray(`  ${pad("Smart tests")}disabled`));
   }
   if (config.dryRun) {
-    console.log(chalk.yellow(`  ⚠️  DRY RUN - no actual execution`));
+    console.log(chalk.yellow(`  ${pad("!")}DRY RUN - no actual execution`));
   }
   if (logWriter) {
     console.log(
       chalk.gray(
-        `  Logging: JSON (run ${logWriter.getRunId()?.slice(0, 8)}...)`,
+        `  ${pad("Logging")}JSON (run ${logWriter.getRunId()?.slice(0, 8)}...)`,
       ),
     );
   }
   if (stateManager) {
-    console.log(chalk.gray(`  State tracking: enabled`));
+    console.log(chalk.gray(`  ${pad("State")}enabled`));
   }
   if (mergedOptions.force) {
-    console.log(chalk.yellow(`  Force mode: enabled (bypass state guard)`));
+    console.log(chalk.yellow(`  ${pad("Force")}enabled (bypass state guard)`));
   }
   console.log(
-    chalk.gray(`  Issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`),
+    chalk.gray(
+      `  ${pad("Issues")}${issueNumbers.map((n) => `#${n}`).join(", ")}`,
+    ),
   );
 
   // ============================================================================
@@ -555,7 +560,7 @@ export async function runCommand(
     } catch (error) {
       // AC-8: Graceful degradation - don't block execution on reconciliation failure
       logNonFatalWarning(
-        `  ⚠️  State reconciliation failed, continuing...`,
+        `  !  State reconciliation failed, continuing...`,
         error,
         config.verbose,
       );
@@ -578,7 +583,7 @@ export async function runCommand(
           skippedIssues.push(issueNumber);
           console.log(
             chalk.yellow(
-              `  ⚠️  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
+              `  !  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
             ),
           );
         } else {
@@ -587,7 +592,7 @@ export async function runCommand(
       } catch (error) {
         // AC-8: Graceful degradation - if state check fails, include the issue
         logNonFatalWarning(
-          `  ⚠️  State lookup failed for #${issueNumber}, including anyway...`,
+          `  !  State lookup failed for #${issueNumber}, including anyway...`,
           error,
           config.verbose,
         );
@@ -729,7 +734,7 @@ export async function runCommand(
         if (batchFailed && config.sequential) {
           console.log(
             chalk.yellow(
-              `\n  ⚠️  Batch ${batchIdx + 1} failed, stopping batch execution`,
+              `\n  !  Batch ${batchIdx + 1} failed, stopping batch execution`,
             ),
           );
           break;
@@ -792,7 +797,7 @@ export async function runCommand(
           const chainInfo = mergedOptions.chain ? " (chain stopped)" : "";
           console.log(
             chalk.yellow(
-              `\n  ⚠️  Issue #${issueNumber} failed, stopping sequential execution${chainInfo}`,
+              `\n  !  Issue #${issueNumber} failed, stopping sequential execution${chainInfo}`,
             ),
           );
           break;
@@ -818,11 +823,11 @@ export async function runCommand(
       const renderProgressLine = () => {
         const parts = issueNumbers.map((num) => {
           const info = issueStatus.get(num)!;
-          if (info.state === "done") return colors.success(`#${num} ✓`);
-          if (info.state === "failed") return colors.error(`#${num} ✗`);
-          return colors.warning(`#${num} ⏳`);
+          if (info.state === "done") return colors.success(`#${num} \u2714`);
+          if (info.state === "failed") return colors.error(`#${num} \u2716`);
+          return colors.muted(`#${num} \u00B7`);
         });
-        return `  Progress: ${parts.join("  ")}`;
+        return `  ${parts.join("  ")}`;
       };
 
       const updateProgress = (completedIssue?: number) => {
@@ -841,7 +846,7 @@ export async function runCommand(
               ? ` (${formatElapsedTime(info.durationSeconds)})`
               : "";
           if (info.state === "done") {
-            const line = `  ${colors.success("✓")} Issue #${completedIssue} completed${duration}`;
+            const line = `  ${colors.success("\u2714")} #${completedIssue} completed${duration}`;
             if (process.stdout.isTTY) {
               // Move to a new line before printing the summary, then re-render progress
               process.stdout.write(`\n${line}\n${renderProgressLine()}`);
@@ -850,7 +855,7 @@ export async function runCommand(
             }
           } else {
             const errorSuffix = info.error ? `: ${info.error}` : "";
-            const line = `  ${colors.error("✗")} Issue #${completedIssue} failed${duration}${errorSuffix}`;
+            const line = `  ${colors.error("\u2716")} #${completedIssue} failed${duration}${errorSuffix}`;
             if (process.stdout.isTTY) {
               process.stdout.write(`\n${line}\n${renderProgressLine()}`);
             } else {
@@ -862,6 +867,7 @@ export async function runCommand(
 
       // Per-phase progress callback for parallel mode (AC-1, AC-3)
       const parallelStartTime = Date.now();
+      let lastPhaseEventTime = Date.now();
       const onPhaseProgress: ProgressCallback = (
         issue,
         phase,
@@ -869,28 +875,32 @@ export async function runCommand(
         extra,
       ) => {
         if (mergedOptions.quiet) return;
+        lastPhaseEventTime = Date.now();
         let line: string;
         if (event === "start") {
-          line = `  ${colors.warning("●")} #${issue}: ${phase} started`;
+          line = `  ${colors.running("\u25B8")} #${issue}  ${phase}`;
         } else if (event === "complete") {
           const dur =
             extra?.durationSeconds != null
-              ? ` (${formatElapsedTime(extra.durationSeconds)})`
+              ? `  ${formatElapsedTime(extra.durationSeconds)}`
               : "";
-          line = `  ${colors.success("●")} #${issue}: ${phase} ✓${dur}`;
+          line = `  ${colors.success("\u2714")} #${issue}  ${phase}${dur}`;
         } else {
-          line = `  ${colors.error("●")} #${issue}: ${phase} ✗`;
+          line = `  ${colors.error("\u2716")} #${issue}  ${phase}`;
         }
         console.log(line);
       };
 
-      // 60-second heartbeat timer so the terminal never appears frozen (AC-2)
-      const HEARTBEAT_INTERVAL_MS = 60_000;
+      // 5-minute heartbeat timer, suppressed when phase events occur within window
+      const HEARTBEAT_INTERVAL_MS = 300_000;
+      const HEARTBEAT_SUPPRESS_MS = 60_000;
       const heartbeatTimer = setInterval(() => {
         if (mergedOptions.quiet) return;
+        // Suppress if a phase event occurred recently
+        if (Date.now() - lastPhaseEventTime < HEARTBEAT_SUPPRESS_MS) return;
         const elapsedSec = Math.round((Date.now() - parallelStartTime) / 1000);
         console.log(
-          `  ${colors.warning("⏳")} Still running... (${formatElapsedTime(elapsedSec)} elapsed)`,
+          `  ${colors.muted(`Still running... (${formatElapsedTime(elapsedSec)} elapsed)`)}`,
         );
       }, HEARTBEAT_INTERVAL_MS);
 
@@ -1055,13 +1065,13 @@ export async function runCommand(
 
         if (config.verbose) {
           console.log(
-            chalk.gray(`  📊 Metrics recorded to .sequant/metrics.json`),
+            chalk.gray(`  Metrics: Metrics recorded to .sequant/metrics.json`),
           );
         }
       } catch (metricsError) {
         // Metrics recording errors shouldn't stop execution
         logNonFatalWarning(
-          `  ⚠️  Metrics recording failed, continuing...`,
+          `  !  Metrics recording failed, continuing...`,
           metricsError,
           config.verbose,
         );
@@ -1074,9 +1084,7 @@ export async function runCommand(
     console.log(ui.divider());
 
     console.log(
-      colors.muted(
-        `\n  Results: ${colors.success(`${passed} passed`)}, ${colors.error(`${failed} failed`)}`,
-      ),
+      `\n  ${colors.success(`${passed} passed`)} ${colors.muted("\u00B7")} ${colors.error(`${failed} failed`)}`,
     );
 
     for (const result of results) {
@@ -1103,7 +1111,7 @@ export async function runCommand(
     console.log("");
 
     if (logPath) {
-      console.log(colors.muted(`  📝 Log: ${logPath}`));
+      console.log(colors.muted(`  Log: ${logPath}`));
       console.log("");
     }
 
@@ -1128,7 +1136,7 @@ export async function runCommand(
     // Suggest merge checks for multi-issue batches
     if (results.length > 1 && passed > 0 && !config.dryRun) {
       console.log(
-        colors.muted("  💡 Verify batch integration before merging:"),
+        colors.muted("  Tip: Verify batch integration before merging:"),
       );
       console.log(colors.muted("     sequant merge --check"));
       console.log("");

@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sequant-testgen` — test stub generation for `/testgen`
 - `templates/agents/` directory so `sequant init` copies agent definitions to new projects
 - Custom agents section in `subagent-types.md` reference documentation
+- Modernized CLI output formatting across all commands (#495)
+  - Replaced decorative emoji with typographic symbols matching ora output
+  - Light dividers instead of heavy rules; bold titles instead of boxen borders
+  - Parallel mode: 5-minute heartbeat (was 60s), suppressed during active phases
+  - Columnar config display alignment in `sequant run`
 
 ### Changed
 

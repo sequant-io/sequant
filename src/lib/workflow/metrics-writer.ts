@@ -164,7 +164,9 @@ export class MetricsWriter {
     await this.saveMetrics(metrics);
 
     if (this.verbose) {
-      console.log(`📊 Recorded run: ${run.id.slice(0, 8)}... (${run.outcome})`);
+      console.log(
+        `Metrics: Recorded run: ${run.id.slice(0, 8)}... (${run.outcome})`,
+      );
     }
 
     return run;
@@ -214,7 +216,7 @@ export class MetricsWriter {
       this.cachedMetrics = null;
 
       if (this.verbose) {
-        console.log(`📊 Metrics deleted: ${this.metricsPath}`);
+        console.log(`Metrics: Metrics deleted: ${this.metricsPath}`);
       }
     }
   }
