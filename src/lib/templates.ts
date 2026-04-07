@@ -283,6 +283,9 @@ export async function copyTemplates(
   // Copy skills
   await copyDir(join(templatesDir, "skills"), ".claude/skills");
 
+  // Copy agent definitions
+  await copyDir(join(templatesDir, "agents"), ".claude/agents");
+
   // Copy hooks
   await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
 

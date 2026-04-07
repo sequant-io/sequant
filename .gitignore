@@ -50,6 +50,7 @@ pnpm-lock.yaml
 # Claude Code configuration
 # Track hooks and skills, but ignore local settings
 .claude/*
+!.claude/agents/
 !.claude/hooks/
 !.claude/skills/
 !.claude/settings.json

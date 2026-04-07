@@ -20,7 +20,7 @@ allowed-tools:
   - Bash(semgrep:*)
   - Bash(npx semgrep:*)
   - Bash(npx tsx scripts/semgrep-scan.ts:*)
-  - Task(general-purpose)
+  - Agent(sequant-qa-checker)
   - AgentOutputTool
 ---
 
@@ -933,7 +933,7 @@ issue_type="${SEQUANT_ISSUE_TYPE:-}"
 
 **Docs QA sub-agents (1 agent instead of 3):**
 
-1. `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run scope and size checks on the current branch vs main. Check for broken links in changed markdown files. Report: files count, diff size, broken links, size assessment.")`
+1. `Agent(subagent_type="sequant-qa-checker", prompt="Run scope and size checks on the current branch vs main. Check for broken links in changed markdown files. Report: files count, diff size, broken links, size assessment.")`
 
 **If `SEQUANT_ISSUE_TYPE` is not set or is not `docs`**, use the standard pipeline below.
 
@@ -943,11 +943,11 @@ issue_type="${SEQUANT_ISSUE_TYPE:-}"
 
 **IMPORTANT:** Background agents need `mode="bypassPermissions"` to execute Bash commands (`git diff`, `npm test`, etc.) without interactive approval. The default `acceptEdits` mode only auto-approves Edit/Write — Bash calls are silently denied. These quality check agents only read and analyze; they never write files or push code, so bypassing permissions is safe.
 
-1. `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
+1. `Agent(subagent_type="sequant-qa-checker", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-2. `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
+2. `Agent(subagent_type="sequant-qa-checker", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-3. `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
+3. `Agent(subagent_type="sequant-qa-checker", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 #### If sequential mode (default):
 
@@ -955,11 +955,11 @@ issue_type="${SEQUANT_ISSUE_TYPE:-}"
 
 **Note:** Sequential agents run in the foreground where the user can approve Bash interactively. However, for consistency and to avoid approval fatigue, we still use `mode="bypassPermissions"` since these agents only perform read-only quality checks.
 
-1. **First:** `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
+1. **First:** `Agent(subagent_type="sequant-qa-checker", prompt="Run type safety and deleted tests checks on the current branch vs main. Report: type issues count, deleted tests, verdict.")`
 
-2. **After #1 completes:** `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
+2. **After #1 completes:** `Agent(subagent_type="sequant-qa-checker", prompt="Run scope and size checks on the current branch vs main. Report: files count, diff size, size assessment.")`
 
-3. **After #2 completes:** `Task(subagent_type="general-purpose", model="haiku", mode="bypassPermissions", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
+3. **After #2 completes:** `Agent(subagent_type="sequant-qa-checker", prompt="Run security scan on changed files in current branch vs main. Report: critical/warning/info counts, verdict.")`
 
 **Add RLS check if admin files modified:**
 ```bash
