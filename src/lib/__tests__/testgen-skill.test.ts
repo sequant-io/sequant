@@ -28,10 +28,9 @@ describe("testgen skill haiku sub-agent documentation", () => {
     );
   });
 
-  it('should document model="haiku" pattern for sub-agents', () => {
-    // Check for the Task call pattern with haiku model
-    expect(skillContent).toContain('model="haiku"');
-    expect(skillContent).toContain('subagent_type="general-purpose"');
+  it("should document custom agent pattern for sub-agents", () => {
+    // Check for the Agent call pattern with sequant-testgen
+    expect(skillContent).toContain('subagent_type="sequant-testgen"');
   });
 
   it("should document parse verification criteria as haiku task", () => {
@@ -59,13 +58,13 @@ describe("testgen skill haiku sub-agent documentation", () => {
     expect(skillContent).toMatch(/90%.*token.*cost.*reduction/i);
   });
 
-  it("should contain Task call examples with haiku model parameter", () => {
-    // Count occurrences of haiku model parameter in Task calls
-    const haikuTaskCalls = (
-      skillContent.match(/Task\([^)]*model="haiku"[^)]*\)/g) || []
+  it("should contain Agent call examples with sequant-testgen", () => {
+    // Count occurrences of Agent calls with sequant-testgen
+    const agentCalls = (
+      skillContent.match(/Agent\(subagent_type="sequant-testgen"/g) || []
     ).length;
     // Should have at least 2 examples (parsing and generating)
-    expect(haikuTaskCalls).toBeGreaterThanOrEqual(2);
+    expect(agentCalls).toBeGreaterThanOrEqual(2);
   });
 });
 
