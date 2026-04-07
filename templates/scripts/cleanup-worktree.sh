@@ -53,6 +53,24 @@ if [ "$PR_STATUS" != "MERGED" ]; then
     fi
 fi
 
+# Clean up any exec-agent sub-worktrees first (from parallel isolation)
+EXEC_AGENTS_DIR="$WORKTREE_PATH/.exec-agents"
+if [ -d "$EXEC_AGENTS_DIR" ]; then
+    echo -e "${BLUE}🧹 Cleaning up exec-agent sub-worktrees...${NC}"
+    for agent_dir in "$EXEC_AGENTS_DIR"/agent-*; do
+        if [ -d "$agent_dir" ]; then
+            echo -e "${BLUE}   Removing: $(basename "$agent_dir")${NC}"
+            git worktree remove "$agent_dir" --force 2>/dev/null || true
+        fi
+    done
+    # Clean up orphaned exec-agent branches
+    git branch --list 'exec-agent-*' 2>/dev/null | while read -r branch; do
+        branch=$(echo "$branch" | tr -d ' *')
+        git branch -D "$branch" 2>/dev/null || true
+    done
+    rmdir "$EXEC_AGENTS_DIR" 2>/dev/null || true
+fi
+
 # Remove worktree
 echo -e "${BLUE}📂 Removing worktree...${NC}"
 git worktree remove "$WORKTREE_PATH" --force

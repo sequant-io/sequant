@@ -264,6 +264,9 @@ export async function runCommand(
     maxIterations:
       normalizedOptions.maxIterations ?? settings.run.maxIterations,
     noSmartTests: normalizedOptions.noSmartTests ?? !settings.run.smartTests,
+    // Agent settings (from agents section, not run section)
+    isolateParallel:
+      normalizedOptions.isolateParallel ?? settings.agents.isolateParallel,
     // Env overrides
     ...envConfig,
     // CLI explicit options override all
@@ -424,6 +427,7 @@ export async function runCommand(
     retry: retryEnabled,
     agent: mergedOptions.agent ?? settings.run.agent,
     aiderSettings: settings.run.aider,
+    isolateParallel: mergedOptions.isolateParallel,
   };
 
   // Propagate verbose mode to UI config so spinners use text-only mode.
