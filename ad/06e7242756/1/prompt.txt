@@ -1,0 +1,5 @@
+assume the role of solutions archtect. What would make this product better architectually?
+
+---
+
+CAn you create comprehensive follow up issues that keep the end user as the focus. We also need to be aware of potential gaps. Can you make this the least amount of issues if possible. it helps with batching via sequant run. We also need a dependency tree for the issues so we prio the right order. use sub agents if needed. Research best practices if needed
