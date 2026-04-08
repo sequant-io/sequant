@@ -41,7 +41,7 @@ export function getSequantMcpConfig(options?: {
 }): Record<string, unknown> {
   const config: Record<string, unknown> = {
     command: "npx",
-    args: ["sequant@latest", "serve"],
+    args: ["-y", "sequant@latest", "serve"],
   };
 
   // Add cwd for clients that don't run from the project directory

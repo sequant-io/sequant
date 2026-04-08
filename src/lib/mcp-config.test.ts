@@ -19,7 +19,7 @@ describe("mcp-config", () => {
     it("should return config with npx command", () => {
       const config = getSequantMcpConfig();
       expect(config.command).toBe("npx");
-      expect(config.args).toEqual(["sequant@latest", "serve"]);
+      expect(config.args).toEqual(["-y", "sequant@latest", "serve"]);
     });
 
     it("should include cwd for claude-desktop", () => {
@@ -215,7 +215,10 @@ describe("mcp-config", () => {
         path.join(tmpDir, ".mcp.json"),
         JSON.stringify({
           mcpServers: {
-            sequant: { command: "npx", args: ["sequant@latest", "serve"] },
+            sequant: {
+              command: "npx",
+              args: ["-y", "sequant@latest", "serve"],
+            },
           },
         }),
       );
@@ -260,6 +263,7 @@ describe("mcp-config", () => {
       );
       expect(content.mcpServers.sequant.command).toBe("npx");
       expect(content.mcpServers.sequant.args).toEqual([
+        "-y",
         "sequant@latest",
         "serve",
       ]);
@@ -278,7 +282,7 @@ describe("mcp-config", () => {
     it("should skip when sequant entry already exists", () => {
       const existing = {
         mcpServers: {
-          sequant: { command: "npx", args: ["sequant@latest", "serve"] },
+          sequant: { command: "npx", args: ["-y", "sequant@latest", "serve"] },
         },
       };
       fs.writeFileSync(
