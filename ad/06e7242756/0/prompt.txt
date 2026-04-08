@@ -1,0 +1,24 @@
+Sequant MCP Server                                                               │
+│                                                                                  │
+│ Status: ✘ failed                                                                 │
+│ Command: npx                                                                     │
+│ Args: -y sequant@latest serve                                                    │
+│ Config location: /Users/tony/Projects/sequant/.mcp.json
+
+---
+
+whats best practice and best case for affecting current users?
+
+---
+
+yes
+
+---
+
+<task-notification>
+<task-id>b6bt0q20s</task-id>
+<tool-use-id>toolu_012SJTizDyUxKNsuAqJ2Wss8</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/a3893c45-eb45-4b41-8f9e-8343cf6ec591/tasks/b6bt0q20s.output</output-file>
+<status>completed</status>
+<summary>Background command "Re-run mcp-config tests" completed (exit code 0)</summary>
+</task-notification>
