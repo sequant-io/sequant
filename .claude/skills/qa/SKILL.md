@@ -599,134 +599,6 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
 
 ---
 
-### Phase 0c: Incremental Re-Run Detection (CONDITIONAL)
-
-**When to apply:** On QA re-runs (when a prior QA phase marker exists in issue comments).
-
-**Purpose:** Optimize QA re-runs by detecting what changed since the last QA run and skipping checks whose inputs haven't changed. This significantly reduces token usage and execution time on iterative QA cycles.
-
-**Detection:**
-
-```bash
-# Step 1: Check for prior QA run context in cache
-prior_context=$(npx tsx scripts/qa/qa-cache-cli.ts get-run-context 2>/dev/null || true)
-
-# Step 2: If no cache context found, fall through to full QA run
-if [[ -z "$prior_context" ]] || echo "$prior_context" | grep -q "No QA run context"; then
-  echo "No prior QA context found — running full QA"
-  INCREMENTAL_MODE=false
-else
-  LAST_QA_SHA=$(echo "$prior_context" | jq -r '.lastQACommitSHA')
-  LAST_QA_HASH=$(echo "$prior_context" | jq -r '.lastQADiffHash')
-
-  # Step 3: Validate the commit SHA still exists in git history
-  if ! git cat-file -t "$LAST_QA_SHA" &>/dev/null; then
-    echo "Warning: Last QA commit SHA ($LAST_QA_SHA) not found in history — running full QA"
-    INCREMENTAL_MODE=false
-  else
-    # Step 4: Get files changed since last QA
-    changed_files=$(npx tsx scripts/qa/qa-cache-cli.ts changed-since "$LAST_QA_SHA" 2>/dev/null || true)
-
-    if [[ "$changed_files" == "NO_CHANGES" ]]; then
-      echo "No changes since last QA — all checks can use cached results"
-      INCREMENTAL_MODE=true
-      NO_FILE_CHANGES=true
-    else
-      echo "Changes detected since last QA ($LAST_QA_SHA):"
-      echo "$changed_files" | head -20
-      INCREMENTAL_MODE=true
-      NO_FILE_CHANGES=false
-    fi
-  fi
-fi
-```
-
-**Skip Logic (when INCREMENTAL_MODE=true):**
-
-| Check / Item | Skip Condition | Re-run Condition |
-|-------------|----------------|------------------|
-| Quality checks (type-safety, security, etc.) | Existing diff-hash cache handles this | Hash mismatch -> re-run |
-| Build verification | **Never skip** (always re-run) | Always — cheap and can regress |
-| CI status | **Never skip** (always re-run) | Always — external state changes |
-| AC items with prior status `met` | Skip if NO_FILE_CHANGES=true | Any file changes since last QA |
-| AC items with prior status `not_met` | **Never skip** | Always re-evaluate |
-| AC items with prior status `partially_met` | **Never skip** | Always re-evaluate |
-| AC items with prior status `pending`/`blocked` | **Never skip** | Always re-evaluate |
-
-**AC Re-evaluation Rules:**
-
-When `INCREMENTAL_MODE=true`:
-
-1. **Load prior AC statuses** from run context:
-   ```bash
-   # Extract AC statuses from prior context
-   ac_statuses=$(echo "$prior_context" | jq -r '.acStatuses | to_entries[] | "\(.key)=\(.value)"')
-   ```
-
-2. **For each AC item:**
-   - If prior status is `met` AND `NO_FILE_CHANGES=true`:
-     - **Skip full re-evaluation** — output "Cached: previously MET, no file changes"
-     - Mark as `MET (cached)` in output
-   - If prior status is `met` AND files changed:
-     - **Re-evaluate** — changes may have caused regression
-   - If prior status is `not_met` or `partially_met`:
-     - **Always re-evaluate** — this is the primary purpose of re-runs
-   - If prior status is `pending` or `blocked`:
-     - **Always re-evaluate** — status may have changed
-
-3. **`--no-cache` flag behavior:**
-   - When `--no-cache` is passed, set `INCREMENTAL_MODE=false`
-   - This forces full re-evaluation of ALL checks and AC items
-   - Run context is still saved at the end for future re-runs
-
-**Output Format (Incremental QA Summary):**
-
-When `INCREMENTAL_MODE=true`, prepend this section to the QA output:
-
-```markdown
-### Incremental QA Summary
-
-**Last QA:** <timestamp> (commit: <sha-short>)
-**Changes since last QA:** N files
-
-| Check / AC | Status | Re-run? | Reason |
-|------------|--------|---------|--------|
-| type-safety | PASS | Cached | Diff hash unchanged |
-| security | PASS | Cached | Diff hash unchanged |
-| build | PASS | Re-run | Always fresh |
-| CI status | PASS | Re-run | Always fresh |
-| AC-1 | MET | Cached | Previously MET, no file changes |
-| AC-2 | MET | Re-evaluated | Was NOT_MET |
-| AC-3 | MET | Re-evaluated | Files changed since last QA |
-
-**Summary:** X checks cached, Y re-evaluated, Z always-fresh
-```
-
-**Run Context Persistence:**
-
-After QA completes (regardless of incremental mode), save the run context:
-
-```bash
-# Get current HEAD SHA
-current_sha=$(git rev-parse HEAD)
-# Get current diff hash
-current_hash=$(npx tsx scripts/qa/qa-cache-cli.ts hash)
-
-# Build AC statuses JSON from QA results
-# Example: {"AC-1":"met","AC-2":"not_met","AC-3":"met"}
-ac_json='{"AC-1":"met","AC-2":"not_met"}'  # Replace with actual results
-
-# Save run context
-echo "{
-  \"lastQACommitSHA\": \"$current_sha\",
-  \"lastQADiffHash\": \"$current_hash\",
-  \"acStatuses\": $ac_json,
-  \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"
-}" | npx tsx scripts/qa/qa-cache-cli.ts set-run-context
-```
-
----
-
 ### Phase 1: CI Status Check — REQUIRED
 
 **Purpose:** Check GitHub CI status before finalizing verdict. CI-dependent AC items (e.g., "Tests pass in CI") should reflect actual CI status, not just local test results.
@@ -1476,43 +1348,6 @@ Provide a sentence or two explaining why.
 
 Do NOT mark MET based on "the general intent is satisfied." The AC text is the contract — verify it literally.
 
-### 3a. AC Status Persistence — REQUIRED
-
-**After evaluating each AC item**, update the status in workflow state using the state CLI:
-
-```bash
-# Step 1: Initialize AC items for the issue (run once, before updating statuses)
-npx tsx scripts/state/update.ts init-ac <issue-number> <ac-count>
-
-# Example: Initialize 4 AC items for issue #250
-npx tsx scripts/state/update.ts init-ac 250 4
-```
-
-```bash
-# Step 2: Update each AC item's status
-npx tsx scripts/state/update.ts ac <issue-number> <ac-id> <status> "<notes>"
-
-# Examples:
-npx tsx scripts/state/update.ts ac 250 AC-1 met "Verified: tests pass and feature works"
-npx tsx scripts/state/update.ts ac 250 AC-2 not_met "Missing error handling for edge case"
-npx tsx scripts/state/update.ts ac 250 AC-3 blocked "Waiting on upstream dependency"
-```
-
-**Status mapping:**
-- `MET` → `met`
-- `PARTIALLY_MET` → `not_met` (with notes explaining what's missing)
-- `NOT_MET` → `not_met`
-- `BLOCKED` → `blocked` (external dependency issue)
-
-**Why this matters:** Updating AC status in state enables:
-- Dashboard shows real-time AC progress per issue
-- Cross-skill tracking of which AC items need work
-- Summary badges show "X/Y met" status
-
-**If issue has no stored AC:**
-- Run `init-ac` first to create the AC items
-- Then update each AC status individually
-
 ### 4. Failure Path & Edge Case Testing (REQUIRED)
 
 Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
@@ -2125,34 +1960,6 @@ In some cases, `/verify` execution can be safely skipped when script changes are
 
 ---
 
-## State Tracking
-
-**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
-
-### State Updates (Standalone Only)
-
-When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
-
-**At skill start:**
-```bash
-npx tsx scripts/state/update.ts start <issue-number> qa
-```
-
-**On successful completion (READY_FOR_MERGE or AC_MET_BUT_NOT_A_PLUS):**
-```bash
-npx tsx scripts/state/update.ts complete <issue-number> qa
-npx tsx scripts/state/update.ts status <issue-number> ready_for_merge
-```
-
-**On failure (AC_NOT_MET):**
-```bash
-npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
-```
-
-**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
-
----
-
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
@@ -2162,7 +1969,6 @@ npx tsx scripts/state/update.ts fail <issue-number> qa "AC not met"
 When the size gate determined `SMALL_DIFF=true`, use the **simplified output template**. The following sections are **omitted** (not marked N/A — completely absent):
 
 - Quality Plan Verification
-- Incremental QA Summary
 - Call-Site Review
 - Product Review
 - Smoke Test
@@ -2354,21 +2160,6 @@ You MUST include these sections:
 
 **Derived ACs:** X/Y addressed
 **Quality Plan Status:** Complete / Partial / Not Addressed
-
----
-
-### Incremental QA Summary
-
-[Include if INCREMENTAL_MODE=true from Phase 0c, otherwise: "N/A - First QA run"]
-
-**Last QA:** <timestamp> (commit: <sha-short>)
-**Changes since last QA:** N files
-
-| Check / AC | Status | Re-run? | Reason |
-|------------|--------|---------|--------|
-| [check/AC] | [status] | Cached / Re-run / Re-evaluated | [reason] |
-
-**Summary:** X checks cached, Y re-evaluated, Z always-fresh
 
 ---
 
