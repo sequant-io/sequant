@@ -266,7 +266,7 @@ async function handleRotation(logDir: string, dryRun: boolean): Promise<void> {
   const settings = await getSettings();
   const stats = getLogStats(logDir, settings.run.rotation);
 
-  console.log(chalk.blue("\n📝 Log Rotation\n"));
+  console.log(chalk.blue("\nLog Rotation\n"));
   console.log(chalk.gray(`  Log directory: ${logDir}`));
   console.log(
     chalk.gray(

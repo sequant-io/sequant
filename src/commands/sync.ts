@@ -73,10 +73,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const { force = false, quiet = false } = options;
 
   if (!quiet) {
-    console.log(chalk.blue("\n🔄 Syncing templates...\n"));
+    console.log(chalk.blue("\nSyncing templates...\n"));
     console.log(
       chalk.yellow(
-        "📢 Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
+        "Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
           "   /plugin install sequant@claude-plugin-directory\n" +
           "   Plugin users get auto-updates without running sync manually.\n",
       ),
@@ -105,7 +105,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // Check if sync is needed
   if (!force && skillsVersion === packageVersion) {
     if (!quiet) {
-      console.log(chalk.green("✅ Skills are already up to date!"));
+      console.log(chalk.green("✔ Skills are already up to date!"));
     }
     return;
   }
@@ -120,7 +120,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   };
 
   if (!quiet) {
-    console.log(chalk.blue("📥 Copying templates..."));
+    console.log(chalk.blue("Copying templates..."));
   }
 
   await copyTemplates(manifest.stack, tokens, copyOptions);
@@ -143,19 +143,19 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       });
       await writeAgentsMd(agentsMdContent);
       if (!quiet) {
-        console.log(chalk.blue("📄 Regenerated AGENTS.md"));
+        console.log(chalk.blue("Regenerated AGENTS.md"));
       }
     } catch {
       if (!quiet) {
         console.log(
-          chalk.yellow("⚠️  Could not regenerate AGENTS.md (non-blocking)"),
+          chalk.yellow("!  Could not regenerate AGENTS.md (non-blocking)"),
         );
       }
     }
   }
 
   if (!quiet) {
-    console.log(chalk.green(`\n✅ Synced to v${packageVersion}`));
+    console.log(chalk.green(`\n✔ Synced to v${packageVersion}`));
     console.log(
       chalk.gray("\nSkills, hooks, and memory files have been updated."),
     );
@@ -172,7 +172,7 @@ export async function checkAndWarnSkillsOutdated(): Promise<boolean> {
   if (outdated) {
     console.log(
       chalk.yellow(
-        `\n⚠️  Skills are outdated (${currentVersion || "unknown"} → ${packageVersion})`,
+        `\n!  Skills are outdated (${currentVersion || "unknown"} → ${packageVersion})`,
       ),
     );
     console.log(chalk.yellow("   Run: npx sequant sync\n"));

@@ -426,7 +426,7 @@ export async function runIssueWithLogging(
     } catch (error) {
       // State tracking errors shouldn't stop execution
       if (config.verbose) {
-        log(chalk.yellow(`    ⚠️  State tracking error: ${error}`));
+        log(chalk.yellow(`    !  State tracking error: ${error}`));
       }
     }
   }

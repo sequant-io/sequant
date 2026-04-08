@@ -101,11 +101,15 @@ export function displayDependencyStatus(result: DependencyCheckResult): void {
         );
       } else {
         console.log(
-          chalk.green(`  ${chalk.green("✓")} ${dep.displayName} - installed`),
+          chalk.green(
+            `  ${chalk.green("\u2714")} ${dep.displayName} - installed`,
+          ),
         );
       }
     } else {
-      const marker = dep.required ? chalk.red("✗") : chalk.yellow("○");
+      const marker = dep.required
+        ? chalk.red("\u2716")
+        : chalk.yellow("\u00B7");
       const status = dep.required
         ? "not installed (required)"
         : "not installed (optional)";

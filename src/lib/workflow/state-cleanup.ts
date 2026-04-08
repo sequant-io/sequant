@@ -116,7 +116,7 @@ export async function cleanupStaleEntries(
       ) {
         if (options.verbose) {
           console.log(
-            `🔍 Orphaned: #${issueNum} (worktree not found: ${issueState.worktree})`,
+            `Orphaned: #${issueNum} (worktree not found: ${issueState.worktree})`,
           );
         }
 

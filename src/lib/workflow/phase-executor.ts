@@ -642,7 +642,7 @@ export async function executePhaseWithRetry(
   if (config.mcp && !lastResult!.success && !skipColdStartRetry) {
     console.log(
       chalk.yellow(
-        `\n    ⚠️ Phase failed with MCP enabled, retrying without MCP...`,
+        `\n    ! Phase failed with MCP enabled, retrying without MCP...`,
       ),
     );
 

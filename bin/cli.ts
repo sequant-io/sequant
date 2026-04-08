@@ -80,7 +80,7 @@ if (!process.argv.includes("--quiet") && isLocalNodeModulesInstall()) {
   const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
   console.warn(
     chalk.yellow(
-      "⚠️  Running sequant from local node_modules\n" +
+      "!  Running sequant from local node_modules\n" +
         "   For latest version: npx sequant@latest\n" +
         `   To remove local: ${pmCommands.removePkg} sequant\n`,
     ),

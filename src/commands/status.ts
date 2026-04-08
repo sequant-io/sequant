@@ -61,7 +61,7 @@ async function runReconciliation(
   if (!options.json) {
     // Show reconciliation warnings
     if (result.warnings.length > 0) {
-      console.log(chalk.yellow("\n  ⚠️  Drift detected:"));
+      console.log(chalk.yellow("\n  !  Drift detected:"));
       for (const w of result.warnings) {
         console.log(chalk.yellow(`    #${w.issueNumber}: ${w.description}`));
       }
@@ -77,7 +77,7 @@ async function runReconciliation(
     if (!result.githubReachable && !options.offline) {
       console.log(
         chalk.yellow(
-          "\n  ⚠️  GitHub unreachable — showing cached data. Use --offline to suppress this warning.",
+          "\n  !  GitHub unreachable — showing cached data. Use --offline to suppress this warning.",
         ),
       );
     }
@@ -425,7 +425,7 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
           : null;
         console.log(JSON.stringify(jsonData, null, 2));
       } else if (issueState) {
-        console.log(chalk.bold(`\n📊 Issue #${options.issue} State\n`));
+        console.log(chalk.bold(`\nIssue #${options.issue} State\n`));
         console.log(formatIssueState(issueState));
         const hint = getNextActionHint(issueState);
         if (hint) {
@@ -466,7 +466,7 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
           ),
         );
       } else {
-        console.log(chalk.bold("\n📊 Workflow State\n"));
+        console.log(chalk.bold("\nWorkflow State\n"));
         displayIssueSummary(issues);
 
         // Last synced footer
@@ -489,7 +489,7 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
  */
 async function handleRebuild(options: StatusCommandOptions): Promise<void> {
   if (!options.json) {
-    console.log(chalk.bold("\n🔄 Rebuilding state from logs...\n"));
+    console.log(chalk.bold("\nRebuilding state from logs...\n"));
   }
 
   const result = await rebuildStateFromLogs({ verbose: !options.json });

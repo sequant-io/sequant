@@ -136,7 +136,7 @@ export async function doctorCommand(
       // Show remediation steps
       console.log(
         chalk.yellow(
-          `  ⚠️  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+          `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
         ),
       );
       console.log("");

@@ -225,7 +225,7 @@ class TextSpinner implements SpinnerManager {
     if (text) this.text = text;
     this.isSpinning = true;
     if (!config.jsonMode) {
-      console.log(getColor(chalk.cyan)(`\u23F3 ${this.text}`));
+      console.log(getColor(chalk.cyan)(`\u25B8 ${this.text}`));
     }
     return this;
   }
@@ -234,7 +234,7 @@ class TextSpinner implements SpinnerManager {
     if (text) this.text = text;
     this.isSpinning = false;
     if (!config.jsonMode) {
-      console.log(getColor(chalk.green)(`\u2713 ${this.text}`));
+      console.log(getColor(chalk.green)(`\u2714 ${this.text}`));
     }
     return this;
   }
@@ -243,7 +243,7 @@ class TextSpinner implements SpinnerManager {
     if (text) this.text = text;
     this.isSpinning = false;
     if (!config.jsonMode) {
-      console.log(getColor(chalk.red)(`\u2717 ${this.text}`));
+      console.log(getColor(chalk.red)(`\u2716 ${this.text}`));
     }
     return this;
   }
@@ -252,7 +252,7 @@ class TextSpinner implements SpinnerManager {
     if (text) this.text = text;
     this.isSpinning = false;
     if (!config.jsonMode) {
-      console.log(getColor(chalk.yellow)(`\u26A0 ${this.text}`));
+      console.log(getColor(chalk.yellow)(`! ${this.text}`));
     }
     return this;
   }
@@ -401,7 +401,7 @@ export function box(content: string, style: BoxStyle = "default"): string {
  * Create a success box with title and message
  */
 export function successBox(title: string, message: string): string {
-  const content = `${getColor(chalk.green.bold)(`\u2705 ${title}`)}\n\n${message}`;
+  const content = `${getColor(chalk.green.bold)(title)}\n\n${message}`;
   return box(content, "success");
 }
 
@@ -409,7 +409,7 @@ export function successBox(title: string, message: string): string {
  * Create an error box with title and message
  */
 export function errorBox(title: string, message: string): string {
-  const content = `${getColor(chalk.red.bold)(`\u274C ${title}`)}\n\n${message}`;
+  const content = `${getColor(chalk.red.bold)(title)}\n\n${message}`;
   return box(content, "error");
 }
 
@@ -417,7 +417,7 @@ export function errorBox(title: string, message: string): string {
  * Create a warning box with title and message
  */
 export function warningBox(title: string, message: string): string {
-  const content = `${getColor(chalk.yellow.bold)(`\u26A0\uFE0F  ${title}`)}\n\n${message}`;
+  const content = `${getColor(chalk.yellow.bold)(title)}\n\n${message}`;
   return box(content, "warning");
 }
 
@@ -425,8 +425,8 @@ export function warningBox(title: string, message: string): string {
  * Create a header box
  */
 export function headerBox(title: string): string {
-  const content = getColor(chalk.bold)(title);
-  return box(content, "header");
+  if (config.jsonMode) return "";
+  return getColor(chalk.bold)(title);
 }
 
 // ============================================================================
@@ -581,15 +581,15 @@ export function statusIcon(type: StatusType): string {
 
   switch (type) {
     case "success":
-      return chalk.green("\u2713");
+      return chalk.green("\u2714");
     case "error":
-      return chalk.red("\u2717");
+      return chalk.red("\u2716");
     case "warning":
-      return chalk.yellow("\u26A0");
+      return chalk.yellow("!");
     case "pending":
-      return chalk.gray("\u25CB");
+      return chalk.gray("\u00B7");
     case "running":
-      return chalk.cyan("\u25D0");
+      return chalk.cyan("\u25B8");
   }
 }
 
@@ -611,7 +611,7 @@ export function printStatus(type: StatusType, message: string): void {
 export function divider(width = 50): string {
   if (config.jsonMode) return "";
 
-  const char = isLegacyWindows() ? "-" : "\u2501";
+  const char = isLegacyWindows() ? "-" : "\u2500";
   const line = char.repeat(width);
   return config.noColor ? line : chalk.gray(line);
 }
@@ -647,15 +647,15 @@ export function phaseProgress(phases: PhaseStatus[]): string {
   const icons = phases.map((phase) => {
     switch (phase.status) {
       case "success":
-        return config.noColor ? "[OK]" : chalk.green("\u25CF");
+        return config.noColor ? "[OK]" : chalk.green("\u2714");
       case "failure":
-        return config.noColor ? "[X]" : chalk.red("\u2717");
+        return config.noColor ? "[X]" : chalk.red("\u2716");
       case "running":
-        return config.noColor ? "[..]" : chalk.cyan("\u25D0");
+        return config.noColor ? "[..]" : chalk.cyan("\u25B8");
       case "skipped":
         return config.noColor ? "[-]" : chalk.gray("-");
       default:
-        return config.noColor ? "[ ]" : chalk.gray("\u25CB");
+        return config.noColor ? "[ ]" : chalk.gray("\u00B7");
     }
   });
 

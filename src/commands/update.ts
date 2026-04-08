@@ -36,10 +36,10 @@ interface FileChange {
 }
 
 export async function updateCommand(options: UpdateOptions): Promise<void> {
-  console.log(chalk.blue("\n🔄 Checking for updates...\n"));
+  console.log(chalk.blue("\nChecking for updates...\n"));
   console.log(
     chalk.yellow(
-      "📢 Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
+      "Note: For seamless auto-updates, install sequant as a Claude Code plugin:\n" +
         "   /plugin install sequant@claude-plugin-directory\n" +
         "   Plugin users get auto-updates without running update manually.\n",
     ),
@@ -67,7 +67,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   if (packageNum < manifestNum) {
     console.log(
       chalk.yellow(
-        `⚠️  Warning: You're running an older CLI version (${packageVersion}) than installed (${manifest.version}).`,
+        `!  Warning: You're running an older CLI version (${packageVersion}) than installed (${manifest.version}).`,
       ),
     );
     console.log(chalk.yellow(`   Run with: npx sequant@latest update\n`));
@@ -88,11 +88,11 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       tokens.PM_RUN = pmConfig.run;
       config.tokens = tokens;
       await saveConfig(config);
-      console.log(chalk.blue(`📝 Added PM_RUN token: ${tokens.PM_RUN}\n`));
+      console.log(chalk.blue(`Added PM_RUN token: ${tokens.PM_RUN}\n`));
     }
   } else {
     // First-time config setup
-    console.log(chalk.blue("📝 Setting up configuration (one-time setup)\n"));
+    console.log(chalk.blue("Setting up configuration (one-time setup)\n"));
 
     const stackConfig = getStackConfig(manifest.stack);
     const defaultDevUrl = stackConfig.devUrl;
@@ -103,7 +103,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
     if (options.force) {
       tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
-      console.log(chalk.blue(`🌐 Using default dev URL: ${defaultDevUrl}`));
+      console.log(chalk.blue(`Using default dev URL: ${defaultDevUrl}`));
     } else {
       const { inputDevUrl } = await inquirer.prompt([
         {
@@ -123,7 +123,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       initialized: manifest.installedAt,
     };
     await saveConfig(config);
-    console.log(chalk.green("✅ Configuration saved\n"));
+    console.log(chalk.green("✔ Configuration saved\n"));
   }
 
   // Get list of template files
@@ -181,13 +181,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   const localOverrides = changes.filter((c) => c.status === "local-override");
 
   console.log(chalk.bold("Summary:"));
-  console.log(chalk.green(`  ✨ New files: ${newFiles.length}`));
-  console.log(chalk.yellow(`  📝 Modified: ${modifiedFiles.length}`));
+  console.log(chalk.green(`  New files: ${newFiles.length}`));
+  console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
   console.log(chalk.gray(`  ✓ Unchanged: ${unchangedFiles.length}`));
-  console.log(chalk.blue(`  🔒 Local overrides: ${localOverrides.length}`));
+  console.log(chalk.blue(`  Local overrides: ${localOverrides.length}`));
 
   if (newFiles.length === 0 && modifiedFiles.length === 0) {
-    console.log(chalk.green("\n✅ Everything is up to date!"));
+    console.log(chalk.green("\n✔ Everything is up to date!"));
     return;
   }
 
@@ -231,7 +231,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   }
 
   // Apply updates
-  console.log(chalk.blue("\n📥 Applying updates..."));
+  console.log(chalk.blue("\nApplying updates..."));
   let updated = 0;
 
   // Build complete variables for template processing
@@ -255,7 +255,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   // Update manifest
   await updateManifest();
 
-  console.log(chalk.green(`\n✅ Updated ${updated} files`));
+  console.log(chalk.green(`\n✔ Updated ${updated} files`));
 
   // Check if package.json was updated and run install
   const packageJsonUpdated = [...newFiles, ...modifiedFiles].some(
@@ -267,7 +267,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
     const pmConfig = PM_CONFIG[pm];
     console.log(
-      chalk.blue(`\n📦 package.json updated, running ${pmConfig.install}...`),
+      chalk.blue(`\npackage.json updated, running ${pmConfig.install}...`),
     );
     const [cmd, ...args] = pmConfig.install.split(" ");
     const result = spawnSync(cmd, args, {
@@ -275,11 +275,9 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       shell: true,
     });
     if (result.status === 0) {
-      console.log(chalk.green("✅ Dependencies installed"));
+      console.log(chalk.green("✔ Dependencies installed"));
     } else {
-      console.log(
-        chalk.yellow(`⚠️  ${pmConfig.install} failed - run manually`),
-      );
+      console.log(chalk.yellow(`!  ${pmConfig.install} failed - run manually`));
     }
   }
 }
