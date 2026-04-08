@@ -93,7 +93,7 @@ export async function rebuildStateFromLogs(
 
         if (!log.success) {
           if (options.verbose) {
-            console.log(`⚠️  Invalid log format: ${file}`);
+            console.log(`!  Invalid log format: ${file}`);
           }
           continue;
         }
@@ -161,7 +161,7 @@ export async function rebuildStateFromLogs(
         }
       } catch (err) {
         if (options.verbose) {
-          console.log(`⚠️  Error reading ${file}: ${err}`);
+          console.log(`!  Error reading ${file}: ${err}`);
         }
       }
     }

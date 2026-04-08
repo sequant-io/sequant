@@ -226,7 +226,7 @@ export class StateManager {
       }
       if (pruned.length > 0 && this.verbose) {
         console.log(
-          `📊 Pruned ${pruned.length} expired issue(s): ${pruned.map((k) => `#${k}`).join(", ")}`,
+          `State: Pruned ${pruned.length} expired issue(s): ${pruned.map((k) => `#${k}`).join(", ")}`,
         );
       }
     } catch {
@@ -343,7 +343,7 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Initialized issue #${issueNumber}: ${title}`);
+      console.log(`State: Initialized issue #${issueNumber}: ${title}`);
     }
   }
 
@@ -405,7 +405,9 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Phase ${phase} → ${status} for issue #${issueNumber}`);
+      console.log(
+        `State: Phase ${phase} → ${status} for issue #${issueNumber}`,
+      );
     }
   }
 
@@ -436,7 +438,7 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Issue #${issueNumber} status → ${status}`);
+      console.log(`State: Issue #${issueNumber} status → ${status}`);
     }
   }
 
@@ -459,7 +461,7 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 PR #${pr.number} linked to issue #${issueNumber}`);
+      console.log(`State: PR #${pr.number} linked to issue #${issueNumber}`);
     }
   }
 
@@ -487,7 +489,9 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Worktree updated for issue #${issueNumber}: ${worktree}`);
+      console.log(
+        `State: Worktree updated for issue #${issueNumber}: ${worktree}`,
+      );
     }
   }
 
@@ -534,7 +538,9 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Loop iteration ${iteration} for issue #${issueNumber}`);
+      console.log(
+        `State: Loop iteration ${iteration} for issue #${issueNumber}`,
+      );
     }
   }
 
@@ -555,7 +561,7 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 Removed issue #${issueNumber} from state`);
+      console.log(`State: Removed issue #${issueNumber} from state`);
     }
   }
 
@@ -586,7 +592,7 @@ export class StateManager {
 
     if (this.verbose) {
       console.log(
-        `📊 AC updated for issue #${issueNumber}: ${acceptanceCriteria.items.length} items`,
+        `State: AC updated for issue #${issueNumber}: ${acceptanceCriteria.items.length} items`,
       );
     }
   }
@@ -653,7 +659,7 @@ export class StateManager {
     });
 
     if (this.verbose) {
-      console.log(`📊 AC ${acId} → ${status} for issue #${issueNumber}`);
+      console.log(`State: AC ${acId} → ${status} for issue #${issueNumber}`);
     }
   }
 
@@ -684,7 +690,7 @@ export class StateManager {
 
     if (this.verbose) {
       console.log(
-        `📊 Scope assessment updated for issue #${issueNumber}: ${scopeAssessment.verdict}`,
+        `State: Scope assessment updated for issue #${issueNumber}: ${scopeAssessment.verdict}`,
       );
     }
   }

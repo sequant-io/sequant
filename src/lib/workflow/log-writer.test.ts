@@ -180,7 +180,7 @@ describe("LogWriter", () => {
       writer.startIssue(123, "Test Issue", []);
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Started logging issue #123"),
+        expect.stringContaining("Log started: issue #123"),
       );
       consoleSpy.mockRestore();
     });
@@ -267,7 +267,7 @@ describe("LogWriter", () => {
       writer.logPhase(mockPhaseLog);
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Logged phase: spec (success)"),
+        expect.stringContaining("Log phase: spec (success)"),
       );
       consoleSpy.mockRestore();
     });

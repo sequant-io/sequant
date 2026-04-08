@@ -88,7 +88,7 @@ export class LogWriter {
     }
 
     if (this.verbose && this.runLog) {
-      console.log(`📝 Log initialized: ${this.runLog.runId}`);
+      console.log(`Log initialized: ${this.runLog.runId}`);
     }
   }
 
@@ -118,7 +118,7 @@ export class LogWriter {
     this.currentIssue = issueData;
 
     if (this.verbose) {
-      console.log(`📝 Started logging issue #${issueNumber}`);
+      console.log(`Log started: issue #${issueNumber}`);
     }
   }
 
@@ -148,7 +148,7 @@ export class LogWriter {
 
     if (this.verbose) {
       console.log(
-        `📝 Logged phase: ${phaseLog.phase} (${phaseLog.status}) - ${phaseLog.durationSeconds.toFixed(1)}s`,
+        `Log phase: ${phaseLog.phase} (${phaseLog.status}) - ${phaseLog.durationSeconds.toFixed(1)}s`,
       );
     }
   }
@@ -222,7 +222,7 @@ export class LogWriter {
 
     if (this.verbose) {
       console.log(
-        `📝 Completed issue #${issueLog.issueNumber} (${issueLog.status})`,
+        `Log complete: issue #${issueLog.issueNumber} (${issueLog.status})`,
       );
     }
   }
@@ -269,7 +269,7 @@ export class LogWriter {
     }
 
     if (this.verbose) {
-      console.log(`📝 Log written: ${projectPath}`);
+      console.log(`Log written: ${projectPath}`);
     }
 
     // Auto-rotate if needed
@@ -277,7 +277,7 @@ export class LogWriter {
       const result = rotateIfNeeded(this.logPath, this.rotation);
       if (result.rotated && this.verbose) {
         console.log(
-          `📝 Rotated ${result.deletedCount} old log(s), reclaimed ${(result.bytesReclaimed / 1024).toFixed(1)} KB`,
+          `Log rotated: ${result.deletedCount} old log(s), reclaimed ${(result.bytesReclaimed / 1024).toFixed(1)} KB`,
         );
       }
     }
