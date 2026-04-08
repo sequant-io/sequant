@@ -1,0 +1,9 @@
+yes
+
+---
+
+what issues should I batch first?
+
+---
+
+can you create a diagram that shows our ideal architecture design?
