@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-07
+
 ### Added
 
 - **Worktree isolation for parallel agent groups** — each parallel `/exec` agent gets its own sub-worktree, eliminating file conflicts structurally (#485)
@@ -37,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upgrade TypeScript from 5.x to 6.0, ESLint from 9.x to 10.x, and typescript-eslint to 8.58.0 (#490)
 - Tighten Node.js engine requirement from `>=20.0.0` to `>=20.19.0` (per ESLint 10 requirements)
 - Fix 10 lint errors caught by new ESLint 10 rules (`no-useless-assignment`, `preserve-caught-error`)
+
+### Fixed
+
+- Resolve afterEach race condition in MCP integration tests (#492, #493)
+- Auto-sync marketplace.json version from package.json during releases
+- Log stderr from `gh issue create` for better error diagnostics
 
 ## [2.0.1] - 2026-04-06
 
