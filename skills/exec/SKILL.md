@@ -1837,40 +1837,20 @@ When in doubt, choose:
 
 The goal is to satisfy AC with the smallest, safest change possible.
 
-### 5. Adversarial Self-Evaluation (REQUIRED)
+### 5. Pre-PR Confidence Check (REQUIRED)
 
-**Before outputting your final summary**, you MUST complete this adversarial self-evaluation to catch issues that automated checks miss.
-
-**Why this matters:** Sessions show that honest self-questioning consistently catches real issues:
-- Tests that pass but don't cover the actual changes
-- Features that build but don't work as expected
-- AC items marked "done" but with weak implementation
-
-**Answer these questions honestly:**
-1. "Did anything not work as expected during implementation?"
-2. "If this feature broke tomorrow, would the current tests catch it?"
-3. "What's the weakest part of this implementation?"
-4. "Am I reporting success metrics without honest self-evaluation?"
-5. "For each changed source file, does a corresponding test file exist? If not, why is that acceptable?"
-6. "Did I run `npm run lint` and fix all errors, or am I hoping CI will pass?"
+**Before creating a PR**, state your confidence in 2-3 sentences.
 
 **Include this section in your output:**
 
 ```markdown
-### Self-Evaluation
+### Pre-PR Confidence Check
 
-- **Worked as expected:** [Yes/No - if No, explain what didn't work]
-- **Test coverage confidence:** [High/Medium/Low - explain why]
-- **Weakest part:** [Identify the weakest aspect of the implementation]
-- **Honest assessment:** [Any concerns or caveats?]
+- **Weakest part:** [What's the most fragile aspect of this implementation?]
+- **Coverage gaps:** [Which changed files lack corresponding tests, and why is that acceptable?]
 ```
 
-**If any answer reveals concerns:**
-- Address the issues before proceeding
-- Re-run relevant checks (`npm test`, `npm run build`)
-- Update the self-evaluation after fixes
-
-**Do NOT skip this self-evaluation.** Honest reflection catches issues that automated checks miss.
+**If either field reveals concerns**, address them before creating the PR. Re-run `npm test` and `npm run build` after fixes.
 
 ---
 
@@ -1979,7 +1959,7 @@ npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
 
 **Before responding, verify your output includes ALL of these:**
 
-- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
+- [ ] **Pre-PR Confidence Check** - Weakest part and coverage gaps stated
 - [ ] **AC Progress Summary** - Which AC items are satisfied, partially met, or blocked
 - [ ] **Files Changed** - List of key files modified
 - [ ] **Test/Build/Lint Results** - Output from `npm run build`, `npm run lint`, and `npm test`
