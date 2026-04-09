@@ -1359,39 +1359,20 @@ Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
 
 See [testing-requirements.md](references/testing-requirements.md) for edge case checklists.
 
-### 5. Adversarial Self-Evaluation (REQUIRED)
+### 5. Risk Assessment (REQUIRED unless SMALL_DIFF)
 
-**Before issuing your verdict**, you MUST complete this adversarial self-evaluation to catch issues that automated quality checks miss.
-
-**Why this matters:** QA automation catches type issues, deleted tests, and scope creep - but misses:
-- Features that don't actually work as expected
-- Tests that pass but don't test the right things
-- Edge cases only apparent when actually using the feature
-
-**Answer these questions honestly:**
-1. "Did the implementation actually work when I reviewed it, or am I assuming it works?"
-2. "Do the tests actually test the feature's primary purpose, or just pass?"
-3. "What's the most likely way this feature could break in production?"
-4. "Am I giving a positive verdict because the code looks clean, or because I verified it works?"
-5. "Are there 'design choices' I'm excusing that are actually bad practices?" (e.g., no version pinning, leaking secrets to unnecessary env vars, non-portable shell in example code, no input validation). Would I accept this in a code review from a junior developer?
+**Before issuing your verdict**, state the implementation risks in 2-3 sentences.
 
 **Include this section in your output:**
 
 ```markdown
-### Self-Evaluation
+### Risk Assessment
 
-- **Verified working:** [Yes/No - did you actually verify the feature works, or assume it does?]
-- **Test efficacy:** [High/Medium/Low - do tests catch the feature breaking?]
-- **Likely failure mode:** [What would most likely break this in production?]
-- **Verdict confidence:** [High/Medium/Low - explain any uncertainty]
+- **Likely failure mode:** [How would this break in production? Be specific.]
+- **Not tested:** [What gaps exist in test coverage for these changes?]
 ```
 
-**If any answer reveals concerns:**
-- Factor the concerns into your verdict
-- If significant, change verdict to `AC_NOT_MET` or `AC_MET_BUT_NOT_A_PLUS`
-- Document the concerns in the QA comment
-
-**Do NOT skip this self-evaluation.** Honest reflection catches issues that code review cannot.
+**If either field reveals significant concerns**, factor them into your verdict. A serious failure mode with no test coverage should downgrade to `AC_MET_BUT_NOT_A_PLUS` or `AC_NOT_MET`.
 
 #### Skill Change Review (Conditional)
 
@@ -1402,7 +1383,7 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs || true)
 ```
 
-**If skills_changed > 0, add these adversarial prompts:**
+**If skills_changed > 0, add these verification prompts:**
 
 | Prompt | Why It Matters |
 |--------|----------------|
@@ -1985,14 +1966,14 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Code Review Findings** - Strengths, issues, suggestions
 - [ ] **Test Coverage Analysis** - Changed files with/without tests, critical paths flagged
 - [ ] **Anti-Pattern Detection** - Code patterns check (lightweight)
-- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included
+- [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 
 ### Standard QA (Implementation Exists, `SMALL_DIFF=false`)
 
-- [ ] **Self-Evaluation Completed** - Adversarial self-evaluation section included in output
+- [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated in output
 - [ ] **AC Coverage** - Each AC item marked as MET, PARTIALLY_MET, NOT_MET, PENDING, or N/A
 - [ ] **Quality Plan Verification** - Included if quality plan exists (or marked N/A if no quality plan)
 - [ ] **CI Status** - Included if PR exists (or marked "No PR" / "No CI configured")
@@ -2008,7 +1989,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
-- [ ] **Skill Change Review** - Skill-specific adversarial prompts included if skills changed
+- [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
@@ -2097,12 +2078,10 @@ When the size gate triggers simple fix mode, use this shorter template:
 
 ---
 
-### Self-Evaluation
+### Risk Assessment
 
-- **Verified working:** [Yes/No]
-- **Test efficacy:** [High/Medium/Low]
-- **Likely failure mode:** [description]
-- **Verdict confidence:** [High/Medium/Low]
+- **Likely failure mode:** [How would this break in production?]
+- **Not tested:** [What gaps exist in test coverage?]
 
 ---
 
@@ -2387,12 +2366,10 @@ You MUST include these sections:
 
 ---
 
-### Self-Evaluation
+### Risk Assessment
 
-- **Verified working:** [Yes/No - did you actually verify the feature works?]
-- **Test efficacy:** [High/Medium/Low - do tests catch the feature breaking?]
-- **Likely failure mode:** [What would most likely break this in production?]
-- **Verdict confidence:** [High/Medium/Low - explain any uncertainty]
+- **Likely failure mode:** [How would this break in production? Be specific.]
+- **Not tested:** [What gaps exist in test coverage for these changes?]
 
 ---
 

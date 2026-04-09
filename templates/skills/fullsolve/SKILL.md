@@ -22,14 +22,18 @@ allowed-tools:
   - Bash(gh issue comment:*)
   - Bash(gh issue edit:*)
   - Bash(gh pr create:*)
+  - Bash(gh pr list:*)
+  - Bash(gh pr merge:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
   - Bash(git status:*)
+  - Bash(git log:*)
   - Bash(git add:*)
   - Bash(git commit:*)
   - Bash(git push:*)
   - Bash(git worktree:*)
+  - Bash(./scripts/dev/*:*)
 ---
 
 # Full Solve Command
@@ -39,6 +43,26 @@ You are the "Full Solve Agent" for the current repository.
 ## Purpose
 
 When invoked as `/fullsolve <issue-number>`, execute the complete issue resolution workflow with integrated quality loops. This command orchestrates all phases and automatically iterates until quality gates pass.
+
+## CRITICAL: Auto-Progression Between Phases
+
+**DO NOT wait for user confirmation between phases.** This is an autonomous workflow.
+
+After each phase completes successfully, **immediately proceed** to the next phase:
+1. `/spec` completes → **immediately** invoke `/exec`
+2. `/exec` completes → **immediately** invoke `/test` (if UI) or `/qa`
+3. `/test` completes → **immediately** invoke `/qa`
+4. `/qa` completes → **immediately** create PR
+
+**The user invoked `/fullsolve` expecting end-to-end automation.** Only stop for:
+- Unrecoverable errors (after retry attempts exhausted)
+- Final summary after PR creation
+- Explicit user interruption
+
+```
+WRONG: "Spec complete. Ready for exec phase." [waits]
+RIGHT: "Spec complete. Proceeding to exec..." [invokes /exec immediately]
+```
 
 ## Workflow Overview
 
@@ -88,7 +112,58 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 /fullsolve 218                    # Standard full solve
 /fullsolve 218 --skip-test        # Skip testing phase (backend issues)
 /fullsolve 218 --max-iterations 5 # Override max fix iterations
+/fullsolve 218 --parallel         # Force parallel agent execution (faster, higher token usage)
+/fullsolve 218 --sequential       # Force sequential agent execution (slower, lower token usage)
 ```
+
+## Agent Execution Mode
+
+When spawning sub-agents for quality checks, determine the execution mode:
+
+1. **Check for CLI flag override:**
+   - `--parallel` → Run sub-agents in parallel
+   - `--sequential` → Run sub-agents one at a time
+
+2. **If no flag, read project settings:**
+   Use the Read tool to check project settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Parse JSON and extract agents.parallel (default: false)
+   ```
+
+3. **Default:** Sequential (cost-optimized)
+
+| Mode | Token Usage | Speed | Best For |
+|------|-------------|-------|----------|
+| Sequential | 1x (baseline) | Slower | Limited API plans, single issues |
+| Parallel | ~2-3x | ~50% faster | Unlimited plans, batch operations |
+
+**Pass execution mode to child skills:** When invoking `/qa` or other skills that spawn agents, pass the `--parallel` or `--sequential` flag to maintain consistency.
+
+## Orchestration Context
+
+This skill acts as an **orchestrator** and sets environment variables for child skills to optimize their behavior:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | Identifies the orchestrator | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase being executed | `spec`, `exec`, `test`, `qa`, `loop` |
+| `SEQUANT_ISSUE` | Issue number being processed | `218` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/218-...` |
+
+**Benefits of orchestration context:**
+
+1. **Faster execution** - Child skills skip redundant pre-flight checks
+2. **Cleaner GitHub comments** - Only orchestrator posts progress updates
+3. **Better coordination** - Skills can trust worktree and issue context
+4. **Reduced API calls** - Issue fetch happens once, not per-phase
+
+**Child skills detect orchestration via `SEQUANT_ORCHESTRATOR` and adjust behavior:**
+- `/spec`: Runs normally (first phase, no prior context)
+- `/exec`: Skips worktree creation, uses provided path
+- `/test`: Skips issue fetch, trusts orchestrator context
+- `/qa`: Skips pre-flight sync, defers GitHub updates
+- `/loop`: Uses provided worktree, defers GitHub updates
 
 ## Phase Detection (Smart Resumption)
 
@@ -171,142 +246,153 @@ Before creating any files, check if they already exist:
 
 ## Phase 1: Planning (SPEC)
 
-Execute the planning phase inline (not as separate command):
+**Invoke the `/spec` skill** to plan implementation and extract acceptance criteria.
 
-### 1.1 Fetch Issue Context
+### 1.1 Invoke Spec Skill
 
-```bash
-gh issue view <issue-number> --json title,body,labels
-gh issue view <issue-number> --comments
+Use the `Skill` tool to invoke `/spec`:
+
+```
+Skill(skill: "spec", args: "<issue-number>")
 ```
 
-### 1.2 Extract Acceptance Criteria
+The `/spec` skill will:
+- Fetch issue context from GitHub
+- Extract acceptance criteria (AC-1, AC-2, etc.)
+- Create implementation plan (3-7 steps)
+- Post plan comment to the issue
+- Create feature worktree
 
-Parse issue body and comments to build AC checklist:
-- AC-1, AC-2, etc.
-- Identify blockers, dependencies
-- Note open questions
+### 1.2 Capture Spec Output
 
-### 1.3 Create Implementation Plan
+After `/spec` completes, extract and store:
+- **AC Checklist:** List of acceptance criteria for tracking
+- **Worktree Path:** Location for subsequent phases
+- **Recommended Phases:** Whether `/test` is needed (UI features)
 
-- Break down into 3-7 implementation steps
-- Identify complexity and risks
-- Post plan comment to issue
+```markdown
+## Spec Output Captured
 
-**Use Sequential Thinking for Complex Planning:**
-
-If the issue involves architectural decisions or multiple valid approaches, use Sequential Thinking MCP:
-
-```javascript
-// For complex issues with multiple implementation paths
-mcp__sequential-thinking__sequentialthinking({
-  thought: "Analyzing implementation approaches for [feature]. Options: 1) [Approach A] - pros/cons. 2) [Approach B] - pros/cons. 3) [Approach C] - pros/cons...",
-  thoughtNumber: 1,
-  totalThoughts: 4,
-  nextThoughtNeeded: true
-})
+**Issue:** #<N>
+**Worktree:** ../worktrees/feature/<issue-number>-*/
+**AC Count:** <N> items
+**Needs Testing:** Yes/No (based on labels)
 ```
 
-**When to use Sequential Thinking in planning:**
-- Issue labeled `complex`, `refactor`, or `architecture`
-- 3+ valid implementation approaches exist
-- Unclear trade-offs between options
-- Previous implementation attempt failed
+### 1.3 Handle Spec Failures
 
-**Fallback:** If Sequential Thinking unavailable, document pros/cons explicitly in the plan comment.
+If `/spec` fails:
+- Check if issue exists and is readable
+- Verify GitHub CLI authentication
+- Report failure and exit workflow
 
-### 1.4 Create Feature Worktree
+```markdown
+## Spec Failed
 
-```bash
-./scripts/dev/new-feature.sh <issue-number>
+**Error:** [error message]
+**Action Required:** [what the user needs to do]
+
+Workflow halted. Fix the issue and re-run `/fullsolve <issue-number>`.
 ```
 
 **State after Phase 1:**
 - AC checklist defined
-- Implementation plan created
+- Implementation plan created (and posted to GitHub)
 - Feature worktree ready
+
+**→ IMMEDIATELY proceed to Phase 2 (do not wait for user input)**
 
 ## Phase 2: Implementation (EXEC)
 
-### 2.1 Navigate to Worktree
+**Invoke the `/exec` skill** to implement all acceptance criteria.
 
-```bash
-cd ../worktrees/feature/<issue-number>-*/
+### 2.1 Invoke Exec Skill
+
+Use the `Skill` tool to invoke `/exec`:
+
+```
+Skill(skill: "exec", args: "<issue-number>")
 ```
 
-### 2.2 MCP Availability Check (Optional Enhancement)
+The `/exec` skill will:
+- Navigate to the feature worktree
+- Implement each AC item
+- Run tests and build after changes
+- Verify quality gates pass
 
-Before implementation, check MCP tool availability for enhanced workflow:
+### 2.2 Pass Orchestration Context
+
+Set environment variables before invoking `/exec` so it can optimize its behavior:
+
+```bash
+export SEQUANT_ORCHESTRATOR=fullsolve
+export SEQUANT_PHASE=exec
+export SEQUANT_ISSUE=<issue-number>
+export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+```
+
+When `/exec` detects `SEQUANT_ORCHESTRATOR`, it:
+- Skips worktree creation (already done by `/spec`)
+- Uses the provided worktree path
+- Defers GitHub comment updates to orchestrator
+
+### 2.3 Handle Exec Failures
+
+If `/exec` fails (tests or build):
+
+**Attempt fix (max 3 iterations):**
+```
+exec_iteration = 0
+while exec_iteration < MAX_EXEC_ITERATIONS:
+    result = Skill(skill: "exec", args: "<issue-number>")
+
+    if result.success:
+        break
+
+    # Parse and log failure
+    log_failure(result.error)
+    exec_iteration += 1
+```
+
+**If all iterations exhausted:**
+```markdown
+## Exec Failed
+
+**Iterations:** 3/3 exhausted
+**Last Error:** [error message]
+
+Workflow halted. Manual intervention required.
+```
+
+### 2.4 Capture Exec Output
+
+After successful `/exec`:
+- Verify tests passed
+- Verify build succeeded
+- Record files changed
 
 ```markdown
-**Available MCPs:**
-- [ ] Context7 (`mcp__context7__*`) - For external library documentation
-- [ ] Sequential Thinking (`mcp__sequential-thinking__*`) - For complex decisions
-- [ ] Chrome DevTools (`mcp__chrome-devtools__*`) - For browser testing in Phase 3
+## Exec Complete
+
+**Tests:** ✅ All passing
+**Build:** ✅ Succeeded
+**Files Changed:** <N>
 ```
-
-**If MCPs unavailable:** Continue with standard implementation - fallback strategies documented in `/exec` skill.
-
-### 2.3 Implement Each AC Item
-
-For each AC item:
-1. Understand requirement
-2. Find similar patterns in codebase (use Glob/Grep first)
-3. **If using unfamiliar library:** Use Context7 for documentation lookup
-4. **If facing complex decision:** Use Sequential Thinking to analyze approaches
-5. Implement minimal solution
-6. Run tests and build
-7. Mark AC as complete
-
-**MCP Usage in Implementation Loop:**
-
-```
-For each AC item:
-│
-├─ Need external library API? → Use Context7 (if available)
-│   └─ Fallback: WebSearch for documentation
-│
-├─ Multiple valid approaches? → Use Sequential Thinking (if available)
-│   └─ Fallback: Explicit pros/cons analysis in response
-│
-└─ Standard implementation → Use Glob/Grep for patterns
-```
-
-### 2.4 Quality Gates
-
-After implementation:
-- `npm test` - All tests pass
-- `npm run build` - Build succeeds
-- `git diff` - Changes are proportional
-
-### 2.5 Final Verification (CRITICAL)
-
-**After ALL implementation changes are complete**, run verification one more time:
-
-```bash
-# Run full test suite AFTER all changes
-npm test
-
-# Verify build still works
-npm run build
-```
-
-**Why this matters:** Tests run during implementation may pass before file conversions or final changes are made. Always verify after the LAST change, not just after each intermediate step.
-
-**If tests fail at this stage:**
-1. Fix the failing tests (update paths, content checks, etc.)
-2. Re-run `npm test` until all pass
-3. Do NOT proceed to Phase 3 until tests pass
 
 **State after Phase 2:**
 - All AC items implemented
 - Tests passing (verified AFTER final changes)
 - Build succeeding
 
+**→ IMMEDIATELY proceed to Phase 3 or 4 (do not wait for user input)**
+- If UI labels (`ui`, `frontend`, `admin`) present AND no `no-browser-test` label → invoke `/test`
+- If `no-browser-test` label present → skip to `/qa` (explicit opt-out)
+- Otherwise → skip to `/qa`
+
 ## Phase 3: Testing (TEST)
 
 **Skip if:**
-- Issue doesn't have `admin`, `ui`, or `frontend` labels, OR
+- Issue doesn't have `admin`, `ui`, or `frontend` labels (determined from `/spec` output), OR
 - Issue has `no-browser-test` label (explicit opt-out, overrides UI labels)
 
 ### Browser Testing Label Reference
@@ -317,105 +403,164 @@ npm run build
 | `no-browser-test` | Always skips `/test` phase (explicit opt-out) |
 | Neither | Auto-detection in `/spec` may suggest adding `ui` label |
 
-### 3.1 Start Dev Server
+**Invoke the `/test` skill** for browser-based UI testing.
 
-```bash
-npm run dev &
+### 3.1 Invoke Test Skill
+
+Use the `Skill` tool to invoke `/test`:
+
+```
+Skill(skill: "test", args: "<issue-number>")
 ```
 
-### 3.2 Execute Test Cases
-
-Using Chrome DevTools MCP:
-- Navigate to feature
+The `/test` skill will:
+- Start development server
+- Navigate to feature in browser (Chrome DevTools MCP)
 - Execute each test case
-- Record PASS/FAIL/BLOCKED
+- Record PASS/FAIL/BLOCKED results
+
+### 3.2 Pass Orchestration Context
+
+```bash
+export SEQUANT_ORCHESTRATOR=fullsolve
+export SEQUANT_PHASE=test
+export SEQUANT_ISSUE=<issue-number>
+export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+```
+
+When `/test` detects `SEQUANT_ORCHESTRATOR`, it:
+- Skips issue fetch (trusts orchestrator context)
+- Uses provided AC checklist
+- Defers GitHub updates to orchestrator
 
 ### 3.3 Test Loop (Max 3 iterations)
 
+If tests fail, invoke `/loop` to fix and re-test:
+
 ```
 test_iteration = 0
-while test_iteration < 3:
-    run_tests()
+while test_iteration < MAX_TEST_ITERATIONS:
+    result = Skill(skill: "test", args: "<issue-number>")
 
-    if all_tests_pass:
+    if result.all_tests_pass:
         break
 
-    # Parse failures
-    failed_tests = parse_failed_tests()
-
-    # Fix each failure
-    for test in failed_tests:
-        understand_failure()
-        implement_fix()
-        verify_fix()
-
+    # Use /loop to fix failures
+    Skill(skill: "loop", args: "<issue-number> --phase test")
     test_iteration += 1
+```
+
+### 3.4 Handle Test Exhaustion
+
+If max iterations reached:
+
+```markdown
+## Test Loop Exhausted
+
+**Iterations:** 3/3
+**Remaining Failures:** [list]
+
+Proceeding to QA phase. Failures will be documented.
 ```
 
 **State after Phase 3:**
 - All tests passing (or max iterations reached)
 - Bugs documented and fixed
 
+**→ IMMEDIATELY proceed to Phase 4 (do not wait for user input)**
+
 ## Phase 4: Quality Assurance (QA)
 
-### 4.1 Automated Quality Checks
+**Invoke the `/qa` skill** for code review and AC validation.
 
-```bash
-# Type safety
-git diff main...HEAD | grep -E ":\s*any[,)]|as any" || true
+### 4.1 Invoke QA Skill
 
-# Deleted tests
-git diff main...HEAD --diff-filter=D --name-only | grep -E "\.test\." || true
+Use the `Skill` tool to invoke `/qa`:
 
-# Scope check
-git diff main...HEAD --name-only | wc -l
-
-# Size check
-git diff main...HEAD --numstat
+```
+Skill(skill: "qa", args: "<issue-number>")
 ```
 
-### 4.2 AC Coverage Review
+The `/qa` skill will:
+- Run automated quality checks (type safety, deleted tests, scope)
+- Review AC coverage (MET/PARTIALLY_MET/NOT_MET/PENDING)
+- Generate review comment draft
+- Return verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION,
+  or AC_NOT_MET
 
-For each AC item, mark:
-- `MET` - Fully implemented
-- `PARTIALLY_MET` - Needs more work
-- `NOT_MET` - Not implemented
+### 4.2 Pass Orchestration Context
+
+```bash
+export SEQUANT_ORCHESTRATOR=fullsolve
+export SEQUANT_PHASE=qa
+export SEQUANT_ISSUE=<issue-number>
+export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+```
+
+When `/qa` detects `SEQUANT_ORCHESTRATOR`, it:
+- Skips pre-flight sync
+- Defers GitHub comment posting to orchestrator
+- Returns structured verdict for orchestrator to process
 
 ### 4.3 QA Loop (Max 2 iterations)
 
+If verdict is not `READY_FOR_MERGE`, invoke `/loop` to fix and re-run QA:
+
 ```
 qa_iteration = 0
-while qa_iteration < 2:
-    run_qa_checks()
+while qa_iteration < MAX_QA_ITERATIONS:
+    result = Skill(skill: "qa", args: "<issue-number>")
 
-    if verdict == "READY_FOR_MERGE":
+    if result.verdict == "READY_FOR_MERGE":
         break
 
-    if verdict == "AC_MET_BUT_NOT_A_PLUS":
+    if result.verdict == "AC_MET_BUT_NOT_A_PLUS":
         # Good enough, proceed with notes
         break
 
-    if verdict == "NEEDS_VERIFICATION":
+    if result.verdict == "NEEDS_VERIFICATION":
         # ACs are met but pending external verification
         # Proceed to PR - verification can happen post-PR
         break
 
-    # Parse issues (AC_NOT_MET)
-    issues = parse_qa_issues()
-
-    # Fix each issue
-    for issue in issues:
-        understand_issue()
-        implement_fix()
-        verify_fix()
-
+    # Use /loop to fix issues (AC_NOT_MET)
+    Skill(skill: "loop", args: "<issue-number> --phase qa")
     qa_iteration += 1
 ```
 
+### 4.4 Handle QA Exhaustion
+
+If max iterations reached with `AC_NOT_MET`:
+
+```markdown
+## QA Loop Exhausted
+
+**Iterations:** 2/2
+**Verdict:** AC_NOT_MET
+**Remaining Issues:** [list]
+
+Creating PR with notes for human review.
+```
+
 **State after Phase 4:**
-- AC fully met
+- AC fully met (or documented as partial)
 - Code quality validated
-- Ready for merge
+- Ready for merge (or flagged for human review)
+
+**→ IMMEDIATELY proceed to Phase 5 after self-evaluation (do not wait for user input)**
+
+### 4.5 Risk Assessment
+
+Risk assessment is performed during the QA phase — see QA output above. If QA was skipped or incomplete, state risks here using the same format:
+
+```markdown
+### Risk Assessment
+
+- **Likely failure mode:** [How would this break in production?]
+- **Not tested:** [What gaps exist in test coverage?]
+```
+
+---
 
 ## Phase 5: Pull Request (PR)
 
@@ -693,10 +838,57 @@ sequant merge --check         # Verify no cross-issue conflicts
 
 ---
 
+## State Tracking
+
+**IMPORTANT:** `/fullsolve` is an orchestrator and manages state for child skills.
+
+### Orchestrator Responsibilities
+
+As an orchestrator, `/fullsolve` must:
+
+1. **Set orchestration context** for child skills:
+   ```bash
+   export SEQUANT_ORCHESTRATOR=fullsolve
+   export SEQUANT_PHASE=<current-phase>
+   export SEQUANT_ISSUE=<issue-number>
+   export SEQUANT_WORKTREE=<worktree-path>
+   ```
+
+2. **Initialize issue state at workflow start:**
+   ```bash
+   npx tsx scripts/state/update.ts init <issue-number> "<issue-title>"
+   ```
+
+3. **Update phase status** at each transition:
+   ```bash
+   # Before invoking child skill
+   npx tsx scripts/state/update.ts start <issue-number> <phase>
+
+   # After child skill completes
+   npx tsx scripts/state/update.ts complete <issue-number> <phase>
+
+   # If child skill fails
+   npx tsx scripts/state/update.ts fail <issue-number> <phase> "Error"
+   ```
+
+4. **Update final status** after workflow completes:
+   ```bash
+   # On READY_FOR_MERGE
+   npx tsx scripts/state/update.ts status <issue-number> ready_for_merge
+
+   # On failure
+   npx tsx scripts/state/update.ts status <issue-number> blocked
+   ```
+
+**Why child skills skip state updates:** When `SEQUANT_ORCHESTRATOR` is set, child skills defer state management to the orchestrator to avoid duplicate updates.
+
+---
+
 ## Output Verification
 
 **Before responding, verify your output includes ALL of these:**
 
+- [ ] **Risk Assessment (from QA)** - Likely failure mode and coverage gaps stated
 - [ ] **Progress Table** - Phase, iterations, and status for each phase
 - [ ] **AC Coverage** - Each AC marked MET/PARTIALLY_MET/NOT_MET
 - [ ] **Quality Metrics** - Tests passed, build status, type issues
