@@ -76,10 +76,10 @@ export class ConfigResolver {
     for (const key of allKeys) {
       // Check each layer in reverse priority (lowest first)
       const layers = [
-        { source: defaults, value: defaults[key] },
-        { source: settings, value: settings[key] },
-        { source: env, value: env[key] },
-        { source: explicit, value: explicit[key] },
+        { value: defaults[key] },
+        { value: settings[key] },
+        { value: env[key] },
+        { value: explicit[key] },
       ];
 
       // Walk from highest to lowest priority, take first defined value
@@ -106,9 +106,7 @@ export class ConfigResolver {
         explicit[key] === undefined &&
         env[key] !== undefined
       ) {
-        // env is present but settings overrode it; use settings value
-        // Actually the loop already handled this — env wins over settings
-        // so we need to coerce the env value
+        // env is present and wins over settings — coerce the env value
         resolved = coerceEnvValue(env[key], defaultVal);
       }
 
@@ -160,22 +158,26 @@ export function resolveRunOptions(
   const normalized = normalizeCommanderOptions(cliOptions);
   const envConfig = getEnvConfig();
 
+  // Strip undefined keys so programmatic callers don't clobber env/settings values
+  const defined = Object.fromEntries(
+    Object.entries(normalized).filter(([, v]) => v !== undefined),
+  ) as Partial<RunOptions>;
+
   const merged: RunOptions = {
     // Settings defaults
-    sequential: normalized.sequential ?? settings.run.sequential,
-    concurrency: normalized.concurrency ?? settings.run.concurrency,
-    timeout: normalized.timeout ?? settings.run.timeout,
-    logPath: normalized.logPath ?? settings.run.logPath,
-    qualityLoop: normalized.qualityLoop ?? settings.run.qualityLoop,
-    maxIterations: normalized.maxIterations ?? settings.run.maxIterations,
-    noSmartTests: normalized.noSmartTests ?? !settings.run.smartTests,
+    sequential: defined.sequential ?? settings.run.sequential,
+    concurrency: defined.concurrency ?? settings.run.concurrency,
+    timeout: defined.timeout ?? settings.run.timeout,
+    logPath: defined.logPath ?? settings.run.logPath,
+    qualityLoop: defined.qualityLoop ?? settings.run.qualityLoop,
+    maxIterations: defined.maxIterations ?? settings.run.maxIterations,
+    noSmartTests: defined.noSmartTests ?? !settings.run.smartTests,
     // Agent settings
-    isolateParallel:
-      normalized.isolateParallel ?? settings.agents.isolateParallel,
+    isolateParallel: defined.isolateParallel ?? settings.agents.isolateParallel,
     // Env overrides
     ...envConfig,
     // CLI explicit options override all
-    ...normalized,
+    ...defined,
   };
 
   // Auto-detect phases from labels unless --phases explicitly set

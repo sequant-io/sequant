@@ -3,12 +3,22 @@
  * ConfigResolver: Extract config merging logic with 4-layer priority
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   ConfigResolver,
   normalizeCommanderOptions,
+  resolveRunOptions,
 } from "../src/lib/workflow/config-resolver.js";
 import type { RunOptions } from "../src/lib/workflow/types.js";
+import type { SequantSettings } from "../src/lib/settings.js";
+
+// Mock getEnvConfig for resolveRunOptions tests
+vi.mock("../src/lib/workflow/batch-executor.js", () => ({
+  getEnvConfig: vi.fn(() => ({})),
+}));
+
+import { getEnvConfig } from "../src/lib/workflow/batch-executor.js";
+const mockGetEnvConfig = vi.mocked(getEnvConfig);
 
 // === AC-5: ConfigResolver extracted with unit tests ===
 
@@ -319,5 +329,87 @@ describe("ConfigResolver integration", () => {
     expect(result.noMcp).toBe(true);
     // settings don't set retry, default wins
     expect(result.retry).toBe(true);
+  });
+});
+
+// === resolveRunOptions direct tests ===
+
+/** Minimal SequantSettings for testing */
+function makeSettings(
+  overrides: Partial<SequantSettings["run"]> = {},
+): SequantSettings {
+  return {
+    version: "1.0",
+    run: {
+      logJson: true,
+      logPath: ".sequant/logs",
+      autoDetectPhases: true,
+      timeout: 1800,
+      sequential: false,
+      concurrency: 3,
+      qualityLoop: false,
+      maxIterations: 3,
+      smartTests: true,
+      rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+      mcp: true,
+      retry: true,
+      staleBranchThreshold: 5,
+      resolvedIssueTTL: 7,
+      pmRun: "npm run",
+      ...overrides,
+    },
+    agents: { parallel: false, model: "haiku", isolateParallel: false },
+    scopeAssessment: {
+      trivialThresholds: { maxACItems: 3, maxDirectories: 1, maxFiles: 3 },
+    },
+    qa: {
+      smallDiffThreshold: 100,
+      staleBranchThreshold: 5,
+    },
+  } as SequantSettings;
+}
+
+describe("resolveRunOptions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEnvConfig.mockReturnValue({});
+  });
+
+  it("CLI option overrides settings default", () => {
+    const result = resolveRunOptions(
+      { timeout: 300 } as RunOptions,
+      makeSettings({ timeout: 1800 }),
+    );
+    expect(result.timeout).toBe(300);
+  });
+
+  it("env overrides settings when CLI is undefined", () => {
+    mockGetEnvConfig.mockReturnValue({ qualityLoop: true });
+    const result = resolveRunOptions(
+      {} as RunOptions,
+      makeSettings({ qualityLoop: false }),
+    );
+    expect(result.qualityLoop).toBe(true);
+  });
+
+  it("CLI overrides env", () => {
+    mockGetEnvConfig.mockReturnValue({ maxIterations: 5 });
+    const result = resolveRunOptions(
+      { maxIterations: 10 } as RunOptions,
+      makeSettings(),
+    );
+    expect(result.maxIterations).toBe(10);
+  });
+
+  it("programmatic call with explicit undefined does not clobber env value", () => {
+    mockGetEnvConfig.mockReturnValue({ qualityLoop: true });
+    const result = resolveRunOptions(
+      { qualityLoop: undefined, timeout: undefined } as RunOptions,
+      makeSettings({ timeout: 1800, qualityLoop: false }),
+    );
+    // env qualityLoop=true should survive, not be clobbered by undefined
+    expect(result.qualityLoop).toBe(true);
+    // settings timeout=1800 should survive, not be clobbered by undefined
+    expect(result.timeout).toBe(1800);
   });
 });
