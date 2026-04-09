@@ -172,3 +172,26 @@ export {
   ERROR_CATEGORIES,
 } from "./lib/workflow/error-classifier.js";
 export type { ErrorCategory } from "./lib/workflow/error-classifier.js";
+
+// Run orchestrator exports (AC-4: importable without CLI context)
+export { RunOrchestrator } from "./lib/workflow/run-orchestrator.js";
+export type {
+  OrchestratorConfig,
+  OrchestratorServices,
+  RunInit,
+  RunResult,
+} from "./lib/workflow/run-orchestrator.js";
+export {
+  ConfigResolver,
+  resolveRunOptions,
+  buildExecutionConfig,
+  normalizeCommanderOptions,
+} from "./lib/workflow/config-resolver.js";
+export type { ConfigLayers } from "./lib/workflow/config-resolver.js";
+export type {
+  ExecutionConfig,
+  RunOptions,
+  IssueResult,
+  PhaseResult,
+  ProgressCallback,
+} from "./lib/workflow/types.js";

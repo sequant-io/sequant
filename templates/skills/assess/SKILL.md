@@ -110,18 +110,20 @@ Surface red flags. Only track signals that change the recommendation.
 
 **Phase selection from labels:**
 
-| Labels | Workflow |
-|--------|----------|
-| bug, fix, hotfix, patch | `exec → qa` |
-| docs, documentation, readme | `exec → qa` |
-| ui, frontend, admin, web, browser | `spec → exec → test → qa` |
-| security, auth, authentication, permissions | `spec → security-review → exec → qa` |
-| complex, refactor, breaking, major | `spec → exec → qa` + `-q` |
-| enhancement, feature (default) | `spec → exec → qa` |
+| Labels | Category | Workflow |
+|--------|----------|----------|
+| security, auth, authentication, permissions | Domain | `spec → security-review → exec → qa` |
+| ui, frontend, admin, web, browser | Domain | `spec → exec → test → qa` |
+| complex, refactor, breaking, major | Modifier | `spec → exec → qa` + `-q` |
+| enhancement, feature (default) | Generic | `spec → exec → qa` |
+| bug, fix, hotfix, patch | Generic | `exec → qa` |
+| docs, documentation, readme | Generic | `exec → qa` |
+
+**Label priority:** Domain labels take precedence over generic labels. When an issue has both a domain label and a generic label (e.g., `bug` + `auth`), use the domain-specific workflow. Example: an issue labeled `bug` + `auth` gets `spec → security-review → exec → qa`, not `exec → qa`. Similarly, `bug` + `ui` gets `spec → exec → test → qa`.
 
 **Valid phases (from `PhaseSchema` in `src/lib/workflow/types.ts`):** `spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`
 
-**Skip spec when:** bug/docs label, OR spec comment already exists on issue.
+**Skip spec when:** (bug/docs label AND no domain labels like security/auth/ui/frontend), OR spec comment already exists on issue.
 
 **Resume detection:** Branch exists with commits ahead of main → mark as resume (`◂`).
 
@@ -150,6 +152,8 @@ For each active worktree, check `git diff --name-only main...HEAD` for file over
 
 **Design principle:** Dashboard first. Copy-pasteable commands. Silence means healthy.
 
+**Table column rules:** The "Reason" column must not be truncated mid-word. If a row's reason text would exceed the column width, prefer abbreviating the reason to a shorter synonym rather than cutting a word in half. Column widths should adapt to content — do not force a fixed table width.
+
 ```
  #    Action     Reason                              Run
 <N>   <ACTION>   <short reason>                       <workflow or symbol>
@@ -157,10 +161,8 @@ For each active worktree, check `git diff --name-only main...HEAD` for file over
 ...
 ────────────────────────────────────────────────────────────────
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run <N1> <N2> <flags>                           │
-│  npx sequant run <N3> <flags>              # resume          │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run <N1> <N2> <flags>
+    npx sequant run <N3> <flags>              # resume
 
 ────────────────────────────────────────────────────────────────
 Order: <N> → <N> (<shared file>) · <N> → <N> (<dependency>)
@@ -201,6 +203,7 @@ Cleanup:
 4. Rewrite issues get `# restart` comment
 5. Chain mode issues use `--chain` flag
 6. If ALL issues share the same workflow, emit a single command
+7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
 
 #### Annotation Rules
 
@@ -210,7 +213,7 @@ Cleanup:
 - **Omit entire section** (including its separator) when no annotations of that type exist.
 - **"All clear" is silence** — no annotation means no issues.
 
-#### Batch Example (mixed states)
+#### Batch Example (mixed states, with label priority)
 
 ```
  #    Action     Reason                              Run
@@ -220,22 +223,23 @@ Cleanup:
  458  PROCEED    Parallel UX + race condition          spec → exec → qa
  447  CLOSE      PR #457 merged                        —
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
- 412  PROCEED    Auth token refresh                    ◂ exec → qa
+ 412  PROCEED    Auth bug (domain: auth overrides bug) spec → security-review → exec → qa
+ 411  PROCEED    Config path normalization              ◂ exec → qa
  405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
 ────────────────────────────────────────────────────────────────
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --phases exec,qa                      │
-│  npx sequant run 458 443 -q                                  │
-│  npx sequant run 412 -q --phases exec,qa     # resume        │
-│  npx sequant run 405 -q                      # restart       │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run 461 460 -q --phases exec,qa
+    npx sequant run 458 443 -q
+    npx sequant run 412 -q --phases spec,security-review,exec,qa
+    npx sequant run 411 -q --phases exec,qa     # resume
+    npx sequant run 405 -q                      # restart
 
 ────────────────────────────────────────────────────────────────
 Order: 460 → 461 (batch-executor.ts)
 
 ⚠ #458  Dual concern (UX + race) across 4 files
 ⚠ #405  Stale 30+ days, ACs still valid
+⚠ #412  bug + auth labels — domain label (auth) takes priority over bug
 ────────────────────────────────────────────────────────────────
 Cleanup:
   git worktree remove .../447-...      # merged, stale worktree
@@ -249,7 +253,8 @@ Cleanup:
 <!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #447 assess:action=CLOSE -->
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #412 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #412 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
+<!-- #411 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
@@ -264,16 +269,66 @@ When every issue is PROCEED with no warnings, the output is minimal:
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
 ────────────────────────────────────────────────────────────────
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --phases exec,qa                      │
-│  npx sequant run 443 -q                                      │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run 461 460 -q --phases exec,qa
+    npx sequant run 443 -q
 
 ────────────────────────────────────────────────────────────────
 
 <!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #460 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+```
+
+#### Batch Example (large batch, 13 issues with Rule 7 split)
+
+When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per line), and the table adapts to content width:
+
+```
+ #    Action     Reason                                   Run
+ 503  PROCEED    Fix typo in error output                   exec → qa
+ 502  PROCEED    Update deprecated API call                 exec → qa
+ 501  PROCEED    Add retry logic to API client              exec → qa
+ 500  PROCEED    Fix token refresh race condition           spec → security-review → exec → qa
+ 499  PROCEED    Dashboard chart rendering bug              spec → exec → test → qa
+ 498  PROCEED    Update error messages                      exec → qa
+ 497  PROCEED    Refactor batch executor                    spec → exec → qa
+ 496  PARK       Blocked on #490 schema migration           ‖
+ 495  PROCEED    CLI help text improvements                 exec → qa
+ 494  PROCEED    Assess batch formatting fix                exec → qa
+ 493  CLOSE      Duplicate of #491                          —
+ 492  PROCEED    Add export command                         spec → exec → qa
+ 491  PROCEED    Normalize config paths                     exec → qa
+────────────────────────────────────────────────────────────────
+
+    npx sequant run 503 502 501 498 495 494 -q --phases exec,qa
+    npx sequant run 491 -q --phases exec,qa
+    npx sequant run 499 -q --phases spec,exec,test,qa
+    npx sequant run 500 -q --phases spec,security-review,exec,qa
+    npx sequant run 497 492 -q
+
+────────────────────────────────────────────────────────────────
+Order: 497 → 492 (batch-executor.ts)
+
+⚠ #500  bug + auth labels — domain label takes priority
+⚠ #499  bug + ui labels — domain label triggers test phase
+────────────────────────────────────────────────────────────────
+Cleanup:
+  gh issue close 493                   # duplicate of #491
+────────────────────────────────────────────────────────────────
+
+<!-- #503 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #502 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #501 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #500 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
+<!-- #499 assess:action=PROCEED assess:phases=spec,exec,test,qa assess:quality-loop=true -->
+<!-- #498 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #497 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #496 assess:action=PARK -->
+<!-- #495 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #494 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #493 assess:action=CLOSE -->
+<!-- #492 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #491 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 ```
 
 ---
@@ -291,9 +346,7 @@ More context since you're focused on one issue. Separators between every section
 
 → PROCEED — <one-line reason>
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run <N> <flags>                                 │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run <N> <flags>
 
 <phases> · <N> ACs · <flag reasoning>
 ────────────────────────────────────────────────────────────────
@@ -315,9 +368,7 @@ Open · bug, enhancement, cli
 
 → PROCEED — Both root causes confirmed in codebase
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 458 -q                                      │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run 458 -q
 
 spec → exec → qa · 8 ACs · -q (dual concern)
 ────────────────────────────────────────────────────────────────
@@ -397,9 +448,7 @@ Need: <specific information required>
 
 → REWRITE — <reason>
 
-╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run <N> <flags>                 # fresh start   │
-╰──────────────────────────────────────────────────────────────╯
+    npx sequant run <N> <flags>                 # fresh start
 
 <phases> · <N> ACs
 ────────────────────────────────────────────────────────────────

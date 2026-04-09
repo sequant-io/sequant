@@ -1,6 +1,9 @@
 # Sequant Target Architecture
 
-> Post #503-#508 architecture. This is the design we're building toward.
+> Post #503-#508 architecture, scoped after overcomplexity review (2026-04-08).
+>
+> Guiding principle: **build the tool, not the framework.** Abstractions are added
+> when a second consumer forces them, not when the diagram looks prettier.
 
 ## System Overview
 
@@ -15,19 +18,18 @@ graph TB
     subgraph Orchestration["Orchestration Layer"]
         RO["RunOrchestrator<br/><small>#503</small>"]
         CR["ConfigResolver<br/><small>#503 / #507</small>"]
-        EE["WorkflowEventEmitter<br/><small>#504</small>"]
+        EE["WorkflowEventEmitter<br/><small>#504 — emitter only,<br/>consumers opt-in later</small>"]
     end
 
     subgraph Execution["Execution Engine"]
         BE["BatchExecutor<br/><small>parallel / sequential / chain</small>"]
         PE["PhaseExecutor<br/><small>retry + cold-start logic</small>"]
-        PR["PhaseRegistry<br/><small>#505 — built-in + user phases</small>"]
+        PR["PhaseRegistry<br/><small>#505 — built-in phases only,<br/>user extensibility deferred</small>"]
     end
 
     subgraph Infrastructure["Infrastructure"]
-        WM["WorktreeManager<br/><small>async git ops</small>"]
+        WM["WorktreeManager<br/><small>git ops (sync — async deferred)</small>"]
         SM["StateManager<br/><small>atomic writes + locking</small>"]
-        AS["AsyncSubprocess<br/><small>#506</small>"]
     end
 
     subgraph Drivers["Agent Drivers"]
@@ -39,15 +41,12 @@ graph TB
     subgraph Platforms["Platform Providers"]
         GH["GitHubProvider<br/><small>async gh CLI + GraphQL batch</small>"]
         GL["GitLabProvider<br/><small>#375 — future</small>"]
-        AZ["AzureDevOpsProvider<br/><small>#375 — future</small>"]
     end
 
-    subgraph Listeners["Event Listeners"]
-        LW["LogWriter"]
-        MW["MetricsWriter"]
-        PD["ProgressDisplay<br/><small>CLI spinners</small>"]
-        MN["MCP Notifications<br/><small>real-time streaming</small>"]
-        WH["Webhooks<br/><small>future</small>"]
+    subgraph Listeners["Event Listeners (current)"]
+        LW["LogWriter<br/><small>direct call</small>"]
+        MW["MetricsWriter<br/><small>direct call</small>"]
+        PD["ProgressDisplay<br/><small>direct call</small>"]
     end
 
     subgraph External["External Services"]
@@ -59,7 +58,7 @@ graph TB
 
     %% Frontend → Orchestrator (all three share the same engine)
     CLI -->|"parse flags →<br/>RunConfig"| RO
-    MCP -->|"in-process<br/>#508"| RO
+    MCP -->|"subprocess<br/>(in-process deferred)"| RO
     SDK -->|"direct call"| RO
 
     %% Orchestrator internals
@@ -76,8 +75,7 @@ graph TB
     PE --> WM
     PE --> SM
     BE --> SM
-    WM --> AS
-    GH --> AS
+    GH -.-> |"async gh CLI"| GHAPI
 
     %% Drivers
     PE -->|"AgentDriver<br/>interface"| CC
@@ -87,14 +85,11 @@ graph TB
     %% Platforms
     BE --> GH
     BE -.-> GL
-    BE -.-> AZ
 
-    %% Event listeners (fire-and-forget)
-    EE -.->|"subscribe"| LW
-    EE -.->|"subscribe"| MW
-    EE -.->|"subscribe"| PD
-    EE -.->|"subscribe"| MN
-    EE -.->|"subscribe"| WH
+    %% Listeners (direct calls for now, event-driven migration deferred)
+    BE --> LW
+    BE --> MW
+    BE --> PD
 
     %% External
     GH --> GHAPI
@@ -109,12 +104,25 @@ graph TB
     classDef future fill:#fff3e0,stroke:#f57c00,stroke-width:1px,stroke-dasharray:5
     classDef existing fill:#f5f5f5,stroke:#616161,stroke-width:1px
     classDef external fill:#fce4ec,stroke:#c62828,stroke-width:1px
+    classDef deferred fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px,stroke-dasharray:3
 
-    class RO,CR,EE,PR,AS new
-    class GL,AZ,CX,WH,MN future
+    class RO,CR,PR new
+    class GL,CX future
+    class EE deferred
     class CLI,MCP,SDK,BE,PE,WM,SM,CC,AI,GH,LW,MW,PD existing
     class GHAPI,GIT,CCSDK,FS external
 ```
+
+## Scope Decisions (2026-04-08)
+
+| Issue | Original Scope | Revised Scope | Rationale |
+|-------|---------------|---------------|-----------|
+| #503 | RunOrchestrator extraction | **Unchanged** | run.ts is 1,171 lines — real problem |
+| #507 | Config validation + error types | **Unchanged** | Boundary hardening, quick win |
+| #504 | Full event system + consumer migration | **Emitter only** — no LogWriter/MetricsWriter/spinner refactoring | Event bus with 2 riders; migrate consumers when a 4th arrives |
+| #505 | Phase plugin framework | **Registry class only** — no user-defined phases, no CLI command | 0 users asking for plugins; consolidate internals only |
+| #506 | All async I/O (~30 call sites) | **GitHubProvider async only** — defer WorktreeManager | GitHub API is the bottleneck; worktree ops are per-issue sequential |
+| #508 | In-process MCP engine | **Deferred** — fix log polling race separately | Dependency chain cost > benefit at current adoption |
 
 ## Layer Responsibilities
 
@@ -131,13 +139,13 @@ graph LR
         direction TB
         L2A["Resolve configuration<br/>(defaults → settings → env → explicit)"]
         L2B["Coordinate execution<br/>(batch/chain/sequential mode)"]
-        L2C["Emit lifecycle events"]
+        L2C["Emit lifecycle events<br/>(optional — consumers opt in)"]
     end
 
     subgraph L3["Layer 3: Execution"]
         direction TB
         L3A["Execute individual phases"]
-        L3B["Resolve phase definitions<br/>(built-in + user-defined)"]
+        L3B["Resolve phase definitions<br/>(built-in registry)"]
         L3C["Retry with error classification"]
     end
 
@@ -145,8 +153,7 @@ graph LR
         direction TB
         L4A["Git worktree lifecycle"]
         L4B["Persistent state (atomic R/W)"]
-        L4C["Async subprocess execution"]
-        L4D["Platform API abstraction"]
+        L4C["Platform API abstraction<br/>(async GitHubProvider)"]
     end
 
     L1 --> L2 --> L3 --> L4
@@ -170,38 +177,37 @@ sequenceDiagram
 
     F->>O: execute(RunConfig)
     O->>E: emit(run_started)
-    E-->>L: log run start
-    E-->>D: show banner
 
     O->>B: executeBatch(issues)
 
     loop For each issue (p-limit concurrency)
         B->>E: emit(issue_started)
-        E-->>D: show spinner
+        B->>D: show spinner (direct call)
 
         loop For each phase
             B->>P: executePhase(issue, phase)
             P->>E: emit(phase_started)
-            E-->>D: update spinner
-            E-->>L: log phase start
+            P->>L: logPhase (direct call)
 
             P-->>P: run agent driver
 
             P->>E: emit(phase_completed | phase_failed)
-            E-->>L: log phase result
-            E-->>M: record metrics
-            E-->>D: update status
+            P->>L: log result (direct call)
+            P->>M: record metrics (direct call)
+            B->>D: update status (direct call)
         end
 
         B->>E: emit(issue_completed)
     end
 
     O->>E: emit(run_completed)
-    E-->>L: finalize log
-    E-->>M: write metrics
-    E-->>D: show summary
+    L->>L: finalize log
+    M->>M: write metrics
+    D->>D: show summary
 
     O-->>F: return RunResult
+
+    Note over E: Emitter exists but LogWriter,<br/>MetricsWriter, ProgressDisplay<br/>remain direct calls until a 4th<br/>consumer justifies migration
 ```
 
 ## Configuration Resolution
@@ -225,23 +231,25 @@ flowchart TB
     subgraph Registry["PhaseRegistry (#505)"]
         direction TB
         BI["Built-in Phases<br/><small>spec, exec, qa, testgen,<br/>test, verify, loop,<br/>security-review, merger</small>"]
-        UD["User-Defined Phases<br/><small>.sequant/phases/deploy/<br/>.sequant/phases/perf-test/</small>"]
     end
 
     PD["PhaseDefinition"]
-    PD --- |name| N["'deploy'"]
-    PD --- |skill| SK["'deploy'"]
-    PD --- |promptTemplate| PT["'Deploy {issue} to...'"]
+    PD --- |name| N["'spec'"]
+    PD --- |skill| SK["'spec'"]
+    PD --- |promptTemplate| PT["'Spec {issue}...'"]
     PD --- |requiresWorktree| RW["true"]
     PD --- |retryStrategy| RS["{ maxRetries: 2 }"]
-    PD --- |detect| DT["{ labels: ['deploy'] }"]
-    PD --- |driverOverrides| DO["{ aider: '...', codex: '...' }"]
+    PD --- |detect| DT["{ labels: ['bug'] }"]
+    PD --- |driverOverrides| DO["{ aider: '...' }"]
 
     Registry --> PE["PhaseExecutor"]
     PE -->|"registry.get(phase)"| PD
 
     classDef new fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
     class Registry,PD new
+
+    note["User-defined phases deferred<br/>until requested"]
+    style note fill:#fff3e0,stroke:#f57c00,stroke-dasharray:5
 ```
 
 ## Dependency Graph (Issues)
@@ -249,47 +257,61 @@ flowchart TB
 ```mermaid
 flowchart TB
     503["#503 RunOrchestrator<br/><small>Foundation</small>"]
-    504["#504 Event System"]
-    505["#505 Phase Registry"]
-    506["#506 Async I/O"]
+    504["#504 Event Emitter<br/><small>Descoped</small>"]
+    505["#505 Phase Registry<br/><small>Descoped</small>"]
+    506["#506 Async GitHub I/O<br/><small>Split</small>"]
     507["#507 Config + Errors<br/><small>Standalone</small>"]
-    508["#508 In-Process MCP"]
+    508["#508 In-Process MCP<br/><small>Deferred</small>"]
 
     503 --> 504
     503 --> 505
     503 --> 506
-    504 --> 508
-    503 --> 508
+    504 -.-> 508
+    503 -.-> 508
 
-    subgraph B1["Batch 1"]
+    subgraph B1["Batch 1 (now)"]
         503
         507
     end
-    subgraph B2["Batch 2"]
+    subgraph B2["Batch 2 (next)"]
         504
         505
         506
     end
-    subgraph B3["Batch 3"]
+    subgraph Deferred["Deferred"]
         508
     end
 
     classDef batch1 fill:#c8e6c9,stroke:#2e7d32
     classDef batch2 fill:#e1f5fe,stroke:#0288d1
-    classDef batch3 fill:#fff3e0,stroke:#f57c00
+    classDef deferred fill:#f3e5f5,stroke:#7b1fa2,stroke-dasharray:5
     classDef standalone fill:#f3e5f5,stroke:#7b1fa2
 
     class 503 batch1
     class 507 standalone
     class 504,505,506 batch2
-    class 508 batch3
+    class 508 deferred
 ```
+
+## Deferred Work
+
+Items intentionally excluded from this iteration. Revisit when triggered:
+
+| Item | Trigger to Revisit |
+|------|-------------------|
+| User-defined phases (`.sequant/phases/`) | A user files an issue requesting custom phases |
+| Event listener migration (LogWriter, MetricsWriter, spinners) | A 4th event consumer is needed (webhooks, VS Code extension) |
+| WorktreeManager async migration | Profiling shows git ops as a parallel execution bottleneck |
+| In-process MCP engine (#508) | MCP usage grows, or #383 interactive relay becomes priority |
+| GitLabProvider / AzureDevOpsProvider | User requests non-GitHub platform support |
+| AsyncSubprocess abstraction | Multiple subsystems need shared process lifecycle management |
 
 ## Color Key
 
 | Color | Meaning |
 |-------|---------|
-| Blue fill | New component (from #503-#508) |
+| Blue fill | New component (active scope) |
+| Purple dashed | Deferred — designed but not built yet |
 | Orange dashed | Future / planned |
 | Gray fill | Existing component (unchanged or refactored) |
 | Pink fill | External service |

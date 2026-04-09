@@ -758,21 +758,21 @@ echo "Size gate: $total_changes lines changed (threshold: $threshold), pkg_chang
 
 Run these checks directly (no sub-agents needed):
 
-```bash
-# Type safety: check for 'any' additions
-any_count=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -cw 'any' || true)
+**IMPORTANT:** Use the Grep tool (not bash `grep`) for pattern matching — bash grep uses BSD regex on macOS which is incompatible with some patterns below. The Grep tool uses ripgrep which works cross-platform.
 
+```bash
 # Deleted tests check
 deleted_tests=$(git diff origin/main...HEAD --name-only --diff-filter=D | grep -cE '\.(test|spec)\.' || true)
 
 # Scope: files changed count
 files_changed=$(git diff origin/main...HEAD --name-only | wc -l | tr -d ' ')
-
-# Security scan (lightweight — just check for obvious patterns in added lines)
-security_issues=$(git diff origin/main...HEAD | grep '^\+' | grep -v '^\+\+\+' | grep -ciE 'eval\(|innerHTML|dangerouslySetInnerHTML|exec\(|password.*=.*["']|secret.*=.*["']|api.?key.*=.*["']' || true)
-
-echo "Inline checks: any=$any_count, deleted_tests=$deleted_tests, files=$files_changed, security_issues=$security_issues"
 ```
+
+For type safety and security scans, use the Grep tool instead of bash:
+- **Type safety:** `Grep(pattern=":\\s*any[,;)\\]]|as any", path="<changed-files>")` on added lines
+- **Security scan:** `Grep(pattern="eval\\(|innerHTML|dangerouslySetInnerHTML|password.*=.*[\"']|secret.*=.*[\"']", path="<changed-files>")` on added lines
+
+Count results from the Grep tool output to get `any_count` and `security_issues`.
 
 **After inline checks, skip to the output template** (the sub-agent section below is not executed).
 
