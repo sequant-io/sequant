@@ -299,7 +299,6 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
     npx sequant run 499 -q --phases spec,exec,test,qa
     npx sequant run 500 -q --phases spec,security-review,exec,qa
     npx sequant run 497 492 -q
-    npx sequant run 496 -q                      # blocked, deferred
 
 ────────────────────────────────────────────────────────────────
 Order: 497 → 492 (batch-executor.ts)
