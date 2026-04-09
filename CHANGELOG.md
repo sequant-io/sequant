@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/commands/run.ts` reduced from 1,171 to 184 lines as thin CLI adapter
   - Both classes exported from package entry point for programmatic use
 
+### Fixed
+
+- Fix `/assess` batch output corruption with 9+ issues: replace box-drawing with indented commands, add command splitting rule, add label-priority ordering so domain labels override generic labels (#494)
+
 ## [2.1.1] - 2026-04-07
 
 ### Fixed
