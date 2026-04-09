@@ -127,3 +127,48 @@ export type {
   SolveMarkers,
   IssueComment,
 } from "./lib/assess-comment-parser.js";
+
+// Settings schema exports (AC-5)
+export {
+  SettingsSchema,
+  validateSettings,
+  getSettingsWithWarnings,
+  generateSettingsReference,
+  generateSettingsJsonc,
+  stripJsoncComments,
+} from "./lib/settings.js";
+export type {
+  SequantSettings,
+  RunSettings,
+  AgentSettings,
+  ValidationResult,
+  SettingsWarning,
+} from "./lib/settings.js";
+
+// Structured error types (AC-10)
+export {
+  SequantError,
+  ContextOverflowError,
+  ApiError,
+  HookFailureError,
+  BuildError,
+  TimeoutError,
+  SubprocessError,
+  ERROR_TYPE_MAP,
+} from "./lib/errors.js";
+export type {
+  ContextOverflowMetadata,
+  ApiErrorMetadata,
+  HookFailureMetadata,
+  BuildErrorMetadata,
+  TimeoutErrorMetadata,
+  SubprocessErrorMetadata,
+} from "./lib/errors.js";
+
+// Error classifier (AC-7)
+export {
+  classifyError,
+  errorTypeToCategory,
+  ERROR_CATEGORIES,
+} from "./lib/workflow/error-classifier.js";
+export type { ErrorCategory } from "./lib/workflow/error-classifier.js";

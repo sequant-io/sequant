@@ -13,6 +13,7 @@
 
 import { readFile, writeFile, fileExists, ensureDir } from "./fs.js";
 import { dirname } from "path";
+import { z } from "zod";
 
 /** Path to project-level settings file */
 export const SETTINGS_PATH = ".sequant/settings.json";
@@ -230,6 +231,266 @@ export interface SequantSettings {
   qa: QASettings;
 }
 
+// ─── Zod Schemas (AC-1, AC-5) ────────────────────────────────────────────────
+
+/** Zod schema for RotationSettings */
+export const RotationSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  maxSizeMB: z.number().default(10),
+  maxFiles: z.number().default(100),
+});
+
+/** Zod schema for AiderSettings */
+export const AiderSettingsSchema = z.object({
+  model: z.string().optional(),
+  editFormat: z.string().optional(),
+  extraArgs: z.array(z.string()).optional(),
+});
+
+/** Zod schema for AgentSettings */
+export const AgentSettingsSchema = z.object({
+  parallel: z.boolean().default(false),
+  model: z.enum(["haiku", "sonnet", "opus"]).default("haiku"),
+  isolateParallel: z.boolean().default(false),
+});
+
+/** Zod schema for RunSettings */
+export const RunSettingsSchema = z.object({
+  logJson: z.boolean().default(true),
+  logPath: z.string().default(".sequant/logs"),
+  autoDetectPhases: z.boolean().default(true),
+  timeout: z.number().default(1800),
+  sequential: z.boolean().default(false),
+  concurrency: z.number().default(3),
+  qualityLoop: z.boolean().default(false),
+  maxIterations: z.number().default(3),
+  smartTests: z.boolean().default(true),
+  rotation: RotationSettingsSchema.default(
+    () => RotationSettingsSchema.parse({}) as never,
+  ),
+  defaultBase: z.string().optional(),
+  mcp: z.boolean().default(true),
+  retry: z.boolean().default(true),
+  staleBranchThreshold: z.number().default(5),
+  resolvedIssueTTL: z.number().default(7),
+  agent: z.string().optional(),
+  aider: AiderSettingsSchema.optional(),
+});
+
+/** Zod schema for ScopeThreshold */
+export const ScopeThresholdSchema = z.object({
+  yellow: z.number(),
+  red: z.number(),
+});
+
+/** Zod schema for TrivialThresholds */
+export const TrivialThresholdsSchema = z.object({
+  maxACItems: z.number().default(3),
+  maxDirectories: z.number().default(1),
+});
+
+/** Zod schema for ScopeAssessmentSettings */
+export const ScopeAssessmentSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  skipIfSimple: z.boolean().default(true),
+  trivialThresholds: TrivialThresholdsSchema.default(
+    () => TrivialThresholdsSchema.parse({}) as never,
+  ),
+  thresholds: z
+    .object({
+      featureCount: ScopeThresholdSchema.default({ yellow: 2, red: 3 }),
+      acItems: ScopeThresholdSchema.default({ yellow: 6, red: 9 }),
+      fileEstimate: ScopeThresholdSchema.default({ yellow: 8, red: 13 }),
+      directorySpread: ScopeThresholdSchema.default({ yellow: 3, red: 5 }),
+    })
+    .default(
+      () =>
+        z
+          .object({
+            featureCount: ScopeThresholdSchema.default({ yellow: 2, red: 3 }),
+            acItems: ScopeThresholdSchema.default({ yellow: 6, red: 9 }),
+            fileEstimate: ScopeThresholdSchema.default({ yellow: 8, red: 13 }),
+            directorySpread: ScopeThresholdSchema.default({
+              yellow: 3,
+              red: 5,
+            }),
+          })
+          .parse({}) as never,
+    ),
+});
+
+/** Zod schema for QASettings */
+export const QASettingsSchema = z.object({
+  smallDiffThreshold: z.number().default(100),
+});
+
+/**
+ * Zod schema for the full SequantSettings (AC-1, AC-5).
+ *
+ * Top-level uses `.passthrough()` to allow forward-compatible fields from
+ * newer Sequant versions. Unknown keys are preserved in parse output and
+ * reported as warnings via `validateSettings()`.
+ *
+ * Nested schemas don't use `.passthrough()` because unknown key detection
+ * is handled by `detectUnknownKeys()` at validation time.
+ */
+export const SettingsSchema = z
+  .object({
+    version: z.string().default("1.0"),
+    run: RunSettingsSchema.default(() => RunSettingsSchema.parse({}) as never),
+    agents: AgentSettingsSchema.default(
+      () => AgentSettingsSchema.parse({}) as never,
+    ),
+    scopeAssessment: ScopeAssessmentSettingsSchema.default(
+      () => ScopeAssessmentSettingsSchema.parse({}) as never,
+    ),
+    qa: QASettingsSchema.default(() => QASettingsSchema.parse({}) as never),
+  })
+  .passthrough();
+
+// ─── Validation helpers (AC-2) ───────────────────────────────────────────────
+
+/** A single validation warning about an unknown or invalid setting */
+export interface SettingsWarning {
+  /** Dot-separated path to the problematic key, e.g. "run.timoeut" */
+  path: string;
+  /** Human-readable message */
+  message: string;
+}
+
+/** Result of settings validation */
+export interface ValidationResult {
+  /** The merged settings (always returned — invalid fields use defaults) */
+  settings: SequantSettings;
+  /** Validation warnings (unknown keys, type mismatches that were coerced) */
+  warnings: SettingsWarning[];
+}
+
+/**
+ * Known keys at each level of the settings schema.
+ * Used to detect unknown/misspelled keys and produce warnings.
+ */
+const KNOWN_KEYS: Record<string, Set<string>> = {
+  "": new Set(["version", "run", "agents", "scopeAssessment", "qa"]),
+  run: new Set([
+    "logJson",
+    "logPath",
+    "autoDetectPhases",
+    "timeout",
+    "sequential",
+    "concurrency",
+    "qualityLoop",
+    "maxIterations",
+    "smartTests",
+    "rotation",
+    "defaultBase",
+    "mcp",
+    "retry",
+    "staleBranchThreshold",
+    "resolvedIssueTTL",
+    "agent",
+    "aider",
+  ]),
+  agents: new Set(["parallel", "model", "isolateParallel"]),
+  scopeAssessment: new Set([
+    "enabled",
+    "skipIfSimple",
+    "trivialThresholds",
+    "thresholds",
+  ]),
+  qa: new Set(["smallDiffThreshold"]),
+  "run.rotation": new Set(["enabled", "maxSizeMB", "maxFiles"]),
+  "run.aider": new Set(["model", "editFormat", "extraArgs"]),
+  "scopeAssessment.trivialThresholds": new Set([
+    "maxACItems",
+    "maxDirectories",
+  ]),
+  "scopeAssessment.thresholds": new Set([
+    "featureCount",
+    "acItems",
+    "fileEstimate",
+    "directorySpread",
+  ]),
+};
+
+/**
+ * Recursively detect unknown keys in a raw settings object.
+ */
+function detectUnknownKeys(
+  obj: Record<string, unknown>,
+  prefix: string,
+): SettingsWarning[] {
+  const warnings: SettingsWarning[] = [];
+  const knownSet = KNOWN_KEYS[prefix];
+  if (!knownSet) return warnings; // no known-keys list → skip checking
+
+  for (const key of Object.keys(obj)) {
+    const fullPath = prefix ? `${prefix}.${key}` : key;
+    if (!knownSet.has(key)) {
+      warnings.push({
+        path: fullPath,
+        message: `Unknown key '${fullPath}' in settings.json (ignored)`,
+      });
+    }
+    // Recurse into nested objects
+    const val = obj[key];
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      warnings.push(
+        ...detectUnknownKeys(val as Record<string, unknown>, fullPath),
+      );
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Format a Zod error into user-friendly messages (AC-2).
+ *
+ * Produces messages like:
+ *   settings.json: 'run.timeout' must be a number, got string 'fast'
+ */
+function formatZodErrors(error: z.ZodError): SettingsWarning[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.join(".");
+    // Zod v4 uses issue.message which already includes type info
+    const message = `settings.json: '${path}' ${issue.message}`;
+    return { path, message };
+  });
+}
+
+/**
+ * Validate a raw settings object against the Zod schema (AC-2).
+ *
+ * Returns validated settings (with defaults filled in) and any warnings.
+ * On type errors, falls back to defaults for the invalid fields and
+ * reports warnings — never throws.
+ */
+export function validateSettings(raw: unknown): ValidationResult {
+  const warnings: SettingsWarning[] = [];
+
+  // Detect unknown keys before Zod parsing (passthrough preserves them but doesn't warn)
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    warnings.push(...detectUnknownKeys(raw as Record<string, unknown>, ""));
+  }
+
+  const result = SettingsSchema.safeParse(raw ?? {});
+
+  if (result.success) {
+    return { settings: result.data as SequantSettings, warnings };
+  }
+
+  // Zod validation failed — report errors as warnings and fall back to defaults
+  warnings.push(...formatZodErrors(result.error));
+
+  // Try to salvage what we can: parse with defaults for the invalid parts
+  // by stripping invalid fields and re-parsing
+  const fallback = SettingsSchema.safeParse({});
+  const settings = (
+    fallback.success ? fallback.data : DEFAULT_SETTINGS
+  ) as SequantSettings;
+  return { settings, warnings };
+}
+
 /**
  * Default rotation settings
  */
@@ -352,56 +613,50 @@ export function validateAiderSettings(
 }
 
 /**
- * Get the current project settings
+ * Get the current project settings with validation warnings (AC-2, AC-3).
  *
- * Returns default settings if no settings file exists.
+ * Returns settings merged with defaults and any validation warnings.
+ * Use this when you need to display warnings to the user (e.g., status command).
  */
-export async function getSettings(): Promise<SequantSettings> {
+export async function getSettingsWithWarnings(): Promise<ValidationResult> {
   if (!(await fileExists(SETTINGS_PATH))) {
-    return DEFAULT_SETTINGS;
+    return { settings: DEFAULT_SETTINGS, warnings: [] };
   }
 
   try {
     const content = await readFile(SETTINGS_PATH);
-    const parsed = JSON.parse(content) as Partial<SequantSettings>;
-
-    // Validate aider settings if present
-    const aiderSettings = validateAiderSettings(
-      (parsed.run as Record<string, unknown> | undefined)?.aider,
-    );
-
-    // Merge with defaults to ensure all fields exist
+    if (!content.trim()) {
+      return { settings: DEFAULT_SETTINGS, warnings: [] };
+    }
+    const parsed = JSON.parse(stripJsoncComments(content));
+    return validateSettings(parsed);
+  } catch (err) {
+    const message =
+      err instanceof SyntaxError
+        ? `settings.json: Invalid JSON — ${err.message}. Check syntax or delete the file to use defaults.`
+        : `settings.json: Failed to read — ${err instanceof Error ? err.message : String(err)}`;
     return {
-      version: parsed.version ?? DEFAULT_SETTINGS.version,
-      run: {
-        ...DEFAULT_SETTINGS.run,
-        ...parsed.run,
-        ...(aiderSettings !== undefined ? { aider: aiderSettings } : {}),
-      },
-      agents: {
-        ...DEFAULT_AGENT_SETTINGS,
-        ...parsed.agents,
-      },
-      scopeAssessment: {
-        ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
-        ...parsed.scopeAssessment,
-        trivialThresholds: {
-          ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.trivialThresholds,
-          ...parsed.scopeAssessment?.trivialThresholds,
-        },
-        thresholds: {
-          ...DEFAULT_SCOPE_ASSESSMENT_SETTINGS.thresholds,
-          ...parsed.scopeAssessment?.thresholds,
-        },
-      },
-      qa: {
-        ...DEFAULT_QA_SETTINGS,
-        ...parsed.qa,
-      },
+      settings: DEFAULT_SETTINGS,
+      warnings: [{ path: "", message }],
     };
-  } catch {
-    return DEFAULT_SETTINGS;
   }
+}
+
+/**
+ * Get the current project settings
+ *
+ * Returns default settings if no settings file exists.
+ * Validates against Zod schema (AC-2) — warnings are logged to stderr.
+ */
+export async function getSettings(): Promise<SequantSettings> {
+  const { settings, warnings } = await getSettingsWithWarnings();
+
+  // Log validation warnings to stderr so they're visible but don't pollute stdout
+  for (const w of warnings) {
+    console.error(`⚠ ${w.message}`);
+  }
+
+  return settings;
 }
 
 /**
@@ -422,6 +677,246 @@ export async function settingsExist(): Promise<boolean> {
 /**
  * Create default settings file
  */
+/**
+ * Create default settings file with JSONC inline comments (AC-4).
+ *
+ * Generates a JSONC file (.json with // comments) documenting each field
+ * and its default value. The loadSettings path strips comments before parsing.
+ */
 export async function createDefaultSettings(): Promise<void> {
-  await saveSettings(DEFAULT_SETTINGS);
+  await ensureDir(dirname(SETTINGS_PATH));
+  const jsonc = generateSettingsJsonc(DEFAULT_SETTINGS);
+  await writeFile(SETTINGS_PATH, jsonc);
+}
+
+/**
+ * Generate JSONC content with inline comments for each settings field (AC-4).
+ */
+export function generateSettingsJsonc(settings: SequantSettings): string {
+  const lines: string[] = ["{"];
+
+  lines.push(`  // Schema version for migration support`);
+  lines.push(`  "version": ${JSON.stringify(settings.version)},`);
+  lines.push("");
+  lines.push(`  // Run command settings`);
+  lines.push(`  "run": {`);
+  lines.push(`    // Enable JSON logging`);
+  lines.push(`    "logJson": ${JSON.stringify(settings.run.logJson)},`);
+  lines.push(`    // Path to log directory`);
+  lines.push(`    "logPath": ${JSON.stringify(settings.run.logPath)},`);
+  lines.push(`    // Auto-detect phases from GitHub issue labels`);
+  lines.push(
+    `    "autoDetectPhases": ${JSON.stringify(settings.run.autoDetectPhases)},`,
+  );
+  lines.push(`    // Default timeout per phase in seconds`);
+  lines.push(`    "timeout": ${JSON.stringify(settings.run.timeout)},`);
+  lines.push(`    // Run issues sequentially by default`);
+  lines.push(`    "sequential": ${JSON.stringify(settings.run.sequential)},`);
+  lines.push(`    // Max concurrent issues in parallel mode`);
+  lines.push(`    "concurrency": ${JSON.stringify(settings.run.concurrency)},`);
+  lines.push(`    // Enable quality loop by default`);
+  lines.push(`    "qualityLoop": ${JSON.stringify(settings.run.qualityLoop)},`);
+  lines.push(`    // Max iterations for quality loop`);
+  lines.push(
+    `    "maxIterations": ${JSON.stringify(settings.run.maxIterations)},`,
+  );
+  lines.push(`    // Enable smart test detection`);
+  lines.push(`    "smartTests": ${JSON.stringify(settings.run.smartTests)},`);
+  lines.push(`    // Enable MCP servers in headless mode`);
+  lines.push(`    "mcp": ${JSON.stringify(settings.run.mcp)},`);
+  lines.push(`    // Enable automatic retry with MCP fallback`);
+  lines.push(`    "retry": ${JSON.stringify(settings.run.retry)},`);
+  lines.push(`    // Commits behind main before warning`);
+  lines.push(
+    `    "staleBranchThreshold": ${JSON.stringify(settings.run.staleBranchThreshold)},`,
+  );
+  lines.push(
+    `    // Days before resolved issues auto-prune (0=never, -1=immediate)`,
+  );
+  lines.push(
+    `    "resolvedIssueTTL": ${JSON.stringify(settings.run.resolvedIssueTTL)},`,
+  );
+  lines.push("");
+  lines.push(`    // Log rotation settings`);
+  lines.push(`    "rotation": {`);
+  lines.push(`      // Enable automatic log rotation`);
+  lines.push(
+    `      "enabled": ${JSON.stringify(settings.run.rotation.enabled)},`,
+  );
+  lines.push(`      // Maximum total size in MB before rotation`);
+  lines.push(
+    `      "maxSizeMB": ${JSON.stringify(settings.run.rotation.maxSizeMB)},`,
+  );
+  lines.push(`      // Maximum number of rotated log files to keep`);
+  lines.push(
+    `      "maxFiles": ${JSON.stringify(settings.run.rotation.maxFiles)}`,
+  );
+  lines.push(`    }`);
+  lines.push(`  },`);
+  lines.push("");
+  lines.push(`  // Agent settings`);
+  lines.push(`  "agents": {`);
+  lines.push(`    // Run agents in parallel (faster, higher token usage)`);
+  lines.push(`    "parallel": ${JSON.stringify(settings.agents.parallel)},`);
+  lines.push(`    // Default model for sub-agents ("haiku", "sonnet", "opus")`);
+  lines.push(`    "model": ${JSON.stringify(settings.agents.model)},`);
+  lines.push(`    // Isolate parallel agent groups in separate worktrees`);
+  lines.push(
+    `    "isolateParallel": ${JSON.stringify(settings.agents.isolateParallel)}`,
+  );
+  lines.push(`  }`);
+  lines.push("}");
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+/**
+ * Strip single-line // comments from JSONC content for JSON.parse compatibility.
+ * Handles comments on their own line and trailing comments after values.
+ * Preserves strings containing // (e.g., URLs).
+ */
+export function stripJsoncComments(content: string): string {
+  const lines = content.split("\n");
+  const result: string[] = [];
+  for (const line of lines) {
+    // Find // outside of strings
+    let inString = false;
+    let escaped = false;
+    let commentStart = -1;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (
+        !inString &&
+        ch === "/" &&
+        i + 1 < line.length &&
+        line[i + 1] === "/"
+      ) {
+        commentStart = i;
+        break;
+      }
+    }
+
+    if (commentStart === -1) {
+      result.push(line);
+    } else {
+      const before = line.slice(0, commentStart).trimEnd();
+      if (before) {
+        result.push(before);
+      }
+      // Skip comment-only lines entirely
+    }
+  }
+  return result.join("\n");
+}
+
+/**
+ * Generate settings.reference.md companion document (AC-4).
+ *
+ * Supplements the inline JSONC comments with a structured Markdown reference.
+ */
+export function generateSettingsReference(): string {
+  return `# Sequant Settings Reference
+
+This file documents all settings available in \`.sequant/settings.json\`.
+Generated by \`sequant init\`. See defaults below.
+
+## Top-Level
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`version\` | string | \`"${SETTINGS_VERSION}"\` | Schema version for migration support |
+
+## \`run\` — Run Command Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`logJson\` | boolean | \`true\` | Enable JSON logging |
+| \`logPath\` | string | \`".sequant/logs"\` | Path to log directory |
+| \`autoDetectPhases\` | boolean | \`true\` | Auto-detect phases from GitHub issue labels |
+| \`timeout\` | number | \`1800\` | Default timeout per phase in seconds |
+| \`sequential\` | boolean | \`false\` | Run issues sequentially by default |
+| \`concurrency\` | number | \`3\` | Max concurrent issues in parallel mode |
+| \`qualityLoop\` | boolean | \`false\` | Enable quality loop by default |
+| \`maxIterations\` | number | \`3\` | Max iterations for quality loop |
+| \`smartTests\` | boolean | \`true\` | Enable smart test detection |
+| \`defaultBase\` | string | — | Default base branch for worktree creation |
+| \`mcp\` | boolean | \`true\` | Enable MCP servers in headless mode |
+| \`retry\` | boolean | \`true\` | Enable automatic retry with MCP fallback |
+| \`staleBranchThreshold\` | number | \`5\` | Commits behind main before warning |
+| \`resolvedIssueTTL\` | number | \`7\` | Days before resolved issues auto-prune (0=never, -1=immediate) |
+| \`agent\` | string | — | Agent driver: \`"claude-code"\` (default) or \`"aider"\` |
+
+### \`run.rotation\` — Log Rotation
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`enabled\` | boolean | \`true\` | Enable automatic log rotation |
+| \`maxSizeMB\` | number | \`10\` | Maximum total size in MB before rotation |
+| \`maxFiles\` | number | \`100\` | Maximum file count before rotation |
+
+### \`run.aider\` — Aider Settings (when agent="aider")
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`model\` | string | — | Model to use (e.g., "claude-3-sonnet") |
+| \`editFormat\` | string | — | Edit format: "diff", "whole", "udiff" |
+| \`extraArgs\` | string[] | — | Extra CLI arguments passed to aider |
+
+## \`agents\` — Agent Execution Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`parallel\` | boolean | \`false\` | Run agents in parallel (faster, higher token usage) |
+| \`model\` | enum | \`"haiku"\` | Default model: \`"haiku"\`, \`"sonnet"\`, or \`"opus"\` |
+| \`isolateParallel\` | boolean | \`false\` | Isolate parallel agents in separate worktrees |
+
+## \`scopeAssessment\` — Scope Assessment Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`enabled\` | boolean | \`true\` | Whether scope assessment is enabled |
+| \`skipIfSimple\` | boolean | \`true\` | Skip assessment for trivial issues |
+
+### \`scopeAssessment.trivialThresholds\`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`maxACItems\` | number | \`3\` | Max AC items for trivial classification |
+| \`maxDirectories\` | number | \`1\` | Max directories for trivial classification |
+
+### \`scopeAssessment.thresholds\`
+
+Each threshold has \`yellow\` (warning) and \`red\` (split recommended) values:
+
+| Metric | Yellow | Red |
+|--------|--------|-----|
+| \`featureCount\` | 2 | 3 |
+| \`acItems\` | 6 | 9 |
+| \`fileEstimate\` | 8 | 13 |
+| \`directorySpread\` | 3 | 5 |
+
+## \`qa\` — QA Skill Settings
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`smallDiffThreshold\` | number | \`100\` | Diff size threshold for small-diff fast path |
+
+---
+
+*Unknown keys are preserved but logged as warnings. This allows forward compatibility
+with newer Sequant versions.*
+`;
 }
