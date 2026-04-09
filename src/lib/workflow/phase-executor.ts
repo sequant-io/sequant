@@ -17,6 +17,8 @@ import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
+import { classifyError } from "./error-classifier.js";
+import { ApiError } from "../errors.js";
 
 /**
  * Natural language prompts for each phase.
@@ -611,9 +613,27 @@ export async function executePhaseWithRetry(
       }
 
       // Genuine failure (took long enough to be real work) → skip cold-start retries.
-      // For spec phase, break to allow Phase 3 (spec-specific retry) to run.
-      // For other phases, return immediately — no further retries.
+      // Use error classification (AC-9): if the error is retryable (e.g., API
+      // rate limit, transient 503), allow one more attempt even for genuine failures.
       if (duration >= COLD_START_THRESHOLD_SECONDS) {
+        const typedError = classifyError(
+          lastResult.stderrTail ?? [],
+          lastResult.exitCode,
+        );
+        if (typedError.isRetryable && attempt < COLD_START_MAX_RETRIES) {
+          if (config.verbose) {
+            const label =
+              typedError instanceof ApiError
+                ? `API error (status ${typedError.metadata.statusCode ?? "unknown"})`
+                : typedError.name;
+            console.log(
+              chalk.yellow(
+                `\n    ⟳ Retryable error: ${label}, retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+              ),
+            );
+          }
+          continue;
+        }
         if (phase === "spec") {
           break;
         }

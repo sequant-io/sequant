@@ -23,6 +23,7 @@ import {
   type IssueStatus,
   type Phase,
 } from "../lib/workflow/state-schema.js";
+import { getSettingsWithWarnings } from "../lib/settings.js";
 
 export interface StatusCommandOptions {
   /** Show only issues state */
@@ -337,6 +338,15 @@ export async function statusCommand(
   console.log(chalk.gray(`Installed: ${manifest.installedAt}`));
   if (manifest.updatedAt) {
     console.log(chalk.gray(`Last updated: ${manifest.updatedAt}`));
+  }
+
+  // Show settings validation warnings (AC-3)
+  const { warnings: settingsWarnings } = await getSettingsWithWarnings();
+  if (settingsWarnings.length > 0) {
+    console.log(chalk.yellow("\n  Settings Warnings:"));
+    for (const w of settingsWarnings) {
+      console.log(chalk.yellow(`    ${w.message}`));
+    }
   }
 
   // Count skills

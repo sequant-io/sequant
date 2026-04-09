@@ -5,7 +5,10 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import * as fs from "fs";
 
 import { RingBuffer } from "../../src/lib/workflow/ring-buffer.js";
-import { classifyError } from "../../src/lib/workflow/error-classifier.js";
+import {
+  classifyError,
+  errorTypeToCategory,
+} from "../../src/lib/workflow/error-classifier.js";
 import {
   PhaseLogSchema,
   RunLogSchema,
@@ -43,11 +46,15 @@ describe("Error Capture - Integration", () => {
       const stdoutTail = stdoutBuffer.getLines();
 
       // Build errorContext from tails
+      const typedError = classifyError(stderrTail, 1);
       const errorContext: ErrorContext = {
         stderrTail,
         stdoutTail,
         exitCode: 1,
-        category: classifyError(stderrTail),
+        category: errorTypeToCategory(typedError),
+        errorType: typedError.name,
+        errorMetadata: typedError.metadata,
+        isRetryable: typedError.isRetryable,
       };
 
       // Create phase log with errorContext
