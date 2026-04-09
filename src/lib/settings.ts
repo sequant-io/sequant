@@ -277,11 +277,23 @@ export const RunSettingsSchema = z.object({
   aider: AiderSettingsSchema.optional(),
 });
 
-/** Zod schema for ScopeThreshold */
+/** Zod schema for ScopeThreshold (base — fields required, no defaults) */
 export const ScopeThresholdSchema = z.object({
   yellow: z.number(),
   red: z.number(),
 });
+
+/**
+ * Create a threshold schema with specific defaults for partial input.
+ * Each threshold (featureCount, acItems, etc.) needs its own defaults
+ * so that `{ yellow: 10 }` fills `red` from that threshold's default.
+ */
+function thresholdWithDefaults(defaultYellow: number, defaultRed: number) {
+  return z.object({
+    yellow: z.number().default(defaultYellow),
+    red: z.number().default(defaultRed),
+  });
+}
 
 /** Zod schema for TrivialThresholds */
 export const TrivialThresholdsSchema = z.object({
@@ -298,19 +310,34 @@ export const ScopeAssessmentSettingsSchema = z.object({
   ),
   thresholds: z
     .object({
-      featureCount: ScopeThresholdSchema.default({ yellow: 2, red: 3 }),
-      acItems: ScopeThresholdSchema.default({ yellow: 6, red: 9 }),
-      fileEstimate: ScopeThresholdSchema.default({ yellow: 8, red: 13 }),
-      directorySpread: ScopeThresholdSchema.default({ yellow: 3, red: 5 }),
+      featureCount: thresholdWithDefaults(2, 3).default({ yellow: 2, red: 3 }),
+      acItems: thresholdWithDefaults(6, 9).default({ yellow: 6, red: 9 }),
+      fileEstimate: thresholdWithDefaults(8, 13).default({
+        yellow: 8,
+        red: 13,
+      }),
+      directorySpread: thresholdWithDefaults(3, 5).default({
+        yellow: 3,
+        red: 5,
+      }),
     })
     .default(
       () =>
         z
           .object({
-            featureCount: ScopeThresholdSchema.default({ yellow: 2, red: 3 }),
-            acItems: ScopeThresholdSchema.default({ yellow: 6, red: 9 }),
-            fileEstimate: ScopeThresholdSchema.default({ yellow: 8, red: 13 }),
-            directorySpread: ScopeThresholdSchema.default({
+            featureCount: thresholdWithDefaults(2, 3).default({
+              yellow: 2,
+              red: 3,
+            }),
+            acItems: thresholdWithDefaults(6, 9).default({
+              yellow: 6,
+              red: 9,
+            }),
+            fileEstimate: thresholdWithDefaults(8, 13).default({
+              yellow: 8,
+              red: 13,
+            }),
+            directorySpread: thresholdWithDefaults(3, 5).default({
               yellow: 3,
               red: 5,
             }),
