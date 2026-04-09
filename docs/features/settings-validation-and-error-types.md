@@ -1,0 +1,173 @@
+# Configuration Schema Validation & Structured Error Types
+
+Sequant now validates `.sequant/settings.json` against a Zod schema — misspelled keys and type mismatches produce clear warnings instead of being silently ignored. Phase failures are classified into typed error instances with structured metadata, replacing fragile string-based categories.
+
+## Prerequisites
+
+1. **Sequant v2.2+** — `npx sequant --version`
+2. **Existing settings file** — created by `sequant init` (existing files continue working)
+
+## Settings Validation
+
+### What Changed
+
+Previously, a misspelled key like `"timoeut": 1800` was silently ignored and the default (`1800`) was used — with no indication anything was wrong. Now Sequant validates settings on load and warns about problems.
+
+### How It Works
+
+Settings are validated every time they're loaded. The validator:
+
+1. **Warns on unknown keys** — catches misspellings like `timoeut` instead of `timeout`
+2. **Warns on type mismatches** — catches `"timeout": "fast"` (string instead of number)
+3. **Falls back to defaults** — invalid fields use defaults, valid fields are kept
+4. **Never blocks** — warnings are informational, not fatal
+
+### Viewing Warnings
+
+Run `sequant status` to see any settings validation warnings:
+
+```
+$ sequant status
+
+  Settings Warnings:
+    Unknown key 'run.timoeut' in settings.json (ignored)
+    settings.json: 'run.timeout' Expected number, received string
+```
+
+### Forward Compatibility
+
+The schema uses `.passthrough()` at the top level, so settings files from newer Sequant versions won't be rejected — unknown keys are preserved and a warning is logged. This prevents breakage when downgrading Sequant versions.
+
+### Generated Settings File
+
+`sequant init` now generates a JSONC file (JSON with `//` comments) documenting each field and its default value, plus a companion `settings.reference.md` with a full reference table.
+
+```jsonc
+{
+  // Schema version for migration support
+  "version": "1.0",
+
+  // Run command settings
+  "run": {
+    // Default timeout per phase in seconds
+    "timeout": 1800,
+    // Enable automatic retry with MCP fallback
+    "retry": true,
+    ...
+  }
+}
+```
+
+### Programmatic Use
+
+The settings schema is exported for use in plugins and integrations:
+
+```typescript
+import { SettingsSchema, validateSettings } from 'sequant';
+
+const result = SettingsSchema.safeParse(myConfig);
+if (!result.success) {
+  console.log(result.error.issues);
+}
+
+// Or use the higher-level validator (returns warnings, never throws)
+const { settings, warnings } = validateSettings(rawJson);
+```
+
+## Structured Error Types
+
+### What Changed
+
+Phase failures were previously classified into string categories (`"api_error"`, `"timeout"`, etc.) via regex matching on stderr. This was fragile — a Claude Code SDK update that changed error message wording silently broke classification.
+
+Now `classifyError()` returns typed `SequantError` instances with structured metadata. Exit codes are the primary classification signal; stderr patterns are secondary.
+
+### Error Type Hierarchy
+
+| Error Type | When | Retryable | Metadata |
+|------------|------|-----------|----------|
+| `ContextOverflowError` | Token/context limit exceeded | Yes | `maxTokens`, `usedTokens` |
+| `ApiError` | Rate limits (429), 503, auth failures | 429/502/503: Yes | `statusCode`, `endpoint` |
+| `HookFailureError` | Pre-commit hook blocked | No | `hook`, `reason` |
+| `BuildError` | TypeScript, ESLint, npm errors | No | `toolchain`, `errorCode`, `file`, `line` |
+| `TimeoutError` | Phase exceeded time limit | No | `timeoutMs`, `phase` |
+| `SubprocessError` | git/gh command failed | Signal exits (128+): Yes | `command`, `exitCode`, `stderr` |
+
+### How Retry Works
+
+The phase executor now uses `error.isRetryable` instead of string matching:
+
+```typescript
+const error = classifyError(stderrLines, exitCode);
+if (error.isRetryable) {
+  // Retry: API rate limits, transient 503s, signal-killed processes
+} else {
+  // Don't retry: build errors, hook failures, auth errors
+}
+```
+
+### Run Log Format
+
+Failed phases now store structured error metadata in run logs:
+
+```json
+{
+  "category": "api_error",
+  "errorType": "ApiError",
+  "errorMetadata": { "statusCode": 429 },
+  "isRetryable": true
+}
+```
+
+Old logs with only the `category` string still parse correctly — the new fields are optional.
+
+### Programmatic Use
+
+All error types are exported for use in plugins and integrations:
+
+```typescript
+import {
+  SequantError,
+  ApiError,
+  BuildError,
+  classifyError,
+} from 'sequant';
+
+const error = classifyError(stderrLines, exitCode);
+
+if (error instanceof ApiError) {
+  console.log(`API error: status ${error.metadata.statusCode}`);
+}
+
+// Serialize for logging
+const json = error.toJSON();
+// { name: "ApiError", message: "...", isRetryable: true, metadata: { statusCode: 429 } }
+```
+
+## Settings Reference
+
+For the full list of settings fields and defaults, see `.sequant/settings.reference.md` (generated by `sequant init`) or the [settings source](../../src/lib/settings.ts).
+
+## Troubleshooting
+
+### "Unknown key" warnings for valid settings
+
+**Symptoms:** `sequant status` shows warnings for keys you intentionally added.
+
+**Solution:** Extra keys are allowed (forward compatibility) but warned about. If these are experimental fields, the warnings are informational — they don't affect behavior. Future Sequant versions may recognize these keys.
+
+### Settings validation warnings after upgrading Sequant
+
+**Symptoms:** After upgrading, new warnings appear about fields that worked before.
+
+**Solution:** Check the warning message. If a field type changed (e.g., from string to number), update your settings file. Run `sequant init` in a temp directory to see the latest defaults.
+
+### "Unknown" error classification
+
+**Symptoms:** A failed phase shows error type `SubprocessError` with no specific classification.
+
+**Solution:** The error didn't match any known pattern. Check `errorMetadata.stderr` in the run log for the actual error message. If it should be classified differently, the stderr patterns in `error-classifier.ts` may need updating.
+
+---
+
+*Generated for Issue #507 on 2026-04-08*
