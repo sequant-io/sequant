@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import { RingBuffer } from "../src/lib/workflow/ring-buffer.js";
 import {
   classifyError,
+  errorTypeToCategory,
   ERROR_CATEGORIES,
 } from "../src/lib/workflow/error-classifier.js";
 import {
@@ -224,37 +225,40 @@ describe("ErrorContext in PhaseLog", () => {
 // === AC-4: Failure categorization in stats ===
 
 describe("Error Classifier", () => {
+  // Helper: classifyError now returns typed SequantError instances (#507).
+  // Use errorTypeToCategory() to get the legacy string category for these tests.
+  const classify = (lines: string[]) =>
+    errorTypeToCategory(classifyError(lines));
+
   describe("AC-4: Failure categorization", () => {
     it("should classify context overflow errors", () => {
       expect(
-        classifyError(["Error: context window exceeded, max tokens reached"]),
+        classify(["Error: context window exceeded, max tokens reached"]),
       ).toBe("context_overflow");
     });
 
     it("should classify API errors", () => {
-      expect(classifyError(["Error 429: rate limit exceeded"])).toBe(
-        "api_error",
-      );
+      expect(classify(["Error 429: rate limit exceeded"])).toBe("api_error");
     });
 
     it("should classify hook failures", () => {
-      expect(classifyError(["HOOK_BLOCKED: pre-commit hook failed"])).toBe(
+      expect(classify(["HOOK_BLOCKED: pre-commit hook failed"])).toBe(
         "hook_failure",
       );
     });
 
     it("should classify build/syntax errors", () => {
-      expect(classifyError(["error TS2304: Cannot find name 'foo'."])).toBe(
+      expect(classify(["error TS2304: Cannot find name 'foo'."])).toBe(
         "build_error",
       );
     });
 
     it("should classify timeout errors", () => {
-      expect(classifyError(["Process timed out after 1800s"])).toBe("timeout");
+      expect(classify(["Process timed out after 1800s"])).toBe("timeout");
     });
 
     it("should fall back to unknown for unrecognized patterns", () => {
-      expect(classifyError(["Something went wrong in an unexpected way"])).toBe(
+      expect(classify(["Something went wrong in an unexpected way"])).toBe(
         "unknown",
       );
     });
@@ -262,18 +266,18 @@ describe("Error Classifier", () => {
     // === FAILURE PATHS ===
     describe("error handling", () => {
       it("should handle empty stderr array", () => {
-        expect(classifyError([])).toBe("unknown");
+        expect(classify([])).toBe("unknown");
       });
 
       it("should NOT classify HTTP codes embedded in larger numbers", () => {
-        expect(classifyError(["connecting on port 50200"])).toBe("unknown");
-        expect(classifyError(["processed batch 4290 records"])).toBe("unknown");
-        expect(classifyError(["reference ID 15029"])).toBe("unknown");
+        expect(classify(["connecting on port 50200"])).toBe("unknown");
+        expect(classify(["processed batch 4290 records"])).toBe("unknown");
+        expect(classify(["reference ID 15029"])).toBe("unknown");
       });
 
       it("should handle stderr with multiple matching patterns (first wins)", () => {
         // "timeout" has higher priority than "api_error"
-        const result = classifyError([
+        const result = classify([
           "connection timeout after 30s",
           "api error: 503 service unavailable",
         ]);

@@ -98,7 +98,7 @@ export const ErrorContextSchema = z.object({
   stdoutTail: z.array(z.string()),
   /** Process exit code */
   exitCode: z.number().int().optional(),
-  /** Classified error category */
+  /** Classified error category (legacy, kept for backwards compatibility) */
   category: z.enum([
     "context_overflow",
     "api_error",
@@ -107,6 +107,12 @@ export const ErrorContextSchema = z.object({
     "timeout",
     "unknown",
   ]),
+  /** Typed error class name (AC-8), e.g. "ApiError", "BuildError" */
+  errorType: z.string().optional(),
+  /** Structured error metadata (AC-8) */
+  errorMetadata: z.record(z.string(), z.unknown()).optional(),
+  /** Whether this error type is retryable (AC-9) */
+  isRetryable: z.boolean().optional(),
 });
 
 export type ErrorContext = z.infer<typeof ErrorContextSchema>;

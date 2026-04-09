@@ -11,6 +11,7 @@ vi.mock("../lib/fs.js", () => ({
 // Mock settings
 vi.mock("../lib/settings.js", () => ({
   createDefaultSettings: vi.fn(),
+  generateSettingsReference: vi.fn(() => "# Settings Reference\n"),
   SETTINGS_PATH: ".sequant/settings.json",
 }));
 

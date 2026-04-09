@@ -266,7 +266,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       const config = getSequantMcpConfig();
 
       expect(config.command).toBe("npx");
-      expect(config.args).toEqual(["sequant@latest", "serve"]);
+      expect(config.args).toEqual(["-y", "sequant@latest", "serve"]);
     });
 
     it("should add sequant config to an existing MCP config file", () => {

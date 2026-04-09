@@ -16,7 +16,10 @@ import {
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
-import { createDefaultSettings } from "../lib/settings.js";
+import {
+  createDefaultSettings,
+  generateSettingsReference,
+} from "../lib/settings.js";
 import { detectAndSaveConventions } from "../lib/conventions-detector.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
@@ -447,11 +450,15 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(chalk.blue("📋 Saved multi-stack configuration"));
   }
 
-  // Create default settings
+  // Create default settings + reference doc (AC-4)
   const settingsSpinner = ui.spinner("Creating default settings...");
   settingsSpinner.start();
   await createDefaultSettings();
-  settingsSpinner.succeed("Created default settings");
+  await writeFile(
+    ".sequant/settings.reference.md",
+    generateSettingsReference(),
+  );
+  settingsSpinner.succeed("Created default settings + reference doc");
 
   // Detect codebase conventions
   const conventionsSpinner = ui.spinner("Detecting codebase conventions...");

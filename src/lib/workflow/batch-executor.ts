@@ -20,7 +20,7 @@ import {
   type IssueExecutionContext,
   type BatchExecutionContext,
 } from "./types.js";
-import { classifyError } from "./error-classifier.js";
+import { classifyError, errorTypeToCategory } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
@@ -549,11 +549,18 @@ export async function runIssueWithLogging(
         // Build errorContext from captured stderr/stdout tails (#447)
         let specErrorContext: ErrorContext | undefined;
         if (!specResult.success && specResult.stderrTail) {
+          const specError = classifyError(
+            specResult.stderrTail ?? [],
+            specResult.exitCode,
+          );
           specErrorContext = {
             stderrTail: specResult.stderrTail ?? [],
             stdoutTail: specResult.stdoutTail ?? [],
             exitCode: specResult.exitCode,
-            category: classifyError(specResult.stderrTail ?? []),
+            category: errorTypeToCategory(specError),
+            errorType: specError.name,
+            errorMetadata: specError.metadata,
+            isRetryable: specError.isRetryable,
           };
         }
         const phaseLog = createPhaseLogFromTiming(
@@ -808,14 +815,21 @@ export async function runIssueWithLogging(
         const cacheMetrics =
           phase === "qa" ? readCacheMetrics(worktreePath) : undefined;
 
-        // Build errorContext from captured stderr/stdout tails (#447)
+        // Build errorContext from captured stderr/stdout tails (#447, AC-7/AC-8)
         let errorContext: ErrorContext | undefined;
         if (!result.success && result.stderrTail) {
+          const typedError = classifyError(
+            result.stderrTail ?? [],
+            result.exitCode,
+          );
           errorContext = {
             stderrTail: result.stderrTail ?? [],
             stdoutTail: result.stdoutTail ?? [],
             exitCode: result.exitCode,
-            category: classifyError(result.stderrTail ?? []),
+            category: errorTypeToCategory(typedError),
+            errorType: typedError.name,
+            errorMetadata: typedError.metadata,
+            isRetryable: typedError.isRetryable,
           };
         }
 
