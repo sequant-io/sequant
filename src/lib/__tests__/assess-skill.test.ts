@@ -57,7 +57,7 @@ describe("assess skill phase vocabulary", () => {
   it("should only use valid phases in the label→phase workflow table", () => {
     // Extract phase names from the workflow column of the label→phase table
     const tableSection = skillContent.match(
-      /\| Labels \| Category \| Workflow \|[\s\S]*?(?=\n\n)/,
+      /\| Labels \|.*Workflow \|[\s\S]*?(?=\n\n)/,
     );
     expect(tableSection).not.toBeNull();
 
