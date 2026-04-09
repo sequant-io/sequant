@@ -1,0 +1,15 @@
+is this good architecture design and best practices? research if needed\
+\
+https://github.com/sequant-io/sequant/blob/main/docs/internal/architecture-target.md
+
+---
+
+Can you also assess for overcomplexity?
+
+---
+
+Can you check our open issues and create a plan to update them based on this assement. 503 and 507 are running in a sequant run currently for context
+
+---
+
+proceed
