@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/commands/run.ts` reduced from 1,171 to 184 lines as thin CLI adapter
   - Both classes exported from package entry point for programmatic use
 
+## [2.1.1] - 2026-04-07
+
+### Fixed
+
+- Add `-y` flag to npx in generated MCP server config to prevent silent hang in non-interactive contexts
+
 ## [2.1.0] - 2026-04-07
 
 ### Added
