@@ -1,0 +1,21 @@
+qa 503
+
+---
+
+any gaps?
+
+---
+
+can wefix the gaps? plan
+
+---
+
+commit
+
+---
+
+/reflect
+
+---
+
+proceed with action items
