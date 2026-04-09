@@ -224,12 +224,14 @@ Cleanup:
  447  CLOSE      PR #457 merged                        —
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
  412  PROCEED    Auth bug (domain: auth overrides bug) spec → security-review → exec → qa
+ 411  PROCEED    Config path normalization              ◂ exec → qa
  405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
 ────────────────────────────────────────────────────────────────
 
     npx sequant run 461 460 -q --phases exec,qa
     npx sequant run 458 443 -q
     npx sequant run 412 -q --phases spec,security-review,exec,qa
+    npx sequant run 411 -q --phases exec,qa     # resume
     npx sequant run 405 -q                      # restart
 
 ────────────────────────────────────────────────────────────────
@@ -252,6 +254,7 @@ Cleanup:
 <!-- #447 assess:action=CLOSE -->
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #412 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
+<!-- #411 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
@@ -276,12 +279,14 @@ When every issue is PROCEED with no warnings, the output is minimal:
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
-#### Batch Example (large batch, 11 issues)
+#### Batch Example (large batch, 13 issues with Rule 7 split)
 
 When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per line), and the table adapts to content width:
 
 ```
  #    Action     Reason                                   Run
+ 503  PROCEED    Fix typo in error output                   exec → qa
+ 502  PROCEED    Update deprecated API call                 exec → qa
  501  PROCEED    Add retry logic to API client              exec → qa
  500  PROCEED    Fix token refresh race condition           spec → security-review → exec → qa
  499  PROCEED    Dashboard chart rendering bug              spec → exec → test → qa
@@ -295,7 +300,8 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
  491  PROCEED    Normalize config paths                     exec → qa
 ────────────────────────────────────────────────────────────────
 
-    npx sequant run 501 498 495 494 491 -q --phases exec,qa
+    npx sequant run 503 502 501 498 495 494 -q --phases exec,qa
+    npx sequant run 491 -q --phases exec,qa
     npx sequant run 499 -q --phases spec,exec,test,qa
     npx sequant run 500 -q --phases spec,security-review,exec,qa
     npx sequant run 497 492 -q
@@ -310,6 +316,8 @@ Cleanup:
   gh issue close 493                   # duplicate of #491
 ────────────────────────────────────────────────────────────────
 
+<!-- #503 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #502 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #501 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
 <!-- #500 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
 <!-- #499 assess:action=PROCEED assess:phases=spec,exec,test,qa assess:quality-loop=true -->
