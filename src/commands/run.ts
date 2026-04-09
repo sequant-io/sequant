@@ -1,243 +1,44 @@
-/**
- * sequant run - Execute workflow for GitHub issues
- *
- * Orchestrator module that composes focused workflow modules:
- * - worktree-manager: Worktree lifecycle (ensure, list, cleanup, changed files)
- * - phase-executor: Phase execution with retry and failure handling
- * - phase-mapper: Label-to-phase detection and workflow parsing
- * - batch-executor: Batch execution, dependency sorting, issue logging
- */
+/** sequant run — Thin CLI adapter that delegates to RunOrchestrator. */
 
 import chalk from "chalk";
-import { spawnSync } from "child_process";
-import pLimit from "p-limit";
 import { getManifest } from "../lib/manifest.js";
 import { formatElapsedTime } from "../lib/phase-spinner.js";
 import { getSettings } from "../lib/settings.js";
-import { LogWriter } from "../lib/workflow/log-writer.js";
-import type { RunConfig } from "../lib/workflow/run-log-schema.js";
-import { StateManager } from "../lib/workflow/state-manager.js";
-import {
-  Phase,
-  DEFAULT_PHASES,
-  DEFAULT_CONFIG,
-  ExecutionConfig,
-  IssueResult,
-} from "../lib/workflow/types.js";
-import { ShutdownManager } from "../lib/shutdown.js";
+import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
-import { MetricsWriter } from "../lib/workflow/metrics-writer.js";
-import {
-  type MetricPhase,
-  determineOutcome,
-} from "../lib/workflow/metrics-schema.js";
 import { ui, colors } from "../lib/cli-ui.js";
-import { getCommitHash } from "../lib/workflow/git-diff-utils.js";
-import { getTokenUsageForRun } from "../lib/workflow/token-utils.js";
-import { reconcileStateAtStartup } from "../lib/workflow/state-utils.js";
+import { formatDuration } from "../lib/workflow/phase-executor.js";
+import { parseBatches } from "../lib/workflow/batch-executor.js";
+import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
+import type { RunResult } from "../lib/workflow/run-orchestrator.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 
-/** @internal Log a non-fatal warning: one-line summary always, detail in verbose. */
-export function logNonFatalWarning(
-  message: string,
-  error: unknown,
-  verbose: boolean,
-): void {
-  console.log(chalk.yellow(message));
-  if (verbose) {
-    console.log(chalk.gray(`    ${error}`));
-  }
-}
-
-// Extracted modules
-import {
-  detectDefaultBranch,
-  ensureWorktrees,
-  ensureWorktreesChain,
-  getWorktreeDiffStats,
-} from "../lib/workflow/worktree-manager.js";
-import type { WorktreeInfo } from "../lib/workflow/worktree-manager.js";
-import { formatDuration } from "../lib/workflow/phase-executor.js";
-import {
-  getIssueInfo,
-  sortByDependencies,
-  parseBatches,
-  getEnvConfig,
-  executeBatch,
-  runIssueWithLogging,
-} from "../lib/workflow/batch-executor.js";
-import type {
-  RunOptions,
-  ProgressCallback,
-  IssueExecutionContext,
-  BatchExecutionContext,
-} from "../lib/workflow/batch-executor.js";
-
 // Re-export public API for backwards compatibility
-export {
-  parseQaVerdict,
-  formatDuration,
-  executePhaseWithRetry,
-} from "../lib/workflow/phase-executor.js";
-export {
-  detectDefaultBranch,
-  checkWorktreeFreshness,
-  removeStaleWorktree,
-  listWorktrees,
-  getWorktreeChangedFiles,
-  getWorktreeDiffStats,
-  readCacheMetrics,
-  filterResumedPhases,
-  ensureWorktree,
-  createCheckpointCommit,
-  reinstallIfLockfileChanged,
-  rebaseBeforePR,
-  createPR,
-} from "../lib/workflow/worktree-manager.js";
-export type {
-  WorktreeInfo,
-  RebaseResult,
-  PRCreationResult,
-} from "../lib/workflow/worktree-manager.js";
-export {
-  detectPhasesFromLabels,
-  parseRecommendedWorkflow,
-  determinePhasesForIssue,
-} from "../lib/workflow/phase-mapper.js";
-export {
-  getIssueInfo,
-  sortByDependencies,
-  parseBatches,
-  getEnvConfig,
-  executeBatch,
-  runIssueWithLogging,
-} from "../lib/workflow/batch-executor.js";
-export type { RunOptions } from "../lib/workflow/batch-executor.js";
+export * from "./run-compat.js";
 
-/**
- * Commander.js flag mapping for --no-X flags.
- * Commander converts `--no-X` to `{ X: false }` instead of `{ noX: true }`.
- * This interface types the raw Commander output for safe normalization.
- */
-interface CommanderRawOptions extends RunOptions {
-  log?: boolean;
-  smartTests?: boolean;
-  mcp?: boolean;
-  retry?: boolean;
-  rebase?: boolean;
-  pr?: boolean;
-}
-
-/**
- * Normalize Commander.js --no-X flags into typed RunOptions fields.
- * Replaces the `as any` cast (#402 AC-4).
- */
-export function normalizeCommanderOptions(options: RunOptions): RunOptions {
-  const raw = options as CommanderRawOptions;
-  return {
-    ...options,
-    ...(raw.log === false && { noLog: true }),
-    ...(raw.smartTests === false && { noSmartTests: true }),
-    ...(raw.mcp === false && { noMcp: true }),
-    ...(raw.retry === false && { noRetry: true }),
-    ...(raw.rebase === false && { noRebase: true }),
-    ...(raw.pr === false && { noPr: true }),
-  };
-}
-
-/**
- * Execute a single issue with log bookkeeping (start/complete/PR info).
- * Replaces the duplicated per-issue wrapper in sequential and parallel loops (#402 AC-1).
- */
-async function executeOneIssue(args: {
-  issueNumber: number;
-  batchCtx: BatchExecutionContext;
-  chain?: { enabled: boolean; isLast: boolean };
-  /** When set, pass issueNumber to logWriter.setPRInfo/completeIssue (parallel mode) */
-  parallelIssueNumber?: number;
-}): Promise<IssueResult> {
-  const { issueNumber, batchCtx, chain, parallelIssueNumber } = args;
-  const {
-    config,
-    options,
-    issueInfoMap,
-    worktreeMap,
-    logWriter,
-    stateManager,
-    shutdownManager,
-    packageManager,
-    baseBranch,
-    onProgress,
-  } = batchCtx;
-
-  const issueInfo = issueInfoMap.get(issueNumber) ?? {
-    title: `Issue #${issueNumber}`,
-    labels: [],
-  };
-  const worktreeInfo = worktreeMap.get(issueNumber);
-
-  // Start issue logging
-  if (logWriter) {
-    logWriter.startIssue(issueNumber, issueInfo.title, issueInfo.labels);
-  }
-
-  const ctx: IssueExecutionContext = {
-    issueNumber,
-    title: issueInfo.title,
-    labels: issueInfo.labels,
-    config,
-    options,
-    services: { logWriter, stateManager, shutdownManager },
-    worktree: worktreeInfo
-      ? { path: worktreeInfo.path, branch: worktreeInfo.branch }
-      : undefined,
-    chain,
-    packageManager,
-    baseBranch,
-    onProgress,
-  };
-  const result = await runIssueWithLogging(ctx);
-
-  // Record PR info in log before completing issue
-  if (logWriter && result.prNumber && result.prUrl) {
-    logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
-  }
-
-  // Complete issue logging
-  if (logWriter) {
-    logWriter.completeIssue(parallelIssueNumber);
-  }
-
-  return result;
-}
-
-/**
- * Main run command
- */
+/** Parse CLI args → validate → delegate to RunOrchestrator.run() → display summary. */
 export async function runCommand(
   issues: string[],
   options: RunOptions,
 ): Promise<void> {
   console.log(ui.headerBox("SEQUANT WORKFLOW"));
 
-  // Version freshness check (cached, non-blocking, respects --quiet)
   if (!options.quiet) {
     try {
-      const versionResult = await checkVersionCached();
-      if (versionResult.isOutdated && versionResult.latestVersion) {
+      const v = await checkVersionCached();
+      if (v.isOutdated && v.latestVersion) {
         console.log(
           chalk.yellow(
-            `  !  ${getVersionWarning(versionResult.currentVersion, versionResult.latestVersion, versionResult.isLocalInstall)}`,
+            `  !  ${getVersionWarning(v.currentVersion, v.latestVersion, v.isLocalInstall)}`,
           ),
         );
         console.log("");
       }
     } catch {
-      // Silent failure - version check is non-critical
+      /* non-critical */
     }
   }
 
-  // Check if initialized
   const manifest = await getManifest();
   if (!manifest) {
     console.log(
@@ -246,926 +47,138 @@ export async function runCommand(
     return;
   }
 
-  // Load settings and merge with environment config and CLI options
   const settings = await getSettings();
-  const envConfig = getEnvConfig();
 
-  // Settings provide defaults, env overrides settings, CLI overrides all
-  // Note: phases are auto-detected per-issue unless --phases is explicitly set
-  const normalizedOptions = normalizeCommanderOptions(options);
+  // Validate constraints
+  if (options.chain && options.batch?.length) {
+    console.log(chalk.red("❌ --chain cannot be used with --batch"));
+    return;
+  }
+  if (
+    options.concurrency !== undefined &&
+    (options.concurrency < 1 || !Number.isInteger(options.concurrency))
+  ) {
+    console.log(
+      chalk.red(
+        `❌ Invalid --concurrency value: ${options.concurrency}. Must be a positive integer.`,
+      ),
+    );
+    return;
+  }
+  if (options.qaGate && !options.chain) {
+    console.log(chalk.red("❌ --qa-gate requires --chain flag"));
+    return;
+  }
 
-  const mergedOptions: RunOptions = {
-    // Settings defaults (phases removed - now auto-detected)
-    sequential: normalizedOptions.sequential ?? settings.run.sequential,
-    concurrency: normalizedOptions.concurrency ?? settings.run.concurrency,
-    timeout: normalizedOptions.timeout ?? settings.run.timeout,
-    logPath: normalizedOptions.logPath ?? settings.run.logPath,
-    qualityLoop: normalizedOptions.qualityLoop ?? settings.run.qualityLoop,
-    maxIterations:
-      normalizedOptions.maxIterations ?? settings.run.maxIterations,
-    noSmartTests: normalizedOptions.noSmartTests ?? !settings.run.smartTests,
-    // Agent settings (from agents section, not run section)
-    isolateParallel:
-      normalizedOptions.isolateParallel ?? settings.agents.isolateParallel,
-    // Env overrides
-    ...envConfig,
-    // CLI explicit options override all
-    ...normalizedOptions,
-  };
-
-  // Determine if we should auto-detect phases from labels
-  const autoDetectPhases = !options.phases && settings.run.autoDetectPhases;
-  mergedOptions.autoDetectPhases = autoDetectPhases;
-
-  // Resolve base branch: CLI flag → settings.run.defaultBase → auto-detect → 'main'
-  const resolvedBaseBranch =
-    options.base ??
-    settings.run.defaultBase ??
-    detectDefaultBranch(mergedOptions.verbose ?? false);
-
-  // Parse issue numbers (or use batch mode)
-  let issueNumbers: number[];
   let batches: number[][] | null = null;
-
-  if (mergedOptions.batch && mergedOptions.batch.length > 0) {
-    batches = parseBatches(mergedOptions.batch);
-    issueNumbers = batches.flat();
+  if (options.batch?.length) {
+    batches = parseBatches(options.batch);
     console.log(
       chalk.gray(
         `  Batch mode: ${batches.map((b) => `[${b.join(", ")}]`).join(" → ")}`,
       ),
     );
-  } else {
-    issueNumbers = issues.map((i) => parseInt(i, 10)).filter((n) => !isNaN(n));
   }
 
-  if (issueNumbers.length === 0) {
-    console.log(chalk.red("❌ No valid issue numbers provided."));
-    console.log(chalk.gray("\nUsage: npx sequant run <issues...> [options]"));
-    console.log(chalk.gray("Example: npx sequant run 1 2 3 --sequential"));
-    console.log(
-      chalk.gray('Batch example: npx sequant run --batch "1 2" --batch "3"'),
-    );
-    console.log(chalk.gray("Chain example: npx sequant run 1 2 3 --chain"));
-    return;
-  }
+  console.log(chalk.gray(`  ${"Stack".padEnd(15)}${manifest.stack}`));
 
-  // Validate chain mode requirements
-  if (mergedOptions.chain) {
-    // Chain mode is inherently sequential — imply --sequential automatically
-    if (!mergedOptions.sequential) {
-      mergedOptions.sequential = true;
-    }
-
-    if (batches) {
-      console.log(chalk.red("❌ --chain cannot be used with --batch"));
-      console.log(
-        chalk.gray(
-          "   Chain mode creates a linear dependency chain between issues.",
-        ),
-      );
-      return;
-    }
-
-    // Warn about long chains
-    if (issueNumbers.length > 5) {
-      console.log(
-        chalk.yellow(
-          `  !  Warning: Chain has ${issueNumbers.length} issues (recommended max: 5)`,
-        ),
-      );
-      console.log(
-        chalk.yellow(
-          "     Long chains increase merge complexity and review difficulty.",
-        ),
-      );
-      console.log(
-        chalk.yellow(
-          "     Consider breaking into smaller chains or using batch mode.",
-        ),
-      );
-      console.log("");
-    }
-  }
-
-  // Validate concurrency value
-  if (
-    mergedOptions.concurrency !== undefined &&
-    (mergedOptions.concurrency < 1 ||
-      !Number.isInteger(mergedOptions.concurrency))
-  ) {
-    console.log(
-      chalk.red(
-        `❌ Invalid --concurrency value: ${mergedOptions.concurrency}. Must be a positive integer.`,
-      ),
-    );
-    return;
-  }
-
-  // Validate QA gate requirements
-  if (mergedOptions.qaGate && !mergedOptions.chain) {
-    console.log(chalk.red("❌ --qa-gate requires --chain flag"));
-    console.log(
-      chalk.gray(
-        "   QA gate ensures each issue passes QA before the next issue starts.",
-      ),
-    );
-    console.log(
-      chalk.gray(
-        "   Usage: npx sequant run 1 2 3 --sequential --chain --qa-gate",
-      ),
-    );
-    return;
-  }
-
-  // Sort issues by dependencies (if more than one issue)
-  if (issueNumbers.length > 1 && !batches) {
-    const originalOrder = [...issueNumbers];
-    issueNumbers = sortByDependencies(issueNumbers);
-    const orderChanged = !originalOrder.every((n, i) => n === issueNumbers[i]);
-    if (orderChanged) {
-      console.log(
-        chalk.gray(
-          `  Dependency order: ${issueNumbers.map((n) => `#${n}`).join(" → ")}`,
-        ),
-      );
-    }
-  }
-
-  // Build config
-  // Note: config.phases is only used when --phases is explicitly set or autoDetect fails
-  const explicitPhases = mergedOptions.phases
-    ? (mergedOptions.phases.split(",").map((p) => p.trim()) as Phase[])
-    : null;
-
-  // Determine MCP enablement: CLI flag (--no-mcp) → settings.run.mcp → default (true)
-  const mcpEnabled = mergedOptions.noMcp
-    ? false
-    : (settings.run.mcp ?? DEFAULT_CONFIG.mcp);
-
-  // Resolve retry setting: CLI flag → settings.run.retry → default (true)
-  const retryEnabled = mergedOptions.noRetry
-    ? false
-    : (settings.run.retry ?? true);
-
-  const isSequential = mergedOptions.sequential ?? false;
-  const isParallel = !isSequential && issueNumbers.length > 1;
-
-  const config: ExecutionConfig = {
-    ...DEFAULT_CONFIG,
-    phases: explicitPhases ?? DEFAULT_PHASES,
-    sequential: isSequential,
-    concurrency: mergedOptions.concurrency ?? DEFAULT_CONFIG.concurrency,
-    parallel: isParallel,
-    dryRun: mergedOptions.dryRun ?? false,
-    verbose: mergedOptions.verbose ?? false,
-    phaseTimeout: mergedOptions.timeout ?? DEFAULT_CONFIG.phaseTimeout,
-    qualityLoop: mergedOptions.qualityLoop ?? false,
-    maxIterations: mergedOptions.maxIterations ?? DEFAULT_CONFIG.maxIterations,
-    noSmartTests: mergedOptions.noSmartTests ?? false,
-    mcp: mcpEnabled,
-    retry: retryEnabled,
-    agent: mergedOptions.agent ?? settings.run.agent,
-    aiderSettings: settings.run.aider,
-    isolateParallel: mergedOptions.isolateParallel,
-  };
-
-  // Propagate verbose mode to UI config so spinners use text-only mode.
-  // This prevents animated spinner control characters from colliding with
-  // verbose console.log() calls from StateManager/MetricsWriter (#282).
-  if (config.verbose) {
-    ui.configure({ verbose: true });
-  }
-
-  // Initialize log writer if JSON logging enabled
-  // Default: enabled via settings (logJson: true), can be disabled with --no-log
-  let logWriter: LogWriter | null = null;
-  const shouldLog =
-    !mergedOptions.noLog &&
-    !config.dryRun &&
-    (mergedOptions.logJson ?? settings.run.logJson);
-
-  if (shouldLog) {
-    const runConfig: RunConfig = {
-      phases: config.phases,
-      sequential: config.sequential,
-      qualityLoop: config.qualityLoop,
-      maxIterations: config.maxIterations,
-      chain: mergedOptions.chain,
-      qaGate: mergedOptions.qaGate,
-    };
-
-    try {
-      logWriter = new LogWriter({
-        logPath: mergedOptions.logPath ?? settings.run.logPath,
-        verbose: config.verbose,
-        startCommit: getCommitHash(process.cwd()),
-      });
-      await logWriter.initialize(runConfig);
-    } catch (err) {
-      // Log initialization failure is non-fatal - warn and continue without logging
-      // Common causes: permissions issues, disk full, invalid path
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      console.log(
-        chalk.yellow(
-          `  ! Log initialization failed, continuing without logging: ${errorMessage}`,
-        ),
-      );
-      logWriter = null;
-    }
-  }
-
-  // Initialize state manager for persistent workflow state tracking
-  // State tracking is always enabled (unless dry run)
-  let stateManager: StateManager | null = null;
-  if (!config.dryRun) {
-    stateManager = new StateManager({ verbose: config.verbose });
-  }
-
-  // Initialize shutdown manager for graceful interruption handling
-  const shutdown = new ShutdownManager();
-
-  // Register log writer finalization as cleanup task
-  if (logWriter) {
-    const writer = logWriter; // Capture for closure
-    shutdown.registerCleanup("Finalize run logs", async () => {
-      await writer.finalize();
-    });
-  }
-
-  // Display configuration (columnar alignment)
-  const pad = (label: string) => label.padEnd(15);
-  console.log(chalk.gray(`  ${pad("Stack")}${manifest.stack}`));
-  if (autoDetectPhases) {
-    console.log(chalk.gray(`  ${pad("Phases")}auto-detect from labels`));
-  } else {
-    console.log(
-      chalk.gray(`  ${pad("Phases")}${config.phases.join(" \u2192 ")}`),
-    );
-  }
-  console.log(
-    chalk.gray(
-      `  ${pad("Mode")}${config.sequential ? "sequential (stop-on-failure)" : `parallel (concurrency: ${config.concurrency})`}`,
-    ),
-  );
-  if (config.qualityLoop) {
-    console.log(
-      chalk.gray(
-        `  ${pad("Quality loop")}enabled (max ${config.maxIterations} iterations)`,
-      ),
-    );
-  }
-  if (mergedOptions.testgen) {
-    console.log(chalk.gray(`  ${pad("Testgen")}enabled`));
-  }
-  if (config.noSmartTests) {
-    console.log(chalk.gray(`  ${pad("Smart tests")}disabled`));
-  }
-  if (config.dryRun) {
-    console.log(chalk.yellow(`  ${pad("!")}DRY RUN - no actual execution`));
-  }
-  if (logWriter) {
-    console.log(
-      chalk.gray(
-        `  ${pad("Logging")}JSON (run ${logWriter.getRunId()?.slice(0, 8)}...)`,
-      ),
-    );
-  }
-  if (stateManager) {
-    console.log(chalk.gray(`  ${pad("State")}enabled`));
-  }
-  if (mergedOptions.force) {
-    console.log(chalk.yellow(`  ${pad("Force")}enabled (bypass state guard)`));
-  }
-  console.log(
-    chalk.gray(
-      `  ${pad("Issues")}${issueNumbers.map((n) => `#${n}`).join(", ")}`,
-    ),
-  );
-
-  // ============================================================================
-  // Pre-flight State Guard (#305)
-  // ============================================================================
-
-  // AC-5: Auto-cleanup at run start - reconcile stale ready_for_merge states
-  if (stateManager && !config.dryRun) {
-    try {
-      const reconcileResult = await reconcileStateAtStartup({
-        verbose: config.verbose,
-      });
-
-      if (reconcileResult.success && reconcileResult.advanced.length > 0) {
-        console.log(
-          chalk.gray(
-            `  State reconciled: ${reconcileResult.advanced.map((n) => `#${n}`).join(", ")} → merged`,
-          ),
-        );
-      }
-    } catch (error) {
-      // AC-8: Graceful degradation - don't block execution on reconciliation failure
-      logNonFatalWarning(
-        `  !  State reconciliation failed, continuing...`,
-        error,
-        config.verbose,
-      );
-    }
-  }
-
-  // AC-1 & AC-2: Pre-flight state guard - skip completed issues unless --force
-  if (stateManager && !config.dryRun && !mergedOptions.force) {
-    const skippedIssues: number[] = [];
-    const activeIssues: number[] = [];
-
-    for (const issueNumber of issueNumbers) {
-      try {
-        const issueState = await stateManager.getIssueState(issueNumber);
-        if (
-          issueState &&
-          (issueState.status === "ready_for_merge" ||
-            issueState.status === "merged")
-        ) {
-          skippedIssues.push(issueNumber);
-          console.log(
-            chalk.yellow(
-              `  !  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
-            ),
-          );
-        } else {
-          activeIssues.push(issueNumber);
-        }
-      } catch (error) {
-        // AC-8: Graceful degradation - if state check fails, include the issue
-        logNonFatalWarning(
-          `  !  State lookup failed for #${issueNumber}, including anyway...`,
-          error,
-          config.verbose,
-        );
-        activeIssues.push(issueNumber);
-      }
-    }
-
-    // Update issueNumbers to only include active issues
-    if (skippedIssues.length > 0) {
-      issueNumbers = activeIssues;
-
-      if (issueNumbers.length === 0) {
-        console.log(
-          chalk.yellow(
-            `\n  All issues already completed. Use --force to re-run.`,
-          ),
-        );
-        return;
-      }
-
-      console.log(
-        chalk.gray(
-          `  Active issues: ${issueNumbers.map((n) => `#${n}`).join(", ")}`,
-        ),
-      );
-    }
-  }
-
-  // Worktree isolation is enabled by default for multi-issue runs
-  const useWorktreeIsolation =
-    mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
-
-  if (useWorktreeIsolation) {
-    console.log(chalk.gray(`  Worktree isolation: enabled`));
-  }
-  if (resolvedBaseBranch) {
-    console.log(chalk.gray(`  Base branch: ${resolvedBaseBranch}`));
-  }
-  if (mergedOptions.chain) {
-    console.log(
-      chalk.gray(`  Chain mode: enabled (each issue branches from previous)`),
-    );
-  }
-  if (mergedOptions.qaGate) {
-    console.log(chalk.gray(`  QA gate: enabled (chain waits for QA pass)`));
-  }
-
-  // Fetch issue info for all issues first
-  const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
-  for (const issueNumber of issueNumbers) {
-    issueInfoMap.set(issueNumber, await getIssueInfo(issueNumber));
-  }
-
-  // Create worktrees for all issues before execution (if isolation enabled)
-  let worktreeMap: Map<number, WorktreeInfo> = new Map();
-  if (useWorktreeIsolation && !config.dryRun) {
-    const issueData = issueNumbers.map((num) => ({
-      number: num,
-      title: issueInfoMap.get(num)?.title || `Issue #${num}`,
-    }));
-
-    // Use chain mode or standard worktree creation
-    if (mergedOptions.chain) {
-      worktreeMap = await ensureWorktreesChain(
-        issueData,
-        config.verbose,
-        manifest.packageManager,
-        resolvedBaseBranch,
-      );
-    } else {
-      worktreeMap = await ensureWorktrees(
-        issueData,
-        config.verbose,
-        manifest.packageManager,
-        resolvedBaseBranch,
-      );
-    }
-
-    // Register cleanup tasks for newly created worktrees (not pre-existing ones)
-    for (const [issueNum, worktree] of worktreeMap.entries()) {
-      if (!worktree.existed) {
-        shutdown.registerCleanup(
-          `Cleanup worktree for #${issueNum}`,
-          async () => {
-            // Remove worktree (leaves branch intact for recovery)
-            const result = spawnSync(
-              "git",
-              ["worktree", "remove", "--force", worktree.path],
-              {
-                stdio: "pipe",
-              },
-            );
-            if (result.status !== 0 && config.verbose) {
-              console.log(
-                chalk.yellow(
-                  `    Warning: Could not remove worktree ${worktree.path}`,
-                ),
-              );
-            }
-          },
-        );
-      }
-    }
-  }
-
-  // Shared context for all execution paths
-  const batchCtx: BatchExecutionContext = {
-    config,
-    options: mergedOptions,
-    issueInfoMap,
-    worktreeMap,
-    logWriter,
-    stateManager,
-    shutdownManager: shutdown,
-    packageManager: manifest.packageManager,
-    baseBranch: resolvedBaseBranch,
-  };
-
-  // Execute with graceful shutdown handling
-  const results: IssueResult[] = [];
-  let exitCode = 0;
-
-  try {
-    if (batches) {
-      // Batch execution: run batches sequentially, issues within batch based on mode
-      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-        const batch = batches[batchIdx];
-        console.log(
-          chalk.blue(
-            `\n  Batch ${batchIdx + 1}/${batches.length}: Issues ${batch.map((n) => `#${n}`).join(", ")}`,
-          ),
-        );
-
-        const batchResults = await executeBatch(batch, batchCtx);
-        results.push(...batchResults);
-
-        // Check if batch failed and we should stop
-        const batchFailed = batchResults.some((r) => !r.success);
-        if (batchFailed && config.sequential) {
-          console.log(
-            chalk.yellow(
-              `\n  !  Batch ${batchIdx + 1} failed, stopping batch execution`,
-            ),
-          );
-          break;
-        }
-      }
-    } else if (config.sequential) {
-      // Sequential execution
-      for (let i = 0; i < issueNumbers.length; i++) {
-        const issueNumber = issueNumbers[i];
-
-        const result = await executeOneIssue({
-          issueNumber,
-          batchCtx,
-          chain: mergedOptions.chain
-            ? { enabled: true, isLast: i === issueNumbers.length - 1 }
-            : undefined,
-        });
-        results.push(result);
-
-        // Check if shutdown was triggered
-        if (shutdown.shuttingDown) {
-          break;
-        }
-
-        if (!result.success) {
-          // Check if QA gate is enabled and QA specifically failed
-          if (mergedOptions.qaGate) {
-            const qaResult = result.phaseResults.find((p) => p.phase === "qa");
-            const qaFailed = qaResult && !qaResult.success;
-
-            if (qaFailed) {
-              // QA gate: pause chain with clear messaging
-              console.log(chalk.yellow("\n  ⏸️  QA Gate"));
-              console.log(
-                chalk.yellow(
-                  `     Issue #${issueNumber} QA did not pass. Chain paused.`,
-                ),
-              );
-              console.log(
-                chalk.gray(
-                  "     Fix QA issues and re-run, or run /loop to auto-fix.",
-                ),
-              );
-
-              // Update state to waiting_for_qa_gate
-              if (stateManager) {
-                try {
-                  await stateManager.updateIssueStatus(
-                    issueNumber,
-                    "waiting_for_qa_gate",
-                  );
-                } catch {
-                  // State tracking errors shouldn't stop execution
-                }
-              }
-              break;
-            }
-          }
-
-          const chainInfo = mergedOptions.chain ? " (chain stopped)" : "";
-          console.log(
-            chalk.yellow(
-              `\n  !  Issue #${issueNumber} failed, stopping sequential execution${chainInfo}`,
-            ),
-          );
-          break;
-        }
-      }
-    } else {
-      // Default mode: run issues concurrently with configurable concurrency limit
-      const limit = pLimit(config.concurrency);
-
-      // Track progress for concurrent issues
-      const issueStatus = new Map<
-        number,
-        {
-          state: "running" | "done" | "failed";
-          durationSeconds?: number;
-          error?: string;
-        }
-      >();
-      for (const num of issueNumbers) {
-        issueStatus.set(num, { state: "running" });
-      }
-
-      const renderProgressLine = () => {
-        const parts = issueNumbers.map((num) => {
-          const info = issueStatus.get(num)!;
-          if (info.state === "done") return colors.success(`#${num} \u2714`);
-          if (info.state === "failed") return colors.error(`#${num} \u2716`);
-          return colors.muted(`#${num} \u00B7`);
-        });
-        return `  ${parts.join("  ")}`;
-      };
-
-      const updateProgress = (completedIssue?: number) => {
-        if (mergedOptions.quiet) return;
-
-        if (process.stdout.isTTY) {
-          // TTY: overwrite the progress line in place
-          process.stdout.write(`\r${renderProgressLine()}`);
-        }
-
-        // Print a per-issue completion summary (works on both TTY and non-TTY)
-        if (completedIssue != null) {
-          const info = issueStatus.get(completedIssue)!;
-          const duration =
-            info.durationSeconds != null
-              ? ` (${formatElapsedTime(info.durationSeconds)})`
-              : "";
-          if (info.state === "done") {
-            const line = `  ${colors.success("\u2714")} #${completedIssue} completed${duration}`;
-            if (process.stdout.isTTY) {
-              // Move to a new line before printing the summary, then re-render progress
-              process.stdout.write(`\n${line}\n${renderProgressLine()}`);
-            } else {
-              console.log(line);
-            }
-          } else {
-            const errorSuffix = info.error ? `: ${info.error}` : "";
-            const line = `  ${colors.error("\u2716")} #${completedIssue} failed${duration}${errorSuffix}`;
-            if (process.stdout.isTTY) {
-              process.stdout.write(`\n${line}\n${renderProgressLine()}`);
-            } else {
-              console.log(line);
-            }
-          }
-        }
-      };
-
-      // Per-phase progress callback for parallel mode (AC-1, AC-3)
-      const parallelStartTime = Date.now();
-      let lastPhaseEventTime = Date.now();
-      const onPhaseProgress: ProgressCallback = (
-        issue,
-        phase,
-        event,
-        extra,
+  const onProgress = !options.quiet
+    ? (
+        issue: number,
+        phase: string,
+        event: "start" | "complete" | "failed",
+        extra?: { durationSeconds?: number },
       ) => {
-        if (mergedOptions.quiet) return;
-        lastPhaseEventTime = Date.now();
-        let line: string;
-        if (event === "start") {
-          line = `  ${colors.running("\u25B8")} #${issue}  ${phase}`;
-        } else if (event === "complete") {
+        if (event === "start")
+          console.log(`  ${colors.running("▸")} #${issue}  ${phase}`);
+        else if (event === "complete") {
           const dur =
             extra?.durationSeconds != null
               ? `  ${formatElapsedTime(extra.durationSeconds)}`
               : "";
-          line = `  ${colors.success("\u2714")} #${issue}  ${phase}${dur}`;
-        } else {
-          line = `  ${colors.error("\u2716")} #${issue}  ${phase}`;
-        }
-        console.log(line);
-      };
-
-      // 5-minute heartbeat timer, suppressed when phase events occur within window
-      const HEARTBEAT_INTERVAL_MS = 300_000;
-      const HEARTBEAT_SUPPRESS_MS = 60_000;
-      const heartbeatTimer = setInterval(() => {
-        if (mergedOptions.quiet) return;
-        // Suppress if a phase event occurred recently
-        if (Date.now() - lastPhaseEventTime < HEARTBEAT_SUPPRESS_MS) return;
-        const elapsedSec = Math.round((Date.now() - parallelStartTime) / 1000);
-        console.log(
-          `  ${colors.muted(`Still running... (${formatElapsedTime(elapsedSec)} elapsed)`)}`,
-        );
-      }, HEARTBEAT_INTERVAL_MS);
-
-      updateProgress();
-
-      const settledResults = await Promise.allSettled(
-        issueNumbers.map((issueNumber) =>
-          limit(async () => {
-            // Check if shutdown was triggered before starting
-            if (shutdown.shuttingDown) {
-              return {
-                issueNumber,
-                success: false,
-                phaseResults: [],
-                durationSeconds: 0,
-                loopTriggered: false,
-              } as IssueResult;
-            }
-
-            const result = await executeOneIssue({
-              issueNumber,
-              batchCtx: { ...batchCtx, onProgress: onPhaseProgress },
-              parallelIssueNumber: issueNumber,
-            });
-
-            // Update progress with completion details
-            issueStatus.set(issueNumber, {
-              state: result.success ? "done" : "failed",
-              durationSeconds: result.durationSeconds,
-              error: result.phaseResults.find((p) => !p.success)?.error,
-            });
-            updateProgress(issueNumber);
-
-            return result;
-          }),
-        ),
-      );
-
-      // Clean up heartbeat timer
-      clearInterval(heartbeatTimer);
-
-      // Clear the progress line
-      if (process.stdout.isTTY && !mergedOptions.quiet) {
-        process.stdout.write("\n");
+          console.log(`  ${colors.success("✔")} #${issue}  ${phase}${dur}`);
+        } else console.log(`  ${colors.error("✖")} #${issue}  ${phase}`);
       }
+    : undefined;
 
-      // Collect results from settled promises
-      for (let i = 0; i < settledResults.length; i++) {
-        const settled = settledResults[i];
-        if (settled.status === "fulfilled") {
-          results.push(settled.value);
-        } else {
-          // Defensive fallback — runIssueWithLogging catches errors internally,
-          // so this path is unreachable in normal operation.
-          results.push({
-            issueNumber: issueNumbers[i],
-            success: false,
-            phaseResults: [],
-            durationSeconds: 0,
-            loopTriggered: false,
-          });
-        }
-      }
-    }
+  const result = await RunOrchestrator.run(
+    {
+      options,
+      settings,
+      manifest: {
+        stack: manifest.stack,
+        packageManager: manifest.packageManager ?? "npm",
+      },
+      onProgress,
+    },
+    issues,
+    batches,
+  );
 
-    // Finalize log
-    let logPath: string | null = null;
-    if (logWriter) {
-      logPath = await logWriter.finalize({
-        endCommit: getCommitHash(process.cwd()),
-      });
-    }
+  displaySummary(result);
+  if (result.exitCode !== 0) process.exit(result.exitCode);
+}
 
-    // Calculate success/failure counts
-    const passed = results.filter((r) => r.success).length;
-    const failed = results.filter((r) => !r.success).length;
+function displaySummary(result: RunResult): void {
+  const { results, logPath, config, mergedOptions } = result;
+  if (results.length === 0) return;
 
-    // Record metrics (local analytics)
-    if (!config.dryRun && results.length > 0) {
-      try {
-        const metricsWriter = new MetricsWriter({ verbose: config.verbose });
+  const passed = results.filter((r) => r.success).length;
+  const failed = results.filter((r) => !r.success).length;
 
-        // Calculate total duration
-        const totalDuration = results.reduce(
-          (sum, r) => sum + (r.durationSeconds ?? 0),
-          0,
-        );
-
-        // Get unique phases from all results
-        const allPhases = new Set<MetricPhase>();
-        for (const result of results) {
-          for (const phaseResult of result.phaseResults) {
-            // Only include phases that are valid MetricPhases
-            const phase = phaseResult.phase as MetricPhase;
-            if (
-              [
-                "spec",
-                "security-review",
-                "testgen",
-                "exec",
-                "test",
-                "qa",
-                "loop",
-              ].includes(phase)
-            ) {
-              allPhases.add(phase);
-            }
-          }
-        }
-
-        // Calculate aggregate metrics from worktrees
-        let totalFilesChanged = 0;
-        let totalLinesAdded = 0;
-        let totalQaIterations = 0;
-
-        for (const result of results) {
-          const worktreeInfo = worktreeMap.get(result.issueNumber);
-          if (worktreeInfo?.path) {
-            const stats = getWorktreeDiffStats(worktreeInfo.path);
-            totalFilesChanged += stats.filesChanged;
-            totalLinesAdded += stats.linesAdded;
-          }
-          // Count QA iterations (loop phases indicate retries)
-          if (result.loopTriggered) {
-            totalQaIterations += result.phaseResults.filter(
-              (p) => p.phase === "loop",
-            ).length;
-          }
-        }
-
-        // Build CLI flags for metrics
-        const cliFlags: string[] = [];
-        if (mergedOptions.sequential) cliFlags.push("--sequential");
-        if (mergedOptions.chain) cliFlags.push("--chain");
-        if (mergedOptions.qaGate) cliFlags.push("--qa-gate");
-        if (mergedOptions.qualityLoop) cliFlags.push("--quality-loop");
-        if (mergedOptions.testgen) cliFlags.push("--testgen");
-
-        // Read token usage from SessionEnd hook files (AC-5, AC-6)
-        const tokenUsage = getTokenUsageForRun(undefined, true); // cleanup after reading
-
-        // Record the run
-        await metricsWriter.recordRun({
-          issues: issueNumbers,
-          phases: Array.from(allPhases),
-          outcome: determineOutcome(passed, results.length),
-          duration: totalDuration,
-          model: process.env.ANTHROPIC_MODEL ?? "opus",
-          flags: cliFlags,
-          metrics: {
-            tokensUsed: tokenUsage.tokensUsed,
-            filesChanged: totalFilesChanged,
-            linesAdded: totalLinesAdded,
-            acceptanceCriteria: 0, // Would need to parse from issue
-            qaIterations: totalQaIterations,
-            // Token breakdown (AC-6)
-            inputTokens: tokenUsage.inputTokens || undefined,
-            outputTokens: tokenUsage.outputTokens || undefined,
-            cacheTokens: tokenUsage.cacheTokens || undefined,
-          },
-        });
-
-        if (config.verbose) {
-          console.log(
-            chalk.gray(`  Metrics recorded to .sequant/metrics.json`),
-          );
-        }
-      } catch (metricsError) {
-        // Metrics recording errors shouldn't stop execution
-        logNonFatalWarning(
-          `  !  Metrics recording failed, continuing...`,
-          metricsError,
-          config.verbose,
-        );
-      }
-    }
-
-    // Summary
-    console.log("\n" + ui.divider());
-    console.log(colors.info("  Summary"));
-    console.log(ui.divider());
-
+  console.log("\n" + ui.divider());
+  console.log(colors.info("  Summary"));
+  console.log(ui.divider());
+  console.log(
+    `\n  ${colors.success(`${passed} passed`)} ${colors.muted("·")} ${colors.error(`${failed} failed`)}`,
+  );
+  for (const r of results) {
+    const status = r.success
+      ? ui.statusIcon("success")
+      : ui.statusIcon("error");
+    const duration = r.durationSeconds
+      ? colors.muted(` (${formatDuration(r.durationSeconds)})`)
+      : "";
+    const phases = r.phaseResults
+      .map((p) => (p.success ? colors.success(p.phase) : colors.error(p.phase)))
+      .join(" → ");
+    const loopInfo = r.loopTriggered ? colors.warning(" [loop]") : "";
+    const prInfo = r.prUrl ? colors.muted(` → PR #${r.prNumber}`) : "";
     console.log(
-      `\n  ${colors.success(`${passed} passed`)} ${colors.muted("\u00B7")} ${colors.error(`${failed} failed`)}`,
+      `  ${status} #${r.issueNumber}: ${phases}${loopInfo}${prInfo}${duration}`,
     );
-
-    for (const result of results) {
-      const status = result.success
-        ? ui.statusIcon("success")
-        : ui.statusIcon("error");
-      const duration = result.durationSeconds
-        ? colors.muted(` (${formatDuration(result.durationSeconds)})`)
-        : "";
-      const phases = result.phaseResults
-        .map((p) =>
-          p.success ? colors.success(p.phase) : colors.error(p.phase),
-        )
-        .join(" → ");
-      const loopInfo = result.loopTriggered ? colors.warning(" [loop]") : "";
-      const prInfo = result.prUrl
-        ? colors.muted(` → PR #${result.prNumber}`)
-        : "";
-      console.log(
-        `  ${status} #${result.issueNumber}: ${phases}${loopInfo}${prInfo}${duration}`,
-      );
-    }
-
-    console.log("");
-
-    if (logPath) {
-      console.log(colors.muted(`  Log: ${logPath}`));
-      console.log("");
-    }
-
-    // Reflection analysis (--reflect flag)
-    if (mergedOptions.reflect && results.length > 0) {
-      const reflection = analyzeRun({
-        results,
-        issueInfoMap,
-        runLog: logWriter?.getRunLog() ?? null,
-        config: {
-          phases: config.phases,
-          qualityLoop: config.qualityLoop,
-        },
-      });
-      const reflectionOutput = formatReflection(reflection);
-      if (reflectionOutput) {
-        console.log(reflectionOutput);
-        console.log("");
-      }
-    }
-
-    // Suggest merge checks for multi-issue batches
-    if (results.length > 1 && passed > 0 && !config.dryRun) {
-      console.log(
-        colors.muted("  Tip: Verify batch integration before merging:"),
-      );
-      console.log(colors.muted("     sequant merge --check"));
-      console.log("");
-    }
-
-    if (config.dryRun) {
-      console.log(
-        colors.warning(
-          "  ℹ️  This was a dry run. Use without --dry-run to execute.",
-        ),
-      );
-      console.log("");
-    }
-
-    // Set exit code if any failed
-    if (failed > 0 && !config.dryRun) {
-      exitCode = 1;
-    }
-  } finally {
-    // Always dispose shutdown manager to clean up signal handlers
-    shutdown.dispose();
   }
-
-  // Exit with error if any failed (outside try/finally so dispose() runs first)
-  if (exitCode !== 0) {
-    process.exit(exitCode);
+  console.log("");
+  if (logPath) {
+    console.log(colors.muted(`  Log: ${logPath}`));
+    console.log("");
+  }
+  if (mergedOptions.reflect && results.length > 0) {
+    const reflection = analyzeRun({
+      results,
+      issueInfoMap: result.issueInfoMap,
+      runLog: result.logWriter?.getRunLog() ?? null,
+      config: { phases: config.phases, qualityLoop: config.qualityLoop },
+    });
+    const reflectionOutput = formatReflection(reflection);
+    if (reflectionOutput) {
+      console.log(reflectionOutput);
+      console.log("");
+    }
+  }
+  if (results.length > 1 && passed > 0 && !config.dryRun) {
+    console.log(
+      colors.muted("  Tip: Verify batch integration before merging:"),
+    );
+    console.log(colors.muted("     sequant merge --check"));
+    console.log("");
+  }
+  if (config.dryRun) {
+    console.log(
+      colors.warning(
+        "  ℹ️  This was a dry run. Use without --dry-run to execute.",
+      ),
+    );
+    console.log("");
   }
 }
