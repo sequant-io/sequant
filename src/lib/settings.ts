@@ -135,6 +135,16 @@ export interface RunSettings {
    */
   resolvedIssueTTL: number;
   /**
+   * Package manager run command (e.g., "npm run", "yarn", "pnpm run").
+   * Set during `sequant init` based on detected package manager.
+   */
+  pmRun?: string;
+  /**
+   * Development server URL (e.g., "http://localhost:3000").
+   * Set during `sequant init` based on detected stack.
+   */
+  devUrl?: string;
+  /**
    * Agent driver for phase execution.
    * Default: "claude-code". Set to "aider" to use Aider CLI.
    */
@@ -273,6 +283,8 @@ export const RunSettingsSchema = z.object({
   retry: z.boolean().default(true),
   staleBranchThreshold: z.number().default(5),
   resolvedIssueTTL: z.number().default(7),
+  pmRun: z.string().optional(),
+  devUrl: z.string().optional(),
   agent: z.string().optional(),
   aider: AiderSettingsSchema.optional(),
 });
@@ -415,6 +427,8 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "retry",
     "staleBranchThreshold",
     "resolvedIssueTTL",
+    "pmRun",
+    "devUrl",
     "agent",
     "aider",
   ]),
