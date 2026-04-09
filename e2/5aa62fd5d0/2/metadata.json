@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.5.1",
+  "checkpoint_id": "e25aa62fd5d0",
+  "session_id": "f7aba497-17f6-4142-9edf-2d8e06250985",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-09T04:04:55.167757Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "src/lib/__tests__/assess-skill.test.ts"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "7e8e2952c496",
+  "checkpoint_transcript_start": 443,
+  "transcript_lines_at_start": 443,
+  "token_usage": {
+    "input_tokens": 34,
+    "cache_creation_tokens": 14356,
+    "cache_read_tokens": 6507548,
+    "output_tokens": 9722,
+    "api_call_count": 32
+  },
+  "session_metrics": {
+    "turn_count": 9
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-09T04:04:53.131925Z",
+    "agent_lines": 0,
+    "human_added": 0,
+    "human_modified": 1,
+    "human_removed": 0,
+    "total_committed": 0,
+    "agent_percentage": 0
+  }
+}
