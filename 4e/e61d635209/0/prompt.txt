@@ -1,0 +1,35 @@
+<task-notification>
+<task-id>bk9m28kwi</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/27ed5902-0042-42ed-8253-8e4d93b1875c/tasks/bk9m28kwi.output</output-file>
+<status>completed</status>
+<summary>Background command "Build check" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bckg4ikpz</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/27ed5902-0042-42ed-8253-8e4d93b1875c/tasks/bckg4ikpz.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>b95y9n51k</task-id>
+<tool-use-id>toolu_01SeUy6syaACdskSopwLSsy3</tool-use-id>
+<output-file>/private/tmp/claude-502/-Users-tony-Projects-sequant/27ed5902-0042-42ed-8253-8e4d93b1875c/tasks/b95y9n51k.output</output-file>
+<status>completed</status>
+<summary>Background command "Run full test suite (foreground)" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+merge
+
+---
+
+docs 507
