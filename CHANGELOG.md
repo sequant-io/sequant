@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Extract `RunOrchestrator` class to decouple execution engine from CLI wiring (#503)
+  - New `RunOrchestrator.run()` static method for full lifecycle execution
+  - `ConfigResolver` class for 4-layer config merge (defaults < settings < env < explicit)
+  - `src/commands/run.ts` reduced from 1,171 to 184 lines as thin CLI adapter
+  - Both classes exported from package entry point for programmatic use
+
 ### Fixed
 
 - Fix `/assess` batch output corruption with 9+ issues: replace box-drawing with indented commands, add command splitting rule, add label-priority ordering so domain labels override generic labels (#494)
