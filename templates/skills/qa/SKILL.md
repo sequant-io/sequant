@@ -122,9 +122,22 @@ Include this marker in every `gh issue comment` that represents QA completion.
 Invocation:
 
 - `/qa 123`: Treat `123` as the GitHub issue/PR identifier in context.
+- `/qa 123 172`: Treat both as issue numbers — process each sequentially.
 - `/qa <freeform description>`: Treat the text as context about the change to review.
 - `/qa 123 --parallel`: Force parallel agent execution (faster, higher token usage).
 - `/qa 123 --sequential`: Force sequential agent execution (slower, lower token usage).
+
+### Multi-Issue Invocation
+
+When multiple issue numbers are provided (e.g., `/qa 167 172`):
+
+1. **Parse all issue numbers** from args
+2. **Process each issue sequentially** with inline code review — do NOT spawn ad-hoc background agents for the diff reading or AC verification portions
+3. The built-in `sequant-qa-checker` sub-agents (type safety, scope, security) continue to run per the size gate rules for each issue
+4. Each issue gets its own full QA cycle: context fetch → diff review → quality checks → verdict → comment
+5. Post a **separate QA comment** to each issue's GitHub thread
+
+**Why sequential with inline review:** Ad-hoc background agents for code review are unreliable — they hallucinate about file existence, misattribute API patterns, and hit permission issues on worktree reads. The narrowly-scoped `sequant-qa-checker` agents work well because they have specific, bounded tasks. The code review portion must stay inline for accuracy.
 
 ### Agent Execution Mode
 
