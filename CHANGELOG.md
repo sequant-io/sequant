@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-04-11
+
 ### Added
 
 - **Configuration schema validation** — Zod schema for `.sequant/settings.json` with clear warnings for misspelled keys and type mismatches (#507)
@@ -22,7 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Simplify adversarial self-evaluation to 2-field risk assessment (#513)
 - Fix `/assess` batch output corruption with 9+ issues: replace box-drawing with indented commands, add command splitting rule, add label-priority ordering so domain labels override generic labels (#494)
+- Fix undefined spread in `resolveRunOptions` + add direct unit tests (#503)
+- Use Grep tool instead of bash grep for QA inline checks
+- Update assess-skill test regex for 3-column label→phase table
 
 ## [2.1.1] - 2026-04-07
 

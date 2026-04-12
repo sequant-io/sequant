@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.1.1
+# What We've Built: Sequant v2.1.2
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,8 +737,11 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.1.0)
+### Recent Additions (v2.1.2)
 
+- **Configuration Schema Validation** - Zod-powered validation for `.sequant/settings.json` with clear warnings for misspelled keys (#507)
+- **Structured Error Types** - `SequantError` base class with 6 typed subclasses replacing string-based classification (#507)
+- **RunOrchestrator Extraction** - Decoupled execution engine from CLI wiring for programmatic use (#503)
 - **Worktree Isolation** - Parallel `/exec` agents each get isolated sub-worktrees, eliminating file conflicts (#485)
 - **Declarative Agents** - `.claude/agents/` definitions for sequant subagents, replacing inline spawn parameters (#484)
 - **CLI Output Modernization** - Typographic symbols, light dividers, 5-min heartbeat, columnar config (#495)
@@ -1069,7 +1072,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.1.1
+**Current Version:** 2.1.2
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1079,7 +1082,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.1.1                                │
+│                              SEQUANT v2.1.2                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
