@@ -476,17 +476,6 @@ Every separator and section is conditional. If there are no warnings and no clea
 
 ---
 
-## State Tracking
-
-Initialize state for each assessed issue:
-
-```bash
-TITLE=$(gh issue view <N> --json title -q '.title')
-npx tsx scripts/state/update.ts init <N> "$TITLE"
-```
-
-Note: `/assess` only initializes issues — actual phase tracking happens during workflow execution.
-
 ## Persist Analysis
 
 After displaying output, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
