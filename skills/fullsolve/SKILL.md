@@ -854,33 +854,7 @@ As an orchestrator, `/fullsolve` must:
    export SEQUANT_WORKTREE=<worktree-path>
    ```
 
-2. **Initialize issue state at workflow start:**
-   ```bash
-   npx tsx scripts/state/update.ts init <issue-number> "<issue-title>"
-   ```
-
-3. **Update phase status** at each transition:
-   ```bash
-   # Before invoking child skill
-   npx tsx scripts/state/update.ts start <issue-number> <phase>
-
-   # After child skill completes
-   npx tsx scripts/state/update.ts complete <issue-number> <phase>
-
-   # If child skill fails
-   npx tsx scripts/state/update.ts fail <issue-number> <phase> "Error"
-   ```
-
-4. **Update final status** after workflow completes:
-   ```bash
-   # On READY_FOR_MERGE
-   npx tsx scripts/state/update.ts status <issue-number> ready_for_merge
-
-   # On failure
-   npx tsx scripts/state/update.ts status <issue-number> blocked
-   ```
-
-**Why child skills skip state updates:** When `SEQUANT_ORCHESTRATOR` is set, child skills defer state management to the orchestrator to avoid duplicate updates.
+2. **State tracking** is handled automatically by the orchestrator runtime when `SEQUANT_ORCHESTRATOR` is set. Child skills defer state management to the orchestrator to avoid duplicate updates.
 
 ---
 

@@ -228,8 +228,7 @@ fi
 # Delete remote branch (previously handled by --delete-branch)
 gh api repos/{owner}/{repo}/git/refs/heads/$(gh pr view <PR_NUMBER> --json headRefName --jq '.headRefName') -X DELETE 2>/dev/null || true
 
-# REQUIRED: Update state to mark issue as merged (#305)
-npx tsx scripts/state/update.ts merged $ISSUE
+# State is tracked by the orchestrator runtime when available
 ```
 
 #### For conflicting changes (integration branch):
@@ -571,35 +570,6 @@ Environment variables:
 - `SEQUANT_MERGER_NO_CLEANUP` - If true, keep worktrees after merge
 - `SEQUANT_MERGER_FORCE` - If true, proceed even with conflicts or regressions (bypasses regression gate)
 - `SEQUANT_MERGER_SKIP_SMOKETEST` - If true, skip post-merge smoketest (also skips baseline capture)
-
-## State Tracking
-
-**IMPORTANT:** `/merger` updates state for merged issues.
-
-### State Updates
-
-When merging issues, update state to reflect the merge:
-
-**After successful merge of each issue:**
-```bash
-npx tsx scripts/state/update.ts merged <issue-number>
-```
-
-**For integration branches (multiple issues merged together):**
-```bash
-# Mark all integrated issues as merged
-npx tsx scripts/state/update.ts merged <issue-1>
-npx tsx scripts/state/update.ts merged <issue-2>
-```
-
-**On merge failure:**
-```bash
-npx tsx scripts/state/update.ts fail <issue-number> merger "Merge conflict or CI failure"
-```
-
-**Why this matters:** The dashboard shows merged issues as complete, and state tracking enables accurate workflow metrics.
-
----
 
 ## Output Verification
 

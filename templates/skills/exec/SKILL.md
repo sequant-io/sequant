@@ -806,16 +806,6 @@ After implementation is complete and all checks pass, create and verify the PR:
    - If PR exists: Record the URL from `gh pr view` output
    - If PR creation failed: Record the error and include manual creation instructions
 
-6. **Record PR info in workflow state:**
-   ```bash
-   # Extract PR number and URL from gh pr view output, then update state
-   PR_INFO=$(gh pr view --json number,url)
-   PR_NUMBER=$(echo "$PR_INFO" | jq -r '.number')
-   PR_URL=$(echo "$PR_INFO" | jq -r '.url')
-   npx tsx scripts/state/update.ts pr <issue-number> "$PR_NUMBER" "$PR_URL"
-   ```
-   This enables `--cleanup` to detect merged PRs and auto-remove state entries.
-
 **PR Verification Failure Handling:**
 
 If `gh pr view` fails after retry:
@@ -1921,37 +1911,6 @@ At the end of a session:
      ```
 
 You may be invoked multiple times for the same issue. Each time, re-establish context, ensure you're in the correct worktree, and continue iterating until we are as close as practical to meeting the AC.
-
----
-
-## State Tracking
-
-**IMPORTANT:** Update workflow state when running standalone (not orchestrated).
-
-### Check Orchestration Mode
-
-The orchestration check happens automatically when you run the state update script - it exits silently if `SEQUANT_ORCHESTRATOR` is set.
-
-### State Updates (Standalone Only)
-
-When NOT orchestrated (`SEQUANT_ORCHESTRATOR` is not set):
-
-**At skill start:**
-```bash
-npx tsx scripts/state/update.ts start <issue-number> exec
-```
-
-**On successful completion:**
-```bash
-npx tsx scripts/state/update.ts complete <issue-number> exec
-```
-
-**On failure:**
-```bash
-npx tsx scripts/state/update.ts fail <issue-number> exec "Error description"
-```
-
-**Why this matters:** State tracking enables dashboard visibility, resume capability, and workflow orchestration. Skills update state when standalone; orchestrators handle state when running workflows.
 
 ---
 
