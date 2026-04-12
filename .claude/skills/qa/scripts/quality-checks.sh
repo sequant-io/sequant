@@ -457,7 +457,52 @@ else
 fi
 
 # =============================================================================
-# 12. Build Verification (cacheable - expensive operation)
+# 12. Skill Sync Check (when skill files modified)
+# =============================================================================
+echo ""
+skill_files_changed=$(git diff main...HEAD --name-only | grep -E '^\.(claude/skills|skills|templates/skills)/' || true)
+if [[ -n "$skill_files_changed" ]]; then
+  echo "🔍 Checking three-directory skill sync..."
+  if [[ -f "scripts/check-skill-sync.ts" ]]; then
+    sync_output=$(npx tsx scripts/check-skill-sync.ts 2>&1 || true)
+    sync_exit=$?
+    sync_summary=$(echo "$sync_output" | grep "^Summary:" || true)
+    if [[ $sync_exit -ne 0 ]]; then
+      echo "⚠️  Skill sync: DIVERGENCE DETECTED"
+      echo "$sync_summary"
+      echo "   Run: npx tsx scripts/check-skill-sync.ts --fix"
+    else
+      echo "✅ Skill sync: All files synced across 3 directories"
+    fi
+  else
+    echo "   (scripts/check-skill-sync.ts not found — using inline diff)"
+    diverged=0
+    for f in $skill_files_changed; do
+      if [[ "$f" == .claude/skills/* ]]; then
+        rel="${f#.claude/skills/}"
+        for mirror in "templates/skills" "skills"; do
+          if [[ -f "${mirror}/${rel}" ]]; then
+            if ! diff -q ".claude/skills/${rel}" "${mirror}/${rel}" > /dev/null 2>&1; then
+              echo "   ⚠️  DIVERGED: ${rel} (.claude/skills vs ${mirror})"
+              diverged=$((diverged + 1))
+            fi
+          fi
+        done
+      fi
+    done
+    if [[ $diverged -eq 0 ]]; then
+      echo "✅ Skill sync: Changed skill files are synced"
+    else
+      echo "⚠️  Skill sync: ${diverged} file(s) diverged"
+      echo "   Fix: copy from .claude/skills/ to templates/skills/ and skills/"
+    fi
+  fi
+else
+  echo "🔍 Skill sync: No skill files changed (skipped)"
+fi
+
+# =============================================================================
+# 13. Build Verification (cacheable - expensive operation)
 # =============================================================================
 
 verify_build_against_main() {

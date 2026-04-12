@@ -838,6 +838,12 @@ issue_type="${SEQUANT_ISSUE_TYPE:-}"
 admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1 || true)
 ```
 
+**Add skill sync check if skill files modified:**
+```bash
+skill_modified=$(git diff main...HEAD --name-only | grep -E "^\.(claude/skills|skills|templates/skills)/" | head -1 || true)
+```
+If skill files are modified, the quality-checks.sh script automatically runs the three-directory sync check (section 12). If divergence is detected, this blocks `READY_FOR_MERGE` — verdict becomes `AC_MET_BUT_NOT_A_PLUS` with a note to run `npx tsx scripts/check-skill-sync.ts --fix`.
+
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
 
 ### Using MCP Tools (Optional)
