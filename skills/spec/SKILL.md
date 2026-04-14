@@ -78,7 +78,14 @@ Mark tier in HTML comment for downstream parsing: `<!-- SEQUANT_SPEC_TIER: [tier
 
 1. **AC Extraction & Storage:** Use `extractAcceptanceCriteria` from `./src/lib/ac-parser.ts` and `StateManager` from `./src/lib/workflow/state-manager.ts` to parse and store AC in `.sequant/state.json`. Supports formats: `- [ ] **AC-1:** Desc`, `- [ ] AC-1: Desc`, `- [ ] **B2:** Desc`.
 
-2. **AC Quality Check** (unless `--skip-ac-lint`): Use `lintAcceptanceCriteria` from `./src/lib/ac-linter.ts`. Flags vague ("should work"), unmeasurable ("fast"), incomplete ("handle errors"), open-ended ("etc."). Warning-only — does not block planning.
+2. **AC Quality Check** (unless `--skip-ac-lint`): Use `lintAcceptanceCriteria` from `./src/lib/ac-linter.ts`. Warning-only — does not block planning. Flag these patterns:
+
+   | Pattern | Examples | Issue |
+   |---------|----------|-------|
+   | Vague | "should work", "properly" | No measurable outcome |
+   | Unmeasurable | "fast", "performant" | No threshold defined |
+   | Incomplete | "handle errors", "edge cases" | Scenarios not enumerated |
+   | Open-ended | "etc.", "and more" | Scope undefined |
 
 3. **Scope Assessment** (unless `--skip-scope-check`): Use `performScopeAssessment` from `./src/lib/scope/index.ts` with settings from `getSettings()`. Verdicts: SCOPE_OK (green), SCOPE_WARNING (yellow, auto-enables quality loop), SCOPE_SPLIT_RECOMMENDED (red). Store results in state.
 
@@ -135,6 +142,21 @@ Check for explicit dependencies: `gh issue view <issue> --json body,labels`. If 
 
 Check issue body/labels for feature branch references (`feature/`, `based on`, epic labels). If found, recommend `--base feature/<branch>` in the plan.
 
+## Verification Method Decision Framework
+
+Use this table when assigning verification methods to each AC:
+
+| AC Type | Method | When to Use |
+|---------|--------|-------------|
+| Pure logic/calculation | Unit Test | Clear input/output, no side effects |
+| API endpoint | Integration Test | HTTP handlers, DB queries, external calls |
+| User workflow | Browser Test | Multi-step UI interactions, forms |
+| Visual appearance | Manual Test | Styling, layout, animations |
+| CLI command | Integration Test | Script execution, stdout verification |
+| Error handling | Unit + Integration | Both isolated and realistic scenarios |
+
+See [verification-criteria.md](references/verification-criteria.md) for detailed examples.
+
 ## Output Template
 
 **Single authoritative template.** Include ALL sections in this order. Scale detail by complexity tier.
@@ -172,9 +194,8 @@ Check issue body/labels for feature branch references (`feature/`, `based on`, e
 **Scenario:** Given [state] → When [action] → Then [outcome]
 **Assumptions:** [List any that need pre-coding validation]
 
-<!-- Repeat for all ACs.
-     EVERY AC must have a Verification Method. If unclear, flag as "⚠️ UNCLEAR" with suggested refinement.
-     See references/verification-criteria.md for method selection guide. -->
+<!-- Repeat for all ACs. EVERY AC must have a Verification Method from the decision framework.
+     If unclear, flag as "⚠️ UNCLEAR" with suggested refinement. -->
 
 ---
 
