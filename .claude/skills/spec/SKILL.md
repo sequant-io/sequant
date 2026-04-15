@@ -288,6 +288,30 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
 [AC checklist with verification + implementation plan + key decisions + open questions]
 ```
 
+### Testgen Phase Auto-Detection
+
+#### When to recommend `testgen` phase:
+
+| Condition | Recommend testgen? | Reasoning |
+|-----------|-------------------|-----------|
+| ACs have "Unit Test" verification method | Yes | Tests should be stubbed before implementation |
+| ACs have "Integration Test" verification method | Yes | Complex integration tests benefit from early structure |
+| New feature (`enhancement`/`feature` label) with >2 ACs | Yes | Features need test coverage |
+| Simple bug fix (`bug` label only) | No | Skip testgen — targeted tests sufficient |
+| Docs-only (`docs` label) | No | Skip testgen — no unit tests needed |
+| All ACs have "Manual Test" or "Browser Test" | No | Skip testgen — no code stubs to generate |
+
+**Detection logic:**
+1. Count ACs with "Unit Test" → If >0, recommend testgen
+2. Count ACs with "Integration Test" → If >0, recommend testgen
+3. Check labels: `bug`/`fix` only → Skip testgen. `docs` → Skip testgen.
+
+**Example when testgen recommended:**
+```markdown
+**Phases:** spec → testgen → exec → qa
+**Reasoning:** ACs include Unit Test verification methods; testgen will create stubs before implementation
+```
+
 ### Browser Testing Label Suggestion
 
 When `.tsx`/`.jsx` references detected in issue body AND no `ui`/`frontend`/`admin` label present:
