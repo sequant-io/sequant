@@ -24,6 +24,7 @@ import {
   type Phase,
 } from "../lib/workflow/state-schema.js";
 import { getSettingsWithWarnings } from "../lib/settings.js";
+import { getSkillVersions } from "../lib/skill-version.js";
 
 export interface StatusCommandOptions {
   /** Show only issues state */
@@ -349,13 +350,36 @@ export async function statusCommand(
     }
   }
 
-  // Count skills
+  // Count skills and check versions
   const skillsDir = ".claude/skills";
   if (await fileExists(skillsDir)) {
     try {
       const skills = await readdir(skillsDir);
       const skillCount = skills.filter((s) => !s.startsWith(".")).length;
       console.log(chalk.gray(`Skills: ${skillCount}`));
+
+      // Show skill version info
+      const { getTemplatesDir } = await import("../lib/templates.js");
+      const { join } = await import("path");
+      const templateSkillsDir = join(getTemplatesDir(), "skills");
+      const skillVersions = await getSkillVersions(templateSkillsDir);
+      const outdated = skillVersions.filter((s) => s.updateAvailable);
+
+      if (outdated.length > 0) {
+        console.log(
+          chalk.yellow(`\n  Skill updates available (${outdated.length}):`),
+        );
+        for (const s of outdated) {
+          console.log(
+            chalk.yellow(
+              `    ${s.name}: v${s.installedVersion} → v${s.templateVersion}`,
+            ),
+          );
+        }
+        console.log(
+          chalk.gray("    Run `sequant init --upgrade-skills` to update."),
+        );
+      }
     } catch {
       // Ignore errors
     }

@@ -3,7 +3,10 @@
  */
 
 import chalk from "chalk";
+import { diffLines } from "diff";
 import inquirer from "inquirer";
+import { join, dirname } from "path";
+import { readdir } from "fs/promises";
 import { ui, colors } from "../lib/cli-ui.js";
 import {
   detectStack,
@@ -77,6 +80,7 @@ interface InitOptions {
   noSymlinks?: boolean;
   agentsMd?: boolean;
   mcp?: boolean;
+  upgradeSkills?: boolean;
 }
 
 /**
@@ -119,6 +123,12 @@ function logDefault(label: string, value: string): void {
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
+  // Handle --upgrade-skills: update skill files from installed package templates
+  if (options.upgradeSkills) {
+    await upgradeSkills();
+    return;
+  }
+
   // Show banner
   console.log(ui.banner());
   console.log(colors.success("\nInitializing Sequant...\n"));
@@ -650,6 +660,138 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(
     chalk.gray(
       "\nDocumentation: https://github.com/sequant-io/sequant#readme\n",
+    ),
+  );
+}
+
+/**
+ * Upgrade installed skill files from the sequant package's templates.
+ * Shows a diff preview for each changed file and asks for confirmation.
+ */
+async function upgradeSkills(): Promise<void> {
+  console.log(chalk.bold("\nUpgrading skills from package templates...\n"));
+
+  const installedDir = ".claude/skills";
+  if (!(await fileExists(installedDir))) {
+    console.log(
+      chalk.red("No skills directory found. Run `sequant init` first."),
+    );
+    return;
+  }
+
+  // Resolve the package's templates/skills directory
+  const { getTemplatesDir } = await import("../lib/templates.js");
+  const templateSkillsDir = join(getTemplatesDir(), "skills");
+
+  // Collect all files from both directories
+  const changes: { path: string; installed: string; template: string }[] = [];
+  const newFiles: { path: string; content: string }[] = [];
+
+  async function compareDir(
+    templateDir: string,
+    installedBaseDir: string,
+    relativePrefix: string,
+  ): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(templateDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const relPath = join(relativePrefix, entry.name);
+      const templatePath = join(templateDir, entry.name);
+      const installedPath = join(installedBaseDir, relPath);
+
+      if (entry.isDirectory()) {
+        await compareDir(templatePath, installedBaseDir, relPath);
+      } else {
+        const templateContent = await readFile(templatePath);
+        const exists = await fileExists(installedPath);
+
+        if (!exists) {
+          newFiles.push({ path: relPath, content: templateContent });
+        } else {
+          const installedContent = await readFile(installedPath);
+          if (installedContent !== templateContent) {
+            changes.push({
+              path: relPath,
+              installed: installedContent,
+              template: templateContent,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  await compareDir(templateSkillsDir, installedDir, "");
+
+  if (changes.length === 0 && newFiles.length === 0) {
+    console.log(chalk.green("All skills are up to date."));
+    return;
+  }
+
+  // Show summary
+  console.log(chalk.bold("Changes found:"));
+  if (changes.length > 0) {
+    console.log(chalk.yellow(`  Modified: ${changes.length} file(s)`));
+  }
+  if (newFiles.length > 0) {
+    console.log(chalk.green(`  New: ${newFiles.length} file(s)`));
+  }
+  console.log();
+
+  // Show diffs for modified files
+  for (const change of changes) {
+    console.log(chalk.yellow(`--- ${change.path} ---`));
+    const diff = diffLines(change.installed, change.template);
+    for (const part of diff) {
+      if (part.added) {
+        process.stdout.write(chalk.green(part.value));
+      } else if (part.removed) {
+        process.stdout.write(chalk.red(part.value));
+      }
+      // Skip unchanged lines in diff output
+    }
+    console.log();
+  }
+
+  // Show new files
+  for (const file of newFiles) {
+    console.log(chalk.green(`+++ ${file.path} (new)`));
+  }
+
+  // Ask for confirmation
+  const isInteractive = shouldUseInteractiveMode();
+  if (isInteractive) {
+    const { proceed } = await inquirer.prompt([
+      {
+        type: "confirm",
+        name: "proceed",
+        message: `Apply ${changes.length + newFiles.length} skill update(s)?`,
+        default: true,
+      },
+    ]);
+    if (!proceed) {
+      console.log(chalk.gray("Aborted."));
+      return;
+    }
+  }
+
+  // Apply changes
+  for (const change of changes) {
+    await writeFile(join(installedDir, change.path), change.template);
+  }
+  for (const file of newFiles) {
+    await ensureDir(dirname(join(installedDir, file.path)));
+    await writeFile(join(installedDir, file.path), file.content);
+  }
+
+  console.log(
+    chalk.green(
+      `\nUpgraded ${changes.length + newFiles.length} skill file(s).`,
     ),
   );
 }

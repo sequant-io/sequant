@@ -115,6 +115,10 @@ program
     "--mcp",
     "Add Sequant MCP server to detected clients (use with --yes)",
   )
+  .option(
+    "--upgrade-skills",
+    "Upgrade skill files from installed package templates (with diff preview)",
+  )
   .action(initCommand);
 
 program

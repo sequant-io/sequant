@@ -22,7 +22,7 @@ import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
 
 // Get the package templates directory
-function getTemplatesDir(): string {
+export function getTemplatesDir(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   // Compiled structure: dist/src/lib/templates.js
   // So we need ../../../templates to reach project root templates/
