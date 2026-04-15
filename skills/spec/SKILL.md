@@ -197,6 +197,15 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
 <!-- Repeat for all ACs. EVERY AC must have a Verification Method from the decision framework.
      If unclear, flag as "⚠️ UNCLEAR" with suggested refinement. -->
 
+<!-- Example of a completed AC entry:
+
+### AC-3: User can submit the registration form
+
+**Verification:** Browser Test
+**Scenario:** Given user on /register → When fill fields and click Submit → Then redirect to /dashboard with success toast
+**Assumptions:** Auth API returns 201 on valid input; email uniqueness enforced by DB constraint
+-->
+
 ---
 
 ## Implementation Plan
