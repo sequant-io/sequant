@@ -131,10 +131,24 @@ Surface red flags. Only track signals that change the recommendation.
 
 **Quality loop (`-q`):** Recommend for everything except simple bug fixes and docs-only.
 
-**Other flags:**
-- `--chain` — Chain issues: each branches from previous (implies --sequential)
-- `--qa-gate` — Pause chain on QA failure, preventing downstream issues from building on broken code (requires --chain)
-- `--base <branch>` — Issue references a feature branch
+**Testgen detection:** Add `testgen` to the workflow when any apply:
+- Labels include (`ui` or `frontend`) AND (`enhancement` or `feature`)
+- ACs reference "unit test", "integration test", or list "Automated Test" as a verification method
+
+Skip when: only `bug`/`fix` labels present, only `docs` label present, or a prior `testgen` phase marker exists in issue comments.
+
+**Chain detection (suggest-only, never auto-apply):** When 2+ assessed issues have a detected dependency, emit a `Chain:` line alongside (not replacing) the default per-issue commands. False dependency inference produces silently-wrong branch topology, so the user decides.
+
+Triggers (any one):
+- Issue body or comments mention `"depends on #N"`, `"blocked by #N"`, or `"after #N"`
+- One issue's described output is another issue's input (e.g., A changes a function signature that B consumes)
+
+Format: `Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <one-line reason>`
+
+Flag references:
+- `--chain` chains issues (each branches from previous; implies `--sequential`)
+- `--qa-gate` pauses chain on QA failure (requires `--chain`)
+- `--base <branch>` — issue references a feature branch
 
 ### Step 5: Conflict Detection
 
@@ -155,20 +169,25 @@ For each active worktree, check `git diff --name-only main...HEAD` for file over
 **Table column rules:** The "Reason" column must not be truncated mid-word. If a row's reason text would exceed the column width, prefer abbreviating the reason to a shorter synonym rather than cutting a word in half. Column widths should adapt to content — do not force a fixed table width.
 
 ```
- #    Action     Reason                              Run
-<N>   <ACTION>   <short reason>                       <workflow or symbol>
-<N>   <ACTION>   <short reason>                       <workflow or symbol>
+ #    Action     [ACs]  Reason                              Run
+<N>   <ACTION>   [N]    <short reason>                       <workflow or symbol>
+<N>   <ACTION>   [N]    <short reason>                       <workflow or symbol>
 ...
 ────────────────────────────────────────────────────────────────
-
-    npx sequant run <N1> <N2> <flags>
-    npx sequant run <N3> <flags>              # resume
-
+Commands:
+  npx sequant run <N1> <N2> <flags>
+  npx sequant run <N3> <flags>              # resume
 ────────────────────────────────────────────────────────────────
-Order: <N> → <N> (<shared file>) · <N> → <N> (<dependency>)
+Order: <N> → <N> (<dependency reason>)
 
 ⚠ #<N>  <warning>
 ⚠ #<N>  <warning>
+
+Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <reason>
+
+Flags:
+  <flag>                <one-line reason>
+  <flag>                <one-line reason>
 ────────────────────────────────────────────────────────────────
 Cleanup:
   <executable command>                 # reason
@@ -180,6 +199,8 @@ Cleanup:
 <!-- assess:phases=<csv> -->
 <!-- assess:quality-loop=<bool> -->
 ```
+
+**`ACs` column (conditional):** Include the `ACs` column only when every assessed issue has at least one explicit `- [ ]` checkbox AC in its body. Otherwise omit the column entirely — do not show partial values. The counter prevents eroding table trust when some issues use implicit/narrative ACs.
 
 #### Run Column Symbols
 
@@ -195,25 +216,50 @@ Cleanup:
 | `‖` | Blocked/deferred | Dependency or manual |
 | `—` | No action needed | Already closed/merged |
 
-#### Command Block Rules
+#### Commands Block Rules
+
+The commands block is headed by `Commands:` — no box-drawing, no character counting. The header label is the visual anchor.
 
 1. Only PROCEED and REWRITE issues get commands
 2. Group by identical phases + flags → same line
 3. Resume issues get `# resume` comment
 4. Rewrite issues get `# restart` comment
-5. Chain mode issues use `--chain` flag
+5. Chain mode issues use `--chain` flag (see `Chain:` annotation rules below)
 6. If ALL issues share the same workflow, emit a single command
 7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
 
 #### Annotation Rules
 
-- **`Order:`** — Only when sequencing matters (shared files or dependencies). Format: `A → B (reason)` joined by ` · `
-- **`⚠` warnings** — Only non-obvious signals (complexity, staleness, dual concerns). One line each. Prefix with issue number.
+Emit annotations in this order between the separators that follow `Commands:`:
+`Order:` → `⚠` warnings → `Chain:` → `Flags:`. `Cleanup:` goes in its own block after. Omit any section (and its surrounding blank line) when it has no content.
+
+- **`Order:`** — Only when sequencing matters. Include the **reason** for the ordering, not just `(<filename>)`. Prefer dependency reasoning over filename.
+  - Good: `Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)`
+  - Good: `Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)`
+  - Avoid bare filenames when a reason is clearer.
+
+- **`⚠` warnings** — Only non-obvious signals (complexity, staleness, dual concerns, partial-AC satisfaction). One line each, prefixed with issue number. Warnings can note when part of an AC is already satisfied in the codebase:
+  - `⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected`
+  - `⚠ #412  bug + auth labels — domain label (auth) takes priority over bug`
+
+- **`Chain:`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology. Does not replace the default per-issue commands. Format:
+  `Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <one-line reason>`
+
+- **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
+  ```
+  Flags:
+    -q                   9+ ACs or multi-file scope
+    --testgen            testable ACs detected (UI hooks + API integration)
+    --phases ...,test    ui label → browser verification
+  ```
+
 - **`Cleanup:`** — Only when actionable (stale branches, merged-but-open issues, label changes). Show as executable commands with `# reason` comments.
-- **Omit entire section** (including its separator) when no annotations of that type exist.
+
 - **"All clear" is silence** — no annotation means no issues.
 
 #### Batch Example (mixed states, with label priority)
+
+Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
 
 ```
  #    Action     Reason                              Run
@@ -227,19 +273,22 @@ Cleanup:
  411  PROCEED    Config path normalization              ◂ exec → qa
  405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
 ────────────────────────────────────────────────────────────────
-
-    npx sequant run 461 460 -q --phases exec,qa
-    npx sequant run 458 443 -q
-    npx sequant run 412 -q --phases spec,security-review,exec,qa
-    npx sequant run 411 -q --phases exec,qa     # resume
-    npx sequant run 405 -q                      # restart
-
+Commands:
+  npx sequant run 461 460 -q --phases exec,qa
+  npx sequant run 458 443 -q
+  npx sequant run 412 -q --phases spec,security-review,exec,qa
+  npx sequant run 411 -q --phases exec,qa     # resume
+  npx sequant run 405 -q                      # restart
 ────────────────────────────────────────────────────────────────
-Order: 460 → 461 (batch-executor.ts)
+Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)
 
 ⚠ #458  Dual concern (UX + race) across 4 files
 ⚠ #405  Stale 30+ days, ACs still valid
 ⚠ #412  bug + auth labels — domain label (auth) takes priority over bug
+
+Flags:
+  -q                   multi-file scope across most PROCEED issues
+  --phases spec,...    spec phase added for 458/443/412/405 (standard features)
 ────────────────────────────────────────────────────────────────
 Cleanup:
   git worktree remove .../447-...      # merged, stale worktree
@@ -258,9 +307,39 @@ Cleanup:
 <!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
+#### Batch Example (dependent issues with testgen, chain suggestion)
+
+All issues have explicit checkbox ACs, so the `ACs` column is shown. A dependency is detected (185 → 186), so a `Chain:` suggestion appears alongside the default commands.
+
+```
+ #    Action    ACs  Reason                           Run
+ 185  PROCEED    6   Domain error standardization      spec → exec → qa
+ 186  PROCEED    9   React Query hooks migration       spec → testgen → exec → test → qa
+────────────────────────────────────────────────────────────────
+Commands:
+  npx sequant run 185 -q
+  npx sequant run 186 -q --phases spec,testgen,exec,test,qa
+────────────────────────────────────────────────────────────────
+Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)
+
+⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected
+⚠ #186  @tanstack/react-query not installed; large scope (9 hooks + optimistic updates)
+
+Chain: npx sequant run 185 186 --chain --qa-gate -q --phases spec,testgen,exec,test,qa
+       # alternative — use if 186 should branch from 185's work
+
+Flags:
+  --testgen             #186 has testable ACs (UI hooks + API integration)
+  --phases ...,test     #186 ui label → browser verification
+────────────────────────────────────────────────────────────────
+
+<!-- #185 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #186 assess:action=PROCEED assess:phases=spec,testgen,exec,test,qa assess:quality-loop=true -->
+```
+
 #### Batch Example (all clean)
 
-When every issue is PROCEED with no warnings, the output is minimal:
+When every issue is PROCEED with no warnings, no dependencies, and no non-default flags beyond an obvious `-q`, the output is minimal. The `Flags:` section is omitted because `-q` is obvious here (all PROCEED enhancements).
 
 ```
  #    Action     Reason                              Run
@@ -268,10 +347,9 @@ When every issue is PROCEED with no warnings, the output is minimal:
  460  PROCEED    batch-executor tests                  exec → qa
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
 ────────────────────────────────────────────────────────────────
-
-    npx sequant run 461 460 -q --phases exec,qa
-    npx sequant run 443 -q
-
+Commands:
+  npx sequant run 461 460 -q --phases exec,qa
+  npx sequant run 443 -q
 ────────────────────────────────────────────────────────────────
 
 <!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
@@ -279,9 +357,11 @@ When every issue is PROCEED with no warnings, the output is minimal:
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
+Silence means clean — no `Order:`, no `⚠`, no `Chain:`, no `Flags:`, no `Cleanup:`.
+
 #### Batch Example (large batch, 13 issues with Rule 7 split)
 
-When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per line), and the table adapts to content width:
+When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per line), and the table adapts to content width. Mixed AC styles across issues → `ACs` column omitted.
 
 ```
  #    Action     Reason                                   Run
@@ -299,18 +379,21 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
  492  PROCEED    Add export command                         spec → exec → qa
  491  PROCEED    Normalize config paths                     exec → qa
 ────────────────────────────────────────────────────────────────
-
-    npx sequant run 503 502 501 498 495 494 -q --phases exec,qa
-    npx sequant run 491 -q --phases exec,qa
-    npx sequant run 499 -q --phases spec,exec,test,qa
-    npx sequant run 500 -q --phases spec,security-review,exec,qa
-    npx sequant run 497 492 -q
-
+Commands:
+  npx sequant run 503 502 501 498 495 494 -q --phases exec,qa
+  npx sequant run 491 -q --phases exec,qa
+  npx sequant run 499 -q --phases spec,exec,test,qa
+  npx sequant run 500 -q --phases spec,security-review,exec,qa
+  npx sequant run 497 492 -q
 ────────────────────────────────────────────────────────────────
-Order: 497 → 492 (batch-executor.ts)
+Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
 
 ⚠ #500  bug + auth labels — domain label takes priority
 ⚠ #499  bug + ui labels — domain label triggers test phase
+
+Flags:
+  --phases ...,security-review   #500 auth label → security review required
+  --phases ...,test              #499 ui label → browser verification
 ────────────────────────────────────────────────────────────────
 Cleanup:
   gh issue close 493                   # duplicate of #491
@@ -346,9 +429,13 @@ More context since you're focused on one issue. Separators between every section
 
 → PROCEED — <one-line reason>
 
-    npx sequant run <N> <flags>
+Commands:
+  npx sequant run <N> <flags>
 
-<phases> · <N> ACs · <flag reasoning>
+<phases> · <N> ACs
+
+Flags:
+  <flag>        <one-line reason>
 ────────────────────────────────────────────────────────────────
 ⚠ <warning if any>
 ⚠ Conflict: #<N> also modifies <path>
@@ -359,7 +446,9 @@ More context since you're focused on one issue. Separators between every section
 <!-- assess:quality-loop=<bool> -->
 ```
 
-If no warnings exist, omit the warning section and its separator:
+**`Flags:` (single mode):** Indented list of each enabled non-default flag with a one-line reason. Omit the entire `Flags:` section when `-q` is the only non-default flag AND the reason is obvious (e.g., a straightforward enhancement). Do not repeat obvious flags.
+
+Example with `Flags:` (non-obvious `-q` + `--testgen`):
 
 ```
 #458 — Parallel run UX freeze + reconcileState race condition
@@ -368,9 +457,33 @@ Open · bug, enhancement, cli
 
 → PROCEED — Both root causes confirmed in codebase
 
-    npx sequant run 458 -q
+Commands:
+  npx sequant run 458 -q
 
-spec → exec → qa · 8 ACs · -q (dual concern)
+spec → exec → qa · 8 ACs
+
+Flags:
+  -q     dual concern across 4 files
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PROCEED -->
+<!-- assess:phases=spec,exec,qa -->
+<!-- assess:quality-loop=true -->
+```
+
+Example omitting `Flags:` (obvious `-q` for a standard enhancement):
+
+```
+#443 — Consolidate gh CLI calls
+Open · enhancement
+────────────────────────────────────────────────────────────────
+
+→ PROCEED — Codebase matches spec, 5 ACs
+
+Commands:
+  npx sequant run 443 -q
+
+spec → exec → qa · 5 ACs
 ────────────────────────────────────────────────────────────────
 
 <!-- assess:action=PROCEED -->
@@ -448,7 +561,8 @@ Need: <specific information required>
 
 → REWRITE — <reason>
 
-    npx sequant run <N> <flags>                 # fresh start
+Commands:
+  npx sequant run <N> <flags>                 # fresh start
 
 <phases> · <N> ACs
 ────────────────────────────────────────────────────────────────
@@ -466,13 +580,16 @@ Need: <specific information required>
 
 | Section | Show when |
 |---------|-----------|
-| Command block | At least one PROCEED or REWRITE issue |
+| `ACs` column (batch) | Every assessed issue has ≥1 explicit `- [ ]` checkbox AC |
+| `Commands:` block | At least one PROCEED or REWRITE issue |
 | `Order:` | File conflicts or dependencies require sequencing |
-| `⚠` warnings | Non-obvious signals exist |
+| `⚠` warnings | Non-obvious signals exist (complexity, staleness, dual concerns, partial-AC satisfaction) |
+| `Chain:` | 2+ PROCEED issues with detected dependency (suggest-only) |
+| `Flags:` | Non-default flags appear AND `-q` is not the sole flag with an obvious reason |
 | `Cleanup:` | Stale branches, merged-but-open issues, or label changes |
 | Separators | Between sections that are both shown; omit if adjacent section is omitted |
 
-Every separator and section is conditional. If there are no warnings and no cleanup, the output is just: table → separator → command block → separator → markers.
+Every separator and section is conditional. If there are no warnings, no chain, no flags, and no cleanup, the output is just: table → separator → `Commands:` block → separator → markers.
 
 ---
 
@@ -505,10 +622,16 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 
 - [ ] Every issue has exactly one action in the table
 - [ ] Run column uses correct symbol for the action/state
-- [ ] Command block only contains PROCEED and REWRITE issues
-- [ ] Commands are grouped by compatible workflow
-- [ ] Separators appear between every shown section
-- [ ] Annotations omitted when not applicable (silence = healthy)
+- [ ] `ACs` column included only when every issue has explicit `- [ ]` checkboxes
+- [ ] Commands appear under a `Commands:` header (no bare indented block, no box-drawing)
+- [ ] Commands block only contains PROCEED and REWRITE issues, grouped by compatible workflow
+- [ ] `testgen` included when ui/frontend + enhancement/feature labels OR testable-AC signals
+- [ ] `Chain:` suggested (not auto-applied) when 2+ PROCEED issues have a detected dependency
+- [ ] `Flags:` section present when non-default flags appear (unless only obvious `-q`)
+- [ ] `Order:` annotations carry dependency **reasoning**, not bare filenames
+- [ ] `⚠` warnings include partial-AC satisfaction where applicable
+- [ ] Separators appear between every shown section; omitted when adjacent section is omitted
+- [ ] Annotations/sections omitted when not applicable (silence = healthy)
 - [ ] HTML markers present for every assessed issue
 - [ ] Batch mode: table is the primary output, no per-issue detail sections
 - [ ] Single mode: focused summary with separators between sections
