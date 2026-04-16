@@ -115,6 +115,7 @@ Surface red flags. Only track signals that change the recommendation.
 | security, auth, authentication, permissions | Domain | `spec → security-review → exec → qa` |
 | ui, frontend, admin, web, browser | Domain | `spec → exec → test → qa` |
 | complex, refactor, breaking, major | Modifier | `spec → exec → qa` + `-q` |
+| (ui/frontend) + (enhancement/feature), or testable-AC signals | Modifier | inserts `testgen` before `exec` (see Testgen detection below) |
 | enhancement, feature (default) | Generic | `spec → exec → qa` |
 | bug, fix, hotfix, patch | Generic | `exec → qa` |
 | docs, documentation, readme | Generic | `exec → qa` |
