@@ -107,16 +107,18 @@ describe("assess skill CLI flag accuracy", () => {
     }
   });
 
-  it("should only reference valid CLI flags in Other flags section", () => {
-    const otherFlagsSection = skillContent.match(
-      /\*\*Other flags:\*\*[\s\S]*?(?=\n###|\n\n\*\*)/,
+  it("should only reference valid CLI flags in Step 4 detection sections", () => {
+    // Scan the Step 4 "Chain detection" + "Flag references:" region where
+    // run-command flags are documented. Replaces the older "Other flags" section.
+    const detectionSection = skillContent.match(
+      /\*\*Chain detection[\s\S]*?(?=\n### Step 5:)/,
     );
-    expect(otherFlagsSection).not.toBeNull();
+    expect(detectionSection).not.toBeNull();
 
-    const flagRefs =
-      otherFlagsSection![0].match(/`(--[a-z][a-z-]*)[` ]/g) || [];
+    const flagRefs = detectionSection![0].match(/`(--[a-z][a-z-]*)[` ]/g) || [];
     const referencedFlags = flagRefs.map((s) => s.replace(/`/g, "").trim());
 
+    expect(referencedFlags.length).toBeGreaterThan(0);
     for (const flag of referencedFlags) {
       expect(validRunFlags).toContain(flag);
     }
