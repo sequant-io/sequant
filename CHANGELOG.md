@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Restore `/solve` feature parity in `/assess` output (#522)
+  - `Commands:` labeled header replaces bare indented command block (no box-drawing)
+  - `Chain:` suggestion annotation when 2+ assessed issues share a dependency (suggest-only, never auto-applied)
+  - `Testgen` auto-detection for `ui`/`frontend` + `enhancement`/`feature` labels or testable-AC signals
+  - `Flags:` section with one-line reasoning per non-default flag (batch + single modes)
+  - Conditional `ACs` column in batch mode when every issue has explicit `- [ ]` checkboxes
+  - Richer `Order:` / `⚠` annotations carrying dependency reasoning and partial-AC-satisfaction context
+
 ## [2.1.2] - 2026-04-11
 
 ### Added
