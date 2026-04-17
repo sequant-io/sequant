@@ -450,21 +450,29 @@ describe("chain mode", () => {
   });
 
   describe("createCheckpointCommit", () => {
-    it("should return true when no changes to commit", () => {
-      // Mock git status returning empty (no changes)
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from(""),
-        pid: 1234,
-        signal: null,
-        output: [],
-      });
+    const spawnOk = (stdout = "") => ({
+      status: 0,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from(""),
+      pid: 1234,
+      signal: null as null,
+      output: [],
+    });
+    const spawnFail = (stderr = "error") => ({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(stderr),
+      pid: 1234,
+      signal: null as null,
+      output: [],
+    });
+
+    it("should return true when no changes to commit (AC-5)", () => {
+      mockSpawnSync.mockReturnValue(spawnOk(""));
 
       const result = createCheckpointCommit("/path/to/worktree", 123, false);
 
       expect(result).toBe(true);
-      // Only status should be called since there are no changes
       expect(mockSpawnSync).toHaveBeenCalledTimes(1);
       expect(mockSpawnSync).toHaveBeenCalledWith(
         "git",
@@ -473,70 +481,109 @@ describe("chain mode", () => {
       );
     });
 
-    it("should create checkpoint commit when there are uncommitted changes", () => {
-      // First call: git status (has changes)
-      // Second call: git add -A
-      // Third call: git commit
+    it("should stage only in-scope feature paths, not git add -A (AC-1)", () => {
+      // 1: git status (dirty file is in-scope)
+      // 2: git diff --name-only (feature paths)
+      // 3: git add -- <scoped files>
+      // 4: git commit
       mockSpawnSync
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from("M src/file.ts\n"),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        })
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from(""),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        })
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from(""),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        });
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnOk());
 
-      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
 
       expect(result).toBe(true);
-      expect(mockSpawnSync).toHaveBeenCalledTimes(3);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(4);
 
-      // Verify git add was called
+      // Verify git diff was called with baseBranch
       expect(mockSpawnSync).toHaveBeenNthCalledWith(
         2,
         "git",
-        ["-C", "/path/to/worktree", "add", "-A"],
+        ["-C", "/path/to/worktree", "diff", "--name-only", "main...HEAD"],
         { stdio: "pipe" },
       );
 
-      // Verify git commit was called with checkpoint message
-      const commitCall = mockSpawnSync.mock.calls[2];
-      expect(commitCall[0]).toBe("git");
-      expect(commitCall[1]).toContain("-C");
-      expect(commitCall[1]).toContain("commit");
-      expect(commitCall[1]).toContain("-m");
-      // Verify commit message contains issue number
+      // Verify scoped git add (not -A)
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        3,
+        "git",
+        ["-C", "/path/to/worktree", "add", "--", "src/file.ts"],
+        { stdio: "pipe" },
+      );
+
+      // Verify commit message
+      const commitCall = mockSpawnSync.mock.calls[3];
       const commitMessage = commitCall[1][commitCall[1].indexOf("-m") + 1];
       expect(commitMessage).toContain("checkpoint(#123)");
       expect(commitMessage).toContain("QA passed");
     });
 
+    it("should skip checkpoint and warn when unrelated dirty files exist (AC-2)", () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      // 1: git status (has dirty file outside feature scope)
+      // 2: git diff --name-only (feature paths don't include the dirty file)
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk(" M .claude/settings.json\n"))
+        .mockReturnValueOnce(spawnOk("src/feature.ts\n"));
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(false);
+      // Should NOT call git add or git commit
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+
+      // Verify warning was emitted
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Skipping checkpoint"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining(".claude/settings.json"),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should skip checkpoint when mix of in-scope and out-of-scope dirty files (AC-2)", () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      // Both feature file and unrelated file are dirty
+      mockSpawnSync
+        .mockReturnValueOnce(
+          spawnOk(" M src/file.ts\n M .sequant-manifest.json\n"),
+        )
+        .mockReturnValueOnce(spawnOk("src/file.ts\n"));
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(false);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining(".sequant-manifest.json"),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
     it("should return false when git status fails", () => {
-      mockSpawnSync.mockReturnValue({
-        status: 1,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from("error"),
-        pid: 1234,
-        signal: null,
-        output: [],
-      });
+      mockSpawnSync.mockReturnValue(spawnFail());
 
       const result = createCheckpointCommit("/path/to/worktree", 123, false);
 
@@ -545,58 +592,122 @@ describe("chain mode", () => {
 
     it("should return false when git add fails", () => {
       mockSpawnSync
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from("M src/file.ts\n"),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        })
-        .mockReturnValueOnce({
-          status: 1, // git add fails
-          stdout: Buffer.from(""),
-          stderr: Buffer.from("error"),
-          pid: 1234,
-          signal: null,
-          output: [],
-        });
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnFail());
 
-      const result = createCheckpointCommit("/path/to/worktree", 123, false);
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
 
       expect(result).toBe(false);
     });
 
     it("should return false when git commit fails", () => {
       mockSpawnSync
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from("M src/file.ts\n"),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        })
-        .mockReturnValueOnce({
-          status: 0,
-          stdout: Buffer.from(""),
-          stderr: Buffer.from(""),
-          pid: 1234,
-          signal: null,
-          output: [],
-        })
-        .mockReturnValueOnce({
-          status: 1, // git commit fails
-          stdout: Buffer.from(""),
-          stderr: Buffer.from("commit failed"),
-          pid: 1234,
-          signal: null,
-          output: [],
-        });
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnFail("commit failed"));
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(false);
+    });
+
+    it("should treat all dirty files as in-scope when no baseBranch provided (non-chain)", () => {
+      // Without baseBranch: status → add all dirty → commit (no diff needed)
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnOk());
 
       const result = createCheckpointCommit("/path/to/worktree", 123, false);
 
+      expect(result).toBe(true);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(3);
+
+      // No diff call — all dirty files are in-scope
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        2,
+        "git",
+        ["-C", "/path/to/worktree", "add", "--", "src/file.ts"],
+        { stdio: "pipe" },
+      );
+    });
+
+    it("should exclude dirty non-feature file in chain mode and skip checkpoint (AC-4 integration)", () => {
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      // Simulate chain run: feature file + unrelated infra file both dirty
+      // Feature commits only touched src/feature.ts, not .claude/memory.md
+      mockSpawnSync
+        .mockReturnValueOnce(
+          spawnOk(" M src/feature.ts\n M .claude/memory.md\n"),
+        )
+        .mockReturnValueOnce(spawnOk("src/feature.ts\n"));
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        42,
+        true,
+        "main",
+      );
+
+      // Checkpoint should be skipped (not sweep the dirty file)
       expect(result).toBe(false);
+      // Only status + diff — no add or commit
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+      // Warning should list the unrelated file
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Skipping checkpoint"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining(".claude/memory.md"),
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it("should checkpoint only feature files when both feature and non-feature are dirty but all committed (AC-4 clean variant)", () => {
+      // All dirty files are in the feature scope — checkpoint proceeds
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk(" M src/index.ts\n M src/utils.ts\n"))
+        .mockReturnValueOnce(spawnOk("src/index.ts\nsrc/utils.ts\n"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnOk());
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        42,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(true);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(4);
+      // Verify both files are staged
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        3,
+        "git",
+        [
+          "-C",
+          "/path/to/worktree",
+          "add",
+          "--",
+          "src/index.ts",
+          "src/utils.ts",
+        ],
+        { stdio: "pipe" },
+      );
     });
   });
 

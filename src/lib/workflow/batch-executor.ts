@@ -995,7 +995,12 @@ export async function runIssueWithLogging(
 
   // Create checkpoint commit in chain mode after QA passes
   if (success && chainMode && worktreePath) {
-    createCheckpointCommit(worktreePath, issueNumber, config.verbose);
+    createCheckpointCommit(
+      worktreePath,
+      issueNumber,
+      config.verbose,
+      baseBranch,
+    );
   }
 
   // Rebase onto the base branch before PR creation (unless --no-rebase)

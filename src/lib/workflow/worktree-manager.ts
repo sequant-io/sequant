@@ -970,14 +970,16 @@ export async function ensureWorktreesChain(
 }
 
 /**
- * Create a checkpoint commit in the worktree after QA passes
- * This allows recovery in case later issues in the chain fail
+ * Create a checkpoint commit in the worktree after QA passes.
+ * Only stages files that were touched by the issue's commits (diff vs baseBranch).
+ * If unrelated dirty files exist, emits a warning and skips the checkpoint.
  * @internal Exported for testing
  */
 export function createCheckpointCommit(
   worktreePath: string,
   issueNumber: number,
   verbose: boolean,
+  baseBranch?: string,
 ): boolean {
   // Check if there are uncommitted changes
   const statusResult = spawnSync(
@@ -995,8 +997,11 @@ export function createCheckpointCommit(
     return false;
   }
 
-  const hasChanges = statusResult.stdout.toString().trim().length > 0;
-  if (!hasChanges) {
+  const statusLines = statusResult.stdout
+    .toString()
+    .split("\n")
+    .filter((line) => line.length > 0);
+  if (statusLines.length === 0) {
     if (verbose) {
       console.log(
         chalk.gray(`    📌 No changes to checkpoint (already committed)`),
@@ -1005,10 +1010,66 @@ export function createCheckpointCommit(
     return true;
   }
 
-  // Stage all changes
-  const addResult = spawnSync("git", ["-C", worktreePath, "add", "-A"], {
-    stdio: "pipe",
-  });
+  // Parse dirty file paths from porcelain output (format: "XY path" or "XY path -> newpath")
+  // Porcelain columns: index 0 = index status, index 1 = worktree status, index 2 = space
+  // Preserve raw lines to avoid corrupting the fixed-width column layout
+  const dirtyFiles = statusLines
+    .map((line) => line.slice(3).split(" -> ").pop()!.trim())
+    .filter(Boolean);
+
+  // Determine which files to stage.
+  // When baseBranch is provided (chain mode), scope to feature paths only.
+  // When baseBranch is absent (non-chain), treat all dirty files as in-scope.
+  let inScope: string[];
+  if (baseBranch) {
+    const diffResult = spawnSync(
+      "git",
+      ["-C", worktreePath, "diff", "--name-only", `${baseBranch}...HEAD`],
+      { stdio: "pipe" },
+    );
+
+    const featurePaths = new Set<string>();
+    if (diffResult.status === 0) {
+      diffResult.stdout
+        .toString()
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .forEach((p) => featurePaths.add(p));
+    }
+
+    inScope = dirtyFiles.filter((f) => featurePaths.has(f));
+    const outOfScope = dirtyFiles.filter((f) => !featurePaths.has(f));
+
+    // AC-2: If unrelated dirty files exist, warn and skip checkpoint
+    if (outOfScope.length > 0) {
+      console.log(
+        chalk.yellow(
+          `    ⚠  Skipping checkpoint for #${issueNumber}: ${outOfScope.length} unrelated dirty file(s) in worktree:`,
+        ),
+      );
+      for (const f of outOfScope) {
+        console.log(chalk.yellow(`       - ${f}`));
+      }
+      return false;
+    }
+  } else {
+    // Non-chain mode: all dirty files are in-scope
+    inScope = dirtyFiles;
+  }
+
+  if (inScope.length === 0) {
+    if (verbose) {
+      console.log(chalk.gray(`    📌 No in-scope changes to checkpoint`));
+    }
+    return true;
+  }
+
+  // AC-1: Stage only in-scope feature paths
+  const addResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "add", "--", ...inScope],
+    { stdio: "pipe" },
+  );
 
   if (addResult.status !== 0) {
     if (verbose) {
