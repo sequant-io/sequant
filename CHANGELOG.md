@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chain-mode checkpoint scoping** — `createCheckpointCommit` no longer runs `git add -A`; stages only files touched by the issue's commits relative to the chain base branch. Unrelated dirty files (e.g. `.claude/*`, `.sequant-manifest.json`) trigger a warning and skip the checkpoint instead of being swept in. Uses NUL-terminated git output (`-z`) for robust handling of paths with unicode or special characters (#528)
+
 ### Changed
 
 - Restore `/solve` feature parity in `/assess` output (#522)
