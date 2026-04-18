@@ -1012,7 +1012,8 @@ export function createCheckpointCommit(
 
   // Parse dirty file paths from porcelain output (format: "XY path" or "XY path -> newpath")
   // Porcelain columns: index 0 = index status, index 1 = worktree status, index 2 = space
-  // Preserve raw lines to avoid corrupting the fixed-width column layout
+  // Preserve raw lines to avoid corrupting the fixed-width column layout.
+  // The trailing .trim() strips whitespace around rename targets — not column fixing.
   const dirtyFiles = statusLines
     .map((line) => line.slice(3).split(" -> ").pop()!.trim())
     .filter(Boolean);

@@ -709,6 +709,61 @@ describe("chain mode", () => {
         { stdio: "pipe" },
       );
     });
+
+    it("should extract rename target path from porcelain R entries", () => {
+      // Porcelain rename format: "R  old -> new" (note: 2 spaces after R for index/worktree status)
+      // slice(3) yields "old -> new"; split(" -> ").pop() yields "new"
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk("R  src/old.ts -> src/new.ts\n"))
+        .mockReturnValueOnce(spawnOk("src/new.ts\n"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnOk());
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(true);
+      // Verify the rename target (new path) was staged, not the original
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        3,
+        "git",
+        ["-C", "/path/to/worktree", "add", "--", "src/new.ts"],
+        { stdio: "pipe" },
+      );
+    });
+
+    it("should classify untracked files as out-of-scope in chain mode", () => {
+      // Untracked files appear in porcelain as "?? path" but are not in git diff
+      // (diff only shows committed changes). Per AC-1, only paths touched by commits
+      // are in-scope, so untracked files trigger the warn+skip path.
+      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk("?? src/untracked-new.ts\n"))
+        .mockReturnValueOnce(spawnOk("")); // no committed feature paths
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(false);
+      expect(mockSpawnSync).toHaveBeenCalledTimes(2);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Skipping checkpoint"),
+      );
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("src/untracked-new.ts"),
+      );
+
+      consoleSpy.mockRestore();
+    });
   });
 
   describe("chain mode validation", () => {
