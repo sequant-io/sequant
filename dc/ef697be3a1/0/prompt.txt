@@ -63,3 +63,11 @@ whats best practice and wont lose any work?
 ---
 
 could you not have just manually added the changes to main since theres only 17 lines, like I asked before?
+
+---
+
+yes
+
+---
+
+commit those
