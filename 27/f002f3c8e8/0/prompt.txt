@@ -1,0 +1,49 @@
+qa 528
+
+---
+
+lets fix all gaps. plan
+
+---
+
+implement
+
+---
+
+any other gaps?
+
+---
+
+CAn we fix it in this PR or is it too much?
+
+---
+
+proceed
+
+---
+
+why do we have to keep rerunning qa 528?
+
+---
+
+re-run
+
+---
+
+proceed
+
+---
+
+I'll check back in a few. how long should I wait?
+
+---
+
+check now
+
+---
+
+merge
+
+---
+
+docs 528
