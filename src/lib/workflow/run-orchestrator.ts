@@ -96,6 +96,34 @@ export interface RunInit {
 }
 
 /**
+ * Pure result of config resolution — no side effects, no services.
+ * Produced by `RunOrchestrator.resolveConfig()` and consumed by both
+ * `run()` (internally) and the CLI (for pre-run display).
+ */
+export interface ResolvedRun {
+  /** Post-merge run options (defaults < settings < env < explicit) */
+  mergedOptions: RunOptions;
+  /** Execution config derived from mergedOptions */
+  config: ExecutionConfig;
+  /** Parsed + dep-sorted issue numbers (pre-state-guard) */
+  issueNumbers: number[];
+  /** Resolved batches if --batch specified, else null */
+  batches: number[][] | null;
+  /** Resolved base branch (CLI → settings → auto-detect → "main") */
+  baseBranch: string;
+  /** Stack from manifest */
+  stack: string;
+  /** True when phases will be auto-detected from issue labels */
+  autoDetectPhases: boolean;
+  /** True when worktree isolation is enabled */
+  worktreeIsolationEnabled: boolean;
+  /** True when JSON logging will be initialized */
+  logEnabled: boolean;
+  /** True when state tracking will be enabled */
+  stateEnabled: boolean;
+}
+
+/**
  * Structured result of a full orchestrator run.
  */
 export interface RunResult {
@@ -137,19 +165,21 @@ export class RunOrchestrator {
   }
 
   /**
-   * Full lifecycle execution — the primary entry point for programmatic use.
+   * Pure config resolution — no side effects.
    *
-   * Handles: config resolution → services setup → state guard →
-   * issue discovery → worktree creation → execution → metrics → cleanup.
+   * Produces a `ResolvedRun` containing merged options, execution config,
+   * parsed/sorted issue numbers, base branch, and display-only flags. Safe
+   * to call for preview purposes (e.g. CLI config display before run).
+   *
+   * `run()` uses this internally to avoid duplicating resolution logic.
    */
-  static async run(
+  static resolveConfig(
     init: RunInit,
     issueArgs: string[],
     batches?: number[][] | null,
-  ): Promise<RunResult> {
-    const { options, settings, manifest, onProgress } = init;
+  ): ResolvedRun {
+    const { options, settings, manifest } = init;
 
-    // ── Config resolution ──────────────────────────────────────────────
     const mergedOptions = resolveRunOptions(options, settings);
     const baseBranch =
       init.baseBranch ??
@@ -157,7 +187,6 @@ export class RunOrchestrator {
       settings.run.defaultBase ??
       detectDefaultBranch(mergedOptions.verbose ?? false);
 
-    // ── Parse issues ───────────────────────────────────────────────────
     let issueNumbers: number[];
     let resolvedBatches: number[][] | null = batches ?? null;
 
@@ -176,6 +205,55 @@ export class RunOrchestrator {
         .filter((n) => !isNaN(n));
     }
 
+    if (issueNumbers.length > 1 && !resolvedBatches) {
+      issueNumbers = sortByDependencies(issueNumbers);
+    }
+
+    const config = buildExecutionConfig(
+      mergedOptions,
+      settings,
+      issueNumbers.length,
+    );
+
+    const logEnabled =
+      !mergedOptions.noLog &&
+      !config.dryRun &&
+      (mergedOptions.logJson ?? settings.run.logJson ?? false);
+
+    return {
+      mergedOptions,
+      config,
+      issueNumbers,
+      batches: resolvedBatches,
+      baseBranch,
+      stack: manifest.stack,
+      autoDetectPhases: mergedOptions.autoDetectPhases ?? false,
+      worktreeIsolationEnabled:
+        mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0,
+      logEnabled,
+      stateEnabled: !config.dryRun,
+    };
+  }
+
+  /**
+   * Full lifecycle execution — the primary entry point for programmatic use.
+   *
+   * Handles: config resolution → services setup → state guard →
+   * issue discovery → worktree creation → execution → metrics → cleanup.
+   */
+  static async run(
+    init: RunInit,
+    issueArgs: string[],
+    batches?: number[][] | null,
+  ): Promise<RunResult> {
+    const { manifest, onProgress, settings } = init;
+
+    // ── Config resolution ──────────────────────────────────────────────
+    const resolved = RunOrchestrator.resolveConfig(init, issueArgs, batches);
+    const { mergedOptions, config, baseBranch } = resolved;
+    let { issueNumbers } = resolved;
+    const resolvedBatches = resolved.batches;
+
     if (issueNumbers.length === 0) {
       return {
         results: [],
@@ -183,23 +261,11 @@ export class RunOrchestrator {
         exitCode: 0,
         worktreeMap: new Map(),
         issueInfoMap: new Map(),
-        config: buildExecutionConfig(mergedOptions, settings, 0),
+        config,
         mergedOptions,
         logWriter: null,
       };
     }
-
-    // Sort by dependencies
-    if (issueNumbers.length > 1 && !resolvedBatches) {
-      issueNumbers = sortByDependencies(issueNumbers);
-    }
-
-    // ── Build execution config ─────────────────────────────────────────
-    const config = buildExecutionConfig(
-      mergedOptions,
-      settings,
-      issueNumbers.length,
-    );
 
     // ── Services setup ─────────────────────────────────────────────────
     let logWriter: LogWriter | null = null;
