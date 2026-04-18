@@ -182,6 +182,23 @@ origin/main
 
 After each issue passes QA, a checkpoint commit is automatically created. This serves as a recovery point if later issues in the chain fail.
 
+The checkpoint stages **only the files touched by the current issue's commits** (computed via `git diff --name-only baseBranch...HEAD`). Files dirty outside that scope — for example, `.claude/memory.md` or `.sequant-manifest.json` modified by `sequant sync` or mid-run Claude Code memory writes — are **not** swept into the checkpoint.
+
+If unrelated dirty files are detected, the checkpoint is skipped with a warning:
+
+```
+⚠  Skipping checkpoint for #42: 1 unrelated dirty file(s) in worktree:
+       - .claude/memory.md
+```
+
+**What to do when you see this warning:**
+
+- Inspect the dirty files with `git status` in the worktree
+- Either commit them intentionally (if they belong to the issue), discard them (`git checkout -- <path>`), or stash them (`git stash`)
+- The chain continues, but this issue will not have a recovery point until the next successful checkpoint
+
+Paths containing unicode or special characters are handled correctly (the scope detection uses git's NUL-terminated output internally).
+
 **Requirements:**
 
 - `--chain` implies `--sequential` (issues must run in order)
