@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Orchestrator no longer reports empty-worktree runs as successful (#534)
   - QA phase with null/unparseable verdict now returns `success: false` with `"QA completed without a parseable verdict"` instead of silently passing
-  - Exec phase now fails with `"exec produced no changes (no commits, no uncommitted work)"` when the agent session returns success but the worktree has no commits ahead of `origin/main` and no uncommitted work
+  - Exec phase now fails with `"exec produced no changes (no commits, no uncommitted work)"` when the agent session returns success but HEAD has no commits unique to it relative to `origin/main` and no uncommitted work (counted via `git rev-list --count origin/main..HEAD` so stale branches where main has advanced still report correctly)
 
 ### Changed
 

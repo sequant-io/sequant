@@ -254,25 +254,32 @@ export function formatDuration(seconds: number): string {
 
 /**
  * Check whether the exec phase produced any changes in the worktree.
- * Returns true if there are commits ahead of origin/main OR uncommitted work.
- * Fails open (returns true) on git errors — a missing origin ref is worse
+ * Returns true if HEAD has commits unique to it relative to origin/main
+ * OR uncommitted work is present.
+ *
+ * Uses `git rev-list --count origin/main..HEAD` (commits reachable from HEAD
+ * but not origin/main) instead of `git diff origin/main..HEAD`, because the
+ * two-dot diff also fires in reverse when origin/main has advanced past HEAD
+ * — on stale branches that would falsely report "has commits" even when the
+ * exec phase produced nothing, reintroducing the bug #534 is fixing.
+ *
+ * Fails open (returns true) on git errors — a missing origin ref is better
  * diagnosed as a real zero-diff run than as a false phase failure.
  *
  * @internal Exported for testing only.
  */
 export function hasExecChanges(cwd: string): boolean {
-  // git diff --quiet exits 0 when identical, 1 when differing, other on error.
   let commitsAhead: boolean;
   try {
-    execSync("git diff --quiet origin/main..HEAD", { cwd, stdio: "pipe" });
-    commitsAhead = false;
-  } catch (err) {
-    const status = (err as { status?: number }).status;
-    if (status === 1) {
-      commitsAhead = true;
-    } else {
-      return true;
-    }
+    const count = execSync("git rev-list --count origin/main..HEAD", {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+    commitsAhead = Number.parseInt(count, 10) > 0;
+  } catch {
+    return true;
   }
   if (commitsAhead) return true;
   try {

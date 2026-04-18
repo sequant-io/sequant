@@ -1029,24 +1029,16 @@ describe("hasExecChanges", () => {
     mockExecSync.mockReset();
   });
 
-  function gitDiffExitStatus(status: number): Error {
-    const err = new Error("git diff exited") as Error & { status: number };
-    err.status = status;
-    return err;
-  }
-
   it("returns true when there are commits ahead of origin/main", () => {
-    // git diff --quiet exits 1 → commits ahead
-    mockExecSync.mockImplementationOnce(() => {
-      throw gitDiffExitStatus(1);
-    });
+    // git rev-list --count origin/main..HEAD returns "3\n"
+    mockExecSync.mockReturnValueOnce(Buffer.from("3\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
     expect(mockExecSync).toHaveBeenCalledTimes(1);
   });
 
   it("returns true when there are uncommitted changes but no commits", () => {
-    // git diff --quiet exits 0 → no commits
-    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    // git rev-list --count → "0"
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     // git status --porcelain returns dirty output
     mockExecSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
@@ -1054,25 +1046,40 @@ describe("hasExecChanges", () => {
   });
 
   it("returns false when there are no commits and no uncommitted work", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+
+  it("returns false on a stale base branch when HEAD has no unique commits even though origin/main has advanced", () => {
+    // Regression guard: `git diff --quiet origin/main..HEAD` would exit 1
+    // here (main has advanced past HEAD), falsely reporting "has commits".
+    // `git rev-list --count origin/main..HEAD` correctly returns 0.
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
   });
 
   it("fails open (returns true) on git errors (e.g. missing origin)", () => {
-    // git diff --quiet exits 128 → unknown revision
+    // rev-list throws when origin/main is not a valid ref
     mockExecSync.mockImplementationOnce(() => {
-      throw gitDiffExitStatus(128);
+      throw new Error("fatal: bad revision 'origin/main..HEAD'");
     });
     expect(hasExecChanges("/tmp/wt")).toBe(true);
   });
 
   it("fails open when git status itself throws", () => {
-    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockImplementationOnce(() => {
       throw new Error("git status unavailable");
     });
     expect(hasExecChanges("/tmp/wt")).toBe(true);
+  });
+
+  it("treats non-numeric rev-list output as zero (fail closed on parse)", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("not-a-number\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
   });
 });
 
@@ -1201,12 +1208,8 @@ describe("mapAgentSuccessToPhaseResult", () => {
 
   describe("exec phase", () => {
     it("passes when exec produced commits", () => {
-      // git diff --quiet exits 1 → commits ahead
-      mockExecSync.mockImplementationOnce(() => {
-        const err = new Error("diff") as Error & { status: number };
-        err.status = 1;
-        throw err;
-      });
+      // git rev-list --count origin/main..HEAD → 2
+      mockExecSync.mockReturnValueOnce(Buffer.from("2\n"));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
@@ -1218,8 +1221,8 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("passes when exec left uncommitted work", () => {
-      // git diff --quiet exits 0 → no commits
-      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      // git rev-list --count → 0
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       // git status --porcelain shows dirty tree
       mockExecSync.mockReturnValueOnce(Buffer.from("?? src/new.ts\n"));
       const result = mapAgentSuccessToPhaseResult(
@@ -1232,7 +1235,26 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("fails when exec produced no commits and no uncommitted work (#534)", () => {
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(
+        "exec produced no changes (no commits, no uncommitted work)",
+      );
+    });
+
+    it("fails on a stale base branch when HEAD has no unique commits (regression for #534 follow-up)", () => {
+      // Even if origin/main has advanced, HEAD's commit count relative to
+      // origin/main is still 0 — exec did nothing and must be reported as a
+      // failure. Previously `git diff --quiet origin/main..HEAD` would have
+      // exited 1 (inverse diff non-empty) and falsely passed.
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       mockExecSync.mockReturnValueOnce(Buffer.from(""));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
