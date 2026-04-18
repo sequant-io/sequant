@@ -122,4 +122,36 @@ describe("createCheckpointCommit (integration)", () => {
     expect(result).toBe(true);
     expect(headAfter).toBe(headBefore);
   });
+
+  it("checkpoints paths with unicode/non-ASCII characters", () => {
+    // Without -z, git quotes non-ASCII paths ("caf\\303\\251.ts"), which would
+    // break path-based staging. This test proves -z avoids that class of bug.
+    const unicodePath = "src/café.ts";
+    writeFileSync(join(repoDir, unicodePath), "export const v = 1;\n");
+    git(repoDir, "add", unicodePath);
+    git(repoDir, "commit", "-m", "feat: add unicode-named file");
+
+    // Dirty the unicode-named file
+    writeFileSync(join(repoDir, unicodePath), "export const v = 2;\n");
+
+    const headBefore = git(repoDir, "rev-parse", "HEAD");
+    const result = createCheckpointCommit(repoDir, 42, false, "main");
+    const headAfter = git(repoDir, "rev-parse", "HEAD");
+
+    expect(result).toBe(true);
+    expect(headAfter).not.toBe(headBefore);
+
+    // The unicode path appears verbatim in the checkpoint commit.
+    // Use -c core.quotePath=false so git doesn't escape non-ASCII in its output.
+    const changed = git(
+      repoDir,
+      "-c",
+      "core.quotePath=false",
+      "show",
+      "--name-only",
+      "--pretty=format:",
+      "HEAD",
+    ).trim();
+    expect(changed).toContain(unicodePath);
+  });
 });

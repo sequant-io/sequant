@@ -981,10 +981,11 @@ export function createCheckpointCommit(
   verbose: boolean,
   baseBranch?: string,
 ): boolean {
-  // Check if there are uncommitted changes
+  // Check if there are uncommitted changes.
+  // Use -z (NUL-terminated) so paths with unicode or special chars aren't quoted/escaped.
   const statusResult = spawnSync(
     "git",
-    ["-C", worktreePath, "status", "--porcelain"],
+    ["-C", worktreePath, "status", "--porcelain", "-z"],
     { stdio: "pipe" },
   );
 
@@ -997,11 +998,8 @@ export function createCheckpointCommit(
     return false;
   }
 
-  const statusLines = statusResult.stdout
-    .toString()
-    .split("\n")
-    .filter((line) => line.length > 0);
-  if (statusLines.length === 0) {
+  const statusRaw = statusResult.stdout.toString();
+  if (statusRaw.length === 0) {
     if (verbose) {
       console.log(
         chalk.gray(`    📌 No changes to checkpoint (already committed)`),
@@ -1010,13 +1008,20 @@ export function createCheckpointCommit(
     return true;
   }
 
-  // Parse dirty file paths from porcelain output (format: "XY path" or "XY path -> newpath")
-  // Porcelain columns: index 0 = index status, index 1 = worktree status, index 2 = space
-  // Preserve raw lines to avoid corrupting the fixed-width column layout.
-  // The trailing .trim() strips whitespace around rename targets — not column fixing.
-  const dirtyFiles = statusLines
-    .map((line) => line.slice(3).split(" -> ").pop()!.trim())
-    .filter(Boolean);
+  // Parse NUL-separated porcelain entries. Each entry is "XY path".
+  // For renames/copies, the next entry is the old path and must be consumed.
+  const entries = statusRaw.split("\0").filter((e) => e.length > 0);
+  const dirtyFiles: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const xy = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (path) dirtyFiles.push(path);
+    // Rename (R) and copy (C) entries are followed by the original path — skip it
+    if (xy[0] === "R" || xy[0] === "C") {
+      i++;
+    }
+  }
 
   // Determine which files to stage.
   // When baseBranch is provided (chain mode), scope to feature paths only.
@@ -1025,7 +1030,7 @@ export function createCheckpointCommit(
   if (baseBranch) {
     const diffResult = spawnSync(
       "git",
-      ["-C", worktreePath, "diff", "--name-only", `${baseBranch}...HEAD`],
+      ["-C", worktreePath, "diff", "--name-only", "-z", `${baseBranch}...HEAD`],
       { stdio: "pipe" },
     );
 
@@ -1033,8 +1038,8 @@ export function createCheckpointCommit(
     if (diffResult.status === 0) {
       diffResult.stdout
         .toString()
-        .split("\n")
-        .filter((line) => line.length > 0)
+        .split("\0")
+        .filter((p) => p.length > 0)
         .forEach((p) => featurePaths.add(p));
     }
 

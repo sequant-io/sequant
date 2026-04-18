@@ -476,7 +476,7 @@ describe("chain mode", () => {
       expect(mockSpawnSync).toHaveBeenCalledTimes(1);
       expect(mockSpawnSync).toHaveBeenCalledWith(
         "git",
-        ["-C", "/path/to/worktree", "status", "--porcelain"],
+        ["-C", "/path/to/worktree", "status", "--porcelain", "-z"],
         { stdio: "pipe" },
       );
     });
@@ -487,8 +487,8 @@ describe("chain mode", () => {
       // 3: git add -- <scoped files>
       // 4: git commit
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
-        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\0"))
         .mockReturnValueOnce(spawnOk())
         .mockReturnValueOnce(spawnOk());
 
@@ -506,7 +506,7 @@ describe("chain mode", () => {
       expect(mockSpawnSync).toHaveBeenNthCalledWith(
         2,
         "git",
-        ["-C", "/path/to/worktree", "diff", "--name-only", "main...HEAD"],
+        ["-C", "/path/to/worktree", "diff", "--name-only", "-z", "main...HEAD"],
         { stdio: "pipe" },
       );
 
@@ -531,8 +531,8 @@ describe("chain mode", () => {
       // 1: git status (has dirty file outside feature scope)
       // 2: git diff --name-only (feature paths don't include the dirty file)
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M .claude/settings.json\n"))
-        .mockReturnValueOnce(spawnOk("src/feature.ts\n"));
+        .mockReturnValueOnce(spawnOk(" M .claude/settings.json\0"))
+        .mockReturnValueOnce(spawnOk("src/feature.ts\0"));
 
       const result = createCheckpointCommit(
         "/path/to/worktree",
@@ -562,9 +562,9 @@ describe("chain mode", () => {
       // Both feature file and unrelated file are dirty
       mockSpawnSync
         .mockReturnValueOnce(
-          spawnOk(" M src/file.ts\n M .sequant-manifest.json\n"),
+          spawnOk(" M src/file.ts\0 M .sequant-manifest.json\0"),
         )
-        .mockReturnValueOnce(spawnOk("src/file.ts\n"));
+        .mockReturnValueOnce(spawnOk("src/file.ts\0"));
 
       const result = createCheckpointCommit(
         "/path/to/worktree",
@@ -592,8 +592,8 @@ describe("chain mode", () => {
 
     it("should return false when git add fails", () => {
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
-        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\0"))
         .mockReturnValueOnce(spawnFail());
 
       const result = createCheckpointCommit(
@@ -608,8 +608,8 @@ describe("chain mode", () => {
 
     it("should return false when git commit fails", () => {
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
-        .mockReturnValueOnce(spawnOk("src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/file.ts\0"))
         .mockReturnValueOnce(spawnOk())
         .mockReturnValueOnce(spawnFail("commit failed"));
 
@@ -626,7 +626,7 @@ describe("chain mode", () => {
     it("should treat all dirty files as in-scope when no baseBranch provided (non-chain)", () => {
       // Without baseBranch: status → add all dirty → commit (no diff needed)
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M src/file.ts\n"))
+        .mockReturnValueOnce(spawnOk(" M src/file.ts\0"))
         .mockReturnValueOnce(spawnOk())
         .mockReturnValueOnce(spawnOk());
 
@@ -651,9 +651,9 @@ describe("chain mode", () => {
       // Feature commits only touched src/feature.ts, not .claude/memory.md
       mockSpawnSync
         .mockReturnValueOnce(
-          spawnOk(" M src/feature.ts\n M .claude/memory.md\n"),
+          spawnOk(" M src/feature.ts\0 M .claude/memory.md\0"),
         )
-        .mockReturnValueOnce(spawnOk("src/feature.ts\n"));
+        .mockReturnValueOnce(spawnOk("src/feature.ts\0"));
 
       const result = createCheckpointCommit(
         "/path/to/worktree",
@@ -680,8 +680,8 @@ describe("chain mode", () => {
     it("should checkpoint only feature files when both feature and non-feature are dirty but all committed (AC-4 clean variant)", () => {
       // All dirty files are in the feature scope — checkpoint proceeds
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk(" M src/index.ts\n M src/utils.ts\n"))
-        .mockReturnValueOnce(spawnOk("src/index.ts\nsrc/utils.ts\n"))
+        .mockReturnValueOnce(spawnOk(" M src/index.ts\0 M src/utils.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/index.ts\0src/utils.ts\0"))
         .mockReturnValueOnce(spawnOk())
         .mockReturnValueOnce(spawnOk());
 
@@ -710,12 +710,14 @@ describe("chain mode", () => {
       );
     });
 
-    it("should extract rename target path from porcelain R entries", () => {
-      // Porcelain rename format: "R  old -> new" (note: 2 spaces after R for index/worktree status)
-      // slice(3) yields "old -> new"; split(" -> ").pop() yields "new"
+    it("should extract rename target path from porcelain R entries (-z)", () => {
+      // With -z, rename format is two NUL-separated entries:
+      //   "R  newpath\0oldpath\0"
+      // The first entry's path is the new name; the second (oldpath) is consumed
+      // by the parser and NOT staged.
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk("R  src/old.ts -> src/new.ts\n"))
-        .mockReturnValueOnce(spawnOk("src/new.ts\n"))
+        .mockReturnValueOnce(spawnOk("R  src/new.ts\0src/old.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/new.ts\0"))
         .mockReturnValueOnce(spawnOk())
         .mockReturnValueOnce(spawnOk());
 
@@ -727,11 +729,37 @@ describe("chain mode", () => {
       );
 
       expect(result).toBe(true);
-      // Verify the rename target (new path) was staged, not the original
+      // Only the new path is staged — old path is consumed by the rename-pair parser
       expect(mockSpawnSync).toHaveBeenNthCalledWith(
         3,
         "git",
         ["-C", "/path/to/worktree", "add", "--", "src/new.ts"],
+        { stdio: "pipe" },
+      );
+    });
+
+    it("should handle paths with unicode/special characters (-z, no quoting)", () => {
+      // With -z, git does not quote non-ASCII paths. This is the key
+      // robustness win over --porcelain without -z.
+      mockSpawnSync
+        .mockReturnValueOnce(spawnOk(" M src/café.ts\0"))
+        .mockReturnValueOnce(spawnOk("src/café.ts\0"))
+        .mockReturnValueOnce(spawnOk())
+        .mockReturnValueOnce(spawnOk());
+
+      const result = createCheckpointCommit(
+        "/path/to/worktree",
+        123,
+        false,
+        "main",
+      );
+
+      expect(result).toBe(true);
+      // Unicode path passed verbatim — no escape sequences, no quote chars
+      expect(mockSpawnSync).toHaveBeenNthCalledWith(
+        3,
+        "git",
+        ["-C", "/path/to/worktree", "add", "--", "src/café.ts"],
         { stdio: "pipe" },
       );
     });
@@ -743,7 +771,7 @@ describe("chain mode", () => {
       const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
       mockSpawnSync
-        .mockReturnValueOnce(spawnOk("?? src/untracked-new.ts\n"))
+        .mockReturnValueOnce(spawnOk("?? src/untracked-new.ts\0"))
         .mockReturnValueOnce(spawnOk("")); // no committed feature paths
 
       const result = createCheckpointCommit(
