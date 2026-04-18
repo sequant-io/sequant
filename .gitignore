@@ -46,6 +46,8 @@ pnpm-lock.yaml
 .sequant/*
 # But track upstream assessment baseline and reports
 !.sequant/upstream/
+# Nested runtime dirs (e.g. .claude/skills/.sequant/ token-usage telemetry)
+**/.sequant/
 
 # Claude Code configuration
 # Track hooks and skills, but ignore local settings
