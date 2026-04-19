@@ -253,15 +253,59 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Check whether the exec phase produced any changes in the worktree.
- * Returns true if HEAD has commits unique to it relative to origin/main
- * OR uncommitted work is present.
+ * Resolve the base ref the zero-diff guard should compare against for
+ * this worktree.
  *
- * Uses `git rev-list --count origin/main..HEAD` (commits reachable from HEAD
- * but not origin/main) instead of `git diff origin/main..HEAD`, because the
- * two-dot diff also fires in reverse when origin/main has advanced past HEAD
+ * Reads `branch.<current>.sequantBase` — written by `scripts/new-feature.sh`
+ * when a worktree is created with `--base <branch>`. Returns `origin/<base>`
+ * (prepending `origin/` only when the recorded value does not already
+ * reference a remote). Falls back to `"origin/main"` on missing config,
+ * missing branch, or any git error — preserves the pre-#537 behavior
+ * for worktrees that predate this change or are managed outside
+ * `new-feature.sh`.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveBaseRef(cwd: string): string {
+  const fallback = "origin/main";
+  let branch: string;
+  try {
+    branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, stdio: "pipe" })
+      .toString()
+      .trim();
+  } catch {
+    return fallback;
+  }
+  if (!branch || branch === "HEAD") return fallback;
+  let recorded: string;
+  try {
+    recorded = execSync(`git config --get branch.${branch}.sequantBase`, {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+  } catch {
+    return fallback;
+  }
+  if (!recorded) return fallback;
+  return recorded.startsWith("origin/") ? recorded : `origin/${recorded}`;
+}
+
+/**
+ * Check whether the exec phase produced any changes in the worktree.
+ * Returns true if HEAD has commits unique to it relative to the resolved
+ * base ref (see {@link resolveBaseRef}) OR uncommitted work is present.
+ *
+ * Uses `git rev-list --count <base>..HEAD` (commits reachable from HEAD
+ * but not the base) instead of `git diff <base>..HEAD`, because the
+ * two-dot diff also fires in reverse when the base has advanced past HEAD
  * — on stale branches that would falsely report "has commits" even when the
  * exec phase produced nothing, reintroducing the bug #534 is fixing.
+ *
+ * The base ref defaults to `origin/main` but is overridden to the worktree's
+ * recorded base (see #537) so zero-diff execs are still detected on
+ * custom-base worktrees (e.g. those created with `--base feature/epic`).
  *
  * Fails open (returns true) on git errors — a missing origin ref is better
  * diagnosed as a real zero-diff run than as a false phase failure.
@@ -269,9 +313,10 @@ export function formatDuration(seconds: number): string {
  * @internal Exported for testing only.
  */
 export function hasExecChanges(cwd: string): boolean {
+  const baseRef = resolveBaseRef(cwd);
   let commitsAhead: boolean;
   try {
-    const count = execSync("git rev-list --count origin/main..HEAD", {
+    const count = execSync(`git rev-list --count ${baseRef}..HEAD`, {
       cwd,
       stdio: "pipe",
     })

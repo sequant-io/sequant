@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Orchestrator no longer reports empty-worktree runs as successful (#534)
   - QA phase with null/unparseable verdict now returns `success: false` with `"QA completed without a parseable verdict"` instead of silently passing
   - Exec phase now fails with `"exec produced no changes (no commits, no uncommitted work)"` when the agent session returns success but HEAD has no commits unique to it relative to `origin/main` and no uncommitted work (counted via `git rev-list --count origin/main..HEAD` so stale branches where main has advanced still report correctly)
+  - Zero-diff guard now respects custom base branches (#537): `scripts/new-feature.sh --base feature/<branch>` records the base in `branch.<name>.sequantBase`, and the guard compares against `origin/<recorded-base>` instead of hardcoded `origin/main`. Worktrees without a recorded base fall back to `origin/main` (unchanged #534 behavior), so existing worktrees and non-sequant-managed ones are unaffected
 - **Chain-mode checkpoint scoping** — `createCheckpointCommit` no longer runs `git add -A`; stages only files touched by the issue's commits relative to the chain base branch. Unrelated dirty files (e.g. `.claude/*`, `.sequant-manifest.json`) trigger a warning and skip the checkpoint instead of being swept in. Uses NUL-terminated git output (`-z`) for robust handling of paths with unicode or special characters (#528)
 
 ### Changed

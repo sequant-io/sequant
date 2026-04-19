@@ -152,6 +152,12 @@ git pull origin "$BASE_BRANCH"
 echo -e "${BLUE}🌿 Creating new worktree from ${BASE_BRANCH}...${NC}"
 git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME"
 
+# Record the base branch on the new branch so downstream tooling
+# (e.g. phase-executor zero-diff guard, see #537) can resolve the
+# correct comparison ref when the worktree was branched off something
+# other than origin/main.
+git -C "$WORKTREE_DIR" config "branch.${BRANCH_NAME}.sequantBase" "$BASE_BRANCH"
+
 # Navigate to worktree
 cd "$WORKTREE_DIR"
 

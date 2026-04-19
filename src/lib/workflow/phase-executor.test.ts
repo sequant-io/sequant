@@ -13,6 +13,7 @@ import {
   executePhaseWithRetry,
   hasExecChanges,
   mapAgentSuccessToPhaseResult,
+  resolveBaseRef,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
 } from "./phase-executor.js";
@@ -1024,28 +1025,100 @@ describe("executePhaseWithRetry", () => {
   });
 });
 
+describe("resolveBaseRef", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+  });
+
+  it("returns the recorded base prefixed with origin/", () => {
+    // git rev-parse --abbrev-ref HEAD
+    mockExecSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    // git config --get branch.feature/537-foo.sequantBase
+    mockExecSync.mockReturnValueOnce(Buffer.from("feature/epic\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/feature/epic");
+  });
+
+  it("preserves an explicit origin/ prefix in the recorded value", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from("origin/feature/epic\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/feature/epic");
+  });
+
+  it("falls back to origin/main when no config is recorded", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    // git config --get exits non-zero when the key is unset
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when rev-parse fails", () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("not a git repo");
+    });
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when HEAD is detached", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("HEAD\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when the recorded value is empty", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from("\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+});
+
 describe("hasExecChanges", () => {
   beforeEach(() => {
     mockExecSync.mockReset();
   });
 
+  /**
+   * Prime `resolveBaseRef` to fall back to origin/main (no recorded base).
+   * Consumes two mock calls: rev-parse (returns branch name) + config --get
+   * (throws, simulating a missing config entry).
+   */
+  function mockNoRecordedBase(branch = "feature/537-foo"): void {
+    mockExecSync.mockReturnValueOnce(Buffer.from(`${branch}\n`));
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+  }
+
+  /**
+   * Prime `resolveBaseRef` to resolve to `origin/<base>`.
+   * Consumes two mock calls: rev-parse + config --get (returns the recorded base).
+   */
+  function mockRecordedBase(base: string, branch = "feature/537-foo"): void {
+    mockExecSync.mockReturnValueOnce(Buffer.from(`${branch}\n`));
+    mockExecSync.mockReturnValueOnce(Buffer.from(`${base}\n`));
+  }
+
   it("returns true when there are commits ahead of origin/main", () => {
+    mockNoRecordedBase();
     // git rev-list --count origin/main..HEAD returns "3\n"
     mockExecSync.mockReturnValueOnce(Buffer.from("3\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
-    expect(mockExecSync).toHaveBeenCalledTimes(1);
+    // 2 for resolveBaseRef + 1 for rev-list
+    expect(mockExecSync).toHaveBeenCalledTimes(3);
   });
 
   it("returns true when there are uncommitted changes but no commits", () => {
+    mockNoRecordedBase();
     // git rev-list --count → "0"
     mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     // git status --porcelain returns dirty output
     mockExecSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
-    expect(mockExecSync).toHaveBeenCalledTimes(2);
+    expect(mockExecSync).toHaveBeenCalledTimes(4);
   });
 
   it("returns false when there are no commits and no uncommitted work", () => {
+    mockNoRecordedBase();
     mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
@@ -1055,12 +1128,14 @@ describe("hasExecChanges", () => {
     // Regression guard: `git diff --quiet origin/main..HEAD` would exit 1
     // here (main has advanced past HEAD), falsely reporting "has commits".
     // `git rev-list --count origin/main..HEAD` correctly returns 0.
+    mockNoRecordedBase();
     mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
   });
 
   it("fails open (returns true) on git errors (e.g. missing origin)", () => {
+    mockNoRecordedBase();
     // rev-list throws when origin/main is not a valid ref
     mockExecSync.mockImplementationOnce(() => {
       throw new Error("fatal: bad revision 'origin/main..HEAD'");
@@ -1069,6 +1144,7 @@ describe("hasExecChanges", () => {
   });
 
   it("fails open when git status itself throws", () => {
+    mockNoRecordedBase();
     mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
     mockExecSync.mockImplementationOnce(() => {
       throw new Error("git status unavailable");
@@ -1077,9 +1153,56 @@ describe("hasExecChanges", () => {
   });
 
   it("treats non-numeric rev-list output as zero (fail closed on parse)", () => {
+    mockNoRecordedBase();
     mockExecSync.mockReturnValueOnce(Buffer.from("not-a-number\n"));
     mockExecSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+
+  // AC-4 matrix (#537): custom-base worktrees must be compared against their
+  // recorded base, not origin/main, or zero-diff execs slip through on epic
+  // integration branches.
+  describe("with a recorded custom base (#537)", () => {
+    it("returns true when HEAD has new commits relative to the recorded base", () => {
+      mockRecordedBase("feature/epic");
+      // git rev-list --count origin/feature/epic..HEAD returns "2\n"
+      mockExecSync.mockReturnValueOnce(Buffer.from("2\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+      // Verify the rev-list call used the custom base, not origin/main
+      const revListCall = mockExecSync.mock.calls[2][0];
+      expect(revListCall).toContain("origin/feature/epic..HEAD");
+      expect(revListCall).not.toContain("origin/main..HEAD");
+    });
+
+    it("returns false when HEAD has zero new commits relative to the recorded base (primary #537 fix)", () => {
+      // This is the scenario #537 exists to fix: the parent branch
+      // has N commits ahead of origin/main, and exec produced nothing.
+      // Before #537 the guard would count those N commits and falsely
+      // report `hasExecChanges = true`, passing the zero-diff exec.
+      mockRecordedBase("feature/epic");
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      expect(hasExecChanges("/tmp/wt")).toBe(false);
+    });
+
+    it("returns true when there are uncommitted changes even with zero commits vs recorded base", () => {
+      mockRecordedBase("feature/epic");
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+    });
+  });
+
+  // AC-3 (#537): backward compatibility — worktrees without a recorded base
+  // must continue to behave exactly as they did under #534.
+  describe("without a recorded base (AC-3 fallback)", () => {
+    it("compares against origin/main", () => {
+      mockNoRecordedBase();
+      mockExecSync.mockReturnValueOnce(Buffer.from("1\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+      const revListCall = mockExecSync.mock.calls[2][0];
+      expect(revListCall).toContain("origin/main..HEAD");
+    });
   });
 });
 
@@ -1207,7 +1330,20 @@ describe("mapAgentSuccessToPhaseResult", () => {
   });
 
   describe("exec phase", () => {
+    /**
+     * Prime `resolveBaseRef` (called indirectly by `hasExecChanges`) to
+     * fall back to origin/main. Consumes two mock calls: rev-parse branch +
+     * config --get (throws, simulating a missing entry).
+     */
+    function mockNoRecordedBase(): void {
+      mockExecSync.mockReturnValueOnce(Buffer.from("feature/test\n"));
+      mockExecSync.mockImplementationOnce(() => {
+        throw new Error("exit code 1");
+      });
+    }
+
     it("passes when exec produced commits", () => {
+      mockNoRecordedBase();
       // git rev-list --count origin/main..HEAD → 2
       mockExecSync.mockReturnValueOnce(Buffer.from("2\n"));
       const result = mapAgentSuccessToPhaseResult(
@@ -1221,6 +1357,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("passes when exec left uncommitted work", () => {
+      mockNoRecordedBase();
       // git rev-list --count → 0
       mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       // git status --porcelain shows dirty tree
@@ -1235,6 +1372,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("fails when exec produced no commits and no uncommitted work (#534)", () => {
+      mockNoRecordedBase();
       mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       mockExecSync.mockReturnValueOnce(Buffer.from(""));
       const result = mapAgentSuccessToPhaseResult(
@@ -1254,6 +1392,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
       // origin/main is still 0 — exec did nothing and must be reported as a
       // failure. Previously `git diff --quiet origin/main..HEAD` would have
       // exited 1 (inverse diff non-empty) and falsely passed.
+      mockNoRecordedBase();
       mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
       mockExecSync.mockReturnValueOnce(Buffer.from(""));
       const result = mapAgentSuccessToPhaseResult(
@@ -1266,6 +1405,28 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.error).toBe(
         "exec produced no changes (no commits, no uncommitted work)",
       );
+    });
+
+    it("fails for custom-base worktree with zero diff against the recorded base (#537)", () => {
+      // resolveBaseRef reads branch + sequantBase config
+      mockExecSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from("feature/epic\n"));
+      // rev-list and status both return empty
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(
+        "exec produced no changes (no commits, no uncommitted work)",
+      );
+      // Verify the guard compared against the recorded base, not origin/main
+      const revListCall = mockExecSync.mock.calls[2][0];
+      expect(revListCall).toContain("origin/feature/epic..HEAD");
     });
   });
 
