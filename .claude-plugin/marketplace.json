@@ -8,7 +8,7 @@
     {
       "name": "sequant",
       "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases. Includes 17 skills, MCP server with workflow tools, and pre/post-tool hooks.",
-      "version": "2.1.0",
+      "version": "2.2.0",
       "author": {
         "name": "sequant-io",
         "email": "hello@sequant.io"
