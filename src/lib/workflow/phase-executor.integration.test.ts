@@ -176,3 +176,103 @@ describe("hasExecChanges without recorded base (integration, AC-3 fallback)", ()
     expect(hasExecChanges(work)).toBe(true);
   });
 });
+
+/**
+ * End-to-end test using `git worktree add` rather than `git init`.
+ *
+ * Branch-scoped git config (`branch.<name>.sequantBase`) is stored in
+ * `$GIT_COMMON_DIR/config` and shared across all worktrees of a repo.
+ * `new-feature.sh` writes the key from inside the worktree directory,
+ * and `resolveBaseRef` reads it from the same worktree. This test
+ * exercises that actual shape — create a main repo, push `main` and
+ * `feature/epic` to a bare origin, then use `git worktree add` to
+ * create a sibling worktree branched from `feature/epic`, record the
+ * base from the worktree, and verify the guard reads it back.
+ *
+ * Complements the `git init` integration tests above (which exercise
+ * the consumer semantics without the worktree-specific config
+ * plumbing).
+ */
+describe("hasExecChanges via real git worktree add (integration, #537 AC-6 end-to-end)", () => {
+  let origin: string;
+  let main: string;
+  let worktree: string;
+
+  beforeEach(() => {
+    origin = mkdtempSync(join(tmpdir(), "sequant-537-wt-origin-"));
+    main = mkdtempSync(join(tmpdir(), "sequant-537-wt-main-"));
+    // Sibling directory to `main` so git worktree add can use a relative
+    // path that does not collide with the main repo layout.
+    worktree = join(main, "..", `sequant-537-wt-feat-${Date.now()}`);
+
+    git(origin, "init", "--bare", "--initial-branch=main");
+    git(main, "init", "--initial-branch=main");
+    git(main, "config", "user.email", "test@sequant.test");
+    git(main, "config", "user.name", "Test");
+    git(main, "config", "commit.gpgsign", "false");
+    git(main, "remote", "add", "origin", origin);
+
+    // M1: baseline
+    writeFileSync(join(main, "README.md"), "# repo\n");
+    git(main, "add", "README.md");
+    git(main, "commit", "-m", "M1: baseline");
+    git(main, "push", "-u", "origin", "main");
+
+    // E1: epic branch with a commit ahead of main
+    git(main, "checkout", "-b", "feature/epic");
+    mkdirSync(join(main, "src"), { recursive: true });
+    writeFileSync(join(main, "src/epic.ts"), "export const epic = 1;\n");
+    git(main, "add", "src/epic.ts");
+    git(main, "commit", "-m", "E1: epic work");
+    git(main, "push", "-u", "origin", "feature/epic");
+
+    // Return main to `main` so the worktree add has a clean HEAD to branch from.
+    git(main, "checkout", "main");
+
+    // The scenario new-feature.sh produces: a worktree branched from
+    // feature/epic, with the base recorded in branch config.
+    git(
+      main,
+      "worktree",
+      "add",
+      worktree,
+      "-b",
+      "feature/537-test",
+      "feature/epic",
+    );
+    git(
+      worktree,
+      "config",
+      "branch.feature/537-test.sequantBase",
+      "feature/epic",
+    );
+  });
+
+  afterEach(() => {
+    // Order matters: worktree remove clears metadata before rmSync unlinks.
+    try {
+      git(main, "worktree", "remove", "--force", worktree);
+    } catch {
+      // Worktree may already be gone; cleanup is best-effort.
+    }
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(main, { recursive: true, force: true });
+    rmSync(worktree, { recursive: true, force: true });
+  });
+
+  it("reads the recorded base through the worktree's shared config", () => {
+    expect(resolveBaseRef(worktree)).toBe("origin/feature/epic");
+  });
+
+  it("detects zero-diff exec on a real custom-base worktree (primary #537 fix, end-to-end)", () => {
+    // HEAD is identical to feature/epic; no new commits, no dirty work.
+    expect(hasExecChanges(worktree)).toBe(false);
+  });
+
+  it("detects real work on top of the recorded base", () => {
+    writeFileSync(join(worktree, "src/new.ts"), "export const n = 1;\n");
+    git(worktree, "add", "src/new.ts");
+    git(worktree, "commit", "-m", "feat: new work on epic");
+    expect(hasExecChanges(worktree)).toBe(true);
+  });
+});
