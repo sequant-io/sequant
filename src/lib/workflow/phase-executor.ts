@@ -16,7 +16,11 @@ import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
-import type { AgentDriver, AgentExecutionConfig } from "./drivers/index.js";
+import type {
+  AgentDriver,
+  AgentExecutionConfig,
+  AgentPhaseResult,
+} from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
 import { ApiError } from "../errors.js";
 
@@ -249,6 +253,140 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Check whether the exec phase produced any changes in the worktree.
+ * Returns true if HEAD has commits unique to it relative to origin/main
+ * OR uncommitted work is present.
+ *
+ * Uses `git rev-list --count origin/main..HEAD` (commits reachable from HEAD
+ * but not origin/main) instead of `git diff origin/main..HEAD`, because the
+ * two-dot diff also fires in reverse when origin/main has advanced past HEAD
+ * — on stale branches that would falsely report "has commits" even when the
+ * exec phase produced nothing, reintroducing the bug #534 is fixing.
+ *
+ * Fails open (returns true) on git errors — a missing origin ref is better
+ * diagnosed as a real zero-diff run than as a false phase failure.
+ *
+ * @internal Exported for testing only.
+ */
+export function hasExecChanges(cwd: string): boolean {
+  let commitsAhead: boolean;
+  try {
+    const count = execSync("git rev-list --count origin/main..HEAD", {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+    commitsAhead = Number.parseInt(count, 10) > 0;
+  } catch {
+    return true;
+  }
+  if (commitsAhead) return true;
+  try {
+    const porcelain = execSync("git status --porcelain", { cwd, stdio: "pipe" })
+      .toString()
+      .trim();
+    return porcelain.length > 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Map a successful AgentPhaseResult to a PhaseResult, applying phase-specific
+ * guards that catch agent sessions which returned success without producing
+ * usable work (#534):
+ *
+ * - `qa`: fails when no parseable verdict is found (empty or malformed output).
+ * - `exec`: fails when no commits and no uncommitted changes exist.
+ *
+ * @internal Exported for testing only.
+ */
+export function mapAgentSuccessToPhaseResult(
+  phase: Phase,
+  agentResult: AgentPhaseResult,
+  durationSeconds: number,
+  cwd: string,
+): PhaseResult & { sessionId?: string } {
+  const tails = {
+    stderrTail: agentResult.stderrTail,
+    stdoutTail: agentResult.stdoutTail,
+    exitCode: agentResult.exitCode,
+  };
+
+  if (phase === "qa") {
+    const verdict = agentResult.output
+      ? parseQaVerdict(agentResult.output)
+      : null;
+    const summary = agentResult.output
+      ? (parseQaSummary(agentResult.output) ?? undefined)
+      : undefined;
+    if (
+      verdict &&
+      verdict !== "READY_FOR_MERGE" &&
+      verdict !== "NEEDS_VERIFICATION"
+    ) {
+      return {
+        phase,
+        success: false,
+        durationSeconds,
+        error: `QA verdict: ${verdict}`,
+        sessionId: agentResult.sessionId,
+        output: agentResult.output,
+        verdict,
+        summary,
+        ...tails,
+      };
+    }
+    if (!verdict) {
+      // #534: a null verdict (empty or unparseable output) is not success.
+      return {
+        phase,
+        success: false,
+        durationSeconds,
+        error: "QA completed without a parseable verdict",
+        sessionId: agentResult.sessionId,
+        output: agentResult.output,
+        summary,
+        ...tails,
+      };
+    }
+    return {
+      phase,
+      success: true,
+      durationSeconds,
+      sessionId: agentResult.sessionId,
+      output: agentResult.output,
+      verdict,
+      summary,
+      ...tails,
+    };
+  }
+
+  if (phase === "exec" && !hasExecChanges(cwd)) {
+    // #534: an exec phase that produced nothing is not success.
+    return {
+      phase,
+      success: false,
+      durationSeconds,
+      error: "exec produced no changes (no commits, no uncommitted work)",
+      sessionId: agentResult.sessionId,
+      output: agentResult.output,
+      ...tails,
+    };
+  }
+
+  return {
+    phase,
+    success: true,
+    durationSeconds,
+    sessionId: agentResult.sessionId,
+    output: agentResult.output,
+    ...tails,
+  };
+}
+
+/**
  * Get the prompt for a phase with the issue number substituted.
  * Selects self-contained prompts for non-Claude agents.
  * Includes AGENTS.md content as context so non-Claude agents
@@ -466,56 +604,13 @@ async function executePhase(
 
   const durationSeconds = (Date.now() - startTime) / 1000;
 
-  // Map AgentPhaseResult to PhaseResult
-  const tails = {
-    stderrTail: agentResult.stderrTail,
-    stdoutTail: agentResult.stdoutTail,
-    exitCode: agentResult.exitCode,
-  };
-
   if (agentResult.success) {
-    // For QA phase, check the verdict to determine actual success
-    // Agent "success" just means the execution completed — we need to parse the verdict
-    if (phase === "qa" && agentResult.output) {
-      const verdict = parseQaVerdict(agentResult.output);
-      const summary = parseQaSummary(agentResult.output) ?? undefined;
-      if (
-        verdict &&
-        verdict !== "READY_FOR_MERGE" &&
-        verdict !== "NEEDS_VERIFICATION"
-      ) {
-        return {
-          phase,
-          success: false,
-          durationSeconds,
-          error: `QA verdict: ${verdict}`,
-          sessionId: agentResult.sessionId,
-          output: agentResult.output,
-          verdict,
-          summary,
-          ...tails,
-        };
-      }
-      return {
-        phase,
-        success: true,
-        durationSeconds,
-        sessionId: agentResult.sessionId,
-        output: agentResult.output,
-        verdict: verdict ?? undefined,
-        summary,
-        ...tails,
-      };
-    }
-
-    return {
+    return mapAgentSuccessToPhaseResult(
       phase,
-      success: true,
+      agentResult,
       durationSeconds,
-      sessionId: agentResult.sessionId,
-      output: agentResult.output,
-      ...tails,
-    };
+      cwd,
+    );
   }
 
   return {
@@ -524,7 +619,9 @@ async function executePhase(
     durationSeconds,
     error: agentResult.error,
     sessionId: agentResult.sessionId,
-    ...tails,
+    stderrTail: agentResult.stderrTail,
+    stdoutTail: agentResult.stdoutTail,
+    exitCode: agentResult.exitCode,
   };
 }
 

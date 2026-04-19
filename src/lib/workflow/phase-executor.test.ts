@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("child_process", () => ({
+  execSync: vi.fn(),
+}));
+
+import { execSync } from "child_process";
 import {
   parseQaVerdict,
   parseQaSummary,
   formatDuration,
   getPhasePrompt,
   executePhaseWithRetry,
+  hasExecChanges,
+  mapAgentSuccessToPhaseResult,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
+import type { AgentPhaseResult } from "./drivers/index.js";
 import { ShutdownManager } from "../shutdown.js";
 
 // Mock agents-md module
@@ -18,6 +27,7 @@ vi.mock("../agents-md.js", () => ({
 
 import { readAgentsMd } from "../agents-md.js";
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
+const mockExecSync = vi.mocked(execSync);
 
 describe("parseQaVerdict", () => {
   const verdicts = [
@@ -1011,5 +1021,265 @@ describe("executePhaseWithRetry", () => {
 
     expect(executePhaseFn).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("hasExecChanges", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+  });
+
+  it("returns true when there are commits ahead of origin/main", () => {
+    // git rev-list --count origin/main..HEAD returns "3\n"
+    mockExecSync.mockReturnValueOnce(Buffer.from("3\n"));
+    expect(hasExecChanges("/tmp/wt")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns true when there are uncommitted changes but no commits", () => {
+    // git rev-list --count → "0"
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+    // git status --porcelain returns dirty output
+    mockExecSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
+    expect(hasExecChanges("/tmp/wt")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns false when there are no commits and no uncommitted work", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+
+  it("returns false on a stale base branch when HEAD has no unique commits even though origin/main has advanced", () => {
+    // Regression guard: `git diff --quiet origin/main..HEAD` would exit 1
+    // here (main has advanced past HEAD), falsely reporting "has commits".
+    // `git rev-list --count origin/main..HEAD` correctly returns 0.
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+
+  it("fails open (returns true) on git errors (e.g. missing origin)", () => {
+    // rev-list throws when origin/main is not a valid ref
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("fatal: bad revision 'origin/main..HEAD'");
+    });
+    expect(hasExecChanges("/tmp/wt")).toBe(true);
+  });
+
+  it("fails open when git status itself throws", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("git status unavailable");
+    });
+    expect(hasExecChanges("/tmp/wt")).toBe(true);
+  });
+
+  it("treats non-numeric rev-list output as zero (fail closed on parse)", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from("not-a-number\n"));
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+});
+
+describe("mapAgentSuccessToPhaseResult", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+  });
+
+  function makeAgentResult(
+    overrides: Partial<AgentPhaseResult> = {},
+  ): AgentPhaseResult {
+    return {
+      success: true,
+      output: "",
+      ...overrides,
+    };
+  }
+
+  describe("qa phase", () => {
+    it("passes through READY_FOR_MERGE verdict as success", () => {
+      const agentResult = makeAgentResult({
+        output: "### Verdict: READY_FOR_MERGE",
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(true);
+      expect(result.verdict).toBe("READY_FOR_MERGE");
+      expect(result.error).toBeUndefined();
+    });
+
+    it("passes through NEEDS_VERIFICATION verdict as success", () => {
+      const agentResult = makeAgentResult({
+        output: "### Verdict: NEEDS_VERIFICATION",
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(true);
+      expect(result.verdict).toBe("NEEDS_VERIFICATION");
+    });
+
+    it("fails on AC_NOT_MET verdict (existing behavior preserved)", () => {
+      const agentResult = makeAgentResult({
+        output: "### Verdict: AC_NOT_MET",
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("QA verdict: AC_NOT_MET");
+      expect(result.verdict).toBe("AC_NOT_MET");
+    });
+
+    it("fails on AC_MET_BUT_NOT_A_PLUS verdict (existing behavior preserved)", () => {
+      const agentResult = makeAgentResult({
+        output: "### Verdict: AC_MET_BUT_NOT_A_PLUS",
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("QA verdict: AC_MET_BUT_NOT_A_PLUS");
+    });
+
+    it("fails when output is present but no verdict is parseable (#534)", () => {
+      const agentResult = makeAgentResult({
+        output: "Some review text but no verdict line",
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("QA completed without a parseable verdict");
+      expect(result.verdict).toBeUndefined();
+    });
+
+    it("fails when output is empty (#534)", () => {
+      const agentResult = makeAgentResult({ output: "" });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("QA completed without a parseable verdict");
+    });
+
+    it("preserves sessionId and tails on null-verdict failure", () => {
+      const agentResult = makeAgentResult({
+        output: "",
+        sessionId: "sess-123",
+        stderrTail: ["boom"],
+        stdoutTail: ["hello"],
+        exitCode: 0,
+      });
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.sessionId).toBe("sess-123");
+      expect(result.stderrTail).toEqual(["boom"]);
+      expect(result.stdoutTail).toEqual(["hello"]);
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe("exec phase", () => {
+    it("passes when exec produced commits", () => {
+      // git rev-list --count origin/main..HEAD → 2
+      mockExecSync.mockReturnValueOnce(Buffer.from("2\n"));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it("passes when exec left uncommitted work", () => {
+      // git rev-list --count → 0
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      // git status --porcelain shows dirty tree
+      mockExecSync.mockReturnValueOnce(Buffer.from("?? src/new.ts\n"));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("fails when exec produced no commits and no uncommitted work (#534)", () => {
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(
+        "exec produced no changes (no commits, no uncommitted work)",
+      );
+    });
+
+    it("fails on a stale base branch when HEAD has no unique commits (regression for #534 follow-up)", () => {
+      // Even if origin/main has advanced, HEAD's commit count relative to
+      // origin/main is still 0 — exec did nothing and must be reported as a
+      // failure. Previously `git diff --quiet origin/main..HEAD` would have
+      // exited 1 (inverse diff non-empty) and falsely passed.
+      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(
+        "exec produced no changes (no commits, no uncommitted work)",
+      );
+    });
+  });
+
+  describe("other phases", () => {
+    it("does not apply guards to non-qa, non-exec phases", () => {
+      // No execSync calls expected
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({ output: "plan" }),
+        30,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(true);
+      expect(mockExecSync).not.toHaveBeenCalled();
+    });
   });
 });
