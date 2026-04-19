@@ -1240,7 +1240,11 @@ describe("hasExecChanges", () => {
 
 describe("mapAgentSuccessToPhaseResult", () => {
   beforeEach(() => {
+    // Reset both subprocess mocks — the exec-phase block exercises
+    // execFileSync; resetting only execSync would leak state into the
+    // other-phases block below, which asserts "no subprocess calls".
     mockExecSync.mockReset();
+    mockExecFileSync.mockReset();
   });
 
   function makeAgentResult(
@@ -1469,7 +1473,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
 
   describe("other phases", () => {
     it("does not apply guards to non-qa, non-exec phases", () => {
-      // No execSync calls expected
+      // No subprocess calls expected — spec is a pure passthrough.
       const result = mapAgentSuccessToPhaseResult(
         "spec",
         makeAgentResult({ output: "plan" }),
@@ -1478,6 +1482,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
       );
       expect(result.success).toBe(true);
       expect(mockExecSync).not.toHaveBeenCalled();
+      expect(mockExecFileSync).not.toHaveBeenCalled();
     });
   });
 });
