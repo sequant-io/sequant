@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.1.2
+# What We've Built: Sequant v2.2.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,7 +737,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.1.2)
+### Recent Additions (v2.2.0)
+
+- **Three-Directory Skill Sync** - Verification script and QA skill check guard against drift across `.claude/skills/`, `templates/skills/`, and `skills/` (#498, #499)
+- **QA Multi-Issue Guidance** - Batch review flows get explicit invocation guidance in the `/qa` skill (#509)
+- **Compressed `/spec` Prompt** - 75% smaller with tiered context loading on demand (#515)
+- **Orchestrator Honesty** - Null QA verdicts and zero-diff exec phases now fail loud instead of silent success (#534)
+- **Chain-Mode Checkpoint Scoping** - Stages only issue-touched files; warns and skips on unrelated dirty state (no more `git add -A`) (#528)
+- **/assess Feature Parity** - Restored `/solve` features lost in v3.0 rewrite: labeled headers, chain suggestions, testgen auto-detect, flag reasoning, conditional ACs column (#522)
+
+### Earlier Additions (v2.1.2)
 
 - **Configuration Schema Validation** - Zod-powered validation for `.sequant/settings.json` with clear warnings for misspelled keys (#507)
 - **Structured Error Types** - `SequantError` base class with 6 typed subclasses replacing string-based classification (#507)
@@ -1072,7 +1081,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.1.2
+**Current Version:** 2.2.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1082,7 +1091,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.1.2                                │
+│                              SEQUANT v2.2.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

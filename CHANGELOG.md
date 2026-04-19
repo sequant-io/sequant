@@ -7,12 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-04-18
+
+### Added
+
+- **Three-directory skill sync verification** — new `scripts/check-skill-sync.ts` script detects drift across `.claude/skills/`, `templates/skills/`, and `skills/` (#498)
+- **QA skill check for skill sync** — `/qa` now flags skill-directory drift as a quality gap (#499)
+- **Multi-issue invocation guidance** in `/qa` skill for batch review flows (#509)
+- **Compressed `/spec` skill prompt** — 75% smaller with tiered context loading on demand (#515)
+
 ### Fixed
 
 - Orchestrator no longer reports empty-worktree runs as successful (#534)
   - QA phase with null/unparseable verdict now returns `success: false` with `"QA completed without a parseable verdict"` instead of silently passing
   - Exec phase now fails with `"exec produced no changes (no commits, no uncommitted work)"` when the agent session returns success but HEAD has no commits unique to it relative to `origin/main` and no uncommitted work (counted via `git rev-list --count origin/main..HEAD` so stale branches where main has advanced still report correctly)
 - **Chain-mode checkpoint scoping** — `createCheckpointCommit` no longer runs `git add -A`; stages only files touched by the issue's commits relative to the chain base branch. Unrelated dirty files (e.g. `.claude/*`, `.sequant-manifest.json`) trigger a warning and skip the checkpoint instead of being swept in. Uses NUL-terminated git output (`-z`) for robust handling of paths with unicode or special characters (#528)
+- Restore pre-run config display regressed by #503 refactor
 
 ### Changed
 
@@ -23,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Flags:` section with one-line reasoning per non-default flag (batch + single modes)
   - Conditional `ACs` column in batch mode when every issue has explicit `- [ ]` checkboxes
   - Richer `Order:` / `⚠` annotations carrying dependency reasoning and partial-AC-satisfaction context
+
+### Removed
+
+- Dead `scripts/state/update.ts` references from skill templates (#502)
 
 ## [2.1.2] - 2026-04-11
 
