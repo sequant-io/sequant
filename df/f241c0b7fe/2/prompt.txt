@@ -1,0 +1,37 @@
+fullsolve 534
+
+---
+
+any gaps?
+
+---
+
+Fix gap 1. create a comprehensive follow up issue for gap 2
+
+---
+
+arewe ready for merge or do we need another qa?
+
+---
+
+ready for merge?
+
+---
+
+poll
+
+---
+
+yes
+
+---
+
+docs 534
+
+---
+
+Can you just update the docs on main?
+
+---
+
+commited too?
