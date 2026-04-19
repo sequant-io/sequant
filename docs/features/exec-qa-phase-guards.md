@@ -75,11 +75,17 @@ If either git command throws (e.g. `origin/main` isn't fetched yet), `hasExecCha
 
 **Fix:** Check `sequant logs --failed --verbose` for the session's stderr tail. Common causes: phase timeout (`run.timeout` in `.sequant/settings.json`), context overflow, or hook blocks. Re-run with `sequant run <issue> --phase qa` after addressing the root cause.
 
-### Zero-progress exec on a custom-base worktree isn't caught
+### Zero-progress exec on a custom-base worktree (resolved in #537)
 
-**Cause:** Worktrees created with `./scripts/dev/new-feature.sh <issue> --base feature/<branch>` branch from a non-main ref. The guard compares against `origin/main`, so any commits from the feature base still count — a zero-progress exec on top of a populated base is not detected.
+**Cause (pre-#537):** Worktrees created with `./scripts/new-feature.sh <issue> --base feature/<branch>` branch from a non-main ref. The original #534 guard compared HEAD against `origin/main`, so the parent branch's commits still counted — a zero-progress exec on top of a populated base was not detected.
 
-**Fix:** Tracked in [#537](https://github.com/sequant-io/sequant/issues/537). Until resolved, custom-base worktrees preserve the pre-#534 behavior for the exec zero-diff case (QA null-verdict guard still applies).
+**Fix ([#537](https://github.com/sequant-io/sequant/issues/537)):** `new-feature.sh` now records the `--base` value in `branch.<name>.sequantBase` (via `git config`) at worktree creation. The zero-diff guard reads that key via `resolveBaseRef(cwd)` and compares against `origin/<recorded-base>` instead of the hardcoded `origin/main`. Worktrees without a recorded base fall back to `origin/main` — pre-#534 behavior preserved for legacy and non-sequant-managed worktrees. Subprocess calls use `execFileSync` so the recorded value cannot trigger shell interpretation.
+
+**If you still see zero-diff execs passing on a custom-base worktree:** the base wasn't recorded. Either the worktree predates #537, or it was created outside `new-feature.sh`. Set it manually:
+
+```bash
+git -C <worktree> config branch.<current-branch>.sequantBase feature/<parent>
+```
 
 ---
 

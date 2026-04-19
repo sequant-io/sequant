@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import {
   parseQaVerdict,
   parseQaSummary,
@@ -13,6 +14,7 @@ import {
   executePhaseWithRetry,
   hasExecChanges,
   mapAgentSuccessToPhaseResult,
+  resolveBaseRef,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
 } from "./phase-executor.js";
@@ -28,6 +30,7 @@ vi.mock("../agents-md.js", () => ({
 import { readAgentsMd } from "../agents-md.js";
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 
 describe("parseQaVerdict", () => {
   const verdicts = [
@@ -1024,30 +1027,130 @@ describe("executePhaseWithRetry", () => {
   });
 });
 
-describe("hasExecChanges", () => {
+describe("resolveBaseRef", () => {
   beforeEach(() => {
-    mockExecSync.mockReset();
+    mockExecFileSync.mockReset();
   });
 
+  it("returns the recorded base prefixed with origin/", () => {
+    // git rev-parse --abbrev-ref HEAD
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    // git config --get branch.feature/537-foo.sequantBase
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/epic\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/feature/epic");
+  });
+
+  it("preserves an explicit origin/ prefix in the recorded value", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("origin/feature/epic\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/feature/epic");
+  });
+
+  it("accepts legal-but-unusual refname characters (+, =, ,)", () => {
+    // Previously a defensive regex rejected these; with execFileSync the
+    // value is no longer shell-interpreted, so refnames git accepts must
+    // flow through to the caller.
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/v1+dev\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("release=1,tag\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/release=1,tag");
+  });
+
+  it("passes argv (not a shell string) to git — no injection via metacharacters", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/epic\n"));
+    resolveBaseRef("/tmp/wt");
+    // Every call must use the argv form: first arg is "git", second is an array.
+    for (const call of mockExecFileSync.mock.calls) {
+      expect(call[0]).toBe("git");
+      expect(Array.isArray(call[1])).toBe(true);
+    }
+  });
+
+  it("falls back to origin/main when no config is recorded", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    // git config --get exits non-zero when the key is unset
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when rev-parse fails", () => {
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("not a git repo");
+    });
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when HEAD is detached", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("HEAD\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back to origin/main when the recorded value is empty", () => {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("\n"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+
+  it("falls back when the recorded value contains an embedded newline (paranoid guard)", () => {
+    // git config --get should never return multiple lines, but the helper
+    // guards against it so a malformed config entry can't split refnames.
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/epic\nextra"));
+    expect(resolveBaseRef("/tmp/wt")).toBe("origin/main");
+  });
+});
+
+describe("hasExecChanges", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  /**
+   * Prime `resolveBaseRef` to fall back to origin/main (no recorded base).
+   * Consumes two mock calls: rev-parse (returns branch name) + config --get
+   * (throws, simulating a missing config entry).
+   */
+  function mockNoRecordedBase(branch = "feature/537-foo"): void {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(`${branch}\n`));
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+  }
+
+  /**
+   * Prime `resolveBaseRef` to resolve to `origin/<base>`.
+   * Consumes two mock calls: rev-parse + config --get (returns the recorded base).
+   */
+  function mockRecordedBase(base: string, branch = "feature/537-foo"): void {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(`${branch}\n`));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(`${base}\n`));
+  }
+
   it("returns true when there are commits ahead of origin/main", () => {
+    mockNoRecordedBase();
     // git rev-list --count origin/main..HEAD returns "3\n"
-    mockExecSync.mockReturnValueOnce(Buffer.from("3\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("3\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
-    expect(mockExecSync).toHaveBeenCalledTimes(1);
+    // 2 for resolveBaseRef + 1 for rev-list
+    expect(mockExecFileSync).toHaveBeenCalledTimes(3);
   });
 
   it("returns true when there are uncommitted changes but no commits", () => {
+    mockNoRecordedBase();
     // git rev-list --count → "0"
-    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
     // git status --porcelain returns dirty output
-    mockExecSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
     expect(hasExecChanges("/tmp/wt")).toBe(true);
-    expect(mockExecSync).toHaveBeenCalledTimes(2);
+    expect(mockExecFileSync).toHaveBeenCalledTimes(4);
   });
 
   it("returns false when there are no commits and no uncommitted work", () => {
-    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
-    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
   });
 
@@ -1055,37 +1158,93 @@ describe("hasExecChanges", () => {
     // Regression guard: `git diff --quiet origin/main..HEAD` would exit 1
     // here (main has advanced past HEAD), falsely reporting "has commits".
     // `git rev-list --count origin/main..HEAD` correctly returns 0.
-    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
-    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
   });
 
   it("fails open (returns true) on git errors (e.g. missing origin)", () => {
+    mockNoRecordedBase();
     // rev-list throws when origin/main is not a valid ref
-    mockExecSync.mockImplementationOnce(() => {
+    mockExecFileSync.mockImplementationOnce(() => {
       throw new Error("fatal: bad revision 'origin/main..HEAD'");
     });
     expect(hasExecChanges("/tmp/wt")).toBe(true);
   });
 
   it("fails open when git status itself throws", () => {
-    mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
-    mockExecSync.mockImplementationOnce(() => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockImplementationOnce(() => {
       throw new Error("git status unavailable");
     });
     expect(hasExecChanges("/tmp/wt")).toBe(true);
   });
 
   it("treats non-numeric rev-list output as zero (fail closed on parse)", () => {
-    mockExecSync.mockReturnValueOnce(Buffer.from("not-a-number\n"));
-    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("not-a-number\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
     expect(hasExecChanges("/tmp/wt")).toBe(false);
+  });
+
+  // AC-4 matrix (#537): custom-base worktrees must be compared against their
+  // recorded base, not origin/main, or zero-diff execs slip through on epic
+  // integration branches.
+  describe("with a recorded custom base (#537)", () => {
+    it("returns true when HEAD has new commits relative to the recorded base", () => {
+      mockRecordedBase("feature/epic");
+      // git rev-list --count origin/feature/epic..HEAD returns "2\n"
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("2\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+      // Verify the rev-list call used the custom base, not origin/main.
+      // With execFileSync, args are passed as argv array (not a shell string),
+      // so inspect mock.calls[2][1] (the args array to execFileSync).
+      const revListArgs = mockExecFileSync.mock.calls[2][1] as string[];
+      expect(revListArgs).toContain("origin/feature/epic..HEAD");
+      expect(revListArgs).not.toContain("origin/main..HEAD");
+    });
+
+    it("returns false when HEAD has zero new commits relative to the recorded base (primary #537 fix)", () => {
+      // This is the scenario #537 exists to fix: the parent branch
+      // has N commits ahead of origin/main, and exec produced nothing.
+      // Before #537 the guard would count those N commits and falsely
+      // report `hasExecChanges = true`, passing the zero-diff exec.
+      mockRecordedBase("feature/epic");
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
+      expect(hasExecChanges("/tmp/wt")).toBe(false);
+    });
+
+    it("returns true when there are uncommitted changes even with zero commits vs recorded base", () => {
+      mockRecordedBase("feature/epic");
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+    });
+  });
+
+  // AC-3 (#537): backward compatibility — worktrees without a recorded base
+  // must continue to behave exactly as they did under #534.
+  describe("without a recorded base (AC-3 fallback)", () => {
+    it("compares against origin/main", () => {
+      mockNoRecordedBase();
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("1\n"));
+      expect(hasExecChanges("/tmp/wt")).toBe(true);
+      const revListArgs = mockExecFileSync.mock.calls[2][1] as string[];
+      expect(revListArgs).toContain("origin/main..HEAD");
+    });
   });
 });
 
 describe("mapAgentSuccessToPhaseResult", () => {
   beforeEach(() => {
+    // Reset both subprocess mocks — the exec-phase block exercises
+    // execFileSync; resetting only execSync would leak state into the
+    // other-phases block below, which asserts "no subprocess calls".
     mockExecSync.mockReset();
+    mockExecFileSync.mockReset();
   });
 
   function makeAgentResult(
@@ -1207,9 +1366,26 @@ describe("mapAgentSuccessToPhaseResult", () => {
   });
 
   describe("exec phase", () => {
+    beforeEach(() => {
+      mockExecFileSync.mockReset();
+    });
+
+    /**
+     * Prime `resolveBaseRef` (called indirectly by `hasExecChanges`) to
+     * fall back to origin/main. Consumes two mock calls: rev-parse branch +
+     * config --get (throws, simulating a missing entry).
+     */
+    function mockNoRecordedBase(): void {
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/test\n"));
+      mockExecFileSync.mockImplementationOnce(() => {
+        throw new Error("exit code 1");
+      });
+    }
+
     it("passes when exec produced commits", () => {
+      mockNoRecordedBase();
       // git rev-list --count origin/main..HEAD → 2
-      mockExecSync.mockReturnValueOnce(Buffer.from("2\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("2\n"));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
@@ -1221,10 +1397,11 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("passes when exec left uncommitted work", () => {
+      mockNoRecordedBase();
       // git rev-list --count → 0
-      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
       // git status --porcelain shows dirty tree
-      mockExecSync.mockReturnValueOnce(Buffer.from("?? src/new.ts\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("?? src/new.ts\n"));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
@@ -1235,8 +1412,9 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
 
     it("fails when exec produced no commits and no uncommitted work (#534)", () => {
-      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
-      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      mockNoRecordedBase();
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
@@ -1254,8 +1432,9 @@ describe("mapAgentSuccessToPhaseResult", () => {
       // origin/main is still 0 — exec did nothing and must be reported as a
       // failure. Previously `git diff --quiet origin/main..HEAD` would have
       // exited 1 (inverse diff non-empty) and falsely passed.
-      mockExecSync.mockReturnValueOnce(Buffer.from("0\n"));
-      mockExecSync.mockReturnValueOnce(Buffer.from(""));
+      mockNoRecordedBase();
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
@@ -1267,11 +1446,34 @@ describe("mapAgentSuccessToPhaseResult", () => {
         "exec produced no changes (no commits, no uncommitted work)",
       );
     });
+
+    it("fails for custom-base worktree with zero diff against the recorded base (#537)", () => {
+      // resolveBaseRef reads branch + sequantBase config
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/537-foo\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("feature/epic\n"));
+      // rev-list and status both return empty
+      mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+      mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
+      const result = mapAgentSuccessToPhaseResult(
+        "exec",
+        makeAgentResult({ output: "done" }),
+        120,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBe(
+        "exec produced no changes (no commits, no uncommitted work)",
+      );
+      // Verify the guard compared against the recorded base, not origin/main.
+      // mock.calls[2][1] is the argv array to execFileSync on the rev-list call.
+      const revListArgs = mockExecFileSync.mock.calls[2][1] as string[];
+      expect(revListArgs).toContain("origin/feature/epic..HEAD");
+    });
   });
 
   describe("other phases", () => {
     it("does not apply guards to non-qa, non-exec phases", () => {
-      // No execSync calls expected
+      // No subprocess calls expected — spec is a pure passthrough.
       const result = mapAgentSuccessToPhaseResult(
         "spec",
         makeAgentResult({ output: "plan" }),
@@ -1280,6 +1482,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
       );
       expect(result.success).toBe(true);
       expect(mockExecSync).not.toHaveBeenCalled();
+      expect(mockExecFileSync).not.toHaveBeenCalled();
     });
   });
 });

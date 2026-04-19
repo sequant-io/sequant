@@ -9,7 +9,7 @@
  */
 
 import chalk from "chalk";
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
 import { PhaseSpinner } from "../phase-spinner.js";
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
@@ -253,15 +253,72 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Check whether the exec phase produced any changes in the worktree.
- * Returns true if HEAD has commits unique to it relative to origin/main
- * OR uncommitted work is present.
+ * Resolve the base ref the zero-diff guard should compare against for
+ * this worktree.
  *
- * Uses `git rev-list --count origin/main..HEAD` (commits reachable from HEAD
- * but not origin/main) instead of `git diff origin/main..HEAD`, because the
- * two-dot diff also fires in reverse when origin/main has advanced past HEAD
+ * Reads `branch.<current>.sequantBase` — written by `scripts/new-feature.sh`
+ * when a worktree is created with `--base <branch>`. Returns `origin/<base>`
+ * (prepending `origin/` only when the recorded value does not already
+ * reference a remote). Falls back to `"origin/main"` on missing config,
+ * missing branch, or any git error — preserves the pre-#537 behavior
+ * for worktrees that predate this change or are managed outside
+ * `new-feature.sh`.
+ *
+ * Uses `execFileSync` (not `execSync`) so argv is passed directly to
+ * `execve` without shell interpretation — the recorded value originates
+ * from the user-supplied `--base` CLI flag, and shell-interpolating it
+ * would open a shell-injection vector. With `execFileSync`, a malicious
+ * value is at worst treated as an invalid revspec by git (triggering
+ * the fail-open path), never executed as shell.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveBaseRef(cwd: string): string {
+  const fallback = "origin/main";
+  let branch: string;
+  try {
+    branch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+  } catch {
+    return fallback;
+  }
+  // Guard against multi-line output (paranoid — should never happen) and
+  // the detached-HEAD case where we have no recorded base to look up.
+  if (!branch || branch === "HEAD" || branch.includes("\n")) return fallback;
+  let recorded: string;
+  try {
+    recorded = execFileSync(
+      "git",
+      ["config", "--get", `branch.${branch}.sequantBase`],
+      { cwd, stdio: "pipe" },
+    )
+      .toString()
+      .trim();
+  } catch {
+    return fallback;
+  }
+  if (!recorded || recorded.includes("\n")) return fallback;
+  return recorded.startsWith("origin/") ? recorded : `origin/${recorded}`;
+}
+
+/**
+ * Check whether the exec phase produced any changes in the worktree.
+ * Returns true if HEAD has commits unique to it relative to the resolved
+ * base ref (see {@link resolveBaseRef}) OR uncommitted work is present.
+ *
+ * Uses `git rev-list --count <base>..HEAD` (commits reachable from HEAD
+ * but not the base) instead of `git diff <base>..HEAD`, because the
+ * two-dot diff also fires in reverse when the base has advanced past HEAD
  * — on stale branches that would falsely report "has commits" even when the
  * exec phase produced nothing, reintroducing the bug #534 is fixing.
+ *
+ * The base ref defaults to `origin/main` but is overridden to the worktree's
+ * recorded base (see #537) so zero-diff execs are still detected on
+ * custom-base worktrees (e.g. those created with `--base feature/epic`).
  *
  * Fails open (returns true) on git errors — a missing origin ref is better
  * diagnosed as a real zero-diff run than as a false phase failure.
@@ -269,12 +326,14 @@ export function formatDuration(seconds: number): string {
  * @internal Exported for testing only.
  */
 export function hasExecChanges(cwd: string): boolean {
+  const baseRef = resolveBaseRef(cwd);
   let commitsAhead: boolean;
   try {
-    const count = execSync("git rev-list --count origin/main..HEAD", {
-      cwd,
-      stdio: "pipe",
-    })
+    const count = execFileSync(
+      "git",
+      ["rev-list", "--count", `${baseRef}..HEAD`],
+      { cwd, stdio: "pipe" },
+    )
       .toString()
       .trim();
     commitsAhead = Number.parseInt(count, 10) > 0;
@@ -283,7 +342,10 @@ export function hasExecChanges(cwd: string): boolean {
   }
   if (commitsAhead) return true;
   try {
-    const porcelain = execSync("git status --porcelain", { cwd, stdio: "pipe" })
+    const porcelain = execFileSync("git", ["status", "--porcelain"], {
+      cwd,
+      stdio: "pipe",
+    })
       .toString()
       .trim();
     return porcelain.length > 0;
