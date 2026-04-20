@@ -107,8 +107,10 @@ COMMIT_SHA=$(git rev-parse HEAD)
 ```
 
 ```markdown
-<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"<ISO-8601>","commitSHA":"<HEAD-SHA>"} -->
+<!-- SEQUANT_PHASE: {"phase":"qa","status":"completed","timestamp":"<ISO-8601>","commitSHA":"<HEAD-SHA>","verdict":"<READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|NEEDS_VERIFICATION>"} -->
 ```
+
+**Note:** The `verdict` field is required on `status:"completed"` markers so the Phase 0a short-circuit can surface the prior verdict without re-reading the comment body. Older markers without this field are still accepted — Phase 0a falls back to `(see prior QA comment)`.
 
 If QA determines AC_NOT_MET, emit:
 ```markdown
@@ -126,6 +128,7 @@ Invocation:
 - `/qa <freeform description>`: Treat the text as context about the change to review.
 - `/qa 123 --parallel`: Force parallel agent execution (faster, higher token usage).
 - `/qa 123 --sequential`: Force sequential agent execution (slower, lower token usage).
+- `/qa 123 --force`: Bypass prior-QA short-circuit and force a full re-run even if the last QA covers the current commit.
 
 ### Multi-Issue Invocation
 
@@ -497,6 +500,87 @@ if [[ "$any_changes" -gt 0 ]]; then
   # DO NOT early exit — proceed with QA
 fi
 ```
+
+---
+
+### Phase 0a: Prior QA Short-Circuit Check
+
+**After confirming implementation exists** (Phase 0 passed), check whether a prior QA run already covers the current commit. This avoids re-running the full QA pipeline when nothing has changed.
+
+**Skip this check if any of these are true:**
+- `--force` flag is present in the invocation args
+- `--no-cache` flag is present in the invocation args
+- `SEQUANT_ORCHESTRATOR` is set and the orchestrator explicitly requests a fresh run
+
+**Detection Logic:**
+
+```bash
+# 1. Get current HEAD SHA
+current_sha=$(git rev-parse HEAD)
+
+# 2. Fetch the latest qa:completed or qa:failed phase marker from issue comments
+# NOTE: Use `.comments[].body` (NOT `[.comments[].body]`). The array form JSON-encodes
+# each body, escaping internal quotes (`"phase":"qa"` → `\"phase\":\"qa\"`) and `<` →
+# `\u003c`, which defeats the grep pattern below. The streaming form outputs raw bodies.
+latest_qa_marker=$(gh issue view <issue-number> --json comments --jq '.comments[].body' | \
+  grep -o '<!-- SEQUANT_PHASE: {[^}]*"phase":"qa"[^}]*} -->' | \
+  tail -1 || true)
+
+# 3. Extract status, commitSHA, verdict, and timestamp from the marker
+if [[ -n "$latest_qa_marker" ]]; then
+  marker_json=$(echo "$latest_qa_marker" | grep -o '{[^}]*}')
+  marker_status=$(echo "$marker_json" | jq -r '.status // empty' 2>/dev/null || true)
+  marker_sha=$(echo "$marker_json" | jq -r '.commitSHA // empty' 2>/dev/null || true)
+  marker_timestamp=$(echo "$marker_json" | jq -r '.timestamp // empty' 2>/dev/null || true)
+  marker_verdict=$(echo "$marker_json" | jq -r '.verdict // empty' 2>/dev/null || true)
+fi
+```
+
+**Short-Circuit Decision Matrix:**
+
+| marker_status | marker_sha == HEAD | Action |
+|---------------|-------------------|--------|
+| `completed` | Yes | **Short-circuit** — skip full QA |
+| `completed` | No | Proceed with full QA (new commits since last run) |
+| `failed` | Yes or No | Proceed with full QA (user likely wants re-run after fix) |
+| (not found) | N/A | Proceed with full QA (no prior run) |
+
+**When short-circuiting (status=completed, SHA matches):**
+
+1. **Skip** sub-agent spawning
+2. **Skip** code review and quality checks
+3. **Output** the short-circuit summary (template below)
+4. **Do NOT** post a new GitHub comment (the prior comment is still valid)
+
+**Short-Circuit Output Template:**
+
+Populate `**Prior Verdict:**` from `$marker_verdict` when non-empty. When empty (legacy marker without the field), substitute the literal string `(see prior QA comment)`.
+
+```markdown
+## QA Review for Issue #<N>
+
+### Prior QA Still Valid
+
+QA already completed at commit `<SHA>` on <timestamp> — no changes since last run.
+Current HEAD (`<current_sha>`) matches the previously reviewed commit.
+
+**Prior Verdict:** <$marker_verdict OR "(see prior QA comment)" if empty>
+
+To force a full re-run, use: `/qa <N> --force` or `/qa <N> --no-cache`
+
+---
+
+*QA short-circuited: prior run at same SHA is still valid*
+```
+
+**Verdict field handling:**
+
+| `$marker_verdict` | Action |
+|-------------------|--------|
+| Non-empty (new markers) | Emit literally: `**Prior Verdict:** READY_FOR_MERGE` (etc.) |
+| Empty (legacy markers) | Emit: `**Prior Verdict:** (see prior QA comment)` — the prior comment body contains the full verdict |
+
+The short-circuit itself still triggers in both cases — only the displayed verdict text differs.
 
 ---
 
