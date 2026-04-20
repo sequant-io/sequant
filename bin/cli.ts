@@ -241,6 +241,10 @@ program
     "--agent <name>",
     'Agent driver for phase execution (default: "claude-code")',
   )
+  .option(
+    "--experimental-tui",
+    "Render live multi-issue dashboard (requires TTY; falls back to linear output when piped)",
+  )
   .action(runCommand);
 
 program

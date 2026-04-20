@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Experimental multi-issue TUI dashboard** — `sequant run --experimental-tui` renders a live, ink-based dashboard with one box per issue (header / context / activity cells), rotating border colors, per-phase progression row, and a 1 Hz elapsed timer. Auto-falls back to the existing linear output when stdout is not a TTY (#540)
+  - New `RunOrchestrator.getSnapshot()` exposes a point-in-time view of the run for read-only consumers
+  - `nowLine` in this milestone is phase-coarse (e.g. `running exec`); per-file activity is deferred to a follow-up
+
 ## [2.2.0] - 2026-04-18
 
 ### Added
