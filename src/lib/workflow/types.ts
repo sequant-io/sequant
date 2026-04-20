@@ -264,6 +264,12 @@ export interface RunOptions {
    * Resolution priority: CLI flag → settings.agents.isolateParallel → false
    */
   isolateParallel?: boolean;
+  /**
+   * Render a live multi-issue dashboard during the run.
+   * Requires a TTY; auto-falls back to linear output when stdout is piped.
+   * Experimental — surface and behavior may change.
+   */
+  experimentalTui?: boolean;
 }
 
 /**

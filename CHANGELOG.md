@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Experimental multi-issue TUI dashboard** — `sequant run --experimental-tui` renders a live, ink-based dashboard with one box per issue (header / context / activity cells), rotating border colors, per-phase progression row, and a 1 Hz elapsed timer. Auto-falls back to the existing linear output when stdout is not a TTY (#540)
+  - New `RunOrchestrator.getSnapshot()` exposes a point-in-time view of the run for read-only consumers
+  - `nowLine` in this milestone is phase-coarse (e.g. `running exec`); per-file activity is deferred to a follow-up
 - **QA short-circuit on unchanged commit** — `/qa` now skips the full sub-agent pipeline when the latest `qa:completed` phase marker's `commitSHA` matches current `HEAD`. Bypass with `/qa <N> --force` or `/qa <N> --no-cache`. Failed prior runs (status=`failed`) never short-circuit. New `status:"completed"` markers include a `verdict` field so the short-circuit summary surfaces the prior verdict; legacy markers without the field fall back to `(see prior QA comment)`. Marker detection streams comment bodies via `.comments[].body` (raw) rather than `[.comments[].body]` (JSON-escaped) so the grep pattern actually matches. (#530)
 
 ## [2.2.0] - 2026-04-18
