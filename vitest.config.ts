@@ -11,6 +11,7 @@ export default defineConfig({
         test: {
           include: [
             "**/*.test.ts",
+            "**/*.test.tsx",
             "!**/*.integration.test.ts",
             // Subprocess-heavy tests run in the integration project
             "!scripts/qa/tautology-detector-cli.test.ts",

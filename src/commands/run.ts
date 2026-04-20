@@ -89,24 +89,50 @@ export async function runCommand(
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
   displayConfig(resolved);
 
-  const onProgress = !options.quiet
-    ? (
-        issue: number,
-        phase: string,
-        event: "start" | "complete" | "failed",
-        extra?: { durationSeconds?: number },
-      ) => {
-        if (event === "start")
-          console.log(`  ${colors.running("▸")} #${issue}  ${phase}`);
-        else if (event === "complete") {
-          const dur =
-            extra?.durationSeconds != null
-              ? `  ${formatElapsedTime(extra.durationSeconds)}`
-              : "";
-          console.log(`  ${colors.success("✔")} #${issue}  ${phase}${dur}`);
-        } else console.log(`  ${colors.error("✖")} #${issue}  ${phase}`);
-      }
-    : undefined;
+  const tuiEnabled =
+    Boolean(options.experimentalTui) && Boolean(process.stdout.isTTY);
+
+  const onProgress =
+    !options.quiet && !tuiEnabled
+      ? (
+          issue: number,
+          phase: string,
+          event: "start" | "complete" | "failed",
+          extra?: { durationSeconds?: number },
+        ) => {
+          if (event === "start")
+            console.log(`  ${colors.running("▸")} #${issue}  ${phase}`);
+          else if (event === "complete") {
+            const dur =
+              extra?.durationSeconds != null
+                ? `  ${formatElapsedTime(extra.durationSeconds)}`
+                : "";
+            console.log(`  ${colors.success("✔")} #${issue}  ${phase}${dur}`);
+          } else console.log(`  ${colors.error("✖")} #${issue}  ${phase}`);
+        }
+      : undefined;
+
+  if (tuiEnabled) {
+    const { renderTui } = await import("../ui/tui/index.js");
+    let tuiHandle: { done: Promise<void>; unmount: () => void } | null = null;
+    const result = await RunOrchestrator.run(
+      {
+        ...init,
+        onProgress,
+        onOrchestratorReady: (orch) => {
+          tuiHandle = renderTui(orch);
+        },
+      },
+      issues,
+      batches,
+    );
+    if (tuiHandle) {
+      await (tuiHandle as { done: Promise<void> }).done;
+    }
+    displaySummary(result);
+    if (result.exitCode !== 0) process.exit(result.exitCode);
+    return;
+  }
 
   const result = await RunOrchestrator.run(
     { ...init, onProgress },
