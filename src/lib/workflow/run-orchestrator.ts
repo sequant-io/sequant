@@ -18,6 +18,13 @@ import type {
   IssueExecutionContext,
   ProgressCallback,
 } from "./types.js";
+import type {
+  IssueRuntimeState,
+  PhaseRuntimeState,
+  RunSnapshot,
+  RunSnapshotConfig,
+} from "./run-state.js";
+import { formatCoarseNowLine } from "./run-state.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import {
   detectDefaultBranch,
@@ -93,6 +100,12 @@ export interface RunInit {
   baseBranch?: string;
   /** Per-phase progress callback */
   onProgress?: ProgressCallback;
+  /**
+   * Invoked once the orchestrator is constructed but before execution begins.
+   * Used by the experimental TUI to attach a snapshot poller to the active
+   * orchestrator instance created inside `run()`.
+   */
+  onOrchestratorReady?: (orchestrator: RunOrchestrator) => void;
 }
 
 /**
@@ -158,10 +171,130 @@ export interface RunResult {
  */
 export class RunOrchestrator {
   private readonly cfg: OrchestratorConfig;
+  private readonly issueStates = new Map<number, IssueRuntimeState>();
+  private readonly phaseStartTimes = new Map<string, number>();
+  private done = false;
 
   constructor(config: OrchestratorConfig) {
     this.validate(config);
-    this.cfg = config;
+    this.cfg = { ...config, onProgress: this.wrapProgress(config.onProgress) };
+    this.initIssueStates();
+  }
+
+  /**
+   * Point-in-time view of the entire run.
+   *
+   * Safe under concurrent reads: the returned object contains only freshly
+   * allocated arrays and plain records; no internal Map or mutable state
+   * reference is leaked. Callers may hold snapshots across awaits without
+   * observing torn writes.
+   */
+  getSnapshot(): RunSnapshot {
+    const { config } = this.cfg;
+    const snapshotConfig: RunSnapshotConfig = {
+      concurrency: config.concurrency,
+      baseBranch: this.cfg.baseBranch ?? "main",
+      qualityLoop: config.qualityLoop,
+    };
+    const issues: IssueRuntimeState[] = [];
+    for (const state of this.issueStates.values()) {
+      issues.push(cloneIssueState(state));
+    }
+    return {
+      config: snapshotConfig,
+      issues,
+      done: this.done,
+      capturedAt: new Date(),
+    };
+  }
+
+  /** Mark the run as completed so the dashboard can unmount. */
+  markDone(): void {
+    this.done = true;
+  }
+
+  private initIssueStates(): void {
+    const { issueInfoMap, worktreeMap, config } = this.cfg;
+    for (const [num, info] of issueInfoMap.entries()) {
+      const branch = worktreeMap.get(num)?.branch ?? `#${num}`;
+      const phases: PhaseRuntimeState[] = config.phases.map((name) => ({
+        name,
+        status: "pending",
+      }));
+      this.issueStates.set(num, {
+        number: num,
+        title: info.title,
+        branch,
+        status: "queued",
+        phases,
+      });
+    }
+  }
+
+  private wrapProgress(external?: ProgressCallback): ProgressCallback {
+    return (issue, phase, event, extra) => {
+      this.applyProgressEvent(issue, phase, event, extra);
+      external?.(issue, phase, event, extra);
+    };
+  }
+
+  private applyProgressEvent(
+    issue: number,
+    phase: string,
+    event: "start" | "complete" | "failed",
+    extra?: { durationSeconds?: number; error?: string },
+  ): void {
+    const state = this.issueStates.get(issue);
+    if (!state) return;
+
+    if (event === "start") {
+      if (!state.startedAt) state.startedAt = new Date();
+      state.status = "running";
+      const now = new Date();
+      this.phaseStartTimes.set(`${issue}:${phase}`, now.getTime());
+      state.currentPhase = {
+        name: phase,
+        startedAt: now,
+        lastActivityAt: now,
+        nowLine: formatCoarseNowLine(phase),
+      };
+      const p = findOrAppendPhase(state, phase);
+      p.status = "running";
+      p.startedAt = now;
+      return;
+    }
+
+    // complete / failed
+    const key = `${issue}:${phase}`;
+    const startMs = this.phaseStartTimes.get(key);
+    this.phaseStartTimes.delete(key);
+    const elapsedMs =
+      extra?.durationSeconds != null
+        ? extra.durationSeconds * 1000
+        : startMs != null
+          ? Date.now() - startMs
+          : undefined;
+    const p = findOrAppendPhase(state, phase);
+    p.status = event === "complete" ? "done" : "failed";
+    p.elapsedMs = elapsedMs;
+    state.currentPhase = undefined;
+
+    if (event === "failed") {
+      state.status = "failed";
+      state.completedAt = new Date();
+      return;
+    }
+
+    // Completed phase: if it's the last phase in the plan, mark issue passed.
+    const allDone = state.phases.every(
+      (ph) => ph.status === "done" || ph.status === "failed",
+    );
+    if (allDone) {
+      state.status = state.phases.some((ph) => ph.status === "failed")
+        ? "failed"
+        : "passed";
+      state.completedAt = new Date();
+    }
   }
 
   /**
@@ -437,18 +570,19 @@ export class RunOrchestrator {
     // ── Execute ────────────────────────────────────────────────────────
     let results: IssueResult[] = [];
 
-    try {
-      const orchestrator = new RunOrchestrator({
-        config,
-        options: mergedOptions,
-        issueInfoMap,
-        worktreeMap,
-        services: { logWriter, stateManager, shutdownManager: shutdown },
-        packageManager: manifest.packageManager,
-        baseBranch,
-        onProgress,
-      });
+    const orchestrator = new RunOrchestrator({
+      config,
+      options: mergedOptions,
+      issueInfoMap,
+      worktreeMap,
+      services: { logWriter, stateManager, shutdownManager: shutdown },
+      packageManager: manifest.packageManager,
+      baseBranch,
+      onProgress,
+    });
+    init.onOrchestratorReady?.(orchestrator);
 
+    try {
       if (resolvedBatches) {
         for (let batchIdx = 0; batchIdx < resolvedBatches.length; batchIdx++) {
           const batch = resolvedBatches[batchIdx];
@@ -511,6 +645,7 @@ export class RunOrchestrator {
         logWriter,
       };
     } finally {
+      orchestrator.markDone();
       shutdown.dispose();
     }
   }
@@ -788,6 +923,44 @@ export class RunOrchestrator {
       console.log(chalk.gray("  Metrics recorded to .sequant/metrics.json"));
     }
   }
+}
+
+function findOrAppendPhase(
+  state: IssueRuntimeState,
+  name: string,
+): PhaseRuntimeState {
+  let p = state.phases.find((ph) => ph.name === name);
+  if (!p) {
+    p = { name, status: "pending" };
+    state.phases.push(p);
+  }
+  return p;
+}
+
+function cloneIssueState(s: IssueRuntimeState): IssueRuntimeState {
+  return {
+    number: s.number,
+    title: s.title,
+    branch: s.branch,
+    status: s.status,
+    startedAt: s.startedAt,
+    completedAt: s.completedAt,
+    phases: s.phases.map((p) => ({
+      name: p.name,
+      status: p.status,
+      startedAt: p.startedAt,
+      elapsedMs: p.elapsedMs,
+    })),
+    currentPhase: s.currentPhase
+      ? {
+          name: s.currentPhase.name,
+          startedAt: s.currentPhase.startedAt,
+          lastActivityAt: s.currentPhase.lastActivityAt,
+          nowLine: s.currentPhase.nowLine,
+          logPath: s.currentPhase.logPath,
+        }
+      : undefined,
+  };
 }
 
 /** Log a non-fatal warning: one-line summary always, detail in verbose. */
