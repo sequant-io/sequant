@@ -84,4 +84,15 @@ describe("IssueBox", () => {
     );
     expect(lastFrame() ?? "").toContain("feature/47-blog-pagination");
   });
+
+  it("renders border-colored tee glyphs around gray horizontal dividers", () => {
+    const { lastFrame } = render(
+      <IssueBox state={baseState()} slot={0} width={80} now={Date.now()} />,
+    );
+    const frame = lastFrame() ?? "";
+    // Two dividers (between header/context and context/activity), each with
+    // border-colored tees at start/end and gray fill between.
+    expect(frame).toContain("├");
+    expect(frame).toContain("┤");
+  });
 });
