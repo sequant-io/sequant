@@ -55,12 +55,62 @@ gh pr list --search "head:feature/<issue-number>" --json number,headRefName
 **Step 3:** Analyze the implementation diff:
 ```bash
 # If PR exists:
-gh pr diff <pr-number> 
+gh pr diff <pr-number>
 
 # If no PR, use git diff from feature branch:
 git diff main...HEAD --name-only
 git diff main...HEAD
 ```
+
+**Step 4:** Detect documentation-only changes:
+```bash
+# Count non-documentation files changed
+non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs || true)
+```
+
+**Decision Logic:**
+```
+IF non_doc_files == 0 THEN
+  # Documentation-only issue detected
+  # Skip template generation, post confirmation comment instead
+  # See Section 2a: Documentation-Only Early Exit
+ELSE
+  # Continue with normal documentation generation
+END IF
+```
+
+### 2a. Documentation-Only Early Exit
+
+When only documentation files (`.md`, `.mdx`, or files in `docs/`) were modified, skip template generation and post a confirmation comment instead.
+
+**Detection criteria - ALL of these must be true:**
+- `git diff main...HEAD --name-only` returns files
+- All changed files match: `*.md`, `*.mdx`, or `docs/*`
+
+**Early exit action:**
+
+1. **Post confirmation comment to GitHub issue:**
+   ```bash
+   gh issue comment <issue-number> --body "$(cat <<'EOF'
+   ## Documentation Review Complete
+
+   This issue contains **documentation-only changes**. No additional documentation generation required.
+
+   ### Files Modified:
+   [List of changed .md/.mdx/docs/ files]
+
+   ### Status:
+   ✅ Documentation changes are ready for review and merge.
+
+   ---
+   Ready to merge!
+   EOF
+   )"
+   ```
+
+2. **Exit without generating template documentation.**
+
+**Skip to end of workflow** - do not proceed to Section 2 (Auto-Detect Documentation Type) or beyond.
 
 ### 2. Auto-Detect Documentation Type
 
@@ -72,6 +122,18 @@ Determine documentation type based on changed files:
 - Files in `lib/admin/`
 - Admin-related API routes
 
+**Developer Tool Documentation** (`docs/features/`):
+- Files in `src/commands/`, `bin/`, `src/mcp/`
+- CLI commands, MCP tools, scripts
+- Configuration options, SDK integrations
+
+**Infra / Scaffold Documentation** (`docs/features/`):
+- Root config files (`package.json`, `*.config.ts`, `*.config.js`, `*.config.mjs`)
+- Environment templates (`.env.example`)
+- Next.js layout/page files (`src/app/**/layout.tsx`, `src/app/**/page.tsx`)
+- Middleware (`src/middleware.ts`)
+- Framework config (`payload.config.*`, `drizzle.config.*`, `next.config.*`, `vite.config.*`, `vitest.config.*`)
+
 **User-Facing Documentation** (`docs/features/`):
 - Files in `app/[city]/`
 - Files in `components/` (non-admin)
@@ -82,15 +144,25 @@ Determine documentation type based on changed files:
 IF any file path contains "/admin/" THEN
   type = "admin"
   output_dir = "docs/admin/"
-ELSE
-  type = "feature"
+  template = "admin" (Section 3a)
+ELSE IF any file path matches "src/commands/|bin/|src/mcp/|scripts/" THEN
+  type = "developer-tool"
   output_dir = "docs/features/"
+  template = "developer-tool" (Section 3b)
+ELSE IF any file path matches "package\.json$|.*\.config\.(ts|js|mjs)$|\.env\.example$|^src/app/.*(layout|page)\.tsx$|^src/middleware\.ts$|^(payload|drizzle|next|vite|vitest)\.config\." THEN
+  type = "developer-tool"
+  output_dir = "docs/features/"
+  template = "developer-tool" (Section 3b)
+ELSE
+  type = "developer-tool"
+  output_dir = "docs/features/"
+  template = "developer-tool" (Section 3b)
 END IF
 ```
 
-### 3. Documentation Template
+### 3a. Admin/UI Documentation Template
 
-Generate documentation using this template:
+Use this template for admin pages and UI features:
 
 ```markdown
 # [Feature Name]
@@ -130,20 +202,9 @@ Generate documentation using this template:
 2. [Step 2]
 3. [Step 3]
 
-### [Workflow 2: e.g., "Bulk Edit Multiple Items"]
-
-1. [Step 1]
-2. [Step 2]
-
 ## Troubleshooting
 
 ### [Common Issue 1]
-
-**Symptoms:** [What the user sees]
-
-**Solution:** [How to fix it]
-
-### [Common Issue 2]
 
 **Symptoms:** [What the user sees]
 
@@ -154,9 +215,64 @@ Generate documentation using this template:
 *Generated for Issue #[number] on [date]*
 ```
 
+### 3b. Developer Tool Documentation Template
+
+Use this template for CLI commands, MCP tools, scripts, and developer-facing features. Structure around the user's journey, not the API surface.
+
+```markdown
+# [Feature Name]
+
+[1-2 sentence summary: what it does and why you'd use it.]
+
+## Prerequisites
+
+[Everything needed before this works. Be exhaustive — list tools, auth, config. Include verification commands.]
+
+1. **[Requirement 1]** — `verification command`
+2. **[Requirement 2]** — `verification command`
+
+## Setup
+
+[Step-by-step to go from zero to working. If setup differs per environment/client/platform, show each separately with clear labels.]
+
+## What You Can Do
+
+[Real examples of usage in natural language or command form. Show the most common actions first.]
+
+## What to Expect
+
+[Set expectations: how long things take, what output looks like, where results go. Address "it looks like nothing is happening" if applicable.]
+
+## [Command/Tool] Reference
+
+[Parameter tables, flags, options. Put this AFTER the narrative sections — users need context before reference.]
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+
+## Troubleshooting
+
+[Real failure scenarios users will hit. Lead with what they see, then the fix.]
+
+### [Problem user sees]
+
+[Cause and solution]
+
+---
+
+*Generated for Issue #[number] on [date]*
+```
+
+**Key differences from admin template:**
+- No "Access / URL / Menu / Permissions" section (not applicable to CLI tools)
+- Prerequisites section is mandatory (CLI tools have more dependencies)
+- "What to Expect" section addresses timing, output location, async behavior
+- Setup may vary per environment — show each variant
+- Reference tables come after narrative, not before
+
 ### 4. Content Guidelines
 
-**Focus on operational usage, not technical implementation:**
+**For admin/UI features — focus on operational usage:**
 
 - "Click the 'Approve' button to publish the item"
 - NOT: "The `approveItem` function updates the database"
@@ -164,15 +280,18 @@ Generate documentation using this template:
 - "Wait for the green success message"
 - NOT: "The API returns a 200 status code"
 
+**For developer tools — focus on the user's journey:**
+
+- "Run `sequant serve` to start the MCP server"
+- NOT: "The `serveCommand` function creates an MCP server instance"
+
+- "This takes 10–20 minutes. Your editor will appear idle — that's normal."
+- NOT: "The tool uses `spawnSync` with a 30-minute timeout"
+
 **Be specific and actionable:**
 
 - "Navigate to Admin → Items → Review Queue"
 - NOT: "Go to the review page"
-
-**Include visual cues when relevant:**
-
-- "Look for the blue 'Edit' icon next to each row"
-- NOT: "Click the edit button"
 
 **Document common workflows end-to-end:**
 
@@ -238,6 +357,8 @@ Before completing, verify:
 - [ ] Filename follows naming convention
 - [ ] Correct folder (`docs/admin/` vs `docs/features/`)
 - [ ] Summary comment posted to issue
+
+**Note:** For documentation-only issues (detected in Step 4), skip this checklist and use the simplified confirmation comment from Section 2a instead.
 
 ## Workflow Integration
 
