@@ -127,10 +127,15 @@ Determine documentation type based on changed files:
 - CLI commands, MCP tools, scripts
 - Configuration options, SDK integrations
 
-**User-Facing Documentation** (`docs/features/`):
-- Files in `app/[city]/`
-- Files in `components/` (non-admin)
-- Public-facing pages or features
+**Infra / Scaffold Documentation** (`docs/features/`):
+- Root config files (`package.json`, `*.config.{ts,js,mjs,cts,cjs,mts}`)
+- TypeScript / JavaScript project config (`tsconfig.json`, `jsconfig.json`)
+- Environment templates (`.env.example`)
+- Next.js layout/page files (`src/app/**/layout.tsx`, `src/app/**/page.tsx`)
+- Middleware (`src/middleware.ts`)
+- Framework config (`payload.config.*`, `drizzle.config.*`, `next.config.*`, `vite.config.*`, `vitest.config.*`)
+
+Everything else (user-facing pages, non-admin components, public-facing features) falls through to the default `developer-tool` template.
 
 **Decision Logic:**
 ```
@@ -142,10 +147,14 @@ ELSE IF any file path matches "src/commands/|bin/|src/mcp/|scripts/" THEN
   type = "developer-tool"
   output_dir = "docs/features/"
   template = "developer-tool" (Section 3b)
-ELSE
-  type = "feature"
+ELSE IF any file path matches "package\.json$|.*\.config\.(ts|js|mjs|cts|cjs|mts)$|(ts|js)config\.json$|\.env\.example$|^src/app/.*(layout|page)\.tsx$|^src/middleware\.ts$|^(payload|drizzle|next|vite|vitest)\.config\." THEN
+  type = "developer-tool"
   output_dir = "docs/features/"
-  template = "admin" (Section 3a — generic enough for UI features)
+  template = "developer-tool" (Section 3b)
+ELSE
+  type = "developer-tool"
+  output_dir = "docs/features/"
+  template = "developer-tool" (Section 3b)
 END IF
 ```
 
