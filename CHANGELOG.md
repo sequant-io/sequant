@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **/docs skill classifier** routes infra/scaffold paths (`package.json`, `*.config.*`, `.env.example`, layout/page files, middleware) to the `developer-tool` template instead of falling through to `admin`. Default fallback is now `developer-tool`; `admin` template is opt-in via `/admin/` path only (#531)
+
 ### Added
 
 - **Experimental multi-issue TUI dashboard** — `sequant run --experimental-tui` renders a live, ink-based dashboard with one box per issue (header / context / activity cells), rotating border colors, per-phase progression row, and a 1 Hz elapsed timer. Auto-falls back to the existing linear output when stdout is not a TTY (#540)
