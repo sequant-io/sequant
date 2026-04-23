@@ -1760,6 +1760,15 @@ Provide an overall verdict:
    - IF .tsx files changed AND /test did NOT run AND no 'no-browser-test' label:
        → Set browser_test_missing = true
 
+3a. Manual test AC enforcement check:
+   - Scan spec plan comment for ACs with **Verification:** Manual Test (or freeform: try X confirm Y, verify by, test that)
+   - For each detected manual-test AC:
+     - IF runtime test was executed → AC status from test result (MET/NOT_MET)
+     - IF approved override documented → AC status = MET
+     - ELSE → AC status = PENDING (this increments pending_count)
+   - NOTE: No new verdict branch needed — PENDING manual-test ACs flow through
+     the existing pending_count > 0 → NEEDS_VERIFICATION path in step 4
+
 4. Determine verdict (in order):
    - IF not_met_count > 0 OR partial_count > 0:
        → AC_NOT_MET (block merge)
@@ -1813,6 +1822,105 @@ fi
 | `.tsx` changed + `no-browser-test` label | Normal verdict (explicit opt-out) |
 | `.tsx` changed + no `/test` + no opt-out | Force `AC_MET_BUT_NOT_A_PLUS` |
 | No `.tsx` changed | Normal verdict |
+
+**Manual Test AC Enforcement:**
+
+Before finalizing the verdict, check if any ACs require manual (runtime) verification that was specified in the `/spec` plan:
+
+```bash
+# 1. Extract spec plan comment from issue
+spec_comment=$(gh issue view <issue-number> --json comments --jq \
+  '[.comments[].body | select(contains("\"phase\":\"spec\""))] | last' || true)
+
+# 2. Detect ACs with manual-test verification methods
+# Matches: "**Verification:** Manual Test", "**Verify:** ...", "try X, confirm Y", "verify by", "test that"
+manual_test_acs=$(echo "$spec_comment" | \
+  grep -iE '(\*\*Verification:\*\*\s*Manual Test|\*\*Verify:\*\*\s*|try .*, confirm|verify by|test that|verify:?\s*manual)' || true)
+
+# 3. Extract AC IDs associated with manual-test lines
+# Scan backwards from each match to find the nearest ### AC-N header
+manual_ac_ids=$(echo "$spec_comment" | \
+  awk 'BEGIN{IGNORECASE=1} /^(#+ AC-[0-9]+|\*\*AC-[0-9]+)/{ac=$0} /Manual Test|\*\*Verify:\*\*|try .*, confirm|verify by|test that/{print ac}' | \
+  grep -oE 'AC-[0-9]+' | sort -u || true)
+```
+
+**If manual-test ACs are detected**, include this section in QA output:
+
+```markdown
+### Manual Test ACs Detected
+
+| AC | Verification Method | Runtime Test Status |
+|----|--------------------|--------------------|
+| AC-N | Manual Test | ✅ Executed / ⚠️ PENDING / 🔄 Overridden |
+```
+
+**Enforcement Rules:**
+
+For each detected manual-test AC, QA must do ONE of:
+
+1. **Execute the test** using available tools (chrome-devtools MCP, dev server, CLI invocation) and record pass/fail evidence → mark AC `MET` or `NOT_MET` based on result
+2. **Mark AC `PENDING`** with note: `⚠️ Manual verification required — runtime test not executed` → flows through `pending_count > 0 → NEEDS_VERIFICATION` verdict path
+3. **Override** with approved justification (see Manual Test Override below) → mark AC `MET`
+
+**Key Rule:** A manual-test AC CANNOT be marked `MET` from static code review alone. QA must either execute the runtime test, provide an approved override, or mark `PENDING`.
+
+| Scenario | AC Status | Verdict Impact |
+|----------|-----------|----------------|
+| Runtime test executed and passed | `MET` | Normal verdict |
+| Runtime test executed and failed | `NOT_MET` | → `AC_NOT_MET` |
+| Runtime test not executed, no override | `PENDING` | → `NEEDS_VERIFICATION` |
+| Override with approved justification | `MET` | Normal verdict |
+| Override with unapproved justification | `PENDING` | → `NEEDS_VERIFICATION` |
+
+### Manual Test Override
+
+In some cases, runtime verification can be safely skipped for manual-test ACs when the verification target has no runtime surface or is covered by equivalent automated tests. **Overrides require explicit justification and risk assessment.**
+
+**Override Format (REQUIRED when skipping manual-test execution):**
+
+```markdown
+### Manual Test Override
+
+**AC:** AC-N
+**Requirement:** Runtime verification for manual-test AC
+**Override:** Yes
+**Justification:** [One of the approved categories below]
+**Risk Assessment:** [None/Low]
+```
+
+**Approved Override Categories:**
+
+| Category | Example | Risk |
+|----------|---------|------|
+| No runtime surface | Pure type definitions, config schema validation | None |
+| Equivalent unit test coverage | Automated test covers the exact same code path the manual test would exercise | Low |
+| Tested in sibling issue | Cross-reference to another issue where the same runtime behavior was verified | Low |
+
+**NOT Approved for Override (always require runtime test):**
+
+| Category | Example | Why |
+|----------|---------|-----|
+| Logic changes with UI surface | Modified form validation, new user flows | Runtime behavior may diverge from code review expectations |
+| New user-facing features | Added pages, new interactions | Must verify actual user experience |
+| Integration points | API calls, database writes, auth flows | Runtime dependencies may behave differently |
+| Error handling with user feedback | Toast messages, error pages, redirects | Presentation layer needs runtime check |
+
+**Risk Assessment Definitions:**
+
+| Level | Meaning | Criteria |
+|-------|---------|----------|
+| **None** | Zero runtime impact | Change has no executable runtime surface (types, config) |
+| **Low** | Negligible runtime impact | Automated tests cover the same path; manual test would be redundant |
+| **Medium** | Possible runtime impact | **Should NOT be overridden** — run the manual test |
+
+**Override Decision Flow:**
+
+1. Check if change matches an approved category → If no, runtime test is required
+2. Assess risk level → If Medium or higher, runtime test is required
+3. Document override using the format above in the QA output
+4. Include override in the GitHub issue comment for audit trail
+
+**CRITICAL:** When in doubt, execute the manual test. Overrides are for clear-cut cases only. The motivation for this gate (issue #529) was a real bug that passed QA because `minRows: 1` appeared correct in code review but did not work at runtime.
 
 **CRITICAL:** `PARTIALLY_MET` is NOT sufficient for merge. It MUST be treated as `NOT_MET` for verdict purposes.
 
@@ -2094,6 +2202,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
+- [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
@@ -2466,6 +2575,20 @@ You MUST include these sections:
 | Error handling | `[command]` | ✅/❌ | [observation] |
 
 **Smoke Test Status:** Complete / Partial (document gaps) / Not Required
+
+---
+
+### Manual Test ACs
+
+[Include if spec plan has ACs with **Verification:** Manual Test, otherwise: "N/A - No manual-test ACs detected"]
+
+| AC | Verification Method | Runtime Test Status | Evidence |
+|----|--------------------|--------------------|----------|
+| AC-N | Manual Test | ✅ Executed / ⚠️ PENDING / 🔄 Overridden | [result or override justification] |
+
+**Manual Test Enforcement:** X/Y manual-test ACs verified at runtime
+
+[If any overrides applied, include Manual Test Override block per Section 7]
 
 ---
 

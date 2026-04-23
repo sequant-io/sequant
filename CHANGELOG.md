@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Manual Test AC enforcement gate** — `/qa` now detects ACs with `**Verification:** Manual Test` (and freeform patterns like `try X, confirm Y`) from `/spec` comments and requires runtime execution or an approved override before marking them `MET`. Unexecuted manual-test ACs are marked `PENDING`, forcing `NEEDS_VERIFICATION` verdict. Override mechanism mirrors Section 11a with approved categories: `no runtime surface`, `equivalent unit test coverage`, `tested in sibling issue` (#529)
 - **Experimental multi-issue TUI dashboard** — `sequant run --experimental-tui` renders a live, ink-based dashboard with one box per issue (header / context / activity cells), rotating border colors, per-phase progression row, and a 1 Hz elapsed timer. Auto-falls back to the existing linear output when stdout is not a TTY (#540)
   - New `RunOrchestrator.getSnapshot()` exposes a point-in-time view of the run for read-only consumers
   - `nowLine` in this milestone is phase-coarse (e.g. `running exec`); per-file activity is deferred to a follow-up
