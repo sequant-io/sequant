@@ -1830,7 +1830,7 @@ Before finalizing the verdict, check if any ACs require manual (runtime) verific
 ```bash
 # 1. Extract spec plan comment from issue
 spec_comment=$(gh issue view <issue-number> --json comments --jq \
-  '[.comments[].body | select(contains("SEQUANT_PHASE") and contains("spec"))] | last' || true)
+  '[.comments[].body | select(contains("\"phase\":\"spec\""))] | last' || true)
 
 # 2. Detect ACs with manual-test verification methods
 # Matches: "**Verification:** Manual Test", "try X, confirm Y", "verify by", "test that"
@@ -1840,7 +1840,7 @@ manual_test_acs=$(echo "$spec_comment" | \
 # 3. Extract AC IDs associated with manual-test lines
 # Scan backwards from each match to find the nearest ### AC-N header
 manual_ac_ids=$(echo "$spec_comment" | \
-  awk '/^### AC-[0-9]+/{ac=$0} /Manual Test|try .*, confirm|verify by|test that/{print ac}' | \
+  awk 'BEGIN{IGNORECASE=1} /^### AC-[0-9]+/{ac=$0} /Manual Test|try .*, confirm|verify by|test that/{print ac}' | \
   grep -oE 'AC-[0-9]+' | sort -u || true)
 ```
 
