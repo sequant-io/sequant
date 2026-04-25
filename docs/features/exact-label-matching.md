@@ -6,14 +6,14 @@
 
 Previously, phase detection used `label.includes(targetLabel)` to check GitHub issue labels against known label sets. This caused substring collisions where unrelated labels could trigger incorrect workflows:
 
-| Label on Issue | Would Match | Triggered Pipeline | Correct? |
-|----------------|-------------|-------------------|----------|
-| `docstring`    | `docs`      | Docs (skip spec)  | No       |
-| `debugging`    | `bug`       | Bug fix (skip spec)| No       |
-| `patchwork`    | `patch`     | Bug fix (skip spec)| No       |
-| `webinar`      | `web`       | UI (add test phase)| No       |
-| `complexity`   | `complex`   | Quality loop       | No       |
-| `insecurity`   | `security`  | Security review    | No       |
+| Label on Issue | Would Match | Triggered Pipeline         | Correct? |
+|----------------|-------------|----------------------------|----------|
+| `docstring`    | `docs`      | Docs pipeline              | No       |
+| `debugging`    | `bug`       | Bug fix pipeline           | No       |
+| `patchwork`    | `patch`     | Bug fix pipeline           | No       |
+| `webinar`      | `web`       | UI (add test phase)        | No       |
+| `complexity`   | `complex`   | Quality loop               | No       |
+| `insecurity`   | `security`  | Security review            | No       |
 
 Now all label checks use exact equality (`===`), so only labels that exactly match a known value will trigger their associated pipeline.
 
@@ -23,8 +23,8 @@ All label arrays in the phase mapper use exact matching:
 
 | Label Set | Recognized Labels | Effect |
 |-----------|------------------|--------|
-| `BUG_LABELS` | `bug`, `fix`, `hotfix`, `patch` | Skip spec phase |
-| `DOCS_LABELS` | `docs`, `documentation`, `readme` | Skip spec phase |
+| `BUG_LABELS` | `bug`, `fix`, `hotfix`, `patch` | Downstream metadata only (since #533 these no longer skip spec) |
+| `DOCS_LABELS` | `docs`, `documentation`, `readme` | Propagate `issueType: "docs"` to post-spec phases (since #533 these no longer skip spec) |
 | `UI_LABELS` | `ui`, `frontend`, `admin`, `web`, `browser` | Add test phase |
 | `COMPLEX_LABELS` | `complex`, `refactor`, `breaking`, `major` | Enable quality loop |
 | `SECURITY_LABELS` | `security`, `auth`, `authentication`, `permissions`, `admin` | Add security-review phase |

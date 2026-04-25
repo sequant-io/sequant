@@ -36,7 +36,6 @@ import {
   detectPhasesFromLabels,
   parseRecommendedWorkflow,
   determinePhasesForIssue,
-  BUG_LABELS,
   DOCS_LABELS,
 } from "./phase-mapper.js";
 
@@ -437,204 +436,178 @@ export async function runIssueWithLogging(
   let specAlreadyRan = false;
 
   if (options.autoDetectPhases) {
-    // Check if labels indicate a simple bug/fix (skip spec entirely)
-    const lowerLabels = labels.map((l) => l.toLowerCase());
-    const isSimpleBugFix = lowerLabels.some((label) =>
-      BUG_LABELS.some((bugLabel) => label === bugLabel),
-    );
+    // #533: Always run spec to get recommended workflow.
+    // The prior bug/docs shortcut (skip spec → exec → qa) was removed because
+    // bug and docs issues often contain design decisions (scope boundaries,
+    // edge cases, test-strategy shifts) that benefit from a spec pass.
+    log(chalk.gray(`    Running spec to determine workflow...`));
 
-    // Check if labels indicate documentation-only work (skip spec)
-    const isDocs = lowerLabels.some((label) =>
-      DOCS_LABELS.some((docsLabel) => label === docsLabel),
-    );
+    // Create spinner for spec phase (suppressed in parallel mode to prevent interleaving)
+    const specSpinner = config.parallel
+      ? undefined
+      : new PhaseSpinner({
+          phase: "spec",
+          phaseIndex: 1,
+          totalPhases: 3, // Estimate; will be refined after spec
+          shutdownManager,
+        });
+    specSpinner?.start();
+    emitProgressLine(issueNumber, "spec", "start");
+    try {
+      onProgress?.(issueNumber, "spec", "start");
+    } catch {
+      /* progress errors must not halt */
+    }
 
-    if (isSimpleBugFix) {
-      // Simple bug fix: skip spec, go straight to exec → qa
-      phases = ["exec", "qa"];
-      log(chalk.gray(`    Bug fix detected: ${phases.join(" → ")}`));
-    } else if (isDocs) {
-      // Documentation issue: skip spec, lighter pipeline
-      phases = ["exec", "qa"];
-      log(chalk.gray(`    Docs issue detected: ${phases.join(" → ")}`));
-    } else {
-      // Run spec first to get recommended workflow
-      log(chalk.gray(`    Running spec to determine workflow...`));
-
-      // Create spinner for spec phase (suppressed in parallel mode to prevent interleaving)
-      const specSpinner = config.parallel
-        ? undefined
-        : new PhaseSpinner({
-            phase: "spec",
-            phaseIndex: 1,
-            totalPhases: 3, // Estimate; will be refined after spec
-            shutdownManager,
-          });
-      specSpinner?.start();
-      emitProgressLine(issueNumber, "spec", "start");
+    // Track spec phase start in state
+    if (stateManager) {
       try {
-        onProgress?.(issueNumber, "spec", "start");
+        await stateManager.updatePhaseStatus(
+          issueNumber,
+          "spec",
+          "in_progress",
+        );
+      } catch {
+        // State tracking errors shouldn't stop execution
+      }
+    }
+
+    const specStartTime = new Date();
+    // Note: spec runs in main repo (not worktree) for planning
+    const specResult = await executePhaseWithRetry(
+      issueNumber,
+      "spec",
+      config,
+      sessionId,
+      worktreePath, // Will be ignored for spec (non-isolated phase)
+      shutdownManager,
+      specSpinner,
+    );
+    const specEndTime = new Date();
+
+    if (specResult.sessionId) {
+      sessionId = specResult.sessionId;
+      // Update session ID in state for resume capability
+      if (stateManager) {
+        try {
+          await stateManager.updateSessionId(issueNumber, specResult.sessionId);
+        } catch {
+          // State tracking errors shouldn't stop execution
+        }
+      }
+    }
+
+    phaseResults.push(specResult);
+    specAlreadyRan = true;
+
+    // Emit completion/failure progress event (AC-8)
+    const specDurationSec = Math.round(
+      (specEndTime.getTime() - specStartTime.getTime()) / 1000,
+    );
+    if (specResult.success) {
+      const extra = { durationSeconds: specDurationSec };
+      emitProgressLine(issueNumber, "spec", "complete", extra);
+      try {
+        onProgress?.(issueNumber, "spec", "complete", extra);
       } catch {
         /* progress errors must not halt */
       }
-
-      // Track spec phase start in state
-      if (stateManager) {
-        try {
-          await stateManager.updatePhaseStatus(
-            issueNumber,
-            "spec",
-            "in_progress",
-          );
-        } catch {
-          // State tracking errors shouldn't stop execution
-        }
+    } else {
+      const extra = { error: specResult.error ?? "unknown" };
+      emitProgressLine(issueNumber, "spec", "failed", extra);
+      try {
+        onProgress?.(issueNumber, "spec", "failed", extra);
+      } catch {
+        /* progress errors must not halt */
       }
+    }
 
-      const specStartTime = new Date();
-      // Note: spec runs in main repo (not worktree) for planning
-      const specResult = await executePhaseWithRetry(
-        issueNumber,
-        "spec",
-        config,
-        sessionId,
-        worktreePath, // Will be ignored for spec (non-isolated phase)
-        shutdownManager,
-        specSpinner,
-      );
-      const specEndTime = new Date();
-
-      if (specResult.sessionId) {
-        sessionId = specResult.sessionId;
-        // Update session ID in state for resume capability
-        if (stateManager) {
-          try {
-            await stateManager.updateSessionId(
-              issueNumber,
-              specResult.sessionId,
-            );
-          } catch {
-            // State tracking errors shouldn't stop execution
-          }
-        }
-      }
-
-      phaseResults.push(specResult);
-      specAlreadyRan = true;
-
-      // Emit completion/failure progress event (AC-8)
-      const specDurationSec = Math.round(
-        (specEndTime.getTime() - specStartTime.getTime()) / 1000,
-      );
-      if (specResult.success) {
-        const extra = { durationSeconds: specDurationSec };
-        emitProgressLine(issueNumber, "spec", "complete", extra);
-        try {
-          onProgress?.(issueNumber, "spec", "complete", extra);
-        } catch {
-          /* progress errors must not halt */
-        }
-      } else {
-        const extra = { error: specResult.error ?? "unknown" };
-        emitProgressLine(issueNumber, "spec", "failed", extra);
-        try {
-          onProgress?.(issueNumber, "spec", "failed", extra);
-        } catch {
-          /* progress errors must not halt */
-        }
-      }
-
-      // Log spec phase result
-      // Note: Spec runs in main repo, not worktree, so no git diff stats
-      if (logWriter) {
-        // Build errorContext from captured stderr/stdout tails (#447)
-        let specErrorContext: ErrorContext | undefined;
-        if (!specResult.success && specResult.stderrTail) {
-          const specError = classifyError(
-            specResult.stderrTail ?? [],
-            specResult.exitCode,
-          );
-          specErrorContext = {
-            stderrTail: specResult.stderrTail ?? [],
-            stdoutTail: specResult.stdoutTail ?? [],
-            exitCode: specResult.exitCode,
-            category: errorTypeToCategory(specError),
-            errorType: specError.name,
-            errorMetadata: specError.metadata,
-            isRetryable: specError.isRetryable,
-          };
-        }
-        const phaseLog = createPhaseLogFromTiming(
-          "spec",
-          issueNumber,
-          specStartTime,
-          specEndTime,
-          specResult.success
-            ? "success"
-            : specResult.error?.includes("Timeout")
-              ? "timeout"
-              : "failure",
-          { error: specResult.error, errorContext: specErrorContext },
+    // Log spec phase result
+    // Note: Spec runs in main repo, not worktree, so no git diff stats
+    if (logWriter) {
+      // Build errorContext from captured stderr/stdout tails (#447)
+      let specErrorContext: ErrorContext | undefined;
+      if (!specResult.success && specResult.stderrTail) {
+        const specError = classifyError(
+          specResult.stderrTail ?? [],
+          specResult.exitCode,
         );
-        logWriter.logPhase(phaseLog);
-      }
-
-      // Track spec phase completion in state
-      if (stateManager) {
-        try {
-          const phaseStatus = specResult.success ? "completed" : "failed";
-          await stateManager.updatePhaseStatus(
-            issueNumber,
-            "spec",
-            phaseStatus,
-            {
-              error: specResult.error,
-            },
-          );
-        } catch {
-          // State tracking errors shouldn't stop execution
-        }
-      }
-
-      if (!specResult.success) {
-        specSpinner?.fail(specResult.error);
-        const durationSeconds = (Date.now() - startTime) / 1000;
-        return {
-          issueNumber,
-          success: false,
-          phaseResults,
-          durationSeconds,
-          loopTriggered: false,
+        specErrorContext = {
+          stderrTail: specResult.stderrTail ?? [],
+          stdoutTail: specResult.stdoutTail ?? [],
+          exitCode: specResult.exitCode,
+          category: errorTypeToCategory(specError),
+          errorType: specError.name,
+          errorMetadata: specError.metadata,
+          isRetryable: specError.isRetryable,
         };
       }
+      const phaseLog = createPhaseLogFromTiming(
+        "spec",
+        issueNumber,
+        specStartTime,
+        specEndTime,
+        specResult.success
+          ? "success"
+          : specResult.error?.includes("Timeout")
+            ? "timeout"
+            : "failure",
+        { error: specResult.error, errorContext: specErrorContext },
+      );
+      logWriter.logPhase(phaseLog);
+    }
 
-      specSpinner?.succeed();
-
-      // Parse recommended workflow from spec output
-      const parsedWorkflow = specResult.output
-        ? parseRecommendedWorkflow(specResult.output)
-        : null;
-
-      if (parsedWorkflow) {
-        // Remove spec from phases since we already ran it
-        phases = parsedWorkflow.phases.filter((p) => p !== "spec");
-        detectedQualityLoop = parsedWorkflow.qualityLoop;
-        log(
-          chalk.gray(
-            `    Spec recommends: ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
-          ),
-        );
-      } else {
-        // Fall back to label-based detection
-        log(
-          chalk.yellow(
-            `    Could not parse spec recommendation, using label-based detection`,
-          ),
-        );
-        const detected = detectPhasesFromLabels(labels);
-        phases = detected.phases.filter((p) => p !== "spec");
-        detectedQualityLoop = detected.qualityLoop;
-        log(chalk.gray(`    Fallback: ${phases.join(" → ")}`));
+    // Track spec phase completion in state
+    if (stateManager) {
+      try {
+        const phaseStatus = specResult.success ? "completed" : "failed";
+        await stateManager.updatePhaseStatus(issueNumber, "spec", phaseStatus, {
+          error: specResult.error,
+        });
+      } catch {
+        // State tracking errors shouldn't stop execution
       }
+    }
+
+    if (!specResult.success) {
+      specSpinner?.fail(specResult.error);
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      return {
+        issueNumber,
+        success: false,
+        phaseResults,
+        durationSeconds,
+        loopTriggered: false,
+      };
+    }
+
+    specSpinner?.succeed();
+
+    // Parse recommended workflow from spec output
+    const parsedWorkflow = specResult.output
+      ? parseRecommendedWorkflow(specResult.output)
+      : null;
+
+    if (parsedWorkflow) {
+      // Remove spec from phases since we already ran it
+      phases = parsedWorkflow.phases.filter((p) => p !== "spec");
+      detectedQualityLoop = parsedWorkflow.qualityLoop;
+      log(
+        chalk.gray(
+          `    Spec recommends: ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
+        ),
+      );
+    } else {
+      // Fall back to label-based detection
+      log(
+        chalk.yellow(
+          `    Could not parse spec recommendation, using label-based detection`,
+        ),
+      );
+      const detected = detectPhasesFromLabels(labels);
+      phases = detected.phases.filter((p) => p !== "spec");
+      detectedQualityLoop = detected.qualityLoop;
+      log(chalk.gray(`    Fallback: ${phases.join(" → ")}`));
     }
   } else {
     // Use explicit phases with adjustments

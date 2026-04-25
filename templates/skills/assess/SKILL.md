@@ -117,14 +117,14 @@ Surface red flags. Only track signals that change the recommendation.
 | complex, refactor, breaking, major | Modifier | `spec → exec → qa` + `-q` |
 | (ui/frontend) + (enhancement/feature), or testable-AC signals | Modifier | inserts `testgen` before `exec` (see Testgen detection below) |
 | enhancement, feature (default) | Generic | `spec → exec → qa` |
-| bug, fix, hotfix, patch | Generic | `exec → qa` |
-| docs, documentation, readme | Generic | `exec → qa` |
+| bug, fix, hotfix, patch | Generic | `spec → exec → qa` |
+| docs, documentation, readme | Generic | `spec → exec → qa` |
 
-**Label priority:** Domain labels take precedence over generic labels. When an issue has both a domain label and a generic label (e.g., `bug` + `auth`), use the domain-specific workflow. Example: an issue labeled `bug` + `auth` gets `spec → security-review → exec → qa`, not `exec → qa`. Similarly, `bug` + `ui` gets `spec → exec → test → qa`.
+**Label priority:** Domain labels take precedence over generic labels. When an issue has both a domain label and a generic label (e.g., `bug` + `auth`), the domain label adds its extra phase. Example: an issue labeled `bug` + `auth` gets `spec → security-review → exec → qa` (adds `security-review` from `auth`); `bug` + `ui` gets `spec → exec → test → qa` (adds `test` from `ui`).
 
 **Valid phases (from `PhaseSchema` in `src/lib/workflow/types.ts`):** `spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`
 
-**Skip spec when:** (bug/docs label AND no domain labels like security/auth/ui/frontend), OR spec comment already exists on issue.
+**Skip spec when:** a prior `spec` phase marker already exists on the issue. Otherwise, always include spec — bug and docs issues often contain design decisions (scope boundaries, edge cases, test-strategy shifts) that benefit from a spec pass.
 
 **Resume detection:** Branch exists with commits ahead of main → mark as resume (`◂`).
 
@@ -208,7 +208,7 @@ Cleanup:
 | Symbol | Meaning | Example |
 |--------|---------|---------|
 | `spec → exec → qa` | Full workflow | Standard feature |
-| `exec → qa` | Skip spec | Bug, docs, or spec exists |
+| `exec → qa` | Skip spec | Prior spec marker exists |
 | `◂ exec → qa` | Resume existing work | Branch has commits |
 | `◂ qa` | PR needs review/QA | Open PR, impl done |
 | `⟳ spec → exec → qa` | Restart (fresh) | Stale PR abandoned |
@@ -265,18 +265,17 @@ Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
 ```
  #    Action     Reason                              Run
  462  PARK       Manual measurement task              ‖
- 461  PROCEED    Exact label matching                  exec → qa
- 460  PROCEED    batch-executor tests                  exec → qa
+ 461  PROCEED    Exact label matching                  spec → exec → qa
+ 460  PROCEED    batch-executor tests                  spec → exec → qa
  458  PROCEED    Parallel UX + race condition          spec → exec → qa
  447  CLOSE      PR #457 merged                        —
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
- 412  PROCEED    Auth bug (domain: auth overrides bug) spec → security-review → exec → qa
+ 412  PROCEED    Auth bug (domain: auth adds review)   spec → security-review → exec → qa
  411  PROCEED    Config path normalization              ◂ exec → qa
  405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 461 460 -q --phases exec,qa
-  npx sequant run 458 443 -q
+  npx sequant run 461 460 458 443 -q
   npx sequant run 412 -q --phases spec,security-review,exec,qa
   npx sequant run 411 -q --phases exec,qa     # resume
   npx sequant run 405 -q                      # restart
@@ -285,11 +284,12 @@ Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depe
 
 ⚠ #458  Dual concern (UX + race) across 4 files
 ⚠ #405  Stale 30+ days, ACs still valid
-⚠ #412  bug + auth labels — domain label (auth) takes priority over bug
+⚠ #412  bug + auth labels — auth (domain) adds security-review phase
 
 Flags:
-  -q                   multi-file scope across most PROCEED issues
-  --phases spec,...    spec phase added for 458/443/412/405 (standard features)
+  -q                              multi-file scope across most PROCEED issues
+  --phases ...,security-review    #412 auth label → security review required
+  --phases exec,qa                #411 resume — prior spec marker already exists
 ────────────────────────────────────────────────────────────────
 Cleanup:
   git worktree remove .../447-...      # merged, stale worktree
@@ -298,8 +298,8 @@ Cleanup:
 ────────────────────────────────────────────────────────────────
 
 <!-- #462 assess:action=PARK -->
-<!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #460 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #460 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #447 assess:action=CLOSE -->
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
@@ -344,17 +344,16 @@ When every issue is PROCEED with no warnings, no dependencies, and no non-defaul
 
 ```
  #    Action     Reason                              Run
- 461  PROCEED    Exact label matching                  exec → qa
- 460  PROCEED    batch-executor tests                  exec → qa
+ 461  PROCEED    Exact label matching                  spec → exec → qa
+ 460  PROCEED    batch-executor tests                  spec → exec → qa
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 461 460 -q --phases exec,qa
-  npx sequant run 443 -q
+  npx sequant run 461 460 443 -q
 ────────────────────────────────────────────────────────────────
 
-<!-- #461 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #460 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #460 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
@@ -366,31 +365,30 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
 
 ```
  #    Action     Reason                                   Run
- 503  PROCEED    Fix typo in error output                   exec → qa
- 502  PROCEED    Update deprecated API call                 exec → qa
- 501  PROCEED    Add retry logic to API client              exec → qa
+ 503  PROCEED    Fix typo in error output                   spec → exec → qa
+ 502  PROCEED    Update deprecated API call                 spec → exec → qa
+ 501  PROCEED    Add retry logic to API client              spec → exec → qa
  500  PROCEED    Fix token refresh race condition           spec → security-review → exec → qa
  499  PROCEED    Dashboard chart rendering bug              spec → exec → test → qa
- 498  PROCEED    Update error messages                      exec → qa
+ 498  PROCEED    Update error messages                      spec → exec → qa
  497  PROCEED    Refactor batch executor                    spec → exec → qa
  496  PARK       Blocked on #490 schema migration           ‖
- 495  PROCEED    CLI help text improvements                 exec → qa
- 494  PROCEED    Assess batch formatting fix                exec → qa
+ 495  PROCEED    CLI help text improvements                 spec → exec → qa
+ 494  PROCEED    Assess batch formatting fix                spec → exec → qa
  493  CLOSE      Duplicate of #491                          —
  492  PROCEED    Add export command                         spec → exec → qa
- 491  PROCEED    Normalize config paths                     exec → qa
+ 491  PROCEED    Normalize config paths                     spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 503 502 501 498 495 494 -q --phases exec,qa
-  npx sequant run 491 -q --phases exec,qa
+  npx sequant run 503 502 501 498 497 495 -q
+  npx sequant run 494 492 491 -q
   npx sequant run 499 -q --phases spec,exec,test,qa
   npx sequant run 500 -q --phases spec,security-review,exec,qa
-  npx sequant run 497 492 -q
 ────────────────────────────────────────────────────────────────
 Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
 
-⚠ #500  bug + auth labels — domain label takes priority
-⚠ #499  bug + ui labels — domain label triggers test phase
+⚠ #500  bug + auth labels — auth (domain) adds security-review phase
+⚠ #499  bug + ui labels — ui (domain) adds test phase
 
 Flags:
   --phases ...,security-review   #500 auth label → security review required
@@ -400,19 +398,19 @@ Cleanup:
   gh issue close 493                   # duplicate of #491
 ────────────────────────────────────────────────────────────────
 
-<!-- #503 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #502 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #501 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #503 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #502 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #501 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #500 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
 <!-- #499 assess:action=PROCEED assess:phases=spec,exec,test,qa assess:quality-loop=true -->
-<!-- #498 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #498 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #497 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #496 assess:action=PARK -->
-<!-- #495 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #494 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #495 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #494 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 <!-- #493 assess:action=CLOSE -->
 <!-- #492 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #491 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #491 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
 ```
 
 ---

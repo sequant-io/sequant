@@ -389,9 +389,9 @@ describe("detectPhasesFromLabels", () => {
     expect(result.qualityLoop).toBe(false);
   });
 
-  it("should detect bug labels and skip spec", () => {
+  it("should detect bug labels and include spec by default (#533)", () => {
     const result = detectPhasesFromLabels(["bug"]);
-    expect(result.phases).toEqual(["exec", "qa"]);
+    expect(result.phases).toEqual(["spec", "exec", "qa"]);
   });
 
   it("should detect UI labels and add test phase", () => {
@@ -423,10 +423,10 @@ describe("detectPhasesFromLabels", () => {
     }
   });
 
-  it("should not add security-review when spec is skipped (bug fix)", () => {
+  it("should add security-review when bug+security present (spec now runs, #533)", () => {
+    // #533: bug no longer skips spec, so security-review is inserted after spec
     const result = detectPhasesFromLabels(["bug", "security"]);
-    expect(result.phases).not.toContain("security-review");
-    expect(result.phases).toEqual(["exec", "qa"]);
+    expect(result.phases).toEqual(["spec", "security-review", "exec", "qa"]);
   });
 
   it("should combine UI and security labels correctly", () => {

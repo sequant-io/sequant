@@ -7,30 +7,33 @@ import {
 } from "./phase-mapper.js";
 
 describe("detectPhasesFromLabels", () => {
-  describe("docs label detection (AC-3)", () => {
-    it("returns exec → qa for 'docs' label", () => {
+  // #533: bug and docs labels no longer skip spec. They now follow the
+  // default workflow (spec → exec → qa) because bug/docs issues often
+  // contain design decisions worth a spec pass.
+  describe("docs label detection (#533: includes spec)", () => {
+    it("returns spec → exec → qa for 'docs' label", () => {
       const result = detectPhasesFromLabels(["docs"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("returns exec → qa for 'documentation' label", () => {
+    it("returns spec → exec → qa for 'documentation' label", () => {
       const result = detectPhasesFromLabels(["documentation"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("returns exec → qa for 'readme' label", () => {
+    it("returns spec → exec → qa for 'readme' label", () => {
       const result = detectPhasesFromLabels(["readme"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
     it("is case-insensitive for docs labels", () => {
       const result = detectPhasesFromLabels(["DOCS"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
     it("detects docs label in mixed label set", () => {
       const result = detectPhasesFromLabels(["enhancement", "docs", "cli"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
     it("does not enable quality loop for docs-only", () => {
@@ -39,15 +42,15 @@ describe("detectPhasesFromLabels", () => {
     });
   });
 
-  describe("bug label detection", () => {
-    it("returns exec → qa for 'bug' label", () => {
+  describe("bug label detection (#533: includes spec)", () => {
+    it("returns spec → exec → qa for 'bug' label", () => {
       const result = detectPhasesFromLabels(["bug"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("returns exec → qa for 'fix' label", () => {
+    it("returns spec → exec → qa for 'fix' label", () => {
       const result = detectPhasesFromLabels(["fix"]);
-      expect(result.phases).toEqual(["exec", "qa"]);
+      expect(result.phases).toEqual(["spec", "exec", "qa"]);
     });
   });
 
