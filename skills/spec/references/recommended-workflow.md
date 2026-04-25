@@ -14,15 +14,17 @@ This document shows the expected output format for the `## Recommended Workflow`
 
 ## Examples
 
-### Simple Bug Fix
+### Simple Bug Fix (spec confirms straightforward scope)
 
 ```markdown
 ## Recommended Workflow
 
 **Phases:** exec → qa
 **Quality Loop:** disabled
-**Reasoning:** Straightforward bug fix with clear root cause. No planning needed.
+**Reasoning:** This spec pass confirmed a clear root cause and narrow scope — no testgen or additional phases required; proceed to exec.
 ```
+
+*Note:* Since #533, spec always runs by default. `**Phases:**` lists phases **after** spec — use `exec → qa` here to indicate "spec is done; only exec and qa remain."
 
 ### Standard Feature
 

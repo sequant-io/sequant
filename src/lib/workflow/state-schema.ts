@@ -34,7 +34,7 @@ export const PhaseStatusSchema = z.enum([
   "in_progress", // Phase currently executing
   "completed", // Phase finished successfully
   "failed", // Phase finished with errors
-  "skipped", // Phase intentionally skipped (e.g., bug labels skip spec)
+  "skipped", // Phase intentionally skipped (e.g., prior phase marker already exists)
 ]);
 
 export type PhaseStatus = z.infer<typeof PhaseStatusSchema>;
