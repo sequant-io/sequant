@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `nowLine` in this milestone is phase-coarse (e.g. `running exec`); per-file activity is deferred to a follow-up
 - **QA short-circuit on unchanged commit** — `/qa` now skips the full sub-agent pipeline when the latest `qa:completed` phase marker's `commitSHA` matches current `HEAD`. Bypass with `/qa <N> --force` or `/qa <N> --no-cache`. Failed prior runs (status=`failed`) never short-circuit. New `status:"completed"` markers include a `verdict` field so the short-circuit summary surfaces the prior verdict; legacy markers without the field fall back to `(see prior QA comment)`. Marker detection streams comment bodies via `.comments[].body` (raw) rather than `[.comments[].body]` (JSON-escaped) so the grep pattern actually matches. (#530)
 
+### Changed
+
+- **Default workflow: spec phase ON for bug/docs issues** — the "skip spec when (bug/docs label AND no domain labels)" shortcut has been removed at both the skill-recommendation layer (`/assess`) and the runtime auto-detection layer (`phase-mapper.detectPhasesFromLabels`, `batch-executor` auto-detect). Bug- and docs-labeled issues now run `spec → exec → qa` by default under `sequant run --auto-detect`. Spec is only skipped when a prior `spec` phase marker already exists on the issue. Real-world batches showed that bug and docs issues frequently contain design decisions (scope boundaries, edge cases, test-strategy shifts) that benefit from a spec pass, and post-#515 the per-phase cost is small enough to justify universal inclusion. Docs-labeled issues still propagate `issueType: "docs"` through post-spec phases for downstream skills (e.g. lighter `/qa` pipeline). Override with explicit `--phases exec,qa`. (#533)
+
 ## [2.2.0] - 2026-04-18
 
 ### Added

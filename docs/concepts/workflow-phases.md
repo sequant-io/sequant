@@ -246,8 +246,8 @@ When using `sequant run`, phases are detected automatically:
 
 | Labels | Phases | Why |
 |--------|--------|-----|
-| `bug`, `fix`, `hotfix` | exec → qa | Simple fixes skip spec and testgen |
-| `docs`, `documentation` | exec → qa | Docs changes skip spec and testgen |
+| `bug`, `fix`, `hotfix` | spec → exec → qa | Spec catches scope/design decisions in fixes (#533) |
+| `docs`, `documentation` | spec → exec → qa | Spec catches scope/design decisions in docs work (#533) |
 | `enhancement`, `feature` | spec → testgen → exec → qa | New features need test stubs |
 | `ui`, `frontend`, `admin` | spec → testgen → exec → test → qa | UI with testable ACs |
 | `complex`, `refactor` | spec → testgen → exec → qa + quality loop | Complex changes need tests and iteration |

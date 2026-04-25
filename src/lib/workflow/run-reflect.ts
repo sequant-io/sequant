@@ -65,7 +65,7 @@ function analyzeTimingPatterns(
         `Spec times similar across issues (${formatSec(min)}–${formatSec(max)}) despite varying complexity`,
       );
       suggestions.push(
-        "Consider `--phases exec,qa` for simple fixes to skip spec",
+        "Consider `--phases exec,qa` for issues where spec is not adding value (the default includes spec, #533)",
       );
     }
   }

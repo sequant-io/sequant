@@ -24,12 +24,12 @@ interface PhaseMapperOptions {
 export const UI_LABELS = ["ui", "frontend", "admin", "web", "browser"];
 
 /**
- * Bug-related labels that skip spec phase
+ * Bug-related labels (used by downstream metadata consumers)
  */
 export const BUG_LABELS = ["bug", "fix", "hotfix", "patch"];
 
 /**
- * Documentation labels that skip spec phase
+ * Documentation labels (used for issueType propagation and downstream metadata)
  */
 export const DOCS_LABELS = ["docs", "documentation", "readme"];
 
@@ -58,16 +58,6 @@ export function detectPhasesFromLabels(labels: string[]): {
 } {
   const lowerLabels = labels.map((l) => l.toLowerCase());
 
-  // Check for bug/fix labels → exec → qa (skip spec)
-  const isBugFix = lowerLabels.some((label) =>
-    BUG_LABELS.some((bugLabel) => label === bugLabel),
-  );
-
-  // Check for docs labels → exec → qa (skip spec)
-  const isDocs = lowerLabels.some((label) =>
-    DOCS_LABELS.some((docsLabel) => label === docsLabel),
-  );
-
   // Check for UI labels → add test phase
   const isUI = lowerLabels.some((label) =>
     UI_LABELS.some((uiLabel) => label === uiLabel),
@@ -83,19 +73,13 @@ export function detectPhasesFromLabels(labels: string[]): {
     SECURITY_LABELS.some((secLabel) => label === secLabel),
   );
 
-  // Build phase list
-  let phases: Phase[];
-
-  if (isBugFix || isDocs) {
-    // Simple workflow: exec → qa
-    phases = ["exec", "qa"];
-  } else if (isUI) {
-    // UI workflow: spec → exec → test → qa
-    phases = ["spec", "exec", "test", "qa"];
-  } else {
-    // Standard workflow: spec → exec → qa
-    phases = ["spec", "exec", "qa"];
-  }
+  // Build phase list — spec is always included by default (#533).
+  // Bug/docs labels no longer short-circuit spec; downstream consumers
+  // (e.g. `issueType: "docs"` propagation) still use DOCS_LABELS for
+  // metadata purposes, not for phase selection.
+  const phases: Phase[] = isUI
+    ? ["spec", "exec", "test", "qa"]
+    : ["spec", "exec", "qa"];
 
   // Add security-review phase after spec if security labels detected
   if (isSecurity && phases.includes("spec")) {

@@ -130,8 +130,13 @@ beforeEach(() => {
 });
 
 describe("runIssueWithLogging — label-based phase shortcuts", () => {
-  describe("AC-1: isSimpleBugFix shortcut", () => {
-    it("skips spec for 'bug' label → phases are [exec, qa]", async () => {
+  // #533: bug/docs labels no longer short-circuit spec. Under autoDetectPhases
+  // mode, spec runs first, then the remaining phases come from the spec
+  // recommendation (or, if unparseable, from detectPhasesFromLabels with spec
+  // filtered out). With the default mock returning successResult("exec") and
+  // no parseable workflow, bug/docs issues produce the full [spec, exec, qa].
+  describe("#533: bug labels include spec by default", () => {
+    it("runs spec → exec → qa for 'bug' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 42,
@@ -140,12 +145,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      // executePhaseWithRetry should be called for exec and qa (no spec)
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("skips spec for 'fix' label", async () => {
+    it("runs spec → exec → qa for 'fix' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 43,
@@ -155,10 +159,10 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("skips spec for 'hotfix' label", async () => {
+    it("runs spec → exec → qa for 'hotfix' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 44,
@@ -168,10 +172,10 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("skips spec for 'patch' label", async () => {
+    it("runs spec → exec → qa for 'patch' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 45,
@@ -181,12 +185,12 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
   });
 
-  describe("AC-1: isDocs shortcut", () => {
-    it("skips spec for 'docs' label → phases are [exec, qa]", async () => {
+  describe("#533: docs labels include spec by default", () => {
+    it("runs spec → exec → qa for 'docs' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 50,
@@ -196,10 +200,10 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("skips spec for 'documentation' label", async () => {
+    it("runs spec → exec → qa for 'documentation' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 51,
@@ -209,10 +213,10 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("skips spec for 'readme' label", async () => {
+    it("runs spec → exec → qa for 'readme' label", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 52,
@@ -222,11 +226,19 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
   });
 
   describe("AC-2: issueConfig.issueType set to 'docs' for docs labels", () => {
+    // #533: Spec now runs for docs-labeled issues under autoDetectPhases.
+    // Spec is executed before issueConfig is built, so the spec call receives
+    // the base config without issueType. issueType is propagated to exec/qa
+    // calls (and any other post-spec phases) via issueConfig. The assertions
+    // filter out the spec call to verify issueType propagation downstream.
+    const nonSpec = (calls: typeof mockExecutePhase.mock.calls) =>
+      calls.filter((c) => c[1] !== "spec");
+
     it("passes issueType 'docs' to executePhaseWithRetry when docs label present", async () => {
       await runIssueWithLogging(
         makeCtx({
@@ -236,8 +248,9 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      // The 3rd argument to executePhaseWithRetry is the config
-      for (const call of mockExecutePhase.mock.calls) {
+      const postSpecCalls = nonSpec(mockExecutePhase.mock.calls);
+      expect(postSpecCalls.length).toBeGreaterThan(0);
+      for (const call of postSpecCalls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
       }
@@ -252,7 +265,9 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      for (const call of mockExecutePhase.mock.calls) {
+      const postSpecCalls = nonSpec(mockExecutePhase.mock.calls);
+      expect(postSpecCalls.length).toBeGreaterThan(0);
+      for (const call of postSpecCalls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
       }
@@ -267,7 +282,9 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      for (const call of mockExecutePhase.mock.calls) {
+      const postSpecCalls = nonSpec(mockExecutePhase.mock.calls);
+      expect(postSpecCalls.length).toBeGreaterThan(0);
+      for (const call of postSpecCalls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
       }
@@ -326,8 +343,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
     });
   });
 
-  describe("AC-4: bug labels take precedence over docs labels in phase selection", () => {
-    it("uses bug shortcut phases when both bug and docs labels present", async () => {
+  describe("AC-4: bug + docs combined labels (#533: no phase-selection precedence)", () => {
+    // #533 removed the bug/docs phase shortcuts, so neither label wins a
+    // phase-selection "precedence" — both now produce the default workflow.
+    // issueType propagation still fires for any label in DOCS_LABELS.
+    it("runs spec → exec → qa when both bug and docs labels present", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 80,
@@ -336,12 +356,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      // Bug shortcut fires first (if/else chain), so phases = [exec, qa]
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("still sets issueType to 'docs' even when bug shortcut fires", async () => {
+    it("still sets issueType to 'docs' on post-spec calls when docs label is present", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 81,
@@ -350,8 +369,13 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         }),
       );
 
-      // issueConfig is built independently, so docs label still sets issueType
-      for (const call of mockExecutePhase.mock.calls) {
+      // issueConfig is built after spec runs; it still propagates issueType
+      // to exec/qa when a docs label is present.
+      const postSpecCalls = mockExecutePhase.mock.calls.filter(
+        (c) => c[1] !== "spec",
+      );
+      expect(postSpecCalls.length).toBeGreaterThan(0);
+      for (const call of postSpecCalls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
       }
@@ -359,7 +383,7 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
   });
 
   describe("AC-5 (derived): case-insensitive label matching", () => {
-    it("detects uppercase 'BUG' label as bug shortcut", async () => {
+    it("detects uppercase 'BUG' label (still runs spec → exec → qa under #533)", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 90,
@@ -369,10 +393,10 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
 
-    it("detects uppercase 'DOCS' label and sets issueType", async () => {
+    it("detects uppercase 'DOCS' label and sets issueType on post-spec calls", async () => {
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 91,
@@ -382,9 +406,12 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
 
-      for (const call of mockExecutePhase.mock.calls) {
+      const postSpecCalls = mockExecutePhase.mock.calls.filter(
+        (c) => c[1] !== "spec",
+      );
+      for (const call of postSpecCalls) {
         const passedConfig = call[2] as ExecutionConfig;
         expect(passedConfig.issueType).toBe("docs");
       }
@@ -400,7 +427,7 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       );
 
       const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
-      expect(calledPhases).toEqual(["exec", "qa"]);
+      expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
   });
 
@@ -435,10 +462,11 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
     });
   });
 
-  describe("AC-6 (derived): autoDetectPhases = false skips label shortcuts", () => {
+  describe("AC-6 (derived): autoDetectPhases = false bypasses label-based auto-detection", () => {
     it("uses explicit phases when autoDetectPhases is false", async () => {
-      // Use ["qa"] only — bug shortcut would produce ["exec", "qa"],
-      // so this distinguishes explicit phases from shortcut
+      // Use ["qa"] only — auto-detection would produce ["spec", "exec", "qa"]
+      // for a bug-labeled issue, so this distinguishes explicit-phase mode
+      // from auto-detect mode (#533).
       await runIssueWithLogging(
         makeCtx({
           issueNumber: 100,
