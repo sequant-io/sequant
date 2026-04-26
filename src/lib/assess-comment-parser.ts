@@ -193,6 +193,19 @@ export function findAssessComment(
 }
 
 /**
+ * Find every assess/solve comment in chronological order (oldest first).
+ *
+ * Preserves the input order of `comments`, which is the order GitHub returns
+ * them (chronological). Callers that need the most recent comment should
+ * read the last element.
+ */
+export function findAllAssessComments(
+  comments: IssueComment[],
+): IssueComment[] {
+  return comments.filter((c) => isAssessComment(c.body));
+}
+
+/**
  * Find the most recent solve comment from a list of comments
  * @deprecated Use findAssessComment instead
  */
@@ -479,4 +492,124 @@ export function solveCoversIssue(
   issueNumber: number,
 ): boolean {
   return assessCoversIssue(workflow, issueNumber);
+}
+
+// ─── Prior-Assessment Detection ─────────────────────────────────────────────
+
+/**
+ * Pattern matching exec phase markers in any comment.
+ * Used by detectChurn to differentiate "no execution" churn from
+ * legitimate re-assessment after exec.
+ */
+const EXEC_PHASE_MARKER_PATTERN =
+  /<!--\s*SEQUANT_PHASE:\s*\{[^}]*"phase"\s*:\s*"exec"[^}]*\}\s*-->/;
+
+/**
+ * Format a comment's createdAt timestamp as YYYY-MM-DD.
+ * Falls back to the raw value when missing or unparseable so output
+ * still says something useful.
+ */
+function formatAssessDate(createdAt?: string): string {
+  if (!createdAt) return "unknown date";
+  const parsed = new Date(createdAt);
+  if (isNaN(parsed.getTime())) return createdAt;
+  return parsed.toISOString().slice(0, 10);
+}
+
+/**
+ * Build a one-line supersession header for a new assess comment.
+ *
+ * Format:
+ * - 0 priors → null (caller omits the header entirely)
+ * - 1 prior  → `Supersedes prior assess from <date> (<action>)`
+ * - ≥2 priors → `Supersedes N prior assessments (most recent: <date>)`
+ *
+ * Priors must be passed in chronological order (oldest first), matching
+ * the output of findAllAssessComments.
+ */
+export function buildSupersessionHeader(priors: IssueComment[]): string | null {
+  if (priors.length === 0) return null;
+
+  const mostRecent = priors[priors.length - 1];
+  const date = formatAssessDate(mostRecent.createdAt);
+
+  if (priors.length === 1) {
+    const workflow = parseAssessWorkflow(mostRecent.body);
+    const action = workflow.action ?? "unknown";
+    return `Supersedes prior assess from ${date} (${action})`;
+  }
+
+  return `Supersedes ${priors.length} prior assessments (most recent: ${date})`;
+}
+
+/**
+ * Result of churn detection: whether to fire the warning, the count
+ * of prior assessments, and the date of the first one.
+ */
+export interface ChurnResult {
+  isChurn: boolean;
+  count: number;
+  firstDate?: string;
+}
+
+/**
+ * Detect re-assessment churn — repeated /assess invocations without
+ * an intervening exec phase. Fires only when ≥3 priors exist and no
+ * exec phase marker appears in any comment dated after the first prior.
+ *
+ * `allComments` should be the full comment list from the issue
+ * (including the prior assess comments themselves) so we can search
+ * for SEQUANT_PHASE exec markers in non-assess comments.
+ */
+export function detectChurn(
+  priors: IssueComment[],
+  allComments: IssueComment[],
+): ChurnResult {
+  const count = priors.length;
+  if (count < 3) {
+    return { isChurn: false, count };
+  }
+
+  const firstPrior = priors[0];
+  const firstDate = formatAssessDate(firstPrior.createdAt);
+  const firstTimestamp = firstPrior.createdAt
+    ? new Date(firstPrior.createdAt).getTime()
+    : NaN;
+
+  const hasExecAfterFirst = allComments.some((c) => {
+    if (!EXEC_PHASE_MARKER_PATTERN.test(c.body)) return false;
+    if (!Number.isFinite(firstTimestamp)) return true;
+    if (!c.createdAt) return true;
+    const ts = new Date(c.createdAt).getTime();
+    if (isNaN(ts)) return true;
+    return ts >= firstTimestamp;
+  });
+
+  return {
+    isChurn: !hasExecAfterFirst,
+    count,
+    firstDate,
+  };
+}
+
+/**
+ * Decide whether to prompt the user before posting a new assess comment
+ * that conflicts with the most recent prior recommendation.
+ *
+ * Prompts only when:
+ *   - A prior action exists, AND
+ *   - The prior action is PROCEED or REWRITE (the "do work" actions
+ *     where flipping to PARK/CLOSE/etc. needs explicit confirmation), AND
+ *   - The new action differs from the prior.
+ *
+ * Skips the prompt for prior CLOSE/PARK/CLARIFY/MERGE — flipping
+ * away from those is rarely "wrong" and the prompt would just be noise.
+ */
+export function shouldPromptOnConflict(
+  priorAction: AssessAction | undefined,
+  newAction: AssessAction | undefined,
+): boolean {
+  if (!priorAction || !newAction) return false;
+  if (priorAction === newAction) return false;
+  return priorAction === "PROCEED" || priorAction === "REWRITE";
 }
