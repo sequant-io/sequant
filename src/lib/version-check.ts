@@ -6,6 +6,7 @@
  */
 
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import {
@@ -77,26 +78,123 @@ export function getCurrentVersion(): string {
 }
 
 /**
- * Check if running from a local node_modules install (vs npx cache)
+ * Check if running from a global install (npm root -g).
+ *
+ * On POSIX, npm's global root convention puts packages under
+ * `<prefix>/lib/node_modules/` (e.g. `/usr/local/lib/node_modules`,
+ * `/opt/homebrew/lib/node_modules`, `~/.nvm/versions/node/<v>/lib/node_modules`).
+ *
+ * On Windows, the default global root is `%AppData%\npm\node_modules\` —
+ * sometimes nested under `Roaming\` depending on the npm/Node installer —
+ * with no `lib\` segment. Both variants are matched here.
+ *
+ * Project-local installs live under `<project>/node_modules/` and don't match
+ * either pattern.
+ */
+export function isGlobalInstall(installPath: string = __dirname): boolean {
+  const normalizedPath = installPath.replace(/\\/g, "/");
+  return (
+    normalizedPath.includes("/lib/node_modules/sequant") ||
+    /\/AppData\/(Roaming\/)?npm\/node_modules\/sequant/.test(normalizedPath)
+  );
+}
+
+/**
+ * Check if running from a local node_modules install (vs npx cache or global).
  *
  * Local installs are in: <project>/node_modules/sequant/
  * npx installs are in: ~/.npm/_npx/<hash>/node_modules/sequant/
+ * Global installs are in: <prefix>/lib/node_modules/sequant/
  *
- * This matters because:
- * - Local installs should be updated with: npm update sequant
- * - npx installs should be updated with: npx sequant@latest
+ * Only project-local installs return true — npx and globals are excluded so
+ * neither receives the project-local "use npm update sequant" warning.
  */
-export function isLocalNodeModulesInstall(): boolean {
-  // Check if our path contains node_modules/sequant but NOT in .npm/_npx
-  const normalizedPath = __dirname.replace(/\\/g, "/");
+export function isLocalNodeModulesInstall(
+  installPath: string = __dirname,
+): boolean {
+  const normalizedPath = installPath.replace(/\\/g, "/");
 
-  // Running from local node_modules (not npx cache)
   const inNodeModules = normalizedPath.includes("/node_modules/sequant");
   const inNpxCache =
     normalizedPath.includes("/.npm/_npx/") ||
     normalizedPath.includes("\\.npm\\_npx\\");
 
-  return inNodeModules && !inNpxCache;
+  return inNodeModules && !inNpxCache && !isGlobalInstall(normalizedPath);
+}
+
+/**
+ * Walk up from the given directory to find the directory containing
+ * sequant's package.json. Returns null if not found.
+ *
+ * Mirrors the walk-up in getCurrentVersion() so callers can reason about
+ * the install root (the directory that actually holds sequant's package.json),
+ * which is needed to distinguish between e.g. project-local installs and the
+ * pathological $HOME/node_modules/sequant case.
+ *
+ * @internal Exported for testability and reuse in bin/cli.ts. Not a stable
+ * public API — may change without a major version bump.
+ */
+export function getInstallRoot(startDir: string = __dirname): string | null {
+  let dir = startDir;
+  while (dir !== path.dirname(dir)) {
+    const candidate = path.resolve(dir, "package.json");
+    try {
+      const content = fs.readFileSync(candidate, "utf8");
+      const pkg = JSON.parse(content);
+      if (pkg.name === "sequant") {
+        return dir;
+      }
+    } catch {
+      // Not found, continue searching
+    }
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
+/**
+ * Check whether sequant is installed in $HOME/node_modules/sequant exactly.
+ *
+ * This is a known footgun: a stray `npm install sequant` run from $HOME
+ * leaves a package.json + node_modules/ at the home root, and Node's module
+ * resolution then walks up from any home subdirectory to that stale install
+ * before falling back to the npx cache. The result is that `npx sequant`
+ * silently runs the home-stray copy instead of the latest version.
+ *
+ * Project-local installs (anywhere else under node_modules/), global installs,
+ * and the npx cache all return false.
+ *
+ * `installRoot` is accepted as a parameter for testability.
+ */
+export function isHomeStrayInstall(
+  installRoot: string | null = getInstallRoot(),
+): boolean {
+  if (!installRoot) return false;
+  const expected = path.join(os.homedir(), "node_modules", "sequant");
+  return path.resolve(installRoot) === path.resolve(expected);
+}
+
+/**
+ * Render the home-stray warning string for a given install root.
+ *
+ * Extracted from bin/cli.ts so the rendered output can be asserted in unit
+ * tests; the predicate (isHomeStrayInstall) and the emission are then both
+ * covered without spawning a child process. Returns the warning text without
+ * any chalk styling — the caller decides whether to colorize.
+ *
+ * @internal Exported for the bin/cli.ts caller and unit tests. Not a stable
+ * public API — may change without a major version bump.
+ */
+export function buildHomeStrayWarning(installRoot: string): string {
+  const parent = path.dirname(installRoot);
+  return (
+    `!  Sequant is running from ${installRoot} — this pollutes\n` +
+    `   resolution for every subdirectory of your home directory.\n\n` +
+    `   If accidental (usually is — one stray \`npm install sequant\` from ~ does it):\n` +
+    `       remove ${parent}\n` +
+    `       remove $HOME/package.json and $HOME/package-lock.json\n\n` +
+    `   If intentional: use \`npm install -g sequant\` or the Claude Code plugin.\n`
+  );
 }
 
 /**
