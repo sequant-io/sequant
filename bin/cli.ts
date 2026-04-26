@@ -86,8 +86,8 @@ configureUI({
 // install root once and pass it to both predicates to avoid a second walk.
 if (!process.argv.includes("--quiet")) {
   const installRoot = getInstallRoot();
-  if (isHomeStrayInstall(installRoot)) {
-    console.warn(chalk.yellow(buildHomeStrayWarning(installRoot!)));
+  if (installRoot && isHomeStrayInstall(installRoot)) {
+    console.warn(chalk.yellow(buildHomeStrayWarning(installRoot)));
   } else if (isLocalNodeModulesInstall()) {
     const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
     console.warn(

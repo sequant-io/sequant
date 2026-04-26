@@ -164,6 +164,20 @@ describe("version-check utilities", () => {
       ).toBe(true);
     });
 
+    it("returns true for Windows AppData/Roaming/npm global path", () => {
+      expect(
+        isGlobalInstall(
+          "C:\\Users\\foo\\AppData\\Roaming\\npm\\node_modules\\sequant",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns true for Windows AppData/npm global path (no Roaming)", () => {
+      expect(
+        isGlobalInstall("C:\\Users\\foo\\AppData\\npm\\node_modules\\sequant"),
+      ).toBe(true);
+    });
+
     it("returns false for project-local installs", () => {
       expect(
         isGlobalInstall("/home/user/projects/foo/node_modules/sequant"),

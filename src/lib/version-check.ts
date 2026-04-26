@@ -80,14 +80,23 @@ export function getCurrentVersion(): string {
 /**
  * Check if running from a global install (npm root -g).
  *
- * npm's global root convention puts packages under `<prefix>/lib/node_modules/`
- * (e.g. `/usr/local/lib/node_modules`, `/opt/homebrew/lib/node_modules`,
- * `~/.nvm/versions/node/<v>/lib/node_modules`). Project-local installs live
- * under `<project>/node_modules/` without the `lib/` segment.
+ * On POSIX, npm's global root convention puts packages under
+ * `<prefix>/lib/node_modules/` (e.g. `/usr/local/lib/node_modules`,
+ * `/opt/homebrew/lib/node_modules`, `~/.nvm/versions/node/<v>/lib/node_modules`).
+ *
+ * On Windows, the default global root is `%AppData%\npm\node_modules\` —
+ * sometimes nested under `Roaming\` depending on the npm/Node installer —
+ * with no `lib\` segment. Both variants are matched here.
+ *
+ * Project-local installs live under `<project>/node_modules/` and don't match
+ * either pattern.
  */
 export function isGlobalInstall(installPath: string = __dirname): boolean {
   const normalizedPath = installPath.replace(/\\/g, "/");
-  return normalizedPath.includes("/lib/node_modules/sequant");
+  return (
+    normalizedPath.includes("/lib/node_modules/sequant") ||
+    /\/AppData\/(Roaming\/)?npm\/node_modules\/sequant/.test(normalizedPath)
+  );
 }
 
 /**
@@ -172,6 +181,9 @@ export function isHomeStrayInstall(
  * tests; the predicate (isHomeStrayInstall) and the emission are then both
  * covered without spawning a child process. Returns the warning text without
  * any chalk styling — the caller decides whether to colorize.
+ *
+ * @internal Exported for the bin/cli.ts caller and unit tests. Not a stable
+ * public API — may change without a major version bump.
  */
 export function buildHomeStrayWarning(installRoot: string): string {
   const parent = path.dirname(installRoot);
