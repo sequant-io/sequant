@@ -190,6 +190,12 @@ describe("version-check utilities", () => {
   });
 
   describe("isLocalNodeModulesInstall", () => {
+    it("returns a boolean when called with no args (default __dirname)", () => {
+      // Smoke test: function must not throw under the real runtime context.
+      const result = isLocalNodeModulesInstall();
+      expect(typeof result).toBe("boolean");
+    });
+
     it("returns true for project-local installs", () => {
       expect(
         isLocalNodeModulesInstall(
@@ -198,9 +204,20 @@ describe("version-check utilities", () => {
       ).toBe(true);
     });
 
-    it("returns false for global installs (excluded)", () => {
+    it("returns false for POSIX global installs (excluded)", () => {
       expect(
         isLocalNodeModulesInstall("/usr/local/lib/node_modules/sequant"),
+      ).toBe(false);
+    });
+
+    it("returns false for Windows global installs (excluded)", () => {
+      // Integration check: ensures the global exclusion in
+      // isLocalNodeModulesInstall stays in lock-step with isGlobalInstall's
+      // Windows pattern, not just the POSIX one.
+      expect(
+        isLocalNodeModulesInstall(
+          "C:\\Users\\foo\\AppData\\Roaming\\npm\\node_modules\\sequant",
+        ),
       ).toBe(false);
     });
 
