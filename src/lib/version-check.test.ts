@@ -16,6 +16,21 @@ vi.mock("fs", () => ({
   existsSync: mockExistsSync,
 }));
 
+// Mock os.homedir() so isHomeStrayInstall can be tested deterministically.
+// process.env.HOME is set in beforeEach, but os.homedir() reads the OS-level
+// home on macOS regardless, so we mock the module to honor the env value.
+vi.mock("os", async () => {
+  const actual = await vi.importActual<typeof import("os")>("os");
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      homedir: () => process.env.HOME || "/home/user",
+    },
+    homedir: () => process.env.HOME || "/home/user",
+  };
+});
+
 // Mock global fetch
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -31,6 +46,9 @@ import {
   isCacheFresh,
   getCurrentVersion,
   isLocalNodeModulesInstall,
+  isGlobalInstall,
+  isHomeStrayInstall,
+  buildHomeStrayWarning,
   fetchLatestVersion,
   checkVersionThorough,
   checkVersionCached,
@@ -127,12 +145,154 @@ describe("version-check utilities", () => {
     });
   });
 
+  describe("isGlobalInstall", () => {
+    it("returns true for /usr/local/lib/node_modules/sequant", () => {
+      expect(isGlobalInstall("/usr/local/lib/node_modules/sequant")).toBe(true);
+    });
+
+    it("returns true for Homebrew global path", () => {
+      expect(isGlobalInstall("/opt/homebrew/lib/node_modules/sequant")).toBe(
+        true,
+      );
+    });
+
+    it("returns true for nvm global path", () => {
+      expect(
+        isGlobalInstall(
+          "/home/user/.nvm/versions/node/v22.0.0/lib/node_modules/sequant",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns true for Windows AppData/Roaming/npm global path", () => {
+      expect(
+        isGlobalInstall(
+          "C:\\Users\\foo\\AppData\\Roaming\\npm\\node_modules\\sequant",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns true for Windows AppData/npm global path (no Roaming)", () => {
+      expect(
+        isGlobalInstall("C:\\Users\\foo\\AppData\\npm\\node_modules\\sequant"),
+      ).toBe(true);
+    });
+
+    it("returns false for project-local installs", () => {
+      expect(
+        isGlobalInstall("/home/user/projects/foo/node_modules/sequant"),
+      ).toBe(false);
+    });
+
+    it("returns false for the home-stray case", () => {
+      expect(isGlobalInstall("/home/user/node_modules/sequant")).toBe(false);
+    });
+  });
+
   describe("isLocalNodeModulesInstall", () => {
-    it("returns a boolean", () => {
-      // This function depends on __dirname at runtime
-      // Just verify it returns a boolean without throwing
+    it("returns a boolean when called with no args (default __dirname)", () => {
+      // Smoke test: function must not throw under the real runtime context.
       const result = isLocalNodeModulesInstall();
       expect(typeof result).toBe("boolean");
+    });
+
+    it("returns true for project-local installs", () => {
+      expect(
+        isLocalNodeModulesInstall(
+          "/home/user/projects/foo/node_modules/sequant/dist/src/lib",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns false for POSIX global installs (excluded)", () => {
+      expect(
+        isLocalNodeModulesInstall("/usr/local/lib/node_modules/sequant"),
+      ).toBe(false);
+    });
+
+    it("returns false for Windows global installs (excluded)", () => {
+      // Integration check: ensures the global exclusion in
+      // isLocalNodeModulesInstall stays in lock-step with isGlobalInstall's
+      // Windows pattern, not just the POSIX one.
+      expect(
+        isLocalNodeModulesInstall(
+          "C:\\Users\\foo\\AppData\\Roaming\\npm\\node_modules\\sequant",
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false for npx cache installs", () => {
+      expect(
+        isLocalNodeModulesInstall(
+          "/home/user/.npm/_npx/abc123/node_modules/sequant",
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false when path is not under node_modules/sequant", () => {
+      expect(isLocalNodeModulesInstall("/home/user/Projects/sequant")).toBe(
+        false,
+      );
+    });
+  });
+
+  describe("isHomeStrayInstall", () => {
+    // process.env.HOME is set to "/home/user" in beforeEach, so
+    // os.homedir() resolves to "/home/user" inside the function.
+
+    it("returns true when install root equals $HOME/node_modules/sequant", () => {
+      expect(isHomeStrayInstall("/home/user/node_modules/sequant")).toBe(true);
+    });
+
+    it("returns false for project-local installs", () => {
+      expect(
+        isHomeStrayInstall("/home/user/projects/foo/node_modules/sequant"),
+      ).toBe(false);
+    });
+
+    it("returns false for global installs", () => {
+      expect(isHomeStrayInstall("/usr/local/lib/node_modules/sequant")).toBe(
+        false,
+      );
+    });
+
+    it("returns false for npx cache installs", () => {
+      expect(
+        isHomeStrayInstall("/home/user/.npm/_npx/abc123/node_modules/sequant"),
+      ).toBe(false);
+    });
+
+    it("returns false when install root cannot be resolved", () => {
+      expect(isHomeStrayInstall(null)).toBe(false);
+    });
+  });
+
+  describe("buildHomeStrayWarning", () => {
+    it("names the install root path in the first line", () => {
+      const out = buildHomeStrayWarning("/home/user/node_modules/sequant");
+      expect(out).toContain(
+        "Sequant is running from /home/user/node_modules/sequant",
+      );
+    });
+
+    it("emits the parent directory (without /sequant) in the cleanup line", () => {
+      const out = buildHomeStrayWarning("/home/user/node_modules/sequant");
+      // path.dirname of the install root is the cleanup target
+      expect(out).toContain("remove /home/user/node_modules\n");
+      expect(out).not.toContain("remove /home/user/node_modules/sequant\n");
+    });
+
+    it("includes the package.json + lockfile cleanup", () => {
+      const out = buildHomeStrayWarning("/home/user/node_modules/sequant");
+      expect(out).toContain(
+        "remove $HOME/package.json and $HOME/package-lock.json",
+      );
+    });
+
+    it("documents the legitimate alternatives", () => {
+      const out = buildHomeStrayWarning("/home/user/node_modules/sequant");
+      expect(out).toContain("npm install -g sequant");
+      expect(out).toContain("Claude Code plugin");
     });
   });
 

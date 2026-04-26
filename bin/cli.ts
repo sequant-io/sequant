@@ -11,7 +11,12 @@ import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
-import { isLocalNodeModulesInstall } from "../src/lib/version-check.js";
+import {
+  buildHomeStrayWarning,
+  getInstallRoot,
+  isHomeStrayInstall,
+  isLocalNodeModulesInstall,
+} from "../src/lib/version-check.js";
 import { configureUI, banner } from "../src/lib/cli-ui.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 import {
@@ -74,17 +79,25 @@ configureUI({
   minimal: process.env.SEQUANT_MINIMAL === "1",
 });
 
-// Warn if running from local node_modules (not npx cache or global)
-// This helps users who accidentally have a stale local install
-if (!process.argv.includes("--quiet") && isLocalNodeModulesInstall()) {
-  const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
-  console.warn(
-    chalk.yellow(
-      "!  Running sequant from local node_modules\n" +
-        "   For latest version: npx sequant@latest\n" +
-        `   To remove local: ${pmCommands.removePkg} sequant\n`,
-    ),
-  );
+// Warn if running from a problematic install location.
+// The home-stray case ($HOME/node_modules/sequant) gets a distinct warning
+// because it pollutes resolution for every subdirectory of $HOME, which the
+// generic "local node_modules" message doesn't communicate. Resolve the
+// install root once and pass it to both predicates to avoid a second walk.
+if (!process.argv.includes("--quiet")) {
+  const installRoot = getInstallRoot();
+  if (installRoot && isHomeStrayInstall(installRoot)) {
+    console.warn(chalk.yellow(buildHomeStrayWarning(installRoot)));
+  } else if (isLocalNodeModulesInstall()) {
+    const pmCommands = getPackageManagerCommands(detectPackageManagerSync());
+    console.warn(
+      chalk.yellow(
+        "!  Running sequant from local node_modules\n" +
+          "   For latest version: npx sequant@latest\n" +
+          `   To remove local: ${pmCommands.removePkg} sequant\n`,
+      ),
+    );
+  }
 }
 
 program
