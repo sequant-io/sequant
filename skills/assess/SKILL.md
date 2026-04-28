@@ -228,6 +228,7 @@ The commands block is headed by `Commands:` — no box-drawing, no character cou
 5. Chain mode issues use `--chain` flag (see `Chain:` annotation rules below)
 6. If ALL issues share the same workflow, emit a single command
 7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
+8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts:186`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — currently `--testgen` is the only additive flag (`bin/cli.ts:208`); use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Asymmetry: no `--security-review` additive flag exists yet, so security-review workflows still require `--phases`. The posted marker (`<!-- assess:phases=… -->`) records the full resolved workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
 
 #### Annotation Rules
 
@@ -238,6 +239,7 @@ Emit annotations in this order between the separators that follow `Commands:`:
   - Good: `Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)`
   - Good: `Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)`
   - Avoid bare filenames when a reason is clearer.
+  - **Exception:** When the sequencing reason **is** a file collision (two issues both modify the same file), the filename **is** the reason and is acceptable verbatim. Example: `Order: 460 → 461 (qa/SKILL.md)` — the bare filename communicates the conflict directly.
 
 - **`⚠` warnings** — Only non-obvious signals (complexity, staleness, dual concerns, partial-AC satisfaction). One line each, prefixed with issue number. Warnings can note when part of an AC is already satisfied in the codebase:
   - `⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected`
@@ -319,19 +321,18 @@ All issues have explicit checkbox ACs, so the `ACs` column is shown. A dependenc
 ────────────────────────────────────────────────────────────────
 Commands:
   npx sequant run 185 -q
-  npx sequant run 186 -q --phases spec,testgen,exec,test,qa
+  npx sequant run 186 -q --testgen
 ────────────────────────────────────────────────────────────────
 Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)
 
 ⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected
 ⚠ #186  @tanstack/react-query not installed; large scope (9 hooks + optimistic updates)
 
-Chain: npx sequant run 185 186 --chain --qa-gate -q --phases spec,testgen,exec,test,qa
+Chain: npx sequant run 185 186 --chain --qa-gate -q --testgen
        # alternative — use if 186 should branch from 185's work
 
 Flags:
-  --testgen             #186 has testable ACs (UI hooks + API integration)
-  --phases ...,test     #186 ui label → browser verification
+  --testgen             #186 testable ACs (UI hooks + API integration); ui label auto-adds test phase
 ────────────────────────────────────────────────────────────────
 
 <!-- #185 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
@@ -380,9 +381,8 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
  491  PROCEED    Normalize config paths                     spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 503 502 501 498 497 495 -q
-  npx sequant run 494 492 491 -q
-  npx sequant run 499 -q --phases spec,exec,test,qa
+  npx sequant run 503 502 501 499 498 497 -q
+  npx sequant run 495 494 492 491 -q
   npx sequant run 500 -q --phases spec,security-review,exec,qa
 ────────────────────────────────────────────────────────────────
 Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
@@ -392,7 +392,6 @@ Order: 497 → 492 (497 refactors batch-executor internals that 492's export com
 
 Flags:
   --phases ...,security-review   #500 auth label → security review required
-  --phases ...,test              #499 ui label → browser verification
 ────────────────────────────────────────────────────────────────
 Cleanup:
   gh issue close 493                   # duplicate of #491

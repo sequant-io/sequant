@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`/assess` emits minimal command flags** — generated `sequant run` examples now omit `--phases` when the resulting workflow equals the CLI default (`spec,exec,qa`) and prefer additive flags like `--testgen` over restating the full phase list. The posted `<!-- assess:phases=… -->` marker still records the full resolved workflow for parsers; only the displayed command is shortened. SKILL.md `Order:` annotation rule also gains a filename-as-reason exception for file-collision cases. (#554)
 - **/docs skill classifier** routes infra/scaffold paths (`package.json`, `*.config.*`, `.env.example`, layout/page files, middleware) to the `developer-tool` template instead of falling through to `admin`. Default fallback is now `developer-tool`; `admin` template is opt-in via `/admin/` path only (#531)
 
 ### Added
