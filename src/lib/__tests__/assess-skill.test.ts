@@ -137,6 +137,19 @@ describe("assess skill CLI flag accuracy", () => {
       }
     }
   });
+
+  it("should not restate default phases or non-additive testgen in example commands", () => {
+    const exampleLines = skillContent
+      .split("\n")
+      .filter((line) => /sequant\s+run\b/.test(line));
+
+    expect(exampleLines.length).toBeGreaterThan(0);
+
+    for (const line of exampleLines) {
+      expect(line).not.toMatch(/--phases\s+spec,exec,qa\b/);
+      expect(line).not.toMatch(/--phases\s+\S*\btestgen\b/);
+    }
+  });
 });
 
 describe("assess skill 3-directory sync", () => {
