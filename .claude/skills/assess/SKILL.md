@@ -79,6 +79,26 @@ gh pr list --search "<N> in:title" --json number,title,state,headRefName,mergeab
 - Check files referenced in issue body exist
 - Identify modified files if branch exists
 
+#### Prior Assessment Detection
+
+Before generating output, scan the issue's existing comments for prior `<!-- assess:action=... -->` markers. The parser exposes four pure functions in `src/lib/assess-comment-parser.ts`:
+
+| Function | Purpose |
+|----------|---------|
+| `findAllAssessComments(comments)` | Returns prior assess comments in chronological order (oldest first). |
+| `buildSupersessionHeader(priors)` | Returns `Supersedes prior assess from <date> (<action>)` for 1 prior, `Supersedes N prior assessments (most recent: <date>)` for ≥2, or `null` for 0. |
+| `detectChurn(priors, allComments)` | Returns `{ isChurn, count, firstDate }`. Fires (`isChurn=true`) only when ≥3 priors exist AND no exec phase marker (`<!-- SEQUANT_PHASE: {"phase":"exec",...} -->`) appears in any comment dated after the first prior. |
+| `shouldPromptOnConflict(prior, new)` | Returns `true` only when prior action ∈ {`PROCEED`, `REWRITE`} AND differs from the new action. |
+
+**Supersession protocol:**
+
+1. **No priors** → omit the supersession header entirely.
+2. **1+ priors** → prepend the header line returned by `buildSupersessionHeader` to the new comment body, immediately above the `→ ACTION — reason` line.
+3. **Churn detected** (`detectChurn(...).isChurn === true`) → emit a dashboard warning: `⚠ #<N>  Re-assessed N times since <firstDate> without execution — possible blocker or low priority`.
+4. **Conflict detected** (`shouldPromptOnConflict(prior, new) === true`) → confirm with the user via `AskUserQuestion` before posting. Skip the prompt when actions match or when the prior was `CLOSE`/`PARK`/`CLARIFY`/`MERGE`.
+
+**This pass is read-only — never edit or delete prior assess comments.** The append-only history is the audit trail; new comments add context, they do not rewrite it.
+
 ### Step 2: Health Checks
 
 Surface red flags. Only track signals that change the recommendation.
@@ -596,6 +616,7 @@ Every separator and section is conditional. If there are no warnings, no chain, 
 After displaying output, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
 
 If confirmed, post a structured comment to each issue via `gh issue comment`. Each posted comment should include:
+- **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, prepend `buildSupersessionHeader(priors)` immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also emit a `⚠ Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning in the dashboard. When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for full protocol.
 - The action headline (`→ ACTION — reason`)
 - The workflow (for PROCEED/REWRITE)
 - Standard HTML markers on separate lines:
@@ -631,5 +652,7 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 - [ ] Separators appear between every shown section; omitted when adjacent section is omitted
 - [ ] Annotations/sections omitted when not applicable (silence = healthy)
 - [ ] HTML markers present for every assessed issue
+- [ ] Supersession header prepended when prior assess comments exist (`buildSupersessionHeader`)
+- [ ] Churn warning included in dashboard when `detectChurn(...).isChurn === true`
 - [ ] Batch mode: table is the primary output, no per-issue detail sections
 - [ ] Single mode: focused summary with separators between sections
