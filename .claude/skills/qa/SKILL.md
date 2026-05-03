@@ -1726,6 +1726,170 @@ fi
 
 ---
 
+### 6c. Detection Pattern Verification (REQUIRED for skill regex/grep/awk/jq/sed changes)
+
+**When to apply:** Diff modifies skill markdown files (`.claude/skills/**/*.md`, `templates/skills/**/*.md`, `skills/**/*.md`) AND adds or modifies regex literals or `grep`/`awk`/`jq`/`sed` commands inside those files.
+
+**Purpose:** Prompt-only skill changes (regex/grep/awk/jq inside `SKILL.md`) have **no automated test coverage**. Section 6a (Skill Command Verification) checks command syntax — whether `gh pr checks --json conclusion` is a valid field — but does NOT check whether `awk '/^### AC-[0-9]+/'` actually matches real spec headers. A pattern that is syntactically valid but matches the wrong corpus produces a **silent detection failure** — the worst kind of bug, because the pipeline reports success.
+
+**Origin (PR #547 / issue #529):** Three such bugs shipped in a single PR before adversarial review surfaced them:
+
+1. `jq 'select(contains("SEQUANT_PHASE") and contains("spec"))'` matched 5 unrelated comments and returned a QA comment as "the spec plan"
+2. `awk '/^### AC-[0-9]+/'` only matched 3-hash headers, missing `#### AC-N` and `**AC-N:**` (~45% of sampled past specs)
+3. The grep regex omitted `**Verify:**` as a prefix — even though the issue body's verbatim motivating example used that exact prefix
+
+Each was a 30-second diagnostic once piped through real corpus. None showed up in static review of the diff against AC text because every pattern was syntactically valid and matched the AC description in the abstract.
+
+#### Step 1: Detect Pattern Changes
+
+```bash
+# Skill markdown files modified in this PR
+skill_md_changed=$(git diff origin/main...HEAD --name-only | \
+  grep -E '^(\.claude/skills|templates/skills|skills)/.*\.md$' || true)
+
+# Among those, ADDED lines that introduce a grep/awk/jq/sed command or a regex literal
+pattern_changes=""
+for f in $skill_md_changed; do
+  added=$(git diff origin/main...HEAD -- "$f" | \
+    awk '/^\+[^+]/ { print substr($0, 2) }' | \
+    grep -E '(\bgrep -[A-Za-z]+|\bawk [\x27"]|\bjq [\x27"]|\bsed [\x27"]|/\^[^/]+/|\(\?[:=!]|\\b[A-Za-z]+\\b)' || true)
+  if [[ -n "$added" ]]; then
+    pattern_changes="${pattern_changes}\n=== $f ===\n${added}"
+  fi
+done
+
+if [[ -z "$pattern_changes" ]]; then
+  echo "No pattern changes detected — verification not required"
+  # Set detection_pattern_status = "Not Required"
+fi
+```
+
+**Manual review fallback:** Heuristic regex misses some pattern shapes (multi-line `awk` blocks, complex `sed` programs, regex literals embedded in JSON examples). Even when the script reports zero matches, scan the diff for pattern-shaped additions if any of `grep`/`awk`/`jq`/`sed`/`regex`/`pattern` appear in the diff text.
+
+#### Step 2: Identify Intended Corpus per Pattern
+
+For each modified pattern, determine WHERE it is supposed to match. Use the surrounding skill prose (section title, preceding paragraph, the bash variable name) to infer the corpus:
+
+| Pattern Context | Corpus Source | How to Sample |
+|-----------------|---------------|---------------|
+| Spec plan parsing | Past `/spec` comments on GitHub issues | `gh search issues "SEQUANT_PHASE spec" --limit 10 --json number` then fetch comment bodies |
+| Assess action parsing | Past `/assess` comments | `gh search issues "assess:action" --limit 10 --json number` |
+| QA verdict parsing | Past `/qa` review comments | `gh search issues "QA Review" --limit 10 --json number` |
+| Issue body extraction | Real issue bodies | `gh issue view <N> --json body` for ≥5 representative issues |
+| AC checkbox detection | Issue/PR bodies with `- [ ] AC-N` | Sample ≥5 issues from current milestone |
+| Skill markdown | This repo's own `.claude/skills/**/*.md` | Local files (no API call needed) |
+| Generic markdown | Repo `*.md` fixtures, `docs/`, examples | Local files |
+
+If a pattern's corpus cannot be identified from surrounding prose, that itself is a finding — the skill author needs to document where the pattern is meant to match before it ships.
+
+#### Step 3: Execute Pattern Against ≥5 Real Samples
+
+For each detected pattern, sample at least 5 real instances from the identified corpus and run the pattern. Record actual matches vs. AC-claimed expected matches.
+
+```bash
+# Example: verifying a new awk header regex against past /spec comments
+samples=$(gh search issues "SEQUANT_PHASE spec" --limit 10 --json number -q '.[].number')
+sample_count=0
+for n in $samples; do
+  body=$(gh issue view "$n" --json comments \
+    -q '.comments[].body | select(contains("SEQUANT_PHASE") and contains("spec"))' || true)
+  [[ -z "$body" ]] && continue
+  matches=$(echo "$body" | awk '/^### AC-[0-9]+/' | wc -l | xargs)
+  expected_at_least=1   # AC says pattern should match ≥1 AC header per spec
+  status="Passed"
+  [[ "$matches" -lt "$expected_at_least" ]] && status="Failed"
+  echo "issue #$n: matched=$matches expected≥$expected_at_least → $status"
+  sample_count=$((sample_count + 1))
+done
+[[ "$sample_count" -lt 5 ]] && echo "⚠ Only $sample_count samples available — increase corpus"
+```
+
+**Output table (REQUIRED):**
+
+| Pattern | Corpus | Samples | Expected | Actual | Status |
+|---------|--------|---------|----------|--------|--------|
+| `awk '/^### AC-[0-9]+/'` | past `/spec` comments | 5 | ≥1 match per | 3/5 had 0 matches | ❌ Failed |
+| `jq 'select(contains("SEQUANT_PHASE"))'` | issue comments | 5 | exactly 1 spec comment | returned 5 | ❌ Failed |
+
+#### Step 4: Motivating-Example Fixture Verification (REQUIRED)
+
+Snippets quoted in the **issue body** as motivating examples or AC verification targets are **mandatory test fixtures**. The new pattern MUST produce the AC-claimed result on each. This is belt-and-suspenders to Step 3 — Step 3 catches general corpus drift; Step 4 catches the specific case the AC was written to address.
+
+**What counts as a motivating-example fixture:**
+
+- Blockquoted text (lines starting with `>`)
+- Fenced code blocks (` ``` `) under non-Setup/non-Install headings
+- Lines prefixed with `**Verify:**`, `**Verbatim:**`, `**Example:**`, `**AC verification:**`
+- Verbatim spec excerpts referenced in the AC text (e.g. "the issue body's verbatim motivating example used that exact prefix")
+
+**What is excluded:**
+
+- Code blocks under headings named `## Setup`, `## Install`, `## Prerequisites`, `## How to install` (these are environment commands, not fixtures)
+- Generic shell session transcripts unrelated to the pattern under test
+
+**Extraction recipe:**
+
+```bash
+issue_body=$(gh issue view <issue-number> --json body -q '.body')
+
+# Blockquotes
+echo "$issue_body" | grep -E '^>' || true
+
+# Fenced code blocks (excluding Setup/Install/Prerequisites sections)
+echo "$issue_body" | awk '
+  /^## (Setup|Install|Prerequisites|How to install)/ { skip=1; next }
+  /^## / && skip { skip=0 }
+  /^```/ { in_block=!in_block; next }
+  in_block && !skip { print }
+'
+
+# Bold-prefixed example lines
+echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*' || true
+```
+
+**Run the new pattern against each extracted fixture.** For every fixture the AC says should match, the pattern MUST produce a match. **A 0-match result on a verbatim AC fixture is automatically `Failed`.**
+
+#### Step 5: Detection Pattern Verification Status
+
+| Status | Meaning |
+|--------|---------|
+| **Passed** | All patterns matched their corpora at the AC-claimed rate; all motivating-example fixtures matched |
+| **Failed** | At least one pattern produced 0 matches against input the AC says should match (corpus or fixture) |
+| **Skipped** | Patterns identified but corpus unavailable (e.g. `gh` offline / unauth / rate-limited); document the specific reason |
+| **Not Required** | No pattern changes in skill markdown |
+
+**CORPUS-UNAVAILABLE RULE:** If `gh` is unauthenticated, offline, or rate-limited, mark `Skipped` with the specific reason. Do **NOT** silently mark `Passed`.
+
+#### Verdict Gating (STRICTER than Section 6a)
+
+| Verification Status | Maximum Verdict |
+|---------------------|-----------------|
+| Passed | READY_FOR_MERGE |
+| Skipped | AC_MET_BUT_NOT_A_PLUS (note unverified corpus) |
+| **Failed** | **`AC_NOT_MET`** (silent detection failures are worse than wrong CLI flags — block merge) |
+| Not Required | READY_FOR_MERGE |
+
+**Rationale for stricter gate vs Section 6a:** Section 6a catches CLI commands that error out at runtime (loud failures). Detection patterns silently match the wrong thing (quiet failures the pipeline reports as success). The 3 bugs in PR #547 all passed Section 6a-style review and only surfaced when patterns were piped through real input.
+
+**Output Format:**
+
+```markdown
+### Detection Pattern Verification
+
+**Skill markdown files with pattern changes:** N
+
+| Pattern | Corpus | Samples | Expected | Actual | Status |
+|---------|--------|---------|----------|--------|--------|
+| `awk '/^### AC-[0-9]+/'` | past `/spec` comments | 5 | ≥1 per | 3/5 = 0 | ❌ Failed |
+| `grep -E '\*\*Verify:\*\*'` | issue #551 body | 1 (verbatim fixture) | matched | matched | ✅ Passed |
+
+**Motivating-example fixtures from issue body:** M (all run against the new pattern)
+
+**Verification Status:** Failed (1 pattern misses ~45% of corpus)
+```
+
+---
+
 ### 7. A+ Status Verdict
 
 Provide an overall verdict:
@@ -1752,6 +1916,7 @@ Provide an overall verdict:
    - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
    - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
+   - detection_pattern_status = status from Section 6c (Passed/Failed/Skipped/Not Required)
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -1772,6 +1937,8 @@ Provide an overall verdict:
 4. Determine verdict (in order):
    - IF not_met_count > 0 OR partial_count > 0:
        → AC_NOT_MET (block merge)
+   - ELSE IF detection_pattern_status == "Failed":
+       → AC_NOT_MET (silent detection failures - block merge; STRICTER than skill_verification because pattern bugs report success but match the wrong corpus)
    - ELSE IF skill_verification == "Failed":
        → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
    - ELSE IF execution_evidence == "Incomplete":
@@ -1788,6 +1955,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (some quality dimensions incomplete - can merge with notes)
    - ELSE IF smoke_test_status == "Partial":
        → AC_MET_BUT_NOT_A_PLUS (smoke tests incomplete - document gaps before merge)
+   - ELSE IF detection_pattern_status == "Skipped":
+       → AC_MET_BUT_NOT_A_PLUS (corpus unavailable for pattern verification - document reason)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
@@ -1925,6 +2094,8 @@ In some cases, runtime verification can be safely skipped for manual-test ACs wh
 **CRITICAL:** `PARTIALLY_MET` is NOT sufficient for merge. It MUST be treated as `NOT_MET` for verdict purposes.
 
 **CRITICAL:** If skill command verification = "Failed", verdict CANNOT be `READY_FOR_MERGE`. This prevents shipping skills with broken commands (like issue #178's `conclusion` field).
+
+**CRITICAL:** If detection pattern verification = "Failed" (Section 6c), verdict MUST be `AC_NOT_MET` — stricter than the skill_verification gate. Silent detection failures (regex/grep/awk/jq matching the wrong corpus while reporting success) are worse than wrong CLI flags because the pipeline reports success.
 
 See [quality-gates.md](references/quality-gates.md) for detailed verdict criteria.
 
@@ -2166,6 +2337,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - Smoke Test
 - CLI Registration Verification
 - Skill Command Verification
+- Detection Pattern Verification
 - Script Verification Override
 - Skill Change Review
 
@@ -2181,6 +2353,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
+- [ ] Adversarial re-read of core logic — list anything the structured pipeline didn't surface
 
 ### Standard QA (Implementation Exists, `SMALL_DIFF=false`)
 
@@ -2200,12 +2373,14 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Execution Evidence** - Included if scripts/CLI modified (or marked N/A)
 - [ ] **Script Verification Override** - Included if scripts/CLI modified AND /verify was skipped (with justification and risk assessment)
 - [ ] **Skill Command Verification** - Included if `.claude/skills/**/*.md` modified (or marked N/A)
+- [ ] **Detection Pattern Verification** - Included if skill markdown adds new `grep`/`awk`/`jq`/`sed`/regex (or marked N/A)
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
+- [ ] Adversarial re-read of core logic — list anything the structured pipeline didn't surface
 
 ### Early Exit (No Implementation)
 
@@ -2533,6 +2708,24 @@ You MUST include these sections:
 - `[command]` → ❌ [issue description]
 
 **Verification Status:** Passed / Failed / Skipped / Not Required
+
+---
+
+### Detection Pattern Verification
+
+[Include if skill markdown adds/modifies `grep`/`awk`/`jq`/`sed` commands or regex literals, otherwise: "N/A - No pattern changes in skill markdown"]
+
+**Skill markdown files with pattern changes:** X
+
+| Pattern | Corpus | Samples | Expected | Actual | Status |
+|---------|--------|---------|----------|--------|--------|
+| `[pattern]` | [corpus source] | [N samples] | [AC-claimed result] | [observed] | ✅ Passed / ❌ Failed |
+
+**Motivating-example fixtures from issue body:** Y (run against the new pattern)
+
+**Verification Status:** Passed / Failed / Skipped / Not Required
+
+**Verdict impact (stricter than 6a):** Failed → `AC_NOT_MET` (silent detection failures block merge)
 
 ---
 
