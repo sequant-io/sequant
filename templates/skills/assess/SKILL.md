@@ -248,7 +248,7 @@ The commands block is headed by `Commands:` — no box-drawing, no character cou
 5. Chain mode issues use `--chain` flag (see `Chain:` annotation rules below)
 6. If ALL issues share the same workflow, emit a single command
 7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
-8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts:186`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — currently `--testgen` is the only additive flag (`bin/cli.ts:208`); use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Asymmetry: no `--security-review` additive flag exists yet, so security-review workflows still require `--phases`. The posted marker (`<!-- assess:phases=… -->`) records the full resolved workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
+8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts:186`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — additive flags: `--testgen` and `--security-review` (`bin/cli.ts:208-209`). Use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Use `--security-review` instead of `--phases spec,security-review,exec,qa`. The posted marker (`<!-- assess:phases=… -->`) records the full resolved workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
 
 #### Annotation Rules
 
@@ -298,7 +298,7 @@ Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
 ────────────────────────────────────────────────────────────────
 Commands:
   npx sequant run 461 460 458 443 -q
-  npx sequant run 412 -q --phases spec,security-review,exec,qa
+  npx sequant run 412 -q --security-review
   npx sequant run 411 -q --phases exec,qa     # resume
   npx sequant run 405 -q                      # restart
 ────────────────────────────────────────────────────────────────
@@ -310,7 +310,7 @@ Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depe
 
 Flags:
   -q                              multi-file scope across most PROCEED issues
-  --phases ...,security-review    #412 auth label → security review required
+  --security-review               #412 auth label → security review required
   --phases exec,qa                #411 resume — prior spec marker already exists
 ────────────────────────────────────────────────────────────────
 Cleanup:
@@ -403,7 +403,7 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
 Commands:
   npx sequant run 503 502 501 499 498 497 -q
   npx sequant run 495 494 492 491 -q
-  npx sequant run 500 -q --phases spec,security-review,exec,qa
+  npx sequant run 500 -q --security-review
 ────────────────────────────────────────────────────────────────
 Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
 
@@ -411,7 +411,7 @@ Order: 497 → 492 (497 refactors batch-executor internals that 492's export com
 ⚠ #499  bug + ui labels — ui (domain) adds test phase
 
 Flags:
-  --phases ...,security-review   #500 auth label → security review required
+  --security-review     #500 auth label → security review required
 ────────────────────────────────────────────────────────────────
 Cleanup:
   gh issue close 493                   # duplicate of #491
