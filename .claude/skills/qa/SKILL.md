@@ -1752,7 +1752,7 @@ pattern_changes=""
 for f in $skill_md_changed; do
   added=$(git diff origin/main...HEAD -- "$f" | \
     awk '/^\+[^+]/ { print substr($0, 2) }' | \
-    grep -E '(\bgrep -[A-Za-z]+|\bawk [\x27"]|\bjq [\x27"]|\bsed [\x27"]|/\^[^/]+/|\(\?[:=!]|\\b[A-Za-z]+\\b)' || true)
+    grep -E '(\b(grep|awk|jq|sed) [-\x27"]|/\^[^/]+/|\(\?[:=!]|\\b[A-Za-z]+\\b)' || true)
   if [[ -n "$added" ]]; then
     pattern_changes="${pattern_changes}\n=== $f ===\n${added}"
   fi
@@ -1764,7 +1764,7 @@ if [[ -z "$pattern_changes" ]]; then
 fi
 ```
 
-**Manual review fallback:** Heuristic regex misses some pattern shapes (multi-line `awk` blocks, complex `sed` programs, regex literals embedded in JSON examples). Even when the script reports zero matches, scan the diff for pattern-shaped additions if any of `grep`/`awk`/`jq`/`sed`/`regex`/`pattern` appear in the diff text.
+**Manual review fallback:** Heuristic regex misses some pattern shapes — bare `grep "pattern"` with no flag, multi-line `awk` blocks, complex `sed` programs, regex literals embedded in JSON examples, non-anchored character classes (`[A-Z]+`, `(\d+)`). Even when the script reports zero matches, scan the diff for pattern-shaped additions if any of `grep`/`awk`/`jq`/`sed`/`regex`/`pattern` appear in the diff text.
 
 #### Step 2: Identify Intended Corpus per Pattern
 
@@ -1772,13 +1772,15 @@ For each modified pattern, determine WHERE it is supposed to match. Use the surr
 
 | Pattern Context | Corpus Source | How to Sample |
 |-----------------|---------------|---------------|
-| Spec plan parsing | Past `/spec` comments on GitHub issues | `gh search issues "SEQUANT_PHASE spec" --limit 10 --json number` then fetch comment bodies |
-| Assess action parsing | Past `/assess` comments | `gh search issues "assess:action" --limit 10 --json number` |
-| QA verdict parsing | Past `/qa` review comments | `gh search issues "QA Review" --limit 10 --json number` |
+| Spec plan parsing | Past `/spec` comments on GitHub issues | `gh api 'repos/{owner}/{repo}/issues/comments?per_page=100' --paginate -q '.[] \| select(.body \| contains("SEQUANT_PHASE: spec")) \| .body'` |
+| Assess action parsing | Past `/assess` comments | `gh api 'repos/{owner}/{repo}/issues/comments?per_page=100' --paginate -q '.[] \| select(.body \| contains("assess:action=")) \| .body'` |
+| QA verdict parsing | Past `/qa` review comments | `gh api 'repos/{owner}/{repo}/issues/comments?per_page=100' --paginate -q '.[] \| select(.body \| startswith("## /qa Review")) \| .body'` |
 | Issue body extraction | Real issue bodies | `gh issue view <N> --json body` for ≥5 representative issues |
 | AC checkbox detection | Issue/PR bodies with `- [ ] AC-N` | Sample ≥5 issues from current milestone |
 | Skill markdown | This repo's own `.claude/skills/**/*.md` | Local files (no API call needed) |
 | Generic markdown | Repo `*.md` fixtures, `docs/`, examples | Local files |
+
+**Why `gh api` over `gh search issues`:** `gh search` relies on GitHub's full-text search index, which does not reliably cover HTML-comment markers (`<!-- SEQUANT_PHASE: spec -->`) buried in comment bodies. Query strings containing `:` (e.g. `assess:action`) are also parsed as search qualifiers and return empty. `gh api` returns raw JSON that local `jq` filters can match deterministically against the actual marker text.
 
 If a pattern's corpus cannot be identified from surrounding prose, that itself is a finding — the skill author needs to document where the pattern is meant to match before it ships.
 
@@ -1787,21 +1789,23 @@ If a pattern's corpus cannot be identified from surrounding prose, that itself i
 For each detected pattern, sample at least 5 real instances from the identified corpus and run the pattern. Record actual matches vs. AC-claimed expected matches.
 
 ```bash
-# Example: verifying a new awk header regex against past /spec comments
-samples=$(gh search issues "SEQUANT_PHASE spec" --limit 10 --json number -q '.[].number')
+# Example: verifying a new awk header regex against past /spec comments.
+# Fetch comment bodies via gh api (full-text search of HTML markers is unreliable).
+spec_bodies=$(gh api 'repos/{owner}/{repo}/issues/comments?per_page=100' --paginate \
+  -q '.[] | select(.body | contains("SEQUANT_PHASE: spec")) | .body' || true)
 sample_count=0
-for n in $samples; do
-  body=$(gh issue view "$n" --json comments \
-    -q '.comments[].body | select(contains("SEQUANT_PHASE") and contains("spec"))' || true)
+while IFS= read -r body; do
   [[ -z "$body" ]] && continue
   matches=$(echo "$body" | awk '/^### AC-[0-9]+/' | wc -l | xargs)
   expected_at_least=1   # AC says pattern should match ≥1 AC header per spec
   status="Passed"
   [[ "$matches" -lt "$expected_at_least" ]] && status="Failed"
-  echo "issue #$n: matched=$matches expected≥$expected_at_least → $status"
   sample_count=$((sample_count + 1))
-done
-[[ "$sample_count" -lt 5 ]] && echo "⚠ Only $sample_count samples available — increase corpus"
+  echo "sample $sample_count: matched=$matches expected≥$expected_at_least → $status"
+done <<< "$spec_bodies"
+if [[ "$sample_count" -lt 5 ]]; then
+  echo "⚠ Only $sample_count samples available — set detection_pattern_status='Insufficient Samples'"
+fi
 ```
 
 **Output table (REQUIRED):**
@@ -1853,18 +1857,22 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 
 | Status | Meaning |
 |--------|---------|
-| **Passed** | All patterns matched their corpora at the AC-claimed rate; all motivating-example fixtures matched |
+| **Passed** | All patterns matched their corpora at the AC-claimed rate (≥5 samples each); all motivating-example fixtures matched |
 | **Failed** | At least one pattern produced 0 matches against input the AC says should match (corpus or fixture) |
-| **Skipped** | Patterns identified but corpus unavailable (e.g. `gh` offline / unauth / rate-limited); document the specific reason |
+| **Insufficient Samples** | Corpus exists but fewer than 5 representative instances were available; reviewer must record the actual count |
+| **Skipped** | Patterns identified but corpus fully unavailable (e.g. `gh` offline / unauth / rate-limited); document the specific reason |
 | **Not Required** | No pattern changes in skill markdown |
 
 **CORPUS-UNAVAILABLE RULE:** If `gh` is unauthenticated, offline, or rate-limited, mark `Skipped` with the specific reason. Do **NOT** silently mark `Passed`.
+
+**SPARSE-CORPUS RULE:** If corpus is reachable but fewer than 5 samples are found (and all matched), mark `Insufficient Samples` with the actual count. Do **NOT** silently mark `Passed` — AC-2 requires ≥5 samples.
 
 #### Verdict Gating (STRICTER than Section 6a)
 
 | Verification Status | Maximum Verdict |
 |---------------------|-----------------|
 | Passed | READY_FOR_MERGE |
+| Insufficient Samples | AC_MET_BUT_NOT_A_PLUS (sparse corpus — record actual count) |
 | Skipped | AC_MET_BUT_NOT_A_PLUS (note unverified corpus) |
 | **Failed** | **`AC_NOT_MET`** (silent detection failures are worse than wrong CLI flags — block merge) |
 | Not Required | READY_FOR_MERGE |
@@ -1916,7 +1924,7 @@ Provide an overall verdict:
    - execution_evidence = status from Section 6 (Complete/Incomplete/Waived/Not Required)
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
    - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
-   - detection_pattern_status = status from Section 6c (Passed/Failed/Skipped/Not Required)
+   - detection_pattern_status = status from Section 6c (Passed/Failed/Insufficient Samples/Skipped/Not Required)
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -1955,6 +1963,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (some quality dimensions incomplete - can merge with notes)
    - ELSE IF smoke_test_status == "Partial":
        → AC_MET_BUT_NOT_A_PLUS (smoke tests incomplete - document gaps before merge)
+   - ELSE IF detection_pattern_status == "Insufficient Samples":
+       → AC_MET_BUT_NOT_A_PLUS (sparse corpus - record actual sample count)
    - ELSE IF detection_pattern_status == "Skipped":
        → AC_MET_BUT_NOT_A_PLUS (corpus unavailable for pattern verification - document reason)
    - ELSE IF improvement_suggestions.length > 0:
@@ -2723,7 +2733,7 @@ You MUST include these sections:
 
 **Motivating-example fixtures from issue body:** Y (run against the new pattern)
 
-**Verification Status:** Passed / Failed / Skipped / Not Required
+**Verification Status:** Passed / Failed / Insufficient Samples / Skipped / Not Required
 
 **Verdict impact (stricter than 6a):** Failed → `AC_NOT_MET` (silent detection failures block merge)
 
