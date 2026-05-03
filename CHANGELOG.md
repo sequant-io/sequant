@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/fullsolve` quality-loop misroute** — fixed unqualified `Skill("loop")` calls in fullsolve SKILL.md resolving to Anthropic's top-level recurring-prompt `loop` skill instead of sequant's quality-loop skill, causing the workflow to silently prompt the user to schedule a recurring task instead of running the test/QA fix iteration. All 6 occurrences across the 3 mirrored fullsolve SKILL.md files (`.claude/skills/`, `skills/`, `templates/skills/`) now use the qualified form `Skill("sequant:loop", ...)`. (#562)
+
 ### Added
 
 - **Prior assessment detection in `/assess`** — `/assess` now scans existing issue comments for prior `<!-- assess:action=... -->` markers before posting. New comments prepend a supersession header (`Supersedes prior assess from <date> (<action>)` for one prior, `Supersedes N prior assessments (most recent: <date>)` for multiple). When ≥3 priors exist with no intervening exec phase marker, the dashboard emits a re-assessment churn warning. When the new recommendation conflicts with a prior `PROCEED` or `REWRITE`, the user is prompted to confirm via `AskUserQuestion` before posting (skipped for prior `CLOSE`/`PARK`/`CLARIFY`/`MERGE`). New parser exports in `src/lib/assess-comment-parser.ts`: `findAllAssessComments()`, `buildSupersessionHeader()`, `detectChurn()`, `shouldPromptOnConflict()`. Detection matches the durable HTML action marker — works on production dashboard-format comments that lack the legacy `## Assess Analysis` prose header. (#555)
