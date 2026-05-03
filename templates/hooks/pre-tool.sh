@@ -117,7 +117,8 @@ fi
 
 # Force push
 # Pattern requires -f to be a standalone flag (not part of branch name like -fix)
-if echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
+if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
     echo "HOOK_BLOCKED: Force push" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
@@ -225,7 +226,8 @@ check_sensitive_files() {
 
 if [[ "${CLAUDE_HOOKS_SECURITY:-true}" != "false" ]]; then
     # Security checks for git commit
-    if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+    # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
+    if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
         # Skip security checks if --no-verify is used
         if ! echo "$TOOL_INPUT" | grep -qE -- '--no-verify'; then
             # Check staged files for secrets
@@ -257,7 +259,8 @@ fi
 # --- No-Changes Guard (AC-7) ---
 # Block commits when there are no staged or unstaged changes (prevents empty commits)
 # Skips for --amend since amending doesn't require new changes
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
+if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     if ! echo "$TOOL_INPUT" | grep -qE -- '--amend|--allow-empty'; then
         # Extract target directory from cd command if present (for worktree commits)
         # Handles: "cd /path && git commit" or "cd /path; git commit"
@@ -284,7 +287,8 @@ fi
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
 QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
+if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     CWD=$(pwd)
     if ! echo "$CWD" | grep -qE 'worktrees/feature/'; then
         echo "$(date +%H:%M:%S) WORKTREE_WARNING: Committing outside feature worktree ($CWD)" >> "$QUALITY_LOG"
@@ -295,7 +299,8 @@ fi
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
+if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     # Extract message from -m flag
     MSG=""
 
