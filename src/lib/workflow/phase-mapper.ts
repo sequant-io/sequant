@@ -16,6 +16,7 @@ import type { Phase } from "./types.js";
  */
 interface PhaseMapperOptions {
   testgen?: boolean;
+  securityReview?: boolean;
 }
 
 /**
@@ -175,6 +176,15 @@ export function determinePhasesForIssue(
     const specIndex = phases.indexOf("spec");
     if (!phases.includes("testgen")) {
       phases.splice(specIndex + 1, 0, "testgen");
+    }
+  }
+
+  // Add security-review phase after spec if requested.
+  // Idempotent vs label-based auto-detection in detectPhasesFromLabels.
+  if (options.securityReview && phases.includes("spec")) {
+    const specIndex = phases.indexOf("spec");
+    if (!phases.includes("security-review")) {
+      phases.splice(specIndex + 1, 0, "security-review");
     }
   }
 

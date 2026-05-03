@@ -138,7 +138,7 @@ describe("assess skill CLI flag accuracy", () => {
     }
   });
 
-  it("should not restate default phases or non-additive testgen in example commands", () => {
+  it("should not restate default phases or non-additive testgen/security-review in example commands", () => {
     const exampleLines = skillContent
       .split("\n")
       .filter((line) => /sequant\s+run\b/.test(line));
@@ -148,6 +148,7 @@ describe("assess skill CLI flag accuracy", () => {
     for (const line of exampleLines) {
       expect(line).not.toMatch(/--phases\s+spec,exec,qa\b/);
       expect(line).not.toMatch(/--phases\s+\S*\btestgen\b/);
+      expect(line).not.toMatch(/--phases\s+\S*\bsecurity-review\b/);
     }
   });
 });
