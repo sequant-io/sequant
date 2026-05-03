@@ -214,6 +214,7 @@ check_sensitive_files() {
 
 if [[ "${CLAUDE_HOOKS_SECURITY:-true}" != "false" ]]; then
     # Security checks for git commit
+    # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
     if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
         # Skip security checks if --no-verify is used
         if ! echo "$TOOL_INPUT" | grep -qE -- '--no-verify'; then
@@ -246,6 +247,7 @@ fi
 # --- No-Changes Guard (AC-7) ---
 # Block commits when there are no staged or unstaged changes (prevents empty commits)
 # Skips for --amend since amending doesn't require new changes
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
 if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     if ! echo "$TOOL_INPUT" | grep -qE -- '--amend|--allow-empty'; then
         # Extract target directory from cd command if present (for worktree commits)
@@ -273,6 +275,7 @@ fi
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
 QUALITY_LOG="/tmp/claude-quality.log"
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
 if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     CWD=$(pwd)
     if ! echo "$CWD" | grep -qE 'worktrees/feature/'; then
@@ -284,6 +287,7 @@ fi
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
 if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     # Extract message from -m flag
     MSG=""
