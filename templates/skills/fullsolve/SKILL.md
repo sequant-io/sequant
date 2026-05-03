@@ -446,7 +446,7 @@ while test_iteration < MAX_TEST_ITERATIONS:
         break
 
     # Use /loop to fix failures
-    Skill(skill: "loop", args: "<issue-number> --phase test")
+    Skill(skill: "sequant:loop", args: "<issue-number> --phase test")
     test_iteration += 1
 ```
 
@@ -524,7 +524,7 @@ while qa_iteration < MAX_QA_ITERATIONS:
         break
 
     # Use /loop to fix issues (AC_NOT_MET)
-    Skill(skill: "loop", args: "<issue-number> --phase qa")
+    Skill(skill: "sequant:loop", args: "<issue-number> --phase qa")
     qa_iteration += 1
 ```
 
