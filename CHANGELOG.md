@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Default workflow: spec phase ON for bug/docs issues** — the "skip spec when (bug/docs label AND no domain labels)" shortcut has been removed at both the skill-recommendation layer (`/assess`) and the runtime auto-detection layer (`phase-mapper.detectPhasesFromLabels`, `batch-executor` auto-detect). Bug- and docs-labeled issues now run `spec → exec → qa` by default under `sequant run --auto-detect`. Spec is only skipped when a prior `spec` phase marker already exists on the issue. Real-world batches showed that bug and docs issues frequently contain design decisions (scope boundaries, edge cases, test-strategy shifts) that benefit from a spec pass, and post-#515 the per-phase cost is small enough to justify universal inclusion. Docs-labeled issues still propagate `issueType: "docs"` through post-spec phases for downstream skills (e.g. lighter `/qa` pipeline). Override with explicit `--phases exec,qa`. (#533)
 
+### Fixed
+
+- **Pre-tool hook regexes now skip `gh issue|pr` body content** — the force-push regex and all four `git commit` regex sites in `pre-tool.sh` (security-checks, no-changes guard, worktree warning, conventional-commits validator) are now gated behind the same `^gh (issue|pr) ` exclusion that already guarded the secrets/credentials checks. Previously, `gh issue create` / `gh pr create` / `gh issue comment` / `gh pr comment` calls whose body text merely *referenced* these tokens (e.g. a doc explaining the hook itself, or a release note) were blocked at the tool-call level. Mirrored across all three hook copies (`templates/hooks/pre-tool.sh`, `hooks/pre-tool.sh`, `.claude/hooks/pre-tool.sh`). Follow-up to #532. (#564)
+
 ## [2.2.0] - 2026-04-18
 
 ### Added
