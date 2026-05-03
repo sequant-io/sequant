@@ -297,6 +297,10 @@ export function getEnvConfig(): Partial<RunOptions> {
     config.testgen = true;
   }
 
+  if (process.env.SEQUANT_SECURITY_REVIEW === "true") {
+    config.securityReview = true;
+  }
+
   return config;
 }
 
@@ -651,6 +655,23 @@ export async function runIssueWithLogging(
       const specIndex = phases.indexOf("spec");
       if (specIndex !== -1) {
         phases.splice(specIndex + 1, 0, "testgen");
+      }
+    }
+  }
+
+  // Add security-review phase if requested (and spec was in the phases).
+  // Idempotent vs label-based auto-detection — only inserts if not present.
+  if (
+    options.securityReview &&
+    (phases.includes("spec") || specAlreadyRan) &&
+    !phases.includes("security-review")
+  ) {
+    if (specAlreadyRan) {
+      phases.unshift("security-review");
+    } else {
+      const specIndex = phases.indexOf("spec");
+      if (specIndex !== -1) {
+        phases.splice(specIndex + 1, 0, "security-review");
       }
     }
   }
