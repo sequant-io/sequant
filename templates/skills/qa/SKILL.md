@@ -1477,6 +1477,14 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 **If either field reveals significant concerns**, factor them into your verdict. A serious failure mode with no test coverage should downgrade to `AC_MET_BUT_NOT_A_PLUS` or `AC_NOT_MET`.
 
+#### Sibling-site Scan (Conditional)
+
+**When to apply:** Focused AC + a localized fix in a multi-pattern file (same root cause likely repeats elsewhere in the same file/module).
+
+**Before declaring AC met**, scan the same file/module for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict — as expanded scope (only when trivial), follow-up issue suggestion, or `NEEDS_VERIFICATION` note. **Don't widen scope mid-PR; file a follow-up issue instead.**
+
+This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at the same file" prompt.
+
 #### Skill Change Review (Conditional)
 
 **When to apply:** `.claude/skills/**/*.md` files were modified.
