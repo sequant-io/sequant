@@ -78,6 +78,7 @@ gh pr list --search "<N> in:title" --json number,title,state,headRefName,mergeab
 - Grep for TODOs: `Grep(pattern="TODO.*#<N>")`
 - Check files referenced in issue body exist
 - Identify modified files if branch exists
+- For predicted-collision detection (see Step 5), pass each PROCEED candidate's body through `extractPathsFromIssueBody` from `src/lib/assess-collision-detect.ts` to build the issue → paths map used in Step 5
 
 #### Prior Assessment Detection
 
@@ -185,16 +186,16 @@ For each active worktree, check `git diff --name-only main...HEAD` for file over
 
 | Function | Purpose |
 |----------|---------|
-| `extractPathsFromIssueBody(body)` | Strips fenced code blocks and HTML comments, then returns the set of source-tree paths the body names. Backtick-quoted paths under `.claude/`, `templates/`, `skills/`, `src/`, `bin/`, `docs/` matching `*.md`, `*.ts`, `*.tsx`, `*.json`, `*.sh` are extracted directly. When the body also mentions "3-dir sync" (or "across all three skill directories"), bare `<name>/SKILL.md` references and `/<skill>` slash-command mentions are expanded to all three skill-root mirrors. Globally excluded paths (`CHANGELOG.md`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) are stripped. |
-| `detectFileCollisions(issuePaths)` | Computes pairwise file-path intersections across the PROCEED issues. Returns one `CollisionResult` per shared file: `{ issues: number[], file: string }`. When N issues share a file, that's a single result with `issues.length === N`. |
+| `extractPathsFromIssueBody(body)` | Strips fenced code blocks and HTML comments, then returns the set of canonical paths the body names. Backtick-quoted paths under `.claude/`, `templates/`, `skills/`, `src/`, `bin/`, `docs/` matching `*.md`, `*.ts`, `*.tsx`, `*.json`, `*.sh` are extracted; skill-mirror prefixes (`.claude/skills/`, `templates/skills/`, `skills/`) are normalized away so `qa/SKILL.md` is the canonical form. When the body also mentions "3-dir sync" (or "across all three skill directories"), bare `<name>/SKILL.md` references and `/<skill>` slash-command mentions are also added. Globally excluded paths (`CHANGELOG.md`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`) are stripped. |
+| `detectFileCollisions(issuePaths)` | Computes pairwise file-path intersections across the PROCEED issues. Returns one `CollisionResult` per shared file: `{ issues: number[], file: string }`. When N issues share a file, that's a single result with `issues.length === N`. Because paths are canonical, mirrored skill files emit one collision, not three. |
 | `formatCollisionAnnotations(results)` | Returns `{ orderLines, warnings, chainSuggestion? }`. Each pair (or group) emits an `Order: A → B (path)` line and one `⚠ #N  Modifies <path> (overlaps #M); land sequentially` per affected issue. When ≥3 issues collide on the same file, a `Chain:` suggestion is also returned (suggest-only — never auto-applied). |
 
 **Output integration:**
 
-1. After Step 4 produces the PROCEED set, call `extractPathsFromIssueBody` for each PROCEED issue's body.
-2. Pass the resulting `Map<issueNumber, Set<path>>` to `detectFileCollisions`.
+1. Step 1 (Context Gathering) already calls `extractPathsFromIssueBody` per PROCEED candidate to build the issue → paths map.
+2. After Step 4 produces the PROCEED set, pass the map to `detectFileCollisions`.
 3. Render the formatted annotations in the dashboard alongside the active-worktree overlap warnings — same `Order:` / `⚠` / `Chain:` blocks defined in "Annotation Rules" below.
-4. The bare-filename `Order:` exception (e.g. `Order: 460 → 461 (qa/SKILL.md)`) applies here — predicted collisions are file-collision reasons by definition.
+4. The bare-filename `Order:` exception (e.g. `Order: 551 → 552 (qa/SKILL.md)`) applies here — predicted collisions are file-collision reasons by definition.
 
 False-positive guards and tunables (excluded paths, the path regex, the slash-command-skill derivation rule) are documented in [`references/predicted-collision-detection.md`](references/predicted-collision-detection.md) so they can change without editing this skill.
 

@@ -39,13 +39,24 @@ Examples that **don't** match:
 - `` `.claude/skills/**/*.md` `` — glob, not a literal path
 - `` `references/foo.md` `` — `references` is not a tracked root (it lives under `skills/<name>/`)
 
-### 3. Bare `<name>/SKILL.md` references (gated on 3-dir sync)
+### 3. Canonical bare form for skill files
 
-When the body also signals "3-dir sync" (regex below), bare skill-file mentions like `` `qa/SKILL.md` `` and `` `spec/SKILL.md` `` are expanded to all three skill-root mirrors:
+Skill files have three byte-identical mirrors at `.claude/skills/<name>/...`, `templates/skills/<name>/...`, `skills/<name>/...`. Treating the mirrors as separate paths would produce 3× the `Order:` lines and 6× the warnings for one logical conflict.
 
-- `.claude/skills/<name>/SKILL.md`
-- `templates/skills/<name>/SKILL.md`
-- `skills/<name>/SKILL.md`
+The detector normalizes all three mirror prefixes to the bare subpath at extraction time:
+
+| Input (in issue body) | Canonical |
+|-----------------------|-----------|
+| `` `.claude/skills/qa/SKILL.md` `` | `qa/SKILL.md` |
+| `` `templates/skills/qa/SKILL.md` `` | `qa/SKILL.md` |
+| `` `skills/qa/SKILL.md` `` | `qa/SKILL.md` |
+| `` `qa/SKILL.md` `` (under 3-dir sync) | `qa/SKILL.md` |
+
+This is the form that appears in `Order:` lines and `⚠` warnings.
+
+### 4. Bare `<name>/SKILL.md` references (gated on 3-dir sync)
+
+When the body also signals "3-dir sync" (regex below), bare skill-file mentions like `` `qa/SKILL.md` `` and `` `spec/SKILL.md` `` are added to the path set in canonical form. The 3-dir-sync gate prevents over-extraction from incidental skill-file references in prose.
 
 3-dir-sync language is matched by:
 
@@ -53,9 +64,9 @@ When the body also signals "3-dir sync" (regex below), bare skill-file mentions 
 /3[- ]dir(?:ectory)?\s+sync|across\s+all\s+three\s+skill\s+directories|across\s+(?:the\s+)?three\s+skill\s+directories/i
 ```
 
-### 4. Slash-command-skill derivation (gated on 3-dir sync)
+### 5. Slash-command-skill derivation (gated on 3-dir sync)
 
-When the body signals 3-dir sync, every `/<skill>` slash-command mention is also expanded to `<skill>/SKILL.md` across the three skill roots — provided `<skill>` matches a known skill name. This catches issues that describe section changes via `/qa Section 6c`-style notation rather than naming the file path.
+When the body signals 3-dir sync, every `/<skill>` slash-command mention is also added as `<skill>/SKILL.md` (canonical bare form) — provided `<skill>` matches a known skill name. This catches issues that describe section changes via `/qa Section 6c`-style notation rather than naming the file path.
 
 The known-skill-name list lives in `KNOWN_SKILL_NAMES` in `src/lib/assess-collision-detect.ts`. Keep it in sync with the actual skill set under `skills/`. Adding a new skill? Append its name here.
 
@@ -91,8 +102,8 @@ The PATH_REGEX requires a directory prefix (one of the six tracked roots) and a 
 
 The detector returns `CollisionResult[]` from `detectFileCollisions`. The formatter (`formatCollisionAnnotations`) renders annotations in the dashboard format:
 
-- `Order: A → B (path)` per pair (or `Order: A → B → C (path)` for 3+ on the same file)
-- `⚠ #N  Modifies <path> (overlaps #M); land sequentially` per affected issue
-- `Chain: npx sequant run A B C --chain --qa-gate -q   # alternative — N issues modify <path>` only when ≥3 issues collide on the same file (suggest-only)
+- `Order: A → B (path)` per pair (or `Order: A → B → C (path)` for 3+ on the same file). `path` is the canonical bare form (e.g. `qa/SKILL.md`).
+- `⚠ #N  Modifies <path> (overlaps #M); land sequentially` per affected issue.
+- `Chain: npx sequant run A B C --chain --qa-gate -q   # alternative — N issues modify <path>` only when ≥3 issues collide on the same file (suggest-only).
 
 The bare-filename `Order:` exception (defined in the skill's "Annotation Rules") applies here — predicted collisions are file-collision reasons by definition, so the filename in parentheses is the reason verbatim.

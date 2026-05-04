@@ -121,28 +121,28 @@ medium — shared heuristic + 2 skill updates + 3-dir sync + tests + docs. Estim
 // ─── extractPathsFromIssueBody ──────────────────────────────────────────────
 
 describe("extractPathsFromIssueBody", () => {
-  it("expands /qa slash-command with 3-dir-sync language to all three skill roots (issue #551)", () => {
+  it("derives qa/SKILL.md (canonical bare form) from /qa + 3-dir-sync language (issue #551)", () => {
     const paths = extractPathsFromIssueBody(ISSUE_551_BODY);
 
     // #551 mentions /qa and 'across all three skill directories'.
-    expect(paths.has(".claude/skills/qa/SKILL.md")).toBe(true);
-    expect(paths.has("templates/skills/qa/SKILL.md")).toBe(true);
-    expect(paths.has("skills/qa/SKILL.md")).toBe(true);
+    // The detector normalizes to the canonical bare form so the three
+    // mirrored copies don't triple-emit collision warnings.
+    expect(paths.has("qa/SKILL.md")).toBe(true);
+    expect(paths.has(".claude/skills/qa/SKILL.md")).toBe(false);
+    expect(paths.has("templates/skills/qa/SKILL.md")).toBe(false);
+    expect(paths.has("skills/qa/SKILL.md")).toBe(false);
   });
 
-  it("extracts both bare qa/SKILL.md and full .claude/skills/assess/SKILL.md (issue #552)", () => {
+  it("normalizes mirror-qualified .claude/skills/assess/SKILL.md to assess/SKILL.md (issue #552)", () => {
     const paths = extractPathsFromIssueBody(ISSUE_552_BODY);
 
-    // Explicit full path mentioned in motivation:
-    expect(paths.has(".claude/skills/assess/SKILL.md")).toBe(true);
+    // Mirror-qualified paths normalize to the canonical bare form.
+    expect(paths.has("assess/SKILL.md")).toBe(true);
 
-    // Bare 'qa/SKILL.md' and 'spec/SKILL.md' under 3-dir-sync:
-    expect(paths.has(".claude/skills/qa/SKILL.md")).toBe(true);
-    expect(paths.has("templates/skills/qa/SKILL.md")).toBe(true);
-    expect(paths.has("skills/qa/SKILL.md")).toBe(true);
-    expect(paths.has(".claude/skills/spec/SKILL.md")).toBe(true);
-    expect(paths.has("templates/skills/spec/SKILL.md")).toBe(true);
-    expect(paths.has("skills/spec/SKILL.md")).toBe(true);
+    // Bare 'qa/SKILL.md' and 'spec/SKILL.md' under 3-dir-sync are
+    // already canonical.
+    expect(paths.has("qa/SKILL.md")).toBe(true);
+    expect(paths.has("spec/SKILL.md")).toBe(true);
   });
 
   it("does not extract paths mentioned only inside fenced code blocks", () => {
@@ -197,7 +197,7 @@ edit qa/SKILL.md and 3-dir sync across .claude/skills/
 // ─── detectFileCollisions ───────────────────────────────────────────────────
 
 describe("detectFileCollisions", () => {
-  it("flags overlap when two issue bodies both target qa/SKILL.md (verbatim #551 + #552)", () => {
+  it("flags exactly one overlap on canonical qa/SKILL.md (verbatim #551 + #552)", () => {
     const issuePaths = new Map<number, Set<string>>([
       [551, extractPathsFromIssueBody(ISSUE_551_BODY)],
       [552, extractPathsFromIssueBody(ISSUE_552_BODY)],
@@ -205,20 +205,44 @@ describe("detectFileCollisions", () => {
 
     const collisions = detectFileCollisions(issuePaths);
 
-    // At minimum, .claude/skills/qa/SKILL.md (and the two mirrored
-    // mirrors) must be flagged.
-    const qaSkillFiles = collisions
-      .filter((c) => c.file.endsWith("qa/SKILL.md"))
-      .map((c) => c.file);
-    expect(qaSkillFiles).toContain(".claude/skills/qa/SKILL.md");
+    // The collision must be reported on the canonical bare path only —
+    // not three times once per skill-root mirror.
+    const qaCollisions = collisions.filter((c) => c.file === "qa/SKILL.md");
+    expect(qaCollisions).toHaveLength(1);
+    expect(qaCollisions[0].issues).toEqual([551, 552]);
 
-    for (const c of qaSkillFiles) {
-      const collision = collisions.find((x) => x.file === c)!;
-      expect(collision.issues).toEqual([551, 552]);
+    // No mirror-qualified duplicates leak through.
+    for (const c of collisions) {
+      expect(c.file).not.toMatch(
+        /^(?:\.claude\/skills|templates\/skills|skills)\/qa\/SKILL\.md$/,
+      );
     }
   });
 
-  it("does not flag overlap when shared path appears only in a code block", () => {
+  it("does not flag overlap when one issue mentions qa/SKILL.md only inside a code block (AC-6 fixture)", () => {
+    // AC-6 verbatim: "One issue mentions qa/SKILL.md, the other only
+    // mentions it inside a code-block → no overlap (false-positive guard)."
+    // Issue #552 mentions qa/SKILL.md in prose; the second body here
+    // mentions qa/SKILL.md only inside a fenced code block.
+    const codeBlockOnlyBody = `## Summary
+
+Modifies \`src/lib/unrelated.ts\` only.
+
+## Example output (illustrative — not a target file)
+
+\`\`\`
+edit qa/SKILL.md and 3-dir sync
+\`\`\`
+`;
+    const issuePaths = new Map<number, Set<string>>([
+      [552, extractPathsFromIssueBody(ISSUE_552_BODY)],
+      [999, extractPathsFromIssueBody(codeBlockOnlyBody)],
+    ]);
+    const collisions = detectFileCollisions(issuePaths);
+    expect(collisions).toEqual([]);
+  });
+
+  it("does not flag overlap when shared path appears only in a code block (synthetic fixture)", () => {
     const bodyA = "Modifies \`src/lib/foo.ts\`.";
     const bodyB =
       "Modifies \`src/lib/bar.ts\`.\n\n```\nedit src/lib/foo.ts\n```\n";
@@ -257,16 +281,14 @@ describe("detectFileCollisions", () => {
 // ─── formatCollisionAnnotations ─────────────────────────────────────────────
 
 describe("formatCollisionAnnotations", () => {
-  it("renders Order: line and per-issue ⚠ warnings for a 2-issue collision", () => {
+  it("renders Order: line and per-issue ⚠ warnings for a 2-issue collision (canonical bare path matches AC-3 example)", () => {
     const out = formatCollisionAnnotations([
-      { issues: [551, 552], file: ".claude/skills/qa/SKILL.md" },
+      { issues: [551, 552], file: "qa/SKILL.md" },
     ]);
-    expect(out.orderLines).toEqual([
-      "Order: 551 → 552 (.claude/skills/qa/SKILL.md)",
-    ]);
+    expect(out.orderLines).toEqual(["Order: 551 → 552 (qa/SKILL.md)"]);
     expect(out.warnings).toEqual([
-      "⚠ #551  Modifies .claude/skills/qa/SKILL.md (overlaps #552); land sequentially",
-      "⚠ #552  Modifies .claude/skills/qa/SKILL.md (overlaps #551); land sequentially",
+      "⚠ #551  Modifies qa/SKILL.md (overlaps #552); land sequentially",
+      "⚠ #552  Modifies qa/SKILL.md (overlaps #551); land sequentially",
     ]);
     expect(out.chainSuggestion).toBeUndefined();
   });

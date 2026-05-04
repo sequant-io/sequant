@@ -30,14 +30,6 @@ export const EXCLUDED_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * The three skill-root mirrors maintained by the repo. When an issue body
- * mentions "3-dir sync" alongside a named skill file, the file is expanded
- * to all three roots so collisions on the same logical file are detected
- * regardless of which mirror the issue body cites.
- */
-const SKILL_ROOTS = [".claude/skills/", "templates/skills/", "skills/"];
-
-/**
  * Slash-command names recognized as references to a skill's SKILL.md.
  * Used by the slash-command-skill derivation rule when an issue body
  * also signals 3-dir sync — the skill name maps deterministically to the
@@ -106,13 +98,23 @@ function stripCodeBlocksAndComments(body: string): string {
 }
 
 /**
- * Expand a bare skill-file subpath like `qa/SKILL.md` to all three
- * skill-root mirrors.
+ * Collapse a fully-qualified skill-mirror path to its canonical bare form.
+ *
+ * The repo maintains three byte-identical mirrors of every skill file
+ * under `.claude/skills/`, `templates/skills/`, and `skills/`. Treating
+ * those mirrors as separate paths in collision detection produces 3× the
+ * Order: lines and 6× the warnings for one logical conflict, since both
+ * sides of the 3-dir-sync expansion match each mirror.
+ *
+ * Normalizing to the bare subpath (e.g. `qa/SKILL.md`) makes mirrored
+ * collisions deduplicate naturally and matches the issue-body shorthand
+ * the dashboard's `Order:` annotation already uses.
  */
-function expandSkillFile(skillSubpath: string, into: Set<string>): void {
-  for (const root of SKILL_ROOTS) {
-    into.add(root + skillSubpath);
-  }
+function normalizeSkillMirrorPath(path: string): string {
+  const m = path.match(
+    /^(?:\.claude\/skills\/|templates\/skills\/|skills\/)(.+)$/,
+  );
+  return m ? m[1] : path;
 }
 
 /**
@@ -121,35 +123,36 @@ function expandSkillFile(skillSubpath: string, into: Set<string>): void {
  *
  * Strategy:
  *   1. Strip fenced code blocks and HTML comments (AC-5 guard).
- *   2. Pull every backtick-quoted path matching the source-tree regex.
- *   3. If the body mentions "3-dir sync", expand any bare `<name>/SKILL.md`
- *      paths to all three skill-root mirrors, AND apply the slash-command
- *      derivation rule below.
- *   4. Slash-command derivation: when a body signals 3-dir sync, every
- *      `/<skill>` slash-command mention (where `<skill>` is in
- *      KNOWN_SKILL_NAMES) is expanded to `<skill>/SKILL.md` across all
- *      three skill roots. This catches issues that describe section
- *      changes via the `/qa`-style notation rather than naming the
- *      file path explicitly.
- *   5. Remove globally excluded paths.
+ *   2. Pull every backtick-quoted path matching the source-tree regex,
+ *      normalizing skill-mirror paths to their canonical bare form.
+ *   3. If the body mentions "3-dir sync", also pull bare
+ *      `<name>/SKILL.md` references and `/<skill>` slash-command
+ *      mentions (where `<skill>` is in KNOWN_SKILL_NAMES). Both already
+ *      live in the canonical bare form.
+ *   4. Remove globally excluded paths.
+ *
+ * The canonical bare form (`qa/SKILL.md`, not `.claude/skills/qa/SKILL.md`)
+ * is what the dashboard's `Order:` annotations render, and it makes
+ * mirrored collisions deduplicate without a separate post-processing
+ * pass.
  */
 export function extractPathsFromIssueBody(body: string): Set<string> {
   const paths = new Set<string>();
   const cleaned = stripCodeBlocksAndComments(body);
 
   for (const m of cleaned.matchAll(PATH_REGEX)) {
-    paths.add(m[1]);
+    paths.add(normalizeSkillMirrorPath(m[1]));
   }
 
   const threeDir = THREE_DIR_SYNC_PATTERN.test(cleaned);
   if (threeDir) {
     for (const m of cleaned.matchAll(SKILL_FILE_REGEX)) {
-      expandSkillFile(m[1], paths);
+      paths.add(m[1]);
     }
     for (const m of cleaned.matchAll(SLASH_COMMAND_REGEX)) {
       const name = m[1];
       if (KNOWN_SKILL_NAMES.includes(name)) {
-        expandSkillFile(`${name}/SKILL.md`, paths);
+        paths.add(`${name}/SKILL.md`);
       }
     }
   }
