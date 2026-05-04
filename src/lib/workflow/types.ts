@@ -188,6 +188,7 @@ export interface RunOptions {
   smartTests?: boolean;
   noSmartTests?: boolean;
   testgen?: boolean;
+  securityReview?: boolean;
   autoDetectPhases?: boolean;
   /** Enable automatic worktree creation for issue isolation */
   worktreeIsolation?: boolean;

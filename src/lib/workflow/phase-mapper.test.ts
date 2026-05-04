@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectPhasesFromLabels,
+  determinePhasesForIssue,
   hasUILabels,
   DOCS_LABELS,
   BUG_LABELS,
@@ -142,5 +143,51 @@ describe("BUG_LABELS", () => {
     expect(BUG_LABELS).toContain("fix");
     expect(BUG_LABELS).toContain("hotfix");
     expect(BUG_LABELS).toContain("patch");
+  });
+});
+
+describe("determinePhasesForIssue --security-review flag (#559)", () => {
+  it("inserts security-review immediately after spec when flag is set", () => {
+    const result = determinePhasesForIssue(["spec", "exec", "qa"], [], {
+      securityReview: true,
+    });
+    expect(result).toEqual(["spec", "security-review", "exec", "qa"]);
+  });
+
+  it("does not insert security-review when flag is unset", () => {
+    const result = determinePhasesForIssue(["spec", "exec", "qa"], [], {});
+    expect(result).toEqual(["spec", "exec", "qa"]);
+  });
+
+  it("does not insert security-review when spec is absent", () => {
+    const result = determinePhasesForIssue(["exec", "qa"], [], {
+      securityReview: true,
+    });
+    expect(result).toEqual(["exec", "qa"]);
+  });
+
+  // AC-3.1 (derived): idempotency vs label-based auto-detection
+  it("does not duplicate security-review when label-based phases already include it", () => {
+    const result = determinePhasesForIssue(
+      ["spec", "security-review", "exec", "qa"],
+      ["auth"],
+      { securityReview: true },
+    );
+    const occurrences = result.filter((p) => p === "security-review").length;
+    expect(occurrences).toBe(1);
+  });
+
+  it("composes with --testgen — security-review immediately after spec, testgen and exec follow", () => {
+    const result = determinePhasesForIssue(["spec", "exec", "qa"], [], {
+      testgen: true,
+      securityReview: true,
+    });
+    // testgen runs first in determinePhasesForIssue, so it ends up adjacent
+    // to spec; security-review is inserted immediately after spec, which
+    // pushes testgen one slot further. Both phases appear exactly once.
+    expect(result.filter((p) => p === "testgen").length).toBe(1);
+    expect(result.filter((p) => p === "security-review").length).toBe(1);
+    expect(result[0]).toBe("spec");
+    expect(result.indexOf("security-review")).toBe(1);
   });
 });
