@@ -1459,6 +1459,7 @@ Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
 2. **"What assumptions am I making?"** - List and validate key assumptions
 3. **"What's the unhappy path?"** - Test invalid inputs, failed dependencies
 4. **"Did I test the feature's PRIMARY PURPOSE?"** - If it handles errors, trigger an error
+5. **"Does the same root-cause pattern exist at sibling sites in this file?"** - The literal repro from the issue body is necessary but not sufficient. After the cited bug is fixed, audit other call sites in the same file (and same function/loop) that share the root-cause pattern. Example: if a destructive operation invalidates a resource that subsequent code depends on, scan for other destructive operations on that resource type in the same function/loop; if a wrong null-check is the bug, scan for the same access pattern elsewhere. **Complementary to Section 5's cross-file sibling-site scan: §4's question is intra-file (other lines/functions in the same file with the same root cause); §5 is cross-file (other files in the codebase with the same vulnerability).**
 
 See [testing-requirements.md](references/testing-requirements.md) for edge case checklists.
 
@@ -1473,20 +1474,21 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
 - **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 ```
 
 **If either field reveals significant concerns**, factor them into your verdict. A serious failure mode with no test coverage should downgrade to `AC_MET_BUT_NOT_A_PLUS` or `AC_NOT_MET`.
 
 #### Sibling-site Scan (Conditional)
 
-**When to apply:** Focused AC + a localized fix in a multi-pattern file (≥3 instances of the affected pattern in the same file — e.g. the regex blocks in `pre-tool.sh`). Same root cause likely repeats elsewhere in the file/module.
+**When to apply:** Focused AC + a localized fix where the same root-cause pattern likely exists in other files in the codebase (≥3 occurrences of the affected pattern across files — e.g. regex blocks repeated across multiple hook scripts). Intra-file sibling sites are covered by §4 Q5; this scan is the cross-file complement.
 
-**Before declaring AC met**, scan the same file/module for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict's `Sibling sites considered:` slot — as expanded scope (only when trivial) or follow-up issue suggestion. **Don't widen scope mid-PR; file a follow-up issue instead.** Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted).
+**Before declaring AC met**, scan other files in the codebase for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict's `Sibling sites considered:` slot — as expanded scope (only when trivial) or follow-up issue suggestion. **Don't widen scope mid-PR; file a follow-up issue instead.** Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted).
 
 **Scope:** orchestrator/inline-review only — `sequant-qa-checker` sub-agents are not asked to do this scan; the orchestrator owns it during verdict synthesis.
 
-This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at the same file" prompt.
+This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at adjacent files" prompt.
 
 #### Skill Change Review (Conditional)
 
@@ -2548,7 +2550,8 @@ When the size gate triggers simple fix mode, use this shorter template:
 
 - **Likely failure mode:** [How would this break in production?]
 - **Not tested:** [What gaps exist in test coverage?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 
 ---
 
@@ -2869,7 +2872,8 @@ You MUST include these sections:
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
 - **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 
 ---
 
