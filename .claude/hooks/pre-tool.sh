@@ -92,13 +92,15 @@ if echo "$TOOL_INPUT" | grep -qE '^(env|printenv|export)$'; then
 fi
 
 # Destructive system commands
-if echo "$TOOL_INPUT" | grep -qE 'sudo|rm -rf /|rm -rf ~|rm -rf \$HOME'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
+if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'sudo|rm -rf /|rm -rf ~|rm -rf \$HOME'; then
     echo "HOOK_BLOCKED: Destructive system command" | tee -a /tmp/claude-hook.log >&2
     exit 2
 fi
 
 # Deployment (should never happen in issue automation)
-if echo "$TOOL_INPUT" | grep -qE 'vercel (deploy|--prod)|terraform (apply|destroy)|kubectl (apply|delete)'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
+if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'vercel (deploy|--prod)|terraform (apply|destroy)|kubectl (apply|delete)'; then
     echo "HOOK_BLOCKED: Deployment command" | tee -a /tmp/claude-hook.log >&2
     exit 2
 fi
@@ -116,7 +118,8 @@ fi
 # - Unpushed commits on main/master
 # - Uncommitted changes (staged or unstaged)
 # - Unfinished merge in progress
-if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
+if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     BLOCK_REASONS=""
     
@@ -156,7 +159,8 @@ if echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
 fi
 
 # CI/CD triggers (automation shouldn't trigger more automation)
-if echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
+# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
+if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
     echo "HOOK_BLOCKED: Workflow trigger" | tee -a /tmp/claude-hook.log >&2
     exit 2
 fi
