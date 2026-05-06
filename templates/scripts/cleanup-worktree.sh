@@ -15,6 +15,11 @@ NC='\033[0m'
 
 BRANCH_NAME=$1
 
+# Resolve main worktree (first entry in `git worktree list`) so subsequent git
+# commands run from a stable cwd even if the caller invoked us from inside the
+# worktree we are about to delete.
+MAIN_WORKTREE=$(git worktree list --porcelain | awk '/^worktree / {print $2; exit}')
+
 # Check if branch name provided
 if [ -z "$BRANCH_NAME" ]; then
     echo -e "${RED}❌ Error: Branch name required${NC}"
@@ -73,6 +78,10 @@ fi
 
 # Remove worktree
 echo -e "${BLUE}📂 Removing worktree...${NC}"
+# Move to main worktree first — if cwd is inside $WORKTREE_PATH, the remove
+# below would invalidate it and every subsequent git call would fail with
+# "Unable to read current working directory".
+cd "$MAIN_WORKTREE"
 git worktree remove "$WORKTREE_PATH" --force
 
 # Delete local branch
