@@ -793,12 +793,72 @@ No CI checks configured for this repository.
 **Verdict Integration:**
 
 CI status affects the final verdict through the standard verdict algorithm:
-- CI `PENDING` → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
+- CI `PENDING` (gating) → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
+- CI `PENDING` (relaxed via the markdown-only block below) → AC item marked `MET` → no impact on verdict
 - CI `failure` → AC item marked `NOT_MET` → Verdict: `AC_NOT_MET`
 - CI `success` → AC item marked `MET` → No additional impact
 - No CI → AC item marked `N/A` → No impact on verdict
 
-**Important:** Do NOT give `READY_FOR_MERGE` if any CI check is still pending. The correct verdict is `NEEDS_VERIFICATION` with a note to re-run QA after CI completes.
+**Important:** Do NOT give `READY_FOR_MERGE` if any *gating* CI check is still pending. Pending checks are gating by default; the markdown-only relaxation below reclassifies a narrow allowlist as informational. When any gating-pending check remains, the correct verdict is `NEEDS_VERIFICATION` with a note to re-run QA after CI completes.
+
+#### Markdown-Only Diff Relaxation
+
+**Purpose:** A diff that touches only `.md` files cannot break the build matrix. Forcing `NEEDS_VERIFICATION` until the build matrix reports back wastes wakeup cycles when `typecheck` (already green) has proven the change is structurally inert. This relaxation reclassifies a small, configurable allowlist of pending checks (default: build matrix + Plugin Structure Validation) as informational for markdown-only diffs.
+
+**Scope and limits:**
+
+- **Only pending checks are relaxed.** Failed checks always gate, regardless of diff type.
+- **Only the configured allowlist is relaxed.** Other pending checks (`validate-skills`, `Hooks Validation`, `validate-plugin`, etc.) still gate.
+- **Build-affecting files disqualify the diff** even if every other change is `.md`. The detector treats `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `tsconfig*.json`, `*.config.{js,ts,mjs,cjs}`, and `.github/workflows/**` as non-markdown.
+
+**Settings (`.sequant/settings.json`, `qa` section):**
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `markdownOnlyCiRelaxed` | `true` | Master switch. Set to `false` to restore strict gating for paranoid projects. |
+| `markdownOnlySafeCiPatterns` | `["build (*)", "Plugin Structure Validation"]` | Glob patterns (single `*` wildcard) for CI check names that are safe to ignore when pending on a markdown-only diff. Override per project to match local CI step names. |
+
+**Procedure:**
+
+```bash
+# 1. Read settings — silently fall back to defaults on parse failure.
+relaxed_enabled=$(cat .sequant/settings.json 2>/dev/null \
+  | grep -o '"markdownOnlyCiRelaxed"[[:space:]]*:[[:space:]]*\(true\|false\)' \
+  | grep -o 'true\|false' || echo "true")
+
+# 2. Compute changed-file list against origin/main.
+changed_files=$(git diff origin/main...HEAD --name-only || true)
+
+# 3. Run the helpers (single npx call returns the gating-pending bucket).
+result=$(SEQUANT_QA_RELAX_FILES="$changed_files" SEQUANT_QA_RELAX_PENDING="$pending_check_names" \
+  npx tsx -e '
+    (async () => {
+      const m = await import("./src/lib/qa/markdown-only-ci.ts");
+      const { getSettings } = await import("./src/lib/settings.ts");
+      const files = (process.env.SEQUANT_QA_RELAX_FILES || "").split("\n").filter(Boolean);
+      const pending = (process.env.SEQUANT_QA_RELAX_PENDING || "").split("\n").filter(Boolean);
+      const settings = await getSettings();
+      const isMdOnly = m.detectMarkdownOnlyDiff(files);
+      const enabled = settings.qa.markdownOnlyCiRelaxed && isMdOnly;
+      const buckets = enabled
+        ? m.filterRelaxablePending(pending, settings.qa.markdownOnlySafeCiPatterns)
+        : { relaxed: [], gating: pending };
+      console.log(JSON.stringify({ isMdOnly, enabled, ...buckets }));
+    })();
+  ' 2>/dev/null || echo '{"isMdOnly":false,"enabled":false,"relaxed":[],"gating":[]}')
+```
+
+When `enabled === true` (markdown-only diff AND `markdownOnlyCiRelaxed` is `true`), use `gating` for the verdict's `pending_count`; the `relaxed` list is informational and rendered in the output.
+
+**Output transparency (REQUIRED when relaxation triggers):**
+
+When `enabled === true` AND `relaxed.length > 0`, the `### CI Status` section MUST include this labeled note immediately after the CI summary line, listing the relaxed check names verbatim:
+
+```markdown
+**Markdown-only diff detected — pending build-matrix checks treated as informational. Relaxed: build (20.x), build (22.x), Plugin Structure Validation.**
+```
+
+If `enabled === false` (flag off, or diff includes non-markdown files), do not emit the note — render the CI Status section unchanged.
 
 ---
 
