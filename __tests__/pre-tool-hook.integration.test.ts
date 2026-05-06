@@ -306,6 +306,57 @@ describe.each(HOOK_COPIES)(
       expect(stderr).toMatch(/HOOK_BLOCKED: Workflow trigger/);
     });
 
+    // === #570 verbatim issue-body fixtures ===
+    // Per feedback_motivating_example_regression: examples quoted verbatim in
+    // the issue body are mandatory test fixtures, not "close enough" paraphrases.
+    // The strings below are the EXACT scenarios from the #570 issue body
+    // (table rows in "Affected regex sites" + the explicit Repro pattern).
+
+    it("#570 verbatim destructive: cleanup-doc explainer payload (issue body row 1)", () => {
+      const cmd = 'gh issue create --body "WARNING: never run `rm -rf /`..."';
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    it("#570 verbatim deployment: release-notes payload (issue body row 2)", () => {
+      const cmd =
+        'gh issue create --body "release notes: deployed via `vercel deploy`..."';
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    it("#570 verbatim git reset: tutorial payload (issue body row 3)", () => {
+      // git reset outer guard only triggers in a dirty repo; use the same
+      // dirty-fixture pattern as AC-3 to ensure the test exercises the wrap.
+      const repo = mkdtempSync(join(tmpdir(), "pre-tool-test-verbatim-"));
+      try {
+        spawnSync("git", ["init", "-q"], { cwd: repo });
+        spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+        spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        const cmd =
+          'gh issue comment --body "if conflicted, run `git reset --hard origin/main`..."';
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("#570 verbatim gh workflow: workflow-doc payload (issue body row 4)", () => {
+      const cmd =
+        'gh issue create --body "trigger via `gh workflow run release.yml`..."';
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    it('#570 verbatim repro pattern (issue body "Repro pattern" section)', () => {
+      const cmd =
+        'gh issue create --title "x" --body "Don\'t run `rm -rf /` because..."';
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
     // Sanity: when there ARE staged changes, the no-changes guard does not fire
     // for a real `git commit`. (The conventional-commits validator may still
     // block based on message format — that's a separate guard. We only assert
