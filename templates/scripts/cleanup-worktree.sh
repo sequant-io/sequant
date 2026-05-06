@@ -15,10 +15,11 @@ NC='\033[0m'
 
 BRANCH_NAME=$1
 
-# Resolve main worktree (first entry in `git worktree list`) so subsequent git
+# Resolve main worktree (first entry in porcelain output) so subsequent git
 # commands run from a stable cwd even if the caller invoked us from inside the
-# worktree we are about to delete.
-MAIN_WORKTREE=$(git worktree list --porcelain | awk '/^worktree / {print $2; exit}')
+# worktree we are about to delete. `sed` keeps the path intact when it contains
+# whitespace; `awk '{print $2}'` would truncate at the first space.
+MAIN_WORKTREE=$(git worktree list --porcelain | sed -n 's/^worktree //p' | head -n 1)
 
 # Check if branch name provided
 if [ -z "$BRANCH_NAME" ]; then
@@ -30,8 +31,17 @@ if [ -z "$BRANCH_NAME" ]; then
     exit 1
 fi
 
-# Find worktree path
-WORKTREE_PATH=$(git worktree list | grep "$BRANCH_NAME" | awk '{print $1}')
+# Find worktree path. Parse porcelain (which separates path/branch onto distinct
+# lines) so paths containing whitespace survive intact, and so we match against
+# the branch ref rather than against a free-form `grep` over the entire line —
+# the latter false-matches whenever the branch name appears in the path string.
+WORKTREE_PATH=$(git worktree list --porcelain | awk -v target="$BRANCH_NAME" '
+  /^worktree / { sub(/^worktree /, ""); path = $0 }
+  /^branch refs\/heads\// {
+    sub(/^branch refs\/heads\//, "")
+    if (index($0, target) > 0) { print path; exit }
+  }
+')
 
 if [ -z "$WORKTREE_PATH" ]; then
     echo -e "${RED}❌ Error: Worktree not found for branch: $BRANCH_NAME${NC}"
@@ -58,6 +68,13 @@ if [ "$PR_STATUS" != "MERGED" ]; then
     fi
 fi
 
+# Move to the main worktree before any destructive operation. If the caller's
+# cwd is inside $WORKTREE_PATH (or any of its .exec-agents/agent-* sub-worktrees
+# below), the first `git worktree remove` would invalidate cwd and every
+# subsequent git/gh call would silently fail with "Unable to read current
+# working directory" — including the ones with `2>/dev/null || true`.
+cd "$MAIN_WORKTREE"
+
 # Clean up any exec-agent sub-worktrees first (from parallel isolation)
 EXEC_AGENTS_DIR="$WORKTREE_PATH/.exec-agents"
 if [ -d "$EXEC_AGENTS_DIR" ]; then
@@ -76,12 +93,8 @@ if [ -d "$EXEC_AGENTS_DIR" ]; then
     rmdir "$EXEC_AGENTS_DIR" 2>/dev/null || true
 fi
 
-# Remove worktree
+# Remove worktree (cwd already pinned to $MAIN_WORKTREE above)
 echo -e "${BLUE}📂 Removing worktree...${NC}"
-# Move to main worktree first — if cwd is inside $WORKTREE_PATH, the remove
-# below would invalidate it and every subsequent git call would fail with
-# "Unable to read current working directory".
-cd "$MAIN_WORKTREE"
 git worktree remove "$WORKTREE_PATH" --force
 
 # Delete local branch
