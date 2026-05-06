@@ -10,45 +10,23 @@
  * Failed CI checks are NOT relaxed — they always gate regardless of diff type.
  */
 
-import { basename } from "node:path";
-
-/**
- * Files that, when changed, disqualify a diff from "markdown-only" treatment
- * even if every other changed file is a `.md`. These touch the build/runtime
- * surface and cannot be assumed safe.
- */
-const NON_MARKDOWN_BUILD_FILES = new Set([
-  "package.json",
-  "package-lock.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-]);
-
 /**
  * Predicate: does the given changed-file list qualify as a markdown-only diff?
  *
- * A file qualifies if it is a `.md` file. Any other file disqualifies the diff,
- * with explicit name-checks for build-affecting files (`package.json`,
- * `tsconfig*.json`, `*.config.{js,ts,mjs,cjs}`, `.github/workflows/**`).
+ * A file qualifies only if it ends in `.md` (case-insensitive) AND is not
+ * inside `.github/workflows/`. Any non-`.md` file (including `package.json`,
+ * `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `tsconfig*.json`, and
+ * `*.config.{js,ts,mjs,cjs}`) automatically disqualifies the diff because it
+ * does not end in `.md`.
  *
  * @param files - Paths from `git diff --name-only`. Forward slashes; relative to repo root.
- * @returns `true` if every changed file is markdown and none of the build-file exclusions apply.
+ * @returns `true` if every changed file is markdown and none are workflow files.
  */
 export function detectMarkdownOnlyDiff(files: string[]): boolean {
   if (files.length === 0) return false;
 
   for (const file of files) {
-    if (file.toLowerCase().endsWith(".md")) continue;
-
-    return false;
-  }
-
-  for (const file of files) {
-    const name = basename(file);
-
-    if (NON_MARKDOWN_BUILD_FILES.has(name)) return false;
-    if (/^tsconfig.*\.json$/i.test(name)) return false;
-    if (/\.config\.(js|ts|mjs|cjs)$/i.test(name)) return false;
+    if (!file.toLowerCase().endsWith(".md")) return false;
     if (file.startsWith(".github/workflows/")) return false;
   }
 

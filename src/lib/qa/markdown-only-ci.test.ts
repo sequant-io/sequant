@@ -65,11 +65,22 @@ describe("detectMarkdownOnlyDiff (AC-1)", () => {
     ).toBe(false);
   });
 
+  it("returns false when an .md file lives inside .github/workflows/", () => {
+    // Workflows directory is excluded even for .md content (e.g. workflow READMEs)
+    // because changes there can affect CI execution semantics.
+    expect(detectMarkdownOnlyDiff([".github/workflows/README.md"])).toBe(false);
+    expect(
+      detectMarkdownOnlyDiff(["docs/foo.md", ".github/workflows/notes.md"]),
+    ).toBe(false);
+  });
+
   it("matches the .md extension case-insensitively", () => {
     expect(detectMarkdownOnlyDiff(["README.MD", "docs/Guide.Md"])).toBe(true);
   });
 
-  it("matches build-file exclusions case-insensitively", () => {
+  it("disqualifies build/config files because they do not end in .md", () => {
+    // The function's contract is ".md only"; non-.md files always disqualify
+    // regardless of whether they happen to be build-related.
     expect(detectMarkdownOnlyDiff(["README.md", "TSConfig.json"])).toBe(false);
   });
 });
@@ -221,5 +232,49 @@ describe("markdown-only relaxation pipeline (AC-5 end-to-end fixture)", () => {
     expect(detectMarkdownOnlyDiff(mixedDiff)).toBe(false);
     // With diff disqualified, the orchestrator does not call
     // filterRelaxablePending at all; pending checks gate as usual.
+  });
+
+  // Verbatim reproduction of the motivating example documented in issue #569's
+  // Origin section: a 16-line markdown-only diff from /fullsolve 562 (3 fullsolve
+  // SKILL.md mirrors + CHANGELOG entry) where 5 of 8 CI checks had passed at QA
+  // time and the 3 pending checks (build matrix + Plugin Structure Validation)
+  // were structurally incapable of failing. Pre-relaxation this forced
+  // NEEDS_VERIFICATION; post-relaxation it should resolve to the READY_FOR_MERGE
+  // path. Per feedback_motivating_example_regression.md, this fixture is a
+  // permanent test, not just an inline dogfood check.
+  it("matches the verbatim /fullsolve 562 reproduction from the issue body", () => {
+    const verbatimDiff = [
+      ".claude/skills/fullsolve/SKILL.md",
+      "skills/fullsolve/SKILL.md",
+      "templates/skills/fullsolve/SKILL.md",
+      "CHANGELOG.md",
+    ];
+    const verbatimCi = [
+      { name: "typecheck", state: "SUCCESS" as const },
+      { name: "validate-skills", state: "SUCCESS" as const },
+      { name: "Hooks Validation", state: "SUCCESS" as const },
+      { name: "validate-plugin", state: "SUCCESS" as const },
+      { name: "Setup Directory Creation", state: "SUCCESS" as const },
+      { name: "build (20.x)", state: "PENDING" as const },
+      { name: "build (22.x)", state: "PENDING" as const },
+      { name: "Plugin Structure Validation", state: "PENDING" as const },
+    ];
+
+    expect(detectMarkdownOnlyDiff(verbatimDiff)).toBe(true);
+
+    const pending = verbatimCi
+      .filter((c) => c.state === "PENDING")
+      .map((c) => c.name);
+    const { relaxed, gating } = filterRelaxablePending(
+      pending,
+      settings.markdownOnlySafeCiPatterns,
+    );
+
+    expect(relaxed).toEqual([
+      "build (20.x)",
+      "build (22.x)",
+      "Plugin Structure Validation",
+    ]);
+    expect(gating).toEqual([]);
   });
 });

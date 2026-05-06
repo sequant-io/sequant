@@ -721,10 +721,12 @@ fi
 | `FAILURE` | `fail` | `NOT_MET` | Blocks merge |
 | `CANCELLED` | `fail` | `NOT_MET` | Blocks merge |
 | `SKIPPED` | `pass` | `N/A` | No impact |
-| `PENDING` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
-| `QUEUED` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
-| `IN_PROGRESS` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `PENDING` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
+| `QUEUED` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
+| `IN_PROGRESS` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | (empty response) | - | `N/A` | No CI configured |
+
+\* Pending checks may be reclassified as `MET` (informational) when the diff is markdown-only and the check name matches `qa.markdownOnlySafeCiPatterns` — see "Markdown-Only Diff Relaxation" below for the gating-vs-relaxed partitioning rules. Failed checks are never relaxed.
 
 **CI-Related AC Detection:**
 
