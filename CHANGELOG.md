@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`pre-tool.sh` regex follow-up to #564** — wrapped four additional regex sites (destructive system commands, deployment commands, `git reset --hard` outer guard, `gh workflow run`) with the `^gh (issue|pr) ` exclusion idiom across all three mirrored hook copies (`templates/hooks/`, `hooks/`, `.claude/hooks/`). Previously, `gh issue create` / `gh pr create` / `gh issue comment` / `gh pr comment` calls whose body text merely *referenced* tokens like `rm -rf /`, `vercel deploy`, `git reset --hard`, or `gh workflow run` (e.g. release notes, tutorials, doc explainers) were blocked at the tool-call level. Closes the gap surfaced during /fullsolve QA on 2026-05-03 where #564 deliberately scoped only the force-push and `git commit` regexes. (#570)
 - **`/fullsolve` quality-loop misroute** — fixed unqualified `Skill("loop")` calls in fullsolve SKILL.md resolving to Anthropic's top-level recurring-prompt `loop` skill instead of sequant's quality-loop skill, causing the workflow to silently prompt the user to schedule a recurring task instead of running the test/QA fix iteration. All 6 occurrences across the 3 mirrored fullsolve SKILL.md files (`.claude/skills/`, `skills/`, `templates/skills/`) now use the qualified form `Skill("sequant:loop", ...)`. (#562)
 
 ### Added
