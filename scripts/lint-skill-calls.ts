@@ -1,19 +1,24 @@
 #!/usr/bin/env npx tsx
 /**
- * Lint Skill() calls in SKILL.md files for unqualified collisions with
- * Anthropic's top-level skill names.
+ * Lint Skill() calls in skill markdown files for unqualified collisions
+ * with Anthropic's top-level skill names.
  *
  * Sequant skills that share a name with an Anthropic top-level skill
  * (e.g., `loop`, `security-review`) silently misroute when invoked via the
  * bare name from another sequant skill — the harness resolves the bare name
  * to Anthropic's version. Qualifying as `sequant:<name>` avoids this.
  *
+ * Scans every `**\/*.md` under `.claude/skills/`, `templates/skills/`,
+ * and `skills/` (not just `SKILL.md`) — referenced markdown files are
+ * loaded by the harness too and can contain runtime-dangerous calls.
+ * Multi-line `Skill(\n  skill: "...",\n)` invocations are detected.
+ *
  * Usage:
  *   npx tsx scripts/lint-skill-calls.ts          # Scan and report
  *
  * Exit codes:
  *   0 - No violations
- *   1 - Violations found (or invalid args)
+ *   1 - Violations found
  *
  * Background: #562 (loop misroute), #568 (this guard).
  */
@@ -26,10 +31,13 @@ const __dirname = dirname(__filename);
 const PROJECT_ROOT = join(__dirname, "..");
 
 /**
- * Anthropic top-level skill names that collide with sequant skills.
- * Updating this list: see user-memory note `project_skill_namespace_collisions`
- * and the `available-skills` block at session start. Add a name when Anthropic
- * ships a top-level skill that shares a name with a sequant skill.
+ * Anthropic top-level skill names that could collide with a sequant skill.
+ * Sourced from the `available-skills` block emitted at session start by the
+ * Claude Code harness — every name listed here is currently registered as a
+ * top-level (non-prefixed) Anthropic skill. Defensive on purpose: includes
+ * names sequant doesn't ship today, so the lint catches a future sequant
+ * skill that picks the same name. Update when `available-skills` changes —
+ * the `/upstream` skill flags Anthropic skill drift.
  */
 export const ANTHROPIC_TOP_LEVEL_NAMES: readonly string[] = [
   "loop",
@@ -38,7 +46,10 @@ export const ANTHROPIC_TOP_LEVEL_NAMES: readonly string[] = [
   "review",
   "simplify",
   "schedule",
-  "release",
+  "claude-api",
+  "update-config",
+  "keybindings-help",
+  "fewer-permission-prompts",
 ];
 
 const SCAN_DIRS = [".claude/skills", "templates/skills", "skills"];
@@ -50,27 +61,35 @@ export interface Violation {
   snippet: string;
 }
 
+// `\s*` between tokens already matches newlines, so this catches both
+// `Skill(skill: "loop", ...)` and the multi-line readable form
+// `Skill(\n  skill: "loop",\n  ...\n)`. Run against full content (not
+// per-line) so multi-line invocations aren't missed.
 const SKILL_CALL_RE = /Skill\(\s*skill:\s*"([^"]+)"/g;
+
+function lineNumberAt(content: string, index: number): number {
+  let n = 1;
+  for (let i = 0; i < index; i++) if (content.charCodeAt(i) === 10) n++;
+  return n;
+}
 
 export function findViolations(
   content: string,
 ): Array<Omit<Violation, "file">> {
   const found: Array<Omit<Violation, "file">> = [];
   const lines = content.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    SKILL_CALL_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = SKILL_CALL_RE.exec(line)) !== null) {
-      const name = m[1];
-      if (name.startsWith("sequant:")) continue;
-      if (!ANTHROPIC_TOP_LEVEL_NAMES.includes(name)) continue;
-      found.push({
-        line: i + 1,
-        name,
-        snippet: line.trim(),
-      });
-    }
+  SKILL_CALL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = SKILL_CALL_RE.exec(content)) !== null) {
+    const name = m[1];
+    if (name.startsWith("sequant:")) continue;
+    if (!ANTHROPIC_TOP_LEVEL_NAMES.includes(name)) continue;
+    const line = lineNumberAt(content, m.index);
+    found.push({
+      line,
+      name,
+      snippet: lines[line - 1].trim(),
+    });
   }
   return found;
 }
@@ -85,7 +104,7 @@ function walkSkillFiles(baseDir: string): string[] {
       const stat = statSync(full);
       if (stat.isDirectory()) {
         walk(full);
-      } else if (entry === "SKILL.md") {
+      } else if (entry.endsWith(".md")) {
         files.push(full);
       }
     }

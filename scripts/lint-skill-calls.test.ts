@@ -61,6 +61,33 @@ describe("findViolations", () => {
     const content = 'Skill(  skill:   "loop"  , args: "x")';
     expect(findViolations(content)).toHaveLength(1);
   });
+
+  it("flags multi-line Skill() invocations", () => {
+    const content = [
+      "# heading",
+      "Skill(",
+      '  skill: "loop",',
+      '  args: "x"',
+      ")",
+      "trailing prose",
+    ].join("\n");
+    const found = findViolations(content);
+    expect(found).toHaveLength(1);
+    expect(found[0].name).toBe("loop");
+    // Line number is the line where `Skill(` starts (line 2), not where `skill:` lives.
+    expect(found[0].line).toBe(2);
+    expect(found[0].snippet).toBe("Skill(");
+  });
+
+  it("does not flag a multi-line call qualified with sequant:", () => {
+    const content = [
+      "Skill(",
+      '  skill: "sequant:loop",',
+      '  args: "x"',
+      ")",
+    ].join("\n");
+    expect(findViolations(content)).toHaveLength(0);
+  });
 });
 
 describe("lintSkillCalls (filesystem)", () => {
@@ -120,9 +147,32 @@ describe("lintSkillCalls (filesystem)", () => {
     expect(byName["security-review"].file).toBe("skills/baz/SKILL.md");
   });
 
-  it("only scans SKILL.md files, not other markdown", () => {
+  it("scans every .md file under skill mirror dirs, not just SKILL.md", () => {
+    writeSkill(
+      ".claude/skills/foo/SKILL.md",
+      'Skill(skill: "sequant:loop", args: "1")\n',
+    );
+    writeSkill(
+      ".claude/skills/foo/references/example.md",
+      'Skill(skill: "loop", args: "1")\n',
+    );
     writeSkill(
       ".claude/skills/foo/README.md",
+      'Skill(skill: "security-review", args: "1")\n',
+    );
+    const result = lintSkillCalls(tmp);
+    expect(result.scanned).toBe(3);
+    expect(result.violations).toHaveLength(2);
+    const files = result.violations.map((v) => v.file).sort();
+    expect(files).toEqual([
+      ".claude/skills/foo/README.md",
+      ".claude/skills/foo/references/example.md",
+    ]);
+  });
+
+  it("ignores non-markdown files", () => {
+    writeSkill(
+      ".claude/skills/foo/example.ts",
       'Skill(skill: "loop", args: "1")\n',
     );
     writeSkill(
