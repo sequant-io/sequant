@@ -141,8 +141,14 @@ export class LivenessHeartbeat {
     } else {
       this.phases.clear();
     }
-    if (this.phases.size === 0) {
-      this.dispose();
+    // Clear the timer when no phases remain so we don't poll uselessly between
+    // phases. We do NOT call dispose() here — that would set `stopped = true`
+    // and silently no-op the next start() in a sequential single-issue run
+    // (spec → stop → exec). Terminal teardown is dispose() called from the
+    // run.ts `finally` block.
+    if (this.phases.size === 0 && this.timer !== null) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
   }
 

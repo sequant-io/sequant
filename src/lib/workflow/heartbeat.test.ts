@@ -494,4 +494,36 @@ describe("LivenessHeartbeat", () => {
     vi.advanceTimersByTime(30_000);
     expect(writes.stdout[0]).toContain(`${ESC}[K`);
   });
+
+  // Regression: a single-issue sequential run (spec → stop → exec → stop → ...)
+  // is the most common -q use case. stop() of the last active phase must not
+  // permanently disable the heartbeat — the next start() has to re-arm the
+  // shared timer. Originally stop() called dispose(), which set stopped=true
+  // and silently no-op'd every subsequent start.
+  it("re-arms the timer after the last phase stops and a new phase starts (single-issue sequential)", () => {
+    const NOW = 1_700_000_000_000;
+    mockMtime(NOW - 1000);
+    const { hb, writes } = makeHb({ isTTY: true, now: () => NOW });
+
+    // Phase 1: spec
+    hb.start({ issueNumber: 574, phase: "spec", startedAt: NOW - 60_000 });
+    vi.advanceTimersByTime(30_000);
+    expect(writes.stdout).toHaveLength(1);
+    expect(writes.stdout[0]).toContain("spec");
+
+    // Phase 1 completes — phases.size hits 0; timer must be cleared but
+    // heartbeat must remain re-armable.
+    hb.stop({ issueNumber: 574, phase: "spec" });
+
+    // No ticks should fire while no phase is active.
+    vi.advanceTimersByTime(30_000 * 3);
+    expect(writes.stdout).toHaveLength(1);
+
+    // Phase 2: exec — must produce its own heartbeat line.
+    hb.start({ issueNumber: 574, phase: "exec", startedAt: NOW });
+    vi.advanceTimersByTime(30_000);
+
+    expect(writes.stdout.length).toBeGreaterThanOrEqual(2);
+    expect(writes.stdout.at(-1)).toContain("exec");
+  });
 });
