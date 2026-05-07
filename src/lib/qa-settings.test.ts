@@ -1,8 +1,6 @@
 /**
- * Tests for QA settings (smallDiffThreshold) in getSettings()
- *
- * Verifies that the qa.smallDiffThreshold field is correctly
- * merged from settings.json with the default value of 100.
+ * Tests for QA settings in getSettings(): `smallDiffThreshold`,
+ * `markdownOnlyCiRelaxed`, and `markdownOnlySafeCiPatterns`.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -37,7 +35,7 @@ describe("QA settings", () => {
 
     const settings = await getSettings();
 
-    expect(settings.qa).toEqual({ smallDiffThreshold: 100 });
+    expect(settings.qa).toEqual(DEFAULT_QA_SETTINGS);
   });
 
   it("should return default QA settings when settings file has no qa section", async () => {
@@ -46,7 +44,7 @@ describe("QA settings", () => {
 
     const settings = await getSettings();
 
-    expect(settings.qa).toEqual({ smallDiffThreshold: 100 });
+    expect(settings.qa).toEqual(DEFAULT_QA_SETTINGS);
   });
 
   it("should use custom smallDiffThreshold from settings file", async () => {
@@ -85,5 +83,61 @@ describe("QA settings", () => {
     const diffSize = 75;
 
     expect(diffSize < settings.qa.smallDiffThreshold).toBe(true);
+  });
+
+  describe("markdownOnlyCiRelaxed", () => {
+    it("defaults to true with the documented safe-pattern allowlist", () => {
+      expect(DEFAULT_QA_SETTINGS.markdownOnlyCiRelaxed).toBe(true);
+      expect(DEFAULT_QA_SETTINGS.markdownOnlySafeCiPatterns).toEqual([
+        "build (*)",
+        "Plugin Structure Validation",
+      ]);
+      expect(DEFAULT_SETTINGS.qa.markdownOnlyCiRelaxed).toBe(true);
+    });
+
+    it("returns defaults when the qa section is absent", async () => {
+      mockFileExists.mockResolvedValue(false);
+
+      const settings = await getSettings();
+
+      expect(settings.qa.markdownOnlyCiRelaxed).toBe(true);
+      expect(settings.qa.markdownOnlySafeCiPatterns).toEqual([
+        "build (*)",
+        "Plugin Structure Validation",
+      ]);
+    });
+
+    it("honours an explicit false override", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({
+          version: "1.0",
+          qa: { markdownOnlyCiRelaxed: false },
+        }),
+      );
+
+      const settings = await getSettings();
+
+      expect(settings.qa.markdownOnlyCiRelaxed).toBe(false);
+    });
+
+    it("honours a custom safe-pattern allowlist", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({
+          version: "1.0",
+          qa: {
+            markdownOnlySafeCiPatterns: ["test (*)", "Lint"],
+          },
+        }),
+      );
+
+      const settings = await getSettings();
+
+      expect(settings.qa.markdownOnlySafeCiPatterns).toEqual([
+        "test (*)",
+        "Lint",
+      ]);
+    });
   });
 });
