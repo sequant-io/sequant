@@ -44,7 +44,7 @@ For each platform/IDE combination, verify:
 
 - [ ] `./scripts/dev/list-worktrees.sh` runs without errors
 - [ ] `./scripts/dev/new-feature.sh 1` creates worktree (if issue exists)
-- [ ] `./scripts/dev/cleanup-worktree.sh` shows usage help
+- [ ] `./scripts/cleanup-worktree.sh` shows usage help
 
 #### Skills Integration
 
