@@ -224,6 +224,73 @@ describe("AC Linter", () => {
       });
     });
 
+    describe("title-body-tension patterns", () => {
+      it("flags doc-noun title + runtime-imperative body (motivating example from #562 AC-5)", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-5",
+          "Smoke test note in PR description. Manually trigger /fullsolve on an issue that will fail QA, capture the first line of /loop output as evidence.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        expect(result.passed).toBe(false);
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("does not flag consistent documentation AC", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Add CHANGELOG entry. Write a single bullet under Unreleased.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeUndefined();
+      });
+
+      it("does not flag consistent runtime AC", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Run end-to-end test, capture output.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeUndefined();
+      });
+
+      it("suggestion contains both resolutions (a) tighten title and (b) split AC", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-5",
+          "Smoke test note in PR description. Manually trigger /fullsolve, capture output as evidence.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+        expect(tension!.suggestion).toMatch(/\(a\)/);
+        expect(tension!.suggestion).toMatch(/\(b\)/);
+      });
+
+      it("emits warning, does not throw", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Add doc note. Trigger the workflow and capture output.",
+        );
+        expect(() => lintAcceptanceCriterion(ac)).not.toThrow();
+        const result = lintAcceptanceCriterion(ac);
+        expect(result.passed).toBe(false);
+      });
+    });
+
     describe("clear criteria", () => {
       it("should pass clear and specific AC", () => {
         const ac = createAcceptanceCriterion(

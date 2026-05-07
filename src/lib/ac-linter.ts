@@ -25,7 +25,8 @@ export type ACLintIssueType =
   | "vague"
   | "unmeasurable"
   | "incomplete"
-  | "open_ended";
+  | "open_ended"
+  | "title-body-tension";
 
 /**
  * A lint issue found in an acceptance criterion
@@ -268,6 +269,86 @@ const DEFAULT_LINT_PATTERNS: LintPattern[] = [
 ];
 
 /**
+ * Documentation-noun head words that suggest a doc-only verification bar
+ * when they appear in the AC title.
+ */
+const DOC_NOUNS = [
+  "note",
+  "comment",
+  "documentation",
+  "description",
+  "snippet",
+  "entry",
+  "mention",
+];
+
+/**
+ * Runtime-imperative phrases that suggest an execution/evidence bar
+ * when they appear in the AC body.
+ */
+const RUNTIME_IMPERATIVES = [
+  "execute",
+  "trigger",
+  "capture",
+  "verify by running",
+  "reproduce",
+  "confirm at runtime",
+];
+
+/**
+ * Slash-command runtime pattern: "run /<command>" anywhere in the body.
+ */
+const RUN_SLASH_RE = /\brun\s+\/[a-z][a-z0-9_-]*/i;
+
+/**
+ * Detect title/body verification-method tension.
+ *
+ * Splits the AC description on the first period or newline. Treats the head
+ * as the "title" and the rest as the "body". Warns when the title contains
+ * a documentation-noun (suggesting a doc bar) AND the body contains a
+ * runtime-imperative or `run /<command>` (suggesting a runtime bar).
+ *
+ * Warning-only — same convention as the regex-based DEFAULT_LINT_PATTERNS.
+ *
+ * @param ac - The acceptance criterion to check
+ * @returns A lint issue if tension is detected, otherwise null
+ */
+function detectTitleBodyTension(ac: AcceptanceCriterion): ACLintIssue | null {
+  const description = ac.description;
+  const splitIdx = description.search(/[.\n]/);
+  if (splitIdx <= 0) return null;
+
+  const title = description.slice(0, splitIdx);
+  const body = description.slice(splitIdx + 1);
+  if (title.length === 0 || body.length === 0) return null;
+
+  const titleLower = title.toLowerCase();
+  const bodyLower = body.toLowerCase();
+
+  const docNoun = DOC_NOUNS.find((noun) =>
+    new RegExp(`\\b${noun}\\b`, "i").test(titleLower),
+  );
+  if (!docNoun) return null;
+
+  const runtimeImperative = RUNTIME_IMPERATIVES.find((imp) =>
+    new RegExp(`\\b${imp}\\b`, "i").test(bodyLower),
+  );
+  const slashRun = RUN_SLASH_RE.test(body);
+  if (!runtimeImperative && !slashRun) return null;
+
+  const matched = runtimeImperative ?? "run /<command>";
+
+  return {
+    type: "title-body-tension",
+    matchedPattern: `title="${docNoun}" + body="${matched}"`,
+    problem:
+      "Title/body tension: title implies a documentation bar, body specifies a runtime/execution bar",
+    suggestion:
+      "Two verification bars detected. Either (a) tighten the title to match the runtime body (e.g., 'Smoke test execution — capture evidence'), or (b) split the runtime requirement into a separate AC.",
+  };
+}
+
+/**
  * Lint a single acceptance criterion against all patterns
  *
  * @param ac - The acceptance criterion to lint
@@ -292,6 +373,9 @@ export function lintAcceptanceCriterion(
       });
     }
   }
+
+  const tension = detectTitleBodyTension(ac);
+  if (tension) issues.push(tension);
 
   return {
     ac,
