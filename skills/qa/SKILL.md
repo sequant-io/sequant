@@ -1924,7 +1924,7 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 | 1 | **Verbatim fixtures** | Run the implementation against EVERY verbatim motivating-example string from the issue body (fenced code blocks, blockquotes, `**Verify:**` / `**Example:**` / `**Repro:**` snippets, `## Repro pattern` sections). Per `feedback_motivating_example_regression.md`, this rule applies to **any** change with motivating-example payload — not only the skill-markdown changes that trigger Section 6c. |
 | 2 | **Evidence framing** | For every "evidence" claim in the QA output (Execution Evidence, self-dogfood notes, smoke tests), check: is it a pre-fix bug reproduction or a post-fix validation? Conflating the two overstates the rigor of the QA. |
 | 3 | **Process state** | Inspect uncommitted work, divergent branches, stashed changes, and any orchestrator state (worktree, phase markers) the structured pipeline normalizes away. The pipeline reads HEAD; the truth is sometimes in the working tree. |
-| 4 | **Sibling sites** | Already covered by Section 5's Sibling-site Scan when applicable. If that scan was Skipped/N/A, briefly justify why no sibling site exists (e.g. "single-pattern file" / "test-only diff"). Do not hand-wave; cite. |
+| 4 | **Sibling sites** | Cross-file siblings: covered by Section 5's Sibling-site Scan when applicable. Intra-file siblings: covered by Section 4 Q5's audit. If both are Skipped/N/A, briefly justify why no sibling site exists (e.g. "no cross-file siblings + single-call-site fix" / "test-only diff"). Do not hand-wave; cite. |
 | 5 | **Out-of-scope but adjacent** | What does the issue body call out as Non-Goals or "left out"? Has any of it become in-scope due to the implementation choices made? Surface explicitly; do not silently expand or silently leave out. |
 
 **Status outcomes:**
@@ -1953,7 +1953,7 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 | 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
 | 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
 | 3 | Process state | [What was inspected; clean or noted] |
-| 4 | Sibling sites | [Reference Section 5's scan, OR justify N/A] |
+| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
 | 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
 
 **Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
@@ -2884,7 +2884,7 @@ You MUST include these sections:
 | 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
 | 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
 | 3 | Process state | [What was inspected; clean or noted] |
-| 4 | Sibling sites | [Reference Section 5's scan, OR justify N/A] |
+| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
 | 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
 
 **Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
