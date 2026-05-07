@@ -8,6 +8,7 @@ import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { parseBatches } from "../lib/workflow/batch-executor.js";
+import { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
 import { displayConfig, displaySummary } from "./run-display.js";
 
@@ -92,6 +93,16 @@ export async function runCommand(
   const tuiEnabled =
     Boolean(options.experimentalTui) && Boolean(process.stdout.isTTY);
 
+  // Quiet, non-TUI runs go silent for the full phase duration. The heartbeat
+  // surfaces a TTY liveness line + one-shot stall warning so users can
+  // distinguish "agent working" from "process hung". See #574.
+  const heartbeat =
+    options.quiet && !tuiEnabled
+      ? new LivenessHeartbeat({
+          phaseTimeoutSeconds: settings.run.timeout,
+        })
+      : null;
+
   const onProgress =
     !options.quiet && !tuiEnabled
       ? (
@@ -110,7 +121,21 @@ export async function runCommand(
             console.log(`  ${colors.success("✔")} #${issue}  ${phase}${dur}`);
           } else console.log(`  ${colors.error("✖")} #${issue}  ${phase}`);
         }
-      : undefined;
+      : heartbeat
+        ? (
+            issue: number,
+            phase: string,
+            event: "start" | "complete" | "failed",
+          ) => {
+            if (event === "start")
+              heartbeat.start({
+                issueNumber: issue,
+                phase,
+                startedAt: Date.now(),
+              });
+            else heartbeat.stop({ issueNumber: issue, phase });
+          }
+        : undefined;
 
   if (tuiEnabled) {
     const { renderTui } = await import("../ui/tui/index.js");
@@ -146,12 +171,16 @@ export async function runCommand(
     }
   }
 
-  const result = await RunOrchestrator.run(
-    { ...init, onProgress },
-    issues,
-    batches,
-  );
+  try {
+    const result = await RunOrchestrator.run(
+      { ...init, onProgress },
+      issues,
+      batches,
+    );
 
-  displaySummary(result);
-  if (result.exitCode !== 0) process.exit(result.exitCode);
+    displaySummary(result);
+    if (result.exitCode !== 0) process.exit(result.exitCode);
+  } finally {
+    heartbeat?.dispose();
+  }
 }
