@@ -721,10 +721,12 @@ fi
 | `FAILURE` | `fail` | `NOT_MET` | Blocks merge |
 | `CANCELLED` | `fail` | `NOT_MET` | Blocks merge |
 | `SKIPPED` | `pass` | `N/A` | No impact |
-| `PENDING` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
-| `QUEUED` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
-| `IN_PROGRESS` | `pending` | `PENDING` | → `NEEDS_VERIFICATION` |
+| `PENDING` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
+| `QUEUED` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
+| `IN_PROGRESS` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | (empty response) | - | `N/A` | No CI configured |
+
+\* Pending checks may be reclassified as `MET` (informational) when the diff is markdown-only and the check name matches `qa.markdownOnlySafeCiPatterns` — see "Markdown-Only Diff Relaxation" below for the gating-vs-relaxed partitioning rules. Failed checks are never relaxed.
 
 **CI-Related AC Detection:**
 
@@ -793,12 +795,72 @@ No CI checks configured for this repository.
 **Verdict Integration:**
 
 CI status affects the final verdict through the standard verdict algorithm:
-- CI `PENDING` → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
+- CI `PENDING` (gating) → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
+- CI `PENDING` (relaxed via the markdown-only block below) → AC item marked `MET` → no impact on verdict
 - CI `failure` → AC item marked `NOT_MET` → Verdict: `AC_NOT_MET`
 - CI `success` → AC item marked `MET` → No additional impact
 - No CI → AC item marked `N/A` → No impact on verdict
 
-**Important:** Do NOT give `READY_FOR_MERGE` if any CI check is still pending. The correct verdict is `NEEDS_VERIFICATION` with a note to re-run QA after CI completes.
+**Important:** Do NOT give `READY_FOR_MERGE` if any *gating* CI check is still pending. Pending checks are gating by default; the markdown-only relaxation below reclassifies a narrow allowlist as informational. When any gating-pending check remains, the correct verdict is `NEEDS_VERIFICATION` with a note to re-run QA after CI completes.
+
+#### Markdown-Only Diff Relaxation
+
+**Purpose:** A diff that touches only `.md` files cannot break the build matrix. Forcing `NEEDS_VERIFICATION` until the build matrix reports back wastes wakeup cycles when `typecheck` (already green) has proven the change is structurally inert. This relaxation reclassifies a small, configurable allowlist of pending checks (default: build matrix + Plugin Structure Validation) as informational for markdown-only diffs.
+
+**Scope and limits:**
+
+- **Only pending checks are relaxed.** Failed checks always gate, regardless of diff type.
+- **Only the configured allowlist is relaxed.** Other pending checks (`validate-skills`, `Hooks Validation`, `validate-plugin`, etc.) still gate.
+- **Build-affecting files disqualify the diff** even if every other change is `.md`. The detector treats `package.json`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `tsconfig*.json`, `*.config.{js,ts,mjs,cjs}`, and `.github/workflows/**` as non-markdown.
+
+**Settings (`.sequant/settings.json`, `qa` section):**
+
+| Key | Default | Effect |
+|-----|---------|--------|
+| `markdownOnlyCiRelaxed` | `true` | Master switch. Set to `false` to restore strict gating for paranoid projects. |
+| `markdownOnlySafeCiPatterns` | `["build (*)", "Plugin Structure Validation"]` | Glob patterns (single `*` wildcard) for CI check names that are safe to ignore when pending on a markdown-only diff. Override per project to match local CI step names. |
+
+**Procedure:**
+
+```bash
+# 1. Read settings — silently fall back to defaults on parse failure.
+relaxed_enabled=$(cat .sequant/settings.json 2>/dev/null \
+  | grep -o '"markdownOnlyCiRelaxed"[[:space:]]*:[[:space:]]*\(true\|false\)' \
+  | grep -o 'true\|false' || echo "true")
+
+# 2. Compute changed-file list against origin/main.
+changed_files=$(git diff origin/main...HEAD --name-only || true)
+
+# 3. Run the helpers (single npx call returns the gating-pending bucket).
+result=$(SEQUANT_QA_RELAX_FILES="$changed_files" SEQUANT_QA_RELAX_PENDING="$pending_check_names" \
+  npx tsx -e '
+    (async () => {
+      const m = await import("./src/lib/qa/markdown-only-ci.ts");
+      const { getSettings } = await import("./src/lib/settings.ts");
+      const files = (process.env.SEQUANT_QA_RELAX_FILES || "").split("\n").filter(Boolean);
+      const pending = (process.env.SEQUANT_QA_RELAX_PENDING || "").split("\n").filter(Boolean);
+      const settings = await getSettings();
+      const isMdOnly = m.detectMarkdownOnlyDiff(files);
+      const enabled = settings.qa.markdownOnlyCiRelaxed && isMdOnly;
+      const buckets = enabled
+        ? m.filterRelaxablePending(pending, settings.qa.markdownOnlySafeCiPatterns)
+        : { relaxed: [], gating: pending };
+      console.log(JSON.stringify({ isMdOnly, enabled, ...buckets }));
+    })();
+  ' 2>/dev/null || echo '{"isMdOnly":false,"enabled":false,"relaxed":[],"gating":[]}')
+```
+
+When `enabled === true` (markdown-only diff AND `markdownOnlyCiRelaxed` is `true`), use `gating` for the verdict's `pending_count`; the `relaxed` list is informational and rendered in the output.
+
+**Output transparency (REQUIRED when relaxation triggers):**
+
+When `enabled === true` AND `relaxed.length > 0`, the `### CI Status` section MUST include this labeled note immediately after the CI summary line, listing the relaxed check names verbatim:
+
+```markdown
+**Markdown-only diff detected — pending build-matrix checks treated as informational. Relaxed: build (20.x), build (22.x), Plugin Structure Validation.**
+```
+
+If `enabled === false` (flag off, or diff includes non-markdown files), do not emit the note — render the CI Status section unchanged.
 
 ---
 
@@ -1459,6 +1521,7 @@ Before any READY_FOR_MERGE verdict, complete the adversarial thinking checklist:
 2. **"What assumptions am I making?"** - List and validate key assumptions
 3. **"What's the unhappy path?"** - Test invalid inputs, failed dependencies
 4. **"Did I test the feature's PRIMARY PURPOSE?"** - If it handles errors, trigger an error
+5. **"Does the same root-cause pattern exist at sibling sites in this file?"** - The literal repro from the issue body is necessary but not sufficient. After the cited bug is fixed, audit other call sites in the same file (and same function/loop) that share the root-cause pattern. Example: if a destructive operation invalidates a resource that subsequent code depends on, scan for other destructive operations on that resource type in the same function/loop; if a wrong null-check is the bug, scan for the same access pattern elsewhere. **Complementary to Section 5's cross-file sibling-site scan: §4's question is intra-file (other lines/functions in the same file with the same root cause); §5 is cross-file (other files in the codebase with the same vulnerability).**
 
 See [testing-requirements.md](references/testing-requirements.md) for edge case checklists.
 
@@ -1473,20 +1536,21 @@ See [testing-requirements.md](references/testing-requirements.md) for edge case 
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
 - **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 ```
 
 **If either field reveals significant concerns**, factor them into your verdict. A serious failure mode with no test coverage should downgrade to `AC_MET_BUT_NOT_A_PLUS` or `AC_NOT_MET`.
 
 #### Sibling-site Scan (Conditional)
 
-**When to apply:** Focused AC + a localized fix in a multi-pattern file (≥3 instances of the affected pattern in the same file — e.g. the regex blocks in `pre-tool.sh`). Same root cause likely repeats elsewhere in the file/module.
+**When to apply:** Focused AC + a localized fix where the same root-cause pattern likely exists in other files in the codebase (≥3 occurrences of the affected pattern across files — e.g. regex blocks repeated across multiple hook scripts). Intra-file sibling sites are covered by §4 Q5; this scan is the cross-file complement.
 
-**Before declaring AC met**, scan the same file/module for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict's `Sibling sites considered:` slot — as expanded scope (only when trivial) or follow-up issue suggestion. **Don't widen scope mid-PR; file a follow-up issue instead.** Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted).
+**Before declaring AC met**, scan other files in the codebase for sibling code with the same pattern as the bug being fixed. If sibling sites would exhibit the same root cause but weren't part of the literal AC, surface them in the verdict's `Sibling sites considered:` slot — as expanded scope (only when trivial) or follow-up issue suggestion. **Don't widen scope mid-PR; file a follow-up issue instead.** Sibling sites alone do not produce `NEEDS_VERIFICATION`; that verdict is reserved for external/temporal gates (CI pending, manual-test ACs unexecuted).
 
 **Scope:** orchestrator/inline-review only — `sequant-qa-checker` sub-agents are not asked to do this scan; the orchestrator owns it during verdict synthesis.
 
-This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at the same file" prompt.
+This operationalizes the principle in `feedback_qa_second_look.md` (structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps). Don't automate via grep — false-positive risk; this is a "look at adjacent files" prompt.
 
 #### Skill Change Review (Conditional)
 
@@ -1909,6 +1973,58 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 
 ---
 
+### 6d. Adversarial Re-Read (REQUIRED for Standard QA before READY_FOR_MERGE)
+
+**Purpose:** The structured pipeline (Sections 1–6c) catches *known* failure modes by gating on file types, AC patterns, and explicit checks. The Adversarial Re-Read pass catches what the pipeline doesn't gate on — the unknown unknowns. It is the operationalization of `feedback_qa_second_look.md` ("structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps") at the structural level rather than as a final-pass checkbox.
+
+**When to apply:** Required for non-Simple-Fix verdicts before issuing `READY_FOR_MERGE`. For Simple Fix mode (`SMALL_DIFF=true`), this section is omitted entirely.
+
+**How to perform:** Answer all 5 sub-prompts below with concrete content. A bare "No gaps" without specific reasoning fails output verification — name the corpus you scanned, the strings you ran, or the codepath you traced.
+
+| # | Sub-prompt | What to check |
+|---|------------|---------------|
+| 1 | **Verbatim fixtures** | Run the implementation against EVERY verbatim motivating-example string from the issue body (fenced code blocks, blockquotes, `**Verify:**` / `**Example:**` / `**Repro:**` snippets, `## Repro pattern` sections). Per `feedback_motivating_example_regression.md`, this rule applies to **any** change with motivating-example payload — not only the skill-markdown changes that trigger Section 6c. |
+| 2 | **Evidence framing** | For every "evidence" claim in the QA output (Execution Evidence, self-dogfood notes, smoke tests), check: is it a pre-fix bug reproduction or a post-fix validation? Conflating the two overstates the rigor of the QA. |
+| 3 | **Process state** | Inspect uncommitted work, divergent branches, stashed changes, and any orchestrator state (worktree, phase markers) the structured pipeline normalizes away. The pipeline reads HEAD; the truth is sometimes in the working tree. |
+| 4 | **Sibling sites** | Cross-file siblings: covered by Section 5's Sibling-site Scan when applicable. Intra-file siblings: covered by Section 4 Q5's audit. If both are Skipped/N/A, briefly justify why no sibling site exists (e.g. "no cross-file siblings + single-call-site fix" / "test-only diff"). Do not hand-wave; cite. |
+| 5 | **Out-of-scope but adjacent** | What does the issue body call out as Non-Goals or "left out"? Has any of it become in-scope due to the implementation choices made? Surface explicitly; do not silently expand or silently leave out. |
+
+**Status outcomes:**
+
+| Status | Criteria |
+|--------|----------|
+| **Clean** | All 5 sub-prompts answered with concrete content; no gaps surfaced |
+| **Gaps Found** | One or more sub-prompts surfaced a gap, but each maps to a recommendation (improvement suggestion, follow-up issue) rather than a missing AC fixture or false claim |
+| **Severe Gap** | A sub-prompt surfaced a gap that maps to: (a) a verbatim motivating-example fixture not run, OR (b) an evidence claim that's actually a bug reproduction not a validation, OR (c) an AC marked MET on the basis of code review without the runtime / corpus check the AC's text required |
+
+**Verdict gating:**
+
+| Status | Maximum Verdict |
+|--------|-----------------|
+| Clean | READY_FOR_MERGE |
+| Gaps Found | AC_MET_BUT_NOT_A_PLUS |
+| Severe Gap | AC_NOT_MET |
+
+**Output Format:**
+
+```markdown
+### Adversarial Re-Read
+
+| # | Sub-prompt | Finding |
+|---|------------|---------|
+| 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
+| 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
+| 3 | Process state | [What was inspected; clean or noted] |
+| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
+| 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
+
+**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
+
+**Status:** Clean / Gaps Found / Severe Gap
+```
+
+---
+
 ### 7. A+ Status Verdict
 
 Provide an overall verdict:
@@ -1936,6 +2052,7 @@ Provide an overall verdict:
    - quality_plan_status = status from Phase 0b (Complete/Partial/Not Addressed/N/A)
    - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
    - detection_pattern_status = status from Section 6c (Passed/Failed/Insufficient Samples/Skipped/Not Required)
+   - adversarial_reread_status = status from Section 6d (Clean/Gaps Found/Severe Gap) — REQUIRED for Standard QA, omitted for Simple Fix
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -1958,6 +2075,8 @@ Provide an overall verdict:
        → AC_NOT_MET (block merge)
    - ELSE IF detection_pattern_status == "Failed":
        → AC_NOT_MET (silent detection failures - block merge; STRICTER than skill_verification because pattern bugs report success but match the wrong corpus)
+   - ELSE IF adversarial_reread_status == "Severe Gap":
+       → AC_NOT_MET (verbatim motivating-example fixture not run / evidence claim is bug reproduction not validation / AC marked MET without runtime or corpus check the AC text required)
    - ELSE IF skill_verification == "Failed":
        → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
    - ELSE IF execution_evidence == "Incomplete":
@@ -1978,6 +2097,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (sparse corpus - record actual sample count)
    - ELSE IF detection_pattern_status == "Skipped":
        → AC_MET_BUT_NOT_A_PLUS (corpus unavailable for pattern verification - document reason)
+   - ELSE IF adversarial_reread_status == "Gaps Found":
+       → AC_MET_BUT_NOT_A_PLUS (adversarial re-read surfaced non-blocking gaps; address as follow-up or improvement suggestions)
    - ELSE IF improvement_suggestions.length > 0:
        → AC_MET_BUT_NOT_A_PLUS (can merge with notes)
    - ELSE:
@@ -2361,6 +2482,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - Detection Pattern Verification
 - Script Verification Override
 - Skill Change Review
+- Adversarial Re-Read
 
 **Required sections for simple fix mode:**
 
@@ -2399,9 +2521,9 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
 - [ ] **CHANGELOG Verification** - User-facing changes have `[Unreleased]` entry (or marked N/A)
+- [ ] **Adversarial Re-Read** - Required structured section: all 5 sub-prompts answered with concrete content; "Findings:" and "Status:" lines populated; bare "No gaps" without specific reasoning fails verification (see Section 6d)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
-- [ ] Adversarial re-read of core logic — list anything the structured pipeline didn't surface
 
 ### Early Exit (No Implementation)
 
@@ -2490,7 +2612,8 @@ When the size gate triggers simple fix mode, use this shorter template:
 
 - **Likely failure mode:** [How would this break in production?]
 - **Not tested:** [What gaps exist in test coverage?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
 
 ---
 
@@ -2811,7 +2934,24 @@ You MUST include these sections:
 
 - **Likely failure mode:** [How would this break in production? Be specific.]
 - **Not tested:** [What gaps exist in test coverage for these changes?]
-- **Sibling sites considered:** [List sibling code in the same file/module with the same root cause, or "none — single-pattern file" / "N/A — sibling-site scan does not apply"]
+- **Sibling sites considered:** [List sibling code in other files in the codebase with the same root cause, or "none — no cross-file siblings" / "N/A — cross-file sibling-site scan does not apply"]
+- **Sibling-line audit:** [Adjacent call sites in the same file/function audited with the same root-cause pattern, OR "none — single-call-site fix"]
+
+---
+
+### Adversarial Re-Read
+
+| # | Sub-prompt | Finding |
+|---|------------|---------|
+| 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
+| 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
+| 3 | Process state | [What was inspected; clean or noted] |
+| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
+| 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
+
+**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
+
+**Status:** Clean / Gaps Found / Severe Gap
 
 ---
 

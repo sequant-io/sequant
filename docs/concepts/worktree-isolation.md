@@ -95,7 +95,7 @@ After merging a PR, clean up the worktree:
 
 ```bash
 # Manual cleanup
-./scripts/dev/cleanup-worktree.sh feature/123-add-caching
+./scripts/cleanup-worktree.sh feature/123-add-caching
 
 # Or let /clean handle it
 /clean
