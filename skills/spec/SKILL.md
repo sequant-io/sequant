@@ -142,6 +142,16 @@ Check for explicit dependencies: `gh issue view <issue> --json body,labels`. If 
 
 Check issue body/labels for feature branch references (`feature/`, `based on`, epic labels). If found, recommend `--base feature/<branch>` in the plan.
 
+### Sibling-site Scan (Conditional)
+
+**When to apply:** Focused AC + a localized fix where the same root-cause pattern likely exists at sibling sites in the same file (≥3 instances of the affected pattern in the same file — e.g. regex blocks repeated across hook scripts like `pre-tool.sh`).
+
+**During plan generation**, scan the same file/module for sibling code matching the bug's root cause. If sibling sites are found, surface them as either: **(a)** an Open Question proposing scope expansion (only when trivially co-located), or **(b)** a recommended follow-up issue listed in the plan. **Don't silently widen scope — the user decides.**
+
+**Why at `/spec` time:** `/spec` is the front line; `/qa` is the safety net. Catching sibling sites pre-implementation lets the planner widen scope or file a follow-up before any code is written, avoiding both PR-padding and process tax.
+
+This operationalizes the principle in `feedback_qa_second_look.md` (structured analysis biases positive on the literal AC; an adversarial re-read of adjacent code surfaces hidden scope). Don't automate via grep — false-positive risk; this is a "look at adjacent code" planner prompt.
+
 ## Verification Method Decision Framework
 
 Use this table when assigning verification methods to each AC:
