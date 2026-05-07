@@ -34,6 +34,7 @@ allowed-tools:
   - Bash(git push:*)
   - Bash(git worktree:*)
   - Bash(./scripts/dev/*:*)
+  - Bash(./scripts/cleanup-worktree.sh:*)
 ---
 
 # Full Solve Command
