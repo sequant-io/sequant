@@ -28,7 +28,7 @@ allowed-tools:
   - Bash(git worktree:*)
   # Worktree management
   - Bash(./scripts/dev/new-feature.sh:*)
-  - Bash(./scripts/dev/cleanup-worktree.sh:*)
+  - Bash(./scripts/cleanup-worktree.sh:*)
   # GitHub CLI
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
@@ -517,7 +517,7 @@ echo "Current branch: $CURRENT_BRANCH"
 4. **After implementation is complete:**
    - Push the branch: `git push -u origin feature/<branch-name>`
    - Create PR (manually or via script)
-   - The worktree will be cleaned up after PR merge using `./scripts/dev/cleanup-worktree.sh <branch-name>`
+   - The worktree will be cleaned up after PR merge using `./scripts/cleanup-worktree.sh <branch-name>`
 
 **Important:** Always work in the worktree directory, not the main repository, once the worktree is created.
 
