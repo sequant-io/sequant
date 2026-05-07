@@ -223,6 +223,20 @@ export interface QASettings {
    * Default: 100
    */
   smallDiffThreshold: number;
+  /**
+   * When a diff touches only markdown files, treat pending CI checks that match
+   * `markdownOnlySafeCiPatterns` as informational instead of forcing
+   * `NEEDS_VERIFICATION`. Failed checks always gate regardless of this setting.
+   * Default: true
+   */
+  markdownOnlyCiRelaxed: boolean;
+  /**
+   * Glob patterns for CI check names that are safe to ignore when pending on a
+   * markdown-only diff (e.g., build matrix, plugin structure validation).
+   * Consumer projects should override these to match their CI step names.
+   * Default: ["build (*)", "Plugin Structure Validation"]
+   */
+  markdownOnlySafeCiPatterns: string[];
 }
 
 /**
@@ -361,6 +375,10 @@ export const ScopeAssessmentSettingsSchema = z.object({
 /** Zod schema for QASettings */
 export const QASettingsSchema = z.object({
   smallDiffThreshold: z.number().default(100),
+  markdownOnlyCiRelaxed: z.boolean().default(true),
+  markdownOnlySafeCiPatterns: z
+    .array(z.string())
+    .default(["build (*)", "Plugin Structure Validation"]),
 });
 
 /**
@@ -439,7 +457,11 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "trivialThresholds",
     "thresholds",
   ]),
-  qa: new Set(["smallDiffThreshold"]),
+  qa: new Set([
+    "smallDiffThreshold",
+    "markdownOnlyCiRelaxed",
+    "markdownOnlySafeCiPatterns",
+  ]),
   "run.rotation": new Set(["enabled", "maxSizeMB", "maxFiles"]),
   "run.aider": new Set(["model", "editFormat", "extraArgs"]),
   "scopeAssessment.trivialThresholds": new Set([
@@ -594,6 +616,8 @@ export const DEFAULT_SCOPE_ASSESSMENT_SETTINGS: ScopeAssessmentSettings = {
  */
 export const DEFAULT_QA_SETTINGS: QASettings = {
   smallDiffThreshold: 100,
+  markdownOnlyCiRelaxed: true,
+  markdownOnlySafeCiPatterns: ["build (*)", "Plugin Structure Validation"],
 };
 
 /**
@@ -954,6 +978,8 @@ Each threshold has \`yellow\` (warning) and \`red\` (split recommended) values:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | \`smallDiffThreshold\` | number | \`100\` | Diff size threshold for small-diff fast path |
+| \`markdownOnlyCiRelaxed\` | boolean | \`true\` | When diff touches only \`.md\` files, treat pending CI checks matching \`markdownOnlySafeCiPatterns\` as informational |
+| \`markdownOnlySafeCiPatterns\` | string[] | \`["build (*)", "Plugin Structure Validation"]\` | Glob patterns for CI checks that are safe to ignore when pending on a markdown-only diff |
 
 ---
 
