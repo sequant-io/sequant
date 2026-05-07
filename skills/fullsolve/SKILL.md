@@ -633,7 +633,7 @@ Post completion comment to issue with:
 gh pr merge <N> --squash
 
 # 2. Clean up worktree (removes local worktree + branch)
-./scripts/dev/cleanup-worktree.sh feature/<issue-number>-*
+./scripts/cleanup-worktree.sh feature/<issue-number>-*
 
 # 3. Issue auto-closes if commit message contains "Fixes #N"
 ```
