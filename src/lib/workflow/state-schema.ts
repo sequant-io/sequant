@@ -189,6 +189,27 @@ export const AcceptanceCriteriaSchema = z.object({
 export type AcceptanceCriteria = z.infer<typeof AcceptanceCriteriaSchema>;
 
 /**
+ * Single QA stagnation observation.
+ *
+ * Recorded when fullsolve detects a same-SHA same-verdict cycle so future
+ * runs can spot "we've been here before" without re-deriving it from comments.
+ */
+export const QAStagnationEntrySchema = z.object({
+  /** HEAD SHA at the time of detection */
+  sha: z.string(),
+  /** QA verdict that repeated (e.g., AC_NOT_MET) */
+  verdict: z.string(),
+  /** ISO 8601 timestamp of detection */
+  detectedAt: z.string().datetime(),
+  /** QA loop iteration number where stagnation was detected */
+  iteration: z.number().int().nonnegative(),
+  /** Reason code: SAME_SHA_NO_PROGRESS or LOOP_NO_DIFF */
+  reason: z.enum(["SAME_SHA_NO_PROGRESS", "LOOP_NO_DIFF"]),
+});
+
+export type QAStagnationEntry = z.infer<typeof QAStagnationEntrySchema>;
+
+/**
  * Complete state for a single issue
  */
 export const IssueStateSchema = z.object({
@@ -214,6 +235,8 @@ export const IssueStateSchema = z.object({
   acceptanceCriteria: AcceptanceCriteriaSchema.optional(),
   /** Scope assessment result (if performed by /spec) */
   scopeAssessment: ScopeAssessmentSchema.optional(),
+  /** QA stagnation log: same-SHA same-verdict cycles detected during fullsolve */
+  qaStagnation: z.array(QAStagnationEntrySchema).optional(),
   /** Claude session ID (for resume) */
   sessionId: z.string().optional(),
   /** When the issue transitioned to a terminal status (merged/abandoned/closed) */

@@ -253,6 +253,34 @@ mcp__context7__query-docs({
 - Maintain type safety (no `any`)
 - Don't delete or modify unrelated tests
 
+### Step 5.5: No-Diff Guard (issue #581)
+
+Before yielding back to `/qa`, verify Step 5 actually produced a diff. If neither HEAD nor the working tree (excluding `.sequant/` state writes) changed, the fix attempt was a silent no-op — re-running `/qa` would produce the same verdict at the same SHA. Halt with `LOOP_NO_DIFF` so the orchestrator escalates to manual intervention rather than wasting another QA cycle.
+
+**Take a baseline snapshot at the START of Step 5:**
+
+```bash
+BEFORE_SNAPSHOT=$(npx tsx scripts/qa-stagnation.ts snapshot)
+# JSON: {"sha": "<HEAD>", "dirty": ["<path>", ...]} — .sequant/ paths excluded
+```
+
+**Compare AFTER Step 5 completes (before Step 6 re-validates):**
+
+```bash
+AFTER_SNAPSHOT=$(npx tsx scripts/qa-stagnation.ts snapshot)
+DECISION=$(npx tsx scripts/qa-stagnation.ts compare-snapshot "$BEFORE_SNAPSHOT" "$AFTER_SNAPSHOT")
+# JSON: {"progressed": true|false, "reason"?: "LOOP_NO_DIFF", "message": "..."}
+
+if [[ $(echo "$DECISION" | jq -r '.progressed') == "false" ]]; then
+  # Record stagnation telemetry; halt — manual intervention required.
+  npx tsx scripts/qa-stagnation.ts record <issue-number> <iteration> LOOP_NO_DIFF --verdict=NO_LOOP_PROGRESS || true
+  echo "ERROR: /loop made no commit and no working-tree changes (excluding .sequant/) — manual intervention required."
+  exit 1
+fi
+```
+
+State-file writes (anything under `.sequant/`) are deliberately excluded from the dirty comparison — `recordStagnation` writes there itself, and per issue #581's open question those writes are not progress.
+
 ### Step 6: Re-run Validation
 
 After fixes are applied, re-run the phase that found issues:

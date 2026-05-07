@@ -504,11 +504,29 @@ When `/qa` detects `SEQUANT_ORCHESTRATOR`, it:
 
 ### 4.3 QA Loop (Max 2 iterations)
 
-If verdict is not `READY_FOR_MERGE`, invoke `/loop` to fix and re-run QA:
+If verdict is not `READY_FOR_MERGE`, invoke `/loop` to fix and re-run QA.
+
+**Stagnation gate (issue #581):** Before each `/qa` re-invocation after iteration 1, run the stagnation detector. If it reports `stagnant: true` with reason `SAME_SHA_NO_PROGRESS`, the prior `/loop` made no commit and produced no diff — re-running `/qa` would yield the same verdict. Halt the loop and surface a hard blocker instead of wasting another cycle.
+
+```bash
+# Run before each /qa call after iteration 0 (skip on first call):
+npx tsx scripts/qa-stagnation.ts detect <issue-number>
+# Output (JSON): {"stagnant": true|false, "reason"?: "SAME_SHA_NO_PROGRESS", "message": "...", ...}
+# When stagnant === true: record telemetry, then halt — do NOT call /qa again.
+npx tsx scripts/qa-stagnation.ts record <issue-number> <iteration> SAME_SHA_NO_PROGRESS --verdict=AC_NOT_MET
+```
 
 ```
 qa_iteration = 0
 while qa_iteration < MAX_QA_ITERATIONS:
+    if qa_iteration > 0:
+        # Stagnation gate — same-SHA same-verdict cycles are wasted.
+        decision = `npx tsx scripts/qa-stagnation.ts detect <issue-number>`
+        if decision.stagnant == true:
+            `npx tsx scripts/qa-stagnation.ts record <issue-number> {qa_iteration} SAME_SHA_NO_PROGRESS --verdict=AC_NOT_MET`
+            # Halt — no progress since last QA. Skip to 4.4 with stagnation note.
+            break
+
     result = Skill(skill: "qa", args: "<issue-number>")
 
     if result.verdict == "READY_FOR_MERGE":
