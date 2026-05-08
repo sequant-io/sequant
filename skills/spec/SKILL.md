@@ -151,6 +151,49 @@ Check issue body/labels for feature branch references (`feature/`, `based on`, e
 
 This operationalizes the principle in `feedback_qa_second_look.md` (structured analysis biases positive on the literal AC; an adversarial re-read of adjacent code surfaces hidden scope) — `/spec` is the front line, `/qa` the safety net, so catching siblings here is strictly cheaper than at QA. Don't automate via grep — false-positive risk; this is a "look at adjacent code" planner prompt.
 
+### Rule Touchpoints (Conditional)
+
+**When to apply:** Any AC whose description matches the behavior-rule heuristic — i.e. >= 2 distinct keywords from `default | always | never | rule | behavior | skip` (case-insensitive), OR an explicit pattern like `always X unless Y` / `never X unless Y` / `default X when Y`.
+
+**Why:** Behavior-rule ACs are routinely implemented at multiple touchpoints — typically a skill prompt (LLM-interpreted) AND runtime TypeScript that duplicates the same rule. Without this check, edits land at one site and the other goes stale. Motivating miss: issue #533 (default /assess spec phase ON) where the runtime CLI's `BUG_LABELS`/`DOCS_LABELS` short-circuit survived the SKILL.md edit and was caught only by manual user follow-up. See [behavior-rule-detection.md](../_shared/references/behavior-rule-detection.md).
+
+**During context gathering**, run the detector on every AC. For each AC that triggers, list its touchpoints under a new `## Rule Touchpoints` section in the plan output.
+
+```bash
+# Per-AC touchpoint enumeration. Run once per AC in the issue body.
+# Skip entirely when no AC triggers (cheap short-circuit).
+SPEC_AC_ID="AC-1" \
+SPEC_AC_TEXT="<verbatim AC description from the issue body>" \
+npx tsx -e '
+(async () => {
+  const m = await import("./src/lib/heuristics/behavior-rule-detector.ts");
+  const ac = {
+    id: process.env.SPEC_AC_ID,
+    description: process.env.SPEC_AC_TEXT,
+    verificationMethod: "manual",
+    status: "pending",
+  };
+  const detection = m.detectBehaviorRule(ac);
+  if (!detection.triggered) { console.log(JSON.stringify({ triggered: false })); return; }
+  const touchpoints = m.findTouchpoints(ac, process.cwd());
+  console.log(JSON.stringify({ triggered: true, keywords: detection.keywords, touchpoints }));
+})();
+'
+```
+
+**If any AC triggers and `touchpoints` is non-empty**, add this section to the plan output (between **Implementation Plan** and **Design Review**):
+
+```markdown
+## Rule Touchpoints
+
+| AC | Touchpoint | Snippet |
+|----|------------|---------|
+| AC-N | path/to/file.ts:LINE | `<one-line snippet>` |
+```
+
+**If every AC short-circuits** (`triggered: false`) **or `touchpoints` is empty**, omit the section entirely — keeps cost cheap per the Performance budget in the reference doc.
+
+
 ## Verification Method Decision Framework
 
 Use this table when assigning verification methods to each AC:
