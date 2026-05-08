@@ -35,6 +35,8 @@ allowed-tools:
   - Bash(git worktree:*)
   - Bash(./scripts/dev/*:*)
   - Bash(./scripts/cleanup-worktree.sh:*)
+  - Bash(./scripts/new-feature.sh:*)
+  - Bash(./scripts/list-worktrees.sh:*)
 ---
 
 # Full Solve Command
