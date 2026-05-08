@@ -852,7 +852,7 @@ Shell scripts in `templates/scripts/`:
   - `--force` flag bypasses the guard for re-execution
   - Stale worktree detection: recreates worktrees >5 commits behind `origin/main`
   - Preserves worktrees with uncommitted changes or unpushed commits
-  - Auto-reconciliation at run start: advances merged issues via `gh pr` and `git branch --merged`
+  - Auto-reconciliation at run start: advances merged issues via `gh pr` and `git branch --merged` (#592 extended to also escalate `in_progress` → `merged` when the PR was merged outside the current sequant session)
   - Merger skill updated with explicit state update and worktree cleanup steps
   - Graceful degradation on missing state, network failures, or corrupted state
   - Merge detection uses merge-specific grep patterns (avoids false positives from docs/changelog commits)
