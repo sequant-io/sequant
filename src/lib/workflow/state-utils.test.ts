@@ -735,8 +735,10 @@ describe("state-utils", () => {
       expect(updatedState.issues["43"].status).toBe("ready_for_merge");
     });
 
-    it("should not affect issues with other statuses", async () => {
-      // Create state with issues in various states
+    it("should not advance issues in non-actionable statuses (#592: in_progress also checked)", async () => {
+      // After #592, in_progress is also checked (and may be advanced if remote
+      // says merged). Here the remote returns nothing, so #44 stays put.
+      // not_started and merged are skipped entirely (not added to stillPending).
       const state: WorkflowState = {
         version: 1,
         lastUpdated: new Date().toISOString(),
@@ -757,13 +759,28 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
+      // Mock gh + git to return "no result" so #44 (in_progress, no PR) is
+      // checked but not advanced. Without this mock, isIssueMergedIntoMain
+      // would walk up to the real .git and return true for any issue number
+      // that happens to match a real merge commit (e.g. #44 collides with
+      // PR #44 in this repo).
+      mockSpawnSync.mockImplementation(() => ({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from(""), Buffer.from("")],
+        signal: null,
+      }));
+
       const result = await reconcileStateAtStartup({ statePath });
 
       expect(result.success).toBe(true);
       expect(result.advanced).toEqual([]);
-      expect(result.stillPending).toEqual([]);
+      // #44 (in_progress) is now checked; remote shows no merge → stays pending.
+      expect(result.stillPending).toEqual([44]);
 
-      // Verify states were not changed
+      // Verify no statuses were corrupted
       const updatedState = JSON.parse(fs.readFileSync(statePath, "utf-8"));
       expect(updatedState.issues["44"].status).toBe("in_progress");
       expect(updatedState.issues["45"].status).toBe("not_started");
