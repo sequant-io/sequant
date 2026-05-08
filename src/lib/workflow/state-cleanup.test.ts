@@ -35,6 +35,21 @@ vi.mock("./platforms/github.js", async (importOriginal) => {
   };
 });
 
+// Mock spawnSync so individual tests can control the git-fallback path
+// (`isIssueMergedIntoMain` in pr-status.ts shells out to `git branch -a`
+// and `git log main --grep`). Default falls through to real spawnSync —
+// in tempDir with no .git, real git fails, which is what most tests want.
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    spawnSync: vi.fn(actual.spawnSync),
+  };
+});
+
+import { spawnSync } from "child_process";
+const mockSpawnSync = vi.mocked(spawnSync);
+
 import { reconcileStateAtStartup } from "./state-cleanup.js";
 
 function makeIssue(
@@ -57,8 +72,9 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
   let statePath: string;
 
   beforeEach(() => {
-    // tempDir has no .git, so isIssueMergedIntoMain (spawnSync git) returns false.
-    // That keeps these tests deterministic — only the mocked PR status drives `isMerged`.
+    // spawnSync is mocked so neither real git nor real gh runs in tests.
+    // GitHubProvider.getPRMergeStatusSync is mocked above; child_process is
+    // mocked at module top so isIssueMergedIntoMain's git calls are controlled.
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "reconcile-startup-test-"));
     statePath = path.join(tempDir, ".sequant", "state.json");
     fs.mkdirSync(path.join(tempDir, ".sequant"), { recursive: true });
@@ -66,6 +82,16 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
     process.chdir(tempDir);
     mockPRStatus = null;
     mockGetPRMergeStatusSync.mockClear();
+    // Default: every git/gh spawn returns a non-zero exit, so
+    // isIssueMergedIntoMain's git fallback returns false.
+    mockSpawnSync.mockReset().mockImplementation(() => ({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+      pid: 0,
+      output: [null, Buffer.from(""), Buffer.from("")],
+      signal: null,
+    }));
   });
 
   afterEach(() => {
@@ -171,5 +197,68 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
     expect(result.advanced).toEqual([]);
     expect(result.stillPending).toEqual([]);
     expect(mockGetPRMergeStatusSync).not.toHaveBeenCalled();
+  });
+
+  it("AC-1 git-fallback: advances in_progress with no pr.number when isIssueMergedIntoMain finds a merge commit", async () => {
+    // No PR recorded — checkPRMergeStatus is skipped, isIssueMergedIntoMain runs.
+    // Mock spawnSync so `git branch -a` returns nothing (forcing the merge-commit
+    // path), then `git log main --oneline ... --grep "(#593)"` returns a fake
+    // merge commit. isIssueMergedIntoMain returns true → escalation.
+    mockSpawnSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
+        return {
+          status: 0,
+          stdout: Buffer.from("  main\n"),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from("  main\n"), Buffer.from("")],
+          signal: null,
+        };
+      }
+      if (cmd === "git" && args?.includes("log")) {
+        const out = Buffer.from(
+          "abc1234 fix: backport landed via separate PR (#593)\n",
+        );
+        return {
+          status: 0,
+          stdout: out,
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, out, Buffer.from("")],
+          signal: null,
+        };
+      }
+      // Fallback for any unexpected spawnSync — fail closed.
+      return {
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from(""), Buffer.from("")],
+        signal: null,
+      };
+    });
+
+    const state = createEmptyState();
+    state.issues["593"] = makeIssue({
+      number: 593,
+      status: "in_progress",
+      // Intentionally no pr field — exercises the git-only fallback path.
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([593]);
+    expect(result.stillPending).toEqual([]);
+    // PR check is skipped because no pr.number is set.
+    expect(mockGetPRMergeStatusSync).not.toHaveBeenCalled();
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["593"].status).toBe("merged");
+    expect(persisted.issues["593"].resolvedAt).toBeDefined();
   });
 });
