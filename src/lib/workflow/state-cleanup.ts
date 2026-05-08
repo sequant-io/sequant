@@ -262,10 +262,12 @@ export interface ReconcileResult {
 /**
  * Lightweight state reconciliation at run start
  *
- * Checks issues in `ready_for_merge` state and advances them to `merged`
- * if their PRs are merged or their branches are in main.
+ * Checks issues in `ready_for_merge` or `in_progress` state and advances
+ * them to `merged` if their PRs are merged or their branches are in main.
  *
- * This prevents re-running already completed issues.
+ * Including `in_progress` covers the case where a PR was merged outside
+ * this sequant session (separate process, `gh pr merge`, web UI) — without
+ * it, the run command would re-execute already-merged issues. See #592.
  *
  * @param options - Reconciliation options
  * @returns Result with lists of advanced and still-pending issues
@@ -292,9 +294,13 @@ export async function reconcileStateAtStartup(
     const advanced: number[] = [];
     const stillPending: number[] = [];
 
-    // Find issues in ready_for_merge state
+    // Find issues in ready_for_merge or in_progress state.
+    // in_progress covers PRs merged outside this session (#592).
     for (const [issueNumStr, issueState] of Object.entries(state.issues)) {
-      if (issueState.status !== "ready_for_merge") {
+      if (
+        issueState.status !== "ready_for_merge" &&
+        issueState.status !== "in_progress"
+      ) {
         continue;
       }
 
