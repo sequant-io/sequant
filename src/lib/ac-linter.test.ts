@@ -226,13 +226,53 @@ describe("AC Linter", () => {
 
     describe("title-body-tension patterns", () => {
       it("flags doc-noun title + runtime-imperative body (motivating example from #562 AC-5)", () => {
+        // Verbatim source from #562 AC-5 issue body (bypasses parser per #597 Non-Goals)
         const ac = createAcceptanceCriterion(
           "AC-5",
-          "Smoke test note in PR description. Manually trigger /fullsolve on an issue that will fail QA, capture the first line of /loop output as evidence.",
+          'Smoke test note in PR description.** Manually trigger `/fullsolve` on an issue that will fail QA (e.g., a known AC gap) to verify `sequant:loop` is invoked, not the recurring-prompt skill. Capture the first line of /loop output ("Quality loop - Parse test/QA findings...") as evidence.',
         );
         const result = lintAcceptanceCriterion(ac);
 
         expect(result.passed).toBe(false);
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags colon separator between doc-noun title and runtime-imperative body", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Documentation note: trigger /fullsolve and capture output",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags em-dash separator between doc-noun title and runtime-imperative body", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Doc snippet — trigger workflow and capture output",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags inflected runtime imperatives (`captured`/`triggered`)", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Add note to PR description. Output is captured and workflow triggered automatically.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
         const tension = result.issues.find(
           (i) => i.type === "title-body-tension",
         );
