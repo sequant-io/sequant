@@ -27,7 +27,7 @@ allowed-tools:
   - Bash(git push:*)
   - Bash(git worktree:*)
   # Worktree management
-  - Bash(./scripts/dev/new-feature.sh:*)
+  - Bash(./scripts/new-feature.sh:*)
   - Bash(./scripts/cleanup-worktree.sh:*)
   # GitHub CLI
   - Bash(gh issue view:*)
@@ -273,7 +273,7 @@ When worktree creation is needed (standalone mode, no existing worktree):
 1. **Start worktree creation as background task:**
    ```bash
    # From main repo, start worktree creation in background
-   ./scripts/dev/new-feature.sh <issue-number> &
+   ./scripts/new-feature.sh <issue-number> &
    WORKTREE_PID=$!
    echo "Worktree creation started (PID: $WORKTREE_PID)"
    ```
@@ -461,8 +461,8 @@ echo "Current branch: $CURRENT_BRANCH"
 
 **If on main/master branch:**
 1. **STOP** - Do not implement directly on main
-2. Create a feature worktree first: `./scripts/dev/new-feature.sh <issue-number>`
-   - For custom base branch: `./scripts/dev/new-feature.sh <issue-number> --base <branch>`
+2. Create a feature worktree first: `./scripts/new-feature.sh <issue-number>`
+   - For custom base branch: `./scripts/new-feature.sh <issue-number> --base <branch>`
 3. Navigate to the worktree before making any changes
 
 **Why this matters:** Work done directly on main can be lost during sync operations (git reset, git pull --rebase, etc.). Worktrees provide isolation and safe recovery through branches.
@@ -484,9 +484,9 @@ echo "Current branch: $CURRENT_BRANCH"
    ```bash
    # Step 1: Start worktree creation in background
    # For default (main) base:
-   ./scripts/dev/new-feature.sh <issue-number> &
+   ./scripts/new-feature.sh <issue-number> &
    # For custom base branch (e.g., feature integration branch):
-   ./scripts/dev/new-feature.sh <issue-number> --base feature/dashboard &
+   ./scripts/new-feature.sh <issue-number> --base feature/dashboard &
    WORKTREE_PID=$!
 
    # Step 2: Gather context while worktree creates (see Section 2)
