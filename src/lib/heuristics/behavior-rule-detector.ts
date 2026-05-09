@@ -55,15 +55,24 @@ export type BehaviorKeyword = (typeof BEHAVIOR_KEYWORDS)[number];
 
 /**
  * Explicit behavior-rule patterns that trigger detection even with a single
- * keyword (false-positive guard exception). Examples:
- *  - "always X unless Y"
- *  - "never X unless Y"
- *  - "default X when Y"
+ * keyword (false-positive guard exception). Two families:
+ *
+ * 1. Mid-sentence rule constructs:
+ *    - "always X unless Y", "never X unless Y", "default X when Y"
+ * 2. Imperative AC openers — when an AC description begins with a capitalized
+ *    `Always` / `Never` / `Default` followed by a verb, it's almost certainly
+ *    a behavior rule even with a single keyword. Covers the AC-5 literals
+ *    "Always include Y" and "Never skip Z" which #552's prior threshold missed.
+ *    Case-sensitive on purpose: matches the imperative-rule register, not
+ *    "the system always defaults to..." prose mid-paragraph.
  */
 const EXPLICIT_PATTERNS: RegExp[] = [
   /\balways\b[^.]*?\bunless\b/i,
   /\bnever\b[^.]*?\bunless\b/i,
   /\bdefault\b[^.]*?\bwhen\b/i,
+  /^\s*Always\s+\w+/,
+  /^\s*Never\s+\w+/,
+  /^\s*Default\s+\w+/,
 ];
 
 /**
@@ -96,12 +105,15 @@ export interface BehaviorRuleDetection {
 
 /**
  * Roots scanned by `findTouchpoints`. Order matters when `TOTAL_CAP` is hit:
- * `src/lib` runs first so the runtime layer (where rule drift is most
- * dangerous) is always represented in the results. `templates/skills/` and
- * `skills/` are intentionally omitted — they mirror `.claude/skills/` 1:1
+ * earlier roots are always represented in the results. `bin/` and
+ * `src/commands/` are scanned because CLI option registration (Commander.js
+ * `.option()` chains in `bin/cli.ts`, `RunOptions` interface in
+ * `src/commands/run.ts`) is a recurring rule-drift site — see the "CLI wiring
+ * gap" pitfall called out in this project's CLAUDE.md memory. `templates/skills/`
+ * and `skills/` are intentionally omitted — they mirror `.claude/skills/` 1:1
  * and including them would triple-count every hit.
  */
-const TOUCHPOINT_ROOTS = ["src/lib", ".claude/skills"];
+const TOUCHPOINT_ROOTS = ["src/lib", "src/commands", "bin", ".claude/skills"];
 
 const TOUCHPOINT_EXTENSIONS = [".md", ".ts", ".tsx"];
 
@@ -174,8 +186,9 @@ export function detectBehaviorRule(
  *  - Walk {@link TOUCHPOINT_ROOTS}; for each line in matching files, mark a
  *    hit if the line contains any extracted symbol OR ≥2 distinct AC
  *    behavior keywords.
- *  - Hits are deduplicated by `path:line` and capped at 50 to keep `/spec`
- *    output readable (callers can re-run with a tighter scope if needed).
+ *  - Hits are deduplicated by `path:line` and capped (per-file: 3, total: 200)
+ *    to keep `/spec` output readable (callers can re-run with a tighter scope
+ *    if needed).
  */
 export function findTouchpoints(
   ac: AcceptanceCriterion,

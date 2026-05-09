@@ -48,9 +48,15 @@ To avoid flagging localized fixes that happen to mention "default" once
 1. **>= 2 distinct keywords** from `BEHAVIOR_KEYWORDS` in the AC description
    (case-insensitive, word-boundary), **OR**
 2. An **explicit pattern** match (single keyword is enough):
-   - `always X unless Y`
-   - `never X unless Y`
-   - `default X when Y`
+   - Mid-sentence rule constructs:
+     - `always X unless Y`
+     - `never X unless Y`
+     - `default X when Y`
+   - Capitalized imperative AC openers (case-sensitive — matches the
+     imperative-rule register, not "the system always defaults to..." prose):
+     - `Always <verb> ...` — covers AC-5 literal "Always include Y"
+     - `Never <verb> ...` — covers AC-5 literal "Never skip Z"
+     - `Default <verb> ...` — covers AC-5 literal "Default rule becomes X"
 
 Tunable in `EXPLICIT_PATTERNS` in `behavior-rule-detector.ts`.
 
@@ -105,9 +111,11 @@ listed in the QA output (per AC-2 of #552).
 - `findTouchpoints` and `findSurvivingInverseSymbols` short-circuit to `[]`
   when `detectBehaviorRule` returns `triggered: false`.
 - For `/qa`, the per-AC grep cost is bounded by the diff blast radius (not
-  the whole repo). For `/spec`, scope is limited to `src/lib` and
-  `.claude/skills` — `templates/skills/` and `skills/` are intentionally
-  excluded since they 1:1 mirror `.claude/skills/`.
+  the whole repo). For `/spec`, scope is `src/lib`, `src/commands`, `bin`,
+  and `.claude/skills` — `bin/` and `src/commands/` are included because CLI
+  option registration (Commander.js `.option()` chains, `RunOptions` interface)
+  is a recurring rule-drift site. `templates/skills/` and `skills/` are
+  intentionally excluded since they 1:1 mirror `.claude/skills/`.
 
 When zero behavior-rule ACs are detected across the issue, both detectors
 should be skipped entirely (no per-file grep pass).

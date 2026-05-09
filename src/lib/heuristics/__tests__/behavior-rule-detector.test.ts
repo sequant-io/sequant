@@ -127,6 +127,40 @@ describe("behavior-rule-detector", () => {
     });
   });
 
+  // The literal AC-5 example strings from the #552 issue body must trigger
+  // verbatim — no augmentation. Per feedback_qa_ac_literal.md and
+  // feedback_synthetic_test_fixture_trap.md.
+  describe("AC-5 verbatim: literal example strings from #552 issue body", () => {
+    it("triggers verbatim on 'Default rule becomes X' (issue-body example)", () => {
+      const ac = createAcceptanceCriterion("AC-5", "Default rule becomes X");
+      expect(detectBehaviorRule(ac).triggered).toBe(true);
+    });
+
+    it("triggers verbatim on 'Always include Y' via imperative-opener pattern", () => {
+      // Single keyword (`always`) — pre-fix this returned `triggered: false`.
+      // Imperative-opener explicit pattern now covers it.
+      const ac = createAcceptanceCriterion("AC-5", "Always include Y");
+      const result = detectBehaviorRule(ac);
+      expect(result.triggered).toBe(true);
+      expect(result.matchedPattern).toBeTruthy();
+    });
+
+    it("triggers verbatim on 'Never skip Z' (issue-body example)", () => {
+      const ac = createAcceptanceCriterion("AC-5", "Never skip Z");
+      expect(detectBehaviorRule(ac).triggered).toBe(true);
+    });
+
+    it("does NOT trigger on lowercase mid-sentence 'always include' prose", () => {
+      // Imperative-opener pattern is case-sensitive on purpose: descriptive
+      // prose like "the system always includes Y" must not self-trigger.
+      const ac = createAcceptanceCriterion(
+        "AC-5",
+        "the system always includes Y in responses",
+      );
+      expect(detectBehaviorRule(ac).triggered).toBe(false);
+    });
+  });
+
   // The #533 fixture uses the verbatim AC text from the issue body so the
   // detector is tested against real-world payload, not a synthetic. See
   // feedback_motivating_example_regression.md / feedback_synthetic_test_fixture_trap.md.
@@ -202,6 +236,57 @@ describe("behavior-rule-detector", () => {
         "/nonexistent/path/for/test/" + Date.now(),
       );
       expect(hits).toEqual([]);
+    });
+
+    // Guards against the recurring "CLI wiring gap" — see CLAUDE.md memory.
+    // A behavior rule about a CLI default lands in skill code while the
+    // Commander.js .option() registration in bin/cli.ts goes stale. Pre-fix
+    // (TOUCHPOINT_ROOTS = ["src/lib", ".claude/skills"]) the detector would
+    // miss it.
+    it("scans bin/ for CLI option registration touchpoints", () => {
+      function makeFixtureRepo(files: Record<string, string>): string {
+        const tmp = fs.mkdtempSync(
+          path.join(os.tmpdir(), `sequant-552-cli-scope-`),
+        );
+        for (const [rel, content] of Object.entries(files)) {
+          const full = path.join(tmp, rel);
+          fs.mkdirSync(path.dirname(full), { recursive: true });
+          fs.writeFileSync(full, content);
+        }
+        return tmp;
+      }
+
+      const fixture = makeFixtureRepo({
+        "bin/cli.ts": [
+          'import { Command } from "commander";',
+          "const program = new Command();",
+          '.option("--skip-spec", "Skip the spec phase entirely")',
+        ].join("\n"),
+        "src/commands/run.ts": [
+          "export interface RunOptions {",
+          "  /** Skip spec phase entirely — legacy default. */",
+          "  skipSpec?: boolean;",
+          "}",
+        ].join("\n"),
+      });
+
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Default rule becomes: never skip spec; remove `--skip-spec` legacy flag",
+      );
+      const hits = findTouchpoints(ac, fixture);
+
+      const paths = hits.map((h) => h.path);
+      expect(
+        paths.some((p) => p.startsWith("bin/")),
+        `Expected a bin/ hit, got:\n${paths.join("\n")}`,
+      ).toBe(true);
+      expect(
+        paths.some((p) => p.startsWith("src/commands/")),
+        `Expected a src/commands/ hit, got:\n${paths.join("\n")}`,
+      ).toBe(true);
+
+      fs.rmSync(fixture, { recursive: true, force: true });
     });
   });
 
