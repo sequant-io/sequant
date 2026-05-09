@@ -103,7 +103,7 @@ export function isBranchMergedIntoMain(
  * Check if a feature branch for an issue is merged into a base branch
  *
  * Tries multiple detection methods:
- * 1. Check if branch exists and is merged via `git branch --merged <baseBranch>`
+ * 1. Find `feature/<N>-*` branches with `git branch -a` and check via {@link isBranchMergedIntoMain}
  * 2. Check for merge commits mentioning the issue
  *
  * @param issueNumber - The issue number to check
