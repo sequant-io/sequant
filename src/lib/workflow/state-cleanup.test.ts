@@ -189,6 +189,56 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
     expect(persisted.issues["300"].status).toBe("merged");
   });
 
+  it("AC-1/AC-3/AC-7 (#606): advances waiting_for_qa_gate to merged when PR is MERGED on GitHub", async () => {
+    mockPRStatus = "MERGED";
+
+    const state = createEmptyState();
+    state.issues["606"] = makeIssue({
+      number: 606,
+      status: "waiting_for_qa_gate",
+      currentPhase: "qa",
+      pr: { number: 700, url: "https://github.com/test/test/pull/700" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([606]);
+    expect(result.stillPending).toEqual([]);
+    expect(mockGetPRMergeStatusSync).toHaveBeenCalledWith(700);
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["606"].status).toBe("merged");
+    expect(persisted.issues["606"].resolvedAt).toBeDefined();
+  });
+
+  it("AC-6 (#606): leaves waiting_for_qa_gate untouched when GitHub is unreachable and no merge commit found", async () => {
+    mockPRStatus = null;
+
+    const state = createEmptyState();
+    state.issues["606"] = makeIssue({
+      number: 606,
+      status: "waiting_for_qa_gate",
+      pr: { number: 700, url: "https://github.com/test/test/pull/700" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([]);
+    expect(result.stillPending).toEqual([606]);
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["606"].status).toBe("waiting_for_qa_gate");
+    expect(persisted.issues["606"].resolvedAt).toBeUndefined();
+  });
+
   it("returns success with empty advances when state file does not exist", async () => {
     const missing = path.join(tempDir, ".sequant", "missing.json");
     const result = await reconcileStateAtStartup({ statePath: missing });
