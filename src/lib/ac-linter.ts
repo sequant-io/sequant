@@ -303,10 +303,11 @@ const RUN_SLASH_RE = /\brun\s+\/[a-z][a-z0-9_-]*/i;
 /**
  * Detect title/body verification-method tension.
  *
- * Splits the AC description on the first period or newline. Treats the head
- * as the "title" and the rest as the "body". Warns when the title contains
- * a documentation-noun (suggesting a doc bar) AND the body contains a
- * runtime-imperative or `run /<command>` (suggesting a runtime bar).
+ * Splits the AC description on the first separator (`.`, `\n`, `:`, or `—`).
+ * Treats the head as the "title" and the rest as the "body". Warns when the
+ * title contains a documentation-noun (suggesting a doc bar) AND the body
+ * contains a runtime-imperative (incl. inflections like `triggered`,
+ * `captured`) or `run /<command>` (suggesting a runtime bar).
  *
  * Warning-only — same convention as the regex-based DEFAULT_LINT_PATTERNS.
  *
@@ -315,7 +316,7 @@ const RUN_SLASH_RE = /\brun\s+\/[a-z][a-z0-9_-]*/i;
  */
 function detectTitleBodyTension(ac: AcceptanceCriterion): ACLintIssue | null {
   const description = ac.description;
-  const splitIdx = description.search(/[.\n]/);
+  const splitIdx = description.search(/[.\n:—]/);
   if (splitIdx <= 0) return null;
 
   const title = description.slice(0, splitIdx);
@@ -330,9 +331,16 @@ function detectTitleBodyTension(ac: AcceptanceCriterion): ACLintIssue | null {
   );
   if (!docNoun) return null;
 
-  const runtimeImperative = RUNTIME_IMPERATIVES.find((imp) =>
-    new RegExp(`\\b${imp}\\b`, "i").test(bodyLower),
-  );
+  const runtimeImperative = RUNTIME_IMPERATIVES.find((imp) => {
+    if (imp.includes(" ")) {
+      return new RegExp(`\\b${imp}\\b`, "i").test(bodyLower);
+    }
+    if (imp.endsWith("e")) {
+      const stem = imp.slice(0, -1);
+      return new RegExp(`\\b${stem}(?:e|es|ed|ing)\\b`, "i").test(bodyLower);
+    }
+    return new RegExp(`\\b${imp}(?:s|ed|ing)?\\b`, "i").test(bodyLower);
+  });
   const slashRun = RUN_SLASH_RE.test(body);
   if (!runtimeImperative && !slashRun) return null;
 

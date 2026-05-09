@@ -86,7 +86,7 @@ Mark tier in HTML comment for downstream parsing: `<!-- SEQUANT_SPEC_TIER: [tier
    | Unmeasurable | "fast", "performant" | No threshold defined |
    | Incomplete | "handle errors", "edge cases" | Scenarios not enumerated |
    | Open-ended | "etc.", "and more" | Scope undefined |
-   | Title/body tension | doc-noun title ("note", "comment", "snippet") + runtime-imperative body ("execute", "trigger", "capture", `run /<cmd>`) | Two different verification bars |
+   | Title/body tension | doc-noun title ("note", "comment", "snippet") + runtime-imperative body ("execute", "trigger", "capture", incl. inflections like `triggered`/`captured`, `run /<cmd>`); separators `.`/`\n`/`:`/`—` | Two different verification bars |
 
 3. **Scope Assessment** (unless `--skip-scope-check`): Use `performScopeAssessment` from `./src/lib/scope/index.ts` with settings from `getSettings()`. Verdicts: SCOPE_OK (green), SCOPE_WARNING (yellow, auto-enables quality loop), SCOPE_SPLIT_RECOMMENDED (red). Store results in state.
 
