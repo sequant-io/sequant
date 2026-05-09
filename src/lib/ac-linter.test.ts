@@ -226,9 +226,10 @@ describe("AC Linter", () => {
 
     describe("title-body-tension patterns", () => {
       it("flags doc-noun title + runtime-imperative body (motivating example from #562 AC-5)", () => {
+        // Verbatim from #562 AC-5 issue body — constructs the AC directly to exercise the linter in isolation from parseAcceptanceCriteria.
         const ac = createAcceptanceCriterion(
           "AC-5",
-          "Smoke test note in PR description. Manually trigger /fullsolve on an issue that will fail QA, capture the first line of /loop output as evidence.",
+          'Smoke test note in PR description.** Manually trigger `/fullsolve` on an issue that will fail QA (e.g., a known AC gap) to verify `sequant:loop` is invoked, not the recurring-prompt skill. Capture the first line of /loop output ("Quality loop - Parse test/QA findings...") as evidence.',
         );
         const result = lintAcceptanceCriterion(ac);
 
@@ -237,6 +238,86 @@ describe("AC Linter", () => {
           (i) => i.type === "title-body-tension",
         );
         expect(tension).toBeDefined();
+      });
+
+      it("flags colon separator between doc-noun title and runtime-imperative body", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Documentation note: trigger /fullsolve and capture output",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags em-dash separator between doc-noun title and runtime-imperative body", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Doc snippet — trigger workflow and capture output",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags colon separator between doc-noun title and slash-command body (no runtime imperative)", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Documentation note: run /fullsolve",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags em-dash separator between doc-noun title and slash-command body (no runtime imperative)", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Doc snippet — run /fullsolve",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("flags inflected runtime imperatives (`captured`/`triggered`)", () => {
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Add note to PR description. Output is captured and workflow triggered automatically.",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeDefined();
+      });
+
+      it("does not flag non-DOC_NOUN title even with runtime-imperative body (Non-Goal: DOC_NOUNS not widened)", () => {
+        // Issue #597 Risks section listed `Implementation: trigger workflow` as a sanity check.
+        // `Implementation` is intentionally NOT in DOC_NOUNS — Non-Goals forbids widening.
+        const ac = createAcceptanceCriterion(
+          "AC-1",
+          "Implementation: trigger workflow",
+        );
+        const result = lintAcceptanceCriterion(ac);
+
+        const tension = result.issues.find(
+          (i) => i.type === "title-body-tension",
+        );
+        expect(tension).toBeUndefined();
       });
 
       it("does not flag consistent documentation AC", () => {
