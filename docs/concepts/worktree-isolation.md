@@ -65,7 +65,7 @@ When `/exec` runs, it creates a worktree:
 
 ```bash
 # Automatically called by /exec
-./scripts/dev/new-feature.sh 123
+./scripts/new-feature.sh 123
 ```
 
 This:
@@ -225,7 +225,7 @@ The `/exec` skill refuses to implement directly on main/master branch:
 # Check your branch before implementing
 git rev-parse --abbrev-ref HEAD
 # If on 'main' - create a worktree first!
-./scripts/dev/new-feature.sh <issue-number>
+./scripts/new-feature.sh <issue-number>
 ```
 
 **Why this matters:**

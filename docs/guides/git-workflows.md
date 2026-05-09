@@ -13,7 +13,7 @@ Standard pattern for new feature work:
 git worktree add ../worktrees/feature/<N>-<slug> -b feature/<N>-<slug>
 
 # Or use the helper script
-./scripts/dev/new-feature.sh <N>
+./scripts/new-feature.sh <N>
 ```
 
 ### Worktree Locations
@@ -198,10 +198,10 @@ The `new-feature.sh` script also supports `--base`:
 
 ```bash
 # Create worktree from feature branch
-./scripts/dev/new-feature.sh 117 --base feature/dashboard
+./scripts/new-feature.sh 117 --base feature/dashboard
 
 # With stash
-./scripts/dev/new-feature.sh 117 --base feature/dashboard --stash
+./scripts/new-feature.sh 117 --base feature/dashboard --stash
 ```
 
 ## Best Practices
