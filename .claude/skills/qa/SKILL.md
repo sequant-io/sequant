@@ -2309,7 +2309,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
 **Wired into §7 verdict algorithm:** This gate is enforced via the `changelog_required AND changelog_missing` branch in §7 — when both conditions are true, the verdict is demoted from `READY_FOR_MERGE` to `AC_MET_BUT_NOT_A_PLUS`. The branch is no-op when `CHANGELOG.md` is absent or no user-facing commit prefix is detected.
 
-**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes (`feat:|fix:|perf:|refactor:|docs:`) in `git log main..HEAD`. Projects without conventional commits silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
+**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes — `feat`, `fix`, `perf`, `refactor`, `docs`, with optional scope (`(...)`) and breaking marker (`!`) — in `git log main..HEAD`. Projects whose commits don't follow this pattern silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
 
 **Detection:**
 
@@ -2325,7 +2325,7 @@ unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep
 
 # Determine if change is user-facing (new features, bug fixes, etc.)
 # Look at commit messages or file changes
-user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs):' | wc -l | xargs || true)
+user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs)(\([^)]*\))?!?:' | wc -l | xargs || true)
 ```
 
 **Verification Logic:**
