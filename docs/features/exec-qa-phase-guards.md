@@ -5,7 +5,7 @@ The orchestrator now treats two previously-silent failure modes as explicit phas
 ## Prerequisites
 
 1. **Sequant CLI** — `npx sequant --version` (shipped in 2.1.3+ / Unreleased)
-2. **Worktree branched from `origin/main`** — created via `./scripts/dev/new-feature.sh <issue>` (no action needed; this is the default)
+2. **Worktree branched from `origin/main`** — created via `./scripts/new-feature.sh <issue>` (no action needed; this is the default)
 
 ## What Changed
 
