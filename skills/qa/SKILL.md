@@ -2053,7 +2053,7 @@ Provide an overall verdict:
    - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
    - detection_pattern_status = status from Section 6c (Passed/Failed/Insufficient Samples/Skipped/Not Required)
    - adversarial_reread_status = status from Section 6d (Clean/Gaps Found/Severe Gap) — REQUIRED for Standard QA, omitted for Simple Fix
-   - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND `git log main..HEAD` contains a user-facing conventional-commit prefix (`feat:|fix:|perf:|refactor:|docs:`); false otherwise
+   - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
    - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
 
 3. Browser testing enforcement check:
