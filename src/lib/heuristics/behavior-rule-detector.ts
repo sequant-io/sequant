@@ -54,6 +54,31 @@ export const BEHAVIOR_KEYWORDS = [
 export type BehaviorKeyword = (typeof BEHAVIOR_KEYWORDS)[number];
 
 /**
+ * Per-stem inflection regex map. Mirrors the stem-aware pattern landed by
+ * #597 in `src/lib/ac-linter.ts`: build `\b<stem>(<suffixes>)?\b` so the
+ * keyword check matches common inflections (`defaults`, `skipping`,
+ * `behaviors`) without over-matching identifier-shaped tokens. Word
+ * boundaries are preserved so e.g. `defaultValue` does NOT match.
+ *
+ *  - `default` → matches `default`/`defaults`/`defaulted`/`defaulting`
+ *  - `always` / `never` — adverbs, no inflections
+ *  - `rule` — e-ending: `rule`/`rules`/`ruled`/`ruling`
+ *  - `behavior` — `behavior`/`behaviors`/`behavioral`/`behaviorally`
+ *  - `skip` — double-`p` per English: `skip`/`skips`/`skipped`/`skipping`
+ *
+ * Source-of-truth lives in this map so the test suite can read it (rather
+ * than each call site rebuilding the regex inline).
+ */
+const KEYWORD_REGEXES: Record<BehaviorKeyword, RegExp> = {
+  default: /\bdefault(?:s|ed|ing)?\b/i,
+  always: /\balways\b/i,
+  never: /\bnever\b/i,
+  rule: /\brul(?:e|es|ed|ing)\b/i,
+  behavior: /\bbehavior(?:s|al|ally)?\b/i,
+  skip: /\bskip(?:s|ped|ping)?\b/i,
+};
+
+/**
  * Explicit behavior-rule patterns that trigger detection even with a single
  * keyword (false-positive guard exception). Two families:
  *
@@ -80,14 +105,21 @@ const EXPLICIT_PATTERNS: RegExp[] = [
  * terms for OLD-rule survivors inside the diff blast radius. Asymmetric on
  * purpose: e.g. an AC asserting the NEW rule "always include spec" should
  * search for "skip" / "exclude" / "bypass" survivors, not "always" itself.
+ *
+ * High-noise common English words (`include`, `run`, `auto`, `old`,
+ * `previous`) were pruned from this map after QA's self-dogfood pass on
+ * #552 returned 50 survivors entirely from definitional documentation —
+ * those words appear in any English prose. {@link deriveInverseTerms} also
+ * filters terms in {@link COMMON_WORDS} as defense-in-depth for future
+ * tuners.
  */
 const INVERSE_KEYWORDS: Record<BehaviorKeyword, string[]> = {
   default: ["skip", "exclude", "bypass", "override"],
   always: ["skip", "never", "exclude", "conditional", "shortcut"],
-  never: ["always", "default", "include", "auto"],
+  never: ["always", "default", "exclude"],
   rule: ["exception", "override", "shortcut", "bypass"],
-  behavior: ["legacy", "old", "previous", "deprecated"],
-  skip: ["include", "run", "always", "default"],
+  behavior: ["legacy", "deprecated"],
+  skip: ["always", "default", "exclude"],
 };
 
 /** A single touchpoint hit (file location matching a behavior-rule symbol). */
@@ -116,6 +148,15 @@ export interface BehaviorRuleDetection {
 const TOUCHPOINT_ROOTS = ["src/lib", "src/commands", "bin", ".claude/skills"];
 
 const TOUCHPOINT_EXTENSIONS = [".md", ".ts", ".tsx"];
+
+/**
+ * Total survivor cap on `findSurvivingInverseSymbols` results. Lower than
+ * `findTouchpoints`'s total cap (200) because survivors are surfaced inside
+ * the QA verdict and a long list drowns out the rule-relevant hits — a
+ * tighter cap forces operators to triage the highest-signal blast-radius
+ * lines first.
+ */
+const SURVIVOR_TOTAL_CAP = 50;
 
 /** Skip these directories when walking — they explode the corpus without value. */
 const WALK_SKIP_DIRS = new Set([
@@ -153,8 +194,7 @@ export function detectBehaviorRule(
 
   const matched = new Set<BehaviorKeyword>();
   for (const kw of BEHAVIOR_KEYWORDS) {
-    const re = new RegExp(`\\b${kw}\\b`, "i");
-    if (re.test(description)) matched.add(kw);
+    if (KEYWORD_REGEXES[kw].test(description)) matched.add(kw);
   }
 
   // Explicit pattern overrides the ≥2-keyword threshold (e.g. "always X
@@ -310,7 +350,7 @@ export function findSurvivingInverseSymbols(
         snippet: line.trim().slice(0, 200),
       });
 
-      if (hits.length >= 50) return hits;
+      if (hits.length >= SURVIVOR_TOTAL_CAP) return hits;
     }
   }
 
@@ -396,7 +436,7 @@ function matchesBehaviorSite(
   }
   let count = 0;
   for (const kw of keywords) {
-    if (new RegExp(`\\b${kw}\\b`, "i").test(line)) {
+    if (KEYWORD_REGEXES[kw].test(line)) {
       count++;
       if (count >= 2) return true;
     }
@@ -420,7 +460,13 @@ function escapeRegex(s: string): string {
 function deriveInverseTerms(keywords: BehaviorKeyword[]): string[] {
   const out = new Set<string>();
   for (const k of keywords) {
-    for (const inv of INVERSE_KEYWORDS[k] ?? []) out.add(inv);
+    for (const inv of INVERSE_KEYWORDS[k] ?? []) {
+      // Defense-in-depth: drop any inverse term that's a common English
+      // word, even if a future tuner adds it to INVERSE_KEYWORDS. Common
+      // words produce false-positive survivors on every prose line.
+      if (COMMON_WORDS.has(inv.toLowerCase())) continue;
+      out.add(inv);
+    }
   }
   return [...out];
 }

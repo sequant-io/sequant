@@ -161,6 +161,49 @@ describe("behavior-rule-detector", () => {
     });
   });
 
+  // Inflection-aware keyword matching — mirrors the stem-aware pattern
+  // landed by #597 in ac-linter.ts. Pre-fix `\bdefault\b` missed `defaults`
+  // and `defaulting`; `\bskip\b` missed `skipping`; `\bbehavior\b` missed
+  // `behaviors`. Real-world ACs use these forms.
+  describe("inflection-aware keyword matching", () => {
+    it("triggers on 'The system defaults to skipping bug labels' (default + skip via inflections)", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-x",
+        "The system defaults to skipping bug labels",
+      );
+      const result = detectBehaviorRule(ac);
+      expect(result.triggered).toBe(true);
+      // Stems are stored canonically — `defaults` → `default`, `skipping` → `skip`.
+      expect(result.keywords).toEqual(
+        expect.arrayContaining(["default", "skip"]),
+      );
+    });
+
+    it("triggers on 'Behaviors are deprecated when defaults change' (behavior + default via inflections)", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-x",
+        "Behaviors are deprecated when defaults change",
+      );
+      const result = detectBehaviorRule(ac);
+      expect(result.triggered).toBe(true);
+      expect(result.keywords).toEqual(
+        expect.arrayContaining(["behavior", "default"]),
+      );
+    });
+
+    it("does NOT trigger on the camelCase identifier 'defaultValue' alone (word boundary holds)", () => {
+      // Pre-fix paranoia: `\bdefault(s|ed|ing)?\b` must not match
+      // `defaultValue` because the next char `V` is a word char.
+      const ac = createAcceptanceCriterion(
+        "AC-x",
+        "Add a defaultValue field to interface X",
+      );
+      const result = detectBehaviorRule(ac);
+      expect(result.triggered).toBe(false);
+      expect(result.keywords).toEqual([]);
+    });
+  });
+
   // The #533 fixture uses the verbatim AC text from the issue body so the
   // detector is tested against real-world payload, not a synthetic. See
   // feedback_motivating_example_regression.md / feedback_synthetic_test_fixture_trap.md.
@@ -396,6 +439,37 @@ describe("behavior-rule-detector", () => {
       );
       const survivors = findSurvivingInverseSymbols(ac, REPO_ROOT, []);
       expect(survivors).toEqual([]);
+    });
+
+    // Pre-fix INVERSE_KEYWORDS["skip"] included "include" and INVERSE_KEYWORDS
+    // ["never"] included "include"/"auto". `matchesAnyTerm` did not filter
+    // against COMMON_WORDS, so the bare word "include" in any English prose
+    // line was a false-positive survivor — exactly the noise QA flagged in
+    // its self-dogfood pass on PR #607.
+    it("does NOT flag survivors on pruned common-word inverse terms (include/run/auto/old/previous)", () => {
+      // Fixture contains only the words that were pruned in #607's gap-fix
+      // round-2: `include`, `run`, `auto`, `old`, `previous`. Pre-fix these
+      // were inverse terms for `skip` and `never` and matched any English
+      // prose. Post-fix they're absent from the map and additionally
+      // filtered by `deriveInverseTerms` against COMMON_WORDS.
+      const fixture = makeFixtureRepo({
+        "src/lib/comment.ts": [
+          "// docs include English prose like an auto-run hook for the old",
+          "// previous workflow; this file's content is unrelated to the rule.",
+          "export const x = 1;",
+        ].join("\n"),
+      });
+
+      const ac = createAcceptanceCriterion(
+        "AC-x",
+        "Default rule becomes: never skip spec for any label",
+      );
+      const survivors = findSurvivingInverseSymbols(ac, fixture, [
+        "src/lib/comment.ts",
+      ]);
+      expect(survivors).toEqual([]);
+
+      fs.rmSync(fixture, { recursive: true, force: true });
     });
   });
 });

@@ -29,16 +29,19 @@ heuristic does.
 
 ## Trigger keywords
 
-A `BEHAVIOR_KEYWORDS` constant in `behavior-rule-detector.ts`:
+A `BEHAVIOR_KEYWORDS` constant in `behavior-rule-detector.ts`. Each keyword
+also matches common inflections via the `KEYWORD_REGEXES` map (mirrors the
+stem-aware pattern landed by #597 in `ac-linter.ts`); word boundaries are
+preserved so `defaultValue` (camelCase identifier) does NOT trigger.
 
-| Keyword | Why it's in the set |
-|---------|---------------------|
-| `default` | "default becomes X", "default to Y" |
-| `always` | "always include", "always run" |
-| `never` | "never skip", "never run when X" |
-| `rule` | "the rule is", "this rule applies" |
-| `behavior` | "the behavior is", "behavior changes" |
-| `skip` | "skip spec", "skip when X" |
+| Keyword | Inflections matched | Why it's in the set |
+|---------|---------------------|---------------------|
+| `default` | `defaults`, `defaulted`, `defaulting` | "default becomes X", "defaults to Y" |
+| `always` | (adverb, no inflections) | "always include", "always run" |
+| `never` | (adverb, no inflections) | "never skip", "never run when X" |
+| `rule` | `rules`, `ruled`, `ruling` | "the rule is", "this rule applies" |
+| `behavior` | `behaviors`, `behavioral`, `behaviorally` | "the behavior is", "behaviors change" |
+| `skip` | `skips`, `skipped`, `skipping` | "skip spec", "skipping when X" |
 
 ## Trigger threshold (false-positive guard)
 
@@ -86,10 +89,17 @@ survivors, not "always" itself.
 |------------------|----------------------|
 | `default` | `skip`, `exclude`, `bypass`, `override` |
 | `always` | `skip`, `never`, `exclude`, `conditional`, `shortcut` |
-| `never` | `always`, `default`, `include`, `auto` |
+| `never` | `always`, `default`, `exclude` |
 | `rule` | `exception`, `override`, `shortcut`, `bypass` |
-| `behavior` | `legacy`, `old`, `previous`, `deprecated` |
-| `skip` | `include`, `run`, `always`, `default` |
+| `behavior` | `legacy`, `deprecated` |
+| `skip` | `always`, `default`, `exclude` |
+
+High-noise common English words (`include`, `run`, `auto`, `old`,
+`previous`) were pruned from this map after QA's self-dogfood pass on #552
+returned 50 survivors entirely from definitional prose. As defense in
+depth, `deriveInverseTerms` also drops any term in the `COMMON_WORDS`
+filter at runtime, so future tunings that re-add a common word are still
+filtered out.
 
 A survival inside the diff blast radius -> AC `NOT_MET` with `path:line`
 listed in the QA output (per AC-2 of #552).
@@ -104,6 +114,9 @@ listed in the QA output (per AC-2 of #552).
   from the symbol-extraction pass to avoid grepping for "the".
 - Per-file cap (3) + total cap (200) on `findTouchpoints` results — keeps
   `/spec` output readable when an AC's keywords are ambient in the repo.
+- Total cap (50, `SURVIVOR_TOTAL_CAP`) on `findSurvivingInverseSymbols`
+  results — tighter than `findTouchpoints` because survivors are surfaced
+  inside the QA verdict and a long list drowns out the rule-relevant hits.
 
 ## Performance budget
 
@@ -154,13 +167,31 @@ const survivors = findSurvivingInverseSymbols(ac, repoRoot, diffPaths);
 // survivors: { path, line, snippet }[]
 ```
 
+## Known limitations
+
+**Meta-recursion** — when an AC describes the detector itself (e.g. lists
+all six trigger keywords as part of explaining the trigger condition),
+`findSurvivingInverseSymbols` will self-fire on the new feature's own
+definitional documentation. The pruned `INVERSE_KEYWORDS` map and
+`SURVIVOR_TOTAL_CAP = 50` mitigate noise, but the heuristic cannot
+distinguish "code that implements the OLD rule" from "documentation that
+defines the rule". Treat survivors inside this reference doc and
+`spec/SKILL.md` / `qa/SKILL.md` as definitional, not stale. See QA's
+self-dogfood result on PR #607 for the original observation.
+
 ## Tuning
 
 Edit `src/lib/heuristics/behavior-rule-detector.ts`:
 
-- `BEHAVIOR_KEYWORDS` — keyword set
-- `EXPLICIT_PATTERNS` — single-keyword override patterns
-- `INVERSE_KEYWORDS` — asserted -> inverse mapping for `/qa`
+- `BEHAVIOR_KEYWORDS` — keyword stem set (the source of truth)
+- `KEYWORD_REGEXES` — per-stem inflection regex map; word-boundary
+  guarded so identifier-shaped tokens (`defaultValue`, `skipperFn`) do
+  not trigger
+- `EXPLICIT_PATTERNS` — single-keyword override patterns (mid-sentence
+  rule constructs + capitalized imperative AC openers)
+- `INVERSE_KEYWORDS` — asserted -> inverse mapping for `/qa` (common
+  English words filtered at runtime in `deriveInverseTerms`)
 - `TOUCHPOINT_ROOTS` — directories scanned by `findTouchpoints`
+- `SURVIVOR_TOTAL_CAP` — total survivor cap on `findSurvivingInverseSymbols`
 
 Re-run `npx vitest run src/lib/heuristics` after tuning.
