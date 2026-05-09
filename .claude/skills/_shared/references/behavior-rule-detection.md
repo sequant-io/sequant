@@ -179,6 +179,14 @@ defines the rule". Treat survivors inside this reference doc and
 `spec/SKILL.md` / `qa/SKILL.md` as definitional, not stale. See QA's
 self-dogfood result on PR #607 for the original observation.
 
+**Inverse-phrase fallback (deferred)** — `findSurvivingInverseSymbols`
+relies on the asserted-→-inverse keyword map. When an AC's inverse rule
+has no obvious symbol or keyword (e.g. "API responses always include the
+user ID field"), the natural next layer is to derive an inverse English
+phrase ("exclude user ID", "don't include user ID") and grep for that.
+Not implemented — file a follow-up issue with the concrete fixture if a
+real `/qa` miss surfaces.
+
 ## Tuning
 
 Edit `src/lib/heuristics/behavior-rule-detector.ts`:
