@@ -2112,6 +2112,8 @@ Provide an overall verdict:
    - detection_pattern_status = status from Section 6c (Passed/Failed/Insufficient Samples/Skipped/Not Required)
    - adversarial_reread_status = status from Section 6d (Clean/Gaps Found/Severe Gap) — REQUIRED for Standard QA, omitted for Simple Fix
    - behavior_rule_survival_status = status from Section 6e (Clean/Survivors Found/N/A) — REQUIRED when any AC triggers the behavior-rule heuristic, omitted otherwise
+   - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND `git log main..HEAD` contains a user-facing conventional-commit prefix (`feat:|fix:|perf:|refactor:|docs:`); false otherwise
+   - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
 
 3. Browser testing enforcement check:
    - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
@@ -2142,6 +2144,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
    - ELSE IF execution_evidence == "Incomplete":
        → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
+   - ELSE IF changelog_required AND changelog_missing:
+       → AC_MET_BUT_NOT_A_PLUS (CHANGELOG entry required for user-facing changes - see Section 10a for remediation)
    - ELSE IF quality_plan_status == "Not Addressed" AND quality_plan_exists:
        → AC_MET_BUT_NOT_A_PLUS (quality dimensions not addressed - flag for review)
    - ELSE IF browser_test_missing (from step 3):
@@ -2363,6 +2367,10 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 ### 10a. CHANGELOG Quality Gate (REQUIRED)
 
 **Purpose:** Verify user-facing changes have corresponding CHANGELOG entries before `READY_FOR_MERGE`.
+
+**Wired into §7 verdict algorithm:** This gate is enforced via the `changelog_required AND changelog_missing` branch in §7 — when both conditions are true, the verdict is demoted from `READY_FOR_MERGE` to `AC_MET_BUT_NOT_A_PLUS`. The branch is no-op when `CHANGELOG.md` is absent or no user-facing commit prefix is detected.
+
+**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes (`feat:|fix:|perf:|refactor:|docs:`) in `git log main..HEAD`. Projects without conventional commits silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
 
 **Detection:**
 
