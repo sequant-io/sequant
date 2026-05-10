@@ -28,7 +28,10 @@ import {
 import { formatElapsedTime, formatTimestamp } from "./format.js";
 
 const FIXED_NOW = 1_700_000_000_000;
-const FIXED_DATE = new Date("2026-05-09T16:00:00.000Z");
+// Construct via local-time components so `getHours()` returns 11 in any timezone
+// (CI runs in UTC, dev may be in any TZ — using `new Date("…Z")` would render
+// differently and cause snapshot mismatches).
+const FIXED_DATE = new Date(2026, 4, 9, 11, 0, 0, 0);
 
 function buffer(): {
   write: (s: string) => void;
