@@ -37,28 +37,60 @@ export function checkPRMergeStatus(prNumber: number): PRMergeStatus {
 /**
  * Check if a branch has been merged into a base branch using git
  *
+ * "Merged" here means the branch was the source of an actual merge commit on
+ * the base branch — i.e., the branch tip appears as a non-first parent of some
+ * merge commit reachable from baseBranch. This deliberately excludes the case
+ * where the branch tip is just an ancestor of baseBranch with no commits ever
+ * added (e.g., a worktree branch created from main that was abandoned before
+ * any commits were made). Those branches are reachable from main but were
+ * never merged in any meaningful sense; the older `git branch --merged` check
+ * misclassified them as merged and caused subsequent runs to skip the still-
+ * open issue.
+ *
+ * Squash-merged branches do not satisfy this check (their tip is not on main
+ * after squash) — callers that need to detect squash merges should rely on
+ * commit-message detection (see {@link isIssueMergedIntoMain}'s `--grep` path)
+ * or a PR API check.
+ *
  * @param branchName - The branch name to check (e.g., "feature/33-some-title")
  * @param baseBranch - The base branch to check against (default: "main")
- * @returns true if the branch is merged into the base branch, false otherwise
+ * @returns true if a merge commit on baseBranch records branchName's tip as a
+ *   non-first parent, false otherwise
  */
 export function isBranchMergedIntoMain(
   branchName: string,
   baseBranch: string = "main",
 ): boolean {
   try {
-    // Get branches merged into the base branch
-    const result = spawnSync("git", ["branch", "--merged", baseBranch], {
+    // Resolve the branch tip SHA. If the branch can't be resolved (deleted,
+    // typo'd, etc.), it can't be "merged" by any definition.
+    const tipResult = spawnSync("git", ["rev-parse", branchName], {
       stdio: "pipe",
       timeout: 10000,
     });
+    if (tipResult.status !== 0) return false;
+    const branchTip = tipResult.stdout.toString().trim();
+    if (!branchTip) return false;
 
-    if (result.status === 0 && result.stdout) {
-      const mergedBranches = result.stdout.toString();
-      // Check if our branch is in the list (handle both local and remote refs)
-      return (
-        mergedBranches.includes(branchName) ||
-        mergedBranches.includes(`remotes/origin/${branchName}`)
-      );
+    // Walk recent merge commits on baseBranch and check whether any records
+    // the branch tip as a non-first parent. The first parent of a merge
+    // commit is the prior tip of baseBranch; non-first parents are the
+    // sources being merged in.
+    const mergesResult = spawnSync(
+      "git",
+      ["rev-list", "--merges", "--parents", "-200", baseBranch],
+      { stdio: "pipe", timeout: 10000 },
+    );
+
+    if (mergesResult.status === 0 && mergesResult.stdout) {
+      const lines = mergesResult.stdout.toString().trim().split("\n");
+      for (const line of lines) {
+        if (!line) continue;
+        const parts = line.split(" ");
+        if (parts.length > 2 && parts.slice(2).includes(branchTip)) {
+          return true;
+        }
+      }
     }
   } catch {
     // git command failed - return false
@@ -71,7 +103,7 @@ export function isBranchMergedIntoMain(
  * Check if a feature branch for an issue is merged into a base branch
  *
  * Tries multiple detection methods:
- * 1. Check if branch exists and is merged via `git branch --merged <baseBranch>`
+ * 1. Find `feature/<N>-*` branches with `git branch -a` and check via {@link isBranchMergedIntoMain}
  * 2. Check for merge commits mentioning the issue
  *
  * @param issueNumber - The issue number to check
