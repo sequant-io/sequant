@@ -803,9 +803,8 @@ describe("state-utils", () => {
       };
       fs.writeFileSync(statePath, JSON.stringify(state));
 
-      // Mock git commands to show branch is merged
+      const branchTip = "47474747474747474747474747474747aaaaaaaa";
       mockSpawnSync.mockImplementation((cmd, args) => {
-        // Mock git branch -a to return the feature branch
         if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
           return {
             status: 0,
@@ -822,22 +821,30 @@ describe("state-utils", () => {
             signal: null,
           };
         }
-        // Mock git branch --merged main to show our branch is merged
-        if (
-          cmd === "git" &&
-          args?.includes("--merged") &&
-          args?.includes("main")
-        ) {
+        // Resolve branch tip
+        if (cmd === "git" && args?.[0] === "rev-parse") {
           return {
             status: 0,
-            stdout: Buffer.from("  main\n  feature/47-some-feature\n"),
+            stdout: Buffer.from(`${branchTip}\n`),
             stderr: Buffer.from(""),
             pid: 0,
-            output: [
-              null,
-              Buffer.from("  main\n  feature/47-some-feature\n"),
-              Buffer.from(""),
-            ],
+            output: [null, Buffer.from(`${branchTip}\n`), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // Merge commits on main include branchTip as non-first parent
+        if (
+          cmd === "git" &&
+          args?.includes("--merges") &&
+          args?.includes("--parents")
+        ) {
+          const out = `mergeNNN firstparent ${branchTip}\n`;
+          return {
+            status: 0,
+            stdout: Buffer.from(out),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(out), Buffer.from("")],
             signal: null,
           };
         }
@@ -867,47 +874,101 @@ describe("state-utils", () => {
       mockSpawnSync.mockReset();
     });
 
-    it("should return true when branch is in git branch --merged main output", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 0,
-        stdout: Buffer.from("  main\n  feature/123-test\n"),
-        stderr: Buffer.from(""),
-        pid: 0,
-        output: [
-          null,
-          Buffer.from("  main\n  feature/123-test\n"),
-          Buffer.from(""),
-        ],
-        signal: null,
+    function mockGit(
+      handlers: Array<(cmd: string, args: string[]) => string | null>,
+    ) {
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        const argsArr = (args ?? []) as string[];
+        for (const handler of handlers) {
+          const out = handler(cmd as string, argsArr);
+          if (out !== null) {
+            const buf = Buffer.from(out);
+            return {
+              status: 0,
+              stdout: buf,
+              stderr: Buffer.from(""),
+              pid: 0,
+              output: [null, buf, Buffer.from("")],
+              signal: null,
+            };
+          }
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
       });
+    }
+
+    it("returns true when branch tip is recorded as non-first parent of a merge on base", () => {
+      const branchTip = "aaaaaaa1111111111111111111111111111111";
+      mockGit([
+        (cmd, args) =>
+          cmd === "git" &&
+          args[0] === "rev-parse" &&
+          args[1] === "feature/123-test"
+            ? `${branchTip}\n`
+            : null,
+        (cmd, args) =>
+          cmd === "git" &&
+          args[0] === "rev-list" &&
+          args.includes("--merges") &&
+          args.includes("--parents")
+            ? `merge0123 firstparent ${branchTip}\n`
+            : null,
+      ]);
 
       expect(isBranchMergedIntoMain("feature/123-test")).toBe(true);
     });
 
-    it("should return false when branch is not in merged output", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 0,
-        stdout: Buffer.from("  main\n"),
-        stderr: Buffer.from(""),
-        pid: 0,
-        output: [null, Buffer.from("  main\n"), Buffer.from("")],
-        signal: null,
-      });
+    it("returns false for an empty branch whose tip is just an ancestor of base (no merge records it)", () => {
+      // Reproduces the SIGINT-orphan bug: branch was created from main and
+      // never had commits added. Its tip equals an old main commit (so
+      // `git branch --merged main` would list it), but no merge commit ever
+      // recorded it as a non-first parent.
+      const branchTip = "ddddddddddddddddddddddddddddddddddddddd0";
+      mockGit([
+        (cmd, args) =>
+          cmd === "git" && args[0] === "rev-parse" ? `${branchTip}\n` : null,
+        (cmd, args) =>
+          cmd === "git" &&
+          args[0] === "rev-list" &&
+          args.includes("--merges") &&
+          args.includes("--parents")
+            ? // Some unrelated merges on main — none with branchTip as a parent
+              "mergeAAA parent1 parent2\nmergeBBB parent3 parent4\n"
+            : null,
+      ]);
 
-      expect(isBranchMergedIntoMain("feature/456-other")).toBe(false);
+      expect(isBranchMergedIntoMain("feature/608-empty-orphan")).toBe(false);
     });
 
-    it("should return false when git command fails", () => {
-      mockSpawnSync.mockReturnValueOnce({
-        status: 1,
-        stdout: Buffer.from(""),
-        stderr: Buffer.from("error"),
-        pid: 0,
-        output: [null, Buffer.from(""), Buffer.from("error")],
-        signal: null,
-      });
+    it("returns false when branch cannot be resolved", () => {
+      // git rev-parse fails — fallthrough handler returns status 1
+      mockGit([]);
 
-      expect(isBranchMergedIntoMain("feature/789-branch")).toBe(false);
+      expect(isBranchMergedIntoMain("feature/789-missing")).toBe(false);
+    });
+
+    it("returns false when there are no merges on base", () => {
+      const branchTip = "ccccccccccccccccccccccccccccccccccccccc0";
+      mockGit([
+        (cmd, args) =>
+          cmd === "git" && args[0] === "rev-parse" ? `${branchTip}\n` : null,
+        (cmd, args) =>
+          cmd === "git" &&
+          args[0] === "rev-list" &&
+          args.includes("--merges") &&
+          args.includes("--parents")
+            ? ""
+            : null,
+      ]);
+
+      expect(isBranchMergedIntoMain("feature/456-other")).toBe(false);
     });
   });
 
@@ -916,9 +977,10 @@ describe("state-utils", () => {
       mockSpawnSync.mockReset();
     });
 
-    it("should return true when feature branch is merged", () => {
+    it("should return true when feature branch is recorded as a merge source", () => {
+      const branchTip = "ababab1212121212121212121212121212121212";
       mockSpawnSync.mockImplementation((cmd, args) => {
-        // First call: git branch -a
+        // git branch -a: list branches so isIssueMergedIntoMain finds the candidate
         if (args?.includes("-a")) {
           return {
             status: 0,
@@ -933,18 +995,26 @@ describe("state-utils", () => {
             signal: null,
           };
         }
-        // Second call: git branch --merged main
-        if (args?.includes("--merged")) {
+        // git rev-parse <branch>: resolve tip
+        if (args?.[0] === "rev-parse") {
           return {
             status: 0,
-            stdout: Buffer.from("  main\n  feature/50-test-feature\n"),
+            stdout: Buffer.from(`${branchTip}\n`),
             stderr: Buffer.from(""),
             pid: 0,
-            output: [
-              null,
-              Buffer.from("  main\n  feature/50-test-feature\n"),
-              Buffer.from(""),
-            ],
+            output: [null, Buffer.from(`${branchTip}\n`), Buffer.from("")],
+            signal: null,
+          };
+        }
+        // git rev-list --merges --parents: include branchTip as a non-first parent
+        if (args?.includes("--merges") && args?.includes("--parents")) {
+          const out = `merge0123 firstparent ${branchTip}\n`;
+          return {
+            status: 0,
+            stdout: Buffer.from(out),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(out), Buffer.from("")],
             signal: null,
           };
         }
@@ -959,6 +1029,72 @@ describe("state-utils", () => {
       });
 
       expect(isIssueMergedIntoMain(50)).toBe(true);
+    });
+
+    it("regression: empty feature branch from interrupted run is NOT detected as merged", () => {
+      // Mirrors the production bug: a `feature/<N>-...` branch was created
+      // from main, no commits were added, the run was SIGINT'd, the worktree
+      // was removed but the branch was left behind. The branch tip equals an
+      // old main commit, so `git branch --merged main` would list it — but
+      // no merge commit on main records it as a parent and no `(#N)` /
+      // `Merge #N` commit references the issue.
+      const branchTip = "feedfeedfeedfeedfeedfeedfeedfeedfeedfee0";
+      mockSpawnSync.mockImplementation((cmd, args) => {
+        if (args?.includes("-a")) {
+          const out = "  main\n  feature/608-investigate-metrics-gap\n";
+          return {
+            status: 0,
+            stdout: Buffer.from(out),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(out), Buffer.from("")],
+            signal: null,
+          };
+        }
+        if (args?.[0] === "rev-parse") {
+          return {
+            status: 0,
+            stdout: Buffer.from(`${branchTip}\n`),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(`${branchTip}\n`), Buffer.from("")],
+            signal: null,
+          };
+        }
+        if (args?.includes("--merges") && args?.includes("--parents")) {
+          // Some merges exist on main but none reference branchTip
+          const out = "mergeAAA parent1 parent2\nmergeBBB parent3 parent4\n";
+          return {
+            status: 0,
+            stdout: Buffer.from(out),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(out), Buffer.from("")],
+            signal: null,
+          };
+        }
+        if (args?.includes("log")) {
+          // No `(#608)` / `Merge #608` commits either
+          return {
+            status: 0,
+            stdout: Buffer.from(""),
+            stderr: Buffer.from(""),
+            pid: 0,
+            output: [null, Buffer.from(""), Buffer.from("")],
+            signal: null,
+          };
+        }
+        return {
+          status: 1,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from(""), Buffer.from("")],
+          signal: null,
+        };
+      });
+
+      expect(isIssueMergedIntoMain(608)).toBe(false);
     });
 
     it("should return false when no feature branch exists for issue", () => {
