@@ -571,6 +571,151 @@ describe("TTYRenderer", () => {
     r.dispose();
   });
 
+  it("AC-23: auto-detect mode renders `Phase: detecting…` until spec finishes", () => {
+    const { r } = makeTTY({ columns: 100 });
+    r.registerIssue({ issueNumber: 614, autoDetect: true });
+    r.onEvent({ issue: 614, phase: "spec", event: "start" });
+
+    // While spec is running and no other phase is known, header should show
+    // the detecting placeholder.
+    const detectingFrame = stripAnsi(r.renderLiveFrame(100));
+    expect(detectingFrame).toMatch(/Phase: detecting…/);
+    expect(detectingFrame).not.toMatch(/⠋ spec/);
+
+    // Once spec completes and exec begins, the resolved plan takes over.
+    r.onEvent({
+      issue: 614,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 30,
+    });
+    r.onEvent({ issue: 614, phase: "exec", event: "start" });
+    const resolvedFrame = stripAnsi(r.renderLiveFrame(100));
+    expect(resolvedFrame).not.toMatch(/Phase: detecting…/);
+    expect(resolvedFrame).toMatch(/exec/);
+    r.dispose();
+  });
+
+  it("AC-23: non-auto-detect runs never render the detecting placeholder", () => {
+    const { r } = makeTTY({ columns: 100 });
+    r.registerIssue({ issueNumber: 614 }); // autoDetect omitted
+    r.onEvent({ issue: 614, phase: "spec", event: "start" });
+    const frame = stripAnsi(r.renderLiveFrame(100));
+    expect(frame).not.toMatch(/Phase: detecting…/);
+    expect(frame).toMatch(/spec/);
+    r.dispose();
+  });
+
+  it("AC-26: phase running past stallThresholdMs flips to `⚠ stalled`", () => {
+    const buf = buffer();
+    let nowMs = FIXED_NOW;
+    const r = new TTYRenderer({
+      stdoutWrite: buf.write,
+      noColor: true,
+      now: () => nowMs,
+      wallClock: () => FIXED_DATE,
+      isTTY: true,
+      columns: 100,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      stallThresholdMs: 60_000, // 60s threshold
+    });
+    r.registerIssue({ issueNumber: 614 });
+    r.onEvent({ issue: 614, phase: "exec", event: "start" });
+
+    // Just under threshold — normal status.
+    nowMs = FIXED_NOW + 30_000;
+    const okFrame = stripAnsi(r.renderLiveFrame(100));
+    expect(okFrame).not.toMatch(/⚠ stalled/);
+    expect(okFrame).toMatch(/exec/);
+
+    // Past threshold — stalled marker.
+    nowMs = FIXED_NOW + 90_000;
+    const stalledFrame = stripAnsi(r.renderLiveFrame(100));
+    expect(stalledFrame).toMatch(/⚠ stalled · exec/);
+    r.dispose();
+  });
+
+  it("AC-26: stallThresholdMs defaults to disabled (no false stalls)", () => {
+    const buf = buffer();
+    let nowMs = FIXED_NOW;
+    const r = new TTYRenderer({
+      stdoutWrite: buf.write,
+      noColor: true,
+      now: () => nowMs,
+      wallClock: () => FIXED_DATE,
+      isTTY: true,
+      columns: 100,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      // stallThresholdMs omitted → defaults to Infinity
+    });
+    r.registerIssue({ issueNumber: 614 });
+    r.onEvent({ issue: 614, phase: "exec", event: "start" });
+    nowMs = FIXED_NOW + 60 * 60 * 1000; // +1h
+    const frame = stripAnsi(r.renderLiveFrame(100));
+    expect(frame).not.toMatch(/⚠ stalled/);
+    r.dispose();
+  });
+
+  it("AC-28: >row-cap multi-issue grid rolls up oldest done rows", () => {
+    const buf = buffer();
+    let nowMs = FIXED_NOW;
+    const r = new TTYRenderer({
+      stdoutWrite: buf.write,
+      noColor: true,
+      now: () => nowMs,
+      wallClock: () => FIXED_DATE,
+      isTTY: true,
+      columns: 120,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      multiIssueRowCap: 5, // small cap to make assertions easy
+    });
+
+    // Register 8 issues; complete 6 of them at increasing wall-clock times so
+    // oldest-vs-newest can be distinguished. Leave 2 still running.
+    for (let i = 1; i <= 8; i++) {
+      r.registerIssue({ issueNumber: 600 + i });
+    }
+    for (let i = 1; i <= 6; i++) {
+      nowMs = FIXED_NOW + i * 1000;
+      r.onEvent({ issue: 600 + i, phase: "spec", event: "start" });
+      r.onEvent({
+        issue: 600 + i,
+        phase: "spec",
+        event: "complete",
+        durationSeconds: 1,
+      });
+    }
+    // Two still running.
+    r.onEvent({ issue: 607, phase: "exec", event: "start" });
+    r.onEvent({ issue: 608, phase: "exec", event: "start" });
+
+    const frame = stripAnsi(r.renderLiveFrame(120));
+
+    // Rollup row should mention the oldest-done count.
+    // 6 done total - (cap 5 - 1 rollup row - 2 active) = 6 - 2 = 4 rolled up.
+    expect(frame).toMatch(/✔ 4 done · rolled up|4 done/);
+    // Both running issues should still be visible.
+    expect(frame).toMatch(/#607/);
+    expect(frame).toMatch(/#608/);
+    // "M of N shown" indicator present.
+    expect(frame).toMatch(/of 8 shown/);
+    r.dispose();
+  });
+
+  it("AC-28: at-or-under cap, no rollup or `(M of N)` indicator", () => {
+    const { r } = makeTTY({ columns: 100 });
+    for (let i = 1; i <= 5; i++) {
+      r.registerIssue({ issueNumber: 600 + i });
+    }
+    const frame = stripAnsi(r.renderLiveFrame(100));
+    expect(frame).not.toMatch(/rolled up/);
+    expect(frame).not.toMatch(/of \d+ shown/);
+    r.dispose();
+  });
+
   it("AC-4/8: tick advances spinner + redraws without an event", () => {
     const buf = buffer();
     const r = new TTYRenderer({

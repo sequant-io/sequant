@@ -45,6 +45,11 @@ export interface IssueState {
   subStatus?: string;
   /** Last QA verdict / error reason for failed issues. */
   failureReason?: string;
+  /**
+   * AC-23: auto-detect mode — render `Phase: detecting…` until spec finishes
+   * and the resolved plan is known.
+   */
+  autoDetect?: boolean;
 }
 
 /** Initial registration payload — fed at runner start so queued rows render. */
@@ -53,6 +58,12 @@ export interface IssueRegistration {
   title?: string;
   worktreePath?: string;
   branch?: string;
+  /**
+   * AC-23: when true, the issue runs in auto-detect mode. The renderer shows
+   * `Phase: detecting…` while spec is running (before the resolved phase plan
+   * is known) and switches to the normal phase header once spec completes.
+   */
+  autoDetect?: boolean;
 }
 
 /** Per-issue summary fields used by the final summary table. */
@@ -120,6 +131,19 @@ export interface RenderOptions {
   nonTtyHeartbeatMs?: number;
   /** Don't subscribe to SIGWINCH (used in tests). */
   noSignalListeners?: boolean;
+  /**
+   * AC-26: when a running phase has been active for longer than this many ms
+   * with no completion event, the status header flips to `⚠ stalled · …`.
+   * Defaults to half the phase timeout when wired from settings; effectively
+   * disabled (10× the default heartbeat) when omitted.
+   */
+  stallThresholdMs?: number;
+  /**
+   * AC-28: cap visible per-issue rows in the multi-issue live grid. When the
+   * total issue count exceeds this, the oldest done rows roll up into a
+   * single `✔ {N} done` summary row at the top. Defaults to 10.
+   */
+  multiIssueRowCap?: number;
   /**
    * When true, `renderSummary` is rendered even if no issues were registered.
    * Default: false (matches existing displaySummary behaviour).

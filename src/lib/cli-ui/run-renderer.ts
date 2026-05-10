@@ -32,6 +32,7 @@ import type {
 const DEFAULT_LIVE_TICK_MS = 1000;
 const DEFAULT_NON_TTY_HEARTBEAT_MS = 60_000;
 const NARROW_TERMINAL_THRESHOLD = 80;
+const DEFAULT_MULTI_ISSUE_ROW_CAP = 10;
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -93,6 +94,7 @@ abstract class BaseRenderer implements RunRenderer {
       title: reg.title,
       worktreePath: reg.worktreePath,
       branch: reg.branch,
+      autoDetect: reg.autoDetect,
       status: "queued",
       phases: [],
     });
@@ -366,6 +368,8 @@ export class TTYRenderer extends BaseRenderer {
   private spinnerFrame = 0;
   private readonly columnsOverride?: number;
   private readonly noSignalListeners: boolean;
+  private readonly stallThresholdMs: number;
+  private readonly multiIssueRowCap: number;
   private readonly logUpdateImpl: (text: string) => void;
   private readonly logUpdateClear: () => void;
   private readonly logUpdateDone: () => void;
@@ -377,6 +381,12 @@ export class TTYRenderer extends BaseRenderer {
     this.liveTickMs = options.liveTickMs ?? DEFAULT_LIVE_TICK_MS;
     this.columnsOverride = options.columns;
     this.noSignalListeners = Boolean(options.noSignalListeners);
+    // AC-26: stall threshold disabled by default (Number.POSITIVE_INFINITY); the
+    // wiring layer derives a real value from settings.run.timeout when available.
+    this.stallThresholdMs =
+      options.stallThresholdMs ?? Number.POSITIVE_INFINITY;
+    this.multiIssueRowCap =
+      options.multiIssueRowCap ?? DEFAULT_MULTI_ISSUE_ROW_CAP;
 
     // log-update writes to process.stdout via a mutable global instance. When
     // tests inject `stdoutWrite`, route renders through it instead so capture
@@ -569,10 +579,20 @@ export class TTYRenderer extends BaseRenderer {
     const header = `SEQUANT WORKFLOW · ${this.runHeader()}`;
     const lines: string[] = [c.bold(header), ""];
     if (this.banner) lines.push(c.yellow(this.banner), "");
-    for (const state of this.issues.values()) {
+    const { rolledUpDoneCount, visibleStates, totalCount } = this.applyRowCap();
+    if (rolledUpDoneCount > 0) {
+      lines.push(`  ${c.green(`✔ ${rolledUpDoneCount} done`)}`);
+    }
+    for (const state of visibleStates) {
       lines.push(`  #${state.issueNumber}  ${this.statusHeader(state)}`);
       const subLines = this.statusSubLines(state);
       for (const line of subLines) lines.push(`     ${line}`);
+    }
+    if (rolledUpDoneCount > 0) {
+      lines.push(
+        "",
+        c.dim(`  (${visibleStates.length} of ${totalCount} shown)`),
+      );
     }
     lines.push("", this.rollupLine());
     return lines.join("\n");
@@ -610,6 +630,9 @@ export class TTYRenderer extends BaseRenderer {
 
   private renderMultiIssueFrame(cols: number): string {
     // AC-5/6/7: per-issue grid with active expanded, done collapsed.
+    // AC-28: when total issues exceed the row cap, oldest done issues collapse
+    // into a single `✔ {N} done` row at the top and a `(M of N shown)` indicator
+    // is appended.
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · ${this.runHeader()}`;
 
@@ -620,17 +643,60 @@ export class TTYRenderer extends BaseRenderer {
     const lines: string[] = [c.bold(header), ""];
     if (this.banner) lines.push(c.yellow(this.banner), "");
 
-    const issuesInOrder = [...this.issues.values()];
-    const rows = issuesInOrder.map((state) => {
-      return {
+    const { rolledUpDoneCount, visibleStates, totalCount } = this.applyRowCap();
+
+    const rows: Array<{ issueLabel: string; statusLines: string[] }> = [];
+    if (rolledUpDoneCount > 0) {
+      rows.push({
+        issueLabel: c.green(`✔ ${rolledUpDoneCount}`),
+        statusLines: [c.green(`${rolledUpDoneCount} done · rolled up`)],
+      });
+    }
+    for (const state of visibleStates) {
+      rows.push({
         issueLabel: `#${state.issueNumber}`,
         statusLines: this.statusCellLines(state),
-      };
-    });
+      });
+    }
     lines.push(this.drawIssueGrid(rows, issueColW, statusColW));
     lines.push("");
+    if (rolledUpDoneCount > 0) {
+      lines.push(c.dim(`  (${visibleStates.length} of ${totalCount} shown)`));
+    }
     lines.push("  " + this.rollupLine());
     return lines.join("\n");
+  }
+
+  /**
+   * AC-28: enforce the per-frame issue row cap. If the cap is not exceeded,
+   * returns all issues unchanged. Otherwise: keep all non-done rows, then fill
+   * remaining slots with the most recently completed done rows; older done
+   * rows roll up into a single summary entry above the grid.
+   */
+  private applyRowCap(): {
+    rolledUpDoneCount: number;
+    visibleStates: IssueState[];
+    totalCount: number;
+  } {
+    const all = [...this.issues.values()];
+    const totalCount = all.length;
+    if (totalCount <= this.multiIssueRowCap) {
+      return { rolledUpDoneCount: 0, visibleStates: all, totalCount };
+    }
+    const active = all.filter((s) => s.status !== "done");
+    const done = all
+      .filter((s) => s.status === "done")
+      .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+    // Reserve one row for the rollup line, leave the rest for visible issues.
+    const visibleSlots = Math.max(1, this.multiIssueRowCap - 1);
+    const remainingSlotsForDone = Math.max(0, visibleSlots - active.length);
+    const visibleDone = done.slice(0, remainingSlotsForDone);
+    const rolledUpDoneCount = done.length - visibleDone.length;
+    return {
+      rolledUpDoneCount,
+      visibleStates: [...active, ...visibleDone],
+      totalCount,
+    };
   }
 
   // ---------------- Per-issue status content ----------------
@@ -670,6 +736,25 @@ export class TTYRenderer extends BaseRenderer {
       phase?.startedAt !== undefined ? this.now() - phase.startedAt : 0;
     const elapsed = formatElapsedTime(elapsedMs / 1000);
     const spinner = SPINNER_FRAMES[this.spinnerFrame];
+
+    // AC-23: in auto-detect mode, render `Phase: detecting…` while spec is
+    // running and no other phase has started yet (no resolved plan known).
+    if (
+      state.autoDetect &&
+      cur === "spec" &&
+      phase?.status === "running" &&
+      state.phases.length === 1
+    ) {
+      return c.cyan(`${spinner} Phase: detecting… · ${elapsed}`);
+    }
+
+    // AC-26: when a phase has been running past the stall threshold, flip the
+    // status header to a yellow stalled marker. The phase keeps ticking; this
+    // is informational only.
+    if (elapsedMs > this.stallThresholdMs) {
+      return c.yellow(`⚠ stalled · ${cur} · ${elapsed}`);
+    }
+
     const loopLabel =
       phase?.loopIteration && phase.loopIteration > 1
         ? ` loop ${phase.loopIteration}/3`

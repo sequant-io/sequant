@@ -28,8 +28,17 @@ export function buildProgressWiring(args: {
   quiet: boolean;
   issueNumbers: number[];
   phaseTimeoutSeconds: number;
+  /** AC-23: when auto-detect mode is on, the renderer shows `Phase: detecting…`
+   *  while spec runs (before the resolved plan is known). */
+  autoDetectPhases?: boolean;
 }): ProgressWiring {
-  const { tuiEnabled, quiet, issueNumbers, phaseTimeoutSeconds } = args;
+  const {
+    tuiEnabled,
+    quiet,
+    issueNumbers,
+    phaseTimeoutSeconds,
+    autoDetectPhases,
+  } = args;
 
   const heartbeat =
     quiet && !tuiEnabled
@@ -38,10 +47,21 @@ export function buildProgressWiring(args: {
 
   // RunRenderer (#618) — single owner of stdout, replaces legacy
   // PhaseSpinner (#244) + parallel-mode `▸/✔` lines (#458).
-  const renderer = !tuiEnabled && !quiet ? createRunRenderer() : null;
+  // AC-26: derive a stall threshold from the configured phase timeout. Half
+  // the timeout is a conservative "expected duration" proxy — phases that
+  // routinely take longer would have failed timeout already.
+  const renderer =
+    !tuiEnabled && !quiet
+      ? createRunRenderer({
+          stallThresholdMs:
+            phaseTimeoutSeconds > 0
+              ? (phaseTimeoutSeconds * 1000) / 2
+              : undefined,
+        })
+      : null;
   if (renderer) {
     for (const issueNumber of issueNumbers) {
-      renderer.registerIssue({ issueNumber });
+      renderer.registerIssue({ issueNumber, autoDetect: autoDetectPhases });
     }
   }
 

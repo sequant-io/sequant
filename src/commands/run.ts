@@ -99,6 +99,7 @@ export async function runCommand(
     quiet: Boolean(options.quiet),
     issueNumbers: resolved.issueNumbers,
     phaseTimeoutSeconds: settings.run.timeout,
+    autoDetectPhases: resolved.autoDetectPhases,
   });
 
   if (tuiEnabled) {
