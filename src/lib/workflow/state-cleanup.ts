@@ -251,9 +251,9 @@ export interface ReconcileOptions {
 export interface ReconcileResult {
   /** Whether reconciliation was successful */
   success: boolean;
-  /** Issues that were advanced from ready_for_merge to merged */
+  /** Issues advanced to `merged` (from `ready_for_merge`, `in_progress`, or `waiting_for_qa_gate`) */
   advanced: number[];
-  /** Issues checked but still ready_for_merge */
+  /** Issues checked but not yet merged (status unchanged) */
   stillPending: number[];
   /** Error message if failed */
   error?: string;
@@ -262,12 +262,18 @@ export interface ReconcileResult {
 /**
  * Lightweight state reconciliation at run start
  *
- * Checks issues in `ready_for_merge` or `in_progress` state and advances
- * them to `merged` if their PRs are merged or their branches are in main.
+ * Checks issues in `ready_for_merge`, `in_progress`, or `waiting_for_qa_gate`
+ * state and advances them to `merged` if their PRs are merged or their branches
+ * are in main.
  *
  * Including `in_progress` covers the case where a PR was merged outside
  * this sequant session (separate process, `gh pr merge`, web UI) — without
  * it, the run command would re-execute already-merged issues. See #592.
+ *
+ * Including `waiting_for_qa_gate` covers the symmetric case where a PR
+ * awaiting human QA-gate approval is merged externally before the next
+ * sequant session — without it, `sequant run <N>` re-executes the QA phase
+ * against already-merged work. See #606.
  *
  * @param options - Reconciliation options
  * @returns Result with lists of advanced and still-pending issues
@@ -294,12 +300,14 @@ export async function reconcileStateAtStartup(
     const advanced: number[] = [];
     const stillPending: number[] = [];
 
-    // Find issues in ready_for_merge or in_progress state.
+    // Find issues in ready_for_merge, in_progress, or waiting_for_qa_gate state.
     // in_progress covers PRs merged outside this session (#592).
+    // waiting_for_qa_gate covers PRs merged before the next QA-gate run (#606).
     for (const [issueNumStr, issueState] of Object.entries(state.issues)) {
       if (
         issueState.status !== "ready_for_merge" &&
-        issueState.status !== "in_progress"
+        issueState.status !== "in_progress" &&
+        issueState.status !== "waiting_for_qa_gate"
       ) {
         continue;
       }
