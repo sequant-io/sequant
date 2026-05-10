@@ -2,15 +2,14 @@
 
 import chalk from "chalk";
 import { getManifest } from "../lib/manifest.js";
-import { formatElapsedTime } from "../lib/phase-spinner.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
-import { ui, colors } from "../lib/cli-ui.js";
+import { ui } from "../lib/cli-ui.js";
 import { parseBatches } from "../lib/workflow/batch-executor.js";
-import { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
 import { displayConfig, displaySummary } from "./run-display.js";
+import { buildProgressWiring } from "./run-progress.js";
 
 // Re-export public API for backwards compatibility
 export * from "./run-compat.js";
@@ -93,49 +92,14 @@ export async function runCommand(
   const tuiEnabled =
     Boolean(options.experimentalTui) && Boolean(process.stdout.isTTY);
 
-  // Quiet, non-TUI runs go silent for the full phase duration. The heartbeat
-  // surfaces a TTY liveness line + one-shot stall warning so users can
-  // distinguish "agent working" from "process hung". See #574.
-  const heartbeat =
-    options.quiet && !tuiEnabled
-      ? new LivenessHeartbeat({
-          phaseTimeoutSeconds: settings.run.timeout,
-        })
-      : null;
-
-  const onProgress =
-    !options.quiet && !tuiEnabled
-      ? (
-          issue: number,
-          phase: string,
-          event: "start" | "complete" | "failed",
-          extra?: { durationSeconds?: number },
-        ) => {
-          if (event === "start")
-            console.log(`  ${colors.running("▸")} #${issue}  ${phase}`);
-          else if (event === "complete") {
-            const dur =
-              extra?.durationSeconds != null
-                ? `  ${formatElapsedTime(extra.durationSeconds)}`
-                : "";
-            console.log(`  ${colors.success("✔")} #${issue}  ${phase}${dur}`);
-          } else console.log(`  ${colors.error("✖")} #${issue}  ${phase}`);
-        }
-      : heartbeat
-        ? (
-            issue: number,
-            phase: string,
-            event: "start" | "complete" | "failed",
-          ) => {
-            if (event === "start")
-              heartbeat.start({
-                issueNumber: issue,
-                phase,
-                startedAt: Date.now(),
-              });
-            else heartbeat.stop({ issueNumber: issue, phase });
-          }
-        : undefined;
+  // RunRenderer (#618) + LivenessHeartbeat (#574) wiring lives in
+  // run-progress.ts to keep this adapter under the 200-LOC cap (#503 AC-2).
+  const { renderer, heartbeat, onProgress } = buildProgressWiring({
+    tuiEnabled,
+    quiet: Boolean(options.quiet),
+    issueNumbers: resolved.issueNumbers,
+    phaseTimeoutSeconds: settings.run.timeout,
+  });
 
   if (tuiEnabled) {
     const { renderTui } = await import("../ui/tui/index.js");
@@ -171,6 +135,13 @@ export async function runCommand(
     }
   }
 
+  // SIGINT handler: clear the live zone before ShutdownManager writes its
+  // cleanup banner so the two don't collide. See AC-29.
+  const sigintHandler = (): void => {
+    renderer?.dispose();
+  };
+  if (renderer) process.once("SIGINT", sigintHandler);
+
   try {
     const result = await RunOrchestrator.run(
       { ...init, onProgress },
@@ -178,9 +149,20 @@ export async function runCommand(
       batches,
     );
 
-    displaySummary(result);
+    // Record PR info in renderer state before summary so done rows show PR #s.
+    if (renderer) {
+      for (const r of result.results) {
+        if (r.prNumber && r.prUrl) {
+          renderer.setPullRequest(r.issueNumber, r.prNumber, r.prUrl);
+        }
+      }
+    }
+
+    displaySummary(result, renderer);
+    renderer?.dispose();
     if (result.exitCode !== 0) process.exit(result.exitCode);
   } finally {
     heartbeat?.dispose();
+    if (renderer) process.off("SIGINT", sigintHandler);
   }
 }
