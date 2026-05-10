@@ -11,7 +11,15 @@
 import chalk from "chalk";
 import { execSync, execFileSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
-import { PhaseSpinner } from "../phase-spinner.js";
+/**
+ * Lifecycle hook for pausing the run renderer's live zone while verbose
+ * Claude streaming writes through stdout, then resuming after the agent
+ * call completes. Replaces the legacy `PhaseSpinner` argument (#618).
+ */
+export interface PhasePauseHandle {
+  pause(): void;
+  resume(): void;
+}
 import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
@@ -492,7 +500,7 @@ async function executePhase(
   sessionId?: string,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
-  spinner?: PhaseSpinner,
+  spinner?: PhasePauseHandle,
 ): Promise<PhaseResult & { sessionId?: string }> {
   const startTime = Date.now();
 
@@ -708,7 +716,7 @@ export async function executePhaseWithRetry(
   sessionId?: string,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
-  spinner?: PhaseSpinner,
+  spinner?: PhasePauseHandle,
   /** @internal Injected for testing — defaults to module-level executePhase */
   executePhaseFn: typeof executePhase = executePhase,
   /** @internal Injected for testing — defaults to setTimeout-based delay */

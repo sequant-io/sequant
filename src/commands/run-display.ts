@@ -2,16 +2,25 @@
  * Display helpers for `sequant run` — pre-run config block + post-run summary.
  *
  * Kept separate from run.ts so the adapter stays thin (see AC-2 of #503).
+ *
+ * As of #618, the post-run summary delegates to the unified RunRenderer when
+ * one is provided. The renderless path (used by --experimental-tui and tests)
+ * falls back to `renderRunSummary` so output stays consistent across modes.
  */
 
 import chalk from "chalk";
 import { ui, colors } from "../lib/cli-ui.js";
-import { formatDuration } from "../lib/workflow/phase-executor.js";
+import { renderRunSummary } from "../lib/cli-ui/run-renderer.js";
+import type {
+  IssueSummary,
+  RunRenderer,
+} from "../lib/cli-ui/run-renderer-types.js";
 import type {
   ResolvedRun,
   RunResult,
 } from "../lib/workflow/run-orchestrator.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
+import type { IssueResult } from "../lib/workflow/types.js";
 
 /**
  * Print pre-run config block.
@@ -29,7 +38,7 @@ export function displayConfig(r: ResolvedRun): void {
   if (r.autoDetectPhases) {
     row("Phases", "auto-detect from labels");
   } else {
-    row("Phases", r.config.phases.join(" \u2192 "));
+    row("Phases", r.config.phases.join(" → "));
   }
 
   row(
@@ -72,42 +81,70 @@ export function displayConfig(r: ResolvedRun): void {
 }
 
 /**
- * Print post-run summary: per-issue status, log path, reflection, tips.
+ * Convert workflow `IssueResult` to renderer `IssueSummary`.
  */
-export function displaySummary(result: RunResult): void {
+function toIssueSummary(r: IssueResult): IssueSummary {
+  const failedPhase = r.phaseResults.find((p) => !p.success);
+  const summary: IssueSummary = {
+    issueNumber: r.issueNumber,
+    success: r.success,
+    durationSeconds: r.durationSeconds,
+    phases: r.phaseResults.map((p) => ({ name: p.phase, success: p.success })),
+    loopTriggered: r.loopTriggered,
+    prNumber: r.prNumber,
+    prUrl: r.prUrl,
+  };
+  if (!r.success) {
+    summary.failureReason =
+      failedPhase?.error ??
+      r.abortReason ??
+      `${failedPhase?.phase ?? "phase"} failed`;
+    if (failedPhase?.verdict) {
+      summary.qaVerdict = String(failedPhase.verdict);
+    }
+    if (failedPhase?.summary?.gaps?.length !== undefined) {
+      summary.unmetCount = failedPhase.summary.gaps.length;
+    }
+  }
+  return summary;
+}
+
+/**
+ * Print post-run summary: per-issue grid, log path, reflection, tips.
+ *
+ * If a renderer is provided (default path), delegate to its `renderSummary`
+ * so the live zone is torn down cleanly first. Otherwise, fall back to the
+ * shared `renderRunSummary` helper (used by tests and TUI mode).
+ */
+export function displaySummary(
+  result: RunResult,
+  renderer?: RunRenderer | null,
+): void {
   const { results, logPath, config, mergedOptions } = result;
   if (results.length === 0) return;
 
-  const passed = results.filter((r) => r.success).length;
-  const failed = results.filter((r) => !r.success).length;
-
-  console.log("\n" + ui.divider());
-  console.log(colors.info("  Summary"));
-  console.log(ui.divider());
-  console.log(
-    `\n  ${colors.success(`${passed} passed`)} ${colors.muted("·")} ${colors.error(`${failed} failed`)}`,
+  const issueSummaries = results.map(toIssueSummary);
+  const totalSeconds = results.reduce(
+    (sum, r) => sum + (r.durationSeconds ?? 0),
+    0,
   );
-  for (const r of results) {
-    const status = r.success
-      ? ui.statusIcon("success")
-      : ui.statusIcon("error");
-    const duration = r.durationSeconds
-      ? colors.muted(` (${formatDuration(r.durationSeconds)})`)
-      : "";
-    const phases = r.phaseResults
-      .map((p) => (p.success ? colors.success(p.phase) : colors.error(p.phase)))
-      .join(" → ");
-    const loopInfo = r.loopTriggered ? colors.warning(" [loop]") : "";
-    const prInfo = r.prUrl ? colors.muted(` → PR #${r.prNumber}`) : "";
-    console.log(
-      `  ${status} #${r.issueNumber}: ${phases}${loopInfo}${prInfo}${duration}`,
-    );
+
+  if (renderer) {
+    renderer.renderSummary({
+      issues: issueSummaries,
+      totalDurationSeconds: totalSeconds,
+      logPath,
+      dryRun: config.dryRun,
+    });
+  } else {
+    renderRunSummary({
+      issues: issueSummaries,
+      totalDurationSeconds: totalSeconds,
+      logPath,
+      dryRun: config.dryRun,
+    });
   }
-  console.log("");
-  if (logPath) {
-    console.log(colors.muted(`  Log: ${logPath}`));
-    console.log("");
-  }
+
   if (mergedOptions.reflect && results.length > 0) {
     const reflection = analyzeRun({
       results,
@@ -121,6 +158,7 @@ export function displaySummary(result: RunResult): void {
       console.log("");
     }
   }
+  const passed = results.filter((r) => r.success).length;
   if (results.length > 1 && passed > 0 && !config.dryRun) {
     console.log(
       colors.muted("  Tip: Verify batch integration before merging:"),
@@ -136,4 +174,8 @@ export function displaySummary(result: RunResult): void {
     );
     console.log("");
   }
+  // Reference imported `ui` so existing tests that depend on side-effect-only
+  // imports still pass; explicit retention to keep ui in scope for future
+  // formatting reuse.
+  void ui;
 }

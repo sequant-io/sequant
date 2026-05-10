@@ -22,7 +22,6 @@ import {
 } from "./types.js";
 import { classifyError, errorTypeToCategory } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
-import { PhaseSpinner } from "../phase-spinner.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
 import {
   createCheckpointCommit,
@@ -446,16 +445,8 @@ export async function runIssueWithLogging(
     // edge cases, test-strategy shifts) that benefit from a spec pass.
     log(chalk.gray(`    Running spec to determine workflow...`));
 
-    // Create spinner for spec phase (suppressed in parallel mode to prevent interleaving)
-    const specSpinner = config.parallel
-      ? undefined
-      : new PhaseSpinner({
-          phase: "spec",
-          phaseIndex: 1,
-          totalPhases: 3, // Estimate; will be refined after spec
-          shutdownManager,
-        });
-    specSpinner?.start();
+    // RunRenderer (#618) owns spec progress via emitProgressLine + onProgress.
+    // The legacy PhaseSpinner produced duplicate lines for single-issue runs.
     emitProgressLine(issueNumber, "spec", "start");
     try {
       onProgress?.(issueNumber, "spec", "start");
@@ -485,7 +476,6 @@ export async function runIssueWithLogging(
       sessionId,
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
-      specSpinner,
     );
     const specEndTime = new Date();
 
@@ -574,7 +564,6 @@ export async function runIssueWithLogging(
     }
 
     if (!specResult.success) {
-      specSpinner?.fail(specResult.error);
       const durationSeconds = (Date.now() - startTime) / 1000;
       return {
         issueNumber,
@@ -584,8 +573,6 @@ export async function runIssueWithLogging(
         loopTriggered: false,
       };
     }
-
-    specSpinner?.succeed();
 
     // Parse recommended workflow from spec output
     const parsedWorkflow = specResult.output
@@ -704,26 +691,10 @@ export async function runIssueWithLogging(
 
     let phasesFailed = false;
 
-    // Calculate total phases for progress indicator
-    // If spec already ran in auto-detect mode, it's counted separately
-    const totalPhases = specAlreadyRan ? phases.length + 1 : phases.length;
-    const phaseIndexOffset = specAlreadyRan ? 1 : 0;
-
     for (let phaseIdx = 0; phaseIdx < phases.length; phaseIdx++) {
       const phase = phases[phaseIdx];
-      const phaseNumber = phaseIdx + 1 + phaseIndexOffset;
 
-      // Create spinner for this phase (suppressed in parallel mode)
-      const phaseSpinner = config.parallel
-        ? undefined
-        : new PhaseSpinner({
-            phase,
-            phaseIndex: phaseNumber,
-            totalPhases,
-            shutdownManager,
-            iteration: useQualityLoop ? iteration : undefined,
-          });
-      phaseSpinner?.start();
+      // RunRenderer (#618) owns phase progress via emitProgressLine + onProgress.
       emitProgressLine(issueNumber, phase, "start");
       try {
         onProgress?.(issueNumber, phase, "start");
@@ -752,7 +723,6 @@ export async function runIssueWithLogging(
         sessionId,
         worktreePath,
         shutdownManager,
-        phaseSpinner,
       );
       const phaseEndTime = new Date();
 
@@ -872,24 +842,12 @@ export async function runIssueWithLogging(
       }
 
       if (result.success) {
-        phaseSpinner?.succeed();
+        // Phase succeeded — RunRenderer (#618) updates state via onProgress.
       } else {
-        phaseSpinner?.fail(result.error);
         phasesFailed = true;
 
         // If quality loop enabled, run loop phase to fix issues
         if (useQualityLoop && iteration < maxIterations) {
-          // Create spinner for loop phase (suppressed in parallel mode)
-          const loopSpinner = config.parallel
-            ? undefined
-            : new PhaseSpinner({
-                phase: "loop",
-                phaseIndex: phaseNumber,
-                totalPhases,
-                shutdownManager,
-                iteration,
-              });
-          loopSpinner?.start();
           emitProgressLine(issueNumber, "loop", "start");
           try {
             onProgress?.(issueNumber, "loop", "start");
@@ -915,7 +873,6 @@ export async function runIssueWithLogging(
             sessionId,
             worktreePath,
             shutdownManager,
-            loopSpinner,
           );
           const loopEndTime = new Date();
           phaseResults.push(loopResult);
@@ -947,11 +904,8 @@ export async function runIssueWithLogging(
           }
 
           if (loopResult.success) {
-            loopSpinner?.succeed();
             // Continue to next iteration
             break;
-          } else {
-            loopSpinner?.fail(loopResult.error);
           }
         }
 

@@ -30,16 +30,6 @@ vi.mock("./state-manager.js", () => ({
   StateManager: vi.fn(),
 }));
 
-vi.mock("../phase-spinner.js", () => {
-  return {
-    PhaseSpinner: class MockPhaseSpinner {
-      start = vi.fn();
-      succeed = vi.fn();
-      fail = vi.fn();
-    },
-  };
-});
-
 vi.mock("../shutdown.js", () => {
   return {
     ShutdownManager: class MockShutdownManager {
