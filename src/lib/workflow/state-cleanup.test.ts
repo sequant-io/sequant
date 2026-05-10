@@ -1,9 +1,16 @@
 /**
- * Tests for reconcileStateAtStartup — Issue #592
- * Covers: AC-1, AC-3, AC-6, AC-7 (in_progress → merged escalation when remote merged).
+ * Tests for reconcileStateAtStartup — Issues #592, #606
+ * Covers: AC-1, AC-3, AC-6, AC-7 for both in_progress (#592) and
+ * waiting_for_qa_gate (#606) → merged escalation when remote merged.
  *
  * The pre-existing ready_for_merge → merged path is also covered as a
  * regression guard for the loop guard relaxation.
+ *
+ * AC-2 (pre-flight guard at run-orchestrator.ts skips with the existing
+ * "already merged — skipping (use --force to re-run)" voice) is not
+ * directly asserted here. Escalating to `merged` is sufficient by
+ * construction: the existing #305 pre-flight guard already short-circuits
+ * on `ready_for_merge || merged` and is unchanged by #592 / #606.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -66,7 +73,7 @@ function writeState(statePath: string, state: WorkflowState): void {
   fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
 }
 
-describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
+describe("reconcileStateAtStartup escalation", () => {
   let tempDir: string;
   let originalCwd: string;
   let statePath: string;
@@ -149,7 +156,7 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
     expect(persisted.issues["592"].resolvedAt).toBeUndefined();
   });
 
-  it("does not call GitHub for issues whose status is neither in_progress nor ready_for_merge", async () => {
+  it("does not call GitHub for issues whose status is not in the reconcile allowlist", async () => {
     mockPRStatus = "MERGED";
 
     const state = createEmptyState();
@@ -247,6 +254,65 @@ describe("reconcileStateAtStartup (#592 in_progress escalation)", () => {
     expect(result.advanced).toEqual([]);
     expect(result.stillPending).toEqual([]);
     expect(mockGetPRMergeStatusSync).not.toHaveBeenCalled();
+  });
+
+  it("AC-1 git-fallback (#606): advances waiting_for_qa_gate with no pr.number when isIssueMergedIntoMain finds a merge commit", async () => {
+    // Symmetric to the #592 in_progress git-fallback test below: PR not
+    // recorded → checkPRMergeStatus is skipped → isIssueMergedIntoMain
+    // shells out to git and finds the merge commit → escalation.
+    mockSpawnSync.mockImplementation((cmd, args) => {
+      if (cmd === "git" && args?.includes("branch") && args?.includes("-a")) {
+        return {
+          status: 0,
+          stdout: Buffer.from("  main\n"),
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, Buffer.from("  main\n"), Buffer.from("")],
+          signal: null,
+        };
+      }
+      if (cmd === "git" && args?.includes("log")) {
+        const out = Buffer.from("def5678 fix: gate-merged via web UI (#606)\n");
+        return {
+          status: 0,
+          stdout: out,
+          stderr: Buffer.from(""),
+          pid: 0,
+          output: [null, out, Buffer.from("")],
+          signal: null,
+        };
+      }
+      return {
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from(""),
+        pid: 0,
+        output: [null, Buffer.from(""), Buffer.from("")],
+        signal: null,
+      };
+    });
+
+    const state = createEmptyState();
+    state.issues["606"] = makeIssue({
+      number: 606,
+      status: "waiting_for_qa_gate",
+      // Intentionally no pr field — exercises the git-only fallback path
+      // for the new waiting_for_qa_gate allowlist entry.
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([606]);
+    expect(result.stillPending).toEqual([]);
+    expect(mockGetPRMergeStatusSync).not.toHaveBeenCalled();
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["606"].status).toBe("merged");
+    expect(persisted.issues["606"].resolvedAt).toBeDefined();
   });
 
   it("AC-1 git-fallback: advances in_progress with no pr.number when isIssueMergedIntoMain finds a merge commit", async () => {
