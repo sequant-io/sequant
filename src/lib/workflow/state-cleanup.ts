@@ -251,9 +251,9 @@ export interface ReconcileOptions {
 export interface ReconcileResult {
   /** Whether reconciliation was successful */
   success: boolean;
-  /** Issues that were advanced from ready_for_merge to merged */
+  /** Issues advanced to `merged` (from `ready_for_merge`, `in_progress`, or `waiting_for_qa_gate`) */
   advanced: number[];
-  /** Issues checked but still ready_for_merge */
+  /** Issues checked but not yet merged (status unchanged) */
   stillPending: number[];
   /** Error message if failed */
   error?: string;
