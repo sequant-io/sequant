@@ -206,7 +206,7 @@ Paths containing unicode or special characters are handled correctly (the scope 
 
 **Performance Warning:**
 
-Chain mode has a significantly lower success rate (~50%) compared to parallel mode (~67%) due to failure compounding — if any issue in the chain fails, all subsequent issues are skipped. Use chain mode only when issues have genuine dependencies.
+Chain mode has a significantly lower whole-chain success rate (~29%, n=7) compared to parallel multi-issue mode (~53%, n=38). Failure compounding is the main mechanism — if any issue in the chain fails, all subsequent issues are skipped, so a single first-issue failure marks the whole chain as failed. Success drops sharply with chain length: length-2 succeeded 1/1, length-3 succeeded 1/4, length-4 succeeded 0/2. Use chain mode only when issues have genuine dependencies and prefer 2-issue chains. See [chain-mode-analysis-2026-05.md](./chain-mode-analysis-2026-05.md) for the failure-mode breakdown.
 
 **Warnings:**
 

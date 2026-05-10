@@ -304,6 +304,18 @@ describe("formatCollisionAnnotations", () => {
     expect(out.chainSuggestion).toContain("src/lib/foo.ts");
   });
 
+  it("annotates the Chain: suggestion with the historical length≥3 success rate (#604)", () => {
+    const out = formatCollisionAnnotations([
+      { issues: [10, 20, 30], file: "src/lib/foo.ts" },
+    ]);
+    expect(out.chainSuggestion).toContain(
+      "chain length≥3 historically 1/6 = 17%",
+    );
+    expect(out.chainSuggestion).toContain(
+      "docs/reference/chain-mode-analysis-2026-05.md",
+    );
+  });
+
   it("does not emit Chain: when only 2 issues collide", () => {
     const out = formatCollisionAnnotations([
       { issues: [10, 20], file: "src/lib/foo.ts" },
