@@ -11,7 +11,7 @@
  * @see Issue #574
  */
 import * as fs from "fs";
-import { formatElapsedTime } from "../phase-spinner.js";
+import { formatElapsedTime } from "../cli-ui/format.js";
 import type { ShutdownManager } from "../shutdown.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
