@@ -15,6 +15,8 @@
 
 The 29% headline from `npx sequant stats` reproduces (28.6% in raw data). Gap vs single-issue holds.
 
+> **Note on the 92% vs 80% gap.** The issue body cites `npx sequant stats` reporting 92% single-issue success at the time it was filed (56 runs in the local sample). This analysis runs on a larger 62-run snapshot of `.sequant/metrics.json` and the doc's 80% applies the explicit `phases ⊇ {spec, exec, qa}` filter. `sequant stats` itself counts every run with `issues.length === 1` (any phase set) — see `src/commands/stats.ts:422`. The headline 76.5% / 80% / 28.6% / 52.6% rates here are reproducible from the raw data; the 92% is a snapshot-in-time figure that does not reproduce against the current data and is treated as a directional, not load-bearing, baseline. (Independent recount of the spec+exec+qa cohort yields 11/14 = 78.6% with a strict `--chain` exclusion; the doc's 12/15 = 80.0% filter includes one borderline single-issue run that may also have ridden in a chain — within rounding either way.)
+
 ## Phase A — Signal Confirmation
 
 ### Sample size
@@ -107,7 +109,7 @@ Recommended change: emit chain suggestion only for `length === 2`; for `length >
 
 - The AC_MET_BUT_NOT_A_PLUS retry-loop bug is documented in `feedback_qa_break_vs_loop.md` and is a `/qa` skill defect, not a chain-mode defect.
 - Claude Code rate-limit handling (resume after limit reset) is a separate orchestrator concern.
-- `docs/guides/git-workflows.md:126` lists chain rate as `50% n=4` from the #452 era; this is now stale and should be refreshed regardless of the AC-6 outcome.
+- `docs/features/parallel-execution.md:126` previously listed chain rate as `50% n=4` from the #452 era; refreshed to `29% n=7` in this PR.
 
 ## Limitations
 
