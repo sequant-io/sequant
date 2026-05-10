@@ -121,9 +121,11 @@ Parallel worktrees are the default for multi-issue runs. Chain mode (`--chain`) 
 
 | Mode | Success Rate | Sample Size | Notes |
 |------|-------------|-------------|-------|
-| Single issue | 72% | n=50+ | Baseline |
-| Parallel | 67% | n=50+ | Close to single-issue baseline |
-| Chain (`--chain`) | 50% | n=4 | Small sample, but failure compounding is structural |
+| Single issue (spec+exec+qa) | 80% | n=15 | Baseline |
+| Parallel multi-issue | 53% | n=38 | Below single-issue baseline |
+| Chain (`--chain`) | 29% | n=7 | Length-2: 1/1; length-3: 1/4; length-4: 0/2 |
+
+See [chain-mode-analysis-2026-05.md](../reference/chain-mode-analysis-2026-05.md) for the failure-mode breakdown. Whole-chain success understates per-issue performance — when chain mode actually reaches an issue (i.e., the chain hasn't been halted by an earlier failure), per-issue success is 61.5%, much closer to the single-issue baseline.
 
 ### Trade-offs
 
