@@ -33,6 +33,8 @@ The 29% headline from `npx sequant stats` reproduces (28.6% in raw data). Gap vs
 
 **Length-3+ aggregate: 1/6 = 17%.** Failure rate scales with chain length.
 
+> **"Success" filter.** Throughout this doc and the runtime annotation in `assess-collision-detect.ts`, "success" means `outcome === "success"` in `.sequant/metrics.json`. The 2 length-3 chains marked `partial` (some issues completed before the chain halted) are counted with the failures here, not with the successes. Under a partial-counts-as-success framing the length-3+ rate would be 3/6 = 50% rather than 1/6 = 17%; we use the strict definition consistently so the headline (28.6%), the segmentation table, and the runtime annotation all align.
+
 ### Per-issue attribution (counterfactual)
 
 The 28.6% whole-chain rate masks a bookkeeping artifact: when issue 1 in a chain fails, issues 2..N never execute and are counted as "chain failed."
@@ -93,17 +95,15 @@ Rationale:
 - Per-issue success (61.5%) shows chain mode itself is not structurally broken at solving issues — its accounting and duration scaling are.
 - Underlying failure modes (rate limits, AC_MET_BUT_NOT_A_PLUS retry loop) are tracked separately and may be fixed without revisiting chain mode.
 
-### Suggested `/assess` collision-detect change
+### `/assess` collision-detect change (implemented)
 
-Current rule (`src/lib/assess-collision-detect.ts:264`):
+Existing rule at `src/lib/assess-collision-detect.ts:267` (length-≥3 emit guard) is **preserved**. The chain suggestion now appends a historical-rate annotation:
 
-```ts
-if (r.issues.length >= 3 && !chainSuggestion) {
-  chainSuggestion = `Chain: npx sequant run ${ids} --chain --qa-gate -q ...`;
-}
+```
+Chain: npx sequant run A B C --chain --qa-gate -q   # alternative — N issues modify <path> (chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)
 ```
 
-Recommended change: emit chain suggestion only for `length === 2`; for `length >= 3` either omit the suggestion or annotate it with the historical success rate (1/6 = 17%). The skill mirrors and `predicted-collision-detection.md` should reflect the same threshold.
+The annotation route was chosen over a threshold flip (which would have suppressed the suggestion entirely at length≥3) because n=7 is small enough that hard-restricting based on it would over-fit the sample; surfacing the rate inline lets the user weigh chain mode against the parallel-mode default without removing the option. The three skill mirrors of `predicted-collision-detection.md` (`.claude/skills/`, `templates/skills/`, `skills/`) carry the same wording in lockstep, and `src/lib/__tests__/assess-collision-detect.test.ts` asserts both annotation substrings on every length≥3 collision. Re-evaluate (and consider flipping to a hard `length === 2` threshold) when n≥20 chain runs accumulate.
 
 ### Out of scope for this issue
 
