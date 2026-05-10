@@ -13,14 +13,16 @@ action-rate number, we cannot tell which gates are earning their token cost.
 
 ## TL;DR
 
+Sections sorted by action rate, descending (matches `displayReport` output):
+
 | Section                            | Triggered | Action rate | Skill lines | Recommendation        |
 | ---------------------------------- | --------- | ----------- | ----------- | --------------------- |
-| §4 Q5 — intra-file sibling-line    | 6 / 44    | **17%**     | 12          | Gate by file-shape    |
 | §5 — cross-file sibling-site       | 3 / 44    | 33%         | 7           | **Keep**              |
+| Spec — sibling-site scan           | 7 / 7     | 29%         | 8           | **Keep**              |
+| §4 Q5 — intra-file sibling-line    | 6 / 44    | **17%**     | 12          | Gate by file-shape    |
+| Spec — AC linter (title/body)      | 6 / 15    | 17%         | 4           | Gate by AC count      |
 | §6c — detection-pattern verify     | **0 / 11**| **0%**      | 156         | **Gate by file glob** |
 | §6d — Adversarial Re-Read          | 9 / 14    | **0%**      | 35          | **Trim**              |
-| Spec — sibling-site scan           | 7 / 7     | 29%         | 8           | **Keep**              |
-| Spec — AC linter (title/body)      | 6 / 15    | 17%         | 4           | Gate by AC count      |
 
 Two clear remove/gate candidates: **§6c** (zero substantive findings in 11 emits, 156 lines
 of prompt loaded every run that needs it) and **§6d** (9 findings, all dismissed
@@ -71,8 +73,46 @@ by `measureSkillCost()` against the section's anchor in `.claude/skills/qa/SKILL
 (or `spec/SKILL.md`). The proxy approximates the prompt overhead loaded on every
 section-eligible run; it does not capture per-section token attribution from the
 QA model itself (run logs report `metrics.tokensUsed: 0` — the field is unwired
-per the spec's AC-3 caveat). A single ablation calibration is recorded inline
-below; full per-section ablation is deferred.
+per the spec's AC-3 caveat).
+
+#### Ablation calibration — §6c on PR #616
+
+To anchor the word-count proxy in a real measurement, we ablate §6c (the
+heaviest gap-check section) against `.claude/skills/qa/SKILL.md` as it stood
+when PR #616 was reviewed (2026-05-09, commit `60778b6` — a 4-file Fixed-bucket
+PR with no skill changes, where §6c is mechanically `N/A`).
+
+| Configuration                       |   Lines |    Words | Token estimate¹ |
+| ----------------------------------- | ------: | -------: | --------------: |
+| Full QA SKILL.md                    |   3,042 |   18,703 |         ~24,310 |
+| Without §6c (lines 1804–1959)       |   2,886 |   17,297 |         ~22,486 |
+| **Delta (per QA invocation)**       | **−156** | **−1,406** |     **~−1,824** |
+
+Reproduce:
+
+```bash
+wc -l .claude/skills/qa/SKILL.md                                  # 3042
+sed '1804,1959d' .claude/skills/qa/SKILL.md | wc -l               # 2886
+wc -w .claude/skills/qa/SKILL.md                                  # 18703
+sed '1804,1959d' .claude/skills/qa/SKILL.md | wc -w               # 17297
+```
+
+¹ Token estimate uses the conservative 1.3-token-per-word heuristic for English
+prose with code fences. Actual token cost varies with tokenizer (this estimate
+is for context-budgeting, not billing). The §6c block contains structured
+tables and `gh`/`grep` snippets that may push the per-word ratio higher; treat
+~1,800 tokens as a floor.
+
+**Calibration takeaway:** the §6c row's `1,406 words` cost-proxy figure
+translates to ~1,800 tokens of prompt overhead loaded into every QA invocation
+where §6c is in scope, regardless of whether the section emits a substantive
+finding (it has emitted zero, per Phase A). On the 50-PR window that is
+~50 × 1,800 ≈ 90,000 prompt tokens spent for 0 actioned findings — the largest
+single signal-to-noise loss in the catalog. Other sections' word-count rows
+should be read against this anchor: §6d (505 words) ≈ ~660 tokens / invocation,
+§4 Q5 (199 words) ≈ ~260 tokens / invocation. Full per-section ablation is
+deferred (one calibration is sufficient to translate the proxy column into
+budgeting language for #609).
 
 ## Findings
 

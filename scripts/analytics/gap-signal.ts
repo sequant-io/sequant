@@ -470,7 +470,10 @@ export function displayReport(report: MiningReport): void {
     "  Section                                     Runs  Trig  Act+File  Dism  Silent  Action%  Lines",
   );
   console.log("  " + "-".repeat(98));
-  for (const s of report.sections) {
+  const sortedSections = [...report.sections].sort(
+    (a, b) => b.actionRate - a.actionRate,
+  );
+  for (const s of sortedSections) {
     const acted = s.byFate.actioned_in_pr + s.byFate.filed_followup;
     console.log(
       `  ${s.label.padEnd(43)}  ${String(s.totalRuns).padStart(4)}  ${String(s.triggered).padStart(4)}  ${String(acted).padStart(8)}  ${String(s.byFate.dismissed).padStart(4)}  ${String(s.byFate.silent).padStart(6)}  ${formatPct(s.actionRate).padStart(7)}  ${String(s.skillLines).padStart(5)}`,
