@@ -1,0 +1,39 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`NonTTYRenderer > AC-31: snapshot of failed run 1`] = `
+"[11:00:00] ▸ #606 qa
+[11:00:00] ✘ #606 qa AC_NOT_MET
+
+SUMMARY · 1 issue · 8m 48s · 0 passed · 1 failed
+
+  ┌──────────┬────────────┬───────────────────────────────────────────┬────────────┐
+  │ Issue    │ Result     │ Detail                                    │ Total      │
+  ├──────────┼────────────┼───────────────────────────────────────────┼────────────┤
+  │ #606     │ ✘ failed   │ qa max-iters                              │ 8m 48s     │
+  │          │            │ AC_NOT_MET (3 unmet)                      │            │
+  └──────────┴────────────┴───────────────────────────────────────────┴────────────┘
+
+  0 passed · 1 failed
+"
+`;
+
+exports[`NonTTYRenderer > AC-31: snapshot of full lifecycle (queued → running → done; passed run) 1`] = `
+"[11:00:00] ▸ #614 spec
+[11:00:00] ✔ #614 spec 5m 13s
+[11:00:00] ▸ #614 exec
+[11:00:00] ✔ #614 exec 10m
+[11:00:00] ▸ #614 qa
+[11:00:00] ✔ #614 qa 2m 57s
+[11:00:00] → #614 PR #615 https://github.com/x/y/pull/615
+
+SUMMARY · 1 issue · 18m 10s · 1 passed · 0 failed
+
+  ┌──────────┬────────────┬───────────────────────────────────────────┬────────────┐
+  │ Issue    │ Result     │ Detail                                    │ Total      │
+  ├──────────┼────────────┼───────────────────────────────────────────┼────────────┤
+  │ #614     │ ✔ passed   │ spec → exec → qa · PR #615                │ 18m 10s    │
+  └──────────┴────────────┴───────────────────────────────────────────┴────────────┘
+
+  1 passed · 0 failed
+"
+`;

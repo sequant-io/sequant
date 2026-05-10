@@ -2023,7 +2023,65 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 **Status:** Clean / Gaps Found / Severe Gap
 ```
 
+### 6e. Behavior-Rule Survival Check (REQUIRED for behavior-rule ACs)
+
+**Purpose:** When an AC asserts a behavior rule (e.g. "default becomes X", "always include Y", "never skip Z"), verify the OLD-rule's implementation has been removed from every touchpoint inside the diff blast radius. Catches the #533-class miss where the SKILL.md was updated but the runtime CLI's short-circuit (`BUG_LABELS`/`DOCS_LABELS`) survived. See [behavior-rule-detection.md](../_shared/references/behavior-rule-detection.md).
+
+**When to apply:** Run on every AC for which the behavior-rule heuristic triggers (>= 2 distinct keywords from `default | always | never | rule | behavior | skip` OR explicit pattern like `always X unless Y`). Skip entirely when no AC triggers across the issue (cheap short-circuit per the reference doc's Performance budget).
+
+**How to perform:**
+
+```bash
+# Per-AC survival check. Run once per behavior-rule AC.
+QA_AC_ID="AC-1" \
+QA_AC_TEXT="<verbatim AC description>" \
+QA_DIFF_PATHS="$(git diff main...HEAD --name-only | tr '\n' '|')" \
+npx tsx -e '
+(async () => {
+  const m = await import("./src/lib/heuristics/behavior-rule-detector.ts");
+  const ac = {
+    id: process.env.QA_AC_ID,
+    description: process.env.QA_AC_TEXT,
+    verificationMethod: "manual",
+    status: "pending",
+  };
+  const detection = m.detectBehaviorRule(ac);
+  if (!detection.triggered) { console.log(JSON.stringify({ triggered: false })); return; }
+  const diffPaths = (process.env.QA_DIFF_PATHS || "").split("|").filter(Boolean);
+  const survivors = m.findSurvivingInverseSymbols(ac, process.cwd(), diffPaths);
+  console.log(JSON.stringify({ triggered: true, survivors }));
+})();
+'
+```
+
+**Status outcomes:**
+
+| Status | Criteria |
+|--------|----------|
+| **Clean** | Detector triggered, `survivors` is empty across diff blast radius |
+| **Survivors Found** | One or more inverse symbols / inverse-keyword lines survive in the diff blast radius |
+| **N/A** | No AC triggers the behavior-rule detector (skip section entirely) |
+
+**AC marking and verdict gating:**
+
+- Survival inside the diff blast radius -> the corresponding AC is marked `NOT_MET` with the `path:line` list in the AC explanation (per AC-2 of #552).
+- Survivors -> verdict floors at `AC_NOT_MET` via the §7 algorithm's `behavior_rule_survival_status` gate.
+
+**Output Format:**
+
+```markdown
+### Behavior-Rule Survival Check
+
+| AC | Triggered? | Survivors | Status |
+|----|-----------|-----------|--------|
+| AC-N | Yes | path/to/file.ts:LINE — `<snippet>` | Survivors Found |
+| AC-M | No | — | N/A |
+
+**Status:** Clean / Survivors Found / N/A
+```
+
 ---
+
 
 ### 7. A+ Status Verdict
 
@@ -2053,7 +2111,8 @@ Provide an overall verdict:
    - smoke_test_status = status from Section 6b (Complete/Partial/Not Required)
    - detection_pattern_status = status from Section 6c (Passed/Failed/Insufficient Samples/Skipped/Not Required)
    - adversarial_reread_status = status from Section 6d (Clean/Gaps Found/Severe Gap) — REQUIRED for Standard QA, omitted for Simple Fix
-   - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND `git log main..HEAD` contains a user-facing conventional-commit prefix (`feat:|fix:|perf:|refactor:|docs:`); false otherwise
+   - behavior_rule_survival_status = status from Section 6e (Clean/Survivors Found/N/A) — REQUIRED when any AC triggers the behavior-rule heuristic, omitted otherwise
+   - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
    - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
 
 3. Browser testing enforcement check:
@@ -2077,6 +2136,8 @@ Provide an overall verdict:
        → AC_NOT_MET (block merge)
    - ELSE IF detection_pattern_status == "Failed":
        → AC_NOT_MET (silent detection failures - block merge; STRICTER than skill_verification because pattern bugs report success but match the wrong corpus)
+   - ELSE IF behavior_rule_survival_status == "Survivors Found":
+       → AC_NOT_MET (OLD-rule symbol survived inside the diff blast radius — see #533 motivating miss in Section 6e and references/behavior-rule-detection.md)
    - ELSE IF adversarial_reread_status == "Severe Gap":
        → AC_NOT_MET (verbatim motivating-example fixture not run / evidence claim is bug reproduction not validation / AC marked MET without runtime or corpus check the AC text required)
    - ELSE IF skill_verification == "Failed":
@@ -2309,7 +2370,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
 **Wired into §7 verdict algorithm:** This gate is enforced via the `changelog_required AND changelog_missing` branch in §7 — when both conditions are true, the verdict is demoted from `READY_FOR_MERGE` to `AC_MET_BUT_NOT_A_PLUS`. The branch is no-op when `CHANGELOG.md` is absent or no user-facing commit prefix is detected.
 
-**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes (`feat:|fix:|perf:|refactor:|docs:`) in `git log main..HEAD`. Projects without conventional commits silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
+**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes — `feat`, `fix`, `perf`, `refactor`, `docs`, with optional scope (`(...)`) and breaking marker (`!`) — in `git log main..HEAD`. Projects whose commits don't follow this pattern silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
 
 **Detection:**
 
@@ -2325,7 +2386,7 @@ unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep
 
 # Determine if change is user-facing (new features, bug fixes, etc.)
 # Look at commit messages or file changes
-user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs):' | wc -l | xargs || true)
+user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs)(\([^)]*\))?!?:' | wc -l | xargs || true)
 ```
 
 **Verification Logic:**
