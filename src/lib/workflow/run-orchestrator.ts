@@ -36,6 +36,8 @@ import { LogWriter } from "./log-writer.js";
 import type { RunConfig } from "./run-log-schema.js";
 import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
+import { LockManager, formatLockedMessage } from "../locks/index.js";
+import type { LockFile } from "../locks/index.js";
 import {
   getIssueInfo,
   sortByDependencies,
@@ -519,6 +521,76 @@ export class RunOrchestrator {
       }
     }
 
+    // ── Concurrency lock (#625) ────────────────────────────────────────
+    // Acquired here — after the state guard, before worktree creation — so
+    // that issues already filtered as ready_for_merge don't claim locks they
+    // wouldn't release. Locked issues are skipped from the run with a
+    // synthetic IssueResult so the batch continues.
+    const lockManager = new LockManager();
+    const lockedResults: IssueResult[] = [];
+    if (!lockManager.isNoop && !config.dryRun) {
+      const commandLabel = `npx sequant run ${issueNumbers.join(" ")}`;
+      const claimed: number[] = [];
+      for (const issueNumber of issueNumbers) {
+        const claim = mergedOptions.force
+          ? (() => {
+              const { previous } = lockManager.forceAcquire(
+                issueNumber,
+                commandLabel,
+              );
+              if (previous && mergedOptions.signalOther) {
+                const sent = lockManager.signalOther(previous);
+                console.log(
+                  chalk.gray(
+                    sent
+                      ? `  Signaled PID ${previous.pid} (SIGTERM) for #${issueNumber}`
+                      : `  Could not signal PID ${previous.pid} for #${issueNumber} (cross-host or already exited)`,
+                  ),
+                );
+              }
+              return { acquired: true as const };
+            })()
+          : lockManager.acquire(issueNumber, commandLabel);
+        if (claim.acquired) {
+          claimed.push(issueNumber);
+        } else {
+          lockedResults.push(buildLockedResult(issueNumber, claim.holder));
+          console.log(
+            chalk.yellow(
+              `  !  ${formatLockedMessage(issueNumber, claim.holder)}`,
+            ),
+          );
+        }
+      }
+      issueNumbers = claimed;
+      if (claimed.length > 0) {
+        shutdown.registerCleanup("Release issue locks", async () => {
+          lockManager.releaseAll();
+        });
+        // Sync cleanup for SIGKILL / uncaughtException paths. process.on('exit')
+        // only fires sync handlers; this is the best-effort safety net for
+        // events ShutdownManager doesn't catch.
+        const exitHandler = (): void => lockManager.releaseAll();
+        process.on("exit", exitHandler);
+        shutdown.registerCleanup("Detach exit-handler", async () => {
+          process.off("exit", exitHandler);
+        });
+      }
+      if (issueNumbers.length === 0) {
+        shutdown.dispose();
+        return {
+          results: lockedResults,
+          logPath: null,
+          exitCode: lockedResults.length > 0 ? 1 : 0,
+          worktreeMap: new Map(),
+          issueInfoMap: new Map(),
+          config,
+          mergedOptions,
+          logWriter: null,
+        };
+      }
+    }
+
     // ── Issue info + worktree setup ────────────────────────────────────
     const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
     for (const issueNumber of issueNumbers) {
@@ -634,10 +706,11 @@ export class RunOrchestrator {
         }
       }
 
+      const allResults = [...lockedResults, ...results];
       return {
-        results,
+        results: allResults,
         logPath,
-        exitCode: results.some((r) => !r.success) && !config.dryRun ? 1 : 0,
+        exitCode: allResults.some((r) => !r.success) && !config.dryRun ? 1 : 0,
         worktreeMap,
         issueInfoMap,
         config,
@@ -960,6 +1033,28 @@ function cloneIssueState(s: IssueRuntimeState): IssueRuntimeState {
           logPath: s.currentPhase.logPath,
         }
       : undefined,
+  };
+}
+
+/**
+ * Build the synthetic `IssueResult` returned for an issue that was skipped
+ * because another sequant session holds its lock (#625).
+ */
+export function buildLockedResult(
+  issueNumber: number,
+  holder: LockFile,
+): IssueResult {
+  return {
+    issueNumber,
+    success: false,
+    phaseResults: [],
+    abortReason: `locked by PID ${holder.pid}`,
+    locked: {
+      pid: holder.pid,
+      hostname: holder.hostname,
+      startedAt: holder.startedAt,
+      command: holder.command,
+    },
   };
 }
 

@@ -167,6 +167,18 @@ export interface IssueResult {
   prNumber?: number;
   /** PR URL if created after successful QA */
   prUrl?: string;
+  /**
+   * Set when the issue was skipped because another sequant session holds
+   * the per-issue lock (#625). Surfaced in the summary as
+   * `locked by PID <n>`. When present, `success` is false and the issue
+   * was not executed.
+   */
+  locked?: {
+    pid: number;
+    hostname: string;
+    startedAt: string;
+    command: string;
+  };
 }
 
 /**
@@ -271,6 +283,11 @@ export interface RunOptions {
    * Experimental — surface and behavior may change.
    */
   experimentalTui?: boolean;
+  /**
+   * With `--force`, SIGTERM the prior PID holding the per-issue lock
+   * before claiming it. Only acts on same-host alive PIDs. (#625)
+   */
+  signalOther?: boolean;
 }
 
 /**
