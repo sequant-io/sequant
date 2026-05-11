@@ -31,6 +31,8 @@ export function buildProgressWiring(args: {
   /** AC-23: when auto-detect mode is on, the renderer shows `Phase: detecting…`
    *  while spec runs (before the resolved plan is known). */
   autoDetectPhases?: boolean;
+  /** #624 Item 3 / D2: total allowed quality-loop iterations (from settings). */
+  maxLoopIterations?: number;
 }): ProgressWiring {
   const {
     tuiEnabled,
@@ -38,6 +40,7 @@ export function buildProgressWiring(args: {
     issueNumbers,
     phaseTimeoutSeconds,
     autoDetectPhases,
+    maxLoopIterations,
   } = args;
 
   const heartbeat =
@@ -50,6 +53,9 @@ export function buildProgressWiring(args: {
   // AC-26: derive a stall threshold from the configured phase timeout. Half
   // the timeout is a conservative "expected duration" proxy — phases that
   // routinely take longer would have failed timeout already.
+  // #624 Item 1: pass terminal rows so the live zone can cap its height.
+  // #624 Item 3 / D2: thread the configured maxLoopIterations through so
+  // all three retry-suffix sites display the correct denominator.
   const renderer =
     !tuiEnabled && !quiet
       ? createRunRenderer({
@@ -57,6 +63,8 @@ export function buildProgressWiring(args: {
             phaseTimeoutSeconds > 0
               ? (phaseTimeoutSeconds * 1000) / 2
               : undefined,
+          rows: process.stdout.rows,
+          maxLoopIterations,
         })
       : null;
   if (renderer) {
@@ -68,12 +76,15 @@ export function buildProgressWiring(args: {
   let onProgress: ProgressCallback | undefined;
   if (renderer) {
     onProgress = (issue, phase, event, extra) => {
+      // #624 Item 3: pass the outer-loop iteration through so the renderer can
+      // render `(attempt N/M)` / `loop N/M`.
       renderer.onEvent({
         issue,
         phase,
         event,
         durationSeconds: extra?.durationSeconds,
         error: extra?.error,
+        iteration: extra?.iteration,
       });
     };
   } else if (heartbeat) {
