@@ -683,6 +683,31 @@ describe("LockManager — RunOrchestrator lockedResults flow (AC-18)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("buildLockedResult produces the IssueResult shape that flows into the summary", async () => {
+    // Imported lazily so test failures in lock-manager don't masquerade as
+    // workflow-package failures during file collection.
+    const { buildLockedResult } =
+      await import("../workflow/run-orchestrator.js");
+    const result = buildLockedResult(100, {
+      pid: 9999,
+      hostname: "host-a",
+      startedAt: "2026-05-11T00:00:00Z",
+      command: "npx sequant run 100",
+    });
+    expect(result).toMatchObject({
+      issueNumber: 100,
+      success: false,
+      phaseResults: [],
+      abortReason: "locked by PID 9999",
+      locked: {
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: "2026-05-11T00:00:00Z",
+        command: "npx sequant run 100",
+      },
+    });
+  });
+
   it("batch with a pre-existing foreign lock skips that issue and proceeds with others", async () => {
     // Pre-write a fresh foreign lock for issue 100 — simulates another
     // session that ran `npx sequant run 100` and is still in-flight.
