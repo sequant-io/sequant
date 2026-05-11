@@ -191,9 +191,8 @@ the inline pattern verification (#547 / #533 prevented). On the >>95% of PRs
 where §6c is N/A, the precheck plumbing is a net win.
 
 **Verification (Manual per spec):** the spec marks AC-5 as Manual verification.
-This report provides the methodology; an empirical 5+ PR run can be performed
-post-merge by replaying merged PRs through `scripts/qa/precheck.ts` and
-comparing per-section costs against the pre-#609 SKILL.md (via `git show`).
+The calibration above provides the section-size delta; the section below
+provides the empirical per-PR replay against 6 historical merged PRs.
 
 **Reproduce the calibration numbers:**
 
@@ -206,6 +205,53 @@ awk '/^### 6d\./,/^### 6e\./' .claude/skills/qa/SKILL.md | wc -lw
 # Pre-#609 section sizes (from main)
 git show main:.claude/skills/qa/SKILL.md | awk '/^### 6c\./,/^### 6d\./' | wc -lw
 git show main:.claude/skills/qa/SKILL.md | awk '/^### 6d\./,/^### 6e\./' | wc -lw
+```
+
+### Empirical 5-PR replay (post-fix)
+
+Six historical merged PRs replayed through `scripts/qa/precheck.ts` with
+`--base-sha <merge^> --head-sha <merge>`:
+
+| PR | Issue | §6c gate (new diff-hunk) | Fixtures | Sibling IDs | AC fail | Net Δ tok / invoke |
+|----|-------|--------------------------|---------:|------------:|--------:|-------------------:|
+| #623 | #608 | skipped | 0 | 27 | 0 | ≈ −1,609 |
+| #620 | #618 | skipped | 0 | 35 | **8** ⚠ | ≈ −1,609 + real AC catch |
+| #621 | #604 | TRIGGERED | 2 | 0 | 0 | ≈ +215 |
+| #617 | #616 | skipped | 0 | 0 | 0 | ≈ −1,609 |
+| #622 | #606 | skipped | 0 | 0 | 0 | ≈ −1,609 |
+| #547 | #529 | TRIGGERED | 1 | 0 | 0 | ≈ +215 |
+
+**Aggregate:** §6c gate skipped on **4 / 6 PRs (67%)** under the new diff-hunk
+precondition. Average across this sample: **≈ −1,002 tok / PR**
+(`(4 × −1,609 + 2 × 215) / 6`). Net reduction confirmed; AC-5 met empirically.
+
+**Important correction to the calibration claim above** (`In the 50-PR
+window analyzed by #608 the precondition was true on 0 PRs`): the original
+content-grep precondition shipped in the first cut of #609 actually
+triggered on **6 / 6** of these PRs (every sequant SKILL.md file mentions
+`grep`/`awk`/`jq`/`sed` in unrelated example code, so the content-grep
+gate always fired on skill-md diffs). The follow-up fix in this PR
+changes the gate to grep the **diff hunks** instead, which yields the
+4 / 6 skip rate above and recovers the cost-savings the calibration
+predicted.
+
+**Real-finding catch (PR #620):** the precheck surfaced
+`acLiteralDiff.missingInPR.length = 8` — eight AC IDs listed in #618's
+issue body but not echoed in the PR body. This is the kind of literal
+mismatch the inline §1 prose was supposed to catch; #608's data showed
+§1 surfaced such mismatches but rarely produced action. The precheck
+makes the finding machine-readable and unmissable.
+
+**Reproduce the empirical replay:**
+
+```bash
+for entry in "623:608" "620:618" "621:604" "617:616" "622:606" "547:529"; do
+  pr="${entry%%:*}"; iss="${entry##*:}"
+  merge=$(gh pr view $pr --json mergeCommit -q '.mergeCommit.oid')
+  parent=$(git rev-parse "$merge^")
+  npx tsx scripts/qa/precheck.ts --issue "$iss" --pr "$pr" \
+    --base-sha "$parent" --head-sha "$merge" --out "/tmp/precheck-$pr.json"
+done
 ```
 
 ---
@@ -246,12 +292,27 @@ on edge cases, the agent loses signal without a warning.
 
 4. **Known-buggy fixtures cited:** the spec calls out fixtures from
    `feedback_motivating_example_regression.md`,
-   `feedback_dogfood_detection_patterns.md`, PR #547 / #533. The 27 tests
+   `feedback_dogfood_detection_patterns.md`, PR #547 / #533. The 30 tests
    include the structural shapes from each (verbatim fenced fixtures under
-   non-Setup headings, `**Verify:**`-prefixed examples). An empirical replay
-   pass can be performed post-merge by extracting fixtures from each of
-   those issue bodies via `npx tsx scripts/qa/precheck.ts --issue <N>` and
-   confirming `.checks.fixtures.count > 0`.
+   non-Setup headings, `**Verify:**`-prefixed examples).
+
+### Empirical fixture-extraction replay (post-fix)
+
+Two of the replay PRs above carry real motivating-example payloads in
+their linked issue bodies. Running the precheck against them confirms
+the extractor surfaces the same fixtures the pre-#609 inline awk
+extractor would have:
+
+| PR | Issue | Fixtures surfaced | Demonstrates |
+|----|-------|------------------:|--------------|
+| #547 | #529 | 1 | Single fenced verbatim fixture under non-Setup heading (per `feedback_motivating_example_regression.md` shape) |
+| #621 | #604 | 2 | Multiple fenced fixtures in an investigation issue (no false negatives from heading-state machine) |
+
+Both extractions were against the **historical issue bodies** fetched
+live via `gh issue view <N> --json body` — no synthetic fixtures
+involved (per `feedback_synthetic_test_fixture_trap.md`). AC-6 met
+empirically: the precheck adds findings on these known-fixture-bearing
+PRs and never removes the fallback path on the other 4.
 
 **Regression risks NOT covered by this script:**
 

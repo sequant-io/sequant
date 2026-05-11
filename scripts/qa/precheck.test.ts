@@ -233,6 +233,27 @@ describe("extractIdentifiersFromDiff", () => {
       { name: "alpha", file: "src/foo.ts" },
     ]);
   });
+
+  it("skips indented (function-body local) declarations", () => {
+    // The dogfood run on PR #628 surfaced 24 identifiers when only ~7 were
+    // top-level exports — the other 17 were local consts/lets inside
+    // function bodies (e.g. `  const lines = body.split("\n")`).
+    // These are noise for cross-file sibling-grep and inflate agent reading
+    // load. Top-level decls have no leading whitespace in source.
+    const diff = [
+      "+++ b/src/foo.ts",
+      "+export function alpha() {",
+      "+  const localConst = 1;",
+      "+  let localLet = 2;",
+      "+  const nested = () => localConst;",
+      "+}",
+      "+export const topLevel = 3;",
+    ].join("\n");
+    const ids = extractIdentifiersFromDiff(diff)
+      .map((i) => i.name)
+      .sort();
+    expect(ids).toEqual(["alpha", "topLevel"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -371,6 +392,25 @@ describe("parseArgs", () => {
 
   it("treats malformed numbers as null", () => {
     expect(parseArgs(["--issue", "notanumber"]).issue).toBeNull();
+  });
+
+  it("parses --base-sha / --head-sha for historical-PR replay", () => {
+    const args = parseArgs([
+      "--issue",
+      "609",
+      "--base-sha",
+      "abc1234",
+      "--head-sha",
+      "def5678",
+    ]);
+    expect(args.baseSha).toBe("abc1234");
+    expect(args.headSha).toBe("def5678");
+  });
+
+  it("defaults --base-sha / --head-sha to null when not provided", () => {
+    const args = parseArgs(["--issue", "609"]);
+    expect(args.baseSha).toBeNull();
+    expect(args.headSha).toBeNull();
   });
 });
 

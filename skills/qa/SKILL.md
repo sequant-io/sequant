@@ -1882,10 +1882,19 @@ fi
 **HARD PRECONDITION (REQUIRED — emit nothing when false):**
 
 ```bash
-# Skill markdown files that BOTH appear in the diff AND contain regex/grep/awk/jq/sed literals.
+# Skill markdown files whose DIFF HUNKS (added lines) contain
+# regex/grep/awk/jq/sed literals. Grepping diff hunks rather than current
+# file content is load-bearing: all 19 sequant SKILL.md files mention these
+# tokens in unrelated example code, so a content-grep gate fires for ~100%
+# of skill-md PRs and the cost-saving intent of #608 / #609 evaporates.
 pattern_files=$(git diff origin/main...HEAD --name-only | \
   grep -E '^(\.claude/skills|templates/skills|skills)/.*\.md$' | \
-  xargs grep -lE '\b(grep|awk|jq|sed)\b|/[^/]+/[gim]?' 2>/dev/null || true)
+  while read -r f; do
+    if git diff origin/main...HEAD -- "$f" | grep -E '^\+[^+]' | \
+       grep -qE '\b(grep|awk|jq|sed)\b|/[^/]+/[gim]?'; then
+      echo "$f"
+    fi
+  done || true)
 ```
 
 If `pattern_files` is empty, **omit the entire §6c block — including its output template row — from the QA comment.** Do NOT emit "Not Required." Per the #608 signal-to-noise study, every one of §6c's 11 prior emissions said exactly "N/A — no skill regex/grep/awk changes" and produced zero substantive findings. The header recitation itself is the cost (~1,800 tokens / invoke). When the precondition is false, treat §6c as not loaded for this run.

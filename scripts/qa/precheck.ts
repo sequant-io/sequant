@@ -291,9 +291,11 @@ export function extractIdentifiersFromDiff(
     if (!currentFileEligible) continue;
     if (!line.startsWith("+") || line.startsWith("+++")) continue;
 
-    // Strip the leading `+` and any indentation; declaration must be at the
-    // start of the line content (no nested-block decls).
-    const content = line.slice(1).trimStart();
+    // Strip the leading `+` only — keep indentation. Top-level declarations
+    // have no leading whitespace in source; indented (function-body) decls
+    // are noise for the cross-file sibling-grep section because they're
+    // local consts that never have siblings in other files.
+    const content = line.slice(1);
     for (const re of declRegexes) {
       const m = content.match(re);
       if (m) {
@@ -349,9 +351,22 @@ function fetchCurrentPrNumber(): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
-function fetchDiff(): string | null {
+function fetchDiff(
+  baseSha?: string | null,
+  headSha?: string | null,
+): string | null {
   // origin/main is the canonical comparison base — see
   // feedback_worktree_stale_main.md (local main can drift).
+  // baseSha / headSha override the default range for historical-PR replay
+  // (see --base-sha / --head-sha CLI flags; parsing tested in `parseArgs`).
+  if (baseSha && headSha) {
+    // Validate SHAs to avoid shell injection — git SHAs are [0-9a-f]+, len 4-40.
+    const valid = /^[0-9a-f]{4,40}$/i;
+    if (!valid.test(baseSha) || !valid.test(headSha)) {
+      return null;
+    }
+    return safeExec(`git diff ${baseSha}...${headSha} --unified=0`);
+  }
   return safeExec(`git diff origin/main...HEAD --unified=0`);
 }
 
@@ -416,6 +431,10 @@ export interface RunOptions {
   prBody?: string | null;
   diff?: string | null;
   searchRoots?: string[];
+  // Historical-PR replay: override the default origin/main...HEAD diff range.
+  // When both are set, fetchDiff() shells out to `git diff <base>...<head>`.
+  baseSha?: string | null;
+  headSha?: string | null;
 }
 
 export function runPrecheck(opts: RunOptions): PrecheckResult {
@@ -434,7 +453,8 @@ export function runPrecheck(opts: RunOptions): PrecheckResult {
         ? fetchPrBody(prNumber)
         : null;
 
-  const diff = opts.diff !== undefined ? opts.diff : fetchDiff();
+  const diff =
+    opts.diff !== undefined ? opts.diff : fetchDiff(opts.baseSha, opts.headSha);
 
   // --- fixtures ---
   let fixtures: FixturesCheck;
@@ -526,6 +546,8 @@ interface CliArgs {
   pr: number | null;
   out: string;
   help: boolean;
+  baseSha: string | null;
+  headSha: string | null;
 }
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -534,6 +556,8 @@ export function parseArgs(argv: string[]): CliArgs {
     pr: null,
     out: ".sequant/gap-precheck.json",
     help: false,
+    baseSha: null,
+    headSha: null,
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -545,6 +569,10 @@ export function parseArgs(argv: string[]): CliArgs {
       args.pr = parseIntStrict(argv[++i]);
     } else if (a === "--out") {
       args.out = argv[++i] ?? args.out;
+    } else if (a === "--base-sha") {
+      args.baseSha = argv[++i] ?? null;
+    } else if (a === "--head-sha") {
+      args.headSha = argv[++i] ?? null;
     }
   }
   return args;
@@ -564,12 +592,15 @@ function printHelp(): void {
       "",
       "Usage:",
       "  npx tsx scripts/qa/precheck.ts --issue <N> [--pr <P>] [--out <path>]",
+      "                                [--base-sha <SHA> --head-sha <SHA>]",
       "",
       "Options:",
-      "  --issue <N>   Issue number (required for fixture extraction + AC diff)",
-      "  --pr <P>      PR number (auto-detected via `gh pr view` if omitted)",
-      "  --out <path>  Output JSON path (default: .sequant/gap-precheck.json)",
-      "  --help        Show this help",
+      "  --issue <N>       Issue number (required for fixture extraction + AC diff)",
+      "  --pr <P>          PR number (auto-detected via `gh pr view` if omitted)",
+      "  --out <path>      Output JSON path (default: .sequant/gap-precheck.json)",
+      "  --base-sha <SHA>  Override diff base (default: origin/main) — replay mode",
+      "  --head-sha <SHA>  Override diff head (default: HEAD) — replay mode",
+      "  --help            Show this help",
       "",
       "Exit code: always 0. Findings live in the JSON.",
     ].join("\n"),
@@ -594,7 +625,12 @@ function main(): void {
     printHelp();
     return;
   }
-  const result = runPrecheck({ issue: args.issue, pr: args.pr });
+  const result = runPrecheck({
+    issue: args.issue,
+    pr: args.pr,
+    baseSha: args.baseSha,
+    headSha: args.headSha,
+  });
   writeResult(result, args.out);
   // eslint-disable-next-line no-console
   console.log(`Wrote ${args.out}`);
