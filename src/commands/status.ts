@@ -25,6 +25,7 @@ import {
 } from "../lib/workflow/state-schema.js";
 import { getSettingsWithWarnings } from "../lib/settings.js";
 import { getSkillVersions } from "../lib/skill-version.js";
+import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
 
 export interface StatusCommandOptions {
   /** Show only issues state */
@@ -461,6 +462,15 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
       } else if (issueState) {
         console.log(chalk.bold(`\nIssue #${options.issue} State\n`));
         console.log(formatIssueState(issueState));
+        const lockManager = new LockManager();
+        const holder = lockManager.check(options.issue);
+        if (holder) {
+          console.log(
+            chalk.yellow(
+              `    !  ${formatLockedMessage(options.issue, holder)}`,
+            ),
+          );
+        }
         const hint = getNextActionHint(issueState);
         if (hint) {
           console.log(chalk.cyan(`\n    Next: ${hint}`));

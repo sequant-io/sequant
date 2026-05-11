@@ -52,6 +52,20 @@ Every issue gets exactly ONE action:
 
 ### Step 1: Context Gathering
 
+**Concurrency check (#625, read-only):**
+
+Probe the per-issue concurrency lock so the dashboard can flag issues another session is actively working on. `/assess` never acquires the lock — it only reports.
+
+```bash
+# Single batch call. Empty output = no issues are locked. Held issues print one
+# pre-formatted `⚠ #<N> held by ...` line each, ready to paste above the dashboard.
+npx sequant locks check-batch <N1> <N2> ... 2>/dev/null || true
+```
+
+If the output is non-empty, paste every line verbatim above the dashboard table (or, in single-issue detail mode, immediately above the action verdict). Do not gate the recommendation — `/assess` is read-only and must still produce its action verdict even when an issue is locked.
+
+The orchestrator/MCP mode (`SEQUANT_ORCHESTRATOR` set) returns no output, so the call is safe to make unconditionally.
+
 **From GitHub (parallel for all issues):**
 
 ```bash

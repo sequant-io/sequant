@@ -60,6 +60,14 @@ import {
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
+import {
+  locksListCommand,
+  locksClearCommand,
+  locksAcquireCommand,
+  locksReleaseCommand,
+  locksCheckCommand,
+  locksCheckBatchCommand,
+} from "../src/commands/locks.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -239,7 +247,11 @@ program
   )
   .option(
     "-f, --force",
-    "Force re-execution of completed issues (bypass pre-flight state guard)",
+    "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",
+  )
+  .option(
+    "--signal-other",
+    "With --force, SIGTERM the prior PID holding the lock (same-host alive only)",
   )
   .option(
     "--concurrency <n>",
@@ -373,6 +385,71 @@ stateCmd
   .option("--max-age <days>", "Remove entries older than N days", parseInt)
   .option("--all", "Remove all orphaned entries (merged and abandoned)")
   .action(stateCleanCommand);
+
+// Per-issue concurrency locks (#625)
+const locksCmd = program
+  .command("locks")
+  .description("Inspect and clear per-issue concurrency locks");
+
+locksCmd
+  .command("list")
+  .description("List active locks with staleness metadata")
+  .option("--json", "Output as JSON")
+  .action(locksListCommand);
+
+locksCmd
+  .command("clear <issue>")
+  .description(
+    "Manually clear the lock for an issue (safety check unless --force)",
+  )
+  .option(
+    "-f, --force",
+    "Skip safety check; clear even a fresh same-host alive lock",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksClearCommand);
+
+locksCmd
+  .command("acquire <issue>")
+  .description(
+    "Claim the lock for an issue (used by /fullsolve, /assess; exits 1 if held)",
+  )
+  .option("--command <command>", "Human-readable command label", "unknown")
+  .option(
+    "--skip-pid-check",
+    "Mark the lock so stale recovery skips same-host PID checks (use from skill shells)",
+  )
+  .option("-f, --force", "Take over even if another holder is alive")
+  .option(
+    "--signal-other",
+    "When forcing, SIGTERM the prior same-host holder if alive",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksAcquireCommand);
+
+locksCmd
+  .command("release <issue>")
+  .description(
+    "Release a lock previously acquired on this host (skill or current process)",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksReleaseCommand);
+
+locksCmd
+  .command("check <issue>")
+  .description(
+    "Read-only probe: print lock holder if any; exit 1 when held (for /assess)",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksCheckCommand);
+
+locksCmd
+  .command("check-batch <issues...>")
+  .description(
+    "Batch read-only probe: emit canonical ⚠ warning lines for held issues (for /assess dashboard)",
+  )
+  .option("--json", "Output as JSON instead of canonical text lines")
+  .action(locksCheckBatchCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).
