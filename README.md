@@ -245,22 +245,31 @@ npx sequant locks clear 123 --force   # Clear unconditionally
 ```
 
 **Skill wiring** (`/fullsolve`, `/assess`). The `/fullsolve` skill claims the
-lock at Phase 0.3 and releases it at Phase 5.5; `/assess` probes it read-only
-and surfaces a dashboard warning when an issue is in use. Both use these
-subcommands directly from bash:
+lock at Phase 0.3, releases it at Phase 5.5, AND releases on every halt
+branch (spec failure, exec exhausted, etc.) so an aborted run frees the
+lock immediately. `/assess` probes it read-only and surfaces a dashboard
+warning when any issue is in use. Both use these subcommands directly from
+bash:
 
 ```bash
 npx sequant locks acquire 123 --command="/fullsolve 123" --skip-pid-check
-npx sequant locks release 123
-npx sequant locks check   123 --json   # exit 1 when held, prints holder JSON
+npx sequant locks release 123                    # idempotent; safe on every error path
+npx sequant locks check   123 --json             # exit 1 when held, prints holder JSON
+npx sequant locks check-batch 100 101 102        # /assess: emits ⚠ lines for held issues only
 ```
 
 `--skip-pid-check` is required for skill shells: the Node process that runs
 `locks acquire` exits immediately, so its PID is dead before the lock is
-released. With the flag set, stale detection falls back to age-only (2h
-default) on the holder's own host. A skill that crashes leaves at most a 2h
-orphan; clear it manually with `sequant locks clear <issue>` to recover
-sooner.
+released. With the flag set, stale detection falls back to age-only on the
+holder's own host. The default skill-lock TTL is **6h** (separate from the
+2h cross-host TTL) — long enough to cover virtually every `/fullsolve` run
+including multi-iteration QA loops. Override per-process via
+`SEQUANT_SKILL_LOCK_TTL_MS=<milliseconds>`.
+
+A skill that crashes mid-run leaves at most a 6h orphan; clear it manually
+with `sequant locks clear <issue>` to recover sooner. The skill's explicit
+release calls on every halt branch (see `.claude/skills/fullsolve/SKILL.md`
+Phase 0.3 release contract) mean this corner case should be rare in practice.
 
 **Read-only commands** (`status`, `merge`, `/assess`) warn when an issue is
 locked but do not block.

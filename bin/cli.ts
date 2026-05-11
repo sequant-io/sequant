@@ -66,6 +66,7 @@ import {
   locksAcquireCommand,
   locksReleaseCommand,
   locksCheckCommand,
+  locksCheckBatchCommand,
 } from "../src/commands/locks.js";
 import { getManifest } from "../src/lib/manifest.js";
 
@@ -441,6 +442,14 @@ locksCmd
   )
   .option("--json", "Output as JSON")
   .action(locksCheckCommand);
+
+locksCmd
+  .command("check-batch <issues...>")
+  .description(
+    "Batch read-only probe: emit canonical ⚠ warning lines for held issues (for /assess dashboard)",
+  )
+  .option("--json", "Output as JSON instead of canonical text lines")
+  .action(locksCheckBatchCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).

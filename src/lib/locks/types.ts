@@ -4,8 +4,19 @@
 
 import { z } from "zod";
 
-/** Default age cutoff (ms) for cross-host / unknown-PID stale locks. */
+/** Default age cutoff (ms) for cross-host stale locks. */
 export const DEFAULT_STALE_AGE_MS = 2 * 60 * 60 * 1000; // 2h
+
+/**
+ * Default age cutoff (ms) for skill-shell locks (`skipPidCheck: true`).
+ * Longer than `DEFAULT_STALE_AGE_MS` because skill shells can't refresh
+ * their own PID liveness — the lock has to outlive long /fullsolve runs
+ * with multi-iteration QA loops. 6h covers virtually every run while
+ * still bounding the orphan window on crash/abort.
+ *
+ * Override per-process via `SEQUANT_SKILL_LOCK_TTL_MS` (milliseconds).
+ */
+export const DEFAULT_SKILL_LOCK_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 
 /** Default lock directory relative to the project root. */
 export const DEFAULT_LOCKS_DIR = ".sequant/locks";

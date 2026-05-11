@@ -33,6 +33,7 @@ import * as os from "os";
 
 import {
   DEFAULT_LOCKS_DIR,
+  DEFAULT_SKILL_LOCK_TTL_MS,
   DEFAULT_STALE_AGE_MS,
   LockFileSchema,
   type AcquireResult,
@@ -43,8 +44,17 @@ import {
 export interface LockManagerOptions {
   /** Directory holding `<issue>.lock` files (default: `.sequant/locks`). */
   locksDir?: string;
-  /** Age cutoff (ms) before a lock is considered stale by time. */
+  /**
+   * Age cutoff (ms) before a cross-host lock is considered stale by time.
+   * Default 2h. Does NOT apply to skill-shell locks — see `skillLockTtlMs`.
+   */
   staleAgeMs?: number;
+  /**
+   * Age cutoff (ms) for skill-shell locks (`skipPidCheck: true`). Default 6h.
+   * Longer than `staleAgeMs` because skill shells can't refresh PID liveness;
+   * the lock has to bridge long /fullsolve runs with multi-iteration QA loops.
+   */
+  skillLockTtlMs?: number;
   /** Override for orchestrator detection (test seam). */
   orchestratorMode?: boolean;
   /** Override for `os.hostname()` (test seam). */
@@ -66,6 +76,19 @@ export function isOrchestratorMode(): boolean {
 export function resolveLocksDir(explicit?: string): string {
   const fromEnv = process.env.SEQUANT_LOCKS_DIR;
   return resolve(explicit ?? fromEnv ?? DEFAULT_LOCKS_DIR);
+}
+
+/**
+ * Resolve `SEQUANT_SKILL_LOCK_TTL_MS` (milliseconds) — env override for the
+ * skill-shell lock TTL. Returns `null` when unset or unparseable so the
+ * caller can fall back to the constructor option / default.
+ */
+export function resolveSkillLockTtlMs(): number | null {
+  const raw = process.env.SEQUANT_SKILL_LOCK_TTL_MS;
+  if (raw === undefined || raw === "") return null;
+  const ms = Number.parseInt(raw, 10);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return ms;
 }
 
 /** Default same-host PID check. `process.kill(pid, 0)` throws if not alive. */
@@ -100,9 +123,12 @@ export function classifyStaleness(args: {
   myHostname: string;
   now: number;
   staleAgeMs: number;
+  /** TTL for skill-shell (skipPidCheck) locks; falls back to staleAgeMs. */
+  skillLockTtlMs?: number;
   isPidAlive: (pid: number) => boolean;
 }): "pid-dead" | "age-exceeded" | null {
   const { holder, myHostname, now, staleAgeMs, isPidAlive } = args;
+  const skillTtl = args.skillLockTtlMs ?? staleAgeMs;
 
   // 1. Same-host PID check is authoritative — except when the holder asked
   //    us to skip it (skill shells exit before the lock is released; their
@@ -113,15 +139,20 @@ export function classifyStaleness(args: {
   }
 
   // 2. Cross-host or skipPidCheck: PID is meaningless. Fall through to age.
+  //    skipPidCheck uses its own TTL (default 6h) so long /fullsolve runs
+  //    with multi-iteration QA loops don't lose their own lock; cross-host
+  //    uses the stricter staleAgeMs (default 2h).
+  const ttl = holder.skipPidCheck ? skillTtl : staleAgeMs;
   const ageMs = now - Date.parse(holder.startedAt);
   if (!Number.isFinite(ageMs)) return null;
-  if (ageMs > staleAgeMs) return "age-exceeded";
+  if (ageMs > ttl) return "age-exceeded";
   return null;
 }
 
 export class LockManager {
   private readonly locksDir: string;
   private readonly staleAgeMs: number;
+  private readonly skillLockTtlMs: number;
   private readonly orchestratorMode: boolean;
   private readonly hostname: string;
   private readonly pid: number;
@@ -134,6 +165,10 @@ export class LockManager {
   constructor(options: LockManagerOptions = {}) {
     this.locksDir = resolveLocksDir(options.locksDir);
     this.staleAgeMs = options.staleAgeMs ?? DEFAULT_STALE_AGE_MS;
+    this.skillLockTtlMs =
+      options.skillLockTtlMs ??
+      resolveSkillLockTtlMs() ??
+      DEFAULT_SKILL_LOCK_TTL_MS;
     this.orchestratorMode = options.orchestratorMode ?? isOrchestratorMode();
     this.hostname = options.hostname ?? os.hostname();
     this.pid = options.pid ?? process.pid;
@@ -189,6 +224,7 @@ export class LockManager {
         myHostname: this.hostname,
         now: this.now(),
         staleAgeMs: this.staleAgeMs,
+        skillLockTtlMs: this.skillLockTtlMs,
         isPidAlive: this.isPidAlive,
       });
       if (staleReason) {
@@ -343,6 +379,7 @@ export class LockManager {
         myHostname: this.hostname,
         now,
         staleAgeMs: this.staleAgeMs,
+        skillLockTtlMs: this.skillLockTtlMs,
         isPidAlive: this.isPidAlive,
       });
       out.push({
@@ -380,6 +417,7 @@ export class LockManager {
         myHostname: this.hostname,
         now: this.now(),
         staleAgeMs: this.staleAgeMs,
+        skillLockTtlMs: this.skillLockTtlMs,
         isPidAlive: this.isPidAlive,
       });
       if (!staleReason) {

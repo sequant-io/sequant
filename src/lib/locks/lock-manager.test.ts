@@ -457,6 +457,33 @@ describe("LockManager — list / clearLock", () => {
   });
 });
 
+describe("resolveSkillLockTtlMs / SEQUANT_SKILL_LOCK_TTL_MS", () => {
+  beforeEach(() => {
+    delete process.env.SEQUANT_SKILL_LOCK_TTL_MS;
+  });
+
+  it("returns null when env var is unset", async () => {
+    const { resolveSkillLockTtlMs } = await import("./lock-manager.js");
+    expect(resolveSkillLockTtlMs()).toBeNull();
+  });
+
+  it("parses a positive integer from env", async () => {
+    const { resolveSkillLockTtlMs } = await import("./lock-manager.js");
+    process.env.SEQUANT_SKILL_LOCK_TTL_MS = "1000";
+    expect(resolveSkillLockTtlMs()).toBe(1000);
+  });
+
+  it("rejects non-numeric / zero / negative values (returns null)", async () => {
+    const { resolveSkillLockTtlMs } = await import("./lock-manager.js");
+    process.env.SEQUANT_SKILL_LOCK_TTL_MS = "abc";
+    expect(resolveSkillLockTtlMs()).toBeNull();
+    process.env.SEQUANT_SKILL_LOCK_TTL_MS = "0";
+    expect(resolveSkillLockTtlMs()).toBeNull();
+    process.env.SEQUANT_SKILL_LOCK_TTL_MS = "-100";
+    expect(resolveSkillLockTtlMs()).toBeNull();
+  });
+});
+
 describe("resolveLocksDir / SEQUANT_LOCKS_DIR", () => {
   afterEach(() => {
     delete process.env.SEQUANT_LOCKS_DIR;
@@ -586,13 +613,13 @@ describe("LockManager — skipPidCheck (skill-shell holders)", () => {
     }
   });
 
-  it("a skipPidCheck same-host lock past staleAgeMs is auto-cleared", () => {
+  it("a skipPidCheck same-host lock past skillLockTtlMs is auto-cleared", () => {
     writeFileSync(
       join(dir, "42.lock"),
       JSON.stringify({
         pid: 9999,
         hostname: "host-a",
-        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), // 3h
+        startedAt: new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString(), // 7h
         command: "/fullsolve 42",
         skipPidCheck: true,
       }),
@@ -602,6 +629,74 @@ describe("LockManager — skipPidCheck (skill-shell holders)", () => {
       hostname: "host-a",
       pid: 1,
       isPidAlive: () => true,
+      // Default skillLockTtlMs is 6h; 7h-old lock should be cleared.
+    });
+    const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
+    expect(result.acquired).toBe(true);
+  });
+
+  it("a skipPidCheck same-host lock between staleAgeMs (2h) and skillLockTtlMs (6h) is NOT cleared", () => {
+    // 4h old: past staleAgeMs (would clear cross-host) but within skillLockTtlMs.
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
+    expect(result.acquired).toBe(false);
+  });
+
+  it("a cross-host lock past staleAgeMs (2h) but within skillLockTtlMs (6h) IS cleared", () => {
+    // Regression guard: cross-host MUST use staleAgeMs, not skillLockTtlMs.
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "remote-host",
+        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), // 3h
+        command: "npx sequant run 42",
+        // No skipPidCheck — this is a regular cross-host lock.
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const result = mgr.acquire(42, "x");
+    expect(result.acquired).toBe(true);
+  });
+
+  it("constructor honors explicit skillLockTtlMs option", () => {
+    // 3h old + 1h TTL = stale.
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+      skillLockTtlMs: 60 * 60 * 1000, // 1h
     });
     const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
     expect(result.acquired).toBe(true);

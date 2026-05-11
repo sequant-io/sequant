@@ -3,7 +3,11 @@
  */
 
 import chalk from "chalk";
-import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
+import {
+  LockManager,
+  formatLockedMessage,
+  type LockFile,
+} from "../lib/locks/index.js";
 
 export interface LocksListOptions {
   json?: boolean;
@@ -27,6 +31,10 @@ export interface LocksReleaseOptions {
 }
 
 export interface LocksCheckOptions {
+  json?: boolean;
+}
+
+export interface LocksCheckBatchOptions {
   json?: boolean;
 }
 
@@ -241,7 +249,9 @@ export async function locksReleaseCommand(
   const manager = new LockManager();
   if (manager.isNoop) {
     if (options.json) {
-      console.log(JSON.stringify({ released: false, orchestratorMode: true }));
+      console.log(
+        JSON.stringify({ issue, released: false, orchestratorMode: true }),
+      );
     } else {
       console.log(
         chalk.gray("Lock operations are disabled (SEQUANT_ORCHESTRATOR set)."),
@@ -300,5 +310,62 @@ export async function locksCheckCommand(
     console.log(JSON.stringify({ issue, locked: true, holder }));
   } else {
     console.log(chalk.yellow(formatLockedMessage(issue, holder)));
+  }
+}
+
+/**
+ * `sequant locks check-batch <issue1> <issue2> ...` — read-only batch probe
+ * used by `/assess`. Text mode emits one canonical warning line per held
+ * issue (nothing for unheld), so the skill can paste the output directly
+ * above its dashboard. JSON mode emits a structured `{ warnings: [...] }`.
+ *
+ * Exit code is always 0 — `/assess` is read-only and should never abort
+ * on locked issues; the warning is informational.
+ */
+export async function locksCheckBatchCommand(
+  issueArgs: string[],
+  options: LocksCheckBatchOptions = {},
+): Promise<void> {
+  const issues: number[] = [];
+  for (const arg of issueArgs) {
+    const issue = Number.parseInt(arg, 10);
+    if (!Number.isInteger(issue) || issue <= 0) {
+      console.error(chalk.red(`Invalid issue number: ${arg}`));
+      process.exitCode = 2;
+      return;
+    }
+    issues.push(issue);
+  }
+
+  const manager = new LockManager();
+  if (manager.isNoop) {
+    if (options.json) {
+      console.log(
+        JSON.stringify({ warnings: [], orchestratorMode: true, checked: 0 }),
+      );
+    }
+    // Non-JSON: silent in orchestrator mode (matches `acquire`/`release`
+    // semantics — no spurious output for /assess in MCP-driven runs).
+    return;
+  }
+
+  const warnings: Array<{ issue: number; holder: LockFile }> = [];
+  for (const issue of issues) {
+    const holder = manager.check(issue);
+    if (holder) warnings.push({ issue, holder });
+  }
+
+  if (options.json) {
+    console.log(JSON.stringify({ warnings, checked: issues.length }, null, 2));
+    return;
+  }
+
+  // Text mode: one line per held issue (canonical `⚠` format that /assess
+  // pastes verbatim into its dashboard). Empty output when nothing is held.
+  for (const { issue, holder } of warnings) {
+    console.log(
+      `⚠ #${issue} held by PID ${holder.pid} on ${holder.hostname} ` +
+        `since ${holder.startedAt} (${holder.command})`,
+    );
   }
 }

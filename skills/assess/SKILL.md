@@ -54,14 +54,17 @@ Every issue gets exactly ONE action:
 
 **Concurrency check (#625, read-only):**
 
-For each issue, probe the per-issue concurrency lock so the dashboard can flag issues another session is actively working on. `/assess` never acquires the lock — it only reports.
+Probe the per-issue concurrency lock so the dashboard can flag issues another session is actively working on. `/assess` never acquires the lock — it only reports.
 
 ```bash
-# Per issue. Exit code 1 means held; output is the canonical "issue in use" message.
-npx sequant locks check <N> --json || true
+# Single batch call. Empty output = no issues are locked. Held issues print one
+# pre-formatted `⚠ #<N> held by ...` line each, ready to paste above the dashboard.
+npx sequant locks check-batch <N1> <N2> ... 2>/dev/null || true
 ```
 
-When the JSON output is `{"locked":true,"holder":{...}}`, surface a warning line in the dashboard near the issue's row: `⚠ #<N> held by PID <pid> on <host> since <startedAt> (<command>)`. Do not gate the recommendation — `/assess` is read-only and should still produce its action vocabulary verdict even when an issue is locked.
+If the output is non-empty, paste every line verbatim above the dashboard table (or, in single-issue detail mode, immediately above the action verdict). Do not gate the recommendation — `/assess` is read-only and must still produce its action verdict even when an issue is locked.
+
+The orchestrator/MCP mode (`SEQUANT_ORCHESTRATOR` set) returns no output, so the call is safe to make unconditionally.
 
 **From GitHub (parallel for all issues):**
 

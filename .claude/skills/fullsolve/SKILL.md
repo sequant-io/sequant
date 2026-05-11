@@ -264,9 +264,11 @@ if ! npx sequant locks acquire <issue-number> \
 fi
 ```
 
-**Release contract:** Phase 5.5 below releases the lock. If the workflow halts early (errors, max-iteration exhaustion, user interrupt), the lock is left in place — the user can clear it via `npx sequant locks clear <issue-number>` or wait 2h for age-based stale recovery.
+**Release contract:** Phase 5.5 releases the lock on the happy path. On ANY halt/abort branch (spec failure, exec exhausted, qa loop exhausted with AC_NOT_MET, unrecoverable error, stagnation halt), you MUST run `npx sequant locks release <issue-number> || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new abort path, add a release call there too.
 
-**Orchestrator/MCP mode:** When `SEQUANT_ORCHESTRATOR` is set, `locks acquire` is a no-op (exit 0, no file written). Safe to call unconditionally.
+**Backstop:** If a release is somehow missed, stale recovery clears the lock after 6h on the same host (`SEQUANT_SKILL_LOCK_TTL_MS` overrides). The user can also force-clear via `npx sequant locks clear <issue-number>`.
+
+**Orchestrator/MCP mode:** When `SEQUANT_ORCHESTRATOR` is set, `locks acquire` and `locks release` are no-ops (exit 0, no file touched). Safe to call unconditionally.
 
 ## Phase 1: Planning (SPEC)
 
@@ -308,7 +310,13 @@ After `/spec` completes, extract and store:
 If `/spec` fails:
 - Check if issue exists and is readable
 - Verify GitHub CLI authentication
+- **Release the lock acquired in Phase 0.3** (so the user can retry without hitting the orphan window)
 - Report failure and exit workflow
+
+```bash
+# Release before halting — see Phase 0.3 release contract.
+npx sequant locks release <issue-number> || true
+```
 
 ```markdown
 ## Spec Failed
@@ -379,6 +387,11 @@ while exec_iteration < MAX_EXEC_ITERATIONS:
 ```
 
 **If all iterations exhausted:**
+```bash
+# Release before halting — see Phase 0.3 release contract.
+npx sequant locks release <issue-number> || true
+```
+
 ```markdown
 ## Exec Failed
 
@@ -789,15 +802,24 @@ Ready for human review and merge.
 
 ## Error Recovery
 
+**Concurrency lock cleanup (#625, applies to every abort path below):**
+
+```bash
+npx sequant locks release <issue-number> || true
+```
+
+Run this BEFORE printing the halt/exit message in any of the branches below. The release call is idempotent (no-op when nothing is held, no-op in orchestrator mode), so calling it unconditionally on every error path is safe.
+
 **If spec fails:**
 - Check issue exists and is readable
 - Verify GitHub CLI authentication
+- Release lock (see top of section)
 - Exit with clear error
 
 **If exec fails (build/test):**
 - Check error logs
 - Attempt targeted fix
-- If persistent, document and exit
+- If persistent: release lock, document, and exit
 
 **If test loop exhausted:**
 - Document remaining failures
