@@ -52,6 +52,24 @@ import { getTokenUsageForRun } from "./token-utils.js";
 import type { SequantSettings } from "../settings.js";
 import { resolveRunOptions, buildExecutionConfig } from "./config-resolver.js";
 
+/**
+ * Build the stack-manifest line emitted into PR bodies under --stacked.
+ *
+ * Example for issues `[100, 101, 102]` at `currentIndex=1`:
+ *   `Part of stack: #100 → #101 (this) → #102`
+ *
+ * @internal Exported for testing.
+ */
+export function buildStackManifest(
+  issueNumbers: number[],
+  currentIndex: number,
+): string {
+  const parts = issueNumbers.map((n, i) =>
+    i === currentIndex ? `#${n} (this)` : `#${n}`,
+  );
+  return `Part of stack: ${parts.join(" → ")}`;
+}
+
 // ── Public types ────────────────────────────────────────────────────────────
 
 /**
@@ -796,11 +814,33 @@ export class RunOrchestrator {
         break;
       }
 
+      // #605: under --stacked, non-first PRs target the predecessor branch.
+      // The final PR still targets `main` (AC-3 open-question default) so the
+      // stack can land partially. Manifest renders for every PR in the stack.
+      let predecessorBranch: string | undefined;
+      let stackManifest: string | undefined;
+      if (options.chain && options.stacked) {
+        if (i > 0 && i < issueNumbers.length - 1) {
+          predecessorBranch = this.cfg.worktreeMap.get(
+            issueNumbers[i - 1],
+          )?.branch;
+        } else if (i > 0) {
+          // Last PR: still emit manifest, but base stays main (no predecessor).
+          // intentionally undefined predecessorBranch
+        }
+        stackManifest = buildStackManifest(issueNumbers, i);
+      }
+
       const result = await this.executeOneIssue({
         issueNumber,
         batchCtx,
         chain: options.chain
-          ? { enabled: true, isLast: i === issueNumbers.length - 1 }
+          ? {
+              enabled: true,
+              isLast: i === issueNumbers.length - 1,
+              predecessorBranch,
+              stackManifest,
+            }
           : undefined,
       });
       results.push(result);
@@ -865,7 +905,12 @@ export class RunOrchestrator {
   private async executeOneIssue(args: {
     issueNumber: number;
     batchCtx: BatchExecutionContext;
-    chain?: { enabled: boolean; isLast: boolean };
+    chain?: {
+      enabled: boolean;
+      isLast: boolean;
+      predecessorBranch?: string;
+      stackManifest?: string;
+    };
     parallelIssueNumber?: number;
   }): Promise<IssueResult> {
     const { issueNumber, batchCtx, chain, parallelIssueNumber } = args;
