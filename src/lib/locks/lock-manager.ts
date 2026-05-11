@@ -104,13 +104,15 @@ export function classifyStaleness(args: {
 }): "pid-dead" | "age-exceeded" | null {
   const { holder, myHostname, now, staleAgeMs, isPidAlive } = args;
 
-  // 1. Same-host PID check is authoritative.
-  if (holder.hostname === myHostname) {
+  // 1. Same-host PID check is authoritative — except when the holder asked
+  //    us to skip it (skill shells exit before the lock is released; their
+  //    PID is dead but the skill is still running in Claude Code).
+  if (holder.hostname === myHostname && !holder.skipPidCheck) {
     if (!isPidAlive(holder.pid)) return "pid-dead";
     return null;
   }
 
-  // 2. Cross-host: PID is meaningless. Fall through to age.
+  // 2. Cross-host or skipPidCheck: PID is meaningless. Fall through to age.
   const ageMs = now - Date.parse(holder.startedAt);
   if (!Number.isFinite(ageMs)) return null;
   if (ageMs > staleAgeMs) return "age-exceeded";
@@ -162,8 +164,16 @@ export class LockManager {
    *   - Cross-host within age window: blocked.
    *   - Cross-host beyond `staleAgeMs`: silently cleared, then acquired.
    *   - Orchestrator mode: returns `{ acquired: true, lockPath: '' }` no-op.
+   *
+   * `options.skipPidCheck` marks the lock so future stale checks skip the
+   * same-host PID probe and fall back to age-only — used for skill shells
+   * whose Node PID dies between acquire and release.
    */
-  acquire(issue: number, command: string): AcquireResult {
+  acquire(
+    issue: number,
+    command: string,
+    options: { skipPidCheck?: boolean } = {},
+  ): AcquireResult {
     if (this.orchestratorMode) {
       return { acquired: true, lockPath: "" };
     }
@@ -194,7 +204,7 @@ export class LockManager {
       }
     }
 
-    return this.writeAtomic(issue, lockPath, command);
+    return this.writeAtomic(issue, lockPath, command, options.skipPidCheck);
   }
 
   /**
@@ -205,6 +215,7 @@ export class LockManager {
   forceAcquire(
     issue: number,
     command: string,
+    options: { skipPidCheck?: boolean } = {},
   ): { lockPath: string; previous: LockFile | null } {
     if (this.orchestratorMode) {
       return { lockPath: "", previous: null };
@@ -216,7 +227,12 @@ export class LockManager {
     const previous = this.readLockSafe(lockPath);
     if (previous) this.unlinkSafe(lockPath);
 
-    const result = this.writeAtomic(issue, lockPath, command);
+    const result = this.writeAtomic(
+      issue,
+      lockPath,
+      command,
+      options.skipPidCheck,
+    );
     if (!result.acquired) {
       throw new Error(
         `forceAcquire raced and lost on issue #${issue}: ${formatLockedMessage(
@@ -261,6 +277,29 @@ export class LockManager {
       this.unlinkSafe(lockPath);
     }
     this.held.delete(issue);
+  }
+
+  /**
+   * Release a lock claimed by a previous, now-dead, short-lived process on
+   * the same host — the skill-shell pattern (`skipPidCheck: true`). Used by
+   * `sequant locks release` to let skills hand back ownership. Returns
+   * `true` when a lock was removed.
+   */
+  releaseExternal(issue: number): boolean {
+    if (this.orchestratorMode) return false;
+
+    const lockPath = this.lockPathFor(issue);
+    const current = this.readLockSafe(lockPath);
+    if (!current) return false;
+
+    // Only owner-host can release. The `skipPidCheck` flag is the explicit
+    // signal that "the original PID won't be alive — match on host instead".
+    if (current.hostname !== this.hostname) return false;
+    if (!current.skipPidCheck && current.pid !== this.pid) return false;
+
+    this.unlinkSafe(lockPath);
+    this.held.delete(issue);
+    return true;
   }
 
   /** Release every lock this instance holds. */
@@ -366,12 +405,14 @@ export class LockManager {
     issue: number,
     lockPath: string,
     command: string,
+    skipPidCheck?: boolean,
   ): AcquireResult {
     const payload: LockFile = {
       pid: this.pid,
       hostname: this.hostname,
       startedAt: new Date(this.now()).toISOString(),
       command,
+      ...(skipPidCheck ? { skipPidCheck: true } : {}),
     };
     const body = JSON.stringify(payload, null, 2);
 

@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MODULE_PATH = resolve(__dirname, "lock-manager.ts");
+const SHUTDOWN_PATH = resolve(__dirname, "../shutdown.ts");
 
 /**
  * Run a short Node script that acquires a lock and exits. Returns the
@@ -149,6 +150,72 @@ describe("LockManager — integration: two-process contention", () => {
       // A new same-host run should auto-clear (PID is dead) and acquire.
       const next = runAcquireSync(dir, 42, "next");
       expect(next.acquired).toBe(true);
+    },
+  );
+
+  it(
+    "SIGINT triggers ShutdownManager.gracefulShutdown which releases the lock (AC-16)",
+    { timeout: 20_000 },
+    async () => {
+      // Spawn a child that mirrors run-orchestrator.ts:567 — acquires the
+      // lock and registers releaseAll() as a ShutdownManager cleanup, then
+      // sleeps. SIGINT must invoke gracefulShutdown → cleanup → release.
+      const script = `
+        import { LockManager } from ${JSON.stringify(MODULE_PATH)};
+        import { ShutdownManager } from ${JSON.stringify(SHUTDOWN_PATH)};
+        const mgr = new LockManager({ locksDir: ${JSON.stringify(dir)} });
+        const r = mgr.acquire(77, "sigint-test");
+        if (!r.acquired) { process.stdout.write("ACQUIRE_FAILED\\n"); process.exit(2); }
+        const shutdown = new ShutdownManager({ forceExitTimeout: 5000 });
+        shutdown.registerCleanup("Release locks", async () => { mgr.releaseAll(); });
+        process.stdout.write("READY pid=" + process.pid + "\\n");
+        // Hold indefinitely — SIGINT path is what releases.
+        setInterval(() => {}, 1000);
+      `;
+      const child = spawn("npx", ["tsx", "--eval", script], {
+        env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
+      });
+      let stdoutBuf = "";
+      child.stdout.on("data", (b) => (stdoutBuf += b.toString()));
+      child.stderr.on("data", () => {}); // drain
+
+      // Wait for the child to report ready.
+      const childPid = await new Promise<number>((res, rej) => {
+        const t = setTimeout(
+          () => rej(new Error("child did not report ready: " + stdoutBuf)),
+          10_000,
+        );
+        const i = setInterval(() => {
+          const m = stdoutBuf.match(/READY pid=(\d+)/);
+          if (m) {
+            clearInterval(i);
+            clearTimeout(t);
+            res(Number.parseInt(m[1], 10));
+          }
+        }, 50);
+      });
+
+      // Lock should exist on disk at this point.
+      expect(existsSync(join(dir, "77.lock"))).toBe(true);
+
+      // SIGINT the actual Node process running our script (not the npx wrapper).
+      try {
+        process.kill(childPid, "SIGINT");
+      } catch {
+        child.kill("SIGINT");
+      }
+
+      // Wait for the child to exit gracefully.
+      const exitCode = await new Promise<number | null>((res) => {
+        child.on("exit", (code) => res(code));
+      });
+
+      // ShutdownManager calls process.exit(130) on SIGINT after cleanup runs.
+      // The lock file must be gone — that's the AC-16 guarantee.
+      expect(existsSync(join(dir, "77.lock"))).toBe(false);
+      // Sanity: child exited; exit code may be 130 (SIGINT) or 0 depending
+      // on whether the interval keeps the loop alive past cleanup.
+      expect(exitCode === 130 || exitCode === 0).toBe(true);
     },
   );
 });

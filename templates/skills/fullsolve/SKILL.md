@@ -247,6 +247,27 @@ Before creating any files, check if they already exist:
 
 **If work already exists:** Skip to the appropriate phase (e.g., if implementation is done, go to Phase 3 or 4).
 
+### 0.3 Acquire Concurrency Lock (#625)
+
+**Before invoking `/spec`**, claim the per-issue concurrency lock. This prevents a second session (another `/fullsolve`, an `npx sequant run`, or another `/fullsolve` in a different window) from racing on the same issue and producing zero-diff exec failures.
+
+```bash
+# Acquire lock for this issue. --skip-pid-check is required: the shell that
+# runs this command exits immediately, so the lock's PID is dead by the time
+# the next check runs. Stale recovery falls back to age-only (2h).
+if ! npx sequant locks acquire <issue-number> \
+    --command="/fullsolve <issue-number>" \
+    --skip-pid-check; then
+  echo "❌ Another session is working on #<issue-number>. Run 'npx sequant locks list' for details."
+  echo "   If you're sure the holder is dead, run: npx sequant locks clear <issue-number>"
+  exit 1
+fi
+```
+
+**Release contract:** Phase 5.5 below releases the lock. If the workflow halts early (errors, max-iteration exhaustion, user interrupt), the lock is left in place — the user can clear it via `npx sequant locks clear <issue-number>` or wait 2h for age-based stale recovery.
+
+**Orchestrator/MCP mode:** When `SEQUANT_ORCHESTRATOR` is set, `locks acquire` is a no-op (exit 0, no file written). Safe to call unconditionally.
+
 ## Phase 1: Planning (SPEC)
 
 **Invoke the `/spec` skill** to plan implementation and extract acceptance criteria.
@@ -659,6 +680,16 @@ npx sequant doctor
 ```
 
 If any command fails, fix immediately on main before continuing. This catches issues like ESM compatibility bugs that unit tests may miss.
+
+### 5.5 Release Concurrency Lock (#625)
+
+After the PR is created (or earlier if the workflow exits gracefully), release the lock so other sessions can claim it:
+
+```bash
+npx sequant locks release <issue-number> || true
+```
+
+`|| true` is intentional — release is idempotent; the lock may already have been cleared (orchestrator mode, age-based recovery, or manual `locks clear`). The exit code is informational only.
 
 ## Iteration Tracking
 

@@ -16,6 +16,12 @@ export const LockFileSchema = z.object({
   hostname: z.string(),
   startedAt: z.string(), // ISO-8601 UTC
   command: z.string(),
+  /**
+   * True when the holder cannot vouch for its PID staying alive (e.g. a skill
+   * shell that exits immediately after acquire). Stale detection falls back
+   * to age-only on the holder's host, same path as cross-host locks.
+   */
+  skipPidCheck: z.boolean().optional(),
 });
 
 export type LockFile = z.infer<typeof LockFileSchema>;

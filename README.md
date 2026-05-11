@@ -244,8 +244,26 @@ npx sequant locks clear 123           # Clear lock for #123 (refuses fresh)
 npx sequant locks clear 123 --force   # Clear unconditionally
 ```
 
-**Read-only commands** (`status`, `merge`) warn when an issue is locked
-but do not block.
+**Skill wiring** (`/fullsolve`, `/assess`). The `/fullsolve` skill claims the
+lock at Phase 0.3 and releases it at Phase 5.5; `/assess` probes it read-only
+and surfaces a dashboard warning when an issue is in use. Both use these
+subcommands directly from bash:
+
+```bash
+npx sequant locks acquire 123 --command="/fullsolve 123" --skip-pid-check
+npx sequant locks release 123
+npx sequant locks check   123 --json   # exit 1 when held, prints holder JSON
+```
+
+`--skip-pid-check` is required for skill shells: the Node process that runs
+`locks acquire` exits immediately, so its PID is dead before the lock is
+released. With the flag set, stale detection falls back to age-only (2h
+default) on the holder's own host. A skill that crashes leaves at most a 2h
+orphan; clear it manually with `sequant locks clear <issue>` to recover
+sooner.
+
+**Read-only commands** (`status`, `merge`, `/assess`) warn when an issue is
+locked but do not block.
 
 **MCP / orchestrator mode.** When the `SEQUANT_ORCHESTRATOR` env var is set
 (in-process or remote MCP-driven runs), all lock operations are no-ops —

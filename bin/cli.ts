@@ -60,7 +60,13 @@ import {
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
-import { locksListCommand, locksClearCommand } from "../src/commands/locks.js";
+import {
+  locksListCommand,
+  locksClearCommand,
+  locksAcquireCommand,
+  locksReleaseCommand,
+  locksCheckCommand,
+} from "../src/commands/locks.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -401,6 +407,40 @@ locksCmd
   )
   .option("--json", "Output as JSON")
   .action(locksClearCommand);
+
+locksCmd
+  .command("acquire <issue>")
+  .description(
+    "Claim the lock for an issue (used by /fullsolve, /assess; exits 1 if held)",
+  )
+  .option("--command <command>", "Human-readable command label", "unknown")
+  .option(
+    "--skip-pid-check",
+    "Mark the lock so stale recovery skips same-host PID checks (use from skill shells)",
+  )
+  .option("-f, --force", "Take over even if another holder is alive")
+  .option(
+    "--signal-other",
+    "When forcing, SIGTERM the prior same-host holder if alive",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksAcquireCommand);
+
+locksCmd
+  .command("release <issue>")
+  .description(
+    "Release a lock previously acquired on this host (skill or current process)",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksReleaseCommand);
+
+locksCmd
+  .command("check <issue>")
+  .description(
+    "Read-only probe: print lock holder if any; exit 1 when held (for /assess)",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksCheckCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).

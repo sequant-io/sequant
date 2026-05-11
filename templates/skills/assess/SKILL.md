@@ -52,6 +52,17 @@ Every issue gets exactly ONE action:
 
 ### Step 1: Context Gathering
 
+**Concurrency check (#625, read-only):**
+
+For each issue, probe the per-issue concurrency lock so the dashboard can flag issues another session is actively working on. `/assess` never acquires the lock — it only reports.
+
+```bash
+# Per issue. Exit code 1 means held; output is the canonical "issue in use" message.
+npx sequant locks check <N> --json || true
+```
+
+When the JSON output is `{"locked":true,"holder":{...}}`, surface a warning line in the dashboard near the issue's row: `⚠ #<N> held by PID <pid> on <host> since <startedAt> (<command>)`. Do not gate the recommendation — `/assess` is read-only and should still produce its action vocabulary verdict even when an issue is locked.
+
 **From GitHub (parallel for all issues):**
 
 ```bash

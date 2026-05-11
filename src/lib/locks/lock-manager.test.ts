@@ -494,3 +494,240 @@ describe("defaultIsPidAlive", () => {
     expect(defaultIsPidAlive(4194303)).toBe(false);
   });
 });
+
+describe("LockManager — skipPidCheck (skill-shell holders)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = makeTmpDir();
+    delete process.env.SEQUANT_ORCHESTRATOR;
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("classifyStaleness skips same-host PID check when skipPidCheck is set", () => {
+    const holder = {
+      pid: 9999,
+      hostname: "host-a",
+      startedAt: new Date("2026-05-11T00:00:00Z").toISOString(),
+      command: "/fullsolve 1",
+      skipPidCheck: true,
+    };
+    // PID is "dead" but skipPidCheck means we don't probe.
+    const fresh = classifyStaleness({
+      holder,
+      myHostname: "host-a",
+      now: new Date("2026-05-11T00:10:00Z").getTime(),
+      staleAgeMs: DEFAULT_STALE_AGE_MS,
+      isPidAlive: () => false,
+    });
+    expect(fresh).toBeNull();
+
+    const aged = classifyStaleness({
+      holder,
+      myHostname: "host-a",
+      now: new Date("2026-05-11T03:00:00Z").getTime(), // 3h later
+      staleAgeMs: DEFAULT_STALE_AGE_MS,
+      isPidAlive: () => false,
+    });
+    expect(aged).toBe("age-exceeded");
+  });
+
+  it("acquire({ skipPidCheck: true }) writes the flag into the lock file", () => {
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
+    expect(result.acquired).toBe(true);
+    const parsed = JSON.parse(readFileSync(join(dir, "42.lock"), "utf-8"));
+    expect(parsed.skipPidCheck).toBe(true);
+  });
+
+  it("acquire without skipPidCheck does NOT include the flag", () => {
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    expect(mgr.acquire(42, "x").acquired).toBe(true);
+    const parsed = JSON.parse(readFileSync(join(dir, "42.lock"), "utf-8"));
+    expect(parsed.skipPidCheck).toBeUndefined();
+  });
+
+  it("a skipPidCheck same-host lock blocks a second skill on this host", () => {
+    // Skill A wrote a lock from a now-dead shell.
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 60_000).toISOString(), // 1m ago
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    // Skill B (different PID, same host) tries to acquire.
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => false, // would normally clear; skipPidCheck overrides
+    });
+    const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
+    expect(result.acquired).toBe(false);
+    if (result.acquired === false) {
+      expect(result.holder.skipPidCheck).toBe(true);
+    }
+  });
+
+  it("a skipPidCheck same-host lock past staleAgeMs is auto-cleared", () => {
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(), // 3h
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const result = mgr.acquire(42, "/fullsolve 42", { skipPidCheck: true });
+    expect(result.acquired).toBe(true);
+  });
+
+  it("releaseExternal removes a same-host skipPidCheck lock from any PID", () => {
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999, // dead PID from a prior skill shell
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    // Released by a different PID on the same host (the next skill shell).
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    expect(mgr.releaseExternal(42)).toBe(true);
+    expect(existsSync(join(dir, "42.lock"))).toBe(false);
+  });
+
+  it("releaseExternal refuses to release a cross-host lock", () => {
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "other-host",
+        startedAt: new Date().toISOString(),
+        command: "/fullsolve 42",
+        skipPidCheck: true,
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    expect(mgr.releaseExternal(42)).toBe(false);
+    expect(existsSync(join(dir, "42.lock"))).toBe(true);
+  });
+
+  it("releaseExternal refuses non-skipPidCheck locks from a different PID", () => {
+    writeFileSync(
+      join(dir, "42.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "regular run", // no skipPidCheck
+      }),
+    );
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    expect(mgr.releaseExternal(42)).toBe(false);
+    expect(existsSync(join(dir, "42.lock"))).toBe(true);
+  });
+});
+
+describe("LockManager — RunOrchestrator lockedResults flow (AC-18)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = makeTmpDir();
+    delete process.env.SEQUANT_ORCHESTRATOR;
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("batch with a pre-existing foreign lock skips that issue and proceeds with others", async () => {
+    // Pre-write a fresh foreign lock for issue 100 — simulates another
+    // session that ran `npx sequant run 100` and is still in-flight.
+    writeFileSync(
+      join(dir, "100.lock"),
+      JSON.stringify({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 30_000).toISOString(),
+        command: "npx sequant run 100",
+      }),
+    );
+
+    // Same-host manager — pid=1, pid=9999 still alive per probe.
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: (pid) => pid === 9999,
+    });
+
+    // Emulate the orchestrator's per-issue acquire loop (run-orchestrator.ts:533-555):
+    // try-acquire each issue, collect locked vs claimed.
+    const claimed: number[] = [];
+    const lockedHolders: number[] = [];
+    for (const issue of [100, 101]) {
+      const claim = mgr.acquire(issue, "npx sequant run 100 101");
+      if (claim.acquired) claimed.push(issue);
+      else lockedHolders.push(claim.holder.pid);
+    }
+
+    // #100 should be in lockedHolders; #101 should be claimed and proceed.
+    expect(lockedHolders).toEqual([9999]);
+    expect(claimed).toEqual([101]);
+    expect(existsSync(join(dir, "100.lock"))).toBe(true); // foreign lock preserved
+    expect(existsSync(join(dir, "101.lock"))).toBe(true); // we acquired
+
+    // The `formatLockedMessage` output flows into IssueResult.abortReason
+    // (run-orchestrator.ts:1043) — verify the canonical format is present.
+    const holder = mgr.check(100);
+    expect(holder).not.toBeNull();
+    if (holder) {
+      expect(formatLockedMessage(100, holder)).toContain(
+        "Issue #100 is being worked on by PID 9999",
+      );
+    }
+  });
+});
