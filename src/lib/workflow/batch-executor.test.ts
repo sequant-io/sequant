@@ -5,7 +5,7 @@ import type {
   IssueExecutionContext,
 } from "./types.js";
 import type { RunOptions } from "./batch-executor.js";
-import { buildLoopContext } from "./batch-executor.js";
+import { buildLoopContext, emitProgressLine } from "./batch-executor.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
@@ -556,5 +556,117 @@ describe("buildLoopContext", () => {
     expect(result).not.toContain("Suggestions:");
     expect(result).not.toContain("Error:");
     expect(result).not.toContain("Last output:");
+  });
+});
+
+// =============================================================================
+// #624 Item 3 — emitProgressLine iteration propagation
+// =============================================================================
+
+describe("emitProgressLine (#624 Item 3): iteration field propagation", () => {
+  const ORIGINAL_ORCH = process.env.SEQUANT_ORCHESTRATOR;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let captured: string[];
+
+  beforeEach(() => {
+    captured = [];
+    process.env.SEQUANT_ORCHESTRATOR = "1";
+    stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: unknown) => {
+        captured.push(String(chunk));
+        return true;
+      });
+  });
+
+  // vitest's afterEach is implicit via spy restore; restore env after each.
+  function teardown(): void {
+    stderrSpy.mockRestore();
+    if (ORIGINAL_ORCH === undefined) {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+    } else {
+      process.env.SEQUANT_ORCHESTRATOR = ORIGINAL_ORCH;
+    }
+  }
+
+  function lastPayload(): Record<string, unknown> {
+    const last = captured[captured.length - 1] ?? "";
+    const m = last.match(/^SEQUANT_PROGRESS:(.+)\n$/);
+    if (!m) throw new Error(`unexpected stderr: ${JSON.stringify(last)}`);
+    return JSON.parse(m[1]) as Record<string, unknown>;
+  }
+
+  it("includes iteration in the JSON payload when extra.iteration is set", () => {
+    try {
+      emitProgressLine(604, "exec", "start", { iteration: 2 });
+      const payload = lastPayload();
+      expect(payload).toMatchObject({
+        issue: 604,
+        phase: "exec",
+        event: "start",
+        iteration: 2,
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("omits iteration key when extra is undefined", () => {
+    try {
+      emitProgressLine(604, "exec", "start");
+      const payload = lastPayload();
+      expect(payload.iteration).toBeUndefined();
+      expect(payload).toMatchObject({
+        issue: 604,
+        phase: "exec",
+        event: "start",
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("threads iteration alongside durationSeconds on complete events", () => {
+    try {
+      emitProgressLine(604, "exec", "complete", {
+        durationSeconds: 42,
+        iteration: 3,
+      });
+      const payload = lastPayload();
+      expect(payload).toMatchObject({
+        event: "complete",
+        durationSeconds: 42,
+        iteration: 3,
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("threads iteration alongside error on failed events", () => {
+    try {
+      emitProgressLine(604, "exec", "failed", {
+        error: "boom",
+        iteration: 2,
+      });
+      const payload = lastPayload();
+      expect(payload).toMatchObject({
+        event: "failed",
+        error: "boom",
+        iteration: 2,
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("is a no-op when SEQUANT_ORCHESTRATOR is unset", () => {
+    try {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+      emitProgressLine(604, "exec", "start", { iteration: 5 });
+      expect(captured).toHaveLength(0);
+    } finally {
+      teardown();
+    }
   });
 });

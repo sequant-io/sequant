@@ -1,3 +1,9 @@
+// @tautology-skip: tests construct renderers via the makeTTY / makeNonTTY
+// helpers (which internally call `new TTYRenderer(...)` / `new NonTTYRenderer`)
+// and exercise production methods (`r.onEvent`, `r.renderLiveFrame`,
+// `r.renderSummary`, etc.) on the resulting instances. The detector's
+// imported-name body scan does not follow helper functions, so most tests
+// here are flagged as not-calling-production despite testing it transitively.
 /**
  * Tests for Issue #624 — run renderer follow-ups (#618 follow-up).
  *
@@ -191,7 +197,7 @@ describe("Item 1 — live-zone height cap (TTYRenderer)", () => {
     r.dispose();
   });
 
-  it("AC-1.2: rows=20 + 5 issues + multiple events produce one frame per redraw (no duplicate frames)", () => {
+  it("AC-1.2: keeps exactly one live frame on screen after 5 issues × 10 events", () => {
     const { r } = makeTTY({ columns: 100, rows: 20 });
     for (let i = 1; i <= 5; i++) r.registerIssue({ issueNumber: 600 + i });
 
@@ -216,7 +222,13 @@ describe("Item 1 — live-zone height cap (TTYRenderer)", () => {
     // Each registerIssue + each onEvent triggers a redraw. 5 registers + 10
     // events = 15 redraws → 14 replacements (first call wasn't a replacement).
     expect(stub!.replacementCount).toBeGreaterThanOrEqual(10);
-    // The "live" frame on screen is exactly one frame.
+
+    // AC text says "captured output contains exactly one `SEQUANT WORKFLOW ·`
+    // line per state". In test mode the stdout buffer accumulates every redraw
+    // (the stub doesn't simulate log-update's in-place replacement); the right
+    // semantic is `stub.lastFrame` — what a real terminal shows after the live
+    // zone redraws. Asserting on `buf.joined()` would be wrong because the
+    // stub appends instead of replacing.
     expect(stub!.lastFrame.match(/SEQUANT WORKFLOW ·/g) ?? []).toHaveLength(1);
     r.dispose();
   });
@@ -251,14 +263,16 @@ describe("Item 1 — live-zone height cap (TTYRenderer)", () => {
       r.dispose();
     });
 
-    it("handles undefined rows by skipping the dynamic cap (back-compat)", () => {
-      const { r } = makeTTY({ columns: 100 }); // rows omitted
+    it("uses generous default rows (100) and renders normally when rows is omitted", () => {
+      const { r } = makeTTY({ columns: 100 }); // rows omitted → DEFAULT_TERMINAL_ROWS=100
       r.registerIssue({ issueNumber: 614 });
       r.onEvent({ issue: 614, phase: "exec", event: "start" });
-      // Should not throw and should produce a non-empty frame.
       const frame = stripAnsi(r.renderLiveFrame(100));
       expect(frame.length).toBeGreaterThan(0);
       expect(frame).toContain("#614");
+      // At default rows=100, getMaxLiveRows()=95 — single-issue frame is well
+      // under the cap, so the frame renders unclamped (no overflow indicator).
+      expect(frame).not.toContain("more line");
       r.dispose();
     });
 
@@ -333,12 +347,19 @@ describe("Item 2 — summary teardown + width clamp", () => {
         expect(out).not.toContain("�");
         // No bare `\x1b[K` erase-line escapes leaking past the live zone.
         expect(buf.joined()).not.toMatch(/\x1b\[K[A-Za-z0-9]/);
+        // The verbatim corruption from the motivating transcript was
+        // `├───────�ing:` — a box-drawing char abutting alphanumeric text.
+        // U+2500..U+257F covers the entire Box Drawing block (canonical JS
+        // regex equivalent of `\p{Block=Box_Drawing}`, which V8 does not
+        // support — ECMAScript only allows General_Category / Script /
+        // Script_Extensions / binary properties).
+        expect(out).not.toMatch(/[─-╿][A-Za-z0-9]/u);
         r.dispose();
       }
     }
   });
 
-  it("AC-2.2: TTYRenderer.renderSummary clears + finalizes log-update before summary text", () => {
+  it("AC-2.2: renderSummary invokes logUpdate.clear() + logUpdate.done() before writing summary", () => {
     const writes: string[] = [];
     const r = new TTYRenderer({
       stdoutWrite: (s) => writes.push(s),
@@ -353,8 +374,10 @@ describe("Item 2 — summary teardown + width clamp", () => {
     r.registerIssue({ issueNumber: 614 });
     r.onEvent({ issue: 614, phase: "spec", event: "start" });
 
-    // After live activity, the stub's `lastFrame` is non-empty.
-    expect(r.getTestStub()!.lastFrame.length).toBeGreaterThan(0);
+    const stub = r.getTestStub()!;
+    expect(stub.lastFrame.length).toBeGreaterThan(0);
+    const clearsBefore = stub.clearCalls;
+    const donesBefore = stub.doneCalls;
 
     r.renderSummary({
       issues: [
@@ -366,56 +389,84 @@ describe("Item 2 — summary teardown + width clamp", () => {
         },
       ],
     });
-    // Post-flush: log-update considers the frame done (lastFrame cleared).
-    expect(r.getTestStub()!.lastFrame).toBe("");
-    // And the summary block was written via stdoutWrite (the trailing block).
+
+    // Counter assertions prove the renderer actually called the teardown
+    // methods on log-update — not just that the stub's local state was reset.
+    expect(stub.clearCalls).toBeGreaterThan(clearsBefore);
+    expect(stub.doneCalls).toBeGreaterThan(donesBefore);
+    expect(stub.lastFrame).toBe("");
+
+    // And the summary block was written after the teardown.
     const last = writes.join("");
     expect(stripAnsi(last)).toContain("SUMMARY · 1 issue");
     r.dispose();
   });
 
-  it("AC-2.3 (TTY): summary columns clamped to 110 even when terminal is wider", () => {
-    const { r, buf } = makeTTY({ columns: 200 });
-    r.registerIssue({ issueNumber: 614 });
-    r.renderSummary({
-      issues: [
-        {
-          issueNumber: 614,
-          success: true,
-          durationSeconds: 60,
-          phases: [{ name: "spec", success: true }],
-        },
-      ],
-    });
-    const out = stripAnsi(buf.joined());
-    for (const line of out.split("\n")) {
-      // Allow a couple of chars of slack for ANSI-aware width estimation.
-      expect(line.length).toBeLessThanOrEqual(115);
-    }
-    r.dispose();
+  it("AC-2.3 (TTY): cols=200 and cols=110 produce identical summary widths (cap pinned at 110)", () => {
+    const renderAt = (cols: number): number => {
+      const { r, buf } = makeTTY({ columns: cols });
+      r.registerIssue({ issueNumber: 614 });
+      r.renderSummary({
+        issues: [
+          {
+            issueNumber: 614,
+            success: true,
+            durationSeconds: 60,
+            phases: [{ name: "spec", success: true }],
+          },
+        ],
+      });
+      const out = stripAnsi(buf.joined());
+      let maxLineWidth = 0;
+      for (const line of out.split("\n")) {
+        if (line.length > maxLineWidth) maxLineWidth = line.length;
+      }
+      r.dispose();
+      return maxLineWidth;
+    };
+
+    const widthAt110 = renderAt(110);
+    const widthAt200 = renderAt(200);
+    // Pin the cap: at any cols ≥ 110, the visible summary width must equal
+    // the width at cols=110. If SUMMARY_COLUMN_CAP were silently bumped or
+    // lowered (current value 110), this equality would break.
+    expect(widthAt200).toBe(widthAt110);
+    // And the cap is at or below 110 (allow 2 chars of left-margin slack).
+    expect(widthAt200).toBeLessThanOrEqual(112);
   });
 
-  it("AC-2.3 (NonTTY): summary columns use shared helper (not hardcoded 80)", () => {
-    const { r, buf } = makeNonTTY({ columns: 200 });
-    r.registerIssue({ issueNumber: 614 });
-    r.renderSummary({
-      issues: [
-        {
-          issueNumber: 614,
-          success: true,
-          durationSeconds: 60,
-          phases: [{ name: "spec", success: true }],
-        },
-      ],
-    });
-    const out = stripAnsi(buf.joined());
-    // Same cap as TTY path: ≤ 110 visible columns.
-    for (const line of out.split("\n")) {
-      expect(line.length).toBeLessThanOrEqual(115);
-    }
-    // The narrow-fallback (no box drawing) is NOT triggered at columns=200.
-    expect(out).toContain("┌");
-    r.dispose();
+  it("AC-2.3 (NonTTY): renders box-drawing summary with the same pinned cap as TTY", () => {
+    const renderAt = (cols: number): { width: number; out: string } => {
+      const { r, buf } = makeNonTTY({ columns: cols });
+      r.registerIssue({ issueNumber: 614 });
+      r.renderSummary({
+        issues: [
+          {
+            issueNumber: 614,
+            success: true,
+            durationSeconds: 60,
+            phases: [{ name: "spec", success: true }],
+          },
+        ],
+      });
+      const out = stripAnsi(buf.joined());
+      let width = 0;
+      for (const line of out.split("\n")) {
+        if (line.length > width) width = line.length;
+      }
+      r.dispose();
+      return { width, out };
+    };
+
+    const at110 = renderAt(110);
+    const at200 = renderAt(200);
+    // NonTTY path shares the same SUMMARY_COLUMN_CAP — width at cols=200 must
+    // equal width at cols=110 (the cap pins it).
+    expect(at200.width).toBe(at110.width);
+    expect(at200.width).toBeLessThanOrEqual(112);
+    // The narrow-fallback (no box drawing) is NOT triggered at columns=200 —
+    // i.e. the AC-2.3 fix replaced the hardcoded 80 with the shared cap.
+    expect(at200.out).toContain("┌");
   });
 
   it("AC-2.4: motivating-transcript scenario produces clean captured stdout (no \\x1b[K leak, no U+FFFD)", () => {
@@ -449,6 +500,9 @@ describe("Item 2 — summary teardown + width clamp", () => {
     expect(stripped).not.toContain("�");
     // No erase-line escape leak.
     expect(raw).not.toMatch(/\x1b\[K[A-Za-z0-9]/);
+    // No `├ing:`-style box-char abutting alphanumeric (the verbatim corruption
+    // from the issue body).
+    expect(stripped).not.toMatch(/[─-╿][A-Za-z0-9]/u);
     r.dispose();
   });
 
@@ -720,7 +774,38 @@ describe("Item 4 — failure dedup", () => {
     r.dispose();
   });
 
-  it("AC-4.3: 3 identical + 1 divergent — full/abbreviated/divergent-full/final-full", () => {
+  it("AC-4.3 (literal): 3 identical with maxIter=3 → full/abbreviated/full (last-before-max-iter)", () => {
+    const err = "exec produced no changes (no commits, no uncommitted work)";
+    const { r, buf } = makeTTY({ maxLoopIterations: 3 });
+    r.registerIssue({ issueNumber: 604 });
+    for (let i = 1; i <= 3; i++) {
+      r.onEvent({ issue: 604, phase: "exec", event: "start", iteration: i });
+      r.onEvent({
+        issue: 604,
+        phase: "exec",
+        event: "failed",
+        error: err,
+        iteration: i,
+      });
+    }
+    const stripped = stripAnsi(buf.joined());
+    const failLines = stripped.split("\n").filter((l) => /✘ #604 exec/.test(l));
+    expect(failLines).toHaveLength(3);
+    // Attempt 1: full text (first-seen for this signature).
+    expect(failLines[0]).toContain(err);
+    expect(failLines[0]).not.toContain("same failure as");
+    // Attempt 2: abbreviated (sig matches, not last).
+    expect(failLines[1]).toContain("(attempt 2/3)");
+    expect(failLines[1]).toContain("same failure as attempt 1");
+    expect(failLines[1]).not.toContain(err);
+    // Attempt 3: full text re-emitted (last-before-max-iter rule).
+    expect(failLines[2]).toContain("(attempt 3/3)");
+    expect(failLines[2]).toContain(err);
+    expect(failLines[2]).not.toContain("same failure as");
+    r.dispose();
+  });
+
+  it("AC-4.3 (divergence): identical-then-divergent → full on divergence and on max-iter", () => {
     const errA = "error A: bad spec";
     const errB = "error B: bad qa";
     const { r, buf } = makeTTY({ maxLoopIterations: 4 });
@@ -782,6 +867,44 @@ describe("Item 4 — failure dedup", () => {
     const a = "\x1b[31mERROR\x1b[0m: bad\n";
     const b = "error: bad   ";
     expect(failureSignature(a)).toBe(failureSignature(b));
+  });
+
+  it("dedup state is per-phase: exec fail then qa fail with same string does NOT abbreviate qa", () => {
+    // Per-phase dedup (hardening fix #1): if exec and qa both fail with the
+    // exact same error string across iterations, the qa abbreviation must NOT
+    // reference an exec attempt — the user expects "attempt N" to mean
+    // "attempt N of this phase", not "attempt N of any phase on this issue".
+    const err = "downstream service returned 500";
+    const { r, buf } = makeTTY({ maxLoopIterations: 3 });
+    r.registerIssue({ issueNumber: 604 });
+    // iter 1: exec fails with `err`
+    r.onEvent({ issue: 604, phase: "exec", event: "start", iteration: 1 });
+    r.onEvent({
+      issue: 604,
+      phase: "exec",
+      event: "failed",
+      error: err,
+      iteration: 1,
+    });
+    // iter 2: qa fails with same `err` text (but different phase)
+    r.onEvent({ issue: 604, phase: "qa", event: "start", iteration: 2 });
+    r.onEvent({
+      issue: 604,
+      phase: "qa",
+      event: "failed",
+      error: err,
+      iteration: 2,
+    });
+
+    const stripped = stripAnsi(buf.joined());
+    const execFails = stripped.split("\n").filter((l) => /✘ #604 exec/.test(l));
+    const qaFails = stripped.split("\n").filter((l) => /✘ #604 qa/.test(l));
+    expect(execFails).toHaveLength(1);
+    expect(qaFails).toHaveLength(1);
+    // qa is first-seen for the qa phase → full text, NOT abbreviated.
+    expect(qaFails[0]).toContain(err);
+    expect(qaFails[0]).not.toContain("same failure as");
+    r.dispose();
   });
 
   describe("error handling", () => {
@@ -897,13 +1020,20 @@ describe("Derived AC-D2: maxLoopIterations threaded through all 3 retry-suffix s
   });
 });
 
-describe("Derived AC-D3: box-char assertions use Unicode property escapes (Windows-safe)", () => {
-  it("box-drawing detection uses Unicode property escape \\p{Block=Box_Drawing}", () => {
+describe("Derived AC-D3: box-char assertions use the Box Drawing codepoint range (Windows-safe)", () => {
+  it("detects box-drawing chars in the U+2500–U+257F range emitted by the renderer", () => {
+    // The spec plan called for `\p{Block=Box_Drawing}` Unicode property
+    // escapes, but ECMAScript regex (V8 / Node) does NOT support the `Block`
+    // property name — only `General_Category`, `Script`, `Script_Extensions`,
+    // and binary properties are allowed. The canonical JS equivalent is the
+    // codepoint range `[─-╿]/u` (U+2500..U+257F = the entire Box Drawing
+    // block). Codepoint-range matching is platform-agnostic (Linux/macOS/
+    // Windows all encode these chars identically), so the Windows-safety
+    // requirement is satisfied without needing a Windows CI runner.
     const { r } = makeTTY({ columns: 100 });
     r.registerIssue({ issueNumber: 614 });
     r.onEvent({ issue: 614, phase: "exec", event: "start" });
     const frame = r.renderLiveFrame(100);
-    // Box drawing chars are in U+2500..U+257F.
     expect(/[─-╿]/u.test(frame)).toBe(true);
     r.dispose();
   });
