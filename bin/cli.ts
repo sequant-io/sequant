@@ -60,6 +60,7 @@ import {
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
+import { locksListCommand, locksClearCommand } from "../src/commands/locks.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -239,7 +240,11 @@ program
   )
   .option(
     "-f, --force",
-    "Force re-execution of completed issues (bypass pre-flight state guard)",
+    "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",
+  )
+  .option(
+    "--signal-other",
+    "With --force, SIGTERM the prior PID holding the lock (same-host alive only)",
   )
   .option(
     "--concurrency <n>",
@@ -373,6 +378,29 @@ stateCmd
   .option("--max-age <days>", "Remove entries older than N days", parseInt)
   .option("--all", "Remove all orphaned entries (merged and abandoned)")
   .action(stateCleanCommand);
+
+// Per-issue concurrency locks (#625)
+const locksCmd = program
+  .command("locks")
+  .description("Inspect and clear per-issue concurrency locks");
+
+locksCmd
+  .command("list")
+  .description("List active locks with staleness metadata")
+  .option("--json", "Output as JSON")
+  .action(locksListCommand);
+
+locksCmd
+  .command("clear <issue>")
+  .description(
+    "Manually clear the lock for an issue (safety check unless --force)",
+  )
+  .option(
+    "-f, --force",
+    "Skip safety check; clear even a fresh same-host alive lock",
+  )
+  .option("--json", "Output as JSON")
+  .action(locksClearCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).

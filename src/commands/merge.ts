@@ -19,6 +19,7 @@ import {
   formatReportMarkdown,
 } from "../lib/merge-check/index.js";
 import type { MergeCommandOptions } from "../lib/merge-check/types.js";
+import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
 
 /**
  * Determine exit code from batch verdict
@@ -83,6 +84,19 @@ export async function mergeCommand(
           : `Auto-detecting issues from most recent run (mode: ${mode})`,
       ),
     );
+
+    // #625: read-only lock awareness — warn but proceed.
+    const lockManager = new LockManager();
+    if (!lockManager.isNoop) {
+      for (const issue of issueNumbers) {
+        const holder = lockManager.check(issue);
+        if (holder) {
+          console.log(
+            colors.muted(`  !  ${formatLockedMessage(issue, holder)}`),
+          );
+        }
+      }
+    }
     console.log("");
   }
 

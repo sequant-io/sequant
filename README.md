@@ -207,11 +207,55 @@ npx sequant status            # Show version and config
 npx sequant run <issues...>   # Execute workflow
 npx sequant merge <issues...> # Batch integration QA before merging
 npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
+npx sequant locks <cmd>       # Inspect/clear per-issue concurrency locks
 npx sequant stats             # View local workflow analytics
 npx sequant dashboard         # Launch real-time workflow dashboard
 ```
 
 See [Run Command Options](docs/reference/run-command.md), [Merge Command](docs/reference/merge-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
+
+---
+
+## Concurrency
+
+Sequant prevents two sessions from working on the same GitHub issue at the
+same time. When `sequant run` starts, each issue claims a per-issue lock at
+`.sequant/locks/<issue>.lock` containing the holder's PID, hostname, start
+time, and command. A second session attempting the same issue is skipped
+with a clear error and the rest of the batch continues.
+
+**Stale recovery.** Locks are auto-cleared in three situations:
+
+1. Same host, PID no longer alive → cleared immediately (covers SIGKILL and
+   crashes).
+2. Cross-host, lock older than 2 hours → cleared by age.
+3. Manual: `sequant locks clear <issue>` (with safety check by default).
+
+**Taking over an active session.** `sequant run --force <issue>` writes a
+new lock claiming the issue. Add `--signal-other` to also SIGTERM the prior
+PID (same host, alive only). Plain `--force` does not signal — use it when
+you already know the other session is dead.
+
+**Inspecting locks.**
+
+```bash
+npx sequant locks list                # Show every active lock
+npx sequant locks clear 123           # Clear lock for #123 (refuses fresh)
+npx sequant locks clear 123 --force   # Clear unconditionally
+```
+
+**Read-only commands** (`status`, `merge`) warn when an issue is locked
+but do not block.
+
+**MCP / orchestrator mode.** When the `SEQUANT_ORCHESTRATOR` env var is set
+(in-process or remote MCP-driven runs), all lock operations are no-ops —
+the orchestrator caller is responsible for any coordination.
+
+**Caveats.** The lock relies on `open(O_CREAT | O_EXCL)` and is reliable on
+local filesystems. NFS and other network filesystems may not honor those
+semantics; users on networked repos may see false positives. The
+`SEQUANT_LOCKS_DIR` env var overrides the lock directory (used in tests
+and unusual layouts).
 
 ---
 
