@@ -696,6 +696,82 @@ quality_plan_exists=$(gh issue view <issue> --comments --json comments -q '.comm
 
 ---
 
+### Phase 0c: Precheck Findings (CONDITIONAL)
+
+**Purpose:** Consume deterministic gap-check output from `scripts/qa/precheck.ts`. The script handles three checks the agent doesn't need to evaluate but pays token cost for if inlined: verbatim motivating-example fixture extraction, cross-file sibling-grep on changed identifiers, and AC literal-id diff between issue body and PR body. Downstream sections (§1 AC Literal Verification, §5 Sibling-site Scan, §6c Step 4 Fixture Verification, §6d Q1 Verbatim Fixtures) consult the precheck output when available and fall back to inline logic on miss/error.
+
+**Origin:** #609 — extract deterministic gap-checks into a pre-QA gate. Backed by #608's signal-to-noise study (e.g. §6c at 0/11 actioned findings, ~1,800 tokens/invoke).
+
+**Run (best-effort, exit code is always 0 even on partial failure):**
+
+```bash
+issue=<issue-number>
+npx tsx scripts/qa/precheck.ts --issue "$issue" 2>/dev/null || true
+```
+
+The script also auto-detects the PR via `gh pr view --json number` and runs `git diff origin/main...HEAD` for the changed-identifier scan.
+
+**Output:** `.sequant/gap-precheck.json` (schemaVersion 1):
+
+```json
+{
+  "schemaVersion": 1,
+  "issue": 609,
+  "pr": 999,
+  "generatedAt": "...",
+  "checks": {
+    "fixtures":      { "status": "pass | not_applicable | fail", "count": N, "fixtures": [...] },
+    "siblingGrep":   { "status": "...", "identifiers": [{ "name": "...", "definedIn": "...", "siblingSites": [...] }] },
+    "acLiteralDiff": { "status": "...", "issueACs": [...], "prACs": [...], "missingInPR": [...] }
+  }
+}
+```
+
+**Consumption rules per downstream section:**
+
+| Precheck status | Downstream section behavior |
+|-----------------|-----------------------------|
+| `pass` | Use precheck output as primary input; agent judgment evaluates surfaced candidates (e.g. is each sibling-grep hit a real sibling site?) |
+| `not_applicable` | Treat as section N/A; do NOT inline-re-extract |
+| `fail` | Fall back to inline extraction (the section's pre-existing logic) |
+| Precheck JSON missing / malformed | Fall back to inline extraction; note "precheck unavailable" |
+
+**Fallback (precheck JSON missing / malformed):**
+
+```bash
+precheck_path=".sequant/gap-precheck.json"
+precheck_ok="no"
+if [[ -f "$precheck_path" ]]; then
+  schema=$(jq -r .schemaVersion "$precheck_path" 2>/dev/null || echo "")
+  if [[ "$schema" == "1" ]]; then
+    precheck_ok="yes"
+  fi
+fi
+# When precheck_ok=no, every downstream consumer falls back to its inline path.
+```
+
+Do NOT block the QA run on a missing precheck — the script is best-effort. The fallback path is the pre-#609 behavior, which still produces a correct verdict (just at higher token cost).
+
+**Output Format:**
+
+```markdown
+### Precheck Findings
+
+| Section | Status | Surfaced |
+|---------|--------|----------|
+| Fixtures | pass | 3 motivating-example fixtures (consumed by §6c Step 4 / §6d Q1) |
+| Sibling-grep | pass | 5 changed identifiers (candidate sites surfaced to §5) |
+| AC literal-diff | fail | Issue lists AC-3 / AC-4; PR body omits them |
+
+**Source:** `.sequant/gap-precheck.json` (schemaVersion 1)
+```
+
+If precheck unavailable, omit the table and emit a single line: `**Precheck Findings:** unavailable — inline fallback used.`
+
+**Verdict impact:** None directly. Phase 0c is plumbing — the downstream sections own the verdict effect when they consume the surfaced candidates.
+
+---
+
 ### Phase 1: CI Status Check — REQUIRED
 
 **Purpose:** Check GitHub CI status before finalizing verdict. CI-dependent AC items (e.g., "Tests pass in CI") should reflect actual CI status, not just local test results.
@@ -1803,6 +1879,19 @@ fi
 
 ### 6c. Detection Pattern Verification (REQUIRED for skill regex/grep/awk/jq/sed changes)
 
+**HARD PRECONDITION (REQUIRED — emit nothing when false):**
+
+```bash
+# Skill markdown files that BOTH appear in the diff AND contain regex/grep/awk/jq/sed literals.
+pattern_files=$(git diff origin/main...HEAD --name-only | \
+  grep -E '^(\.claude/skills|templates/skills|skills)/.*\.md$' | \
+  xargs grep -lE '\b(grep|awk|jq|sed)\b|/[^/]+/[gim]?' 2>/dev/null || true)
+```
+
+If `pattern_files` is empty, **omit the entire §6c block — including its output template row — from the QA comment.** Do NOT emit "Not Required." Per the #608 signal-to-noise study, every one of §6c's 11 prior emissions said exactly "N/A — no skill regex/grep/awk changes" and produced zero substantive findings. The header recitation itself is the cost (~1,800 tokens / invoke). When the precondition is false, treat §6c as not loaded for this run.
+
+**When precondition is TRUE:** continue with Steps 1–5 below.
+
 **When to apply:** Diff modifies skill markdown files (`.claude/skills/**/*.md`, `templates/skills/**/*.md`, `skills/**/*.md`) AND adds or modifies regex literals or `grep`/`awk`/`jq`/`sed` commands inside those files.
 
 **Purpose:** Prompt-only skill changes (regex/grep/awk/jq inside `SKILL.md`) have **no automated test coverage**. Section 6a (Skill Command Verification) checks command syntax — whether `gh pr checks --json conclusion` is a valid field — but does NOT check whether `awk '/^### AC-[0-9]+/'` actually matches real spec headers. A pattern that is syntactically valid but matches the wrong corpus produces a **silent detection failure** — the worst kind of bug, because the pipeline reports success.
@@ -1906,24 +1995,27 @@ Snippets quoted in the **issue body** as motivating examples or AC verification 
 - Code blocks under headings named `## Setup`, `## Install`, `## Prerequisites`, `## How to install` (these are environment commands, not fixtures)
 - Generic shell session transcripts unrelated to the pattern under test
 
-**Extraction recipe:**
+**Extraction:**
+
+Prefer the Phase 0c precheck output when available — fixture extraction is
+deterministic and #609 moved it out of the QA prompt:
 
 ```bash
-issue_body=$(gh issue view <issue-number> --json body -q '.body')
-
-# Blockquotes
-echo "$issue_body" | grep -E '^>' || true
-
-# Fenced code blocks (excluding Setup/Install/Prerequisites sections)
-echo "$issue_body" | awk '
-  /^## (Setup|Install|Prerequisites|How to install)/ { skip=1; next }
-  /^## / && skip { skip=0 }
-  /^```/ { in_block=!in_block; next }
-  in_block && !skip { print }
-'
-
-# Bold-prefixed example lines
-echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*' || true
+precheck=".sequant/gap-precheck.json"
+if [[ -f "$precheck" ]] && [[ "$(jq -r .schemaVersion "$precheck" 2>/dev/null)" == "1" ]]; then
+  jq -r '.checks.fixtures.fixtures[] | "[\(.kind)\(if .label then ":" + .label else "" end) line \(.line)] \(.content)"' "$precheck"
+else
+  # Inline fallback (pre-#609 behavior)
+  issue_body=$(gh issue view <issue-number> --json body -q '.body')
+  echo "$issue_body" | grep -E '^>' || true
+  echo "$issue_body" | awk '
+    /^## (Setup|Install|Prerequisites|How to install)/ { skip=1; next }
+    /^## / && skip { skip=0 }
+    /^```/ { in_block=!in_block; next }
+    in_block && !skip { print }
+  '
+  echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification|Repro):\*\*' || true
+fi
 ```
 
 **Run the new pattern against each extracted fixture.** For every fixture the AC says should match, the pattern MUST produce a match. **A 0-match result on a verbatim AC fixture is automatically `Failed`.**
@@ -1975,27 +2067,13 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 
 ### 6d. Adversarial Re-Read (REQUIRED for Standard QA before READY_FOR_MERGE)
 
-**Purpose:** The structured pipeline (Sections 1–6c) catches *known* failure modes by gating on file types, AC patterns, and explicit checks. The Adversarial Re-Read pass catches what the pipeline doesn't gate on — the unknown unknowns. It is the operationalization of `feedback_qa_second_look.md` ("structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps") at the structural level rather than as a final-pass checkbox.
+**Purpose:** Catch what the structured pipeline doesn't gate on. Operationalizes `feedback_qa_second_look.md` — structured QA biases positive on clean code; an adversarial re-read of core logic surfaces real gaps.
 
-**When to apply:** Required for non-Simple-Fix verdicts before issuing `READY_FOR_MERGE`. For Simple Fix mode (`SMALL_DIFF=true`), this section is omitted entirely.
+**When to apply:** Required for non-Simple-Fix verdicts before issuing `READY_FOR_MERGE`. Omitted entirely for Simple Fix mode (`SMALL_DIFF=true`).
 
-**How to perform:** Answer all 5 sub-prompts below with concrete content. A bare "No gaps" without specific reasoning fails output verification — name the corpus you scanned, the strings you ran, or the codepath you traced.
+**How to perform:** Before declaring READY_FOR_MERGE, walk through the diff once more adversarially and surface anything the structured pipeline didn't gate on. In particular: (1) run the implementation against every verbatim motivating-example fixture from the issue body — Phase 0c precheck surfaces these in `.checks.fixtures.fixtures`; if precheck unavailable, extract inline per `feedback_motivating_example_regression.md`; (2) flag any "evidence" claim that is actually a pre-fix bug repro rather than a post-fix validation; (3) inspect process state the pipeline normalizes away (uncommitted work, divergent branches, stashed changes, orchestrator state); (4) cite sibling sites explicitly — §5 (cross-file) and §4 Q5 (intra-file); do not hand-wave with "N/A"; (5) surface any Non-Goals from the issue body that have silently expanded into scope. A bare "No gaps" without specific reasoning fails output verification — name what you scanned, ran, or traced.
 
-| # | Sub-prompt | What to check |
-|---|------------|---------------|
-| 1 | **Verbatim fixtures** | Run the implementation against EVERY verbatim motivating-example string from the issue body (fenced code blocks, blockquotes, `**Verify:**` / `**Example:**` / `**Repro:**` snippets, `## Repro pattern` sections). Per `feedback_motivating_example_regression.md`, this rule applies to **any** change with motivating-example payload — not only the skill-markdown changes that trigger Section 6c. |
-| 2 | **Evidence framing** | For every "evidence" claim in the QA output (Execution Evidence, self-dogfood notes, smoke tests), check: is it a pre-fix bug reproduction or a post-fix validation? Conflating the two overstates the rigor of the QA. |
-| 3 | **Process state** | Inspect uncommitted work, divergent branches, stashed changes, and any orchestrator state (worktree, phase markers) the structured pipeline normalizes away. The pipeline reads HEAD; the truth is sometimes in the working tree. |
-| 4 | **Sibling sites** | Cross-file siblings: covered by Section 5's Sibling-site Scan when applicable. Intra-file siblings: covered by Section 4 Q5's audit. If both are Skipped/N/A, briefly justify why no sibling site exists (e.g. "no cross-file siblings + single-call-site fix" / "test-only diff"). Do not hand-wave; cite. |
-| 5 | **Out-of-scope but adjacent** | What does the issue body call out as Non-Goals or "left out"? Has any of it become in-scope due to the implementation choices made? Surface explicitly; do not silently expand or silently leave out. |
-
-**Status outcomes:**
-
-| Status | Criteria |
-|--------|----------|
-| **Clean** | All 5 sub-prompts answered with concrete content; no gaps surfaced |
-| **Gaps Found** | One or more sub-prompts surfaced a gap, but each maps to a recommendation (improvement suggestion, follow-up issue) rather than a missing AC fixture or false claim |
-| **Severe Gap** | A sub-prompt surfaced a gap that maps to: (a) a verbatim motivating-example fixture not run, OR (b) an evidence claim that's actually a bug reproduction not a validation, OR (c) an AC marked MET on the basis of code review without the runtime / corpus check the AC's text required |
+**Status outcomes:** **Clean** = walked the 5 checks above, surfaced no gaps. **Gaps Found** = surfaced gaps that map to recommendations or follow-up issues but no missing AC fixture. **Severe Gap** = surfaced (a) a verbatim motivating-example fixture not run, OR (b) an evidence claim that's actually a bug repro not a validation, OR (c) an AC marked MET on code review alone without the runtime / corpus check the AC's text required.
 
 **Verdict gating:**
 
@@ -2010,18 +2088,12 @@ echo "$issue_body" | grep -E '\*\*(Verify|Verbatim|Example|AC verification):\*\*
 ```markdown
 ### Adversarial Re-Read
 
-| # | Sub-prompt | Finding |
-|---|------------|---------|
-| 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
-| 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
-| 3 | Process state | [What was inspected; clean or noted] |
-| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
-| 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
-
-**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
+**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced — fixtures consulted, evidence claims audited, process state inspected, sibling sites cited, Non-Goals checked>"]
 
 **Status:** Clean / Gaps Found / Severe Gap
 ```
+
+**Origin:** This section was promoted to a structured 5-sub-prompt table in #582. #608's signal-to-noise study found 9/14 emits surfaced findings but 0 were actioned — the structure produced visibility without action. #609 trims back to a single-paragraph prompt while preserving the safety net and verdict gating.
 
 ### 6e. Behavior-Rule Survival Check (REQUIRED for behavior-rule ACs)
 
@@ -2743,6 +2815,20 @@ You MUST include these sections:
 
 ---
 
+### Precheck Findings
+
+[Include if `.sequant/gap-precheck.json` (schemaVersion 1) is present. Otherwise emit one line: "Precheck Findings: unavailable — inline fallback used." and omit the table.]
+
+| Section | Status | Surfaced |
+|---------|--------|----------|
+| Fixtures | pass / not_applicable / fail | [N fixtures, consumed by §6c Step 4 / §6d Q1] |
+| Sibling-grep | pass / not_applicable / fail | [N identifiers, candidate sites surfaced to §5] |
+| AC literal-diff | pass / not_applicable / fail | [IDs missing from PR body, if any] |
+
+**Source:** `.sequant/gap-precheck.json` (schemaVersion 1)
+
+---
+
 ### CI Status
 
 [Include if PR exists, otherwise: "No PR exists yet" or "No CI configured"]
@@ -3010,15 +3096,7 @@ You MUST include these sections:
 
 ### Adversarial Re-Read
 
-| # | Sub-prompt | Finding |
-|---|------------|---------|
-| 1 | Verbatim fixtures | [List fixtures run, OR "No motivating-example payload in issue body" with citation] |
-| 2 | Evidence framing | [Specific check, OR "No evidence claims to verify"] |
-| 3 | Process state | [What was inspected; clean or noted] |
-| 4 | Sibling sites | [Reference Section 5's cross-file scan + Section 4 Q5's intra-file audit, OR justify N/A] |
-| 5 | Out-of-scope/Non-Goals | [Explicit answer, OR "No Non-Goals listed in issue"] |
-
-**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced>"]
+**Findings:** [Concrete enumeration of gaps surfaced, OR "No gaps found because: <specific reason citing what was scanned/run/traced — fixtures consulted, evidence claims audited, process state inspected, sibling sites cited, Non-Goals checked>"]
 
 **Status:** Clean / Gaps Found / Severe Gap
 
