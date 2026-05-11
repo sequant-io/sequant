@@ -324,12 +324,16 @@ export interface BatchResult {
 /**
  * Callback type for per-phase progress updates.
  * Used by parallel mode in run.ts to render phase status to the terminal.
+ *
+ * `extra.iteration` (#624 Item 3): outer quality-loop iteration. Threaded
+ * through to the renderer as `(attempt N/M)` on retried phase events and
+ * `loop N/M` on loop-phase live-zone status cells.
  */
 export type ProgressCallback = (
   issue: number,
   phase: string,
   event: "start" | "complete" | "failed",
-  extra?: { durationSeconds?: number; error?: string },
+  extra?: { durationSeconds?: number; error?: string; iteration?: number },
 ) => void;
 
 /**
