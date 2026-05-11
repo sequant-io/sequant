@@ -211,6 +211,12 @@ export interface RunOptions {
   /** Chain issues: each branches from previous (requires --sequential) */
   chain?: boolean;
   /**
+   * Stacked PRs: each non-first PR targets its predecessor branch instead of
+   * `main`. Implies --chain. The final PR still targets `main` so partial
+   * progress can land without the whole stack. (#605)
+   */
+  stacked?: boolean;
+  /**
    * Wait for QA pass before starting next issue in chain mode.
    * When enabled, the chain pauses if QA fails, preventing downstream issues
    * from building on potentially broken code.
@@ -383,6 +389,17 @@ export interface IssueExecutionContext {
   chain?: {
     enabled: boolean;
     isLast: boolean;
+    /**
+     * Stacked-PR base branch for this issue. Set only when --stacked is active
+     * and this issue has a predecessor in the chain. When set, createPR targets
+     * this branch instead of `main`. (#605)
+     */
+    predecessorBranch?: string;
+    /**
+     * Pre-rendered stack manifest line for the PR body, e.g.
+     * `Part of stack: #100 → #101 (this) → #102`. Set only under --stacked.
+     */
+    stackManifest?: string;
   };
   /** Package manager name (e.g., "npm", "pnpm") */
   packageManager?: string;

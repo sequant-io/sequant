@@ -476,6 +476,38 @@ gh issue view <issue> --json body,labels | jq '.body, .labels[].name'
 
 If dependencies found, enforce merge order.
 
+### Stacked PR Detection (#605)
+
+PRs created with `sequant run --stacked` have a non-`main` base and a manifest
+line in the body (`Part of stack: #N1 → #N2 → ...`). They **must merge in
+order** — predecessor first. Merging out of order re-bases the dependent PR's
+diff against an unexpected commit and inflates the visible change set.
+
+**Detect stacked PRs:**
+
+```bash
+# A PR with a non-main base + manifest is part of a stack
+gh pr view <PR_NUMBER> --json baseRefName,body | \
+  jq -r 'if (.baseRefName != "main" and (.body | contains("Part of stack:"))) then "STACKED" else "STANDALONE" end'
+```
+
+**Enforce stack order before merging:**
+
+1. Extract the stack manifest from each PR's body (`Part of stack: #100 → #101 (this) → #102`).
+2. Treat the order in the manifest as the merge order — earlier entries land first.
+3. If the user requests an out-of-order merge (e.g. `/merger 102 100 101` for the stack above), **warn before proceeding** and recommend the manifest order.
+4. GitHub auto-updates the dependent PR's base when its predecessor merges, so once the order is correct no manual rebasing is needed.
+
+**Warning template:**
+
+```text
+⚠️  Stack order violation detected
+   PR #102 is part of stack: #100 → #101 → #102
+   You requested merge order: #102, #100, #101
+   Recommended: merge in manifest order to preserve incremental diffs.
+   Continue anyway? (y/N)
+```
+
 ## Output Format
 
 ### Merge Report

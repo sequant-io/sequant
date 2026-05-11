@@ -306,6 +306,123 @@ describe("RunOrchestrator", () => {
     });
   });
 
+  // ===== #605: Stacked-mode chain context =====
+  describe("#605: --stacked passes predecessor branch + manifest", () => {
+    it("sets predecessorBranch on middle-of-stack issues only", async () => {
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true, stacked: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 102 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101, 102]);
+
+      // First call: issue 100 — no predecessor (first in stack)
+      const firstCtx = mockRunIssue.mock.calls[0][0];
+      expect(firstCtx.chain?.enabled).toBe(true);
+      expect(firstCtx.chain?.predecessorBranch).toBeUndefined();
+      expect(firstCtx.chain?.stackManifest).toBe(
+        "Part of stack: #100 (this) → #101 → #102",
+      );
+
+      // Second call: issue 101 — predecessor is feature/100-first
+      const secondCtx = mockRunIssue.mock.calls[1][0];
+      expect(secondCtx.chain?.predecessorBranch).toBe("feature/100-first");
+      expect(secondCtx.chain?.stackManifest).toBe(
+        "Part of stack: #100 → #101 (this) → #102",
+      );
+
+      // Third call: issue 102 — last in stack, no predecessor (PR targets main)
+      const thirdCtx = mockRunIssue.mock.calls[2][0];
+      expect(thirdCtx.chain?.isLast).toBe(true);
+      expect(thirdCtx.chain?.predecessorBranch).toBeUndefined();
+      expect(thirdCtx.chain?.stackManifest).toBe(
+        "Part of stack: #100 → #101 → #102 (this)",
+      );
+    });
+
+    it("does not set stack fields when stacked=false (plain --chain)", async () => {
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101]);
+
+      for (const call of mockRunIssue.mock.calls) {
+        const ctx = call[0];
+        expect(ctx.chain?.predecessorBranch).toBeUndefined();
+        expect(ctx.chain?.stackManifest).toBeUndefined();
+      }
+    });
+  });
+
   // ===== AC-3: No Commander.js Types =====
   describe("AC-3: No Commander.js types in orchestrator", () => {
     it("should not import from commander package", () => {

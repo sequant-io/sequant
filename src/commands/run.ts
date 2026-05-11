@@ -47,6 +47,16 @@ export async function runCommand(
 
   const settings = await getSettings();
 
+  // #605: --stacked implies --chain; reject explicit --no-chain combo before
+  // we evaluate any --chain-dependent constraint below.
+  if (options.stacked && options.chain === false) {
+    console.log(chalk.red("❌ --stacked cannot be combined with --no-chain"));
+    return;
+  }
+  if (options.stacked) {
+    options.chain = true;
+  }
+
   // Validate constraints
   if (options.chain && options.batch?.length) {
     console.log(chalk.red("❌ --chain cannot be used with --batch"));
