@@ -14,7 +14,12 @@ export interface ProgressEvent {
   event: ProgressEventKind;
   durationSeconds?: number;
   error?: string;
-  /** Quality-loop iteration (1-based). Only set for the `loop` phase. */
+  /**
+   * Quality-loop iteration (1-based). Set on the `loop` phase event and on
+   * retried phase events (exec, qa, ...) once the outer loop iterates past 1.
+   * Surfaced in the events log as `(attempt N/M)` and in the live-zone status
+   * cell as `loop N/M` (#624 Item 3).
+   */
   iteration?: number;
 }
 
@@ -50,6 +55,18 @@ export interface IssueState {
    * and the resolved plan is known.
    */
   autoDetect?: boolean;
+  /**
+   * #624 Item 4: normalized signature of the most recent failure (ANSI-stripped,
+   * lowercased, first 80 chars, trimmed). Used to abbreviate repeated identical
+   * failures in the events log.
+   */
+  lastFailureSignature?: string;
+  /**
+   * #624 Item 4: 1-based attempt number when `lastFailureSignature` was first
+   * observed. Referenced in the abbreviated form
+   * `(attempt N/M, same failure as attempt K)`.
+   */
+  firstAttemptForSignature?: number;
 }
 
 /** Initial registration payload — fed at runner start so queued rows render. */
@@ -144,6 +161,19 @@ export interface RenderOptions {
    * single `✔ {N} done` summary row at the top. Defaults to 10.
    */
   multiIssueRowCap?: number;
+  /**
+   * #624 Item 1: terminal row count. The TTY live zone caps its frame height
+   * at `max(8, rows - 5)` so `log-update` never deals with a frame taller than
+   * the terminal — otherwise it loses cursor tracking and appends fresh frames
+   * instead of replacing them. Defaults to `process.stdout.rows` or 24.
+   */
+  rows?: number;
+  /**
+   * #624 Item 3 / D2: total allowed quality-loop iterations. Used by every
+   * retry-suffix site (`(attempt N/M)` / `loop N/M`) so the M denominator
+   * tracks the configured maximum instead of being hardcoded. Defaults to 3.
+   */
+  maxLoopIterations?: number;
   /**
    * When true, `renderSummary` is rendered even if no issues were registered.
    * Default: false (matches existing displaySummary behaviour).
