@@ -5,7 +5,11 @@ import type {
   IssueExecutionContext,
 } from "./types.js";
 import type { RunOptions } from "./batch-executor.js";
-import { buildLoopContext, emitProgressLine } from "./batch-executor.js";
+import {
+  buildLoopContext,
+  emitProgressLine,
+  withActivityHook,
+} from "./batch-executor.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
@@ -556,6 +560,54 @@ describe("buildLoopContext", () => {
     expect(result).not.toContain("Suggestions:");
     expect(result).not.toContain("Error:");
     expect(result).not.toContain("Last output:");
+  });
+});
+
+// =============================================================================
+// #543 — withActivityHook: bridges agent onOutput to ProgressCallback("activity")
+// =============================================================================
+
+describe("withActivityHook (#543)", () => {
+  const baseConfig = {
+    phases: ["exec"],
+    phaseTimeout: 60,
+    qualityLoop: false,
+    maxIterations: 1,
+    skipVerification: false,
+    sequential: false,
+    concurrency: 3,
+    parallel: false,
+    verbose: false,
+    noSmartTests: false,
+    dryRun: false,
+    mcp: false,
+  } as ExecutionConfig;
+
+  it("returns the input config unchanged when onProgress is undefined", () => {
+    const wrapped = withActivityHook(baseConfig, 1, "exec", undefined);
+    expect(wrapped).toBe(baseConfig);
+    expect(wrapped.onActivity).toBeUndefined();
+  });
+
+  it("installs an onActivity hook that forwards activity events", () => {
+    const onProgress = vi.fn();
+    const wrapped = withActivityHook(baseConfig, 42, "exec", onProgress);
+    expect(wrapped).not.toBe(baseConfig);
+    expect(wrapped.onActivity).toBeTypeOf("function");
+
+    wrapped.onActivity!("writing tests");
+    expect(onProgress).toHaveBeenCalledWith(42, "exec", "activity", {
+      text: "writing tests",
+    });
+  });
+
+  it("swallows progress callback errors so the run is not disrupted", () => {
+    const onProgress = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const wrapped = withActivityHook(baseConfig, 1, "exec", onProgress);
+    expect(() => wrapped.onActivity!("anything")).not.toThrow();
+    expect(onProgress).toHaveBeenCalled();
   });
 });
 

@@ -76,6 +76,8 @@ export function buildProgressWiring(args: {
   let onProgress: ProgressCallback | undefined;
   if (renderer) {
     onProgress = (issue, phase, event, extra) => {
+      // #543: activity events only feed the TUI's nowLine — skip the line renderer.
+      if (event === "activity") return;
       // #624 Item 3: pass the outer-loop iteration through so the renderer can
       // render `(attempt N/M)` / `loop N/M`.
       renderer.onEvent({
@@ -89,6 +91,7 @@ export function buildProgressWiring(args: {
     };
   } else if (heartbeat) {
     onProgress = (issue, phase, event) => {
+      if (event === "activity") return;
       if (event === "start")
         heartbeat.start({
           issueNumber: issue,

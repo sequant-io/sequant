@@ -134,4 +134,100 @@ describe("RunOrchestrator.getSnapshot", () => {
     orch.markDone();
     expect(orch.getSnapshot().done).toBe(true);
   });
+
+  // #543 — sub-phase activity enrichment
+  describe("activity events", () => {
+    it("updates nowLine and lastActivityAt on activity events", async () => {
+      const orch = makeOrchestrator([42]);
+      const progress = orch["cfg"].onProgress!;
+      progress(42, "exec", "start");
+      const startSnap = orch.getSnapshot();
+      const startActivityAt =
+        startSnap.issues[0].currentPhase!.lastActivityAt.getTime();
+      expect(startSnap.issues[0].currentPhase!.nowLine).toBe("running exec");
+
+      // Wait long enough that lastActivityAt advances by at least 1ms.
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      progress(42, "exec", "activity", { text: "Editing src/foo.ts" });
+
+      const snap = orch.getSnapshot();
+      expect(snap.issues[0].currentPhase!.nowLine).toBe("Editing src/foo.ts");
+      expect(
+        snap.issues[0].currentPhase!.lastActivityAt.getTime(),
+      ).toBeGreaterThan(startActivityAt);
+    });
+
+    it("uses the last non-empty line from a multi-line chunk", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      progress(1, "exec", "activity", {
+        text: "first line\nmiddle\nlast useful line\n\n",
+      });
+      expect(orch.getSnapshot().issues[0].currentPhase!.nowLine).toBe(
+        "last useful line",
+      );
+    });
+
+    it("strips ANSI escape sequences from activity text", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      progress(1, "exec", "activity", {
+        text: "\x1b[32mwriting tests\x1b[0m",
+      });
+      expect(orch.getSnapshot().issues[0].currentPhase!.nowLine).toBe(
+        "writing tests",
+      );
+    });
+
+    it("ignores activity events for stale phase names", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "spec", "start");
+      progress(1, "spec", "complete", { durationSeconds: 1 });
+      // After completion, currentPhase is cleared — activity must be a no-op.
+      progress(1, "spec", "activity", { text: "leaked output" });
+      const snap = orch.getSnapshot();
+      expect(snap.issues[0].currentPhase).toBeUndefined();
+    });
+
+    it("ignores activity events when there is no usable text", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      const before = orch.getSnapshot().issues[0].currentPhase!.nowLine;
+      progress(1, "exec", "activity", { text: "   \n\n  " });
+      progress(1, "exec", "activity", { text: undefined });
+      const after = orch.getSnapshot().issues[0].currentPhase!.nowLine;
+      expect(after).toBe(before);
+    });
+
+    it("falls back to coarse 'running <phase>' when activity is stale ≥5s", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      progress(1, "exec", "activity", { text: "fresh activity" });
+
+      // Force lastActivityAt to 6 seconds ago.
+      const internal = orch["issueStates"].get(1)!;
+      internal.currentPhase!.lastActivityAt = new Date(Date.now() - 6_000);
+
+      const snap = orch.getSnapshot();
+      expect(snap.issues[0].currentPhase!.nowLine).toBe("running exec");
+      // The underlying timestamp is preserved so the "Xs ago" stamp still ticks.
+      expect(
+        Date.now() - snap.issues[0].currentPhase!.lastActivityAt.getTime(),
+      ).toBeGreaterThanOrEqual(6_000);
+    });
+
+    it("does not fall back while activity is fresh", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      progress(1, "exec", "activity", { text: "live signal" });
+      const snap = orch.getSnapshot();
+      expect(snap.issues[0].currentPhase!.nowLine).toBe("live signal");
+    });
+  });
 });

@@ -106,6 +106,14 @@ export interface ExecutionConfig {
    * Propagated as SEQUANT_FAILED_ACS env var to skills.
    */
   failedAcs?: string;
+  /**
+   * Runtime callback invoked when the agent driver emits a chunk of output
+   * during phase execution (#543). Used by the multi-issue TUI to enrich
+   * `nowLine` with sub-phase activity. Not serialized — set per-call by the
+   * orchestrator. The phase executor throttles calls to ~10 Hz so the TUI's
+   * poll budget is preserved.
+   */
+  onActivity?: (text: string) => void;
 }
 
 /**
@@ -328,12 +336,21 @@ export interface BatchResult {
  * `extra.iteration` (#624 Item 3): outer quality-loop iteration. Threaded
  * through to the renderer as `(attempt N/M)` on retried phase events and
  * `loop N/M` on loop-phase live-zone status cells.
+ *
+ * `"activity"` (#543): sub-phase activity ping. `extra.text` carries a short
+ * one-line snippet (e.g. last line of agent output) for the dashboard's
+ * `nowLine`. Fires at most ~10 Hz from the phase executor.
  */
 export type ProgressCallback = (
   issue: number,
   phase: string,
-  event: "start" | "complete" | "failed",
-  extra?: { durationSeconds?: number; error?: string; iteration?: number },
+  event: "start" | "complete" | "failed" | "activity",
+  extra?: {
+    durationSeconds?: number;
+    error?: string;
+    iteration?: number;
+    text?: string;
+  },
 ) => void;
 
 /**
