@@ -22,6 +22,7 @@ import type {
   IssueRegistration,
   IssueState,
   IssueSummary,
+  PhaseState,
   ProgressEvent,
   RenderOptions,
   RendererMode,
@@ -33,6 +34,15 @@ const DEFAULT_LIVE_TICK_MS = 1000;
 const DEFAULT_NON_TTY_HEARTBEAT_MS = 60_000;
 const NARROW_TERMINAL_THRESHOLD = 80;
 const DEFAULT_MULTI_ISSUE_ROW_CAP = 10;
+// Generous default: in production, TTY mode always has `process.stdout.rows`
+// set, so this only matters in tests and detached stdout. A high default avoids
+// over-constraining multi-issue test scenarios while keeping the height cap
+// active enough to catch pathological frames.
+const DEFAULT_TERMINAL_ROWS = 100;
+const DEFAULT_MAX_LOOP_ITERATIONS = 3;
+const SUMMARY_COLUMN_CAP = 110;
+const FAILURE_SIGNATURE_LENGTH = 80;
+const FAIL_REASON_TRUNCATE_LENGTH = 40;
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -59,6 +69,47 @@ function colorize(noColor: boolean) {
     gray: chalk.gray,
     bold: chalk.bold,
   };
+}
+
+// ============================================================================
+// Shared helpers (#624)
+// ============================================================================
+
+/**
+ * #624 Item 4: normalized failure signature for dedup decisions.
+ *
+ * Strips ANSI escape sequences, lowercases, trims whitespace, and truncates to
+ * the first 80 visible chars. The plan deliberately chose a length-bounded
+ * prefix over a crypto hash so debugging can match signatures by eye.
+ */
+export function failureSignature(error: string | undefined): string {
+  if (!error) return "";
+  // eslint-disable-next-line no-control-regex
+  const stripped = error.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
+  return stripped.trim().toLowerCase().slice(0, FAILURE_SIGNATURE_LENGTH);
+}
+
+/**
+ * #624 Item 3 / Derived AC-D2: shared suffix builder used by all three retry
+ * sites (NonTTY events log, TTY events log, TTY status header). Centralizes
+ * the `(attempt N/M)` / `loop N/M` literals so they cannot drift between paths.
+ *
+ * `kind` selects the surface:
+ *   - "events" → events-log line: leading space + parentheses
+ *   - "header" → status cell: leading space, no parentheses
+ *
+ * Returns the empty string when the attempt counter does not apply
+ * (no iteration, iteration === 1, or non-positive).
+ */
+export function formatRetrySuffix(
+  iteration: number | undefined,
+  maxIterations: number,
+  kind: "events" | "header",
+): string {
+  if (!iteration || iteration <= 1) return "";
+  const counter = `${iteration}/${maxIterations}`;
+  if (kind === "events") return ` (attempt ${counter})`;
+  return ` ${counter}`;
 }
 
 // ============================================================================
@@ -188,7 +239,19 @@ abstract class BaseRenderer implements RunRenderer {
     state.status = "failed";
     state.completedAt = this.now();
     state.currentPhase = undefined;
-    if (event.error) state.failureReason = event.error;
+    if (event.error !== undefined) state.failureReason = event.error;
+
+    // #624 Item 4: update failure dedup metadata on the PHASE (not the issue).
+    // Per-phase tracking ensures "same failure as attempt N" only references
+    // prior attempts of THIS phase — exec failing with "boom" followed by qa
+    // failing with "boom" no longer abbreviates qa as "same failure as attempt 1"
+    // when attempt 1 was an exec failure.
+    const sig = failureSignature(event.error);
+    const currentAttempt = phase.loopIteration ?? 1;
+    if (phase.lastFailureSignature !== sig) {
+      phase.lastFailureSignature = sig;
+      phase.firstAttemptForSignature = currentAttempt;
+    }
   }
 
   /** Mark an issue done after PR is recorded — derived from phase completion. */
@@ -254,14 +317,28 @@ export class OrchestratorRenderer extends BaseRenderer {
 export class NonTTYRenderer extends BaseRenderer {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatMs: number;
+  private readonly columnsOverride?: number;
+  private readonly maxLoopIterations: number;
   private lastEventAt: number;
 
   constructor(options: RenderOptions) {
     super(options);
     this.heartbeatMs =
       options.nonTtyHeartbeatMs ?? DEFAULT_NON_TTY_HEARTBEAT_MS;
+    this.columnsOverride = options.columns;
+    this.maxLoopIterations =
+      options.maxLoopIterations ?? DEFAULT_MAX_LOOP_ITERATIONS;
     this.lastEventAt = this.now();
     this.startHeartbeat();
+  }
+
+  private getColumns(): number {
+    return (
+      this.columnsOverride ??
+      (process.stdout.columns && process.stdout.columns > 0
+        ? process.stdout.columns
+        : 100)
+    );
   }
 
   private startHeartbeat(): void {
@@ -304,13 +381,20 @@ export class NonTTYRenderer extends BaseRenderer {
   private emitEventLine(event: ProgressEvent, state: IssueState): void {
     const c = colorize(this.noColor);
     const phase = state.phases.find((p) => p.name === event.phase);
-    const loopSuffix =
-      phase?.loopIteration && phase.loopIteration > 1
-        ? ` (loop ${phase.loopIteration})`
-        : "";
+    // #624 Item 3: non-loop phase events on retry get `(attempt N/M)`.
+    // The loop phase itself stays unannotated in the events log (the live zone
+    // shows `loop N/M · last fail: …` already; double-counting would be noise).
+    const retrySuffix =
+      event.phase === "loop"
+        ? ""
+        : formatRetrySuffix(
+            phase?.loopIteration,
+            this.maxLoopIterations,
+            "events",
+          );
     if (event.event === "start") {
       this.emitLine(
-        `${c.cyan("▸")} #${event.issue} ${event.phase}${loopSuffix}`,
+        `${c.cyan("▸")} #${event.issue} ${event.phase}${retrySuffix}`,
       );
     } else if (event.event === "complete") {
       const durStr =
@@ -318,13 +402,27 @@ export class NonTTYRenderer extends BaseRenderer {
           ? ` ${formatElapsedTime(event.durationSeconds)}`
           : "";
       this.emitLine(
-        `${c.green("✔")} #${event.issue} ${event.phase}${loopSuffix}${durStr}`,
+        `${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}`,
       );
     } else {
-      const errStr = event.error ? ` ${c.red(event.error)}` : "";
-      this.emitLine(
-        `${c.red("✘")} #${event.issue} ${event.phase}${loopSuffix}${errStr}`,
-      );
+      // #624 Item 4: failure dedup. The third tier (final attempt) emits the
+      // full text even when the signature repeats, so divergent failures stay
+      // visible right up to max-iter. Dedup state is per-phase so cross-phase
+      // signature collisions don't produce misleading "attempt N" references.
+      const attempt = phase?.loopIteration ?? 1;
+      const dedup = phase
+        ? decideDedup(phase, attempt, this.maxLoopIterations)
+        : "full";
+      if (dedup === "abbreviated" && phase) {
+        this.emitLine(
+          `${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${phase.firstAttemptForSignature})`,
+        );
+      } else {
+        const errStr = event.error ? ` ${c.red(event.error)}` : "";
+        this.emitLine(
+          `${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix}${errStr}`,
+        );
+      }
     }
   }
 
@@ -343,10 +441,13 @@ export class NonTTYRenderer extends BaseRenderer {
 
   renderSummary(input: SummaryRenderInput): void {
     if (this.disposed) return;
+    // #624 Item 2 (AC-2.3): share the same column source/cap as the TTY path
+    // so the summary table is never rendered at a divergent width that pushes
+    // the rightmost border off-screen.
     renderSummaryBlock(input, {
       stdoutWrite: this.stdoutWrite,
       noColor: this.noColor,
-      columns: NARROW_TERMINAL_THRESHOLD,
+      columns: Math.min(this.getColumns(), SUMMARY_COLUMN_CAP),
     });
   }
 
@@ -359,27 +460,90 @@ export class NonTTYRenderer extends BaseRenderer {
 }
 
 // ============================================================================
+// Failure dedup shared decision (#624 Item 4)
+// ============================================================================
+
+/**
+ * Three-state machine for failure dedup. Returns "abbreviated" when the
+ * incoming failure signature matches a prior attempt of THIS phase AND we
+ * haven't yet reached the final allowed attempt; otherwise "full" so
+ * divergence and last-chance failures stay fully visible in the events log.
+ *
+ * Per-phase (not per-issue) so cross-phase signature collisions don't produce
+ * misleading "same failure as attempt N" text — N would otherwise point at a
+ * different phase's attempt.
+ */
+function decideDedup(
+  phase: PhaseState,
+  currentAttempt: number,
+  maxIterations: number,
+): "abbreviated" | "full" {
+  // `applyEvent` already updated `phase.lastFailureSignature` and
+  // `phase.firstAttemptForSignature` before the emit code runs. So we dedup
+  // when the first-seen attempt is strictly earlier than the current one.
+  const firstAttempt = phase.firstAttemptForSignature;
+  if (firstAttempt === undefined || firstAttempt >= currentAttempt) {
+    return "full";
+  }
+  if (currentAttempt >= maxIterations) {
+    return "full";
+  }
+  return "abbreviated";
+}
+
+// ============================================================================
 // TTY renderer — log-update live zone + append-only events log
 // ============================================================================
+
+/**
+ * #624 Derived AC-D1: test-only observability for the log-update stub. Tests
+ * can read `replacementCount` and `lastFrame` to verify the frame is *replaced*
+ * on each redraw rather than appended — the foundational guarantee that Items
+ * 1 and 2 rely on.
+ *
+ * `clearCalls` / `doneCalls` (added in the hardening pass) let AC-2.2 verify
+ * the renderer actually invokes `logUpdate.clear()` + `logUpdate.done()` during
+ * `renderSummary` teardown — not just that the stub's local `lastFrame` was
+ * reset.
+ */
+export interface TTYTestStub {
+  /** Number of times the live frame was replaced (not the initial write). */
+  readonly replacementCount: number;
+  /** The most recent live frame text passed to log-update. */
+  readonly lastFrame: string;
+  /** Number of times `logUpdate.clear()` was invoked. */
+  readonly clearCalls: number;
+  /** Number of times `logUpdate.done()` was invoked. */
+  readonly doneCalls: number;
+}
 
 export class TTYRenderer extends BaseRenderer {
   private readonly liveTickMs: number;
   private liveTimer: ReturnType<typeof setInterval> | null = null;
   private spinnerFrame = 0;
   private readonly columnsOverride?: number;
+  private readonly rowsOverride?: number;
   private readonly noSignalListeners: boolean;
   private readonly stallThresholdMs: number;
   private readonly multiIssueRowCap: number;
+  private readonly maxLoopIterations: number;
   private readonly logUpdateImpl: (text: string) => void;
   private readonly logUpdateClear: () => void;
   private readonly logUpdateDone: () => void;
   private resizeListener: (() => void) | null = null;
   private banner: string | null = null;
+  private readonly _testStub: {
+    replacementCount: number;
+    lastFrame: string;
+    clearCalls: number;
+    doneCalls: number;
+  } | null;
 
   constructor(options: RenderOptions) {
     super(options);
     this.liveTickMs = options.liveTickMs ?? DEFAULT_LIVE_TICK_MS;
     this.columnsOverride = options.columns;
+    this.rowsOverride = options.rows;
     this.noSignalListeners = Boolean(options.noSignalListeners);
     // AC-26: stall threshold disabled by default (Number.POSITIVE_INFINITY); the
     // wiring layer derives a real value from settings.run.timeout when available.
@@ -387,26 +551,39 @@ export class TTYRenderer extends BaseRenderer {
       options.stallThresholdMs ?? Number.POSITIVE_INFINITY;
     this.multiIssueRowCap =
       options.multiIssueRowCap ?? DEFAULT_MULTI_ISSUE_ROW_CAP;
+    this.maxLoopIterations =
+      options.maxLoopIterations ?? DEFAULT_MAX_LOOP_ITERATIONS;
 
     // log-update writes to process.stdout via a mutable global instance. When
     // tests inject `stdoutWrite`, route renders through it instead so capture
     // works deterministically.
     if (options.stdoutWrite) {
-      let lastFrame = "";
+      // #624 Derived AC-D1: replacement-aware test stub. Tracks each frame
+      // replacement so tests can assert on frame churn without parsing buf.out.
+      // `clearCalls` / `doneCalls` verify the renderer actually invokes the
+      // teardown methods (not just resets local state).
+      const stub = {
+        replacementCount: 0,
+        lastFrame: "",
+        clearCalls: 0,
+        doneCalls: 0,
+      };
+      this._testStub = stub;
       this.logUpdateImpl = (text: string) => {
-        // Clear previous frame (best-effort emulation of log-update behaviour
-        // without a real terminal cursor).
-        if (lastFrame) options.stdoutWrite!("");
-        lastFrame = text;
+        if (stub.lastFrame) stub.replacementCount++;
+        stub.lastFrame = text;
         options.stdoutWrite!(text + "\n");
       };
       this.logUpdateClear = () => {
-        lastFrame = "";
+        stub.clearCalls++;
+        stub.lastFrame = "";
       };
       this.logUpdateDone = () => {
-        lastFrame = "";
+        stub.doneCalls++;
+        stub.lastFrame = "";
       };
     } else {
+      this._testStub = null;
       this.logUpdateImpl = (text: string) => logUpdate(text);
       this.logUpdateClear = () => logUpdate.clear();
       this.logUpdateDone = () => logUpdate.done();
@@ -414,6 +591,14 @@ export class TTYRenderer extends BaseRenderer {
 
     this.startLiveTimer();
     this.installSignalListeners();
+  }
+
+  /**
+   * #624 Derived AC-D1: expose the test-only log-update stub. Returns `null`
+   * when not in test mode (production renders go through real `log-update`).
+   */
+  getTestStub(): TTYTestStub | null {
+    return this._testStub;
   }
 
   private startLiveTimer(): void {
@@ -467,23 +652,40 @@ export class TTYRenderer extends BaseRenderer {
     this.logUpdateClear();
     const c = colorize(this.noColor);
     const phase = state.phases.find((p) => p.name === event.phase);
-    const loopSuffix =
-      phase?.loopIteration && phase.loopIteration > 1
-        ? ` (loop ${phase.loopIteration}/3)`
-        : "";
+    // #624 Item 3: shared retry-suffix helper. The `loop` phase has its own
+    // running indicator in the live zone, so we don't double-annotate it here.
+    const retrySuffix =
+      event.phase === "loop"
+        ? ""
+        : formatRetrySuffix(
+            phase?.loopIteration,
+            this.maxLoopIterations,
+            "events",
+          );
     let line: string;
     if (event.event === "start") {
-      line = `  ${c.cyan("▸")} #${event.issue} ${event.phase}${loopSuffix}`;
+      line = `  ${c.cyan("▸")} #${event.issue} ${event.phase}${retrySuffix}`;
     } else if (event.event === "complete") {
       const durStr =
         event.durationSeconds !== undefined
           ? `  ${formatElapsedTime(event.durationSeconds)}`
           : "";
       const prSuffix = state.prUrl ? `  →  PR #${state.prNumber}` : "";
-      line = `  ${c.green("✔")} #${event.issue} ${event.phase}${loopSuffix}${durStr}${prSuffix}`;
+      line = `  ${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}${prSuffix}`;
     } else {
-      const errStr = event.error ? `  ${c.red(event.error)}` : "";
-      line = `  ${c.red("✘")} #${event.issue} ${event.phase}${loopSuffix}${errStr}`;
+      // #624 Item 4: failure dedup. Abbreviated form only fires when the
+      // signature matches a *prior* attempt of THIS phase and we are not at
+      // the final allowed iteration (preserves divergence visibility).
+      const attempt = phase?.loopIteration ?? 1;
+      const dedup = phase
+        ? decideDedup(phase, attempt, this.maxLoopIterations)
+        : "full";
+      if (dedup === "abbreviated" && phase) {
+        line = `  ${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${phase.firstAttemptForSignature})`;
+      } else {
+        const errStr = event.error ? `  ${c.red(event.error)}` : "";
+        line = `  ${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix}${errStr}`;
+      }
     }
     this.stdoutWrite(line + "\n");
   }
@@ -501,17 +703,22 @@ export class TTYRenderer extends BaseRenderer {
 
   renderSummary(input: SummaryRenderInput): void {
     if (this.disposed) return;
-    // Stop the live zone so the summary anchors at the bottom.
+    // #624 Item 2: tear down the live zone *before* writing the summary so any
+    // subsequent `console.log` from displaySummary (reflection block, merge
+    // tip) cannot overlap with the trailing border of the summary table.
     this.logUpdateClear();
     this.logUpdateDone();
     if (this.liveTimer !== null) {
       clearInterval(this.liveTimer);
       this.liveTimer = null;
     }
+    // #624 Item 2 (AC-2.3): clamp summary columns to SUMMARY_COLUMN_CAP so wide
+    // terminals don't produce a grid that overflows narrower readers (CI logs,
+    // VS Code terminal panes).
     renderSummaryBlock(input, {
       stdoutWrite: this.stdoutWrite,
       noColor: this.noColor,
-      columns: this.getColumns(),
+      columns: Math.min(this.getColumns(), SUMMARY_COLUMN_CAP),
     });
   }
 
@@ -549,6 +756,27 @@ export class TTYRenderer extends BaseRenderer {
     );
   }
 
+  /**
+   * #624 Item 1: terminal row count, with a safe default for piped / detached
+   * stdout where `process.stdout.rows` is undefined.
+   */
+  private getRows(): number {
+    if (this.rowsOverride !== undefined) return this.rowsOverride;
+    const r = process.stdout.rows;
+    return r && r > 0 ? r : DEFAULT_TERMINAL_ROWS;
+  }
+
+  /**
+   * #624 Item 1: hard ceiling on live-zone height. The cap is
+   * `max(8, rows - 5)`, dropping to `max(8, rows - 7)` when a banner is active
+   * so the banner + a few separator rows still fit. The floor of 8 prevents
+   * the live zone from collapsing on tiny terminals.
+   */
+  private getMaxLiveRows(): number {
+    const reservation = this.banner ? 7 : 5;
+    return Math.max(8, this.getRows() - reservation);
+  }
+
   private redraw(): void {
     if (this.disposed || this.paused) return;
     const cols = this.getColumns();
@@ -564,13 +792,40 @@ export class TTYRenderer extends BaseRenderer {
   renderLiveFrame(columns?: number): string {
     const cols = columns ?? this.getColumns();
     if (this.issues.size === 0) return "";
-    if (cols < NARROW_TERMINAL_THRESHOLD) {
-      return this.renderNarrowFrame();
-    }
-    if (this.issues.size === 1) {
-      return this.renderSingleIssueFrame(cols);
-    }
-    return this.renderMultiIssueFrame(cols);
+    const text =
+      cols < NARROW_TERMINAL_THRESHOLD
+        ? this.renderNarrowFrame()
+        : this.issues.size === 1
+          ? this.renderSingleIssueFrame(cols)
+          : this.renderMultiIssueFrame(cols);
+    return this.clampFrameHeight(text);
+  }
+
+  /**
+   * #624 Item 1 (AC-1.1): hard ceiling on rendered frame height. The interior
+   * `applyRowCap` already collapses excess issues into the rollup row, but the
+   * frame can still drift over the cap if many issues have multi-line status
+   * cells (sub-status + phase sequence). This is the belt-and-braces clamp
+   * that guarantees `log-update` never sees a frame taller than the terminal.
+   *
+   * Always engages — when `rows` isn't explicitly provided, `getRows()` returns
+   * `DEFAULT_TERMINAL_ROWS` (100) so the cap is generous but never disengaged.
+   */
+  private clampFrameHeight(text: string): string {
+    const lines = text.split("\n");
+    const maxRows = this.getMaxLiveRows();
+    if (lines.length <= maxRows) return text;
+    const c = colorize(this.noColor);
+    // Reserve the last visible row for an overflow indicator so the cap is
+    // observable from the rendered output.
+    const truncated = lines.slice(0, Math.max(1, maxRows - 1));
+    const hidden = lines.length - truncated.length;
+    truncated.push(
+      c.dim(
+        `  … ${hidden} more line${hidden === 1 ? "" : "s"} (terminal too short)`,
+      ),
+    );
+    return truncated.join("\n");
   }
 
   private renderNarrowFrame(): string {
@@ -668,10 +923,15 @@ export class TTYRenderer extends BaseRenderer {
   }
 
   /**
-   * AC-28: enforce the per-frame issue row cap. If the cap is not exceeded,
-   * returns all issues unchanged. Otherwise: keep all non-done rows, then fill
-   * remaining slots with the most recently completed done rows; older done
-   * rows roll up into a single summary entry above the grid.
+   * AC-28 + #624 Item 1: enforce the per-frame issue row cap, derived from
+   * the smaller of `multiIssueRowCap` (static config) and a dynamic ceiling
+   * computed from terminal height. The dynamic ceiling reserves ~3 lines per
+   * issue (status header + sub-status + separator) and a fixed overhead for
+   * the frame header, blank lines, grid borders, and the rollup line.
+   *
+   * If the cap is not exceeded, returns all issues unchanged. Otherwise: keep
+   * all non-done rows, then fill remaining slots with the most recently
+   * completed done rows; older done rows roll up into a single summary entry.
    */
   private applyRowCap(): {
     rolledUpDoneCount: number;
@@ -680,7 +940,8 @@ export class TTYRenderer extends BaseRenderer {
   } {
     const all = [...this.issues.values()];
     const totalCount = all.length;
-    if (totalCount <= this.multiIssueRowCap) {
+    const cap = this.effectiveRowCap();
+    if (totalCount <= cap) {
       return { rolledUpDoneCount: 0, visibleStates: all, totalCount };
     }
     const active = all.filter((s) => s.status !== "done");
@@ -688,7 +949,7 @@ export class TTYRenderer extends BaseRenderer {
       .filter((s) => s.status === "done")
       .sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
     // Reserve one row for the rollup line, leave the rest for visible issues.
-    const visibleSlots = Math.max(1, this.multiIssueRowCap - 1);
+    const visibleSlots = Math.max(1, cap - 1);
     const remainingSlotsForDone = Math.max(0, visibleSlots - active.length);
     const visibleDone = done.slice(0, remainingSlotsForDone);
     const rolledUpDoneCount = done.length - visibleDone.length;
@@ -697,6 +958,28 @@ export class TTYRenderer extends BaseRenderer {
       visibleStates: [...active, ...visibleDone],
       totalCount,
     };
+  }
+
+  /**
+   * #624 Item 1 (AC-1.1): smaller of the configured static cap and the
+   * dynamic terminal-height-derived cap. Each issue row takes roughly 3 grid
+   * lines (header, sub-status, separator); the fixed overhead covers the
+   * frame title, blank lines, grid borders, and the rollup row.
+   *
+   * Always engages — when `rows` isn't explicitly provided, `getRows()` returns
+   * `DEFAULT_TERMINAL_ROWS` (100) which produces a dynamic cap of ~30, well
+   * above the static `multiIssueRowCap` default of 10, so the static cap stays
+   * in charge for normal-height terminals.
+   */
+  private effectiveRowCap(): number {
+    const LINES_PER_ISSUE = 3;
+    const FIXED_OVERHEAD = 8;
+    const maxLiveRows = this.getMaxLiveRows();
+    const dynamicCap = Math.max(
+      2,
+      Math.floor((maxLiveRows - FIXED_OVERHEAD) / LINES_PER_ISSUE),
+    );
+    return Math.min(this.multiIssueRowCap, dynamicCap);
   }
 
   // ---------------- Per-issue status content ----------------
@@ -755,11 +1038,28 @@ export class TTYRenderer extends BaseRenderer {
       return c.yellow(`⚠ stalled · ${cur} · ${elapsed}`);
     }
 
-    const loopLabel =
-      phase?.loopIteration && phase.loopIteration > 1
-        ? ` loop ${phase.loopIteration}/3`
+    // #624 Item 3 (AC-3.3): while in the `loop` phase, surface both the loop
+    // iteration counter and the last failure reason so the user can see what
+    // the loop is reacting to. The first loop iteration starts at 1/M.
+    if (cur === "loop") {
+      const iter = phase?.loopIteration ?? 1;
+      const failReason = state.failureReason
+        ? ` · last fail: ${truncate(state.failureReason, FAIL_REASON_TRUNCATE_LENGTH)}`
         : "";
-    return c.cyan(`${spinner} ${cur}${loopLabel} · ${elapsed}`);
+      return c.cyan(
+        `${spinner} loop ${iter}/${this.maxLoopIterations}${failReason} · ${elapsed}`,
+      );
+    }
+
+    // #624 Derived AC-D2: shared retry-suffix helper. Eliminates the hardcoded
+    // `/3` literal so `maxLoopIterations` from settings flows through.
+    const loopLabel = formatRetrySuffix(
+      phase?.loopIteration,
+      this.maxLoopIterations,
+      "header",
+    );
+    const loopPrefix = loopLabel ? ` loop${loopLabel}` : "";
+    return c.cyan(`${spinner} ${cur}${loopPrefix} · ${elapsed}`);
   }
 
   private statusSubLines(state: IssueState): string[] {
@@ -1118,10 +1418,14 @@ export function renderRunSummary(
     columns?: number;
   } = {},
 ): void {
+  // #624 Item 2 (AC-2.3): apply the same SUMMARY_COLUMN_CAP as the TTY and
+  // non-TTY paths so the legacy renderless path can't produce a divergent
+  // wide grid that overflows.
+  const rawColumns = options.columns ?? process.stdout.columns ?? 100;
   renderSummaryBlock(input, {
     stdoutWrite:
       options.stdoutWrite ?? ((s: string) => void process.stdout.write(s)),
     noColor: Boolean(options.noColor) || Boolean(process.env.NO_COLOR),
-    columns: options.columns ?? process.stdout.columns ?? 100,
+    columns: Math.min(rawColumns, SUMMARY_COLUMN_CAP),
   });
 }
