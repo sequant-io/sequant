@@ -100,7 +100,7 @@ export function emitProgressLine(
   issue: number,
   phase: string,
   event: "start" | "complete" | "failed" = "start",
-  extra?: { durationSeconds?: number; error?: string },
+  extra?: { durationSeconds?: number; error?: string; iteration?: number },
 ): void {
   if (!process.env.SEQUANT_ORCHESTRATOR) return;
   const payload: Record<string, unknown> = { issue, phase, event };
@@ -109,6 +109,11 @@ export function emitProgressLine(
   }
   if (extra?.error !== undefined) {
     payload.error = extra.error;
+  }
+  // #624 Item 3: surface the outer-loop iteration so MCP consumers (and the
+  // renderer) can label retried events as `(attempt N/M)` / `loop N/M`.
+  if (extra?.iteration !== undefined) {
+    payload.iteration = extra.iteration;
   }
   const line = `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
   process.stderr.write(line);
@@ -695,9 +700,14 @@ export async function runIssueWithLogging(
       const phase = phases[phaseIdx];
 
       // RunRenderer (#618) owns phase progress via emitProgressLine + onProgress.
-      emitProgressLine(issueNumber, phase, "start");
+      // #624 Item 3: surface the outer-loop iteration on every retried phase
+      // event so the renderer can label them `(attempt N/M)`. First-attempt
+      // events still get `iteration: 1` so the data flow is uniform; the
+      // renderer's `formatRetrySuffix` suppresses the suffix when iteration ≤ 1.
+      const phaseExtra: { iteration: number } = { iteration };
+      emitProgressLine(issueNumber, phase, "start", phaseExtra);
       try {
-        onProgress?.(issueNumber, phase, "start");
+        onProgress?.(issueNumber, phase, "start", phaseExtra);
       } catch {
         /* progress errors must not halt */
       }
@@ -746,7 +756,7 @@ export async function runIssueWithLogging(
         (phaseEndTime.getTime() - phaseStartTime.getTime()) / 1000,
       );
       if (result.success) {
-        const extra = { durationSeconds: phaseDurationSec };
+        const extra = { durationSeconds: phaseDurationSec, iteration };
         emitProgressLine(issueNumber, phase, "complete", extra);
         try {
           onProgress?.(issueNumber, phase, "complete", extra);
@@ -754,7 +764,7 @@ export async function runIssueWithLogging(
           /* progress errors must not halt */
         }
       } else {
-        const extra = { error: result.error ?? "unknown" };
+        const extra = { error: result.error ?? "unknown", iteration };
         emitProgressLine(issueNumber, phase, "failed", extra);
         try {
           onProgress?.(issueNumber, phase, "failed", extra);
@@ -848,9 +858,12 @@ export async function runIssueWithLogging(
 
         // If quality loop enabled, run loop phase to fix issues
         if (useQualityLoop && iteration < maxIterations) {
-          emitProgressLine(issueNumber, "loop", "start");
+          // #624 Item 3 (AC-3.3): the loop phase carries the current outer
+          // iteration so the live-zone status cell can show `loop N/M`.
+          const loopStartExtra: { iteration: number } = { iteration };
+          emitProgressLine(issueNumber, "loop", "start", loopStartExtra);
           try {
-            onProgress?.(issueNumber, "loop", "start");
+            onProgress?.(issueNumber, "loop", "start", loopStartExtra);
           } catch {
             /* progress errors must not halt */
           }
@@ -882,7 +895,7 @@ export async function runIssueWithLogging(
             (loopEndTime.getTime() - loopStartTime.getTime()) / 1000,
           );
           if (loopResult.success) {
-            const extra = { durationSeconds: loopDurationSec };
+            const extra = { durationSeconds: loopDurationSec, iteration };
             emitProgressLine(issueNumber, "loop", "complete", extra);
             try {
               onProgress?.(issueNumber, "loop", "complete", extra);
@@ -890,7 +903,7 @@ export async function runIssueWithLogging(
               /* progress errors must not halt */
             }
           } else {
-            const extra = { error: loopResult.error ?? "unknown" };
+            const extra = { error: loopResult.error ?? "unknown", iteration };
             emitProgressLine(issueNumber, "loop", "failed", extra);
             try {
               onProgress?.(issueNumber, "loop", "failed", extra);
