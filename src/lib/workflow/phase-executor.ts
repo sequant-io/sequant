@@ -616,6 +616,25 @@ async function executePhase(
   // pause/resume is called for every chunk in rapid succession)
   let verboseStreamingActive = false;
 
+  // Activity ping throttle (#543): the agent driver streams text in many small
+  // chunks; the TUI only polls at 10 Hz. Coalesce to one call per ~100ms so
+  // we don't burn the poll budget on snapshot churn.
+  let lastActivityAtMs = 0;
+  const ACTIVITY_THROTTLE_MS = 100;
+  const onActivity = config.onActivity;
+  const reportActivity = onActivity
+    ? (text: string): void => {
+        const now = Date.now();
+        if (now - lastActivityAtMs < ACTIVITY_THROTTLE_MS) return;
+        lastActivityAtMs = now;
+        try {
+          onActivity(text);
+        } catch {
+          // Activity reporting must never disrupt the run.
+        }
+      }
+    : undefined;
+
   // Safety: never resume a session when worktree isolation is active.
   // Even if THIS phase doesn't use the worktree, a previous phase may have
   // created the session there. Resuming from a different cwd crashes the SDK
@@ -633,15 +652,19 @@ async function executePhase(
     mcp: config.mcp,
     sessionId: canResume ? sessionId : undefined,
     files,
-    onOutput: config.verbose
-      ? (text: string) => {
-          if (!verboseStreamingActive) {
-            spinner?.pause();
-            verboseStreamingActive = true;
+    onOutput:
+      config.verbose || reportActivity
+        ? (text: string) => {
+            if (config.verbose) {
+              if (!verboseStreamingActive) {
+                spinner?.pause();
+                verboseStreamingActive = true;
+              }
+              process.stdout.write(chalk.gray(text));
+            }
+            reportActivity?.(text);
           }
-          process.stdout.write(chalk.gray(text));
-        }
-      : undefined,
+        : undefined,
     onStderr: config.verbose
       ? (data: string) => {
           if (!verboseStreamingActive) {
