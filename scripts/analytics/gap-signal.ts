@@ -211,7 +211,13 @@ function fetchIssue(num: number): IssueRecord | null {
       bodyText: data.body ?? "",
       comments: data.comments ?? [],
     };
-  } catch {
+  } catch (err) {
+    // Surface gh failures (rate-limit, auth, network) instead of silently
+    // returning null — silent skips skew action-rate downward and look
+    // identical to "issue has no comments" in the rolled-up output.
+    console.error(
+      `[gap-signal] fetchIssue(${num}) failed: ${(err as Error).message}`,
+    );
     return null;
   }
 }
@@ -231,6 +237,13 @@ function commentPhase(body: string): "qa" | "spec" | "exec" | null {
 
 const NA_RE =
   /\b(N\/A|Not Required|none(?: --? | — | - )|single-call-site|no cross-file siblings|no findings|all clean|nothing material|All \d+ ACs? pass(?:ed)?\s+lint|No (?:issues|anti-patterns|code patterns?) (?:detected|to flag|flagged|applicable)|no vague|all \d+ ACs are specific)/i;
+
+// Excerpts shorter than this are treated as N/A-equivalent. Substantive findings
+// in the QA/spec output format always exceed this length (the shortest real
+// finding observed in the 50-PR window was ~80 chars); shorter slices are
+// boilerplate ("N/A — single-call-site fix.") that the NA_RE above sometimes
+// misses due to phrasing variations.
+const MIN_EXCERPT_LEN = 60;
 
 function extractFlag(
   comment: IssueComment,
@@ -262,7 +275,7 @@ function extractFlag(
     excerpt = (stop > 0 ? slice.slice(0, stop) : slice).trim();
   }
 
-  const triggered = !NA_RE.test(excerpt) && excerpt.length > 60;
+  const triggered = !NA_RE.test(excerpt) && excerpt.length > MIN_EXCERPT_LEN;
   return { triggered, excerpt: excerpt.slice(0, 400) };
 }
 
@@ -316,12 +329,20 @@ interface SkillCost {
 
 export function measureSkillCost(section: SectionDef): SkillCost {
   if (!fs.existsSync(section.skillFile)) {
+    console.error(
+      `[gap-signal] anchor drift: SECTIONS[${section.id}].skillFile not found at ${section.skillFile} — cost row will report 0`,
+    );
     return { lines: 0, words: 0 };
   }
   const content = fs.readFileSync(section.skillFile, "utf-8");
   const lines = content.split("\n");
   const startIdx = lines.findIndex((l) => section.skillSectionAnchor.test(l));
-  if (startIdx < 0) return { lines: 0, words: 0 };
+  if (startIdx < 0) {
+    console.error(
+      `[gap-signal] anchor drift: SECTIONS[${section.id}].skillSectionAnchor did not match in ${section.skillFile} — cost row will report 0 (section may have been renamed)`,
+    );
+    return { lines: 0, words: 0 };
+  }
 
   // End at the next sibling-level header (### or ##)
   let endIdx = lines.length;
