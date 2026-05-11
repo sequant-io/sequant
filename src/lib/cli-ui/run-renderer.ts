@@ -22,6 +22,7 @@ import type {
   IssueRegistration,
   IssueState,
   IssueSummary,
+  PhaseState,
   ProgressEvent,
   RenderOptions,
   RendererMode,
@@ -33,7 +34,11 @@ const DEFAULT_LIVE_TICK_MS = 1000;
 const DEFAULT_NON_TTY_HEARTBEAT_MS = 60_000;
 const NARROW_TERMINAL_THRESHOLD = 80;
 const DEFAULT_MULTI_ISSUE_ROW_CAP = 10;
-const DEFAULT_TERMINAL_ROWS = 24;
+// Generous default: in production, TTY mode always has `process.stdout.rows`
+// set, so this only matters in tests and detached stdout. A high default avoids
+// over-constraining multi-issue test scenarios while keeping the height cap
+// active enough to catch pathological frames.
+const DEFAULT_TERMINAL_ROWS = 100;
 const DEFAULT_MAX_LOOP_ITERATIONS = 3;
 const SUMMARY_COLUMN_CAP = 110;
 const FAILURE_SIGNATURE_LENGTH = 80;
@@ -236,13 +241,16 @@ abstract class BaseRenderer implements RunRenderer {
     state.currentPhase = undefined;
     if (event.error !== undefined) state.failureReason = event.error;
 
-    // #624 Item 4: update failure dedup metadata. A signature is computed even
-    // for empty error strings so consecutive empty failures dedup correctly.
+    // #624 Item 4: update failure dedup metadata on the PHASE (not the issue).
+    // Per-phase tracking ensures "same failure as attempt N" only references
+    // prior attempts of THIS phase — exec failing with "boom" followed by qa
+    // failing with "boom" no longer abbreviates qa as "same failure as attempt 1"
+    // when attempt 1 was an exec failure.
     const sig = failureSignature(event.error);
     const currentAttempt = phase.loopIteration ?? 1;
-    if (state.lastFailureSignature !== sig) {
-      state.lastFailureSignature = sig;
-      state.firstAttemptForSignature = currentAttempt;
+    if (phase.lastFailureSignature !== sig) {
+      phase.lastFailureSignature = sig;
+      phase.firstAttemptForSignature = currentAttempt;
     }
   }
 
@@ -399,12 +407,15 @@ export class NonTTYRenderer extends BaseRenderer {
     } else {
       // #624 Item 4: failure dedup. The third tier (final attempt) emits the
       // full text even when the signature repeats, so divergent failures stay
-      // visible right up to max-iter.
+      // visible right up to max-iter. Dedup state is per-phase so cross-phase
+      // signature collisions don't produce misleading "attempt N" references.
       const attempt = phase?.loopIteration ?? 1;
-      const dedup = decideDedup(state, attempt, this.maxLoopIterations);
-      if (dedup === "abbreviated") {
+      const dedup = phase
+        ? decideDedup(phase, attempt, this.maxLoopIterations)
+        : "full";
+      if (dedup === "abbreviated" && phase) {
         this.emitLine(
-          `${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${state.firstAttemptForSignature})`,
+          `${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${phase.firstAttemptForSignature})`,
         );
       } else {
         const errStr = event.error ? ` ${c.red(event.error)}` : "";
@@ -454,19 +465,23 @@ export class NonTTYRenderer extends BaseRenderer {
 
 /**
  * Three-state machine for failure dedup. Returns "abbreviated" when the
- * incoming failure signature matches the prior one AND we haven't yet reached
- * the final allowed attempt; otherwise "full" so divergence and last-chance
- * failures stay fully visible in the events log.
+ * incoming failure signature matches a prior attempt of THIS phase AND we
+ * haven't yet reached the final allowed attempt; otherwise "full" so
+ * divergence and last-chance failures stay fully visible in the events log.
+ *
+ * Per-phase (not per-issue) so cross-phase signature collisions don't produce
+ * misleading "same failure as attempt N" text — N would otherwise point at a
+ * different phase's attempt.
  */
 function decideDedup(
-  state: IssueState,
+  phase: PhaseState,
   currentAttempt: number,
   maxIterations: number,
 ): "abbreviated" | "full" {
-  // `applyEvent` already updated `lastFailureSignature` and
-  // `firstAttemptForSignature` before the emit code runs. So we dedup when
-  // the first-seen attempt is strictly earlier than the current one.
-  const firstAttempt = state.firstAttemptForSignature;
+  // `applyEvent` already updated `phase.lastFailureSignature` and
+  // `phase.firstAttemptForSignature` before the emit code runs. So we dedup
+  // when the first-seen attempt is strictly earlier than the current one.
+  const firstAttempt = phase.firstAttemptForSignature;
   if (firstAttempt === undefined || firstAttempt >= currentAttempt) {
     return "full";
   }
@@ -485,12 +500,21 @@ function decideDedup(
  * can read `replacementCount` and `lastFrame` to verify the frame is *replaced*
  * on each redraw rather than appended — the foundational guarantee that Items
  * 1 and 2 rely on.
+ *
+ * `clearCalls` / `doneCalls` (added in the hardening pass) let AC-2.2 verify
+ * the renderer actually invokes `logUpdate.clear()` + `logUpdate.done()` during
+ * `renderSummary` teardown — not just that the stub's local `lastFrame` was
+ * reset.
  */
 export interface TTYTestStub {
   /** Number of times the live frame was replaced (not the initial write). */
   readonly replacementCount: number;
   /** The most recent live frame text passed to log-update. */
   readonly lastFrame: string;
+  /** Number of times `logUpdate.clear()` was invoked. */
+  readonly clearCalls: number;
+  /** Number of times `logUpdate.done()` was invoked. */
+  readonly doneCalls: number;
 }
 
 export class TTYRenderer extends BaseRenderer {
@@ -511,6 +535,8 @@ export class TTYRenderer extends BaseRenderer {
   private readonly _testStub: {
     replacementCount: number;
     lastFrame: string;
+    clearCalls: number;
+    doneCalls: number;
   } | null;
 
   constructor(options: RenderOptions) {
@@ -534,7 +560,14 @@ export class TTYRenderer extends BaseRenderer {
     if (options.stdoutWrite) {
       // #624 Derived AC-D1: replacement-aware test stub. Tracks each frame
       // replacement so tests can assert on frame churn without parsing buf.out.
-      const stub = { replacementCount: 0, lastFrame: "" };
+      // `clearCalls` / `doneCalls` verify the renderer actually invokes the
+      // teardown methods (not just resets local state).
+      const stub = {
+        replacementCount: 0,
+        lastFrame: "",
+        clearCalls: 0,
+        doneCalls: 0,
+      };
       this._testStub = stub;
       this.logUpdateImpl = (text: string) => {
         if (stub.lastFrame) stub.replacementCount++;
@@ -542,9 +575,11 @@ export class TTYRenderer extends BaseRenderer {
         options.stdoutWrite!(text + "\n");
       };
       this.logUpdateClear = () => {
+        stub.clearCalls++;
         stub.lastFrame = "";
       };
       this.logUpdateDone = () => {
+        stub.doneCalls++;
         stub.lastFrame = "";
       };
     } else {
@@ -639,12 +674,14 @@ export class TTYRenderer extends BaseRenderer {
       line = `  ${c.green("✔")} #${event.issue} ${event.phase}${retrySuffix}${durStr}${prSuffix}`;
     } else {
       // #624 Item 4: failure dedup. Abbreviated form only fires when the
-      // signature matches a *prior* attempt and we are not at the final
-      // allowed iteration (preserves divergence visibility).
+      // signature matches a *prior* attempt of THIS phase and we are not at
+      // the final allowed iteration (preserves divergence visibility).
       const attempt = phase?.loopIteration ?? 1;
-      const dedup = decideDedup(state, attempt, this.maxLoopIterations);
-      if (dedup === "abbreviated") {
-        line = `  ${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${state.firstAttemptForSignature})`;
+      const dedup = phase
+        ? decideDedup(phase, attempt, this.maxLoopIterations)
+        : "full";
+      if (dedup === "abbreviated" && phase) {
+        line = `  ${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix} (same failure as attempt ${phase.firstAttemptForSignature})`;
       } else {
         const errStr = event.error ? `  ${c.red(event.error)}` : "";
         line = `  ${c.red("✘")} #${event.issue} ${event.phase}${retrySuffix}${errStr}`;
@@ -770,11 +807,11 @@ export class TTYRenderer extends BaseRenderer {
    * frame can still drift over the cap if many issues have multi-line status
    * cells (sub-status + phase sequence). This is the belt-and-braces clamp
    * that guarantees `log-update` never sees a frame taller than the terminal.
+   *
+   * Always engages — when `rows` isn't explicitly provided, `getRows()` returns
+   * `DEFAULT_TERMINAL_ROWS` (100) so the cap is generous but never disengaged.
    */
   private clampFrameHeight(text: string): string {
-    // Skip the clamp when rows wasn't explicitly provided — preserves pre-#624
-    // behavior for tests and detached / piped stdout.
-    if (this.rowsOverride === undefined) return text;
     const lines = text.split("\n");
     const maxRows = this.getMaxLiveRows();
     if (lines.length <= maxRows) return text;
@@ -929,12 +966,12 @@ export class TTYRenderer extends BaseRenderer {
    * lines (header, sub-status, separator); the fixed overhead covers the
    * frame title, blank lines, grid borders, and the rollup row.
    *
-   * The dynamic cap only engages when `rows` was explicitly provided. Without
-   * a known terminal height we cannot bound the live zone safely, so we leave
-   * the static `multiIssueRowCap` in charge — matching pre-#624 behavior.
+   * Always engages — when `rows` isn't explicitly provided, `getRows()` returns
+   * `DEFAULT_TERMINAL_ROWS` (100) which produces a dynamic cap of ~30, well
+   * above the static `multiIssueRowCap` default of 10, so the static cap stays
+   * in charge for normal-height terminals.
    */
   private effectiveRowCap(): number {
-    if (this.rowsOverride === undefined) return this.multiIssueRowCap;
     const LINES_PER_ISSUE = 3;
     const FIXED_OVERHEAD = 8;
     const maxLiveRows = this.getMaxLiveRows();

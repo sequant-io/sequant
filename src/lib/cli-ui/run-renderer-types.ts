@@ -31,6 +31,18 @@ export interface PhaseState {
   durationMs?: number;
   /** Loop iteration label (e.g. "loop 2/3"). */
   loopIteration?: number;
+  /**
+   * #624 Item 4: normalized signature of the most recent failure for THIS
+   * phase (ANSI-stripped, lowercased, first 80 chars, trimmed). Per-phase so
+   * "same failure as attempt N" never references a different phase's attempt.
+   */
+  lastFailureSignature?: string;
+  /**
+   * #624 Item 4: 1-based attempt number for this phase when
+   * `lastFailureSignature` was first observed. Referenced in the abbreviated
+   * form `(attempt N/M, same failure as attempt K)`.
+   */
+  firstAttemptForSignature?: number;
 }
 
 /** Per-issue status tracked inside the renderer state machine. */
@@ -55,18 +67,6 @@ export interface IssueState {
    * and the resolved plan is known.
    */
   autoDetect?: boolean;
-  /**
-   * #624 Item 4: normalized signature of the most recent failure (ANSI-stripped,
-   * lowercased, first 80 chars, trimmed). Used to abbreviate repeated identical
-   * failures in the events log.
-   */
-  lastFailureSignature?: string;
-  /**
-   * #624 Item 4: 1-based attempt number when `lastFailureSignature` was first
-   * observed. Referenced in the abbreviated form
-   * `(attempt N/M, same failure as attempt K)`.
-   */
-  firstAttemptForSignature?: number;
 }
 
 /** Initial registration payload — fed at runner start so queued rows render. */
