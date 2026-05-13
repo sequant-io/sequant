@@ -178,11 +178,18 @@ describe("sequant locks acquire --force --signal-other --skip-pid-check (skill t
   it("takes over an existing skill-shell lock; signal-other prints 'Could not signal' for dead PID", () => {
     // Pre-write a skill lock as if a prior /fullsolve had acquired it and
     // its shell already exited (the canonical skipPidCheck scenario).
+    //
+    // The hostname is intentionally a sentinel non-host string so
+    // signalOther's cross-host short-circuit (lock-manager.ts:289) returns
+    // false WITHOUT invoking process.kill on PID 9999. Previously this used
+    // os.hostname() with pid: 9999, which assumed PID 9999 was dead — on a
+    // busy CI runner PID 9999 can be a live sibling/ancestor process, and
+    // SIGTERMing it killed the CLI mid-spawn → result.status === null (#633).
     writeFileSync(
       join(locksDir, "77.lock"),
       JSON.stringify({
-        pid: 9999, // long-dead PID
-        hostname: require("os").hostname(),
+        pid: 9999,
+        hostname: "definitely-not-this-host",
         startedAt: new Date().toISOString(),
         command: "/fullsolve 77 (prior)",
         skipPidCheck: true,
@@ -212,11 +219,13 @@ describe("sequant locks acquire --force --signal-other --skip-pid-check (skill t
   });
 
   it("--force without --signal-other does NOT print the signal line", () => {
+    // Same sentinel-hostname pattern as the sibling test above (#633), so a
+    // future edit that adds --signal-other here can't regress the flake.
     writeFileSync(
       join(locksDir, "88.lock"),
       JSON.stringify({
         pid: 9999,
-        hostname: require("os").hostname(),
+        hostname: "definitely-not-this-host",
         startedAt: new Date().toISOString(),
         command: "old",
         skipPidCheck: true,
