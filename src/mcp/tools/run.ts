@@ -196,6 +196,29 @@ export async function readLatestRunLog(
 }
 
 /**
+ * Resolve the run log for an MCP `sequant_run` invocation (#631).
+ *
+ * Prefers exact-filename lookup by captured runId; falls back to the
+ * time-window heuristic when no runId was captured (older CLI, startup
+ * race) or when the runId lookup returned null (corrupted file, slow
+ * fsync). On lookup-miss with a captured runId, emit a debug line on
+ * the MCP server's own stderr so the silent fallback is observable.
+ */
+export async function resolveRunLog(
+  capturedRunId: string | null,
+  runStartTime: Date,
+): Promise<RunLog | null> {
+  if (capturedRunId !== null) {
+    const byId = await readRunLogById(capturedRunId);
+    if (byId) return byId;
+    console.error(
+      `[mcp:run] runId ${capturedRunId} lookup miss — falling back to readLatestRunLog`,
+    );
+  }
+  return readLatestRunLog(runStartTime);
+}
+
+/**
  * Build a structured response from a parsed RunLog
  */
 export function buildStructuredResponse(
@@ -374,6 +397,42 @@ export function parseProgressLine(line: string): ProgressEvent | null {
 }
 
 /**
+ * Stateful capture of the per-run UUID emitted on stderr by the spawned
+ * CLI (#631). Each MCP request creates its own capture instance.
+ *
+ * `routeLine` consumes a complete stderr line:
+ * - Until a `SEQUANT_RUN_ID:` line is seen, attempts to capture it.
+ * - After capture (or for non-runId lines), delegates to `parseProgressLine`
+ *   and returns the parsed `ProgressEvent`, if any.
+ *
+ * Returning `ProgressEvent | null` (instead of side-effecting) keeps the
+ * factory pure and lets callers wire emission (`emitProgress`) at the
+ * outer layer. This separation also makes the capture logic directly
+ * testable without driving the full MCP request handler.
+ */
+export function createRunIdCapture(): {
+  routeLine: (line: string) => ProgressEvent | null;
+  getCapturedRunId: () => string | null;
+} {
+  let capturedRunId: string | null = null;
+  return {
+    routeLine(line: string): ProgressEvent | null {
+      if (capturedRunId === null) {
+        const id = parseRunIdLine(line);
+        if (id) {
+          capturedRunId = id;
+          return null;
+        }
+      }
+      return parseProgressLine(line);
+    },
+    getCapturedRunId(): string | null {
+      return capturedRunId;
+    },
+  };
+}
+
+/**
  * Build a human-readable message for a progress notification (AC-3).
  * @internal Exported for testing only.
  */
@@ -539,34 +598,19 @@ export function registerRunTool(server: McpServer): void {
         }
       };
 
-      // Captured runId from the SEQUANT_RUN_ID startup line emitted by the
-      // CLI (#631). When set, we look up the log by exact filename instead of
-      // relying on `readLatestRunLog`'s time-window heuristic.
-      let capturedRunId: string | null = null;
-
-      /**
-       * Handle a complete line of subprocess stderr, routing to:
-       * - parseRunIdLine: captures the run's UUID for exact log lookup (#631)
-       * - parseProgressLine: emits MCP progress notifications when subscribed
-       *
-       * The buffer is always-on so runId capture works for clients that don't
-       * pass a progressToken; emission is still gated inside `emitProgress`.
-       */
+      // Per-request capture of the runId line emitted by the spawned CLI
+      // (#631). `routeLine` also parses progress events; we wire emission
+      // at this layer so the capture factory stays pure / testable.
+      const { routeLine, getCapturedRunId } = createRunIdCapture();
       const handleLine = (line: string): void => {
-        if (capturedRunId === null) {
-          const id = parseRunIdLine(line);
-          if (id) {
-            capturedRunId = id;
-            return;
-          }
-        }
-        const event = parseProgressLine(line);
+        const event = routeLine(line);
         if (event) emitProgress(event);
       };
 
-      // Always create the line buffer so runId capture works regardless of
-      // whether the client provided a progressToken. spawnAsync's internal
-      // progress detection (for timeout reset) is still gated on the token.
+      // `hasProgressToken` no longer gates the line buffer (always-on so
+      // runId capture works without a subscriber); it still gates the
+      // `onProgress` callback below, which controls spawnAsync's
+      // timeout-reset behavior on progress events.
       const hasProgressToken = progressToken !== undefined;
       const stderrLineBuffer = createLineBuffer(handleLine);
 
@@ -599,10 +643,7 @@ export function registerRunTool(server: McpServer): void {
         // Prefer exact-filename lookup by captured runId (#631); fall back to
         // the time-window heuristic when the CLI didn't emit a runId (older
         // CLI, startup race) or the file is not yet visible on disk.
-        const runLog =
-          (capturedRunId !== null
-            ? await readRunLogById(capturedRunId)
-            : null) ?? (await readLatestRunLog(runStartTime));
+        const runLog = await resolveRunLog(getCapturedRunId(), runStartTime);
 
         let response: RunToolResponse;
         if (runLog) {
