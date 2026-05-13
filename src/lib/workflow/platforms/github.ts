@@ -609,7 +609,13 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async createPR(opts: CreatePROptions): Promise<PRInfo> {
-    const result = this.createPRCliSync(opts.title, opts.body, opts.head);
+    const result = this.createPRCliSync(
+      opts.title,
+      opts.body,
+      opts.head,
+      undefined,
+      opts.base,
+    );
 
     if (result.exitCode !== 0) {
       const error = result.stderr.trim() || "Unknown error";

@@ -821,6 +821,9 @@ export class RunOrchestrator {
       let stackManifest: string | undefined;
       if (options.chain && options.stacked) {
         if (i > 0 && i < issueNumbers.length - 1) {
+          // Invariant: chain breaks on prior failure (see `break` below), so the
+          // predecessor's worktree is always in worktreeMap when we reach this
+          // branch. The optional-chained fallback to undefined is unreachable.
           predecessorBranch = this.cfg.worktreeMap.get(
             issueNumbers[i - 1],
           )?.branch;
