@@ -162,6 +162,7 @@ program
   .command("doctor")
   .description("Check your Sequant installation for issues")
   .option("--skip-issue-check", "Skip closed-issue verification check")
+  .option("-q, --quiet", "Suppress informational warnings")
   .action(doctorCommand);
 
 program

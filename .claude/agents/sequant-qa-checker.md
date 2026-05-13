@@ -1,7 +1,8 @@
 ---
 name: sequant-qa-checker
 description: Quality check agent for sequant /qa phase. Runs type safety, scope/size, security, and documentation checks on diffs. Use when spawned by the /qa skill to perform parallel or sequential quality checks.
-model: haiku
+# Note: per anthropics/claude-code#43869 this is currently a no-op; agent runs on parent's model
+model: sonnet
 permissionMode: bypassPermissions
 effort: low
 maxTurns: 15

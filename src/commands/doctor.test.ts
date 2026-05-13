@@ -57,8 +57,18 @@ vi.mock("../lib/settings.js", () => ({
         retry: true,
         staleBranchThreshold: 5,
       },
+      agents: {
+        parallel: false,
+        model: "haiku",
+        isolateParallel: false,
+      },
     }),
   ),
+  DEFAULT_AGENT_SETTINGS: {
+    parallel: false,
+    model: "haiku",
+    isolateParallel: false,
+  },
 }));
 
 // Mock MCP server (for MCP server health check)
@@ -103,7 +113,11 @@ vi.mock("../lib/system.js", () => ({
   ],
 }));
 
-import { doctorCommand, checkClosedIssues } from "./doctor.js";
+import {
+  doctorCommand,
+  checkClosedIssues,
+  UPSTREAM_SUBAGENT_WARNING,
+} from "./doctor.js";
 import { fileExists, isExecutable, readFile } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -115,6 +129,9 @@ import {
   getMcpServersConfig,
 } from "../lib/system.js";
 import { readAgentsMd, checkAgentsMdConsistency } from "../lib/agents-md.js";
+import { getSettings } from "../lib/settings.js";
+
+const mockGetSettings = vi.mocked(getSettings);
 
 const mockFileExists = vi.mocked(fileExists);
 const mockIsExecutable = vi.mocked(isExecutable);
@@ -643,6 +660,89 @@ describe("doctor command", () => {
       expect(output).toContain(
         "All recently closed issues have commits in main",
       );
+    });
+  });
+
+  describe("upstream subagent routing warning (AC-2, AC-4)", () => {
+    it("emits the #43869 warning line and link by default", async () => {
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("43869");
+      expect(output).toContain(UPSTREAM_SUBAGENT_WARNING.primary);
+      expect(output).toContain(UPSTREAM_SUBAGENT_WARNING.url);
+    });
+
+    it("suppresses the warning when --quiet is passed", async () => {
+      await doctorCommand({ quiet: true });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain(UPSTREAM_SUBAGENT_WARNING.primary);
+      expect(output).not.toContain("43869");
+    });
+
+    it("does NOT append the inert-field note when agents.model is default (haiku)", async () => {
+      mockGetSettings.mockResolvedValueOnce({
+        version: "1.0",
+        run: {
+          logJson: true,
+          logPath: ".sequant/logs",
+          autoDetectPhases: true,
+          timeout: 1800,
+          sequential: false,
+          qualityLoop: false,
+          maxIterations: 3,
+          smartTests: true,
+          rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+          mcp: true,
+          retry: true,
+          staleBranchThreshold: 5,
+        },
+        agents: {
+          parallel: false,
+          model: "haiku",
+          isolateParallel: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("43869");
+      expect(output).not.toContain(UPSTREAM_SUBAGENT_WARNING.inertFieldNote);
+    });
+
+    it("appends the inert-field note when agents.model differs from default", async () => {
+      mockGetSettings.mockResolvedValueOnce({
+        version: "1.0",
+        run: {
+          logJson: true,
+          logPath: ".sequant/logs",
+          autoDetectPhases: true,
+          timeout: 1800,
+          sequential: false,
+          qualityLoop: false,
+          maxIterations: 3,
+          smartTests: true,
+          rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+          mcp: true,
+          retry: true,
+          staleBranchThreshold: 5,
+        },
+        agents: {
+          parallel: false,
+          model: "opus",
+          isolateParallel: false,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain(UPSTREAM_SUBAGENT_WARNING.inertFieldNote);
+      expect(output).toContain("#43869");
     });
   });
 });

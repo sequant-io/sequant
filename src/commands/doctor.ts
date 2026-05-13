@@ -17,7 +17,7 @@ import {
   getMcpServersConfig,
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
-import { getSettings } from "../lib/settings.js";
+import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
   getVersionWarning,
@@ -39,6 +39,45 @@ interface Check {
 
 export interface DoctorOptions {
   skipIssueCheck?: boolean;
+  /** Suppress informational warnings (e.g., upstream subagent routing notice) */
+  quiet?: boolean;
+}
+
+// TODO: remove when anthropics/claude-code#43869 closes
+/**
+ * Upstream subagent routing bug notice (anthropics/claude-code#43869).
+ * Subagent `model:` declarations are silently ignored; agents run on the
+ * parent session's model. Exported as a constant so tests can match it.
+ */
+export const UPSTREAM_SUBAGENT_WARNING = {
+  primary:
+    "WARN: Claude Code #43869 — subagent model: declarations are ignored. Agents currently run on parent model.",
+  url: "https://github.com/anthropics/claude-code/issues/43869",
+  inertFieldNote: "Note: agents.model is currently inert (see #43869).",
+} as const;
+
+/**
+ * Emit the upstream subagent-routing bug notice and (when applicable) the
+ * `agents.model` inert-field note. Honors `--quiet`.
+ *
+ * AC-2: primary line + link, suppressible via `quiet`.
+ * AC-4: when the user's `agents.model` differs from the shipped default,
+ * append a second-line note flagging the field as inert.
+ */
+export function emitUpstreamWarning(opts: {
+  quiet?: boolean;
+  agentsModel: string;
+  defaultAgentsModel: string;
+}): void {
+  if (opts.quiet) return;
+  console.log("");
+  console.log(chalk.yellow(`  !  ${UPSTREAM_SUBAGENT_WARNING.primary}`));
+  console.log(chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.url}`));
+  if (opts.agentsModel !== opts.defaultAgentsModel) {
+    console.log(
+      chalk.yellow(`     ${UPSTREAM_SUBAGENT_WARNING.inertFieldNote}`),
+    );
+  }
 }
 
 /**
@@ -559,6 +598,13 @@ export async function doctorCommand(
     else if (check.status === "warn") warnCount++;
     else failCount++;
   }
+
+  // Upstream subagent routing notice (AC-2/AC-4)
+  emitUpstreamWarning({
+    quiet: options.quiet,
+    agentsModel: settings.agents.model,
+    defaultAgentsModel: DEFAULT_AGENT_SETTINGS.model,
+  });
 
   // Summary with boxed output
   const totalChecks = passCount + warnCount + failCount;

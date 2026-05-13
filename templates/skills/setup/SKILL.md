@@ -190,6 +190,12 @@ Create `.sequant/settings.json` with sensible defaults:
 }
 ```
 
+> **Note:** `agents.model` is currently **inert** per
+> [anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869).
+> Subagents inherit the parent session's model regardless of this value. The
+> field is kept for forward compatibility so existing settings.json files
+> continue to parse without error.
+
 Use the Write tool to create `.sequant/settings.json` with the above content.
 
 ### 5. Detect Package Manager

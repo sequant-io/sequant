@@ -91,7 +91,7 @@ After `/sequant:setup`, edit `.sequant/settings.json` to customize:
 | `run.pmRun` | Package manager run command | auto-detected |
 | `run.devUrl` | Dev server URL for `/test` | auto-detected |
 | `agents.parallel` | Parallel sub-agent execution | `false` |
-| `agents.model` | Sub-agent model | `"haiku"` |
+| `agents.model` | Sub-agent model (currently inert — see [anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869); kept for forward compatibility) | `"haiku"` |
 
 ## MCP Server Details
 
