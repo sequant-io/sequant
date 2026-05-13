@@ -253,11 +253,16 @@ function displayIssueSummary(issues: IssueState[]): void {
             `→ ${hint.length > 30 ? hint.substring(0, 27) + "..." : hint}`,
           )
         : "";
+      // Relay column (#383). Shows ✓ when active, "-" otherwise.
+      const relayDisplay = issue.relay?.enabled
+        ? chalk.green("on")
+        : chalk.gray("-");
       rows.push([
         `#${issue.number}`,
         title,
         colorStatus(issue.status, issue.resolvedAt),
         issue.currentPhase || "-",
+        relayDisplay,
         hintDisplay,
       ]);
     }
@@ -272,6 +277,7 @@ function displayIssueSummary(issues: IssueState[]): void {
           { header: "Title", width: 32 },
           { header: "Status", width: 20 },
           { header: "Phase", width: 10 },
+          { header: "Relay", width: 5 },
           { header: "Next", width: 34 },
         ],
       }),

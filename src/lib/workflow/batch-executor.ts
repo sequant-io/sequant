@@ -38,6 +38,11 @@ import {
   determinePhasesForIssue,
   DOCS_LABELS,
 } from "./phase-mapper.js";
+import {
+  activateRelay,
+  deactivateRelay,
+  type ActivationResult,
+} from "../relay/activation.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -467,6 +472,31 @@ export async function runIssueWithLogging(
     }
   }
 
+  // Activate relay (#383) if enabled. Tolerates errors — relay must never
+  // block the underlying run.
+  let relayActivation: ActivationResult | null = null;
+  if (config.relayEnabled && !config.dryRun) {
+    try {
+      relayActivation = await activateRelay(issueNumber, {
+        worktreePath,
+        stateManager: stateManager ?? null,
+      });
+      if (relayActivation.warning && config.verbose) {
+        log(chalk.yellow(`    !  Relay: ${relayActivation.warning}`));
+      } else if (relayActivation.activated && config.verbose) {
+        log(
+          chalk.gray(
+            `    Relay active — use \`sequant prompt ${issueNumber} "<msg>"\` to nudge`,
+          ),
+        );
+      }
+    } catch (err) {
+      if (config.verbose) {
+        log(chalk.yellow(`    !  Relay activation failed: ${err}`));
+      }
+    }
+  }
+
   // Determine phases for this specific issue
   let phases: Phase[];
   let detectedQualityLoop = false;
@@ -599,6 +629,19 @@ export async function runIssueWithLogging(
 
     if (!specResult.success) {
       const durationSeconds = (Date.now() - startTime) / 1000;
+      // Archive relay state on early exit (spec failure).
+      if (relayActivation) {
+        try {
+          await deactivateRelay(issueNumber, {
+            phase: "spec",
+            startedAt: relayActivation.startedAt,
+            worktreePath,
+            stateManager: stateManager ?? null,
+          });
+        } catch {
+          /* swallow */
+        }
+      }
       return {
         issueNumber,
         success: false,
@@ -1050,6 +1093,23 @@ export async function runIssueWithLogging(
         } catch {
           // State tracking errors shouldn't stop execution
         }
+      }
+    }
+  }
+
+  // Deactivate relay (#383) — archive inbox/outbox transcripts to
+  // .sequant/logs/relay/ before worktree teardown (AC-D2). Never throws.
+  if (relayActivation) {
+    try {
+      await deactivateRelay(issueNumber, {
+        phase: phaseResults[phaseResults.length - 1]?.phase ?? "exec",
+        startedAt: relayActivation.startedAt,
+        worktreePath,
+        stateManager: stateManager ?? null,
+      });
+    } catch (err) {
+      if (config.verbose) {
+        log(chalk.yellow(`    !  Relay deactivation failed: ${err}`));
       }
     }
   }

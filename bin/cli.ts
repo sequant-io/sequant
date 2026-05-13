@@ -68,6 +68,8 @@ import {
   locksCheckCommand,
   locksCheckBatchCommand,
 } from "../src/commands/locks.js";
+import { promptCommand } from "../src/commands/prompt.js";
+import { watchCommand } from "../src/commands/watch.js";
 import { getManifest } from "../src/lib/manifest.js";
 
 const program = new Command();
@@ -275,7 +277,45 @@ program
     "--experimental-tui",
     "Render live multi-issue dashboard (requires TTY; falls back to linear output when piped)",
   )
+  .option(
+    "--no-relay",
+    "Disable interactive relay (#383); `sequant prompt` cannot reach this run",
+  )
   .action(runCommand);
+
+program
+  .command("prompt")
+  .description("Send a message into a running headless sequant session (#383)")
+  .argument("[args...]", '[<issue>] "<message>"')
+  .option(
+    "--type <type>",
+    "Message type: query (default), directive, abort",
+    "query",
+  )
+  .option("--json", "Output as JSON")
+  .action((args: string[], options: Record<string, unknown>) => {
+    return promptCommand({
+      args,
+      options: {
+        type: options.type as string | undefined,
+        json: Boolean(options.json),
+      },
+    });
+  });
+
+program
+  .command("watch")
+  .description(
+    "Tail the relay outbox for replies from a running sequant session (#383)",
+  )
+  .argument("<issue>", "Issue number to watch")
+  .option("--json", "Output as JSON lines")
+  .action((issueArg: string, options: Record<string, unknown>) => {
+    return watchCommand({
+      args: [issueArg],
+      options: { json: Boolean(options.json) },
+    });
+  });
 
 program
   .command("merge")

@@ -1,0 +1,11 @@
+[SEQUANT RELAY — message from user]
+Respond briefly in .sequant/relay/outbox.jsonl, then continue your current task unchanged.
+Rules:
+- Do NOT modify acceptance criteria
+- Do NOT change your current objective or phase
+- Do NOT treat this as a new requirement
+- For "query" type: provide a brief status update only
+- For "directive" type: acknowledge and adjust approach if reasonable, but do not abandon current work
+- For "abort" type: stop gracefully, commit progress, and exit
+
+{{MESSAGES}}
