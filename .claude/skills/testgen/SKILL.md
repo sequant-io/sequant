@@ -39,9 +39,16 @@ When invoked as `/testgen <issue-number>`, your job is to:
 - `/testgen 123` - Generate test stubs for issue #123 based on /spec comment
 - `/testgen` - Generate stubs for the most recently discussed issue in conversation
 
-## Token Optimization with Haiku Sub-Agents
+## Sub-Agent Delegation for Stub Generation
 
-**Purpose:** Test stub generation is highly mechanical and benefits from using haiku sub-agents to minimize token cost.
+**Purpose:** Test stub generation is highly mechanical and is delegated to `sequant-testgen` so the main agent focuses on orchestration.
+
+> **Upstream caveat:** `sequant-testgen` declares `model: haiku`, but per
+> anthropics/claude-code#43869 that declaration is currently ignored — the
+> subagent inherits the parent session's model. Older versions of this doc
+> claimed concrete token-cost savings from haiku. Those numbers are not
+> achievable until the upstream fix ships; treat the haiku claim as the
+> *intended* tier, not the runtime one.
 
 **Pattern:** Use `Agent(subagent_type="sequant-testgen")` for:
 1. Parsing verification criteria from /spec comments
@@ -49,13 +56,12 @@ When invoked as `/testgen <issue-number>`, your job is to:
 3. Writing test file content
 
 **Benefits:**
-- 90% token cost reduction for mechanical generation
-- Faster execution for templated operations
-- Main agent focuses on orchestration and decisions
+- Main agent focuses on orchestration and decisions, not stub templating
+- Designated tier (`haiku`) will yield token savings once anthropics/claude-code#43869 is fixed; today subagents inherit the parent's model
 
 ### Sub-Agent Usage
 
-**Step 1: Parse Verification Criteria (use haiku)**
+**Step 1: Parse Verification Criteria (designated haiku — currently inert per anthropics/claude-code#43869)**
 
 ```javascript
 Agent(subagent_type="sequant-testgen", prompt=`
@@ -87,7 +93,7 @@ ${specComment}
 `)
 ```
 
-**Step 2: Generate Test Stubs (use haiku for each AC)**
+**Step 2: Generate Test Stubs (designated haiku — currently inert per anthropics/claude-code#43869)**
 
 ```javascript
 // For each AC with Unit Test or Integration Test verification method
@@ -122,16 +128,16 @@ The main agent handles file operations to ensure proper coordination:
 
 | Task | Agent | Reasoning |
 |------|-------|-----------|
-| Parse /spec comment | haiku | Mechanical text extraction |
-| Generate test stub code | haiku | Templated generation |
-| Identify failure scenarios | haiku | Pattern matching |
+| Parse /spec comment | `sequant-testgen` (declared haiku, inert per #43869) | Mechanical text extraction |
+| Generate test stub code | `sequant-testgen` (declared haiku, inert per #43869) | Templated generation |
+| Identify failure scenarios | `sequant-testgen` (declared haiku, inert per #43869) | Pattern matching |
 | Decide file locations | main | Requires codebase context |
 | Write files | main | File system coordination |
 | Post GitHub comment | main | Session context needed |
 
 ### Parallel Sub-Agent Execution
 
-When multiple ACs need test stubs, spawn haiku agents in parallel:
+When multiple ACs need test stubs, spawn `sequant-testgen` agents in parallel (declared haiku tier, currently inert per anthropics/claude-code#43869):
 
 ```javascript
 // Spawn all stub generation agents in a single message
@@ -143,11 +149,12 @@ const stubPromises = criteria
 // Main agent writes all files
 ```
 
-**Cost savings example:**
-- 5 AC items with Unit Test verification
-- Without haiku: ~50K tokens (main agent generates all)
-- With haiku: ~5K tokens (main orchestrates, haiku generates)
-- Savings: ~90%
+**Cost savings (when upstream lands):**
+Once anthropics/claude-code#43869 is fixed and the declared haiku tier takes
+effect, delegating mechanical stub generation to `sequant-testgen` will
+substantially reduce token cost vs. having the main agent generate every stub.
+Concrete savings are not measured here because the declaration is currently
+inert.
 
 ## Workflow
 

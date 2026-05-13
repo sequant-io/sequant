@@ -1,6 +1,7 @@
 ---
 name: sequant-testgen
 description: Test stub generator for sequant /testgen phase. Parses verification criteria from /spec comments and generates Jest/Vitest test stubs with Given/When/Then structure. Use when spawned by the /testgen skill.
+# Note: per anthropics/claude-code#43869 this is currently a no-op; agent runs on parent's model
 model: haiku
 maxTurns: 25
 tools:

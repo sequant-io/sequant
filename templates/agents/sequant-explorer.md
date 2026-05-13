@@ -1,6 +1,7 @@
 ---
 name: sequant-explorer
 description: Codebase exploration agent for sequant /spec phase. Searches for existing patterns, components, database schemas, and file structures. Use when gathering context before planning a feature implementation.
+# Note: per anthropics/claude-code#43869 this is currently a no-op; agent runs on parent's model
 model: haiku
 maxTurns: 15
 tools:
