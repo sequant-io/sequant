@@ -128,6 +128,29 @@ function resolveLogDir(): string {
 }
 
 /**
+ * Find and parse a run log file by its exact runId suffix (#631).
+ *
+ * Avoids the recency-window heuristic in `readLatestRunLog`, which can
+ * return another concurrent run's log or a stale same-issue log when
+ * filesystem ordering doesn't favor the current run.
+ *
+ * Returns null on miss, parse failure, or I/O error (no new failure mode).
+ */
+export async function readRunLogById(runId: string): Promise<RunLog | null> {
+  try {
+    const logDir = resolveLogDir();
+    const entries = await readdir(logDir);
+    // Filename format: run-<timestamp>-<runId>.json — match by exact suffix.
+    const match = entries.find((f) => f.endsWith(`-${runId}.json`));
+    if (!match) return null;
+    const content = await readFile(join(logDir, match), "utf-8");
+    return RunLogSchema.parse(JSON.parse(content));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Find and parse the most recent run log file.
  *
  * When runStartTime is provided, only log files created within
@@ -170,6 +193,29 @@ export async function readLatestRunLog(
   } catch {
     return null;
   }
+}
+
+/**
+ * Resolve the run log for an MCP `sequant_run` invocation (#631).
+ *
+ * Prefers exact-filename lookup by captured runId; falls back to the
+ * time-window heuristic when no runId was captured (older CLI, startup
+ * race) or when the runId lookup returned null (corrupted file, slow
+ * fsync). On lookup-miss with a captured runId, emit a debug line on
+ * the MCP server's own stderr so the silent fallback is observable.
+ */
+export async function resolveRunLog(
+  capturedRunId: string | null,
+  runStartTime: Date,
+): Promise<RunLog | null> {
+  if (capturedRunId !== null) {
+    const byId = await readRunLogById(capturedRunId);
+    if (byId) return byId;
+    console.error(
+      `[mcp:run] runId ${capturedRunId} lookup miss — falling back to readLatestRunLog`,
+    );
+  }
+  return readLatestRunLog(runStartTime);
 }
 
 /**
@@ -288,6 +334,24 @@ function buildFallbackResponse(
 /** Prefix used by the batch executor to emit structured progress lines. */
 const PROGRESS_LINE_PREFIX = "SEQUANT_PROGRESS:";
 
+/** Prefix used by the batch executor to emit the current run's UUID (#631). */
+const RUN_ID_LINE_PREFIX = "SEQUANT_RUN_ID:";
+
+/** UUID v4 pattern produced by `crypto.randomUUID()`. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Parse a SEQUANT_RUN_ID line emitted by the batch executor (#631).
+ * Returns the runId UUID or null if the line isn't a runId line or the
+ * payload isn't a well-formed UUID.
+ */
+export function parseRunIdLine(line: string): string | null {
+  if (!line.startsWith(RUN_ID_LINE_PREFIX)) return null;
+  const id = line.slice(RUN_ID_LINE_PREFIX.length).trim();
+  return UUID_RE.test(id) ? id : null;
+}
+
 /** Parsed progress event from a SEQUANT_PROGRESS line. */
 export interface ProgressEvent {
   issue: number;
@@ -330,6 +394,42 @@ export function parseProgressLine(line: string): ProgressEvent | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Stateful capture of the per-run UUID emitted on stderr by the spawned
+ * CLI (#631). Each MCP request creates its own capture instance.
+ *
+ * `routeLine` consumes a complete stderr line:
+ * - Until a `SEQUANT_RUN_ID:` line is seen, attempts to capture it.
+ * - After capture (or for non-runId lines), delegates to `parseProgressLine`
+ *   and returns the parsed `ProgressEvent`, if any.
+ *
+ * Returning `ProgressEvent | null` (instead of side-effecting) keeps the
+ * factory pure and lets callers wire emission (`emitProgress`) at the
+ * outer layer. This separation also makes the capture logic directly
+ * testable without driving the full MCP request handler.
+ */
+export function createRunIdCapture(): {
+  routeLine: (line: string) => ProgressEvent | null;
+  getCapturedRunId: () => string | null;
+} {
+  let capturedRunId: string | null = null;
+  return {
+    routeLine(line: string): ProgressEvent | null {
+      if (capturedRunId === null) {
+        const id = parseRunIdLine(line);
+        if (id) {
+          capturedRunId = id;
+          return null;
+        }
+      }
+      return parseProgressLine(line);
+    },
+    getCapturedRunId(): string | null {
+      return capturedRunId;
+    },
+  };
 }
 
 /**
@@ -498,22 +598,21 @@ export function registerRunTool(server: McpServer): void {
         }
       };
 
-      /**
-       * Handle a complete line of subprocess stderr, checking for progress events.
-       * The batch executor emits SEQUANT_PROGRESS:{json} lines at phase boundaries.
-       */
+      // Per-request capture of the runId line emitted by the spawned CLI
+      // (#631). `routeLine` also parses progress events; we wire emission
+      // at this layer so the capture factory stays pure / testable.
+      const { routeLine, getCapturedRunId } = createRunIdCapture();
       const handleLine = (line: string): void => {
-        const event = parseProgressLine(line);
+        const event = routeLine(line);
         if (event) emitProgress(event);
       };
 
-      // Line-buffer stderr to handle chunk boundaries correctly.
-      // When a progressToken is present, we also enable spawnAsync's
-      // internal progress detection for timeout reset (AC-4).
+      // `hasProgressToken` no longer gates the line buffer (always-on so
+      // runId capture works without a subscriber); it still gates the
+      // `onProgress` callback below, which controls spawnAsync's
+      // timeout-reset behavior on progress events.
       const hasProgressToken = progressToken !== undefined;
-      const stderrLineBuffer = hasProgressToken
-        ? createLineBuffer(handleLine)
-        : undefined;
+      const stderrLineBuffer = createLineBuffer(handleLine);
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -540,8 +639,11 @@ export function registerRunTool(server: McpServer): void {
         const overallStatus: "success" | "failure" =
           result.exitCode === 0 ? "success" : "failure";
 
-        // Try to read structured log file for rich per-issue data
-        const runLog = await readLatestRunLog(runStartTime);
+        // Try to read structured log file for rich per-issue data.
+        // Prefer exact-filename lookup by captured runId (#631); fall back to
+        // the time-window heuristic when the CLI didn't emit a runId (older
+        // CLI, startup race) or the file is not yet visible on disk.
+        const runLog = await resolveRunLog(getCapturedRunId(), runStartTime);
 
         let response: RunToolResponse;
         if (runLog) {
