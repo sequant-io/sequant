@@ -128,6 +128,29 @@ function resolveLogDir(): string {
 }
 
 /**
+ * Find and parse a run log file by its exact runId suffix (#631).
+ *
+ * Avoids the recency-window heuristic in `readLatestRunLog`, which can
+ * return another concurrent run's log or a stale same-issue log when
+ * filesystem ordering doesn't favor the current run.
+ *
+ * Returns null on miss, parse failure, or I/O error (no new failure mode).
+ */
+export async function readRunLogById(runId: string): Promise<RunLog | null> {
+  try {
+    const logDir = resolveLogDir();
+    const entries = await readdir(logDir);
+    // Filename format: run-<timestamp>-<runId>.json — match by exact suffix.
+    const match = entries.find((f) => f.endsWith(`-${runId}.json`));
+    if (!match) return null;
+    const content = await readFile(join(logDir, match), "utf-8");
+    return RunLogSchema.parse(JSON.parse(content));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Find and parse the most recent run log file.
  *
  * When runStartTime is provided, only log files created within
@@ -287,6 +310,24 @@ function buildFallbackResponse(
 }
 /** Prefix used by the batch executor to emit structured progress lines. */
 const PROGRESS_LINE_PREFIX = "SEQUANT_PROGRESS:";
+
+/** Prefix used by the batch executor to emit the current run's UUID (#631). */
+const RUN_ID_LINE_PREFIX = "SEQUANT_RUN_ID:";
+
+/** UUID v4 pattern produced by `crypto.randomUUID()`. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Parse a SEQUANT_RUN_ID line emitted by the batch executor (#631).
+ * Returns the runId UUID or null if the line isn't a runId line or the
+ * payload isn't a well-formed UUID.
+ */
+export function parseRunIdLine(line: string): string | null {
+  if (!line.startsWith(RUN_ID_LINE_PREFIX)) return null;
+  const id = line.slice(RUN_ID_LINE_PREFIX.length).trim();
+  return UUID_RE.test(id) ? id : null;
+}
 
 /** Parsed progress event from a SEQUANT_PROGRESS line. */
 export interface ProgressEvent {
@@ -498,22 +539,36 @@ export function registerRunTool(server: McpServer): void {
         }
       };
 
+      // Captured runId from the SEQUANT_RUN_ID startup line emitted by the
+      // CLI (#631). When set, we look up the log by exact filename instead of
+      // relying on `readLatestRunLog`'s time-window heuristic.
+      let capturedRunId: string | null = null;
+
       /**
-       * Handle a complete line of subprocess stderr, checking for progress events.
-       * The batch executor emits SEQUANT_PROGRESS:{json} lines at phase boundaries.
+       * Handle a complete line of subprocess stderr, routing to:
+       * - parseRunIdLine: captures the run's UUID for exact log lookup (#631)
+       * - parseProgressLine: emits MCP progress notifications when subscribed
+       *
+       * The buffer is always-on so runId capture works for clients that don't
+       * pass a progressToken; emission is still gated inside `emitProgress`.
        */
       const handleLine = (line: string): void => {
+        if (capturedRunId === null) {
+          const id = parseRunIdLine(line);
+          if (id) {
+            capturedRunId = id;
+            return;
+          }
+        }
         const event = parseProgressLine(line);
         if (event) emitProgress(event);
       };
 
-      // Line-buffer stderr to handle chunk boundaries correctly.
-      // When a progressToken is present, we also enable spawnAsync's
-      // internal progress detection for timeout reset (AC-4).
+      // Always create the line buffer so runId capture works regardless of
+      // whether the client provided a progressToken. spawnAsync's internal
+      // progress detection (for timeout reset) is still gated on the token.
       const hasProgressToken = progressToken !== undefined;
-      const stderrLineBuffer = hasProgressToken
-        ? createLineBuffer(handleLine)
-        : undefined;
+      const stderrLineBuffer = createLineBuffer(handleLine);
 
       // Register all issues as active runs for real-time status polling
       for (const issue of issues) {
@@ -540,8 +595,14 @@ export function registerRunTool(server: McpServer): void {
         const overallStatus: "success" | "failure" =
           result.exitCode === 0 ? "success" : "failure";
 
-        // Try to read structured log file for rich per-issue data
-        const runLog = await readLatestRunLog(runStartTime);
+        // Try to read structured log file for rich per-issue data.
+        // Prefer exact-filename lookup by captured runId (#631); fall back to
+        // the time-window heuristic when the CLI didn't emit a runId (older
+        // CLI, startup race) or the file is not yet visible on disk.
+        const runLog =
+          (capturedRunId !== null
+            ? await readRunLogById(capturedRunId)
+            : null) ?? (await readLatestRunLog(runStartTime));
 
         let response: RunToolResponse;
         if (runLog) {
