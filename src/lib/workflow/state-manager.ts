@@ -33,6 +33,7 @@ import {
   type PRInfo,
   type AcceptanceCriteria,
   type ACStatus,
+  type RelayState,
   WorkflowStateSchema,
   STATE_FILE_PATH,
   createEmptyState,
@@ -510,6 +511,49 @@ export class StateManager {
       issueState.sessionId = sessionId;
       issueState.lastActivity = new Date().toISOString();
 
+      await this.saveState(state);
+    });
+  }
+
+  /**
+   * Set or clear the relay state for an issue (#383).
+   *
+   * Pass `null` to remove the relay field entirely (deactivation). Pass an
+   * object to overwrite the current relay state (activation or refresh).
+   */
+  async setRelayState(
+    issueNumber: number,
+    relay: RelayState | null,
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
+      if (relay === null) {
+        delete issueState.relay;
+      } else {
+        issueState.relay = relay;
+      }
+      issueState.lastActivity = new Date().toISOString();
+      await this.saveState(state);
+    });
+  }
+
+  /**
+   * Increment the relay message counter. No-op when relay isn't active.
+   */
+  async incrementRelayMessageCount(
+    issueNumber: number,
+    delta: number = 1,
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState || !issueState.relay) return;
+      issueState.relay.messageCount += delta;
+      issueState.lastActivity = new Date().toISOString();
       await this.saveState(state);
     });
   }

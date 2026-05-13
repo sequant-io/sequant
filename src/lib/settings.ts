@@ -156,6 +156,13 @@ export interface RunSettings {
    * Aider-specific configuration. Only used when agent is "aider".
    */
   aider?: AiderSettings;
+  /**
+   * Enable interactive relay (#383): file-based IPC that lets a user terminal
+   * send `query`/`directive`/`abort` messages into a running headless session
+   * via the PostToolUse hook. Disable with `--no-relay`.
+   * Default: true.
+   */
+  relay?: boolean;
 }
 
 /**
@@ -304,6 +311,7 @@ export const RunSettingsSchema = z.object({
   devUrl: z.string().optional(),
   agent: z.string().optional(),
   aider: AiderSettingsSchema.optional(),
+  relay: z.boolean().default(true),
 });
 
 /** Zod schema for ScopeThreshold (base — fields required, no defaults) */
@@ -452,6 +460,7 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "devUrl",
     "agent",
     "aider",
+    "relay",
   ]),
   agents: new Set(["parallel", "model", "isolateParallel"]),
   scopeAssessment: new Set([
@@ -643,6 +652,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     retry: true, // Enable automatic retry with MCP fallback by default
     staleBranchThreshold: 5, // Block QA/test if feature is >5 commits behind main
     resolvedIssueTTL: 7, // Auto-prune resolved issues after 7 days
+    relay: true, // Enable interactive relay (#383) by default
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
