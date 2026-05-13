@@ -210,6 +210,21 @@ export const QAStagnationEntrySchema = z.object({
 export type QAStagnationEntry = z.infer<typeof QAStagnationEntrySchema>;
 
 /**
+ * Optional relay state for the interactive bidirectional channel (#383).
+ *
+ * Present when `sequant run` has activated the relay for an issue, absent
+ * otherwise. Legacy state files (no relay field) still parse successfully.
+ */
+export const RelayStateSchema = z.object({
+  enabled: z.boolean(),
+  pid: z.number().int().positive(),
+  startedAt: z.string().datetime(),
+  messageCount: z.number().int().nonnegative(),
+});
+
+export type RelayState = z.infer<typeof RelayStateSchema>;
+
+/**
  * Complete state for a single issue
  */
 export const IssueStateSchema = z.object({
@@ -237,6 +252,8 @@ export const IssueStateSchema = z.object({
   scopeAssessment: ScopeAssessmentSchema.optional(),
   /** QA stagnation log: same-SHA same-verdict cycles detected during fullsolve */
   qaStagnation: z.array(QAStagnationEntrySchema).optional(),
+  /** Relay state (#383); present when bidirectional relay is active */
+  relay: RelayStateSchema.optional(),
   /** Claude session ID (for resume) */
   sessionId: z.string().optional(),
   /** When the issue transitioned to a terminal status (merged/abandoned/closed) */

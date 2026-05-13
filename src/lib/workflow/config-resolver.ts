@@ -212,6 +212,11 @@ export function buildExecutionConfig(
   const isSequential = mergedOptions.sequential ?? false;
   const isParallel = !isSequential && issueCount > 1;
 
+  // `--no-relay` arrives from Commander as `mergedOptions.relay === false`;
+  // explicit `false` overrides settings, otherwise settings/default win.
+  const relayEnabled =
+    mergedOptions.relay === false ? false : (settings.run.relay ?? true);
+
   return {
     ...DEFAULT_CONFIG,
     phases: explicitPhases ?? DEFAULT_PHASES,
@@ -229,5 +234,6 @@ export function buildExecutionConfig(
     agent: mergedOptions.agent ?? settings.run.agent,
     aiderSettings: settings.run.aider,
     isolateParallel: mergedOptions.isolateParallel,
+    relayEnabled,
   };
 }

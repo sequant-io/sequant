@@ -656,6 +656,22 @@ async function executePhase(
     env.SEQUANT_ISOLATE_PARALLEL = "true";
   }
 
+  // Activate interactive relay (#383) unless explicitly disabled.
+  // `relay-check.sh` (sourced from post-tool.sh) reads this env var on every
+  // tool call. Disabled by default in non-interactive scenarios — controlled
+  // via `settings.run.relay` (true by default).
+  if (config.relayEnabled) {
+    env.SEQUANT_RELAY = "true";
+    try {
+      const { resolveBundledFramePath } =
+        await import("../relay/activation.js");
+      const framePath = resolveBundledFramePath();
+      if (framePath) env.SEQUANT_RELAY_FRAME = framePath;
+    } catch {
+      /* relay module unavailable — fall back to bash's search heuristic. */
+    }
+  }
+
   // Track whether we're actively streaming verbose output
   // Pausing spinner once per streaming session prevents truncation from rapid pause/resume cycles
   // (Issue #283: ora's stop() clears the current line, which can truncate output when

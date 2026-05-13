@@ -114,6 +114,13 @@ export interface ExecutionConfig {
    * poll budget is preserved.
    */
   onActivity?: (text: string) => void;
+  /**
+   * Enable interactive relay (#383). When true, phase-executor sets
+   * `SEQUANT_RELAY=true` in the agent environment so the PostToolUse hook
+   * starts polling `<worktree>/.sequant/relay/inbox.jsonl` for user messages.
+   * Default: false (opt-in for the initial rollout).
+   */
+  relayEnabled?: boolean;
 }
 
 /**
@@ -302,6 +309,13 @@ export interface RunOptions {
    * before claiming it. Only acts on same-host alive PIDs. (#625)
    */
   signalOther?: boolean;
+  /**
+   * Interactive relay (#383). Set via `--no-relay`, which Commander surfaces as
+   * `options.relay = false`. When `false`, the PostToolUse hook is not
+   * activated and `sequant prompt` cannot reach this run.
+   * Resolution priority: this CLI flag → settings.run.relay → default (true).
+   */
+  relay?: boolean;
 }
 
 /**
