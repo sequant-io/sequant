@@ -175,7 +175,7 @@ describe("sequant locks check-batch", () => {
 });
 
 describe("sequant locks acquire --force --signal-other --skip-pid-check (skill takeover)", () => {
-  it("takes over an existing skill-shell lock; signal-other prints 'Could not signal' for dead PID", () => {
+  it("takes over an existing skill-shell lock; signal-other prints 'Could not signal' for cross-host holder", () => {
     // Pre-write a skill lock as if a prior /fullsolve had acquired it and
     // its shell already exited (the canonical skipPidCheck scenario).
     //
@@ -185,6 +185,13 @@ describe("sequant locks acquire --force --signal-other --skip-pid-check (skill t
     // os.hostname() with pid: 9999, which assumed PID 9999 was dead — on a
     // busy CI runner PID 9999 can be a live sibling/ancestor process, and
     // SIGTERMing it killed the CLI mid-spawn → result.status === null (#633).
+    //
+    // The CLI prints the same `(cross-host or already exited)` suffix for
+    // both false-branches of signalOther (cross-host vs same-host-dead-PID),
+    // so the assertion below verifies the not-sent path but cannot
+    // distinguish which internal branch ran — that's a CLI-message-level
+    // limitation. The same-host-dead-PID branch is unit-tested at
+    // lock-manager.test.ts:294 via the isPidAlive constructor seam.
     writeFileSync(
       join(locksDir, "77.lock"),
       JSON.stringify({
@@ -207,8 +214,12 @@ describe("sequant locks acquire --force --signal-other --skip-pid-check (skill t
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("✓ Acquired lock for #77 (forced)");
-    // signal-other should report inability to signal a dead PID.
-    expect(result.stdout).toMatch(/Could not signal PID 9999 for #77/);
+    // signal-other should report inability to signal — anchored on the full
+    // "(cross-host or already exited)" suffix so a future refactor that
+    // accidentally takes the "Signaled ..." (sent) branch would fail loudly.
+    expect(result.stdout).toMatch(
+      /Could not signal PID 9999 for #77 \(cross-host or already exited\)/,
+    );
 
     // The lock file now reflects the new acquirer with the new command label
     // and skipPidCheck still set (we passed --skip-pid-check).
