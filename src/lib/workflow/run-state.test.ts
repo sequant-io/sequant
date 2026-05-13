@@ -181,6 +181,20 @@ describe("RunOrchestrator.getSnapshot", () => {
       );
     });
 
+    it("strips non-SGR CSI sequences (cursor moves, line clears, mode toggles)", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "exec", "start");
+      // Mix of line-clear (\x1b[2K), cursor-column (\x1b[G), DEC private
+      // hide-cursor (\x1b[?25l), and a trailing SGR colour reset.
+      progress(1, "exec", "activity", {
+        text: "\x1b[2K\x1b[G\x1b[?25lediting src/foo.ts\x1b[0m",
+      });
+      expect(orch.getSnapshot().issues[0].currentPhase!.nowLine).toBe(
+        "editing src/foo.ts",
+      );
+    });
+
     it("ignores activity events for stale phase names", () => {
       const orch = makeOrchestrator([1]);
       const progress = orch["cfg"].onProgress!;

@@ -1071,9 +1071,11 @@ function nowLineWithStaleFallback(
  */
 function extractActivityLine(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  // Strip ANSI escapes (bold/colour codes leak in from chalk in agent output).
+  // Strip ANSI CSI escapes — covers SGR (colour/bold, `…m`), cursor-movement
+  // and line-clear codes (`\x1b[2K`, `\x1b[G`), and DEC private-mode toggles
+  // (`\x1b[?25l`), any of which can leak through chalk/ink in agent output.
   // eslint-disable-next-line no-control-regex
-  const cleaned = raw.replace(/\x1b\[[0-9;]*m/g, "");
+  const cleaned = raw.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
   const lines = cleaned.split(/\r?\n/);
   let last = "";
   for (let i = lines.length - 1; i >= 0; i--) {
