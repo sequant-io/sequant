@@ -166,6 +166,40 @@ Common issues and solutions when using Sequant.
    bun add -g sequant           # bun
    ```
 
+### Stray `$HOME/node_modules/sequant` install
+
+**Problem:** On startup the CLI prints:
+
+```text
+!  Sequant is running from /Users/<you>/node_modules/sequant — this pollutes
+   resolution for every subdirectory of your home directory.
+
+   If accidental (usually is — one stray `npm install sequant` from ~ does it):
+       remove /Users/<you>/node_modules
+       remove $HOME/package.json and $HOME/package-lock.json
+
+   If intentional: use `npm install -g sequant` or the Claude Code plugin.
+```
+
+**Cause:** A `npm install sequant` was run from `$HOME` at some point. Node's module resolution walks up the directory tree, so every subdirectory of home now resolves to that stale copy before reaching the npx cache. The result: `npx sequant` from any project silently runs the home-stray version instead of the latest.
+
+**Solutions:**
+
+1. If you didn't intend to install sequant in `$HOME`:
+   ```bash
+   rm -rf "$HOME/node_modules"
+   rm -f "$HOME/package.json" "$HOME/package-lock.json"
+   ```
+   Re-run `npx sequant@latest <command>` — resolution now falls through to the npx cache.
+
+2. If you genuinely want sequant available everywhere, install it the right way:
+   ```bash
+   npm install -g sequant
+   ```
+   Or use the [Claude Code plugin](features/plugin-distribution.md), which doesn't rely on Node's `node_modules` walk-up at all.
+
+The warning only fires when the resolved install path is *exactly* `$HOME/node_modules/sequant`. Legitimate project-local installs (`<project>/node_modules/sequant`), global installs, and npx cache paths are not flagged.
+
 ### Permission errors during install
 
 **Problem:** `EACCES` permission denied errors.
