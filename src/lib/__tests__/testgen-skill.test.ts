@@ -2,11 +2,16 @@
  * Tests for testgen auto-detection workflow
  *
  * AC-1: Integration test verifies /spec recommends testgen for appropriate issues
- * AC-2: Documentation or test confirms /testgen uses haiku sub-agents at runtime
+ * AC-2: Documentation or test confirms /testgen declares haiku sub-agents.
+ *       Note: per anthropics/claude-code#43869 the declared model is currently
+ *       inert at runtime; the SKILL.md keeps the declaration and annotates it as
+ *       inert so tier reactivates automatically once upstream ships a fix
+ *       (tracked in #632).
  *
  * These tests verify:
  * 1. The /spec skill contains testgen auto-detection rules (AC-1)
- * 2. The /testgen skill contains haiku sub-agent patterns (AC-2)
+ * 2. The /testgen skill declares haiku sub-agents and documents the upstream
+ *    routing caveat (AC-2)
  */
 
 import * as fs from "fs";
@@ -22,9 +27,9 @@ describe("testgen skill haiku sub-agent documentation", () => {
     skillContent = fs.readFileSync(skillPath, "utf-8");
   });
 
-  it("should have Token Optimization with Haiku Sub-Agents section", () => {
+  it("should have a sub-agent delegation section for stub generation", () => {
     expect(skillContent).toContain(
-      "## Token Optimization with Haiku Sub-Agents",
+      "## Sub-Agent Delegation for Stub Generation",
     );
   });
 
@@ -53,9 +58,12 @@ describe("testgen skill haiku sub-agent documentation", () => {
     expect(skillContent).toContain("Parallel Sub-Agent Execution");
   });
 
-  it("should document cost savings from haiku usage", () => {
-    // The skill should explain the token cost benefit
-    expect(skillContent).toMatch(/90%.*token.*cost.*reduction/i);
+  it("should document the upstream haiku routing caveat (#43869)", () => {
+    // Per #632 the concrete cost-savings claim was deliberately removed because
+    // anthropics/claude-code#43869 silently ignores subagent model declarations.
+    // The skill must annotate haiku as the *intended* (currently inert) tier.
+    expect(skillContent).toContain("anthropics/claude-code#43869");
+    expect(skillContent).toMatch(/inert|currently inert/i);
   });
 
   it("should contain Agent call examples with sequant-testgen", () => {

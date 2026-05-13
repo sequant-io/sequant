@@ -25,6 +25,13 @@ When the implementation involves 3+ independent tasks that could be parallelized
 
 ## Model Selection
 
+> **Note:** Per anthropics/claude-code#43869, the `[model: ...]` annotation
+> below and the `model=` parameter `/exec` passes to `Agent(...)` are currently
+> ignored — every spawned subagent inherits the parent session's model. The
+> guidance here reflects the *intended* tier for each task once upstream fixes
+> ship; the parser in `exec/SKILL.md` is kept intact so it reactivates
+> automatically.
+
 Include a `[model: haiku]` or `[model: sonnet]` annotation at the end of each task line:
 
 | Task Type | Recommended Model |

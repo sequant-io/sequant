@@ -57,10 +57,16 @@ Place a same-named file in `~/.claude/agents/` to override the project-level def
 
 ## Agent Reference
 
-| Agent | Used By | Model | Permission Mode | Tools |
-|-------|---------|-------|-----------------|-------|
+> **Known upstream limitation:** the `model:` column below reflects the declared
+> tier in each agent file. Per [anthropics/claude-code#43869][cc43869], those
+> declarations are currently ignored at runtime and every subagent inherits the
+> parent session's model. The values below are aspirational until the upstream
+> fix lands. See [Known Upstream Limitations](#known-upstream-limitations).
+
+| Agent | Used By | Model (declared) | Permission Mode | Tools |
+|-------|---------|------------------|-----------------|-------|
 | `sequant-explorer` | `/spec` | haiku | default | Read, Grep, Glob |
-| `sequant-qa-checker` | `/qa` | haiku | bypassPermissions | Read, Grep, Glob, Bash |
+| `sequant-qa-checker` | `/qa` | sonnet | bypassPermissions | Read, Grep, Glob, Bash |
 | `sequant-implementer` | `/exec` | inherits | bypassPermissions | all |
 | `sequant-testgen` | `/testgen` | haiku | default | Read, Grep, Glob, Write |
 
@@ -84,7 +90,7 @@ Quality check agent for `/qa`. Runs type safety, scope/size, security, and docum
 
 Implementation agent for `/exec` parallel groups. Handles component creation, type definitions, and refactoring.
 
-- **No model set** — inherits from parent, so the skill can override per-invocation (e.g., `model="haiku"` for subtasks)
+- **No model set** — inherits from parent, so the skill can override per-invocation (e.g., `model="haiku"` for subtasks). Note: per [anthropics/claude-code#43869][cc43869], per-call overrides are also currently ignored.
 - **bypassPermissions** — needs full tool access for implementation
 - **maxTurns:** 25
 
@@ -104,7 +110,8 @@ Each agent is a Markdown file with YAML frontmatter:
 ---
 name: sequant-qa-checker
 description: Quality check agent for sequant QA phase.
-model: haiku
+# Note: per anthropics/claude-code#43869 this is currently a no-op; agent runs on parent's model
+model: sonnet
 permissionMode: bypassPermissions
 effort: low
 maxTurns: 15
@@ -137,6 +144,36 @@ Agent behavior is identical to the previous inline `Task()` pattern — same per
 - `/qa` quality checks still run without permission prompts (bypassPermissions)
 - `/spec` exploration is still read-only (no Bash/Edit/Write)
 - `/exec` parallel/sequential mode is still controlled by the skill, not the agent definition
+
+## Known Upstream Limitations
+
+These are documented bugs in Claude Code that affect how `.claude/agents/*.md`
+behaves at runtime. The agent files in this repo declare what each agent
+*should* run as; until upstream fixes land, the declarations are inert.
+
+### Subagent `model:` declarations are ignored ([anthropics/claude-code#43869][cc43869])
+
+Every mechanism Claude Code documents for setting a subagent's model is
+currently a no-op:
+
+- Per-call `model:` parameter passed to `Agent(...)`
+- Agent frontmatter `model:` field
+- `CLAUDE_CODE_SUBAGENT_MODEL` environment variable
+
+All three are silently overridden — subagents always run on the parent session's
+model. `sequant doctor` emits a warning about this on every run (suppressible
+with `--quiet`). The model fields in `.claude/agents/*.md` are kept aligned with
+intended tiers so they reactivate automatically when the upstream fix ships.
+
+### Silent override with no observability ([anthropics/claude-code#57718][cc57718])
+
+Even in versions where the env var partially takes effect, the per-call `model:`
+parameter is silently clamped with no signal in `tool_result` payloads or
+transcripts. There is no way to programmatically observe which tier a subagent
+actually ran on.
+
+[cc43869]: https://github.com/anthropics/claude-code/issues/43869
+[cc57718]: https://github.com/anthropics/claude-code/issues/57718
 
 ## Troubleshooting
 

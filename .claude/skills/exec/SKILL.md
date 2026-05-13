@@ -1536,6 +1536,8 @@ Look in the issue comments (especially from `/spec`) for:
 
 2. **Determine model for each task:**
 
+   <!-- Note: model param inert per anthropics/claude-code#43869; the parsing
+        logic below reactivates automatically when the upstream fix ships. -->
    Check for model annotations in the task line: `[model: haiku]` or `[model: sonnet]`
 
    **Model Selection Priority:**

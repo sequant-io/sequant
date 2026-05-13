@@ -53,7 +53,7 @@ Sequant processes GitHub issues through sequential phases, each with a specific 
 1. Reads verification criteria from the `/spec` comment
 2. Parses each AC's verification method (Unit Test, Integration Test, etc.)
 3. Generates test stubs with TODO markers
-4. Uses haiku sub-agents for cost-efficient stub generation
+4. Designates haiku sub-agents for stub generation (declared tier currently inert per [anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869); subagents inherit the parent's model until upstream fixes ship)
 5. Posts a summary to the GitHub issue
 
 **Outputs:**

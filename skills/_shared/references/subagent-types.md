@@ -17,10 +17,15 @@ Claude Code supports exactly **4 built-in subagent types**:
 
 Sequant defines **4 custom agents** in `.claude/agents/`. These centralize model, permissions, effort, and tool restrictions that were previously duplicated inline.
 
-| Agent Name | Based On | Model | Permission Mode | Used By |
-|------------|----------|-------|-----------------|---------|
+> **Upstream caveat:** `Model` values below are *declared* in the agent files but
+> currently ignored at runtime per anthropics/claude-code#43869 — every subagent
+> inherits the parent session's model. Tiers are kept aligned with intended
+> defaults so they reactivate when upstream fixes ship.
+
+| Agent Name | Based On | Model (declared) | Permission Mode | Used By |
+|------------|----------|------------------|-----------------|---------|
 | `sequant-explorer` | Explore | haiku | (default) | `/spec` |
-| `sequant-qa-checker` | general-purpose | haiku | bypassPermissions | `/qa` |
+| `sequant-qa-checker` | general-purpose | sonnet | bypassPermissions | `/qa` |
 | `sequant-implementer` | general-purpose | (inherits) | bypassPermissions | `/exec` |
 | `sequant-testgen` | general-purpose | haiku | (default) | `/testgen` |
 
@@ -68,7 +73,8 @@ Custom agents are defined in `.claude/agents/*.md` with YAML frontmatter:
 ---
 name: sequant-qa-checker
 description: Quality check agent for sequant QA phase.
-model: haiku
+# Note: per anthropics/claude-code#43869 this is currently a no-op; agent runs on parent's model
+model: sonnet
 permissionMode: bypassPermissions
 effort: low
 maxTurns: 15
@@ -139,10 +145,17 @@ Agent(subagent_type="Plan",
 
 **Default:** Use `haiku` unless the task requires deep reasoning.
 
+> **Note:** Per anthropics/claude-code#43869, both the per-call `model:`
+> parameter and the agent-definition `model:` field are currently ignored.
+> Subagents inherit the parent session's model regardless of what you specify
+> here. The guidance below reflects the *intended* tier each task should use
+> once upstream fixes land.
+
 Custom agents set their model in the agent definition, so you don't need to specify it inline:
 
 ```
-# Model comes from .claude/agents/sequant-qa-checker.md (haiku)
+# Model comes from .claude/agents/sequant-qa-checker.md (sonnet, declared)
+# Note: declared tier currently inert per anthropics/claude-code#43869
 Agent(subagent_type="sequant-qa-checker",
      prompt="...")
 ```
@@ -201,10 +214,10 @@ inline when spawning them.
 
 | Task | Recommended Agent | Why |
 |------|-------------------|-----|
-| Quality checks (git diff, npm test) | `sequant-qa-checker` | bypassPermissions + haiku + effort:low |
-| Codebase exploration | `sequant-explorer` | Read-only, haiku, focused tools |
+| Quality checks (git diff, npm test) | `sequant-qa-checker` | bypassPermissions + effort:low (declared model: sonnet, inert per #43869) |
+| Codebase exploration | `sequant-explorer` | Read-only, focused tools (declared model: haiku, inert per #43869) |
 | Implementation subtask | `sequant-implementer` | Full access, inherits model |
-| Test stub generation | `sequant-testgen` | Write access, no Bash, haiku |
+| Test stub generation | `sequant-testgen` | Write access, no Bash (declared model: haiku, inert per #43869) |
 | One-off custom task | `general-purpose` | Flexible, specify model/mode inline |
 
 **CRITICAL:** If your background agent runs `git diff`, `npm test`, `git status`, or any shell command, use `sequant-qa-checker` or `sequant-implementer` (both have bypassPermissions). Do NOT use `general-purpose` without `mode="bypassPermissions"` — Bash calls will silently fail.
