@@ -120,6 +120,52 @@ const COLD_START_THRESHOLD_SECONDS = 60;
 const COLD_START_MAX_RETRIES = 2;
 
 /**
+ * Leading + trailing throttle. Fires the wrapped callback immediately on the
+ * first call, drops subsequent calls that arrive inside `intervalMs` but
+ * remembers the latest payload, and fires one final "trailing" call with that
+ * latest payload after the window closes. Used to bridge the agent driver's
+ * fine-grained `onOutput` stream (#543) to the TUI's `nowLine` without
+ * either burning the 10 Hz snapshot budget on every chunk or losing the last
+ * useful chunk before the agent goes idle.
+ *
+ * `cancel()` clears the pending timer + payload — call after the consuming
+ * phase finishes so a residual trailing fire doesn't outlive its phase
+ * context. (The orchestrator's stale-phase guard catches it anyway, but
+ * cleanup avoids holding even a no-op timer.)
+ *
+ * @internal Exported for testing only.
+ */
+export function createThrottledReporter(
+  fn: (text: string) => void,
+  intervalMs: number,
+): { report(text: string): void; cancel(): void } {
+  let timer: NodeJS.Timeout | null = null;
+  let pending: string | null = null;
+  const report = (text: string): void => {
+    if (timer) {
+      // Inside the throttle window — stash the latest payload for the
+      // trailing fire and drop this call.
+      pending = text;
+      return;
+    }
+    fn(text);
+    timer = setTimeout(() => {
+      const trailing = pending;
+      pending = null;
+      timer = null;
+      if (trailing !== null) report(trailing);
+    }, intervalMs);
+    timer.unref?.();
+  };
+  const cancel = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    pending = null;
+  };
+  return { report, cancel };
+}
+
+/**
  * Spec-specific retry configuration.
  * Spec failures have a higher failure rate (~8.6%) than other phases due to
  * transient GitHub API issues and rate limits. One extra retry with backoff
@@ -616,6 +662,23 @@ async function executePhase(
   // pause/resume is called for every chunk in rapid succession)
   let verboseStreamingActive = false;
 
+  // Activity ping throttle (#543): the agent driver streams text in many small
+  // chunks; the TUI only polls at 10 Hz. Coalesce to ≤2 calls per ~100ms
+  // window (leading + trailing) so we don't burn the poll budget on snapshot
+  // churn but still surface the latest chunk before the agent goes idle.
+  const ACTIVITY_THROTTLE_MS = 100;
+  const onActivity = config.onActivity;
+  const throttle = onActivity
+    ? createThrottledReporter((text: string) => {
+        try {
+          onActivity(text);
+        } catch {
+          // Activity reporting must never disrupt the run.
+        }
+      }, ACTIVITY_THROTTLE_MS)
+    : undefined;
+  const reportActivity = throttle ? throttle.report : undefined;
+
   // Safety: never resume a session when worktree isolation is active.
   // Even if THIS phase doesn't use the worktree, a previous phase may have
   // created the session there. Resuming from a different cwd crashes the SDK
@@ -633,15 +696,19 @@ async function executePhase(
     mcp: config.mcp,
     sessionId: canResume ? sessionId : undefined,
     files,
-    onOutput: config.verbose
-      ? (text: string) => {
-          if (!verboseStreamingActive) {
-            spinner?.pause();
-            verboseStreamingActive = true;
+    onOutput:
+      config.verbose || reportActivity
+        ? (text: string) => {
+            if (config.verbose) {
+              if (!verboseStreamingActive) {
+                spinner?.pause();
+                verboseStreamingActive = true;
+              }
+              process.stdout.write(chalk.gray(text));
+            }
+            reportActivity?.(text);
           }
-          process.stdout.write(chalk.gray(text));
-        }
-      : undefined,
+        : undefined,
     onStderr: config.verbose
       ? (data: string) => {
           if (!verboseStreamingActive) {
@@ -659,6 +726,11 @@ async function executePhase(
   });
 
   const agentResult = await driver.executePhase(prompt, agentConfig);
+
+  // Cancel any pending trailing activity fire — phase is done; the
+  // orchestrator's stale-phase guard would no-op a late call anyway, but
+  // clearing the timer is cheaper than letting it elapse.
+  throttle?.cancel();
 
   // Resume spinner after execution completes (if we paused it)
   if (verboseStreamingActive) {
