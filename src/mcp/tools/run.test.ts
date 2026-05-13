@@ -12,7 +12,9 @@ import { readdir, readFile } from "fs/promises";
 import {
   buildStructuredResponse,
   readLatestRunLog,
+  readRunLogById,
   parseProgressLine,
+  parseRunIdLine,
   createLineBuffer,
   formatProgressMessage,
   spawnAsync,
@@ -21,7 +23,10 @@ import {
 } from "./run.js";
 import type { ProgressEvent } from "./run.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
-import { emitProgressLine } from "../../lib/workflow/batch-executor.js";
+import {
+  emitProgressLine,
+  emitRunIdLine,
+} from "../../lib/workflow/batch-executor.js";
 
 // Mock fs.existsSync (still used synchronously in resolveLogDir)
 vi.mock("fs", async (importOriginal) => {
@@ -786,5 +791,207 @@ describe("emitProgressLine (AC-8)", () => {
     emitProgressLine(325, "spec", "start");
 
     expect(writeSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ── Issue #631: runId threading to defeat log-file lookup races ───────
+
+describe("parseRunIdLine (#631 AC-1, AC-3)", () => {
+  it("should parse a valid UUID v4 runId line", () => {
+    const id = "550e8400-e29b-41d4-a716-446655440000";
+    expect(parseRunIdLine(`SEQUANT_RUN_ID:${id}`)).toBe(id);
+  });
+
+  it("should trim trailing whitespace before validating", () => {
+    const id = "550e8400-e29b-41d4-a716-446655440000";
+    expect(parseRunIdLine(`SEQUANT_RUN_ID:${id} `)).toBe(id);
+  });
+
+  it("should return null for non-runId lines", () => {
+    expect(parseRunIdLine("")).toBeNull();
+    expect(parseRunIdLine("SEQUANT_OTHER:abc")).toBeNull();
+    expect(
+      parseRunIdLine(
+        'SEQUANT_PROGRESS:{"issue":1,"phase":"spec","event":"start"}',
+      ),
+    ).toBeNull();
+  });
+
+  it("should reject payloads that are not well-formed UUIDs", () => {
+    expect(parseRunIdLine("SEQUANT_RUN_ID:not-a-uuid")).toBeNull();
+    expect(parseRunIdLine("SEQUANT_RUN_ID:")).toBeNull();
+    expect(parseRunIdLine("SEQUANT_RUN_ID:550e8400")).toBeNull();
+  });
+});
+
+describe("readRunLogById (#631 AC-2, AC-5, AC-6)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("should return null when no file matches the runId suffix", async () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "run-2026-03-23T10-00-00-other-uuid.json" as any,
+    ]);
+
+    const result = await readRunLogById("550e8400-e29b-41d4-a716-446655440000");
+    expect(result).toBeNull();
+  });
+
+  it("should return the log file whose name ends with -<runId>.json", async () => {
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+    const runLog = makeRunLog({ runId });
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-00-00-${runId}.json` as any,
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue(JSON.stringify(runLog) as any);
+
+    const result = await readRunLogById(runId);
+    expect(result).not.toBeNull();
+    expect(result!.runId).toBe(runId);
+  });
+
+  // AC-5: Two concurrent runs — each lookup returns its own log,
+  // regardless of which filename `.sort().reverse()` would prefer.
+  it("should return the caller's own log when concurrent run logs coexist", async () => {
+    const runIdA = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
+    const runIdB = "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb";
+    const logA = makeRunLog({ runId: runIdA });
+    const logB = makeRunLog({ runId: runIdB });
+
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // Both filenames pass `readLatestRunLog`'s 5-minute window; without
+      // runId lookup, `.sort().reverse()` would return runIdB's file for both.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-00-00-${runIdA}.json` as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-00-01-${runIdB}.json` as any,
+    ]);
+    mockedReadFile.mockImplementation(async (path) => {
+      const name = String(path);
+      if (name.endsWith(`-${runIdA}.json`)) return JSON.stringify(logA);
+      if (name.endsWith(`-${runIdB}.json`)) return JSON.stringify(logB);
+      throw new Error(`Unexpected read: ${name}`);
+    });
+
+    const resultA = await readRunLogById(runIdA);
+    const resultB = await readRunLogById(runIdB);
+    expect(resultA!.runId).toBe(runIdA);
+    expect(resultB!.runId).toBe(runIdB);
+  });
+
+  // AC-6: A stale same-issue log from the last 5 minutes does not bleed
+  // into a fresh run when the fresh runId is used for lookup.
+  it("should not return a stale same-issue log when looked up by fresh runId", async () => {
+    // UUID v4 group 4 must start with 8/9/a/b for zod's .uuid() to accept it.
+    const staleRunId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const freshRunId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const freshLog = makeRunLog({ runId: freshRunId });
+
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // Stale file is lexicographically *later* than the fresh one — without
+      // runId lookup, `readLatestRunLog` would return it.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-00-00-${freshRunId}.json` as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-02-00-${staleRunId}.json` as any,
+    ]);
+    mockedReadFile.mockImplementation(async (path) => {
+      const name = String(path);
+      if (name.endsWith(`-${freshRunId}.json`)) return JSON.stringify(freshLog);
+      throw new Error(`Should not read stale log: ${name}`);
+    });
+
+    const result = await readRunLogById(freshRunId);
+    expect(result).not.toBeNull();
+    expect(result!.runId).toBe(freshRunId);
+  });
+
+  it("should return null on parse failure", async () => {
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      `run-2026-03-23T10-00-00-${runId}.json` as any,
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockedReadFile.mockResolvedValue("not-json{{{" as any);
+
+    const result = await readRunLogById(runId);
+    expect(result).toBeNull();
+  });
+
+  it("should return null on readdir rejection", async () => {
+    mockedExistsSync.mockReturnValue(true);
+    mockedReaddir.mockRejectedValue(new Error("EACCES"));
+
+    const result = await readRunLogById("550e8400-e29b-41d4-a716-446655440000");
+    expect(result).toBeNull();
+  });
+});
+
+describe("emitRunIdLine (#631 AC-1)", () => {
+  const originalEnv = process.env.SEQUANT_ORCHESTRATOR;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+    } else {
+      process.env.SEQUANT_ORCHESTRATOR = originalEnv;
+    }
+  });
+
+  it("should emit a SEQUANT_RUN_ID line with the runId when orchestrated", () => {
+    process.env.SEQUANT_ORCHESTRATOR = "mcp-server";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+
+    emitRunIdLine(runId);
+
+    expect(writeSpy).toHaveBeenCalledOnce();
+    const output = writeSpy.mock.calls[0][0] as string;
+    expect(output).toBe(`SEQUANT_RUN_ID:${runId}\n`);
+    expect(parseRunIdLine(output.trim())).toBe(runId);
+  });
+
+  it("should not emit when SEQUANT_ORCHESTRATOR is not set", () => {
+    delete process.env.SEQUANT_ORCHESTRATOR;
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+
+    emitRunIdLine("550e8400-e29b-41d4-a716-446655440000");
+
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
+  // AC-1: runId line must precede the first SEQUANT_PROGRESS line so the
+  // MCP buffer captures it before any progress event arrives.
+  it("should be emittable before emitProgressLine (ordering invariant)", () => {
+    process.env.SEQUANT_ORCHESTRATOR = "mcp-server";
+    const writeSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const runId = "550e8400-e29b-41d4-a716-446655440000";
+
+    emitRunIdLine(runId);
+    emitProgressLine(1, "spec", "start");
+
+    expect(writeSpy).toHaveBeenCalledTimes(2);
+    const first = writeSpy.mock.calls[0][0] as string;
+    const second = writeSpy.mock.calls[1][0] as string;
+    expect(parseRunIdLine(first.trim())).toBe(runId);
+    expect(parseProgressLine(second.trim())).toEqual({
+      issue: 1,
+      phase: "spec",
+      event: "start",
+    });
   });
 });

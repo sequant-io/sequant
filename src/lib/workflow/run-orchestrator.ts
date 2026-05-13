@@ -43,6 +43,7 @@ import {
   sortByDependencies,
   parseBatches,
   runIssueWithLogging,
+  emitRunIdLine,
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { getCommitHash } from "./git-diff-utils.js";
@@ -454,6 +455,8 @@ export class RunOrchestrator {
           startCommit: getCommitHash(process.cwd()),
         });
         await logWriter.initialize(runConfig);
+        const runId = logWriter.getRunId();
+        if (runId) emitRunIdLine(runId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.log(

@@ -148,6 +148,18 @@ export function emitProgressLine(
   process.stderr.write(line);
 }
 
+/**
+ * Emit the current run's UUID on stderr so MCP callers can look up the exact
+ * log file produced by this subprocess instead of relying on a fuzzy time
+ * filter (#631). Gated on `SEQUANT_ORCHESTRATOR` so CLI users see nothing.
+ *
+ * Must be called before `emitProgressLine` to satisfy AC-1.
+ */
+export function emitRunIdLine(runId: string): void {
+  if (!process.env.SEQUANT_ORCHESTRATOR) return;
+  process.stderr.write(`SEQUANT_RUN_ID:${runId}\n`);
+}
+
 export async function getIssueInfo(
   issueNumber: number,
 ): Promise<{ title: string; labels: string[] }> {
