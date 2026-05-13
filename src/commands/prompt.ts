@@ -122,7 +122,7 @@ export async function promptCommand(argsAndOptions: {
 
   // Resolve target issue.
   const stateManager = new StateManager();
-  let issueState: IssueState | null = null;
+  let issueState: IssueState | null;
   let issueNumber: number;
 
   if (parsed.issue !== null) {
