@@ -287,6 +287,11 @@ export class LockManager {
   signalOther(holder: LockFile, signal: NodeJS.Signals = "SIGTERM"): boolean {
     if (this.orchestratorMode) return false;
     if (holder.hostname !== this.hostname) return false;
+    // Defense-in-depth: never signal ourselves or our parent. A real lock
+    // file's pid should never match this process or its parent; a malformed
+    // file or recycled PID could otherwise let us SIGTERM our own shell
+    // (#637, defense follow-up to the #633 flake).
+    if (holder.pid === this.pid || holder.pid === process.ppid) return false;
     if (!this.isPidAlive(holder.pid)) return false;
     try {
       process.kill(holder.pid, signal);

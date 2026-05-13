@@ -331,6 +331,75 @@ describe("LockManager — forceAcquire / signalOther", () => {
       (process as unknown as { kill: typeof process.kill }).kill = originalKill;
     }
   });
+
+  it("signalOther refuses to signal the manager's own PID without probing isPidAlive (#637)", () => {
+    let probed = 0;
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => {
+        probed++;
+        return true;
+      },
+    });
+    const killCalls: number[] = [];
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      killCalls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const sent = mgr.signalOther({
+        pid: 1, // === this.pid
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "x",
+      });
+      expect(sent).toBe(false);
+      expect(probed).toBe(0); // guard short-circuits BEFORE isPidAlive
+      expect(killCalls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther refuses to signal process.ppid without probing isPidAlive (#637)", () => {
+    let probed = 0;
+    // Pick a pid that cannot collide with process.ppid (parent of vitest).
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: process.pid, // self
+      isPidAlive: () => {
+        probed++;
+        return true;
+      },
+    });
+    const killCalls: number[] = [];
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      killCalls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const sent = mgr.signalOther({
+        pid: process.ppid, // === parent of this process
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "x",
+      });
+      expect(sent).toBe(false);
+      expect(probed).toBe(0);
+      expect(killCalls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
 });
 
 describe("LockManager — orchestrator no-op", () => {
