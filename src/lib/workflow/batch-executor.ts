@@ -19,6 +19,7 @@ import {
   type RunOptions,
   type IssueExecutionContext,
   type BatchExecutionContext,
+  type ProgressCallback,
 } from "./types.js";
 import { classifyError, errorTypeToCategory } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
@@ -56,6 +57,34 @@ export type {
  * @param event - Phase lifecycle event: "start", "complete", or "failed"
  * @param extra - Optional fields: durationSeconds (on complete), error (on failed)
  */
+
+/**
+ * Wrap an `ExecutionConfig` with an `onActivity` hook that re-emits each
+ * agent-output ping as a `"activity"` progress event for the dashboard (#543).
+ *
+ * Returns the input config unchanged when no `onProgress` callback is set,
+ * so non-TUI runs pay no overhead.
+ *
+ * @internal Exported for testing only
+ */
+export function withActivityHook(
+  base: ExecutionConfig,
+  issueNumber: number,
+  phase: string,
+  onProgress: ProgressCallback | undefined,
+): ExecutionConfig {
+  if (!onProgress) return base;
+  return {
+    ...base,
+    onActivity: (text: string) => {
+      try {
+        onProgress(issueNumber, phase, "activity", { text });
+      } catch {
+        // Activity events must never disrupt the run.
+      }
+    },
+  };
+}
 
 /**
  * Build enriched prompt context for the /loop phase from a failed phase result (#488).
@@ -477,7 +506,7 @@ export async function runIssueWithLogging(
     const specResult = await executePhaseWithRetry(
       issueNumber,
       "spec",
-      config,
+      withActivityHook(config, issueNumber, "spec", onProgress),
       sessionId,
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
@@ -729,7 +758,7 @@ export async function runIssueWithLogging(
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
-        issueConfig,
+        withActivityHook(issueConfig, issueNumber, phase, onProgress),
         sessionId,
         worktreePath,
         shutdownManager,
@@ -882,7 +911,7 @@ export async function runIssueWithLogging(
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
-            loopConfig,
+            withActivityHook(loopConfig, issueNumber, "loop", onProgress),
             sessionId,
             worktreePath,
             shutdownManager,

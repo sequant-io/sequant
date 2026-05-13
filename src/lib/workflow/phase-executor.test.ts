@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("child_process", () => ({
   execSync: vi.fn(),
@@ -15,6 +15,7 @@ import {
   hasExecChanges,
   mapAgentSuccessToPhaseResult,
   resolveBaseRef,
+  createThrottledReporter,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
 } from "./phase-executor.js";
@@ -1484,5 +1485,81 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(mockExecSync).not.toHaveBeenCalled();
       expect(mockExecFileSync).not.toHaveBeenCalled();
     });
+  });
+});
+
+// =============================================================================
+// #543 — createThrottledReporter: leading + trailing throttle for activity pings
+// =============================================================================
+
+describe("createThrottledReporter (#543)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("fires the first call immediately (leading edge)", () => {
+    const fn = vi.fn();
+    const { report } = createThrottledReporter(fn, 100);
+    report("first");
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenCalledWith("first");
+  });
+
+  it("drops calls inside the window but stashes the latest payload", () => {
+    const fn = vi.fn();
+    const { report } = createThrottledReporter(fn, 100);
+    report("a"); // leading — fires
+    report("b"); // dropped, stashed
+    report("c"); // dropped, replaces stash
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenLastCalledWith("a");
+  });
+
+  it("fires the latest stashed payload after the window closes (trailing edge)", () => {
+    const fn = vi.fn();
+    const { report } = createThrottledReporter(fn, 100);
+    report("a");
+    report("b");
+    report("c");
+    vi.advanceTimersByTime(100);
+    // Trailing fire delivers the most recent payload, not "b".
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenLastCalledWith("c");
+  });
+
+  it("does not fire a trailing call when no payload was stashed", () => {
+    const fn = vi.fn();
+    const { report } = createThrottledReporter(fn, 100);
+    report("only");
+    vi.advanceTimersByTime(100);
+    // No trailing fire because no additional calls arrived during the window.
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes leading-edge behavior after an idle window", () => {
+    const fn = vi.fn();
+    const { report } = createThrottledReporter(fn, 100);
+    report("a"); // leading
+    vi.advanceTimersByTime(100); // window closes, no trailing
+    expect(fn).toHaveBeenCalledTimes(1);
+    report("b"); // new leading
+    expect(fn).toHaveBeenCalledTimes(2);
+    expect(fn).toHaveBeenLastCalledWith("b");
+  });
+
+  it("cancel() drops the pending trailing fire", () => {
+    const fn = vi.fn();
+    const { report, cancel } = createThrottledReporter(fn, 100);
+    report("a"); // leading — fires
+    report("b"); // stashed
+    cancel();
+    vi.advanceTimersByTime(200);
+    // Only the leading call survives.
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(fn).toHaveBeenLastCalledWith("a");
   });
 });

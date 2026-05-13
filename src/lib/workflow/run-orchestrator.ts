@@ -261,8 +261,8 @@ export class RunOrchestrator {
   private applyProgressEvent(
     issue: number,
     phase: string,
-    event: "start" | "complete" | "failed",
-    extra?: { durationSeconds?: number; error?: string },
+    event: "start" | "complete" | "failed" | "activity",
+    extra?: { durationSeconds?: number; error?: string; text?: string },
   ): void {
     const state = this.issueStates.get(issue);
     if (!state) return;
@@ -281,6 +281,17 @@ export class RunOrchestrator {
       const p = findOrAppendPhase(state, phase);
       p.status = "running";
       p.startedAt = now;
+      return;
+    }
+
+    if (event === "activity") {
+      // Ignore activity for stale phases (race between completion and a
+      // final flushed output chunk).
+      if (!state.currentPhase || state.currentPhase.name !== phase) return;
+      const line = extractActivityLine(extra?.text);
+      if (!line) return;
+      state.currentPhase.nowLine = line;
+      state.currentPhase.lastActivityAt = new Date();
       return;
     }
 
@@ -1058,6 +1069,12 @@ function findOrAppendPhase(
   return p;
 }
 
+/**
+ * Activity is considered stale (and `nowLine` falls back to the coarse
+ * `running <phase>` form) once it goes this long without an update (#543).
+ */
+const ACTIVITY_STALE_MS = 5_000;
+
 function cloneIssueState(s: IssueRuntimeState): IssueRuntimeState {
   return {
     number: s.number,
@@ -1077,11 +1094,48 @@ function cloneIssueState(s: IssueRuntimeState): IssueRuntimeState {
           name: s.currentPhase.name,
           startedAt: s.currentPhase.startedAt,
           lastActivityAt: s.currentPhase.lastActivityAt,
-          nowLine: s.currentPhase.nowLine,
+          nowLine: nowLineWithStaleFallback(s.currentPhase),
           logPath: s.currentPhase.logPath,
         }
       : undefined,
   };
+}
+
+function nowLineWithStaleFallback(
+  current: NonNullable<IssueRuntimeState["currentPhase"]>,
+): string {
+  const ageMs = Date.now() - current.lastActivityAt.getTime();
+  if (ageMs >= ACTIVITY_STALE_MS) {
+    return formatCoarseNowLine(current.name);
+  }
+  return current.nowLine;
+}
+
+/**
+ * Reduce a chunk of streamed agent output to a single line suitable for the
+ * activity row. Strips ANSI sequences and trailing whitespace; returns the
+ * last non-empty line, truncated to keep the cell render cheap. Returns
+ * `undefined` when the chunk contains no usable content.
+ */
+function extractActivityLine(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  // Strip ANSI CSI escapes — covers SGR (colour/bold, `…m`), cursor-movement
+  // and line-clear codes (`\x1b[2K`, `\x1b[G`), and DEC private-mode toggles
+  // (`\x1b[?25l`), any of which can leak through chalk/ink in agent output.
+  // eslint-disable-next-line no-control-regex
+  const cleaned = raw.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "");
+  const lines = cleaned.split(/\r?\n/);
+  let last = "";
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed.length > 0) {
+      last = trimmed;
+      break;
+    }
+  }
+  if (!last) return undefined;
+  // Bound at 200 chars; the TUI truncates further per row width.
+  return last.length > 200 ? last.slice(0, 200) : last;
 }
 
 /**
