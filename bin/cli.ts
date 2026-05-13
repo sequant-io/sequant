@@ -222,7 +222,7 @@ program
   )
   .option(
     "--stacked",
-    "Stack PRs: non-first PRs target predecessor branch instead of main (implies --chain)",
+    "Stack PRs: middle PRs target predecessor branch instead of main; first/last target main (implies --chain)",
   )
   .option(
     "--qa-gate",

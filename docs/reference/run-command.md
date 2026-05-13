@@ -289,6 +289,11 @@ re-base the dependent PR's diff against an unexpected commit.
 The `/merger` skill warns when it detects stacked PRs being processed out of
 order; see [merger skill docs](../../.claude/skills/merger/SKILL.md).
 
+**Caveats:**
+
+- **2-issue stacks are manifest-only.** With `run 100 101 --stacked`, both PRs target `main` (#100 is first, #101 is last; there is no middle PR to gain an incremental-diff benefit). The stack manifest still renders, but the base-branch behavior is identical to plain `--chain`. Use `--stacked` for chains of 3+ issues.
+- **The final PR shows the cumulative diff.** Because the last branch still rebases onto `main` before its PR is created (preserving existing `--chain` behavior and the partial-landing default for AC-3), reviewers see the entire stack's diff on the final PR — not its incremental change vs. its predecessor. Only the middle PRs show incremental diffs.
+
 ### QA Gate Mode
 
 Add `--qa-gate` to pause the chain when QA fails, preventing downstream issues from building on potentially broken code:
