@@ -51,6 +51,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
 | `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
+| `--stacked` | Stack PRs: non-first PRs target predecessor branch (implies `--chain`) | `false` |
 | `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
@@ -237,6 +238,61 @@ gh pr merge 3 --squash
 
 Option B: Single combined review
 - Review the final branch which contains all changes
+
+### Stacked PRs
+
+`--stacked` builds on `--chain` and changes only one thing: each non-first PR
+targets its **predecessor branch** as the base instead of `main`. This means
+reviewers see the incremental diff for each issue, not the cumulative diff of
+the whole chain.
+
+```bash
+npx sequant run 100 101 102 --stacked
+```
+
+**What happens:**
+
+| Issue | Branch | PR base |
+|-------|--------|---------|
+| #100 (first) | `feature/100-...` | `main` |
+| #101 | `feature/101-...` | `feature/100-...` |
+| #102 (last) | `feature/102-...` | `main` |
+
+The last PR keeps `main` as its base so the stack can land partially — you don't
+have to merge the whole chain atomically. (To make the last PR target its
+predecessor instead, do not use `--stacked` for that final issue.)
+
+Each PR body includes a manifest line:
+
+```
+Part of stack: #100 → #101 (this) → #102
+```
+
+**Requirements:**
+
+- `--stacked` implies `--chain` (and therefore `--sequential`)
+- Cannot be combined with `--no-chain` (errors at startup)
+
+**Performance Warning:**
+
+`--stacked` inherits chain-mode's reliability profile (~29% whole-chain success
+rate; see [chain-mode-analysis-2026-05.md](./chain-mode-analysis-2026-05.md)).
+Use it only for chains you would already run with `--chain`.
+
+**Merge Order Matters:**
+
+Stacked PRs **must merge in order** (predecessor first, then dependents).
+GitHub auto-updates a dependent PR's base when its predecessor merges, so
+landing in order works without manual rebasing. Merging out of order will
+re-base the dependent PR's diff against an unexpected commit.
+
+The `/merger` skill warns when it detects stacked PRs being processed out of
+order; see [merger skill docs](../../.claude/skills/merger/SKILL.md).
+
+**Caveats:**
+
+- **2-issue stacks are manifest-only.** With `run 100 101 --stacked`, both PRs target `main` (#100 is first, #101 is last; there is no middle PR to gain an incremental-diff benefit). The stack manifest still renders, but the base-branch behavior is identical to plain `--chain`. Use `--stacked` for chains of 3+ issues.
+- **The final PR shows the cumulative diff.** Because the last branch still rebases onto `main` before its PR is created (preserving existing `--chain` behavior and the partial-landing default for AC-3), reviewers see the entire stack's diff on the final PR — not its incremental change vs. its predecessor. Only the middle PRs show incremental diffs.
 
 ### QA Gate Mode
 

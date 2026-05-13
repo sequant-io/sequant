@@ -6,7 +6,10 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { RunOrchestrator } from "../src/lib/workflow/run-orchestrator.js";
+import {
+  RunOrchestrator,
+  buildStackManifest,
+} from "../src/lib/workflow/run-orchestrator.js";
 import { DEFAULT_SETTINGS } from "../src/lib/settings.js";
 import type { RunInit } from "../src/lib/workflow/run-orchestrator.js";
 import type { RunOptions } from "../src/lib/workflow/types.js";
@@ -146,5 +149,38 @@ describe("RunOrchestrator.resolveConfig", () => {
 
     expect(r.issueNumbers).toEqual([]);
     expect(r.worktreeIsolationEnabled).toBe(false);
+  });
+});
+
+describe("buildStackManifest (#605)", () => {
+  it("renders middle-of-stack manifest with (this) marker", () => {
+    expect(buildStackManifest([100, 101, 102], 1)).toBe(
+      "Part of stack: #100 → #101 (this) → #102",
+    );
+  });
+
+  it("renders first-in-stack manifest with (this) marker", () => {
+    expect(buildStackManifest([100, 101, 102], 0)).toBe(
+      "Part of stack: #100 (this) → #101 → #102",
+    );
+  });
+
+  it("renders last-in-stack manifest with (this) marker", () => {
+    expect(buildStackManifest([100, 101, 102], 2)).toBe(
+      "Part of stack: #100 → #101 → #102 (this)",
+    );
+  });
+
+  it("handles single-issue stack (degenerate but well-defined)", () => {
+    expect(buildStackManifest([100], 0)).toBe("Part of stack: #100 (this)");
+  });
+
+  it("handles two-issue stack", () => {
+    expect(buildStackManifest([100, 101], 0)).toBe(
+      "Part of stack: #100 (this) → #101",
+    );
+    expect(buildStackManifest([100, 101], 1)).toBe(
+      "Part of stack: #100 → #101 (this)",
+    );
   });
 });

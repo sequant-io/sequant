@@ -221,6 +221,10 @@ program
     "Chain issues: each branches from previous (implies --sequential)",
   )
   .option(
+    "--stacked",
+    "Stack PRs: middle PRs target predecessor branch instead of main; first/last target main (implies --chain)",
+  )
+  .option(
     "--qa-gate",
     "Wait for QA pass before starting next issue in chain (requires --chain)",
   )

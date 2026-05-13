@@ -1018,6 +1018,15 @@ export async function runIssueWithLogging(
   let prUrl: string | undefined;
   const shouldCreatePR = success && worktreePath && branch && !options.noPr;
   if (shouldCreatePR) {
+    // #605: under --stacked, target predecessor branch (only for non-first,
+    // non-last issues). Last PR keeps `main` so partial progress can land.
+    const stackOptions =
+      chain?.predecessorBranch || chain?.stackManifest
+        ? {
+            prBase: chain.predecessorBranch,
+            stackManifest: chain.stackManifest,
+          }
+        : undefined;
     const prResult = createPR(
       worktreePath,
       issueNumber,
@@ -1025,6 +1034,7 @@ export async function runIssueWithLogging(
       branch,
       config.verbose,
       labels,
+      stackOptions,
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;

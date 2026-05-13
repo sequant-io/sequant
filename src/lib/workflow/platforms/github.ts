@@ -229,12 +229,26 @@ export class GitHubProvider implements PlatformProvider {
     body: string,
     head: string,
     cwd?: string,
+    base?: string,
   ): CreatePRCliResult {
-    const result = spawnSync(
-      "gh",
-      ["pr", "create", "--title", title, "--body", body, "--head", head],
-      { stdio: "pipe", cwd, timeout: 30000 },
-    );
+    const args = [
+      "pr",
+      "create",
+      "--title",
+      title,
+      "--body",
+      body,
+      "--head",
+      head,
+    ];
+    if (base) {
+      args.push("--base", base);
+    }
+    const result = spawnSync("gh", args, {
+      stdio: "pipe",
+      cwd,
+      timeout: 30000,
+    });
 
     return {
       stdout: result.stdout?.toString() ?? "",
@@ -595,7 +609,13 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   async createPR(opts: CreatePROptions): Promise<PRInfo> {
-    const result = this.createPRCliSync(opts.title, opts.body, opts.head);
+    const result = this.createPRCliSync(
+      opts.title,
+      opts.body,
+      opts.head,
+      undefined,
+      opts.base,
+    );
 
     if (result.exitCode !== 0) {
       const error = result.stderr.trim() || "Unknown error";

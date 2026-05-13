@@ -426,4 +426,47 @@ describe("GitHubProvider", () => {
       expect(provider.getPRHeadBranchSync(456)).toBeNull();
     });
   });
+
+  // #605: async createPR(opts) must forward opts.base to the underlying
+  // `gh pr create` call. Previously dropped silently.
+  describe("createPR (async) forwards opts.base", () => {
+    it("passes --base <opts.base> to gh pr create", async () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: "https://github.com/owner/repo/pull/42\n",
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+
+      const result = await provider.createPR({
+        title: "feat(#605): test",
+        body: "body",
+        head: "feature/605",
+        base: "feature/predecessor",
+      });
+
+      expect(result).toEqual({
+        number: 42,
+        url: "https://github.com/owner/repo/pull/42",
+      });
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        [
+          "pr",
+          "create",
+          "--title",
+          "feat(#605): test",
+          "--body",
+          "body",
+          "--head",
+          "feature/605",
+          "--base",
+          "feature/predecessor",
+        ],
+        expect.objectContaining({ stdio: "pipe", timeout: 30000 }),
+      );
+    });
+  });
 });
