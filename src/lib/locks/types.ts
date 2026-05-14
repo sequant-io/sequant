@@ -58,3 +58,22 @@ export interface LockListing {
   staleReason: "pid-dead" | "age-exceeded" | null;
   lockPath: string;
 }
+
+/**
+ * Discriminator for `LockManager.signalOther()`. Distinguishes the branches
+ * that previously all collapsed to `false`, so callers can produce accurate
+ * log lines (#637).
+ */
+export type SignalReason =
+  | "sent"
+  | "orchestrator"
+  | "cross-host"
+  | "self-or-parent"
+  | "pid-dead"
+  | "kill-failed";
+
+/** Outcome of `LockManager.signalOther()`. */
+export interface SignalOtherResult {
+  sent: boolean;
+  reason: SignalReason;
+}

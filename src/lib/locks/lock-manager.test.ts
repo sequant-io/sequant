@@ -308,25 +308,94 @@ describe("LockManager — forceAcquire / signalOther", () => {
       return true;
     }) as typeof process.kill;
     try {
-      const sent = mgr.signalOther({
+      const result = mgr.signalOther({
         pid: 9999,
         hostname: "host-a",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent).toBe(true);
+      expect(result).toEqual({ sent: true, reason: "sent" });
       expect(calls).toEqual([9999]);
 
       // Cross-host: should NOT signal.
       calls.length = 0;
-      const sent2 = mgr.signalOther({
+      const result2 = mgr.signalOther({
         pid: 9999,
         hostname: "other-host",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent2).toBe(false);
+      expect(result2).toEqual({ sent: false, reason: "cross-host" });
       expect(calls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther refuses to signal the manager's own PID without probing isPidAlive (#637)", () => {
+    let probed = 0;
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: process.pid, // mirrors production — manager runs with its real pid
+      isPidAlive: () => {
+        probed++;
+        return true;
+      },
+    });
+    const killCalls: number[] = [];
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      killCalls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: process.pid, // === this.pid
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "x",
+      });
+      expect(result).toEqual({ sent: false, reason: "self-or-parent" });
+      expect(probed).toBe(0); // guard short-circuits BEFORE isPidAlive
+      expect(killCalls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther refuses to signal process.ppid without probing isPidAlive (#637)", () => {
+    let probed = 0;
+    // Pick a pid that cannot collide with process.ppid (parent of vitest).
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: process.pid, // self; POSIX guarantees process.pid !== process.ppid
+      isPidAlive: () => {
+        probed++;
+        return true;
+      },
+    });
+    const killCalls: number[] = [];
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      killCalls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: process.ppid, // === parent of this process
+        hostname: "host-a",
+        startedAt: new Date().toISOString(),
+        command: "x",
+      });
+      expect(result).toEqual({ sent: false, reason: "self-or-parent" });
+      expect(probed).toBe(0);
+      expect(killCalls).toEqual([]);
     } finally {
       (process as unknown as { kill: typeof process.kill }).kill = originalKill;
     }
