@@ -9,6 +9,23 @@ import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 
+// Re-export the emitter types so external consumers can import them from
+// the workflow types barrel without reaching into the implementation file (#504).
+export type {
+  WorkflowEventEmitter,
+  WorkflowEvents,
+  WorkflowEventListener,
+  IssueEventStatus,
+  BaseEventPayload,
+  RunEventPayload,
+  PhaseStartedPayload,
+  PhaseCompletedPayload,
+  PhaseFailedPayload,
+  IssueStatusChangedPayload,
+  QaVerdictPayload,
+  ProgressPayload,
+} from "./event-emitter.js";
+
 /**
  * Canonical Zod schema for all workflow phases.
  *
