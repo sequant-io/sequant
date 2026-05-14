@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-05-13
+
 ### Added
 
 - **`sequant stats --label` and `--since` filters for cohort measurement** — new `src/commands/stats.ts` helpers `filterLogs(logs, { label, since })` and `emitNoMatchingRuns(options)` filter `.sequant/logs/run-*.json` entries before `calculateStats` / `calculateDetailedAnalytics`. `--label <name>` keeps a run iff some issue in `log.issues[]` carries the label (mirroring the existing label-segment scan); `--since YYYY-MM-DD` keeps a run iff `log.startTime >= <since>T00:00:00Z`; both compose with AND. Filters force log-mode and bypass the metrics-first path — the metrics file at `.sequant/metrics.json` carries only issue numbers (per `metrics-schema.ts` `MetricRun.issues: number[]`), so per-label filtering against metrics is impossible. Applied uniformly to JSON, CSV, human-readable, and `--detailed` output paths. Zero-match emits a clear "No matching runs" message in the active output format (JSON `{error,runs:[]}`, header-only CSV, headerBox + warning text for human). Invalid `--since` exits with code 1 and a `console.error` matching the `locks.ts` pattern. `bin/cli.ts` registers both `.option()` calls. Documented in `README.md` §CLI Commands and `docs/reference/analytics.md` §"Filtering by Label or Date". 5 new tests in `src/commands/stats.test.ts` cover label match, label miss, `--since` cutoff, composed AND, and invalid-date rejection. Obsoletes the manual `jq` workflow from #462's closeout. (#640)

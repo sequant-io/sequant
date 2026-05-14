@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.2.0
+# What We've Built: Sequant v2.3.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,7 +737,31 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.2.0)
+### Recent Additions (v2.3.0)
+
+- **Unified Run Renderer** - Two-zone live grid + events log replaces dual-output regression; experimental ink-based TUI dashboard variant via `--experimental-tui` (#618, #620, #624, #540, #542, #543)
+- **Interactive Relay** - `sequant prompt <issue> "..."` and `sequant watch <issue>` send messages into and tail replies from a running run, without killing it (#383)
+- **Stacked PRs** - `--stacked` flag (implies `--chain`) bases non-first PRs on their predecessor branch for incremental reviewer diffs; each PR body includes a chain manifest (#605)
+- **Per-Issue Concurrency Locks** - `.sequant/locks/<issue>.lock` prevents two `sequant run` sessions from clobbering the same issue; new `sequant locks list / clear / acquire / release / check / check-batch` subcommands (#625)
+- **`sequant stats --label` / `--since`** - Cohort filters compose with AND across JSON, CSV, human, and `--detailed` outputs (#640)
+- **`--security-review` Flag** - Additive flag mirroring `--testgen` inserts the security-review phase after spec (#559)
+- **`-q` Mode Liveness Heartbeat** - 30s progress + 5-minute stall warning so quiet mode is no longer silent (#574)
+- **/qa Adversarial Re-Read** - Required structured section before `READY_FOR_MERGE`; severe gaps demote to `AC_NOT_MET` (#582)
+- **/qa & /spec Sibling-Site Scan** - Multi-pattern files surface sibling code matching the bug's root cause (#573, #580, #587)
+- **/qa Detection-Pattern Verification** - Skill PRs touching `grep`/`awk`/`jq`/`sed`/regex must execute each pattern against ≥5 real corpus samples (#551)
+- **/qa CHANGELOG Gate** - Demotes to `AC_MET_BUT_NOT_A_PLUS` when user-facing commits land without an `[Unreleased]` entry (#585)
+- **/qa Markdown-Only CI Relaxation** - Md-only diffs no longer block on pending build-matrix CI (#569)
+- **/qa Short-Circuit on Unchanged Commit** - Skips a full QA re-run when prior `qa:completed` SHA matches HEAD (#530)
+- **/spec Spec-By-Default** - Bug/docs issues now run `spec → exec → qa` by default; the auto-skip shortcut is gone (#533)
+- **/spec AC Linter — Title/Body Tension** - Warns when an AC title implies a docs bar but the body specifies a runtime/execution bar (#571, #597)
+- **/assess Predicted File-Collision** - Scans unstarted PROCEED issues, flags pairs sharing files, suggests chains for length≥3 (#556)
+- **/assess Prior Assessment Detection** - Supersession headers, churn warnings, conflict prompts when re-assessing (#555)
+- **Behavior-Rule Touchpoint Detection** - Proactive sibling-touchpoint surface in /spec; OLD-rule survival check in /qa (#552)
+- **Stray `$HOME/node_modules/sequant` Detection** - Distinct warning for the common mis-install footgun (#539)
+- **`lint:skill-calls` CI Guard** - Fails CI on unqualified `Skill()` calls colliding with Anthropic top-level skills (#568)
+- **Deterministic QA Gap-Check Precheck** - `scripts/qa/precheck.ts` runs fixture extraction, sibling-grep, and AC-literal diff before the QA agent (#609)
+
+### Earlier Additions (v2.2.0)
 
 - **Three-Directory Skill Sync** - Verification script and QA skill check guard against drift across `.claude/skills/`, `templates/skills/`, and `skills/` (#498, #499)
 - **QA Multi-Issue Guidance** - Batch review flows get explicit invocation guidance in the `/qa` skill (#509)
@@ -1081,7 +1105,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.2.0
+**Current Version:** 2.3.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1091,7 +1115,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.2.0                                │
+│                              SEQUANT v2.3.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
