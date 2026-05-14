@@ -209,9 +209,10 @@ npx sequant merge <issues...> # Batch integration QA before merging
 npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
 npx sequant locks <cmd>       # Inspect/clear per-issue concurrency locks
 npx sequant stats             # View local workflow analytics
-                              #   --label docs --since 2026-01-01  filter cohort
 npx sequant dashboard         # Launch real-time workflow dashboard
 ```
+
+Cohort filtering: `npx sequant stats --label docs --since 2026-01-01`. See [Analytics — Filtering by Label or Date](docs/reference/analytics.md#filtering-by-label-or-date) for details.
 
 See [Run Command Options](docs/reference/run-command.md), [Merge Command](docs/reference/merge-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
 

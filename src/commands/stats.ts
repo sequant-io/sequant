@@ -897,8 +897,15 @@ function emitNoMatchingRuns(options: StatsOptions): void {
  */
 export async function statsCommand(options: StatsOptions): Promise<void> {
   // Validate --since up-front so an invalid date errors before any output.
+  // Two-stage check: a strict YYYY-MM-DD regex (rejects 2026/01/01, 2026-1-1,
+  // Jan 1 2026 — all of which Date.parse would otherwise accept with engine-
+  // dependent UTC interpretation), then Date.parse for semantic validity
+  // (rejects 2026-13-45 etc.).
   if (options.since !== undefined) {
-    const sinceMs = Date.parse(`${options.since}T00:00:00Z`);
+    const SINCE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const sinceMs = SINCE_RE.test(options.since)
+      ? Date.parse(`${options.since}T00:00:00Z`)
+      : NaN;
     if (Number.isNaN(sinceMs)) {
       console.error(
         colors.error(

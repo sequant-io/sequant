@@ -468,6 +468,18 @@ describe("statsCommand", () => {
       expect(allCalls).not.toContain("Weekly Trends");
       expect(allCalls).not.toContain("Success by Label");
     });
+
+    it("--detailed with a filter that excludes all runs emits 'No matching runs'", async () => {
+      // Human path short-circuits via emitNoMatchingRuns and returns before
+      // the --detailed block runs, so detailed sections must not appear.
+      await statsCommand({ detailed: true, label: "nonexistent" });
+
+      const allCalls = consoleSpy.mock.calls.flat().join(" ");
+      expect(allCalls).toContain("No matching runs");
+      expect(allCalls).not.toContain("QA Verdicts");
+      expect(allCalls).not.toContain("Weekly Trends");
+      expect(allCalls).not.toContain("Success by Label");
+    });
   });
 
   describe("--label and --since filters", () => {
@@ -568,13 +580,23 @@ describe("statsCommand", () => {
       expect(parsed.totalRuns).toBe(1);
     });
 
-    it("--label and --since compose (AND)", async () => {
+    it("--label and --since compose (AND, zero match)", async () => {
       // docs + after 2026-02-01: jan has docs but is too early → 0 matches
       await statsCommand({ json: true, label: "docs", since: "2026-02-01" });
 
       const output = consoleSpy.mock.calls[0][0] as string;
       const parsed = JSON.parse(output);
       expect(parsed.error).toBe("No matching runs");
+    });
+
+    it("--label and --since compose (AND, positive match)", async () => {
+      // bug + after 2026-02-01: only mar matches both → 1 run
+      await statsCommand({ json: true, label: "bug", since: "2026-02-01" });
+
+      const output = consoleSpy.mock.calls[0][0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.totalRuns).toBe(1);
+      expect(parsed.totalIssues).toBe(1);
     });
 
     it("rejects an invalid --since date with a clear error and exit code 1", async () => {
