@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Typed workflow event system** — new `WorkflowEventEmitter` (`src/lib/workflow/event-emitter.ts`) wraps Node's built-in `EventEmitter` with a compile-time-typed event map. `RunOrchestrator` instantiates one per run, exposes it via `getEmitter()`, and emits 8 lifecycle events (`run_started`, `run_completed`, `phase_started`, `phase_completed`, `phase_failed`, `issue_status_changed`, `qa_verdict`, `progress`). Event payloads are JSON-serializable (`{ issueNumber, phase?, timestamp, duration?, verdict?, error?, ... }`) so MCP / webhook consumers can serialize them directly. `emit()` is wrapped in `Promise.allSettled` — a slow or throwing listener cannot crash the run. Existing consumers (LogWriter, MetricsWriter, CLI spinners) remain as direct calls per the descope decision; the emitter is opt-in for new subscribers (TUI, MCP server, future webhooks). `markDone()` drains all subscribers to prevent listener leaks across repeated `RunOrchestrator.run()` invocations (e.g. in the MCP server). Tests: 10 unit cases in `src/lib/workflow/event-emitter.test.ts` + 9 integration cases in `__tests__/run-orchestrator-events.test.ts`. (#504)
+
 ## [2.3.0] - 2026-05-13
 
 ### Added

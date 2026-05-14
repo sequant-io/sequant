@@ -70,6 +70,8 @@ import {
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { MetricsWriter } from "./metrics-writer.js";
+import { WorkflowEventEmitter } from "./event-emitter.js";
+import type { IssueEventStatus } from "./event-emitter.js";
 import { type MetricPhase, determineOutcome } from "./metrics-schema.js";
 import { getTokenUsageForRun } from "./token-utils.js";
 import type { SequantSettings } from "../settings.js";
@@ -216,12 +218,36 @@ export class RunOrchestrator {
   private readonly cfg: OrchestratorConfig;
   private readonly issueStates = new Map<number, IssueRuntimeState>();
   private readonly phaseStartTimes = new Map<string, number>();
+  private readonly emitter: WorkflowEventEmitter;
   private done = false;
 
   constructor(config: OrchestratorConfig) {
     this.validate(config);
+    // Build the event emitter before wrapProgress so the wrapper can route
+    // status transitions through `issue_status_changed` events (AC-3).
+    this.emitter = new WorkflowEventEmitter({
+      onListenerError: (event, error) => {
+        // Mirror the orchestrator's verbose-gated non-fatal warning style.
+        // Listener failures must never propagate to the run.
+        logNonFatalWarning(
+          `  !  Event listener for "${event}" threw, ignoring`,
+          error,
+          config.config?.verbose ?? false,
+        );
+      },
+    });
     this.cfg = { ...config, onProgress: this.wrapProgress(config.onProgress) };
     this.initIssueStates();
+  }
+
+  /**
+   * Returns the workflow event emitter. External consumers (TUI, MCP server,
+   * future webhooks) call `getEmitter().on(...)` to subscribe to lifecycle
+   * events. Subscribing is opt-in — the orchestrator runs unaware of who is
+   * listening (#504, AC-3).
+   */
+  getEmitter(): WorkflowEventEmitter {
+    return this.emitter;
   }
 
   /**
@@ -251,9 +277,14 @@ export class RunOrchestrator {
     };
   }
 
-  /** Mark the run as completed so the dashboard can unmount. */
+  /**
+   * Mark the run as completed so the dashboard can unmount and drop event
+   * subscribers. Drains the emitter to prevent leaks across multiple
+   * `run()` invocations in the same process (e.g. the MCP server).
+   */
   markDone(): void {
     this.done = true;
+    this.emitter.removeAllListeners();
   }
 
   private initIssueStates(): void {
@@ -285,12 +316,18 @@ export class RunOrchestrator {
     issue: number,
     phase: string,
     event: "start" | "complete" | "failed" | "activity",
-    extra?: { durationSeconds?: number; error?: string; text?: string },
+    extra?: {
+      durationSeconds?: number;
+      error?: string;
+      text?: string;
+      iteration?: number;
+    },
   ): void {
     const state = this.issueStates.get(issue);
     if (!state) return;
 
     if (event === "start") {
+      const wasStatus: IssueEventStatus = state.status;
       if (!state.startedAt) state.startedAt = new Date();
       state.status = "running";
       const now = new Date();
@@ -304,6 +341,19 @@ export class RunOrchestrator {
       const p = findOrAppendPhase(state, phase);
       p.status = "running";
       p.startedAt = now;
+      // Fire-and-forget — listener safety guaranteed by the emitter (AC-5).
+      void this.emitter.emit("phase_started", {
+        issueNumber: issue,
+        phase,
+        iteration: extra?.iteration,
+      });
+      if (wasStatus !== "running") {
+        void this.emitter.emit("issue_status_changed", {
+          issueNumber: issue,
+          from: wasStatus,
+          to: "running",
+        });
+      }
       return;
     }
 
@@ -315,6 +365,11 @@ export class RunOrchestrator {
       if (!line) return;
       state.currentPhase.nowLine = line;
       state.currentPhase.lastActivityAt = new Date();
+      void this.emitter.emit("progress", {
+        issueNumber: issue,
+        phase,
+        text: line,
+      });
       return;
     }
 
@@ -332,22 +387,54 @@ export class RunOrchestrator {
     p.status = event === "complete" ? "done" : "failed";
     p.elapsedMs = elapsedMs;
     state.currentPhase = undefined;
+    const durationSec =
+      elapsedMs !== undefined ? Math.round(elapsedMs / 1000) : undefined;
 
     if (event === "failed") {
+      const prev: IssueEventStatus = state.status;
       state.status = "failed";
       state.completedAt = new Date();
+      void this.emitter.emit("phase_failed", {
+        issueNumber: issue,
+        phase,
+        duration: durationSec,
+        error: extra?.error ?? "unknown",
+        iteration: extra?.iteration,
+      });
+      if (prev !== "failed") {
+        void this.emitter.emit("issue_status_changed", {
+          issueNumber: issue,
+          from: prev,
+          to: "failed",
+        });
+      }
       return;
     }
+
+    void this.emitter.emit("phase_completed", {
+      issueNumber: issue,
+      phase,
+      duration: durationSec ?? 0,
+      iteration: extra?.iteration,
+    });
 
     // Completed phase: if it's the last phase in the plan, mark issue passed.
     const allDone = state.phases.every(
       (ph) => ph.status === "done" || ph.status === "failed",
     );
     if (allDone) {
+      const prev: IssueEventStatus = state.status;
       state.status = state.phases.some((ph) => ph.status === "failed")
         ? "failed"
         : "passed";
       state.completedAt = new Date();
+      if (prev !== state.status) {
+        void this.emitter.emit("issue_status_changed", {
+          issueNumber: issue,
+          from: prev,
+          to: state.status,
+        });
+      }
     }
   }
 
@@ -989,16 +1076,46 @@ export class RunOrchestrator {
       baseBranch,
       onProgress,
     };
-    const result = await runIssueWithLogging(ctx);
 
-    if (logWriter && result.prNumber && result.prUrl) {
-      logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
-    }
-    if (logWriter) {
-      logWriter.completeIssue(parallelIssueNumber);
-    }
+    // Fire-and-forget — orchestrator does not await listener completion on
+    // the lifecycle bracket events. Listener safety is the emitter's job (AC-5).
+    void this.emitter.emit("run_started", { issueNumber });
+    const issueStartedAt = Date.now();
+    // `run_completed` is emitted in the finally so the bracket stays
+    // symmetric with `run_started` even if `runIssueWithLogging` throws —
+    // subscribers (MCP, dashboard) can rely on every started run ending.
+    let result: IssueResult | undefined;
+    try {
+      result = await runIssueWithLogging(ctx);
 
-    return result;
+      // Surface QA verdicts as a dedicated event so consumers don't have to
+      // re-parse phase output. Emits at most once per QA phase result.
+      for (const pr of result.phaseResults) {
+        if (pr.phase === "qa" && pr.verdict) {
+          void this.emitter.emit("qa_verdict", {
+            issueNumber,
+            phase: "qa",
+            verdict: pr.verdict,
+          });
+        }
+      }
+
+      if (logWriter && result.prNumber && result.prUrl) {
+        logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
+      }
+      if (logWriter) {
+        logWriter.completeIssue(parallelIssueNumber);
+      }
+
+      return result;
+    } finally {
+      const durationSec = Math.round((Date.now() - issueStartedAt) / 1000);
+      void this.emitter.emit("run_completed", {
+        issueNumber,
+        duration: durationSec,
+        success: result?.success ?? false,
+      });
+    }
   }
 
   private static async recordMetrics(
