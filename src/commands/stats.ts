@@ -27,6 +27,8 @@ interface StatsOptions {
   csv?: boolean;
   json?: boolean;
   detailed?: boolean;
+  label?: string;
+  since?: string;
 }
 
 /**
@@ -127,6 +129,40 @@ function parseLogFile(filePath: string): RunLog | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Filter runs by label and/or since date.
+ *
+ * Applied after parseLogFile, before calculateStats / calculateDetailedAnalytics.
+ * Metrics file is bypassed when either filter is set — its schema carries only
+ * issue numbers (not labels), so per-label filtering is impossible there.
+ *
+ * Inclusion rules (AND when both filters set):
+ *   --label <name> — keep a run iff some issue in log.issues carries the label
+ *                    (mirrors the per-issue label scan in calculateDetailedAnalytics)
+ *   --since YYYY-MM-DD — keep a run iff log.startTime >= <since>T00:00:00Z
+ *
+ * Caller is responsible for validating `since` format up-front (see statsCommand).
+ */
+function filterLogs(
+  logs: RunLog[],
+  filters: { label?: string; since?: string },
+): RunLog[] {
+  const { label, since } = filters;
+  const sinceMs =
+    since !== undefined ? Date.parse(`${since}T00:00:00Z`) : undefined;
+  return logs.filter((log) => {
+    if (label !== undefined) {
+      const hasLabel = log.issues.some((issue) => issue.labels.includes(label));
+      if (!hasLabel) return false;
+    }
+    if (sinceMs !== undefined) {
+      const startMs = Date.parse(log.startTime);
+      if (Number.isNaN(startMs) || startMs < sinceMs) return false;
+    }
+    return true;
+  });
 }
 
 /**
@@ -838,11 +874,57 @@ function displayDetailedAnalytics(detailed: DetailedAnalytics): void {
 }
 
 /**
+ * Emit the "no matching runs" empty branch in the active output format.
+ * Reuses the shape of the existing empty-data branches (AC-4).
+ */
+function emitNoMatchingRuns(options: StatsOptions): void {
+  if (options.json) {
+    console.log(JSON.stringify({ error: "No matching runs", runs: [] }));
+    return;
+  }
+  if (options.csv) {
+    console.log("runId,startTime,duration,issues,passed,failed,phases");
+    return;
+  }
+  console.log(ui.headerBox("SEQUANT ANALYTICS"));
+  console.log(colors.muted("\n  Local data only - no telemetry\n"));
+  console.log(colors.warning("  No matching runs."));
+  console.log("");
+}
+
+/**
  * Main stats command
  */
 export async function statsCommand(options: StatsOptions): Promise<void> {
-  // Try to load local metrics first
-  const metrics = loadMetrics();
+  // Validate --since up-front so an invalid date errors before any output.
+  // Two-stage check: a strict YYYY-MM-DD regex (rejects 2026/01/01, 2026-1-1,
+  // Jan 1 2026 — all of which Date.parse would otherwise accept with engine-
+  // dependent UTC interpretation), then Date.parse for semantic validity
+  // (rejects 2026-13-45 etc.).
+  if (options.since !== undefined) {
+    const SINCE_RE = /^\d{4}-\d{2}-\d{2}$/;
+    const sinceMs = SINCE_RE.test(options.since)
+      ? Date.parse(`${options.since}T00:00:00Z`)
+      : NaN;
+    if (Number.isNaN(sinceMs)) {
+      console.error(
+        colors.error(
+          `Invalid --since date: ${options.since}. Expected YYYY-MM-DD.`,
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  // --label / --since force log-mode: the metrics file has no per-issue labels
+  // (metrics-schema.ts MetricRun.issues is number[]), so filtering is impossible
+  // against metrics. Bypass the metrics-first path entirely when filters are set.
+  const useFilters = options.label !== undefined || options.since !== undefined;
+  const filters = { label: options.label, since: options.since };
+
+  // Try to load local metrics first (skipped when filters force log-mode)
+  const metrics = useFilters ? null : loadMetrics();
 
   // If JSON output requested
   if (options.json) {
@@ -886,15 +968,21 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
       return;
     }
 
-    const logs = logFiles
+    const allLogs = logFiles
       .map((filename) => {
         const filePath = path.join(logDir, filename);
         return parseLogFile(filePath);
       })
       .filter((log): log is RunLog => log !== null);
 
-    if (logs.length === 0) {
+    if (allLogs.length === 0) {
       console.log(JSON.stringify({ error: "No valid logs found", runs: [] }));
+      return;
+    }
+
+    const logs = useFilters ? filterLogs(allLogs, filters) : allLogs;
+    if (useFilters && logs.length === 0) {
+      emitNoMatchingRuns(options);
       return;
     }
 
@@ -926,12 +1014,18 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
       return;
     }
 
-    const logs = logFiles
+    const allLogs = logFiles
       .map((filename) => {
         const filePath = path.join(logDir, filename);
         return parseLogFile(filePath);
       })
       .filter((log): log is RunLog => log !== null);
+
+    const logs = useFilters ? filterLogs(allLogs, filters) : allLogs;
+    if (useFilters && logs.length === 0) {
+      emitNoMatchingRuns(options);
+      return;
+    }
 
     console.log(generateCsv(logs));
     return;
@@ -957,15 +1051,21 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
       return;
     }
 
-    const logs = logFiles
+    const allLogs = logFiles
       .map((filename) => {
         const filePath = path.join(logDir, filename);
         return parseLogFile(filePath);
       })
       .filter((log): log is RunLog => log !== null);
 
-    if (logs.length === 0) {
+    if (allLogs.length === 0) {
       console.log(colors.warning("\n  No valid log files found.\n"));
+      return;
+    }
+
+    const logs = useFilters ? filterLogs(allLogs, filters) : allLogs;
+    if (useFilters && logs.length === 0) {
+      emitNoMatchingRuns(options);
       return;
     }
 
@@ -977,13 +1077,14 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
   if (options.detailed) {
     const logDir = resolveLogPath(options.path);
     const logFiles = listLogFiles(logDir);
-    const logs = logFiles
+    const allLogs = logFiles
       .map((filename) => {
         const filePath = path.join(logDir, filename);
         return parseLogFile(filePath);
       })
       .filter((log): log is RunLog => log !== null);
 
+    const logs = useFilters ? filterLogs(allLogs, filters) : allLogs;
     if (logs.length > 0) {
       const detailed = calculateDetailedAnalytics(logs);
       displayDetailedAnalytics(detailed);
