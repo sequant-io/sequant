@@ -8,7 +8,6 @@ import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
-import type { WorkflowEventEmitter } from "./event-emitter.js";
 
 // Re-export the emitter types so external consumers can import them from
 // the workflow types barrel without reaching into the implementation file (#504).
@@ -406,12 +405,6 @@ export interface BatchExecutionContext {
   packageManager?: string;
   baseBranch?: string;
   onProgress?: ProgressCallback;
-  /**
-   * Typed workflow event emitter (#504). Threaded through so phase-executor
-   * and batch-executor can emit lifecycle events without reaching back to
-   * the orchestrator. Optional — runs without subscribers stay zero-cost.
-   */
-  emitter?: WorkflowEventEmitter;
 }
 
 /**
@@ -462,6 +455,4 @@ export interface IssueExecutionContext {
   baseBranch?: string;
   /** Per-phase progress callback (used in parallel mode) */
   onProgress?: ProgressCallback;
-  /** Typed workflow event emitter (#504), threaded from the orchestrator. */
-  emitter?: WorkflowEventEmitter;
 }

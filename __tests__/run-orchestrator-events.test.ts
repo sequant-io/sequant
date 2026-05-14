@@ -402,4 +402,31 @@ describe("RunOrchestrator + WorkflowEventEmitter (#504)", () => {
       expect(orchestrator.getEmitter().listenerCount("phase_started")).toBe(0);
     });
   });
+
+  describe("AC-3 symmetry: run_completed emitted even when runIssueWithLogging throws", () => {
+    it("emits run_completed with success:false before re-raising the underlying error", async () => {
+      const cfg = makeOrchestratorConfig();
+      const orchestrator = new RunOrchestrator(cfg);
+
+      const order: string[] = [];
+      orchestrator.getEmitter().on("run_started", () => order.push("started"));
+      orchestrator
+        .getEmitter()
+        .on("run_completed", (p) => order.push(`completed:${p.success}`));
+
+      const boom = new Error("simulated runIssueWithLogging crash");
+      mockRunIssue.mockRejectedValueOnce(boom);
+
+      // executeParallel wraps each issue in Promise.allSettled, so the
+      // rejection surfaces as a failed IssueResult rather than a thrown
+      // promise. We assert (a) the synthetic failure result is what
+      // executeParallel returns and (b) run_completed still fired with
+      // success:false from the finally block.
+      const results = await orchestrator.execute([123]);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].success).toBe(false);
+      expect(order).toEqual(["started", "completed:false"]);
+    });
+  });
 });

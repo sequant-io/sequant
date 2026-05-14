@@ -917,7 +917,6 @@ export class RunOrchestrator {
       packageManager: this.cfg.packageManager,
       baseBranch: this.cfg.baseBranch,
       onProgress: this.cfg.onProgress,
-      emitter: this.emitter,
     };
   }
 
@@ -1076,42 +1075,47 @@ export class RunOrchestrator {
       packageManager,
       baseBranch,
       onProgress,
-      emitter: this.emitter,
     };
 
     // Fire-and-forget — orchestrator does not await listener completion on
     // the lifecycle bracket events. Listener safety is the emitter's job (AC-5).
     void this.emitter.emit("run_started", { issueNumber });
     const issueStartedAt = Date.now();
-    const result = await runIssueWithLogging(ctx);
-    const durationSec = Math.round((Date.now() - issueStartedAt) / 1000);
+    // `run_completed` is emitted in the finally so the bracket stays
+    // symmetric with `run_started` even if `runIssueWithLogging` throws —
+    // subscribers (MCP, dashboard) can rely on every started run ending.
+    let result: IssueResult | undefined;
+    try {
+      result = await runIssueWithLogging(ctx);
 
-    // Surface QA verdicts as a dedicated event so consumers don't have to
-    // re-parse phase output. Emits at most once per QA phase result.
-    for (const pr of result.phaseResults) {
-      if (pr.phase === "qa" && pr.verdict) {
-        void this.emitter.emit("qa_verdict", {
-          issueNumber,
-          phase: "qa",
-          verdict: pr.verdict,
-        });
+      // Surface QA verdicts as a dedicated event so consumers don't have to
+      // re-parse phase output. Emits at most once per QA phase result.
+      for (const pr of result.phaseResults) {
+        if (pr.phase === "qa" && pr.verdict) {
+          void this.emitter.emit("qa_verdict", {
+            issueNumber,
+            phase: "qa",
+            verdict: pr.verdict,
+          });
+        }
       }
-    }
 
-    void this.emitter.emit("run_completed", {
-      issueNumber,
-      duration: durationSec,
-      success: result.success,
-    });
+      if (logWriter && result.prNumber && result.prUrl) {
+        logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
+      }
+      if (logWriter) {
+        logWriter.completeIssue(parallelIssueNumber);
+      }
 
-    if (logWriter && result.prNumber && result.prUrl) {
-      logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
+      return result;
+    } finally {
+      const durationSec = Math.round((Date.now() - issueStartedAt) / 1000);
+      void this.emitter.emit("run_completed", {
+        issueNumber,
+        duration: durationSec,
+        success: result?.success ?? false,
+      });
     }
-    if (logWriter) {
-      logWriter.completeIssue(parallelIssueNumber);
-    }
-
-    return result;
   }
 
   private static async recordMetrics(
