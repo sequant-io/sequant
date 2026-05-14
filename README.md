@@ -16,6 +16,7 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 - **Parallel execution with per-issue locks** — multi-issue runs are concurrent by default (`--concurrency`); `.sequant/locks/` prevents two sessions from clobbering the same issue.
 - **Stacked PRs** — `sequant run --stacked` chains issue PRs onto their predecessor branch so reviewers see the incremental diff per issue instead of the cumulative chain diff.
 - **Live run dashboard + cohort analytics** — unified renderer with a two-zone TTY grid (active issues + append-only events log); `sequant stats --label <name> --since YYYY-MM-DD` filters runs for measuring feature- or class-specific success rates.
+- **Interactive relay** — `sequant prompt <issue> "<message>"` sends queries or directives into a running headless `sequant run`, and `sequant watch <issue>` tails the replies. Bidirectional communication with detached and CI-driven sessions.
 - **GitHub Actions & multi-agent backends** — label-triggered and comment-triggered CI workflows out of the box; `--agent aider` for non-Claude-Code execution.
 
 Upgrading from v1.x? See the [migration guide](CHANGELOG.md#migration-from-v1x).
