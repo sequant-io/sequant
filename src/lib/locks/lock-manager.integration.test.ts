@@ -17,6 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const MODULE_PATH = resolve(__dirname, "lock-manager.ts");
 const SHUTDOWN_PATH = resolve(__dirname, "../shutdown.ts");
+const TSX_BIN = resolve(__dirname, "../../../node_modules/.bin/tsx");
 
 /**
  * Run a short Node script that acquires a lock and exits. Returns the
@@ -35,12 +36,14 @@ function runAcquireSync(
     // Hold for 200ms so a concurrent acquirer can race.
     setTimeout(() => {}, 200);
   `;
-  const result = spawnSync("npx", ["tsx", "--eval", script], {
+  const result = spawnSync(TSX_BIN, ["--eval", script], {
     encoding: "utf-8",
     env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
   });
   if (result.status !== 0) {
-    throw new Error(`tsx failed: ${result.stderr}`);
+    throw new Error(
+      `tsx failed (status=${result.status}, signal=${result.signal ?? "none"}, error=${result.error?.message ?? "none"}): ${result.stderr}`,
+    );
   }
   return JSON.parse(result.stdout);
 }
@@ -68,7 +71,7 @@ describe("LockManager — integration: two-process contention", () => {
         process.stdout.write(JSON.stringify(r) + "\\n");
         setTimeout(() => { mgr.release(42); process.exit(0); }, 1000);
       `;
-      const child = spawn("npx", ["tsx", "--eval", script], {
+      const child = spawn(TSX_BIN, ["--eval", script], {
         env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
       });
       let stdoutBuf = "";
@@ -112,7 +115,7 @@ describe("LockManager — integration: two-process contention", () => {
         process.stdout.write(JSON.stringify({ ...r, pid: process.pid }) + "\\n");
         setTimeout(() => {}, 30_000);
       `;
-      const child = spawn("npx", ["tsx", "--eval", script], {
+      const child = spawn(TSX_BIN, ["--eval", script], {
         env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
       });
       let stdoutBuf = "";
@@ -172,7 +175,7 @@ describe("LockManager — integration: two-process contention", () => {
         // Hold indefinitely — SIGINT path is what releases.
         setInterval(() => {}, 1000);
       `;
-      const child = spawn("npx", ["tsx", "--eval", script], {
+      const child = spawn(TSX_BIN, ["--eval", script], {
         env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
       });
       let stdoutBuf = "";
