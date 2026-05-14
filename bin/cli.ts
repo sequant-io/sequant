@@ -367,6 +367,11 @@ program
     "--detailed",
     "Show detailed analytics (QA verdicts, trends, label segmentation)",
   )
+  .option("--label <name>", "Filter to runs whose issues carry the given label")
+  .option(
+    "--since <date>",
+    "Filter to runs with startTime on/after YYYY-MM-DD (UTC)",
+  )
   .action(statsCommand);
 
 program

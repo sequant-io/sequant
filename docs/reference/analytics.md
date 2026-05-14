@@ -58,6 +58,27 @@ sequant stats
 sequant stats --json
 ```
 
+### Filtering by Label or Date
+
+`--label` and `--since` narrow every output mode (table, `--json`, `--csv`,
+`--detailed`) to a cohort. Both filters compose; an unmatched filter prints a
+clear "No matching runs" message in the active output format.
+
+```bash
+# All runs where any issue carried the "docs" label
+sequant stats --label docs
+
+# All runs that started on or after 2026-01-01 (UTC midnight cutoff)
+sequant stats --since 2026-01-01
+
+# Both filters AND together — docs-labeled issues since 2026-01-01
+sequant stats --label docs --since 2026-01-01 --json
+```
+
+**Note:** Filters read from `.sequant/logs/run-*.json` (which carry full
+per-issue labels). The metrics file at `.sequant/metrics.json` is bypassed when
+either filter is set — its schema stores issue numbers only, not labels.
+
 ### Example Output
 
 ```
