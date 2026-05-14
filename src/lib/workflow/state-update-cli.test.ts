@@ -15,6 +15,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "../../..");
 const scriptPath = path.resolve(projectRoot, "scripts/state/update.ts");
+const tsxBin = path.resolve(projectRoot, "node_modules/.bin/tsx");
 
 /**
  * Run the state update CLI script with given arguments
@@ -23,12 +24,20 @@ function runCli(
   args: string[],
   options?: { env?: Record<string, string>; cwd?: string },
 ): { stdout: string; stderr: string; status: number | null } {
-  const result = spawnSync("npx", ["tsx", scriptPath, ...args], {
+  const result = spawnSync(tsxBin, [scriptPath, ...args], {
     cwd: options?.cwd ?? projectRoot,
     encoding: "utf-8",
     env: { ...process.env, ...options?.env },
     timeout: 30000,
   });
+
+  // Surface signal/timeout failures explicitly — a null status with a real
+  // error or signal would otherwise masquerade as an exit-code mismatch.
+  if (result.status === null) {
+    throw new Error(
+      `tsx subprocess did not exit cleanly (signal=${result.signal ?? "none"}, error=${result.error?.message ?? "none"})`,
+    );
+  }
 
   return {
     stdout: result.stdout || "",
