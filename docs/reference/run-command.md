@@ -48,7 +48,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--phases <list>` | Comma-separated phases to run | `spec,exec,qa` |
+| `--phases <list>` | Comma-separated phases to run. Validated against the phase registry — unknown names exit with `error: option '--phases <list>' argument 'X' is invalid. Unknown phase 'X'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger` | `spec,exec,qa` |
 | `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
 | `--stacked` | Stack PRs: non-first PRs target predecessor branch (implies `--chain`) | `false` |
@@ -67,11 +67,16 @@ Shows what would be executed without actually running any phases. Useful for ver
 | Phase | Description |
 |-------|-------------|
 | `spec` | Planning and specification review |
-| `testgen` | Generate test stubs from spec |
+| `security-review` | Deep security analysis (auto-added for `security`/`auth`/`authentication`/`permissions`/`admin`-labeled issues) |
 | `exec` | Implementation execution |
-| `test` | Run tests and verify |
+| `testgen` | Generate test stubs from spec |
+| `test` | Browser-based testing (auto-added for `ui`/`frontend`/`admin`/`web`/`browser`-labeled issues) |
+| `verify` | Execution verification — runs commands and captures output for review |
 | `qa` | Quality review and approval |
 | `loop` | Quality iteration loop |
+| `merger` | Multi-issue integration and merge |
+
+Phase definitions, prompt templates, retry strategies, and label triggers all live in `src/lib/workflow/phase-registry.ts` — see [phase type definitions](../features/phase-type-definitions.md) for the registry pattern and how to add a new phase.
 
 ## Execution Model
 
