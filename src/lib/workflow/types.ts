@@ -14,6 +14,23 @@ import type { WorktreeInfo } from "./worktree-manager.js";
 // populated before any PhaseSchema parse runs.
 import { phaseRegistry, getPhaseNames } from "./phase-registry.js";
 
+// Re-export the emitter types so external consumers can import them from
+// the workflow types barrel without reaching into the implementation file (#504).
+export type {
+  WorkflowEventEmitter,
+  WorkflowEvents,
+  WorkflowEventListener,
+  IssueEventStatus,
+  BaseEventPayload,
+  RunEventPayload,
+  PhaseStartedPayload,
+  PhaseCompletedPayload,
+  PhaseFailedPayload,
+  IssueStatusChangedPayload,
+  QaVerdictPayload,
+  ProgressPayload,
+} from "./event-emitter.js";
+
 /**
  * Canonical Zod schema for all workflow phases.
  *

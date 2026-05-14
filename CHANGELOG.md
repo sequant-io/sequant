@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Typed workflow event system** — new `WorkflowEventEmitter` (`src/lib/workflow/event-emitter.ts`) wraps Node's built-in `EventEmitter` with a compile-time-typed event map. `RunOrchestrator` instantiates one per run, exposes it via `getEmitter()`, and emits 8 lifecycle events (`run_started`, `run_completed`, `phase_started`, `phase_completed`, `phase_failed`, `issue_status_changed`, `qa_verdict`, `progress`). Event payloads are JSON-serializable (`{ issueNumber, phase?, timestamp, duration?, verdict?, error?, ... }`) so MCP / webhook consumers can serialize them directly. `emit()` is wrapped in `Promise.allSettled` — a slow or throwing listener cannot crash the run. Existing consumers (LogWriter, MetricsWriter, CLI spinners) remain as direct calls per the descope decision; the emitter is opt-in for new subscribers (TUI, MCP server, future webhooks). `markDone()` drains all subscribers to prevent listener leaks across repeated `RunOrchestrator.run()` invocations (e.g. in the MCP server). Tests: 10 unit cases in `src/lib/workflow/event-emitter.test.ts` + 9 integration cases in `__tests__/run-orchestrator-events.test.ts`. (#504)
+
 ### Changed
 
-- Phase definitions consolidated into a single registry (`src/lib/workflow/phase-registry.ts`) — replaces the scattered `PHASE_PROMPTS`, `AIDER_PHASE_PROMPTS`, `ISOLATED_PHASES`, `UI_LABELS`, and `SECURITY_LABELS` constants. All 9 built-in phases (`spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`) now register through the same mechanism with no special-casing. `--phases` now validates against the registry at runtime and reports unknown names with a clear error (`Unknown phase 'deploy'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger`). User-facing behavior is otherwise unchanged. (#505)
+- Phase definitions consolidated into a single registry (`src/lib/workflow/phase-registry.ts`) — replaces the scattered `PHASE_PROMPTS`, `AIDER_PHASE_PROMPTS`, `ISOLATED_PHASES`, `UI_LABELS`, and `SECURITY_LABELS` constants. All 9 built-in phases (`spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`) now register through the same mechanism with no special-casing. `--phases` now validates against the registry at runtime and reports unknown names with a clear error (`Unknown phase 'deploy'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger`). `retryStrategy` metadata on `PhaseDefinition` is consumed at runtime (spec backoff/extra-retries + the `maxRetries: 0` skip-cold-start-retries rule) instead of being a parallel hardcoded set of constants. User-facing behavior is otherwise unchanged. (#505)
 
 ## [2.3.0] - 2026-05-13
 
