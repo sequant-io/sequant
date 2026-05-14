@@ -7,7 +7,30 @@ import {
   LockManager,
   formatLockedMessage,
   type LockFile,
+  type SignalOtherResult,
 } from "../lib/locks/index.js";
+
+/** Human-readable line for the `--signal-other` log output (#637). */
+function formatSignalLine(
+  issue: number,
+  pid: number,
+  result: SignalOtherResult,
+): string {
+  switch (result.reason) {
+    case "sent":
+      return `Signaled PID ${pid} (SIGTERM) for #${issue}`;
+    case "cross-host":
+      return `Could not signal PID ${pid} for #${issue} (cross-host holder)`;
+    case "self-or-parent":
+      return `Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
+    case "pid-dead":
+      return `Could not signal PID ${pid} for #${issue} (already exited)`;
+    case "kill-failed":
+      return `Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
+    case "orchestrator":
+      return `Skipped signal for #${issue} (orchestrator mode)`;
+  }
+}
 
 export interface LocksListOptions {
   json?: boolean;
@@ -180,15 +203,9 @@ export async function locksAcquireCommand(
       skipPidCheck: options.skipPidCheck,
     });
     if (previous && options.signalOther) {
-      const sent = manager.signalOther(previous);
+      const result = manager.signalOther(previous);
       if (!options.json) {
-        console.log(
-          chalk.gray(
-            sent
-              ? `Signaled PID ${previous.pid} (SIGTERM) for #${issue}`
-              : `Could not signal PID ${previous.pid} for #${issue} (cross-host or already exited)`,
-          ),
-        );
+        console.log(chalk.gray(formatSignalLine(issue, previous.pid, result)));
       }
     }
     if (options.json) {

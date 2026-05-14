@@ -175,23 +175,22 @@ describe("sequant locks check-batch", () => {
 });
 
 describe("sequant locks acquire --force --signal-other --skip-pid-check (skill takeover)", () => {
-  it("takes over an existing skill-shell lock; signal-other prints 'Could not signal' for cross-host holder", () => {
+  it("takes over an existing skill-shell lock; signal-other prints 'cross-host holder' for cross-host holder", () => {
     // Pre-write a skill lock as if a prior /fullsolve had acquired it and
     // its shell already exited (the canonical skipPidCheck scenario).
     //
     // The hostname is intentionally a sentinel non-host string so
-    // signalOther's cross-host short-circuit (lock-manager.ts:289) returns
-    // false WITHOUT invoking process.kill on PID 9999. Previously this used
-    // os.hostname() with pid: 9999, which assumed PID 9999 was dead — on a
-    // busy CI runner PID 9999 can be a live sibling/ancestor process, and
-    // SIGTERMing it killed the CLI mid-spawn → result.status === null (#633).
+    // signalOther's cross-host short-circuit returns { sent: false,
+    // reason: "cross-host" } WITHOUT invoking process.kill on PID 9999.
+    // Previously this used os.hostname() with pid: 9999, which assumed
+    // PID 9999 was dead — on a busy CI runner PID 9999 can be a live
+    // sibling/ancestor process, and SIGTERMing it killed the CLI mid-spawn
+    // → result.status === null (#633).
     //
-    // The CLI prints the same `(cross-host or already exited)` suffix for
-    // both false-branches of signalOther (cross-host vs same-host-dead-PID),
-    // so the assertion below verifies the not-sent path but cannot
-    // distinguish which internal branch ran — that's a CLI-message-level
-    // limitation. The same-host-dead-PID branch is unit-tested at
-    // lock-manager.test.ts:294 via the isPidAlive constructor seam.
+    // Since #637 the CLI distinguishes each refusal branch in its log line
+    // via the discriminated `reason` returned by signalOther; this test
+    // anchors on the cross-host wording so a future refactor that
+    // accidentally took a different branch would fail loudly.
     writeFileSync(
       join(locksDir, "77.lock"),
       JSON.stringify({
@@ -214,11 +213,12 @@ describe("sequant locks acquire --force --signal-other --skip-pid-check (skill t
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("✓ Acquired lock for #77 (forced)");
-    // signal-other should report inability to signal — anchored on the full
-    // "(cross-host or already exited)" suffix so a future refactor that
-    // accidentally takes the "Signaled ..." (sent) branch would fail loudly.
+    // signal-other should report cross-host — anchored on the full
+    // "(cross-host holder)" suffix so a future refactor that accidentally
+    // takes the "Signaled ..." (sent) branch or a different refusal branch
+    // would fail loudly (#637).
     expect(result.stdout).toMatch(
-      /Could not signal PID 9999 for #77 \(cross-host or already exited\)/,
+      /Could not signal PID 9999 for #77 \(cross-host holder\)/,
     );
 
     // The lock file now reflects the new acquirer with the new command label

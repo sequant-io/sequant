@@ -39,6 +39,7 @@ import {
   type AcquireResult,
   type LockFile,
   type LockListing,
+  type SignalOtherResult,
 } from "./types.js";
 
 export interface LockManagerOptions {
@@ -281,18 +282,32 @@ export class LockManager {
   }
 
   /**
-   * SIGTERM the prior PID iff it is alive on this host. Returns whether a
-   * signal was sent. No-op in orchestrator mode or for cross-host holders.
+   * SIGTERM the prior PID iff it is alive on this host. The `reason` discriminator
+   * lets callers produce accurate log lines for each refusal branch (#637).
+   * No-op in orchestrator mode or for cross-host holders.
    */
-  signalOther(holder: LockFile, signal: NodeJS.Signals = "SIGTERM"): boolean {
-    if (this.orchestratorMode) return false;
-    if (holder.hostname !== this.hostname) return false;
-    if (!this.isPidAlive(holder.pid)) return false;
+  signalOther(
+    holder: LockFile,
+    signal: NodeJS.Signals = "SIGTERM",
+  ): SignalOtherResult {
+    if (this.orchestratorMode) return { sent: false, reason: "orchestrator" };
+    if (holder.hostname !== this.hostname) {
+      return { sent: false, reason: "cross-host" };
+    }
+    // Defense-in-depth: never signal ourselves or our parent. A real lock
+    // file's pid should never match this process or its parent; a malformed
+    // file or recycled PID could otherwise let us SIGTERM our own shell
+    // (#637, defense follow-up to the #633 flake).
+    if (holder.pid === this.pid || holder.pid === process.ppid) {
+      return { sent: false, reason: "self-or-parent" };
+    }
+    if (!this.isPidAlive(holder.pid))
+      return { sent: false, reason: "pid-dead" };
     try {
       process.kill(holder.pid, signal);
-      return true;
+      return { sent: true, reason: "sent" };
     } catch {
-      return false;
+      return { sent: false, reason: "kill-failed" };
     }
   }
 
