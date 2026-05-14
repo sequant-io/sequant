@@ -103,15 +103,23 @@ export function createThrottledReporter(
 }
 
 /**
- * Spec-specific retry configuration.
+ * Spec-specific retry configuration. Sourced from the phase registry's
+ * `retryStrategy` field — `phase-registry.ts` is the source of truth.
+ *
  * Spec failures have a higher failure rate (~8.6%) than other phases due to
  * transient GitHub API issues and rate limits. One extra retry with backoff
  * recovers most of these without user intervention.
+ *
+ * Fallback literals (5000 / 1) match the legacy hardcoded values and only
+ * fire if the spec registration is removed or its `retryStrategy` is unset,
+ * which would be a misconfiguration. Tests pin these at 5000 / 1, so any
+ * drift surfaces immediately.
  */
+const SPEC_RETRY_STRATEGY = phaseRegistry.get("spec").retryStrategy;
 /** @internal Exported for testing only */
-export const SPEC_RETRY_BACKOFF_MS = 5000;
+export const SPEC_RETRY_BACKOFF_MS = SPEC_RETRY_STRATEGY?.backoffMs ?? 5000;
 /** @internal Exported for testing only */
-export const SPEC_EXTRA_RETRIES = 1;
+export const SPEC_EXTRA_RETRIES = SPEC_RETRY_STRATEGY?.extraRetries ?? 1;
 
 export function parseQaVerdict(output: string): QaVerdict | null {
   if (!output) return null;
@@ -768,11 +776,16 @@ export async function executePhaseWithRetry(
     );
   }
 
-  // Skip cold-start retries for `loop` phase (#488).
-  // Loop is always a re-run after a failed QA — never a first boot.
-  // Failures at 47-51s are genuine skill failures, not cold-start issues.
-  // Without this guard, 2 cold-start retries + 1 MCP fallback = 3 wasted spawns per loop.
-  const skipColdStartRetry = phase === "loop";
+  // Skip cold-start retries for phases registered with `retryStrategy.maxRetries: 0`.
+  // `loop` is the canonical user (#488) — it's always a re-run after a failed QA,
+  // never a first boot. Failures at 47-51s are genuine skill failures, not cold-start
+  // issues. Without this guard, 2 cold-start retries + 1 MCP fallback = 3 wasted
+  // spawns per loop. Sourcing the decision from the registry makes the rule
+  // data-driven — any future phase registered with `maxRetries: 0` inherits the
+  // same behavior without a code change here.
+  const skipColdStartRetry =
+    phaseRegistry.has(phase) &&
+    phaseRegistry.get(phase).retryStrategy?.maxRetries === 0;
 
   let lastResult: PhaseResult & { sessionId?: string };
 

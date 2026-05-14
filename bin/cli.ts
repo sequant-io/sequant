@@ -5,7 +5,7 @@
  * Sequential AI phases with quality gates for any codebase.
  */
 
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import chalk from "chalk";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -89,9 +89,9 @@ function validatePhasesFlag(value: string): string {
   const unknown = names.filter((n) => !phaseRegistry.has(n));
   if (unknown.length > 0) {
     const available = phaseRegistry.names().join(", ");
-    const offender = unknown[0];
-    console.error(`Unknown phase '${offender}'. Available: ${available}`);
-    process.exit(1);
+    throw new InvalidArgumentError(
+      `Unknown phase '${unknown[0]}'. Available: ${available}`,
+    );
   }
   return value;
 }

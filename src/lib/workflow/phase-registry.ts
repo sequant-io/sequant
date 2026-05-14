@@ -178,9 +178,9 @@ phaseRegistry.register({
     "Review GitHub issue #{issue} and create an implementation plan with verification criteria. Run the /spec {issue} workflow.",
   requiresWorktree: false,
   // Spec has a higher transient failure rate (~8.6%) than other phases due
-  // to GitHub API issues and rate limits. The retry strategy here advertises
-  // the per-phase extra retry — phase-executor reads the constants directly
-  // today but consumers (telemetry, observability) can rely on this metadata.
+  // to GitHub API issues and rate limits. phase-executor.ts reads these
+  // values directly from the registry at module load (see
+  // SPEC_RETRY_BACKOFF_MS / SPEC_EXTRA_RETRIES).
   retryStrategy: { extraRetries: 1, backoffMs: 5000 },
   driverOverrides: {
     aider: {
@@ -300,7 +300,7 @@ with format "### Verdict: <VERDICT>" followed by an explanation.`,
 });
 
 // Loop — worktree-isolated. `maxRetries: 0` encodes the
-// "skip cold-start retries for loop" rule from phase-executor.
+// "skip cold-start retries" rule consumed by phase-executor.ts (#488).
 phaseRegistry.register({
   name: "loop",
   skill: "loop",
