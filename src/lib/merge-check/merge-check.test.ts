@@ -97,7 +97,7 @@ describe("mirroring-check", () => {
         issueNumber: 200,
         title: "Update hooks",
         branch: "feature/200-hooks",
-        filesModified: ["hooks/pre-tool.sh"],
+        filesModified: [".claude/hooks/pre-tool.sh"],
       },
     ];
 

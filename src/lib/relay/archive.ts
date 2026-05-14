@@ -105,6 +105,11 @@ export function archiveRelayDir(
       }
     }
 
+    // Split inbox/outbox counts (#645, Gap 5). Surfaces unanswered queries
+    // (inboxCount > outboxCount) when inspecting archives post-hoc.
+    const inboxCount = countLines(join(srcDir, RELAY_INBOX));
+    const outboxCount = countLines(join(srcDir, RELAY_OUTBOX));
+
     // Write meta.json.
     const meta: RelayArchiveMeta = RelayArchiveMetaSchema.parse({
       issue,
@@ -112,6 +117,8 @@ export function archiveRelayDir(
       startedAt: options.startedAt,
       endedAt,
       messageCount: options.messageCount,
+      inboxCount,
+      outboxCount,
     });
     writeFileSync(
       join(destDir, "meta.json"),

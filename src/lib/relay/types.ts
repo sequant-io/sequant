@@ -87,7 +87,16 @@ export const RelayArchiveMetaSchema = z.object({
   phase: z.string(),
   startedAt: z.string().datetime(),
   endedAt: z.string().datetime(),
+  /** Total inbox + outbox messages exchanged during the run. */
   messageCount: z.number().int().nonnegative(),
+  /**
+   * Inbox messages (user → agent). Split out from `messageCount` (#645, Gap 5)
+   * so post-hoc inspection can spot unanswered queries (inboxCount > outboxCount).
+   * Optional for backward compatibility with archives written before this split.
+   */
+  inboxCount: z.number().int().nonnegative().optional(),
+  /** Outbox replies (agent → user). See `inboxCount` for context. */
+  outboxCount: z.number().int().nonnegative().optional(),
 });
 
 export type RelayArchiveMeta = z.infer<typeof RelayArchiveMetaSchema>;
