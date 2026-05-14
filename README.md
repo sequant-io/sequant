@@ -9,13 +9,14 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-### What's new in 2.0
+### What's new in 2.x
 
 - **MCP server** — `sequant serve` exposes workflow orchestration as MCP tools (`sequant_run`, `sequant_status`, `sequant_logs`). Any MCP client can drive Sequant headlessly.
 - **`/assess` unification** — `/solve` is merged into `/assess` with a 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK). `/solve` still works as an alias.
-- **Parallel execution** — multi-issue runs are concurrent by default with `--concurrency`.
-- **Multi-agent** — `--agent aider` as an alternative backend, with a driver interface for future agents.
-- **GitHub Actions** — label-triggered and comment-triggered CI workflows out of the box.
+- **Parallel execution with per-issue locks** — multi-issue runs are concurrent by default (`--concurrency`); `.sequant/locks/` prevents two sessions from clobbering the same issue.
+- **Stacked PRs** — `sequant run --stacked` chains issue PRs onto their predecessor branch so reviewers see the incremental diff per issue instead of the cumulative chain diff.
+- **Live run dashboard + cohort analytics** — unified renderer with a two-zone TTY grid (active issues + append-only events log); `sequant stats --label <name> --since YYYY-MM-DD` filters runs for measuring feature- or class-specific success rates.
+- **GitHub Actions & multi-agent backends** — label-triggered and comment-triggered CI workflows out of the box; `--agent aider` for non-Claude-Code execution.
 
 Upgrading from v1.x? See the [migration guide](CHANGELOG.md#migration-from-v1x).
 
