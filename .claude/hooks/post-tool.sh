@@ -49,24 +49,35 @@ else
     TOOL_OUTPUT=$(echo "$INPUT_JSON" | grep -oE '"tool_response"\s*:\s*\{[^}]+\}' | head -1)
 fi
 
-TIMING_LOG="/tmp/claude-timing.log"
-QUALITY_LOG="/tmp/claude-quality.log"
-TESTS_LOG="/tmp/claude-tests.log"
-PARALLEL_MARKER_PREFIX="/tmp/claude-parallel-"
+_TMPDIR="${TMPDIR:-/tmp}"
+
+# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
+if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+  _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
+  mkdir -p "$_LOG_DIR"
+else
+  _LOG_DIR="${_TMPDIR}"
+fi
+
+TIMING_LOG="${_LOG_DIR}/claude-timing.log"
+QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
+TESTS_LOG="${_LOG_DIR}/claude-tests.log"
+PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
 
 # === AGENT ID DETECTION ===
 # For parallel agents, detect group ID from marker files
-# Format: /tmp/claude-parallel-<group-id>.marker
+# Format: ${_TMPDIR}/claude-parallel-<group-id>.marker
 AGENT_ID=""
 IS_PARALLEL_AGENT="false"
-for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
-    if [[ -f "$marker" ]]; then
+# Find marker files using find (works in both bash and zsh)
+while IFS= read -r marker; do
+    if [[ -n "$marker" && -f "$marker" ]]; then
         # Extract group ID from marker filename
         AGENT_ID=$(basename "$marker" | sed 's/claude-parallel-//' | sed 's/\.marker//')
         IS_PARALLEL_AGENT="true"
         break
     fi
-done
+done < <(find "${_TMPDIR}" -maxdepth 1 -name "claude-parallel-*.marker" 2>/dev/null)
 
 # === TIMING END ===
 # Include agent ID in log format if available (AC-4)
@@ -201,14 +212,16 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
 fi
 
 # === DETECT TEST FAILURES ===
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm (test|run test)'; then
+# Supports: npm, bun, yarn, pnpm
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE '(npm (test|run test)|bun (test|run test)|yarn (test|run test)|pnpm (test|run test))'; then
     if echo "$TOOL_OUTPUT" | grep -qE '(FAIL|failed|Error:)'; then
         echo "$(date +%H:%M:%S) TEST_FAILURE detected" >> "$QUALITY_LOG"
     fi
 fi
 
 # === DETECT BUILD FAILURES ===
-if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm run build'; then
+# Supports: npm, bun, yarn, pnpm
+if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE '(npm run build|bun run build|yarn build|yarn run build|pnpm run build)'; then
     if echo "$TOOL_OUTPUT" | grep -qE '(error TS|Build failed|Error:)'; then
         echo "$(date +%H:%M:%S) BUILD_FAILURE detected" >> "$QUALITY_LOG"
     fi
@@ -219,10 +232,10 @@ fi
 # Automatically appends coverage analysis to npm test output
 # Logs which changed files have/don't have corresponding tests
 if [[ "${CLAUDE_HOOKS_COVERAGE:-}" == "true" ]]; then
-    if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'npm (test|run test)'; then
+    if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE '(npm (test|run test)|bun (test|run test)|yarn (test|run test)|pnpm (test|run test))'; then
         # Only run if tests passed (don't clutter failure output)
         if ! echo "$TOOL_OUTPUT" | grep -qE '(FAIL|failed|Error:)'; then
-            COVERAGE_LOG="/tmp/claude-coverage.log"
+            COVERAGE_LOG="${_LOG_DIR}/claude-coverage.log"
 
             # Get changed source files (excluding tests)
             changed_files=$(git diff main...HEAD --name-only 2>/dev/null | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
@@ -239,9 +252,7 @@ if [[ "${CLAUDE_HOOKS_COVERAGE:-}" == "true" ]]; then
                     base=$(basename "$file" .ts | sed 's/\.tsx$//')
 
                     # Check for test file
-                    has_test="no"
                     if find . -name "${base}.test.*" -o -name "${base}.spec.*" 2>/dev/null | grep -q .; then
-                        has_test="yes"
                         ((files_with_tests++))
                     else
                         ((files_without_tests++))
@@ -371,7 +382,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && echo "$TOOL_INPUT" | grep -qE 'gh pr merge'; 
 
                 if [[ -n "$WORKTREE_PATH" && -d "$WORKTREE_PATH" ]]; then
                     git worktree remove "$WORKTREE_PATH" --force 2>/dev/null || true
-                    echo "POST-MERGE: Removed worktree $WORKTREE_PATH for branch $BRANCH_NAME" >> /tmp/claude-hook.log
+                    echo "POST-MERGE: Removed worktree $WORKTREE_PATH for branch $BRANCH_NAME" >> "${_LOG_DIR}/claude-hook.log"
                 fi
 
                 # Clean up local branch
