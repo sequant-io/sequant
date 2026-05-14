@@ -16,4 +16,10 @@ export {
   DEFAULT_STALE_AGE_MS,
   LockFileSchema,
 } from "./types.js";
-export type { AcquireResult, LockFile, LockListing } from "./types.js";
+export type {
+  AcquireResult,
+  LockFile,
+  LockListing,
+  SignalOtherResult,
+  SignalReason,
+} from "./types.js";
