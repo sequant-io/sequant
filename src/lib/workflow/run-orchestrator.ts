@@ -37,7 +37,29 @@ import type { RunConfig } from "./run-log-schema.js";
 import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
 import { LockManager, formatLockedMessage } from "../locks/index.js";
-import type { LockFile } from "../locks/index.js";
+import type { LockFile, SignalOtherResult } from "../locks/index.js";
+
+/** Human-readable line for the run-orchestrator's `--signal-other` log (#637). */
+function formatSignalLine(
+  issue: number,
+  pid: number,
+  result: SignalOtherResult,
+): string {
+  switch (result.reason) {
+    case "sent":
+      return `  Signaled PID ${pid} (SIGTERM) for #${issue}`;
+    case "cross-host":
+      return `  Could not signal PID ${pid} for #${issue} (cross-host holder)`;
+    case "self-or-parent":
+      return `  Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
+    case "pid-dead":
+      return `  Could not signal PID ${pid} for #${issue} (already exited)`;
+    case "kill-failed":
+      return `  Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
+    case "orchestrator":
+      return `  Skipped signal for #${issue} (orchestrator mode)`;
+  }
+}
 import {
   getIssueInfo,
   sortByDependencies,
@@ -571,12 +593,10 @@ export class RunOrchestrator {
                 commandLabel,
               );
               if (previous && mergedOptions.signalOther) {
-                const sent = lockManager.signalOther(previous);
+                const result = lockManager.signalOther(previous);
                 console.log(
                   chalk.gray(
-                    sent
-                      ? `  Signaled PID ${previous.pid} (SIGTERM) for #${issueNumber}`
-                      : `  Could not signal PID ${previous.pid} for #${issueNumber} (cross-host or already exited)`,
+                    formatSignalLine(issueNumber, previous.pid, result),
                   ),
                 );
               }

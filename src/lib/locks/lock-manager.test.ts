@@ -308,24 +308,24 @@ describe("LockManager — forceAcquire / signalOther", () => {
       return true;
     }) as typeof process.kill;
     try {
-      const sent = mgr.signalOther({
+      const result = mgr.signalOther({
         pid: 9999,
         hostname: "host-a",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent).toBe(true);
+      expect(result).toEqual({ sent: true, reason: "sent" });
       expect(calls).toEqual([9999]);
 
       // Cross-host: should NOT signal.
       calls.length = 0;
-      const sent2 = mgr.signalOther({
+      const result2 = mgr.signalOther({
         pid: 9999,
         hostname: "other-host",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent2).toBe(false);
+      expect(result2).toEqual({ sent: false, reason: "cross-host" });
       expect(calls).toEqual([]);
     } finally {
       (process as unknown as { kill: typeof process.kill }).kill = originalKill;
@@ -337,7 +337,7 @@ describe("LockManager — forceAcquire / signalOther", () => {
     const mgr = new LockManager({
       locksDir: dir,
       hostname: "host-a",
-      pid: 1,
+      pid: process.pid, // mirrors production — manager runs with its real pid
       isPidAlive: () => {
         probed++;
         return true;
@@ -352,13 +352,13 @@ describe("LockManager — forceAcquire / signalOther", () => {
       return true;
     }) as typeof process.kill;
     try {
-      const sent = mgr.signalOther({
-        pid: 1, // === this.pid
+      const result = mgr.signalOther({
+        pid: process.pid, // === this.pid
         hostname: "host-a",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent).toBe(false);
+      expect(result).toEqual({ sent: false, reason: "self-or-parent" });
       expect(probed).toBe(0); // guard short-circuits BEFORE isPidAlive
       expect(killCalls).toEqual([]);
     } finally {
@@ -372,7 +372,7 @@ describe("LockManager — forceAcquire / signalOther", () => {
     const mgr = new LockManager({
       locksDir: dir,
       hostname: "host-a",
-      pid: process.pid, // self
+      pid: process.pid, // self; POSIX guarantees process.pid !== process.ppid
       isPidAlive: () => {
         probed++;
         return true;
@@ -387,13 +387,13 @@ describe("LockManager — forceAcquire / signalOther", () => {
       return true;
     }) as typeof process.kill;
     try {
-      const sent = mgr.signalOther({
+      const result = mgr.signalOther({
         pid: process.ppid, // === parent of this process
         hostname: "host-a",
         startedAt: new Date().toISOString(),
         command: "x",
       });
-      expect(sent).toBe(false);
+      expect(result).toEqual({ sent: false, reason: "self-or-parent" });
       expect(probed).toBe(0);
       expect(killCalls).toEqual([]);
     } finally {
