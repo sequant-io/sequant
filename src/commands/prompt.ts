@@ -3,19 +3,30 @@
  * headless `sequant run` session via the interactive relay (#383).
  */
 
+import { existsSync, statSync, readFileSync } from "fs";
 import chalk from "chalk";
 import {
   RelayMessageTypeSchema,
+  RelayResponseSchema,
   type RelayMessageType,
+  type RelayResponse,
 } from "../lib/relay/types.js";
 import { appendInboxMessage } from "../lib/relay/writer.js";
 import { cleanupStalePid, readPidFile } from "../lib/relay/pid.js";
+import { outboxPathFor } from "../lib/relay/paths.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import type { IssueState } from "../lib/workflow/state-schema.js";
 
 export interface PromptCommandOptions {
   type?: string;
   json?: boolean;
+  /**
+   * If set, poll the outbox for a reply that matches the new message ID and
+   * print it inline. Exits 0 on reply, 1 on timeout (#645, Gap 4).
+   */
+  waitSeconds?: number;
+  /** Test seam: override the poll interval (ms). Default 250. */
+  waitPollIntervalMs?: number;
 }
 
 export interface ParsedPromptArgs {
@@ -199,14 +210,34 @@ export async function promptCommand(argsAndOptions: {
     /* swallow */
   }
 
-  // Build confirmation with current phase + elapsed time.
-  const phase = issueState?.currentPhase ?? "unknown";
+  // Re-fetch state with a fresh manager to bypass any cached snapshot from
+  // the start-of-command read. Without this, `currentPhase` shown in the
+  // confirmation can be a phase-old (#645, Gap 6: user reported "exec phase"
+  // while state.json had advanced to qa).
+  let freshPhase: string | undefined;
+  let freshStartedAt: string | undefined;
+  try {
+    const freshState = await new StateManager().getIssueState(issueNumber);
+    freshPhase = freshState?.currentPhase;
+    freshStartedAt = freshState?.relay?.startedAt;
+  } catch {
+    // Fall back to the issueState we already have.
+    freshPhase = issueState?.currentPhase;
+    freshStartedAt = issueState?.relay?.startedAt;
+  }
+
   let elapsedSegment = "";
-  if (issueState?.relay?.startedAt) {
-    const ms = Date.now() - new Date(issueState.relay.startedAt).getTime();
+  if (freshStartedAt) {
+    const ms = Date.now() - new Date(freshStartedAt).getTime();
     elapsedSegment = `, ${formatElapsed(ms)} elapsed`;
   }
-  const confirmation = `Message sent to #${issueNumber} (${phase} phase${elapsedSegment})`;
+  // Omit the phase label when we don't have a fresh reading (#645, Gap 6) —
+  // a wrong phase is worse than no phase. Callers asking for JSON still get
+  // an explicit `phase: null` for that case.
+  const phaseSegment = freshPhase
+    ? ` (${freshPhase} phase${elapsedSegment})`
+    : "";
+  const confirmation = `Message sent to #${issueNumber}${phaseSegment}`;
 
   if (options.json) {
     console.log(
@@ -215,12 +246,97 @@ export async function promptCommand(argsAndOptions: {
         issue: issueNumber,
         messageId: message.id,
         type: parsed.type,
-        phase,
+        phase: freshPhase ?? null,
       }),
     );
   } else {
     console.log(chalk.green(confirmation));
   }
+
+  // Optional --wait: poll outbox for a reply that references our message id.
+  // Times out with exit 1 if no matching reply lands within the window.
+  if (
+    typeof options.waitSeconds === "number" &&
+    options.waitSeconds > 0 &&
+    parsed.type !== "abort"
+  ) {
+    const reply = await waitForReply({
+      issueNumber,
+      worktreePath: issueState?.worktree,
+      inReplyTo: message.id,
+      timeoutMs: options.waitSeconds * 1000,
+      pollIntervalMs: options.waitPollIntervalMs ?? 250,
+    });
+
+    if (reply) {
+      if (options.json) {
+        console.log(JSON.stringify({ ok: true, reply }));
+      } else {
+        console.log(chalk.cyan(`Reply: ${reply.message}`));
+      }
+    } else {
+      const msg = `No reply received within ${options.waitSeconds}s. Message may be archived without a response.`;
+      if (options.json) {
+        console.log(JSON.stringify({ ok: false, timeout: true, error: msg }));
+      } else {
+        console.error(chalk.yellow(msg));
+      }
+      process.exitCode = 1;
+    }
+  }
+}
+
+interface WaitForReplyOptions {
+  issueNumber: number;
+  worktreePath: string | undefined;
+  inReplyTo: string;
+  timeoutMs: number;
+  pollIntervalMs: number;
+}
+
+async function waitForReply(
+  options: WaitForReplyOptions,
+): Promise<RelayResponse | null> {
+  const outboxPath = outboxPathFor(options.issueNumber, {
+    worktreePath: options.worktreePath,
+  });
+
+  // Seed offset at current EOF: only NEW replies count for this prompt's wait.
+  let offset = existsSync(outboxPath) ? statSync(outboxPath).size : 0;
+  let partial = "";
+
+  const deadline = Date.now() + options.timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(outboxPath)) {
+      try {
+        const size = statSync(outboxPath).size;
+        if (size > offset) {
+          const chunk = readFileSync(outboxPath, "utf-8").slice(offset);
+          offset = size;
+          const lines = (partial + chunk).split("\n");
+          partial = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.trim() === "") continue;
+            try {
+              const parsed = RelayResponseSchema.safeParse(JSON.parse(line));
+              if (
+                parsed.success &&
+                parsed.data.inReplyTo === options.inReplyTo
+              ) {
+                return parsed.data;
+              }
+            } catch {
+              /* skip malformed */
+            }
+          }
+        }
+      } catch {
+        /* transient — try again */
+      }
+    }
+    await new Promise((r) => setTimeout(r, options.pollIntervalMs));
+  }
+  return null;
 }
 
 function formatElapsed(ms: number): string {
