@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Phase definitions consolidated into a single registry (`src/lib/workflow/phase-registry.ts`) — replaces the scattered `PHASE_PROMPTS`, `AIDER_PHASE_PROMPTS`, `ISOLATED_PHASES`, `UI_LABELS`, and `SECURITY_LABELS` constants. All 9 built-in phases (`spec`, `security-review`, `exec`, `testgen`, `test`, `verify`, `qa`, `loop`, `merger`) now register through the same mechanism with no special-casing. `--phases` now validates against the registry at runtime and reports unknown names with a clear error (`Unknown phase 'deploy'. Available: spec, security-review, exec, testgen, test, verify, qa, loop, merger`). User-facing behavior is otherwise unchanged. (#505)
+
 ## [2.3.0] - 2026-05-13
 
 ### Added

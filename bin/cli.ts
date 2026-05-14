@@ -71,6 +71,30 @@ import {
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { getManifest } from "../src/lib/manifest.js";
+import { phaseRegistry } from "../src/lib/workflow/phase-registry.js";
+
+/**
+ * Validate `--phases` argument against the phase registry.
+ *
+ * Splits a comma-separated phase list, checks each name against
+ * `phaseRegistry`, and exits with a clear error message if any phase
+ * is unknown. Returns the original string unchanged so downstream
+ * `RunOptions.phases` parsing in `config-resolver.ts` is undisturbed.
+ */
+function validatePhasesFlag(value: string): string {
+  const names = value
+    .split(",")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  const unknown = names.filter((n) => !phaseRegistry.has(n));
+  if (unknown.length > 0) {
+    const available = phaseRegistry.names().join(", ");
+    const offender = unknown[0];
+    console.error(`Unknown phase '${offender}'. Available: ${available}`);
+    process.exit(1);
+  }
+  return value;
+}
 
 const program = new Command();
 
@@ -194,7 +218,11 @@ program
   .command("run")
   .description("Execute workflow for GitHub issues using Claude Agent SDK")
   .argument("[issues...]", "Issue numbers to process")
-  .option("--phases <list>", "Phases to run (default: spec,exec,qa)")
+  .option(
+    "--phases <list>",
+    "Phases to run (default: spec,exec,qa)",
+    validatePhasesFlag,
+  )
   .option("--sequential", "Stop on first issue failure (default: continue)")
   .option("-d, --dry-run", "Preview without execution")
   .option("-v, --verbose", "Verbose output with streaming")

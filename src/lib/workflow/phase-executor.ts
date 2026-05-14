@@ -31,84 +31,21 @@ import type {
 } from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
 import { ApiError } from "../errors.js";
+import { phaseRegistry } from "./phase-registry.js";
 
 /**
- * Natural language prompts for each phase.
- * Claude Code invokes the corresponding skills via natural language.
+ * Determine whether a phase's session must run inside the issue worktree.
+ *
+ * Sourced from `phaseRegistry.get(phase).requiresWorktree` — replaces the
+ * previous hardcoded `ISOLATED_PHASES` array. Phases must:
+ * 1. Read/modify worktree code
+ * 2. Resume a session from the same cwd it was created in (SDK constraint)
  */
-const PHASE_PROMPTS: Record<Phase, string> = {
-  spec: "Review GitHub issue #{issue} and create an implementation plan with verification criteria. Run the /spec {issue} workflow.",
-  "security-review":
-    "Perform a deep security analysis for GitHub issue #{issue} focusing on auth, permissions, and sensitive operations. Run the /security-review {issue} workflow.",
-  testgen:
-    "Generate test stubs for GitHub issue #{issue} based on the specification. Run the /testgen {issue} workflow.",
-  exec: "Implement the feature for GitHub issue #{issue} following the spec. Run the /exec {issue} workflow.",
-  test: "Execute structured browser-based testing for GitHub issue #{issue}. Run the /test {issue} workflow.",
-  verify:
-    "Verify the implementation for GitHub issue #{issue} by running commands and capturing output. Run the /verify {issue} workflow.",
-  qa: "Review the implementation for GitHub issue #{issue} against acceptance criteria. Run the /qa {issue} workflow.",
-  loop: "Parse test/QA findings for GitHub issue #{issue} and iterate until quality gates pass. Run the /loop {issue} workflow.",
-  merger:
-    "Integrate and merge completed worktrees for GitHub issue #{issue}. Run the /merger {issue} workflow.",
-};
-
-/**
- * Self-contained prompts for non-Claude agents (Aider, Codex, etc.).
- * These agents don't have a skill system, so prompts must include
- * full instructions rather than skill invocations.
- */
-const AIDER_PHASE_PROMPTS: Record<Phase, string> = {
-  spec: `Read GitHub issue #{issue} using 'gh issue view #{issue}'.
-Create a spec comment on the issue with:
-1. Implementation plan
-2. Acceptance criteria as a checklist
-3. Risk assessment
-Post the comment using 'gh issue comment #{issue} --body "<comment>"'.`,
-  "security-review": `Perform a security review for GitHub issue #{issue}.
-Read the issue with 'gh issue view #{issue}'.
-Check for auth, permissions, injection, and sensitive data issues.
-Post findings as a comment on the issue.`,
-  testgen: `Generate test stubs for GitHub issue #{issue}.
-Read the spec comments on the issue with 'gh issue view #{issue} --comments'.
-Create test files with describe/it blocks covering the acceptance criteria.
-Use the project's existing test framework.`,
-  exec: `Implement the feature described in GitHub issue #{issue}.
-Read the issue and any spec comments with 'gh issue view #{issue} --comments'.
-Follow the implementation plan from the spec.
-Write tests for new functionality.
-Ensure the build passes with 'npm test' and 'npm run build'.`,
-  test: `Test the implementation for GitHub issue #{issue}.
-Run 'npm test' and verify all tests pass.
-Check for edge cases and error handling.`,
-  verify: `Verify the implementation for GitHub issue #{issue}.
-Run relevant commands and capture their output for review.`,
-  qa: `Review the changes for GitHub issue #{issue}.
-Run 'npm test' and 'npm run build' to verify everything works.
-Check each acceptance criterion from the issue comments.
-Output a verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
-with format "### Verdict: <VERDICT>" followed by an explanation.`,
-  loop: `Review test and QA findings for GitHub issue #{issue}.
-Fix any issues identified in the QA feedback.
-Re-run 'npm test' and 'npm run build' until all quality gates pass.`,
-  merger: `Integrate and merge completed worktrees for GitHub issue #{issue}.
-Ensure all branches are up to date and merge cleanly.`,
-};
-
-/**
- * Phases that require worktree isolation.
- * Only `spec` runs in the main repo (planning-only, no file changes).
- * All other phases must run in the worktree because:
- * 1. They need to read/modify the worktree code
- * 2. Resuming a session created in a different cwd crashes the SDK
- */
-const ISOLATED_PHASES: Phase[] = [
-  "exec",
-  "security-review",
-  "testgen",
-  "test",
-  "qa",
-  "loop",
-];
+function phaseRequiresWorktree(phase: Phase): boolean {
+  return phaseRegistry.has(phase)
+    ? phaseRegistry.get(phase).requiresWorktree
+    : false;
+}
 
 /**
  * Cold-start retry threshold in seconds.
@@ -516,9 +453,15 @@ export async function getPhasePrompt(
   agent?: string,
   promptContext?: string,
 ): Promise<string> {
-  const prompts =
-    agent && agent !== "claude-code" ? AIDER_PHASE_PROMPTS : PHASE_PROMPTS;
-  let basePrompt = prompts[phase].replace(/\{issue\}/g, String(issueNumber));
+  const definition = phaseRegistry.get(phase);
+  // Non-claude drivers consult driverOverrides[<driver>] first; fall back to
+  // the default promptTemplate when no override is registered for the driver.
+  const driverPrompt =
+    agent && agent !== "claude-code"
+      ? definition.driverOverrides?.[agent]?.promptTemplate
+      : undefined;
+  const template = driverPrompt ?? definition.promptTemplate;
+  let basePrompt = template.replace(/\{issue\}/g, String(issueNumber));
 
   // Append phase-specific context (e.g., QA findings for loop phase)
   if (promptContext) {
@@ -573,13 +516,13 @@ async function executePhase(
 
   if (config.verbose) {
     console.log(chalk.gray(`    Prompt: ${prompt}`));
-    if (worktreePath && ISOLATED_PHASES.includes(phase)) {
+    if (worktreePath && phaseRequiresWorktree(phase)) {
       console.log(chalk.gray(`    Worktree: ${worktreePath}`));
     }
   }
 
   // Determine working directory and environment
-  const shouldUseWorktree = worktreePath && ISOLATED_PHASES.includes(phase);
+  const shouldUseWorktree = worktreePath && phaseRequiresWorktree(phase);
   const cwd = shouldUseWorktree ? worktreePath : process.cwd();
 
   // Resolve file context for file-oriented drivers (e.g., Aider --file)
@@ -698,8 +641,9 @@ async function executePhase(
   // Safety: never resume a session when worktree isolation is active.
   // Even if THIS phase doesn't use the worktree, a previous phase may have
   // created the session there. Resuming from a different cwd crashes the SDK
-  // (exit code 1). ISOLATED_PHASES prevents this by design, but this guard
-  // catches edge cases (e.g. a new phase added without updating ISOLATED_PHASES).
+  // (exit code 1). The registry's `requiresWorktree` field prevents this by
+  // design, but this guard catches edge cases (e.g. a new phase registered
+  // without setting `requiresWorktree: true`).
   const canResume = sessionId && !worktreePath;
 
   // Build AgentExecutionConfig for the driver
