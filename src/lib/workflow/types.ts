@@ -9,6 +9,11 @@ import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 
+// Importing the registry triggers its side-effect registrations (built-ins
+// live at the bottom of phase-registry.ts), guaranteeing the registry is
+// populated before any PhaseSchema parse runs.
+import { phaseRegistry, getPhaseNames } from "./phase-registry.js";
+
 // Re-export the emitter types so external consumers can import them from
 // the workflow types barrel without reaching into the implementation file (#504).
 export type {
@@ -29,25 +34,30 @@ export type {
 /**
  * Canonical Zod schema for all workflow phases.
  *
- * This is the single source of truth — state-schema.ts and run-log-schema.ts
- * both reference this definition. Add new phases here only.
+ * Backed by the phase registry. `PhaseSchema.parse(name)` succeeds iff
+ * `phaseRegistry.has(name)`. The set of valid phases is the registry's
+ * keys at the time of parsing — registration happens at module load,
+ * so for normal runtime use the set is fixed by the time any code parses.
+ *
+ * This replaces the prior `z.enum([...])` literal. The set of valid names
+ * is identical for the 9 built-in phases; the only observable behavior
+ * change is that `PhaseSchema.options` is no longer available — use
+ * `getPhaseNames()` from `phase-registry.ts` instead.
  */
-export const PhaseSchema = z.enum([
-  "spec",
-  "security-review",
-  "exec",
-  "testgen",
-  "test",
-  "verify",
-  "qa",
-  "loop",
-  "merger",
-]);
+export const PhaseSchema = z
+  .string()
+  .refine((name) => phaseRegistry.has(name), {
+    error: (issue) =>
+      `Unknown phase "${String(issue.input)}". Available: ${getPhaseNames().join(", ")}`,
+  });
 
 /**
- * Available workflow phases (inferred from PhaseSchema)
+ * Available workflow phases. Widened from a string-literal union to `string`
+ * after the registry migration — exhaustiveness checking on `switch (phase)`
+ * is now a runtime concern (see the comment in phase-executor.ts where the
+ * only relevant switch lives).
  */
-export type Phase = z.infer<typeof PhaseSchema>;
+export type Phase = string;
 
 /**
  * Default phases for workflow execution

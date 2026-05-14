@@ -20,11 +20,17 @@
 import { z } from "zod";
 import { ScopeAssessmentSchema } from "../scope/types.js";
 import { PhaseSchema } from "./types.js";
+import { getPhaseNames } from "./phase-registry.js";
 
 /**
- * Workflow phases in order of execution
+ * Workflow phases in order of execution.
+ *
+ * Sourced from the phase registry — replaces the previous `PhaseSchema.options`
+ * literal that existed when `PhaseSchema` was a `z.enum`. Computed at module
+ * load (after `built-in-phases.ts` has run); insertion order is the canonical
+ * pipeline order.
  */
-export const WORKFLOW_PHASES = PhaseSchema.options;
+export const WORKFLOW_PHASES: readonly string[] = getPhaseNames();
 
 /**
  * Phase status - tracks individual phase progress
