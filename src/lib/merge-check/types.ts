@@ -193,7 +193,7 @@ export interface MirrorPair {
  */
 export const DEFAULT_MIRROR_PAIRS: MirrorPair[] = [
   { source: ".claude/skills", target: "templates/skills" },
-  { source: "hooks", target: "templates/hooks" },
+  { source: ".claude/hooks", target: "templates/hooks" },
 ];
 
 /**
