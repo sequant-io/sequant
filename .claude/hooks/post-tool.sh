@@ -13,6 +13,17 @@ if [[ "${CLAUDE_HOOKS_DISABLED:-}" == "true" ]]; then
     exit 0
 fi
 
+# === RELAY CHECK (#383) ===
+# Sourced only when SEQUANT_RELAY=true. The check itself is a single env-var
+# comparison when relay is disabled (default), so non-relay runs incur no cost.
+if [[ "${SEQUANT_RELAY:-}" == "true" ]]; then
+    _RELAY_CHECK="$(dirname "${BASH_SOURCE[0]:-$0}")/relay-check.sh"
+    if [[ -f "${_RELAY_CHECK}" ]]; then
+        # shellcheck source=relay-check.sh disable=SC1091
+        source "${_RELAY_CHECK}" || true
+    fi
+fi
+
 # === READ INPUT FROM STDIN ===
 # Claude Code passes tool data as JSON via stdin, not environment variables
 INPUT_JSON=$(cat)

@@ -8,6 +8,8 @@ import { existsSync, statSync, createReadStream, watch } from "fs";
 import { Readable } from "stream";
 import chalk from "chalk";
 import { outboxPathFor } from "../lib/relay/paths.js";
+import { listArchives } from "../lib/relay/archive.js";
+import { readPidFile } from "../lib/relay/pid.js";
 import { StateManager } from "../lib/workflow/state-manager.js";
 import { RelayResponseSchema, type RelayResponse } from "../lib/relay/types.js";
 
@@ -17,6 +19,8 @@ export interface WatchCommandOptions {
   pollIntervalMs?: number;
   /** Abort signal for clean shutdown (tests). */
   signal?: AbortSignal;
+  /** Override cwd for resolving the pid file + archive root (test seam). */
+  cwd?: string;
 }
 
 function formatTimestamp(iso: string): string {
@@ -102,8 +106,10 @@ export async function watchCommand(argsAndOptions: {
 
   const stateManager = new StateManager();
   const issueState = await stateManager.getIssueState(issueNumber);
+  const cwd = options.cwd ?? process.cwd();
   const outboxPath = outboxPathFor(issueNumber, {
     worktreePath: issueState?.worktree,
+    cwd,
   });
 
   const pollIntervalMs = options.pollIntervalMs ?? 200;
@@ -114,17 +120,45 @@ export async function watchCommand(argsAndOptions: {
     tail.offset = statSync(outboxPath).size;
   }
 
+  // Dead-relay detection (#645, Gap 3). The pidfile is written by activateRelay
+  // and removed by deactivateRelay. If it's absent and the outbox is absent at
+  // startup, there is nothing alive to watch — print a useful pointer and exit.
+  const initialPidPresent = readPidFile(issueNumber, cwd) !== null;
+  const initialOutboxPresent = existsSync(outboxPath);
+  if (!initialPidPresent && !initialOutboxPresent) {
+    const archives = listArchives(issueNumber, cwd);
+    const summary = `No active relay for #${issueNumber}.`;
+    const hint = archives[0]
+      ? ` Most recent archive: ${archives[0]}`
+      : " (no archived runs found)";
+    if (options.json) {
+      console.log(
+        JSON.stringify({
+          ok: false,
+          issue: issueNumber,
+          reason: "no-active-relay",
+          archive: archives[0] ?? null,
+        }),
+      );
+    } else {
+      console.log(chalk.yellow(summary + hint));
+    }
+    return;
+  }
+
   if (!options.json) {
     console.log(chalk.gray(`Watching #${issueNumber} outbox — Ctrl+C to stop`));
   }
 
   let stopped = false;
-  const stop = (): void => {
+  let endReason: "signal" | "relay-ended" | null = null;
+  const stop = (reason: "signal" | "relay-ended" = "signal"): void => {
     stopped = true;
+    if (!endReason) endReason = reason;
   };
-  options.signal?.addEventListener("abort", stop);
+  options.signal?.addEventListener("abort", () => stop("signal"));
   process.on("SIGINT", () => {
-    stop();
+    stop("signal");
     if (!options.json) console.log(chalk.gray("\nStopped watching."));
     process.exit(0);
   });
@@ -150,6 +184,7 @@ export async function watchCommand(argsAndOptions: {
 
   // Polling loop — also used as a heartbeat when fs.watch is active so we
   // don't miss events on filesystems where watch is unreliable.
+  let sawLivePid = initialPidPresent;
   while (!stopped) {
     try {
       const replies = await readNewLines(outboxPath, tail);
@@ -157,6 +192,23 @@ export async function watchCommand(argsAndOptions: {
     } catch {
       /* transient — try again next tick */
     }
+
+    // Dead-relay detection (#645, Gap 3). Once we've seen a live pidfile, its
+    // absence means the run has deactivated relay (archive complete). Drain
+    // one more poll for late writes, then exit cleanly.
+    const pidAlive = readPidFile(issueNumber, cwd) !== null;
+    if (sawLivePid && !pidAlive) {
+      try {
+        const finalReplies = await readNewLines(outboxPath, tail);
+        emit(finalReplies);
+      } catch {
+        /* swallow */
+      }
+      stop("relay-ended");
+      break;
+    }
+    if (pidAlive) sawLivePid = true;
+
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
@@ -168,4 +220,21 @@ export async function watchCommand(argsAndOptions: {
     }
   }
   void useWatcher; // currently unused beyond best-effort init
+
+  if (endReason === "relay-ended") {
+    const archives = listArchives(issueNumber, cwd);
+    if (options.json) {
+      console.log(
+        JSON.stringify({
+          ok: true,
+          issue: issueNumber,
+          reason: "relay-ended",
+          archive: archives[0] ?? null,
+        }),
+      );
+    } else {
+      const hint = archives[0] ? ` Archive: ${archives[0]}` : "";
+      console.log(chalk.gray(`Run for #${issueNumber} ended.${hint}`));
+    }
+  }
 }
