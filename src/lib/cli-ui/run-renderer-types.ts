@@ -179,6 +179,22 @@ export interface RenderOptions {
    * Default: false (matches existing displaySummary behaviour).
    */
   alwaysRenderSummary?: boolean;
+  /**
+   * #647: inject a `log-update` instance (typically built via
+   * `createLogUpdate(stream)` against a custom stream). Used by the
+   * scrollback-harness regression test to drive the real `log-update`
+   * through a virtual terminal that tracks scrollback. When set, this takes
+   * precedence over both `stdoutWrite` (for the log-update path) and the
+   * default `process.stdout`-bound `logUpdate` import.
+   *
+   * Production code never sets this. Tests that need to assert on
+   * `log-update`'s actual erase semantics use it to replace the test stub.
+   */
+  logUpdateInstance?: {
+    (text: string): void;
+    clear(): void;
+    done(): void;
+  };
 }
 
 /**

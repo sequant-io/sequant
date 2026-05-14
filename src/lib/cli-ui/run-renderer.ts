@@ -556,8 +556,20 @@ export class TTYRenderer extends BaseRenderer {
 
     // log-update writes to process.stdout via a mutable global instance. When
     // tests inject `stdoutWrite`, route renders through it instead so capture
-    // works deterministically.
-    if (options.stdoutWrite) {
+    // works deterministically. The #647 harness tests instead inject a real
+    // `log-update` instance bound to a virtual terminal — that path bypasses
+    // the stub so we can assert on actual cursor/erase semantics.
+    if (options.logUpdateInstance) {
+      // #647: harness path — drive a real `createLogUpdate(stream)` instance
+      // so the scrollback-aware regression test sees the same ANSI cursor
+      // operations a production user's terminal would receive. Stub is left
+      // null because the harness asserts on the VirtualTerminal directly.
+      const lu = options.logUpdateInstance;
+      this._testStub = null;
+      this.logUpdateImpl = (text: string) => lu(text);
+      this.logUpdateClear = () => lu.clear();
+      this.logUpdateDone = () => lu.done();
+    } else if (options.stdoutWrite) {
       // #624 Derived AC-D1: replacement-aware test stub. Tracks each frame
       // replacement so tests can assert on frame churn without parsing buf.out.
       // `clearCalls` / `doneCalls` verify the renderer actually invokes the
