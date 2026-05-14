@@ -469,4 +469,129 @@ describe("statsCommand", () => {
       expect(allCalls).not.toContain("Success by Label");
     });
   });
+
+  describe("--label and --since filters", () => {
+    const jan: RunLog = {
+      version: 1,
+      runId: "11111111-1111-4111-a111-111111111111",
+      startTime: "2026-01-10T10:00:00.000Z",
+      endTime: "2026-01-10T10:05:00.000Z",
+      config: {
+        phases: ["spec", "exec", "qa"],
+        sequential: false,
+        qualityLoop: false,
+        maxIterations: 3,
+      },
+      issues: [
+        {
+          issueNumber: 1,
+          title: "Jan docs issue",
+          labels: ["docs"],
+          status: "success",
+          phases: [],
+          totalDurationSeconds: 300,
+        },
+      ],
+      summary: {
+        totalIssues: 1,
+        passed: 1,
+        failed: 0,
+        totalDurationSeconds: 300,
+      },
+    };
+
+    const mar: RunLog = {
+      version: 1,
+      runId: "22222222-2222-4222-a222-222222222222",
+      startTime: "2026-03-15T10:00:00.000Z",
+      endTime: "2026-03-15T10:05:00.000Z",
+      config: {
+        phases: ["spec", "exec", "qa"],
+        sequential: false,
+        qualityLoop: false,
+        maxIterations: 3,
+      },
+      issues: [
+        {
+          issueNumber: 2,
+          title: "March bug",
+          labels: ["bug"],
+          status: "success",
+          phases: [],
+          totalDurationSeconds: 300,
+        },
+      ],
+      summary: {
+        totalIssues: 1,
+        passed: 1,
+        failed: 0,
+        totalDurationSeconds: 300,
+      },
+    };
+
+    beforeEach(() => {
+      (fs.existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
+      (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue([
+        "run-jan.json",
+        "run-mar.json",
+      ]);
+      (fs.readFileSync as ReturnType<typeof vi.fn>).mockImplementation(
+        (path: string) =>
+          path.includes("run-jan") ? JSON.stringify(jan) : JSON.stringify(mar),
+      );
+    });
+
+    it("--label keeps only runs whose issues carry the label", async () => {
+      await statsCommand({ json: true, label: "docs" });
+
+      const output = consoleSpy.mock.calls[0][0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.totalRuns).toBe(1);
+      expect(parsed.totalIssues).toBe(1);
+    });
+
+    it("--label with no matches emits 'No matching runs' (zero-match)", async () => {
+      await statsCommand({ json: true, label: "nonexistent" });
+
+      const output = consoleSpy.mock.calls[0][0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.error).toBe("No matching runs");
+      expect(parsed.runs).toEqual([]);
+    });
+
+    it("--since drops runs with startTime before the cutoff", async () => {
+      await statsCommand({ json: true, since: "2026-02-01" });
+
+      const output = consoleSpy.mock.calls[0][0] as string;
+      const parsed = JSON.parse(output);
+      // Only the March run survives the Feb cutoff
+      expect(parsed.totalRuns).toBe(1);
+    });
+
+    it("--label and --since compose (AND)", async () => {
+      // docs + after 2026-02-01: jan has docs but is too early → 0 matches
+      await statsCommand({ json: true, label: "docs", since: "2026-02-01" });
+
+      const output = consoleSpy.mock.calls[0][0] as string;
+      const parsed = JSON.parse(output);
+      expect(parsed.error).toBe("No matching runs");
+    });
+
+    it("rejects an invalid --since date with a clear error and exit code 1", async () => {
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const prevExitCode = process.exitCode;
+
+      try {
+        await statsCommand({ json: true, since: "not-a-date" });
+
+        expect(errSpy).toHaveBeenCalledWith(
+          expect.stringContaining("Invalid --since date"),
+        );
+        expect(process.exitCode).toBe(1);
+      } finally {
+        errSpy.mockRestore();
+        process.exitCode = prevExitCode;
+      }
+    });
+  });
 });
