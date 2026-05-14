@@ -14,7 +14,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { describe, expect, it, beforeAll } from "vitest";
-import { PhaseSchema } from "../workflow/types.ts";
+import { getPhaseNames } from "../workflow/phase-registry.ts";
 
 const SKILL_DIRS = [
   ".claude/skills/assess/SKILL.md",
@@ -24,7 +24,7 @@ const SKILL_DIRS = [
 
 describe("assess skill phase vocabulary", () => {
   let skillContent: string;
-  const validPhases = PhaseSchema.options;
+  const validPhases = getPhaseNames();
 
   beforeAll(() => {
     const skillPath = path.join(

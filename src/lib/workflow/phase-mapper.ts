@@ -9,6 +9,7 @@
  */
 
 import type { Phase } from "./types.js";
+import { phaseRegistry } from "./phase-registry.js";
 
 /**
  * Minimal options interface for phase mapping.
@@ -20,38 +21,54 @@ interface PhaseMapperOptions {
 }
 
 /**
- * UI-related labels that trigger automatic test phase
- */
-export const UI_LABELS = ["ui", "frontend", "admin", "web", "browser"];
-
-/**
- * Bug-related labels (used by downstream metadata consumers)
+ * Bug-related labels (used by downstream metadata consumers).
+ *
+ * Issue-type metadata — NOT phase-trigger rules. The registry-driven
+ * `detectPhasesFromLabels` below does not consult this list. It stays
+ * here because `batch-executor.ts` and other modules read it for
+ * `issueType` propagation and similar non-phase concerns.
  */
 export const BUG_LABELS = ["bug", "fix", "hotfix", "patch"];
 
 /**
- * Documentation labels (used for issueType propagation and downstream metadata)
+ * Documentation labels (used for issueType propagation and downstream metadata).
+ *
+ * Issue-type metadata — NOT phase-trigger rules. See BUG_LABELS comment.
  */
 export const DOCS_LABELS = ["docs", "documentation", "readme"];
 
 /**
- * Complex labels that enable quality loop
+ * Complex labels that enable quality loop.
+ *
+ * Quality-loop trigger — NOT a phase-trigger rule (does not add the loop
+ * *phase*; only flips the `qualityLoop` flag on the run config). Kept
+ * out of the phase registry by design.
  */
 export const COMPLEX_LABELS = ["complex", "refactor", "breaking", "major"];
 
 /**
- * Security-related labels that trigger security-review phase
+ * Look up label-based detect rules from the registry, returning the set
+ * of phases whose `detect.labels` intersect the issue's labels. Comparison
+ * is case-insensitive (labels lowercased at the call site).
  */
-export const SECURITY_LABELS = [
-  "security",
-  "auth",
-  "authentication",
-  "permissions",
-  "admin",
-];
+function detectPhasesFromRegistry(lowerLabels: string[]): Set<string> {
+  const matched = new Set<string>();
+  for (const def of phaseRegistry.list()) {
+    const triggers = def.detect?.labels;
+    if (!triggers || triggers.length === 0) continue;
+    const hit = triggers.some((t) => lowerLabels.includes(t.toLowerCase()));
+    if (hit) matched.add(def.name);
+  }
+  return matched;
+}
 
 /**
- * Detect phases based on issue labels (like /assess logic)
+ * Detect phases based on issue labels (like /assess logic).
+ *
+ * Label → phase mapping now lives in `PhaseDefinition.detect.labels`. Only
+ * the *insertion position* of detected phases remains baked in here, because
+ * pipeline ordering depends on the phase's role (security-review goes after
+ * spec; test goes before qa).
  */
 export function detectPhasesFromLabels(labels: string[]): {
   phases: Phase[];
@@ -59,20 +76,14 @@ export function detectPhasesFromLabels(labels: string[]): {
 } {
   const lowerLabels = labels.map((l) => l.toLowerCase());
 
-  // Check for UI labels → add test phase
-  const isUI = lowerLabels.some((label) =>
-    UI_LABELS.some((uiLabel) => label === uiLabel),
-  );
-
-  // Check for complex labels → enable quality loop
+  // Quality loop is a registry-independent label trigger (see COMPLEX_LABELS).
   const isComplex = lowerLabels.some((label) =>
     COMPLEX_LABELS.some((complexLabel) => label === complexLabel),
   );
 
-  // Check for security labels → add security-review phase
-  const isSecurity = lowerLabels.some((label) =>
-    SECURITY_LABELS.some((secLabel) => label === secLabel),
-  );
+  const matched = detectPhasesFromRegistry(lowerLabels);
+  const isUI = matched.has("test");
+  const isSecurity = matched.has("security-review");
 
   // Build phase list — spec is always included by default (#533).
   // Bug/docs labels no longer short-circuit spec; downstream consumers
@@ -119,21 +130,11 @@ export function parseRecommendedWorkflow(output: string): {
     .map((p) => p.trim().toLowerCase())
     .filter((p) => p.length > 0);
 
-  // Validate and convert to Phase type
+  // Validate against the registry — accepts any registered phase.
   const validPhases: Phase[] = [];
   for (const name of phaseNames) {
-    if (
-      [
-        "spec",
-        "security-review",
-        "testgen",
-        "exec",
-        "test",
-        "qa",
-        "loop",
-      ].includes(name)
-    ) {
-      validPhases.push(name as Phase);
+    if (phaseRegistry.has(name)) {
+      validPhases.push(name);
     }
   }
 
@@ -153,12 +154,20 @@ export function parseRecommendedWorkflow(output: string): {
 }
 
 /**
- * Check if an issue has UI-related labels
+ * Check if an issue has UI-related labels.
+ *
+ * Sources the label list from the `test` phase's `detect.labels` entry in
+ * the registry — same data as `detectPhasesFromLabels` consults, just
+ * exposed as a boolean for callers that only need the yes/no answer
+ * (e.g. test phase insertion in `determinePhasesForIssue`).
  */
 export function hasUILabels(labels: string[]): boolean {
-  return labels.some((label) =>
-    UI_LABELS.some((uiLabel) => label.toLowerCase() === uiLabel),
-  );
+  const testTriggers = phaseRegistry.has("test")
+    ? (phaseRegistry.get("test").detect?.labels ?? [])
+    : [];
+  if (testTriggers.length === 0) return false;
+  const lowered = new Set(testTriggers.map((t) => t.toLowerCase()));
+  return labels.some((label) => lowered.has(label.toLowerCase()));
 }
 
 /**

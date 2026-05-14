@@ -12,6 +12,7 @@ import {
   WORKFLOW_PHASES,
 } from "./state-schema.js";
 import { PhaseSchema as RunLogPhaseSchema } from "./run-log-schema.js";
+import { getPhaseNames } from "./phase-registry.js";
 import {
   CheckVerdictSchema,
   BatchVerdictSchema,
@@ -28,12 +29,12 @@ describe("Phase type unification", () => {
     expect(RunLogPhaseSchema).toBe(PhaseSchema);
   });
 
-  it("WORKFLOW_PHASES matches PhaseSchema options", () => {
-    expect(WORKFLOW_PHASES).toBe(PhaseSchema.options);
+  it("WORKFLOW_PHASES matches registry phase names", () => {
+    expect([...WORKFLOW_PHASES]).toEqual(getPhaseNames());
   });
 
   it("PhaseSchema includes all expected phases", () => {
-    const phases = PhaseSchema.options;
+    const phases = getPhaseNames();
     expect(phases).toContain("spec");
     expect(phases).toContain("security-review");
     expect(phases).toContain("exec");
