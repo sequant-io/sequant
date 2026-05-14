@@ -109,6 +109,7 @@ export async function watchCommand(argsAndOptions: {
   const cwd = options.cwd ?? process.cwd();
   const outboxPath = outboxPathFor(issueNumber, {
     worktreePath: issueState?.worktree,
+    cwd,
   });
 
   const pollIntervalMs = options.pollIntervalMs ?? 200;
