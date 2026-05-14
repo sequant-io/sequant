@@ -70,7 +70,19 @@ This writes a new lock claiming the issue. **It does not signal the prior proces
 npx sequant run 604 --force --signal-other
 ```
 
-When the prior holder is on the same host AND alive, SIGTERMs it before taking the lock. Cross-host or already-dead holders fall back to a plain force takeover.
+When the prior holder is on the same host AND alive AND not this process or its parent, SIGTERMs it before taking the lock. Anything else falls back to a plain force takeover.
+
+The CLI prints one of the following lines so you can see exactly why a SIGTERM was or wasn't sent (#637):
+
+| Outcome | Log line |
+|---------|----------|
+| Signal delivered | `Signaled PID <pid> (SIGTERM) for #<issue>` |
+| Holder on a different host | `Could not signal PID <pid> for #<issue> (cross-host holder)` |
+| Holder PID equals this process or its parent (defense-in-depth guard) | `Refused to signal PID <pid> for #<issue> (matches this process or its parent)` |
+| Holder PID is no longer alive | `Could not signal PID <pid> for #<issue> (already exited)` |
+| `process.kill` syscall failed | `Could not signal PID <pid> for #<issue> (kill syscall failed)` |
+
+The "matches this process or its parent" line should be vanishingly rare in practice — it fires only if a lock file is malformed or a PID was recycled. Treat it as a heads-up that the lock file is suspect, then proceed with the plain force takeover.
 
 ### Manual clear via `sequant locks`
 
