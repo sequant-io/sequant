@@ -101,6 +101,11 @@ export interface ProgressPayload extends BaseEventPayload {
  * extending this map; the `emit`/`on`/`off` overloads below pick them up
  * automatically. Reject `string` index signatures so consumers cannot
  * subscribe to typo'd event names without a TypeScript error (AC-1, AC-2).
+ *
+ * Event names use `snake_case` intentionally — they match the issue body and
+ * common JSON-payload conventions, and they are part of the public contract
+ * for MCP / webhook consumers. Payload field names stay `camelCase`. Do not
+ * "normalize" the event-name casing.
  */
 export interface WorkflowEvents {
   run_started: RunEventPayload;
