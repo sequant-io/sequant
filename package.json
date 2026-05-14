@@ -26,6 +26,7 @@
     "test": "vitest run",
     "lint": "eslint src/ bin/ --max-warnings 0",
     "sync:skills": "cp -r templates/skills/* .claude/skills/",
+    "sync:hooks": "bash scripts/sync-hooks.sh",
     "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
     "lint:skill-calls": "npx tsx scripts/lint-skill-calls.ts",
     "prepare:marketplace": "npx tsx scripts/prepare-marketplace.ts",
