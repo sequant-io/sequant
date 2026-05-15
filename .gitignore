@@ -40,7 +40,9 @@ pnpm-lock.yaml
 .mcp.json
 
 # Entire CLI runtime data
-.entire/
+.entire/*
+# But track team-shared settings (push_sessions=false enforces no-public-push for entire/checkpoints/v1)
+!.entire/settings.json
 
 # Sequant runtime data (logs, settings, workflow state)
 .sequant/*
