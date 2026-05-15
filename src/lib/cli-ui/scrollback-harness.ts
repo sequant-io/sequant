@@ -294,6 +294,15 @@ export class VirtualTerminal {
  * Bundle a VirtualTerminal with a real `log-update` instance writing into it
  * and a matching `stdoutWrite` for renderer event-line writes. Both paths hit
  * the same VT, mirroring real-terminal interleaving.
+ *
+ * Production runs frequently hit a width/height mismatch between what
+ * `log-update` reads from `process.stdout` and what the real terminal actually
+ * uses (e.g. `process.stdout.columns` is undefined under `npx` so log-update
+ * falls back to 80 while the terminal is 200 cols). Those mismatches cause
+ * `previousLineCount` to under- or over-count the rows log-update actually
+ * wrote, breaking `eraseLines` and leaving stale rows in scrollback. The
+ * `streamColumns` / `streamRows` overrides let tests reproduce this without
+ * needing a real PTY.
  */
 export interface TerminalHarness {
   vt: VirtualTerminal;
@@ -301,17 +310,32 @@ export interface TerminalHarness {
   stdoutWrite: (s: string) => void;
 }
 
-export function createTerminalHarness(
-  opts: VirtualTerminalOptions,
-): TerminalHarness {
+export interface HarnessOptions extends VirtualTerminalOptions {
+  /**
+   * Width log-update is told about via `stream.columns`. Defaults to
+   * `opts.cols` (matched terminal). Override to simulate a mismatch where
+   * log-update wraps at one width but the real terminal wraps at another.
+   */
+  streamColumns?: number;
+  /**
+   * Height log-update is told about via `stream.rows`. Defaults to
+   * `opts.rows`. Override to simulate `process.stdout.rows = undefined`
+   * (the `npx` symptom): pass `undefined` explicitly via the harness's stream
+   * by setting this to a non-positive number — log-update then falls through
+   * to its internal `defaultHeight ?? 24`.
+   */
+  streamRows?: number;
+}
+
+export function createTerminalHarness(opts: HarnessOptions): TerminalHarness {
   const vt = new VirtualTerminal(opts);
   const stream = {
     write: (chunk: string): boolean => {
       vt.write(chunk);
       return true;
     },
-    columns: opts.cols,
-    rows: opts.rows,
+    columns: opts.streamColumns ?? opts.cols,
+    rows: opts.streamRows ?? opts.rows,
     isTTY: true,
   };
   // log-update reads `stream.columns` / `stream.rows` defensively; the cast is
