@@ -1,43 +1,82 @@
 /**
- * Drift guard for the interactive relay hook (#645).
+ * Drift guard for hooks (#645).
  *
- * PR #638 added `templates/hooks/relay-check.sh` + the SEQUANT_RELAY sourcing
- * block in `templates/hooks/post-tool.sh`, but never updated the active hooks
- * in `.claude/hooks/`. Every worktree of this repo inherited the stale checked-in
- * post-tool.sh, so the PostToolUse hook chain never sourced relay-check.sh and
- * relay messages were silently consumed without reply.
+ * PR #638 added relay support to `templates/hooks/` but never updated the
+ * active hooks in `.claude/hooks/`. The installed `post-tool.sh` was
+ * Mar-25-era and missed the SEQUANT_RELAY sourcing block, so the
+ * PostToolUse chain never advanced the relay cursor. After the reconcile
+ * in PR #649, every file present in `templates/hooks/` MUST be byte-identical
+ * to its `.claude/hooks/` counterpart — there is no allowed divergence.
  *
- * These assertions fail immediately if either of those files drifts again.
+ * `.claude/hooks/` MAY contain extra files that templates don't have (e.g.
+ * `capture-tokens.sh`, which is sequant-specific and intentionally local).
+ *
+ * Run `npm run sync-hooks` to regenerate `.claude/hooks/` from the
+ * templates after editing any template hook.
  */
 
 import * as fs from "fs";
 import * as path from "path";
 import { describe, expect, it } from "vitest";
 
-const TEMPLATE_RELAY_CHECK = "templates/hooks/relay-check.sh";
-const ACTIVE_RELAY_CHECK = ".claude/hooks/relay-check.sh";
-const ACTIVE_POST_TOOL = ".claude/hooks/post-tool.sh";
+const TEMPLATES_DIR = "templates/hooks";
+const ACTIVE_DIR = ".claude/hooks";
 
-describe("relay hook sync (#645)", () => {
-  it("active relay-check.sh is byte-identical to the template", () => {
-    const templatePath = path.join(process.cwd(), TEMPLATE_RELAY_CHECK);
-    const activePath = path.join(process.cwd(), ACTIVE_RELAY_CHECK);
+function listHookFiles(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((n) => fs.statSync(path.join(dir, n)).isFile())
+    .sort();
+}
 
-    expect(fs.existsSync(templatePath)).toBe(true);
+describe("hook sync (#645)", () => {
+  const templatesPath = path.join(process.cwd(), TEMPLATES_DIR);
+  const activePath = path.join(process.cwd(), ACTIVE_DIR);
+
+  it("every file in templates/hooks/ exists byte-identically in .claude/hooks/", () => {
+    expect(fs.existsSync(templatesPath)).toBe(true);
     expect(fs.existsSync(activePath)).toBe(true);
 
-    const templateBytes = fs.readFileSync(templatePath);
-    const activeBytes = fs.readFileSync(activePath);
+    const templateFiles = listHookFiles(templatesPath);
+    expect(templateFiles.length).toBeGreaterThan(0);
 
-    expect(activeBytes.equals(templateBytes)).toBe(true);
+    const drift: string[] = [];
+    for (const name of templateFiles) {
+      const tBytes = fs.readFileSync(path.join(templatesPath, name));
+      const aPath = path.join(activePath, name);
+      if (!fs.existsSync(aPath)) {
+        drift.push(`MISSING: .claude/hooks/${name}`);
+        continue;
+      }
+      const aBytes = fs.readFileSync(aPath);
+      if (!aBytes.equals(tBytes)) {
+        drift.push(`DRIFT: .claude/hooks/${name}`);
+      }
+    }
+
+    expect(drift).toEqual([]);
   });
 
-  it("active post-tool.sh sources relay-check.sh under SEQUANT_RELAY", () => {
-    const activePath = path.join(process.cwd(), ACTIVE_POST_TOOL);
-    expect(fs.existsSync(activePath)).toBe(true);
+  it(".claude/hooks/ may have extra local-only files (e.g. capture-tokens.sh)", () => {
+    // This is documentation-as-test: we intentionally allow `.claude/hooks/`
+    // to contain files that aren't in templates. If we ever decide that's
+    // wrong, flip this test to enforce parity in both directions.
+    const templateFiles = new Set(listHookFiles(templatesPath));
+    const activeFiles = listHookFiles(activePath);
+    const extras = activeFiles.filter((n) => !templateFiles.has(n));
+    // Just assert the contract; don't fail on extras.
+    expect(extras.every((n) => typeof n === "string")).toBe(true);
+  });
 
-    const content = fs.readFileSync(activePath, "utf-8");
-
+  it("post-tool.sh sources relay-check.sh under SEQUANT_RELAY (kept for clarity)", () => {
+    // Redundant with the byte-equality check above, but kept so a failure
+    // here points directly at the relay regression rather than a generic
+    // "files differ" message.
+    const content = fs.readFileSync(
+      path.join(activePath, "post-tool.sh"),
+      "utf-8",
+    );
     expect(content).toMatch(/SEQUANT_RELAY:-/);
     expect(content).toMatch(/source\s+"?\$\{?_RELAY_CHECK\}?"?/);
   });
