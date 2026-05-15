@@ -15,7 +15,7 @@
  */
 
 import chalk from "chalk";
-import { createLogUpdate } from "log-update";
+import logUpdate from "log-update";
 import stringWidth from "string-width";
 import { formatElapsedTime, formatTimestamp } from "./format.js";
 import type {
@@ -642,46 +642,18 @@ export class TTYRenderer extends BaseRenderer {
       };
     } else {
       this._testStub = null;
-      // #652 Symptom A defensive fix: bind log-update to a stream wrapper
-      // whose `columns`/`rows` getters return the renderer's view, not
-      // `process.stdout`'s raw view. Under `npx`, `process.stdout.columns`
-      // is sometimes undefined → the default `logUpdate` singleton falls
-      // back to its own `defaultColumns` (typically 80) while the renderer
-      // builds frames at `getColumns()` (falls back to 100). The width
-      // disagreement makes log-update's `previousLineCount` desync from the
-      // real terminal-row-count, so `eraseLines(prevCount)` over- or
-      // under-clears, leaving partial frame rows that the next event-line
-      // write lands on top of — corrupting characters mid-string.
-      const getColumnsForStream = () => this.getColumns();
-      const getRowsForStream = () => this.getRows();
-      const boundStream: Partial<NodeJS.WriteStream> & {
-        write: (chunk: string) => boolean;
-        readonly columns: number;
-        readonly rows: number;
-        readonly isTTY: true;
-      } = {
-        write: (chunk: string) => process.stdout.write(chunk),
-        get columns() {
-          return getColumnsForStream();
-        },
-        get rows() {
-          return getRowsForStream();
-        },
-        isTTY: true,
-      };
-      const lu = createLogUpdate(boundStream as unknown as NodeJS.WriteStream);
       this.logUpdateImpl = (text: string) => {
         frameCounter++;
         emitDebug("impl", text);
-        lu(text);
+        logUpdate(text);
       };
       this.logUpdateClear = () => {
         emitDebug("clear");
-        lu.clear();
+        logUpdate.clear();
       };
       this.logUpdateDone = () => {
         emitDebug("done");
-        lu.done();
+        logUpdate.done();
       };
     }
 
@@ -807,24 +779,15 @@ export class TTYRenderer extends BaseRenderer {
 
   renderSummary(input: SummaryRenderInput): void {
     if (this.disposed) return;
-    // #652 Symptom B defensive fix: cancel the live timer FIRST, before any
-    // log-update teardown or summary write. The prior order ran `clearInterval`
-    // *after* `logUpdateClear`/`Done`, leaving a window where a pending tick
-    // (queued in the event loop before the cancel) could fire between the
-    // teardown and the summary write — re-rendering the live frame into the
-    // summary's output stream. A frame write mid-summary can split a multibyte
-    // box-drawing char at a byte boundary, producing U+FFFD in the rendered
-    // table, and lands the cursor on the wrong row so the next summary line
-    // overlays the prior separator row.
-    if (this.liveTimer !== null) {
-      clearInterval(this.liveTimer);
-      this.liveTimer = null;
-    }
     // #624 Item 2: tear down the live zone *before* writing the summary so any
     // subsequent `console.log` from displaySummary (reflection block, merge
     // tip) cannot overlap with the trailing border of the summary table.
     this.logUpdateClear();
     this.logUpdateDone();
+    if (this.liveTimer !== null) {
+      clearInterval(this.liveTimer);
+      this.liveTimer = null;
+    }
     // #624 Item 2 (AC-2.3): clamp summary columns to SUMMARY_COLUMN_CAP so wide
     // terminals don't produce a grid that overflows narrower readers (CI logs,
     // VS Code terminal panes).
