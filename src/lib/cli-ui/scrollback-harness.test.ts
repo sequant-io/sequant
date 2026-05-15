@@ -11,26 +11,18 @@
  * scrollback, so any header that gets pushed off the top of the screen still
  * shows up in `(visible + scrollback)` for assertion.
  *
- * STATUS (AC-2 partial): the assertions below currently pass on `main` *and*
- * with the AC-3 grid-width fix in this PR. That means these scenarios do NOT
- * yet reproduce the dominant production-bug mechanism (#1 from the issue body:
- * scrollback erasure when event-line writes push the live frame above the
- * visible viewport so `eraseLines` clamps at row 0 and leaves the prior
- * frame's header stranded).
- *
- * The harness models cursor-up clamping at row 0 (see `VirtualTerminal`),
- * so Mechanism #1 IS reachable from this harness — it just requires a
- * scenario whose total content > viewport rows. The two scenarios below
- * stay within the viewport for the basic test and use pause/resume for the
- * stress test (which resets log-update's previousLineCount, defusing the
- * very bug we want to catch).
- *
- * Reproducing Mechanism #1 requires an event-only flood (no pause/resume)
- * tall enough to push the frame top into scrollback. The AC-1 production
- * instrumentation (`SEQUANT_DEBUG_RENDERER=1`) is the intended next step
- * to capture the exact event-count / row-count / viewport size that fires
- * the bug in real `npx sequant run` runs, so the harness scenario can be
- * tightened from a known good fixture rather than guessed.
+ * Coverage in this file:
+ *   - Mechanism #4-adjacent (width misreporting): `streamColumns > vt.cols`
+ *     simulates the case where `process.stdout.columns` (read by both the
+ *     renderer and `log-update`) is wider than the physical terminal. The
+ *     renderer's `min(cols, 78)` cap is the fix; without it, the test fails
+ *     on master because the grid rendered at the reported width gets wrapped
+ *     by the VT, log-update's `previousLineCount` under-counts, and each
+ *     subsequent redraw leaves a stale header in scrollback.
+ *   - Mechanism #1 (scrollback erasure from event-line scrolling) is NOT
+ *     covered here — capturing it deterministically requires AC-1
+ *     instrumentation evidence from a real run. The `it.skip(...)` scaffold
+ *     below is the placeholder.
  */
 
 import { describe, expect, it } from "vitest";
@@ -204,18 +196,13 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
     renderer.dispose();
   });
 
-  // AC-2 Mechanism #1 reproduction attempt: event-only flood (no pause/resume)
-  // in a viewport tall enough that consecutive events scroll the original
-  // frame top into scrollback. If log-update's `eraseLines(previousLineCount)`
-  // clamps at row 0 (the harness models this), the previous frame's header
-  // row should remain stranded in scrollback. This is the dominant production
-  // mechanism per the #647 issue body.
-  //
-  // STATUS: marked `.skip` because it does not currently fire on either
-  // master or this PR — the harness's cursor-up clamp + log-update's
-  // pre-clear-each-frame flow keep the math in agreement. Captured here as
-  // a regression scaffold; AC-1 instrumentation evidence is the prerequisite
-  // for tightening it into a reliable repro (see file header for context).
+  // AC-2 Mechanism #1 reproduction scaffold (deferred — AC-1 evidence gated):
+  // event-only flood without pause/resume, in a viewport short enough that
+  // consecutive renders should scroll the original frame top into scrollback.
+  // The harness models cursor-up clamping at row 0, so Mechanism #1 IS
+  // reachable in principle — but tightening the scenario to fire deterministically
+  // requires AC-1 evidence from a real run (event-count, viewport size, frame
+  // height combinations that production actually exhibits).
   it.skip("AC-2 (mechanism #1, deferred): event-only flood pushes the live frame into scrollback", () => {
     const { renderer, harness } = makeHarnessRenderer({ rows: 12, cols: 100 });
     renderer.registerIssue({ issueNumber: 700 });
@@ -237,5 +224,113 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
     const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
     expect(headerCount).toBeLessThanOrEqual(1);
     renderer.dispose();
+  });
+
+  // AC-2 (Mechanism #4-adjacent): width misreporting. The renderer + log-update
+  // both read `stream.columns = 100`, but the physical terminal is 80 cols.
+  // Without the `min(cols, 78)` cap, the renderer produces 100-col-wide grid
+  // rows that log-update tracks as 1 line each (no internal wrap), the VT
+  // physically wraps each row to 2 lines, and `eraseLines(previousLineCount)`
+  // under-counts. The previous frame's header survives in scrollback on every
+  // redraw — the #647 duplicate-header symptom.
+  //
+  // This scenario is RED on master (`Math.min(cols, 110)` produces a 100-char
+  // grid that the 80-col VT wraps) and GREEN with the `min(cols, 78)` cap.
+  // The grid stays at 78 cols, fits in the VT without wrap, log-update's
+  // line tracking matches the actual rendered height, and only one header
+  // ever lives in (visible + scrollback).
+  it("AC-2: width-misreporting (stream wider than terminal) keeps the header out of scrollback", () => {
+    const { renderer, harness } = makeHarnessRenderer({
+      rows: 30,
+      cols: 80,
+      streamColumns: 100,
+      rendererColumns: 100,
+    });
+
+    renderer.registerIssue({ issueNumber: 504 });
+    renderer.registerIssue({ issueNumber: 505 });
+
+    const events: ProgressEvent[] = [
+      { issue: 504, phase: "spec", event: "start" },
+      { issue: 505, phase: "spec", event: "start" },
+      { issue: 504, phase: "spec", event: "complete", durationSeconds: 232 },
+      { issue: 504, phase: "exec", event: "start" },
+      { issue: 505, phase: "spec", event: "complete", durationSeconds: 262 },
+      { issue: 505, phase: "exec", event: "start" },
+      { issue: 504, phase: "exec", event: "complete", durationSeconds: 820 },
+      { issue: 504, phase: "qa", event: "start" },
+      { issue: 505, phase: "exec", event: "complete", durationSeconds: 1005 },
+      { issue: 505, phase: "qa", event: "start" },
+      { issue: 504, phase: "qa", event: "complete", durationSeconds: 293 },
+      {
+        issue: 505,
+        phase: "qa",
+        event: "failed",
+        error: "QA verdict: AC_MET_BUT_NOT_A_PLUS",
+      },
+    ];
+    for (const ev of events) renderer.onEvent(ev);
+
+    const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
+    if (headerCount > 1) {
+      const visible = harness.vt
+        .getVisibleLines()
+        .map((l, i) => `  v${i.toString().padStart(2, "0")} | ${l}`)
+        .join("\n");
+      const scrollback = harness.vt.scrollback
+        .map((l, i) => `  s${i.toString().padStart(2, "0")} | ${l}`)
+        .join("\n");
+      throw new Error(
+        `Expected at most 1 \`SEQUANT WORKFLOW · \` header but found ${headerCount}.\n\n` +
+          `Scrollback (${harness.vt.scrollback.length} rows):\n${scrollback}\n\n` +
+          `Visible (${harness.vt.rows} rows):\n${visible}`,
+      );
+    }
+    expect(headerCount).toBeLessThanOrEqual(1);
+    renderer.dispose();
+  });
+
+  // AC-3 derived: lock the grid-width arithmetic so future drift (changing
+  // colW, padding, or the cap) can't silently reintroduce the overflow that
+  // started this whole regression. Asserts on the actual rendered string
+  // length of grid border rows at practical widths (≥80 cols, below which the
+  // `Math.max(50, ...)` floor takes over).
+  it("AC-3 (grid-width invariant): rendered grid total width is min(cols, 78) at cols ≥ 80", () => {
+    const widths = [80, 100, 200];
+    for (const cols of widths) {
+      const harness = createTerminalHarness({ rows: 40, cols: 250 });
+      const renderer = new TTYRenderer({
+        stdoutWrite: harness.stdoutWrite,
+        logUpdateInstance: harness.logUpdate,
+        isTTY: true,
+        noColor: true,
+        columns: cols,
+        rows: 40,
+        liveTickMs: 0,
+        noSignalListeners: true,
+        now: () => FIXED_NOW,
+        wallClock: () => FIXED_DATE,
+      });
+      renderer.registerIssue({ issueNumber: 504 });
+      renderer.registerIssue({ issueNumber: 505 });
+      renderer.onEvent({ issue: 504, phase: "spec", event: "start" });
+
+      const allText = harness.vt.getAllText();
+      // Box-drawing border rows are the canonical width indicator. Match
+      // characters used by `drawSimpleTable` / `drawKeyValueTable`.
+      const borderRow = allText.split("\n").find((l) => /[┌┬┐├┼┤└┴┘─]/.test(l));
+      expect(borderRow, `border row not found at cols=${cols}`).toBeTruthy();
+      // The VT preserves the 2-char leading indent. Total visible width
+      // including the indent should equal `min(cols, 78)`.
+      const expected = Math.min(cols, 78);
+      // The VT pads visible rows to its physical width (cols=250 here) and
+      // our trim strips trailing whitespace, so the meaningful content ends
+      // at the closing border char. Re-trim and assert.
+      const trimmed = borderRow!.replace(/\s+$/, "");
+      expect(trimmed.length, `border width mismatch at cols=${cols}`).toBe(
+        expected,
+      );
+      renderer.dispose();
+    }
   });
 });

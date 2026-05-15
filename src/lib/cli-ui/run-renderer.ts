@@ -564,12 +564,30 @@ export class TTYRenderer extends BaseRenderer {
     let frameCounter = 0;
     const emitDebug = (op: "impl" | "clear" | "done", text?: string) => {
       if (!debugEnabled) return;
-      const wrappedLineCount =
-        text !== undefined
-          ? // Count of lines log-update WILL split on after appending \n —
-            // matches `lines.length` in createLogUpdate's render path.
-            text.split("\n").length + (text.endsWith("\n") ? 0 : 1)
-          : undefined;
+      // log-update's render path is roughly:
+      //   output = wrapAnsi(text + "\n", stream.columns, {trim:false, hard:true})
+      //   previousLineCount = output.split("\n").length
+      // So `previousLineCount` is wrap-aware: a 100-char line in an 80-col
+      // stream counts as 2, not 1. We approximate that here using `stringWidth`
+      // (already a dep) instead of `text.split("\n").length`. The metric is
+      // intentionally an approximation — wrap-ansi has word-breaking nuances
+      // — but it's correct enough to spot the diagnostic case AC-1 cares
+      // about: when this count diverges from the actual on-terminal row
+      // count, log-update's `eraseLines` will undershoot.
+      const streamCols =
+        process.stdout.columns ?? this.getColumns() ?? Infinity;
+      let logicalLines: number | undefined;
+      let wrappedLineCount: number | undefined;
+      if (text !== undefined) {
+        const lines = text.split("\n");
+        logicalLines = lines.length + (text.endsWith("\n") ? 0 : 1);
+        wrappedLineCount = lines.reduce((acc, line) => {
+          const w = stringWidth(line);
+          return acc + Math.max(1, Math.ceil(w / streamCols));
+        }, 0);
+        // log-update appends a trailing \n before wrapping, so count it.
+        if (!text.endsWith("\n")) wrappedLineCount++;
+      }
       const record = {
         t: this.now() - this.runStartedAt,
         op,
@@ -578,6 +596,7 @@ export class TTYRenderer extends BaseRenderer {
         rendererRows: this.getRows(),
         stdoutCols: process.stdout.columns ?? null,
         stdoutRows: process.stdout.rows ?? null,
+        logicalLines,
         wrappedLineCount,
       };
       // stderr keeps stdout clean for the live zone; the user redirects it
@@ -935,15 +954,16 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · #${state.issueNumber} · ${formatElapsedTime((this.now() - this.runStartedAt) / 1000)} elapsed`;
 
-    // #647 AC-3: total drawn width is `labelWidth + valueWidth + 9` (2 leading
-    // spaces + 3 box-drawing intersection chars + 4 cell-padding spaces). The
-    // prior `- 7` formula produced rows 2 chars wider than `cols`, which made
-    // every grid line wrap inside log-update's stream. When wrap-count diverged
-    // from terminal-row-count (column mismatch under `npx` / SIGWINCH timing),
-    // `eraseLines(previousLineCount)` undershot and the header survived into
-    // scrollback on each redraw — the #647 duplicate-header symptom.
+    // #647 AC-3: cap at 78 (not 110) so the rendered grid stays narrower than
+    // any standard 80-col terminal even when the reported `cols` is wider than
+    // the actual terminal (e.g. cached `process.stdout.columns`, TTY emulation
+    // layers, `npx` piped stdout). Total drawn width is
+    // `labelWidth + valueWidth + 9` (2 leading spaces + 3 box-drawing
+    // intersection chars + 4 cell-padding spaces); the prior `- 7` formula
+    // additionally produced rows 2 chars wider than `cols`, compounding the
+    // wrap. Both errors removed.
     const labelWidth = 10;
-    const innerWidth = Math.max(40, Math.min(cols, 110) - labelWidth - 9);
+    const innerWidth = Math.max(40, Math.min(cols, 78) - labelWidth - 9);
     const valueWidth = innerWidth;
 
     const rows: Array<[string, string[]]> = [];
@@ -974,12 +994,13 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · ${this.runHeader()}`;
 
-    // #647 AC-3: see note in `renderSingleIssueFrame` — the box-drawing total
-    // is `issueColW + statusColW + 9`; the previous `- 7` formula produced
-    // 2-char overflow that wrapped every border line and broke log-update's
-    // `previousLineCount` accounting.
+    // #647 AC-3: see note in `renderSingleIssueFrame` — cap at 78 (not 110) so
+    // the rendered grid stays narrower than any standard 80-col terminal under
+    // width-misreporting conditions. The box-drawing total is
+    // `issueColW + statusColW + 9`; the prior `- 7` formula compounded the
+    // overflow.
     const issueColW = 8;
-    const innerWidth = Math.max(50, Math.min(cols, 110) - issueColW - 9);
+    const innerWidth = Math.max(50, Math.min(cols, 78) - issueColW - 9);
     const statusColW = innerWidth;
 
     const lines: string[] = [c.bold(header), ""];
