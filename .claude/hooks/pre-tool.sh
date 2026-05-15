@@ -33,20 +33,32 @@ else
     fi
 fi
 
-TIMING_LOG="/tmp/claude-timing.log"
-PARALLEL_MARKER_PREFIX="/tmp/claude-parallel-"
+_TMPDIR="${TMPDIR:-/tmp}"
+
+# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
+if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+  _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
+  mkdir -p "$_LOG_DIR"
+else
+  _LOG_DIR="${_TMPDIR}"
+fi
+
+TIMING_LOG="${_LOG_DIR}/claude-timing.log"
+HOOK_LOG="${_LOG_DIR}/claude-hook.log"
+PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
 
 # === AGENT ID DETECTION ===
 # For parallel agents, detect group ID from marker files
-# Format: /tmp/claude-parallel-<group-id>.marker
+# Format: ${_TMPDIR}/claude-parallel-<group-id>.marker
 AGENT_ID=""
-for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
-    if [[ -f "$marker" ]]; then
+# Find marker files using find (works in both bash and zsh)
+while IFS= read -r marker; do
+    if [[ -n "$marker" && -f "$marker" ]]; then
         # Extract group ID from marker filename
         AGENT_ID=$(basename "$marker" | sed 's/claude-parallel-//' | sed 's/\.marker//')
         break
     fi
-done
+done < <(find "${_TMPDIR}" -maxdepth 1 -name "claude-parallel-*.marker" 2>/dev/null)
 
 # === TIMING START ===
 # Include agent ID in log format if available (AC-4)
@@ -75,33 +87,33 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
 if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) '; then
     # Pattern requires command to START with file reader (not match in quoted strings)
     if echo "$TOOL_INPUT" | grep -qE '^(cat|less|head|tail|more) .*\.(env|pem|key)'; then
-        echo "HOOK_BLOCKED: Reading secret file" | tee -a /tmp/claude-hook.log >&2
+        echo "HOOK_BLOCKED: Reading secret file" | tee -a "$HOOK_LOG" >&2
         exit 2
     fi
 
     if echo "$TOOL_INPUT" | grep -qE '^(cat|less) .*~/\.(ssh|aws|gnupg|config/gh)'; then
-        echo "HOOK_BLOCKED: Reading credential directory" | tee -a /tmp/claude-hook.log >&2
+        echo "HOOK_BLOCKED: Reading credential directory" | tee -a "$HOOK_LOG" >&2
         exit 2
     fi
 fi
 
 # Bare environment dump
 if echo "$TOOL_INPUT" | grep -qE '^(env|printenv|export)$'; then
-    echo "HOOK_BLOCKED: Environment dump" | tee -a /tmp/claude-hook.log >&2
+    echo "HOOK_BLOCKED: Environment dump" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
 
 # Destructive system commands
 # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
 if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'sudo|rm -rf /|rm -rf ~|rm -rf \$HOME'; then
-    echo "HOOK_BLOCKED: Destructive system command" | tee -a /tmp/claude-hook.log >&2
+    echo "HOOK_BLOCKED: Destructive system command" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
 
 # Deployment (should never happen in issue automation)
 # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
 if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'vercel (deploy|--prod)|terraform (apply|destroy)|kubectl (apply|delete)'; then
-    echo "HOOK_BLOCKED: Deployment command" | tee -a /tmp/claude-hook.log >&2
+    echo "HOOK_BLOCKED: Deployment command" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
 
@@ -109,7 +121,7 @@ fi
 # Pattern requires -f to be a standalone flag (not part of branch name like -fix)
 # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
 if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
-    echo "HOOK_BLOCKED: Force push" | tee -a /tmp/claude-hook.log >&2
+    echo "HOOK_BLOCKED: Force push" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
 
@@ -153,7 +165,7 @@ if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | gre
             echo "    git stash                        # save changes"
             echo "    git merge --abort                # cancel merge"
             echo "  Or run directly in terminal (outside Claude Code) to bypass"
-        } | tee -a /tmp/claude-hook.log >&2
+        } | tee -a "$HOOK_LOG" >&2
         exit 2
     fi
 fi
@@ -161,7 +173,7 @@ fi
 # CI/CD triggers (automation shouldn't trigger more automation)
 # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
 if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
-    echo "HOOK_BLOCKED: Workflow trigger" | tee -a /tmp/claude-hook.log >&2
+    echo "HOOK_BLOCKED: Workflow trigger" | tee -a "$HOOK_LOG" >&2
     exit 2
 fi
 
@@ -228,7 +240,7 @@ if [[ "${CLAUDE_HOOKS_SECURITY:-true}" != "false" ]]; then
                 {
                     echo "HOOK_BLOCKED: Hardcoded secret detected in staged changes"
                     echo "  Use 'git commit --no-verify' to bypass if this is a false positive"
-                } | tee -a /tmp/claude-hook.log >&2
+                } | tee -a "$HOOK_LOG" >&2
                 exit 2
             fi
 
@@ -239,7 +251,7 @@ if [[ "${CLAUDE_HOOKS_SECURITY:-true}" != "false" ]]; then
                     echo "HOOK_BLOCKED: Sensitive file in commit (${STAGED_FILES})"
                     echo "  Files like .env, *.pem, *.key should not be committed"
                     echo "  Use 'git commit --no-verify' to bypass if this is intentional"
-                } | tee -a /tmp/claude-hook.log >&2
+                } | tee -a "$HOOK_LOG" >&2
                 exit 2
             fi
         fi
@@ -269,7 +281,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|p
         fi
 
         if [[ "$CHANGES" -eq 0 ]]; then
-            echo "HOOK_BLOCKED: No changes to commit. Stage files with 'git add' first." | tee -a /tmp/claude-hook.log >&2
+            echo "HOOK_BLOCKED: No changes to commit. Stage files with 'git add' first." | tee -a "$HOOK_LOG" >&2
             exit 2
         fi
     fi
@@ -278,7 +290,7 @@ fi
 # --- Worktree Validation (AC-8) ---
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
-QUALITY_LOG="/tmp/claude-quality.log"
+QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
 # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
 if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
     CWD=$(pwd)
@@ -322,9 +334,15 @@ if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|p
             {
                 echo "HOOK_BLOCKED: Commit must follow conventional commits format"
                 echo "  Expected: type(scope): description"
+                # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
+                if [[ "$MSG" == Merge\ * ]]; then
+                    echo ""
+                    echo "  💡 For merge commits, use: chore: merge main into feature branch"
+                    echo ""
+                fi
                 echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
                 echo "  Got: $MSG"
-            } | tee -a /tmp/claude-hook.log >&2
+            } | tee -a "$HOOK_LOG" >&2
             exit 2
         fi
     fi
@@ -359,7 +377,7 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
         # AC-4 (Issue #31): Check worktree directory exists before path validation
         # Prevents Write tool from creating non-existent worktree directories
         if [[ ! -d "$EXPECTED_WORKTREE" ]]; then
-            echo "HOOK_BLOCKED: Worktree does not exist: $EXPECTED_WORKTREE" | tee -a /tmp/claude-hook.log >&2
+            echo "HOOK_BLOCKED: Worktree does not exist: $EXPECTED_WORKTREE" | tee -a "$HOOK_LOG" >&2
             exit 2
         fi
 
@@ -388,7 +406,7 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
                     if [[ -n "${SEQUANT_ISSUE:-}" ]]; then
                         echo "  Issue: #$SEQUANT_ISSUE"
                     fi
-                } | tee -a /tmp/claude-hook.log >&2
+                } | tee -a "$HOOK_LOG" >&2
                 exit 2
             fi
         fi
@@ -411,7 +429,7 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
 
         if [[ -n "$FILE_PATH" ]]; then
             # Create a lock file based on file path hash (handles special chars)
-            LOCK_FILE="/tmp/claude-lock-$(echo "$FILE_PATH" | md5 -q 2>/dev/null || echo "$FILE_PATH" | md5sum | cut -d' ' -f1).lock"
+            LOCK_FILE="${_TMPDIR}/claude-lock-$(echo "$FILE_PATH" | md5 -q 2>/dev/null || echo "$FILE_PATH" | md5sum | cut -d' ' -f1).lock"
 
             # Try to acquire lock with 30 second timeout
             # Use a subshell to hold the lock during the tool execution
@@ -419,7 +437,7 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
                 # macOS: use lockf
                 exec 200>"$LOCK_FILE"
                 if ! lockf -t 30 200 2>/dev/null; then
-                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a /tmp/claude-hook.log >&2
+                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a "$HOOK_LOG" >&2
                     exit 2
                 fi
                 # Lock will be released when the file descriptor closes (process exits)
@@ -427,7 +445,7 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
                 # Linux: use flock
                 exec 200>"$LOCK_FILE"
                 if ! flock -w 30 200 2>/dev/null; then
-                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a /tmp/claude-hook.log >&2
+                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a "$HOOK_LOG" >&2
                     exit 2
                 fi
             fi
@@ -435,6 +453,7 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
         fi
     fi
 fi
+
 # === ALLOW EVERYTHING ELSE ===
 # Slash commands need: git, npm, file edits, gh pr/issue, MCP tools
 exit 0

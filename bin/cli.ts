@@ -70,6 +70,7 @@ import {
 } from "../src/commands/locks.js";
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
+import { abortCommand } from "../src/commands/abort.js";
 import { getManifest } from "../src/lib/manifest.js";
 import { phaseRegistry } from "../src/lib/workflow/phase-registry.js";
 
@@ -321,12 +322,19 @@ program
     "Message type: query (default), directive, abort",
     "query",
   )
+  .option(
+    "--wait <seconds>",
+    "Block until a reply arrives or the timeout elapses (#645, Gap 4)",
+    parseInt,
+  )
   .option("--json", "Output as JSON")
   .action((args: string[], options: Record<string, unknown>) => {
     return promptCommand({
       args,
       options: {
         type: options.type as string | undefined,
+        waitSeconds:
+          typeof options.wait === "number" ? options.wait : undefined,
         json: Boolean(options.json),
       },
     });
@@ -343,6 +351,35 @@ program
     return watchCommand({
       args: [issueArg],
       options: { json: Boolean(options.json) },
+    });
+  });
+
+program
+  .command("abort")
+  .description(
+    "Out-of-band abort: signal a running sequant session directly (#645)",
+  )
+  .argument(
+    "[issue]",
+    "Issue number (auto-resolved when a single run is active)",
+  )
+  .option("--force", "Skip the SIGINT grace period; SIGTERM immediately")
+  .option(
+    "--grace <seconds>",
+    "Seconds to wait after SIGINT before escalating (default: 10)",
+    parseInt,
+  )
+  .option("--json", "Output as JSON")
+  .action((issueArg: string | undefined, options: Record<string, unknown>) => {
+    const args = issueArg === undefined ? [] : [issueArg];
+    return abortCommand({
+      args,
+      options: {
+        force: Boolean(options.force),
+        graceSeconds:
+          typeof options.grace === "number" ? options.grace : undefined,
+        json: Boolean(options.json),
+      },
     });
   });
 
