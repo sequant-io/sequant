@@ -554,6 +554,38 @@ export class TTYRenderer extends BaseRenderer {
     this.maxLoopIterations =
       options.maxLoopIterations ?? DEFAULT_MAX_LOOP_ITERATIONS;
 
+    // #647 AC-1: render-state instrumentation gated on `SEQUANT_DEBUG_RENDERER=1`.
+    // Emits one JSON line per log-update callsite so a production replay shows
+    // exactly which mechanism from the #647 issue body is firing (column/row
+    // mismatch, wrap-induced row inflation, etc.). The trace doubles as the
+    // evidence required by AC-1's "Pick the fix direction from §2 only after
+    // instrumentation confirms the mechanism." sub-bullet.
+    const debugEnabled = process.env.SEQUANT_DEBUG_RENDERER === "1";
+    let frameCounter = 0;
+    const emitDebug = (op: "impl" | "clear" | "done", text?: string) => {
+      if (!debugEnabled) return;
+      const wrappedLineCount =
+        text !== undefined
+          ? // Count of lines log-update WILL split on after appending \n —
+            // matches `lines.length` in createLogUpdate's render path.
+            text.split("\n").length + (text.endsWith("\n") ? 0 : 1)
+          : undefined;
+      const record = {
+        t: this.now() - this.runStartedAt,
+        op,
+        frame: frameCounter,
+        rendererCols: this.getColumns(),
+        rendererRows: this.getRows(),
+        stdoutCols: process.stdout.columns ?? null,
+        stdoutRows: process.stdout.rows ?? null,
+        wrappedLineCount,
+      };
+      // stderr keeps stdout clean for the live zone; the user redirects it
+      // (`SEQUANT_DEBUG_RENDERER=1 npx sequant run ... 2> debug.jsonl`) to
+      // capture without disrupting the run.
+      this.stderrWrite(`SEQUANT_DEBUG_RENDERER ${JSON.stringify(record)}\n`);
+    };
+
     // log-update writes to process.stdout via a mutable global instance. When
     // tests inject `stdoutWrite`, route renders through it instead so capture
     // works deterministically. The #647 harness tests instead inject a real
@@ -566,9 +598,19 @@ export class TTYRenderer extends BaseRenderer {
       // null because the harness asserts on the VirtualTerminal directly.
       const lu = options.logUpdateInstance;
       this._testStub = null;
-      this.logUpdateImpl = (text: string) => lu(text);
-      this.logUpdateClear = () => lu.clear();
-      this.logUpdateDone = () => lu.done();
+      this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
+        lu(text);
+      };
+      this.logUpdateClear = () => {
+        emitDebug("clear");
+        lu.clear();
+      };
+      this.logUpdateDone = () => {
+        emitDebug("done");
+        lu.done();
+      };
     } else if (options.stdoutWrite) {
       // #624 Derived AC-D1: replacement-aware test stub. Tracks each frame
       // replacement so tests can assert on frame churn without parsing buf.out.
@@ -582,23 +624,37 @@ export class TTYRenderer extends BaseRenderer {
       };
       this._testStub = stub;
       this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
         if (stub.lastFrame) stub.replacementCount++;
         stub.lastFrame = text;
         options.stdoutWrite!(text + "\n");
       };
       this.logUpdateClear = () => {
+        emitDebug("clear");
         stub.clearCalls++;
         stub.lastFrame = "";
       };
       this.logUpdateDone = () => {
+        emitDebug("done");
         stub.doneCalls++;
         stub.lastFrame = "";
       };
     } else {
       this._testStub = null;
-      this.logUpdateImpl = (text: string) => logUpdate(text);
-      this.logUpdateClear = () => logUpdate.clear();
-      this.logUpdateDone = () => logUpdate.done();
+      this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
+        logUpdate(text);
+      };
+      this.logUpdateClear = () => {
+        emitDebug("clear");
+        logUpdate.clear();
+      };
+      this.logUpdateDone = () => {
+        emitDebug("done");
+        logUpdate.done();
+      };
     }
 
     this.startLiveTimer();
@@ -608,6 +664,14 @@ export class TTYRenderer extends BaseRenderer {
   /**
    * #624 Derived AC-D1: expose the test-only log-update stub. Returns `null`
    * when not in test mode (production renders go through real `log-update`).
+   *
+   * #647 AC-D3 warning: this stub does NOT model `log-update`'s ANSI cursor
+   * or scrollback semantics. Tests that assert on `stub.lastFrame` only see
+   * the most recent frame, not whether earlier frames remained stranded in
+   * scrollback. Header-count / duplicate-header assertions MUST use
+   * `scrollback-harness.ts` (real `createLogUpdate` + VirtualTerminal),
+   * otherwise they will pass green even when the production rendering is
+   * broken — see #624 for the precedent.
    */
   getTestStub(): TTYTestStub | null {
     return this._testStub;
@@ -871,8 +935,15 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · #${state.issueNumber} · ${formatElapsedTime((this.now() - this.runStartedAt) / 1000)} elapsed`;
 
+    // #647 AC-3: total drawn width is `labelWidth + valueWidth + 9` (2 leading
+    // spaces + 3 box-drawing intersection chars + 4 cell-padding spaces). The
+    // prior `- 7` formula produced rows 2 chars wider than `cols`, which made
+    // every grid line wrap inside log-update's stream. When wrap-count diverged
+    // from terminal-row-count (column mismatch under `npx` / SIGWINCH timing),
+    // `eraseLines(previousLineCount)` undershot and the header survived into
+    // scrollback on each redraw — the #647 duplicate-header symptom.
     const labelWidth = 10;
-    const innerWidth = Math.max(40, Math.min(cols, 110) - labelWidth - 7);
+    const innerWidth = Math.max(40, Math.min(cols, 110) - labelWidth - 9);
     const valueWidth = innerWidth;
 
     const rows: Array<[string, string[]]> = [];
@@ -903,8 +974,12 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · ${this.runHeader()}`;
 
+    // #647 AC-3: see note in `renderSingleIssueFrame` — the box-drawing total
+    // is `issueColW + statusColW + 9`; the previous `- 7` formula produced
+    // 2-char overflow that wrapped every border line and broke log-update's
+    // `previousLineCount` accounting.
     const issueColW = 8;
-    const innerWidth = Math.max(50, Math.min(cols, 110) - issueColW - 7);
+    const innerWidth = Math.max(50, Math.min(cols, 110) - issueColW - 9);
     const statusColW = innerWidth;
 
     const lines: string[] = [c.bold(header), ""];

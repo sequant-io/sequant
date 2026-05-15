@@ -11,17 +11,26 @@
  * scrollback, so any header that gets pushed off the top of the screen still
  * shows up in `(visible + scrollback)` for assertion.
  *
- * STATUS (AC-2 partial): the assertions below currently pass on `main`.
- * That means the harness does NOT yet reproduce the production bug — the
- * `log-update@7` + VT pair we model here correctly tracks wrapped line counts
- * via `wrapAnsi`, so `eraseLines(previousLineCount)` covers everything the
- * renderer wrote. The production bug must come from a real-terminal behaviour
- * the VT does not yet model. AC-1 instrumentation in production is the
- * intended next step to identify which of the issue's candidate mechanisms
- * is firing (likely #2 stream.columns mismatch or #4 process.stdout.rows
- * undefined under `npx`), at which point the harness can be extended (e.g.
- * decouple `streamColumns` from `vt.cols` to simulate the mismatch) to make
- * these assertions fail on `main` as AC-2 requires.
+ * STATUS (AC-2 partial): the assertions below currently pass on `main` *and*
+ * with the AC-3 grid-width fix in this PR. That means these scenarios do NOT
+ * yet reproduce the dominant production-bug mechanism (#1 from the issue body:
+ * scrollback erasure when event-line writes push the live frame above the
+ * visible viewport so `eraseLines` clamps at row 0 and leaves the prior
+ * frame's header stranded).
+ *
+ * The harness models cursor-up clamping at row 0 (see `VirtualTerminal`),
+ * so Mechanism #1 IS reachable from this harness — it just requires a
+ * scenario whose total content > viewport rows. The two scenarios below
+ * stay within the viewport for the basic test and use pause/resume for the
+ * stress test (which resets log-update's previousLineCount, defusing the
+ * very bug we want to catch).
+ *
+ * Reproducing Mechanism #1 requires an event-only flood (no pause/resume)
+ * tall enough to push the frame top into scrollback. The AC-1 production
+ * instrumentation (`SEQUANT_DEBUG_RENDERER=1`) is the intended next step
+ * to capture the exact event-count / row-count / viewport size that fires
+ * the bug in real `npx sequant run` runs, so the harness scenario can be
+ * tightened from a known good fixture rather than guessed.
  */
 
 import { describe, expect, it } from "vitest";
@@ -36,14 +45,19 @@ const FIXED_DATE = new Date(2026, 4, 14, 0, 0, 0, 0);
  * Wire a TTYRenderer through real log-update + a VirtualTerminal so we can
  * inspect (visible + scrollback) as if a user were watching the run.
  */
-function makeHarnessRenderer(opts: { rows: number; cols: number }) {
+function makeHarnessRenderer(opts: {
+  rows: number;
+  cols: number;
+  streamColumns?: number;
+  rendererColumns?: number;
+}) {
   const harness = createTerminalHarness(opts);
   const renderer = new TTYRenderer({
     stdoutWrite: harness.stdoutWrite,
     logUpdateInstance: harness.logUpdate,
     isTTY: true,
     noColor: true,
-    columns: opts.cols,
+    columns: opts.rendererColumns ?? opts.cols,
     rows: opts.rows,
     liveTickMs: 0,
     noSignalListeners: true,
@@ -187,6 +201,41 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
       );
     }
     expect(headerCount).toBe(1);
+    renderer.dispose();
+  });
+
+  // AC-2 Mechanism #1 reproduction attempt: event-only flood (no pause/resume)
+  // in a viewport tall enough that consecutive events scroll the original
+  // frame top into scrollback. If log-update's `eraseLines(previousLineCount)`
+  // clamps at row 0 (the harness models this), the previous frame's header
+  // row should remain stranded in scrollback. This is the dominant production
+  // mechanism per the #647 issue body.
+  //
+  // STATUS: marked `.skip` because it does not currently fire on either
+  // master or this PR — the harness's cursor-up clamp + log-update's
+  // pre-clear-each-frame flow keep the math in agreement. Captured here as
+  // a regression scaffold; AC-1 instrumentation evidence is the prerequisite
+  // for tightening it into a reliable repro (see file header for context).
+  it.skip("AC-2 (mechanism #1, deferred): event-only flood pushes the live frame into scrollback", () => {
+    const { renderer, harness } = makeHarnessRenderer({ rows: 12, cols: 100 });
+    renderer.registerIssue({ issueNumber: 700 });
+    renderer.registerIssue({ issueNumber: 701 });
+
+    for (let i = 0; i < 30; i++) {
+      const phase = i % 3 === 0 ? "spec" : i % 3 === 1 ? "exec" : "qa";
+      const issue = i % 2 === 0 ? 700 : 701;
+      renderer.onEvent({ issue, phase, event: "start", iteration: i });
+      renderer.onEvent({
+        issue,
+        phase,
+        event: "complete",
+        durationSeconds: 60 + i,
+        iteration: i,
+      });
+    }
+
+    const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
+    expect(headerCount).toBeLessThanOrEqual(1);
     renderer.dispose();
   });
 });
