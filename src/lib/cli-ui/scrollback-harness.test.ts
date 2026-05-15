@@ -405,6 +405,123 @@ describe("#652 Symptom A — event-line mid-string char loss", () => {
     expect(mangledTokens).toBeNull();
     renderer.dispose();
   });
+
+  it("binds log-update to the renderer's column count even when process.stdout.columns is undefined (RED→GREEN column-mismatch invariant)", () => {
+    // RED→GREEN gate for the Symptom A defensive fix. The harness cannot
+    // reproduce the visible mid-string corruption deterministically (it
+    // requires real OS-level cursor/erase interleaving the synchronous VT
+    // model doesn't capture). This invariant test instead pins the
+    // *underlying* property the fix enforces: log-update MUST wrap at the
+    // renderer's `getColumns()` value, not at its own `defaultColumns`
+    // fallback. If the production code path reverts to the unbound
+    // `logUpdate` singleton, `process.stdout.columns = undefined` will leak
+    // through and this test goes RED.
+    //
+    // Method: spy on the stream that log-update wraps. The bound stream has
+    // `columns` as a getter that delegates to the renderer. If the renderer
+    // changes its columns (via `columnsOverride`), the next log-update
+    // write sees the new value. We assert that a write under
+    // `process.stdout.columns = undefined` still wraps at the renderer's
+    // configured 200-col width (not log-update's 80-col default).
+    //
+    // We use the production code path (not the harness path) by creating a
+    // TTYRenderer without `logUpdateInstance`. That forces the constructor
+    // into the `else` branch where the bound stream lives.
+    const writes: string[] = [];
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    const originalColumns = process.stdout.columns;
+    const originalRows = process.stdout.rows;
+    const originalIsTTY = process.stdout.isTTY;
+    try {
+      // Simulate `npx` stripping the TTY signals.
+      Object.defineProperty(process.stdout, "columns", {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, "rows", {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, "isTTY", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+      // Capture writes that log-update's bound stream produces.
+      process.stdout.write = ((chunk: string | Uint8Array) => {
+        writes.push(
+          typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(),
+        );
+        return true;
+      }) as typeof process.stdout.write;
+
+      // Production code path: no logUpdateInstance, no stdoutWrite override.
+      // This forces the constructor's `else` branch (the patched path).
+      const r = new TTYRenderer({
+        isTTY: true,
+        noColor: true,
+        columns: 200, // Renderer view: 200 cols
+        rows: 24,
+        liveTickMs: 0,
+        noSignalListeners: true,
+        now: () => FIXED_NOW,
+        wallClock: () => FIXED_DATE,
+      });
+
+      r.registerIssue({ issueNumber: 504 });
+      r.onEvent({ issue: 504, phase: "spec", event: "start" });
+      // A second event drives a log-update redraw — by which point the
+      // bound stream's `columns` getter has been read by log-update for
+      // its wrap math.
+      r.onEvent({
+        issue: 504,
+        phase: "spec",
+        event: "complete",
+        durationSeconds: 30,
+      });
+      r.dispose();
+
+      // Invariant: the renderer rendered frames sized to 200-cols, not
+      // log-update's 80-col fallback. We check by looking at the longest
+      // line in any of the captured writes: if log-update wrapped at 80,
+      // no line would exceed 80 visible chars (stripping ANSI). If
+      // log-update wrapped at 200 (or didn't wrap because the frame
+      // already fit), lines can be longer than 80.
+      // Strip ANSI escapes so we measure visible width.
+      const stripAnsi = (s: string) => s.replace(/\[[0-9;]*[A-Za-z]/g, "");
+      const allText = writes.join("");
+      const lines = allText.split("\n");
+      const longestVisible = Math.max(
+        ...lines.map((line) => stripAnsi(line).length),
+      );
+      // The frame's box-drawing rows are sized to roughly the renderer's
+      // columns (capped at 110 internally for SUMMARY_COLUMN_CAP, but the
+      // single-issue grid uses up to `min(cols, 110)`). So we expect to
+      // see at least one line wider than 80 visible chars — proving
+      // log-update did NOT wrap at its 80-col fallback.
+      expect(longestVisible).toBeGreaterThan(80);
+    } finally {
+      // Restore process.stdout state.
+      process.stdout.write = originalStdoutWrite;
+      Object.defineProperty(process.stdout, "columns", {
+        value: originalColumns,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, "rows", {
+        value: originalRows,
+        writable: true,
+        configurable: true,
+      });
+      Object.defineProperty(process.stdout, "isTTY", {
+        value: originalIsTTY,
+        writable: true,
+        configurable: true,
+      });
+    }
+  });
 });
 
 describe("#652 Symptom B — U+FFFD and row overlap in summary table", () => {
