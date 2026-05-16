@@ -554,10 +554,83 @@ export class TTYRenderer extends BaseRenderer {
     this.maxLoopIterations =
       options.maxLoopIterations ?? DEFAULT_MAX_LOOP_ITERATIONS;
 
+    // #647 AC-1: render-state instrumentation gated on `SEQUANT_DEBUG_RENDERER=1`.
+    // Emits one JSON line per log-update callsite so a production replay shows
+    // exactly which mechanism from the #647 issue body is firing (column/row
+    // mismatch, wrap-induced row inflation, etc.). The trace doubles as the
+    // evidence required by AC-1's "Pick the fix direction from §2 only after
+    // instrumentation confirms the mechanism." sub-bullet.
+    const debugEnabled = process.env.SEQUANT_DEBUG_RENDERER === "1";
+    let frameCounter = 0;
+    const emitDebug = (op: "impl" | "clear" | "done", text?: string) => {
+      if (!debugEnabled) return;
+      // log-update's render path is roughly:
+      //   output = wrapAnsi(text + "\n", stream.columns, {trim:false, hard:true})
+      //   previousLineCount = output.split("\n").length
+      // So `previousLineCount` is wrap-aware: a 100-char line in an 80-col
+      // stream counts as 2, not 1. We approximate that here using `stringWidth`
+      // (already a dep) instead of `text.split("\n").length`. The metric is
+      // intentionally an approximation — wrap-ansi has word-breaking nuances
+      // — but it's correct enough to spot the diagnostic case AC-1 cares
+      // about: when this count diverges from the actual on-terminal row
+      // count, log-update's `eraseLines` will undershoot.
+      const streamCols =
+        process.stdout.columns ?? this.getColumns() ?? Infinity;
+      let logicalLines: number | undefined;
+      let wrappedLineCount: number | undefined;
+      if (text !== undefined) {
+        const lines = text.split("\n");
+        logicalLines = lines.length + (text.endsWith("\n") ? 0 : 1);
+        wrappedLineCount = lines.reduce((acc, line) => {
+          const w = stringWidth(line);
+          return acc + Math.max(1, Math.ceil(w / streamCols));
+        }, 0);
+        // log-update appends a trailing \n before wrapping, so count it.
+        if (!text.endsWith("\n")) wrappedLineCount++;
+      }
+      const record = {
+        t: this.now() - this.runStartedAt,
+        op,
+        frame: frameCounter,
+        rendererCols: this.getColumns(),
+        rendererRows: this.getRows(),
+        stdoutCols: process.stdout.columns ?? null,
+        stdoutRows: process.stdout.rows ?? null,
+        logicalLines,
+        wrappedLineCount,
+      };
+      // stderr keeps stdout clean for the live zone; the user redirects it
+      // (`SEQUANT_DEBUG_RENDERER=1 npx sequant run ... 2> debug.jsonl`) to
+      // capture without disrupting the run.
+      this.stderrWrite(`SEQUANT_DEBUG_RENDERER ${JSON.stringify(record)}\n`);
+    };
+
     // log-update writes to process.stdout via a mutable global instance. When
     // tests inject `stdoutWrite`, route renders through it instead so capture
-    // works deterministically.
-    if (options.stdoutWrite) {
+    // works deterministically. The #647 harness tests instead inject a real
+    // `log-update` instance bound to a virtual terminal — that path bypasses
+    // the stub so we can assert on actual cursor/erase semantics.
+    if (options.logUpdateInstance) {
+      // #647: harness path — drive a real `createLogUpdate(stream)` instance
+      // so the scrollback-aware regression test sees the same ANSI cursor
+      // operations a production user's terminal would receive. Stub is left
+      // null because the harness asserts on the VirtualTerminal directly.
+      const lu = options.logUpdateInstance;
+      this._testStub = null;
+      this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
+        lu(text);
+      };
+      this.logUpdateClear = () => {
+        emitDebug("clear");
+        lu.clear();
+      };
+      this.logUpdateDone = () => {
+        emitDebug("done");
+        lu.done();
+      };
+    } else if (options.stdoutWrite) {
       // #624 Derived AC-D1: replacement-aware test stub. Tracks each frame
       // replacement so tests can assert on frame churn without parsing buf.out.
       // `clearCalls` / `doneCalls` verify the renderer actually invokes the
@@ -570,23 +643,37 @@ export class TTYRenderer extends BaseRenderer {
       };
       this._testStub = stub;
       this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
         if (stub.lastFrame) stub.replacementCount++;
         stub.lastFrame = text;
         options.stdoutWrite!(text + "\n");
       };
       this.logUpdateClear = () => {
+        emitDebug("clear");
         stub.clearCalls++;
         stub.lastFrame = "";
       };
       this.logUpdateDone = () => {
+        emitDebug("done");
         stub.doneCalls++;
         stub.lastFrame = "";
       };
     } else {
       this._testStub = null;
-      this.logUpdateImpl = (text: string) => logUpdate(text);
-      this.logUpdateClear = () => logUpdate.clear();
-      this.logUpdateDone = () => logUpdate.done();
+      this.logUpdateImpl = (text: string) => {
+        frameCounter++;
+        emitDebug("impl", text);
+        logUpdate(text);
+      };
+      this.logUpdateClear = () => {
+        emitDebug("clear");
+        logUpdate.clear();
+      };
+      this.logUpdateDone = () => {
+        emitDebug("done");
+        logUpdate.done();
+      };
     }
 
     this.startLiveTimer();
@@ -596,6 +683,14 @@ export class TTYRenderer extends BaseRenderer {
   /**
    * #624 Derived AC-D1: expose the test-only log-update stub. Returns `null`
    * when not in test mode (production renders go through real `log-update`).
+   *
+   * #647 AC-D3 warning: this stub does NOT model `log-update`'s ANSI cursor
+   * or scrollback semantics. Tests that assert on `stub.lastFrame` only see
+   * the most recent frame, not whether earlier frames remained stranded in
+   * scrollback. Header-count / duplicate-header assertions MUST use
+   * `scrollback-harness.ts` (real `createLogUpdate` + VirtualTerminal),
+   * otherwise they will pass green even when the production rendering is
+   * broken — see #624 for the precedent.
    */
   getTestStub(): TTYTestStub | null {
     return this._testStub;
@@ -859,8 +954,16 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · #${state.issueNumber} · ${formatElapsedTime((this.now() - this.runStartedAt) / 1000)} elapsed`;
 
+    // #647 AC-3: cap at 78 (not 110) so the rendered grid stays narrower than
+    // any standard 80-col terminal even when the reported `cols` is wider than
+    // the actual terminal (e.g. cached `process.stdout.columns`, TTY emulation
+    // layers, `npx` piped stdout). Total drawn width is
+    // `labelWidth + valueWidth + 9` (2 leading spaces + 3 box-drawing
+    // intersection chars + 4 cell-padding spaces); the prior `- 7` formula
+    // additionally produced rows 2 chars wider than `cols`, compounding the
+    // wrap. Both errors removed.
     const labelWidth = 10;
-    const innerWidth = Math.max(40, Math.min(cols, 110) - labelWidth - 7);
+    const innerWidth = Math.max(40, Math.min(cols, 78) - labelWidth - 9);
     const valueWidth = innerWidth;
 
     const rows: Array<[string, string[]]> = [];
@@ -891,8 +994,13 @@ export class TTYRenderer extends BaseRenderer {
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · ${this.runHeader()}`;
 
+    // #647 AC-3: see note in `renderSingleIssueFrame` — cap at 78 (not 110) so
+    // the rendered grid stays narrower than any standard 80-col terminal under
+    // width-misreporting conditions. The box-drawing total is
+    // `issueColW + statusColW + 9`; the prior `- 7` formula compounded the
+    // overflow.
     const issueColW = 8;
-    const innerWidth = Math.max(50, Math.min(cols, 110) - issueColW - 7);
+    const innerWidth = Math.max(50, Math.min(cols, 78) - issueColW - 9);
     const statusColW = innerWidth;
 
     const lines: string[] = [c.bold(header), ""];
