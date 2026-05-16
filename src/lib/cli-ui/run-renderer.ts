@@ -538,6 +538,20 @@ export class TTYRenderer extends BaseRenderer {
     clearCalls: number;
     doneCalls: number;
   } | null;
+  /**
+   * #652: when the renderer is on the production code path (no
+   * `logUpdateInstance` override), this is the stream wrapper bound to
+   * `log-update`. Tests can read its `columns`/`rows`/`isTTY` getters to
+   * verify the bound-stream behaviour directly, rather than inferring it
+   * from emitted frame widths. `null` when the harness or test-stub path
+   * is taken (no bound stream involved).
+   */
+  private _boundStream: {
+    readonly columns: number;
+    readonly rows: number;
+    readonly isTTY: boolean;
+    write: (chunk: string) => boolean;
+  } | null = null;
 
   constructor(options: RenderOptions) {
     super(options);
@@ -654,12 +668,14 @@ export class TTYRenderer extends BaseRenderer {
       // write lands on top of — corrupting characters mid-string.
       const getColumnsForStream = () => this.getColumns();
       const getRowsForStream = () => this.getRows();
-      const boundStream: Partial<NodeJS.WriteStream> & {
-        write: (chunk: string) => boolean;
-        readonly columns: number;
-        readonly rows: number;
-        readonly isTTY: true;
-      } = {
+      // #652 follow-up: do NOT hardcode `isTTY: true`. log-update v7 reads
+      // `stream.isTTY === true` to decide whether to wrap each write in the
+      // synchronized-output escapes (`ESC[?2026h` ... `ESC[?2026l`). Under a
+      // redirect or pipe (`> file`, CI log capture, `npx ... | tee`), real
+      // stdout has `isTTY: false` and the singleton-based old code did not
+      // emit those escapes. Hardcoding `true` would leak the escapes into
+      // non-TTY output streams.
+      const boundStream = {
         write: (chunk: string) => process.stdout.write(chunk),
         get columns() {
           return getColumnsForStream();
@@ -667,9 +683,22 @@ export class TTYRenderer extends BaseRenderer {
         get rows() {
           return getRowsForStream();
         },
-        isTTY: true,
+        get isTTY() {
+          return Boolean(process.stdout.isTTY);
+        },
       };
-      const lu = createLogUpdate(boundStream as unknown as NodeJS.WriteStream);
+      // Double-cast: log-update's signature requires `NodeJS.WritableStream`
+      // (which includes `end`/`emit`/listener methods we don't need); the
+      // bound stream only implements the four fields log-update actually
+      // reads at runtime (`write`/`columns`/`rows`/`isTTY`) — verified
+      // against log-update@7 source. Matches the same pattern the harness
+      // uses in `scrollback-harness.ts:343`.
+      const lu = createLogUpdate(
+        boundStream as unknown as NodeJS.WritableStream,
+      );
+      // Stash for tests: lets the harness assert on the bound stream's
+      // `columns` getter directly without inferring from emitted frame width.
+      this._boundStream = boundStream;
       this.logUpdateImpl = (text: string) => {
         frameCounter++;
         emitDebug("impl", text);
@@ -807,15 +836,29 @@ export class TTYRenderer extends BaseRenderer {
 
   renderSummary(input: SummaryRenderInput): void {
     if (this.disposed) return;
-    // #652 Symptom B defensive fix: cancel the live timer FIRST, before any
-    // log-update teardown or summary write. The prior order ran `clearInterval`
-    // *after* `logUpdateClear`/`Done`, leaving a window where a pending tick
-    // (queued in the event loop before the cancel) could fire between the
-    // teardown and the summary write — re-rendering the live frame into the
-    // summary's output stream. A frame write mid-summary can split a multibyte
-    // box-drawing char at a byte boundary, producing U+FFFD in the rendered
-    // table, and lands the cursor on the wrong row so the next summary line
-    // overlays the prior separator row.
+    // #652 Symptom B — structural cleanup, not the actual fix.
+    //
+    // The original Symptom B PR comment claimed a setInterval tick could
+    // fire *between* `logUpdateClear` and the subsequent `clearInterval`
+    // statement, allowing the live frame to redraw mid-summary and produce
+    // U+FFFD / row overlap. That claim is false: JS is single-threaded;
+    // setInterval callbacks are macrotasks and cannot preempt synchronous
+    // code. The race window described doesn't exist.
+    //
+    // The likely real fix for Symptom B is #647's AC-3 grid-width math
+    // correction (`-7` → `-9`), which prevented box-drawing rows from
+    // being 2 chars wider than the terminal column count. The prior
+    // width-overshoot forced log-update's `wrap-ansi` to hard-wrap inside
+    // a multibyte character — exactly the byte-boundary split that
+    // produces U+FFFD when the terminal decodes the partial sequence.
+    //
+    // We keep the `clearInterval`-first ordering here because:
+    //   1. It costs nothing — single-statement move.
+    //   2. It guarantees no future `redraw()` call (via `setBanner`,
+    //      `setPullRequest`, etc.) accidentally invoked from this method's
+    //      teardown can re-create the live zone after `done()` was called.
+    //   3. It documents intent: when rendering the summary, we are
+    //      *finished* with the live zone; cancel its timer first.
     if (this.liveTimer !== null) {
       clearInterval(this.liveTimer);
       this.liveTimer = null;
