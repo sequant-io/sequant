@@ -27,16 +27,16 @@ Auditing every `process.stdout.write` and `console.log` call reachable from `npx
 
 | Writer | File:line | Reachable in `-q`? |
 |---|---|---|
-| `TTYRenderer.stdoutWrite` (renderer's sole own writer) | `src/lib/cli-ui/run-renderer.ts:131-132` | Yes — sole intended writer |
-| `log-update` instance (via renderer's `logUpdateImpl`) | `src/lib/cli-ui/run-renderer.ts:664-676` | Yes — sole intended writer |
+| `TTYRenderer.stdoutWrite` (renderer's sole own writer) | `src/lib/cli-ui/run-renderer.ts:131-132` | **No in `-q`** — not wired (see `run-progress.ts:59-60`); sole writer in default mode and emits all `✔`/`✘`/`▸` event-line glyphs |
+| `log-update` instance (via renderer's `logUpdateImpl`) | `src/lib/cli-ui/run-renderer.ts:664-676` | Same as above — gated on `!quiet && !tuiEnabled` |
 | `process.stdout.write(chalk.gray(text))` (verbose subprocess streaming) | `src/lib/workflow/phase-executor.ts:675` | **No** — gated on `if (config.verbose)` |
 | `process.stderr.write(chalk.red(data))` (verbose subprocess stderr) | `src/lib/workflow/phase-executor.ts:686` | No — stderr, also gated on verbose |
-| `LivenessHeartbeat.stdoutWrite` | `src/lib/workflow/heartbeat.ts:100` | No — heartbeat is NonTTY-mode only |
+| `LivenessHeartbeat.stdoutWrite` | `src/lib/workflow/heartbeat.ts:100, :226` | **Yes** — sole stdout writer in `-q` mode (see `run-progress.ts:46-49`); mutually exclusive with renderer; writes only `▸ #N phase (elapsed, …)` heartbeat lines, **never `✔`/`✘`** |
 | `batch-executor.ts:153, :165` | n/a | No — stderr only |
 | Renderer's `stderrWrite` (`SEQUANT_DEBUG_RENDERER` traces) | `src/lib/cli-ui/run-renderer.ts:605` | Yes — stderr only |
 | `console.log` callsites in `src/commands/sync.ts`, `src/commands/update.ts`, etc. | various | No — not reachable from `run` |
 
-There is **no second stdout writer** in non-verbose mode. The renderer owns stdout end-to-end.
+There is **no second stdout writer** in either mode: in default mode the renderer owns stdout end-to-end; in `-q` mode the heartbeat owns it (and writes only `▸` lines). No code path produces a `✔` glyph alongside the heartbeat, and no code path produces a `▸` heartbeat alongside the renderer. The `complete[0:8] + failed[col 9+]` overlay cannot be assembled from any combination of these writers in a single run mode.
 
 ### 3. Re-confirmation of ruled-out hypotheses
 
@@ -54,13 +54,15 @@ All three require evidence from a real corrupted run. `SEQUANT_DEBUG_RENDERER=1`
 
 ## How to capture AC-1
 
-1. Identify a scenario known to produce Symptom A. The motivating transcript was `npx sequant run 504 505 -q` (parallel mode, 2 issues, ~12 events including a `loop` retry that fails) in a real terminal.
-2. Run with the instrumentation enabled and capture both streams:
+> **Mode discrepancy — read before running the capture.** The issue body states the motivating transcript was `-q` (quiet) mode, but the visible glyph in the corrupted line (`✔`) is **only** produced by `TTYRenderer`, which is not wired in `-q` mode (see `run-progress.ts:59-60`). The heartbeat path that IS wired in `-q` writes only `▸` (see static-analysis table above). One of three things must be true: (a) the original transcript was actually default mode, not `-q`; (b) the renderer wiring changed since the transcript was captured; or (c) the original transcript's mode label is wrong. Re-confirm the mode from any available evidence before running the capture. The example below uses default mode (no `-q`) because that is the only mode in which the renderer — and therefore Symptom A's `✔` glyph — can fire.
+
+1. Identify a scenario known to produce Symptom A. The motivating transcript referenced `npx sequant run 504 505` (parallel mode, 2 issues, ~12 events including a `loop` retry that fails) in a real terminal.
+2. Run with the instrumentation enabled and capture both streams (default mode, **no** `-q`):
 
    ```bash
    SEQUANT_DEBUG_RENDERER=1 \
      script -q artifact/terminal.typescript \
-     npx sequant run 504 505 -q \
+     npx sequant run 504 505 \
      2> artifact/debug.jsonl
    ```
 
