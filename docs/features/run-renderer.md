@@ -128,6 +128,7 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 | `process.stdout.isTTY` falsy | Non-TTY renderer (append-only + 60s heartbeat) |
 | `SEQUANT_ORCHESTRATOR=1` | Renderer is a no-op; only `emitProgressLine` JSON is emitted (MCP path) |
 | `NO_COLOR=1` | Colors stripped; layout preserved |
+| `SEQUANT_DEBUG_RENDERER=1` | Per-frame instrumentation emitted to **stderr** as JSON-lines (see [Debugging renderer regressions](#debugging-renderer-regressions)) |
 | Terminal width `< 80` cols | Box-drawing replaced with indented key:value pairs |
 | Terminal rows visible | Live-zone height auto-capped to fit; excess done rows roll up |
 
@@ -170,6 +171,44 @@ No CLI flags configure the renderer directly. Renderer behavior is driven by env
 **Cause:** Pre-#624 teardown race: `displaySummary` printed before `log-update` flushed. Fixed by flushing the live zone before the summary renders.
 
 **Fix:** Upgrade to a post-v2.2.0 build.
+
+### Debugging renderer regressions
+
+Set `SEQUANT_DEBUG_RENDERER=1` to capture per-callsite instrumentation for diagnosing duplicate-frame and scrollback regressions (#647). One JSON-line is emitted to **stderr** per `log-update` operation (`impl` / `clear` / `done`):
+
+```bash
+SEQUANT_DEBUG_RENDERER=1 npx sequant run 504 505 -q 2> /tmp/debug.jsonl
+```
+
+Each record looks like:
+
+```json
+{
+  "t": 1234,
+  "op": "impl",
+  "frame": 7,
+  "rendererCols": 100,
+  "rendererRows": 30,
+  "stdoutCols": 100,
+  "stdoutRows": 30,
+  "logicalLines": 12,
+  "wrappedLineCount": 12
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `t` | ms since renderer construction (monotonic) |
+| `op` | `impl` (new frame), `clear` (erase live zone), `done` (finalize) |
+| `frame` | monotonic counter of `impl` calls |
+| `rendererCols` / `rendererRows` | what the renderer believes the terminal is |
+| `stdoutCols` / `stdoutRows` | what `process.stdout` actually reports (may be `null` under `npx` / pipes) |
+| `logicalLines` | newline-split count of the input text |
+| `wrappedLineCount` | approximate count after `wrapAnsi`-style wrapping at `streamCols` — should match `log-update`'s `previousLineCount` |
+
+**Divergence diagnostic:** if `wrappedLineCount` ≠ the on-terminal row count you observe, `log-update`'s `eraseLines` will under- or over-erase, leaving stale rows in scrollback (the #647 symptom).
+
+Output goes to **stderr** so the live zone on stdout is not disrupted. Redirect with `2> debug.jsonl` and inspect with `jq -s` or grep.
 
 ---
 
