@@ -124,7 +124,7 @@ sequant doctor              # Verify installation health
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `-q, --quality-loop` | Auto-retry on failures | off |
+| `-Q, --quality-loop` | Auto-retry on failures | off |
 | `--max-iterations <n>` | Max retry iterations | `3` |
 | `--testgen` | Run testgen phase after spec | off |
 | `--smart-tests` | Enable smart test detection | on |

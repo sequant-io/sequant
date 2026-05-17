@@ -115,7 +115,7 @@ medium — shared heuristic + 2 skill updates + 3-dir sync + tests + docs. Estim
 
 ## Self-assessed workflow
 
-\`spec → exec → qa\` with \`-q\` (skill changes + 3-dir sync + new reference doc + CHANGELOG)
+\`spec → exec → qa\` with \`-Q\` (skill changes + 3-dir sync + new reference doc + CHANGELOG)
 `;
 
 // ─── extractPathsFromIssueBody ──────────────────────────────────────────────
@@ -299,7 +299,7 @@ describe("formatCollisionAnnotations", () => {
     ]);
     expect(out.chainSuggestion).toBeDefined();
     expect(out.chainSuggestion).toMatch(
-      /^Chain: npx sequant run 10 20 30 --chain --qa-gate -q\b/,
+      /^Chain: npx sequant run 10 20 30 --chain --qa-gate -Q\b/,
     );
     expect(out.chainSuggestion).toContain("src/lib/foo.ts");
   });

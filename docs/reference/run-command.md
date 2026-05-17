@@ -56,8 +56,9 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
 | `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
-| `-q, --quality-loop` | Enable auto-retry on failures | `false` |
+| `-Q, --quality-loop` | Enable auto-retry on failures | `false` |
 | `--max-iterations <n>` | Max iterations for quality loop | `3` |
+| `-q, --quiet` | Suppress version warnings and non-essential output | `false` |
 | `--testgen` | Run testgen phase after spec | `false` |
 | `--batch "<issues>"` | Group issues to run together | - |
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
