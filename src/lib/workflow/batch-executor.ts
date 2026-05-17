@@ -369,6 +369,7 @@ export async function executeBatch(
     packageManager,
     baseBranch,
     onProgress,
+    phasePauseHandle,
   } = batchCtx;
   const results: IssueResult[] = [];
 
@@ -402,6 +403,7 @@ export async function executeBatch(
       packageManager,
       baseBranch,
       onProgress,
+      phasePauseHandle,
     };
     const result = await runIssueWithLogging(ctx);
     results.push(result);
@@ -436,6 +438,7 @@ export async function runIssueWithLogging(
     packageManager,
     baseBranch,
     onProgress,
+    phasePauseHandle,
   } = ctx;
   const worktreePath = worktree?.path;
   const branch = worktree?.branch;
@@ -552,6 +555,7 @@ export async function runIssueWithLogging(
       sessionId,
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
+      phasePauseHandle,
     );
     const specEndTime = new Date();
 
@@ -817,6 +821,7 @@ export async function runIssueWithLogging(
         sessionId,
         worktreePath,
         shutdownManager,
+        phasePauseHandle,
       );
       const phaseEndTime = new Date();
 
@@ -970,6 +975,7 @@ export async function runIssueWithLogging(
             sessionId,
             worktreePath,
             shutdownManager,
+            phasePauseHandle,
           );
           const loopEndTime = new Date();
           phaseResults.push(loopResult);
