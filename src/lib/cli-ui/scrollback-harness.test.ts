@@ -290,6 +290,81 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
     renderer.dispose();
   });
 
+  // #655 negative-result lock-in: drive the motivating issue's exact event
+  // sequence (complete `loop` followed by failed `loop` for the same issue)
+  // through the harness at a width that exercises both the renderer's
+  // `min(cols, 78)` cap AND a pause/resume cycle between the two events. The
+  // issue body's forensic byte math (`complete[0:8] + failed[col 9+]` on the
+  // same row) would manifest here as a row containing both the green ✔ marker
+  // and the error string. Assert that no such row exists.
+  //
+  // This test is expected to PASS today (synthetic harness does not reproduce
+  // Symptom A). Its purpose is to lock in the negative result: if a future
+  // change to the renderer or log-update ever introduces an overlay reachable
+  // synthetically, this test will catch it without needing a real-terminal
+  // capture. See `docs/incidents/655/negative-result.md`.
+  it("#655 negative-result lock-in: complete→failed event sequence does not produce an overlay row", () => {
+    const { renderer, harness } = makeHarnessRenderer({
+      rows: 24,
+      cols: 80,
+      streamColumns: 100,
+      rendererColumns: 100,
+    });
+
+    renderer.registerIssue({ issueNumber: 505 });
+    // Drive enough phase activity to push the live frame around in the
+    // viewport before the loop pair fires.
+    renderer.onEvent({ issue: 505, phase: "spec", event: "start" });
+    renderer.onEvent({
+      issue: 505,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 232,
+    });
+    renderer.onEvent({ issue: 505, phase: "exec", event: "start" });
+    renderer.onEvent({
+      issue: 505,
+      phase: "exec",
+      event: "complete",
+      durationSeconds: 820,
+    });
+    // The motivating pair: complete loop then failed loop for the same issue,
+    // separated by a pause/resume that mimics verbose subprocess streaming
+    // toggling. Pause/resume cycling exercises the `logUpdateClear()` →
+    // `redraw()` path between the two event-line writes.
+    renderer.onEvent({
+      issue: 505,
+      phase: "loop",
+      event: "complete",
+      durationSeconds: 60,
+    });
+    renderer.pause();
+    harness.stdoutWrite("  [verbose] streamed line between events\n");
+    renderer.resume();
+    renderer.onEvent({
+      issue: 505,
+      phase: "loop",
+      event: "failed",
+      error: "Claude Code returned an error result: ETIMEDOUT",
+    });
+
+    // Overlay detector: any single row that contains BOTH the green ✔ marker
+    // (only present on `complete` event lines) and the error string (only
+    // present on `failed` event lines) is the Symptom A signature. The two
+    // event types cannot legitimately co-occur on a single row.
+    const allRows = [...harness.vt.scrollback, ...harness.vt.getVisibleLines()];
+    const overlay = allRows.find(
+      (row) => row.includes("✔") && row.includes("Claude Code returned"),
+    );
+    if (overlay) {
+      throw new Error(
+        `Symptom A overlay row produced synthetically (unexpected). Row:\n  ${overlay}`,
+      );
+    }
+    expect(overlay).toBeUndefined();
+    renderer.dispose();
+  });
+
   // AC-3 derived: lock the grid-width arithmetic so future drift (changing
   // colW, padding, or the cap) can't silently reintroduce the overflow that
   // started this whole regression. Asserts on the actual rendered string
