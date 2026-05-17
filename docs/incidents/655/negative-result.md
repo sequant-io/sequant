@@ -7,7 +7,7 @@
 ## TL;DR
 
 - Synthetic reproduction does **not** trigger the `complete[0:8 bytes] + failed[col 9+]` overlay pattern. The scrollback harness from #647 covers the only mechanism reachable in our virtual-terminal model (width misreporting / scroll), and adding the explicit complete→failed event-line sequence at multiple widths + pause/resume states keeps that result.
-- Static analysis of every `process.stdout.write` / `console.log` reachable under `npx sequant run … -q` confirms the renderer is the sole stdout writer in non-verbose mode. There is no second-writer mechanism in the source tree.
+- Static analysis of every `process.stdout.write` / `console.log` reachable from `npx sequant run …` (both default mode and `-q`) confirms there is no second stdout writer in either mode: the renderer owns stdout in default mode, the heartbeat owns it in `-q` mode, and they are mutually exclusive (see `run-progress.ts:46-49` and `run-progress.ts:59-60`). There is no second-writer mechanism in the source tree.
 - The forensic byte math (`complete[0:8] + failed[9:]`) therefore implies one of: (a) a mechanism on the terminal-emulator side, (b) an interleave the static reading missed, or (c) a measurement artifact in the original transcript. Discriminating between these requires a real-run trace.
 - AC-1 instrumentation (`SEQUANT_DEBUG_RENDERER=1`, emitted from `src/lib/cli-ui/run-renderer.ts:557-606`) is already shipped. The next productive step is a live capture against a scenario known to corrupt — see "How to capture AC-1" below.
 
@@ -21,9 +21,9 @@ For #655 specifically, this PR adds one further scenario (see `scrollback-harnes
 
 **Result:** assertion passes. No overlay row produced in any synthetic variant tried.
 
-### 2. Static analysis of stdout writers in `-q` mode (spec phase 2)
+### 2. Static analysis of stdout writers in both run modes (spec phase 2)
 
-Auditing every `process.stdout.write` and `console.log` call reachable from `npx sequant run … -q`:
+Auditing every `process.stdout.write` and `console.log` call reachable from `npx sequant run …` (both default mode and `-q`). The audit covers both modes because the corrected gating analysis below establishes that they have *different* sole writers — restricting the audit to one mode would miss the mode-discrepancy callout in §"How to capture AC-1":
 
 | Writer | File:line | Reachable in `-q`? |
 |---|---|---|
