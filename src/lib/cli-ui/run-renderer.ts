@@ -18,6 +18,7 @@ import chalk from "chalk";
 import logUpdate from "log-update";
 import stringWidth from "string-width";
 import { formatElapsedTime, formatTimestamp } from "./format.js";
+import type { PhasePauseHandle } from "../workflow/types.js";
 import type {
   IssueRegistration,
   IssueState,
@@ -116,7 +117,7 @@ export function formatRetrySuffix(
 // Shared state machine
 // ============================================================================
 
-abstract class BaseRenderer implements RunRenderer {
+abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
   protected readonly issues = new Map<number, IssueState>();
   protected readonly stdoutWrite: (s: string) => void;
   protected readonly stderrWrite: (s: string) => void;

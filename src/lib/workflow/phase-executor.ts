@@ -11,16 +11,13 @@
 import chalk from "chalk";
 import { execSync, execFileSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
-/**
- * Lifecycle hook for pausing the run renderer's live zone while verbose
- * Claude streaming writes through stdout, then resuming after the agent
- * call completes. Replaces the legacy `PhaseSpinner` argument (#618).
- */
-export interface PhasePauseHandle {
-  pause(): void;
-  resume(): void;
-}
-import { Phase, ExecutionConfig, PhaseResult, QaVerdict } from "./types.js";
+import {
+  Phase,
+  ExecutionConfig,
+  PhaseResult,
+  QaVerdict,
+  PhasePauseHandle,
+} from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";

@@ -491,6 +491,89 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
       expect(calledPhases).toEqual(["spec", "exec", "qa"]);
     });
   });
+
+  // #656 AC-1: phasePauseHandle is forwarded to executePhaseWithRetry at every
+  // call site (spec, phase loop, /loop). The handle is the 7th positional
+  // argument (`spinner`) — assert it lands on every call so the renderer's
+  // pause/resume protocol cannot regress to dead code again.
+  describe("#656 AC-1: phasePauseHandle forwarded at every call site", () => {
+    it("forwards the handle to spec, exec, and qa calls", async () => {
+      const handle = { pause: vi.fn(), resume: vi.fn() };
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber: 656,
+          title: "Wire pause handle",
+          labels: ["bug"],
+        }),
+        phasePauseHandle: handle,
+      });
+
+      // Every executePhaseWithRetry invocation gets the same handle in
+      // argument position 6 (issueNumber, phase, config, sessionId,
+      // worktreePath, shutdownManager, spinner).
+      expect(mockExecutePhase.mock.calls.length).toBeGreaterThan(0);
+      for (const call of mockExecutePhase.mock.calls) {
+        expect(call[6]).toBe(handle);
+      }
+    });
+
+    it("forwards undefined when no handle is wired (quiet/TUI modes)", async () => {
+      await runIssueWithLogging(
+        makeCtx({
+          issueNumber: 657,
+          title: "No renderer",
+          labels: ["bug"],
+        }),
+      );
+
+      for (const call of mockExecutePhase.mock.calls) {
+        expect(call[6]).toBeUndefined();
+      }
+    });
+
+    it("forwards the handle to the loop phase when quality loop triggers", async () => {
+      const handle = { pause: vi.fn(), resume: vi.fn() };
+      // QA fails on first attempt, then loop runs, then qa retries and passes.
+      mockExecutePhase.mockReset();
+      mockExecutePhase.mockImplementation(async (_i, phase) => {
+        if (phase === "qa") {
+          // First qa returns failure with AC_NOT_MET, triggering /loop.
+          // Second qa (post-loop) passes.
+          const callIdx = mockExecutePhase.mock.calls.filter(
+            (c) => c[1] === "qa",
+          ).length;
+          if (callIdx === 1) {
+            return {
+              phase: "qa",
+              success: false,
+              durationSeconds: 10,
+              verdict: "AC_NOT_MET",
+            } as PhaseResult;
+          }
+          return successResult("qa");
+        }
+        return successResult(phase as string);
+      });
+
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber: 658,
+          title: "Loop forward",
+          labels: ["bug"],
+          config: { qualityLoop: true, maxIterations: 2 },
+        }),
+        phasePauseHandle: handle,
+      });
+
+      const loopCalls = mockExecutePhase.mock.calls.filter(
+        (c) => c[1] === "loop",
+      );
+      expect(loopCalls.length).toBeGreaterThan(0);
+      for (const call of loopCalls) {
+        expect(call[6]).toBe(handle);
+      }
+    });
+  });
 });
 
 // #488: buildLoopContext — pure function, no mocking needed
