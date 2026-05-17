@@ -1,0 +1,31 @@
+(base) tony@Tambras-MacBook-Air sequant % npx sequant run 656 -q
+SEQUANT WORKFLOW
+  Stack          generic
+  Phases         auto-detect from labels
+  Mode           parallel (concurrency: 3)
+  Quality loop   enabled (max 3 iterations)
+  Logging        JSON
+  State          enabled
+  Issues         #656
+  Worktree isolation: enabled
+  Base branch: main
+SEQUANT WORKFLOW · #656 · 0s elapsed
+
+  ┌────────────┬─────────────────────────────────────────────────────────────┐
+  │ Issue      │ #656                                                        │
+  ├────────────┼─────────────────────────────────────────────────────────────┤
+  │ Status     │ · queued                                                    │
+  └────────────┴─────────────────────────────────────────────────────────────┘
+SEQUANT WORKFLOW · #656 · 5s elapsed
+  ▸ #656 spec
+  ✔ #656 spec  5m 22s
+SEQUANT WORKFLOW · #656 · 5m 27s elapsed
+  ▸ #656 exec
+SEQUANT WORKFLOW · #656 · 15m 25s elapsed
+
+  ┌────────────┬─────────────────────────────────────────────────────────────┐
+  │ Issue      │ #656                                                        │
+  ├────────────┼─────────────────────────────────────────────────────────────┤
+  │ Status     │ ⠋ exec · 9m 57s                                             │
+  │            │ spec ✔ 5m 22s  →  exec running                              │
+  └────────────┴─────────────────────────────────────────────────────────────┘
