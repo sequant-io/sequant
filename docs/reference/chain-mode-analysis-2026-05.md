@@ -100,7 +100,7 @@ Rationale:
 Existing rule at `src/lib/assess-collision-detect.ts:267` (length-≥3 emit guard) is **preserved**. The chain suggestion now appends a historical-rate annotation:
 
 ```
-Chain: npx sequant run A B C --chain --qa-gate -q   # alternative — N issues modify <path> (chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)
+Chain: npx sequant run A B C --chain --qa-gate -Q   # alternative — N issues modify <path> (chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)
 ```
 
 The annotation route was chosen over a threshold flip (which would have suppressed the suggestion entirely at length≥3) because n=7 is small enough that hard-restricting based on it would over-fit the sample; surfacing the rate inline lets the user weigh chain mode against the parallel-mode default without removing the option. The three skill mirrors of `predicted-collision-detection.md` (`.claude/skills/`, `templates/skills/`, `skills/`) carry the same wording in lockstep, and `src/lib/__tests__/assess-collision-detect.test.ts` asserts both annotation substrings on every length≥3 collision. Re-evaluate (and consider flipping to a hard `length === 2` threshold) when n≥20 chain runs accumulate.

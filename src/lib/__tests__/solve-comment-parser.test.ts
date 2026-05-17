@@ -215,14 +215,14 @@ describe("solve-comment-parser", () => {
         const body = `## Solve Workflow for Issues: 152, 153
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 152 153 -q                                  │
+│  npx sequant run 152 153 -Q                                  │
 ╰──────────────────────────────────────────────────────────────╯
 
 #152  Add user dashboard ······················ ui → spec → testgen → exec → test → qa
 #153  Refactor auth module ···················· backend → spec → exec → qa
 
 ┌─ Flags ──────────────────────────────────────────────────────┐
-│  -q                 ✓  quality loop auto-enable              │
+│  -Q                 ✓  quality loop auto-enable              │
 │  --chain            ✗  independent (different codepaths)     │
 └──────────────────────────────────────────────────────────────┘`;
 

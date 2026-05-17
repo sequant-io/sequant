@@ -266,7 +266,7 @@ export function formatCollisionAnnotations(
     if (r.issues.length >= 3 && !chainSuggestion) {
       const ids = r.issues.join(" ");
       chainSuggestion =
-        `Chain: npx sequant run ${ids} --chain --qa-gate -q   ` +
+        `Chain: npx sequant run ${ids} --chain --qa-gate -Q   ` +
         `# alternative — ${r.issues.length} issues modify ${r.file} ` +
         `(chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)`;
     }

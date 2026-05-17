@@ -7,7 +7,7 @@
 ## TL;DR
 
 - Synthetic reproduction does **not** trigger the `complete[0:8 bytes] + failed[col 9+]` overlay pattern. The scrollback harness from #647 covers the only mechanism reachable in our virtual-terminal model (width misreporting / scroll), and adding the explicit complete→failed event-line sequence at multiple widths + pause/resume states keeps that result.
-- Static analysis of every `process.stdout.write` / `console.log` reachable from `npx sequant run …` (both default mode and `-q`) confirms there is no second stdout writer in either mode: the renderer owns stdout in default mode, the heartbeat owns it in `-q` mode, and they are mutually exclusive (see `run-progress.ts:46-49` and `run-progress.ts:59-60`). There is no second-writer mechanism in the source tree.
+- Static analysis of every `process.stdout.write` / `console.log` reachable from `npx sequant run …` (both default mode and quiet mode `--quiet`) confirms there is no second stdout writer in either mode: the renderer owns stdout in default mode, the heartbeat owns it in quiet mode, and they are mutually exclusive (see `run-progress.ts:46-49` and `run-progress.ts:59-60`). There is no second-writer mechanism in the source tree.
 - The forensic byte math (`complete[0:8] + failed[9:]`) therefore implies one of: (a) a mechanism on the terminal-emulator side, (b) an interleave the static reading missed, or (c) a measurement artifact in the original transcript. Discriminating between these requires a real-run trace.
 - AC-1 instrumentation (`SEQUANT_DEBUG_RENDERER=1`, emitted from `src/lib/cli-ui/run-renderer.ts:557-606`) is already shipped. The next productive step is a live capture against a scenario known to corrupt — see "How to capture AC-1" below.
 
@@ -23,20 +23,20 @@ For #655 specifically, this PR adds one further scenario (see `scrollback-harnes
 
 ### 2. Static analysis of stdout writers in both run modes (spec phase 2)
 
-Auditing every `process.stdout.write` and `console.log` call reachable from `npx sequant run …` (both default mode and `-q`). The audit covers both modes because the corrected gating analysis below establishes that they have *different* sole writers — restricting the audit to one mode would miss the mode-discrepancy callout in §"How to capture AC-1":
+Auditing every `process.stdout.write` and `console.log` call reachable from `npx sequant run …` (both default mode and quiet mode `--quiet`). The audit covers both modes because the corrected gating analysis below establishes that they have *different* sole writers — restricting the audit to one mode would miss the mode-discrepancy callout in §"How to capture AC-1":
 
-| Writer | File:line | Reachable in `-q`? |
+| Writer | File:line | Reachable in quiet mode (`--quiet`)? |
 |---|---|---|
-| `TTYRenderer.stdoutWrite` (renderer's sole own writer) | `src/lib/cli-ui/run-renderer.ts:131-132` | **No in `-q`** — not wired (see `run-progress.ts:59-60`); sole writer in default mode and emits all `✔`/`✘`/`▸` event-line glyphs |
+| `TTYRenderer.stdoutWrite` (renderer's sole own writer) | `src/lib/cli-ui/run-renderer.ts:131-132` | **No in `--quiet`** — not wired (see `run-progress.ts:59-60`); sole writer in default mode and emits all `✔`/`✘`/`▸` event-line glyphs |
 | `log-update` instance (via renderer's `logUpdateImpl`) | `src/lib/cli-ui/run-renderer.ts:664-676` | Same as above — gated on `!quiet && !tuiEnabled` |
 | `process.stdout.write(chalk.gray(text))` (verbose subprocess streaming) | `src/lib/workflow/phase-executor.ts:675` | **No** — gated on `if (config.verbose)` |
 | `process.stderr.write(chalk.red(data))` (verbose subprocess stderr) | `src/lib/workflow/phase-executor.ts:686` | No — stderr, also gated on verbose |
-| `LivenessHeartbeat.stdoutWrite` | `src/lib/workflow/heartbeat.ts:100, :226` | **Yes** — sole stdout writer in `-q` mode (see `run-progress.ts:46-49`); mutually exclusive with renderer; writes only `▸ #N phase (elapsed, …)` heartbeat lines, **never `✔`/`✘`** |
+| `LivenessHeartbeat.stdoutWrite` | `src/lib/workflow/heartbeat.ts:100, :226` | **Yes** — sole stdout writer in quiet mode (see `run-progress.ts:46-49`); mutually exclusive with renderer; writes only `▸ #N phase (elapsed, …)` heartbeat lines, **never `✔`/`✘`** |
 | `batch-executor.ts:153, :165` | n/a | No — stderr only |
 | Renderer's `stderrWrite` (`SEQUANT_DEBUG_RENDERER` traces) | `src/lib/cli-ui/run-renderer.ts:605` | Yes — stderr only |
 | `console.log` callsites in `src/commands/sync.ts`, `src/commands/update.ts`, etc. | various | No — not reachable from `run` |
 
-There is **no second stdout writer** in either mode: in default mode the renderer owns stdout end-to-end; in `-q` mode the heartbeat owns it (and writes only `▸` lines). No code path produces a `✔` glyph alongside the heartbeat, and no code path produces a `▸` heartbeat alongside the renderer. The `complete[0:8] + failed[col 9+]` overlay cannot be assembled from any combination of these writers in a single run mode.
+There is **no second stdout writer** in either mode: in default mode the renderer owns stdout end-to-end; in quiet mode the heartbeat owns it (and writes only `▸` lines). No code path produces a `✔` glyph alongside the heartbeat, and no code path produces a `▸` heartbeat alongside the renderer. The `complete[0:8] + failed[col 9+]` overlay cannot be assembled from any combination of these writers in a single run mode.
 
 ### 3. Re-confirmation of ruled-out hypotheses
 
@@ -54,10 +54,10 @@ All three require evidence from a real corrupted run. `SEQUANT_DEBUG_RENDERER=1`
 
 ## How to capture AC-1
 
-> **Mode discrepancy — read before running the capture.** The issue body states the motivating transcript was `-q` (quiet) mode, but the visible glyph in the corrupted line (`✔`) is **only** produced by `TTYRenderer`, which is not wired in `-q` mode (see `run-progress.ts:59-60`). The heartbeat path that IS wired in `-q` writes only `▸` (see static-analysis table above). One of three things must be true: (a) the original transcript was actually default mode, not `-q`; (b) the renderer wiring changed since the transcript was captured; or (c) the original transcript's mode label is wrong. Re-confirm the mode from any available evidence before running the capture. The example below uses default mode (no `-q`) because that is the only mode in which the renderer — and therefore Symptom A's `✔` glyph — can fire.
+> **Mode discrepancy — resolved by #658.** The issue body labels the motivating transcript as `-q` (quiet) mode, but the visible glyph in the corrupted line (`✔`) is **only** produced by `TTYRenderer`, which is gated off when `quiet === true` (see `run-progress.ts:59-60`). The puzzle dissolves once `bin/cli.ts:234` is read: at the time of capture, `-q` was registered as the short form for `--quality-loop`, not `--quiet` (which had no short alias at `bin/cli.ts:250`). Commander assigns each short form to whichever option declares it first, so `npx sequant run … -q` produced `qualityLoop: true, quiet: undefined`, leaving the renderer wired and free to emit `✔`. The mode label in the issue body was a user-side misreading of what `-q` did, not evidence of a renderer wiring bug; the static-analysis conclusion above (renderer and heartbeat are mutually exclusive on stdout) stands unchanged. Post-#658, `-q` is now the short form for `--quiet`, so a fresh capture using `-q` would route through the heartbeat path and would *not* reproduce Symptom A. The example below uses default mode (no `-q`/`--quiet`) because that matches the mode in which the original transcript was actually captured — the renderer being active is what made `✔` reachable in the first place.
 
 1. Identify a scenario known to produce Symptom A. The motivating transcript referenced `npx sequant run 504 505` (parallel mode, 2 issues, ~12 events including a `loop` retry that fails) in a real terminal.
-2. Run with the instrumentation enabled and capture both streams (default mode, **no** `-q`):
+2. Run with the instrumentation enabled and capture both streams (default mode, **no** `-q`/`--quiet`):
 
    ```bash
    SEQUANT_DEBUG_RENDERER=1 \
