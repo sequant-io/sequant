@@ -60,6 +60,19 @@ export const PhaseSchema = z
 export type Phase = string;
 
 /**
+ * Lifecycle hook for pausing the run renderer's live zone while verbose
+ * Claude streaming writes through stdout, then resuming after the agent
+ * call completes. Replaces the legacy `PhaseSpinner` argument (#618).
+ *
+ * Lives in the workflow types barrel so the cli-ui layer can implement it
+ * without the workflow layer reaching back into cli-ui (#656).
+ */
+export interface PhasePauseHandle {
+  pause(): void;
+  resume(): void;
+}
+
+/**
  * Default phases for workflow execution
  */
 export const DEFAULT_PHASES: Phase[] = ["spec", "exec", "qa"];
@@ -415,6 +428,14 @@ export interface BatchExecutionContext {
   packageManager?: string;
   baseBranch?: string;
   onProgress?: ProgressCallback;
+  /**
+   * Optional live-zone pause handle (#656). When set, the phase executor calls
+   * `pause()` before forwarding verbose Claude SDK output to stdout and
+   * `resume()` after the agent call completes — so the 1Hz live grid does not
+   * collide with streaming text. Wired from the active `RunRenderer` at the
+   * composition root in `run.ts`; left undefined for quiet/TUI modes.
+   */
+  phasePauseHandle?: PhasePauseHandle;
 }
 
 /**
@@ -465,4 +486,10 @@ export interface IssueExecutionContext {
   baseBranch?: string;
   /** Per-phase progress callback (used in parallel mode) */
   onProgress?: ProgressCallback;
+  /**
+   * Optional live-zone pause handle (#656). Forwarded to
+   * `executePhaseWithRetry` so the renderer's `pause`/`resume` hooks fire
+   * around verbose Claude streaming.
+   */
+  phasePauseHandle?: PhasePauseHandle;
 }

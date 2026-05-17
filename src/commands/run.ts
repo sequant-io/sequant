@@ -131,6 +131,7 @@ export async function runCommand(
         {
           ...init,
           onProgress,
+          phasePauseHandle: renderer ?? undefined,
           onOrchestratorReady: (orch) => {
             tuiHandle = renderTui(orch);
           },
@@ -158,7 +159,7 @@ export async function runCommand(
 
   try {
     const result = await RunOrchestrator.run(
-      { ...init, onProgress },
+      { ...init, onProgress, phasePauseHandle: renderer ?? undefined },
       issues,
       batches,
     );
