@@ -17,6 +17,7 @@ import type {
   BatchExecutionContext,
   IssueExecutionContext,
   ProgressCallback,
+  PhasePauseHandle,
 } from "./types.js";
 import type {
   IssueRuntimeState,
@@ -128,6 +129,12 @@ export interface OrchestratorConfig {
   baseBranch?: string;
   /** Per-phase progress callback (parallel mode) */
   onProgress?: ProgressCallback;
+  /**
+   * Optional live-zone pause handle (#656). Forwarded to every issue's
+   * batch context so `executePhaseWithRetry` can quiesce the renderer
+   * around verbose Claude streaming.
+   */
+  phasePauseHandle?: PhasePauseHandle;
 }
 
 /**
@@ -145,6 +152,12 @@ export interface RunInit {
   baseBranch?: string;
   /** Per-phase progress callback */
   onProgress?: ProgressCallback;
+  /**
+   * Optional live-zone pause handle (#656). Threaded through to the
+   * `OrchestratorConfig` so verbose Claude streaming pauses the renderer's
+   * live zone instead of redrawing over it.
+   */
+  phasePauseHandle?: PhasePauseHandle;
   /**
    * Invoked once the orchestrator is constructed but before execution begins.
    * Used by the experimental TUI to attach a snapshot poller to the active
@@ -520,7 +533,7 @@ export class RunOrchestrator {
     issueArgs: string[],
     batches?: number[][] | null,
   ): Promise<RunResult> {
-    const { manifest, onProgress, settings } = init;
+    const { manifest, onProgress, phasePauseHandle, settings } = init;
 
     // ── Config resolution ──────────────────────────────────────────────
     const resolved = RunOrchestrator.resolveConfig(init, issueArgs, batches);
@@ -790,6 +803,7 @@ export class RunOrchestrator {
       packageManager: manifest.packageManager,
       baseBranch,
       onProgress,
+      phasePauseHandle,
     });
     init.onOrchestratorReady?.(orchestrator);
 
@@ -917,6 +931,7 @@ export class RunOrchestrator {
       packageManager: this.cfg.packageManager,
       baseBranch: this.cfg.baseBranch,
       onProgress: this.cfg.onProgress,
+      phasePauseHandle: this.cfg.phasePauseHandle,
     };
   }
 
@@ -1049,6 +1064,7 @@ export class RunOrchestrator {
       packageManager,
       baseBranch,
       onProgress,
+      phasePauseHandle,
     } = batchCtx;
 
     const issueInfo = issueInfoMap.get(issueNumber) ?? {
@@ -1075,6 +1091,7 @@ export class RunOrchestrator {
       packageManager,
       baseBranch,
       onProgress,
+      phasePauseHandle,
     };
 
     // Fire-and-forget — orchestrator does not await listener completion on
