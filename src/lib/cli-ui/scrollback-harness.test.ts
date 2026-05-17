@@ -46,6 +46,12 @@ function makeHarnessRenderer(opts: {
   const harness = createTerminalHarness(opts);
   const renderer = new TTYRenderer({
     stdoutWrite: harness.stdoutWrite,
+    // Route the renderer's stderr (used by `SEQUANT_DEBUG_RENDERER` and
+    // related diagnostics, see run-renderer.ts:606) into the same VT — that
+    // is what a real pty does when stdout and stderr share a tty. The #647
+    // AC-1 capture's 2171× amplification is reproducible at synthetic scale
+    // because of this routing.
+    stderrWrite: harness.stderrWrite,
     logUpdateInstance: harness.logUpdate,
     isTTY: true,
     noColor: true,
@@ -196,35 +202,121 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
     renderer.dispose();
   });
 
-  // AC-2 Mechanism #1 reproduction scaffold (deferred — AC-1 evidence gated):
-  // event-only flood without pause/resume, in a viewport short enough that
-  // consecutive renders should scroll the original frame top into scrollback.
-  // The harness models cursor-up clamping at row 0, so Mechanism #1 IS
-  // reachable in principle — but tightening the scenario to fire deterministically
-  // requires AC-1 evidence from a real run (event-count, viewport size, frame
-  // height combinations that production actually exhibits).
-  it.skip("AC-2 (mechanism #1, deferred): event-only flood pushes the live frame into scrollback", () => {
-    const { renderer, harness } = makeHarnessRenderer({ rows: 12, cols: 100 });
-    renderer.registerIssue({ issueNumber: 700 });
-    renderer.registerIssue({ issueNumber: 701 });
-
-    for (let i = 0; i < 30; i++) {
-      const phase = i % 3 === 0 ? "spec" : i % 3 === 1 ? "exec" : "qa";
-      const issue = i % 2 === 0 ? 700 : 701;
-      renderer.onEvent({ issue, phase, event: "start", iteration: i });
-      renderer.onEvent({
-        issue,
-        phase,
-        event: "complete",
-        durationSeconds: 60 + i,
-        iteration: i,
+  // AC-2 (Mechanism #2-class — out-of-band writes break log-update's cursor
+  // model). Forensic analysis of the AC-1 capture
+  // (`docs/incidents/647/captures/2026-05-17/analysis.md`) shows that:
+  //   - The capture's 2181 `SEQUANT WORKFLOW · ` occurrences are wire-traffic
+  //     bytes, not scrollback occurrences.
+  //   - Replaying the capture bytes through a 213×31 VT produces only 1
+  //     scrollback header if the stderr SEQUANT_DEBUG_RENDERER lines are
+  //     stripped first, but 2171 if they are kept (script(1) merged them
+  //     into the same pty).
+  //   - The amplifier is the stderr instrumentation writing to the same tty
+  //     between log-update redraws. log-update tracks `previousLineCount`
+  //     from its own writes only; out-of-band writes scroll the terminal
+  //     without log-update's knowledge, so the next `eraseLines(N)` erases
+  //     wrong lines (or undershoots) and the prior frame's top rows
+  //     survive in scrollback.
+  //
+  // This test reproduces that mechanism deterministically: 1Hz ticks
+  // (renderer.tickNow()) drive log-update redraws, with one out-of-band
+  // write injected before each tick to simulate any non-log-update writer
+  // (stderr instrumentation, subprocess output landing outside a paused
+  // window, future feature that writes to stdout, etc.). On `main` HEAD,
+  // every redraw cycle leaves a header in scrollback.
+  //
+  // Marked `it.fails` (vitest's "expected to fail until fix lands" marker)
+  // per the issue body's AC-2 requirement: "Test must FAIL on main as of
+  // this issue's creation (i.e. reproduces the bug) before any fix code is
+  // written." When the AC-3 fix lands, the assertion below will pass and
+  // `it.fails` will flip the test into a failure — that's the signal to
+  // remove `.fails` and lock the green test in as the permanent regression
+  // guard.
+  it.fails(
+    "AC-2: out-of-band writes between log-update redraws strand headers in scrollback (Mechanism #2-class)",
+    () => {
+      // Wide single-issue setup matching the AC-1 capture parameters.
+      const { renderer, harness } = makeHarnessRenderer({
+        rows: 31,
+        cols: 213,
       });
-    }
 
-    const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
-    expect(headerCount).toBeLessThanOrEqual(1);
-    renderer.dispose();
-  });
+      renderer.registerIssue({ issueNumber: 658 });
+
+      // Initial frame so log-update has a `previousOutput` to compare
+      // against on subsequent calls.
+      renderer.tickNow();
+
+      // Each iteration: write one out-of-band line to the same vt (mimics
+      // stderr instrumentation), then trigger a redraw. log-update has no
+      // record of the out-of-band line, so `eraseLines(previousLineCount)`
+      // misses rows and the prior frame's header survives.
+      //
+      // Every 10th iteration is a phase event (exercises the
+      // appendEventLine path) so we cover both redraw call sites.
+      const ITERATIONS = 60;
+      for (let i = 0; i < ITERATIONS; i++) {
+        harness.stderrWrite(`OUT_OF_BAND ${i}\n`);
+        if (i % 10 === 9) {
+          renderer.onEvent({
+            issue: 658,
+            phase: "spec",
+            event: "start",
+            iteration: Math.floor(i / 10) + 1,
+          });
+        } else {
+          renderer.tickNow();
+        }
+      }
+
+      // The AC-2 invariant from the issue body: total occurrences of
+      // `SEQUANT WORKFLOW · ` in (visible + scrollback) must be exactly 1.
+      // This assertion is what the fix needs to make pass; on main it
+      // fails because out-of-band writes have stranded prior frames in
+      // scrollback. Surface raw terminal state on failure so the
+      // mechanism is observable from the test output.
+      const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
+      if (headerCount !== 1) {
+        const visible = harness.vt
+          .getVisibleLines()
+          .map((l, i) => `  v${i.toString().padStart(2, "0")} | ${l}`)
+          .join("\n");
+        const scrollback = harness.vt.scrollback
+          .map((l, i) => `  s${i.toString().padStart(2, "0")} | ${l}`)
+          .join("\n");
+        throw new Error(
+          `Expected exactly 1 \`SEQUANT WORKFLOW · \` header but found ${headerCount}.\n\n` +
+            `Scrollback (${harness.vt.scrollback.length} rows):\n${scrollback}\n\n` +
+            `Visible (${harness.vt.rows} rows):\n${visible}`,
+        );
+      }
+      expect(headerCount).toBe(1);
+
+      // AC-C: Symptom 2 byte-integrity assertion (bundled #662). Every
+      // `SEQUANT WORKFLOW · ... elapsed` line in (visible + scrollback)
+      // must match the canonical pattern byte-for-byte — no mid-string
+      // drops, no U+FFFD substitutions. Synthetic harness doesn't produce
+      // these today (per the AC-1 capture analysis), so this assertion is
+      // a negative-result lock-in that fires only if future renderer or
+      // log-update changes introduce the corruption synthetically.
+      const allLines = [
+        ...harness.vt.scrollback,
+        ...harness.vt.getVisibleLines(),
+      ];
+      const headerLines = allLines.filter(
+        (l) => l.includes("SEQUANT WORKFLOW · ") && l.includes("elapsed"),
+      );
+      const corrupted = headerLines.filter(
+        (l) =>
+          !/^SEQUANT WORKFLOW · (?:#\d+|\d+ issues?) · [^·]+ elapsed/.test(
+            l.trim(),
+          ),
+      );
+      expect(corrupted).toEqual([]);
+
+      renderer.dispose();
+    },
+  );
 
   // AC-2 (Mechanism #4-adjacent): width misreporting. The renderer + log-update
   // both read `stream.columns = 100`, but the physical terminal is 80 cols.
