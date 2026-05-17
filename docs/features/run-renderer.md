@@ -112,7 +112,7 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 
 - **Frame cadence.** The live zone redraws on phase events and at most once per second on a timer between events. Elapsed counters keep ticking even when nothing is happening, so the screen is always alive.
 - **Verbose streaming.** Running with `-v` / `--verbose` pauses the live zone while Claude's stream prints, then redraws below it on the next phase event. No interleaved garble.
-- **Quiet mode (`-q`).** Renderer still runs; `--quiet` only suppresses Claude's verbose stream. In non-TTY contexts the 60s heartbeat keeps `-q` runs from looking stalled — see [Quiet Mode Heartbeat](quiet-mode-heartbeat.md).
+- **Quiet mode (`-q`).** Renderer is disabled in quiet mode (gated at `run-progress.ts:60` on `!quiet`); the liveness heartbeat replaces it — a TTY-only rewriting line every 30s plus a one-shot stall warning at 5 minutes. See [Quiet Mode Heartbeat](quiet-mode-heartbeat.md).
 - **Retries get a counter.** When a quality loop retries `exec`, the second and later attempts annotate as `(attempt 2/3)`, `(attempt 3/3)` in both the events log and the live-zone status cell (added by #624). QA loop iterations show `qa loop N/3` the same way.
 - **Identical failures get folded.** If `exec` fails three times with the same error, you see the full message on attempt 1 and on the final attempt. The middle attempt shows `(attempt 2/3, same failure as attempt 1)` instead of repeating the error verbatim. Divergent failures always print in full.
 - **Frame stability.** The live zone height is capped at `max(8, terminal-rows − 5)`. With more than ~10 active issues, the oldest done rows roll up to a single `✔ {n} done` line so the grid never spills past the visible terminal.
@@ -177,7 +177,7 @@ No CLI flags configure the renderer directly. Renderer behavior is driven by env
 Set `SEQUANT_DEBUG_RENDERER=1` to capture per-callsite instrumentation for diagnosing duplicate-frame and scrollback regressions (#647). One JSON-line is emitted to **stderr** per `log-update` operation (`impl` / `clear` / `done`):
 
 ```bash
-SEQUANT_DEBUG_RENDERER=1 npx sequant run 504 505 -q 2> /tmp/debug.jsonl
+SEQUANT_DEBUG_RENDERER=1 npx sequant run 504 505 2> /tmp/debug.jsonl
 ```
 
 Each record looks like:

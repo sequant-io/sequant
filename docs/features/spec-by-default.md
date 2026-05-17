@@ -52,10 +52,10 @@ sequant run 123 --phases exec,qa
 
 ```bash
 # Default (assess recommends):
-npx sequant run 123 -q
+npx sequant run 123 -Q
 
 # Override:
-npx sequant run 123 -q --phases exec,qa
+npx sequant run 123 -Q --phases exec,qa
 ```
 
 ### When spec is automatically skipped

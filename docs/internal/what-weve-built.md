@@ -182,7 +182,7 @@ npx sequant              # Or run via npx
 |---------|-------------|
 | `sequant init` | Initialize Sequant in a project (copies templates, creates `.claude/` and `.sequant/`) |
 | `sequant doctor` | Check installation health — prerequisites, closed-issue verification, config validation |
-| `sequant run <issues>` | Execute workflow (`-q` quality loop, `--chain`, `--resume`, `--force`) |
+| `sequant run <issues>` | Execute workflow (`-Q` quality loop, `--chain`, `--resume`, `--force`) |
 | `sequant status` | Show version, config, tracked issues with cleanup options |
 | `sequant update` | Update skill templates to latest versions |
 | `sequant state` | Manage workflow state (`init`, `rebuild`, `clean`) |
@@ -204,7 +204,7 @@ sequant doctor
 sequant run 42
 
 # Run with quality loop (auto-retry on failures)
-sequant run 42 -q
+sequant run 42 -Q
 
 # View your success rates
 sequant stats
@@ -719,7 +719,7 @@ Shell scripts in `templates/scripts/`:
 - GitHub integration via `gh` CLI
 
 ### Phase 2: Quality Systems
-- Quality loop (`-q` flag)
+- Quality loop (`-Q` flag)
 - State tracking (`.sequant/state.json`)
 - Local analytics (`sequant stats`)
 - Run logging with rotation
@@ -745,7 +745,7 @@ Shell scripts in `templates/scripts/`:
 - **Per-Issue Concurrency Locks** - `.sequant/locks/<issue>.lock` prevents two `sequant run` sessions from clobbering the same issue; new `sequant locks list / clear / acquire / release / check / check-batch` subcommands (#625)
 - **`sequant stats --label` / `--since`** - Cohort filters compose with AND across JSON, CSV, human, and `--detailed` outputs (#640)
 - **`--security-review` Flag** - Additive flag mirroring `--testgen` inserts the security-review phase after spec (#559)
-- **`-q` Mode Liveness Heartbeat** - 30s progress + 5-minute stall warning so quiet mode is no longer silent (#574)
+- **`-q`/`--quiet` Mode Liveness Heartbeat** - 30s progress + 5-minute stall warning so quiet mode is no longer silent (#574)
 - **/qa Adversarial Re-Read** - Required structured section before `READY_FOR_MERGE`; severe gaps demote to `AC_NOT_MET` (#582)
 - **/qa & /spec Sibling-Site Scan** - Multi-pattern files surface sibling code matching the bug's root cause (#573, #580, #587)
 - **/qa Detection-Pattern Verification** - Skill PRs touching `grep`/`awk`/`jq`/`sed`/regex must execute each pattern against ≥5 real corpus samples (#551)

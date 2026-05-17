@@ -137,3 +137,36 @@ describe.skipIf(!distExists)("CLI version (pre-built)", () => {
     expect(distExists).toBe(true);
   });
 });
+
+// Issue #658: pin run command short-form bindings so a future option reordering
+// can't silently re-shadow them (Commander assigns -q to whichever option
+// declares it first).
+describe("run command short-form bindings (#658)", () => {
+  const runHelp = (): string => {
+    try {
+      return execSync(`node ${cliPath} run --help`, execOptions);
+    } catch (error) {
+      const execError = error as {
+        status: number | null;
+        stdout: string;
+        stderr: string;
+      };
+      throw new Error(
+        `CLI run --help crashed with exit code ${execError.status}.\n` +
+          `stdout: ${execError.stdout}\n` +
+          `stderr: ${execError.stderr}`,
+      );
+    }
+  };
+
+  it("-q binds to --quiet (UNIX convention)", () => {
+    const output = runHelp();
+    expect(output).toMatch(/-q,\s*--quiet/);
+    expect(output).not.toMatch(/-q,\s*--quality-loop/);
+  });
+
+  it("-Q binds to --quality-loop", () => {
+    const output = runHelp();
+    expect(output).toMatch(/-Q,\s*--quality-loop/);
+  });
+});

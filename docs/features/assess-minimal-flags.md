@@ -14,10 +14,10 @@
 
 | Issue type | Old display | New display |
 |------------|-------------|-------------|
-| Default workflow | `npx sequant run 532 -q --phases spec,exec,qa` | `npx sequant run 532 -q` |
-| testgen needed | `npx sequant run 552 -q --phases spec,testgen,exec,qa` | `npx sequant run 552 -q --testgen` |
-| ui-labelled (test phase auto-added) | `npx sequant run 499 -q --phases spec,exec,test,qa` | `npx sequant run 499 -q` |
-| security-review | `npx sequant run 500 -q --phases spec,security-review,exec,qa` | `npx sequant run 500 -q --security-review` |
+| Default workflow | `npx sequant run 532 -Q --phases spec,exec,qa` | `npx sequant run 532 -Q` |
+| testgen needed | `npx sequant run 552 -Q --phases spec,testgen,exec,qa` | `npx sequant run 552 -Q --testgen` |
+| ui-labelled (test phase auto-added) | `npx sequant run 499 -Q --phases spec,exec,test,qa` | `npx sequant run 499 -Q` |
+| security-review | `npx sequant run 500 -Q --phases spec,security-review,exec,qa` | `npx sequant run 500 -Q --security-review` |
 
 ## What runs at runtime
 
@@ -28,7 +28,7 @@ The displayed command is human shorthand. At runtime, `phase-mapper.determinePha
 - The `--security-review` flag inserts `security-review` after `spec` (idempotent — no duplicate when `auth`/`security` labels already trigger auto-detection).
 - Chain commands (`--chain`) resolve phases per issue, so each issue in the chain gets its own phase list.
 
-Example: `npx sequant run 499 -q` for a ui-labelled issue runs `spec → exec → test → qa` even though the displayed command shows no `--phases` flag.
+Example: `npx sequant run 499 -Q` for a ui-labelled issue runs `spec → exec → test → qa` even though the displayed command shows no `--phases` flag.
 
 ## Markers vs displayed commands
 
@@ -36,7 +36,7 @@ Example: `npx sequant run 499 -q` for a ui-labelled issue runs `spec → exec �
 
 ```
 <!-- assess:phases=spec,exec,test,qa -->
-npx sequant run 499 -q
+npx sequant run 499 -Q
 ```
 
 The marker records the **full resolved workflow** for tooling and audits. The displayed command shows only what the human needs to type. This divergence is intentional — parsers consume markers, humans copy commands.

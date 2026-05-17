@@ -58,8 +58,8 @@ A scannable dashboard — one row per issue, one command block, compressed annot
 ────────────────────────────────────────────────────────────────
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 461 460 -q --phases exec,qa                      │
-│  npx sequant run 458 -q                                      │
+│  npx sequant run 461 460 -Q --phases exec,qa                      │
+│  npx sequant run 458 -Q                                      │
 ╰──────────────────────────────────────────────────────────────╯
 
 ────────────────────────────────────────────────────────────────
@@ -100,10 +100,10 @@ Open · bug, enhancement, cli
 → PROCEED — Both root causes confirmed in codebase
 
 ╭──────────────────────────────────────────────────────────────╮
-│  npx sequant run 458 -q                                      │
+│  npx sequant run 458 -Q                                      │
 ╰──────────────────────────────────────────────────────────────╯
 
-spec → exec → qa · 8 ACs · -q (dual concern)
+spec → exec → qa · 8 ACs · -Q (dual concern)
 ────────────────────────────────────────────────────────────────
 ```
 

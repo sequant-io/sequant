@@ -104,6 +104,6 @@ The detector returns `CollisionResult[]` from `detectFileCollisions`. The format
 
 - `Order: A → B (path)` per pair (or `Order: A → B → C (path)` for 3+ on the same file). `path` is the canonical bare form (e.g. `qa/SKILL.md`).
 - `⚠ #N  Modifies <path> (overlaps #M); land sequentially` per affected issue.
-- `Chain: npx sequant run A B C --chain --qa-gate -q   # alternative — N issues modify <path> (chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)` only when ≥3 issues collide on the same file (suggest-only). The historical-rate annotation comes from the #604 forensic write-up; users see the suggestion alongside the parallel default and can weigh the trade-off.
+- `Chain: npx sequant run A B C --chain --qa-gate -Q   # alternative — N issues modify <path> (chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)` only when ≥3 issues collide on the same file (suggest-only). The historical-rate annotation comes from the #604 forensic write-up; users see the suggestion alongside the parallel default and can weigh the trade-off.
 
 The bare-filename `Order:` exception (defined in the skill's "Annotation Rules") applies here — predicted collisions are file-collision reasons by definition, so the filename in parentheses is the reason verbatim.

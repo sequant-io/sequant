@@ -149,7 +149,7 @@ Surface red flags. Only track signals that change the recommendation.
 |--------|----------|----------|
 | security, auth, authentication, permissions | Domain | `spec → security-review → exec → qa` |
 | ui, frontend, admin, web, browser | Domain | `spec → exec → test → qa` |
-| complex, refactor, breaking, major | Modifier | `spec → exec → qa` + `-q` |
+| complex, refactor, breaking, major | Modifier | `spec → exec → qa` + `-Q` |
 | (ui/frontend) + (enhancement/feature), or testable-AC signals | Modifier | inserts `testgen` before `exec` (see Testgen detection below) |
 | enhancement, feature (default) | Generic | `spec → exec → qa` |
 | bug, fix, hotfix, patch | Generic | `spec → exec → qa` |
@@ -165,7 +165,7 @@ Surface red flags. Only track signals that change the recommendation.
 
 **PR review detection:** Open PR with implementation complete → mark as review-needed (`◂ qa`).
 
-**Quality loop (`-q`):** Recommend for everything except simple bug fixes and docs-only.
+**Quality loop (`-Q`):** Recommend for everything except simple bug fixes and docs-only.
 
 **Testgen detection:** Add `testgen` to the workflow when any apply:
 - Labels include (`ui` or `frontend`) AND (`enhancement` or `feature`)
@@ -179,7 +179,7 @@ Triggers (any one):
 - Issue body or comments mention `"depends on #N"`, `"blocked by #N"`, or `"after #N"`
 - One issue's described output is another issue's input (e.g., A changes a function signature that B consumes)
 
-Format: `Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <one-line reason>`
+Format: `Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>`
 
 Flag references:
 - `--chain` chains issues (each branches from previous; implies `--sequential`)
@@ -238,7 +238,7 @@ Order: <N> → <N> (<dependency reason>)
 ⚠ #<N>  <warning>
 ⚠ #<N>  <warning>
 
-Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <reason>
+Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <reason>
 
 Flags:
   <flag>                <one-line reason>
@@ -300,12 +300,12 @@ Emit annotations in this order between the separators that follow `Commands:`:
   - `⚠ #412  bug + auth labels — domain label (auth) takes priority over bug`
 
 - **`Chain:`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology. Does not replace the default per-issue commands. Format:
-  `Chain: npx sequant run <N1> <N2> --chain --qa-gate -q <phases>   # alternative — <one-line reason>`
+  `Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>`
 
-- **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
+- **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-Q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
   ```
   Flags:
-    -q                   9+ ACs or multi-file scope
+    -Q                   9+ ACs or multi-file scope
     --testgen            testable ACs detected (UI hooks + API integration)
     --phases ...,test    ui label → browser verification
   ```
@@ -331,10 +331,10 @@ Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
  405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 461 460 458 443 -q
-  npx sequant run 412 -q --security-review
-  npx sequant run 411 -q --phases exec,qa     # resume
-  npx sequant run 405 -q                      # restart
+  npx sequant run 461 460 458 443 -Q
+  npx sequant run 412 -Q --security-review
+  npx sequant run 411 -Q --phases exec,qa     # resume
+  npx sequant run 405 -Q                      # restart
 ────────────────────────────────────────────────────────────────
 Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)
 
@@ -343,7 +343,7 @@ Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depe
 ⚠ #412  bug + auth labels — auth (domain) adds security-review phase
 
 Flags:
-  -q                              multi-file scope across most PROCEED issues
+  -Q                              multi-file scope across most PROCEED issues
   --security-review               #412 auth label → security review required
   --phases exec,qa                #411 resume — prior spec marker already exists
 ────────────────────────────────────────────────────────────────
@@ -374,15 +374,15 @@ All issues have explicit checkbox ACs, so the `ACs` column is shown. A dependenc
  186  PROCEED    9   React Query hooks migration       spec → testgen → exec → test → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 185 -q
-  npx sequant run 186 -q --testgen
+  npx sequant run 185 -Q
+  npx sequant run 186 -Q --testgen
 ────────────────────────────────────────────────────────────────
 Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)
 
 ⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected
 ⚠ #186  @tanstack/react-query not installed; large scope (9 hooks + optimistic updates)
 
-Chain: npx sequant run 185 186 --chain --qa-gate -q --testgen
+Chain: npx sequant run 185 186 --chain --qa-gate -Q --testgen
        # alternative — use if 186 should branch from 185's work
 
 Flags:
@@ -395,7 +395,7 @@ Flags:
 
 #### Batch Example (all clean)
 
-When every issue is PROCEED with no warnings, no dependencies, and no non-default flags beyond an obvious `-q`, the output is minimal. The `Flags:` section is omitted because `-q` is obvious here (all PROCEED enhancements).
+When every issue is PROCEED with no warnings, no dependencies, and no non-default flags beyond an obvious `-Q`, the output is minimal. The `Flags:` section is omitted because `-Q` is obvious here (all PROCEED enhancements).
 
 ```
  #    Action     Reason                              Run
@@ -404,7 +404,7 @@ When every issue is PROCEED with no warnings, no dependencies, and no non-defaul
  443  PROCEED    Consolidate gh calls                  spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 461 460 443 -q
+  npx sequant run 461 460 443 -Q
 ────────────────────────────────────────────────────────────────
 
 <!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
@@ -435,9 +435,9 @@ When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per
  491  PROCEED    Normalize config paths                     spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run 503 502 501 499 498 497 -q
-  npx sequant run 495 494 492 491 -q
-  npx sequant run 500 -q --security-review
+  npx sequant run 503 502 501 499 498 497 -Q
+  npx sequant run 495 494 492 491 -Q
+  npx sequant run 500 -Q --security-review
 ────────────────────────────────────────────────────────────────
 Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
 
@@ -498,9 +498,9 @@ Flags:
 <!-- assess:quality-loop=<bool> -->
 ```
 
-**`Flags:` (single mode):** Indented list of each enabled non-default flag with a one-line reason. Omit the entire `Flags:` section when `-q` is the only non-default flag AND the reason is obvious (e.g., a straightforward enhancement). Do not repeat obvious flags.
+**`Flags:` (single mode):** Indented list of each enabled non-default flag with a one-line reason. Omit the entire `Flags:` section when `-Q` is the only non-default flag AND the reason is obvious (e.g., a straightforward enhancement). Do not repeat obvious flags.
 
-Example with `Flags:` (non-obvious `-q` + `--testgen`):
+Example with `Flags:` (non-obvious `-Q` + `--testgen`):
 
 ```
 #458 — Parallel run UX freeze + reconcileState race condition
@@ -510,12 +510,12 @@ Open · bug, enhancement, cli
 → PROCEED — Both root causes confirmed in codebase
 
 Commands:
-  npx sequant run 458 -q
+  npx sequant run 458 -Q
 
 spec → exec → qa · 8 ACs
 
 Flags:
-  -q     dual concern across 4 files
+  -Q     dual concern across 4 files
 ────────────────────────────────────────────────────────────────
 
 <!-- assess:action=PROCEED -->
@@ -523,7 +523,7 @@ Flags:
 <!-- assess:quality-loop=true -->
 ```
 
-Example omitting `Flags:` (obvious `-q` for a standard enhancement):
+Example omitting `Flags:` (obvious `-Q` for a standard enhancement):
 
 ```
 #443 — Consolidate gh CLI calls
@@ -533,7 +533,7 @@ Open · enhancement
 → PROCEED — Codebase matches spec, 5 ACs
 
 Commands:
-  npx sequant run 443 -q
+  npx sequant run 443 -Q
 
 spec → exec → qa · 5 ACs
 ────────────────────────────────────────────────────────────────
@@ -637,7 +637,7 @@ Commands:
 | `Order:` | File conflicts or dependencies require sequencing |
 | `⚠` warnings | Non-obvious signals exist (complexity, staleness, dual concerns, partial-AC satisfaction) |
 | `Chain:` | 2+ PROCEED issues with detected dependency (suggest-only) |
-| `Flags:` | Non-default flags appear AND `-q` is not the sole flag with an obvious reason |
+| `Flags:` | Non-default flags appear AND `-Q` is not the sole flag with an obvious reason |
 | `Cleanup:` | Stale branches, merged-but-open issues, or label changes |
 | Separators | Between sections that are both shown; omit if adjacent section is omitted |
 
@@ -680,7 +680,7 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 - [ ] Commands block only contains PROCEED and REWRITE issues, grouped by compatible workflow
 - [ ] `testgen` included when ui/frontend + enhancement/feature labels OR testable-AC signals
 - [ ] `Chain:` suggested (not auto-applied) when 2+ PROCEED issues have a detected dependency
-- [ ] `Flags:` section present when non-default flags appear (unless only obvious `-q`)
+- [ ] `Flags:` section present when non-default flags appear (unless only obvious `-Q`)
 - [ ] `Order:` annotations carry dependency **reasoning**, not bare filenames
 - [ ] `⚠` warnings include partial-AC satisfaction where applicable
 - [ ] Separators appear between every shown section; omitted when adjacent section is omitted

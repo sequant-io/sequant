@@ -231,7 +231,7 @@ program
   .option("--log-json", "Enable structured JSON logging (default: true)")
   .option("--no-log", "Disable JSON logging for this run")
   .option("--log-path <path>", "Custom log directory path")
-  .option("-q, --quality-loop", "Enable quality loop with auto-retry")
+  .option("-Q, --quality-loop", "Enable quality loop with auto-retry")
   .option(
     "--max-iterations <n>",
     "Max iterations for quality loop (default: 3)",
@@ -247,7 +247,7 @@ program
   .option("--no-smart-tests", "Disable smart test detection")
   .option("--testgen", "Run testgen phase after spec")
   .option("--security-review", "Run security-review phase after spec")
-  .option("--quiet", "Suppress version warnings and non-essential output")
+  .option("-q, --quiet", "Suppress version warnings and non-essential output")
   .option(
     "--chain",
     "Chain issues: each branches from previous (implies --sequential)",
