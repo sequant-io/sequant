@@ -308,6 +308,16 @@ export interface TerminalHarness {
   vt: VirtualTerminal;
   logUpdate: ReturnType<typeof createLogUpdate>;
   stdoutWrite: (s: string) => void;
+  /**
+   * Out-of-band write that lands in the same VT as `logUpdate` and
+   * `stdoutWrite` — mirrors how a real pty merges stderr writes with stdout
+   * when both descriptors point at the same terminal. log-update has no
+   * knowledge of these writes, so they advance the cursor in ways
+   * `previousLineCount` cannot account for. Use this to reproduce the
+   * Mechanism #2-class bug (out-of-band writes break log-update's cursor
+   * model) that #647 AC-1 capture diagnosed.
+   */
+  stderrWrite: (s: string) => void;
 }
 
 export interface HarnessOptions extends VirtualTerminalOptions {
@@ -347,5 +357,6 @@ export function createTerminalHarness(opts: HarnessOptions): TerminalHarness {
     vt,
     logUpdate: lu,
     stdoutWrite: (s: string) => vt.write(s),
+    stderrWrite: (s: string) => vt.write(s),
   };
 }
