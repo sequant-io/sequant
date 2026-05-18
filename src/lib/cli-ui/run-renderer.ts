@@ -575,12 +575,20 @@ export class TTYRenderer extends BaseRenderer {
     const debugEnabled = process.env.SEQUANT_DEBUG_RENDERER === "1";
     let debugFd: number | null = null;
     if (debugEnabled) {
+      // Default sink resolves against `process.cwd()` — matches the rest of
+      // the codebase's `.sequant/` convention (see `src/lib/relay/paths.ts:39`,
+      // `src/lib/ci/config.ts:42`). Invoking `sequant` from a subdirectory
+      // puts the file under that subdirectory's `.sequant/`, where the project
+      // root's `.sequant/*` gitignore does not reach — pass an absolute
+      // override via `SEQUANT_DEBUG_RENDERER_FILE` if that's a concern.
+      //
       // `||` not `??`: treat an empty SEQUANT_DEBUG_RENDERER_FILE as "use
       // default" rather than passing "" to openSync (which would throw and
-      // suppress all debug output via the fallback path).
+      // suppress all debug output via the fallback path). Locked in by the
+      // "AC-2 + empty string" test in scrollback-harness.test.ts.
       const debugPath =
         process.env.SEQUANT_DEBUG_RENDERER_FILE ||
-        path.join(".sequant", "debug-renderer.jsonl");
+        path.join(process.cwd(), ".sequant", "debug-renderer.jsonl");
       try {
         fs.mkdirSync(path.dirname(debugPath), { recursive: true });
         debugFd = fs.openSync(debugPath, "a");

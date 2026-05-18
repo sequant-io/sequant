@@ -624,6 +624,96 @@ describe("#664 SEQUANT_DEBUG_RENDERER file sink", () => {
     expect(content.length).toBeGreaterThan(0);
   });
 
+  // Locks in the `||`-vs-`??` semantics for SEQUANT_DEBUG_RENDERER_FILE: an
+  // empty env var (e.g. `SEQUANT_DEBUG_RENDERER_FILE= …`) must fall back to
+  // the default path, not be passed verbatim to openSync. With `??` (nullish
+  // coalescing) the empty string would propagate and openSync would throw,
+  // routing through the fallback-notice path and silently disabling all
+  // debug output. This test fails immediately if anyone refactors the
+  // operator. See run-renderer.ts:586 inline comment.
+  it("AC-2 (lockin): empty SEQUANT_DEBUG_RENDERER_FILE falls back to default path, not empty-string openSync", () => {
+    process.chdir(tmpDir);
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", "");
+
+    // stderrWrite stub that fails the test if the fallback-notice path
+    // fires — that path only runs when openSync rejects the resolved
+    // debugPath, which would happen if `??` let "" through.
+    const fallbackNoticeCalls: string[] = [];
+    const stderrWatcher = (s: string) => {
+      if (s.startsWith("SEQUANT_DEBUG_RENDERER: file sink unavailable")) {
+        fallbackNoticeCalls.push(s);
+      }
+    };
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: stderrWatcher,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.dispose();
+
+    expect(fallbackNoticeCalls).toEqual([]);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".sequant", "debug-renderer.jsonl")),
+    ).toBe(true);
+  });
+
+  // Locks in the cwd-relative resolution of the default path. `path.join`
+  // alone would also produce a relative path that resolves against cwd at
+  // openSync time, but run-renderer.ts explicitly calls `process.cwd()`
+  // (matching the project-wide `.sequant/` convention in relay/paths.ts).
+  // This test pins that explicit resolution by chdir-ing to a tmpdir and
+  // asserting the file lands there, not relative to where vitest itself
+  // was launched.
+  it("AC-1 (lockin): default path resolves against process.cwd() at construction time", () => {
+    process.chdir(tmpDir);
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", "");
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: harness.stderrWrite,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.dispose();
+
+    // File must be under the chdir'd tmpDir, NOT under the original cwd
+    // (where vitest was invoked, typically the worktree root).
+    const expectedPath = path.join(tmpDir, ".sequant", "debug-renderer.jsonl");
+    expect(fs.existsSync(expectedPath)).toBe(true);
+    // And NOT in the original cwd's .sequant — would indicate the default
+    // path was resolved at module load time rather than at constructor time.
+    const wrongPath = path.join(
+      originalCwd,
+      ".sequant",
+      "debug-renderer.jsonl",
+    );
+    expect(expectedPath).not.toBe(wrongPath);
+  });
+
   // AC-3: JSON schema per record matches the pre-fix shape so existing
   // diagnostic replay tooling keeps working.
   it("AC-3: each line is `SEQUANT_DEBUG_RENDERER ` + JSON record matching prior schema", () => {

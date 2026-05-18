@@ -189,6 +189,8 @@ Override the output path with `SEQUANT_DEBUG_RENDERER_FILE`:
 SEQUANT_DEBUG_RENDERER_FILE=/tmp/debug.jsonl SEQUANT_DEBUG_RENDERER=1 npx sequant run 504 505
 ```
 
+The default path (`.sequant/debug-renderer.jsonl`) is resolved against `process.cwd()` — the same convention used elsewhere in the codebase. If you invoke `sequant` from a subdirectory of your project, the file lands under that subdirectory's `.sequant/`, which is **not** covered by the project root's `.sequant/*` gitignore. Pass an absolute path via `SEQUANT_DEBUG_RENDERER_FILE` (e.g., `/tmp/...`) if you want the file outside the repo, or always invoke from project root.
+
 Each record looks like:
 
 ```json
