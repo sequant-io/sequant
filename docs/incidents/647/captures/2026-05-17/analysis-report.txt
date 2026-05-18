@@ -1,0 +1,83 @@
+# AC-1 capture forensic trace analysis
+
+Source file: terminal.typescript
+Total bytes: 1499995 (after ANSI strip)
+Debug instrumentation lines: 2210
+SEQUANT WORKFLOW · occurrences: 2180
+
+## Width / row sanity (Mechanism #4 candidate)
+  Total debug samples: 2210
+  rendererCols !== stdoutCols mismatches: 0
+  logicalLines !== wrappedLineCount (impl ops): 0
+  First sample: rendererCols=213 stdoutCols=213
+
+## Preceding debug-op type for each header
+  impl: 2180 (100.0%)
+  clear: 0 (0.0%)
+  done: 0 (0.0%)
+  none: 0 (0.0%)
+
+## Inter-header byte-content buckets
+(what appeared between header N-1 and header N, excluding the header itself)
+  noStderrNoStdout: 0 (0.0%)
+  stderrOnly: 0 (0.0%)
+  stdoutOnly: 0 (0.0%)
+  bothInterleaved: 2180 (100.0%)
+
+## Distribution of bytes between consecutive headers
+  min=456 median=665 mean=667 p90=667 p99=667 max=1149
+
+## First 5 representative header occurrences
+  [0] offset=456 preceding=impl@1 bytesBetween=456 stderr=true stdout=true
+      context: SEQUANT WORKFLOW · #658 · 0s elapsed\n\n  ┌────────────┬──────────────────────────
+  [1] offset=1244 preceding=impl@2 bytesBetween=768 stderr=true stdout=true
+      context: SEQUANT WORKFLOW · #658 · 4s elapsed\n\n  ┌────────────┬──────────────────────────
+  [2] offset=2346 preceding=impl@4 bytesBetween=1082 stderr=true stdout=true
+      context: SEQUANT WORKFLOW · #658 · 4s elapsed\n\n  ┌────────────┬──────────────────────────
+  [3] offset=3022 preceding=impl@5 bytesBetween=656 stderr=true stdout=true
+      context: SEQUANT WORKFLOW · #658 · 5s elapsed\n\n  ┌────────────┬──────────────────────────
+  [4] offset=3698 preceding=impl@6 bytesBetween=656 stderr=true stdout=true
+      context: SEQUANT WORKFLOW · #658 · 6s elapsed\n\n  ┌────────────┬──────────────────────────
+
+## Last 5 representative header occurrences
+  [2175] offset=1494848 preceding=impl@2187 bytesBetween=667 stderr=true stdout=true
+  [2176] offset=1495535 preceding=impl@2188 bytesBetween=667 stderr=true stdout=true
+  [2177] offset=1496638 preceding=impl@2190 bytesBetween=1083 stderr=true stdout=true
+  [2178] offset=1497284 preceding=impl@2191 bytesBetween=626 stderr=true stdout=true
+  [2179] offset=1498340 preceding=impl@2193 bytesBetween=1036 stderr=true stdout=true
+
+## Headers per frame distribution
+  frames seen: 2180
+  headers/frame: min=1 median=1 max=1
+  histogram:
+    1 header(s) per frame: 2180 frame(s)
+
+## Header attribution by preceding op (full counts)
+  after clear:  0 headers
+  after impl:   2180 headers
+  after done:   0 headers
+
+## Symptom 2 (bundled #662): header-line byte-integrity scan
+  Corrupted header lines: 0
+
+## VT replay — actual scrollback count (the correct Mechanism #1 measurement)
+  VT size: 213×31 (matching capture's debug trace)
+  Input: raw bytes WITHOUT stderr SEQUANT_DEBUG_RENDERER lines (treats them as stderr — not visible in stdout pty)
+  Total (scrollback + visible): 4 occurrences of 'SEQUANT WORKFLOW · '
+  Scrollback rows containing header: 1 (out of 11 total scrollback rows)
+  Visible rows containing header: 3
+
+## VT replay WITH stderr interleaved (as script(1) captured)
+  Total (scrollback + visible): 2180 occurrences
+  Scrollback rows containing header: 2171 (out of 2220 total scrollback rows)
+  Visible rows containing header: 9
+
+## Differential (stderr amplification factor)
+  Without stderr: 1 headers in scrollback
+  With stderr: 2171 headers in scrollback
+  Amplification: 2171.0×
+
+## Symptom 2 scan — corrupted scrollback header lines (with stderr interleaved)
+  Corrupted scrollback header lines: 1
+  First 10 examples:
+    SEQUANT WORKFLOW
