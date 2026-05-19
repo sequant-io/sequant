@@ -25,7 +25,10 @@
  *     below is the placeholder.
  */
 
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TTYRenderer } from "./run-renderer.js";
 import { createTerminalHarness } from "./scrollback-harness.js";
 import type { ProgressEvent } from "./run-renderer-types.js";
@@ -46,11 +49,12 @@ function makeHarnessRenderer(opts: {
   const harness = createTerminalHarness(opts);
   const renderer = new TTYRenderer({
     stdoutWrite: harness.stdoutWrite,
-    // Route the renderer's stderr (used by `SEQUANT_DEBUG_RENDERER` and
-    // related diagnostics, see run-renderer.ts:606) into the same VT — that
-    // is what a real pty does when stdout and stderr share a tty. The #647
-    // AC-1 capture's 2171× amplification is reproducible at synthetic scale
-    // because of this routing.
+    // Route the renderer's stderr (used by other diagnostics) into the same
+    // VT — that is what a real pty does when stdout and stderr share a tty.
+    // #664: `SEQUANT_DEBUG_RENDERER` no longer writes here (it sinks to a
+    // file). The 2171× amplification observed in the #647 AC-1 capture was
+    // produced by routing the debug instrumentation through this path; the
+    // file-sink fix eliminates that amplifier.
     stderrWrite: harness.stderrWrite,
     logUpdateInstance: harness.logUpdate,
     isTTY: true,
@@ -499,5 +503,282 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
       );
       renderer.dispose();
     }
+  });
+});
+
+describe("#664 SEQUANT_DEBUG_RENDERER file sink", () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-664-"));
+    originalCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    try {
+      process.chdir(originalCwd);
+    } catch {
+      // ignore — already on the original cwd
+    }
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // ignore — test artefacts only
+    }
+  });
+
+  // AC-1 + AC-5: debug output goes to default file path, NOT stderr.
+  // The stderrWrite stub throws on any debug-format call (line starting with
+  // "SEQUANT_DEBUG_RENDERER "), so if the renderer falls back to stderr we
+  // see an exception instead of a passing test.
+  it("AC-1/AC-5: default path receives writes, stderr is never called for debug output", () => {
+    process.chdir(tmpDir);
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", "");
+
+    const stderrCalls: string[] = [];
+    const throwingStderr = (s: string) => {
+      if (s.startsWith("SEQUANT_DEBUG_RENDERER ")) {
+        throw new Error(
+          `stderr received debug output it should not have: ${s}`,
+        );
+      }
+      stderrCalls.push(s);
+    };
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: throwingStderr,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.onEvent({
+      issue: 664,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 30,
+    });
+    renderer.dispose();
+
+    const defaultFile = path.join(tmpDir, ".sequant", "debug-renderer.jsonl");
+    expect(fs.existsSync(defaultFile)).toBe(true);
+    const content = fs.readFileSync(defaultFile, "utf8");
+    const lines = content.split("\n").filter((l) => l.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(line.startsWith("SEQUANT_DEBUG_RENDERER ")).toBe(true);
+    }
+    // No stderr calls at all are expected on the debug path; the throwing
+    // stub above is the primary guard, but assert explicitly so a future
+    // regression that bypasses the throw still fails the test.
+    const debugStderrCalls = stderrCalls.filter((s) =>
+      s.startsWith("SEQUANT_DEBUG_RENDERER "),
+    );
+    expect(debugStderrCalls).toEqual([]);
+  });
+
+  // AC-2: explicit SEQUANT_DEBUG_RENDERER_FILE override is honoured.
+  it("AC-2: SEQUANT_DEBUG_RENDERER_FILE override path receives writes; default path is not created", () => {
+    process.chdir(tmpDir);
+    const overridePath = path.join(tmpDir, "custom-debug.jsonl");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", overridePath);
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: harness.stderrWrite,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.dispose();
+
+    expect(fs.existsSync(overridePath)).toBe(true);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".sequant", "debug-renderer.jsonl")),
+    ).toBe(false);
+    const content = fs.readFileSync(overridePath, "utf8");
+    expect(content.length).toBeGreaterThan(0);
+  });
+
+  // Locks in the `||`-vs-`??` semantics for SEQUANT_DEBUG_RENDERER_FILE: an
+  // empty env var (e.g. `SEQUANT_DEBUG_RENDERER_FILE= …`) must fall back to
+  // the default path, not be passed verbatim to openSync. With `??` (nullish
+  // coalescing) the empty string would propagate and openSync would throw,
+  // routing through the fallback-notice path and silently disabling all
+  // debug output. This test fails immediately if anyone refactors the
+  // operator. See run-renderer.ts:586 inline comment.
+  it("AC-2 (lockin): empty SEQUANT_DEBUG_RENDERER_FILE falls back to default path, not empty-string openSync", () => {
+    process.chdir(tmpDir);
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", "");
+
+    // stderrWrite stub that fails the test if the fallback-notice path
+    // fires — that path only runs when openSync rejects the resolved
+    // debugPath, which would happen if `??` let "" through.
+    const fallbackNoticeCalls: string[] = [];
+    const stderrWatcher = (s: string) => {
+      if (s.startsWith("SEQUANT_DEBUG_RENDERER: file sink unavailable")) {
+        fallbackNoticeCalls.push(s);
+      }
+    };
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: stderrWatcher,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.dispose();
+
+    expect(fallbackNoticeCalls).toEqual([]);
+    expect(
+      fs.existsSync(path.join(tmpDir, ".sequant", "debug-renderer.jsonl")),
+    ).toBe(true);
+  });
+
+  // AC-3: JSON schema per record matches the pre-fix shape so existing
+  // diagnostic replay tooling keeps working.
+  it("AC-3: each line is `SEQUANT_DEBUG_RENDERER ` + JSON record matching prior schema", () => {
+    const overridePath = path.join(tmpDir, "schema-debug.jsonl");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", overridePath);
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    const renderer = new TTYRenderer({
+      stdoutWrite: harness.stdoutWrite,
+      stderrWrite: harness.stderrWrite,
+      logUpdateInstance: harness.logUpdate,
+      isTTY: true,
+      noColor: true,
+      columns: 100,
+      rows: 24,
+      liveTickMs: 0,
+      noSignalListeners: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+    });
+
+    renderer.registerIssue({ issueNumber: 664 });
+    renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+    renderer.onEvent({
+      issue: 664,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 30,
+    });
+    renderer.dispose();
+
+    const lines = fs
+      .readFileSync(overridePath, "utf8")
+      .split("\n")
+      .filter((l) => l.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+
+    for (const line of lines) {
+      const prefix = "SEQUANT_DEBUG_RENDERER ";
+      expect(line.startsWith(prefix)).toBe(true);
+      const json = line.slice(prefix.length);
+      const record = JSON.parse(json) as Record<string, unknown>;
+      // Pre-fix schema (run-renderer.ts emitDebug record). Each key must be
+      // present so the AC-1 capture analyser can replay this file unchanged.
+      for (const key of [
+        "t",
+        "op",
+        "frame",
+        "rendererCols",
+        "rendererRows",
+        "stdoutCols",
+        "stdoutRows",
+      ]) {
+        expect(record, `missing key ${key}`).toHaveProperty(key);
+      }
+      expect(["impl", "clear", "done"]).toContain(record.op);
+    }
+  });
+
+  // AC-4: unwritable sink falls through to no-op rather than crashing, and
+  // emits a single startup notice to stderr so the user sees why their
+  // debug.jsonl is empty. Use `/dev/null/x.jsonl` — `/dev/null` is not a
+  // directory, so both `mkdirSync` (on its parent) and `openSync` fail.
+  it("AC-4: unwritable file path → one-shot stderr notice, no crash, no per-op spam", () => {
+    const unwritable = "/dev/null/foo/debug.jsonl";
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER", "1");
+    vi.stubEnv("SEQUANT_DEBUG_RENDERER_FILE", unwritable);
+
+    const stderrCalls: string[] = [];
+    const recordingStderr = (s: string) => {
+      stderrCalls.push(s);
+    };
+
+    const harness = createTerminalHarness({ rows: 24, cols: 100 });
+    expect(() => {
+      const renderer = new TTYRenderer({
+        stdoutWrite: harness.stdoutWrite,
+        stderrWrite: recordingStderr,
+        logUpdateInstance: harness.logUpdate,
+        isTTY: true,
+        noColor: true,
+        columns: 100,
+        rows: 24,
+        liveTickMs: 0,
+        noSignalListeners: true,
+        now: () => FIXED_NOW,
+        wallClock: () => FIXED_DATE,
+      });
+      renderer.registerIssue({ issueNumber: 664 });
+      renderer.onEvent({ issue: 664, phase: "spec", event: "start" });
+      renderer.onEvent({
+        issue: 664,
+        phase: "spec",
+        event: "complete",
+        durationSeconds: 30,
+      });
+      renderer.dispose();
+    }).not.toThrow();
+
+    const fallbackNotices = stderrCalls.filter((s) =>
+      s.startsWith("SEQUANT_DEBUG_RENDERER: file sink unavailable"),
+    );
+    expect(fallbackNotices.length).toBe(1);
+    // No debug-output stderr lines should leak through as a "fallback"
+    // path — once we fail to open the file, emitDebug becomes a no-op.
+    const debugOutputCalls = stderrCalls.filter((s) =>
+      s.startsWith("SEQUANT_DEBUG_RENDERER "),
+    );
+    expect(debugOutputCalls).toEqual([]);
   });
 });

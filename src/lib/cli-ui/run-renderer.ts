@@ -14,6 +14,8 @@
  * See issue #618.
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import chalk from "chalk";
 import logUpdate from "log-update";
 import stringWidth from "string-width";
@@ -561,10 +563,48 @@ export class TTYRenderer extends BaseRenderer {
     // mismatch, wrap-induced row inflation, etc.). The trace doubles as the
     // evidence required by AC-1's "Pick the fix direction from §2 only after
     // instrumentation confirms the mechanism." sub-bullet.
+    //
+    // #664: routes to a file sink instead of stderr. In any terminal where
+    // stdout and stderr share a pty (the normal case), stderr writes scroll
+    // the terminal between log-update redraws — log-update has no record of
+    // them, so `eraseLines(previousLineCount)` misses rows and the prior
+    // frame's top survives in scrollback. The AC-1 capture's "2181×" headline
+    // was 2171× of this amplifier, not the underlying #647 bug. Sinking to
+    // a file removes the amplifier while preserving identical JSON schema +
+    // per-op cadence for diagnostic replay.
     const debugEnabled = process.env.SEQUANT_DEBUG_RENDERER === "1";
+    let debugFd: number | null = null;
+    if (debugEnabled) {
+      // Default sink resolves against `process.cwd()` — matches the rest of
+      // the codebase's `.sequant/` convention (see `src/lib/relay/paths.ts:39`,
+      // `src/lib/ci/config.ts:42`). Invoking `sequant` from a subdirectory
+      // puts the file under that subdirectory's `.sequant/`, where the project
+      // root's `.sequant/*` gitignore does not reach — pass an absolute
+      // override via `SEQUANT_DEBUG_RENDERER_FILE` if that's a concern.
+      //
+      // `||` not `??`: treat an empty SEQUANT_DEBUG_RENDERER_FILE as "use
+      // default" rather than passing "" to openSync (which would throw and
+      // suppress all debug output via the fallback path). Locked in by the
+      // "AC-2 + empty string" test in scrollback-harness.test.ts.
+      const debugPath =
+        process.env.SEQUANT_DEBUG_RENDERER_FILE ||
+        path.join(process.cwd(), ".sequant", "debug-renderer.jsonl");
+      try {
+        fs.mkdirSync(path.dirname(debugPath), { recursive: true });
+        debugFd = fs.openSync(debugPath, "a");
+      } catch (err) {
+        // Fall through to no-op rather than crashing the run. One-shot
+        // startup notice so the user sees why debug output didn't appear.
+        const msg = err instanceof Error ? err.message : String(err);
+        this.stderrWrite(
+          `SEQUANT_DEBUG_RENDERER: file sink unavailable at ${debugPath} (${msg}), debug output suppressed\n`,
+        );
+        debugFd = null;
+      }
+    }
     let frameCounter = 0;
     const emitDebug = (op: "impl" | "clear" | "done", text?: string) => {
-      if (!debugEnabled) return;
+      if (debugFd === null) return;
       // log-update's render path is roughly:
       //   output = wrapAnsi(text + "\n", stream.columns, {trim:false, hard:true})
       //   previousLineCount = output.split("\n").length
@@ -600,10 +640,13 @@ export class TTYRenderer extends BaseRenderer {
         logicalLines,
         wrappedLineCount,
       };
-      // stderr keeps stdout clean for the live zone; the user redirects it
-      // (`SEQUANT_DEBUG_RENDERER=1 npx sequant run ... 2> debug.jsonl`) to
-      // capture without disrupting the run.
-      this.stderrWrite(`SEQUANT_DEBUG_RENDERER ${JSON.stringify(record)}\n`);
+      // Sync append. `O_APPEND` guarantees atomic per-line writes on POSIX,
+      // and the fd lives for the process lifetime — no close on dispose
+      // because late-fire callbacks could still emit after teardown begins.
+      fs.writeSync(
+        debugFd,
+        `SEQUANT_DEBUG_RENDERER ${JSON.stringify(record)}\n`,
+      );
     };
 
     // log-update writes to process.stdout via a mutable global instance. When

@@ -33,7 +33,7 @@ Auditing every `process.stdout.write` and `console.log` call reachable from `npx
 | `process.stderr.write(chalk.red(data))` (verbose subprocess stderr) | `src/lib/workflow/phase-executor.ts:686` | No — stderr, also gated on verbose |
 | `LivenessHeartbeat.stdoutWrite` | `src/lib/workflow/heartbeat.ts:100, :226` | **Yes** — sole stdout writer in quiet mode (see `run-progress.ts:46-49`); mutually exclusive with renderer; writes only `▸ #N phase (elapsed, …)` heartbeat lines, **never `✔`/`✘`** |
 | `batch-executor.ts:153, :165` | n/a | No — stderr only |
-| Renderer's `stderrWrite` (`SEQUANT_DEBUG_RENDERER` traces) | `src/lib/cli-ui/run-renderer.ts:605` | Yes — stderr only |
+| Renderer's `stderrWrite` (one-shot fallback notice if `SEQUANT_DEBUG_RENDERER` file sink fails to open, per #664) | `src/lib/cli-ui/run-renderer.ts:588-590` | Yes — stderr only, fires at most once per process |
 | `console.log` callsites in `src/commands/sync.ts`, `src/commands/update.ts`, etc. | various | No — not reachable from `run` |
 
 There is **no second stdout writer** in either mode: in default mode the renderer owns stdout end-to-end; in quiet mode the heartbeat owns it (and writes only `▸` lines). No code path produces a `✔` glyph alongside the heartbeat, and no code path produces a `▸` heartbeat alongside the renderer. The `complete[0:8] + failed[col 9+]` overlay cannot be assembled from any combination of these writers in a single run mode.
@@ -50,7 +50,7 @@ The forensic byte pattern (`complete[0:8 bytes] + failed[col 9+]` on the same ro
 2. **A stdout writer we missed in static analysis.** Possible but unlikely given the audit above; the renderer-owned-stdout invariant is structural.
 3. **Measurement artifact.** The original transcript was captured via shell redirection / scrollback copy. If the corruption is purely a rendering issue (i.e., bytes on the wire are correct, but the emulator drew the wrong glyphs at the wrong cells), the transcript could mislead the byte-math analysis.
 
-All three require evidence from a real corrupted run. `SEQUANT_DEBUG_RENDERER=1` emits one JSON line per `log-update` callsite to stderr, including frame counter, columns/rows from both the renderer and `process.stdout`, logical line count, and wrap-aware wrapped line count. Diffing the trace against the visible terminal corruption is what AC-2 calls for.
+All three require evidence from a real corrupted run. `SEQUANT_DEBUG_RENDERER=1` appends one JSON line per `log-update` callsite to `.sequant/debug-renderer.jsonl` (override path via `SEQUANT_DEBUG_RENDERER_FILE`, see #664) — frame counter, columns/rows from both the renderer and `process.stdout`, logical line count, and wrap-aware wrapped line count. Diffing the trace against the visible terminal corruption is what AC-2 calls for.
 
 ## How to capture AC-1
 
