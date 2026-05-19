@@ -46,8 +46,10 @@ SEQUANT WORKFLOW �#658 · 28m 55s elapsed   # U+FFFD where "·" should be
 
 ## Caveat — `script` wrapper interference
 
-The `script(1)` wrapper records the entire pty (stdout AND stderr) into `terminal.typescript`. Because the AC-1 instrumentation correctly writes to stderr (`run-renderer.ts:605` → `process.stderr.write`), its output ended up in the typescript file mixed with renderer stdout writes.
+The `script(1)` wrapper records the entire pty (stdout AND stderr) into `terminal.typescript`. Because the AC-1 instrumentation **at the time of this capture** wrote to stderr (`run-renderer.ts:605` → `process.stderr.write`), its output ended up in the typescript file mixed with renderer stdout writes.
 
 This means:
 - Visual interleaving of `SEQUANT_DEBUG_RENDERER {...}` lines into renderer table writes (visible at table-border breakpoints in the file) is a `script` artifact, not a renderer bug.
 - To discriminate Symptom 2's cause (renderer alone vs. exacerbated by stderr co-writer), a follow-up capture without `script` is needed: `SEQUANT_DEBUG_RENDERER=1 npx sequant run <issue> -q 2> debug.jsonl` plus manual terminal save.
+
+**Resolved going forward (#664).** `SEQUANT_DEBUG_RENDERER` now writes to `.sequant/debug-renderer.jsonl` (override: `SEQUANT_DEBUG_RENDERER_FILE`) instead of stderr, removing the stderr co-writer that produced the 2171× amplifier identified in `analysis.md`. Future captures with `script(1)` will no longer interleave debug output into the pty stream.

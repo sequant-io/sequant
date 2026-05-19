@@ -54,7 +54,7 @@ Over a 36m run with 2210 stderr writes (one per `impl`/`clear`/`done` op) and ~2
   2. Out-of-band writes to the same pty (stderr, in this capture) breaks log-update's cursor tracking and produces near-100% scrollback duplicates.
 - **The original #647 transcript** (3 duplicates over 56m in `npx sequant run 504 505 -q`) reflects a different scenario: parallel mode, subprocess (`claude`) verbose output interleaved with renderer output. That mechanism is consistent with the stderr finding above (any out-of-band writer breaks log-update), but at a lower rate because subprocess output goes through `phase-executor.ts` which now correctly pauses the renderer (per PR #659).
 - **The fix direction**: the underlying mechanism is Mechanism #2-adjacent: "writes to the same pty from a path other than log-update break log-update's cursor model." Candidate fixes:
-  - Drop the stderr instrumentation (or move it to a separate file via `fs.appendFileSync` rather than `process.stderr.write`), eliminating the amplifier seen in the AC-1 capture.
+  - Drop the stderr instrumentation (or move it to a separate file via `fs.appendFileSync` rather than `process.stderr.write`), eliminating the amplifier seen in the AC-1 capture. **(Implemented in #664: now writes to `.sequant/debug-renderer.jsonl`, override via `SEQUANT_DEBUG_RENDERER_FILE`.)**
   - Ensure subprocess output goes through `pause()`/`resume()` brackets (already done in #659).
   - Verify no other code path writes to `process.stdout`/`process.stderr` outside the renderer's bracketed regions.
 
