@@ -117,6 +117,13 @@ export interface RunRenderer {
   pause(): void;
   /** Resume live updates after streaming ends. */
   resume(): void;
+  /**
+   * #647 AC-3: print a notice line above the live zone without breaking
+   * log-update's cursor model. Use for retry/fallback messages emitted
+   * from outside the renderer's event flow (e.g., phase-executor retry
+   * paths).
+   */
+  appendNotice(message: string): void;
   /** Render the final summary block. */
   renderSummary(input: SummaryRenderInput): void;
   /** Tear down timers, cursor state, signal listeners. */

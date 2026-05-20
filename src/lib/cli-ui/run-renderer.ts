@@ -189,6 +189,17 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
     this.onResume();
   }
 
+  /**
+   * #647 AC-3: default notice path — just write to the renderer's stdout
+   * channel. NonTTYRenderer keeps this default (no live zone to manage).
+   * TTYRenderer overrides to clear the live zone before writing so
+   * log-update's cursor model stays consistent with the actual terminal.
+   */
+  appendNotice(message: string): void {
+    if (this.disposed) return;
+    this.stdoutWrite(message + "\n");
+  }
+
   abstract renderSummary(input: SummaryRenderInput): void;
 
   dispose(): void {
@@ -868,6 +879,25 @@ export class TTYRenderer extends BaseRenderer {
 
   protected onResume(): void {
     // Live zone redraws on next tick / event automatically.
+    this.redraw();
+  }
+
+  /**
+   * #647 AC-3: TTYRenderer override. Writes the notice above the live zone
+   * the same way `appendEventLine` does (clear → write → redraw), so
+   * log-update's `previousLineCount` stays consistent with the actual
+   * terminal state. If the renderer is already paused (e.g., during
+   * verbose subprocess streaming), skip the clear/redraw and just write;
+   * the eventual `resume()` will redraw cleanly.
+   */
+  appendNotice(message: string): void {
+    if (this.disposed) return;
+    if (this.paused) {
+      this.stdoutWrite(message + "\n");
+      return;
+    }
+    this.logUpdateClear();
+    this.stdoutWrite(message + "\n");
     this.redraw();
   }
 
