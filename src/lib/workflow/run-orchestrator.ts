@@ -39,7 +39,7 @@ import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
 import { LockManager, formatLockedMessage } from "../locks/index.js";
 import type { LockFile, SignalOtherResult } from "../locks/index.js";
-import { bracketedConsoleLog } from "./phase-executor.js";
+import { bracketedConsoleLog } from "./notice.js";
 
 /** Human-readable line for the run-orchestrator's `--signal-other` log (#637). */
 function formatSignalLine(

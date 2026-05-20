@@ -29,6 +29,7 @@ import type {
 import { classifyError } from "./error-classifier.js";
 import { ApiError } from "../errors.js";
 import { phaseRegistry } from "./phase-registry.js";
+import { bracketedConsoleLog } from "./notice.js";
 
 /**
  * Determine whether a phase's session must run inside the issue worktree.
@@ -52,37 +53,6 @@ function phaseRequiresWorktree(phase: Phase): boolean {
  */
 const COLD_START_THRESHOLD_SECONDS = 60;
 const COLD_START_MAX_RETRIES = 2;
-
-/**
- * #647 AC-3: print a line to stdout while the renderer is active without
- * breaking log-update's cursor model.
- *
- * `log-update` tracks `previousLineCount` from its own writes only; any
- * out-of-band write to the same pty advances the cursor without its
- * knowledge, so the next `eraseLines(previousLineCount)` undershoots and
- * strands the prior frame's top rows in scrollback as duplicate headers.
- *
- * Production routing:
- *   - With a `PhasePauseHandle` (TTY run): route through `appendNotice`,
- *     which clears the live zone, writes through the renderer's own
- *     stdout channel, then redraws. log-update's bookkeeping stays
- *     correct because the clear+redraw goes through the same path as
- *     a normal event line.
- *   - Without a handle (quiet mode / non-TTY / orchestrator): fall back
- *     to `console.log` — there's no live zone to corrupt.
- *
- * @internal Exported for testing.
- */
-export function bracketedConsoleLog(
-  spinner: PhasePauseHandle | undefined,
-  message: string,
-): void {
-  if (spinner) {
-    spinner.appendNotice(message);
-  } else {
-    console.log(message);
-  }
-}
 
 /**
  * Leading + trailing throttle. Fires the wrapped callback immediately on the
@@ -703,6 +673,7 @@ async function executePhase(
                 spinner?.pause();
                 verboseStreamingActive = true;
               }
+              // eslint-disable-next-line no-restricted-syntax -- spinner is paused above; verbose subprocess streaming bypasses log-update intentionally.
               process.stdout.write(chalk.gray(text));
             }
             reportActivity?.(text);
@@ -714,6 +685,7 @@ async function executePhase(
             spinner?.pause();
             verboseStreamingActive = true;
           }
+          // eslint-disable-next-line no-restricted-syntax -- spinner is paused above; verbose subprocess streaming bypasses log-update intentionally.
           process.stderr.write(chalk.red(data));
         }
       : undefined,

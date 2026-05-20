@@ -486,8 +486,7 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
   // A refactor that drops the `appendNotice` routing would re-introduce
   // the cursor-model leak; this test catches it directly.
   it("AC-3: bracketedConsoleLog routes through appendNotice when spinner is present", async () => {
-    const { bracketedConsoleLog } =
-      await import("../workflow/phase-executor.js");
+    const { bracketedConsoleLog } = await import("../workflow/notice.js");
 
     const calls: string[] = [];
     const fakeSpinner = {
@@ -519,8 +518,7 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
   // the manual pause/write/resume pattern in the AC-3 mechanism test above
   // with the actual production helper.
   it("AC-3 (e2e): bracketedConsoleLog via real renderer keeps scrollback clean and shows the notice in the VT", async () => {
-    const { bracketedConsoleLog } =
-      await import("../workflow/phase-executor.js");
+    const { bracketedConsoleLog } = await import("../workflow/notice.js");
     const { renderer, harness } = makeHarnessRenderer({ rows: 24, cols: 100 });
 
     renderer.registerIssue({ issueNumber: 504 });
