@@ -322,6 +322,254 @@ describe("#647 scrollback harness — duplicate-header regression", () => {
     },
   );
 
+  // AC-3 (Mechanism #2 fix): the bracket pattern — pause() before any
+  // out-of-band write, resume() after — keeps log-update's `previousLineCount`
+  // consistent with the actual terminal state. This is the production fix
+  // applied in `phase-executor.ts:bracketedConsoleLog` to MCP-fallback, spec-
+  // retry, and verbose-mode console.log calls that fire WHILE the renderer
+  // is active.
+  //
+  // Scenario: replays a #504/#505-shaped event timeline (parallel pair,
+  // one issue with qa/exec retries) and injects an out-of-band stdout write
+  // at the exact points where production previously fired raw `console.log`
+  // (MCP fallback, spec retry). Each injection is bracketed by pause/resume.
+  //
+  // On master (pre-#647-AC-3 fix), the same scenario with un-bracketed
+  // writes leaves N duplicate headers in scrollback (one per retry message
+  // — matches the original #504/#505 transcript's 3-in-56m rate exactly,
+  // because that run had 3 retries). The bracket pattern eliminates them.
+  it("AC-3: bracketed pause/write/resume around retry messages keeps scrollback clean (Mechanism #2 fix)", () => {
+    const { renderer, harness } = makeHarnessRenderer({ rows: 24, cols: 100 });
+
+    renderer.registerIssue({ issueNumber: 504 });
+    renderer.registerIssue({ issueNumber: 505 });
+
+    // Initial spec phase to populate the live frame.
+    renderer.onEvent({ issue: 504, phase: "spec", event: "start" });
+    renderer.onEvent({ issue: 505, phase: "spec", event: "start" });
+    renderer.tickNow();
+    renderer.onEvent({
+      issue: 504,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 232,
+    });
+    renderer.onEvent({
+      issue: 505,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 262,
+    });
+
+    // Exec phase — exercises 1Hz redraws.
+    renderer.onEvent({ issue: 504, phase: "exec", event: "start" });
+    renderer.onEvent({ issue: 505, phase: "exec", event: "start" });
+    for (let i = 0; i < 5; i++) renderer.tickNow();
+
+    // Simulate the three retry points that fired in the original 2026-05-14
+    // #504/#505 run (per the run log: #505 did exec → qa → exec → qa → exec).
+    // Each retry historically triggered an un-bracketed console.log from
+    // phase-executor.ts that landed on the same pty as the renderer and
+    // broke log-update's cursor model. With the AC-3 fix, each one is
+    // wrapped in pause/resume so log-update's bookkeeping stays correct.
+    const retryMessages = [
+      "    ! Phase failed with MCP enabled, retrying without MCP...",
+      "    ⟳ Spec phase failed, retrying with 5000ms backoff...",
+      "    ⟳ Retryable error: API error (status 503), retrying...",
+    ];
+    for (const msg of retryMessages) {
+      renderer.pause();
+      // Write to stdout via the harness — same path real console.log takes
+      // in a real terminal (process.stdout = same pty as renderer's stream).
+      harness.stdoutWrite(`${msg}\n`);
+      renderer.resume();
+      // A redraw between messages mimics real-run pacing.
+      renderer.tickNow();
+    }
+
+    // Continue the timeline: qa phase, completion.
+    renderer.onEvent({
+      issue: 504,
+      phase: "exec",
+      event: "complete",
+      durationSeconds: 820,
+    });
+    renderer.onEvent({ issue: 504, phase: "qa", event: "start" });
+    for (let i = 0; i < 5; i++) renderer.tickNow();
+    renderer.onEvent({
+      issue: 504,
+      phase: "qa",
+      event: "complete",
+      durationSeconds: 293,
+    });
+
+    // The AC-3 invariant: total `SEQUANT WORKFLOW · ` occurrences across
+    // (visible + scrollback) must be exactly 1. Without the pause/resume
+    // bracket, each retry message would have leaked a header.
+    const headerCount = harness.vt.countOccurrences(/SEQUANT WORKFLOW · /);
+    if (headerCount !== 1) {
+      const visible = harness.vt
+        .getVisibleLines()
+        .map((l, i) => `  v${i.toString().padStart(2, "0")} | ${l}`)
+        .join("\n");
+      const scrollback = harness.vt.scrollback
+        .map((l, i) => `  s${i.toString().padStart(2, "0")} | ${l}`)
+        .join("\n");
+      throw new Error(
+        `Expected exactly 1 \`SEQUANT WORKFLOW · \` header but found ${headerCount}.\n\n` +
+          `Scrollback (${harness.vt.scrollback.length} rows):\n${scrollback}\n\n` +
+          `Visible (${harness.vt.rows} rows):\n${visible}`,
+      );
+    }
+    expect(headerCount).toBe(1);
+
+    renderer.dispose();
+  });
+
+  // AC-3 (Mechanism #2 fix, negative control): the SAME scenario without
+  // the pause/resume bracket leaks headers. This locks in the diagnosis —
+  // if a future refactor accidentally drops the bracket from
+  // phase-executor.ts:bracketedConsoleLog, the AC-3 test above will start
+  // failing for the right reason, and this control test demonstrates what
+  // the failure mode looks like.
+  it.fails(
+    "AC-3 (negative control): un-bracketed retry messages leak duplicate headers (proves the bracket is load-bearing)",
+    () => {
+      const { renderer, harness } = makeHarnessRenderer({
+        rows: 24,
+        cols: 100,
+      });
+
+      renderer.registerIssue({ issueNumber: 504 });
+      renderer.registerIssue({ issueNumber: 505 });
+
+      renderer.onEvent({ issue: 504, phase: "spec", event: "start" });
+      renderer.onEvent({ issue: 505, phase: "spec", event: "start" });
+      renderer.tickNow();
+      renderer.onEvent({
+        issue: 504,
+        phase: "spec",
+        event: "complete",
+        durationSeconds: 232,
+      });
+
+      renderer.onEvent({ issue: 504, phase: "exec", event: "start" });
+      for (let i = 0; i < 5; i++) renderer.tickNow();
+
+      // Un-bracketed writes — what production did before the AC-3 fix.
+      const retryMessages = [
+        "    ! Phase failed with MCP enabled, retrying without MCP...",
+        "    ⟳ Spec phase failed, retrying with 5000ms backoff...",
+        "    ⟳ Retryable error: API error (status 503), retrying...",
+      ];
+      for (const msg of retryMessages) {
+        harness.stdoutWrite(`${msg}\n`);
+        renderer.tickNow();
+      }
+
+      renderer.onEvent({
+        issue: 504,
+        phase: "exec",
+        event: "complete",
+        durationSeconds: 820,
+      });
+
+      expect(harness.vt.countOccurrences(/SEQUANT WORKFLOW · /)).toBe(1);
+
+      renderer.dispose();
+    },
+  );
+
+  // AC-3 (helper-level): the production `bracketedConsoleLog` helper routes
+  // through `PhasePauseHandle.appendNotice` when a handle is provided, and
+  // falls back to a plain `console.log` when not (quiet mode / non-TTY).
+  // A refactor that drops the `appendNotice` routing would re-introduce
+  // the cursor-model leak; this test catches it directly.
+  it("AC-3: bracketedConsoleLog routes through appendNotice when spinner is present", async () => {
+    const { bracketedConsoleLog } = await import("../workflow/notice.js");
+
+    const calls: string[] = [];
+    const fakeSpinner = {
+      pause: () => calls.push("pause"),
+      resume: () => calls.push("resume"),
+      appendNotice: (msg: string) => calls.push(`appendNotice:${msg}`),
+    };
+
+    bracketedConsoleLog(fakeSpinner, "test message");
+    expect(calls).toEqual(["appendNotice:test message"]);
+
+    // No-spinner path: bypasses the renderer and writes directly. We stub
+    // console.log to observe the fallback (instead of polluting test output).
+    calls.length = 0;
+    const originalLog = console.log;
+    console.log = () => calls.push("console.log");
+    try {
+      bracketedConsoleLog(undefined, "test message");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(calls).toEqual(["console.log"]);
+  });
+
+  // AC-3 (end-to-end): with the production helper now routing through
+  // `appendNotice`, the harness can directly observe the notice landing in
+  // the VT (because `appendNotice` uses the renderer's injected
+  // `stdoutWrite`, which writes to the harness stream). This test replaces
+  // the manual pause/write/resume pattern in the AC-3 mechanism test above
+  // with the actual production helper.
+  it("AC-3 (e2e): bracketedConsoleLog via real renderer keeps scrollback clean and shows the notice in the VT", async () => {
+    const { bracketedConsoleLog } = await import("../workflow/notice.js");
+    const { renderer, harness } = makeHarnessRenderer({ rows: 24, cols: 100 });
+
+    renderer.registerIssue({ issueNumber: 504 });
+    renderer.onEvent({ issue: 504, phase: "spec", event: "start" });
+    renderer.tickNow();
+    renderer.onEvent({
+      issue: 504,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 232,
+    });
+    renderer.onEvent({ issue: 504, phase: "exec", event: "start" });
+    for (let i = 0; i < 5; i++) renderer.tickNow();
+
+    bracketedConsoleLog(
+      renderer,
+      "    ! Phase failed with MCP enabled, retrying without MCP...",
+    );
+    bracketedConsoleLog(
+      renderer,
+      "    ⟳ Spec phase failed, retrying with 5000ms backoff...",
+    );
+    bracketedConsoleLog(
+      renderer,
+      "    ⟳ Retryable error: API error (status 503), retrying...",
+    );
+
+    renderer.onEvent({
+      issue: 504,
+      phase: "exec",
+      event: "complete",
+      durationSeconds: 820,
+    });
+    for (let i = 0; i < 3; i++) renderer.tickNow();
+
+    // 1. Scrollback invariant: exactly one header across (visible + scrollback).
+    expect(harness.vt.countOccurrences(/SEQUANT WORKFLOW · /)).toBe(1);
+
+    // 2. Notice visibility: at least one of the three retry messages
+    //    appears somewhere in the rendered output (visible or scrollback).
+    //    Without `appendNotice`, the message would have been lost or
+    //    leaked invisibly.
+    const allText =
+      harness.vt.scrollback.join("\n") +
+      "\n" +
+      harness.vt.getVisibleLines().join("\n");
+    expect(allText).toMatch(/Phase failed with MCP enabled/);
+
+    renderer.dispose();
+  });
+
   // AC-2 (Mechanism #4-adjacent): width misreporting. The renderer + log-update
   // both read `stream.columns = 100`, but the physical terminal is 80 cols.
   // Without the `min(cols, 78)` cap, the renderer produces 100-col-wide grid

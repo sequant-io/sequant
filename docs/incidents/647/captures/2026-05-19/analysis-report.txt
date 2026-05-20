@@ -1,0 +1,40 @@
+# AC-1 re-capture forensic trace analysis (2026-05-19 / post-#664)
+
+## Input shape
+  terminal.typescript: 838927 bytes
+  debug-renderer.jsonl: 796 records
+  Op distribution: impl=785 clear=9 done=2
+
+## Sanity: typescript should NOT contain embedded debug lines
+  Embedded 'SEQUANT_DEBUG_RENDERER ' occurrences: 0
+  Expected: 0 (file sink isolates debug output from the pty)
+
+## VT replay — terminal dimensions
+  VT: 213 × 65 (sourced from first debug record)
+
+## Header occurrence counts (VT-replayed, the only correct measurement)
+  Total (visible + scrollback): 2
+  Scrollback rows containing header: 0
+    (of 0 total scrollback rows)
+  Visible rows containing header: 2
+
+## Sanity rule-outs (from debug records)
+  rendererCols !== stdoutCols mismatches: 0 / 796
+  logicalLines !== wrappedLineCount (impl ops): 0 / 785
+
+## Symptom 2 (bundled #662): byte-integrity of scrollback headers
+  Corrupted scrollback header lines: 0
+
+## 2171× claim validation
+  2026-05-17 capture (WITH stderr instrumentation in pty): 2171 scrollback headers
+  2026-05-17 capture (modeled WITHOUT stderr): 1 scrollback header
+  2026-05-19 capture (this run, with file sink): 0 scrollback headers
+
+  Verdict: INCONCLUSIVE — no scrollback pressure. 0 of 0 scrollback rows populated: the renderer's live frame fit inside the visible viewport for the entire run, so Mechanism #1 had no opportunity to fire. This validates the FILE SINK architecturally (sanity rule-outs above) but does NOT validate the AC-3 residual rate. Re-capture with a smaller terminal (≤30 rows) and/or a parallel pair with retries to actually stress the original #504/#505 scenario.
+
+## AC-3 fate recommendation
+  See `notes.md` Decision rule table for full criteria.
+  Observed scrollback count: 0
+  Scrollback rows populated: 0
+  → INCONCLUSIVE. Capture did not exercise the scrollback path; AC-3 cannot be sized from this data.
+    Re-capture in a smaller terminal (≤30 rows) with a parallel pair that has retries.

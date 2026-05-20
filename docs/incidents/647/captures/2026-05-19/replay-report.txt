@@ -1,0 +1,35 @@
+# Event-replay forensic — #647 AC-3 probe via #504/#505 timeline
+
+## Source
+  Run log: /Users/tony/Projects/sequant/.sequant/logs/run-2026-05-14T03-16-47-1c43f889-6e0f-46fa-a892-3041227b8704.json
+  Run start: 2026-05-14T03:16:47.538Z
+  Run end: 2026-05-14T03:50:37.849Z
+  Issues: #504, #505
+  Phases replayed: 9
+  Total events emitted: 18
+
+## Harness
+  VT: 100 × 24
+  log-update: real `createLogUpdate` bound to VT stream
+  Renderer: real TTYRenderer (no test stub)
+
+## Header occurrence counts
+  Total (visible + scrollback): 1
+  Scrollback rows containing header: 0 (of 7 total scrollback rows)
+  Visible rows containing header: 1
+
+## Sanity
+  Scrollback populated: YES
+
+## Verdict
+  PASS — scrollback was populated but ≤1 header survives. The renderer +
+  log-update + file sink combination correctly erases prior frames.
+  This is strong evidence that #647 AC-3 has no real residual under
+  the original #504/#505 workload pattern. Consider closing #647.
+
+## Final visible viewport (last 5 rows)
+  |   │ #505     │ ✘ failed · 0s · Replay-synthesized failure from run log       │
+  |   └──────────┴───────────────────────────────────────────────────────────────┘
+  | 
+  |   1 done · 0 running · 0 queued · 1 failed
+  | 
