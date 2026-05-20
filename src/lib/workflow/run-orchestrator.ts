@@ -39,6 +39,7 @@ import { StateManager } from "./state-manager.js";
 import { ShutdownManager } from "../shutdown.js";
 import { LockManager, formatLockedMessage } from "../locks/index.js";
 import type { LockFile, SignalOtherResult } from "../locks/index.js";
+import { bracketedConsoleLog } from "./phase-executor.js";
 
 /** Human-readable line for the run-orchestrator's `--signal-other` log (#637). */
 function formatSignalLine(
@@ -811,7 +812,12 @@ export class RunOrchestrator {
       if (resolvedBatches) {
         for (let batchIdx = 0; batchIdx < resolvedBatches.length; batchIdx++) {
           const batch = resolvedBatches[batchIdx];
-          console.log(
+          // #647 AC-3: between-batches in a multi-batch run, the renderer is
+          // still alive and may have a populated live zone from the previous
+          // batch. Route through `bracketedConsoleLog` so log-update's cursor
+          // model stays consistent.
+          bracketedConsoleLog(
+            phasePauseHandle,
             chalk.blue(
               `\n  Batch ${batchIdx + 1}/${resolvedBatches.length}: Issues ${batch.map((n) => `#${n}`).join(", ")}`,
             ),
@@ -820,7 +826,8 @@ export class RunOrchestrator {
           results.push(...batchResults);
           const batchFailed = batchResults.some((r) => !r.success);
           if (batchFailed && config.sequential) {
-            console.log(
+            bracketedConsoleLog(
+              phasePauseHandle,
               chalk.yellow(
                 `\n  !  Batch ${batchIdx + 1} failed, stopping batch execution`,
               ),
