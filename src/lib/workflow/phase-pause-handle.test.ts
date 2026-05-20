@@ -57,8 +57,9 @@ function makeConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
 function makeHandle(): PhasePauseHandle & {
   pause: ReturnType<typeof vi.fn>;
   resume: ReturnType<typeof vi.fn>;
+  appendNotice: ReturnType<typeof vi.fn>;
 } {
-  return { pause: vi.fn(), resume: vi.fn() };
+  return { pause: vi.fn(), resume: vi.fn(), appendNotice: vi.fn() };
 }
 
 beforeEach(() => {

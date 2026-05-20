@@ -70,6 +70,13 @@ export type Phase = string;
 export interface PhasePauseHandle {
   pause(): void;
   resume(): void;
+  /**
+   * #647 AC-3: print a notice line (e.g., retry/fallback message) without
+   * breaking log-update's cursor model. Implementations clear the live zone,
+   * write the line through the renderer's own stdout channel, then redraw.
+   * In quiet / non-TTY paths this degrades to a plain write.
+   */
+  appendNotice(message: string): void;
 }
 
 /**

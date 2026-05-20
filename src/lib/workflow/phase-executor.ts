@@ -54,6 +54,37 @@ const COLD_START_THRESHOLD_SECONDS = 60;
 const COLD_START_MAX_RETRIES = 2;
 
 /**
+ * #647 AC-3: print a line to stdout while the renderer is active without
+ * breaking log-update's cursor model.
+ *
+ * `log-update` tracks `previousLineCount` from its own writes only; any
+ * out-of-band write to the same pty advances the cursor without its
+ * knowledge, so the next `eraseLines(previousLineCount)` undershoots and
+ * strands the prior frame's top rows in scrollback as duplicate headers.
+ *
+ * Production routing:
+ *   - With a `PhasePauseHandle` (TTY run): route through `appendNotice`,
+ *     which clears the live zone, writes through the renderer's own
+ *     stdout channel, then redraws. log-update's bookkeeping stays
+ *     correct because the clear+redraw goes through the same path as
+ *     a normal event line.
+ *   - Without a handle (quiet mode / non-TTY / orchestrator): fall back
+ *     to `console.log` — there's no live zone to corrupt.
+ *
+ * @internal Exported for testing.
+ */
+export function bracketedConsoleLog(
+  spinner: PhasePauseHandle | undefined,
+  message: string,
+): void {
+  if (spinner) {
+    spinner.appendNotice(message);
+  } else {
+    console.log(message);
+  }
+}
+
+/**
  * Leading + trailing throttle. Fires the wrapped callback immediately on the
  * first call, drops subsequent calls that arrive inside `intervalMs` but
  * remembers the latest payload, and fires one final "trailing" call with that
@@ -508,8 +539,11 @@ async function executePhase(
   if (config.dryRun) {
     // Dry run - show the prompt that would be sent, then return
     if (config.verbose) {
-      console.log(chalk.gray(`    Would execute: /${phase} ${issueNumber}`));
-      console.log(chalk.gray(`    Prompt: ${prompt}`));
+      bracketedConsoleLog(
+        spinner,
+        chalk.gray(`    Would execute: /${phase} ${issueNumber}`),
+      );
+      bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
     }
     return {
       phase,
@@ -520,9 +554,9 @@ async function executePhase(
   }
 
   if (config.verbose) {
-    console.log(chalk.gray(`    Prompt: ${prompt}`));
+    bracketedConsoleLog(spinner, chalk.gray(`    Prompt: ${prompt}`));
     if (worktreePath && phaseRequiresWorktree(phase)) {
-      console.log(chalk.gray(`    Worktree: ${worktreePath}`));
+      bracketedConsoleLog(spinner, chalk.gray(`    Worktree: ${worktreePath}`));
     }
   }
 
@@ -835,7 +869,8 @@ export async function executePhaseWithRetry(
               typedError instanceof ApiError
                 ? `API error (status ${typedError.metadata.statusCode ?? "unknown"})`
                 : typedError.name;
-            console.log(
+            bracketedConsoleLog(
+              spinner,
               chalk.yellow(
                 `\n    ⟳ Retryable error: ${label}, retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
               ),
@@ -852,7 +887,8 @@ export async function executePhaseWithRetry(
       // Cold-start failure detected — retry
       if (attempt < COLD_START_MAX_RETRIES) {
         if (config.verbose) {
-          console.log(
+          bracketedConsoleLog(
+            spinner,
             chalk.yellow(
               `\n    ⟳ Cold-start failure detected (${duration.toFixed(1)}s), retrying... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
             ),
@@ -869,7 +905,8 @@ export async function executePhaseWithRetry(
   // This handles npx-based MCP servers that fail on first run due to cold-cache issues.
   // Skip for `loop` phase — MCP is never the cause of loop failures (#488).
   if (config.mcp && !lastResult!.success && !skipColdStartRetry) {
-    console.log(
+    bracketedConsoleLog(
+      spinner,
       chalk.yellow(
         `\n    ! Phase failed with MCP enabled, retrying without MCP...`,
       ),
@@ -892,7 +929,8 @@ export async function executePhaseWithRetry(
     );
 
     if (retryResult.success) {
-      console.log(
+      bracketedConsoleLog(
+        spinner,
         chalk.green(
           `    ✓ Phase succeeded without MCP (MCP cold-start issue detected)`,
         ),
@@ -916,7 +954,8 @@ export async function executePhaseWithRetry(
   // than other phases (~8.6%), so one extra retry with backoff recovers most cases.
   if (phase === "spec" && !lastResult!.success) {
     for (let i = 0; i < SPEC_EXTRA_RETRIES; i++) {
-      console.log(
+      bracketedConsoleLog(
+        spinner,
         chalk.yellow(
           `\n    ⟳ Spec phase failed, retrying with ${SPEC_RETRY_BACKOFF_MS}ms backoff... (spec retry ${i + 1}/${SPEC_EXTRA_RETRIES})`,
         ),
@@ -935,7 +974,10 @@ export async function executePhaseWithRetry(
       );
 
       if (specRetryResult.success) {
-        console.log(chalk.green(`    ✓ Spec phase succeeded on retry`));
+        bracketedConsoleLog(
+          spinner,
+          chalk.green(`    ✓ Spec phase succeeded on retry`),
+        );
         return specRetryResult;
       }
 
