@@ -649,10 +649,14 @@ async function executePhase(
 
   // Safety: never resume a session when worktree isolation is active.
   // Even if THIS phase doesn't use the worktree, a previous phase may have
-  // created the session there. Resuming from a different cwd crashes the SDK
-  // (exit code 1). The registry's `requiresWorktree` field prevents this by
-  // design, but this guard catches edge cases (e.g. a new phase registered
-  // without setting `requiresWorktree: true`).
+  // created the session there. Claude Code namespaces session storage by cwd
+  // (~/.claude/projects/<encoded-cwd>/<session-id>.jsonl), so resuming from a
+  // different cwd can't locate the session — the SDK returns a recoverable
+  // `error_during_execution` ("No conversation found with session ID"), failing
+  // the phase (verified against claude-agent-sdk@0.3.142; see #674). The
+  // registry's `requiresWorktree` field prevents this by design, but this guard
+  // catches edge cases (e.g. a new phase registered without `requiresWorktree:
+  // true`). #674 tracks moving this into a driver-owned, cwd-keyed resume check.
   const canResume = sessionId && !worktreePath;
 
   // Build AgentExecutionConfig for the driver
