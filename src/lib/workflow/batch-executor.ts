@@ -369,6 +369,7 @@ export async function executeBatch(
     packageManager,
     baseBranch,
     onProgress,
+    onPhasePlan,
     phasePauseHandle,
   } = batchCtx;
   const results: IssueResult[] = [];
@@ -403,6 +404,7 @@ export async function executeBatch(
       packageManager,
       baseBranch,
       onProgress,
+      onPhasePlan,
       phasePauseHandle,
     };
     const result = await runIssueWithLogging(ctx);
@@ -438,6 +440,7 @@ export async function runIssueWithLogging(
     packageManager,
     baseBranch,
     onProgress,
+    onPhasePlan,
     phasePauseHandle,
   } = ctx;
   const worktreePath = worktree?.path;
@@ -753,6 +756,20 @@ export async function runIssueWithLogging(
       if (specIndex !== -1) {
         phases.splice(specIndex + 1, 0, "security-review");
       }
+    }
+  }
+
+  // #672 AC-2: surface the resolved phase pipeline to the renderer so it can
+  // seed pending cells for every phase before any one of them fires. This
+  // runs once per issue after all phase-list mutations (auto-detect, resume
+  // filter, testgen/security-review insertion). The full pipeline for the row
+  // is `spec` (if it already ran) plus the remaining `phases` array.
+  if (onPhasePlan) {
+    const fullPlan = specAlreadyRan ? ["spec", ...phases] : [...phases];
+    try {
+      onPhasePlan(issueNumber, fullPlan);
+    } catch {
+      /* renderer wiring errors must not halt execution */
     }
   }
 

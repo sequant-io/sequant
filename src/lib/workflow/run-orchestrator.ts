@@ -17,6 +17,7 @@ import type {
   BatchExecutionContext,
   IssueExecutionContext,
   ProgressCallback,
+  PhasePlanCallback,
   PhasePauseHandle,
 } from "./types.js";
 import type {
@@ -130,6 +131,8 @@ export interface OrchestratorConfig {
   baseBranch?: string;
   /** Per-phase progress callback (parallel mode) */
   onProgress?: ProgressCallback;
+  /** #672 AC-2: phase-plan callback forwarded into per-issue contexts. */
+  onPhasePlan?: PhasePlanCallback;
   /**
    * Optional live-zone pause handle (#656). Forwarded to every issue's
    * batch context so `executePhaseWithRetry` can quiesce the renderer
@@ -153,6 +156,9 @@ export interface RunInit {
   baseBranch?: string;
   /** Per-phase progress callback */
   onProgress?: ProgressCallback;
+  /** #672 AC-2: phase-plan callback. Fired once per issue once the executor
+   * has resolved the final phase pipeline. */
+  onPhasePlan?: PhasePlanCallback;
   /**
    * Optional live-zone pause handle (#656). Threaded through to the
    * `OrchestratorConfig` so verbose Claude streaming pauses the renderer's
@@ -804,6 +810,7 @@ export class RunOrchestrator {
       packageManager: manifest.packageManager,
       baseBranch,
       onProgress,
+      onPhasePlan: init.onPhasePlan,
       phasePauseHandle,
     });
     init.onOrchestratorReady?.(orchestrator);
@@ -938,6 +945,7 @@ export class RunOrchestrator {
       packageManager: this.cfg.packageManager,
       baseBranch: this.cfg.baseBranch,
       onProgress: this.cfg.onProgress,
+      onPhasePlan: this.cfg.onPhasePlan,
       phasePauseHandle: this.cfg.phasePauseHandle,
     };
   }
@@ -1071,6 +1079,7 @@ export class RunOrchestrator {
       packageManager,
       baseBranch,
       onProgress,
+      onPhasePlan,
       phasePauseHandle,
     } = batchCtx;
 
@@ -1098,6 +1107,7 @@ export class RunOrchestrator {
       packageManager,
       baseBranch,
       onProgress,
+      onPhasePlan,
       phasePauseHandle,
     };
 

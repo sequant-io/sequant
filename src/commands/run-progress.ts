@@ -10,12 +10,18 @@
 import { createRunRenderer } from "../lib/cli-ui/run-renderer.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
+import type {
+  ProgressCallback,
+  PhasePlanCallback,
+} from "../lib/workflow/types.js";
 
 export interface ProgressWiring {
   renderer: RunRenderer | null;
   heartbeat: LivenessHeartbeat | null;
   onProgress: ProgressCallback | undefined;
+  /** #672 AC-2: forwarded to the orchestrator so batch-executor can hand the
+   *  resolved phase pipeline back to the renderer once it's known. */
+  onPhasePlan: PhasePlanCallback | undefined;
 }
 
 /**
@@ -102,5 +108,11 @@ export function buildProgressWiring(args: {
     };
   }
 
-  return { renderer, heartbeat, onProgress };
+  // #672 AC-2: only the renderer path consumes a phase plan; quiet / TUI
+  // modes leave this undefined and the orchestrator no-ops the callback.
+  const onPhasePlan: PhasePlanCallback | undefined = renderer
+    ? (issue, phases) => renderer.setPhasePlan(issue, phases)
+    : undefined;
+
+  return { renderer, heartbeat, onProgress, onPhasePlan };
 }
