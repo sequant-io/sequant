@@ -18,6 +18,20 @@ from the wire-amplifiers that made the 2026-05-17 capture non-diagnostic.
 Run outcome: #593 failed (`exec produced no changes`), #627 — run completed; this
 is sufficient to exercise the renderer's running→summary transition.
 
+### Capture metadata (#668 template)
+
+| Field | vscode | iterm2 |
+|---|---|---|
+| `wc -l terminal.typescript` | 5996 | 2630 |
+| `wc -l debug-renderer.jsonl` | 503 | 228 |
+| `grep -c SEQUANT_DEBUG_RENDERER terminal.typescript` | 0 (file sink active ✓) | 0 (file sink active ✓) |
+| Symptom A in byte stream (`grep '✔.*error result'`) | 0 (not present) | 0 (not present) |
+
+Date / time UTC, exact `sequant --version`, and wall-clock duration were not
+recorded on the `matcha-maps` host at capture time (2026-05-28) and are not
+reconstructable from the artifacts; left unfilled rather than back-filled with
+this repo's values.
+
 ## What was observed on screen
 
 - **VS Code:** live, on-screen glyph corruption (mid-string overlay; box-drawing
