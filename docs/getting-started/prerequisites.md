@@ -31,14 +31,14 @@ gh auth login
 gh auth status
 ```
 
-### Node.js 20+
+### Node.js 22.12+
 
-Node.js 20 or higher is required for the CLI.
+Node.js 22.12 or higher is required for the CLI. (Node 20 reached EOL in April 2026.)
 
 ```bash
 # Check version
 node --version
-# Should output v20.x.x or higher
+# Should output v22.12.x or higher
 ```
 
 ### Git
