@@ -81,6 +81,15 @@ export interface IssueRegistration {
    * is known) and switches to the normal phase header once spec completes.
    */
   autoDetect?: boolean;
+  /**
+   * #672 AC-2: the resolved phase pipeline for this issue. When set, the live
+   * zone seeds one pending cell per planned phase so users see the full
+   * roadmap before any phase fires. Cells transition pending → running → ✔/✘
+   * in place via subsequent `onEvent` calls (#672 AC-3). When the plan isn't
+   * known at registration time (auto-detect mode), call `setPhasePlan` once
+   * spec resolves it.
+   */
+  plannedPhases?: string[];
 }
 
 /** Per-issue summary fields used by the final summary table. */
@@ -111,6 +120,13 @@ export interface RunRenderer {
   registerIssue(reg: IssueRegistration): void;
   /** Feed a progress event from batch-executor. */
   onEvent(event: ProgressEvent): void;
+  /**
+   * #672 AC-2: set or replace the planned phase pipeline for an already-
+   * registered issue. Used by auto-detect mode after spec resolves the plan.
+   * No-op for unregistered issues (defensive — same as `setPullRequest`).
+   * An empty `phases` array clears the plan back to streaming-only behaviour.
+   */
+  setPhasePlan(issue: number, phases: string[]): void;
   /** Mark an issue as completed with PR info. Called by orchestrator. */
   setPullRequest(issue: number, prNumber: number, prUrl: string): void;
   /** Pause live updates so verbose streaming can write through. */

@@ -143,6 +143,12 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
 
   registerIssue(reg: IssueRegistration): void {
     if (this.issues.has(reg.issueNumber)) return;
+    // #672 AC-2: seed pending cells when the plan is known at registration.
+    // Empty arrays fall back to streaming-only behaviour (AC-2 edge case).
+    const phases: PhaseState[] =
+      reg.plannedPhases && reg.plannedPhases.length > 0
+        ? reg.plannedPhases.map((name) => ({ name, status: "pending" }))
+        : [];
     this.issues.set(reg.issueNumber, {
       issueNumber: reg.issueNumber,
       title: reg.title,
@@ -150,8 +156,29 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
       branch: reg.branch,
       autoDetect: reg.autoDetect,
       status: "queued",
-      phases: [],
+      phases,
     });
+    this.afterStateChange();
+  }
+
+  setPhasePlan(issue: number, phases: string[]): void {
+    const state = this.issues.get(issue);
+    if (!state) return;
+    // #672 AC-2: rebuild the phase array from the resolved plan, preserving
+    // any phase state already captured from events that fired before the plan
+    // resolved (e.g. spec ran first in auto-detect mode and finished before
+    // setPhasePlan landed). Phases already seen keep their state; new planned
+    // phases enter as `pending`.
+    const existing = new Map(state.phases.map((p) => [p.name, p]));
+    state.phases = phases.map(
+      (name) => existing.get(name) ?? { name, status: "pending" },
+    );
+    // Any previously-seen phases that aren't in the new plan still belong on
+    // the row — they actually ran. Append them at the end so the planned order
+    // is preserved for unplayed phases.
+    for (const prev of existing.values()) {
+      if (!phases.includes(prev.name)) state.phases.push(prev);
+    }
     this.afterStateChange();
   }
 
@@ -797,6 +824,13 @@ export class TTYRenderer extends BaseRenderer {
   }
 
   private appendEventLine(event: ProgressEvent, state: IssueState): void {
+    // #672 AC-1: drop the `▸ start` journal line. The live zone already shows
+    // the phase as running in place, so appending a permanent scrollback line
+    // duplicates that information and produces the "two-row" visual reported
+    // in #672. `complete` and `failed` still append (they are the durable
+    // record of what ran). The redraw in `afterEvent` keeps the live zone
+    // fresh so the transition pending → running is still visible.
+    if (event.event === "start") return;
     // Clear the live zone so the appended event becomes a real `console.log`
     // line above it; the live zone redraws below.
     this.logUpdateClear();
@@ -813,9 +847,7 @@ export class TTYRenderer extends BaseRenderer {
             "events",
           );
     let line: string;
-    if (event.event === "start") {
-      line = `  ${c.cyan("▸")} #${event.issue} ${event.phase}${retrySuffix}`;
-    } else if (event.event === "complete") {
+    if (event.event === "complete") {
       const durStr =
         event.durationSeconds !== undefined
           ? `  ${formatElapsedTime(event.durationSeconds)}`
@@ -1247,7 +1279,15 @@ export class TTYRenderer extends BaseRenderer {
   private statusSubLines(state: IssueState): string[] {
     const c = colorize(this.noColor);
     const lines: string[] = [];
-    if (state.status === "running" || state.status === "queued") {
+    // #672 AC-3: include the failed state so the row that just failed still
+    // renders its phase cells (the failing cell shows ✘ in place). Without
+    // this, a failure on an unstarted phase hides the entire pipeline behind
+    // the header summary, making it impossible to see how far the run got.
+    if (
+      state.status === "running" ||
+      state.status === "queued" ||
+      state.status === "failed"
+    ) {
       const seq = state.phases
         .filter((p) => p.name !== "loop")
         .map((p) => {
@@ -1257,7 +1297,11 @@ export class TTYRenderer extends BaseRenderer {
             );
           if (p.status === "failed") return c.red(`${p.name} ✘`);
           if (p.status === "running") return c.cyan(`${p.name} running`);
-          return c.gray(`${p.name} queued`);
+          // #672 AC-3: pending cells render as `name –` (en dash) so the live
+          // zone reads as a roadmap when a phase plan is set via registration
+          // or `setPhasePlan`. Without a plan, no pending cells are seeded so
+          // this branch is unreachable — preserving prior single-row output.
+          return c.gray(`${p.name} –`);
         })
         .join("  →  ");
       if (seq) lines.push(seq);
