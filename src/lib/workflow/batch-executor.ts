@@ -32,6 +32,7 @@ import {
   filterResumedPhases,
 } from "./worktree-manager.js";
 import { executePhaseWithRetry } from "./phase-executor.js";
+import type { ResumeHandle } from "./drivers/index.js";
 import {
   detectPhasesFromLabels,
   parseRecommendedWorkflow,
@@ -447,7 +448,8 @@ export async function runIssueWithLogging(
   const startTime = Date.now();
   const phaseResults: PhaseResult[] = [];
   let loopTriggered = false;
-  let sessionId: string | undefined;
+  // Cross-phase resume token, driver-tagged and cwd-bound (#674).
+  let resumeHandle: ResumeHandle | undefined;
 
   // In parallel mode, suppress per-issue terminal output to prevent interleaving.
   // The caller (run.ts) handles progress display via updateProgress().
@@ -552,19 +554,22 @@ export async function runIssueWithLogging(
       issueNumber,
       "spec",
       withActivityHook(config, issueNumber, "spec", onProgress),
-      sessionId,
+      resumeHandle,
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
       phasePauseHandle,
     );
     const specEndTime = new Date();
 
-    if (specResult.sessionId) {
-      sessionId = specResult.sessionId;
-      // Update session ID in state for resume capability
+    if (specResult.resumeHandle) {
+      resumeHandle = specResult.resumeHandle;
+      // Persist resume token + originCwd for cross-process resume (#674).
       if (stateManager) {
         try {
-          await stateManager.updateSessionId(issueNumber, specResult.sessionId);
+          await stateManager.updateResumeHandle(
+            issueNumber,
+            specResult.resumeHandle,
+          );
         } catch {
           // State tracking errors shouldn't stop execution
         }
@@ -818,20 +823,22 @@ export async function runIssueWithLogging(
         issueNumber,
         phase,
         withActivityHook(issueConfig, issueNumber, phase, onProgress),
-        sessionId,
+        resumeHandle,
         worktreePath,
         shutdownManager,
         phasePauseHandle,
       );
       const phaseEndTime = new Date();
 
-      // Capture session ID for subsequent phases
-      if (result.sessionId) {
-        sessionId = result.sessionId;
-        // Update session ID in state for resume capability
+      // Capture resume handle for subsequent phases (#674).
+      if (result.resumeHandle) {
+        resumeHandle = result.resumeHandle;
         if (stateManager) {
           try {
-            await stateManager.updateSessionId(issueNumber, result.sessionId);
+            await stateManager.updateResumeHandle(
+              issueNumber,
+              result.resumeHandle,
+            );
           } catch {
             // State tracking errors shouldn't stop execution
           }
@@ -972,7 +979,7 @@ export async function runIssueWithLogging(
             issueNumber,
             "loop",
             withActivityHook(loopConfig, issueNumber, "loop", onProgress),
-            sessionId,
+            resumeHandle,
             worktreePath,
             shutdownManager,
             phasePauseHandle,
@@ -1002,8 +1009,8 @@ export async function runIssueWithLogging(
             }
           }
 
-          if (loopResult.sessionId) {
-            sessionId = loopResult.sessionId;
+          if (loopResult.resumeHandle) {
+            resumeHandle = loopResult.resumeHandle;
           }
 
           if (loopResult.success) {

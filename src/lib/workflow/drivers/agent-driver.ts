@@ -7,6 +7,23 @@
  */
 
 /**
+ * Resume handle for a previous agent session.
+ *
+ * Replaces the opaque `sessionId` string with a driver-tagged value that
+ * records the cwd the session was created in. Drivers use this to enforce
+ * cwd-safe resume (Claude Code: session storage is cwd-namespaced; Codex:
+ * cwd-independent SDK requires driver-side gating). See #674.
+ */
+export interface ResumeHandle {
+  /** Driver name that created this handle (e.g. "claude-code", "codex"). */
+  driver: string;
+  /** Driver-specific resume token (session id, thread id, etc.). */
+  token: string;
+  /** Absolute cwd the session was created in. */
+  originCwd: string;
+}
+
+/**
  * Configuration passed to an agent for phase execution.
  */
 export interface AgentExecutionConfig {
@@ -16,8 +33,17 @@ export interface AgentExecutionConfig {
   phaseTimeout: number;
   verbose: boolean;
   mcp: boolean;
-  /** Resume a previous session (driver-specific; ignored if unsupported) */
+  /**
+   * Resume a previous session (driver-specific; ignored if unsupported).
+   *
+   * @deprecated Use {@link resumeHandle}. The opaque `sessionId` field is
+   * retained for one release to keep in-flight `.sequant/state.json` records
+   * resumable across upgrade. Drivers MUST prefer `resumeHandle` when both
+   * are set. See #674.
+   */
   sessionId?: string;
+  /** Driver-tagged resume handle with originCwd for cwd-safe resume (#674). */
+  resumeHandle?: ResumeHandle;
   /** Callback for streaming output */
   onOutput?: (text: string) => void;
   /** Callback for stderr */
@@ -32,7 +58,14 @@ export interface AgentExecutionConfig {
 export interface AgentPhaseResult {
   success: boolean;
   output: string;
+  /**
+   * @deprecated Use {@link resumeHandle}. Retained as a mirror of
+   * `resumeHandle.token` for one release to ease state-file migration. See
+   * #674.
+   */
   sessionId?: string;
+  /** Driver-tagged resume handle for cwd-safe cross-phase resume (#674). */
+  resumeHandle?: ResumeHandle;
   error?: string;
   /** Last N lines of stderr captured via RingBuffer (#447) */
   stderrTail?: string[];
@@ -61,4 +94,20 @@ export interface AgentDriver {
 
   /** Check if this driver is available/configured */
   isAvailable(): Promise<boolean>;
+
+  /**
+   * Decide whether a resume handle can be safely used for a target cwd.
+   *
+   * Implementations enforce the asymmetric resume contract (#674):
+   * - Claude Code: session storage is cwd-namespaced; resume only if cwds
+   *   match byte-equal.
+   * - Codex (when added in #497): runtime is cwd-independent; the driver
+   *   enforces cwd match (and AGENTS.md parity) to prevent silent
+   *   misexecution.
+   * - Drivers without a session-resume concept return `false`.
+   *
+   * Drivers MUST also verify `handle.driver === this.name` and reject
+   * cross-driver handles.
+   */
+  canResume(handle: ResumeHandle, targetCwd: string): boolean;
 }

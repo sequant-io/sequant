@@ -14,6 +14,7 @@ export type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ResumeHandle,
 } from "./agent-driver.js";
 
 const DRIVERS: Record<string, (opts?: DriverOptions) => AgentDriver> = {
