@@ -4,7 +4,7 @@ Complementary integration test layer for the run pipeline, addressing over-mocki
 
 ## Prerequisites
 
-1. **Node.js 20+** — `node --version`
+1. **Node.js 22.12+** — `node --version`
 2. **Dependencies installed** — `npm install`
 
 ## What's Covered

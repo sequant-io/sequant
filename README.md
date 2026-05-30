@@ -74,7 +74,7 @@ Or step-by-step:
 - Git (for worktree-based isolation)
 
 **For npm installation:**
-- Node.js 20+
+- Node.js 22.12+
 
 **Optional MCP servers (enhanced features):**
 - `chrome-devtools` — enables `/test` for browser-based UI testing

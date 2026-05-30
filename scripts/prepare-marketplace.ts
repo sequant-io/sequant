@@ -267,7 +267,7 @@ Structured workflow system for Claude Code — GitHub issue resolution with spec
 
 - **Git** with a GitHub remote
 - **GitHub CLI** (\`gh\`) authenticated (\`gh auth status\`)
-- **Node.js 20+** (for MCP server via \`npx\`)
+- **Node.js 22.12+** (for MCP server via \`npx\`)
 
 ## Installation
 
