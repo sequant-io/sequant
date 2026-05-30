@@ -25,6 +25,7 @@ import type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ResumeHandle,
 } from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
 import { ApiError } from "../errors.js";
@@ -366,11 +367,15 @@ export function mapAgentSuccessToPhaseResult(
   agentResult: AgentPhaseResult,
   durationSeconds: number,
   cwd: string,
-): PhaseResult & { sessionId?: string } {
+): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
   const tails = {
     stderrTail: agentResult.stderrTail,
     stdoutTail: agentResult.stdoutTail,
     exitCode: agentResult.exitCode,
+  };
+  const resume = {
+    sessionId: agentResult.sessionId,
+    resumeHandle: agentResult.resumeHandle,
   };
 
   if (phase === "qa") {
@@ -390,7 +395,7 @@ export function mapAgentSuccessToPhaseResult(
         success: false,
         durationSeconds,
         error: `QA verdict: ${verdict}`,
-        sessionId: agentResult.sessionId,
+        ...resume,
         output: agentResult.output,
         verdict,
         summary,
@@ -404,7 +409,7 @@ export function mapAgentSuccessToPhaseResult(
         success: false,
         durationSeconds,
         error: "QA completed without a parseable verdict",
-        sessionId: agentResult.sessionId,
+        ...resume,
         output: agentResult.output,
         summary,
         ...tails,
@@ -414,7 +419,7 @@ export function mapAgentSuccessToPhaseResult(
       phase,
       success: true,
       durationSeconds,
-      sessionId: agentResult.sessionId,
+      ...resume,
       output: agentResult.output,
       verdict,
       summary,
@@ -429,7 +434,7 @@ export function mapAgentSuccessToPhaseResult(
       success: false,
       durationSeconds,
       error: "exec produced no changes (no commits, no uncommitted work)",
-      sessionId: agentResult.sessionId,
+      ...resume,
       output: agentResult.output,
       ...tails,
     };
@@ -439,7 +444,7 @@ export function mapAgentSuccessToPhaseResult(
     phase,
     success: true,
     durationSeconds,
-    sessionId: agentResult.sessionId,
+    ...resume,
     output: agentResult.output,
     ...tails,
   };
@@ -492,11 +497,11 @@ async function executePhase(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  sessionId?: string,
+  resumeHandle?: ResumeHandle,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
   spinner?: PhasePauseHandle,
-): Promise<PhaseResult & { sessionId?: string }> {
+): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
   const startTime = Date.now();
 
   const prompt = await getPhasePrompt(
@@ -647,17 +652,21 @@ async function executePhase(
     : undefined;
   const reportActivity = throttle ? throttle.report : undefined;
 
-  // Safety: never resume a session when worktree isolation is active.
-  // Even if THIS phase doesn't use the worktree, a previous phase may have
-  // created the session there. Claude Code namespaces session storage by cwd
-  // (~/.claude/projects/<encoded-cwd>/<session-id>.jsonl), so resuming from a
-  // different cwd can't locate the session — the SDK returns a recoverable
-  // `error_during_execution` ("No conversation found with session ID"), failing
-  // the phase (verified against claude-agent-sdk@0.3.142; see #674). The
-  // registry's `requiresWorktree` field prevents this by design, but this guard
-  // catches edge cases (e.g. a new phase registered without `requiresWorktree:
-  // true`). #674 tracks moving this into a driver-owned, cwd-keyed resume check.
-  const canResume = sessionId && !worktreePath;
+  // Resolve driver before the resume check — eligibility is now driver-owned
+  // (#674). Each driver's `canResume(handle, cwd)` enforces its own contract:
+  // Claude Code requires byte-equal cwd match (session storage is
+  // cwd-namespaced); Aider declines all resume (no session concept); Codex
+  // (when added in #497) folds in AGENTS.md parity. Replacing the prior
+  // `sessionId && !worktreePath` heuristic also unblocks same-worktree resume
+  // across phases.
+  const driver: AgentDriver = getDriver(config.agent, {
+    aiderSettings: config.aiderSettings,
+  });
+
+  const eligibleHandle =
+    resumeHandle && driver.canResume(resumeHandle, cwd)
+      ? resumeHandle
+      : undefined;
 
   // Build AgentExecutionConfig for the driver
   const agentConfig: AgentExecutionConfig = {
@@ -667,7 +676,8 @@ async function executePhase(
     phaseTimeout: config.phaseTimeout,
     verbose: config.verbose,
     mcp: config.mcp,
-    sessionId: canResume ? sessionId : undefined,
+    resumeHandle: eligibleHandle,
+    sessionId: eligibleHandle?.token,
     files,
     onOutput:
       config.verbose || reportActivity
@@ -694,11 +704,6 @@ async function executePhase(
         }
       : undefined,
   };
-
-  // Resolve driver from config or default
-  const driver: AgentDriver = getDriver(config.agent, {
-    aiderSettings: config.aiderSettings,
-  });
 
   const agentResult = await driver.executePhase(prompt, agentConfig);
 
@@ -736,6 +741,7 @@ async function executePhase(
     durationSeconds,
     error: agentResult.error,
     sessionId: agentResult.sessionId,
+    resumeHandle: agentResult.resumeHandle,
     stderrTail: agentResult.stderrTail,
     stdoutTail: agentResult.stdoutTail,
     exitCode: agentResult.exitCode,
@@ -760,7 +766,7 @@ export async function executePhaseWithRetry(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  sessionId?: string,
+  resumeHandle?: ResumeHandle,
   worktreePath?: string,
   shutdownManager?: ShutdownManager,
   spinner?: PhasePauseHandle,
@@ -769,14 +775,14 @@ export async function executePhaseWithRetry(
   /** @internal Injected for testing — defaults to setTimeout-based delay */
   delayFn: (ms: number) => Promise<void> = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms)),
-): Promise<PhaseResult & { sessionId?: string }> {
+): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
   // Skip retry logic if explicitly disabled
   if (config.retry === false) {
     return executePhaseFn(
       issueNumber,
       phase,
       config,
-      sessionId,
+      resumeHandle,
       worktreePath,
       shutdownManager,
       spinner,
@@ -794,7 +800,10 @@ export async function executePhaseWithRetry(
     phaseRegistry.has(phase) &&
     phaseRegistry.get(phase).retryStrategy?.maxRetries === 0;
 
-  let lastResult: PhaseResult & { sessionId?: string };
+  let lastResult: PhaseResult & {
+    sessionId?: string;
+    resumeHandle?: ResumeHandle;
+  };
 
   if (skipColdStartRetry) {
     // Single attempt — no cold-start retry loop
@@ -802,7 +811,7 @@ export async function executePhaseWithRetry(
       issueNumber,
       phase,
       config,
-      sessionId,
+      resumeHandle,
       worktreePath,
       shutdownManager,
       spinner,
@@ -818,7 +827,7 @@ export async function executePhaseWithRetry(
         issueNumber,
         phase,
         config,
-        sessionId,
+        resumeHandle,
         worktreePath,
         shutdownManager,
         spinner,
@@ -898,7 +907,7 @@ export async function executePhaseWithRetry(
       issueNumber,
       phase,
       configWithoutMcp,
-      sessionId,
+      resumeHandle,
       worktreePath,
       shutdownManager,
       spinner,
@@ -943,7 +952,7 @@ export async function executePhaseWithRetry(
         issueNumber,
         phase,
         config,
-        sessionId,
+        resumeHandle,
         worktreePath,
         shutdownManager,
         spinner,

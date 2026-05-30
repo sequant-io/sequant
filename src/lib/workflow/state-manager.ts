@@ -497,7 +497,13 @@ export class StateManager {
   }
 
   /**
-   * Update session ID for an issue (for resume)
+   * Update session ID for an issue (for resume).
+   *
+   * @deprecated Use {@link updateResumeHandle} (#674). This entry point only
+   * writes the legacy `sessionId` field — without an `originCwd`, the next
+   * phase's driver-owned `canResume()` fail-safe will decline resume, so the
+   * data is effectively inert. Retained for one release to keep callers from
+   * older sequant builds compiling.
    */
   async updateSessionId(issueNumber: number, sessionId: string): Promise<void> {
     await this.withLock(async () => {
@@ -509,6 +515,33 @@ export class StateManager {
       }
 
       issueState.sessionId = sessionId;
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+  }
+
+  /**
+   * Update the driver-tagged resume handle for an issue (#674).
+   *
+   * Writes both the new `resumeHandle` field and mirrors the token into
+   * the deprecated `sessionId` field so state files round-trip through
+   * older sequant readers for one release.
+   */
+  async updateResumeHandle(
+    issueNumber: number,
+    handle: { driver: string; token: string; originCwd: string },
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+
+      if (!issueState) {
+        throw new Error(`Issue #${issueNumber} not found in state`);
+      }
+
+      issueState.resumeHandle = handle;
+      issueState.sessionId = handle.token;
       issueState.lastActivity = new Date().toISOString();
 
       await this.saveState(state);
