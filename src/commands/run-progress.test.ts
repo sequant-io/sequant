@@ -58,6 +58,91 @@ describe("buildProgressWiring — activity event filter (#543)", () => {
     });
   });
 
+  // #672 AC-2: in explicit-phase mode the pipeline is known upfront, so every
+  // registered issue (including queued ones) should be seeded with
+  // `plannedPhases` at registration. In auto-detect mode the plan isn't known
+  // yet, so registration must NOT seed a plan (setPhasePlan fills it in later).
+  describe("phase-plan seeding at registration (#672 AC-2)", () => {
+    function captureRegisterIssue(): ReturnType<typeof vi.fn> {
+      const registerIssue = vi.fn();
+      mockCreateRunRenderer.mockReturnValue({
+        onEvent: vi.fn(),
+        registerIssue,
+        setPhasePlan: vi.fn(),
+        setPullRequest: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
+        renderSummary: vi.fn(),
+        dispose: vi.fn(),
+      } as unknown as ReturnType<typeof createRunRenderer>);
+      return registerIssue;
+    }
+
+    it("seeds plannedPhases for every issue in explicit-phase mode", () => {
+      const registerIssue = captureRegisterIssue();
+
+      buildProgressWiring({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [101, 102],
+        phaseTimeoutSeconds: 60,
+        autoDetectPhases: false,
+        basePhases: ["spec", "exec", "qa"],
+      });
+
+      // Both issues — including the queued #102 — get the roadmap upfront.
+      expect(registerIssue).toHaveBeenCalledTimes(2);
+      expect(registerIssue).toHaveBeenNthCalledWith(1, {
+        issueNumber: 101,
+        autoDetect: false,
+        plannedPhases: ["spec", "exec", "qa"],
+      });
+      expect(registerIssue).toHaveBeenNthCalledWith(2, {
+        issueNumber: 102,
+        autoDetect: false,
+        plannedPhases: ["spec", "exec", "qa"],
+      });
+    });
+
+    it("does NOT seed plannedPhases in auto-detect mode", () => {
+      const registerIssue = captureRegisterIssue();
+
+      buildProgressWiring({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [201],
+        phaseTimeoutSeconds: 60,
+        autoDetectPhases: true,
+        basePhases: ["spec", "exec", "qa"],
+      });
+
+      expect(registerIssue).toHaveBeenCalledWith({
+        issueNumber: 201,
+        autoDetect: true,
+        plannedPhases: undefined,
+      });
+    });
+
+    it("leaves plannedPhases undefined when basePhases is empty", () => {
+      const registerIssue = captureRegisterIssue();
+
+      buildProgressWiring({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [301],
+        phaseTimeoutSeconds: 60,
+        autoDetectPhases: false,
+        basePhases: [],
+      });
+
+      expect(registerIssue).toHaveBeenCalledWith({
+        issueNumber: 301,
+        autoDetect: false,
+        plannedPhases: undefined,
+      });
+    });
+  });
+
   describe("heartbeat branch (-q mode)", () => {
     it("skips heartbeat.start / .stop for activity events", () => {
       const start = vi.fn();

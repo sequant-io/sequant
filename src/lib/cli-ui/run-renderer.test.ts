@@ -402,7 +402,10 @@ describe("TTYRenderer", () => {
     return { r, buf };
   }
 
-  it("AC-1/3: appends one event line per progress event with trailing \\n", () => {
+  it("AC-1/3 (post-#672): appends one event line per `complete`/`failed`; `start` no longer appends", () => {
+    // #672 AC-1: TTYRenderer drops the permanent `▸ start` scrollback line —
+    // the live zone already shows the phase as running, so the journal only
+    // records terminal transitions (`✔ complete` / `✘ failed`).
     const { r, buf } = makeTTY();
     r.registerIssue({ issueNumber: 614 });
     r.onEvent({ issue: 614, phase: "spec", event: "start" });
@@ -421,11 +424,7 @@ describe("TTYRenderer", () => {
         /▸ #614/.test(l) || // ▸
         /✔ #614/.test(l), // ✔
     );
-    expect(eventLines).toEqual([
-      "  ▸ #614 spec",
-      "  ✔ #614 spec  5m 13s",
-      "  ▸ #614 exec",
-    ]);
+    expect(eventLines).toEqual(["  ✔ #614 spec  5m 13s"]);
   });
 
   it("AC-2: lifecycle produces NO duplicate phase-completion lines", () => {
