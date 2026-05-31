@@ -13,6 +13,7 @@ import type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ResumeHandle,
 } from "./agent-driver.js";
 
 export class ClaudeCodeDriver implements AgentDriver {
@@ -23,6 +24,25 @@ export class ClaudeCodeDriver implements AgentDriver {
    * Set after each executePhase() call.
    */
   private lastSessionId?: string;
+
+  /**
+   * Decide whether a resume handle can be used for a target cwd.
+   *
+   * Claude Code namespaces session storage by encoded cwd
+   * (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`), so a session
+   * created in cwd A cannot be located when resuming from cwd B — the SDK
+   * returns `error_during_execution` ("No conversation found") rather than
+   * crashing (verified against `@anthropic-ai/claude-agent-sdk@0.3.142`,
+   * see #674).
+   *
+   * We use byte-equal comparison, not a normalized path: the SDK's storage
+   * key is derived from the literal cwd string, so normalizing here would
+   * risk false-positive resumes whose token would then miss on disk.
+   */
+  canResume(handle: ResumeHandle, targetCwd: string): boolean {
+    if (handle.driver !== this.name) return false;
+    return handle.originCwd === targetCwd;
+  }
 
   async executePhase(
     prompt: string,
@@ -49,6 +69,25 @@ export class ClaudeCodeDriver implements AgentDriver {
     const stderrBuffer = new RingBuffer(50);
     const stdoutBuffer = new RingBuffer(50);
 
+    // Resolve resume token with cwd-safety check.
+    //
+    // Prefer the driver-tagged `resumeHandle` over the legacy `sessionId`
+    // string (#674). On cwd mismatch we silently drop the resume — Claude
+    // Code's cwd-mismatched resume is recoverable (`error_during_execution`,
+    // "No conversation found"), but starting fresh is the cleaner outcome
+    // than surfacing a per-phase error the caller can't act on.
+    let resumeToken: string | undefined;
+    if (
+      config.resumeHandle &&
+      this.canResume(config.resumeHandle, config.cwd)
+    ) {
+      resumeToken = config.resumeHandle.token;
+    } else if (!config.resumeHandle && config.sessionId) {
+      // Back-compat: legacy state (sessionId without originCwd) cannot prove
+      // cwd parity. Per #674's fail-safe rule, do NOT resume — start fresh.
+      resumeToken = undefined;
+    }
+
     try {
       // Get MCP servers config if enabled
       const mcpServers = config.mcp ? getMcpServersConfig() : undefined;
@@ -63,8 +102,8 @@ export class ClaudeCodeDriver implements AgentDriver {
           tools: { type: "preset", preset: "claude_code" },
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
-          // Resume from previous session if provided
-          ...(config.sessionId ? { resume: config.sessionId } : {}),
+          // Resume from previous session only when cwd matches origin (#674).
+          ...(resumeToken ? { resume: resumeToken } : {}),
           env: config.env,
           ...(mcpServers ? { mcpServers } : {}),
           stderr: (data: string) => {
@@ -112,12 +151,18 @@ export class ClaudeCodeDriver implements AgentDriver {
       clearTimeout(timeoutId);
       this.lastSessionId = resultSessionId;
 
+      // Build the cwd-bound resume handle from the session created in
+      // `config.cwd`. `sessionId` is mirrored for one release (#674) so
+      // upgraded callers can still drive resume off the deprecated field.
+      const resumeHandle = this.buildResumeHandle(resultSessionId, config.cwd);
+
       if (resultMessage) {
         if (resultMessage.subtype === "success") {
           return {
             success: true,
             output: capturedOutput,
             sessionId: resultSessionId,
+            resumeHandle,
             stderrTail: stderrBuffer.getLines(),
             stdoutTail: stdoutBuffer.getLines(),
           };
@@ -140,6 +185,7 @@ export class ClaudeCodeDriver implements AgentDriver {
           success: false,
           output: capturedOutput,
           sessionId: resultSessionId,
+          resumeHandle,
           error,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
@@ -150,6 +196,7 @@ export class ClaudeCodeDriver implements AgentDriver {
         success: false,
         output: capturedOutput,
         sessionId: resultSessionId,
+        resumeHandle,
         error: "No result received from Claude",
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
@@ -176,11 +223,20 @@ export class ClaudeCodeDriver implements AgentDriver {
         success: false,
         output: capturedOutput,
         sessionId: resultSessionId,
+        resumeHandle: this.buildResumeHandle(resultSessionId, config.cwd),
         error: error + stderrSuffix,
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
       };
     }
+  }
+
+  private buildResumeHandle(
+    token: string | undefined,
+    originCwd: string,
+  ): ResumeHandle | undefined {
+    if (!token) return undefined;
+    return { driver: this.name, token, originCwd };
   }
 
   async isAvailable(): Promise<boolean> {

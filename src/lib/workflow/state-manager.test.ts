@@ -274,6 +274,45 @@ describe("StateManager", () => {
     });
   });
 
+  describe("updateResumeHandle (#674)", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(42, "Test Issue");
+    });
+
+    const handle = {
+      driver: "claude-code",
+      token: "tok-abc",
+      originCwd: "/tmp/wt-1",
+    };
+
+    it("should write the driver-tagged resume handle", async () => {
+      await manager.updateResumeHandle(42, handle);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].resumeHandle).toEqual(handle);
+    });
+
+    it("should mirror the token into the deprecated sessionId field", async () => {
+      await manager.updateResumeHandle(42, handle);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].sessionId).toBe("tok-abc");
+    });
+
+    it("should bump lastActivity", async () => {
+      await manager.updateResumeHandle(42, handle);
+
+      const state = await manager.getState();
+      expect(state.issues["42"].lastActivity).toBeDefined();
+    });
+
+    it("should throw if issue not found", async () => {
+      await expect(manager.updateResumeHandle(999, handle)).rejects.toThrow(
+        "Issue #999 not found",
+      );
+    });
+  });
+
   describe("removeIssue", () => {
     beforeEach(async () => {
       await manager.initializeIssue(42, "Test Issue");
