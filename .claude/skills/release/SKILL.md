@@ -117,6 +117,17 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
     echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
   fi
 fi
+
+# 12. Check README.md "What's new" section mentions the version being released
+if [ -f "README.md" ]; then
+  current=$(node -p "require('./package.json').version")
+
+  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
+  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
+  if ! echo "$whats_new" | grep -qF "New in ${current}"; then
+    echo "Warning: README.md \"What's new\" section omits v${current} — add a feature group before releasing"
+  fi
+fi
 ```
 
 ## Release Steps
@@ -319,6 +330,28 @@ fi
 ```
 
 **Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
+
+### Step 4.7: Regenerate Marketplace Artifact
+
+**IMPORTANT:** The marketplace plugin artifact under `dist/marketplace/` is bundled into the published tgz via `files: ["dist", ...]` in package.json — even though `dist/` is gitignored. Regenerate it from current sources **before** packing/publishing so the bundled README always matches; otherwise a stale artifact ships (root cause of #684 — the v2.4.0 tgz carried a "Node.js 20+" README after the floor moved to 22.12).
+
+This is an action step, so it lives in Release Steps (not the read-only pre-flight checks). It MUST run before Step 5 (`npm pack`) and Step 9 (`npm publish`).
+
+```bash
+# Regenerate the marketplace plugin artifact from current sources
+npm run prepare:marketplace
+
+# Freshness sanity check: generated README's Node.js floor should match package.json engines.
+# Warn-only (regeneration above already fixes the artifact; this is a belt-and-suspenders signal).
+gen_readme="dist/marketplace/external_plugins/sequant/README.md"
+if [ -f "$gen_readme" ]; then
+  engines_floor=$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g,'')")  # e.g. 22.12.0
+  readme_floor=$(grep -oE "Node\.js [0-9]+\.[0-9]+" "$gen_readme" | head -1 | grep -oE "[0-9]+\.[0-9]+" || true)
+  if [ -n "$readme_floor" ] && [ "${engines_floor%.*}" != "$readme_floor" ]; then
+    echo "Warning: generated marketplace README shows Node.js ${readme_floor}, package.json engines floor is ${engines_floor}"
+  fi
+fi
+```
 
 ### Step 5: Verify Package Size
 
