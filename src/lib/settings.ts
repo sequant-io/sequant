@@ -250,6 +250,26 @@ export interface QASettings {
 }
 
 /**
+ * Gate policy for the `sequant ready` post-resolve A+ QA gate (#683).
+ *
+ * - `ac` (default): loop stops once no `AC_NOT_MET` verdict remains (ACs
+ *   objectively met). Remaining quality/polish gaps are documented in the gap
+ *   report but NOT auto-fixed — predictable, scope-respecting behavior for a
+ *   team engineer with a fixed agenda.
+ * - `a-plus` (opt-in): loop continues until `READY_FOR_MERGE`, auto-fixing
+ *   quality gaps along the way — max-quality behavior for a solo maintainer.
+ */
+export type ReadyPolicy = "ac" | "a-plus";
+
+/**
+ * Settings for the `sequant ready` command (#683).
+ */
+export interface ReadySettings {
+  /** Default gate policy. Overridable per-invocation with `--policy`. */
+  policy: ReadyPolicy;
+}
+
+/**
  * Full settings schema
  */
 export interface SequantSettings {
@@ -263,6 +283,8 @@ export interface SequantSettings {
   scopeAssessment: ScopeAssessmentSettings;
   /** QA skill settings */
   qa: QASettings;
+  /** `sequant ready` gate settings (#683) */
+  ready: ReadySettings;
 }
 
 // ─── Zod Schemas (AC-1, AC-5) ────────────────────────────────────────────────
@@ -392,6 +414,11 @@ export const QASettingsSchema = z.object({
     .default(["build (*)", "Plugin Structure Validation"]),
 });
 
+/** Zod schema for ReadySettings (#683) */
+export const ReadySettingsSchema = z.object({
+  policy: z.enum(["ac", "a-plus"]).default("ac"),
+});
+
 /**
  * Zod schema for the full SequantSettings (AC-1, AC-5).
  *
@@ -413,6 +440,9 @@ export const SettingsSchema = z
       () => ScopeAssessmentSettingsSchema.parse({}) as never,
     ),
     qa: QASettingsSchema.default(() => QASettingsSchema.parse({}) as never),
+    ready: ReadySettingsSchema.default(
+      () => ReadySettingsSchema.parse({}) as never,
+    ),
   })
   .passthrough();
 
@@ -439,7 +469,7 @@ export interface ValidationResult {
  * Used to detect unknown/misspelled keys and produce warnings.
  */
 const KNOWN_KEYS: Record<string, Set<string>> = {
-  "": new Set(["version", "run", "agents", "scopeAssessment", "qa"]),
+  "": new Set(["version", "run", "agents", "scopeAssessment", "qa", "ready"]),
   run: new Set([
     "logJson",
     "logPath",
@@ -474,6 +504,7 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "markdownOnlyCiRelaxed",
     "markdownOnlySafeCiPatterns",
   ]),
+  ready: new Set(["policy"]),
   "run.rotation": new Set(["enabled", "maxSizeMB", "maxFiles"]),
   "run.aider": new Set(["model", "editFormat", "extraArgs"]),
   "scopeAssessment.trivialThresholds": new Set([
@@ -632,6 +663,10 @@ export const DEFAULT_QA_SETTINGS: QASettings = {
   markdownOnlySafeCiPatterns: ["build (*)", "Plugin Structure Validation"],
 };
 
+export const DEFAULT_READY_SETTINGS: ReadySettings = {
+  policy: "ac",
+};
+
 /**
  * Default settings
  */
@@ -657,6 +692,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
   qa: DEFAULT_QA_SETTINGS,
+  ready: DEFAULT_READY_SETTINGS,
 };
 
 /**
@@ -844,6 +880,14 @@ export function generateSettingsJsonc(settings: SequantSettings): string {
   lines.push(
     `    "isolateParallel": ${JSON.stringify(settings.agents.isolateParallel)}`,
   );
+  lines.push(`  },`);
+  lines.push("");
+  lines.push(`  // sequant ready — post-resolve A+ QA gate (#683)`);
+  lines.push(`  "ready": {`);
+  lines.push(
+    `    // Gate policy: "ac" (stop at ACs met, report quality gaps) or "a-plus" (loop to READY_FOR_MERGE)`,
+  );
+  lines.push(`    "policy": ${JSON.stringify(settings.ready.policy)}`);
   lines.push(`  }`);
   lines.push("}");
   lines.push("");
@@ -995,6 +1039,12 @@ Each threshold has \`yellow\` (warning) and \`red\` (split recommended) values:
 | \`smallDiffThreshold\` | number | \`100\` | Diff size threshold for small-diff fast path |
 | \`markdownOnlyCiRelaxed\` | boolean | \`true\` | When diff touches only \`.md\` files, treat pending CI checks matching \`markdownOnlySafeCiPatterns\` as informational |
 | \`markdownOnlySafeCiPatterns\` | string[] | \`["build (*)", "Plugin Structure Validation"]\` | Glob patterns for CI checks that are safe to ignore when pending on a markdown-only diff |
+
+## \`ready\` — \`sequant ready\` Gate Settings (#683)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| \`policy\` | enum | \`"ac"\` | Gate policy. \`"ac"\` loops until ACs are objectively met (no \`AC_NOT_MET\`), reporting but not auto-fixing quality gaps. \`"a-plus"\` loops until \`READY_FOR_MERGE\`, auto-fixing quality gaps. Override per-run with \`--policy ac\\|a-plus\`. |
 
 ---
 

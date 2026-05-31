@@ -48,6 +48,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 | `SEQUANT_PHASE` | Current phase in the workflow | `qa` |
 | `SEQUANT_ISSUE` | Issue number being processed | `123` |
 | `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+| `SEQUANT_FULL_QA` | Force full-weight (standalone) QA pre-flight even under an orchestrator (#683) | `1` |
 
 **Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
 
@@ -56,6 +57,8 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 3. **Skip issue fetch** - Use `SEQUANT_ISSUE`, orchestrator has context
 4. **Reduce GitHub comment frequency** - Defer updates to orchestrator
 5. **Trust git state** - Orchestrator verified branch status
+
+> **Full-weight override (`SEQUANT_FULL_QA=1`, #683).** When this flag is set (e.g. by `sequant ready`), do NOT take the git-state shortcuts above. Run the **standalone** pre-flight sync check, the stale-branch detection, and the process-state inspection (uncommitted work, divergent/zero-commit branches) even though `SEQUANT_ORCHESTRATOR` is set — this is the deliberate fresh full-weight pass that catches the no-implementation / divergent-branch class. The other orchestrated behaviors (skip issue fetch, reduced GitHub comments) still apply.
 
 **Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
 
@@ -230,7 +233,7 @@ If the cache is corrupted or unreadable:
 
 ### Pre-flight Sync Check
 
-**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator has already verified sync status.
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** (the orchestrator has already verified sync status) — **unless `SEQUANT_FULL_QA=1`**, in which case run this check even under an orchestrator (#683).
 
 Before starting QA (standalone mode), verify the local branch is in sync with remote:
 
@@ -251,7 +254,7 @@ git pull origin main  # Or merge origin/main if pull fails
 
 ### Stale Branch Detection
 
-**Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator handles branch freshness checks.
+**Skip this section if `SEQUANT_ORCHESTRATOR` is set** (the orchestrator handles branch freshness checks) — **unless `SEQUANT_FULL_QA=1`**, in which case run the branch-freshness check even under an orchestrator (#683).
 
 **Purpose:** Detect when the feature branch is significantly behind main, which can lead to:
 - QA cycles wasted reviewing code that won't cleanly merge

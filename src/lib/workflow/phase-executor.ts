@@ -595,6 +595,14 @@ async function executePhase(
   env.SEQUANT_ORCHESTRATOR = "sequant-run";
   env.SEQUANT_PHASE = phase;
 
+  // #683: force full-weight QA. `sequant ready` sets config.fullQa so its QA
+  // pass runs the standalone branch-freshness / process-state pre-flight checks
+  // even though SEQUANT_ORCHESTRATOR is set unconditionally above. Scoped to the
+  // qa phase — the loop/exec phases don't have a git-trust skip to override.
+  if (config.fullQa && phase === "qa") {
+    env.SEQUANT_FULL_QA = "1";
+  }
+
   // Propagate issue type for skills to adapt behavior (e.g., lighter QA for docs)
   if (config.issueType) {
     env.SEQUANT_ISSUE_TYPE = config.issueType;
