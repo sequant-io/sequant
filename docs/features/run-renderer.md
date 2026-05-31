@@ -1,6 +1,6 @@
 # Run Renderer
 
-The default terminal output for `sequant run`: a live, redrawing grid on top showing per-issue state, with an append-only events log below. Use it to track concurrent issues at a glance, see which phase each is in, and pick out failures from a long run.
+The default terminal output for `sequant run`: a live, redrawing grid on top showing per-issue state as an in-place **phase matrix**, with a compact completion log below. Use it to track concurrent issues at a glance, see which phase each is in, and pick out failures from a long run.
 
 This is the default — nothing to enable. It replaces the older spinner + parallel-mode line output that produced duplicate and overwritten lines.
 
@@ -36,25 +36,24 @@ SEQUANT WORKFLOW · 3 issues · concurrency 3 · 14m 02s
   │ #614   │ ✔ done · 7m 27s · spec→exec→qa · PR #615                 │
   ├────────┼──────────────────────────────────────────────────────────┤
   │ #610   │ ⠋ exec · 4m 18s                                          │
-  │        │   spec ✔ 3m 42s  →  exec running                         │
+  │        │   spec ✔ 3m 42s  →  exec running  →  qa –                │
   │        │   claude streaming · editing src/cli.ts                  │
   ├────────┼──────────────────────────────────────────────────────────┤
   │ #606   │ ⠋ qa loop 2/3 · 1m 02s                                   │
-  │        │   spec ✔  ·  exec ✔                                      │
+  │        │   spec ✔  →  exec ✔  →  qa running                       │
   └────────┴──────────────────────────────────────────────────────────┘
 
-  1 done · 2 running · 0 failed
+  1 done · 2 running · 0 queued · 0 failed
 
   ── events ────────────────────────────
   ✔ #614 qa  2m 57s  →  PR #615
-  ▸ #610 exec
-  ▸ #606 qa (attempt 2/3)
 ```
 
 - **Done** issues collapse to a single line with total time, phase chain, and PR number.
-- **Running** issues expand with phase-by-phase progress and a sub-status line (Claude streaming activity, test counts, loop iteration).
-- The rollup line below the table summarizes the run.
-- The **events log** scrolls naturally below the live zone — one `\n`-terminated line per phase start / complete / failure / PR open. Grep-friendly.
+- **Running** (and **queued**) issues expand into a **phase matrix** sub-line: one cell per phase in the resolved pipeline, joined with `→`. Each cell advances in place — `name –` (pending) → `name running` → `name ✔ 35s` (done) → `name ✘` (failed) — so the row reads as a roadmap, not a stream of events. A second sub-status line shows Claude streaming activity, test counts, or loop iteration. (#672)
+- The **full roadmap shows upfront.** In explicit `--phases` mode every issue — including queued ones not yet started — seeds its pending cells at registration. In auto-detect mode the plan is filled in once `spec` resolves the phase list.
+- The rollup line below the table summarizes the run (`done · running · queued · failed`).
+- The **completion log** scrolls naturally below the live zone — one `\n`-terminated line per phase **complete** (`✔`, with duration and PR) or **failure** (`✘`, with error). Grep-friendly. As of #672 the TTY renderer no longer appends a `▸ start` line per phase — the live matrix already shows a phase entering `running`, so the start line was pure duplication. The durable, ordered start/complete history with timestamps lives in the run log (`.sequant/logs/run-*.json`).
 
 ### Single-issue run (TTY)
 
@@ -66,7 +65,7 @@ SEQUANT WORKFLOW · #614 · 7m 27s elapsed
   │ Worktree │ ../worktrees/feature/614-resolve-...                    │
   │ Branch   │ feature/614-resolve-npm-audit-findings                  │
   │ Status   │ ⠋ exec · 2m 14s                                         │
-  │          │   spec ✔ 5m 13s  →  exec running  →  qa queued          │
+  │          │   spec ✔ 5m 13s  →  exec running  →  qa –               │
   │          │   claude streaming · editing src/lib/audit.ts           │
   └──────────┴─────────────────────────────────────────────────────────┘
 ```
@@ -87,6 +86,8 @@ Append-only lines, prefixed with wall-clock time:
 ```
 
 If no events fire for 60 seconds, a `⏱ still running: …` line emits so CI logs don't look frozen.
+
+Unlike the TTY renderer, the non-TTY path **keeps** the `▸ start` lines (#672 AC-5): with no in-place live zone, the append-only stream is the only record of what ran, so each phase's start and complete both appear. This makes CI scrollback the durable run log.
 
 ### Summary (end of run)
 
@@ -110,10 +111,10 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 
 ## What to Expect
 
-- **Frame cadence.** The live zone redraws on phase events and at most once per second on a timer between events. Elapsed counters keep ticking even when nothing is happening, so the screen is always alive.
+- **Frame cadence.** The live zone redraws on phase events and at most once per second on a timer between events. Elapsed counters keep ticking even when nothing is happening, so the screen is always alive. Because the start line no longer appends to scrollback (#672), each phase transition costs one fewer `logUpdateClear`/redraw cycle — fewer redraws also means a smaller blast radius for terminal-emulator paint corruption (ties to #647/#655).
 - **Verbose streaming.** Running with `-v` / `--verbose` pauses the live zone while Claude's stream prints, then redraws below it on the next phase event. No interleaved garble.
 - **Quiet mode (`-q`).** Renderer is disabled in quiet mode (gated at `run-progress.ts:60` on `!quiet`); the liveness heartbeat replaces it — a TTY-only rewriting line every 30s plus a one-shot stall warning at 5 minutes. See [Quiet Mode Heartbeat](quiet-mode-heartbeat.md).
-- **Retries get a counter.** When a quality loop retries `exec`, the second and later attempts annotate as `(attempt 2/3)`, `(attempt 3/3)` in both the events log and the live-zone status cell (added by #624). QA loop iterations show `qa loop N/3` the same way.
+- **Retries get a counter.** When a quality loop retries `exec`, the second and later attempts annotate as `(attempt 2/3)`, `(attempt 3/3)` (added by #624). Since #672 dropped the `▸ start` line that used to carry this, the counter now surfaces on the live-zone status (`loop N/3`) and on the `✘ failed (attempt N/3)` completion line. QA loop iterations show `qa loop N/3` the same way.
 - **Identical failures get folded.** If `exec` fails three times with the same error, you see the full message on attempt 1 and on the final attempt. The middle attempt shows `(attempt 2/3, same failure as attempt 1)` instead of repeating the error verbatim. Divergent failures always print in full.
 - **Frame stability.** The live zone height is capped at `max(8, terminal-rows − 5)`. With more than ~10 active issues, the oldest done rows roll up to a single `✔ {n} done` line so the grid never spills past the visible terminal.
 - **Narrow terminals.** Under 80 columns, the renderer drops box-drawing characters and falls back to indented `key: value` pairs. The summary table uses the same fallback.
@@ -223,4 +224,4 @@ Output goes to a file rather than stderr (#664) so it cannot interleave with ren
 
 ---
 
-*Documents issues #618 (unified renderer) and #624 (follow-ups: frame stability, attempt counter, summary teardown, failure dedup).*
+*Documents issues #618 (unified renderer), #624 (follow-ups: frame stability, attempt counter, summary teardown, failure dedup), and #672 (in-place phase matrix replacing the start/complete event journal).*

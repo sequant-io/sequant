@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-05-30
+
 ### Changed
 
 - **Resume semantics normalized to a driver-tagged, cwd-bound `ResumeHandle`** — replaces the opaque `sessionId` string and the global `sessionId && !worktreePath` guard at `phase-executor.ts:660`. `AgentDriver` gains a `canResume(handle, targetCwd)` method that each driver owns: `ClaudeCodeDriver` accepts only byte-equal cwd matches (storage is cwd-namespaced under `~/.claude/projects/<encoded-cwd>/`), and on mismatch transparently starts a fresh session rather than surfacing the SDK's recoverable `error_during_execution`; `AiderDriver` declines all resume. Unblocks same-worktree resume across phases (regression fix). State files gain a `resumeHandle` field on `IssueState`; the legacy `sessionId` is retained as a `@deprecated` mirror for one release so in-flight `.sequant/state.json` records load cleanly (legacy entries without `originCwd` are intentionally inert under the new fail-safe). Fixture tests cover cross-worktree rejection for both drivers, same-worktree resume threading through `executePhaseWithRetry`, and a `.skip` placeholder for the Codex case that lights up when #497 lands. (#674)
