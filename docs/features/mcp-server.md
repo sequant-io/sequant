@@ -6,7 +6,7 @@ Use Sequant from Claude Desktop, Cursor, VS Code, or any MCP-compatible AI tool.
 
 ### What you need
 
-1. **Node.js 18+** — `node --version`
+1. **Node.js 22.12+** — `node --version`
 2. **GitHub CLI installed and authenticated** — `gh auth status` (install: [cli.github.com](https://cli.github.com))
 3. **Claude Code authenticated** — either:
    - **Max plan:** run `claude login` (no API key needed)
