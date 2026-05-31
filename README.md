@@ -11,11 +11,21 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ### What's new in 2.x
 
+**New in 2.4.0:**
+
+- **⚠️ Breaking — Node 22.12+ required** (was 20.19+). Node 20 reached end-of-life on 2026-04-30.
+- **⚠️ Breaking — `sequant run` flag rebind:** `-q` now means `--quiet` (it previously bound silently to `--quality-loop`); the quality loop is now `-Q`. Update scripts that used `-q` for the quality loop.
+- **In-place phase matrix** — `sequant run`'s live grid now shows the full phase pipeline per issue as cells advancing pending → running → ✔/✘ in place, instead of a separate start/complete event journal. Fewer redraws, cleaner scrollback.
+- **Typed workflow event system** — JSON-serializable lifecycle events (`run_started`, `phase_completed`, `qa_verdict`, …) for MCP / webhook / TUI consumers.
+- **Phase registry** — all built-in phases consolidated; `--phases` validates names at runtime.
+
+**Earlier in 2.x:**
+
 - **MCP server** — `sequant serve` exposes workflow orchestration as MCP tools (`sequant_run`, `sequant_status`, `sequant_logs`). Any MCP client can drive Sequant headlessly.
 - **`/assess` unification** — `/solve` is merged into `/assess` with a 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK). `/solve` still works as an alias.
 - **Parallel execution with per-issue locks** — multi-issue runs are concurrent by default (`--concurrency`); `.sequant/locks/` prevents two sessions from clobbering the same issue.
 - **Stacked PRs** — `sequant run --stacked` chains issue PRs onto their predecessor branch so reviewers see the incremental diff per issue instead of the cumulative chain diff.
-- **Live run dashboard + cohort analytics** — unified renderer with a two-zone TTY grid (active issues + append-only events log); `sequant stats --label <name> --since YYYY-MM-DD` filters runs for measuring feature- or class-specific success rates.
+- **Live run dashboard + cohort analytics** — unified renderer with a live TTY grid (active issues as an in-place phase matrix + a compact completion log); `sequant stats --label <name> --since YYYY-MM-DD` filters runs for measuring feature- or class-specific success rates.
 - **Interactive relay** — `sequant prompt <issue> "<message>"` sends queries or directives into a running headless `sequant run`, and `sequant watch <issue>` tails the replies. Bidirectional communication with detached and CI-driven sessions.
 - **Worktree isolation for parallel agents** — `sequant run --isolate-parallel` gives each parallel `/exec` agent group its own sub-worktree with merge-back via `git merge --no-ff`, eliminating file conflicts between concurrent agents structurally rather than by convention.
 - **GitHub Actions & multi-agent backends** — label-triggered and comment-triggered CI workflows out of the box; `--agent aider` for non-Claude-Code execution.
