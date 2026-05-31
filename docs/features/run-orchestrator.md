@@ -6,7 +6,7 @@ Use `RunOrchestrator` to run sequant workflows from Node.js code without going t
 
 1. **sequant initialized** — `sequant init` completed in the project
 2. **GitHub CLI** — `gh auth status` shows authenticated (used for issue fetching)
-3. **Node.js 20+** — `node --version`
+3. **Node.js 22.12+** — `node --version`
 
 ## Setup
 

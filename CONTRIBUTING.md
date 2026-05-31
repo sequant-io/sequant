@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Sequant! This document provides g
 
 ### Prerequisites
 
-- Node.js 18.0.0 or higher
+- Node.js 22.12.0 or higher
 - Git
 - GitHub CLI (`gh`) for testing issue integration
 
