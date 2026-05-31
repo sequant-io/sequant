@@ -1105,7 +1105,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.3.0
+**Current Version:** 2.4.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
