@@ -110,6 +110,9 @@ export async function runCommand(
     issueNumbers: resolved.issueNumbers,
     phaseTimeoutSeconds: settings.run.timeout,
     autoDetectPhases: resolved.autoDetectPhases,
+    // #672 AC-2: base pipeline so queued issues show their roadmap upfront in
+    // explicit-phase mode (ignored when auto-detect resolves the plan later).
+    basePhases: resolved.config.phases,
     // #624 Item 3 / D2: route the resolved maxIterations into the renderer so
     // `(attempt N/M)` and `loop N/M` reflect actual configured limits.
     maxLoopIterations: resolved.config.maxIterations,

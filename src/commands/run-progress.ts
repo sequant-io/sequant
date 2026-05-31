@@ -37,6 +37,13 @@ export function buildProgressWiring(args: {
   /** AC-23: when auto-detect mode is on, the renderer shows `Phase: detecting…`
    *  while spec runs (before the resolved plan is known). */
   autoDetectPhases?: boolean;
+  /** #672 AC-2: the base configured phase pipeline. In explicit-phase mode
+   *  (not auto-detect) this is known upfront, so every issue — including those
+   *  still queued behind the active one — can show its roadmap immediately
+   *  rather than only once it starts running. `setPhasePlan` later refines it
+   *  per issue (e.g. testgen/security-review insertion). Ignored in
+   *  auto-detect mode, where the plan isn't known until spec resolves it. */
+  basePhases?: string[];
   /** #624 Item 3 / D2: total allowed quality-loop iterations (from settings). */
   maxLoopIterations?: number;
 }): ProgressWiring {
@@ -46,6 +53,7 @@ export function buildProgressWiring(args: {
     issueNumbers,
     phaseTimeoutSeconds,
     autoDetectPhases,
+    basePhases,
     maxLoopIterations,
   } = args;
 
@@ -74,8 +82,21 @@ export function buildProgressWiring(args: {
         })
       : null;
   if (renderer) {
+    // #672 AC-2: seed the planned pipeline at registration when it's known
+    // upfront (explicit-phase mode). This makes queued issues render their
+    // roadmap before they start, matching the issue's multi-row matrix
+    // mock-up. In auto-detect mode the plan isn't known yet, so we leave
+    // `plannedPhases` undefined and rely on `setPhasePlan` once spec resolves.
+    const seedPlan =
+      !autoDetectPhases && basePhases && basePhases.length > 0
+        ? basePhases
+        : undefined;
     for (const issueNumber of issueNumbers) {
-      renderer.registerIssue({ issueNumber, autoDetect: autoDetectPhases });
+      renderer.registerIssue({
+        issueNumber,
+        autoDetect: autoDetectPhases,
+        plannedPhases: seedPlan,
+      });
     }
   }
 

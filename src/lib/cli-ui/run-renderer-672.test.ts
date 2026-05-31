@@ -459,9 +459,14 @@ describe("AC-6: clearCalls reduced ≥30% vs baseline", () => {
    * Baseline (pre-#672 behaviour): every `start` AND every `complete` triggers
    * a `logUpdateClear` because `appendEventLine` clears the live zone before
    * appending. Eight events × one clear each = 8 baseline clears for the
-   * scenario below. Post-#672 the `start` branch returns early, halving the
-   * total. The ≥30% threshold leaves headroom for unrelated clears
-   * (setBanner, setPullRequest, etc.).
+   * scenario below. Post-#672 the `start` branch returns early, so only the
+   * four `complete` events clear — observed = 4 (a 50% reduction).
+   *
+   * The BASELINE constant MUST equal the true pre-#672 value (8). Inflating it
+   * (e.g. to 12) would push the threshold up to the baseline itself, making
+   * the assertion pass even on un-refactored code — a tautology that would not
+   * catch a regression. With BASELINE = 8 the threshold is floor(8 * 0.7) = 5,
+   * which the post-#672 value (4) clears while a regression back to 8 fails.
    */
   function countClearCalls(renderer: TTYRenderer): number {
     return renderer.getTestStub()?.clearCalls ?? 0;
@@ -508,18 +513,24 @@ describe("AC-6: clearCalls reduced ≥30% vs baseline", () => {
   }
 
   it("should reduce clearCalls by ≥30% vs the captured baseline", () => {
-    // Pre-#672 baseline: 8 events × 1 clear per event in `appendEventLine`
-    // = 8. We allow a small fudge factor in the constant so future unrelated
-    // clears (banner, pause/resume) don't trip the threshold.
-    const BASELINE = 12;
+    // Pre-#672 baseline: 8 events × 1 clear per event in `appendEventLine` = 8.
+    // This is the TRUE pre-refactor value, not an inflated fudge — see the
+    // describe-block comment for why inflating it makes the test a tautology.
+    const BASELINE = 8;
+    // ≥30% reduction means observed ≤ floor(8 * 0.7) = 5. A regression that
+    // re-clears on `start` would push observed back to 8 and fail here.
+    const threshold = Math.floor(BASELINE * 0.7);
 
     const { r } = makeTTY();
     replayScenario(r);
     const observed = countClearCalls(r);
     r.dispose();
 
-    // ≥30% reduction means observed ≤ floor(12 * 0.7) = 8.
-    expect(observed).toBeLessThanOrEqual(Math.floor(BASELINE * 0.7));
+    expect(observed).toBeLessThanOrEqual(threshold);
+    // Guard the baseline itself: the threshold must sit strictly below the
+    // pre-#672 value, otherwise the assertion above could not detect a
+    // regression to baseline.
+    expect(threshold).toBeLessThan(BASELINE);
   });
 
   it("should not regress clearCalls for a single-issue single-phase run", () => {
