@@ -260,8 +260,27 @@ export const IssueStateSchema = z.object({
   qaStagnation: z.array(QAStagnationEntrySchema).optional(),
   /** Relay state (#383); present when bidirectional relay is active */
   relay: RelayStateSchema.optional(),
-  /** Claude session ID (for resume) */
+  /**
+   * Claude session ID (for resume).
+   * @deprecated Use {@link resumeHandle} (#674). Retained as a read-path
+   * mirror of `resumeHandle.token` for one release so state files written by
+   * prior sequant builds load cleanly. Legacy entries (token without
+   * `originCwd`) intentionally do NOT resume — the driver-owned `canResume`
+   * fail-safe disables them.
+   */
   sessionId: z.string().optional(),
+  /**
+   * Driver-tagged resume handle (#674). Stores the driver name, the
+   * resume token, and the cwd the session was created in so the next phase
+   * can prove cwd-equality before reattaching.
+   */
+  resumeHandle: z
+    .object({
+      driver: z.string(),
+      token: z.string(),
+      originCwd: z.string(),
+    })
+    .optional(),
   /** When the issue transitioned to a terminal status (merged/abandoned/closed) */
   resolvedAt: z.string().datetime().optional(),
   /** Most recent activity timestamp */

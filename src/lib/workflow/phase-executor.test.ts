@@ -675,6 +675,36 @@ describe("executePhaseWithRetry", () => {
     expect(result.sessionId).toBe("abc-123");
   });
 
+  // #674 AC-6 regression: same-worktree resume must thread through, replacing
+  // the prior `sessionId && !worktreePath` heuristic that blocked all
+  // worktree resume. The ResumeHandle passed in must propagate to the
+  // injected executePhase so the driver can decide via canResume().
+  it("threads resumeHandle into executePhase (#674 AC-6)", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValue(makeResult({ success: true, durationSeconds: 120 }));
+
+    const handle = {
+      driver: "claude-code",
+      token: "tok-abc",
+      originCwd: "/tmp/wt-1",
+    };
+
+    await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      handle,
+      "/tmp/wt-1",
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    // Argument 4 (zero-indexed 3) is the resumeHandle.
+    expect(executePhaseFn.mock.calls[0][3]).toEqual(handle);
+  });
+
   // === AC-2: Phase retry behavior — cold-start success after retry ===
   it("succeeds after first cold-start retry", async () => {
     const executePhaseFn = vi

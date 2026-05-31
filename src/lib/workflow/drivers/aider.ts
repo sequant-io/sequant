@@ -13,6 +13,7 @@ import type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ResumeHandle,
 } from "./agent-driver.js";
 import type { AiderSettings } from "../../settings.js";
 
@@ -23,6 +24,16 @@ export class AiderDriver implements AgentDriver {
 
   constructor(settings?: AiderSettings) {
     this.settings = settings;
+  }
+
+  /**
+   * Aider has no session-resume concept: each invocation is a one-shot
+   * `aider --message <prompt>` against a fresh chat. There is no token to
+   * reattach to, so resume is always declined (#674).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  canResume(handle: ResumeHandle, targetCwd: string): boolean {
+    return false;
   }
 
   async executePhase(
