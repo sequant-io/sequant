@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.3.0
+# What We've Built: Sequant v2.4.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,7 +737,7 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.3.0)
+### Recent Additions (v2.4.0)
 
 - **Unified Run Renderer** - Two-zone live grid + events log replaces dual-output regression; experimental ink-based TUI dashboard variant via `--experimental-tui` (#618, #620, #624, #540, #542, #543)
 - **Interactive Relay** - `sequant prompt <issue> "..."` and `sequant watch <issue>` send messages into and tail replies from a running run, without killing it (#383)
@@ -1115,7 +1115,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.3.0                                │
+│                              SEQUANT v2.4.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
