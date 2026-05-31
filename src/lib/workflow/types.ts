@@ -421,6 +421,18 @@ export type ProgressCallback = (
 ) => void;
 
 /**
+ * #672 AC-2: fired once per issue after the executor has resolved the final
+ * phase pipeline (post auto-detect, post resume filter, post testgen /
+ * security-review insertion). Lets the run renderer seed pending cells for
+ * the full roadmap before any phase fires, so users see what is about to run
+ * instead of phases appearing one at a time as they stream.
+ *
+ * Empty `phases` means "no plan known" — the renderer should fall back to
+ * streaming-only display.
+ */
+export type PhasePlanCallback = (issue: number, phases: string[]) => void;
+
+/**
  * Shared context for executing a batch of issues.
  * Replaces 11 positional parameters in executeBatch (#402).
  */
@@ -435,6 +447,9 @@ export interface BatchExecutionContext {
   packageManager?: string;
   baseBranch?: string;
   onProgress?: ProgressCallback;
+  /** #672 AC-2: forwarded to per-issue context so batch-executor can fire it
+   * once the final phase pipeline is known. */
+  onPhasePlan?: PhasePlanCallback;
   /**
    * Optional live-zone pause handle (#656). When set, the phase executor calls
    * `pause()` before forwarding verbose Claude SDK output to stdout and
@@ -493,6 +508,8 @@ export interface IssueExecutionContext {
   baseBranch?: string;
   /** Per-phase progress callback (used in parallel mode) */
   onProgress?: ProgressCallback;
+  /** #672 AC-2: invoked once after the per-issue phase plan resolves. */
+  onPhasePlan?: PhasePlanCallback;
   /**
    * Optional live-zone pause handle (#656). Forwarded to
    * `executePhaseWithRetry` so the renderer's `pause`/`resume` hooks fire

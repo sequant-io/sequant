@@ -548,7 +548,11 @@ describe("Item 2 — summary teardown + width clamp", () => {
 // =============================================================================
 
 describe("Item 3 — exec attempt counter", () => {
-  it("AC-3.1: TTYRenderer events log shows `(attempt N/M)` from second exec onwards", () => {
+  it("AC-3.1 (post-#672): TTYRenderer failure lines carry `(attempt N/M)` from second exec onwards", () => {
+    // #672 AC-1 dropped the TTY `▸ start` journal line, so the attempt
+    // suffix on retries surfaces through the surviving failure lines and
+    // the live-zone `loop N/M` status header. NonTTY behaviour is covered
+    // separately by AC-3.2 below.
     const { r, buf } = makeTTY({ columns: 100, maxLoopIterations: 3 });
     r.registerIssue({ issueNumber: 604 });
     r.onEvent({ issue: 604, phase: "exec", event: "start", iteration: 1 });
@@ -586,13 +590,15 @@ describe("Item 3 — exec attempt counter", () => {
     r.onEvent({ issue: 604, phase: "exec", event: "start", iteration: 3 });
 
     const stripped = stripAnsi(buf.joined());
-    const execStartLines = stripped
+    const execFailLines = stripped
       .split("\n")
-      .filter((l) => /▸ #604 exec/.test(l));
-    expect(execStartLines).toHaveLength(3);
-    expect(execStartLines[0]).not.toMatch(/\(attempt/);
-    expect(execStartLines[1]).toContain("(attempt 2/3)");
-    expect(execStartLines[2]).toContain("(attempt 3/3)");
+      .filter((l) => /✘ #604 exec/.test(l));
+    expect(execFailLines).toHaveLength(2);
+    expect(execFailLines[0]).not.toMatch(/\(attempt/);
+    expect(execFailLines[1]).toContain("(attempt 2/3)");
+    // Live frame status header carries the third attempt counter via `loop N/M`.
+    const frame = stripAnsi(r.renderLiveFrame(100));
+    expect(frame).toMatch(/exec loop 3\/3/);
     r.dispose();
   });
 
@@ -669,8 +675,15 @@ describe("Item 3 — exec attempt counter", () => {
     const { r: tty, buf: ttyBuf } = makeTTY({ maxLoopIterations: 3 });
     drive(tty);
     const ttyOut = stripAnsi(ttyBuf.joined());
+    // #672 AC-1: TTY scrollback now only carries terminal transitions
+    // (`✘ failed` here). The retry suffix surfaces on the failure lines —
+    // the dropped `▸ start` lines previously carried it too. The third
+    // attempt has no failure (it's still `start` only), so we only check
+    // the second.
     expect(ttyOut).toContain("(attempt 2/3)");
-    expect(ttyOut).toContain("(attempt 3/3)");
+    // Live frame surfaces the third attempt as `loop N/M`.
+    const ttyFrame = stripAnsi(tty.renderLiveFrame(100));
+    expect(ttyFrame).toMatch(/exec loop 3\/3/);
     tty.dispose();
 
     const { r: nonTty, buf: nonTtyBuf } = makeNonTTY({ maxLoopIterations: 3 });
@@ -710,7 +723,10 @@ describe("Item 3 — exec attempt counter", () => {
       });
       const out = stripAnsi(buf.joined());
       expect(out).not.toMatch(/\(attempt/);
-      expect(out).toContain("▸ #614 exec");
+      // #672 AC-1: TTY scrollback no longer carries `▸` start lines; only
+      // the `✔ complete` line remains.
+      expect(out).toContain("✔ #614 exec");
+      expect(out).not.toContain("▸ #614 exec");
       r.dispose();
     });
   });
@@ -999,13 +1015,17 @@ describe("Derived AC-D2: maxLoopIterations threaded through all 3 retry-suffix s
     r.dispose();
   });
 
-  it("respects maxLoopIterations=5 in TTYRenderer events log", () => {
-    const { r, buf } = makeTTY({ maxLoopIterations: 5 });
+  it("respects maxLoopIterations=5 in TTYRenderer live frame (post-#672)", () => {
+    // #672 AC-1 dropped the `▸ start` TTY events log line, so the
+    // `(attempt N/M)` suffix on starts now surfaces via the live-zone
+    // `loop N/M` status header. The events log path is exercised by the
+    // NonTTY test above.
+    const { r } = makeTTY({ maxLoopIterations: 5 });
     r.registerIssue({ issueNumber: 614 });
     r.onEvent({ issue: 614, phase: "exec", event: "start", iteration: 4 });
-    const out = stripAnsi(buf.joined());
-    expect(out).toContain("(attempt 4/5)");
-    expect(out).not.toContain("(attempt 4/3)");
+    const frame = stripAnsi(r.renderLiveFrame(100));
+    expect(frame).toMatch(/exec loop 4\/5/);
+    expect(frame).not.toMatch(/4\/3/);
     r.dispose();
   });
 

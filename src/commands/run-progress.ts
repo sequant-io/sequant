@@ -10,12 +10,18 @@
 import { createRunRenderer } from "../lib/cli-ui/run-renderer.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
+import type {
+  ProgressCallback,
+  PhasePlanCallback,
+} from "../lib/workflow/types.js";
 
 export interface ProgressWiring {
   renderer: RunRenderer | null;
   heartbeat: LivenessHeartbeat | null;
   onProgress: ProgressCallback | undefined;
+  /** #672 AC-2: forwarded to the orchestrator so batch-executor can hand the
+   *  resolved phase pipeline back to the renderer once it's known. */
+  onPhasePlan: PhasePlanCallback | undefined;
 }
 
 /**
@@ -31,6 +37,13 @@ export function buildProgressWiring(args: {
   /** AC-23: when auto-detect mode is on, the renderer shows `Phase: detecting…`
    *  while spec runs (before the resolved plan is known). */
   autoDetectPhases?: boolean;
+  /** #672 AC-2: the base configured phase pipeline. In explicit-phase mode
+   *  (not auto-detect) this is known upfront, so every issue — including those
+   *  still queued behind the active one — can show its roadmap immediately
+   *  rather than only once it starts running. `setPhasePlan` later refines it
+   *  per issue (e.g. testgen/security-review insertion). Ignored in
+   *  auto-detect mode, where the plan isn't known until spec resolves it. */
+  basePhases?: string[];
   /** #624 Item 3 / D2: total allowed quality-loop iterations (from settings). */
   maxLoopIterations?: number;
 }): ProgressWiring {
@@ -40,6 +53,7 @@ export function buildProgressWiring(args: {
     issueNumbers,
     phaseTimeoutSeconds,
     autoDetectPhases,
+    basePhases,
     maxLoopIterations,
   } = args;
 
@@ -68,8 +82,21 @@ export function buildProgressWiring(args: {
         })
       : null;
   if (renderer) {
+    // #672 AC-2: seed the planned pipeline at registration when it's known
+    // upfront (explicit-phase mode). This makes queued issues render their
+    // roadmap before they start, matching the issue's multi-row matrix
+    // mock-up. In auto-detect mode the plan isn't known yet, so we leave
+    // `plannedPhases` undefined and rely on `setPhasePlan` once spec resolves.
+    const seedPlan =
+      !autoDetectPhases && basePhases && basePhases.length > 0
+        ? basePhases
+        : undefined;
     for (const issueNumber of issueNumbers) {
-      renderer.registerIssue({ issueNumber, autoDetect: autoDetectPhases });
+      renderer.registerIssue({
+        issueNumber,
+        autoDetect: autoDetectPhases,
+        plannedPhases: seedPlan,
+      });
     }
   }
 
@@ -102,5 +129,11 @@ export function buildProgressWiring(args: {
     };
   }
 
-  return { renderer, heartbeat, onProgress };
+  // #672 AC-2: only the renderer path consumes a phase plan; quiet / TUI
+  // modes leave this undefined and the orchestrator no-ops the callback.
+  const onPhasePlan: PhasePlanCallback | undefined = renderer
+    ? (issue, phases) => renderer.setPhasePlan(issue, phases)
+    : undefined;
+
+  return { renderer, heartbeat, onProgress, onPhasePlan };
 }

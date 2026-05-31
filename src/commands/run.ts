@@ -104,12 +104,15 @@ export async function runCommand(
 
   // RunRenderer (#618) + LivenessHeartbeat (#574) wiring lives in
   // run-progress.ts to keep this adapter under the 200-LOC cap (#503 AC-2).
-  const { renderer, heartbeat, onProgress } = buildProgressWiring({
+  const { renderer, heartbeat, onProgress, onPhasePlan } = buildProgressWiring({
     tuiEnabled,
     quiet: Boolean(options.quiet),
     issueNumbers: resolved.issueNumbers,
     phaseTimeoutSeconds: settings.run.timeout,
     autoDetectPhases: resolved.autoDetectPhases,
+    // #672 AC-2: base pipeline so queued issues show their roadmap upfront in
+    // explicit-phase mode (ignored when auto-detect resolves the plan later).
+    basePhases: resolved.config.phases,
     // #624 Item 3 / D2: route the resolved maxIterations into the renderer so
     // `(attempt N/M)` and `loop N/M` reflect actual configured limits.
     maxLoopIterations: resolved.config.maxIterations,
@@ -131,6 +134,7 @@ export async function runCommand(
         {
           ...init,
           onProgress,
+          onPhasePlan,
           phasePauseHandle: renderer ?? undefined,
           onOrchestratorReady: (orch) => {
             tuiHandle = renderTui(orch);
@@ -159,7 +163,12 @@ export async function runCommand(
 
   try {
     const result = await RunOrchestrator.run(
-      { ...init, onProgress, phasePauseHandle: renderer ?? undefined },
+      {
+        ...init,
+        onProgress,
+        onPhasePlan,
+        phasePauseHandle: renderer ?? undefined,
+      },
       issues,
       batches,
     );
