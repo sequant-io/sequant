@@ -99,6 +99,7 @@ sequant doctor              # Verify installation health
 | `sequant doctor` | Check installation health and prerequisites |
 | `sequant status [issue]` | Show version, config, workflow state |
 | `sequant run <issues...>` | Execute workflow headlessly |
+| `sequant ready <issue>` | Post-resolve A+ QA gate (drives to merge-readiness, never merges) |
 | `sequant state [init\|rebuild\|clean]` | Manage workflow state |
 | `sequant stats` | View local workflow analytics |
 | `sequant dashboard` | Launch real-time workflow dashboard |
