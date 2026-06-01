@@ -80,9 +80,28 @@ Per-case JSON is written to `.sequant/backtest/<issue>-results.json`; the run pr
 | Clean threshold exit on a control case, no invented gaps | true negative |
 | Looped to `maxIterations` / budget on a clean case | noise / false-positive |
 
+## ⛔ Methodology blocker — the "checkout pre-fix, run `ready`" harness does not work (discovered 2026-06-01)
+
+Operationalizing the harness via `scripts/analytics/ready-backtest.ts --run` surfaced that the **"`git worktree add <pre-fix-sha>` then run `ready`" approach in the Replay-harness section above is invalid as written.** Three concrete blockers, all verified by git, before any live pass:
+
+1. **Full-weight QA's stale-branch gate blocks every replay.** `sequant ready` runs full-weight QA (`SEQUANT_FULL_QA=1`, #683 AC-2), which **runs** the stale-branch check (the very check the in-run QA skips). Every corpus pre-fix commit is far behind today's `main` — e.g. #467's pre-fix commit is **171 commits behind** `origin/main`, vs. the default `staleBranchThreshold: 5`. So QA `exit 1`s on `STALE_BRANCH` before reviewing anything. Every case is an old commit ⇒ every case blocks.
+2. **A detached pre-fix checkout has no candidate diff to review.** `git diff origin/main...<pre-fix>` = **0 files** (the pre-fix commit is an ancestor of `main`). The bug-era *code* is present but **the change under review is not** — QA reviews `<base>...HEAD` and finds nothing. The fresh QA we're trying to reproduce reviewed a *PR diff*, which a detached old-commit checkout does not reconstruct.
+3. **The clean control needs the post-fix state.** #677 (noise control) must be replayed at its *implemented* state, not pre-fix — pre-fix is an empty baseline that can't test "does the gate invent gaps on clean work."
+
+**Deeper root cause:** the backtest wants to re-present, to *today's* gate, the *buggy diff the historical fresh QA reviewed*. For squash-merged / deleted PR branches that exact buggy state is often unrecoverable.
+
+### Candidate redesigns (a design decision, not just "run the script")
+
+| Approach | Mechanism | Trade-offs |
+|----------|-----------|------------|
+| **A — base override** | Add `ready --base <era-sha>`; replay the fix's diff as a branch on the pre-fix base; point QA's diff + stale checks at `<era-sha>` (not `origin/main`). | Faithful to history, but needs a new CLI/QA-base primitive (skill changes ×3) **and** the historical buggy diff (often unrecoverable for squash-merged branches). |
+| **B — revert-on-current-main** (looks simpler) | Branch off **current** `main`, `git revert --no-commit <fix>` to reintroduce the bug as a candidate diff, run `ready` with the **default** base. | No new feature: `behind main` = 0 (no stale block) and the diff = the reintroduced bug. Tests "does today's gate catch this defect class **today**" — arguably more relevant. Caveats: the revert may conflict after drift; it reviews a *removal of the fix* (which is itself the #318-class regression test); #534 empty-branch cases (#529/#570) still need their own empty-worktree setup. |
+
+Approach **B** needs only driver changes (no `ready` feature); **A** is the more faithful but heavier primitive. Resolve this before re-attempting Layer 2.
+
 ## Execution status
 
-⚠️ The empirical recall and noise numbers require running the harness above against 27 pre-fix worktrees with **live LLM QA** — this is non-deterministic and slow, so it is executed **offline on the feature branch** (rollout-plan step 2), not in CI or as part of the implementing commit. This document commits the **methodology, corpus, harness, and scoring rubric**; the results table below is to be filled in by that offline run before public promotion.
+⚠️ **Blocked on the methodology redesign above** — the prior "offline run is all that's left" framing was wrong; the harness itself needs reworking first (Approach A or B). This document commits the **corpus, scoring rubric, driver plumbing, and the blocker analysis**; the results table below stays `_pending_` until the redesign lands and a valid run is executed offline.
 
 ### Results (to be filled by the offline run)
 
