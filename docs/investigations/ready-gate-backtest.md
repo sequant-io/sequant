@@ -71,18 +71,41 @@ Per-case JSON is written to `.sequant/backtest/<issue>-results.json`; the run pr
 | Clean threshold exit on a control case, no invented gaps | true negative |
 | Looped to `maxIterations` / budget on a clean case | noise / false-positive |
 
-### Scoring rubric
+## ⛔ Methodology blocker — the "checkout pre-fix, run `ready`" harness does not work (discovered 2026-06-01)
 
-| Outcome | Counts as |
-|---------|-----------|
-| `reason: NO_IMPLEMENTATION` on #529/#570 | recall hit (AC subset) |
-| `AC_NOT_MET` surfaced, `remaining` names the defect class | recall hit |
-| Clean threshold exit on a control case, no invented gaps | true negative |
-| Looped to `maxIterations` / budget on a clean case | noise / false-positive |
+Operationalizing the harness via `scripts/analytics/ready-backtest.ts --run` surfaced that the **"`git worktree add <pre-fix-sha>` then run `ready`" approach in the Replay-harness section above is invalid as written.** Three concrete blockers, all verified by git, before any live pass:
+
+1. **Full-weight QA's stale-branch gate blocks every replay.** `sequant ready` runs full-weight QA (`SEQUANT_FULL_QA=1`, #683 AC-2), which **runs** the stale-branch check (the very check the in-run QA skips). Every corpus pre-fix commit is far behind today's `main` — e.g. #467's pre-fix commit is **171 commits behind** `origin/main`, vs. the default `staleBranchThreshold: 5`. So QA `exit 1`s on `STALE_BRANCH` before reviewing anything. Every case is an old commit ⇒ every case blocks.
+2. **A detached pre-fix checkout has no candidate diff to review.** `git diff origin/main...<pre-fix>` = **0 files** (the pre-fix commit is an ancestor of `main`). The bug-era *code* is present but **the change under review is not** — QA reviews `<base>...HEAD` and finds nothing. The fresh QA we're trying to reproduce reviewed a *PR diff*, which a detached old-commit checkout does not reconstruct.
+3. **The clean control needs the post-fix state.** #677 (noise control) must be replayed at its *implemented* state, not pre-fix — pre-fix is an empty baseline that can't test "does the gate invent gaps on clean work."
+
+**Deeper root cause:** the backtest wants to re-present, to *today's* gate, the *buggy diff the historical fresh QA reviewed*. For squash-merged / deleted PR branches that exact buggy state is often unrecoverable.
+
+### Candidate redesigns (a design decision, not just "run the script")
+
+| Approach | Mechanism | Trade-offs |
+|----------|-----------|------------|
+| **A — base override** | Add `ready --base <era-sha>`; replay the fix's diff as a branch on the pre-fix base; point QA's diff + stale checks at `<era-sha>` (not `origin/main`). | Faithful to history, but needs a new CLI/QA-base primitive (skill changes ×3) **and** the historical buggy diff (often unrecoverable for squash-merged branches). |
+| **B — revert-on-current-main** (looks simpler) | Branch off **current** `main`, `git revert --no-commit <fix>` to reintroduce the bug as a candidate diff, run `ready` with the **default** base. | No new feature: `behind main` = 0 (no stale block) and the diff = the reintroduced bug. Tests "does today's gate catch this defect class **today**" — arguably more relevant. Caveats: the revert may conflict after drift; it reviews a *removal of the fix* (which is itself the #318-class regression test); #534 empty-branch cases (#529/#570) still need their own empty-worktree setup. |
+
+Approach **B** needs only driver changes (no `ready` feature); **A** is the more faithful but heavier primitive.
+
+### Approach B was tested — it also fails on this corpus (2026-06-01)
+
+A manual revert-on-main trial on **#573** (a focused skill-prompt fix) **conflicted immediately**: `git revert <fix>` collided on `skills/qa/SKILL.md` (`U` unmerged), because that file has been edited many times since the fix. Surveying the corpus confirms this is systemic, not a one-off:
+
+- **7 of the 10 derivable fixes touch high-churn files** (`qa/SKILL.md`, `run.ts`, `skills/`, `batch-executor`, `phase-executor`) — #421, #467, #318, #465, #484, #554, #573. Their reverts conflict against the drift.
+- The other **3 (#503, #528, #625) are the low-confidence cases** whose `(#N)` match is a *docs* commit — there is no code defect to revert in the first place.
+
+So the corpus is squeezed from both sides: high-churn fixes don't revert cleanly, and the clean-reverting remainder has no real defect. **Both A and B are empirically non-viable** for an *automated* run — A is blocked by the stale-gate + empty-diff, B by revert conflicts on actively-developed files. A valid run would require bespoke per-case reconstruction (hand-resolving each revert conflict, or recovering the historical buggy PR diff from `.entire`), which is archaeology, not a script.
+
+### Conclusion & recommendation
+
+**Automated Layer-2 backtest of this historical corpus is not cost-effective.** The deterministic guarantees AC-7 actually cares about — the #534 empty-branch / null-verdict guard, the policy thresholds, and the budget/stagnation exits — are already pinned by `ready-gate.test.ts` in CI (see Falsifiability). The realistic empirical validation is **Layer 3 (forward shadow dogfood)**: run `sequant ready` alongside the manual fresh `/qa` on the *next* ≥10 live issues, where the candidate diff exists by construction and no archaeology is needed. Recommend **descoping AC-7's "measured historical recall" to the Layer-3 forward cohort** and treating this document as the record of why the backtest-against-history path was abandoned.
 
 ## Execution status
 
-⚠️ The empirical recall and noise numbers require running the harness above against 27 pre-fix worktrees with **live LLM QA** — this is non-deterministic and slow, so it is executed **offline on the feature branch** (rollout-plan step 2), not in CI or as part of the implementing commit. This document commits the **methodology, corpus, harness, and scoring rubric**; the results table below is to be filled in by that offline run before public promotion.
+⚠️ **Automated historical backtest abandoned as infeasible (see above).** Validation shifts to Layer-3 forward shadow dogfood (#689 AC-2). This document is retained as the methodology + corpus + the evidence that both replay approaches (A: stale-gate/empty-diff; B: revert conflicts on drift) fail for an automated run. The results table below will be filled from the Layer-3 forward cohort, not a historical run.
 
 ### Results (to be filled by the offline run)
 

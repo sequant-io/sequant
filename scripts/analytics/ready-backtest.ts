@@ -340,6 +340,19 @@ async function main() {
   );
   console.log(`# current-skills overlay: ${currentSkills ? "ON" : "OFF"}\n`);
 
+  if (live) {
+    // KNOWN BLOCKER (2026-06-01): a detached pre-fix checkout trips full-weight
+    // QA's stale-branch gate (every case is >5 commits behind main) AND has no
+    // candidate diff to review (git diff origin/main...<pre-fix> is empty). See
+    // docs/investigations/ready-gate-backtest.md "Methodology blocker" — the
+    // harness needs the Approach A/B redesign before --run yields valid recall.
+    console.log(
+      "⚠️  --run uses the detached-pre-fix method, which is KNOWN-BROKEN for full-weight QA\n" +
+        "    (stale-branch gate blocks; no candidate diff). Expect STALE_BRANCH / no-diff, not recall.\n" +
+        "    See docs/investigations/ready-gate-backtest.md → Methodology blocker.\n",
+    );
+  }
+
   const rows: string[] = [];
   const results: Array<{ c: BacktestCase; ac?: string; aplus?: string }> = [];
 
