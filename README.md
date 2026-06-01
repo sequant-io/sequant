@@ -9,93 +9,79 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-### What's new in 2.x
+AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step.
 
-**Unreleased:**
-
-- **`sequant ready <issue>`** — post-resolve A+ QA gate. Drives an already-resolved issue's worktree through a **full-weight** `qa → loop → qa` pipeline (the branch-freshness / process-state pre-flight checks run even under an orchestrator), surfaces every gap in a structured report, and **stops at the human merge gate — it never merges.** Configurable rigor via `ready.policy`: `ac` (default, stop at ACs objectively met, report quality gaps) or `a-plus` (loop to `READY_FOR_MERGE`). Reproduces the maintainer's manual fresh-session pass deterministically.
-
-**New in 2.4.0:**
-
-- **⚠️ Breaking — Node 22.12+ required** (was 20.19+). Node 20 reached end-of-life on 2026-04-30.
-- **⚠️ Breaking — `sequant run` flag rebind:** `-q` now means `--quiet` (it previously bound silently to `--quality-loop`); the quality loop is now `-Q`. Update scripts that used `-q` for the quality loop.
-- **In-place phase matrix** — `sequant run`'s live grid now shows the full phase pipeline per issue as cells advancing pending → running → ✔/✘ in place, instead of a separate start/complete event journal. Fewer redraws, cleaner scrollback.
-- **Typed workflow event system** — JSON-serializable lifecycle events (`run_started`, `phase_completed`, `qa_verdict`, …) for MCP / webhook / TUI consumers.
-- **Phase registry** — all built-in phases consolidated; `--phases` validates names at runtime.
-
-**Earlier in 2.x:**
-
-- **MCP server** — `sequant serve` exposes workflow orchestration as MCP tools (`sequant_run`, `sequant_status`, `sequant_logs`). Any MCP client can drive Sequant headlessly.
-- **`/assess` unification** — `/solve` is merged into `/assess` with a 6-action vocabulary (PROCEED, CLOSE, MERGE, REWRITE, CLARIFY, PARK). `/solve` still works as an alias.
-- **Parallel execution with per-issue locks** — multi-issue runs are concurrent by default (`--concurrency`); `.sequant/locks/` prevents two sessions from clobbering the same issue.
-- **Stacked PRs** — `sequant run --stacked` chains issue PRs onto their predecessor branch so reviewers see the incremental diff per issue instead of the cumulative chain diff.
-- **Live run dashboard + cohort analytics** — unified renderer with a live TTY grid (active issues as an in-place phase matrix + a compact completion log); `sequant stats --label <name> --since YYYY-MM-DD` filters runs for measuring feature- or class-specific success rates.
-- **Interactive relay** — `sequant prompt <issue> "<message>"` sends queries or directives into a running headless `sequant run`, and `sequant watch <issue>` tails the replies. Bidirectional communication with detached and CI-driven sessions.
-- **Worktree isolation for parallel agents** — `sequant run --isolate-parallel` gives each parallel `/exec` agent group its own sub-worktree with merge-back via `git merge --no-ff`, eliminating file conflicts between concurrent agents structurally rather than by convention.
-- **GitHub Actions & multi-agent backends** — label-triggered and comment-triggered CI workflows out of the box; `--agent aider` for non-Claude-Code execution.
-
-Upgrading from v1.x? See the [migration guide](CHANGELOG.md#migration-from-v1x).
+See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
 ## Quick Start
 
-### Option A: Plugin (interactive users)
-
-In Claude Code:
-```
-/plugin install sequant@sequant-io/sequant
-/sequant:setup
-```
-
-You get skills, hooks, and MCP tools — no npm required.
-
-### Option B: Package install (power users / CI)
-
-```bash
-npm install sequant          # npm
-pnpm add sequant             # pnpm
-yarn add sequant             # yarn
-bun add sequant              # bun
-```
-
-Then initialize:
-```bash
-npx sequant init     # Install skills to your project
-npx sequant doctor   # Verify setup
-```
-
-### Start Using
-
-Then in Claude Code:
-
-```
-/fullsolve 123    # Solve issue #123 end-to-end
-```
-
-Or step-by-step:
-
-```
-/spec 123    # Plan implementation
-/exec 123    # Build in isolated worktree
-/qa 123      # Review before merge
-```
-
 ### Prerequisites
 
-**Required (one of):**
+**An AI coding agent — one of:**
 - [Claude Code](https://claude.ai/code) — default agent
-- [Aider](https://aider.chat/) — alternative via `--agent aider`
+- [Aider](https://aider.chat/) — alternative, via `--agent aider`
+
+**Always required (both):**
 - [GitHub CLI](https://cli.github.com/) — run `gh auth login`
-- Git (for worktree-based isolation)
+- Git — for worktree-based isolation
 
-**For npm installation:**
-- Node.js 22.12+
+**For the npm/CLI install path:** Node.js 22.12+
 
-**Optional MCP servers (enhanced features):**
+**Optional MCP (Model Context Protocol) servers — enhanced features:**
 - `chrome-devtools` — enables `/test` for browser-based UI testing
 - `sequential-thinking` — enhanced reasoning for complex decisions
 - `context7` — library documentation lookup
 
 > **Note:** Sequant is optimized for Node.js/TypeScript projects. The worktree workflow works with any git repository.
+
+### Install
+
+Pick the path that matches **where you run Sequant**:
+
+**Inside Claude Code (plugin)** — skills, hooks, and MCP tools, no npm required:
+```
+/plugin install sequant@sequant-io/sequant
+/sequant:setup
+```
+
+**Headless / CI (npm package)** — drive runs from the terminal or a CI job:
+```bash
+npm install sequant          # or: pnpm add / yarn add / bun add sequant
+npx sequant init             # install skills into your project
+npx sequant doctor           # verify setup
+```
+
+### Your first run
+
+Inside Claude Code, solve an issue end-to-end:
+```
+/fullsolve 123
+```
+
+Or headless from the terminal (`-Q` runs the quality loop):
+```bash
+npx sequant run 123 -Q
+```
+
+Either way, Sequant creates an isolated worktree, posts a plan comment to the issue, and opens a merge-ready PR.
+
+### What a run looks like
+
+A real `/fullsolve 683` (the run that built `sequant ready` itself):
+
+```text
+SEQUANT WORKFLOW · #683
+  spec   ✔  9 ACs extracted · plan posted to the issue
+  exec   ✔  29 tests + docs + lint fix · committed to the feature branch
+  qa     ✔  full build + suite · 8/9 ACs MET · 1 manual AC marked PENDING (not faked)
+  pr     ✔  opened #686 · 7/7 checks green · MERGEABLE
+
+  → stops at the human merge gate · never auto-merges · run `merge` to land it
+```
+
+QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
+
+> 📹 A recorded demo GIF of the live run grid is coming — tracked separately.
 
 ---
 
@@ -149,89 +135,103 @@ When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
 
 ---
 
-## Two Ways to Use
+## Using Sequant
 
-### Interactive (Slash Commands)
+### Solve one issue (the 80% path)
 
-Type commands in Claude Code or any MCP-connected client:
+The most common invocation — no flags. Auto-creates a worktree, posts a plan comment to the issue, and opens a PR.
 
+In Claude Code:
 ```
-/fullsolve 123              # Complete pipeline
-/spec 123 → /exec → /qa     # Step by step
+/fullsolve 123
 ```
 
-### Headless (CLI)
-
-Run without Claude Code UI:
-
+Headless (`-Q` runs the quality loop):
 ```bash
-npx sequant run 123              # Single issue
-npx sequant run 1 2 3            # Batch (parallel)
-npx sequant run 123 --quality-loop
-npx sequant run 123 --base feature/dashboard  # Custom base branch
-npx sequant merge --check        # Verify batch before merging
-npx sequant ready 123            # Post-resolve A+ QA gate (never merges)
+npx sequant run 123 -Q
+```
+
+> `sequant run --help` is the authoritative flag list. There is **no** `--skip-spec` — to skip the plan phase, use `--phases exec,qa`.
+
+### Batch: triage, then run
+
+For several issues at once, the ritual is `/assess` → paste the commands it emits:
+
+```
+/assess 101 102 103
+```
+
+`/assess` returns a dashboard (PROCEED / PARK / CLOSE per issue), dependency ordering, and ready-to-paste commands like `npx sequant run 101 -Q`. The quality loop (`-Q`) is part of every command it generates.
+
+### From Claude Code, via the MCP server
+
+With the plugin installed, drive runs through the MCP server from inside Claude Code:
+
+```
+use sequant plugin to fullsolve 123
+```
+
+You get back a structured phase-timing table and verdict. The same tools — `sequant_run`, `sequant_status`, `sequant_logs` — are available to any MCP client; `npx sequant serve` exposes them headlessly.
+
+### QA on the issue
+
+Re-verify a resolved issue or PR. Findings land as **issue comments**, with each acceptance criterion independently re-checked:
+
+```
+123 any gaps?     # re-QA issue #123
+/qa pr488         # re-QA a PR
+```
+
+### Merge
+
+```
+merge             # squash-merge + sync main + worktree cleanup + post-merge build/test
 ```
 
 ---
 
-## Commands
+## Command Reference
 
-### Core Workflow
+Most work goes through a handful of top-level commands. The rest are either pipeline internals (run for you) or occasional tools.
 
-| Command | Purpose |
-|---------|---------|
-| `/spec` | Plan implementation, draft acceptance criteria |
-| `/exec` | Implement in isolated git worktree |
-| `/test` | Browser-based UI testing (optional) |
-| `/qa` | Code review and quality gate |
+### Everyday
 
-### Automation
+| Command | What it does |
+|---------|--------------|
+| `/fullsolve <issue>` | Complete spec → exec → qa pipeline; opens a PR. The 80% path. |
+| `/assess <issues…>` | Triage one or more issues; emits a dashboard + ready-to-paste `run` commands (6-action vocabulary). |
+| `npx sequant run <issues…>` | Headless equivalent of `/fullsolve`; batches run in parallel. Add `-Q` for the quality loop. |
+| `/qa <issue>` | Code review + quality gate; posts findings as issue comments. |
+| `npx sequant merge <issues…>` | Batch integration QA before merging. |
 
-| Command | Purpose |
-|---------|---------|
-| `/fullsolve` | Complete pipeline in one command |
-| `/assess` | Triage issue, recommend workflow (6-action vocabulary) |
-| `/loop` | Fix iteration when checks fail |
-| `sequant ready <issue>` | Post-resolve full-weight A+ QA gate; drives to merge-readiness, then stops at the human merge gate (never merges) |
+### Pipeline internals
 
-### Integration
+`/spec`, `/exec`, `/loop`, `/testgen`, `/test` are the phases that `/fullsolve` and `sequant run` orchestrate for you. You can invoke them directly, but rarely need to.
 
-| Command | Purpose |
-|---------|---------|
-| `/merger` | Multi-issue merge coordination |
-| `/testgen` | Generate test stubs from spec |
-| `/verify` | CLI/script execution verification |
-| `/setup` | Initialize Sequant in a project |
+### Occasional / advanced
 
-### Utilities
+| Command | What it does |
+|---------|--------------|
+| `sequant ready <issue>` | Post-resolve full-weight A+ QA gate; drives to merge-readiness, then stops at the human merge gate (never merges). |
+| `/merger` | Multi-issue merge coordination. |
+| `/improve` | Codebase analysis and improvement discovery. |
+| `/security-review` | Deep security analysis. |
+| `/verify` | CLI/script execution verification. |
+| `/docs` · `/clean` · `/reflect` | Feature docs, repo cleanup, workflow reflection. |
 
-| Command | Purpose |
-|---------|---------|
-| `/docs` | Generate feature documentation |
-| `/clean` | Repository cleanup |
-| `/improve` | Codebase analysis and improvement discovery |
-| `/security-review` | Deep security analysis |
-| `/reflect` | Workflow improvement analysis |
-
----
-
-## CLI Commands
+### CLI utilities
 
 ```bash
-npx sequant init              # Initialize in project
-npx sequant update            # Update skill templates
-npx sequant doctor            # Check installation
-npx sequant status            # Show version and config
-npx sequant run <issues...>   # Execute workflow
-npx sequant merge <issues...> # Batch integration QA before merging
-npx sequant state <cmd>       # Manage workflow state (init/rebuild/clean)
-npx sequant locks <cmd>       # Inspect/clear per-issue concurrency locks
-npx sequant stats             # View local workflow analytics
-npx sequant dashboard         # Launch real-time workflow dashboard
+npx sequant init              # initialize in project
+npx sequant update            # update skill templates
+npx sequant doctor            # check installation
+npx sequant status            # show version and config
+npx sequant state <cmd>       # manage workflow state (init/rebuild/clean)
+npx sequant locks <cmd>       # inspect/clear per-issue concurrency locks
+npx sequant stats             # local workflow analytics (cohort filter: --label / --since)
+npx sequant dashboard         # real-time workflow dashboard
+npx sequant serve             # expose workflow tools over MCP
 ```
-
-Cohort filtering: `npx sequant stats --label docs --since 2026-01-01`. See [Analytics — Filtering by Label or Date](docs/reference/analytics.md#filtering-by-label-or-date) for details.
 
 See [Run Command Options](docs/reference/run-command.md), [Merge Command](docs/reference/merge-command.md), [State Command](docs/reference/state-command.md), and [Analytics](docs/reference/analytics.md) for details.
 
@@ -239,71 +239,7 @@ See [Run Command Options](docs/reference/run-command.md), [Merge Command](docs/r
 
 ## Concurrency
 
-Sequant prevents two sessions from working on the same GitHub issue at the
-same time. When `sequant run` starts, each issue claims a per-issue lock at
-`.sequant/locks/<issue>.lock` containing the holder's PID, hostname, start
-time, and command. A second session attempting the same issue is skipped
-with a clear error and the rest of the batch continues.
-
-**Stale recovery.** Locks are auto-cleared in three situations:
-
-1. Same host, PID no longer alive → cleared immediately (covers SIGKILL and
-   crashes).
-2. Cross-host, lock older than 2 hours → cleared by age.
-3. Manual: `sequant locks clear <issue>` (with safety check by default).
-
-**Taking over an active session.** `sequant run --force <issue>` writes a
-new lock claiming the issue. Add `--signal-other` to also SIGTERM the prior
-PID (same host, alive only). Plain `--force` does not signal — use it when
-you already know the other session is dead.
-
-**Inspecting locks.**
-
-```bash
-npx sequant locks list                # Show every active lock
-npx sequant locks clear 123           # Clear lock for #123 (refuses fresh)
-npx sequant locks clear 123 --force   # Clear unconditionally
-```
-
-**Skill wiring** (`/fullsolve`, `/assess`). The `/fullsolve` skill claims the
-lock at Phase 0.3, releases it at Phase 5.5, AND releases on every halt
-branch (spec failure, exec exhausted, etc.) so an aborted run frees the
-lock immediately. `/assess` probes it read-only and surfaces a dashboard
-warning when any issue is in use. Both use these subcommands directly from
-bash:
-
-```bash
-npx sequant locks acquire 123 --command="/fullsolve 123" --skip-pid-check
-npx sequant locks release 123                    # idempotent; safe on every error path
-npx sequant locks check   123 --json             # exit 1 when held, prints holder JSON
-npx sequant locks check-batch 100 101 102        # /assess: emits ⚠ lines for held issues only
-```
-
-`--skip-pid-check` is required for skill shells: the Node process that runs
-`locks acquire` exits immediately, so its PID is dead before the lock is
-released. With the flag set, stale detection falls back to age-only on the
-holder's own host. The default skill-lock TTL is **6h** (separate from the
-2h cross-host TTL) — long enough to cover virtually every `/fullsolve` run
-including multi-iteration QA loops. Override per-process via
-`SEQUANT_SKILL_LOCK_TTL_MS=<milliseconds>`.
-
-A skill that crashes mid-run leaves at most a 6h orphan; clear it manually
-with `sequant locks clear <issue>` to recover sooner. The skill's explicit
-release calls on every halt branch (see `.claude/skills/fullsolve/SKILL.md`
-Phase 0.3 release contract) mean this corner case should be rare in practice.
-
-**Read-only commands** (`status`, `merge`, `/assess`) warn when an issue is
-locked but do not block.
-
-**MCP / orchestrator mode.** When the `SEQUANT_ORCHESTRATOR` env var is set
-(in-process or remote MCP-driven runs), all lock operations are no-ops —
-the orchestrator caller is responsible for any coordination.
-
-**Caveats.** The lock relies on `open(O_CREAT | O_EXCL)` and is reliable on
-local filesystems. NFS and other network filesystems may not honor those
-semantics; users on networked repos may see false positives. The
-`SEQUANT_LOCKS_DIR` env var overrides the lock directory (used in tests
-and unusual layouts).
+Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/<issue>.lock`) stops two sessions from clobbering the same issue — see [Concurrency & Per-Issue Locks](docs/reference/concurrency.md) for stale recovery, takeover (`--force`), and `sequant locks` subcommands.
 
 ---
 
@@ -344,6 +280,7 @@ See [Customization Guide](docs/guides/customization.md) for all options.
 - [What Is Sequant](docs/concepts/what-is-sequant.md) — Elevator pitch, pipeline diagram, architecture
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
+- [Concurrency & Per-Issue Locks](docs/reference/concurrency.md)
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
