@@ -73,6 +73,30 @@ describe("parseQaVerdict", () => {
     }
   });
 
+  describe("emoji-prefixed value (regression: live repro `run 687`, 2026-06-01)", () => {
+    // QA agents commonly write `Verdict: ✅ READY_FOR_MERGE`. The emoji between
+    // the colon and the token must not defeat parsing — otherwise a genuine
+    // PASS is recorded as "completed without a parseable verdict".
+    for (const verdict of verdicts) {
+      it(`parses "Verdict: ✅ ${verdict}"`, () => {
+        expect(parseQaVerdict(`Verdict: ✅ ${verdict}`)).toBe(verdict);
+      });
+    }
+
+    it('parses heading form "## QA Verdict: ✅ READY_FOR_MERGE"', () => {
+      expect(parseQaVerdict("## QA Verdict: ✅ READY_FOR_MERGE")).toBe(
+        "READY_FOR_MERGE",
+      );
+    });
+
+    it("parses other status emoji (❌ / ⚠️)", () => {
+      expect(parseQaVerdict("Verdict: ❌ AC_NOT_MET")).toBe("AC_NOT_MET");
+      expect(parseQaVerdict("Verdict: ⚠️ AC_MET_BUT_NOT_A_PLUS")).toBe(
+        "AC_MET_BUT_NOT_A_PLUS",
+      );
+    });
+  });
+
   describe("case insensitivity", () => {
     it("parses lowercase verdict", () => {
       expect(parseQaVerdict("Verdict: ready_for_merge")).toBe(

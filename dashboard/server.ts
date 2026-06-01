@@ -420,6 +420,7 @@ function renderIssuesList(issues: IssueState[]): string {
   const byStatus: Record<IssueStatus, IssueState[]> = {
     in_progress: [],
     waiting_for_qa_gate: [],
+    waiting_for_human_merge: [],
     ready_for_merge: [],
     blocked: [],
     not_started: [],

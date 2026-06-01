@@ -168,6 +168,15 @@ export interface ExecutionConfig {
    * Default: false (opt-in for the initial rollout).
    */
   relayEnabled?: boolean;
+  /**
+   * Force full-weight (standalone) QA even under an orchestrator (#683).
+   * When true, the phase executor sets `SEQUANT_FULL_QA=1` in the agent
+   * environment for the `qa` phase. The QA skill honors this flag by running
+   * its standalone branch-freshness / process-state pre-flight checks even
+   * though `SEQUANT_ORCHESTRATOR` is also set. Used by `sequant ready` so its
+   * QA pass does NOT skip the checks that catch the #318/#529/#570 class.
+   */
+  fullQa?: boolean;
 }
 
 /**

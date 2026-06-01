@@ -11,6 +11,10 @@ Solve GitHub issues with structured phases and quality gates — from issue to m
 
 ### What's new in 2.x
 
+**Unreleased:**
+
+- **`sequant ready <issue>`** — post-resolve A+ QA gate. Drives an already-resolved issue's worktree through a **full-weight** `qa → loop → qa` pipeline (the branch-freshness / process-state pre-flight checks run even under an orchestrator), surfaces every gap in a structured report, and **stops at the human merge gate — it never merges.** Configurable rigor via `ready.policy`: `ac` (default, stop at ACs objectively met, report quality gaps) or `a-plus` (loop to `READY_FOR_MERGE`). Reproduces the maintainer's manual fresh-session pass deterministically.
+
 **New in 2.4.0:**
 
 - **⚠️ Breaking — Node 22.12+ required** (was 20.19+). Node 20 reached end-of-life on 2026-04-30.
@@ -166,6 +170,7 @@ npx sequant run 1 2 3            # Batch (parallel)
 npx sequant run 123 --quality-loop
 npx sequant run 123 --base feature/dashboard  # Custom base branch
 npx sequant merge --check        # Verify batch before merging
+npx sequant ready 123            # Post-resolve A+ QA gate (never merges)
 ```
 
 ---
@@ -188,6 +193,7 @@ npx sequant merge --check        # Verify batch before merging
 | `/fullsolve` | Complete pipeline in one command |
 | `/assess` | Triage issue, recommend workflow (6-action vocabulary) |
 | `/loop` | Fix iteration when checks fail |
+| `sequant ready <issue>` | Post-resolve full-weight A+ QA gate; drives to merge-readiness, then stops at the human merge gate (never merges) |
 
 ### Integration
 
