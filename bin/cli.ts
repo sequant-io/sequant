@@ -59,6 +59,10 @@ import {
 } from "../src/commands/state.js";
 import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
+import {
+  readyCommand,
+  type ReadyCommandOptions,
+} from "../src/commands/ready.js";
 import { conventionsCommand } from "../src/commands/conventions.js";
 import {
   locksListCommand,
@@ -400,6 +404,34 @@ program
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .action(mergeCommand);
+
+program
+  .command("ready")
+  .description(
+    "Post-resolve A+ QA gate — drive an issue to merge-readiness, then stop at the human merge gate (never merges)",
+  )
+  .argument("<issue>", "Issue number to drive to readiness")
+  .option(
+    "--policy <policy>",
+    "Gate policy: 'ac' (default, stop at ACs met) or 'a-plus' (loop to READY_FOR_MERGE)",
+  )
+  .option(
+    "--max-iterations <n>",
+    "Max QA passes before halting for human review (default: settings.run.maxIterations)",
+    parseInt,
+  )
+  .option(
+    "--budget <tokens>",
+    "Token budget; halt cleanly with a 'needs human' message on exhaustion",
+    parseInt,
+  )
+  .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
+  .option("--no-mcp", "Disable MCP server injection in headless mode")
+  .option("--json", "Output as JSON")
+  .option("-v, --verbose", "Enable verbose output")
+  .action((issue: string, options: ReadyCommandOptions) =>
+    readyCommand(issue, options),
+  );
 
 program
   .command("conventions")

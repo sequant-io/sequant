@@ -381,6 +381,26 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   /**
+   * Fetch an issue's raw body markdown. Used by `sequant ready` (#683) to parse
+   * the Non-Goals section for report-only gap classification. Returns null when
+   * gh is unavailable, the issue can't be fetched, or the body is empty.
+   */
+  fetchIssueBodySync(issueId: string): string | null {
+    try {
+      const result = spawnSync(
+        "gh",
+        ["issue", "view", issueId, "--json", "body", "--jq", ".body"],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+      );
+      if (result.status !== 0) return null;
+      const body = result.stdout ?? "";
+      return body.trim() ? body : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Check if the `gh` CLI binary is installed (not auth, just available).
    * Used by upstream/assessment.ts for pre-flight checks.
    */
