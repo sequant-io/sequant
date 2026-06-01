@@ -44,20 +44,32 @@ For each corpus case:
 
 ### Replay harness
 
-Reuse the existing `.entire` extraction harness (the `/tmp/qa_sessions` condenser) to recover, per corpus case: the issue number, the pre-fix commit SHA, and the fresh QA's recorded verdict + caught-defect summary (the ground truth).
-
-For each case:
+The mechanical parts are automated by **`scripts/analytics/ready-backtest.ts`** (#689). It reads the ground-truth corpus, derives each pre-fix SHA, sets up an issue-number-named worktree, runs `sequant ready` under both policies, captures the JSON, and emits the results table.
 
 ```bash
-# 1. Recreate the worktree at the pre-fix commit.
-git worktree add ../worktrees/backtest/<issue> <pre-fix-sha>
-# 2. Run both policies in shadow (never merges by construction).
-npx sequant ready <issue> --policy ac    --json > /tmp/backtest/<issue>-ac.json
-npx sequant ready <issue> --policy a-plus --json > /tmp/backtest/<issue>-aplus.json
-# 3. Score: did result.reason / result.remaining / result.finalVerdict flag the known defect class?
+npm run build                                            # ready-backtest invokes dist/bin/cli.js
+npx tsx scripts/analytics/ready-backtest.ts              # DRY RUN: resolve SHAs + plan, no live passes
+npx tsx scripts/analytics/ready-backtest.ts --run        # execute the live ready passes (SLOW, token cost)
+npx tsx scripts/analytics/ready-backtest.ts --run --only 467,318   # subset
+npx tsx scripts/analytics/ready-backtest.ts --cleanup    # remove backtest worktrees when done
 ```
 
-The `--json` output (`reason`, `finalVerdict`, `autoFixed`, `remaining`) is the scored signal. Scoring is a human read of whether the flagged class matches the ground-truth defect — non-deterministic, so this is an **offline committed report, not a CI gate** (mirrors the #608 / #609 investigation format).
+Per-case JSON is written to `.sequant/backtest/<issue>-results.json`; the run prints a heuristic recall figure. **The committed recall number must come from a human reading those JSON files** — the heuristic score is a starting point, not the verdict (scoring is non-deterministic LLM judgment, so this stays an offline committed report, not a CI gate — mirrors the #608 / #609 format).
+
+### Three methodology decisions (made explicit by the driver)
+
+1. **Skill version — `--current-skills` (default ON).** Checking out a pre-fix commit also reverts `.claude/skills/`, so a naive run would test that commit's *old* QA skill. The driver overlays the current `main` skill dirs onto the old product code, so the measurement answers "does **today's** `ready` catch this old bug." Use `--no-current-skills` to evaluate the historical skill instead.
+2. **Pre-fix SHA — auto-derived, confidence-flagged.** The SHA is the parent of the squash-merge commit matching `(#<issue>)` (`<fix>~1`). This is the #625-class `git log --grep` false-positive zone, so the driver marks any non-scoped or multi-match derivation **LOW-CONFIDENCE**; those cases (in the current corpus: #503, #528, #625, and the #677 control) **require a manual `sha` override in the `CORPUS` manifest** before their results are trusted.
+3. **Scoring — human-confirmed.** The driver's HIT/MISS is heuristic (`reason`/`finalVerdict` vs. expected class). Confirm each by reading the captured JSON before filling the results table.
+
+### Scoring rubric
+
+| Outcome | Counts as |
+|---------|-----------|
+| `reason: NO_IMPLEMENTATION` on #529/#570 | recall hit (AC subset) |
+| `AC_NOT_MET` surfaced, `remaining` names the defect class | recall hit |
+| Clean threshold exit on a control case, no invented gaps | true negative |
+| Looped to `maxIterations` / budget on a clean case | noise / false-positive |
 
 ### Scoring rubric
 
