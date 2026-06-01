@@ -117,18 +117,9 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
     echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
   fi
 fi
-
-# 12. Check README.md "What's new" section mentions the version being released
-if [ -f "README.md" ]; then
-  current=$(node -p "require('./package.json').version")
-
-  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
-  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
-  if ! echo "$whats_new" | grep -qF "New in ${current}"; then
-    echo "Warning: README.md \"What's new\" section omits v${current} — add a feature group before releasing"
-  fi
-fi
 ```
+
+> **Note:** The README "What's new" freshness check lives in **Step 4.65** (after the version bump), not here — it must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs.
 
 ## Release Steps
 
@@ -330,6 +321,25 @@ fi
 ```
 
 **Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
+
+### Step 4.65: Verify README "What's new" Freshness
+
+**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the README already lists — so the gate would never fire for the version actually being released (root cause class of #684).
+
+Warn-only (like the what-weve-built checks): prompt the releaser to add a "What's new" feature group if the new version is absent.
+
+```bash
+# Warn if README.md "What's new" section omits the version being released
+if [ -f "README.md" ]; then
+  new_version=$(node -p "require('./package.json').version")
+
+  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
+  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
+  if ! echo "$whats_new" | grep -qF "New in ${new_version}"; then
+    echo "Warning: README.md \"What's new\" section omits v${new_version} — add a feature group before releasing"
+  fi
+fi
+```
 
 ### Step 4.7: Regenerate Marketplace Artifact
 
