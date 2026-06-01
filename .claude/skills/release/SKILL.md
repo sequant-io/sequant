@@ -119,6 +119,8 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
 fi
 ```
 
+> **Note:** The README "What's new" freshness check lives in **Step 4.65** (after the version bump), not here — it must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs.
+
 ## Release Steps
 
 ### Step 1: Determine Version
@@ -319,6 +321,47 @@ fi
 ```
 
 **Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
+
+### Step 4.65: Verify README "What's new" Freshness
+
+**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the README already lists — so the gate would never fire for the version actually being released (root cause class of #684).
+
+Warn-only (like the what-weve-built checks): prompt the releaser to add a "What's new" feature group if the new version is absent.
+
+```bash
+# Warn if README.md "What's new" section omits the version being released
+if [ -f "README.md" ]; then
+  new_version=$(node -p "require('./package.json').version")
+
+  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
+  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
+  if ! echo "$whats_new" | grep -qF "New in ${new_version}"; then
+    echo "Warning: README.md \"What's new\" section omits v${new_version} — add a feature group before releasing"
+  fi
+fi
+```
+
+### Step 4.7: Regenerate Marketplace Artifact
+
+**IMPORTANT:** The marketplace plugin artifact under `dist/marketplace/` is bundled into the published tgz via `files: ["dist", ...]` in package.json — even though `dist/` is gitignored. Regenerate it from current sources **before** packing/publishing so the bundled README always matches; otherwise a stale artifact ships (root cause of #684 — the v2.4.0 tgz carried a "Node.js 20+" README after the floor moved to 22.12).
+
+This is an action step, so it lives in Release Steps (not the read-only pre-flight checks). It MUST run before Step 5 (`npm pack`) and Step 9 (`npm publish`).
+
+```bash
+# Regenerate the marketplace plugin artifact from current sources
+npm run prepare:marketplace
+
+# Freshness sanity check: generated README's Node.js floor should match package.json engines.
+# Warn-only (regeneration above already fixes the artifact; this is a belt-and-suspenders signal).
+gen_readme="dist/marketplace/external_plugins/sequant/README.md"
+if [ -f "$gen_readme" ]; then
+  engines_floor=$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g,'')")  # e.g. 22.12.0
+  readme_floor=$(grep -oE "Node\.js [0-9]+\.[0-9]+" "$gen_readme" | head -1 | grep -oE "[0-9]+\.[0-9]+" || true)
+  if [ -n "$readme_floor" ] && [ "${engines_floor%.*}" != "$readme_floor" ]; then
+    echo "Warning: generated marketplace README shows Node.js ${readme_floor}, package.json engines floor is ${engines_floor}"
+  fi
+fi
+```
 
 ### Step 5: Verify Package Size
 
