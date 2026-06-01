@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`/release` pre-flight hardens doc-freshness gates** — adds a marketplace-artifact regeneration step (`npm run prepare:marketplace` before pack/publish, with a warn-only Node-floor-vs-`engines` diff) and a `README.md` "What's new" freshness check that warns when the version being released is absent. Closes the two doc surfaces that shipped stale in v2.4.0 (the bundled marketplace README and the root README "What's new" section). (#684)
+
 ## [2.4.0] - 2026-05-30
 
 ### Changed
