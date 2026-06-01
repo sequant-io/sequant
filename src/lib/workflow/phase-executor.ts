@@ -128,9 +128,17 @@ export function parseQaVerdict(output: string): QaVerdict | null {
   // - "**Verdict:** X" (bold label with colon inside)
   // - "**Verdict:** **X**" (bold label and bold value)
   // - "Verdict: X" (plain)
-  // Case insensitive, handles optional markdown formatting
+  // - "Verdict: ✅ X" (emoji-prefixed value — QA agents commonly write this)
+  // The gap between "Verdict:" and the token tolerates any run of
+  // non-alphanumeric characters (emoji, ✅/❌/⚠️, asterisks, whitespace). A
+  // negated ASCII class (not an emoji literal class) keeps this ReDoS-safe and
+  // avoids the no-misleading-character-class lint, matching parseQaSummary's
+  // approach below. Without this, `Verdict: ✅ READY_FOR_MERGE` parsed as null
+  // and a genuine PASS was recorded as "completed without a parseable verdict"
+  // (live repro: `sequant run 687 --phases exec,qa`, 2026-06-01).
+  // Case insensitive, handles optional markdown formatting.
   const verdictMatch = output.match(
-    /(?:###?\s*)?(?:\*\*)?Verdict:?\*?\*?\s*\*?\*?\s*(READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|AC_NOT_MET|NEEDS_VERIFICATION)\*?\*?/i,
+    /(?:###?\s*)?(?:\*\*)?Verdict:?[^A-Za-z0-9_]*(READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|AC_NOT_MET|NEEDS_VERIFICATION)\*?\*?/i,
   );
 
   if (!verdictMatch) return null;
