@@ -100,26 +100,11 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 
 ### Documentation Checks
 
-```bash
-# 11. Check docs/internal/what-weve-built.md is up to date
-if [ -f "docs/internal/what-weve-built.md" ]; then
-  current=$(node -p "require('./package.json').version")
-
-  # Check title version
-  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
-  if [ "$title_version" != "$current" ]; then
-    echo "Warning: docs/internal/what-weve-built.md title shows v${title_version}, expected v${current}"
-  fi
-
-  # Check ASCII art version
-  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
-  if [ "$ascii_version" != "$current" ]; then
-    echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${current}"
-  fi
-fi
-```
-
-> **Note:** The README "What's new" freshness check lives in **Step 4.65** (after the version bump), not here — it must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs.
+> **Note:** Documentation freshness checks that compare against the version *being released* run **after** Step 4 (the version bump), not here in pre-flight:
+> - `docs/internal/what-weve-built.md` title + ASCII version stamps → **Step 4.63**
+> - README "What's new" section → **Step 4.65**
+>
+> They must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs. Running them in pre-flight would compare against the *previous* release — which the docs already reflect — so the gate would never fire for the release in progress (root cause class of #684 / #687).
 
 ## Release Steps
 
@@ -321,6 +306,31 @@ fi
 ```
 
 **Ask the user to review what-weve-built.md before proceeding** if there are new features to document.
+
+### Step 4.63: Verify what-weve-built.md Version Stamps
+
+**IMPORTANT:** This runs **after** Step 4 (version bump) and Step 4.6 (which updates the stamps), so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release — which the file already reflects — so the gate would never fire for the version actually being released (root cause class of #684 / #687, the same ordering bug fixed for the README check in #685).
+
+Warn-only (like the README "What's new" check): prompt the releaser if the title or ASCII-art version stamp omits/mismatches the version being released.
+
+```bash
+# Warn if docs/internal/what-weve-built.md version stamps don't match the version being released
+if [ -f "docs/internal/what-weve-built.md" ]; then
+  new_version=$(node -p "require('./package.json').version")
+
+  # Check title version
+  title_version=$(grep -oE "Sequant v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
+  if [ "$title_version" != "$new_version" ]; then
+    echo "Warning: docs/internal/what-weve-built.md title shows v${title_version}, expected v${new_version}"
+  fi
+
+  # Check ASCII art version
+  ascii_version=$(grep -E "SEQUANT v[0-9]+\.[0-9]+\.[0-9]+" docs/internal/what-weve-built.md | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" || true)
+  if [ "$ascii_version" != "$new_version" ]; then
+    echo "Warning: docs/internal/what-weve-built.md ASCII art shows v${ascii_version}, expected v${new_version}"
+  fi
+fi
+```
 
 ### Step 4.65: Verify README "What's new" Freshness
 
