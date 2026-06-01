@@ -1050,8 +1050,12 @@ describe("Derived AC-D3: box-char assertions use the Box Drawing codepoint range
     // block). Codepoint-range matching is platform-agnostic (Linux/macOS/
     // Windows all encode these chars identically), so the Windows-safety
     // requirement is satisfied without needing a Windows CI runner.
+    // Use a multi-issue frame: single-issue switched to a boxless indented
+    // layout (#647/#655), but the multi-issue grid still draws box chars, which
+    // is what this Windows-safe detection regex needs to exercise.
     const { r } = makeTTY({ columns: 100 });
     r.registerIssue({ issueNumber: 614 });
+    r.registerIssue({ issueNumber: 615 });
     r.onEvent({ issue: 614, phase: "exec", event: "start" });
     const frame = r.renderLiveFrame(100);
     expect(/[─-╿]/u.test(frame)).toBe(true);

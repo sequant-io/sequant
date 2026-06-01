@@ -1055,22 +1055,26 @@ export class TTYRenderer extends BaseRenderer {
   }
 
   private renderSingleIssueFrame(cols: number): string {
-    // AC-11: Single-issue runs use a key:value full-grid table.
+    // AC-11: single-issue runs render as indented `label  value` lines — not a
+    // box-drawing grid.
+    //
+    // The grid was the dominant source of `log-update` `eraseLines` stranding
+    // (#647 / #655): a multi-line bordered frame whose top survives in
+    // scrollback when the erase undershoots, leaving a frozen first paint (the
+    // classic "0s elapsed" ghost with no bottom border). Indented labels keep
+    // the same information at a shorter, border-free height that clears
+    // cleanly, and match the repo's move away from box-drawing in human output
+    // (see feedback_llm_hostile_formatting). Multi-issue still uses the grid.
     const state = [...this.issues.values()][0];
     const c = colorize(this.noColor);
     const header = `SEQUANT WORKFLOW · #${state.issueNumber} · ${formatElapsedTime((this.now() - this.runStartedAt) / 1000)} elapsed`;
 
-    // #647 AC-3: cap at 78 (not 110) so the rendered grid stays narrower than
-    // any standard 80-col terminal even when the reported `cols` is wider than
-    // the actual terminal (e.g. cached `process.stdout.columns`, TTY emulation
-    // layers, `npx` piped stdout). Total drawn width is
-    // `labelWidth + valueWidth + 9` (2 leading spaces + 3 box-drawing
-    // intersection chars + 4 cell-padding spaces); the prior `- 7` formula
-    // additionally produced rows 2 chars wider than `cols`, compounding the
-    // wrap. Both errors removed.
-    const labelWidth = 10;
-    const innerWidth = Math.max(40, Math.min(cols, 78) - labelWidth - 9);
-    const valueWidth = innerWidth;
+    // Label column fits the widest label ("Worktree"); value column is the
+    // remaining width after the 2-space indent + 2-space gap. Capped the same
+    // way the grid was so wide / misreported terminals can't push values past a
+    // standard 80-col reader.
+    const labelWidth = 8;
+    const valueWidth = Math.max(40, Math.min(cols, 100) - labelWidth - 4);
 
     const rows: Array<[string, string[]]> = [];
     const titleSuffix = state.title ? ` — ${state.title}` : "";
@@ -1088,7 +1092,7 @@ export class TTYRenderer extends BaseRenderer {
 
     const lines: string[] = [c.bold(header), ""];
     if (this.banner) lines.push(c.yellow(this.banner), "");
-    lines.push(this.drawKeyValueTable(rows, labelWidth, valueWidth));
+    lines.push(this.drawKeyValueLines(rows, labelWidth));
     return lines.join("\n");
   }
 
@@ -1352,37 +1356,25 @@ export class TTYRenderer extends BaseRenderer {
 
   // ---------------- Box drawing ----------------
 
-  private drawKeyValueTable(
+  /**
+   * Single-issue layout: indented `label  value` lines, no box drawing. The
+   * label is cyan and padded to `labelW`; continuation lines (multi-line
+   * status cells) align under the value column with a blank label. See
+   * `renderSingleIssueFrame` for why the bordered grid was dropped.
+   */
+  private drawKeyValueLines(
     rows: Array<[string, string[]]>,
     labelW: number,
-    valueW: number,
   ): string {
     const c = colorize(this.noColor);
-    const dim = c.dim;
-    const total = labelW + valueW + 3;
-    const top = dim(
-      "  ┌" + "─".repeat(labelW + 2) + "┬" + "─".repeat(valueW + 2) + "┐",
-    );
-    const sep = dim(
-      "  ├" + "─".repeat(labelW + 2) + "┼" + "─".repeat(valueW + 2) + "┤",
-    );
-    const bottom = dim(
-      "  └" + "─".repeat(labelW + 2) + "┴" + "─".repeat(valueW + 2) + "┘",
-    );
-    const out: string[] = [top];
-    rows.forEach(([label, lines], i) => {
+    const out: string[] = [];
+    for (const [label, lines] of rows) {
       const labelPadded = padEndVisible(label, labelW);
       lines.forEach((line, idx) => {
         const labelCell = idx === 0 ? c.cyan(labelPadded) : " ".repeat(labelW);
-        const valuePadded = padEndVisible(line, valueW);
-        out.push(
-          `  ${dim("│")} ${labelCell} ${dim("│")} ${valuePadded} ${dim("│")}`,
-        );
+        out.push(`  ${labelCell}  ${line}`);
       });
-      if (i < rows.length - 1) out.push(sep);
-    });
-    out.push(bottom);
-    void total;
+    }
     return out.join("\n");
   }
 
