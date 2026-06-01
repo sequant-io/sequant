@@ -447,7 +447,7 @@ describe("TTYRenderer", () => {
     expect(completionLines).toHaveLength(3);
   });
 
-  it("AC-11: single-issue frame uses key:value layout with Issue/Worktree/Branch/Status", () => {
+  it("AC-11: single-issue frame uses indented key:value layout with Issue/Worktree/Branch/Status", () => {
     const { r } = makeTTY({ columns: 100 });
     r.registerIssue({
       issueNumber: 614,
@@ -461,9 +461,10 @@ describe("TTYRenderer", () => {
     expect(frame).toContain("Worktree");
     expect(frame).toContain("Branch");
     expect(frame).toContain("Status");
-    // Box drawing present.
-    expect(frame).toContain("┌");
-    expect(frame).toContain("└");
+    // Indented labels, no box drawing (the grid stranded in scrollback —
+    // #647/#655).
+    expect(frame).not.toContain("┌");
+    expect(frame).not.toContain("│");
     r.dispose();
   });
 
@@ -563,9 +564,9 @@ describe("TTYRenderer", () => {
     for (const cols of [60, 80, 120]) {
       const frame = stripAnsi(r.renderLiveFrame(cols));
       expect(frame.length).toBeGreaterThan(0);
-      // 80+ col uses box drawing; 60 col does not.
-      if (cols >= 80) expect(frame).toContain("┌");
-      else expect(frame).not.toContain("┌");
+      // Single-issue is boxless at every width now (indented labels).
+      expect(frame).not.toContain("┌");
+      expect(frame).toContain("#614");
     }
     r.dispose();
   });
