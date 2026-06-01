@@ -131,22 +131,77 @@ interface ShaResolution {
   reason: string;
 }
 
+/** One `git log --grep "(#N)"` hit. */
+export interface CommitMatch {
+  sha: string;
+  subject: string;
+}
+
+/** Pure confidence classification (no git). @internal Exported for testing only. */
+export interface ConfidenceResult {
+  confidence: ShaResolution["confidence"];
+  reason: string;
+  /** The matched fix commit whose parent is the pre-fix SHA (null on override / no match). */
+  fixSha: string | null;
+}
+
+/**
+ * Classify how much to trust an auto-derived pre-fix SHA, given the `(#N)`
+ * grep matches. High confidence only when the top match is a conventional
+ * `feat|fix|refactor(#N):` scoped to this exact issue AND it's the sole match;
+ * otherwise low (the #625-class false positive — a docs commit merely *mentions*
+ * `(#N)`), which signals the operator to set a manual `sha` override.
+ *
+ * Pure: takes the already-fetched matches so it can be unit-tested without git.
+ *
+ * @internal Exported for testing only.
+ */
+export function classifyShaConfidence(
+  issue: number,
+  matches: CommitMatch[],
+  override?: string,
+): ConfidenceResult {
+  if (override) {
+    return { confidence: "override", reason: "manual override", fixSha: null };
+  }
+  if (matches.length === 0) {
+    return {
+      confidence: "low",
+      reason: "no (#N) commit found — set sha manually",
+      fixSha: null,
+    };
+  }
+  const { sha, subject } = matches[0];
+  const scoped = new RegExp(`^(feat|fix|refactor)\\(#${issue}\\)`).test(
+    subject,
+  );
+  const multiple = matches.length > 1;
+  const confidence: ShaResolution["confidence"] =
+    scoped && !multiple ? "high" : "low";
+  const reason = scoped
+    ? multiple
+      ? `${matches.length} matches — verify the first is the fix`
+      : "scoped conventional commit"
+    : `subject not scoped to #${issue} (\"${subject.slice(0, 50)}…\") — verify/override`;
+  return { confidence, reason, fixSha: sha };
+}
+
 /**
  * Derive the pre-fix SHA: parent of the squash-merge commit whose subject
- * contains `(#<issue>)`. Confidence is "low" when the matched subject is not a
- * conventional fix/feat for this issue (the #625-class false positive) or when
- * multiple commits match.
+ * contains `(#<issue>)`. Delegates the trust judgment to
+ * {@link classifyShaConfidence}; this wrapper owns the git I/O.
  */
 function resolvePreFixSha(c: BacktestCase): ShaResolution {
   if (c.sha) {
+    const cls = classifyShaConfidence(c.issue, [], c.sha);
     return {
       sha: c.sha,
       fixCommit: null,
-      confidence: "override",
-      reason: "manual override",
+      confidence: cls.confidence,
+      reason: cls.reason,
     };
   }
-  const matches = git([
+  const matches: CommitMatch[] = git([
     "log",
     "--grep",
     `(#${c.issue})`,
@@ -154,33 +209,26 @@ function resolvePreFixSha(c: BacktestCase): ShaResolution {
     "-5",
   ])
     .split("\n")
-    .filter(Boolean);
-  if (matches.length === 0) {
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, subject] = line.split("\t");
+      return { sha, subject };
+    });
+  const cls = classifyShaConfidence(c.issue, matches);
+  if (!cls.fixSha) {
     return {
       sha: null,
       fixCommit: null,
-      confidence: "low",
-      reason: "no (#N) commit found — set sha manually",
+      confidence: cls.confidence,
+      reason: cls.reason,
     };
   }
-  const [sha, subject] = matches[0].split("\t");
-  // High confidence: subject is a conventional fix/feat scoped to this exact issue.
-  const scoped = new RegExp(`^(feat|fix|refactor)\\(#${c.issue}\\)`).test(
-    subject,
-  );
-  const multiple = matches.length > 1;
-  const confidence: ShaResolution["confidence"] =
-    scoped && !multiple ? "high" : "low";
-  const parent = git(["rev-parse", `${sha}~1`]);
+  const parent = git(["rev-parse", `${cls.fixSha}~1`]);
   return {
     sha: parent,
-    fixCommit: sha.slice(0, 9),
-    confidence,
-    reason: scoped
-      ? multiple
-        ? `${matches.length} matches — verify the first is the fix`
-        : "scoped conventional commit"
-      : `subject not scoped to #${c.issue} (\"${subject.slice(0, 50)}…\") — verify/override`,
+    fixCommit: cls.fixSha.slice(0, 9),
+    confidence: cls.confidence,
+    reason: cls.reason,
   };
 }
 
@@ -236,7 +284,14 @@ function runReady(issue: number, policy: "ac" | "a-plus"): unknown {
   }
 }
 
-function score(
+/**
+ * Heuristic HIT/MISS: did the gate's `reason`/`finalVerdict` match the expected
+ * defect class? `?` when there's no result. The final recall figure is a human
+ * read of the captured JSON, not this heuristic.
+ *
+ * @internal Exported for testing only.
+ */
+export function score(
   expected: string,
   result: { reason?: string; finalVerdict?: string } | null,
 ): "HIT" | "MISS" | "?" {
@@ -356,7 +411,12 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exitCode = 1;
-});
+// ESM entry-point check (this file is treated as ESM by the project tsconfig).
+// Guarded so importing the module in tests does not execute the CLI.
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
+  main().catch((e) => {
+    console.error(e);
+    process.exitCode = 1;
+  });
+}
