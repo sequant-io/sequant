@@ -1,6 +1,6 @@
 {
   "name": "sequant",
-  "description": "Structured workflow system for Claude Code - GitHub issue resolution with spec, exec, test, and QA phases",
+  "description": "AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees and quality gates, through spec → exec → qa phases.",
   "version": "2.4.0",
   "author": {
     "name": "sequant-io",
