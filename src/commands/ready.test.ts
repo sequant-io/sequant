@@ -33,6 +33,8 @@ vi.mock("../lib/workflow/ready-gate.js", async (importActual) => {
     await importActual<typeof import("../lib/workflow/ready-gate.js")>();
   return { ...actual, runReadyGate: vi.fn() };
 });
+// #699: mock the Ink TUI entry so the TTY path can be driven headlessly.
+vi.mock("../ui/tui/index.js", () => ({ renderTui: vi.fn() }));
 
 import {
   resolvePolicy,
@@ -46,6 +48,7 @@ import {
   type RunReadyGateOptions,
 } from "../lib/workflow/ready-gate.js";
 import { buildProgressWiring } from "./run-progress.js";
+import { renderTui, type TuiHandle } from "../ui/tui/index.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
 import { listWorktrees } from "../lib/workflow/worktree-manager.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
@@ -151,10 +154,15 @@ describe("readyCommand — #697 renderer wiring", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errSpy: ReturnType<typeof vi.spyOn>;
   let savedExitCode: typeof process.exitCode;
+  let savedIsTty: typeof process.stdout.isTTY;
 
   beforeEach(() => {
     vi.clearAllMocks();
     savedExitCode = process.exitCode;
+    // #699: this block covers the non-TTY fallback (plain renderer). Pin isTTY
+    // off so the TUI path is never taken regardless of the test runner's stdout.
+    savedIsTty = process.stdout.isTTY;
+    process.stdout.isTTY = false;
 
     renderer = makeRenderer();
     wiringOnProgress = vi.fn();
@@ -228,6 +236,7 @@ describe("readyCommand — #697 renderer wiring", () => {
     logSpy.mockRestore();
     errSpy.mockRestore();
     process.exitCode = savedExitCode;
+    process.stdout.isTTY = savedIsTty;
   });
 
   it("AC-4: --json builds no renderer and passes no onProgress; JSON only", async () => {
@@ -286,6 +295,139 @@ describe("readyCommand — #697 renderer wiring", () => {
     await readyCommand(String(ISSUE), {});
 
     expect(renderer.dispose).toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
+  });
+});
+
+// ─── #699: boxed Ink TUI on the TTY path (AC-1/AC-3) ─────────────────────────
+
+describe("readyCommand — #699 Ink TUI wiring", () => {
+  const ISSUE = 699;
+  const REPORT_MARKER = "REPORT_MARKER_699";
+
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: ReturnType<typeof vi.spyOn>;
+  let savedExitCode: typeof process.exitCode;
+  let savedIsTty: typeof process.stdout.isTTY;
+  let tuiHandle: { done: Promise<void>; unmount: ReturnType<typeof vi.fn> };
+  let provider: {
+    getSnapshot: () => import("../lib/workflow/run-state.js").RunSnapshot;
+  } | null;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    savedExitCode = process.exitCode;
+    savedIsTty = process.stdout.isTTY;
+    process.stdout.isTTY = true; // force the TUI path
+
+    provider = null;
+    tuiHandle = { done: Promise.resolve(), unmount: vi.fn() };
+    vi.mocked(renderTui).mockImplementation((p) => {
+      provider = p as typeof provider;
+      return tuiHandle as unknown as TuiHandle;
+    });
+
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 3, timeout: 1800 },
+    } as Awaited<ReturnType<typeof getSettings>>);
+
+    vi.mocked(listWorktrees).mockReturnValue([
+      { issue: ISSUE, path: "/tmp/wt-699", branch: "feature/699-tui" },
+    ]);
+
+    vi.mocked(GitHubProvider).mockImplementation(function (): GitHubProvider {
+      return {
+        fetchIssueBodySync: () => "## Non-goals\n- nothing",
+        fetchIssueTitleSync: () => "Upgrade ready to the Ink TUI",
+      } as unknown as GitHubProvider;
+    });
+
+    vi.mocked(getStateManager).mockReturnValue({
+      getIssueState: vi.fn().mockResolvedValue({ issueNumber: ISSUE }),
+      initializeIssue: vi.fn().mockResolvedValue(undefined),
+      updateIssueStatus: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ReturnType<typeof getStateManager>);
+
+    vi.mocked(executePhaseWithRetry).mockResolvedValue({
+      phase: "qa",
+      success: true,
+    });
+
+    // Drive a qa pass through the gate so the adapter accumulates phase state.
+    vi.mocked(runReadyGate).mockImplementation(
+      async (opts: RunReadyGateOptions): Promise<ReadyResult> => {
+        opts.onProgress?.(opts.issueNumber, "qa", "start", { iteration: 1 });
+        opts.onProgress?.(opts.issueNumber, "qa", "complete", {
+          iteration: 1,
+          durationSeconds: 2,
+        });
+        return result({
+          issueNumber: opts.issueNumber,
+          policy: opts.policy,
+          ready: true,
+          reason: "AC_MET",
+          issueStatus: "waiting_for_human_merge",
+          finalVerdict: "AC_MET_BUT_NOT_A_PLUS",
+          report: REPORT_MARKER,
+        });
+      },
+    );
+
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+    process.exitCode = savedExitCode;
+    process.stdout.isTTY = savedIsTty;
+  });
+
+  it("AC-1: on a TTY, mounts the Ink TUI and does not build the plain renderer", async () => {
+    await readyCommand(String(ISSUE), {});
+
+    expect(renderTui).toHaveBeenCalledTimes(1);
+    expect(buildProgressWiring).not.toHaveBeenCalled();
+  });
+
+  it("AC-1: feeds the gate the adapter's onProgress (not a plain-renderer sink)", async () => {
+    await readyCommand(String(ISSUE), {});
+
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(typeof opts.onProgress).toBe("function");
+    // The adapter's snapshot reflects the qa pass the gate drove through it.
+    const snap = provider?.getSnapshot();
+    expect(snap?.issues).toHaveLength(1);
+    expect(snap?.issues[0].number).toBe(ISSUE);
+    expect(snap?.issues[0].title).toBe("Upgrade ready to the Ink TUI");
+    expect(snap?.issues[0].phases.map((p) => p.name)).toEqual(["qa"]);
+  });
+
+  it("AC-3: flips the snapshot to done and prints the report after teardown", async () => {
+    await readyCommand(String(ISSUE), {});
+
+    // markDone() flipped the snapshot so the polling App would unmount…
+    expect(provider?.getSnapshot().done).toBe(true);
+    // …and the report still printed to scrollback.
+    expect(logSpy.mock.calls.flat()).toContain(REPORT_MARKER);
+  });
+
+  it("AC-1: --json on a TTY skips the TUI and emits JSON only", async () => {
+    await readyCommand(String(ISSUE), { json: true });
+
+    expect(renderTui).not.toHaveBeenCalled();
+    expect(buildProgressWiring).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.flat().join("\n")).not.toContain(REPORT_MARKER);
+  });
+
+  it("Derived AC: unmounts the TUI and exits 2 when the gate throws", async () => {
+    vi.mocked(runReadyGate).mockRejectedValueOnce(new Error("driver crash"));
+
+    await readyCommand(String(ISSUE), {});
+
+    expect(tuiHandle.unmount).toHaveBeenCalled();
     expect(process.exitCode).toBe(2);
   });
 });

@@ -65,7 +65,7 @@ export function IssueBox({
         </Text>
       </Box>
 
-      <Divider width={innerWidth} borderColor={border} />
+      <Divider width={innerWidth} />
 
       {/* Cell 2: context */}
       <Box flexDirection="column">
@@ -84,7 +84,7 @@ export function IssueBox({
         ) : null}
       </Box>
 
-      <Divider width={innerWidth} borderColor={border} />
+      <Divider width={innerWidth} />
 
       {/* Cell 3: activity */}
       <Box flexDirection="column">
@@ -126,21 +126,8 @@ function statusLine(state: IssueRuntimeState): string {
   }
 }
 
-function Divider({
-  width,
-  borderColor,
-}: {
-  width: number;
-  borderColor: string;
-}): JSX.Element {
-  const mid = "─".repeat(Math.max(0, width - 2));
-  return (
-    <Text>
-      <Text color={borderColor}>├</Text>
-      <Text color={DIVIDER_COLOR}>{mid}</Text>
-      <Text color={borderColor}>┤</Text>
-    </Text>
-  );
+function Divider({ width }: { width: number }): JSX.Element {
+  return <Text color={DIVIDER_COLOR}>{"─".repeat(Math.max(0, width))}</Text>;
 }
 
 function PhaseProgression({
