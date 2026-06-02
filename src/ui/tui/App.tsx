@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import { Box, useStdout } from "ink";
+import { Box, Text, useStdout } from "ink";
 import type { RunSnapshot } from "../../lib/workflow/run-state.js";
 import { Header } from "./Header.js";
 import { IssueBox } from "./IssueBox.js";
+import { selectVisibleIssues } from "./row-cap.js";
+import { ROLLUP_COLOR } from "./theme.js";
 
 const POLL_MS = 100; // 10 Hz
 
@@ -49,10 +51,18 @@ export function App({
   const columns = stdout?.columns ?? 80;
   const boxWidth = Math.min(columns - 2, 100);
 
+  // #699 AC-4: clamp the number of boxes to the terminal height so a large
+  // batch on a short terminal can't overflow the frame (parity with the plain
+  // renderer's #624 row cap). Older completed issues collapse into `✔ N done`.
+  const { visible, rolledUpDoneCount } = selectVisibleIssues(
+    snapshot.issues,
+    stdout?.rows,
+  );
+
   return (
     <Box flexDirection="column">
       <Header snapshot={snapshot} />
-      {snapshot.issues.map((issue, i) => (
+      {visible.map((issue, i) => (
         <IssueBox
           key={issue.number}
           state={issue}
@@ -61,6 +71,9 @@ export function App({
           now={now}
         />
       ))}
+      {rolledUpDoneCount > 0 ? (
+        <Text color={ROLLUP_COLOR}>{`✔ ${rolledUpDoneCount} done`}</Text>
+      ) : null}
     </Box>
   );
 }
