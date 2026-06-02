@@ -5,13 +5,54 @@
  * - AC-4/AC-5: exit-code mapping (ready → 0, needs-human → 1, no-impl → 2).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// #697: mock the command's collaborators so we can drive `readyCommand` and
+// assert the renderer wiring without a live agent driver / git worktree.
+vi.mock("./run-progress.js", () => ({ buildProgressWiring: vi.fn() }));
+vi.mock("../lib/workflow/worktree-manager.js", () => ({
+  listWorktrees: vi.fn(),
+}));
+vi.mock("../lib/workflow/platforms/github.js", () => ({
+  GitHubProvider: vi.fn(),
+}));
+vi.mock("../lib/workflow/state-manager.js", () => ({
+  getStateManager: vi.fn(),
+}));
+vi.mock("../lib/settings.js", async (importActual) => {
+  const actual = await importActual<typeof import("../lib/settings.js")>();
+  return { ...actual, getSettings: vi.fn() };
+});
+vi.mock("../lib/workflow/phase-executor.js", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../lib/workflow/phase-executor.js")>();
+  return { ...actual, executePhaseWithRetry: vi.fn() };
+});
+vi.mock("../lib/workflow/ready-gate.js", async (importActual) => {
+  const actual =
+    await importActual<typeof import("../lib/workflow/ready-gate.js")>();
+  return { ...actual, runReadyGate: vi.fn() };
+});
+
 import {
   resolvePolicy,
   getReadyExitCode,
+  readyCommand,
   type ReadyCommandOptions,
 } from "./ready.js";
-import type { ReadyResult } from "../lib/workflow/ready-gate.js";
+import {
+  runReadyGate,
+  type ReadyResult,
+  type RunReadyGateOptions,
+} from "../lib/workflow/ready-gate.js";
+import { buildProgressWiring } from "./run-progress.js";
+import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
+import { listWorktrees } from "../lib/workflow/worktree-manager.js";
+import { getStateManager } from "../lib/workflow/state-manager.js";
+import { GitHubProvider } from "../lib/workflow/platforms/github.js";
+import { getSettings } from "../lib/settings.js";
+import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
+import type { ProgressCallback } from "../lib/workflow/types.js";
 
 function result(overrides: Partial<ReadyResult>): ReadyResult {
   return {
@@ -80,5 +121,171 @@ describe("ReadyCommandOptions typing", () => {
       verbose: true,
     };
     expect(opts.policy).toBe("a-plus");
+  });
+});
+
+// ─── #697: live phase-matrix renderer wiring (AC-2/4/5/6) ────────────────────
+
+describe("readyCommand — #697 renderer wiring", () => {
+  const ISSUE = 683;
+  const REPORT_MARKER = "REPORT_MARKER_697";
+
+  /** Minimal RunRenderer test double — every method is a spy. */
+  function makeRenderer(): RunRenderer &
+    Record<string, ReturnType<typeof vi.fn>> {
+    return {
+      registerIssue: vi.fn(),
+      onEvent: vi.fn(),
+      setPhasePlan: vi.fn(),
+      setPullRequest: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      appendNotice: vi.fn(),
+      renderSummary: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as RunRenderer & Record<string, ReturnType<typeof vi.fn>>;
+  }
+
+  let renderer: RunRenderer & Record<string, ReturnType<typeof vi.fn>>;
+  let wiringOnProgress: ProgressCallback;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: ReturnType<typeof vi.spyOn>;
+  let savedExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    savedExitCode = process.exitCode;
+
+    renderer = makeRenderer();
+    wiringOnProgress = vi.fn();
+
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 3, timeout: 1800 },
+    } as Awaited<ReturnType<typeof getSettings>>);
+
+    vi.mocked(listWorktrees).mockReturnValue([
+      { issue: ISSUE, path: "/tmp/wt-683", branch: "feature/683" },
+    ]);
+
+    // Regular function (not arrow): vitest forwards `new` via Reflect.construct,
+    // which rejects non-constructable arrows.
+    vi.mocked(GitHubProvider).mockImplementation(function (): GitHubProvider {
+      return {
+        fetchIssueBodySync: () => "## Non-goals\n- nothing",
+        fetchIssueTitleSync: () => "Title",
+      } as unknown as GitHubProvider;
+    });
+
+    vi.mocked(getStateManager).mockReturnValue({
+      getIssueState: vi.fn().mockResolvedValue({ issueNumber: ISSUE }),
+      initializeIssue: vi.fn().mockResolvedValue(undefined),
+      updateIssueStatus: vi.fn().mockResolvedValue(undefined),
+    } as unknown as ReturnType<typeof getStateManager>);
+
+    vi.mocked(buildProgressWiring).mockImplementation(() => ({
+      renderer,
+      heartbeat: null,
+      onProgress: wiringOnProgress,
+      onPhasePlan: undefined,
+    }));
+
+    vi.mocked(executePhaseWithRetry).mockResolvedValue({
+      phase: "qa",
+      success: true,
+    });
+
+    // Drive a single phase + return a result so we can assert the runPhase
+    // wiring (renderer as pause handle) and dispose-before-report ordering.
+    vi.mocked(runReadyGate).mockImplementation(
+      async (opts: RunReadyGateOptions): Promise<ReadyResult> => {
+        await opts.runPhase(
+          "qa",
+          {} as Parameters<typeof opts.runPhase>[1],
+          opts.worktreePath,
+        );
+        return {
+          issueNumber: opts.issueNumber,
+          policy: opts.policy,
+          ready: true,
+          reason: "AC_MET",
+          issueStatus: "waiting_for_human_merge",
+          iterations: 1,
+          finalVerdict: "AC_MET_BUT_NOT_A_PLUS",
+          autoFixed: [],
+          remaining: [],
+          tokensUsed: 0,
+          report: REPORT_MARKER,
+        };
+      },
+    );
+
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    errSpy.mockRestore();
+    process.exitCode = savedExitCode;
+  });
+
+  it("AC-4: --json builds no renderer and passes no onProgress; JSON only", async () => {
+    await readyCommand(String(ISSUE), { json: true });
+
+    expect(buildProgressWiring).not.toHaveBeenCalled();
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.onProgress).toBeUndefined();
+    // No renderer → executePhaseWithRetry gets `undefined` as the pause handle.
+    expect(vi.mocked(executePhaseWithRetry).mock.calls[0][6]).toBeUndefined();
+    // Output is the JSON object, not the markdown report.
+    expect(logSpy.mock.calls.flat().join("\n")).not.toContain(REPORT_MARKER);
+  });
+
+  it("AC-2: non-json reuses buildProgressWiring for the single issue + threads onProgress", async () => {
+    await readyCommand(String(ISSUE), {});
+
+    expect(buildProgressWiring).toHaveBeenCalledTimes(1);
+    expect(buildProgressWiring).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [ISSUE],
+        phaseTimeoutSeconds: 1800,
+        maxLoopIterations: 3,
+      }),
+    );
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.onProgress).toBe(wiringOnProgress);
+  });
+
+  it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
+    await readyCommand(String(ISSUE), { verbose: true });
+
+    // 7th positional arg (index 6) is the PhasePauseHandle.
+    expect(vi.mocked(executePhaseWithRetry).mock.calls[0][6]).toBe(renderer);
+  });
+
+  it("AC-6: disposes the live zone before printing the report", async () => {
+    await readyCommand(String(ISSUE), {});
+
+    expect(renderer.dispose).toHaveBeenCalled();
+    const reportIdx = logSpy.mock.calls.findIndex(
+      (c) => c[0] === REPORT_MARKER,
+    );
+    expect(reportIdx).toBeGreaterThanOrEqual(0);
+    // dispose() ran before the console.log that printed the report.
+    expect(renderer.dispose.mock.invocationCallOrder[0]).toBeLessThan(
+      logSpy.mock.invocationCallOrder[reportIdx],
+    );
+  });
+
+  it("Derived AC: disposes the renderer when the gate throws", async () => {
+    vi.mocked(runReadyGate).mockRejectedValueOnce(new Error("driver crash"));
+
+    await readyCommand(String(ISSUE), {});
+
+    expect(renderer.dispose).toHaveBeenCalled();
+    expect(process.exitCode).toBe(2);
   });
 });

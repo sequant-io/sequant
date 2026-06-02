@@ -22,7 +22,11 @@
  * lives in `src/commands/ready.ts`.
  */
 
-import type { ExecutionConfig, PhaseResult } from "./types.js";
+import type {
+  ExecutionConfig,
+  PhaseResult,
+  ProgressCallback,
+} from "./types.js";
 import type { QaVerdict } from "./run-log-schema.js";
 import type { ReadyPolicy } from "../settings.js";
 import type { IssueStatus } from "./state-schema.js";
@@ -122,6 +126,14 @@ export interface RunReadyGateOptions {
   verbose?: boolean;
   /** Injectable phase runner — defaults to the real executePhaseWithRetry wrapper. */
   runPhase: ReadyPhaseRunner;
+  /**
+   * #697: optional live-progress sink. The gate owns the qa→loop→qa loop, so it
+   * is the natural emit site (the `run` path emits from RunOrchestrator/batch-
+   * executor). Fires `start` before each phase and `complete`/`failed` after,
+   * carrying the 1-based QA-pass `iteration` so the renderer shows `loop N/M`.
+   * Optional — injected unit tests that omit it stay unaffected.
+   */
+  onProgress?: ProgressCallback;
   /** Injectable token reader — defaults to reading `<worktree>/.sequant`. */
   readTokensUsed?: (worktreePath: string) => number;
   /** Injectable change detector — defaults to {@link hasExecChanges}. */
@@ -371,6 +383,39 @@ export async function runReadyGate(
   const hasChangesFn = opts.hasChangesFn ?? hasExecChanges;
   const snapshotFn = opts.snapshotFn ?? snapshotLoopProgress;
 
+  // #697: run a phase while emitting live-progress events around it. `iteration`
+  // is the 1-based QA-pass index so the renderer can render `loop N/M`. Emits
+  // `failed` (and re-throws) if the runner itself throws so the catch path in
+  // ready.ts disposes a renderer that already reflects the failed cell.
+  const runPhaseTracked = async (
+    phase: "qa" | "loop",
+    config: ExecutionConfig,
+    iteration: number,
+  ): Promise<PhaseResult> => {
+    opts.onProgress?.(opts.issueNumber, phase, "start", { iteration });
+    let phaseResult: PhaseResult;
+    try {
+      phaseResult = await opts.runPhase(phase, config, worktreePath);
+    } catch (err) {
+      opts.onProgress?.(opts.issueNumber, phase, "failed", {
+        iteration,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    opts.onProgress?.(
+      opts.issueNumber,
+      phase,
+      phaseResult.success === false ? "failed" : "complete",
+      {
+        iteration,
+        durationSeconds: phaseResult.durationSeconds,
+        error: phaseResult.success === false ? phaseResult.error : undefined,
+      },
+    );
+    return phaseResult;
+  };
+
   let iterations = 0;
   let finalVerdict: QaVerdict | null = null;
   const autoFixed: string[] = [];
@@ -413,10 +458,10 @@ export async function runReadyGate(
 
     iterations++;
 
-    const qaResult = await opts.runPhase(
+    const qaResult = await runPhaseTracked(
       "qa",
       buildPhaseConfig(opts, { fullQa: true }),
-      worktreePath,
+      iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
 
@@ -460,14 +505,14 @@ export async function runReadyGate(
       .map((g) => g.description);
 
     const before = snapshotFn(worktreePath);
-    const loopResult = await opts.runPhase(
+    const loopResult = await runPhaseTracked(
       "loop",
       buildPhaseConfig(opts, {
         lastVerdict: verdict,
         failedAcs: fixableGaps.join("; ") || undefined,
         promptContext: buildLoopContext(policy, verdict, fixableGaps),
       }),
-      worktreePath,
+      iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
 
