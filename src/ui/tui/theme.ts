@@ -20,6 +20,10 @@ export type BorderColor =
 /** Gray used for horizontal dividers inside each box. */
 export const DIVIDER_COLOR = "gray" as const;
 
+/** Green used for the rolled-up `✔ N done` summary line (#699, parity with the
+ *  plain renderer's #624 rollup). */
+export const ROLLUP_COLOR = "green" as const;
+
 /**
  * Pick the border color for an issue.
  * Failed / passed states win over rotation; otherwise rotate by slot.

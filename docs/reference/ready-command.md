@@ -80,6 +80,17 @@ The loop terminates on the **first** of:
 - **`LOOP_NO_DIFF`** — the fix loop made no commit and no working-tree change (stagnation guard). → state `blocked`, exit `1`.
 - **No implementation (#534 guard)** — a zero-diff worktree (empty branch, the #529/#570 class) or a null/unparseable QA verdict is **never** reported ready. → state `blocked`, exit `2`.
 
+## Live progress
+
+The gate runs a `qa → loop → qa` pipeline that can take several minutes. What you see while it runs depends on where output is going:
+
+- **Interactive terminal (a TTY, no `--json`)** — a **boxed live dashboard**: a single rounded box for the issue with an animated spinner, the worktree branch, and a phase row that fills in as each pass completes (`✓ qa 04s ▸ ✓ loop 03s ▸ ✓ qa 02s`). The box repaints in place; long titles/branches truncate to fit, so it stays clean on narrow (≤80-col) terminals and inside tmux. When the gate finishes, the live box is torn down and replaced by:
+  - a durable one-line summary that stays in scrollback — `✔ #<issue> <title>` (or `✘` if it ended not-ready), and
+  - the full gap report (below), printed in clean scrollback beneath it.
+- **`--json`, or output that isn't a TTY (piped, redirected, CI logs)** — **no live UI** is drawn (so it never corrupts piped JSON or log files). You get only the final static report (or JSON).
+
+There is nothing to configure — the dashboard is automatic on a TTY and silently skipped otherwise. `NO_COLOR` is respected.
+
 ## Output
 
 A structured gap report (markdown, or `--json`) containing:

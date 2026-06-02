@@ -85,14 +85,17 @@ describe("IssueBox", () => {
     expect(lastFrame() ?? "").toContain("feature/47-blog-pagination");
   });
 
-  it("renders border-colored tee glyphs around gray horizontal dividers", () => {
+  it("renders plain full-width gray dividers without tee end-caps (#699)", () => {
     const { lastFrame } = render(
       <IssueBox state={baseState()} slot={0} width={80} now={Date.now()} />,
     );
     const frame = lastFrame() ?? "";
-    // Two dividers (between header/context and context/activity), each with
-    // border-colored tees at start/end and gray fill between.
-    expect(frame).toContain("├");
-    expect(frame).toContain("┤");
+    // Divider polish (#699): drop the `├`/`┤` end-caps for a plain full-width
+    // gray rule. The only box-drawing verticals left are the round border's own
+    // `│` edges — the in-box dividers must not reintroduce tees.
+    expect(frame).not.toContain("├");
+    expect(frame).not.toContain("┤");
+    // A horizontal rule is still present inside the box.
+    expect(frame).toMatch(/─{2,}/);
   });
 });
