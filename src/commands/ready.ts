@@ -21,6 +21,10 @@ import { listWorktrees } from "../lib/workflow/worktree-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
+import { buildProgressWiring } from "./run-progress.js";
+import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
+import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
+import type { ProgressCallback } from "../lib/workflow/types.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -129,6 +133,14 @@ export async function readyCommand(
   const body = gh.fetchIssueBodySync(String(issueNumber));
   const nonGoals = body ? parseNonGoals(body) : [];
 
+  // #697: live phase-matrix renderer, reusing the shared `run` wiring (#618)
+  // for visual parity. Built only on the non-`--json` path so no live writes
+  // corrupt piped JSON (AC-4); the renderer itself degrades to non-TTY line
+  // mode when stdout isn't a TTY, same as `run`.
+  let renderer: RunRenderer | null = null;
+  let heartbeat: LivenessHeartbeat | null = null;
+  let onProgress: ProgressCallback | undefined;
+
   if (!options.json) {
     console.log(ui.headerBox("SEQUANT READY"));
     console.log("");
@@ -147,11 +159,39 @@ export async function readyCommand(
       ),
     );
     console.log("");
+
+    // Stream phases as they fire (no `basePhases`): the ready pipeline length
+    // is dynamic (1–N qa/loop passes), so a fixed seed would leave a stuck-
+    // pending `loop` cell when the gate stops after the first qa.
+    ({ renderer, heartbeat, onProgress } = buildProgressWiring({
+      tuiEnabled: false,
+      quiet: false,
+      issueNumbers: [issueNumber],
+      phaseTimeoutSeconds: phaseTimeout,
+      maxLoopIterations: maxIterations,
+    }));
   }
 
-  // Real phase runner: wraps executePhaseWithRetry against the worktree.
+  // SIGINT: clear the live zone before ShutdownManager writes its cleanup
+  // banner so the two don't collide on stdout (mirror run.ts:159-162).
+  const sigintHandler = (): void => {
+    renderer?.dispose();
+  };
+  if (renderer) process.once("SIGINT", sigintHandler);
+
+  // Real phase runner: wraps executePhaseWithRetry against the worktree. The
+  // renderer doubles as the PhasePauseHandle (7th arg) so `--verbose` streaming
+  // pauses/resumes the live zone instead of double-rendering (AC-5).
   const runPhase: ReadyPhaseRunner = (phase, config, wt) =>
-    executePhaseWithRetry(issueNumber, phase, config, undefined, wt);
+    executePhaseWithRetry(
+      issueNumber,
+      phase,
+      config,
+      undefined,
+      wt,
+      undefined,
+      renderer ?? undefined,
+    );
 
   let result: ReadyResult;
   try {
@@ -166,8 +206,14 @@ export async function readyCommand(
       mcp,
       verbose: options.verbose,
       runPhase,
+      onProgress,
     });
   } catch (error) {
+    // Dispose the live zone on the error path too — not just the happy path
+    // (Derived AC: cleanup on ALL exit paths).
+    renderer?.dispose();
+    heartbeat?.dispose();
+    if (renderer) process.off("SIGINT", sigintHandler);
     const message = error instanceof Error ? error.message : String(error);
     if (options.json) {
       console.log(JSON.stringify({ error: message }));
@@ -215,8 +261,14 @@ export async function readyCommand(
       ),
     );
   } else {
+    // #697 AC-6: dispose the live zone BEFORE printing the report so the
+    // markdown lands in clean scrollback (mirror run.ts:185-186).
+    renderer?.dispose();
     console.log(result.report);
   }
+
+  heartbeat?.dispose();
+  if (renderer) process.off("SIGINT", sigintHandler);
 
   process.exitCode = getReadyExitCode(result);
 }
