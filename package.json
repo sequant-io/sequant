@@ -1,7 +1,7 @@
 {
   "name": "sequant",
   "version": "2.4.0",
-  "description": "Quantize your development workflow - Sequential AI phases with quality gates",
+  "description": "AI coding agent orchestrator — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Works with Claude Code or Aider.",
   "type": "module",
   "bin": {
     "sequant": "dist/bin/cli.js"
@@ -39,21 +39,26 @@
     "claude-code",
     "aider",
     "mcp",
+    "mcp-server",
     "cli",
     "workflow",
     "automation",
     "coding-agent",
+    "ai-coding-agent",
+    "agent-orchestrator",
+    "autonomous-agent",
+    "agentic",
     "agent",
     "github",
     "github-issues",
+    "issue-resolution",
     "quality-gates",
     "code-quality",
     "orchestrator",
+    "git-worktree",
     "developer-tools",
-    "anthropic",
     "llm",
-    "ai-coding",
-    "copilot"
+    "ai-coding"
   ],
   "author": "Sequant Contributors",
   "license": "MIT",
