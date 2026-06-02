@@ -22,7 +22,9 @@ import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
 import { buildProgressWiring } from "./run-progress.js";
+import { ReadySnapshotAdapter } from "./ready-tui-adapter.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
+import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import type { ProgressCallback } from "../lib/workflow/types.js";
 import {
@@ -133,13 +135,18 @@ export async function readyCommand(
   const body = gh.fetchIssueBodySync(String(issueNumber));
   const nonGoals = body ? parseNonGoals(body) : [];
 
-  // #697: live phase-matrix renderer, reusing the shared `run` wiring (#618)
-  // for visual parity. Built only on the non-`--json` path so no live writes
-  // corrupt piped JSON (AC-4); the renderer itself degrades to non-TTY line
-  // mode when stdout isn't a TTY, same as `run`.
+  // Live progress UI (non-`--json` only, so no live writes corrupt piped JSON):
+  //   - TTY      → #699: the boxed Ink TUI, driven by a single-issue snapshot
+  //                adapter fed by the gate's `onProgress` (supersedes #697's
+  //                plain renderer on this path).
+  //   - non-TTY  → #697: the plain phase-matrix renderer, which degrades to
+  //                line mode off a TTY. Static-report fallback, unchanged.
+  const useTui = !options.json && Boolean(process.stdout.isTTY);
   let renderer: RunRenderer | null = null;
   let heartbeat: LivenessHeartbeat | null = null;
   let onProgress: ProgressCallback | undefined;
+  let adapter: ReadySnapshotAdapter | null = null;
+  let tuiHandle: TuiHandle | null = null;
 
   if (!options.json) {
     console.log(ui.headerBox("SEQUANT READY"));
@@ -159,7 +166,21 @@ export async function readyCommand(
       ),
     );
     console.log("");
+  }
 
+  if (useTui) {
+    // Build the snapshot adapter and mount the Ink TUI against it. The gate's
+    // `onProgress` events drive the single box; `markDone` (below) flips the
+    // snapshot's `done` flag so the polling `App` unmounts.
+    const title =
+      gh.fetchIssueTitleSync(String(issueNumber)) ?? `Issue #${issueNumber}`;
+    const branch =
+      listWorktrees().find((w) => w.issue === issueNumber)?.branch ?? "";
+    adapter = new ReadySnapshotAdapter({ issueNumber, title, branch });
+    onProgress = adapter.onProgress;
+    const { renderTui } = await import("../ui/tui/index.js");
+    tuiHandle = renderTui(adapter);
+  } else if (!options.json) {
     // Stream phases as they fire (no `basePhases`): the ready pipeline length
     // is dynamic (1–N qa/loop passes), so a fixed seed would leave a stuck-
     // pending `loop` cell when the gate stops after the first qa.
@@ -172,12 +193,14 @@ export async function readyCommand(
     }));
   }
 
-  // SIGINT: clear the live zone before ShutdownManager writes its cleanup
-  // banner so the two don't collide on stdout (mirror run.ts:159-162).
+  // SIGINT: tear down the live zone (TUI unmount or renderer dispose) before
+  // ShutdownManager writes its cleanup banner so the two don't collide on
+  // stdout (mirror run.ts SIGINT ordering).
   const sigintHandler = (): void => {
+    tuiHandle?.unmount();
     renderer?.dispose();
   };
-  if (renderer) process.once("SIGINT", sigintHandler);
+  if (renderer || tuiHandle) process.once("SIGINT", sigintHandler);
 
   // Real phase runner: wraps executePhaseWithRetry against the worktree. The
   // renderer doubles as the PhasePauseHandle (7th arg) so `--verbose` streaming
@@ -209,11 +232,14 @@ export async function readyCommand(
       onProgress,
     });
   } catch (error) {
-    // Dispose the live zone on the error path too — not just the happy path
-    // (Derived AC: cleanup on ALL exit paths).
+    // Tear down the live zone on the error path too — not just the happy path
+    // (Derived AC: cleanup on ALL exit paths). For the TUI, mark done + unmount
+    // so ink restores the terminal before the error box prints.
+    adapter?.markDone(false);
+    tuiHandle?.unmount();
     renderer?.dispose();
     heartbeat?.dispose();
-    if (renderer) process.off("SIGINT", sigintHandler);
+    if (renderer || tuiHandle) process.off("SIGINT", sigintHandler);
     const message = error instanceof Error ? error.message : String(error);
     if (options.json) {
       console.log(JSON.stringify({ error: message }));
@@ -261,14 +287,20 @@ export async function readyCommand(
       ),
     );
   } else {
-    // #697 AC-6: dispose the live zone BEFORE printing the report so the
-    // markdown lands in clean scrollback (mirror run.ts:185-186).
+    // #699 AC-3 / #697 AC-6: tear the live zone DOWN before printing the report
+    // so the markdown lands in clean scrollback. For the TUI, flip `done` so the
+    // polling App unmounts, await that unmount (which also emits the durable
+    // teardown summary, AC-5), then print the report below it.
+    if (tuiHandle) {
+      adapter?.markDone(result.ready);
+      await tuiHandle.done;
+    }
     renderer?.dispose();
     console.log(result.report);
   }
 
   heartbeat?.dispose();
-  if (renderer) process.off("SIGINT", sigintHandler);
+  if (renderer || tuiHandle) process.off("SIGINT", sigintHandler);
 
   process.exitCode = getReadyExitCode(result);
 }
