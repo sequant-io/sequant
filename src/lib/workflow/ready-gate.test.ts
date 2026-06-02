@@ -21,7 +21,7 @@ import {
   type RunReadyGateOptions,
   type ReadyResult,
 } from "./ready-gate.js";
-import type { PhaseResult } from "./types.js";
+import type { PhaseResult, ProgressCallback } from "./types.js";
 import type { QaVerdict } from "./run-log-schema.js";
 import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 
@@ -238,6 +238,85 @@ describe("runReadyGate — AC-3 policy thresholds", () => {
     expect(result.reason).toBe("READY_FOR_MERGE");
     expect(result.ready).toBe(true);
     expect(result.autoFixed).toContain("polish: extract a helper");
+  });
+});
+
+// ─── runReadyGate: live-progress emission (#697 AC-1) ────────────────────────
+
+describe("runReadyGate — #697 onProgress emission (AC-1)", () => {
+  interface Ev {
+    issue: number;
+    phase: string;
+    event: string;
+    iteration?: number;
+  }
+  function recorder(): { onProgress: ProgressCallback; events: Ev[] } {
+    const events: Ev[] = [];
+    const onProgress: ProgressCallback = (issue, phase, event, extra) => {
+      events.push({ issue, phase, event, iteration: extra?.iteration });
+    };
+    return { onProgress, events };
+  }
+
+  it("emits start/complete per phase with the QA-pass iteration across qa→loop→qa", async () => {
+    const { runPhase } = scriptedRunner([
+      qaResult("AC_NOT_MET", ["bug"]),
+      loopResult(),
+      qaResult("AC_MET_BUT_NOT_A_PLUS"),
+    ]);
+    const { onProgress, events } = recorder();
+    await runReadyGate(baseOpts({ runPhase, policy: "ac", onProgress }));
+
+    // start before / complete after each phase; iteration tracks the QA pass so
+    // the renderer renders `loop N/M`.
+    expect(events).toEqual([
+      { issue: 683, phase: "qa", event: "start", iteration: 1 },
+      { issue: 683, phase: "qa", event: "complete", iteration: 1 },
+      { issue: 683, phase: "loop", event: "start", iteration: 1 },
+      { issue: 683, phase: "loop", event: "complete", iteration: 1 },
+      { issue: 683, phase: "qa", event: "start", iteration: 2 },
+      { issue: 683, phase: "qa", event: "complete", iteration: 2 },
+    ]);
+  });
+
+  it("emits a failed loop event when the fix loop phase fails (LOOP_FAILED)", async () => {
+    const { runPhase } = scriptedRunner([
+      qaResult("AC_NOT_MET", ["bug"]),
+      loopResult(false),
+    ]);
+    const { onProgress, events } = recorder();
+    const result = await runReadyGate(
+      baseOpts({ runPhase, policy: "a-plus", onProgress }),
+    );
+
+    expect(result.reason).toBe("LOOP_FAILED");
+    expect(events).toContainEqual({
+      issue: 683,
+      phase: "loop",
+      event: "failed",
+      iteration: 1,
+    });
+  });
+
+  it("re-emits failed and re-throws when the phase runner throws", async () => {
+    const boom: ReadyPhaseRunner = () =>
+      Promise.reject(new Error("driver crash"));
+    const { onProgress, events } = recorder();
+    await expect(
+      runReadyGate(baseOpts({ runPhase: boom, onProgress })),
+    ).rejects.toThrow("driver crash");
+    expect(events).toContainEqual({
+      issue: 683,
+      phase: "qa",
+      event: "failed",
+      iteration: 1,
+    });
+  });
+
+  it("is a no-op when onProgress is omitted (back-compat)", async () => {
+    const { runPhase } = scriptedRunner([qaResult("READY_FOR_MERGE")]);
+    const result = await runReadyGate(baseOpts({ runPhase }));
+    expect(result.ready).toBe(true);
   });
 });
 
