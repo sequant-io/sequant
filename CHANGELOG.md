@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`update`/`sync` content-truth bugs — false "up to date" and silent loss of in-place customizations (#708)** — both commands decided status from incomplete/divergent template comparison logic. `sync` declared `✔ Skills are already up to date!` purely from the version marker, so real content drift on the automation-recommended path went unreported. `update` compared installed files against the **raw** template (tokens unsubstituted), so an unmodified `constitution.md` always read as `modified`, and an in-place-customized constitution was overwritten on the default `Apply updates? (Y)` prompt — silent data loss. Fixed by extracting a single source of truth in `src/lib/templates.ts` (`buildTemplateVariables` + `computeTemplateChanges`, also used by `copyTemplates`): templates are now rendered with the project's variables **before** diffing, and customizable files (constitution) that diverge in place are classified `local-override` (skip-by-default, only `--force` overwrites). `sync` now verifies actual content on a version match and reports drift (`version current, but N file(s) differ — run \`update\` or \`sync --force\``) instead of a false no-op. On drift at a matching version, `sync` also exits non-zero — even under `--quiet` — so CI/automation (the recommended path) can't treat a drifted tree as success. The customizable-file allow-list is matched on separator-normalized paths so the protection holds on Windows. (#708)
+
 ## [2.6.1] - 2026-06-03
 
 ### Documentation
