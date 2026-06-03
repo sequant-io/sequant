@@ -20,9 +20,8 @@ export async function runCommand(
   issues: string[],
   options: RunOptions,
 ): Promise<void> {
-  // #705: `-q` is a hidden alias for the quality loop (it no longer maps to
-  // --quiet, which moved to `-s`). Normalize before any consumer reads
-  // `qualityLoop` so `-q` and `-Q` produce identical behavior.
+  // #705: fold the hidden `-q` alias into qualityLoop before any consumer reads
+  // it (`-q` no longer maps to --quiet, which moved to `-s`). See run-flags.ts.
   options.qualityLoop = normalizeQualityLoop(options);
 
   console.log(ui.headerBox("SEQUANT WORKFLOW"));
@@ -105,9 +104,8 @@ export async function runCommand(
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
   displayConfig(resolved);
 
-  // #705: the boxed Ink TUI is the default on a TTY; `--no-tui` opts out,
-  // non-TTY auto-degrades, and `--quiet`/`-s` suppresses it (heartbeat-only).
-  // See resolveTuiEnabled for the full precedence.
+  // #705: boxed Ink TUI is the default on a TTY; resolveTuiEnabled owns the
+  // --no-tui / non-TTY / --quiet precedence (see run-flags.ts).
   const tuiEnabled = resolveTuiEnabled(options, Boolean(process.stdout.isTTY));
 
   // RunRenderer (#618) + LivenessHeartbeat (#574) wiring lives in
