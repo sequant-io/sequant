@@ -5,6 +5,7 @@
 import { readdir, chmod } from "fs/promises";
 import { join, dirname, relative, isAbsolute } from "path";
 import { fileURLToPath } from "url";
+import { diffLines } from "diff";
 import {
   readFile,
   writeFile,
@@ -23,6 +24,12 @@ import { getProjectName } from "./project-name.js";
 
 // Get the package templates directory
 export function getTemplatesDir(): string {
+  // Allow overriding the templates source (used by tests; also lets the dir be
+  // relocated without relying on the compiled-output layout below).
+  if (process.env.SEQUANT_TEMPLATES_DIR) {
+    return process.env.SEQUANT_TEMPLATES_DIR;
+  }
+
   const __dirname = dirname(fileURLToPath(import.meta.url));
   // Compiled structure: dist/src/lib/templates.js
   // So we need ../../../templates to reach project root templates/
@@ -85,6 +92,157 @@ export async function getTemplateContent(
   const fullPath = join(templatesDir, relativePath);
 
   return readFile(fullPath);
+}
+
+/**
+ * Files that are meant to be edited in place per project (e.g. the
+ * constitution). When one of these diverges from the rendered template
+ * without a parallel `.claude/.local/` file, it is treated as a protected
+ * local override rather than a stale "modified" file — so the default
+ * (non-`--force`) update/sync path never silently overwrites it.
+ */
+export const CUSTOMIZABLE_FILES = [".claude/memory/constitution.md"];
+
+/**
+ * Whether a local path is a customizable file edited in place per project.
+ */
+export function isCustomizableFile(localPath: string): boolean {
+  return CUSTOMIZABLE_FILES.includes(localPath);
+}
+
+/**
+ * Build the full set of template variables used when rendering templates.
+ *
+ * This is the single source of truth shared by `copyTemplates` (write time)
+ * and `computeTemplateChanges` (diff time) so the two can never drift — a
+ * mismatch here is what caused `constitution.md` to read as "modified" on
+ * every project (the diff used a different/incomplete variable set than the
+ * write). See #708.
+ */
+export async function buildTemplateVariables(
+  stack: string,
+  tokens?: Record<string, string>,
+  options: { additionalStacks?: string[] } = {},
+): Promise<Record<string, string>> {
+  const stackConfig = getStackConfig(stack);
+
+  // Detect project name from available sources (package.json, Cargo.toml, etc.)
+  const projectName = await getProjectName();
+
+  // Get stack-specific notes for constitution template
+  // Use multi-stack notes if additional stacks are provided
+  const stackNotes =
+    options.additionalStacks && options.additionalStacks.length > 0
+      ? getMultiStackNotes(stack, options.additionalStacks)
+      : getStackNotes(stack);
+
+  return {
+    ...stackConfig.variables,
+    ...tokens,
+    PROJECT_NAME: projectName,
+    STACK: stack,
+    STACK_NOTES: stackNotes,
+  };
+}
+
+/**
+ * A single template file's status relative to the installed copy.
+ */
+export interface TemplateChange {
+  /** Installed path under `.claude/` */
+  path: string;
+  /** Source template path under `templates/` */
+  templatePath: string;
+  status: "new" | "modified" | "unchanged" | "local-override";
+  /** Template content rendered with the project's variables */
+  rendered: string;
+  /** Unified-ish diff (installed → rendered), only set for `modified` */
+  diff?: string;
+}
+
+/**
+ * Compare bundled template content against what's installed under `.claude/`.
+ *
+ * Templates are rendered with the project's variables *before* comparison, so
+ * an unmodified file (e.g. a constitution with `{{PROJECT_NAME}}` expanded)
+ * reads as `unchanged` rather than `modified`. A file that diverges in place is
+ * `local-override` (skip-by-default) when it has a parallel `.claude/.local/`
+ * file or is in the customizable allow-list; otherwise it is `modified`.
+ */
+export async function computeTemplateChanges(
+  stack: string,
+  tokens?: Record<string, string>,
+  options: { additionalStacks?: string[] } = {},
+): Promise<TemplateChange[]> {
+  const variables = await buildTemplateVariables(stack, tokens, options);
+  const templateFiles = await listTemplateFiles();
+  const changes: TemplateChange[] = [];
+
+  for (const templatePath of templateFiles) {
+    const localPath = templatePath.replace("templates/", ".claude/");
+
+    // Skip .local files (user customizations are never overwritten)
+    if (localPath.includes(".local/")) {
+      continue;
+    }
+
+    const rendered = processTemplate(
+      await getTemplateContent(templatePath),
+      variables,
+    );
+    const exists = await fileExists(localPath);
+
+    if (!exists) {
+      changes.push({ path: localPath, templatePath, status: "new", rendered });
+      continue;
+    }
+
+    const localContent = await readFile(localPath);
+    if (localContent === rendered) {
+      changes.push({
+        path: localPath,
+        templatePath,
+        status: "unchanged",
+        rendered,
+      });
+      continue;
+    }
+
+    // Content differs after rendering. Protect in-place customizations:
+    // a parallel `.claude/.local/` override, or a known customizable file.
+    const localOverridePath = localPath.replace(".claude/", ".claude/.local/");
+    const hasLocalOverride = await fileExists(localOverridePath);
+
+    if (hasLocalOverride || isCustomizableFile(localPath)) {
+      changes.push({
+        path: localPath,
+        templatePath,
+        status: "local-override",
+        rendered,
+      });
+      continue;
+    }
+
+    const diff = diffLines(localContent, rendered)
+      .map((part) => {
+        const prefix = part.added ? "+" : part.removed ? "-" : " ";
+        return part.value
+          .split("\n")
+          .filter((l) => l)
+          .map((l) => `${prefix} ${l}`)
+          .join("\n");
+      })
+      .join("\n");
+    changes.push({
+      path: localPath,
+      templatePath,
+      status: "modified",
+      rendered,
+      diff,
+    });
+  }
+
+  return changes;
 }
 
 /**
@@ -229,25 +387,9 @@ export async function copyTemplates(
   options: CopyTemplatesOptions = {},
 ): Promise<{ scriptsSymlinked: boolean; symlinkResults?: SymlinkResult[] }> {
   const templatesDir = getTemplatesDir();
-  const stackConfig = getStackConfig(stack);
 
-  // Detect project name from available sources (package.json, Cargo.toml, etc.)
-  const projectName = await getProjectName();
-
-  // Get stack-specific notes for constitution template
-  // Use multi-stack notes if additional stacks are provided
-  const stackNotes =
-    options.additionalStacks && options.additionalStacks.length > 0
-      ? getMultiStackNotes(stack, options.additionalStacks)
-      : getStackNotes(stack);
-
-  const variables = {
-    ...stackConfig.variables,
-    ...tokens,
-    PROJECT_NAME: projectName,
-    STACK: stack,
-    STACK_NOTES: stackNotes,
-  };
+  // Single source of truth for template variables (shared with the diff path)
+  const variables = await buildTemplateVariables(stack, tokens, options);
 
   async function copyDir(srcDir: string, destDir: string): Promise<void> {
     try {
