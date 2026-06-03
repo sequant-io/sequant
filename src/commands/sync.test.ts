@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock fs functions
 vi.mock("../lib/fs.js", () => ({
@@ -44,6 +44,12 @@ describe("sync command", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    // Some paths (missing manifest, content drift) set a non-zero exit code;
+    // reset so it never leaks across tests or into the vitest process.
+    process.exitCode = 0;
   });
 
   describe("getSkillsVersion", () => {
@@ -178,6 +184,44 @@ describe("sync command", () => {
       expect(output).not.toContain("already up to date");
       expect(output).toContain("2 file(s) differ");
       expect(output).toContain("sync --force");
+      // Non-interactive / CI path must detect drift via the exit code.
+      expect(process.exitCode).toBe(1);
+    });
+
+    it("signals drift via non-zero exit code even with --quiet (no silent success)", async () => {
+      // AC-1 intent: the non-interactive path must not declare success on drift.
+      // --quiet suppresses the message, but the exit code (the machine signal
+      // automation actually checks) must still flag the drifted tree (#708).
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "modified",
+          rendered: "new",
+          diff: "diff",
+        },
+      ]);
+
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand({ quiet: true });
+
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+      // Quiet suppresses the human-readable message...
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).not.toContain("already up to date");
+      expect(output).not.toContain("file(s) differ");
+      // ...but the exit code still signals drift to automation.
+      expect(process.exitCode).toBe(1);
     });
 
     it("treats local-override drift as no-op (not reported as drift)", async () => {

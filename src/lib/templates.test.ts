@@ -182,6 +182,12 @@ describe("templates", () => {
         expect(isCustomizableFile(file)).toBe(true);
       }
     });
+
+    it("normalizes Windows-style separators before matching (#708)", () => {
+      // On Windows template paths are assembled with backslashes; the
+      // protection must still recognize the constitution.
+      expect(isCustomizableFile(".claude\\memory\\constitution.md")).toBe(true);
+    });
   });
 
   describe("buildTemplateVariables", () => {
