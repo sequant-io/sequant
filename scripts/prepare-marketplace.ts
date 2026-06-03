@@ -261,7 +261,7 @@ function validate(): void {
 
 const README_CONTENT = `# Sequant
 
-Structured workflow system for Claude Code — GitHub issue resolution with spec, exec, test, and QA phases.
+AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees and quality gates, through spec → exec → qa phases.
 
 ## Prerequisites
 
