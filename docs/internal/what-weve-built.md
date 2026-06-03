@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.4.0
+# What We've Built: Sequant v2.5.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,6 +737,13 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.5.0)
+
+- **`sequant ready <issue>`** - Post-resolve A+ QA gate that drives a resolved issue's worktree through a full-weight `qa → loop → qa` pipeline and stops at the human merge gate (never merges); configurable `ready.policy` (`ac`/`a-plus`), bounded by `--max-iterations`/`--budget`, with a #534 regression guard against empty/unparseable verdicts (#683)
+- **`sequant ready` Live Phase-Matrix + Boxed TUI** - Reuses the `sequant run` renderer for in-place phase/loop liveness instead of going silent; on a TTY renders the boxed Ink dashboard with row-cap/frame-height clamp and durable teardown summary (`--json`/non-TTY fall back to the static report) (#697, #699)
+- **`/release` Doc-Freshness Hardening** - Regenerates the marketplace artifact before pack/publish and warns when CHANGELOG omits the version being released, closing the stale-doc surfaces from v2.4.0 (#684, #701)
+- **Top-Funnel Positioning & SEO Pass** - Differentiated README subhead, social-proof badges, "What's new in 2.5" block, reconciled npm/plugin/marketplace taglines, and tuned repo topics/keywords (#694, #702)
+
 ### Recent Additions (v2.4.0)
 
 - **Unified Run Renderer** - Two-zone live grid + events log replaces dual-output regression; experimental ink-based TUI dashboard variant via `--experimental-tui` (#618, #620, #624, #540, #542, #543)
@@ -1105,7 +1112,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.4.0
+**Current Version:** 2.5.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1115,7 +1122,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.4.0                                │
+│                              SEQUANT v2.5.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
