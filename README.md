@@ -1,17 +1,26 @@
 # Sequant
 
-**Workflow automation for AI coding agents.**
+**Spec-driven AI coding agents — every acceptance criterion verified, stops at the human merge gate.**
 
-Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
+For teams that can't ship un-reviewed AI code. Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
 
 **[sequant.io](https://sequant.io)** — docs, guides, and getting started.
 
 [![npm version](https://img.shields.io/npm/v/sequant.svg)](https://www.npmjs.com/package/sequant)
+[![npm downloads](https://img.shields.io/npm/dm/sequant.svg)](https://www.npmjs.com/package/sequant)
+[![GitHub stars](https://img.shields.io/github/stars/sequant-io/sequant.svg)](https://github.com/sequant-io/sequant/stargazers)
+[![CI](https://github.com/sequant-io/sequant/actions/workflows/ci.yml/badge.svg)](https://github.com/sequant-io/sequant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step.
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
+
+### What's new in 2.5
+
+- **`sequant ready <issue>`** — a post-resolve A+ QA gate that drives a resolved issue through a full-weight `qa → loop → qa` pass and **stops at the human merge gate — it never merges**.
+- **Live phase-matrix TUI** — `sequant ready` and `sequant run` render the active phase and quality-loop iteration in place (boxed Ink dashboard on a TTY), so a long run is never indistinguishable from a hang.
+- **Per-issue concurrency locks** — a second session on the same issue is skipped with a clear message instead of clobbering the first; `sequant locks` inspects and clears them.
 
 ## Quick Start
 
@@ -81,7 +90,7 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-> 📹 A recorded demo GIF of the live run grid is coming — tracked separately.
+> 📹 A recorded demo GIF of the live run grid is coming — tracked in [#695](https://github.com/sequant-io/sequant/issues/695).
 
 ---
 
