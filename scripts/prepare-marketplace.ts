@@ -308,7 +308,7 @@ sequant init
 | \`/improve\` | Codebase analysis and improvement |
 | \`/clean\` | Repository cleanup |
 | \`/security-review\` | Deep security analysis |
-| \`/release\` | Automated release workflow |
+| \`/solve\` | Generate the recommended workflow for one or more issues |
 | \`/merger\` | Multi-issue integration and merge |
 | \`/setup\` | Project initialization for plugin users |
 
@@ -335,9 +335,12 @@ sequant init
 ## Quick Start
 
 \`\`\`
+sequant ready        # Boxed pre-flight: which issues are ready to run?
 /assess 123          # Analyze issue, get recommended workflow
 /fullsolve 123       # End-to-end: spec → exec → qa → PR
 \`\`\`
+
+See the [\`sequant ready\` command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/ready-command.md) for the full pre-flight readiness check.
 
 ## Documentation
 

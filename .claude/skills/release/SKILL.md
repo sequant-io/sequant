@@ -332,21 +332,22 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
 fi
 ```
 
-### Step 4.65: Verify README "What's new" Freshness
+### Step 4.65: Verify CHANGELOG Freshness
 
-**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the README already lists — so the gate would never fire for the version actually being released (root cause class of #684).
+**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the CHANGELOG already lists — so the gate would never fire for the version actually being released (root cause class of #684).
 
-Warn-only (like the what-weve-built checks): prompt the releaser to add a "What's new" feature group if the new version is absent.
+**Note (#701):** #694 moved the changelog wall out of `README.md` into `CHANGELOG.md` and removed the README "What's new" section, so this gate now checks `CHANGELOG.md` (the source of truth). Grepping `README.md` for a now-absent `# What's new` heading made the warn-only gate fire on every release.
+
+Warn-only (like the what-weve-built checks): prompt the releaser to add a `CHANGELOG.md` entry if the new version is absent.
 
 ```bash
-# Warn if README.md "What's new" section omits the version being released
-if [ -f "README.md" ]; then
+# Warn if CHANGELOG.md omits the version being released
+if [ -f "CHANGELOG.md" ]; then
   new_version=$(node -p "require('./package.json').version")
 
-  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
-  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
-  if ! echo "$whats_new" | grep -qF "New in ${new_version}"; then
-    echo "Warning: README.md \"What's new\" section omits v${new_version} — add a feature group before releasing"
+  # Match the Keep-a-Changelog heading for this version, e.g. "## [2.4.0] - 2026-05-30"
+  if ! grep -qF "[${new_version}]" CHANGELOG.md; then
+    echo "Warning: CHANGELOG.md omits v${new_version} — add a \"## [${new_version}]\" entry before releasing"
   fi
 fi
 ```
