@@ -102,7 +102,7 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 
 > **Note:** Documentation freshness checks that compare against the version *being released* run **after** Step 4 (the version bump), not here in pre-flight:
 > - `docs/internal/what-weve-built.md` title + ASCII version stamps → **Step 4.63**
-> - README "What's new" section → **Step 4.65**
+> - `CHANGELOG.md` freshness (version entry present) → **Step 4.65**
 >
 > They must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs. Running them in pre-flight would compare against the *previous* release — which the docs already reflect — so the gate would never fire for the release in progress (root cause class of #684 / #687).
 
@@ -311,7 +311,7 @@ fi
 
 **IMPORTANT:** This runs **after** Step 4 (version bump) and Step 4.6 (which updates the stamps), so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release — which the file already reflects — so the gate would never fire for the version actually being released (root cause class of #684 / #687, the same ordering bug fixed for the README check in #685).
 
-Warn-only (like the README "What's new" check): prompt the releaser if the title or ASCII-art version stamp omits/mismatches the version being released.
+Warn-only (like the CHANGELOG freshness check): prompt the releaser if the title or ASCII-art version stamp omits/mismatches the version being released.
 
 ```bash
 # Warn if docs/internal/what-weve-built.md version stamps don't match the version being released
