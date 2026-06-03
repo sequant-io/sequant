@@ -17,6 +17,7 @@ vi.mock("../lib/manifest.js", () => ({
 // Mock templates
 vi.mock("../lib/templates.js", () => ({
   copyTemplates: vi.fn(),
+  computeTemplateChanges: vi.fn(),
 }));
 
 // Mock config
@@ -27,7 +28,7 @@ vi.mock("../lib/config.js", () => ({
 import { getSkillsVersion, areSkillsOutdated, syncCommand } from "./sync.js";
 import { fileExists, readFile, writeFile } from "../lib/fs.js";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
-import { copyTemplates } from "../lib/templates.js";
+import { copyTemplates, computeTemplateChanges } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 
 const mockFileExists = vi.mocked(fileExists);
@@ -36,6 +37,7 @@ const mockWriteFile = vi.mocked(writeFile);
 const mockGetManifest = vi.mocked(getManifest);
 const mockGetPackageVersion = vi.mocked(getPackageVersion);
 const mockCopyTemplates = vi.mocked(copyTemplates);
+const mockComputeTemplateChanges = vi.mocked(computeTemplateChanges);
 const mockGetConfig = vi.mocked(getConfig);
 
 describe("sync command", () => {
@@ -106,7 +108,8 @@ describe("sync command", () => {
       expect(process.exitCode).toBe(1);
     });
 
-    it("skips sync when versions match and force not set", async () => {
+    it("skips sync when versions match and content is identical", async () => {
+      // AC-2: truthful no-op only when content is actually identical
       mockGetManifest.mockResolvedValue({
         version: "1.1.0",
         stack: "nextjs",
@@ -116,10 +119,98 @@ describe("sync command", () => {
       mockFileExists.mockResolvedValue(true);
       mockReadFile.mockResolvedValue("1.1.0");
       mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      // No drift: every template renders identical to installed content
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "unchanged",
+          rendered: "x",
+        },
+      ]);
 
-      await syncCommand({ quiet: true });
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand();
 
       expect(mockCopyTemplates).not.toHaveBeenCalled();
+      expect(
+        logSpy.mock.calls.some((c) =>
+          String(c[0]).includes("already up to date"),
+        ),
+      ).toBe(true);
+    });
+
+    it("reports drift instead of false up-to-date when content differs at equal version", async () => {
+      // AC-1: version marker matches but content differs
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "modified",
+          rendered: "new",
+          diff: "diff",
+        },
+        {
+          path: ".claude/skills/new/SKILL.md",
+          templatePath: "templates/skills/new/SKILL.md",
+          status: "new",
+          rendered: "new",
+        },
+      ]);
+
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand();
+
+      // Report-only: does not mutate, does not claim up to date
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).not.toContain("already up to date");
+      expect(output).toContain("2 file(s) differ");
+      expect(output).toContain("sync --force");
+    });
+
+    it("treats local-override drift as no-op (not reported as drift)", async () => {
+      // A customized constitution at equal version should not trigger the
+      // drift message — only new/modified count as actionable drift.
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/memory/constitution.md",
+          templatePath: "templates/memory/constitution.md",
+          status: "local-override",
+          rendered: "template",
+        },
+      ]);
+
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand();
+
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+      expect(
+        logSpy.mock.calls.some((c) =>
+          String(c[0]).includes("already up to date"),
+        ),
+      ).toBe(true);
     });
 
     it("syncs when versions differ", async () => {

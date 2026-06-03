@@ -11,7 +11,11 @@ import {
   updateManifest,
   getPackageVersion,
 } from "../lib/manifest.js";
-import { copyTemplates, type CopyTemplatesOptions } from "../lib/templates.js";
+import {
+  copyTemplates,
+  computeTemplateChanges,
+  type CopyTemplatesOptions,
+} from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 import { writeFile, readFile, fileExists } from "../lib/fs.js";
 import {
@@ -102,17 +106,39 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     console.log(chalk.gray(`Stack: ${manifest.stack}\n`));
   }
 
-  // Check if sync is needed
-  if (!force && skillsVersion === packageVersion) {
-    if (!quiet) {
-      console.log(chalk.green("✔ Skills are already up to date!"));
-    }
-    return;
-  }
-
   // Get config tokens for template processing
   const config = await getConfig();
   const tokens = config?.tokens || {};
+
+  // The version marker is only a fast-path hint — verify actual content before
+  // claiming "up to date". On a version match we still diff bundled templates
+  // against installed content (rendered with the same variables) so we never
+  // declare success while real drift sits in place (#708).
+  if (!force && skillsVersion === packageVersion) {
+    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const drifted = changes.filter(
+      (c) => c.status === "new" || c.status === "modified",
+    );
+
+    if (drifted.length === 0) {
+      // Truthful no-op: content is actually identical.
+      if (!quiet) {
+        console.log(chalk.green("✔ Skills are already up to date!"));
+      }
+      return;
+    }
+
+    // Version current but content differs — report, don't mutate (report-only
+    // keeps the fast path from silently overwriting in-place customizations).
+    if (!quiet) {
+      console.log(
+        chalk.yellow(
+          `!  Version current, but ${drifted.length} file(s) differ — run \`update\` or \`sync --force\``,
+        ),
+      );
+    }
+    return;
+  }
 
   // Copy templates with force to overwrite existing files
   const copyOptions: CopyTemplatesOptions = {
