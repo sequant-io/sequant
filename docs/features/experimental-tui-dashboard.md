@@ -1,6 +1,8 @@
 # Live Multi-Issue TUI Dashboard
 
-A live, in-terminal dashboard that renders one box per issue while `sequant run` works through them concurrently. Use it when running multiple issues in parallel and you want to see at a glance which issue is in which phase, what each one is doing right now, and whether anything has stalled. Ships behind `--experimental-tui`; existing linear output is unchanged when the flag is omitted.
+A live, in-terminal dashboard that renders one box per issue while `sequant run` works through them concurrently. Use it when running multiple issues in parallel and you want to see at a glance which issue is in which phase, what each one is doing right now, and whether anything has stalled.
+
+> **Now the default (#705).** This boxed Ink dashboard is the default for `sequant run` on a TTY — no flag needed. Pass **`--no-tui`** to fall back to the [line phase-matrix renderer](run-renderer.md), or **`-s`/`--quiet`** to suppress both in favor of the liveness heartbeat. Non-TTY output (pipe, redirect, CI) auto-degrades to the line renderer. `--experimental-tui` is retained as a hidden no-op alias so existing scripts keep working.
 
 ## Prerequisites
 
@@ -10,20 +12,17 @@ A live, in-terminal dashboard that renders one box per issue while `sequant run`
 
 ## Setup
 
-No installation step beyond sequant itself. The TUI renderer (ink) ships in the package; nothing extra to enable.
+No installation step beyond sequant itself. The TUI renderer (ink) ships in the package, and it is the default on a TTY — nothing to enable.
 
 ```bash
-# Single issue
-npx sequant run 47 --experimental-tui
+# Single issue — boxed TUI by default on a TTY
+npx sequant run 47
 
-# Several issues, parallel
-npx sequant run 46 47 8 34 --experimental-tui
-```
+# Several issues, parallel — boxed TUI by default
+npx sequant run 46 47 8 34
 
-If you want to make it the default for your shell, alias it:
-
-```bash
-alias srun='npx sequant run --experimental-tui'
+# Opt out to the line phase-matrix renderer
+npx sequant run 46 47 8 34 --no-tui
 ```
 
 ## What You Can Do
@@ -32,7 +31,7 @@ alias srun='npx sequant run --experimental-tui'
 - **Spot stalls.** A "last activity" stamp ticks under the live `now` line — if it climbs into minutes while a phase shows the spinner, the phase is stuck.
 - **Find the right log fast.** Each box prints its `tail -f` path so you can pop a second terminal and stream the underlying log without leaving the dashboard.
 - **Ctrl+C cleanly.** The TUI unmounts and hands off to `ShutdownManager`; no terminal corruption, no orphaned spinners.
-- **Combine with `--quiet`.** `--quiet` is orthogonal: pass both, and the TUI still renders while the per-phase progress lines that `--quiet` suppresses stay suppressed in the fallback path.
+- **Suppress with `--quiet`/`-s`.** Since #705, `--quiet` (now `-s`) wins over the TUI default: the dashboard is suppressed and the liveness heartbeat becomes the only signal. Use `--no-tui` instead if you want the line renderer rather than heartbeat-only output.
 
 ## What to Expect
 
@@ -61,22 +60,24 @@ Borders rotate cyan → magenta → blue → yellow by start order. On terminal 
 
 **When the dashboard does NOT render.** If stdout is not a TTY (CI, redirect, pipe), the orchestrator silently falls back to the existing linear stream — no error, no warning.
 
-**Bundle / startup cost.** Ink and React ship with sequant; cold start is unaffected by passing the flag (modules load lazily when the flag is set).
+**Bundle / startup cost.** Ink and React ship with sequant; cold start is unaffected (the modules load lazily only when the TUI actually mounts — i.e. on a TTY without `--no-tui`/`-s`).
 
 ## Reference
 
 | Flag | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `--experimental-tui` | boolean | no | off | Render the live multi-issue dashboard instead of linear progress lines. Auto-falls back to linear output when stdout is not a TTY. |
+| `--no-tui` | boolean | no | TUI on | Opt out of the boxed dashboard and use the line phase-matrix renderer instead. |
+| `--experimental-tui` | boolean | no | (no-op) | Hidden no-op alias retained for backward compatibility (#705) — the TUI is now the default, so this flag does nothing. |
 
 Interaction with other flags:
 
 | Combined with | Behavior |
 |---------------|----------|
-| `--quiet` (`-q`) | Both apply. TUI renders; non-TUI fallback stays quiet (no liveness heartbeat lines, since the dashboard is the liveness signal). |
+| `--quiet` (`-s`) | `--quiet` wins: the TUI is suppressed and the liveness heartbeat is the only signal (#705). |
+| `--no-tui` | TUI does not mount; the line phase-matrix renderer is used instead. |
 | `--phases ...` | Phase set drives the phase progression row inside each box. |
 | `--testgen` / `--security-review` | Inserted phases appear in the progression row like any other. |
-| Output piped (`| tee`, `>file`) | TUI does not mount; linear output is used. |
+| Output piped (`| tee`, `>file`) | TUI does not mount; line renderer is used. |
 | `NO_COLOR=1` | Borders and status colors drop; box structure is preserved. |
 
 ## Troubleshooting
@@ -96,7 +97,7 @@ node -e "console.log(process.stdout.isTTY)"
 
 **Cause:** Terminal is not reporting display widths correctly for wide glyphs (CJK, some emoji). The TUI uses `string-width` for truncation, so this is unusual but possible in older terminals.
 
-**Fix:** Update to a recent terminal (iTerm2, Ghostty, modern xterm, Windows Terminal). If you cannot, drop the flag — linear output works in any terminal.
+**Fix:** Update to a recent terminal (iTerm2, Ghostty, modern xterm, Windows Terminal). If you cannot, pass `--no-tui` — linear output works in any terminal.
 
 ### Boxes overflow off-screen with many issues
 

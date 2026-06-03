@@ -1,10 +1,10 @@
 # Run Renderer
 
-The default terminal output for `sequant run`: a live, redrawing grid on top showing per-issue state as an in-place **phase matrix**, with a compact completion log below. Use it to track concurrent issues at a glance, see which phase each is in, and pick out failures from a long run.
+The line-based terminal output for `sequant run`: a live, redrawing grid on top showing per-issue state as an in-place **phase matrix**, with a compact completion log below. Use it to track concurrent issues at a glance, see which phase each is in, and pick out failures from a long run.
 
-This is the default — nothing to enable. It replaces the older spinner + parallel-mode line output that produced duplicate and overwritten lines.
+Since #705 the boxed Ink TUI is the default on a TTY; this line renderer is what you get when you pass **`--no-tui`**, or automatically when stdout is **not a TTY** (pipe, redirect, CI). It replaces the older spinner + parallel-mode line output that produced duplicate and overwritten lines.
 
-> Looking for the experimental Ink-based dashboard with one box per issue? See [Experimental TUI Dashboard](experimental-tui-dashboard.md). The Ink TUI is opt-in via `--experimental-tui`; the renderer described here is the default.
+> Looking for the boxed Ink-based dashboard with one box per issue? See [TUI Dashboard](experimental-tui-dashboard.md). That Ink TUI is now the default on a TTY (#705); the line renderer described here is the `--no-tui` / non-TTY fallback. `--quiet`/`-s` suppresses both in favor of the liveness heartbeat.
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ No setup. The renderer is wired into `sequant run` and selects a mode based on t
 
 | Environment | Mode | What you see |
 |---|---|---|
-| Interactive terminal (`process.stdout.isTTY`) | **TTY renderer** | Live grid (redrawn ~1Hz) + events log |
+| Interactive terminal (`process.stdout.isTTY`) with `--no-tui` | **TTY renderer** | Live grid (redrawn ~1Hz) + events log |
 | Pipe, redirect, CI (`!process.stdout.isTTY`) | **Non-TTY renderer** | Append-only timestamped events, 60s heartbeat |
 | MCP orchestrator (`SEQUANT_ORCHESTRATOR=1`) | **Orchestrator renderer** | Silent. Only `emitProgressLine` JSON flows. |
 
@@ -113,7 +113,7 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 
 - **Frame cadence.** The live zone redraws on phase events and at most once per second on a timer between events. Elapsed counters keep ticking even when nothing is happening, so the screen is always alive. Because the start line no longer appends to scrollback (#672), each phase transition costs one fewer `logUpdateClear`/redraw cycle — fewer redraws also means a smaller blast radius for terminal-emulator paint corruption (ties to #647/#655).
 - **Verbose streaming.** Running with `-v` / `--verbose` pauses the live zone while Claude's stream prints, then redraws below it on the next phase event. No interleaved garble.
-- **Quiet mode (`-q`).** Renderer is disabled in quiet mode (gated at `run-progress.ts:60` on `!quiet`); the liveness heartbeat replaces it — a TTY-only rewriting line every 30s plus a one-shot stall warning at 5 minutes. See [Quiet Mode Heartbeat](quiet-mode-heartbeat.md).
+- **Quiet mode (`-s`).** Renderer is disabled in quiet mode (gated at `run-progress.ts:60` on `!quiet`); the liveness heartbeat replaces it — a TTY-only rewriting line every 30s plus a one-shot stall warning at 5 minutes. (Since #705 quiet is `-s`, not `-q`.) See [Quiet Mode Heartbeat](quiet-mode-heartbeat.md).
 - **Retries get a counter.** When a quality loop retries `exec`, the second and later attempts annotate as `(attempt 2/3)`, `(attempt 3/3)` (added by #624). Since #672 dropped the `▸ start` line that used to carry this, the counter now surfaces on the live-zone status (`loop N/3`) and on the `✘ failed (attempt N/3)` completion line. QA loop iterations show `qa loop N/3` the same way.
 - **Identical failures get folded.** If `exec` fails three times with the same error, you see the full message on attempt 1 and on the final attempt. The middle attempt shows `(attempt 2/3, same failure as attempt 1)` instead of repeating the error verbatim. Divergent failures always print in full.
 - **Frame stability.** The live zone height is capped at `max(8, terminal-rows − 5)`. With more than ~10 active issues, the oldest done rows roll up to a single `✔ {n} done` line so the grid never spills past the visible terminal.
@@ -125,7 +125,7 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 
 | Env / context | Effect |
 |---|---|
-| `process.stdout.isTTY` truthy | TTY renderer (live grid + events log) |
+| `process.stdout.isTTY` truthy **+ `--no-tui`** | TTY renderer (live grid + events log). Without `--no-tui` the boxed Ink TUI mounts instead (#705). |
 | `process.stdout.isTTY` falsy | Non-TTY renderer (append-only + 60s heartbeat) |
 | `SEQUANT_ORCHESTRATOR=1` | Renderer is a no-op; only `emitProgressLine` JSON is emitted (MCP path) |
 | `NO_COLOR=1` | Colors stripped; layout preserved |
@@ -134,7 +134,7 @@ Passed rows are one-line; failed rows expand with reason, last-verdict summary, 
 | Terminal width `< 80` cols | Box-drawing replaced with indented key:value pairs |
 | Terminal rows visible | Live-zone height auto-capped to fit; excess done rows roll up |
 
-No CLI flags configure the renderer directly. Renderer behavior is driven by environment and the existing `run` flags (`-v`, `-q`, `--experimental-tui` to swap to Ink). See [Run Command](../reference/run-command.md) for run-level flags.
+This line renderer is selected by `--no-tui` (or automatically off a TTY); the boxed Ink TUI is otherwise the default (#705). Renderer behavior is further driven by environment and the existing `run` flags (`-v` verbose, `-s` quiet). See [Run Command](../reference/run-command.md) for run-level flags.
 
 ## Troubleshooting
 

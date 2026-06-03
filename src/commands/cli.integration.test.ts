@@ -138,10 +138,12 @@ describe.skipIf(!distExists)("CLI version (pre-built)", () => {
   });
 });
 
-// Issue #658: pin run command short-form bindings so a future option reordering
-// can't silently re-shadow them (Commander assigns -q to whichever option
-// declares it first).
-describe("run command short-form bindings (#658)", () => {
+// Issue #705: reverse the #658 binding. `-q` no longer maps to --quiet (it is
+// now a hidden alias for the quality loop); --quiet moved to `-s`. The boxed
+// Ink TUI is the default, with `--no-tui` to opt out and `--experimental-tui`
+// kept as a hidden no-op alias. These tests assert the help surface; the
+// alias-normalization and tuiEnabled behavior are unit-tested in run.test.ts.
+describe("run command flag surface (#705)", () => {
   const runHelp = (): string => {
     try {
       return execSync(`node ${cliPath} run --help`, execOptions);
@@ -159,14 +161,66 @@ describe("run command short-form bindings (#658)", () => {
     }
   };
 
-  it("-q binds to --quiet (UNIX convention)", () => {
+  it("--quiet is reachable via -s, not -q (AC-2)", () => {
     const output = runHelp();
-    expect(output).toMatch(/-q,\s*--quiet/);
-    expect(output).not.toMatch(/-q,\s*--quality-loop/);
+    expect(output).toMatch(/-s,\s*--quiet/);
+    expect(output).not.toMatch(/-q,\s*--quiet/);
   });
 
-  it("-Q binds to --quality-loop", () => {
+  it("-Q binds to --quality-loop (AC-1)", () => {
     const output = runHelp();
     expect(output).toMatch(/-Q,\s*--quality-loop/);
+  });
+
+  it("the -q quality-loop alias is hidden from help (AC-1)", () => {
+    const output = runHelp();
+    // Hidden alias Option must not surface in --help, but must still parse
+    // (covered by the parse test below).
+    expect(output).not.toMatch(/--quality-loop-alias/);
+  });
+
+  it("--no-tui is documented; --experimental-tui is hidden (AC-4, AC-5)", () => {
+    const output = runHelp();
+    expect(output).toMatch(/--no-tui/);
+    expect(output).not.toMatch(/--experimental-tui/);
+  });
+
+  // AC-1: `-q` and `-Q` both enable the quality loop and neither enables quiet.
+  // AC-5: `--experimental-tui` still parses without error. Use --dry-run so the
+  // CLI parses flags and exits without executing a real workflow.
+  const runDryRun = (flag: string): string => {
+    try {
+      return execSync(`node ${cliPath} run 1 ${flag} --dry-run`, execOptions);
+    } catch (error) {
+      const execError = error as {
+        status: number | null;
+        stdout: string;
+        stderr: string;
+      };
+      // A parse error exits non-zero with the message on stderr; surface it so
+      // the assertion fails with context rather than a generic throw.
+      throw new Error(
+        `CLI run 1 ${flag} --dry-run crashed with exit code ${execError.status}.\n` +
+          `stdout: ${execError.stdout}\n` +
+          `stderr: ${execError.stderr}`,
+      );
+    }
+  };
+
+  it("-q parses without error (hidden quality-loop alias) (AC-1)", () => {
+    // Must not throw — proves the hidden `-q` alias is accepted by Commander.
+    expect(() => runDryRun("-q")).not.toThrow();
+  });
+
+  it("-Q parses without error (AC-1)", () => {
+    expect(() => runDryRun("-Q")).not.toThrow();
+  });
+
+  it("--experimental-tui still parses as a hidden no-op alias (AC-5)", () => {
+    expect(() => runDryRun("--experimental-tui")).not.toThrow();
+  });
+
+  it("--no-tui parses without error (AC-4)", () => {
+    expect(() => runDryRun("--no-tui")).not.toThrow();
   });
 });
