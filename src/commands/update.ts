@@ -3,7 +3,6 @@
  */
 
 import chalk from "chalk";
-import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { spawnSync } from "child_process";
 import {
@@ -11,28 +10,18 @@ import {
   updateManifest,
   getPackageVersion,
 } from "../lib/manifest.js";
-import {
-  getTemplateContent,
-  listTemplateFiles,
-  processTemplate,
-} from "../lib/templates.js";
+import { computeTemplateChanges } from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
 import {
   getStackConfig,
   PM_CONFIG,
   getPackageManagerCommands,
 } from "../lib/stacks.js";
-import { readFile, writeFile, fileExists } from "../lib/fs.js";
+import { writeFile } from "../lib/fs.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
   force?: boolean;
-}
-
-interface FileChange {
-  path: string;
-  status: "new" | "modified" | "unchanged" | "local-override";
-  diff?: string;
 }
 
 export async function updateCommand(options: UpdateOptions): Promise<void> {
@@ -126,53 +115,10 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     console.log(chalk.green("✔ Configuration saved\n"));
   }
 
-  // Get list of template files
-  const templateFiles = await listTemplateFiles();
-  const changes: FileChange[] = [];
-
-  for (const templatePath of templateFiles) {
-    const localPath = templatePath.replace("templates/", ".claude/");
-
-    // Skip if in .local directory (user customizations)
-    if (localPath.includes(".local/")) {
-      continue;
-    }
-
-    const templateContent = await getTemplateContent(templatePath);
-    const exists = await fileExists(localPath);
-
-    if (!exists) {
-      changes.push({ path: localPath, status: "new" });
-    } else {
-      const localContent = await readFile(localPath);
-      if (localContent === templateContent) {
-        changes.push({ path: localPath, status: "unchanged" });
-      } else {
-        // Check if there's a local override
-        const localOverridePath = localPath.replace(
-          ".claude/",
-          ".claude/.local/",
-        );
-        const hasLocalOverride = await fileExists(localOverridePath);
-
-        if (hasLocalOverride) {
-          changes.push({ path: localPath, status: "local-override" });
-        } else {
-          const diff = diffLines(localContent, templateContent)
-            .map((part) => {
-              const prefix = part.added ? "+" : part.removed ? "-" : " ";
-              return part.value
-                .split("\n")
-                .filter((l) => l)
-                .map((l) => `${prefix} ${l}`)
-                .join("\n");
-            })
-            .join("\n");
-          changes.push({ path: localPath, status: "modified", diff });
-        }
-      }
-    }
-  }
+  // Compute changes using the shared, variable-aware comparison.
+  // Templates are rendered (PROJECT_NAME, STACK_NOTES, etc.) before diffing,
+  // and in-place-customizable files (constitution) are protected as overrides.
+  const changes = await computeTemplateChanges(manifest.stack, tokens);
 
   // Show summary
   const newFiles = changes.filter((c) => c.status === "new");
@@ -186,8 +132,21 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.gray(`  ✓ Unchanged: ${unchangedFiles.length}`));
   console.log(chalk.blue(`  Local overrides: ${localOverrides.length}`));
 
-  if (newFiles.length === 0 && modifiedFiles.length === 0) {
-    console.log(chalk.green("\n✔ Everything is up to date!"));
+  // Local overrides are protected by default — only --force overwrites them.
+  const applySet = options.force
+    ? [...newFiles, ...modifiedFiles, ...localOverrides]
+    : [...newFiles, ...modifiedFiles];
+
+  if (applySet.length === 0) {
+    if (localOverrides.length > 0) {
+      console.log(
+        chalk.blue(
+          `\n✔ No updates to apply. ${localOverrides.length} local override(s) protected (use --force to overwrite).`,
+        ),
+      );
+    } else {
+      console.log(chalk.green("\n✔ Everything is up to date!"));
+    }
     return;
   }
 
@@ -206,6 +165,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     console.log(chalk.bold("\nNew files:"));
     for (const file of newFiles) {
       console.log(chalk.green(`  ${file.path}`));
+    }
+  }
+
+  if (options.force && localOverrides.length > 0) {
+    console.log(chalk.bold("\nLocal overrides (forced overwrite):"));
+    for (const file of localOverrides) {
+      console.log(chalk.blue(`  ${file.path}`));
     }
   }
 
@@ -230,25 +196,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     }
   }
 
-  // Apply updates
+  // Apply updates — content was already rendered with the shared variable set
+  // during change detection, so just write it.
   console.log(chalk.blue("\nApplying updates..."));
   let updated = 0;
 
-  // Build complete variables for template processing
-  const stackConfig = getStackConfig(manifest.stack);
-  const variables = {
-    ...stackConfig.variables,
-    ...tokens,
-    PROJECT_NAME: process.cwd().split("/").pop() || "project",
-    STACK: manifest.stack,
-  };
-
-  for (const file of [...newFiles, ...modifiedFiles]) {
-    const templatePath = file.path.replace(".claude/", "templates/");
-    let content = await getTemplateContent(templatePath);
-    // Process templates with tokens to replace {{DEV_URL}} etc.
-    content = processTemplate(content, variables);
-    await writeFile(file.path, content);
+  for (const file of applySet) {
+    await writeFile(file.path, file.rendered);
     updated++;
   }
 
@@ -258,7 +212,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.green(`\n✔ Updated ${updated} files`));
 
   // Check if package.json was updated and run install
-  const packageJsonUpdated = [...newFiles, ...modifiedFiles].some(
+  const packageJsonUpdated = applySet.some(
     (f) => f.path === "package.json" || f.path.endsWith("/package.json"),
   );
 

@@ -8,7 +8,14 @@ import {
   readFile as fsReadFile,
 } from "fs/promises";
 import { tmpdir } from "os";
-import { symlinkDir, processTemplate } from "./templates.js";
+import {
+  symlinkDir,
+  processTemplate,
+  isCustomizableFile,
+  buildTemplateVariables,
+  computeTemplateChanges,
+  CUSTOMIZABLE_FILES,
+} from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
 
 describe("templates", () => {
@@ -158,6 +165,137 @@ describe("templates", () => {
       await symlinkDir(srcDir, newDest);
 
       expect(await fileExists(join(newDest, "script.sh"))).toBe(true);
+    });
+  });
+
+  describe("isCustomizableFile", () => {
+    it("treats the constitution as customizable", () => {
+      expect(isCustomizableFile(".claude/memory/constitution.md")).toBe(true);
+    });
+
+    it("does not treat ordinary skill files as customizable", () => {
+      expect(isCustomizableFile(".claude/skills/exec/SKILL.md")).toBe(false);
+    });
+
+    it("matches the exported allow-list", () => {
+      for (const file of CUSTOMIZABLE_FILES) {
+        expect(isCustomizableFile(file)).toBe(true);
+      }
+    });
+
+    it("normalizes Windows-style separators before matching (#708)", () => {
+      // On Windows template paths are assembled with backslashes; the
+      // protection must still recognize the constitution.
+      expect(isCustomizableFile(".claude\\memory\\constitution.md")).toBe(true);
+    });
+  });
+
+  describe("buildTemplateVariables", () => {
+    it("includes PROJECT_NAME, STACK and STACK_NOTES", async () => {
+      const vars = await buildTemplateVariables("generic", { DEV_URL: "x" });
+      expect(vars.STACK).toBe("generic");
+      expect(vars.DEV_URL).toBe("x");
+      expect(typeof vars.PROJECT_NAME).toBe("string");
+      expect(vars.PROJECT_NAME.length).toBeGreaterThan(0);
+      expect(typeof vars.STACK_NOTES).toBe("string");
+    });
+  });
+
+  // Hermetic: point SEQUANT_TEMPLATES_DIR at a temp templates tree and run in
+  // a temp cwd so computeTemplateChanges is fully controlled.
+  describe("computeTemplateChanges", () => {
+    const CONSTITUTION_LOCAL = ".claude/memory/constitution.md";
+    const SKILL_LOCAL = ".claude/skills/exec/SKILL.md";
+    let prevCwd: string;
+    let cwdDir: string;
+    let templatesDir: string;
+
+    beforeEach(async () => {
+      prevCwd = process.cwd();
+      cwdDir = await mkdtemp(join(tmpdir(), "sequant-changes-cwd-"));
+      templatesDir = await mkdtemp(join(tmpdir(), "sequant-changes-tpl-"));
+      process.chdir(cwdDir);
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      // Deterministic PROJECT_NAME via package.json
+      await fsWriteFile(
+        join(cwdDir, "package.json"),
+        JSON.stringify({ name: "my-project" }),
+      );
+
+      // Seed the temp templates tree
+      await mkdir(join(templatesDir, "memory"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "memory", "constitution.md"),
+        "# {{PROJECT_NAME}} Constitution\n",
+      );
+      await mkdir(join(templatesDir, "skills", "exec"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "skills", "exec", "SKILL.md"),
+        "exec skill v{{PROJECT_NAME}}\n",
+      );
+    });
+
+    afterEach(async () => {
+      process.chdir(prevCwd);
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      await rm(cwdDir, { recursive: true, force: true });
+      await rm(templatesDir, { recursive: true, force: true });
+    });
+
+    async function seedLocal(
+      localPath: string,
+      content: string,
+    ): Promise<void> {
+      await mkdir(join(cwdDir, localPath, ".."), { recursive: true });
+      await fsWriteFile(join(cwdDir, localPath), content);
+    }
+
+    it("classifies a token-rendered constitution as unchanged, not modified (AC-3)", async () => {
+      // Installed content == rendered template (token already substituted)
+      await seedLocal(CONSTITUTION_LOCAL, "# my-project Constitution\n");
+
+      const changes = await computeTemplateChanges("generic");
+      const constitution = changes.find((c) => c.path === CONSTITUTION_LOCAL);
+
+      expect(constitution?.status).toBe("unchanged");
+    });
+
+    it("classifies an in-place customized constitution as local-override (AC-4)", async () => {
+      // Diverges after rendering, no parallel .claude/.local/ file
+      await seedLocal(
+        CONSTITUTION_LOCAL,
+        "# my-project Constitution\n\n## Custom Principle\nKeep it simple.\n",
+      );
+
+      const changes = await computeTemplateChanges("generic");
+      const constitution = changes.find((c) => c.path === CONSTITUTION_LOCAL);
+
+      expect(constitution?.status).toBe("local-override");
+      // And never reported as modified
+      expect(
+        changes.some(
+          (c) => c.path === CONSTITUTION_LOCAL && c.status === "modified",
+        ),
+      ).toBe(false);
+    });
+
+    it("classifies a diverged non-customizable file as modified", async () => {
+      await seedLocal(SKILL_LOCAL, "locally edited skill\n");
+
+      const changes = await computeTemplateChanges("generic");
+      const skill = changes.find((c) => c.path === SKILL_LOCAL);
+
+      expect(skill?.status).toBe("modified");
+      expect(skill?.diff).toBeDefined();
+    });
+
+    it("classifies a missing installed file as new", async () => {
+      // Nothing seeded under .claude → everything is new
+      const changes = await computeTemplateChanges("generic");
+      const skill = changes.find((c) => c.path === SKILL_LOCAL);
+
+      expect(skill?.status).toBe("new");
     });
   });
 });
