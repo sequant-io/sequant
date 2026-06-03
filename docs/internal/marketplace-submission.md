@@ -47,7 +47,7 @@ Checks:
 2. Fill in the submission details:
    - **Plugin name:** sequant
    - **Repository:** https://github.com/sequant-io/sequant
-   - **Description:** Structured workflow system for Claude Code
+   - **Description:** AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Includes 17 skills, workflow MCP tools, and pre/post-tool hooks.
 3. Submit and wait for review
 
 ### 4. Post-Approval
