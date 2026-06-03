@@ -2,6 +2,7 @@ import type { JSX } from "react";
 import { Box, Text } from "ink";
 import type { IssueRuntimeState } from "../../lib/workflow/run-state.js";
 import {
+  ACTIVE_PHASE_COLOR,
   DIVIDER_COLOR,
   PHASE_GLYPHS,
   borderColorForIssue,
@@ -73,7 +74,10 @@ export function IssueBox({
           <Text color={DIVIDER_COLOR}>branch </Text>
           <Text>{truncateToWidth(state.branch, innerWidth - 8)}</Text>
         </Box>
-        <PhaseProgression phases={state.phases} borderColor={border} />
+        <PhaseProgression
+          phases={state.phases}
+          activeColor={ACTIVE_PHASE_COLOR}
+        />
         {state.currentPhase?.logPath ? (
           <Box>
             <Text color={DIVIDER_COLOR}>log </Text>
@@ -92,7 +96,7 @@ export function IssueBox({
           <>
             <Box>
               <Text color={DIVIDER_COLOR}>now </Text>
-              <Spinner color={border} />
+              <Spinner color={ACTIVE_PHASE_COLOR} />
               <Text>
                 {"  "}
                 {truncateToWidth(state.currentPhase.nowLine, innerWidth - 12)}
@@ -132,10 +136,10 @@ function Divider({ width }: { width: number }): JSX.Element {
 
 function PhaseProgression({
   phases,
-  borderColor,
+  activeColor,
 }: {
   phases: IssueRuntimeState["phases"];
-  borderColor: string;
+  activeColor: string;
 }): JSX.Element {
   return (
     <Box flexWrap="wrap">
@@ -147,7 +151,7 @@ function PhaseProgression({
             <PhaseGlyph
               status={p.status}
               label={p.name}
-              activeColor={borderColor}
+              activeColor={activeColor}
               elapsedMs={p.elapsedMs}
             />
             {!isLast ? (
