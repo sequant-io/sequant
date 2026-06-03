@@ -102,7 +102,7 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 
 > **Note:** Documentation freshness checks that compare against the version *being released* run **after** Step 4 (the version bump), not here in pre-flight:
 > - `docs/internal/what-weve-built.md` title + ASCII version stamps → **Step 4.63**
-> - README "What's new" section → **Step 4.65**
+> - `CHANGELOG.md` freshness (version entry present) → **Step 4.65**
 >
 > They must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs. Running them in pre-flight would compare against the *previous* release — which the docs already reflect — so the gate would never fire for the release in progress (root cause class of #684 / #687).
 
@@ -311,7 +311,7 @@ fi
 
 **IMPORTANT:** This runs **after** Step 4 (version bump) and Step 4.6 (which updates the stamps), so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release — which the file already reflects — so the gate would never fire for the version actually being released (root cause class of #684 / #687, the same ordering bug fixed for the README check in #685).
 
-Warn-only (like the README "What's new" check): prompt the releaser if the title or ASCII-art version stamp omits/mismatches the version being released.
+Warn-only (like the CHANGELOG freshness check): prompt the releaser if the title or ASCII-art version stamp omits/mismatches the version being released.
 
 ```bash
 # Warn if docs/internal/what-weve-built.md version stamps don't match the version being released
@@ -332,21 +332,22 @@ if [ -f "docs/internal/what-weve-built.md" ]; then
 fi
 ```
 
-### Step 4.65: Verify README "What's new" Freshness
+### Step 4.65: Verify CHANGELOG Freshness
 
-**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the README already lists — so the gate would never fire for the version actually being released (root cause class of #684).
+**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release, which the CHANGELOG already lists — so the gate would never fire for the version actually being released (root cause class of #684).
 
-Warn-only (like the what-weve-built checks): prompt the releaser to add a "What's new" feature group if the new version is absent.
+**Note (#701):** #694 moved the changelog wall out of `README.md` into `CHANGELOG.md` and removed the README "What's new" section, so this gate now checks `CHANGELOG.md` (the source of truth). Grepping `README.md` for a now-absent `# What's new` heading made the warn-only gate fire on every release.
+
+Warn-only (like the what-weve-built checks): prompt the releaser to add a `CHANGELOG.md` entry if the new version is absent.
 
 ```bash
-# Warn if README.md "What's new" section omits the version being released
-if [ -f "README.md" ]; then
+# Warn if CHANGELOG.md omits the version being released
+if [ -f "CHANGELOG.md" ]; then
   new_version=$(node -p "require('./package.json').version")
 
-  # Extract the "What's new" region (from its heading to EOF; .? matches the apostrophe)
-  whats_new=$(awk "/^#+ What.?s new/{f=1} f" README.md || true)
-  if ! echo "$whats_new" | grep -qF "New in ${new_version}"; then
-    echo "Warning: README.md \"What's new\" section omits v${new_version} — add a feature group before releasing"
+  # Match the Keep-a-Changelog heading for this version, e.g. "## [2.4.0] - 2026-05-30"
+  if ! grep -qF "[${new_version}]" CHANGELOG.md; then
+    echo "Warning: CHANGELOG.md omits v${new_version} — add a \"## [${new_version}]\" entry before releasing"
   fi
 fi
 ```
