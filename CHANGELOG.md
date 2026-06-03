@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.1] - 2026-06-03
+
+### Documentation
+
+- **README "What's new" section refreshed for 2.6** — added a `### What's new in 2.6` block (boxed Ink TUI default for `run`; `--quiet` moved from `-q` to `-s`, `-q` now aliases the quality loop) above the 2.5 highlights. The v2.6.0 npm tarball shipped with a stale "What's new in 2.5" heading; this patch republishes so the npm package page matches. (#707)
+
 ## [2.6.0] - 2026-06-03
 
 ### Changed
