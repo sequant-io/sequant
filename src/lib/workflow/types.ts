@@ -266,6 +266,13 @@ export interface RunOptions {
   noLog?: boolean;
   logPath?: string;
   qualityLoop?: boolean;
+  /**
+   * #705: hidden `-q` alias for the quality loop. Commander 14 allows only one
+   * short flag per Option, so `-q` lives on its own `--quality-loop-alias`
+   * Option and `runCommand` ORs it into `qualityLoop` before any consumer reads
+   * it. `-q` no longer maps to `--quiet` (which moved to `-s`).
+   */
+  qualityLoopAlias?: boolean;
   maxIterations?: number;
   batch?: string[];
   smartTests?: boolean;
@@ -355,9 +362,17 @@ export interface RunOptions {
    */
   isolateParallel?: boolean;
   /**
-   * Render a live multi-issue dashboard during the run.
-   * Requires a TTY; auto-falls back to linear output when stdout is piped.
-   * Experimental — surface and behavior may change.
+   * #705: the boxed Ink dashboard is the default on a TTY. Set via `--no-tui`,
+   * which Commander surfaces as `options.tui === false` to opt out to the
+   * line-based phase-matrix renderer. Non-TTY / piped output auto-degrades, and
+   * `--quiet`/`-s` suppresses the renderer entirely regardless of this flag.
+   * Resolution: `tuiEnabled = options.tui !== false && isTTY && !quiet`.
+   */
+  tui?: boolean;
+  /**
+   * #705: now a hidden no-op alias — the boxed Ink TUI is the default, so
+   * `--experimental-tui` only parses for backward compatibility and no longer
+   * gates rendering. Kept so existing scripts/muscle-memory don't break.
    */
   experimentalTui?: boolean;
   /**
