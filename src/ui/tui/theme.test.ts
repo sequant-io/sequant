@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   BORDER_ROTATION,
+  BRAND_GREEN,
   borderColorForIssue,
   phaseStatusColor,
 } from "./theme.js";
@@ -18,7 +19,7 @@ describe("borderColorForIssue", () => {
   it("status overrides rotation for failed and passed", () => {
     expect(borderColorForIssue("failed", 0)).toBe("red");
     expect(borderColorForIssue("failed", 7)).toBe("red");
-    expect(borderColorForIssue("passed", 2)).toBe("green");
+    expect(borderColorForIssue("passed", 2)).toBe(BRAND_GREEN);
   });
 
   it("running state uses rotation", () => {
@@ -27,8 +28,8 @@ describe("borderColorForIssue", () => {
 });
 
 describe("phaseStatusColor", () => {
-  it("green for done, red for failed, gray otherwise", () => {
-    expect(phaseStatusColor("done")).toBe("green");
+  it("brand green for done, red for failed, gray otherwise", () => {
+    expect(phaseStatusColor("done")).toBe(BRAND_GREEN);
     expect(phaseStatusColor("failed")).toBe("red");
     expect(phaseStatusColor("pending")).toBe("gray");
     expect(phaseStatusColor("running")).toBe("gray");
