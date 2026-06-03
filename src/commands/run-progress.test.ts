@@ -143,7 +143,7 @@ describe("buildProgressWiring — activity event filter (#543)", () => {
     });
   });
 
-  describe("heartbeat branch (-q mode)", () => {
+  describe("heartbeat branch (-s / quiet mode)", () => {
     it("skips heartbeat.start / .stop for activity events", () => {
       const start = vi.fn();
       const stop = vi.fn();

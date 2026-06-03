@@ -19,7 +19,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 ### What's new in 2.5
 
 - **`sequant ready <issue>`** — a post-resolve A+ QA gate that drives a resolved issue through a full-weight `qa → loop → qa` pass and **stops at the human merge gate — it never merges**.
-- **Live phase-matrix TUI** — `sequant ready` and `sequant run` render the active phase and quality-loop iteration in place (boxed Ink dashboard on a TTY), so a long run is never indistinguishable from a hang.
+- **Live phase-matrix TUI** — `sequant ready` and `sequant run` render the active phase and quality-loop iteration in place (boxed Ink dashboard on a TTY by default), so a long run is never indistinguishable from a hang. Opt out with `--no-tui` (line renderer) or `-s`/`--quiet` (heartbeat-only); non-TTY output auto-degrades.
 - **Per-issue concurrency locks** — a second session on the same issue is skipped with a clear message instead of clobbering the first; `sequant locks` inspects and clears them.
 
 ## Quick Start

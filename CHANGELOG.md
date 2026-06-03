@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CLI UX: `-q`/`-Q` flag collision fixed; boxed Ink TUI is now the default for `run` (#705)** — Commander short flags are case-sensitive, so `sequant run … -q` (meaning to enable the quality loop) silently enabled **quiet mode** instead, suppressing the live renderer. Now: **`--quiet` moves to `-s`** (mnemonic: silent) and `-q` becomes a hidden alias for `-Q, --quality-loop` (both enable the quality loop; neither enables quiet). The **boxed Ink TUI is the default** on a TTY for `sequant run` — `tuiEnabled = options.tui !== false && isTTY && !quiet` — matching `sequant ready`. Opt out with **`--no-tui`** (falls back to the line-based phase-matrix renderer); non-TTY / piped output auto-degrades safely. **`--experimental-tui`** is kept as a hidden no-op alias so existing scripts keep parsing. `--quiet`/`-s` continues to suppress the renderer entirely (heartbeat-only). Flag normalization (`run-flags.ts`) is unit-tested and the CLI help surface is integration-tested. Docs updated: README TUI-default framing and `docs/features/quiet-mode-heartbeat.md` (`-q`→`-s` throughout). (#705)
+
 ## [2.5.0] - 2026-06-02
 
 ### Fixed

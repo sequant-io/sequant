@@ -1,38 +1,42 @@
-# `-q` Mode Liveness Heartbeat & Stall Warning
+# Quiet (`-s`) Mode Liveness Heartbeat & Stall Warning
 
-`sequant run -q` used to go silent for the entire duration of each phase — sometimes 15+ minutes — with no way to tell "agent working" from "process hung" short of digging through `ps`, `lsof`, and `state.json`. The heartbeat fixes that with two thin signals: a TTY-only liveness line that ticks during long phases, and a one-shot warning (TTY and non-TTY) when an in-progress phase shows no activity for 5 minutes.
+> **Flag change (#705):** quiet mode is now `-s, --quiet`. `-q` is no longer
+> quiet — it is a hidden alias for `-Q, --quality-loop`. Update any scripts that
+> used `-q` for quiet to `-s`.
+
+`sequant run -s` used to go silent for the entire duration of each phase — sometimes 15+ minutes — with no way to tell "agent working" from "process hung" short of digging through `ps`, `lsof`, and `state.json`. The heartbeat fixes that with two thin signals: a TTY-only liveness line that ticks during long phases, and a one-shot warning (TTY and non-TTY) when an in-progress phase shows no activity for 5 minutes.
 
 ## Prerequisites
 
 1. **`sequant run` available** — `npx sequant run --help`
-2. **Run with `-q` (or `--quiet`)** — the heartbeat is gated to `-q`. Default verbose mode already prints per-phase progress lines, so it does nothing.
+2. **Run with `-s` (or `--quiet`)** — the heartbeat is gated to quiet mode. Quiet suppresses the renderer (and the boxed Ink TUI), so the heartbeat is the sole liveness signal. Without `-s` the default boxed TUI (or the line renderer under `--no-tui` / non-TTY) handles liveness, so the heartbeat does nothing.
 3. **`.sequant/state.json` is being written** — this happens automatically during any run; the heartbeat reads its mtime as the activity proxy.
 
 ## Setup
 
-No setup. The heartbeat is on by default whenever `sequant run -q` runs without `--experimental-tui`. There is no flag to enable or configure it.
+No setup. The heartbeat is on by default whenever `sequant run -s` runs. There is no flag to enable or configure it. Because quiet always suppresses the boxed TUI, `--no-tui` / `--experimental-tui` have no effect on the heartbeat.
 
 ```bash
 # Heartbeat active (TTY: liveness line + stall warning; non-TTY: stall warning only)
-npx sequant run 551 559 -q
+npx sequant run 551 559 -s
 
-# Heartbeat NOT active (TUI handles its own liveness)
-npx sequant run 551 559 -q --experimental-tui
-
-# Heartbeat NOT active (verbose progress lines render every phase event)
+# Heartbeat NOT active — default boxed Ink TUI owns liveness on a TTY
 npx sequant run 551 559
+
+# Heartbeat NOT active — line phase-matrix renderer owns liveness
+npx sequant run 551 559 --no-tui
 ```
 
 ## What You Can Do
 
-- **Tell "working" from "hung" in a TTY.** A long phase under `-q` rewrites a single line every 30s with elapsed time and how recently `state.json` was last touched.
+- **Tell "working" from "hung" in a TTY.** A long phase under `-s` rewrites a single line every 30s with elapsed time and how recently `state.json` was last touched.
 - **Get a written warning when something stalls.** If `state.json` mtime hasn't advanced for 5 minutes during an in-progress phase, the heartbeat emits one warning to stderr — even when stdout is piped to a file or CI log.
 - **Keep CI logs clean.** Non-TTY runs (CI, redirected output) get the stall warning only — no scroll-spam from periodic heartbeats.
 - **Trust the no-news case.** No warning fired and the rewriting line keeps ticking? The phase is genuinely making progress.
 
 ## What to Expect
 
-**TTY, in `-q`, normal phase progress.** Every 30s the active phase line is rewritten in place using `\r`:
+**TTY, in `-s`, normal phase progress.** Every 30s the active phase line is rewritten in place using `\r`:
 
 ```
   ▸ #551  exec  (12m elapsed, last log update 8s ago)
@@ -60,10 +64,10 @@ The heartbeat is automatic, not flag-driven. Behavior is determined by the matri
 
 | Mode | TTY heartbeat line | Stall warning |
 |------|--------------------|---------------|
-| `-q` (TTY) | Yes — rewrites every 30s | Yes — once per stall window |
-| `-q` (non-TTY: pipe, redirect, CI) | No | Yes — once per stall window |
-| `-q --experimental-tui` | No (TUI owns liveness) | No (TUI surfaces its own activity) |
-| Default verbose (`sequant run` without `-q`) | No (per-phase progress lines exist) | No |
+| `-s` (TTY) | Yes — rewrites every 30s | Yes — once per stall window |
+| `-s` (non-TTY: pipe, redirect, CI) | No | Yes — once per stall window |
+| Default (`sequant run` without `-s`, TTY) | No (boxed Ink TUI owns liveness) | No (TUI surfaces its own activity) |
+| `--no-tui` or non-TTY (without `-s`) | No (line phase-matrix renderer owns liveness) | No |
 
 | Constant | Default | Source |
 |----------|---------|--------|
@@ -75,18 +79,18 @@ These are not user-configurable from the CLI. They live in `src/lib/workflow/hea
 
 ## Troubleshooting
 
-### `-q` run still feels silent — no rewriting line appears
+### `-s` run still feels silent — no rewriting line appears
 
-**Cause:** Either stdout is not a TTY (running under CI, redirected to a file, piped through another command), or the run is using `--experimental-tui`. Both intentionally suppress the rewriting line.
+**Cause:** stdout is not a TTY (running under CI, redirected to a file, piped through another command). The rewriting line is TTY-only by design; non-TTY runs get the stall warning only.
 
-**Fix:** Run in an interactive terminal without `--experimental-tui`. Verify TTY with:
+**Fix:** Run in an interactive terminal. Verify TTY with:
 
 ```bash
 node -e "console.log(process.stdout.isTTY)"
 # expect: true
 ```
 
-If you need a live signal under `--experimental-tui`, the dashboard's per-issue activity stamp is the equivalent.
+If you dropped `-s` to get a live signal, the default boxed Ink TUI's per-issue activity stamp is the equivalent on a TTY.
 
 ### Heartbeat line keeps ticking but I'm sure the phase is hung
 
@@ -110,7 +114,7 @@ If you need a live signal under `--experimental-tui`, the dashboard's per-issue 
 
 **Cause:** Heartbeat noise in scripted scenarios where even the stall warning is unwanted.
 
-**Fix:** No CLI flag exists today. Either use `--experimental-tui` (suppresses the heartbeat in favor of the dashboard) or drop `-q` (verbose mode also suppresses it). Filing a flag-level opt-out is reasonable if your use case can't use either.
+**Fix:** No CLI flag exists today. Drop `-s` — the default boxed Ink TUI (or the `--no-tui` line renderer) suppresses the heartbeat in favor of its own liveness display. Filing a flag-level opt-out is reasonable if your use case can't use either.
 
 ---
 

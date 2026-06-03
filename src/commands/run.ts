@@ -10,6 +10,7 @@ import { parseBatches } from "../lib/workflow/batch-executor.js";
 import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
 import { displayConfig, displaySummary } from "./run-display.js";
 import { buildProgressWiring } from "./run-progress.js";
+import { normalizeQualityLoop, resolveTuiEnabled } from "./run-flags.js";
 
 // Re-export public API for backwards compatibility
 export * from "./run-compat.js";
@@ -19,6 +20,10 @@ export async function runCommand(
   issues: string[],
   options: RunOptions,
 ): Promise<void> {
+  // #705: fold the hidden `-q` alias into qualityLoop before any consumer reads
+  // it (`-q` no longer maps to --quiet, which moved to `-s`). See run-flags.ts.
+  options.qualityLoop = normalizeQualityLoop(options);
+
   console.log(ui.headerBox("SEQUANT WORKFLOW"));
 
   if (!options.quiet) {
@@ -99,8 +104,9 @@ export async function runCommand(
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
   displayConfig(resolved);
 
-  const tuiEnabled =
-    Boolean(options.experimentalTui) && Boolean(process.stdout.isTTY);
+  // #705: boxed Ink TUI is the default on a TTY; resolveTuiEnabled owns the
+  // --no-tui / non-TTY / --quiet precedence (see run-flags.ts).
+  const tuiEnabled = resolveTuiEnabled(options, Boolean(process.stdout.isTTY));
 
   // RunRenderer (#618) + LivenessHeartbeat (#574) wiring lives in
   // run-progress.ts to keep this adapter under the 200-LOC cap (#503 AC-2).

@@ -5,7 +5,7 @@
  * Sequential AI phases with quality gates for any codebase.
  */
 
-import { Command, InvalidArgumentError } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -236,6 +236,16 @@ program
   .option("--no-log", "Disable JSON logging for this run")
   .option("--log-path <path>", "Custom log directory path")
   .option("-Q, --quality-loop", "Enable quality loop with auto-retry")
+  // #705: `-q` is a hidden alias for the quality loop (Commander 14 allows only
+  // one short flag per Option, so it can't live on --quality-loop directly).
+  // `runCommand` ORs `qualityLoopAlias` into `qualityLoop`. `-q` no longer maps
+  // to --quiet, which moved to `-s` to end the `-q`/`-Q` collision.
+  .addOption(
+    new Option(
+      "-q, --quality-loop-alias",
+      "Alias for -Q/--quality-loop",
+    ).hideHelp(),
+  )
   .option(
     "--max-iterations <n>",
     "Max iterations for quality loop (default: 3)",
@@ -251,7 +261,10 @@ program
   .option("--no-smart-tests", "Disable smart test detection")
   .option("--testgen", "Run testgen phase after spec")
   .option("--security-review", "Run security-review phase after spec")
-  .option("-q, --quiet", "Suppress version warnings and non-essential output")
+  .option(
+    "-s, --quiet",
+    "Suppress version warnings and non-essential output (heartbeat-only)",
+  )
   .option(
     "--chain",
     "Chain issues: each branches from previous (implies --sequential)",
@@ -307,10 +320,15 @@ program
     "--agent <name>",
     'Agent driver for phase execution (default: "claude-code")',
   )
+  // #705: the boxed Ink TUI is now the default on a TTY. `--no-tui` opts out to
+  // the line-based phase-matrix renderer; non-TTY / piped output auto-degrades.
   .option(
-    "--experimental-tui",
-    "Render live multi-issue dashboard (requires TTY; falls back to linear output when piped)",
+    "--no-tui",
+    "Disable the boxed Ink dashboard; use the line-based phase-matrix renderer",
   )
+  // #705: `--experimental-tui` is now a hidden no-op alias (the TUI is the
+  // default) so existing scripts and muscle-memory keep parsing.
+  .addOption(new Option("--experimental-tui").hideHelp())
   .option(
     "--no-relay",
     "Disable interactive relay (#383); `sequant prompt` cannot reach this run",
