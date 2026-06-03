@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.5.0
+# What We've Built: Sequant v2.6.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,6 +737,11 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.6.0)
+
+- **Boxed Ink TUI is the default for `sequant run`** - On a TTY, `sequant run` now renders the boxed Ink dashboard by default (matching `sequant ready`); opt out with `--no-tui`, and non-TTY/piped output auto-degrades to the line-based phase-matrix renderer (#705)
+- **`-q`/`-Q` flag collision fixed** - `--quiet` moved to `-s` (silent); `-q` is now a hidden alias for `-Q, --quality-loop`, so `sequant run … -q` enables the quality loop as intended instead of silently suppressing the renderer. `--experimental-tui` kept as a hidden no-op alias for script compatibility (#705)
+
 ### Recent Additions (v2.5.0)
 
 - **`sequant ready <issue>`** - Post-resolve A+ QA gate that drives a resolved issue's worktree through a full-weight `qa → loop → qa` pipeline and stops at the human merge gate (never merges); configurable `ready.policy` (`ac`/`a-plus`), bounded by `--max-iterations`/`--budget`, with a #534 regression guard against empty/unparseable verdicts (#683)
@@ -1112,7 +1117,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.5.0
+**Current Version:** 2.6.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1122,7 +1127,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.5.0                                │
+│                              SEQUANT v2.6.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

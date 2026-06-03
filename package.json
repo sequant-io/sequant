@@ -1,6 +1,6 @@
 {
   "name": "sequant",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "AI coding agent orchestrator — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Works with Claude Code or Aider.",
   "type": "module",
   "bin": {
