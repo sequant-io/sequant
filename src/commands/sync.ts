@@ -137,6 +137,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         ),
       );
     }
+    // Signal drift with a non-zero exit code even under --quiet. The exit code
+    // is the machine signal the (suppressible) message is not, so the
+    // non-interactive / CI path we recommend can't treat a drifted tree as
+    // success — the original failure mode in #708.
+    process.exitCode = 1;
     return;
   }
 

@@ -107,7 +107,9 @@ export const CUSTOMIZABLE_FILES = [".claude/memory/constitution.md"];
  * Whether a local path is a customizable file edited in place per project.
  */
 export function isCustomizableFile(localPath: string): boolean {
-  return CUSTOMIZABLE_FILES.includes(localPath);
+  // Normalize OS path separators so the allow-list match holds on Windows,
+  // where template paths are assembled with backslashes (#708).
+  return CUSTOMIZABLE_FILES.includes(localPath.replace(/\\/g, "/"));
 }
 
 /**
@@ -179,7 +181,12 @@ export async function computeTemplateChanges(
   const changes: TemplateChange[] = [];
 
   for (const templatePath of templateFiles) {
-    const localPath = templatePath.replace("templates/", ".claude/");
+    // Normalize separators first: listTemplateFiles builds paths with the OS
+    // separator (backslashes on Windows), but the prefix swap and the .local/
+    // and customizable-file checks below all assume forward slashes (#708).
+    const localPath = templatePath
+      .replace(/\\/g, "/")
+      .replace("templates/", ".claude/");
 
     // Skip .local files (user customizations are never overwritten)
     if (localPath.includes(".local/")) {
