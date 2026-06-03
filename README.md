@@ -16,6 +16,11 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.6
+
+- **Boxed Ink TUI is the default for `sequant run`** — on a TTY, `run` now renders the boxed dashboard by default (matching `sequant ready`). Opt out with `--no-tui` (line renderer) or `-s`/`--quiet` (heartbeat-only); non-TTY output auto-degrades.
+- **Flag change:** `--quiet` moved from `-q` to **`-s`** (silent). `-q` is now an alias for `-Q, --quality-loop`, so `sequant run … -q` enables the quality loop as intended. (`--experimental-tui` is kept as a hidden no-op alias.)
+
 ### What's new in 2.5
 
 - **`sequant ready <issue>`** — a post-resolve A+ QA gate that drives a resolved issue through a full-weight `qa → loop → qa` pass and **stops at the human merge gate — it never merges**.
