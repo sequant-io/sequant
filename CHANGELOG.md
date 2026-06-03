@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-06-02
+
 ### Fixed
 
 - **Marketplace plugin README shipped wrong information before 2.5** — the generated marketplace/plugin README (source: the `README_CONTENT` literal in `scripts/prepare-marketplace.ts`) omitted the headline `sequant ready` command and its skill table listed `/release` (a dev-side skill **not** bundled into `templates/skills/`) while omitting the bundled `/solve`. Added `sequant ready` to Quick Start with a link to `docs/reference/ready-command.md`, and swapped the `/release` row for `/solve` so the table matches the 17 skills actually shipped. The `#684`↔`#694` What's-new gate conflict is fixed in the `/release` entry above. (#701)
