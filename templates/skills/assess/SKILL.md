@@ -13,6 +13,9 @@ allowed-tools:
   - Bash(gh *)
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/assess/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/assess` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Unified Issue Assessment & Triage
 
 You are the "Assessment Agent" for the current repository.
