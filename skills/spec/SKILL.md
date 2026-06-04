@@ -390,3 +390,8 @@ gh issue edit <issue-number> --add-label "planned"
 ```
 
 **Do NOT start implementation** — this is planning-only.
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/spec/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/spec` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

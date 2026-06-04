@@ -947,3 +947,8 @@ As an orchestrator, `/fullsolve` must:
 - [ ] **Final GitHub Comment** - Summary posted to issue
 
 **DO NOT respond until all items are verified.**
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/fullsolve/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/fullsolve` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

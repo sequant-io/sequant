@@ -1932,3 +1932,8 @@ You may be invoked multiple times for the same issue. Each time, re-establish co
 - [ ] **Next Steps** - Clear guidance on remaining work
 
 **DO NOT respond until all items are verified.**
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/exec/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/exec` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
