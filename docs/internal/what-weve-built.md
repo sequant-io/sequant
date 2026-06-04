@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.6.1
+# What We've Built: Sequant v2.6.2
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,6 +737,13 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.6.2)
+
+- **Brand-colored run dashboard** - Active/live phase spinners use brand orange and success states use brand green in the boxed run TUI; non-truecolor terminals auto-downsample and `NO_COLOR` still strips (#712)
+- **Run dashboard stability** - Fixes a `perf_hooks` buffer leak (`ink`/`react-reconciler` dev bundle) that corrupted the redraw, and width corruption on terminal resize (#718)
+- **`.claude/.local` skill overrides now functional** - Runtime overlay loads `overrides.md` deltas that survive `update`/`sync`; pre-flight skill check is now content-aware, and `update`/`sync` use content-truth and protect in-place customizations (#711, #713, #708)
+- **Corrupt lockfile fixed** - Regenerated `package-lock.json` after PR #716 committed unresolved git-stash conflict markers (#720)
+
 ### Recent Additions (v2.6.0)
 
 - **Boxed Ink TUI is the default for `sequant run`** - On a TTY, `sequant run` now renders the boxed Ink dashboard by default (matching `sequant ready`); opt out with `--no-tui`, and non-TTY/piped output auto-degrades to the line-based phase-matrix renderer (#705)
@@ -1117,7 +1124,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.6.1
+**Current Version:** 2.6.2
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1127,7 +1134,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.6.1                                │
+│                              SEQUANT v2.6.2                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
