@@ -27,6 +27,7 @@ export function App({
   const [now, setNow] = useState(() => Date.now());
   const doneFired = useRef(false);
   const { stdout } = useStdout();
+  const [columns, setColumns] = useState(() => stdout?.columns ?? 80);
 
   // Snapshot poller (drives all state transitions).
   useEffect(() => {
@@ -48,8 +49,29 @@ export function App({
     return () => clearInterval(id);
   }, []);
 
-  const columns = stdout?.columns ?? 80;
-  const boxWidth = Math.min(columns - 2, 100);
+  // Track the terminal width reactively. ink's own resize handler re-renders
+  // the existing React tree but does NOT re-run this component, so a width read
+  // imperatively in render goes stale until the next poll. In that window ink
+  // repaints boxes at the old (now too-wide) width and the lines wrap, which
+  // misaligns the box borders into the duplicate/garbled frames. Updating
+  // `columns` from the resize event forces an immediate re-layout at the new
+  // width. A 1 Hz fallback poll covers terminals that don't emit `resize`.
+  useEffect(() => {
+    if (!stdout) return;
+    const sync = (): void => setColumns(stdout.columns ?? 80);
+    stdout.on("resize", sync);
+    sync();
+    const id = setInterval(sync, 1000);
+    return () => {
+      stdout.off("resize", sync);
+      clearInterval(id);
+    };
+  }, [stdout]);
+
+  // Clamp each box to the current terminal width (minus a 2-col safety margin)
+  // so a box line can never equal or exceed the terminal width and wrap.
+  const safeColumns = columns > 0 ? columns : 80;
+  const boxWidth = Math.max(20, Math.min(safeColumns - 2, 100));
 
   // #699 AC-4: clamp the number of boxes to the terminal height so a large
   // batch on a short terminal can't overflow the frame (parity with the plain
