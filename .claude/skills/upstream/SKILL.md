@@ -414,3 +414,8 @@ No action taken.
 ---
 
 *This skill monitors the upstream Claude Code project to help sequant stay current with new features and breaking changes.*
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/upstream/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/upstream` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

@@ -390,3 +390,8 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 **Settings not being picked up:**
 - Verify `.sequant/settings.json` is valid JSON
 - Check that `.sequant/` is not gitignored in your project (it should be — these are local settings)
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/setup/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/setup` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

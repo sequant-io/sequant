@@ -626,3 +626,8 @@ Creates: `1.4.0-beta.0`
 ```
 /release minor --dry-run
 ```
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/release/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/release` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

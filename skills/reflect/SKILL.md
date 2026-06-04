@@ -173,3 +173,8 @@ At the end of reflection, ask:
 - [ ] **Action Items** - Checklist of concrete next steps
 
 **DO NOT respond until all items are verified.**
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/reflect/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/reflect` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

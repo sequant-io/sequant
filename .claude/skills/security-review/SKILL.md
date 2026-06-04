@@ -356,3 +356,8 @@ EOF
 - [ ] **GitHub Comment** - Security review posted to issue
 
 **DO NOT respond until all items are verified.**
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/security-review/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/security-review` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

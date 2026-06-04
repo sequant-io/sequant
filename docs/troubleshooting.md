@@ -406,12 +406,16 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
    sequant update --force
    ```
 
-3. Move customizations to `.local/`:
+3. Move skill customizations into an overrides file (not a full `SKILL.md` copy —
+   Claude Code never loads `.claude/.local/skills/<name>/SKILL.md`). Put only the
+   behavior you changed into `overrides.md`, then restore the managed skill:
    ```bash
    mkdir -p .claude/.local/skills/spec
-   mv .claude/skills/spec/SKILL.md .claude/.local/skills/spec/
-   sequant update
+   # Write your deltas into .claude/.local/skills/spec/overrides.md, then:
+   sequant update --force   # restore the managed spec/SKILL.md
    ```
+   The overlay directive in `spec/SKILL.md` makes `overrides.md` authoritative at
+   invocation. See the [Customization Guide](guides/customization.md#modifying-an-existing-skill).
 
 ## Build/Test Issues
 

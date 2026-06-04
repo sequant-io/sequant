@@ -816,3 +816,8 @@ Both can be used together:
 - [ ] **Recommendations** - Next steps for failures or follow-up
 
 **DO NOT respond until all items are verified.**
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/test/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/test` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

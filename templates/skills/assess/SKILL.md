@@ -690,3 +690,8 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 - [ ] Churn warning included in dashboard when `detectChurn(...).isChurn === true`
 - [ ] Batch mode: table is the primary output, no per-issue detail sections
 - [ ] Single mode: focused summary with separators between sections
+
+## Local Customization
+
+<!-- sequant:local-override -->
+If `.claude/.local/skills/assess/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/assess` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

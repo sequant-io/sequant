@@ -8,17 +8,26 @@ Sequant uses a two-layer system:
 
 ```
 .claude/
-├── skills/           # Package-managed (updated by sequant update)
+├── skills/           # Package-managed (updated by sequant update/sync)
 ├── hooks/            # Package-managed
 ├── memory/           # Package-managed
 ├── settings.json     # Package-managed
-└── .local/           # YOUR customizations (never touched by updates)
-    ├── skills/       # Custom or modified skills
-    ├── hooks/        # Custom hooks
-    └── memory/       # Custom constitution additions
+├── settings.local.json  # YOUR settings/hook overrides (Claude Code merges this; gitignored)
+└── .local/           # YOUR runtime overlays (never written by update/sync)
+    ├── skills/<name>/overrides.md  # Per-skill instruction deltas (read at invocation)
+    └── memory/constitution.md      # Custom constitution additions (read at invocation)
 ```
 
-**Key principle:** Put your customizations in `.claude/.local/` and they will never be overwritten.
+**Key principle:** `sequant update` and `sync` never *write* into `.claude/.local/`, and they never delete files they don't manage. But putting a file under `.local/` is not enough on its own — it only has an effect if something actually *reads* it:
+
+| Customization | Where it goes | What reads it |
+|---------------|---------------|---------------|
+| Modify an existing skill | `.claude/.local/skills/<name>/overrides.md` | The skill itself, at invocation (overlay directive) |
+| Add a brand-new skill | `.claude/skills/<name>/` (checked in) or `~/.claude/skills/<name>/` | Claude Code skill discovery |
+| Constitution additions | `.claude/.local/memory/constitution.md` | The constitution, at load time |
+| Custom hooks | A script + a `.claude/settings.local.json` entry | Claude Code's hook runner |
+
+> **Important:** Claude Code's skill discovery only scans `~/.claude/skills/` (user), `.claude/skills/` (project), and plugin scopes. It does **not** scan `.claude/.local/skills/`. A full `SKILL.md` placed there is never loaded — see "Modifying an Existing Skill" below for the supported overlay mechanism.
 
 ## Customizing the Constitution
 
@@ -53,23 +62,53 @@ The constitution in `.claude/memory/constitution.md` defines project-wide rules.
 
 ### Modifying an Existing Skill
 
+Do **not** copy the full `SKILL.md` into `.claude/.local/skills/` — Claude Code never loads it from there, so the copy would silently do nothing.
+
+Instead, write an **overrides file**. Every managed skill ends with a directive instructing it to honor `.claude/.local/skills/<name>/overrides.md` if that file exists, treating its instructions as authoritative over anything that conflicts. Claude reads the full skill body (including that directive) at invocation, so your overrides take effect without forking the skill.
+
 To customize the `/spec` skill:
 
-1. Copy the original:
+1. Create the overrides file:
    ```bash
-   cp .claude/skills/spec/SKILL.md .claude/.local/skills/spec/SKILL.md
+   mkdir -p .claude/.local/skills/spec
    ```
 
-2. Edit your copy in `.local/skills/spec/SKILL.md`
+2. Write only the *deltas* — the behavior you want to change — into `.claude/.local/skills/spec/overrides.md`:
+   ```markdown
+   # Overrides for /spec
 
-3. The local version takes precedence
+   - Always include a "Risks" section in the plan.
+   - Skip the Label Review section for internal repos.
+   - Cap the plan at 200 lines.
+   ```
+
+3. Invoke `/spec`. The overlay directive at the end of `spec/SKILL.md` makes these instructions win over the defaults.
+
+**Why deltas, not a full copy?** A small `overrides.md` survives `sequant update`/`sync` cleanly (those commands never write into `.local/`), and you avoid the "vendored fork" problem where your full copy drifts out of date as the upstream skill improves.
+
+### Verifying an override took effect
+
+Don't trust file placement alone — confirm the override actually changes behavior:
+
+1. Add a small, unmistakable instruction to `overrides.md`, e.g. `Begin your reply with the literal line: OVERRIDE-ACTIVE.`
+2. Invoke the skill (`/spec`, `/qa`, …) and confirm the marker appears in the output.
+3. Remove the marker once you've confirmed the overlay is wired up, then keep your real deltas.
+
+If the marker does not appear, check that the path is exactly `.claude/.local/skills/<name>/overrides.md` (the `<name>` must match the skill directory) and that the managed `SKILL.md` still contains its `<!-- sequant:local-override -->` directive (restore it with `sequant update --force` if you edited it away).
 
 ### Creating a New Skill
 
-Create a new skill directory in `.claude/.local/skills/`:
+A net-new skill needs a home that Claude Code's discovery actually scans. `.claude/.local/skills/` is **not** such a location. Use one of:
+
+- **Project scope** (`.claude/skills/<name>/`) — checked into your repo, shared with the team. This is the recommended home for a project-specific skill.
+- **User scope** (`~/.claude/skills/<name>/`) — available across all your projects, not committed.
+
+`sequant update`/`sync` only write the skills they manage (those shipped in the package templates) and never delete unmanaged directories, so a net-new `.claude/skills/<name>/` you add is treated as yours and is never clobbered.
+
+Create the skill directory and `SKILL.md`:
 
 ```
-.claude/.local/skills/deploy/
+.claude/skills/deploy/
 └── SKILL.md
 ```
 
@@ -104,38 +143,52 @@ When invoked as `/deploy`, deploy the application.
 
 ## Customizing Hooks
 
-Hooks run before and after tool executions. Create custom hooks in `.claude/.local/hooks/`:
+Hooks run before and after tool executions. Claude Code fires hooks from the `hooks` block of your settings files — it does **not** auto-discover scripts under `.claude/.local/hooks/`. Dropping a script there alone runs nothing; you must register it.
 
-### Pre-Edit Hook
+The supported, update-safe mechanism is `.claude/settings.local.json`. Claude Code merges it over the package-managed `.claude/settings.json`, and `sequant update`/`sync` never touch it (it is gitignored by default).
 
-`.claude/.local/hooks/pre-edit.sh`:
+### Register a custom hook
 
-```bash
-#!/bin/bash
-# Run before any file edit
+1. Write your hook script anywhere you control — e.g. `.claude/.local/hooks/pre-edit.sh`:
 
-FILE="$1"
+   ```bash
+   #!/bin/bash
+   # Run before any file edit
 
-# Prevent editing production config
-if [[ "$FILE" == *"production.config"* ]]; then
-  echo "ERROR: Cannot edit production config files"
-  exit 1
-fi
-```
+   FILE="$1"
 
-### Post-Commit Hook
+   # Prevent editing production config
+   if [[ "$FILE" == *"production.config"* ]]; then
+     echo "ERROR: Cannot edit production config files"
+     exit 1
+   fi
+   ```
 
-`.claude/.local/hooks/post-commit.sh`:
+   ```bash
+   chmod +x .claude/.local/hooks/pre-edit.sh
+   ```
 
-```bash
-#!/bin/bash
-# Run after git commits
+2. Register it in `.claude/settings.local.json` so Claude Code actually runs it:
 
-# Notify team on Slack
-curl -X POST "$SLACK_WEBHOOK" \
-  -H 'Content-type: application/json' \
-  -d '{"text":"New commit pushed to repository"}'
-```
+   ```json
+   {
+     "hooks": {
+       "PreToolUse": [
+         {
+           "matcher": "Edit",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/.local/hooks/pre-edit.sh"
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+The script may live under `.claude/.local/hooks/` (update-safe), but it only fires because of the explicit `settings.local.json` entry — the path is what matters, not the directory's name.
 
 ## Environment Variables
 
