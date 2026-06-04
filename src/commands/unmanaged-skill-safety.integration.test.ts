@@ -89,36 +89,21 @@ describe("AC-3: update/sync never clobber an unmanaged .claude/skills/ dir", () 
     vi.restoreAllMocks();
   });
 
-  it("update leaves the unmanaged skill untouched while updating the managed one", async () => {
-    await updateCommand({});
+  // Drive the apply via `--force` rather than the default interactive path: the
+  // non-force path is gated by an `inquirer.prompt` confirm, and that mock is not
+  // reliably active inside `updateCommand` in the shared, sequential integration
+  // worker (the prompt resolves falsy → update aborts before applying → CI-only
+  // flake). `--force` skips the prompt and is the STRICTER AC-3 assertion anyway:
+  // even maximal-overwrite mode must leave the unmanaged `foo` dir untouched,
+  // because `foo` is not a template file and so is never in the change set.
+  it("update --force leaves the unmanaged skill untouched while updating the managed one", async () => {
+    await updateCommand({ force: true });
 
     const foo = await fsReadFile(join(cwdDir, UNMANAGED_SKILL), "utf-8");
     expect(foo).toBe(UNMANAGED_CONTENT);
 
     // Sanity: the managed skill was actually updated (proves update did work).
     const spec = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
-    // DIAG-711 (temporary): dump update's own summary + test writeFile directly.
-    if (spec !== "# spec template v2\n") {
-      const logCalls = (
-        console.log as unknown as { mock?: { calls: unknown[][] } }
-      ).mock?.calls
-        ?.map((c) => c.map((x) => String(x)).join(" "))
-        .join(" | ");
-      // Does fs.js writeFile actually persist here?
-      const fslib = await import("../lib/fs.js");
-      let writeProbe = "ok";
-      try {
-        await fslib.writeFile(MANAGED_SKILL, "# probe\n");
-        const back = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
-        writeProbe = `wrote->readback:${JSON.stringify(back)}`;
-      } catch (e) {
-        writeProbe = `WRITE_ERR:${(e as Error).message}`;
-      }
-      console.error(
-        "DIAG-711C",
-        JSON.stringify({ cwd: process.cwd(), writeProbe, logCalls }),
-      );
-    }
     expect(spec).toBe("# spec template v2\n");
   });
 
