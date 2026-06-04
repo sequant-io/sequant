@@ -6,6 +6,8 @@
  */
 
 import chalk from "chalk";
+import { join } from "path";
+import { createHash } from "crypto";
 import {
   getManifest,
   updateManifest,
@@ -14,10 +16,12 @@ import {
 import {
   copyTemplates,
   computeTemplateChanges,
+  listTemplateFiles,
+  getTemplatesDir,
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
-import { writeFile, readFile, fileExists } from "../lib/fs.js";
+import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
 import {
   generateAgentsMd,
   writeAgentsMd,
@@ -28,9 +32,22 @@ import { getStackConfig } from "../lib/stacks.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
+// Where the cheap drift-fingerprint cache lives (gitignored via `**/.sequant/`).
+const DRIFT_CACHE_PATH = ".claude/.sequant/.skills-drift-cache.json";
+// Mirrors config.ts / manifest.ts (those constants are module-private). These
+// install paths are stable; we stat them only to invalidate the drift cache
+// when the project's config tokens or manifest stack change.
+const CONFIG_FILE_PATH = ".claude/.sequant/config.json";
+const MANIFEST_FILE_PATH = ".sequant-manifest.json";
+
 interface SyncOptions {
   force?: boolean;
   quiet?: boolean;
+}
+
+interface DriftCache {
+  fingerprint: string;
+  contentDrift: number;
 }
 
 /**
@@ -67,6 +84,129 @@ export interface SkillsOutdatedStatus {
 }
 
 /**
+ * Cheap stat-only fingerprint of every input that can change the content-drift
+ * result: package version plus the mtime (or absence) of each bundled template,
+ * its installed counterpart, any `.claude/.local/` override, and the config and
+ * manifest. A full read+render+diff scan is ~15ms per command; this fingerprint
+ * is ~2-5ms, so the per-command pre-flight can skip the scan when nothing that
+ * affects drift has changed (AC-5). A per-file hash (not a max-mtime) is used so
+ * editing an *older* file — whose new mtime may still trail another file's —
+ * still changes the fingerprint and forces a rescan (no missed warnings).
+ *
+ * Returns `null` if it cannot be computed; the caller then scans uncached.
+ */
+async function computeDriftFingerprint(
+  packageVersion: string,
+): Promise<string | null> {
+  try {
+    const templateFiles = await listTemplateFiles();
+    const templatesDir = getTemplatesDir();
+    const lines: string[] = [`v=${packageVersion}`];
+
+    const addPath = async (fsPath: string, key: string): Promise<void> => {
+      try {
+        const stats = await getFileStats(fsPath);
+        lines.push(`${key}:${Math.round(stats.mtimeMs)}`);
+      } catch {
+        // Missing file is itself signal: a `.local` override or installed file
+        // appearing/disappearing flips this line and invalidates the cache.
+        lines.push(`${key}:absent`);
+      }
+    };
+
+    for (const templatePath of templateFiles) {
+      const normalized = templatePath.replace(/\\/g, "/");
+      const localPath = normalized.replace("templates/", ".claude/");
+      if (localPath.includes(".local/")) continue;
+      const templateFsPath = join(
+        templatesDir,
+        normalized.replace("templates/", ""),
+      );
+      const overridePath = localPath.replace(".claude/", ".claude/.local/");
+      await addPath(templateFsPath, `t:${normalized}`);
+      await addPath(localPath, `l:${localPath}`);
+      await addPath(overridePath, `o:${overridePath}`);
+    }
+    await addPath(CONFIG_FILE_PATH, "config");
+    await addPath(MANIFEST_FILE_PATH, "manifest");
+
+    lines.sort();
+    return createHash("sha1").update(lines.join("\n")).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
+async function readDriftCache(): Promise<DriftCache | null> {
+  try {
+    if (!(await fileExists(DRIFT_CACHE_PATH))) return null;
+    const parsed = JSON.parse(await readFile(DRIFT_CACHE_PATH));
+    if (
+      typeof parsed?.fingerprint === "string" &&
+      typeof parsed?.contentDrift === "number"
+    ) {
+      return parsed as DriftCache;
+    }
+    return null;
+  } catch {
+    // Corrupt/unreadable cache → treat as a miss; the scan path rebuilds it.
+    return null;
+  }
+}
+
+async function writeDriftCache(cache: DriftCache): Promise<void> {
+  try {
+    await writeFile(DRIFT_CACHE_PATH, JSON.stringify(cache));
+  } catch {
+    // The cache is a pure optimization — never fail a command over a write miss
+    // (e.g. the `.claude/.sequant/` dir not existing yet).
+  }
+}
+
+/**
+ * Run the content-drift scan (the source-of-truth `computeTemplateChanges` diff),
+ * returning the count of `new`+`modified` files. When `useCache` is true (the
+ * per-command pre-flight), a stat-only fingerprint short-circuits the scan if no
+ * drift-affecting input changed since the last run. Callers that need fresh
+ * truth (`doctor`, and `sync` itself) leave caching off — the default.
+ */
+async function computeContentDrift(
+  packageVersion: string,
+  useCache: boolean,
+): Promise<number> {
+  let fingerprint: string | null = null;
+  if (useCache) {
+    fingerprint = await computeDriftFingerprint(packageVersion);
+    if (fingerprint) {
+      const cached = await readDriftCache();
+      if (cached && cached.fingerprint === fingerprint) {
+        return cached.contentDrift;
+      }
+    }
+  }
+
+  try {
+    const manifest = await getManifest();
+    if (!manifest) return 0;
+    const config = await getConfig();
+    const tokens = config?.tokens || {};
+    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const contentDrift = changes.filter(
+      (c) => c.status === "new" || c.status === "modified",
+    ).length;
+    if (useCache && fingerprint) {
+      await writeDriftCache({ fingerprint, contentDrift });
+    }
+    return contentDrift;
+  } catch {
+    // The pre-flight must never break the actual command. If the content diff
+    // fails (missing templates, read error), treat it as "no detectable drift"
+    // and let the command proceed.
+    return 0;
+  }
+}
+
+/**
  * Check if skills are outdated compared to package version.
  *
  * The version marker is only a cheap hint: a tree at the matching version can
@@ -75,30 +215,26 @@ export interface SkillsOutdatedStatus {
  * the single source of truth from #708/#710) and surface a `contentDrift` count.
  * On a version *mismatch* we skip the diff entirely — the install is already stale
  * and the copy path handles it — keeping the per-command pre-flight cheap (AC-5).
+ *
+ * `options.cache` opts into a stat-only fingerprint cache for the content scan,
+ * so the hot pre-flight path (which runs before most commands, including batched
+ * `/assess` dashboard calls) pays the full ~15ms scan only when something that
+ * affects drift actually changed. Off by default so diagnostic callers (`doctor`)
+ * always see fresh truth.
  */
-export async function areSkillsOutdated(): Promise<SkillsOutdatedStatus> {
+export async function areSkillsOutdated(
+  options: { cache?: boolean } = {},
+): Promise<SkillsOutdatedStatus> {
   const currentVersion = await getSkillsVersion();
   const packageVersion = getPackageVersion();
   const outdated = currentVersion !== packageVersion;
 
   let contentDrift = 0;
   if (!outdated) {
-    try {
-      const manifest = await getManifest();
-      if (manifest) {
-        const config = await getConfig();
-        const tokens = config?.tokens || {};
-        const changes = await computeTemplateChanges(manifest.stack, tokens);
-        contentDrift = changes.filter(
-          (c) => c.status === "new" || c.status === "modified",
-        ).length;
-      }
-    } catch {
-      // The pre-flight must never break the actual command. If the content diff
-      // fails (missing templates, read error), treat it as "no detectable drift"
-      // and let the command proceed.
-      contentDrift = 0;
-    }
+    contentDrift = await computeContentDrift(
+      packageVersion,
+      options.cache === true,
+    );
   }
 
   return { outdated, currentVersion, packageVersion, contentDrift };

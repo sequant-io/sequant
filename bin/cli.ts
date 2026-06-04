@@ -625,12 +625,18 @@ locksCmd
 // Projects that manage skills manually (no marker) are not affected.
 program.hook("preAction", async (thisCommand) => {
   const cmd = thisCommand.name();
-  if (cmd === "init" || cmd === "sync") return;
+  // `update` is excluded alongside `init`/`sync`: it is itself the command that
+  // resolves drift, so the warn-only "run sync/update" pre-flight would be a
+  // circular nag right before it does exactly that.
+  if (cmd === "init" || cmd === "sync" || cmd === "update") return;
 
   const manifest = await getManifest();
   if (!manifest) return;
 
-  const status = await areSkillsOutdated();
+  // `cache: true` opts the per-command pre-flight into the stat-only drift
+  // fingerprint cache: the full template scan runs only when something that
+  // affects drift changed, keeping latency off the hot path (AC-5).
+  const status = await areSkillsOutdated({ cache: true });
   const { outdated, currentVersion, contentDrift } = status;
 
   // No version marker → the project manages skills manually; stay silent and

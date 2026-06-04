@@ -101,14 +101,34 @@ surfaced as a warning rather than auto-copied, for two reasons:
    warning never changes the exit code — the user's actual command still runs and
    exits normally.
 
+The `preAction` hook is **skipped entirely** for `init`, `sync`, and `update` —
+those commands manage skills themselves, so the warn-only "run sync/update"
+pre-flight would be a circular nag right before they do exactly that.
+
 ### Performance (#713 / AC-5)
 
-The content diff runs a full template scan, so it is gated behind a **version
-match**: a version mismatch already means stale (the copy path handles it) and
-skips the diff entirely. Up-to-date installs at a matching version pay one scan
-per command; the `preAction` hook reuses the already-computed status when calling
-`checkAndWarnSkillsOutdated`, so the scan runs at most once. An mtime-based cache
-is a documented follow-up if this proves noticeable in practice.
+The content diff is gated two ways. First by a **version match**: a version
+mismatch already means stale (the copy path handles it), so the diff is skipped
+entirely. Second, on a match, by a **stat-only fingerprint cache**: the full
+read+render+diff scan (~15ms across the bundled templates) runs only when
+something that can change drift actually changed.
+
+`areSkillsOutdated({ cache: true })` — used only by the hot `preAction` path —
+computes a SHA-1 over the package version plus the mtime (or absence) of every
+bundled template, its installed counterpart, any `.claude/.local/` override, and
+the config and manifest. If that fingerprint matches the cached one
+(`.claude/.sequant/.skills-drift-cache.json`), the cached drift count is returned
+without scanning (~4ms instead of ~15ms; measured ~5× faster). A **per-file** hash
+(not a max-mtime) is used deliberately: editing an *older* file whose new mtime may
+still trail another file's still changes the fingerprint, so a real drift is never
+missed. When `sync`/`update` rewrite files, their mtimes bump and the cache
+self-invalidates on the next command — no explicit cache-clearing needed.
+
+The cache is **opt-in**. Diagnostic callers (`doctor`) and `sync` itself call
+`areSkillsOutdated()` with no options and always run a fresh, uncached scan. The
+fingerprint and cache I/O degrade gracefully: any error falls back to a fresh
+scan, and a write failure (e.g. a missing `.claude/.sequant/` dir) is swallowed —
+the cache never fails the command it precedes.
 
 ## Breaking Changes Policy
 
