@@ -178,6 +178,10 @@ program
   .description("Update templates from the Sequant package")
   .option("-d, --dry-run", "Show what would be updated without making changes")
   .option("-f, --force", "Overwrite local modifications")
+  .option(
+    "-y, --yes",
+    "Apply updates without prompting (for CI/non-interactive shells)",
+  )
   .action(updateCommand);
 
 program
