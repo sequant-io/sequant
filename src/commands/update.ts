@@ -18,7 +18,7 @@ import {
   getPackageManagerCommands,
 } from "../lib/stacks.js";
 import { writeFile } from "../lib/fs.js";
-import { isStdinTTY } from "../lib/tty.js";
+import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
@@ -27,20 +27,35 @@ interface UpdateOptions {
 }
 
 /**
+ * True when `update` must not prompt: stdin is not a terminal (piped input) or
+ * we are running in a recognized CI environment. CI is checked explicitly
+ * because some runners allocate a pseudo-TTY — `isStdinTTY()` alone would let
+ * the prompt render and then hang an unattended job forever.
+ */
+function isNonInteractive(): boolean {
+  return !isStdinTTY() || isCI();
+}
+
+/**
  * Print an actionable message and set a non-zero exit code when a prompt is
- * required but stdin is not a TTY (piped/CI). Prevents inquirer from throwing a
- * raw ExitPromptError stack trace. Callers should `return` immediately after.
+ * required but the shell is non-interactive (piped/CI). Prevents inquirer from
+ * throwing a raw ExitPromptError stack trace. Callers should `return`
+ * immediately after.
  */
 function refuseNonInteractive(): void {
+  const reason = getNonInteractiveReason() ?? "stdin is not a terminal";
   console.error(
     chalk.red(
-      "\n❌ non-interactive shell: `update` needs to prompt but stdin is not a terminal.",
+      `\n❌ non-interactive shell (${reason}): \`update\` needs to prompt to continue.`,
     ),
   );
   console.error(
     chalk.yellow(
-      "   Re-run with `--yes` (or `-y`) to apply updates without prompting.",
+      "   Re-run with `--yes` (or `-y`) to apply updates without prompting,",
     ),
+  );
+  console.error(
+    chalk.yellow("   or use `--dry-run` to preview changes without applying."),
   );
   process.exitCode = 1;
 }
@@ -114,7 +129,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     if (options.force || options.yes) {
       tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
       console.log(chalk.blue(`Using default dev URL: ${defaultDevUrl}`));
-    } else if (!isStdinTTY()) {
+    } else if (options.dryRun) {
+      // Dry-run is read-only: preview with defaults, never prompt or persist.
+      tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
+      console.log(
+        chalk.blue(`Using default dev URL for preview: ${defaultDevUrl}`),
+      );
+    } else if (isNonInteractive()) {
       refuseNonInteractive();
       return;
     } else {
@@ -129,14 +150,17 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       tokens = { DEV_URL: inputDevUrl, PM_RUN: pmConfig.run };
     }
 
-    // Save the new config
+    // Persist the new config — but not on a dry-run preview, which must leave
+    // the project untouched.
     config = {
       tokens,
       stack: manifest.stack,
       initialized: manifest.installedAt,
     };
-    await saveConfig(config);
-    console.log(chalk.green("✔ Configuration saved\n"));
+    if (!options.dryRun) {
+      await saveConfig(config);
+      console.log(chalk.green("✔ Configuration saved\n"));
+    }
   }
 
   // Compute changes using the shared, variable-aware comparison.
@@ -207,7 +231,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   // Confirm update. --yes and --force both auto-confirm; otherwise we need a
   // prompt, which is impossible without a TTY — bail cleanly instead of crashing.
   if (!options.force && !options.yes) {
-    if (!isStdinTTY()) {
+    if (isNonInteractive()) {
       refuseNonInteractive();
       return;
     }

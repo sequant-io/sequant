@@ -40,7 +40,7 @@ vi.mock("inquirer", () => ({
 }));
 
 import inquirer from "inquirer";
-import { getConfig } from "../lib/config.js";
+import { getConfig, saveConfig } from "../lib/config.js";
 import { updateCommand } from "./update.js";
 
 const CONSTITUTION_LOCAL = ".claude/memory/constitution.md";
@@ -130,6 +130,7 @@ describe("update command — non-interactive path (AC-1, AC-2)", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(inquirer.prompt).mockClear();
+    vi.mocked(saveConfig).mockClear();
 
     await fsWriteFile(
       join(cwdDir, "package.json"),
@@ -189,5 +190,36 @@ describe("update command — non-interactive path (AC-1, AC-2)", () => {
 
     expect(inquirer.prompt).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  it("refuses in CI even with an allocated TTY (no hang)", async () => {
+    setStdinTTY(true); // pseudo-TTY: stdin looks interactive...
+    const prevCI = process.env.CI;
+    process.env.CI = "true"; // ...but the job is unattended
+    try {
+      await expect(updateCommand({})).resolves.toBeUndefined();
+
+      expect(inquirer.prompt).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+      const messages = vi.mocked(console.error).mock.calls.flat().join("\n");
+      expect(messages).toContain("--yes");
+    } finally {
+      if (prevCI === undefined) delete process.env.CI;
+      else process.env.CI = prevCI;
+    }
+  });
+
+  it("dry-run previews a first-run project without prompting, writing, or saving config", async () => {
+    setStdinTTY(false); // non-interactive, but dry-run must not refuse
+    vi.mocked(getConfig).mockResolvedValueOnce(null); // first-run setup path
+
+    await expect(updateCommand({ dryRun: true })).resolves.toBeUndefined();
+
+    expect(inquirer.prompt).not.toHaveBeenCalled();
+    expect(process.exitCode ?? 0).toBe(0); // preview is not an error
+    expect(saveConfig).not.toHaveBeenCalled(); // read-only: nothing persisted
+    await expect(
+      fsReadFile(join(cwdDir, NEW_TEMPLATE), "utf-8"),
+    ).rejects.toThrow(); // nothing applied
   });
 });

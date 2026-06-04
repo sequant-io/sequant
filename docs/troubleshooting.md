@@ -416,7 +416,8 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
 ### `update` crashes or exits in CI / scripts
 
 **Problem:** `sequant update` is interactive by default. When run without a
-terminal (CI, a pipe, a non-interactive shell) it has no way to answer its
+terminal (a pipe, a non-interactive shell) — or in a detected CI environment,
+even one that allocates a pseudo-TTY — it has no way to answer its
 `Apply updates?` prompt.
 
 **Solution:** Pass `--yes` (`-y`) to apply updates non-interactively:
@@ -425,10 +426,12 @@ terminal (CI, a pipe, a non-interactive shell) it has no way to answer its
 sequant update --yes
 ```
 
-Without `--yes` in a non-interactive shell, `update` now exits with a clear
-message and a non-zero status (instead of a raw `ExitPromptError` stack trace),
-so scripts can detect the misuse. For a fast, CI-safe content-drift check that
-never prompts, use `sequant sync`.
+Without `--yes` in a non-interactive or CI shell, `update` now exits with a
+clear message naming the reason and a non-zero status (instead of a raw
+`ExitPromptError` stack trace or a hung job), so scripts can detect the misuse.
+To preview what would change without applying — and without prompting — run
+`sequant update --dry-run`, which is safe in any shell. For a fast, CI-safe
+content-drift check that never prompts, use `sequant sync`.
 
 ## Build/Test Issues
 
