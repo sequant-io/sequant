@@ -103,6 +103,7 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 > **Note:** Documentation freshness checks that compare against the version *being released* run **after** Step 4 (the version bump), not here in pre-flight:
 > - `docs/internal/what-weve-built.md` title + ASCII version stamps → **Step 4.63**
 > - `CHANGELOG.md` freshness (version entry present) → **Step 4.65**
+> - `README.md` "What's new in <minor>" heading freshness → **Step 4.66**
 >
 > They must compare against the *new* version, which doesn't exist in `package.json` until Step 4 runs. Running them in pre-flight would compare against the *previous* release — which the docs already reflect — so the gate would never fire for the release in progress (root cause class of #684 / #687).
 
@@ -348,6 +349,35 @@ if [ -f "CHANGELOG.md" ]; then
   # Match the Keep-a-Changelog heading for this version, e.g. "## [2.4.0] - 2026-05-30"
   if ! grep -qF "[${new_version}]" CHANGELOG.md; then
     echo "Warning: CHANGELOG.md omits v${new_version} — add a \"## [${new_version}]\" entry before releasing"
+  fi
+fi
+```
+
+### Step 4.66: Verify README "What's new" Freshness
+
+**IMPORTANT:** This runs **after** Step 4 (version bump) so `package.json` already holds the *new* version. Running it earlier (in pre-flight) would compare against the previous release — which the README already reflects — so the gate would never fire for the version actually being released (root cause class of #684 / #687, the same ordering bug fixed for the README check in #685).
+
+**Note (#702 / #707):** This gate owns the hand-written `### What's new in <major>.<minor>` positioning section that #702 re-added to `README.md` — distinct from the changelog wall that #694 moved to `CHANGELOG.md` (covered by Step 4.65). It keys on the **minor** line, not a full semver: "What's new in 2.6" is correct for the entire 2.6.x line, so a **patch** release (2.6.0 → 2.6.1) does NOT fire against a matching heading. During v2.6.0 the heading still read "What's new in 2.5" and shipped stale (fixed manually in 18c2d42); this gate flags that case.
+
+Warn-only (like the CHANGELOG freshness check): prompt the releaser if the README's latest "What's new" heading lags the minor line being released. No README edit is auto-applied — the section's content and positioning are an editorial decision.
+
+```bash
+# Warn if README.md's latest "What's new" heading lags the minor line being released.
+# Keys on the MINOR line (e.g. "2.6"), so a patch release against a matching heading stays silent.
+if [ -f "README.md" ]; then
+  new_version=$(node -p "require('./package.json').version")
+  new_minor=$(echo "$new_version" | grep -oE '^[0-9]+\.[0-9]+')
+
+  # Anchor to a markdown heading (^#+) so a "What's new in X.Y" mention in prose can't be read as
+  # the section, and take the numerically-highest minor (sort -t. then tail -1) so the result is
+  # independent of heading order in the file rather than assuming newest-first.
+  readme_minor=$(grep -oE "^#+[[:space:]]+What's new in [0-9]+\.[0-9]+" README.md \
+    | grep -oE '[0-9]+\.[0-9]+' | sort -t. -k1,1n -k2,2n | tail -1 || true)
+
+  # The -n guard is load-bearing: if the section is ever removed again (as #694 did),
+  # this gate stays silent rather than firing on every release (the bug #701 fixed for the old gate).
+  if [ -n "$readme_minor" ] && [ "$readme_minor" != "$new_minor" ]; then
+    echo "Warning: README.md 'What's new' section is for $readme_minor, expected $new_minor — add/update the heading before releasing"
   fi
 fi
 ```
