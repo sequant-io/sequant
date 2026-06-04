@@ -21,7 +21,8 @@ bun add -g sequant           # bun
 #### Update & sync
 
 ```bash
-sequant update              # Update skill templates to latest version
+sequant update              # Update skill templates to latest version (interactive)
+sequant update --yes        # Apply updates without prompting (CI/non-interactive)
 sequant sync                # Sync skills and templates (non-interactive, CI-safe)
 sequant doctor              # Verify installation health
 ```
@@ -32,8 +33,13 @@ sequant doctor              # Verify installation health
 |----------|---------|
 | First time setup | `sequant init` |
 | New Sequant version released | Update with your package manager, then `sequant update` |
-| CI/automation template sync | `sequant sync` |
+| Apply template updates in CI/scripts | `sequant update --yes` (`-y`) |
+| Fast CI-safe sync/drift check | `sequant sync` |
 | Something seems off | `sequant doctor` |
+
+> **Automation:** `sequant update` prompts by default and exits with an error if run
+> without a terminal. In CI or piped shells, pass `--yes` to apply updates
+> non-interactively. Use `sequant sync` for a fast content-drift check.
 
 ---
 

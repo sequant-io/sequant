@@ -18,10 +18,31 @@ import {
   getPackageManagerCommands,
 } from "../lib/stacks.js";
 import { writeFile } from "../lib/fs.js";
+import { isStdinTTY } from "../lib/tty.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
   force?: boolean;
+  yes?: boolean;
+}
+
+/**
+ * Print an actionable message and set a non-zero exit code when a prompt is
+ * required but stdin is not a TTY (piped/CI). Prevents inquirer from throwing a
+ * raw ExitPromptError stack trace. Callers should `return` immediately after.
+ */
+function refuseNonInteractive(): void {
+  console.error(
+    chalk.red(
+      "\n❌ non-interactive shell: `update` needs to prompt but stdin is not a terminal.",
+    ),
+  );
+  console.error(
+    chalk.yellow(
+      "   Re-run with `--yes` (or `-y`) to apply updates without prompting.",
+    ),
+  );
+  process.exitCode = 1;
 }
 
 export async function updateCommand(options: UpdateOptions): Promise<void> {
@@ -90,9 +111,12 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
     const pmConfig = getPackageManagerCommands(pm);
 
-    if (options.force) {
+    if (options.force || options.yes) {
       tokens = { DEV_URL: defaultDevUrl, PM_RUN: pmConfig.run };
       console.log(chalk.blue(`Using default dev URL: ${defaultDevUrl}`));
+    } else if (!isStdinTTY()) {
+      refuseNonInteractive();
+      return;
     } else {
       const { inputDevUrl } = await inquirer.prompt([
         {
@@ -180,8 +204,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     return;
   }
 
-  // Confirm update
-  if (!options.force) {
+  // Confirm update. --yes and --force both auto-confirm; otherwise we need a
+  // prompt, which is impossible without a TTY — bail cleanly instead of crashing.
+  if (!options.force && !options.yes) {
+    if (!isStdinTTY()) {
+      refuseNonInteractive();
+      return;
+    }
     const { proceed } = await inquirer.prompt([
       {
         type: "confirm",
