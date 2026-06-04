@@ -368,8 +368,11 @@ if [ -f "README.md" ]; then
   new_version=$(node -p "require('./package.json').version")
   new_minor=$(echo "$new_version" | grep -oE '^[0-9]+\.[0-9]+')
 
-  # head -1 takes the newest section (README maintains "What's new" blocks newest-first, per #702)
-  readme_minor=$(grep -oE "What's new in [0-9]+\.[0-9]+" README.md | head -1 | grep -oE '[0-9]+\.[0-9]+' || true)
+  # Anchor to a markdown heading (^#+) so a "What's new in X.Y" mention in prose can't be read as
+  # the section, and take the numerically-highest minor (sort -t. then tail -1) so the result is
+  # independent of heading order in the file rather than assuming newest-first.
+  readme_minor=$(grep -oE "^#+[[:space:]]+What's new in [0-9]+\.[0-9]+" README.md \
+    | grep -oE '[0-9]+\.[0-9]+' | sort -t. -k1,1n -k2,2n | tail -1 || true)
 
   # The -n guard is load-bearing: if the section is ever removed again (as #694 did),
   # this gate stays silent rather than firing on every release (the bug #701 fixed for the old gate).
