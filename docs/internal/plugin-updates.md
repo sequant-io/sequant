@@ -93,8 +93,9 @@ surfaced as a warning rather than auto-copied, for two reasons:
 
 1. **Don't clobber in-place customizations (#711).** A blind copy on content drift
    would overwrite files a user has intentionally edited in place. The fix is left
-   to the user (`sequant sync` / `sequant update`), consistent with #708's
-   report-only `sync` decision.
+   to the user (`sequant sync --force` / `sequant update` — a bare `sync` at a
+   matching version is report-only), consistent with #708's report-only `sync`
+   decision.
 2. **The pre-flight must not fail the command it precedes.** Unlike `sequant sync`
    (which sets `process.exitCode = 1` on drift so CI can detect it), the pre-flight
    warning never changes the exit code — the user's actual command still runs and

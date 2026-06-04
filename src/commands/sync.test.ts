@@ -240,7 +240,10 @@ describe("sync command", () => {
 
       expect(warned).toBe(true);
       const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
-      expect(output).toContain("3 skill file(s) differ");
+      expect(output).toContain("3 file(s) differ");
+      // Remediation points at the commands that actually fix in-place drift —
+      // a bare `sync` at a matching version is report-only (#708).
+      expect(output).toContain("sync --force");
       // Pre-flight must not fail the command it precedes.
       expect(process.exitCode).toBe(0);
     });

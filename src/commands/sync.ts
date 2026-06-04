@@ -261,12 +261,19 @@ export async function checkAndWarnSkillsOutdated(
   }
 
   if (contentDrift > 0) {
+    // Mirror syncCommand's own drift remediation: a bare `sync` at a matching
+    // version is report-only (it won't copy), so point at the commands that
+    // actually resolve in-place drift — `sync --force` or `update`.
     console.log(
       chalk.yellow(
-        `\n!  Version current, but ${contentDrift} skill file(s) differ from bundled content`,
+        `\n!  Version current, but ${contentDrift} file(s) differ from bundled content`,
       ),
     );
-    console.log(chalk.yellow("   Run: npx sequant sync\n"));
+    console.log(
+      chalk.yellow(
+        "   Run: npx sequant sync --force (or npx sequant update)\n",
+      ),
+    );
     return true;
   }
 
