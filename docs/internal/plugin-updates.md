@@ -67,6 +67,69 @@ To disable all update notifications:
 export DISABLE_AUTOUPDATER=true
 ```
 
+## Pre-flight Skill Drift Check
+
+Before most commands run, a `preAction` hook in `bin/cli.ts` checks whether the
+installed skills match the bundled package (via `areSkillsOutdated`). There are
+two distinct signals, handled differently:
+
+| Signal | Detection | Action |
+|--------|-----------|--------|
+| **Version mismatch** | `.claude/skills/.sequant-version` ≠ package version | **Auto-sync (copy)** — `syncCommand({ quiet: true })` overwrites templates and bumps the marker. |
+| **Content drift at a matching version** | Version marker matches, but `computeTemplateChanges` reports `new`/`modified` files | **Warn only** — a non-destructive message; no files are touched and `process.exitCode` is left unchanged. |
+
+### Why content drift is warn-only (#713 / AC-3)
+
+`areSkillsOutdated` originally compared only the version marker, so a tree at the
+matching version with drifted bundled content (the #708 scenario) reported
+`outdated: false` — no warning, no auto-sync. The pre-flight is now content-aware:
+on a version match it runs the same `computeTemplateChanges` diff that `sequant
+sync` uses (the single source of truth from #708/#710) and counts `new`+`modified`
+files, **excluding** `local-override`/`unchanged` so customized files (e.g. an
+in-place-customized `constitution.md`, #711) don't warn on every command.
+
+**Auto-sync (copy) stays gated on version bumps only.** Content-only drift is
+surfaced as a warning rather than auto-copied, for two reasons:
+
+1. **Don't clobber in-place customizations (#711).** A blind copy on content drift
+   would overwrite files a user has intentionally edited in place. The fix is left
+   to the user (`sequant sync --force` / `sequant update` — a bare `sync` at a
+   matching version is report-only), consistent with #708's report-only `sync`
+   decision.
+2. **The pre-flight must not fail the command it precedes.** Unlike `sequant sync`
+   (which sets `process.exitCode = 1` on drift so CI can detect it), the pre-flight
+   warning never changes the exit code — the user's actual command still runs and
+   exits normally.
+
+The `preAction` hook is **skipped entirely** for `init`, `sync`, and `update` —
+those commands manage skills themselves, so the warn-only "run sync/update"
+pre-flight would be a circular nag right before they do exactly that.
+
+### Performance (#713 / AC-5)
+
+The content diff is gated two ways. First by a **version match**: a version
+mismatch already means stale (the copy path handles it), so the diff is skipped
+entirely. Second, on a match, by a **stat-only fingerprint cache**: the full
+read+render+diff scan (~15ms across the bundled templates) runs only when
+something that can change drift actually changed.
+
+`areSkillsOutdated({ cache: true })` — used only by the hot `preAction` path —
+computes a SHA-1 over the package version plus the mtime (or absence) of every
+bundled template, its installed counterpart, any `.claude/.local/` override, and
+the config and manifest. If that fingerprint matches the cached one
+(`.claude/.sequant/.skills-drift-cache.json`), the cached drift count is returned
+without scanning (~4ms instead of ~15ms; measured ~5× faster). A **per-file** hash
+(not a max-mtime) is used deliberately: editing an *older* file whose new mtime may
+still trail another file's still changes the fingerprint, so a real drift is never
+missed. When `sync`/`update` rewrite files, their mtimes bump and the cache
+self-invalidates on the next command — no explicit cache-clearing needed.
+
+The cache is **opt-in**. Diagnostic callers (`doctor`) and `sync` itself call
+`areSkillsOutdated()` with no options and always run a fresh, uncached scan. The
+fingerprint and cache I/O degrade gracefully: any error falls back to a fresh
+scan, and a write failure (e.g. a missing `.claude/.sequant/` dir) is swallowed —
+the cache never fails the command it precedes.
+
 ## Breaking Changes Policy
 
 ### What Constitutes a Breaking Change
