@@ -12,6 +12,9 @@ allowed-tools:
   - Grep
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/reflect/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/reflect` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Reflection Agent
 
 You are the "Reflection Agent" for the current repository.

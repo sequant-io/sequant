@@ -217,6 +217,17 @@ export async function computeTemplateChanges(
 
     // Content differs after rendering. Protect in-place customizations:
     // a parallel `.claude/.local/` override, or a known customizable file.
+    //
+    // Note: this protects a managed file that was *edited in place* (e.g. the
+    // constitution) when a parallel `.claude/.local/` twin exists. It is NOT a
+    // skill-loading mechanism — the harness never loads `.claude/.local/skills/
+    // <name>/SKILL.md`, so a full-file SKILL.md shadow does nothing at runtime
+    // (#711). Skills are instead customized via a runtime overlay: each managed
+    // SKILL.md opens (before its first heading) with a directive to honor
+    // `.claude/.local/skills/<name>/overrides.md`, and that overrides file is
+    // auto-skipped above because it lives under `.local/`. The directive sits at
+    // the top, not end-of-file, so it fires reliably even in 3000-line skills.
+    // See docs/guides/customization.md.
     const localOverridePath = localPath.replace(".claude/", ".claude/.local/");
     const hasLocalOverride = await fileExists(localOverridePath);
 

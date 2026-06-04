@@ -15,6 +15,9 @@ allowed-tools:
   - Bash(gh issue comment:*)
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/verify/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/verify` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Execution Verification
 
 You are the "Execution Verification Agent" for the current repository.
