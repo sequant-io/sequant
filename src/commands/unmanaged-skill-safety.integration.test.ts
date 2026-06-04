@@ -97,25 +97,26 @@ describe("AC-3: update/sync never clobber an unmanaged .claude/skills/ dir", () 
 
     // Sanity: the managed skill was actually updated (proves update did work).
     const spec = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
-    // DIAG-711 (temporary): surface classify-vs-apply if sanity check fails.
+    // DIAG-711 (temporary): dump update's own summary + test writeFile directly.
     if (spec !== "# spec template v2\n") {
-      const tpl = await import("../lib/templates.js");
-      const changes = await tpl
-        .computeTemplateChanges("generic", {
-          DEV_URL: "http://localhost:3000",
-          PM_RUN: "npm run",
-        })
-        .then((c) => c.map((x) => ({ path: x.path, status: x.status })))
-        .catch((e) => `COMPUTE_ERR:${e.message}`);
-      const inq = await import("inquirer");
-      const promptRes = await (
-        inq as unknown as { default: { prompt: Function } }
-      ).default
-        .prompt([{ type: "confirm", name: "proceed", default: true }])
-        .catch((e: Error) => `PROMPT_ERR:${e.message}`);
+      const logCalls = (
+        console.log as unknown as { mock?: { calls: unknown[][] } }
+      ).mock?.calls
+        ?.map((c) => c.map((x) => String(x)).join(" "))
+        .join(" | ");
+      // Does fs.js writeFile actually persist here?
+      const fslib = await import("../lib/fs.js");
+      let writeProbe = "ok";
+      try {
+        await fslib.writeFile(MANAGED_SKILL, "# probe\n");
+        const back = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
+        writeProbe = `wrote->readback:${JSON.stringify(back)}`;
+      } catch (e) {
+        writeProbe = `WRITE_ERR:${(e as Error).message}`;
+      }
       console.error(
-        "DIAG-711B",
-        JSON.stringify({ cwd: process.cwd(), changes, promptRes }),
+        "DIAG-711C",
+        JSON.stringify({ cwd: process.cwd(), writeProbe, logCalls }),
       );
     }
     expect(spec).toBe("# spec template v2\n");
