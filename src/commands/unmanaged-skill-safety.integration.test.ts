@@ -97,22 +97,25 @@ describe("AC-3: update/sync never clobber an unmanaged .claude/skills/ dir", () 
 
     // Sanity: the managed skill was actually updated (proves update did work).
     const spec = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
-    // DIAG-711 (temporary): surface env/cwd if the sanity check is about to fail.
+    // DIAG-711 (temporary): surface classify-vs-apply if sanity check fails.
     if (spec !== "# spec template v2\n") {
-      const fs2 = await import("fs/promises");
-      const tplSpec = await fs2
-        .readFile(join(templatesDir, "skills", "spec", "SKILL.md"), "utf-8")
-        .catch((e) => `READ_ERR:${e.code}`);
+      const tpl = await import("../lib/templates.js");
+      const changes = await tpl
+        .computeTemplateChanges("generic", {
+          DEV_URL: "http://localhost:3000",
+          PM_RUN: "npm run",
+        })
+        .then((c) => c.map((x) => ({ path: x.path, status: x.status })))
+        .catch((e) => `COMPUTE_ERR:${e.message}`);
+      const inq = await import("inquirer");
+      const promptRes = await (
+        inq as unknown as { default: { prompt: Function } }
+      ).default
+        .prompt([{ type: "confirm", name: "proceed", default: true }])
+        .catch((e: Error) => `PROMPT_ERR:${e.message}`);
       console.error(
-        "DIAG-711",
-        JSON.stringify({
-          cwd: process.cwd(),
-          cwdDir,
-          templatesDir,
-          envTpl: process.env.SEQUANT_TEMPLATES_DIR,
-          specGot: spec,
-          tplSpecOnDisk: tplSpec,
-        }),
+        "DIAG-711B",
+        JSON.stringify({ cwd: process.cwd(), changes, promptRes }),
       );
     }
     expect(spec).toBe("# spec template v2\n");
