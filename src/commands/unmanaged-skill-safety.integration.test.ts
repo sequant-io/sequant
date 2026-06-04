@@ -97,6 +97,24 @@ describe("AC-3: update/sync never clobber an unmanaged .claude/skills/ dir", () 
 
     // Sanity: the managed skill was actually updated (proves update did work).
     const spec = await fsReadFile(join(cwdDir, MANAGED_SKILL), "utf-8");
+    // DIAG-711 (temporary): surface env/cwd if the sanity check is about to fail.
+    if (spec !== "# spec template v2\n") {
+      const fs2 = await import("fs/promises");
+      const tplSpec = await fs2
+        .readFile(join(templatesDir, "skills", "spec", "SKILL.md"), "utf-8")
+        .catch((e) => `READ_ERR:${e.code}`);
+      console.error(
+        "DIAG-711",
+        JSON.stringify({
+          cwd: process.cwd(),
+          cwdDir,
+          templatesDir,
+          envTpl: process.env.SEQUANT_TEMPLATES_DIR,
+          specGot: spec,
+          tplSpecOnDisk: tplSpec,
+        }),
+      );
+    }
     expect(spec).toBe("# spec template v2\n");
   });
 
