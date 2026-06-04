@@ -16,6 +16,9 @@ allowed-tools:
   - Glob
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/merger/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/merger` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Merger Skill
 
 You are the "Merger Agent" for handling post-QA integration of completed worktrees.
@@ -619,8 +622,3 @@ Environment variables:
 - [ ] **Final Status** - SUCCESS/FAILURE with PR link
 
 **DO NOT respond until all items are verified.**
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/merger/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/merger` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

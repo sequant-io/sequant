@@ -17,6 +17,9 @@ allowed-tools:
   - AgentOutputTool
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/spec/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/spec` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Planning Agent
 
 Phase 1 "Planning Agent." Understands the issue and AC, reviews or synthesizes a plan, identifies gaps and risks, and drafts a GitHub issue comment.
@@ -390,8 +393,3 @@ gh issue edit <issue-number> --add-label "planned"
 ```
 
 **Do NOT start implementation** — this is planning-only.
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/spec/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/spec` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

@@ -64,7 +64,7 @@ The constitution in `.claude/memory/constitution.md` defines project-wide rules.
 
 Do **not** copy the full `SKILL.md` into `.claude/.local/skills/` — Claude Code never loads it from there, so the copy would silently do nothing.
 
-Instead, write an **overrides file**. Every managed skill ends with a directive instructing it to honor `.claude/.local/skills/<name>/overrides.md` if that file exists, treating its instructions as authoritative over anything that conflicts. Claude reads the full skill body (including that directive) at invocation, so your overrides take effect without forking the skill.
+Instead, write an **overrides file**. Every managed skill **opens** (right after its frontmatter, before the first heading) with a "read this first" directive instructing it to honor `.claude/.local/skills/<name>/overrides.md` if that file exists, treating its instructions as authoritative over anything that conflicts. Because the directive is the first thing in the skill body, it fires reliably even in very long skills, and your overrides take effect without forking the skill.
 
 To customize the `/spec` skill:
 
@@ -82,9 +82,11 @@ To customize the `/spec` skill:
    - Cap the plan at 200 lines.
    ```
 
-3. Invoke `/spec`. The overlay directive at the end of `spec/SKILL.md` makes these instructions win over the defaults.
+3. Invoke `/spec`. The overlay directive at the top of `spec/SKILL.md` makes these instructions win over the defaults.
 
 **Why deltas, not a full copy?** A small `overrides.md` survives `sequant update`/`sync` cleanly (those commands never write into `.local/`), and you avoid the "vendored fork" problem where your full copy drifts out of date as the upstream skill improves.
+
+A copyable starting point lives at [`docs/examples/overrides.example.md`](../examples/overrides.example.md).
 
 ### Verifying an override took effect
 

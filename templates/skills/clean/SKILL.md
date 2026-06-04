@@ -27,6 +27,9 @@ allowed-tools:
   - Grep
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/clean/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/clean` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Repository Cleanup Command
 
 Comprehensive, safe repository cleanup that archives stale files, removes artifacts, and commits changes.
@@ -209,8 +212,3 @@ Execute the cleanup following the steps above. Be thorough but safe - when in do
 - [ ] **Next Cleanup Date** - Recommended date for next cleanup
 
 **DO NOT respond until all items are verified.**
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/clean/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/clean` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

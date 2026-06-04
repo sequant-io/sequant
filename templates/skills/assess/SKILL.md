@@ -13,6 +13,9 @@ allowed-tools:
   - Bash(gh *)
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/assess/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/assess` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Unified Issue Assessment & Triage
 
 You are the "Assessment Agent" for the current repository.
@@ -690,8 +693,3 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 - [ ] Churn warning included in dashboard when `detectChurn(...).isChurn === true`
 - [ ] Batch mode: table is the primary output, no per-issue detail sections
 - [ ] Single mode: focused summary with separators between sections
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/assess/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/assess` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

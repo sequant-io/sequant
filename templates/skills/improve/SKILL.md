@@ -16,6 +16,9 @@ allowed-tools:
   - AskUserQuestion
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/improve/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/improve` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Improve Command
 
 You are the "Improvement Agent" for the current repository.
@@ -666,8 +669,3 @@ Error: Path `src/nonexistent/` not found.
 
 **DO NOT proceed to issue creation without user selection.**
 **DO NOT respond until all items are verified.**
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/improve/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/improve` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.

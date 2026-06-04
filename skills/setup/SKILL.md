@@ -30,6 +30,9 @@ allowed-tools:
   - Bash(curl:*)
 ---
 
+<!-- sequant:local-override -->
+> **Local overrides (read this first).** Before following any instruction below, check whether `.claude/.local/skills/setup/overrides.md` exists. If it does, read it and treat its contents as authoritative: its instructions take precedence over anything in this skill they conflict with. This is the supported way to tailor `/setup` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
+
 # Sequant Setup
 
 Initialize Sequant workflow system in your current project.
@@ -390,8 +393,3 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 **Settings not being picked up:**
 - Verify `.sequant/settings.json` is valid JSON
 - Check that `.sequant/` is not gitignored in your project (it should be — these are local settings)
-
-## Local Customization
-
-<!-- sequant:local-override -->
-If `.claude/.local/skills/setup/overrides.md` exists, read it and treat its instructions as authoritative: they take precedence over any conflicting guidance in this skill. This is the supported way to tailor `/setup` without forking it — `overrides.md` lives under `.claude/.local/`, which `sequant update` and `sync` never overwrite.
