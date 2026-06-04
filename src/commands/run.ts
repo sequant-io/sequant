@@ -125,7 +125,7 @@ export async function runCommand(
   });
 
   if (tuiEnabled) {
-    const { renderTui } = await import("../ui/tui/index.js");
+    const { renderTui } = await (await import("../ui/tui/load.js")).loadTui();
     let tuiHandle: { done: Promise<void>; unmount: () => void } | null = null;
     // Unmount the TUI before ShutdownManager writes its shutdown banner so
     // the two don't race on stdout / leave the terminal in alt-screen buffer.

@@ -178,7 +178,7 @@ export async function readyCommand(
       listWorktrees().find((w) => w.issue === issueNumber)?.branch ?? "";
     adapter = new ReadySnapshotAdapter({ issueNumber, title, branch });
     onProgress = adapter.onProgress;
-    const { renderTui } = await import("../ui/tui/index.js");
+    const { renderTui } = await (await import("../ui/tui/load.js")).loadTui();
     tuiHandle = renderTui(adapter);
   } else if (!options.json) {
     // Stream phases as they fire (no `basePhases`): the ready pipeline length
