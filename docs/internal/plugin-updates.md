@@ -67,6 +67,48 @@ To disable all update notifications:
 export DISABLE_AUTOUPDATER=true
 ```
 
+## Pre-flight Skill Drift Check
+
+Before most commands run, a `preAction` hook in `bin/cli.ts` checks whether the
+installed skills match the bundled package (via `areSkillsOutdated`). There are
+two distinct signals, handled differently:
+
+| Signal | Detection | Action |
+|--------|-----------|--------|
+| **Version mismatch** | `.claude/skills/.sequant-version` ≠ package version | **Auto-sync (copy)** — `syncCommand({ quiet: true })` overwrites templates and bumps the marker. |
+| **Content drift at a matching version** | Version marker matches, but `computeTemplateChanges` reports `new`/`modified` files | **Warn only** — a non-destructive message; no files are touched and `process.exitCode` is left unchanged. |
+
+### Why content drift is warn-only (#713 / AC-3)
+
+`areSkillsOutdated` originally compared only the version marker, so a tree at the
+matching version with drifted bundled content (the #708 scenario) reported
+`outdated: false` — no warning, no auto-sync. The pre-flight is now content-aware:
+on a version match it runs the same `computeTemplateChanges` diff that `sequant
+sync` uses (the single source of truth from #708/#710) and counts `new`+`modified`
+files, **excluding** `local-override`/`unchanged` so customized files (e.g. an
+in-place-customized `constitution.md`, #711) don't warn on every command.
+
+**Auto-sync (copy) stays gated on version bumps only.** Content-only drift is
+surfaced as a warning rather than auto-copied, for two reasons:
+
+1. **Don't clobber in-place customizations (#711).** A blind copy on content drift
+   would overwrite files a user has intentionally edited in place. The fix is left
+   to the user (`sequant sync` / `sequant update`), consistent with #708's
+   report-only `sync` decision.
+2. **The pre-flight must not fail the command it precedes.** Unlike `sequant sync`
+   (which sets `process.exitCode = 1` on drift so CI can detect it), the pre-flight
+   warning never changes the exit code — the user's actual command still runs and
+   exits normally.
+
+### Performance (#713 / AC-5)
+
+The content diff runs a full template scan, so it is gated behind a **version
+match**: a version mismatch already means stale (the copy path handles it) and
+skips the diff entirely. Up-to-date installs at a matching version pay one scan
+per command; the `preAction` hook reuses the already-computed status when calling
+`checkAndWarnSkillsOutdated`, so the scan runs at most once. An mtime-based cache
+is a documented follow-up if this proves noticeable in practice.
+
 ## Breaking Changes Policy
 
 ### What Constitutes a Breaking Change

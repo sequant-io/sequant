@@ -49,21 +49,59 @@ export async function getSkillsVersion(): Promise<string | null> {
 }
 
 /**
- * Check if skills are outdated compared to package version
+ * Skills status relative to the bundled package, as seen by the pre-flight path.
  */
-export async function areSkillsOutdated(): Promise<{
+export interface SkillsOutdatedStatus {
+  /** Version-marker mismatch (`.sequant-version` ≠ package). Cheap fast-path. */
   outdated: boolean;
   currentVersion: string | null;
   packageVersion: string;
-}> {
+  /**
+   * Count of bundled files that are `new` or `modified` in place at a *matching*
+   * version (the #708 blind spot the version marker can't see). Only computed
+   * when versions match; `0` otherwise (a mismatch already means stale). Excludes
+   * `local-override`/`unchanged` so customized files (e.g. constitution, #711)
+   * don't register as drift.
+   */
+  contentDrift: number;
+}
+
+/**
+ * Check if skills are outdated compared to package version.
+ *
+ * The version marker is only a cheap hint: a tree at the matching version can
+ * still have drifted bundled content in place (the #708 root cause). So when the
+ * marker matches we run the same content diff `sync` uses (`computeTemplateChanges`,
+ * the single source of truth from #708/#710) and surface a `contentDrift` count.
+ * On a version *mismatch* we skip the diff entirely — the install is already stale
+ * and the copy path handles it — keeping the per-command pre-flight cheap (AC-5).
+ */
+export async function areSkillsOutdated(): Promise<SkillsOutdatedStatus> {
   const currentVersion = await getSkillsVersion();
   const packageVersion = getPackageVersion();
+  const outdated = currentVersion !== packageVersion;
 
-  return {
-    outdated: currentVersion !== packageVersion,
-    currentVersion,
-    packageVersion,
-  };
+  let contentDrift = 0;
+  if (!outdated) {
+    try {
+      const manifest = await getManifest();
+      if (manifest) {
+        const config = await getConfig();
+        const tokens = config?.tokens || {};
+        const changes = await computeTemplateChanges(manifest.stack, tokens);
+        contentDrift = changes.filter(
+          (c) => c.status === "new" || c.status === "modified",
+        ).length;
+      }
+    } catch {
+      // The pre-flight must never break the actual command. If the content diff
+      // fails (missing templates, read error), treat it as "no detectable drift"
+      // and let the command proceed.
+      contentDrift = 0;
+    }
+  }
+
+  return { outdated, currentVersion, packageVersion, contentDrift };
 }
 
 /**
@@ -194,16 +232,38 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 }
 
 /**
- * Check and warn if skills are outdated (for use by other commands)
+ * Check and warn if skills are outdated (for use by other commands).
+ *
+ * Warns on either signal: a version-marker mismatch, or in-place content drift at
+ * a matching version (#708/#713). The content-drift path is warn-only by design —
+ * it never mutates files and never sets `process.exitCode` (this is a pre-flight,
+ * not the command itself), so customized installs (#711) are left intact.
+ *
+ * Callers that have already computed the status (e.g. the `preAction` hook) can
+ * pass it in to avoid a second template scan on the hot path (AC-5).
+ *
+ * @returns `true` if a warning was emitted, `false` if up to date.
  */
-export async function checkAndWarnSkillsOutdated(): Promise<boolean> {
-  const { outdated, currentVersion, packageVersion } =
-    await areSkillsOutdated();
+export async function checkAndWarnSkillsOutdated(
+  status?: SkillsOutdatedStatus,
+): Promise<boolean> {
+  const { outdated, currentVersion, packageVersion, contentDrift } =
+    status ?? (await areSkillsOutdated());
 
   if (outdated) {
     console.log(
       chalk.yellow(
         `\n!  Skills are outdated (${currentVersion || "unknown"} → ${packageVersion})`,
+      ),
+    );
+    console.log(chalk.yellow("   Run: npx sequant sync\n"));
+    return true;
+  }
+
+  if (contentDrift > 0) {
+    console.log(
+      chalk.yellow(
+        `\n!  Version current, but ${contentDrift} skill file(s) differ from bundled content`,
       ),
     );
     console.log(chalk.yellow("   Run: npx sequant sync\n"));

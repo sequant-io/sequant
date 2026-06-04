@@ -57,7 +57,11 @@ import {
   stateRebuildCommand,
   stateCleanCommand,
 } from "../src/commands/state.js";
-import { syncCommand, areSkillsOutdated } from "../src/commands/sync.js";
+import {
+  syncCommand,
+  areSkillsOutdated,
+  checkAndWarnSkillsOutdated,
+} from "../src/commands/sync.js";
 import { mergeCommand } from "../src/commands/merge.js";
 import {
   readyCommand,
@@ -626,9 +630,27 @@ program.hook("preAction", async (thisCommand) => {
   const manifest = await getManifest();
   if (!manifest) return;
 
-  const { outdated, currentVersion } = await areSkillsOutdated();
-  if (outdated && currentVersion !== null) {
+  const status = await areSkillsOutdated();
+  const { outdated, currentVersion, contentDrift } = status;
+
+  // No version marker → the project manages skills manually; stay silent and
+  // do nothing (unchanged behavior — see the header comment above the hook).
+  if (currentVersion === null) return;
+
+  if (outdated) {
+    // Version-marker mismatch → stale install: auto-sync (copy) as before.
     await syncCommand({ quiet: true });
+    return;
+  }
+
+  // Version-current but bundled content drifted in place (#708/#713). AC-3
+  // decision: auto-sync (copy) stays gated on version bumps ONLY — we do NOT
+  // copy here, because that would clobber in-place customizations (#711).
+  // Content-only drift is surfaced as a non-destructive, warn-only signal,
+  // leaving the fix to the user (`sequant sync`/`update`). The helper never
+  // touches process.exitCode, so the command still exits normally.
+  if (contentDrift > 0) {
+    await checkAndWarnSkillsOutdated(status);
   }
 });
 

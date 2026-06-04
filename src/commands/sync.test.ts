@@ -25,7 +25,12 @@ vi.mock("../lib/config.js", () => ({
   getConfig: vi.fn(),
 }));
 
-import { getSkillsVersion, areSkillsOutdated, syncCommand } from "./sync.js";
+import {
+  getSkillsVersion,
+  areSkillsOutdated,
+  checkAndWarnSkillsOutdated,
+  syncCommand,
+} from "./sync.js";
 import { fileExists, readFile, writeFile } from "../lib/fs.js";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { copyTemplates, computeTemplateChanges } from "../lib/templates.js";
@@ -102,6 +107,156 @@ describe("sync command", () => {
 
       expect(result.outdated).toBe(true);
       expect(result.currentVersion).toBeNull();
+    });
+
+    it("reports contentDrift on a version match with new/modified files (AC-1)", async () => {
+      // Version marker matches but bundled content has drifted in place — the
+      // #708 blind spot. The pre-flight must now see it.
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "modified",
+          rendered: "new",
+          diff: "diff",
+        },
+        {
+          path: ".claude/skills/new/SKILL.md",
+          templatePath: "templates/skills/new/SKILL.md",
+          status: "new",
+          rendered: "new",
+        },
+      ]);
+
+      const result = await areSkillsOutdated();
+
+      expect(result.outdated).toBe(false);
+      expect(result.contentDrift).toBe(2);
+    });
+
+    it("excludes local-override/unchanged from contentDrift (AC-1, #711)", async () => {
+      // A customized constitution (local-override) or identical file (unchanged)
+      // must NOT register as drift — otherwise every command would warn.
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/memory/constitution.md",
+          templatePath: "templates/memory/constitution.md",
+          status: "local-override",
+          rendered: "template",
+        },
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "unchanged",
+          rendered: "same",
+        },
+      ]);
+
+      const result = await areSkillsOutdated();
+
+      expect(result.outdated).toBe(false);
+      expect(result.contentDrift).toBe(0);
+    });
+
+    it("skips the content diff on a version mismatch (AC-5 fast-path)", async () => {
+      // A version mismatch already means stale; the copy path handles it, so the
+      // per-command pre-flight must NOT pay for a template scan.
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.0.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+
+      const result = await areSkillsOutdated();
+
+      expect(result.outdated).toBe(true);
+      expect(result.contentDrift).toBe(0);
+      expect(mockComputeTemplateChanges).not.toHaveBeenCalled();
+    });
+
+    it("treats a content-diff failure as no drift (pre-flight never throws)", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockRejectedValue(new Error("read error"));
+
+      const result = await areSkillsOutdated();
+
+      expect(result.outdated).toBe(false);
+      expect(result.contentDrift).toBe(0);
+    });
+  });
+
+  describe("checkAndWarnSkillsOutdated", () => {
+    it("warns and returns true on a version mismatch", async () => {
+      const logSpy = vi.spyOn(console, "log");
+
+      const warned = await checkAndWarnSkillsOutdated({
+        outdated: true,
+        currentVersion: "1.0.0",
+        packageVersion: "1.1.0",
+        contentDrift: 0,
+      });
+
+      expect(warned).toBe(true);
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).toContain("Skills are outdated");
+    });
+
+    it("warns (warn-only) on content drift at a matching version (AC-2)", async () => {
+      const logSpy = vi.spyOn(console, "log");
+
+      const warned = await checkAndWarnSkillsOutdated({
+        outdated: false,
+        currentVersion: "1.1.0",
+        packageVersion: "1.1.0",
+        contentDrift: 3,
+      });
+
+      expect(warned).toBe(true);
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).toContain("3 skill file(s) differ");
+      // Pre-flight must not fail the command it precedes.
+      expect(process.exitCode).toBe(0);
+    });
+
+    it("returns false and stays silent when up to date", async () => {
+      const logSpy = vi.spyOn(console, "log");
+
+      const warned = await checkAndWarnSkillsOutdated({
+        outdated: false,
+        currentVersion: "1.1.0",
+        packageVersion: "1.1.0",
+        contentDrift: 0,
+      });
+
+      expect(warned).toBe(false);
+      expect(logSpy).not.toHaveBeenCalled();
     });
   });
 
