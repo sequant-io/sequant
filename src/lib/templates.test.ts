@@ -297,5 +297,51 @@ describe("templates", () => {
 
       expect(skill?.status).toBe("new");
     });
+
+    // #722 regression: a SKILL.md installed before the `<!-- sequant:local-override
+    // -->` overlay header shipped (#711 / 2.6.2) must surface as `modified` in the
+    // preview — never silently `unchanged` — so `update --dry-run` / `sync --dry-run`
+    // can't report "0 modified" while the apply rewrites it.
+    it("classifies a header-missing SKILL.md vs a header-bearing template as modified (AC-3)", async () => {
+      const OVERRIDE_HEADER =
+        "<!-- sequant:local-override -->\n" +
+        "> **Local overrides (read this first).** See `.claude/.local/skills/exec/overrides.md`.\n\n";
+      // Template ships the overlay header; installed copy predates it.
+      await fsWriteFile(
+        join(templatesDir, "skills", "exec", "SKILL.md"),
+        OVERRIDE_HEADER + "exec skill v{{PROJECT_NAME}}\n",
+      );
+      await seedLocal(SKILL_LOCAL, "exec skill vmy-project\n");
+
+      const changes = await computeTemplateChanges("generic");
+      const skill = changes.find((c) => c.path === SKILL_LOCAL);
+
+      expect(skill?.status).toBe("modified");
+      expect(skill?.diff).toBeDefined();
+    });
+
+    // #722 AC-2: the override classifier must key on a real `.claude/.local/`
+    // twin (the supported customization mechanism), NOT on the in-band marker
+    // embedded in the managed SKILL.md template. Locks the invariant so a future
+    // change can't re-introduce the marker coupling the issue warns against.
+    it("classifies a drifted SKILL.md as modified with no .local twin, local-override with one (AC-2)", async () => {
+      await seedLocal(SKILL_LOCAL, "locally edited skill\n");
+
+      // No `.claude/.local/skills/exec/SKILL.md` twin → modified.
+      const before = await computeTemplateChanges("generic");
+      expect(before.find((c) => c.path === SKILL_LOCAL)?.status).toBe(
+        "modified",
+      );
+
+      // Add the real `.local` twin → now protected as a local-override.
+      await seedLocal(
+        ".claude/.local/skills/exec/SKILL.md",
+        "my local override\n",
+      );
+      const after = await computeTemplateChanges("generic");
+      expect(after.find((c) => c.path === SKILL_LOCAL)?.status).toBe(
+        "local-override",
+      );
+    });
   });
 });

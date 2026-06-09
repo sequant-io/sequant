@@ -43,6 +43,7 @@ const MANIFEST_FILE_PATH = ".sequant-manifest.json";
 interface SyncOptions {
   force?: boolean;
   quiet?: boolean;
+  dryRun?: boolean;
 }
 
 interface DriftCache {
@@ -248,7 +249,7 @@ async function updateSkillsVersion(): Promise<void> {
 }
 
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
-  const { force = false, quiet = false } = options;
+  const { force = false, quiet = false, dryRun = false } = options;
 
   if (!quiet) {
     console.log(chalk.blue("\nSyncing templates...\n"));
@@ -316,6 +317,71 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // non-interactive / CI path we recommend can't treat a drifted tree as
     // success — the original failure mode in #708.
     process.exitCode = 1;
+    return;
+  }
+
+  // Preview path: report exactly what the apply would write, then stop without
+  // mutating (#722). This branch is only reached when `force` is set or the
+  // version marker mismatches — i.e. the path that runs `copyTemplates(force:
+  // true)` and rewrites the whole tree. (A matching-version, non-force dry-run
+  // already returned at the report-only short-circuit above, which never
+  // mutates.) `copyTemplates` does NOT protect in-place customizations the way
+  // `update` does — the force copy overwrites them — so the preview counts
+  // `local-override` files alongside `new`/`modified`. Reporting only
+  // new+modified would under-report the write-set, the exact divergence #722
+  // is about.
+  if (dryRun) {
+    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const newFiles = changes.filter((c) => c.status === "new");
+    const modifiedFiles = changes.filter((c) => c.status === "modified");
+    const localOverrides = changes.filter((c) => c.status === "local-override");
+    const toWrite = [...newFiles, ...modifiedFiles, ...localOverrides];
+
+    if (!quiet) {
+      console.log(chalk.bold("Summary (dry-run):"));
+      console.log(chalk.green(`  New files: ${newFiles.length}`));
+      console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
+      console.log(
+        chalk.blue(
+          `  Local overrides (overwritten by sync): ${localOverrides.length}`,
+        ),
+      );
+
+      if (modifiedFiles.length > 0) {
+        console.log(chalk.bold("\nModified files:"));
+        for (const file of modifiedFiles) {
+          console.log(chalk.yellow(`  ${file.path}`));
+        }
+      }
+      if (newFiles.length > 0) {
+        console.log(chalk.bold("\nNew files:"));
+        for (const file of newFiles) {
+          console.log(chalk.green(`  ${file.path}`));
+        }
+      }
+      if (localOverrides.length > 0) {
+        console.log(
+          chalk.bold("\nLocal overrides (will be overwritten by sync):"),
+        );
+        for (const file of localOverrides) {
+          console.log(chalk.blue(`  ${file.path}`));
+        }
+      }
+
+      if (toWrite.length === 0) {
+        console.log(chalk.green("\n✔ Skills are already up to date!"));
+      } else {
+        console.log(chalk.gray("\n(dry-run mode - no changes made)"));
+      }
+    }
+
+    // Non-zero exit when work is pending so the documented preview surface can
+    // gate CI/automation (the #709 intent): a dry-run reporting nothing must
+    // mean nothing to do. The matching-version short-circuit signals drift the
+    // same way.
+    if (toWrite.length > 0) {
+      process.exitCode = 1;
+    }
     return;
   }
 
