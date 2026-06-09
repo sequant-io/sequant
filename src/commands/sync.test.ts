@@ -553,6 +553,152 @@ describe("sync command", () => {
       expect(mockWriteFile).toHaveBeenCalled();
     });
 
+    // #722: `sync` previously had no preview surface — on a version mismatch it
+    // force-rewrote the whole tree silently, so an operator/CI had no trustworthy
+    // way to see pending work before applying. `--dry-run` reuses the same
+    // `computeTemplateChanges` source of truth the apply consults, so the preview
+    // can never under-report the write-set.
+    describe("--dry-run (#722)", () => {
+      it("previews the write-set on a version mismatch without mutating (AC-1)", async () => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.0.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockFileExists.mockResolvedValue(true);
+        mockReadFile.mockResolvedValue("1.0.0"); // marker < package → mismatch
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/skills/qa/SKILL.md",
+            templatePath: "templates/skills/qa/SKILL.md",
+            status: "modified",
+            rendered: "new",
+            diff: "diff",
+          },
+          {
+            path: ".claude/skills/new/SKILL.md",
+            templatePath: "templates/skills/new/SKILL.md",
+            status: "new",
+            rendered: "new",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        // Reports the real write-set, not a false "0 modified" / "up to date".
+        expect(output).toContain("Modified: 1");
+        expect(output).toContain("New files: 1");
+        expect(output).toContain(".claude/skills/qa/SKILL.md");
+        expect(output).not.toContain("already up to date");
+        // Mutates nothing: no copy, no version-marker/manifest writes.
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+        expect(mockWriteFile).not.toHaveBeenCalled();
+        // Pending work → non-zero exit so the preview can gate CI.
+        expect(process.exitCode).toBe(1);
+      });
+
+      it("counts local-overrides in the write-set (never under-reports, AC-1)", async () => {
+        // `sync`'s apply is `copyTemplates(force:true)`, which overwrites in-place
+        // customizations (it does NOT protect them the way `update` does). The
+        // preview must therefore include local-overrides, or it would under-report
+        // exactly the way #722 describes.
+        mockGetManifest.mockResolvedValue({
+          version: "1.0.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockFileExists.mockResolvedValue(true);
+        mockReadFile.mockResolvedValue("1.0.0");
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/memory/constitution.md",
+            templatePath: "templates/memory/constitution.md",
+            status: "local-override",
+            rendered: "template",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("Local overrides (overwritten by sync): 1");
+        expect(output).toContain(".claude/memory/constitution.md");
+        expect(output).not.toContain("already up to date");
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+        // A pending overwrite still counts as work for the CI gate.
+        expect(process.exitCode).toBe(1);
+      });
+
+      it("previews under --force at a matching version without mutating (AC-1)", async () => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.1.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockFileExists.mockResolvedValue(true);
+        mockReadFile.mockResolvedValue("1.1.0"); // versions match
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/skills/qa/SKILL.md",
+            templatePath: "templates/skills/qa/SKILL.md",
+            status: "modified",
+            rendered: "new",
+            diff: "diff",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true, force: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("Modified: 1");
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+        expect(process.exitCode).toBe(1);
+      });
+
+      it("reports up to date and exits 0 when there is nothing to write", async () => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.1.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockFileExists.mockResolvedValue(true);
+        mockReadFile.mockResolvedValue("1.1.0");
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/skills/qa/SKILL.md",
+            templatePath: "templates/skills/qa/SKILL.md",
+            status: "unchanged",
+            rendered: "same",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        // --force reaches the dry-run preview even at a matching version.
+        await syncCommand({ dryRun: true, force: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("already up to date");
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+        expect(process.exitCode).toBe(0);
+      });
+    });
+
     it("syncs when force is set even if versions match", async () => {
       mockGetManifest.mockResolvedValue({
         version: "1.1.0",

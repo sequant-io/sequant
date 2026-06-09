@@ -195,6 +195,10 @@ program
   )
   .option("-f, --force", "Sync even if versions match")
   .option("-q, --quiet", "Suppress output")
+  .option(
+    "-d, --dry-run",
+    "Show what sync would write without making changes (exits non-zero if work is pending)",
+  )
   .action(syncCommand);
 
 program

@@ -24,6 +24,7 @@ bun add -g sequant           # bun
 sequant update              # Update skill templates to latest version (interactive)
 sequant update --yes        # Apply updates without prompting (CI/non-interactive)
 sequant sync                # Sync skills and templates (non-interactive, CI-safe)
+sequant sync --dry-run      # Preview what sync would write (exits non-zero if work pending)
 sequant doctor              # Verify installation health
 ```
 
