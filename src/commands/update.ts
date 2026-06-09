@@ -225,6 +225,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
   if (options.dryRun) {
     console.log(chalk.gray("\n(dry-run mode - no changes made)"));
+    // Non-zero exit when work is pending so a CI/automation job can gate on the
+    // preview, matching `sync --dry-run` (#724 / #709 intent): a dry-run that
+    // reports nothing must mean nothing to do. The no-op case short-circuits at
+    // the "Everything is up to date!" return above, so it correctly stays 0.
+    if (applySet.length > 0) {
+      process.exitCode = 1;
+    }
     return;
   }
 
