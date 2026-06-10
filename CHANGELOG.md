@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-06-10
+
 ### Added
 
 - **`sequant sync --dry-run` / `-d` — a trustworthy preview for the sync surface (#722)** — `sync` previously had no preview: on a `.sequant-version` marker mismatch (e.g. an install that predates the 2.6.2 `<!-- sequant:local-override -->` overlay header from #711) it ran `copyTemplates(force:true)` and silently rewrote the whole tree (every `SKILL.md` + `AGENTS.md`) with no per-file output, so an operator or CI job had no way to see pending work before applying. The reported dry-run-vs-apply divergence traced to this gap (and/or `npx` version skew) — **not** to `update`, which already derives its summary and write-set from one `computeTemplateChanges()` call and already classifies a header-missing `SKILL.md` as `modified` (verified: `update --dry-run` reports the drift, never a false "0 modified"). `sync --dry-run` reuses that same source of truth to report the exact set the apply would write — `new` + `modified` + `local-override` (the force copy overwrites in-place customizations, so they are counted, never under-reported) — mutates nothing, and exits non-zero when work is pending so the preview can gate automation. The override classifier remains keyed on a real `.claude/.local/` twin, not the in-band marker. (#722)
