@@ -20,6 +20,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 
 - **Boxed Ink TUI is the default for `sequant run`** — on a TTY, `run` now renders the boxed dashboard by default (matching `sequant ready`). Opt out with `--no-tui` (line renderer) or `-s`/`--quiet` (heartbeat-only); non-TTY output auto-degrades.
 - **Flag change:** `--quiet` moved from `-q` to **`-s`** (silent). `-q` is now an alias for `-Q, --quality-loop`, so `sequant run … -q` enables the quality loop as intended. (`--experimental-tui` is kept as a hidden no-op alias.)
+- **Trustworthy `--dry-run` previews for `sync` and `update`** — `sequant sync --dry-run` (`-d`) previews the exact set the apply would write (`new` + `modified` + `local-override`) and mutates nothing. Both `sync --dry-run` and `update --dry-run` now exit non-zero when work is pending, so a CI/automation job can gate on the exit code instead of parsing stdout. (`update` is the interactive command; `sync` is the documented non-interactive/CI surface.)
 
 ### What's new in 2.5
 
