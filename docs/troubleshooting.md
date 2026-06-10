@@ -434,8 +434,10 @@ Without `--yes` in a non-interactive or CI shell, `update` now exits with a
 clear message naming the reason and a non-zero status (instead of a raw
 `ExitPromptError` stack trace or a hung job), so scripts can detect the misuse.
 To preview what would change without applying — and without prompting — run
-`sequant update --dry-run`, which is safe in any shell. For a fast, CI-safe
-content-drift check that never prompts, use `sequant sync`.
+`sequant update --dry-run`, which is safe in any shell. It exits non-zero when
+updates are pending (and `0` when nothing is to apply), so CI can gate on it
+directly without parsing stdout — parity with `sync --dry-run`. For a fast,
+CI-safe content-drift check that never prompts, use `sequant sync`.
 
 ## Build/Test Issues
 
