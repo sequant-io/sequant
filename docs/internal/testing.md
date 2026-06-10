@@ -37,7 +37,8 @@ For each platform/IDE combination, verify:
 
 - [ ] `sequant doctor` passes all checks
 - [ ] `sequant status` shows correct information
-- [ ] `sequant update --dry-run` works without errors
+- [ ] `sequant update --dry-run` previews without prompting or writing (exits
+  non-zero when updates are pending, `0` when up to date — both are expected)
 - [ ] `npx sequant run 1 --dry-run` shows expected output
 
 #### Shell Scripts (Bash environments only)

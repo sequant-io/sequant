@@ -216,7 +216,9 @@ describe("update command — non-interactive path (AC-1, AC-2)", () => {
     await expect(updateCommand({ dryRun: true })).resolves.toBeUndefined();
 
     expect(inquirer.prompt).not.toHaveBeenCalled();
-    expect(process.exitCode ?? 0).toBe(0); // preview is not an error
+    // The seeded NEW_TEMPLATE is pending work, so the preview signals drift with
+    // a non-zero exit for CI gating (#724) — without mutating anything below.
+    expect(process.exitCode).toBe(1);
     expect(saveConfig).not.toHaveBeenCalled(); // read-only: nothing persisted
     await expect(
       fsReadFile(join(cwdDir, NEW_TEMPLATE), "utf-8"),
