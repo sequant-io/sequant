@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.6.2
+# What We've Built: Sequant v2.7.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -737,6 +737,11 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.7.0)
+
+- **`sequant sync --dry-run` / `-d`** - Trustworthy preview of the sync surface: reports the exact set the apply would write (new + modified + local-override), mutates nothing, and exits non-zero when work is pending so CI can gate on it (#722)
+- **`sequant update --dry-run` exit-code parity** - `update --dry-run` now exits non-zero when work is pending (mirroring `sync --dry-run`), so automation can gate on the exit code instead of parsing stdout (#724)
+
 ### Recent Additions (v2.6.2)
 
 - **Brand-colored run dashboard** - Active/live phase spinners use brand orange and success states use brand green in the boxed run TUI; non-truecolor terminals auto-downsample and `NO_COLOR` still strips (#712)
@@ -1124,7 +1129,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.6.2
+**Current Version:** 2.7.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1134,7 +1139,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.6.2                                │
+│                              SEQUANT v2.7.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
