@@ -99,7 +99,9 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-> 📹 A recorded demo GIF of the live run grid is coming — tracked in [#695](https://github.com/sequant-io/sequant/issues/695).
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sequant-io/sequant/main/docs/assets/run-grid.gif" alt="Sequant run grid: the live boxed TUI driving issue #64 through spec, exec, and qa to a green success rollup" width="760">
+</p>
 
 ---
 
