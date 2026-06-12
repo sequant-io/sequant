@@ -44,10 +44,17 @@ const ISSUE = {
   branch: "feature/64-user-auth",
 } as const;
 
+/**
+ * A short "queued" lead-in before spec starts. The TUI mounts on a calm queued
+ * box rather than popping in already mid-spec, so the entrance eases in instead
+ * of jumping. Phase starts are offset past this window.
+ */
+const QUEUED_MS = 700;
+
 const PHASES: PhasePlan[] = [
-  { name: "spec", start: 0, dur: 2200 },
-  { name: "exec", start: 2200, dur: 3800 },
-  { name: "qa", start: 6000, dur: 2200 },
+  { name: "spec", start: QUEUED_MS, dur: 2400 },
+  { name: "exec", start: QUEUED_MS + 2400, dur: 4000 },
+  { name: "qa", start: QUEUED_MS + 6400, dur: 2400 },
 ];
 
 /** Per-phase rotating "now" activity lines (generic, no real-machine data). */
@@ -74,7 +81,7 @@ const NOW_LINES: Record<string, string[]> = {
 const RUN_BASE = Date.now();
 const LAST_END = Math.max(...PHASES.map((p) => p.start + p.dur));
 /** Hold the green success state visible before unmounting. */
-const DONE_AT = LAST_END + 2000;
+const DONE_AT = LAST_END + 1600;
 
 /** Pick the activity line for the current point within a phase. */
 function rotate(lines: string[], elapsedInPhase: number, dur: number): string {
@@ -124,7 +131,12 @@ function buildIssue(elapsed: number): IssueRuntimeState {
   }
 
   const status: IssueRuntimeState["status"] =
-    elapsed >= LAST_END ? "passed" : "running";
+    elapsed < QUEUED_MS ? "queued" : elapsed >= LAST_END ? "passed" : "running";
+
+  // Issue clock starts when the first phase begins (after the queued lead-in),
+  // so the header elapsed timer reads from spec, not from the queued window.
+  const startedAt =
+    elapsed >= QUEUED_MS ? new Date(RUN_BASE + QUEUED_MS) : undefined;
 
   return {
     number: ISSUE.number,
@@ -133,7 +145,7 @@ function buildIssue(elapsed: number): IssueRuntimeState {
     status,
     phases,
     currentPhase,
-    startedAt: new Date(RUN_BASE),
+    startedAt,
     completedAt:
       elapsed >= LAST_END ? new Date(RUN_BASE + LAST_END) : undefined,
   };
