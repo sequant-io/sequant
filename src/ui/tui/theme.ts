@@ -14,8 +14,10 @@ import type { IssueStatus, PhaseStatus } from "../../lib/workflow/run-state.js";
  *   - `BRAND_GREEN` is the accent/success green (`--color-accent`).
  *
  * Used to brand the two color signals that matter most at a glance — the
- * live/active phase and success — while issue-distinction (border rotation),
- * failure (red), and dividers (gray) stay on robust named ANSI colors.
+ * live/active phase and success — while issue-distinction (border rotation)
+ * and failure (red) stay on robust named ANSI colors. The muted gray for
+ * secondary chrome is a fixed mid-gray (`DIVIDER_COLOR`) chosen for WCAG
+ * contrast rather than the too-dim ANSI bright-black.
  *
  * Ink/chalk auto-downsamples hex to the nearest ANSI color on terminals
  * without truecolor, and `NO_COLOR` still strips all color, so these degrade
@@ -34,8 +36,20 @@ export type BorderColor =
   | "red"
   | "gray";
 
-/** Gray used for horizontal dividers inside each box. */
-export const DIVIDER_COLOR = "gray" as const;
+/**
+ * Muted gray for secondary chrome: dividers, field labels (`branch`/`now`/
+ * `log`), the `phase N/total` + elapsed line, the `last activity` stamp, and
+ * the terminal status line.
+ *
+ * Lifted off ANSI `"gray"` (bright-black), which the brand's own dark theme
+ * renders at ~2.4:1 — below WCAG AA (4.5) and even the 3.0 large-text/UI floor.
+ * This fixed mid-gray clears AA (~4.9:1) on the dark theme while staying above
+ * 3.0 on light terminals (~3.4:1). It still degrades gracefully: chalk
+ * downsamples the hex to the nearest ANSI color on non-truecolor terminals, and
+ * `NO_COLOR` strips it entirely. The not-yet-started phase glyph stays on ANSI
+ * `"gray"` (see `phaseStatusColor`) so pending work remains the most recessed.
+ */
+export const DIVIDER_COLOR = "#8B8B9A" as const;
 
 /** Brand orange for the live/active phase spinner — the one element the eye
  *  tracks. Border rotation still distinguishes concurrent issues. */
