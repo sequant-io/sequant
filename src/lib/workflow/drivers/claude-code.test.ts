@@ -132,7 +132,44 @@ describe("ClaudeCodeDriver", () => {
       const err = result.structuredError as SequantError;
       expect(err).toBeInstanceOf(RateLimitError);
       expect(err.isRetryable).toBe(true);
-      expect(err.message).toMatch(/^Rate limited — resets at \d{2}:\d{2}$/);
+      // Past timestamp → date-qualified reset.
+      expect(err.message).toMatch(
+        /^Rate limited — resets at \d{2}-\d{2} \d{2}:\d{2}$/,
+      );
+    });
+
+    it("prefers billing over a transient rate_limit_event when the assistant reports billing_error (#732)", async () => {
+      // A transient (non-billing) throttle event AND a separate billing_error:
+      // the non-retryable billing cause must win so the MCP fallback is skipped.
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              resetsAt: 1_700_000_000,
+              rateLimitType: "five_hour",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          },
+          {
+            type: "assistant",
+            message: { content: [] },
+            error: "billing_error",
+          },
+          RESULT_ERROR,
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      const err = result.structuredError as SequantError;
+      expect(err).toBeInstanceOf(BillingError);
+      expect(err.isRetryable).toBe(false);
+      expect(result.error).toBe("Billing error");
     });
 
     it("falls back to the assistant error field when no rate_limit_event is present (AC-1, AC-6)", async () => {

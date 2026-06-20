@@ -308,6 +308,14 @@ export class ClaudeCodeDriver implements AgentDriver {
    * otherwise the assistant-level `error`; otherwise the last `api_retry`
    * error. Returns undefined when no rate-limit/billing signal was seen, so
    * the executor falls back to stderr-regex classification.
+   *
+   * Exception: a non-retryable billing failure must never be downgraded to a
+   * retryable {@link RateLimitError}. If the `rate_limit_event` was only a
+   * transient throttle but the assistant separately reported `billing_error`,
+   * the billing cause wins — a retry cannot refill credits, and a
+   * RateLimitError would wrongly re-enable the retry / MCP-fallback path. When
+   * the `rate_limit_event` is itself a billing failure its richer metadata
+   * (`canUserPurchaseCredits`, etc.) is preserved.
    */
   private buildStructuredError(
     rateLimitInfo: SDKRateLimitInfo | undefined,
@@ -315,7 +323,11 @@ export class ClaudeCodeDriver implements AgentDriver {
     apiRetryError: SDKAssistantMessageError | undefined,
   ): SequantError | undefined {
     if (rateLimitInfo) {
-      return createRateLimitError(rateLimitInfo);
+      const err = createRateLimitError(rateLimitInfo);
+      if (err instanceof RateLimitError && assistantError === "billing_error") {
+        return new BillingError("Billing error");
+      }
+      return err;
     }
     return (
       this.errorFromAssistantError(assistantError) ??
