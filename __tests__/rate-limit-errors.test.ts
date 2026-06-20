@@ -95,14 +95,27 @@ describe("rate-limit failure predicates", () => {
 // === AC-3: user-facing message names the real cause ===
 
 describe("AC-3: formatRateLimitMessage", () => {
-  it("names a rate limit with reset time (HH:MM)", () => {
+  it("date-qualifies a reset on a different day (MM-DD HH:MM)", () => {
+    // 1_700_000_000 (Nov 2023) is never "today", so the message must carry a
+    // date — bare HH:MM would misread a multi-day (seven_day) window as today.
     const info: RateLimitInfoLike = {
       status: "rejected",
-      resetsAt: 1_700_000_000, // seconds
-      rateLimitType: "five_hour",
+      resetsAt: 1_700_000_000, // seconds, far in the past
+      rateLimitType: "seven_day",
     };
     const msg = formatRateLimitMessage(info);
-    expect(msg).toMatch(/^Rate limited — resets at \d{2}:\d{2}$/);
+    expect(msg).toMatch(/^Rate limited — resets at \d{2}-\d{2} \d{2}:\d{2}$/);
+  });
+
+  it("shows bare HH:MM for a same-day reset", () => {
+    // A reset later today is unambiguous without a date.
+    const today = new Date();
+    today.setHours(14, 30, 0, 0);
+    const msg = formatRateLimitMessage({
+      status: "rejected",
+      resetsAt: today.getTime(), // ms, today
+    });
+    expect(msg).toBe("Rate limited — resets at 14:30");
   });
 
   it("falls back to plain 'Rate limited' when resetsAt is absent", () => {
@@ -174,6 +187,9 @@ describe("AC-7: createRateLimitError + 0.3.181 enrichment", () => {
     });
     expect(err).toBeInstanceOf(RateLimitError);
     expect(err.isRetryable).toBe(true);
-    expect(err.message).toMatch(/^Rate limited — resets at \d{2}:\d{2}$/);
+    // Past timestamp → date-qualified.
+    expect(err.message).toMatch(
+      /^Rate limited — resets at \d{2}-\d{2} \d{2}:\d{2}$/,
+    );
   });
 });

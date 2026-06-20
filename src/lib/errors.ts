@@ -274,22 +274,41 @@ export function isRateLimitFailureInfo(info: RateLimitInfoLike): boolean {
   return info.status === "rejected" || isBillingFailure(info);
 }
 
-/** Format a Unix timestamp (seconds or ms) as a local `HH:MM` string. */
+/**
+ * Format a Unix timestamp (seconds or ms) as a local time string.
+ *
+ * Bare `HH:MM` when the reset falls on the current local calendar day;
+ * date-qualified `MM-DD HH:MM` otherwise. Multi-day windows
+ * (`rateLimitType: seven_day*`) can reset days out — a bare `HH:MM` there reads
+ * as "later today" and misleads the user (#732 QA follow-up), so the date is
+ * included whenever the reset is not today.
+ */
 function formatResetTime(resetsAt: number): string {
   // Heuristic: values below ~1e12 are seconds, otherwise milliseconds.
   const ms = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) {
+    return `${hh}:${mm}`;
+  }
+  const mon = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${mon}-${day} ${hh}:${mm}`;
 }
 
 /**
  * Build a user-facing message from rate-limit info, naming the real cause:
  * - billing/credits → "Out of credits" (enriched with purchasable vs hard
  *   limit when the ≥0.3.181 `canUserPurchaseCredits` field is present)
- * - transient throttle → "Rate limited — resets at HH:MM" (reset time omitted
- *   when `resetsAt` is absent)
+ * - transient throttle → "Rate limited — resets at HH:MM" (date-qualified as
+ *   "MM-DD HH:MM" when the reset is not today; reset time omitted entirely when
+ *   `resetsAt` is absent)
  */
 export function formatRateLimitMessage(info: RateLimitInfoLike): string {
   if (isBillingFailure(info)) {
