@@ -200,6 +200,60 @@ describe("ClaudeCodeDriver", () => {
       expect(result.error).toBe("generic failure");
     });
 
+    it("attaches structuredError when the stream throws after a rejected rate_limit_event (#732)", async () => {
+      // SDK surfaces a billing rejection, then the stream throws mid-iteration.
+      queryMock.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield INIT;
+          yield {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              overageDisabledReason: "out_of_credits",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          };
+          throw new Error("stream connection reset");
+        },
+      });
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(false);
+      expect(result.structuredError).toBeInstanceOf(BillingError);
+      // Real cause preferred over the raw thrown message.
+      expect(result.error).toBe("Out of credits");
+    });
+
+    it("does NOT mask a genuine timeout/abort with a prior rate-limit signal (#732)", async () => {
+      // A rejected event was seen, but the throw is an abort → timeout wins.
+      queryMock.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield INIT;
+          yield {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              overageDisabledReason: "out_of_credits",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          };
+          throw new Error("AbortError: operation aborted");
+        },
+      });
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(false);
+      // Abort path returns first — no structuredError, timeout message intact.
+      expect(result.structuredError).toBeUndefined();
+      expect(result.error).toMatch(/^Timeout after \d+s$/);
+    });
+
     it("leaves structuredError undefined on success", async () => {
       queryMock.mockReturnValue(
         mockStream([
