@@ -28,7 +28,7 @@ import type {
   ResumeHandle,
 } from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
-import { ApiError } from "../errors.js";
+import { ApiError, BillingError } from "../errors.js";
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 
@@ -756,6 +756,9 @@ async function executePhase(
     success: false,
     durationSeconds,
     error: agentResult.error,
+    // Propagate the driver's typed cause (#732) so the retry logic can prefer
+    // it over stderr-regex classification and gate the MCP fallback.
+    structuredError: agentResult.structuredError,
     sessionId: agentResult.sessionId,
     resumeHandle: agentResult.resumeHandle,
     stderrTail: agentResult.stderrTail,
@@ -860,10 +863,12 @@ export async function executePhaseWithRetry(
       // Use error classification (AC-9): if the error is retryable (e.g., API
       // rate limit, transient 503), allow one more attempt even for genuine failures.
       if (duration >= COLD_START_THRESHOLD_SECONDS) {
-        const typedError = classifyError(
-          lastResult.stderrTail ?? [],
-          lastResult.exitCode,
-        );
+        // Prefer the driver's structured cause (#732) — it reflects the real
+        // SDK rate-limit/billing signal — over stderr-regex classification,
+        // which only sees text and never the structured data.
+        const typedError =
+          lastResult.structuredError ??
+          classifyError(lastResult.stderrTail ?? [], lastResult.exitCode);
         if (typedError.isRetryable && attempt < COLD_START_MAX_RETRIES) {
           if (config.verbose) {
             const label =
@@ -905,7 +910,18 @@ export async function executePhaseWithRetry(
   // Phase 2: MCP fallback - if MCP is enabled and we're still failing, try without MCP
   // This handles npx-based MCP servers that fail on first run due to cold-cache issues.
   // Skip for `loop` phase — MCP is never the cause of loop failures (#488).
-  if (config.mcp && !lastResult!.success && !skipColdStartRetry) {
+  //
+  // Also skip when the failure is a billing/credits error (#732): a no-MCP
+  // retry cannot refill credits, so the misleading "retrying without MCP"
+  // noise (#592) would only mask the real cause. The accurate structured
+  // message (e.g. "Out of credits") is surfaced instead.
+  const isBillingFailure = lastResult!.structuredError instanceof BillingError;
+  if (
+    config.mcp &&
+    !lastResult!.success &&
+    !skipColdStartRetry &&
+    !isBillingFailure
+  ) {
     bracketedConsoleLog(
       spinner,
       chalk.yellow(
