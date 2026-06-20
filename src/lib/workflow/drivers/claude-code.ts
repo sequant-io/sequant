@@ -274,6 +274,17 @@ export class ClaudeCodeDriver implements AgentDriver {
         };
       }
 
+      // If the stream surfaced a failure-grade rate-limit/billing signal before
+      // throwing, prefer that typed cause (#732) over the raw thrown message — a
+      // mid-stream throw after a *rejected* rate_limit_event is very likely the
+      // proximate cause. Abort/timeout is handled above first, so a genuine
+      // timeout is never masked by a stale rate-limit signal.
+      const structuredError = this.buildStructuredError(
+        rateLimitInfo,
+        assistantError,
+        apiRetryError,
+      );
+
       const stderrSuffix = capturedStderr
         ? `\nStderr: ${capturedStderr.slice(0, 500)}`
         : "";
@@ -283,7 +294,8 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         resumeHandle: this.buildResumeHandle(resultSessionId, config.cwd),
-        error: error + stderrSuffix,
+        error: structuredError?.message ?? error + stderrSuffix,
+        structuredError,
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
       };

@@ -915,12 +915,12 @@ export async function executePhaseWithRetry(
   // retry cannot refill credits, so the misleading "retrying without MCP"
   // noise (#592) would only mask the real cause. The accurate structured
   // message (e.g. "Out of credits") is surfaced instead.
-  const isBillingFailure = lastResult!.structuredError instanceof BillingError;
+  const failureIsBilling = lastResult!.structuredError instanceof BillingError;
   if (
     config.mcp &&
     !lastResult!.success &&
     !skipColdStartRetry &&
-    !isBillingFailure
+    !failureIsBilling
   ) {
     bracketedConsoleLog(
       spinner,
