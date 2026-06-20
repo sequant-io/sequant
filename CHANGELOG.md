@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Surface structured rate-limit / credits errors from the SDK message stream (#732)** — the Claude Agent SDK already emits structured `rate_limit_event` (`SDKRateLimitInfo`) and assistant `error` signals, but sequant dropped them on the floor and guessed rate limits via regex-on-stderr. The `ClaudeCodeDriver` stream loop now reads these signals and constructs a typed `RateLimitError` (retryable) or `BillingError` (non-retryable) — both new subclasses of `SequantError` carrying `resetsAt`, `overageDisabledReason`, and (on SDK ≥0.3.181) `canUserPurchaseCredits` / `hasChargeableSavedPaymentMethod`. The typed cause propagates through `AgentPhaseResult` → `PhaseResult` so a failed phase now names the real cause ("Out of credits — purchasable", "Rate limited — resets at HH:MM") instead of the generic, misleading `Phase failed with MCP enabled, retrying without MCP...` fallback noise (#592). A billing/credits failure also **skips** the pointless no-MCP retry — a retry cannot refill credits. The existing stderr-regex classifier is retained as the fallback for the subprocess path (`run.ts`), so non-SDK error classification is unchanged. (#732)
+
 ## [2.7.0] - 2026-06-10
 
 ### Added
