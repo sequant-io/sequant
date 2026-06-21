@@ -1,9 +1,18 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ClaudeCodeDriver } from "./claude-code.js";
 
+// Mutable controller for the mocked SDK result. `vi.hoisted` runs before the
+// `vi.mock` factory below so the factory can close over it; each test sets the
+// result subtype it needs. Defaults to `error_max_turns` (the #733 turn-cap
+// path); reset in `beforeEach`.
+const mockResult = vi.hoisted(() => ({
+  subtype: "error_max_turns" as string,
+  errors: undefined as string[] | undefined,
+}));
+
 // Mock the SDK so executePhase iterates a synthetic stream without invoking
-// Claude. The stream yields prior assistant text followed by an
-// `error_max_turns` result — the turn-cap path under test (#733, AC-1).
+// Claude. The stream yields prior assistant text followed by a result whose
+// subtype is driven by `mockResult`.
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(() => ({
     async *[Symbol.asyncIterator]() {
@@ -18,11 +27,17 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
       };
       yield {
         type: "result",
-        subtype: "error_max_turns",
+        subtype: mockResult.subtype,
+        ...(mockResult.errors ? { errors: mockResult.errors } : {}),
       };
     },
   })),
 }));
+
+beforeEach(() => {
+  mockResult.subtype = "error_max_turns";
+  mockResult.errors = undefined;
+});
 
 describe("ClaudeCodeDriver", () => {
   it("has name 'claude-code'", () => {
@@ -78,6 +93,22 @@ describe("ClaudeCodeDriver", () => {
       );
 
       expect(warnings.join("")).toMatch(/turn cap/i);
+    });
+
+    // FAILURE PATH (regression guard): the turn-cap branch must be NARROW.
+    // Other error subtypes still fail hard — `success: false`, a real error
+    // string, and NO `capped` flag — so the soft-cap handling can't mask a
+    // genuine execution failure. Guards the riskiest part of #733's change.
+    it("does not flag non-capped error subtypes as capped", async () => {
+      mockResult.subtype = "error_during_execution";
+      mockResult.errors = ["boom"];
+      const driver = new ClaudeCodeDriver();
+
+      const result = await driver.executePhase("prompt", makeConfig());
+
+      expect(result.success).toBe(false);
+      expect(result.capped).toBeUndefined();
+      expect(result.error).toContain("boom");
     });
   });
 });
