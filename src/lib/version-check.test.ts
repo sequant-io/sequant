@@ -37,6 +37,8 @@ vi.stubGlobal("fetch", mockFetch);
 
 import {
   compareVersions,
+  getNodeVersionError,
+  assertNodeVersion,
   isOutdated,
   getVersionWarning,
   getCacheDir,
@@ -98,6 +100,102 @@ describe("version-check utilities", () => {
       expect(compareVersions("v1.0.0", "1.0.0")).toBe(0);
       expect(compareVersions("1.0.0", "v1.0.0")).toBe(0);
       expect(compareVersions("v1.0.0", "v1.0.1")).toBe(-1);
+    });
+  });
+
+  describe("getNodeVersionError", () => {
+    const FLOOR = ">=22.12.0";
+
+    // AC-5 boundary table: below floor → message, at/above floor → null
+    it("fails on Node 20.x (below floor)", () => {
+      const msg = getNodeVersionError("v20.17.0", FLOOR);
+      expect(msg).not.toBeNull();
+      expect(msg).toContain("20.17.0");
+      expect(msg).toContain("22.12.0");
+    });
+
+    it("fails on Node 22.11.x (just below floor)", () => {
+      expect(getNodeVersionError("v22.11.9", FLOOR)).not.toBeNull();
+    });
+
+    it("passes on Node 22.12.0 (exactly at floor)", () => {
+      expect(getNodeVersionError("v22.12.0", FLOOR)).toBeNull();
+    });
+
+    it("passes on Node 22.12.1 (just above floor)", () => {
+      expect(getNodeVersionError("v22.12.1", FLOOR)).toBeNull();
+    });
+
+    it("passes on Node 24.x (well above floor)", () => {
+      expect(getNodeVersionError("v24.0.0", FLOOR)).toBeNull();
+    });
+
+    it("strips the >= range operator before comparing", () => {
+      // Guards the load-bearing detail: without normalization,
+      // parseInt(">=22") → NaN → 0 would wrongly pass Node 20.
+      expect(getNodeVersionError("20.17.0", ">=22.12.0")).not.toBeNull();
+    });
+
+    it("returns null (skips guard) when floor is missing or unparseable", () => {
+      expect(getNodeVersionError("v20.0.0", null)).toBeNull();
+      expect(getNodeVersionError("v20.0.0", undefined)).toBeNull();
+      expect(getNodeVersionError("v20.0.0", "")).toBeNull();
+      expect(getNodeVersionError("v20.0.0", "garbage")).toBeNull();
+    });
+
+    it("includes at least one upgrade path in the message", () => {
+      const msg = getNodeVersionError("v20.0.0", FLOOR) ?? "";
+      expect(/fnm|nvm|nodejs\.org/.test(msg)).toBe(true);
+    });
+  });
+
+  describe("assertNodeVersion", () => {
+    // process.version is read-only and reflects the test runner's Node (>=22.12),
+    // so the floor is what we vary to exercise both branches.
+    it("does not exit and prints nothing when running Node satisfies the floor", () => {
+      const exitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => undefined) as never);
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      assertNodeVersion(">=22.12.0");
+
+      expect(exitSpy).not.toHaveBeenCalled();
+      expect(errorSpy).not.toHaveBeenCalled();
+
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it("prints the message and exits non-zero when below the floor", () => {
+      const exitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => undefined) as never);
+      const errorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      // A floor above any plausible runner version forces the failure branch.
+      assertNodeVersion(">=999.0.0");
+
+      expect(errorSpy).toHaveBeenCalledOnce();
+      expect(exitSpy).toHaveBeenCalledWith(1);
+
+      exitSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it("does not exit when the floor is missing", () => {
+      const exitSpy = vi
+        .spyOn(process, "exit")
+        .mockImplementation((() => undefined) as never);
+
+      assertNodeVersion(null);
+
+      expect(exitSpy).not.toHaveBeenCalled();
+      exitSpy.mockRestore();
     });
   });
 
