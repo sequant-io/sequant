@@ -5,6 +5,12 @@
  * Sequential AI phases with quality gates for any codebase.
  */
 
+// MUST stay first (#734): the Node-version preflight guard. ESM evaluates a
+// module's imports depth-first in source order before the importer's body, so
+// this side-effecting import runs the guard before commander / chalk / the
+// agent SDK / command modules are evaluated — closing the import-time crash
+// window on an old Node below the engines floor. See bin/preflight.ts.
+import "./preflight.js";
 import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import { fileURLToPath } from "url";
@@ -12,7 +18,6 @@ import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
 import {
-  assertNodeVersion,
   buildHomeStrayWarning,
   getInstallRoot,
   isHomeStrayInstall,
@@ -25,9 +30,11 @@ import {
   getPackageManagerCommands,
 } from "../src/lib/stacks.js";
 
-// Read version + engines floor from package.json dynamically
-// Works from both source (bin/) and compiled (dist/bin/) locations
-function getPackageMeta(): { version: string; engineFloor: string | null } {
+// Read version from package.json dynamically
+// Works from both source (bin/) and compiled (dist/bin/) locations.
+// Note: the engines.node floor is read separately in bin/preflight.ts, which
+// must run before this module's imports — see the side-effecting import above.
+function getVersion(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   let dir = __dirname;
   while (dir !== dirname(dir)) {
@@ -36,19 +43,16 @@ function getPackageMeta(): { version: string; engineFloor: string | null } {
       const content = readFileSync(candidate, "utf-8");
       const pkg = JSON.parse(content);
       if (pkg.name === "sequant") {
-        return {
-          version: pkg.version,
-          engineFloor: pkg.engines?.node ?? null,
-        };
+        return pkg.version;
       }
     } catch {
       // Not found, continue searching
     }
     dir = dirname(dir);
   }
-  return { version: "0.0.0", engineFloor: null }; // Fallback
+  return "0.0.0"; // Fallback
 }
-const { version, engineFloor } = getPackageMeta();
+const version = getVersion();
 import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
@@ -126,10 +130,7 @@ configureUI({
   minimal: process.env.SEQUANT_MINIMAL === "1",
 });
 
-// Fail fast with a clear message if the running Node is below the engines floor,
-// before any command logic runs. The floor is derived from package.json
-// engines.node (single source of truth), not a hardcoded literal.
-assertNodeVersion(engineFloor);
+// (Node-version preflight guard runs at import time — see bin/preflight.ts.)
 
 // Warn if running from a problematic install location.
 // The home-stray case ($HOME/node_modules/sequant) gets a distinct warning
