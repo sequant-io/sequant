@@ -300,6 +300,57 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
+ * Pure preflight check for the running Node version against the engines floor.
+ *
+ * Returns an actionable, multi-line message when `current` is below `floor`,
+ * or `null` when it satisfies the floor (or when `floor` is missing/unparseable,
+ * in which case the guard is skipped rather than crashing the CLI).
+ *
+ * `floor` is the raw `engines.node` value (e.g. ">=22.12.0"); the leading range
+ * operator is stripped before comparison. Reuses {@link compareVersions} — no
+ * `semver` dependency.
+ */
+export function getNodeVersionError(
+  current: string,
+  floor: string | null | undefined,
+): string | null {
+  // Strip any range operator (">=", "^", "~", etc.) from the floor.
+  const normalizedFloor = (floor ?? "").replace(/^[^\d]*/, "");
+  // No usable floor → skip the guard (metadata problem must not crash the CLI).
+  if (!/^\d/.test(normalizedFloor)) {
+    return null;
+  }
+
+  if (compareVersions(current, normalizedFloor) >= 0) {
+    return null;
+  }
+
+  const currentClean = current.replace(/^v/, "");
+  return [
+    `Sequant requires Node.js >=${normalizedFloor}, but you are running ${currentClean}.`,
+    "",
+    "Upgrade Node, then re-run:",
+    "  • fnm:          fnm install 22 && fnm use 22",
+    "  • nvm:          nvm install 22 && nvm use 22",
+    "  • or download:  https://nodejs.org/en/download",
+  ].join("\n");
+}
+
+/**
+ * Side-effecting wrapper around {@link getNodeVersionError}: prints the message
+ * and exits non-zero when the running Node is below the floor. Uses only
+ * built-in globals (`process.version`, `console`, `process.exit`) so it runs —
+ * rather than crashes — on the old Node it rejects.
+ */
+export function assertNodeVersion(floor: string | null | undefined): void {
+  const error = getNodeVersionError(process.version, floor);
+  if (error) {
+    console.error(error);
+    process.exit(1);
+  }
+}
+
+/**
  * Check if the current version is outdated
  */
 export function isOutdated(

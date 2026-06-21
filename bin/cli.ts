@@ -12,6 +12,7 @@ import { dirname, resolve } from "path";
 import { readFileSync } from "fs";
 import { initCommand } from "../src/commands/init.js";
 import {
+  assertNodeVersion,
   buildHomeStrayWarning,
   getInstallRoot,
   isHomeStrayInstall,
@@ -24,9 +25,9 @@ import {
   getPackageManagerCommands,
 } from "../src/lib/stacks.js";
 
-// Read version from package.json dynamically
+// Read version + engines floor from package.json dynamically
 // Works from both source (bin/) and compiled (dist/bin/) locations
-function getVersion(): string {
+function getPackageMeta(): { version: string; engineFloor: string | null } {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   let dir = __dirname;
   while (dir !== dirname(dir)) {
@@ -35,16 +36,19 @@ function getVersion(): string {
       const content = readFileSync(candidate, "utf-8");
       const pkg = JSON.parse(content);
       if (pkg.name === "sequant") {
-        return pkg.version;
+        return {
+          version: pkg.version,
+          engineFloor: pkg.engines?.node ?? null,
+        };
       }
     } catch {
       // Not found, continue searching
     }
     dir = dirname(dir);
   }
-  return "0.0.0"; // Fallback
+  return { version: "0.0.0", engineFloor: null }; // Fallback
 }
-const version = getVersion();
+const { version, engineFloor } = getPackageMeta();
 import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
@@ -121,6 +125,11 @@ configureUI({
   isCI: isCI(),
   minimal: process.env.SEQUANT_MINIMAL === "1",
 });
+
+// Fail fast with a clear message if the running Node is below the engines floor,
+// before any command logic runs. The floor is derived from package.json
+// engines.node (single source of truth), not a hardcoded literal.
+assertNodeVersion(engineFloor);
 
 // Warn if running from a problematic install location.
 // The home-stray case ($HOME/node_modules/sequant) gets a distinct warning
