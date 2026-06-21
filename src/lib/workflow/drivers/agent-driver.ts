@@ -6,6 +6,8 @@
  * interface without touching orchestration logic.
  */
 
+import type { SequantError } from "../../errors.js";
+
 /**
  * Resume handle for a previous agent session.
  *
@@ -67,6 +69,15 @@ export interface AgentPhaseResult {
   /** Driver-tagged resume handle for cwd-safe cross-phase resume (#674). */
   resumeHandle?: ResumeHandle;
   error?: string;
+  /**
+   * Typed error carrying structured cause data (#732). Set by drivers that can
+   * observe structured failure signals (e.g. ClaudeCodeDriver reading the SDK's
+   * `rate_limit_event` / assistant `error`). The executor prefers this over
+   * stderr-regex classification and uses its type to gate retry behavior (e.g.
+   * skipping the MCP fallback for non-retryable billing failures). Left
+   * undefined by drivers without structured signals (aider, subprocess paths).
+   */
+  structuredError?: SequantError;
   /** Last N lines of stderr captured via RingBuffer (#447) */
   stderrTail?: string[];
   /** Last N lines of stdout captured via RingBuffer (#447) */

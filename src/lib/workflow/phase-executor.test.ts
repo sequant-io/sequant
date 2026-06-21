@@ -22,6 +22,7 @@ import {
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
 import { ShutdownManager } from "../shutdown.js";
+import { BillingError, RateLimitError } from "../errors.js";
 
 // Mock agents-md module
 vi.mock("../agents-md.js", () => ({
@@ -641,6 +642,110 @@ describe("executePhaseWithRetry", () => {
     expect(result.success).toBe(false);
     // Only 3 calls (no MCP fallback since mcp was already false)
     expect(executePhaseFn).toHaveBeenCalledTimes(3);
+  });
+
+  // === #732: structured rate-limit / billing errors ===
+
+  it("surfaces the structured cause and skips MCP fallback for a billing failure (AC-3, AC-4)", async () => {
+    // Genuine failure (>= 60s) carrying a non-retryable BillingError.
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 120,
+        error: "Out of credits",
+        structuredError: new BillingError("Out of credits", {
+          overageDisabledReason: "out_of_credits",
+        }),
+      }),
+    );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    // AC-3: real cause surfaced, not generic #592 fallback noise.
+    expect(result.error).toBe("Out of credits");
+    // AC-4: billing failure must NOT trigger the no-MCP retry — single call,
+    // and no call was ever made with mcp disabled.
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    const mcpDisabledCall = executePhaseFn.mock.calls.find(
+      (call) => (call[2] as ExecutionConfig).mcp === false,
+    );
+    expect(mcpDisabledCall).toBeUndefined();
+  });
+
+  it("skips MCP fallback for a cold-start-range billing failure (AC-4)", async () => {
+    // Billing failure that lands in the cold-start window: cold-start retries
+    // run, but the MCP fallback after them must still be skipped.
+    const billing = () =>
+      makeResult({
+        durationSeconds: 5,
+        error: "Out of credits",
+        structuredError: new BillingError("Out of credits", {
+          overageDisabledReason: "out_of_credits",
+        }),
+      });
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(billing())
+      .mockResolvedValueOnce(billing())
+      .mockResolvedValueOnce(billing());
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    // 3 cold-start attempts, NO 4th mcp-disabled fallback call.
+    expect(executePhaseFn).toHaveBeenCalledTimes(3);
+    const mcpDisabledCall = executePhaseFn.mock.calls.find(
+      (call) => (call[2] as ExecutionConfig).mcp === false,
+    );
+    expect(mcpDisabledCall).toBeUndefined();
+  });
+
+  it("still retries a transient rate-limit failure (RateLimitError is retryable)", async () => {
+    // Genuine-duration failure with a retryable RateLimitError → one more
+    // attempt is allowed, unlike the non-retryable billing case.
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResult({
+          durationSeconds: 120,
+          structuredError: new RateLimitError("Rate limited — resets at 14:30"),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 130 }),
+      );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(2);
   });
 
   it("returns original error when MCP fallback also fails", async () => {

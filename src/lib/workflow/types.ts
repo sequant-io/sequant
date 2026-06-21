@@ -8,6 +8,7 @@ import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
+import type { SequantError } from "../errors.js";
 
 // Importing the registry triggers its side-effect registrations (built-ins
 // live at the bottom of phase-registry.ts), guaranteeing the registry is
@@ -210,6 +211,13 @@ export interface PhaseResult {
   success: boolean;
   durationSeconds?: number;
   error?: string;
+  /**
+   * Typed error with structured cause data, propagated from the driver's
+   * `AgentPhaseResult.structuredError` (#732). When present, the retry logic
+   * prefers it over stderr-regex classification and uses its type to gate the
+   * MCP fallback (a `BillingError` skips the misleading retry — #592).
+   */
+  structuredError?: SequantError;
   /** Captured output from the phase (used for parsing spec recommendations) */
   output?: string;
   /** Parsed QA verdict (only for qa phase) */
