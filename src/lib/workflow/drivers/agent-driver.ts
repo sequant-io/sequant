@@ -67,6 +67,13 @@ export interface AgentPhaseResult {
   /** Driver-tagged resume handle for cwd-safe cross-phase resume (#674). */
   resumeHandle?: ResumeHandle;
   error?: string;
+  /**
+   * Set when the agent hit its `maxTurns` ceiling (`error_max_turns`). The
+   * `output` is partial-but-usable rather than a hard failure, so consumers
+   * can treat it as inconclusive/incomplete instead of discarding the work.
+   * See #733.
+   */
+  capped?: boolean;
   /** Last N lines of stderr captured via RingBuffer (#447) */
   stderrTail?: string[];
   /** Last N lines of stdout captured via RingBuffer (#447) */

@@ -168,12 +168,32 @@ export class ClaudeCodeDriver implements AgentDriver {
           };
         }
 
+        // Turn-cap is a soft, recoverable outcome, not a hard failure: the
+        // agent produced partial work before hitting its `maxTurns` ceiling
+        // (turn caps are live on every agent since #484). Warn (not error)
+        // and return the partial output flagged `capped` so consumers — the
+        // /qa and /exec skills — can treat it as inconclusive/incomplete
+        // rather than discarding the work. See #733. Branched out of the
+        // error switch below so it never carries a hard `error` string.
+        if (resultMessage.subtype === "error_max_turns") {
+          config.onStderr?.(
+            "⚠️ Agent hit its turn cap (error_max_turns). Returning partial results.\n",
+          );
+          return {
+            success: false,
+            capped: true,
+            output: capturedOutput,
+            sessionId: resultSessionId,
+            resumeHandle,
+            stderrTail: stderrBuffer.getLines(),
+            stdoutTail: stdoutBuffer.getLines(),
+          };
+        }
+
         // Handle error subtypes
         let error: string;
         const errorSubtype = resultMessage.subtype;
-        if (errorSubtype === "error_max_turns") {
-          error = "Max turns reached";
-        } else if (errorSubtype === "error_during_execution") {
+        if (errorSubtype === "error_during_execution") {
           error = resultMessage.errors?.join(", ") || "Error during execution";
         } else if (errorSubtype === "error_max_budget_usd") {
           error = "Budget limit exceeded";

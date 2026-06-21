@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Graceful `error_max_turns` handling for subagents (#733)** — when a subagent hits its `maxTurns` cap, `ClaudeCodeDriver` previously treated `error_max_turns` as a hard failure (`error: "Max turns reached"`), discarding the partial work the agent had already produced. With turn caps live on every agent (#484) this is a real, reachable failure mode. The driver now logs a **warning** (via the `onStderr` channel) instead of an error and returns the partial output flagged with a new additive `capped: true` field on `AgentPhaseResult`, so the work is preserved rather than thrown away. The `/qa` skill treats a turn-capped check as **inconclusive** (flagged in the QA summary, never failing the whole phase on the cap alone), and `/exec` treats a turn-capped implementer as **incomplete** (reporting which tasks finished vs. which were capped for the next iteration to resume). Orchestrator-level partial-preservation in `phase-executor` is intentionally out of scope (sub-agent caps only). (#733)
+
 ## [2.7.0] - 2026-06-10
 
 ### Added
