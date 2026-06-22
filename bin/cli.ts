@@ -5,6 +5,12 @@
  * Sequential AI phases with quality gates for any codebase.
  */
 
+// MUST stay first (#734): the Node-version preflight guard. ESM evaluates a
+// module's imports depth-first in source order before the importer's body, so
+// this side-effecting import runs the guard before commander / chalk / the
+// agent SDK / command modules are evaluated — closing the import-time crash
+// window on an old Node below the engines floor. See bin/preflight.ts.
+import "./preflight.js";
 import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import { fileURLToPath } from "url";
@@ -25,7 +31,9 @@ import {
 } from "../src/lib/stacks.js";
 
 // Read version from package.json dynamically
-// Works from both source (bin/) and compiled (dist/bin/) locations
+// Works from both source (bin/) and compiled (dist/bin/) locations.
+// Note: the engines.node floor is read separately in bin/preflight.ts, which
+// must run before this module's imports — see the side-effecting import above.
 function getVersion(): string {
   const __dirname = dirname(fileURLToPath(import.meta.url));
   let dir = __dirname;
@@ -121,6 +129,8 @@ configureUI({
   isCI: isCI(),
   minimal: process.env.SEQUANT_MINIMAL === "1",
 });
+
+// (Node-version preflight guard runs at import time — see bin/preflight.ts.)
 
 // Warn if running from a problematic install location.
 // The home-stray case ($HOME/node_modules/sequant) gets a distinct warning

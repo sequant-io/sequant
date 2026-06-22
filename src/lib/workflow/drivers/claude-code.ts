@@ -6,8 +6,19 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  SDKResultMessage,
+  SDKRateLimitInfo,
+  SDKAssistantMessageError,
+} from "@anthropic-ai/claude-agent-sdk";
 import { getMcpServersConfig } from "../../system.js";
+import {
+  type SequantError,
+  RateLimitError,
+  BillingError,
+  createRateLimitError,
+  isRateLimitFailureInfo,
+} from "../../errors.js";
 import { RingBuffer } from "../ring-buffer.js";
 import type {
   AgentDriver,
@@ -66,6 +77,17 @@ export class ClaudeCodeDriver implements AgentDriver {
     let resultMessage: SDKResultMessage | undefined;
     let capturedOutput = "";
     let capturedStderr = "";
+
+    // Structured rate-limit / billing signals captured from the SDK stream
+    // (#732). The SDK emits these but sequant previously dropped them on the
+    // floor, falling back to regex-on-stderr classification. We keep only the
+    // latest *failure-grade* rate-limit info (rejection or billing) so an
+    // informational `allowed_warning` event isn't mis-attributed to an
+    // unrelated phase failure.
+    let rateLimitInfo: SDKRateLimitInfo | undefined;
+    let assistantError: SDKAssistantMessageError | undefined;
+    // Last api_retry signal, captured opportunistically for diagnostics.
+    let apiRetryError: SDKAssistantMessageError | undefined;
     const stderrBuffer = new RingBuffer(50);
     const stdoutBuffer = new RingBuffer(50);
 
@@ -124,7 +146,31 @@ export class ClaudeCodeDriver implements AgentDriver {
           resultSessionId = message.session_id;
         }
 
+        // Capture structured rate-limit info (#732). Only retain
+        // failure-grade events (rejection / billing) so a benign warning
+        // doesn't poison the failure path.
+        if (
+          message.type === "rate_limit_event" &&
+          isRateLimitFailureInfo(message.rate_limit_info)
+        ) {
+          rateLimitInfo = message.rate_limit_info;
+        }
+
+        // Capture api_retry diagnostics (#732, optional). These are transient
+        // retries the SDK performs internally; recorded for the structured
+        // error fallback when no rate_limit_event/assistant error is present.
+        if (message.type === "system" && message.subtype === "api_retry") {
+          apiRetryError = message.error;
+        }
+
         if (message.type === "assistant") {
+          // Capture the assistant-level error field (#732) — `rate_limit`,
+          // `billing_error`, `overloaded`, etc. Previously discarded by the
+          // text-only content filter below.
+          if (message.error) {
+            assistantError = message.error;
+          }
+
           const content = message.message.content as Array<{
             type: string;
             text?: string;
@@ -155,6 +201,15 @@ export class ClaudeCodeDriver implements AgentDriver {
       // `config.cwd`. `sessionId` is mirrored for one release (#674) so
       // upgraded callers can still drive resume off the deprecated field.
       const resumeHandle = this.buildResumeHandle(resultSessionId, config.cwd);
+
+      // Build a typed error from structured SDK signals (#732). Present only
+      // when the stream surfaced a rate-limit/billing failure; otherwise
+      // undefined and the executor falls back to stderr-regex classification.
+      const structuredError = this.buildStructuredError(
+        rateLimitInfo,
+        assistantError,
+        apiRetryError,
+      );
 
       if (resultMessage) {
         if (resultMessage.subtype === "success") {
@@ -206,7 +261,10 @@ export class ClaudeCodeDriver implements AgentDriver {
           output: capturedOutput,
           sessionId: resultSessionId,
           resumeHandle,
-          error,
+          // Prefer the structured cause (e.g. "Out of credits") over the
+          // generic subtype text when available (#732).
+          error: structuredError?.message ?? error,
+          structuredError,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
         };
@@ -217,7 +275,8 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         resumeHandle,
-        error: "No result received from Claude",
+        error: structuredError?.message ?? "No result received from Claude",
+        structuredError,
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
       };
@@ -235,6 +294,17 @@ export class ClaudeCodeDriver implements AgentDriver {
         };
       }
 
+      // If the stream surfaced a failure-grade rate-limit/billing signal before
+      // throwing, prefer that typed cause (#732) over the raw thrown message — a
+      // mid-stream throw after a *rejected* rate_limit_event is very likely the
+      // proximate cause. Abort/timeout is handled above first, so a genuine
+      // timeout is never masked by a stale rate-limit signal.
+      const structuredError = this.buildStructuredError(
+        rateLimitInfo,
+        assistantError,
+        apiRetryError,
+      );
+
       const stderrSuffix = capturedStderr
         ? `\nStderr: ${capturedStderr.slice(0, 500)}`
         : "";
@@ -244,10 +314,64 @@ export class ClaudeCodeDriver implements AgentDriver {
         output: capturedOutput,
         sessionId: resultSessionId,
         resumeHandle: this.buildResumeHandle(resultSessionId, config.cwd),
-        error: error + stderrSuffix,
+        error: structuredError?.message ?? error + stderrSuffix,
+        structuredError,
         stderrTail: stderrBuffer.getLines(),
         stdoutTail: stdoutBuffer.getLines(),
       };
+    }
+  }
+
+  /**
+   * Derive a typed {@link SequantError} from structured SDK failure signals
+   * (#732). Precedence: a captured `rate_limit_event` (richest signal) wins;
+   * otherwise the assistant-level `error`; otherwise the last `api_retry`
+   * error. Returns undefined when no rate-limit/billing signal was seen, so
+   * the executor falls back to stderr-regex classification.
+   *
+   * Exception: a non-retryable billing failure must never be downgraded to a
+   * retryable {@link RateLimitError}. If the `rate_limit_event` was only a
+   * transient throttle but the assistant separately reported `billing_error`,
+   * the billing cause wins — a retry cannot refill credits, and a
+   * RateLimitError would wrongly re-enable the retry / MCP-fallback path. When
+   * the `rate_limit_event` is itself a billing failure its richer metadata
+   * (`canUserPurchaseCredits`, etc.) is preserved.
+   */
+  private buildStructuredError(
+    rateLimitInfo: SDKRateLimitInfo | undefined,
+    assistantError: SDKAssistantMessageError | undefined,
+    apiRetryError: SDKAssistantMessageError | undefined,
+  ): SequantError | undefined {
+    if (rateLimitInfo) {
+      const err = createRateLimitError(rateLimitInfo);
+      if (err instanceof RateLimitError && assistantError === "billing_error") {
+        return new BillingError("Billing error");
+      }
+      return err;
+    }
+    return (
+      this.errorFromAssistantError(assistantError) ??
+      this.errorFromAssistantError(apiRetryError)
+    );
+  }
+
+  /**
+   * Map the SDK's assistant/api-retry error enum to a typed error. Only
+   * rate-limit / billing variants are mapped; other variants (auth, etc.)
+   * return undefined and defer to the existing classification path.
+   */
+  private errorFromAssistantError(
+    error: SDKAssistantMessageError | undefined,
+  ): SequantError | undefined {
+    switch (error) {
+      case "billing_error":
+        return new BillingError("Billing error");
+      case "rate_limit":
+        return new RateLimitError("Rate limited");
+      case "overloaded":
+        return new RateLimitError("API overloaded");
+      default:
+        return undefined;
     }
   }
 
