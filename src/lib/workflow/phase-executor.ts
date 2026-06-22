@@ -759,6 +759,12 @@ async function executePhase(
     // Propagate the driver's typed cause (#732) so the retry logic can prefer
     // it over stderr-regex classification and gate the MCP fallback.
     structuredError: agentResult.structuredError,
+    // Propagate the turn-cap flag and the partial output (#739). On the failure
+    // path `output` was previously dropped entirely — for a capped phase the
+    // partial work is usable and must be preserved, mirroring the driver/skill
+    // slice from #733.
+    capped: agentResult.capped,
+    output: agentResult.output,
     sessionId: agentResult.sessionId,
     resumeHandle: agentResult.resumeHandle,
     stderrTail: agentResult.stderrTail,
@@ -839,6 +845,15 @@ export async function executePhaseWithRetry(
     if (lastResult.success) {
       return lastResult;
     }
+
+    // Turn-capped phase (#739): incomplete-but-not-hard-failed. A retry cannot
+    // un-cap a turn limit, so short-circuit before any fallback — same rationale
+    // as the billing skip (#732), but capped must skip *all* retries (incl.
+    // cold-start), so an explicit early return is required, not just a guard
+    // flag at the MCP gate.
+    if (lastResult.capped) {
+      return lastResult;
+    }
   } else {
     // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
     for (let attempt = 0; attempt <= COLD_START_MAX_RETRIES; attempt++) {
@@ -856,6 +871,15 @@ export async function executePhaseWithRetry(
 
       // Success → return immediately
       if (lastResult.success) {
+        return lastResult;
+      }
+
+      // Turn-capped phase (#739): short-circuit before cold-start retries, the
+      // MCP fallback, and the spec-extra retry — a retry cannot un-cap a turn
+      // limit. The early return here (rather than a guard at the MCP gate alone)
+      // is what skips the cold-start re-spawns, unlike the billing case which
+      // still cold-start-retries in the <60s window.
+      if (lastResult.capped) {
         return lastResult;
       }
 
@@ -916,11 +940,17 @@ export async function executePhaseWithRetry(
   // noise (#592) would only mask the real cause. The accurate structured
   // message (e.g. "Out of credits") is surfaced instead.
   const failureIsBilling = lastResult!.structuredError instanceof BillingError;
+  // Belt-and-suspenders (#739): the capped early-returns above already exit
+  // before reaching here, but gate the MCP fallback on `!failureIsCapped` too so
+  // intent is documented and future code paths can't accidentally re-spawn a
+  // capped phase without MCP.
+  const failureIsCapped = lastResult!.capped === true;
   if (
     config.mcp &&
     !lastResult!.success &&
     !skipColdStartRetry &&
-    !failureIsBilling
+    !failureIsBilling &&
+    !failureIsCapped
   ) {
     bracketedConsoleLog(
       spinner,

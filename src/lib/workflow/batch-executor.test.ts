@@ -53,6 +53,7 @@ vi.mock("./error-classifier.js", () => ({
 }));
 
 import { executePhaseWithRetry } from "./phase-executor.js";
+import { createPhaseLogFromTiming } from "./log-writer.js";
 import { runIssueWithLogging } from "./batch-executor.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
@@ -573,6 +574,95 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
         expect(call[6]).toBe(handle);
       }
     });
+  });
+});
+
+// #739 AC-3: a turn-capped phase surfaces a distinct "partial output preserved"
+// signal (not a generic failure), persists the partial output + capped marker,
+// and halts the run cleanly for resume.
+describe("runIssueWithLogging — #739: turn-capped phase signal (AC-3)", () => {
+  it("emits a distinct capped progress signal, logs the capped marker, and halts", async () => {
+    const cappedResult: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 120,
+      capped: true,
+      output: "partial work before turn cap",
+    };
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue(cappedResult);
+
+    const onProgress = vi.fn();
+    const logPhase = vi.fn();
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 739,
+        title: "Capped phase",
+        config: { phases: ["exec", "qa"] },
+        options: { autoDetectPhases: false },
+      }),
+      onProgress,
+      services: {
+        logWriter: { logPhase } as never,
+        stateManager: null,
+      },
+    });
+
+    // Distinct signal: the failed event carries the capped message, not "unknown".
+    const failedCall = onProgress.mock.calls.find(
+      (c) => c[1] === "exec" && c[2] === "failed",
+    );
+    expect(failedCall).toBeDefined();
+    expect((failedCall![3] as { error: string }).error).toMatch(/turn cap/i);
+
+    // Partial output preserved in the phase results (state).
+    const execResult = result.phaseResults.find((p) => p.phase === "exec");
+    expect(execResult?.capped).toBe(true);
+    expect(execResult?.output).toBe("partial work before turn cap");
+
+    // Phase log marks it capped (status stays "failure", no new enum value).
+    const loggedOptions = vi
+      .mocked(createPhaseLogFromTiming)
+      .mock.calls.map((c) => c[5]);
+    expect(loggedOptions.some((o) => o?.capped === true)).toBe(true);
+
+    // Run halts cleanly: the downstream qa phase never runs.
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["exec"]);
+    expect(result.success).toBe(false);
+  });
+
+  it("skips the quality loop on a capped phase (halts instead of looping on partial work)", async () => {
+    // With the quality loop enabled, a genuine qa failure would spawn /loop. A
+    // capped qa must NOT — partial output is incomplete, so we halt for resume.
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "qa",
+      success: false,
+      durationSeconds: 120,
+      capped: true,
+      output: "partial qa",
+    } as PhaseResult);
+
+    const result = await runIssueWithLogging(
+      makeCtx({
+        issueNumber: 740,
+        title: "Capped qa with quality loop",
+        config: {
+          phases: ["qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+        },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    // No "loop" phase spawned, and qa ran exactly once (no loop iteration).
+    expect(calledPhases).toEqual(["qa"]);
+    expect(calledPhases).not.toContain("loop");
+    expect(result.success).toBe(false);
   });
 });
 

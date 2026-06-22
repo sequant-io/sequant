@@ -791,6 +791,10 @@ export async function runIssueWithLogging(
   const useQualityLoop = config.qualityLoop || detectedQualityLoop;
   const maxIterations = useQualityLoop ? config.maxIterations : 1;
   let completedSuccessfully = false;
+  // Set when a phase hits its turn cap (#739): halt the outer quality-loop
+  // retry too, not just the inner /loop spawn — re-running a capped phase
+  // would only cap again, and "surface + halt" means the user resumes.
+  let haltedByCap = false;
 
   while (iteration < maxIterations) {
     iteration++;
@@ -877,7 +881,18 @@ export async function runIssueWithLogging(
           /* progress errors must not halt */
         }
       } else {
-        const extra = { error: result.error ?? "unknown", iteration };
+        // A turn-capped phase is incomplete-but-not-hard-failed (#739): surface a
+        // distinct "partial output preserved" signal instead of a generic failure
+        // reason, so the user knows the run halted on a recoverable cap (and can
+        // resume) rather than on a genuine error. The partial `result.output` is
+        // already preserved in `phaseResults` (pushed above) and the phase log
+        // (`capped` flag below); the run still halts cleanly at the `break` below.
+        const extra = {
+          error: result.capped
+            ? "turn cap reached — partial output preserved (resume to continue)"
+            : (result.error ?? "unknown"),
+          iteration,
+        };
         emitProgressLine(issueNumber, phase, "failed", extra);
         try {
           onProgress?.(issueNumber, phase, "failed", extra);
@@ -932,6 +947,9 @@ export async function runIssueWithLogging(
               : "failure",
           {
             error: result.error,
+            // Mark a turn-capped phase distinctly in the log (#739): status stays
+            // "failure" (no new enum value) but `capped` flags it as recoverable.
+            capped: result.capped,
             verdict: result.verdict,
             summary: result.summary,
             // Observability fields (AC-1, AC-2, AC-3, AC-7)
@@ -968,9 +986,16 @@ export async function runIssueWithLogging(
         // Phase succeeded — RunRenderer (#618) updates state via onProgress.
       } else {
         phasesFailed = true;
+        if (result.capped) {
+          haltedByCap = true;
+        }
 
-        // If quality loop enabled, run loop phase to fix issues
-        if (useQualityLoop && iteration < maxIterations) {
+        // If quality loop enabled, run loop phase to fix issues.
+        // A turn-capped phase (#739) is incomplete, not a genuine quality
+        // failure: skip the loop and halt cleanly ("surface + halt"). Spawning
+        // /loop on partial output would act on incomplete work — exactly the
+        // risk the capped path is meant to avoid. The user resumes instead.
+        if (useQualityLoop && iteration < maxIterations && !result.capped) {
           // #624 Item 3 (AC-3.3): the loop phase carries the current outer
           // iteration so the live-zone status cell can show `loop N/M`.
           const loopStartExtra: { iteration: number } = { iteration };
@@ -1044,6 +1069,12 @@ export async function runIssueWithLogging(
     // If all phases passed, exit the loop
     if (!phasesFailed) {
       completedSuccessfully = true;
+      break;
+    }
+
+    // A turn-capped phase (#739) halts the outer quality-loop retry as well —
+    // re-running would only cap again; the partial work is already preserved.
+    if (haltedByCap) {
       break;
     }
 

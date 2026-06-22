@@ -334,6 +334,7 @@ export function createPhaseLogFromTiming(
     Pick<
       PhaseLog,
       | "error"
+      | "capped"
       | "iterations"
       | "filesModified"
       | "testsRun"

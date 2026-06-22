@@ -748,6 +748,97 @@ describe("executePhaseWithRetry", () => {
     expect(executePhaseFn).toHaveBeenCalledTimes(2);
   });
 
+  // === #739: turn-capped phases (orchestrator-level) ===
+
+  it("preserves the capped flag and partial output on a capped phase (AC-1)", async () => {
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 120,
+        capped: true,
+        output: "partial work before turn cap",
+        error: undefined,
+      }),
+    );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.capped).toBe(true);
+    expect(result.output).toBe("partial work before turn cap");
+  });
+
+  it("skips the cold-start retry and MCP fallback for a capped phase (AC-2)", async () => {
+    // Capped failure lands in the cold-start window (<60s): without the capped
+    // short-circuit this would cold-start-retry 3× then MCP-fallback. Capped must
+    // skip all of them — a retry cannot un-cap a turn limit.
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 5,
+        capped: true,
+        output: "partial",
+        error: undefined,
+      }),
+    );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.capped).toBe(true);
+    // Exactly one invocation: no cold-start re-spawn, no MCP fallback.
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    const mcpDisabledCall = executePhaseFn.mock.calls.find(
+      (call) => (call[2] as ExecutionConfig).mcp === false,
+    );
+    expect(mcpDisabledCall).toBeUndefined();
+  });
+
+  it("skips the spec-extra retry for a capped spec phase (AC-2)", async () => {
+    // `spec` has an extra retry path beyond the MCP fallback; a capped spec must
+    // short-circuit before it too. Single invocation proves no spec-extra retry.
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        phase: "spec",
+        durationSeconds: 5,
+        capped: true,
+        output: "partial spec",
+        error: undefined,
+      }),
+    );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "spec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.capped).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+  });
+
   it("returns original error when MCP fallback also fails", async () => {
     const executePhaseFn = vi
       .fn()
