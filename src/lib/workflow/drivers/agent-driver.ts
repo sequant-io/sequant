@@ -70,6 +70,13 @@ export interface AgentPhaseResult {
   resumeHandle?: ResumeHandle;
   error?: string;
   /**
+   * Set when the agent hit its `maxTurns` ceiling (`error_max_turns`). The
+   * `output` is partial-but-usable rather than a hard failure, so consumers
+   * can treat it as inconclusive/incomplete instead of discarding the work.
+   * See #733.
+   */
+  capped?: boolean;
+  /**
    * Typed error carrying structured cause data (#732). Set by drivers that can
    * observe structured failure signals (e.g. ClaudeCodeDriver reading the SDK's
    * `rate_limit_event` / assistant `error`). The executor prefers this over

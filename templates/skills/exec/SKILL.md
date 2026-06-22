@@ -1657,6 +1657,35 @@ Parse the agent's output text for these patterns to detect failures:
 | `blocked by hook` | Operation was blocked by pre-tool hook |
 | `I'm unable to` | Agent hit a blocking constraint |
 
+### 4b2. Detecting Turn-Capped Implementers (Incomplete, not Failed)
+
+Every spawned implementer runs under a `maxTurns` cap (live since #484). Hitting the cap is **not** a failure — the agent did real, partial work before running out of turns, and that work is preserved (driver returns it flagged `capped: true` and warns rather than erroring, #733). Treat a capped implementer as **incomplete**, distinct from the hook-block failures in Section 4b.
+
+**Turn-cap detection keywords** (parse the agent's output text):
+
+| Pattern | Meaning |
+|---------|---------|
+| `error_max_turns` | Agent hit its turn cap |
+| `turn cap` / `Returning partial results` | Driver-emitted turn-cap warning |
+| Output ends mid-task with no completion report | Likely capped |
+
+**How to handle a capped implementer:**
+
+- Do **not** discard its changes or roll back the group — keep the partial work it committed.
+- Record, per task, **which tasks finished vs. which were capped**. A capped task is incomplete, not done.
+- Continue with the remaining (non-capped) tasks normally; one cap does not abort the whole `/exec` run.
+- The next `/exec` iteration (or a resumed session) picks up the capped task to finish it — note it explicitly so it is not mistaken for complete.
+- Reflect capped tasks honestly in the AC verification table (⚠️ Partial) and the progress update, rather than reporting the AC as fully satisfied.
+
+```markdown
+### Parallel Group Results
+
+| Task | Status |
+|------|--------|
+| Create types/metrics.ts | ✅ Finished |
+| Refactor batch-executor | ⚠️ Capped (incomplete — resume next iteration) |
+```
+
 ### 4c. Prompt Templates for Sub-Agents
 
 When spawning sub-agents for implementation tasks, use task-specific prompt templates for better results. See [prompt-templates.md](../_shared/references/prompt-templates.md) for the full reference.
