@@ -69,6 +69,20 @@ If the output is non-empty, paste every line verbatim above the dashboard table 
 
 The orchestrator/MCP mode (`SEQUANT_ORCHESTRATOR` set) returns no output, so the call is safe to make unconditionally.
 
+**Command prefix (#740, read-only):**
+
+Probe once here for a global/PATH `sequant`, and reuse the result for every emitted run command below. `npx sequant` is the invocation most prone to version skew (a dual node prefix plus npx cache reuse can silently run a *stale* binary while a directly-installed `sequant` on PATH is current), so prefer a resolvable global install when one exists.
+
+```bash
+# Resolve CMD_PREFIX once here; reuse it for every emitted run command below.
+command -v sequant >/dev/null 2>&1 && CMD_PREFIX="sequant" || CMD_PREFIX="npx sequant"
+```
+
+- Global install on PATH → `CMD_PREFIX="sequant"` → emit `sequant run …`
+- No global install (npx-only) → `CMD_PREFIX="npx sequant"` → emit `npx sequant run …` (unchanged default — zero behavior change for npx-only users)
+
+The probe is read-only and side-effect-free, so it runs unconditionally, including in orchestrator/MCP mode (`SEQUANT_ORCHESTRATOR` set).
+
 **From GitHub (parallel for all issues):**
 
 ```bash
@@ -182,7 +196,7 @@ Triggers (any one):
 - Issue body or comments mention `"depends on #N"`, `"blocked by #N"`, or `"after #N"`
 - One issue's described output is another issue's input (e.g., A changes a function signature that B consumes)
 
-Format: `Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>`
+Format: `Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
 
 Flag references:
 - `--chain` chains issues (each branches from previous; implies `--sequential`)
@@ -233,15 +247,15 @@ False-positive guards and tunables (excluded paths, the path regex, the slash-co
 ...
 ────────────────────────────────────────────────────────────────
 Commands:
-  npx sequant run <N1> <N2> <flags>
-  npx sequant run <N3> <flags>              # resume
+  <CMD_PREFIX> run <N1> <N2> <flags>
+  <CMD_PREFIX> run <N3> <flags>              # resume
 ────────────────────────────────────────────────────────────────
 Order: <N> → <N> (<dependency reason>)
 
 ⚠ #<N>  <warning>
 ⚠ #<N>  <warning>
 
-Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <reason>
+Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <reason>
 
 Flags:
   <flag>                <one-line reason>
@@ -286,6 +300,7 @@ The commands block is headed by `Commands:` — no box-drawing, no character cou
 6. If ALL issues share the same workflow, emit a single command
 7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
 8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts:186`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — additive flags: `--testgen` and `--security-review` (`bin/cli.ts:208-209`). Use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Use `--security-review` instead of `--phases spec,security-review,exec,qa`. The posted marker (`<!-- assess:phases=… -->`) records the full resolved workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
+9. **Command prefix:** Substitute the Step-1 `CMD_PREFIX` for every emitted command — the Commands block, the `Chain:` line, and the single-issue detail-mode command. A resolvable global `sequant` on PATH yields `sequant run …`; npx-only yields `npx sequant run …` (the default). Never mix prefixes within a single assessment.
 
 #### Annotation Rules
 
@@ -303,7 +318,7 @@ Emit annotations in this order between the separators that follow `Commands:`:
   - `⚠ #412  bug + auth labels — domain label (auth) takes priority over bug`
 
 - **`Chain:`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology. Does not replace the default per-issue commands. Format:
-  `Chain: npx sequant run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>`
+  `Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
 
 - **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-Q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
   ```
@@ -320,6 +335,8 @@ Emit annotations in this order between the separators that follow `Commands:`:
 #### Batch Example (mixed states, with label priority)
 
 Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
+
+> **Prefix in examples:** The worked examples in this doc show the `npx sequant` default (the zero-install path). When the Step-1 probe resolves a global `sequant` on PATH, `CMD_PREFIX="sequant"` and every emitted command uses `sequant run …` instead — consistently within one assessment (see Commands Block Rule #9).
 
 ```
  #    Action     Reason                              Run
@@ -485,7 +502,7 @@ More context since you're focused on one issue. Separators between every section
 → PROCEED — <one-line reason>
 
 Commands:
-  npx sequant run <N> <flags>
+  <CMD_PREFIX> run <N> <flags>
 
 <phases> · <N> ACs
 
@@ -617,7 +634,7 @@ Need: <specific information required>
 → REWRITE — <reason>
 
 Commands:
-  npx sequant run <N> <flags>                 # fresh start
+  <CMD_PREFIX> run <N> <flags>                 # fresh start
 
 <phases> · <N> ACs
 ────────────────────────────────────────────────────────────────
