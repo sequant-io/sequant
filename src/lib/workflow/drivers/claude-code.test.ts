@@ -68,6 +68,89 @@ describe("ClaudeCodeDriver", () => {
     expect(typeof driver.name).toBe("string");
   });
 
+  describe("error_max_turns handling (#733, AC-1)", () => {
+    function makeConfig(onStderr?: (text: string) => void) {
+      return {
+        cwd: "/tmp/fixture/733",
+        env: {},
+        phaseTimeout: 60,
+        verbose: false,
+        mcp: false,
+        onStderr,
+      };
+    }
+
+    // Prior assistant text the agent produced before hitting the turn cap.
+    const PARTIAL_ASSISTANT = {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "partial work done" }] },
+    };
+
+    it("returns partial output flagged capped, with no hard error string", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          PARTIAL_ASSISTANT,
+          { type: "result", subtype: "error_max_turns" },
+        ]),
+      );
+      const driver = new ClaudeCodeDriver();
+
+      const result = await driver.executePhase("prompt", makeConfig());
+
+      // Partial work is preserved, not discarded.
+      expect(result.output).toBe("partial work done");
+      // Flagged so /qa and /exec can treat it as inconclusive/incomplete.
+      expect(result.capped).toBe(true);
+      // No hard "Max turns reached" error — turn-cap is a soft outcome.
+      expect(result.error).toBeUndefined();
+    });
+
+    it("warns (not errors) via the onStderr channel", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          PARTIAL_ASSISTANT,
+          { type: "result", subtype: "error_max_turns" },
+        ]),
+      );
+      const driver = new ClaudeCodeDriver();
+      const warnings: string[] = [];
+
+      await driver.executePhase(
+        "prompt",
+        makeConfig((t) => warnings.push(t)),
+      );
+
+      expect(warnings.join("")).toMatch(/turn cap/i);
+    });
+
+    // FAILURE PATH (regression guard): the turn-cap branch must be NARROW.
+    // Other error subtypes still fail hard — `success: false`, a real error
+    // string, and NO `capped` flag — so the soft-cap handling can't mask a
+    // genuine execution failure. Guards the riskiest part of #733's change.
+    it("does not flag non-capped error subtypes as capped", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          PARTIAL_ASSISTANT,
+          {
+            type: "result",
+            subtype: "error_during_execution",
+            errors: ["boom"],
+          },
+        ]),
+      );
+      const driver = new ClaudeCodeDriver();
+
+      const result = await driver.executePhase("prompt", makeConfig());
+
+      expect(result.success).toBe(false);
+      expect(result.capped).toBeUndefined();
+      expect(result.error).toContain("boom");
+    });
+  });
+
   // === AC-1 / AC-6: stream loop reads rate_limit_event + assistant error ===
 
   describe("structured rate-limit / billing capture (#732)", () => {

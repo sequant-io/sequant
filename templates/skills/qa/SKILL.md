@@ -1085,6 +1085,30 @@ skill_modified=$(git diff main...HEAD --name-only | grep -E "^\.(claude/skills|s
 ```
 If skill files are modified, the quality-checks.sh script automatically runs the three-directory sync check (section 12). If divergence is detected, this blocks `READY_FOR_MERGE` — verdict becomes `AC_MET_BUT_NOT_A_PLUS` with a note to run `npx tsx scripts/check-skill-sync.ts --fix`.
 
+#### Turn-Capped Checks → Inconclusive (not a phase failure)
+
+A spawned quality-check sub-agent runs under a `maxTurns` cap (live on every agent since #484). When an agent hits that cap, its work is **partial**, not failed — the driver returns it flagged `capped: true` and warns rather than erroring (#733).
+
+**How to recognize a turn-capped check:** the sub-agent's reported output is truncated mid-analysis, ends without a verdict, or explicitly notes it ran out of turns (look for `error_max_turns`, "turn cap", or "Returning partial results" in its output).
+
+**How to handle it — do NOT fail the whole QA phase on a cap alone:**
+
+- Mark that single check **⚠️ Inconclusive** in the QA summary, with a one-line reason (`hit turn cap — partial analysis`).
+- Use whatever partial findings the capped agent *did* surface; do not discard them.
+- Let the **other** checks proceed and contribute to the verdict normally.
+- If a capped check leaves an AC genuinely unverified, the verdict is `NEEDS_VERIFICATION` for that AC — never a hard `AC_NOT_MET` justified solely by the cap.
+- Surface inconclusive checks prominently so a human can re-run that check (e.g. with a higher cap) rather than silently treating the cap as a pass.
+
+```markdown
+### Quality Checks
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Type safety | ✅ Pass | 0 issues |
+| Scope/size | ⚠️ Inconclusive | hit turn cap — partial analysis, re-run recommended |
+| Security | ✅ Pass | 0 critical |
+```
+
 See [quality-gates.md](references/quality-gates.md) for detailed verdict synthesis.
 
 ### Using MCP Tools (Optional)
