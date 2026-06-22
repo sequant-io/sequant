@@ -595,7 +595,17 @@ export async function runIssueWithLogging(
         /* progress errors must not halt */
       }
     } else {
-      const extra = { error: specResult.error ?? "unknown" };
+      // Mirror the main phase loop (#739): a turn-capped spec phase surfaces the
+      // distinct "partial output preserved" signal rather than a generic failure
+      // reason, so the cap is recognizable on the spec path too (it has its own
+      // failure handling, separate from the main loop). The partial output is
+      // preserved in `phaseResults` (pushed above) and the run still halts via
+      // the early return below.
+      const extra = {
+        error: specResult.capped
+          ? "turn cap reached — partial output preserved (resume to continue)"
+          : (specResult.error ?? "unknown"),
+      };
       emitProgressLine(issueNumber, "spec", "failed", extra);
       try {
         onProgress?.(issueNumber, "spec", "failed", extra);
@@ -634,7 +644,13 @@ export async function runIssueWithLogging(
           : specResult.error?.includes("Timeout")
             ? "timeout"
             : "failure",
-        { error: specResult.error, errorContext: specErrorContext },
+        {
+          error: specResult.error,
+          // Mark a turn-capped spec phase distinctly in the log (#739), matching
+          // the main phase loop: status stays "failure" but `capped` flags it.
+          capped: specResult.capped,
+          errorContext: specErrorContext,
+        },
       );
       logWriter.logPhase(phaseLog);
     }

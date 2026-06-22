@@ -664,6 +664,58 @@ describe("runIssueWithLogging — #739: turn-capped phase signal (AC-3)", () => 
     expect(calledPhases).not.toContain("loop");
     expect(result.success).toBe(false);
   });
+
+  it("surfaces the capped signal and log marker on a capped spec phase (sibling site)", async () => {
+    // The spec phase has its own failure handling, separate from the main phase
+    // loop. A capped spec must get the same distinct signal + `capped` log marker
+    // (and halt) — otherwise a capped spec is indistinguishable from a generic
+    // failure. autoDetectPhases:true is what routes through the spec block.
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "spec",
+      success: false,
+      durationSeconds: 120,
+      capped: true,
+      output: "partial spec",
+    } as PhaseResult);
+
+    const onProgress = vi.fn();
+    const logPhase = vi.fn();
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 741,
+        title: "Capped spec phase",
+        options: { autoDetectPhases: true },
+      }),
+      onProgress,
+      services: {
+        logWriter: { logPhase } as never,
+        stateManager: null,
+      },
+    });
+
+    // Distinct capped signal on the spec failed event.
+    const specFailed = onProgress.mock.calls.find(
+      (c) => c[1] === "spec" && c[2] === "failed",
+    );
+    expect(specFailed).toBeDefined();
+    expect((specFailed![3] as { error: string }).error).toMatch(/turn cap/i);
+
+    // Spec phase log carries the capped marker.
+    const loggedOptions = vi
+      .mocked(createPhaseLogFromTiming)
+      .mock.calls.map((c) => c[5]);
+    expect(loggedOptions.some((o) => o?.capped === true)).toBe(true);
+
+    // Halts on the capped spec: only the spec phase ran, partial output preserved.
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["spec"]);
+    const specResult = result.phaseResults.find((p) => p.phase === "spec");
+    expect(specResult?.capped).toBe(true);
+    expect(specResult?.output).toBe("partial spec");
+    expect(result.success).toBe(false);
+  });
 });
 
 // #488: buildLoopContext — pure function, no mocking needed
