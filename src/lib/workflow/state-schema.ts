@@ -99,6 +99,13 @@ export const PhaseStateSchema = z.object({
   completedAt: z.string().datetime().optional(),
   /** Error message if phase failed */
   error: z.string().optional(),
+  /**
+   * Set when the phase halted on its turn cap (`error_max_turns`) (#739).
+   * Distinguishes a recoverable cap (partial output preserved, resume to
+   * continue) from a genuine failure while keeping `status: "failed"`.
+   * Additive/optional — existing persisted state is unaffected.
+   */
+  capped: z.boolean().optional(),
   /** Number of loop iterations (for loop phase) */
   iteration: z.number().int().nonnegative().optional(),
 });

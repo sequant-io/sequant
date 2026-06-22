@@ -459,6 +459,48 @@ export function mapAgentSuccessToPhaseResult(
 }
 
 /**
+ * Map a failed driver result to a `PhaseResult`.
+ *
+ * Symmetric to {@link mapAgentSuccessToPhaseResult}; extracted so the
+ * failure-path mapping (notably the #739 capped/output gating) is unit-testable
+ * without spawning a driver.
+ *
+ * `output` is propagated **only** for a capped phase (#739): a capped result is
+ * incomplete-but-not-hard-failed, so its partial work must survive downstream.
+ * A genuine (non-capped) failure keeps the historical behaviour of dropping
+ * `output`, leaving the `/loop` fix-context (`formatFailureContext`) unchanged.
+ *
+ * @internal Exported for testing only
+ */
+export function mapAgentFailureToPhaseResult(
+  phase: Phase,
+  agentResult: AgentPhaseResult,
+  durationSeconds: number,
+): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
+  return {
+    phase,
+    success: false,
+    durationSeconds,
+    error: agentResult.error,
+    // Propagate the driver's typed cause (#732) so the retry logic can prefer
+    // it over stderr-regex classification and gate the MCP fallback.
+    structuredError: agentResult.structuredError,
+    // Propagate the turn-cap flag and the partial output (#739). On the failure
+    // path `output` was previously dropped entirely — for a capped phase the
+    // partial work is usable and must be preserved, mirroring the driver/skill
+    // slice from #733. Gating `output` on `capped` keeps non-capped failures
+    // byte-for-byte identical to pre-#739 behaviour.
+    capped: agentResult.capped,
+    output: agentResult.capped ? agentResult.output : undefined,
+    sessionId: agentResult.sessionId,
+    resumeHandle: agentResult.resumeHandle,
+    stderrTail: agentResult.stderrTail,
+    stdoutTail: agentResult.stdoutTail,
+    exitCode: agentResult.exitCode,
+  };
+}
+
+/**
  * Get the prompt for a phase with the issue number substituted.
  * Selects self-contained prompts for non-Claude agents.
  * Includes AGENTS.md content as context so non-Claude agents
@@ -751,26 +793,7 @@ async function executePhase(
     );
   }
 
-  return {
-    phase,
-    success: false,
-    durationSeconds,
-    error: agentResult.error,
-    // Propagate the driver's typed cause (#732) so the retry logic can prefer
-    // it over stderr-regex classification and gate the MCP fallback.
-    structuredError: agentResult.structuredError,
-    // Propagate the turn-cap flag and the partial output (#739). On the failure
-    // path `output` was previously dropped entirely — for a capped phase the
-    // partial work is usable and must be preserved, mirroring the driver/skill
-    // slice from #733.
-    capped: agentResult.capped,
-    output: agentResult.output,
-    sessionId: agentResult.sessionId,
-    resumeHandle: agentResult.resumeHandle,
-    stderrTail: agentResult.stderrTail,
-    stdoutTail: agentResult.stdoutTail,
-    exitCode: agentResult.exitCode,
-  };
+  return mapAgentFailureToPhaseResult(phase, agentResult, durationSeconds);
 }
 
 /**

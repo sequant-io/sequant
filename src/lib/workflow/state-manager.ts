@@ -358,6 +358,7 @@ export class StateManager {
     options?: {
       error?: string;
       iteration?: number;
+      capped?: boolean;
     },
   ): Promise<void> {
     await this.withLock(async () => {
@@ -385,6 +386,13 @@ export class StateManager {
 
       if (options?.iteration !== undefined) {
         phaseState.iteration = options.iteration;
+      }
+
+      // Persist the turn-cap marker (#739) so a halted-on-cap phase is
+      // distinguishable from a genuine failure in state, not just the run-log —
+      // this is what makes the "reversible later" resume path first-class.
+      if (options?.capped !== undefined) {
+        phaseState.capped = options.capped;
       }
 
       // Preserve startedAt if already set

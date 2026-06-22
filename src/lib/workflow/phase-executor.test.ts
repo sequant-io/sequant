@@ -14,6 +14,7 @@ import {
   executePhaseWithRetry,
   hasExecChanges,
   mapAgentSuccessToPhaseResult,
+  mapAgentFailureToPhaseResult,
   resolveBaseRef,
   createThrottledReporter,
   SPEC_EXTRA_RETRIES,
@@ -1735,6 +1736,44 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(mockExecSync).not.toHaveBeenCalled();
       expect(mockExecFileSync).not.toHaveBeenCalled();
     });
+  });
+});
+
+// =============================================================================
+// #739 — mapAgentFailureToPhaseResult: capped/output gating on the failure path
+// =============================================================================
+
+describe("mapAgentFailureToPhaseResult", () => {
+  function makeFailure(
+    overrides: Partial<AgentPhaseResult> = {},
+  ): AgentPhaseResult {
+    return { success: false, output: "", ...overrides };
+  }
+
+  it("preserves partial output for a capped failure (AC-1)", () => {
+    const result = mapAgentFailureToPhaseResult(
+      "exec",
+      makeFailure({ capped: true, output: "partial work before cap" }),
+      120,
+    );
+    expect(result.success).toBe(false);
+    expect(result.capped).toBe(true);
+    expect(result.output).toBe("partial work before cap");
+  });
+
+  it("drops output for a genuine (non-capped) failure — pre-#739 behaviour", () => {
+    // Gate (#739): a non-capped failure must NOT leak `output` into the
+    // `/loop` fix-context (`formatFailureContext`), which would be a silent,
+    // out-of-scope change to the prompt shape for every genuine failure.
+    const result = mapAgentFailureToPhaseResult(
+      "exec",
+      makeFailure({ output: "stdout that should not surface", error: "boom" }),
+      120,
+    );
+    expect(result.success).toBe(false);
+    expect(result.capped).toBeUndefined();
+    expect(result.output).toBeUndefined();
+    expect(result.error).toBe("boom");
   });
 });
 

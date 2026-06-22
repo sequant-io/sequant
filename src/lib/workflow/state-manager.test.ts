@@ -216,6 +216,23 @@ describe("StateManager", () => {
       );
     });
 
+    it("should persist the capped marker on a turn-capped phase (#739)", async () => {
+      await manager.updatePhaseStatus(42, "exec", "failed", { capped: true });
+
+      const state = await manager.getState();
+      const phase = state.issues["42"].phases["exec"];
+      // Status stays "failed"; `capped` distinguishes the recoverable halt.
+      expect(phase?.status).toBe("failed");
+      expect(phase?.capped).toBe(true);
+    });
+
+    it("should leave capped unset for a genuine (non-capped) failure (#739)", async () => {
+      await manager.updatePhaseStatus(42, "exec", "failed", { error: "boom" });
+
+      const state = await manager.getState();
+      expect(state.issues["42"].phases["exec"]?.capped).toBeUndefined();
+    });
+
     it("should update issue status to in_progress on first phase start", async () => {
       await manager.updatePhaseStatus(42, "spec", "in_progress");
 

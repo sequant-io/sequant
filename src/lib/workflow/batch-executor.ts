@@ -661,6 +661,9 @@ export async function runIssueWithLogging(
         const phaseStatus = specResult.success ? "completed" : "failed";
         await stateManager.updatePhaseStatus(issueNumber, "spec", phaseStatus, {
           error: specResult.error,
+          // Mark a turn-capped spec halt distinctly in state (#739), matching
+          // the run-log marker — status stays "failed", `capped` flags it.
+          capped: specResult.capped,
         });
       } catch {
         // State tracking errors shouldn't stop execution
@@ -991,7 +994,13 @@ export async function runIssueWithLogging(
             issueNumber,
             phase as Phase,
             phaseStatus,
-            { error: result.error },
+            {
+              error: result.error,
+              // Mark a turn-capped phase halt distinctly in state (#739),
+              // matching the run-log marker — status stays "failed",
+              // `capped` flags it as recoverable for the resume path.
+              capped: result.capped,
+            },
           );
         } catch {
           // State tracking errors shouldn't stop execution
