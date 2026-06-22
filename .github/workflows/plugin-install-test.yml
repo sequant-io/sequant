@@ -162,8 +162,8 @@ jobs:
           missing_skills=""
 
           for skill_dir in skills/*/; do
-            # Skip _shared directory
-            if [[ "$skill_dir" == *"_shared"* ]]; then
+            # Skip shared-resource directories (not skills): _shared/ and references/
+            if [[ "$skill_dir" == *"_shared"* || "$skill_dir" == *"/references/"* ]]; then
               continue
             fi
 
