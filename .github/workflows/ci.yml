@@ -122,6 +122,9 @@ jobs:
       - name: Lint skill calls
         run: npm run lint:skill-calls
 
+      - name: Check skill sync
+        run: npm run lint:skill-sync
+
   typecheck:
     runs-on: ubuntu-latest
 

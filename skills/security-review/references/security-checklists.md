@@ -8,8 +8,11 @@ Detailed checklists for each security domain, used by the `/security-review` ski
 **Requirement:** Passwords must use bcrypt/argon2 with appropriate cost factor.
 
 **How to Verify:**
-```bash
-grep -r "bcrypt\|argon2\|hashPassword" lib/ app/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="bcrypt|argon2|hashPassword", path="lib/")
+Grep(pattern="bcrypt|argon2|hashPassword", path="app/")
 ```
 
 **Good:**
@@ -27,8 +30,10 @@ const hash = crypto.createHash('sha256').update(password).digest('hex')
 **Requirement:** Session tokens must be cryptographically random.
 
 **How to Verify:**
-```bash
-grep -r "crypto.randomBytes\|uuid\|nanoid" lib/auth/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="crypto.randomBytes|uuid|nanoid", path="lib/auth/")
 ```
 
 **Good:**
@@ -45,8 +50,11 @@ const token = Date.now().toString(36)
 **Requirement:** Sessions must expire within appropriate timeframe.
 
 **How to Verify:**
-```bash
-grep -r "maxAge\|expires\|TTL" lib/auth/ app/api/auth/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="maxAge|expires|TTL", path="lib/auth/")
+Grep(pattern="maxAge|expires|TTL", path="app/api/auth/")
 ```
 
 **Good:** 15-60 minutes for sensitive, 1-7 days for general.
@@ -64,8 +72,11 @@ grep -r "maxAge\|expires\|TTL" lib/auth/ app/api/auth/
 **Requirement:** Reset tokens must be single-use and time-limited.
 
 **How to Verify:**
-```bash
-grep -r "resetToken\|passwordReset" lib/ app/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="resetToken|passwordReset", path="lib/")
+Grep(pattern="resetToken|passwordReset", path="app/")
 ```
 
 **Good:** Token expires in 1 hour, deleted after use.
@@ -76,8 +87,11 @@ grep -r "resetToken\|passwordReset" lib/ app/
 **Requirement:** Failed login attempts must be rate-limited.
 
 **How to Verify:**
-```bash
-grep -r "rateLimit\|loginAttempts\|throttle" lib/ app/api/auth/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="rateLimit|loginAttempts|throttle", path="lib/")
+Grep(pattern="rateLimit|loginAttempts|throttle", path="app/api/auth/")
 ```
 
 **Good:** 5 attempts per 15 minutes.
@@ -86,8 +100,10 @@ grep -r "rateLimit\|loginAttempts\|throttle" lib/ app/api/auth/
 **Requirement:** Password comparison must be constant-time.
 
 **How to Verify:**
-```bash
-grep -r "timingSafeEqual\|bcrypt.compare" lib/auth/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="timingSafeEqual|bcrypt.compare", path="lib/auth/")
 ```
 
 **Good:**
@@ -116,8 +132,11 @@ if (input === password) // Direct comparison leaks timing info
 **Requirement:** Every sensitive endpoint must check authentication.
 
 **How to Verify:**
-```bash
-grep -r "requireAuth\|getServerSession\|authenticate" app/api/ app/admin/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="requireAuth|getServerSession|authenticate", path="app/api/")
+Grep(pattern="requireAuth|getServerSession|authenticate", path="app/admin/")
 ```
 
 **Good:** Middleware checks auth before route handler.
@@ -128,8 +147,11 @@ grep -r "requireAuth\|getServerSession\|authenticate" app/api/ app/admin/
 **Requirement:** Role checks must happen before privileged actions.
 
 **How to Verify:**
-```bash
-grep -r "role\|isAdmin\|hasPermission" lib/ app/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="role|isAdmin|hasPermission", path="lib/")
+Grep(pattern="role|isAdmin|hasPermission", path="app/")
 ```
 
 **Good:**
@@ -173,8 +195,11 @@ const item = await db.items.findUnique({ where: { id: itemId } })
 **Requirement:** Admin actions must be logged for audit.
 
 **How to Verify:**
-```bash
-grep -r "audit\|logAction\|createAuditLog" lib/ app/admin/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="audit|logAction|createAuditLog", path="lib/")
+Grep(pattern="audit|logAction|createAuditLog", path="app/admin/")
 ```
 
 **Good:**
@@ -190,8 +215,11 @@ await logAuditEvent({ action: 'approve_item', actor: userId, target: itemId })
 **Requirement:** All inputs must be validated with schemas.
 
 **How to Verify:**
-```bash
-grep -r "z\.\|zod\|yup\|joi" lib/validations/ app/api/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="z\\.|zod|yup|joi", path="lib/validations/")
+Grep(pattern="z\\.|zod|yup|joi", path="app/api/")
 ```
 
 **Good:**
@@ -216,8 +244,11 @@ const { name } = req.body // No validation
 **Requirement:** Queries must use parameterized statements.
 
 **How to Verify:**
-```bash
-grep -r "raw\|execute\|query" lib/ app/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="raw|execute|query", path="lib/")
+Grep(pattern="raw|execute|query", path="app/")
 ```
 
 **Good:**
@@ -237,16 +268,22 @@ db.query(`SELECT * FROM items WHERE id = ${itemId}`)
 **Requirement:** Public endpoints must be rate-limited.
 
 **How to Verify:**
-```bash
-grep -r "rateLimit\|Ratelimit" middleware/ lib/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="rateLimit|Ratelimit", path="middleware/")
+Grep(pattern="rateLimit|Ratelimit", path="lib/")
 ```
 
 ### API-5: CORS Configuration
 **Requirement:** CORS must be properly configured.
 
 **How to Verify:**
-```bash
-grep -r "cors\|Access-Control" next.config.js middleware/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="cors|Access-Control", path="next.config.js")
+Grep(pattern="cors|Access-Control", path="middleware/")
 ```
 
 **Good:** Specific origins allowed.
@@ -274,8 +311,11 @@ return { error: err.message, stack: err.stack }
 **Requirement:** Uploads must validate type, size, and name.
 
 **How to Verify:**
-```bash
-grep -r "upload\|multipart\|formData" app/api/ lib/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="upload|multipart|formData", path="app/api/")
+Grep(pattern="upload|multipart|formData", path="lib/")
 ```
 
 **Good:**
@@ -314,8 +354,11 @@ if (file.size > 5 * 1024 * 1024) throw Error
 **Requirement:** Logs must not contain sensitive data.
 
 **How to Verify:**
-```bash
-grep -r "console.log\|logger" lib/ app/ | head -20
+
+Use the Grep tool for content search:
+```
+Grep(pattern="console.log|logger", path="lib/", head_limit=20)
+Grep(pattern="console.log|logger", path="app/", head_limit=20)
 ```
 
 **Bad:**
@@ -338,8 +381,11 @@ console.log('User login:', { email, password })
 **Requirement:** Secrets must be in env vars, not code.
 
 **How to Verify:**
-```bash
-grep -r "process.env" lib/ app/ | head -10
+
+Use the Grep tool for content search:
+```
+Grep(pattern="process.env", path="lib/", head_limit=10)
+Grep(pattern="process.env", path="app/", head_limit=10)
 ```
 
 **Good:** API keys in `.env.local`, read via `process.env`.
@@ -350,8 +396,12 @@ grep -r "process.env" lib/ app/ | head -10
 **Requirement:** No secrets committed to repository.
 
 **How to Verify:**
-```bash
-grep -ri "password\|secret\|apikey\|api_key" --include="*.ts" --include="*.tsx" . | grep -v "process.env"
+
+Use the Grep tool for content search (filter results excluding process.env):
+```
+Grep(pattern="password|secret|apikey|api_key", glob="*.ts", -i=true)
+Grep(pattern="password|secret|apikey|api_key", glob="*.tsx", -i=true)
+# Then manually filter out lines containing "process.env"
 ```
 
 ### INFRA-3: Dependencies Up to Date
@@ -366,8 +416,11 @@ npm audit
 **Requirement:** Content Security Policy should be configured.
 
 **How to Verify:**
-```bash
-grep -r "Content-Security-Policy\|CSP" next.config.js middleware/
+
+Use the Grep tool for content search:
+```
+Grep(pattern="Content-Security-Policy|CSP", path="next.config.js")
+Grep(pattern="Content-Security-Policy|CSP", path="middleware/")
 ```
 
 ### INFRA-5: Security Headers

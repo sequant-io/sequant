@@ -51,16 +51,15 @@ If project uses a database with access controls:
 
 ## Integration Check
 
-Verify new exports are imported somewhere:
-```bash
+Verify new exports are imported somewhere using the Grep tool:
+```
+# 1. Get new files from git
 new_files=$(git diff main...HEAD --name-only --diff-filter=A | grep -E "\.(ts|tsx)$" || true)
-for file in $new_files; do
-  exports=$(grep -oE "export (const|function|class|type|interface) ([A-Za-z_][A-Za-z0-9_]*)" "$file" | awk '{print $3}')
-  for exp in $exports; do
-    import_count=$(grep -r "import.*$exp" --include="*.ts" --include="*.tsx" . | grep -v "$file" | wc -l | xargs)
-    if [[ $import_count -eq 0 ]]; then
-      echo "⚠️ '$exp' exported from $file but never imported"
-    fi
-  done
-done
+
+# 2. For each new file, use Grep to find exports:
+#    Grep(pattern="export (const|function|class|type|interface)", path="<file>", output_mode="content")
+
+# 3. For each export, use Grep to check if it's imported anywhere:
+#    Grep(pattern="import.*<export_name>", glob="*.{ts,tsx}")
+#    If no matches (excluding the source file), flag as unused export
 ```

@@ -3,7 +3,15 @@
  * Check three-directory skill sync
  *
  * Compares files across .claude/skills/, templates/skills/, and skills/
- * to detect divergence. Source of truth: .claude/skills/
+ * to detect divergence.
+ *
+ * SOURCE OF TRUTH: .claude/skills/ is canonical. It is the working copy that
+ * receives edits first; `templates/skills/` (consumed by `sequant init`/`sync`)
+ * and `skills/` (the published Claude Code plugin) are MIRRORS generated from
+ * it. Reconcile drift in the direction .claude/skills -> mirrors (run --fix),
+ * never the reverse. `.claude/skills` is canonical even when a mirror happens to
+ * be longer — extra mirror lines are almost always stale, pre-refactor content.
+ * See CONTRIBUTING.md ("Skill mirror sync") and issue #738.
  *
  * Usage:
  *   npx tsx scripts/check-skill-sync.ts          # Check and report
@@ -33,6 +41,21 @@ const MIRROR_DIRS = [
 ];
 const DIR_LABELS = [".claude/skills", "templates/skills", "skills"];
 
+/**
+ * Files intentionally excluded from the three-directory sync check.
+ *
+ * Entries are POSIX-style relative paths under each skill root. Add a file here
+ * ONLY when it legitimately should not be mirrored across all three roots, and
+ * document the reason inline. Excluded files are never reported as "diverged"
+ * or "missing".
+ *
+ * Currently empty: all skill *content* is mirrored. Transient, git-ignored
+ * local artifacts (e.g. `.sequant/.token-usage-*.json`) are dotfiles/dot-dirs
+ * and are skipped structurally in collectFiles() — they never need listing
+ * here. Keep this list as the documented escape hatch for genuine exclusions.
+ */
+export const EXCLUDE: ReadonlySet<string> = new Set<string>([]);
+
 const fixMode = process.argv.includes("--fix");
 
 interface FileResult {
@@ -51,18 +74,25 @@ function countLines(content: string): number {
   return content.split("\n").length;
 }
 
-function collectFiles(baseDir: string): string[] {
+export function collectFiles(baseDir: string): string[] {
   const files: string[] = [];
   if (!existsSync(baseDir)) return files;
 
   function walk(dir: string): void {
     for (const entry of readdirSync(dir)) {
+      // Skip dotfiles and dot-directories (e.g. transient, git-ignored
+      // artifacts like .sequant/.token-usage-*.json). They are local-only and
+      // would otherwise surface as false-positive "missing" entries.
+      if (entry.startsWith(".")) continue;
       const full = join(dir, entry);
       const stat = statSync(full);
       if (stat.isDirectory()) {
         walk(full);
       } else {
-        files.push(relative(baseDir, full));
+        // Normalize separators so EXCLUDE entries are POSIX-style on any OS.
+        const rel = relative(baseDir, full).split(/[\\/]/).join("/");
+        if (EXCLUDE.has(rel)) continue;
+        files.push(rel);
       }
     }
   }
@@ -217,36 +247,42 @@ function printReport(results: FileResult[]): void {
   );
 }
 
-// Main
-const results = checkSync();
+function main(): void {
+  const results = checkSync();
 
-console.log(
-  "Skill sync check (.claude/skills/ → templates/skills/, skills/):\n",
-);
-printReport(results);
+  console.log(
+    "Skill sync check (.claude/skills/ → templates/skills/, skills/):\n",
+  );
+  printReport(results);
 
-if (fixMode) {
-  const divergedOrMissing = results.filter((r) => r.status !== "synced");
-  if (divergedOrMissing.length === 0) {
-    console.log("\nNothing to fix — all files synced.");
-  } else {
-    console.log("\nFixing divergence...");
-    const fixed = fixDivergence(results);
-    console.log(`\nFixed ${fixed} file(s).`);
-
-    const postFixResults = checkSync();
-    const postDiverged = postFixResults.filter((r) => r.status !== "synced");
-    if (postDiverged.length === 0) {
-      console.log("All files now synced.");
+  if (fixMode) {
+    const divergedOrMissing = results.filter((r) => r.status !== "synced");
+    if (divergedOrMissing.length === 0) {
+      console.log("\nNothing to fix — all files synced.");
     } else {
-      console.log(
-        `${postDiverged.length} file(s) still not synced (orphans or source-missing).`,
-      );
+      console.log("\nFixing divergence...");
+      const fixed = fixDivergence(results);
+      console.log(`\nFixed ${fixed} file(s).`);
+
+      const postFixResults = checkSync();
+      const postDiverged = postFixResults.filter((r) => r.status !== "synced");
+      if (postDiverged.length === 0) {
+        console.log("All files now synced.");
+      } else {
+        console.log(
+          `${postDiverged.length} file(s) still not synced (orphans or source-missing).`,
+        );
+      }
     }
   }
+
+  const hasDivergence = results.some(
+    (r) => r.status === "diverged" || r.status === "missing",
+  );
+  process.exit(hasDivergence ? 1 : 0);
 }
 
-const hasDivergence = results.some(
-  (r) => r.status === "diverged" || r.status === "missing",
-);
-process.exit(hasDivergence ? 1 : 0);
+// Run as CLI only when invoked directly (not when imported by tests).
+if (process.argv[1] && process.argv[1] === __filename) {
+  main();
+}
