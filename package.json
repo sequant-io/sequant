@@ -25,10 +25,11 @@
     "dev": "tsx bin/cli.ts",
     "test": "vitest run",
     "lint": "eslint src/ bin/ --max-warnings 0",
-    "sync:skills": "cp -r templates/skills/* .claude/skills/",
+    "sync:skills": "npx tsx scripts/check-skill-sync.ts --fix",
     "sync:hooks": "bash scripts/sync-hooks.sh",
-    "validate:skills": "for skill in templates/skills/*/; do npx skills-ref validate \"$skill\"; done",
+    "validate:skills": "for skill in templates/skills/*/; do case \"$skill\" in *_shared*|*/references/*) continue;; esac; npx skills-ref validate \"$skill\"; done",
     "lint:skill-calls": "npx tsx scripts/lint-skill-calls.ts",
+    "lint:skill-sync": "npx tsx scripts/check-skill-sync.ts",
     "prepare:marketplace": "npx tsx scripts/prepare-marketplace.ts",
     "validate:marketplace": "npx tsx scripts/prepare-marketplace.ts --validate-only",
     "prepublishOnly": "npm run build"

@@ -42,6 +42,30 @@ When invoked as `/loop <issue-number>`, your job is to:
 4. Re-run validation until quality gates pass
 5. Exit when `READY_FOR_MERGE` or max iterations reached
 
+## Orchestration Context
+
+When running as part of an orchestrated workflow (e.g., `sequant run` or `/fullsolve`), this skill receives environment variables that indicate the orchestration context:
+
+| Environment Variable | Description | Example Value |
+|---------------------|-------------|---------------|
+| `SEQUANT_ORCHESTRATOR` | The orchestrator invoking this skill | `sequant-run` |
+| `SEQUANT_PHASE` | Current phase in the workflow | `loop` |
+| `SEQUANT_ISSUE` | Issue number being processed | `123` |
+| `SEQUANT_WORKTREE` | Path to the feature worktree | `/path/to/worktrees/feature/...` |
+
+**Behavior when orchestrated (SEQUANT_ORCHESTRATOR is set):**
+
+1. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path directly
+2. **Use `SEQUANT_ISSUE`** - Skip issue number parsing from invocation
+3. **Reduce GitHub comment frequency** - Defer updates to orchestrator
+4. **Trust issue context** - Orchestrator has already validated issue
+
+**Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
+
+- Locate worktree from issue number
+- Post progress comments to GitHub
+- Fetch issue context if needed
+
 ## Invocation
 
 - `/loop 123` - Parse log for issue #123, fix issues, re-validate
@@ -50,12 +74,66 @@ When invoked as `/loop <issue-number>`, your job is to:
 
 ### Step 1: Read Previous Phase Output
 
+**The source of findings depends on whether you're running in orchestrated or standalone mode.**
+
+#### Step 1A: Orchestrated Mode (SEQUANT_ORCHESTRATOR is set)
+
+When `SEQUANT_ORCHESTRATOR` is set, read QA findings from the GitHub issue comments instead of a log file:
+
 ```bash
-# Read the log file for this issue
-cat /tmp/claude-issue-<issue-number>.log
+# Check if we're in orchestrated mode
+if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
+  echo "Orchestrated mode detected (orchestrator: $SEQUANT_ORCHESTRATOR)"
+
+  # Use SEQUANT_ISSUE if provided, otherwise parse from invocation
+  ISSUE_NUMBER="${SEQUANT_ISSUE:-<issue-number>}"
+
+  # Fetch QA findings from issue comments (use startswith to avoid matching comments that reference QA format)
+  gh issue view "$ISSUE_NUMBER" --json comments -q '.comments[] | select(.body | startswith("## QA Review for Issue")) | .body' | tail -1
+fi
 ```
 
-Parse the log to find:
+**How to identify QA comments:**
+
+| Pattern | Meaning |
+|---------|---------|
+| `## QA Review for Issue #N` | QA phase comment header |
+| `### Verdict:` | Contains AC_NOT_MET, AC_MET_BUT_NOT_A_PLUS, etc. |
+| `### AC Coverage` | Table with MET/NOT_MET/PARTIALLY_MET statuses |
+| `### Required Fixes` or `### Recommendations` | Actionable items to fix |
+
+**Parsing QA comment:**
+```bash
+# Extract verdict from QA comment
+verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $2}' || true)
+
+# Extract NOT_MET AC items
+not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET" || true)
+
+# Extract recommendations section
+recommendations=$(echo "$qa_comment" | sed -n '/### Required Fixes/,/###/p' | head -n -1)
+```
+
+**If no QA comment found in orchestrated mode:**
+1. Log a clear error: `"Warning: No QA comment found in issue #N"`
+2. Fall back to Step 1B (log file) as a recovery mechanism
+3. If log file also doesn't exist, exit with error
+
+#### Step 1B: Standalone Mode (no SEQUANT_ORCHESTRATOR)
+
+When running standalone (interactive `/loop` invocation), read from the log file:
+
+Use the Read tool to read the log file for this issue:
+```
+Read(file_path="/tmp/claude-issue-<issue-number>.log")
+```
+
+**If log file doesn't exist:**
+- Error: `"Log file not found at /tmp/claude-issue-<N>.log. Please run /spec, /exec, /test, or /qa first."`
+
+#### Parsing Findings (Both Modes)
+
+Parse the output (from comment or log file) to find:
 - **Last phase executed:** `/test` or `/qa`
 - **Verdict:** `READY_FOR_MERGE`, `AC_MET_BUT_NOT_A_PLUS`, `NEEDS_VERIFICATION`,
   or `AC_NOT_MET`
@@ -101,6 +179,12 @@ Extract:
 - Specific issues identified
 
 ### Step 4: Locate Feature Worktree
+
+**If orchestrated (SEQUANT_WORKTREE is set):**
+- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
+- Skip the lookup steps below
+
+**If standalone:**
 
 Find the worktree for this issue:
 ```bash
@@ -365,7 +449,21 @@ For each iteration, output:
 
 ## Error Handling
 
-**If log file doesn't exist:**
+**If orchestrated but no QA comment found:**
+```
+Warning: No QA comment found in issue #<N>
+Attempting fallback to log file...
+```
+
+If fallback also fails:
+```
+Error: No QA findings available.
+- No QA comment found in issue #<N>
+- Log file not found at /tmp/claude-issue-<N>.log
+Please run /qa <N> first.
+```
+
+**If log file doesn't exist (standalone mode):**
 ```
 Error: Log file not found at /tmp/claude-issue-<N>.log
 Please run /spec, /exec, /test, or /qa first.

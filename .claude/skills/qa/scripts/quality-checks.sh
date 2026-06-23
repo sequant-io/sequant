@@ -717,6 +717,24 @@ if [[ $hit_count -gt 0 ]]; then
 fi
 echo ""
 
+# Write structured cache metrics JSON for sequant observability (#278/AC-7)
+# This file is read by worktree-manager.ts to populate PhaseLog.cacheMetrics
+# (surfaced via `sequant logs`). Written before the blocking exit logic below so
+# metrics are always emitted, even when a check blocks.
+CACHE_METRICS_DIR=".sequant/.cache/qa"
+mkdir -p "$CACHE_METRICS_DIR"
+
+# Build JSON with per-check status
+CACHE_JSON="{\"hits\":$hit_count,\"misses\":$miss_count,\"skipped\":$skip_count,\"checks\":{"
+first=true
+for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "test-quality" "build"; do
+  $first || CACHE_JSON+=","
+  CACHE_JSON+="\"$check\":\"${CACHE_STATUS[$check]:-MISS}\""
+  first=false
+done
+CACHE_JSON+="}}"
+echo "$CACHE_JSON" > "$CACHE_METRICS_DIR/cache-metrics.json"
+
 echo "✅ Quality checks complete"
 
 # Exit with appropriate code based on blocking issues
