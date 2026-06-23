@@ -155,6 +155,13 @@ export const PhaseLogSchema = z.object({
   status: PhaseStatusSchema,
   /** Error message if failed */
   error: z.string().optional(),
+  /**
+   * Set when the phase hit its turn cap (`error_max_turns`) (#739). Distinguishes
+   * an incomplete-but-not-hard-failed phase (partial output preserved) from a
+   * genuine failure. Reuses the `"failure"` status — additive boolean rather than
+   * a new `PhaseStatus` enum value, to keep the persisted-log schema stable.
+   */
+  capped: z.boolean().optional(),
   /** Number of iterations (for loop phase) */
   iterations: z.number().int().nonnegative().optional(),
   /** Files modified during this phase */

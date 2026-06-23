@@ -218,6 +218,15 @@ export interface PhaseResult {
    * MCP fallback (a `BillingError` skips the misleading retry — #592).
    */
   structuredError?: SequantError;
+  /**
+   * Set when the phase hit its turn cap (`error_max_turns`), propagated from the
+   * driver's `AgentPhaseResult.capped` (#733/#739). A capped phase is
+   * incomplete-but-not-hard-failed: the partial work in `output` is preserved
+   * rather than discarded, and the retry logic treats it like the `BillingError`
+   * skip (#732) — a retry cannot un-cap a turn limit. Additive/optional, same
+   * shape as `structuredError?`; existing consumers are unaffected.
+   */
+  capped?: boolean;
   /** Captured output from the phase (used for parsing spec recommendations) */
   output?: string;
   /** Parsed QA verdict (only for qa phase) */
