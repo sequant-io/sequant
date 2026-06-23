@@ -127,6 +127,9 @@ echo ""
 # Track cache hits/misses for final report
 declare -A CACHE_STATUS
 
+# Track blocking issues
+TAUTOLOGY_BLOCKING=false
+
 # =============================================================================
 # 1. Type safety check - detect 'any' type usage
 # =============================================================================
@@ -355,7 +358,76 @@ else
 fi
 
 # =============================================================================
-# 10. Shell Script Semantic Checks (unused functions, integration)
+# 10. Test Tautology Detection (AC-1 through AC-5)
+# =============================================================================
+echo ""
+echo "🔬 Running test tautology detection..."
+
+# Check for test files in the diff
+test_files_in_diff=$(git diff main...HEAD --name-only | grep -E '\.(test|spec)\.[jt]sx?$' || true)
+
+if [[ -z "$test_files_in_diff" ]]; then
+  CACHE_STATUS["test-quality"]="SKIP"
+  echo "   ⏭️  No test files in diff, skipping tautology check"
+else
+  if cache_check "test-quality"; then
+    CACHE_STATUS["test-quality"]="HIT"
+    cached_result=$(cache_get "test-quality")
+    tautology_passed=$(echo "$cached_result" | grep -o '"passed":\s*[^,}]*' | cut -d: -f2 | tr -d ' ')
+    tautology_message=$(echo "$cached_result" | grep -o '"message":\s*"[^"]*"' | cut -d'"' -f4)
+
+    if [[ "$tautology_passed" == "true" ]]; then
+      echo "   ✅ Test tautology: $tautology_message (cached)"
+    else
+      echo "   ⚠️  Test tautology: $tautology_message (cached)"
+    fi
+  else
+    CACHE_STATUS["test-quality"]="MISS"
+
+    # Check if tautology detector script exists
+    TAUTOLOGY_CLI=""
+    if [[ -f "$SCRIPT_DIR/../../../scripts/qa/tautology-detector-cli.ts" ]]; then
+      TAUTOLOGY_CLI="$SCRIPT_DIR/../../../scripts/qa/tautology-detector-cli.ts"
+    elif [[ -f "scripts/qa/tautology-detector-cli.ts" ]]; then
+      TAUTOLOGY_CLI="scripts/qa/tautology-detector-cli.ts"
+    fi
+
+    if [[ -n "$TAUTOLOGY_CLI" ]] && command -v npx &> /dev/null; then
+      tautology_output=$(npx tsx "$TAUTOLOGY_CLI" --json 2>&1) || tautology_exit=$?
+
+      if [[ -z "$tautology_exit" ]]; then
+        tautology_exit=0
+      fi
+
+      # Parse JSON output
+      tautology_status=$(echo "$tautology_output" | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || echo "none")
+      total_tests=$(echo "$tautology_output" | grep -o '"totalTests":[0-9]*' | cut -d: -f2 || echo "0")
+      total_tautological=$(echo "$tautology_output" | grep -o '"totalTautological":[0-9]*' | cut -d: -f2 || echo "0")
+
+      if [[ "$tautology_status" == "skip" ]]; then
+        echo "   ⏭️  No test blocks found in changed files"
+        cache_set "test-quality" true "No test blocks found" "{\"totalTests\":0,\"tautological\":0}"
+      elif [[ "$tautology_status" == "blocking" ]]; then
+        echo "   ❌ BLOCKER: $total_tautological/$total_tests test blocks are tautological (>50%)"
+        echo "      Tautological tests don't call production code and provide zero regression protection."
+        cache_set "test-quality" false "$total_tautological/$total_tests tests tautological (>50%)" "{\"totalTests\":$total_tests,\"tautological\":$total_tautological}"
+        TAUTOLOGY_BLOCKING=true
+      elif [[ "$tautology_status" == "warning" ]]; then
+        echo "   ⚠️  WARNING: $total_tautological/$total_tests test blocks are tautological"
+        cache_set "test-quality" true "$total_tautological/$total_tests tests tautological" "{\"totalTests\":$total_tests,\"tautological\":$total_tautological}"
+      else
+        echo "   ✅ Test tautology: All tests call production code"
+        cache_set "test-quality" true "All tests call production code" "{\"totalTests\":$total_tests,\"tautological\":0}"
+      fi
+    else
+      echo "   ⚠️  Test tautology detector not available, skipping..."
+      CACHE_STATUS["test-quality"]="SKIP"
+    fi
+  fi
+fi
+
+# =============================================================================
+# 11. Shell Script Semantic Checks (unused functions, integration)
 # =============================================================================
 echo ""
 echo "🔍 Checking shell script semantics..."
@@ -385,8 +457,7 @@ else
 fi
 
 # =============================================================================
-# =============================================================================
-# 11.5. Skill Sync Check (when skill files modified)
+# 12. Skill Sync Check (when skill files modified)
 # =============================================================================
 echo ""
 skill_files_changed=$(git diff main...HEAD --name-only | grep -E '^\.(claude/skills|skills|templates/skills)/' || true)
@@ -431,7 +502,7 @@ else
 fi
 
 # =============================================================================
-# 12. Build Verification (cacheable - expensive operation)
+# 13. Build Verification (cacheable - expensive operation)
 # =============================================================================
 
 verify_build_against_main() {
@@ -613,7 +684,7 @@ echo "=========================================="
 echo ""
 echo "| Check | Cache Status |"
 echo "|-------|--------------|"
-for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "build"; do
+for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "test-quality" "build"; do
   status="${CACHE_STATUS[$check]:-MISS}"
   if [[ "$status" == "HIT" ]]; then
     echo "| $check | ✅ HIT |"
@@ -629,7 +700,7 @@ echo ""
 hit_count=0
 miss_count=0
 skip_count=0
-for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "build"; do
+for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "test-quality" "build"; do
   status="${CACHE_STATUS[$check]:-MISS}"
   if [[ "$status" == "HIT" ]]; then
     ((hit_count++))
@@ -646,15 +717,17 @@ if [[ $hit_count -gt 0 ]]; then
 fi
 echo ""
 
-# Write structured cache metrics JSON for sequant observability (AC-7)
-# This file is read by run.ts to populate PhaseLog.cacheMetrics
+# Write structured cache metrics JSON for sequant observability (#278/AC-7)
+# This file is read by worktree-manager.ts to populate PhaseLog.cacheMetrics
+# (surfaced via `sequant logs`). Written before the blocking exit logic below so
+# metrics are always emitted, even when a check blocks.
 CACHE_METRICS_DIR=".sequant/.cache/qa"
 mkdir -p "$CACHE_METRICS_DIR"
 
 # Build JSON with per-check status
 CACHE_JSON="{\"hits\":$hit_count,\"misses\":$miss_count,\"skipped\":$skip_count,\"checks\":{"
 first=true
-for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "build"; do
+for check in "type-safety" "deleted-tests" "scope" "size" "security" "semgrep" "test-quality" "build"; do
   $first || CACHE_JSON+=","
   CACHE_JSON+="\"$check\":\"${CACHE_STATUS[$check]:-MISS}\""
   first=false
@@ -664,5 +737,16 @@ echo "$CACHE_JSON" > "$CACHE_METRICS_DIR/cache-metrics.json"
 
 echo "✅ Quality checks complete"
 
-# Exit with build verification result if it indicates a problem
-exit $build_verification_result
+# Exit with appropriate code based on blocking issues
+# Priority: build verification > tautology blocking
+if [[ $build_verification_result -ne 0 ]]; then
+  exit $build_verification_result
+fi
+
+if [[ "$TAUTOLOGY_BLOCKING" == "true" ]]; then
+  echo ""
+  echo "❌ BLOCKED: >50% of test blocks are tautological (AC-4 violation)"
+  exit 1
+fi
+
+exit 0

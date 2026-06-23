@@ -149,6 +149,39 @@ Instructions for the AI agent...
 
 3. Validate with: `npx skills-ref validate templates/skills/myskill`
 
+> **Heads up:** skill files live in three mirrored roots. After adding or editing
+> a skill, reconcile the mirrors — see [Skill mirror sync](#skill-mirror-sync) below.
+
+### Skill mirror sync
+
+Skill files are mirrored across **three** roots:
+
+| Root | Role |
+|------|------|
+| `.claude/skills/` | **Canonical source of truth** — the working copy, edited first |
+| `templates/skills/` | Mirror consumed by `sequant init` / `sequant sync` |
+| `skills/` | Mirror published as the Claude Code plugin |
+
+Always edit `.claude/skills/` and propagate **outward** to the mirrors — never
+the reverse. `.claude/skills/` is canonical even when a mirror happens to be
+longer; extra mirror lines are almost always stale, pre-refactor content.
+
+```bash
+# 1. Edit the canonical copy under .claude/skills/
+# 2. Check what diverged
+npm run lint:skill-sync
+# 3. Propagate .claude/skills/ -> templates/skills/ and skills/
+npx tsx scripts/check-skill-sync.ts --fix
+# 4. Re-run to confirm "0 diverged, 0 missing"
+npm run lint:skill-sync
+```
+
+CI runs `npm run lint:skill-sync` and fails the build on any drift, so mirrors
+must be reconciled before a PR merges. Files that legitimately should not be
+mirrored go in the documented `EXCLUDE` allowlist in
+`scripts/check-skill-sync.ts`; dotfiles and dot-directories are skipped
+automatically.
+
 ### Adding a New Stack
 
 1. Create `stacks/mystack.yaml`:

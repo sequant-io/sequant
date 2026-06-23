@@ -109,8 +109,8 @@ jobs:
         run: |
           echo "Validating all skills with skills-ref..."
           for skill in templates/skills/*/; do
-            # Skip _shared directory (contains shared resources, not a skill)
-            if [[ "$skill" == *"_shared"* ]]; then
+            # Skip shared-resource directories (not skills): _shared/ and references/
+            if [[ "$skill" == *"_shared"* || "$skill" == *"/references/"* ]]; then
               echo "Skipping ${skill} (shared resources)"
               continue
             fi
@@ -121,6 +121,9 @@ jobs:
 
       - name: Lint skill calls
         run: npm run lint:skill-calls
+
+      - name: Check skill sync
+        run: npm run lint:skill-sync
 
   typecheck:
     runs-on: ubuntu-latest
