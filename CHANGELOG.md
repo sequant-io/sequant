@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-06-23
+
 ### Added
 
 - **`/assess` emits `sequant run` when a global install is present, not always `npx sequant run` (#740)** — `npx sequant` is the invocation most prone to *version skew*: with a dual node prefix (npx resolving from one prefix, the global binary from another) plus npx cache reuse, `npx sequant` can silently run a *stale* version while a directly-installed `sequant` on PATH is current — so a user copy-pasting an assess-generated command could execute an outdated binary. `/assess` now probes once in Step 1 (`command -v sequant`) and selects the command prefix to match the environment: a resolvable global `sequant` on PATH → `sequant run …`; otherwise the unchanged `npx sequant run …` default (zero behavior change for npx-only users). The Commands block, the `Chain:` line, and the single-issue detail-mode command are tokenized with `CMD_PREFIX` and governed by a new Commands Block Rule #9 (use the chosen prefix consistently, never mix prefixes within one assessment); worked examples continue to illustrate the npx-only default. Skill-prose only — no runtime behavior change — mirrored across all three skill roots. (#740)

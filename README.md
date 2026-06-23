@@ -16,6 +16,12 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.8
+
+- **Clearer failures when an agent stops early** — phases that hit a turn cap now preserve their partial work and halt cleanly for resume instead of discarding it (#739, #733), and rate-limit/out-of-credits failures are named for what they are (with reset time and credit-purchase hints) rather than buried under generic retry noise (#732).
+- **Runtime Node-version guard** — `sequant` checks the running Node against its `engines.node` floor (`>=22.12.0`) at startup and exits with a friendly upgrade message instead of crashing later on a Node-22-only API (#734).
+- **`/assess` avoids npx version skew** — it now emits `sequant run …` when a global install is on `PATH` (and the unchanged `npx sequant run …` otherwise), so copy-pasted commands don't silently run a stale binary (#740).
+
 ### What's new in 2.7
 
 - **Trustworthy `--dry-run` previews for `sync` and `update`** — `sequant sync --dry-run` (`-d`) previews the exact set the apply would write (`new` + `modified` + `local-override`) and mutates nothing. Both `sync --dry-run` and `update --dry-run` now exit non-zero when work is pending, so a CI/automation job can gate on the exit code instead of parsing stdout. (`update` is the interactive command; `sync` is the documented non-interactive/CI surface.)
