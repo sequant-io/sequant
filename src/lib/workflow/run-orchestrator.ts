@@ -33,6 +33,7 @@ import {
   ensureWorktrees,
   ensureWorktreesChain,
   getWorktreeDiffStats,
+  rebaseOntoLocalBranch,
 } from "./worktree-manager.js";
 import { LogWriter } from "./log-writer.js";
 import type { RunConfig } from "./run-log-schema.js";
@@ -963,6 +964,78 @@ export class RunOrchestrator {
 
       if (shutdown?.shuttingDown) {
         break;
+      }
+
+      // #748: Successors were provisioned up-front (ensureWorktreesChain) while
+      // the predecessor branch still pointed at the base, so on a fresh run each
+      // successor effectively branched from main. Now that the predecessor has
+      // executed and committed, re-rebase this successor's worktree onto the
+      // predecessor's *local* committed tip — independent of --stacked, and
+      // targeting the local feature branch (not origin/main). This is what makes
+      // the chain contract ("each branches from previous") actually hold.
+      if (options.chain && i > 0) {
+        const successorWorktree = this.cfg.worktreeMap.get(issueNumber);
+        const predecessorLocalBranch = this.cfg.worktreeMap.get(
+          issueNumbers[i - 1],
+        )?.branch;
+        if (successorWorktree && predecessorLocalBranch) {
+          const rebase = rebaseOntoLocalBranch(
+            successorWorktree.path,
+            predecessorLocalBranch,
+            this.cfg.config.verbose,
+          );
+          if (!rebase.success) {
+            // A broken chain link must NOT silently produce a successor built on
+            // the wrong base — that successor would miss the predecessor's work
+            // (the original #748 bug) and the break would propagate to every
+            // downstream successor. Treat it like a predecessor failure: warn
+            // loudly, record the break, and stop the chain so a human can
+            // resolve the conflict and re-run.
+            console.log(
+              chalk.yellow(
+                `  ⚠️  Chain link broken: could not rebase #${issueNumber} onto #${issueNumbers[i - 1]} (${predecessorLocalBranch})` +
+                  (rebase.conflict ? " — merge conflict" : "") +
+                  `. Stopping the chain; #${issueNumber} and any later issues were not run.`,
+              ),
+            );
+            results.push({
+              issueNumber,
+              success: false,
+              phaseResults: [],
+              durationSeconds: 0,
+              loopTriggered: false,
+              abortReason: rebase.conflict
+                ? `chain rebase conflict onto #${issueNumbers[i - 1]} (${predecessorLocalBranch})`
+                : `chain rebase failed onto #${issueNumbers[i - 1]} (${predecessorLocalBranch}): ${rebase.error ?? "unknown error"}`,
+            });
+            break;
+          }
+        } else {
+          // The worktree map is expected to be fully populated for a chain (the
+          // --stacked block below treats a missing predecessor branch as
+          // unreachable). If it isn't, the successor cannot be chained onto its
+          // predecessor's work — the same end state as a rebase conflict — so we
+          // break the chain identically rather than letting the successor
+          // silently branch from its un-rebased base (the original #748 bug).
+          const missing = !successorWorktree
+            ? "successor worktree"
+            : `predecessor branch for #${issueNumbers[i - 1]}`;
+          console.log(
+            chalk.yellow(
+              `  ⚠️  Chain link could not be established for #${issueNumber}: missing ${missing} in worktree map. ` +
+                `Stopping the chain; #${issueNumber} and any later issues were not run.`,
+            ),
+          );
+          results.push({
+            issueNumber,
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+            abortReason: `chain link could not be established onto #${issueNumbers[i - 1]}: missing ${missing} in worktree map`,
+          });
+          break;
+        }
       }
 
       // #605: under --stacked, non-first PRs target the predecessor branch.

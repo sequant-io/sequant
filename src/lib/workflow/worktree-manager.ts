@@ -56,6 +56,20 @@ export interface RebaseResult {
 }
 
 /**
+ * Result of rebasing a worktree onto a local branch (chain successor → predecessor).
+ */
+export interface LocalRebaseResult {
+  /** Whether the rebase was attempted */
+  performed: boolean;
+  /** Whether the rebase succeeded (branch now contains `ontoBranch`'s commits) */
+  success: boolean;
+  /** Whether a merge conflict caused the rebase to be aborted */
+  conflict: boolean;
+  /** Error message if the rebase failed */
+  error?: string;
+}
+
+/**
  * Result of PR creation
  */
 export interface PRCreationResult {
@@ -586,20 +600,10 @@ export async function ensureWorktree(
         );
       }
 
-      const rebaseResult = spawnSync(
-        "git",
-        ["-C", existingPath, "rebase", baseBranch],
-        { stdio: "pipe" },
-      );
+      const rebase = rebaseOntoLocalBranch(existingPath, baseBranch, verbose);
 
-      if (rebaseResult.status !== 0) {
-        const rebaseError = rebaseResult.stderr.toString();
-
-        // Check if it's a conflict
-        if (
-          rebaseError.includes("CONFLICT") ||
-          rebaseError.includes("could not apply")
-        ) {
+      if (!rebase.success) {
+        if (rebase.conflict) {
           console.log(
             chalk.yellow(
               `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
@@ -610,14 +614,9 @@ export async function ensureWorktree(
               `    ℹ️  Branch ${branch} is not properly chained. Manual rebase may be required.`,
             ),
           );
-
-          // Abort the rebase to restore branch state
-          spawnSync("git", ["-C", existingPath, "rebase", "--abort"], {
-            stdio: "pipe",
-          });
         } else {
           console.log(
-            chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`),
+            chalk.yellow(`    !  Rebase failed: ${rebase.error ?? ""}`),
           );
           console.log(
             chalk.yellow(
@@ -633,12 +632,6 @@ export async function ensureWorktree(
           existed: true,
           rebased: false,
         };
-      }
-
-      if (verbose) {
-        console.log(
-          chalk.green(`    ✔ Existing worktree rebased onto ${baseBranch}`),
-        );
       }
 
       return {
@@ -1192,6 +1185,53 @@ export function reinstallIfLockfileChanged(
 
   console.log(chalk.green(`    ✔ Dependencies reinstalled`));
   return true;
+}
+
+/**
+ * Rebase a worktree's branch onto a *local* branch ref (e.g. a chain
+ * predecessor's feature branch), NOT origin/main. Used to chain a successor
+ * onto its predecessor's committed work at execution time (#748), and to
+ * re-chain a pre-existing worktree onto its chain base.
+ *
+ * On conflict, aborts the rebase to restore the original branch state and
+ * returns `{ success: false, conflict: true }` so callers can warn rather than
+ * silently treat a broken link as healthy.
+ */
+export function rebaseOntoLocalBranch(
+  worktreePath: string,
+  ontoBranch: string,
+  verbose: boolean = false,
+): LocalRebaseResult {
+  const rebaseResult = spawnSync(
+    "git",
+    ["-C", worktreePath, "rebase", ontoBranch],
+    { stdio: "pipe" },
+  );
+
+  if (rebaseResult.status === 0) {
+    if (verbose) {
+      console.log(chalk.green(`    ✔ Rebased worktree onto ${ontoBranch}`));
+    }
+    return { performed: true, success: true, conflict: false };
+  }
+
+  const rebaseError = rebaseResult.stderr.toString();
+  const isConflict =
+    rebaseError.includes("CONFLICT") || rebaseError.includes("could not apply");
+
+  if (isConflict) {
+    // Abort to restore the original branch state.
+    spawnSync("git", ["-C", worktreePath, "rebase", "--abort"], {
+      stdio: "pipe",
+    });
+  }
+
+  return {
+    performed: true,
+    success: false,
+    conflict: isConflict,
+    error: rebaseError.trim(),
+  };
 }
 
 /**
