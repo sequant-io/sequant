@@ -1188,18 +1188,6 @@ export function reinstallIfLockfileChanged(
 }
 
 /**
- * Rebase the worktree branch onto the base branch before PR creation.
- * This ensures the branch is up-to-date and prevents lockfile drift.
- *
- * @param worktreePath Path to the worktree
- * @param issueNumber Issue number (for logging)
- * @param packageManager Package manager to use if reinstall needed
- * @param verbose Whether to show verbose output
- * @param baseBranch Base branch to rebase onto (default: "main")
- * @returns RebaseResult indicating success/failure and whether reinstall was performed
- * @internal Exported for testing
- */
-/**
  * Rebase a worktree's branch onto a *local* branch ref (e.g. a chain
  * predecessor's feature branch), NOT origin/main. Used to chain a successor
  * onto its predecessor's committed work at execution time (#748), and to
@@ -1246,6 +1234,18 @@ export function rebaseOntoLocalBranch(
   };
 }
 
+/**
+ * Rebase the worktree branch onto the base branch before PR creation.
+ * This ensures the branch is up-to-date and prevents lockfile drift.
+ *
+ * @param worktreePath Path to the worktree
+ * @param issueNumber Issue number (for logging)
+ * @param packageManager Package manager to use if reinstall needed
+ * @param verbose Whether to show verbose output
+ * @param baseBranch Base branch to rebase onto (default: "main")
+ * @returns RebaseResult indicating success/failure and whether reinstall was performed
+ * @internal Exported for testing
+ */
 export function rebaseBeforePR(
   worktreePath: string,
   issueNumber: number,
