@@ -83,9 +83,16 @@ Sub-worktrees are removed automatically after merge-back. If a session is interr
 # Manual cleanup of a specific issue's worktree (handles .exec-agents/ automatically)
 ./scripts/cleanup-worktree.sh feature/485-my-feature
 
+# Non-interactive cleanup (e.g. from automation) — skips the confirm prompt
+./scripts/cleanup-worktree.sh --yes feature/485-my-feature
+
 # Or prune stale git worktree entries
 git worktree prune
 ```
+
+The remote branch is deleted only when the branch's PR is merged; pass
+`--delete-remote` (or `--force`) to delete it for an unmerged PR. Run
+`./scripts/cleanup-worktree.sh --help` for the full flag list.
 
 ## Troubleshooting
 
