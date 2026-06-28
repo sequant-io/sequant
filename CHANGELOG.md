@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cleanup-worktree.sh` no longer deletes the remote branch before a PR is merged (#750)** — the merged-PR check only gated a non-blocking prompt, while `git push origin --delete` fired unconditionally, so running the script (or piping `echo y |`) against a branch whose PR was still **OPEN** deleted the PR's head branch and made GitHub close the PR **unmerged**, stranding the work. Remote-branch deletion is now hard-gated: it happens only when the PR is `MERGED` or an explicit `--delete-remote`/`--force` flag is passed; otherwise the remote branch (and any open PR) is left intact. Local teardown (worktree + local branch) still runs unconditionally so the branch lock is freed for a subsequent `gh pr merge --delete-branch`. The script also gained non-interactive support: `--yes`/`-y` (and `--force`) skip the confirmation prompt, and in a non-interactive context without a confirm flag the script now exits safely instead of stalling on `read -p`. The stale, divergent, gitignored `.claude/scripts/cleanup-worktree.sh` copy (which carried the same unconditional-delete bug) was removed so the fix can't be silently undone. (#750)
+
 ## [2.8.0] - 2026-06-23
 
 ### Added
