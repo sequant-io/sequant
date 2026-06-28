@@ -33,6 +33,7 @@ import {
   ensureWorktrees,
   ensureWorktreesChain,
   getWorktreeDiffStats,
+  rebaseOntoLocalBranch,
 } from "./worktree-manager.js";
 import { LogWriter } from "./log-writer.js";
 import type { RunConfig } from "./run-log-schema.js";
@@ -963,6 +964,38 @@ export class RunOrchestrator {
 
       if (shutdown?.shuttingDown) {
         break;
+      }
+
+      // #748: Successors were provisioned up-front (ensureWorktreesChain) while
+      // the predecessor branch still pointed at the base, so on a fresh run each
+      // successor effectively branched from main. Now that the predecessor has
+      // executed and committed, re-rebase this successor's worktree onto the
+      // predecessor's *local* committed tip — independent of --stacked, and
+      // targeting the local feature branch (not origin/main). This is what makes
+      // the chain contract ("each branches from previous") actually hold.
+      if (options.chain && i > 0) {
+        const successorWorktree = this.cfg.worktreeMap.get(issueNumber);
+        const predecessorLocalBranch = this.cfg.worktreeMap.get(
+          issueNumbers[i - 1],
+        )?.branch;
+        if (successorWorktree && predecessorLocalBranch) {
+          const rebase = rebaseOntoLocalBranch(
+            successorWorktree.path,
+            predecessorLocalBranch,
+            this.cfg.config.verbose,
+          );
+          if (!rebase.success) {
+            // Don't silently green a broken link: warn loudly. The successor
+            // keeps its existing (un-rebased) base and still executes.
+            console.log(
+              chalk.yellow(
+                `  ⚠️  Chain link broken: could not rebase #${issueNumber} onto #${issueNumbers[i - 1]} (${predecessorLocalBranch})` +
+                  (rebase.conflict ? " — merge conflict" : "") +
+                  `. It will build on its existing base, not #${issueNumbers[i - 1]}'s committed work.`,
+              ),
+            );
+          }
+        }
       }
 
       // #605: under --stacked, non-first PRs target the predecessor branch.

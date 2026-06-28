@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--chain` successors now branch from the predecessor's committed work, not `main` (#748)** — `ensureWorktreesChain` provisions every chain worktree up-front, branching each successor from its predecessor's branch name; but at provisioning time the predecessor branch still points at the base (it hasn't executed yet), so on a *fresh* run each successor effectively branched from `main` and missed all of its predecessor's work — directly contradicting the `--chain` help text and the code's own AC comment. No execution-time rebase ever corrected this: the existing chain-rebase only fired on the re-run (pre-existing-worktree) path, and `rebaseBeforePR` targets `origin/main`, not the predecessor. `executeSequential` now re-rebases each successor's worktree onto its predecessor's **local** committed tip just before the successor runs (independent of `--stacked`), via an extracted `rebaseOntoLocalBranch` helper reused by the re-run path. On conflict it aborts the rebase (restoring the branch) and warns loudly rather than silently greening a broken link. Guarded by a real-git integration test asserting `git merge-base --is-ancestor <predecessor-exec-commit> <successor-HEAD>` on a fresh chain run (no mock of the rebase step), plus orchestrator wiring tests. The `--chain` help text now describes the actual behavior. (#748)
+
 ## [2.8.0] - 2026-06-23
 
 ### Added
