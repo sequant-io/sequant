@@ -44,6 +44,8 @@ Common issues and solutions when using Sequant.
 2. Clean up using the cleanup script:
    ```bash
    ./scripts/cleanup-worktree.sh feature/<issue-number>-*
+   # Add --yes to skip the prompt in automation; --force to also drop an
+   # unmerged PR's remote branch. See: cleanup-worktree.sh --help
    ```
 
 3. Or clean manually:

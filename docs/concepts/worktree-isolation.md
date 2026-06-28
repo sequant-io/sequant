@@ -101,6 +101,16 @@ After merging a PR, clean up the worktree:
 /clean
 ```
 
+The remote branch is deleted **only when the PR is merged** — running cleanup
+on a branch whose PR is still open removes the local worktree but leaves the
+remote branch (and the open PR) intact. Flags:
+
+- `-y`, `--yes` — skip the confirmation prompt (for non-interactive/automation;
+  without it, a no-TTY run on an unmerged branch exits safely instead of hanging).
+- `--delete-remote` — also delete the remote branch when the PR is **not** merged.
+- `--force` — implies both `--yes` and `--delete-remote`.
+- `-h`, `--help` — show usage and exit.
+
 ## Working in Worktrees
 
 ### Navigate to Worktree
