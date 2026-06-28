@@ -289,7 +289,7 @@ program
   )
   .option(
     "--chain",
-    "Chain issues: each branches from previous (implies --sequential)",
+    "Chain issues: each successor is rebased onto the previous issue's committed work before it runs (implies --sequential)",
   )
   .option(
     "--stacked",

@@ -34,6 +34,11 @@ vi.mock("../src/lib/workflow/worktree-manager.js", () => ({
   ensureWorktreesChain: vi.fn(),
   detectDefaultBranch: vi.fn(() => "main"),
   getWorktreeDiffStats: vi.fn(() => ({ filesChanged: 0, linesAdded: 0 })),
+  rebaseOntoLocalBranch: vi.fn(() => ({
+    performed: true,
+    success: true,
+    conflict: false,
+  })),
 }));
 
 vi.mock("../src/lib/workflow/log-writer.js", () => ({
@@ -96,6 +101,9 @@ vi.mock("p-limit", () => ({
 import { runIssueWithLogging } from "../src/lib/workflow/batch-executor.js";
 const mockRunIssue = vi.mocked(runIssueWithLogging);
 
+import { rebaseOntoLocalBranch } from "../src/lib/workflow/worktree-manager.js";
+const mockRebaseOntoLocalBranch = vi.mocked(rebaseOntoLocalBranch);
+
 /** Build a minimal ExecutionConfig for testing */
 function makeConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
   return {
@@ -133,6 +141,27 @@ function makeOrchestratorConfig(
     baseBranch: "main",
     ...overrides,
   };
+}
+
+/**
+ * Build a worktree map for a chain so chain-mode rebasing has a predecessor
+ * branch to target. Required for `chain: true` tests now that an unresolvable
+ * chain link (missing worktree entry) breaks the chain (#748).
+ */
+function makeChainWorktreeMap(
+  issueNumbers: number[],
+): OrchestratorConfig["worktreeMap"] {
+  return new Map(
+    issueNumbers.map((n) => [
+      n,
+      {
+        path: `/wt/${n}`,
+        branch: `feature/${n}-chain`,
+        existed: false,
+        rebased: false,
+      },
+    ]),
+  );
 }
 
 /** Build a minimal IssueResult for testing */
@@ -262,6 +291,7 @@ describe("RunOrchestrator", () => {
           [100, { title: "Issue 100", labels: [] }],
           [101, { title: "Issue 101", labels: [] }],
         ]),
+        worktreeMap: makeChainWorktreeMap([100, 101]),
       });
       mockRunIssue
         .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
@@ -284,6 +314,7 @@ describe("RunOrchestrator", () => {
           [101, { title: "Issue 101", labels: [] }],
           [102, { title: "Issue 102", labels: [] }],
         ]),
+        worktreeMap: makeChainWorktreeMap([100, 101, 102]),
       });
       mockRunIssue
         .mockResolvedValueOnce(
@@ -420,6 +451,252 @@ describe("RunOrchestrator", () => {
         expect(ctx.chain?.predecessorBranch).toBeUndefined();
         expect(ctx.chain?.stackManifest).toBeUndefined();
       }
+    });
+  });
+
+  // ===== #748: chain successors rebase onto predecessor's local tip =====
+  describe("#748: chain successors are rebased onto the predecessor's local branch", () => {
+    it("rebases each successor onto its predecessor's local branch before it runs (plain --chain)", async () => {
+      mockRebaseOntoLocalBranch.mockClear();
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 102 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101, 102]);
+
+      // First issue (i=0) is not rebased — it branches from the base.
+      // Successors are rebased onto the *local* predecessor branch (not origin).
+      expect(mockRebaseOntoLocalBranch).toHaveBeenCalledTimes(2);
+      expect(mockRebaseOntoLocalBranch).toHaveBeenNthCalledWith(
+        1,
+        "/wt/101",
+        "feature/100-first",
+        false,
+      );
+      expect(mockRebaseOntoLocalBranch).toHaveBeenNthCalledWith(
+        2,
+        "/wt/102",
+        "feature/101-second",
+        false,
+      );
+    });
+
+    it("does not rebase when chain mode is off", async () => {
+      mockRebaseOntoLocalBranch.mockClear();
+      const cfg = makeOrchestratorConfig({
+        config: makeConfig({ sequential: true }),
+        options: {} as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101]);
+
+      expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
+    });
+
+    it("stops the chain when a successor's rebase conflicts (does not run it or later issues)", async () => {
+      mockRebaseOntoLocalBranch.mockReset();
+      // #101's rebase conflicts; the helper's default (success) is irrelevant
+      // because the loop breaks before any further rebase is attempted.
+      mockRebaseOntoLocalBranch
+        .mockReturnValueOnce({
+          performed: true,
+          success: false,
+          conflict: true,
+        })
+        .mockReturnValue({ performed: true, success: true, conflict: false });
+
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue.mockResolvedValue(makeIssueResult({ issueNumber: 100 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      const results = await orchestrator.execute([100, 101, 102]);
+
+      // Only #100 executed; #101's failed rebase broke the chain before it ran.
+      expect(mockRunIssue).toHaveBeenCalledTimes(1);
+      // Exactly one rebase attempt (for #101); the loop broke before #102.
+      expect(mockRebaseOntoLocalBranch).toHaveBeenCalledTimes(1);
+      // Results: #100 success + a recorded failure for the broken #101 link.
+      expect(results).toHaveLength(2);
+      expect(results[0].issueNumber).toBe(100);
+      expect(results[0].success).toBe(true);
+      expect(results[1].issueNumber).toBe(101);
+      expect(results[1].success).toBe(false);
+      expect(results[1].abortReason).toContain("conflict");
+      // #102 was never reached.
+      expect(results.some((r) => r.issueNumber === 102)).toBe(false);
+    });
+
+    it("breaks the chain when the predecessor branch is missing from the worktree map", async () => {
+      mockRebaseOntoLocalBranch.mockReset();
+      mockRebaseOntoLocalBranch.mockReturnValue({
+        performed: true,
+        success: true,
+        conflict: false,
+      });
+      const warnSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        // #100 (the predecessor of #101) is intentionally absent from the map.
+        worktreeMap: new Map([
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue.mockResolvedValue(makeIssueResult({ issueNumber: 100 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      const results = await orchestrator.execute([100, 101, 102]);
+
+      // #100 ran; #101 could not be chained (predecessor absent) so the chain
+      // broke before #101 executed and #102 was never reached — same end state
+      // as a rebase conflict, never a rebase attempt on an unavailable branch.
+      expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
+      expect(mockRunIssue).toHaveBeenCalledTimes(1);
+      expect(results).toHaveLength(2);
+      expect(results[0].issueNumber).toBe(100);
+      expect(results[0].success).toBe(true);
+      expect(results[1].issueNumber).toBe(101);
+      expect(results[1].success).toBe(false);
+      expect(results[1].abortReason).toContain("could not be established");
+      expect(results.some((r) => r.issueNumber === 102)).toBe(false);
+      const warned = warnSpy.mock.calls
+        .flat()
+        .some(
+          (arg) =>
+            typeof arg === "string" &&
+            arg.includes("Chain link could not be established"),
+        );
+      expect(warned).toBe(true);
+      warnSpy.mockRestore();
     });
   });
 
