@@ -985,16 +985,46 @@ export class RunOrchestrator {
             this.cfg.config.verbose,
           );
           if (!rebase.success) {
-            // Don't silently green a broken link: warn loudly. The successor
-            // keeps its existing (un-rebased) base and still executes.
+            // A broken chain link must NOT silently produce a successor built on
+            // the wrong base — that successor would miss the predecessor's work
+            // (the original #748 bug) and the break would propagate to every
+            // downstream successor. Treat it like a predecessor failure: warn
+            // loudly, record the break, and stop the chain so a human can
+            // resolve the conflict and re-run.
             console.log(
               chalk.yellow(
                 `  ⚠️  Chain link broken: could not rebase #${issueNumber} onto #${issueNumbers[i - 1]} (${predecessorLocalBranch})` +
                   (rebase.conflict ? " — merge conflict" : "") +
-                  `. It will build on its existing base, not #${issueNumbers[i - 1]}'s committed work.`,
+                  `. Stopping the chain; #${issueNumber} and any later issues were not run.`,
               ),
             );
+            results.push({
+              issueNumber,
+              success: false,
+              phaseResults: [],
+              durationSeconds: 0,
+              loopTriggered: false,
+              abortReason: rebase.conflict
+                ? `chain rebase conflict onto #${issueNumbers[i - 1]} (${predecessorLocalBranch})`
+                : `chain rebase failed onto #${issueNumbers[i - 1]} (${predecessorLocalBranch}): ${rebase.error ?? "unknown error"}`,
+            });
+            break;
           }
+        } else {
+          // The worktree map is expected to be fully populated for a chain (the
+          // --stacked block below treats a missing predecessor branch as
+          // unreachable). If it isn't, the successor would silently branch from
+          // its un-rebased base — the original #748 bug — so surface it rather
+          // than skipping in silence.
+          console.log(
+            chalk.yellow(
+              `  ⚠️  Chain link unverified for #${issueNumber}: missing ${
+                !successorWorktree
+                  ? "successor worktree"
+                  : `predecessor branch for #${issueNumbers[i - 1]}`
+              } in worktree map. It may not be chained onto #${issueNumbers[i - 1]}'s committed work.`,
+            ),
+          );
         }
       }
 

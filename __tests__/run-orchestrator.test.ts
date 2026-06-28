@@ -538,6 +538,124 @@ describe("RunOrchestrator", () => {
 
       expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
     });
+
+    it("stops the chain when a successor's rebase conflicts (does not run it or later issues)", async () => {
+      mockRebaseOntoLocalBranch.mockReset();
+      // #101's rebase conflicts; the helper's default (success) is irrelevant
+      // because the loop breaks before any further rebase is attempted.
+      mockRebaseOntoLocalBranch
+        .mockReturnValueOnce({
+          performed: true,
+          success: false,
+          conflict: true,
+        })
+        .mockReturnValue({ performed: true, success: true, conflict: false });
+
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue.mockResolvedValue(makeIssueResult({ issueNumber: 100 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      const results = await orchestrator.execute([100, 101, 102]);
+
+      // Only #100 executed; #101's failed rebase broke the chain before it ran.
+      expect(mockRunIssue).toHaveBeenCalledTimes(1);
+      // Exactly one rebase attempt (for #101); the loop broke before #102.
+      expect(mockRebaseOntoLocalBranch).toHaveBeenCalledTimes(1);
+      // Results: #100 success + a recorded failure for the broken #101 link.
+      expect(results).toHaveLength(2);
+      expect(results[0].issueNumber).toBe(100);
+      expect(results[0].success).toBe(true);
+      expect(results[1].issueNumber).toBe(101);
+      expect(results[1].success).toBe(false);
+      expect(results[1].abortReason).toContain("conflict");
+      // #102 was never reached.
+      expect(results.some((r) => r.issueNumber === 102)).toBe(false);
+    });
+
+    it("warns and continues without rebasing when the predecessor branch is missing from the worktree map", async () => {
+      mockRebaseOntoLocalBranch.mockReset();
+      mockRebaseOntoLocalBranch.mockReturnValue({
+        performed: true,
+        success: true,
+        conflict: false,
+      });
+      const warnSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+        ]),
+        // #100 (the predecessor) is intentionally absent from the worktree map.
+        worktreeMap: new Map([
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue.mockResolvedValue(makeIssueResult());
+
+      const orchestrator = new RunOrchestrator(cfg);
+      const results = await orchestrator.execute([100, 101]);
+
+      // No rebase attempted (predecessor branch unavailable), but the gap is
+      // surfaced rather than silently skipped, and both issues still run.
+      expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
+      expect(results).toHaveLength(2);
+      const warned = warnSpy.mock.calls
+        .flat()
+        .some(
+          (arg) =>
+            typeof arg === "string" && arg.includes("Chain link unverified"),
+        );
+      expect(warned).toBe(true);
+      warnSpy.mockRestore();
+    });
   });
 
   // ===== AC-3: No Commander.js Types =====

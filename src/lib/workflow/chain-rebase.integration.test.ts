@@ -136,6 +136,24 @@ describe("chain successor rebasing (integration)", () => {
     expect(files).toContain("feature-126.ts");
   });
 
+  it("is a no-op when the predecessor produced no commits (successor stays on base)", () => {
+    // Predecessor "executed" but committed nothing (e.g. the issue needed no
+    // changes), so its branch still points at the base. Rebasing the successor
+    // onto it must succeed as a no-op — nothing to inherit, no error.
+    const predTip = git(predWorktree, "rev-parse", "HEAD"); // == main
+    const succBefore = git(succWorktree, "rev-parse", "HEAD"); // == main
+
+    const rebase = rebaseOntoLocalBranch(succWorktree, predBranch, false);
+    expect(rebase.success).toBe(true);
+    expect(rebase.conflict).toBe(false);
+
+    // Successor HEAD is unchanged; the (empty) predecessor tip is trivially an
+    // ancestor — the chain contract holds vacuously, no work was lost.
+    const succAfter = git(succWorktree, "rev-parse", "HEAD");
+    expect(succAfter).toBe(succBefore);
+    expect(isAncestor(mainRepo, predTip, succAfter)).toBe(true);
+  });
+
   it("aborts and reports a conflict without changing the successor branch", () => {
     // Predecessor and successor both edit the same file with diverging content
     // — rebasing the successor onto the predecessor must conflict.
