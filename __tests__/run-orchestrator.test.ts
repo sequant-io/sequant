@@ -34,6 +34,11 @@ vi.mock("../src/lib/workflow/worktree-manager.js", () => ({
   ensureWorktreesChain: vi.fn(),
   detectDefaultBranch: vi.fn(() => "main"),
   getWorktreeDiffStats: vi.fn(() => ({ filesChanged: 0, linesAdded: 0 })),
+  rebaseOntoLocalBranch: vi.fn(() => ({
+    performed: true,
+    success: true,
+    conflict: false,
+  })),
 }));
 
 vi.mock("../src/lib/workflow/log-writer.js", () => ({
@@ -95,6 +100,9 @@ vi.mock("p-limit", () => ({
 
 import { runIssueWithLogging } from "../src/lib/workflow/batch-executor.js";
 const mockRunIssue = vi.mocked(runIssueWithLogging);
+
+import { rebaseOntoLocalBranch } from "../src/lib/workflow/worktree-manager.js";
+const mockRebaseOntoLocalBranch = vi.mocked(rebaseOntoLocalBranch);
 
 /** Build a minimal ExecutionConfig for testing */
 function makeConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
@@ -420,6 +428,115 @@ describe("RunOrchestrator", () => {
         expect(ctx.chain?.predecessorBranch).toBeUndefined();
         expect(ctx.chain?.stackManifest).toBeUndefined();
       }
+    });
+  });
+
+  // ===== #748: chain successors rebase onto predecessor's local tip =====
+  describe("#748: chain successors are rebased onto the predecessor's local branch", () => {
+    it("rebases each successor onto its predecessor's local branch before it runs (plain --chain)", async () => {
+      mockRebaseOntoLocalBranch.mockClear();
+      const cfg = makeOrchestratorConfig({
+        options: { chain: true } as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 102 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101, 102]);
+
+      // First issue (i=0) is not rebased — it branches from the base.
+      // Successors are rebased onto the *local* predecessor branch (not origin).
+      expect(mockRebaseOntoLocalBranch).toHaveBeenCalledTimes(2);
+      expect(mockRebaseOntoLocalBranch).toHaveBeenNthCalledWith(
+        1,
+        "/wt/101",
+        "feature/100-first",
+        false,
+      );
+      expect(mockRebaseOntoLocalBranch).toHaveBeenNthCalledWith(
+        2,
+        "/wt/102",
+        "feature/101-second",
+        false,
+      );
+    });
+
+    it("does not rebase when chain mode is off", async () => {
+      mockRebaseOntoLocalBranch.mockClear();
+      const cfg = makeOrchestratorConfig({
+        config: makeConfig({ sequential: true }),
+        options: {} as RunOptions,
+        issueInfoMap: new Map([
+          [100, { title: "Issue 100", labels: [] }],
+          [101, { title: "Issue 101", labels: [] }],
+        ]),
+        worktreeMap: new Map([
+          [
+            100,
+            {
+              path: "/wt/100",
+              branch: "feature/100-first",
+              existed: false,
+              rebased: false,
+            },
+          ],
+          [
+            101,
+            {
+              path: "/wt/101",
+              branch: "feature/101-second",
+              existed: false,
+              rebased: false,
+            },
+          ],
+        ]),
+      });
+
+      mockRunIssue
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
+        .mockResolvedValueOnce(makeIssueResult({ issueNumber: 101 }));
+
+      const orchestrator = new RunOrchestrator(cfg);
+      await orchestrator.execute([100, 101]);
+
+      expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
     });
   });
 
