@@ -143,6 +143,27 @@ function makeOrchestratorConfig(
   };
 }
 
+/**
+ * Build a worktree map for a chain so chain-mode rebasing has a predecessor
+ * branch to target. Required for `chain: true` tests now that an unresolvable
+ * chain link (missing worktree entry) breaks the chain (#748).
+ */
+function makeChainWorktreeMap(
+  issueNumbers: number[],
+): OrchestratorConfig["worktreeMap"] {
+  return new Map(
+    issueNumbers.map((n) => [
+      n,
+      {
+        path: `/wt/${n}`,
+        branch: `feature/${n}-chain`,
+        existed: false,
+        rebased: false,
+      },
+    ]),
+  );
+}
+
 /** Build a minimal IssueResult for testing */
 function makeIssueResult(overrides: Partial<IssueResult> = {}): IssueResult {
   return {
@@ -270,6 +291,7 @@ describe("RunOrchestrator", () => {
           [100, { title: "Issue 100", labels: [] }],
           [101, { title: "Issue 101", labels: [] }],
         ]),
+        worktreeMap: makeChainWorktreeMap([100, 101]),
       });
       mockRunIssue
         .mockResolvedValueOnce(makeIssueResult({ issueNumber: 100 }))
@@ -292,6 +314,7 @@ describe("RunOrchestrator", () => {
           [101, { title: "Issue 101", labels: [] }],
           [102, { title: "Issue 102", labels: [] }],
         ]),
+        worktreeMap: makeChainWorktreeMap([100, 101, 102]),
       });
       mockRunIssue
         .mockResolvedValueOnce(
@@ -609,7 +632,7 @@ describe("RunOrchestrator", () => {
       expect(results.some((r) => r.issueNumber === 102)).toBe(false);
     });
 
-    it("warns and continues without rebasing when the predecessor branch is missing from the worktree map", async () => {
+    it("breaks the chain when the predecessor branch is missing from the worktree map", async () => {
       mockRebaseOntoLocalBranch.mockReset();
       mockRebaseOntoLocalBranch.mockReturnValue({
         performed: true,
@@ -623,8 +646,9 @@ describe("RunOrchestrator", () => {
         issueInfoMap: new Map([
           [100, { title: "Issue 100", labels: [] }],
           [101, { title: "Issue 101", labels: [] }],
+          [102, { title: "Issue 102", labels: [] }],
         ]),
-        // #100 (the predecessor) is intentionally absent from the worktree map.
+        // #100 (the predecessor of #101) is intentionally absent from the map.
         worktreeMap: new Map([
           [
             101,
@@ -635,23 +659,41 @@ describe("RunOrchestrator", () => {
               rebased: false,
             },
           ],
+          [
+            102,
+            {
+              path: "/wt/102",
+              branch: "feature/102-third",
+              existed: false,
+              rebased: false,
+            },
+          ],
         ]),
       });
 
-      mockRunIssue.mockResolvedValue(makeIssueResult());
+      mockRunIssue.mockResolvedValue(makeIssueResult({ issueNumber: 100 }));
 
       const orchestrator = new RunOrchestrator(cfg);
-      const results = await orchestrator.execute([100, 101]);
+      const results = await orchestrator.execute([100, 101, 102]);
 
-      // No rebase attempted (predecessor branch unavailable), but the gap is
-      // surfaced rather than silently skipped, and both issues still run.
+      // #100 ran; #101 could not be chained (predecessor absent) so the chain
+      // broke before #101 executed and #102 was never reached — same end state
+      // as a rebase conflict, never a rebase attempt on an unavailable branch.
       expect(mockRebaseOntoLocalBranch).not.toHaveBeenCalled();
+      expect(mockRunIssue).toHaveBeenCalledTimes(1);
       expect(results).toHaveLength(2);
+      expect(results[0].issueNumber).toBe(100);
+      expect(results[0].success).toBe(true);
+      expect(results[1].issueNumber).toBe(101);
+      expect(results[1].success).toBe(false);
+      expect(results[1].abortReason).toContain("could not be established");
+      expect(results.some((r) => r.issueNumber === 102)).toBe(false);
       const warned = warnSpy.mock.calls
         .flat()
         .some(
           (arg) =>
-            typeof arg === "string" && arg.includes("Chain link unverified"),
+            typeof arg === "string" &&
+            arg.includes("Chain link could not be established"),
         );
       expect(warned).toBe(true);
       warnSpy.mockRestore();

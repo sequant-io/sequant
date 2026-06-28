@@ -186,6 +186,14 @@ origin/main
                     └─→ feature/3-add-logout (Issue #3)
 ```
 
+**How the chaining is established:**
+
+Worktrees are provisioned up front, but at that moment a successor's predecessor has not committed yet — so each successor is initially cut from the base. To make the chain real, just before a successor runs (and after its predecessor has executed and committed), Sequant rebases the successor's worktree onto its predecessor's **local** committed branch. This is what guarantees `git merge-base --is-ancestor <predecessor-tip> <successor-HEAD>` holds — the successor genuinely contains its predecessor's work, not just a same-named branch cut from `main`.
+
+**Broken chain links stop the chain:**
+
+If a successor cannot be rebased onto its predecessor — a merge conflict, or (should-not-happen) a missing worktree — the link is broken: the successor would otherwise build on the wrong base and silently miss its predecessor's work, and that break would cascade to every later issue. Rather than ship a misleadingly "chained" PR, Sequant aborts the rebase (restoring the branch), prints a warning, and **stops the chain** — the conflicted issue and all later issues are left unrun, exactly like a stop-on-failure. Resolve the conflict (e.g. rebase the predecessor's work manually) and re-run the chain. The stopped issue is reported in the run summary with an abort reason.
+
 **Checkpoint Commits:**
 
 After each issue passes QA, a checkpoint commit is automatically created. This serves as a recovery point if later issues in the chain fail.

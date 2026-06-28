@@ -1013,18 +1013,28 @@ export class RunOrchestrator {
         } else {
           // The worktree map is expected to be fully populated for a chain (the
           // --stacked block below treats a missing predecessor branch as
-          // unreachable). If it isn't, the successor would silently branch from
-          // its un-rebased base — the original #748 bug — so surface it rather
-          // than skipping in silence.
+          // unreachable). If it isn't, the successor cannot be chained onto its
+          // predecessor's work — the same end state as a rebase conflict — so we
+          // break the chain identically rather than letting the successor
+          // silently branch from its un-rebased base (the original #748 bug).
+          const missing = !successorWorktree
+            ? "successor worktree"
+            : `predecessor branch for #${issueNumbers[i - 1]}`;
           console.log(
             chalk.yellow(
-              `  ⚠️  Chain link unverified for #${issueNumber}: missing ${
-                !successorWorktree
-                  ? "successor worktree"
-                  : `predecessor branch for #${issueNumbers[i - 1]}`
-              } in worktree map. It may not be chained onto #${issueNumbers[i - 1]}'s committed work.`,
+              `  ⚠️  Chain link could not be established for #${issueNumber}: missing ${missing} in worktree map. ` +
+                `Stopping the chain; #${issueNumber} and any later issues were not run.`,
             ),
           );
+          results.push({
+            issueNumber,
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+            abortReason: `chain link could not be established onto #${issueNumbers[i - 1]}: missing ${missing} in worktree map`,
+          });
+          break;
         }
       }
 
