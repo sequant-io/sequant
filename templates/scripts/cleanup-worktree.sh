@@ -1,8 +1,20 @@
 #!/bin/bash
 
 # Clean up a worktree after PR is merged
-# Usage: ./scripts/cleanup-worktree.sh <branch-name>
+# Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
 # Example: ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
+#
+# The remote branch is deleted ONLY when the branch's PR is MERGED (the
+# documented post-merge contract) or when an explicit override flag is passed.
+# Local teardown (worktree + local branch) always runs so the branch lock is
+# freed for a subsequent `gh pr merge --delete-branch`.
+#
+# Flags:
+#   -y, --yes         Skip the confirmation prompt (non-interactive confirm).
+#                     Does NOT override the merge gate on remote deletion.
+#   --delete-remote   Override the merge gate and delete the remote branch even
+#                     when the PR is not merged (still honors the TTY confirm).
+#   --force           Implies both --yes and --delete-remote.
 
 set -e
 
@@ -13,7 +25,65 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-BRANCH_NAME=$1
+# Print CLI usage/help (kept in sync with the header comment above).
+print_usage() {
+    cat <<'USAGE'
+Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+
+Clean up a feature worktree. The remote branch is deleted ONLY when the
+branch's PR is MERGED (the documented post-merge contract) or when an
+explicit override flag is passed. Local teardown (worktree + local branch)
+always runs so the branch lock is freed for a subsequent
+`gh pr merge --delete-branch`.
+
+Flags:
+  -y, --yes         Skip the confirmation prompt (non-interactive confirm).
+                    Does NOT override the merge gate on remote deletion.
+  --delete-remote   Override the merge gate and delete the remote branch even
+                    when the PR is not merged (still honors the confirm gate).
+  --force           Implies both --yes and --delete-remote.
+  -h, --help        Show this help and exit.
+
+Example:
+  ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
+USAGE
+}
+
+# Parse flags. ASSUME_YES bypasses the confirmation prompt; DELETE_REMOTE
+# overrides the merge gate on remote deletion. The first non-flag argument is
+# the branch name. --force is the combined opt-in (both behaviors).
+BRANCH_NAME=""
+ASSUME_YES=false
+DELETE_REMOTE=false
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -y|--yes)
+            ASSUME_YES=true
+            ;;
+        --delete-remote)
+            DELETE_REMOTE=true
+            ;;
+        --force)
+            ASSUME_YES=true
+            DELETE_REMOTE=true
+            ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}❌ Error: Unknown flag: $1${NC}" >&2
+            print_usage >&2
+            exit 1
+            ;;
+        *)
+            if [ -z "$BRANCH_NAME" ]; then
+                BRANCH_NAME="$1"
+            fi
+            ;;
+    esac
+    shift
+done
 
 # Resolve main worktree (first entry in porcelain output) so subsequent git
 # commands run from a stable cwd even if the caller invoked us from inside the
@@ -23,11 +93,11 @@ MAIN_WORKTREE=$(git worktree list --porcelain | sed -n 's/^worktree //p' | head 
 
 # Check if branch name provided
 if [ -z "$BRANCH_NAME" ]; then
-    echo -e "${RED}❌ Error: Branch name required${NC}"
-    echo "Usage: ./scripts/cleanup-worktree.sh <branch-name>"
-    echo ""
-    echo "Active worktrees:"
-    git worktree list
+    echo -e "${RED}❌ Error: Branch name required${NC}" >&2
+    print_usage >&2
+    echo "" >&2
+    echo "Active worktrees:" >&2
+    git worktree list >&2
     exit 1
 fi
 
@@ -58,12 +128,24 @@ echo ""
 # Check if PR is merged
 PR_STATUS=$(gh pr list --head "$BRANCH_NAME" --state merged --json number,state --jq '.[0].state' 2>/dev/null || echo "")
 
+# Confirmation gate — only reached when the PR is NOT merged. When MERGED we
+# short-circuit past this entirely (no prompt, no TTY check) so the documented
+# post-merge happy path is unchanged.
 if [ "$PR_STATUS" != "MERGED" ]; then
     echo -e "${YELLOW}⚠️  Warning: PR for this branch is not merged${NC}"
-    read -p "Are you sure you want to delete this worktree? (y/n) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo -e "${BLUE}Cancelled.${NC}"
+    if [ "$ASSUME_YES" = true ]; then
+        echo -e "${BLUE}Proceeding (--yes/--force).${NC}"
+    elif [ -t 0 ]; then
+        read -p "Are you sure you want to delete this worktree? (y/n) " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}Cancelled.${NC}"
+            exit 0
+        fi
+    else
+        # Non-interactive (no TTY) and no confirm flag: exit safely instead of
+        # stalling on `read`. Pass --yes/--force to proceed without a prompt.
+        echo -e "${BLUE}Non-interactive context and PR not merged — pass --yes or --force to proceed. Exiting without changes.${NC}"
         exit 0
     fi
 fi
@@ -101,9 +183,16 @@ git worktree remove "$WORKTREE_PATH" --force
 echo -e "${BLUE}🌿 Deleting local branch...${NC}"
 git branch -D "$BRANCH_NAME" 2>/dev/null || true
 
-# Delete remote branch
-echo -e "${BLUE}☁️  Deleting remote branch...${NC}"
-git push origin --delete "$BRANCH_NAME" 2>/dev/null || true
+# Delete remote branch — hard-gated on merge state. Only delete when the PR is
+# MERGED or an explicit override flag (--delete-remote/--force) was passed.
+# Otherwise leave the remote branch (and any open PR) intact: deleting an open
+# PR's head branch makes GitHub close the PR unmerged, stranding the work.
+if [ "$PR_STATUS" = "MERGED" ] || [ "$DELETE_REMOTE" = true ]; then
+    echo -e "${BLUE}☁️  Deleting remote branch...${NC}"
+    git push origin --delete "$BRANCH_NAME" 2>/dev/null || true
+else
+    echo -e "${YELLOW}⏭️  Skipped remote-branch delete (PR not merged; pass --delete-remote or --force to override).${NC}"
+fi
 
 # Update main
 echo -e "${BLUE}📥 Updating main branch...${NC}"
