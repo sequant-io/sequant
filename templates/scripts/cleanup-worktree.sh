@@ -25,6 +25,30 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# Print CLI usage/help (kept in sync with the header comment above).
+print_usage() {
+    cat <<'USAGE'
+Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+
+Clean up a feature worktree. The remote branch is deleted ONLY when the
+branch's PR is MERGED (the documented post-merge contract) or when an
+explicit override flag is passed. Local teardown (worktree + local branch)
+always runs so the branch lock is freed for a subsequent
+`gh pr merge --delete-branch`.
+
+Flags:
+  -y, --yes         Skip the confirmation prompt (non-interactive confirm).
+                    Does NOT override the merge gate on remote deletion.
+  --delete-remote   Override the merge gate and delete the remote branch even
+                    when the PR is not merged (still honors the confirm gate).
+  --force           Implies both --yes and --delete-remote.
+  -h, --help        Show this help and exit.
+
+Example:
+  ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
+USAGE
+}
+
 # Parse flags. ASSUME_YES bypasses the confirmation prompt; DELETE_REMOTE
 # overrides the merge gate on remote deletion. The first non-flag argument is
 # the branch name. --force is the combined opt-in (both behaviors).
@@ -43,9 +67,13 @@ while [ $# -gt 0 ]; do
             ASSUME_YES=true
             DELETE_REMOTE=true
             ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
         -*)
-            echo -e "${RED}❌ Error: Unknown flag: $1${NC}"
-            echo "Usage: ./scripts/cleanup-worktree.sh [-y|--yes] [--delete-remote] [--force] <branch-name>"
+            echo -e "${RED}❌ Error: Unknown flag: $1${NC}" >&2
+            print_usage >&2
             exit 1
             ;;
         *)
@@ -65,11 +93,11 @@ MAIN_WORKTREE=$(git worktree list --porcelain | sed -n 's/^worktree //p' | head 
 
 # Check if branch name provided
 if [ -z "$BRANCH_NAME" ]; then
-    echo -e "${RED}❌ Error: Branch name required${NC}"
-    echo "Usage: ./scripts/cleanup-worktree.sh <branch-name>"
-    echo ""
-    echo "Active worktrees:"
-    git worktree list
+    echo -e "${RED}❌ Error: Branch name required${NC}" >&2
+    print_usage >&2
+    echo "" >&2
+    echo "Active worktrees:" >&2
+    git worktree list >&2
     exit 1
 fi
 
