@@ -1554,7 +1554,7 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.verdict).toBe("AC_NOT_MET");
     });
 
-    it("fails on AC_MET_BUT_NOT_A_PLUS verdict (existing behavior preserved)", () => {
+    it("treats AC_MET_BUT_NOT_A_PLUS as success → break to PR (#749)", () => {
       const agentResult = makeAgentResult({
         output: "### Verdict: AC_MET_BUT_NOT_A_PLUS",
       });
@@ -1564,8 +1564,33 @@ describe("mapAgentSuccessToPhaseResult", () => {
         60,
         "/tmp/wt",
       );
-      expect(result.success).toBe(false);
-      expect(result.error).toBe("QA verdict: AC_MET_BUT_NOT_A_PLUS");
+      // AC_MET_BUT_NOT_A_PLUS is a stopping/ready state, not a hard failure:
+      // success drives shouldCreatePR and the chain-gate, so the run proceeds
+      // to PR instead of feeding the quality loop.
+      expect(result.success).toBe(true);
+      expect(result.error).toBeUndefined();
+      // Verdict retained so the PR body / run log surfaces the "not A+" note.
+      expect(result.verdict).toBe("AC_MET_BUT_NOT_A_PLUS");
+    });
+
+    it("AC_MET_BUT_NOT_A_PLUS does not trip the --qa-gate chain break (#749 AC-2)", () => {
+      // run-orchestrator.ts:1076-1080 breaks a --qa-gate --chain on a
+      // predecessor whose phaseResults contain `p.phase === "qa" && !p.success`.
+      // With the #749 fix the qa result is success, so that predicate is false
+      // and the chain proceeds past an AC_MET_BUT_NOT_A_PLUS predecessor.
+      const agentResult = makeAgentResult({
+        output: "### Verdict: AC_MET_BUT_NOT_A_PLUS",
+      });
+      const qaResult = mapAgentSuccessToPhaseResult(
+        "qa",
+        agentResult,
+        60,
+        "/tmp/wt",
+      );
+      const chainBreaks = [qaResult].some(
+        (p) => p.phase === "qa" && !p.success,
+      );
+      expect(chainBreaks).toBe(false);
     });
 
     it("fails when output is present but no verdict is parseable (#534)", () => {
