@@ -196,11 +196,10 @@ Triggers (any one):
 - Issue body or comments mention `"depends on #N"`, `"blocked by #N"`, or `"after #N"`
 - One issue's described output is another issue's input (e.g., A changes a function signature that B consumes)
 
-Format: `Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
+Format: `Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
 
 Flag references:
 - `--chain` chains issues (each branches from previous; implies `--sequential`)
-- `--qa-gate` pauses chain on QA failure (requires `--chain`)
 - `--base <branch>` — issue references a feature branch
 
 ### Step 5: Conflict Detection
@@ -255,7 +254,7 @@ Order: <N> → <N> (<dependency reason>)
 ⚠ #<N>  <warning>
 ⚠ #<N>  <warning>
 
-Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <reason>
+Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <reason>
 
 Flags:
   <flag>                <one-line reason>
@@ -318,7 +317,7 @@ Emit annotations in this order between the separators that follow `Commands:`:
   - `⚠ #412  bug + auth labels — domain label (auth) takes priority over bug`
 
 - **`Chain:`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology. Does not replace the default per-issue commands. Format:
-  `Chain: <CMD_PREFIX> run <N1> <N2> --chain --qa-gate -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
+  `Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
 
 - **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-Q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
   ```
@@ -402,7 +401,7 @@ Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)
 ⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected
 ⚠ #186  @tanstack/react-query not installed; large scope (9 hooks + optimistic updates)
 
-Chain: npx sequant run 185 186 --chain --qa-gate -Q --testgen
+Chain: npx sequant run 185 186 --chain -Q --testgen
        # alternative — use if 186 should branch from 185's work
 
 Flags:

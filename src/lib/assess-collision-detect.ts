@@ -226,7 +226,8 @@ export function detectFileCollisions(
  * - `chainSuggestion` — emitted only when ≥3 issues collide on the same
  *   file (AC-4); suggest-only, never auto-applied. Annotated with the
  *   historical chain-mode success rate at length≥3 (1/6 = 17%, per #604
- *   forensics) so users can weigh chain mode against the parallel default.
+ *   forensics — the entire sample predates the #748/#749 fixes) so users
+ *   can weigh chain mode against the parallel default.
  */
 export interface CollisionAnnotations {
   orderLines: string[];
@@ -266,9 +267,9 @@ export function formatCollisionAnnotations(
     if (r.issues.length >= 3 && !chainSuggestion) {
       const ids = r.issues.join(" ");
       chainSuggestion =
-        `Chain: npx sequant run ${ids} --chain --qa-gate -Q   ` +
+        `Chain: npx sequant run ${ids} --chain -Q   ` +
         `# alternative — ${r.issues.length} issues modify ${r.file} ` +
-        `(chain length≥3 historically 1/6 = 17%; see docs/reference/chain-mode-analysis-2026-05.md)`;
+        `(chain length≥3 historically 1/6 = 17%, predates the #748/#749 fixes; see docs/reference/chain-mode-analysis-2026-05.md)`;
     }
   }
 
