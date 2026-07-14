@@ -1168,6 +1168,9 @@ export async function runIssueWithLogging(
             stackManifest: chain.stackManifest,
           }
         : undefined;
+    // #749: surface a non-A+ qa verdict (e.g. AC_MET_BUT_NOT_A_PLUS) in the PR
+    // body so a reviewer sees why the run broke to PR rather than reaching A+.
+    const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
     const prResult = createPR(
       worktreePath,
       issueNumber,
@@ -1176,6 +1179,7 @@ export async function runIssueWithLogging(
       config.verbose,
       labels,
       stackOptions,
+      qaVerdict,
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
