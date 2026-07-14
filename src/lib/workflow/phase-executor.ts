@@ -393,11 +393,12 @@ export function mapAgentSuccessToPhaseResult(
     const summary = agentResult.output
       ? (parseQaSummary(agentResult.output) ?? undefined)
       : undefined;
-    if (
-      verdict &&
-      verdict !== "READY_FOR_MERGE" &&
-      verdict !== "NEEDS_VERIFICATION"
-    ) {
+    if (verdict === "AC_NOT_MET") {
+      // #749: only AC_NOT_MET (and the null branch below, #534) hard-fails.
+      // AC_MET_BUT_NOT_A_PLUS is a stopping/ready state — it must break to PR,
+      // not feed the quality loop (mirrors ready-gate.ts's `ac` policy). The
+      // verdict is retained on the success result so the PR/log surfaces the
+      // "not A+" note.
       return {
         phase,
         success: false,
