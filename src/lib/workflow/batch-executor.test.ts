@@ -55,8 +55,10 @@ vi.mock("./error-classifier.js", () => ({
 import { executePhaseWithRetry } from "./phase-executor.js";
 import { createPhaseLogFromTiming } from "./log-writer.js";
 import { runIssueWithLogging } from "./batch-executor.js";
+import { createPR } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
+const mockCreatePR = vi.mocked(createPR);
 
 /** Build a minimal ExecutionConfig for testing */
 function makeConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
@@ -945,5 +947,62 @@ describe("emitProgressLine (#624 Item 3): iteration field propagation", () => {
     } finally {
       teardown();
     }
+  });
+});
+
+describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 753,
+      prUrl: "https://example.test/pr/753",
+    });
+  });
+
+  it("creates the PR (no quality loop) when qa returns AC_MET_BUT_NOT_A_PLUS, forwarding the verdict to the PR body", async () => {
+    // The phase-executor mapping (verdict → success) is unit-tested in
+    // phase-executor.test.ts. This exercises the *consumer* seam: given a
+    // success qa result carrying AC_MET_BUT_NOT_A_PLUS, the run path must reach
+    // createPR (break-to-PR) rather than the quality loop, and surface the
+    // verdict in the PR body (#749 Gap fixes).
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 10,
+          verdict: "AC_MET_BUT_NOT_A_PLUS",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 749,
+        title: "AC_MET_BUT_NOT_A_PLUS break-to-PR",
+        labels: ["bug"],
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 2,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-749", branch: "feature/749" },
+    });
+
+    // Break-to-PR: createPR was called, and the loop never ran.
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    const loopCalls = mockExecutePhase.mock.calls.filter(
+      (c) => c[1] === "loop",
+    );
+    expect(loopCalls).toHaveLength(0);
+
+    // The verdict is forwarded as the 8th arg so the PR body surfaces the
+    // "not A+" note.
+    expect(mockCreatePR.mock.calls[0][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
   });
 });
