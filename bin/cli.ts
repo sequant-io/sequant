@@ -300,6 +300,10 @@ program
     "Wait for QA pass before starting next issue in chain (requires --chain)",
   )
   .option(
+    "--strict-preflight",
+    "Make --chain content pre-flight warnings (missing AC, dependency/overlap order, closed issues) fatal before any worktree is provisioned",
+  )
+  .option(
     "--base <branch>",
     "Base branch for worktree creation (default: main or settings.run.defaultBase)",
   )
