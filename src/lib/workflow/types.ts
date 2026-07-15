@@ -267,6 +267,13 @@ export interface IssueResult {
     startedAt: string;
     command: string;
   };
+  /**
+   * Set true when the chain-mode checkpoint commit could not be written after
+   * this link passed QA (#760). The link's own work is done, but the recovery
+   * point resume depends on is missing — surfaced prominently so a later resume
+   * failing fast (AC-3) is expected, not surprising.
+   */
+  checkpointFailed?: boolean;
 }
 
 /**
