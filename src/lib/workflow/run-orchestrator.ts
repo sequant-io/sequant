@@ -64,6 +64,24 @@ function formatSignalLine(
       return `  Skipped signal for #${issue} (orchestrator mode)`;
   }
 }
+
+/**
+ * Resolve a git ref (branch name or base branch) to its tip commit SHA in the
+ * current repo, or undefined if the ref does not exist. Used by the chain
+ * resume planner (#760) to reconstruct — and validate the existence of — a
+ * completed link's committed tip.
+ */
+function revParseRef(ref: string): string | undefined {
+  const result = spawnSync("git", ["rev-parse", "--verify", "--quiet", ref], {
+    stdio: "pipe",
+    encoding: "utf-8",
+  });
+  if (result.status !== 0) {
+    return undefined;
+  }
+  const sha = result.stdout.trim();
+  return sha.length > 0 ? sha : undefined;
+}
 import {
   getIssueInfo,
   sortByDependencies,
@@ -73,6 +91,11 @@ import {
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { getCommitHash } from "./git-diff-utils.js";
+import {
+  computeChainResumePlan,
+  type ChainResumePlan,
+  type CompletedLinkResolver,
+} from "./chain-resume.js";
 import { MetricsWriter } from "./metrics-writer.js";
 import { WorkflowEventEmitter } from "./event-emitter.js";
 import type { IssueEventStatus } from "./event-emitter.js";
@@ -130,6 +153,12 @@ export interface OrchestratorConfig {
   packageManager?: string;
   /** Base branch for rebase/PR targets */
   baseBranch?: string;
+  /**
+   * Chain resume plan (#760). Present only when re-running a `--chain` batch
+   * whose completed prefix is being skipped. Drives the first active link's
+   * rebase onto the last completed link's committed tip in `executeSequential`.
+   */
+  chainResume?: ChainResumePlan;
   /** Per-phase progress callback (parallel mode) */
   onProgress?: ProgressCallback;
   /** #672 AC-2: phase-plan callback forwarded into per-issue contexts. */
@@ -633,39 +662,69 @@ export class RunOrchestrator {
       }
     }
 
+    let chainResume: ChainResumePlan | undefined;
     if (stateManager && !config.dryRun && !mergedOptions.force) {
-      const activeIssues: number[] = [];
-      for (const issueNumber of issueNumbers) {
-        try {
-          const issueState = await stateManager.getIssueState(issueNumber);
-          if (
-            issueState &&
-            (issueState.status === "ready_for_merge" ||
-              issueState.status === "merged")
-          ) {
-            console.log(
-              chalk.yellow(
-                `  !  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
-              ),
+      if (mergedOptions.chain) {
+        // ── Chain-aware resume (#760) ──────────────────────────────────
+        // Don't just drop completed links (chain-unaware skip leaves the
+        // first incomplete link at index 0, where the #748 successor-rebase
+        // never fires → it silently builds on main). Instead compute a
+        // chain-correct plan that resumes at the first incomplete link,
+        // rebased onto the completed prefix's committed tip.
+        const orderedLinks = [];
+        for (const issueNumber of issueNumbers) {
+          let status: string | undefined;
+          let branch: string | undefined;
+          try {
+            const issueState = await stateManager.getIssueState(issueNumber);
+            status = issueState?.status;
+            branch = issueState?.branch;
+          } catch (error) {
+            logNonFatalWarning(
+              `  !  State lookup failed for #${issueNumber}, treating as incomplete...`,
+              error,
+              config.verbose,
             );
-          } else {
-            activeIssues.push(issueNumber);
           }
-        } catch (error) {
-          logNonFatalWarning(
-            `  !  State lookup failed for #${issueNumber}, including anyway...`,
-            error,
-            config.verbose,
-          );
-          activeIssues.push(issueNumber);
+          orderedLinks.push({ issueNumber, status, branch });
         }
-      }
-      if (activeIssues.length < issueNumbers.length) {
-        issueNumbers = activeIssues;
-        if (issueNumbers.length === 0) {
+
+        const resolver: CompletedLinkResolver = {
+          resolveBranchTip: (branch) => revParseRef(branch),
+          resolveBaseTip: () => revParseRef(baseBranch),
+        };
+        const plan = computeChainResumePlan(orderedLinks, baseBranch, resolver);
+
+        if (plan.failFast) {
+          console.log(
+            chalk.red(`\n  ❌ Chain resume aborted: ${plan.failFast}`),
+          );
+          shutdown.dispose();
+          return {
+            results: [
+              {
+                issueNumber: plan.resumeIssue ?? issueNumbers[0],
+                success: false,
+                phaseResults: [],
+                durationSeconds: 0,
+                loopTriggered: false,
+                abortReason: `chain resume aborted: ${plan.failFast}`,
+              },
+            ],
+            logPath: null,
+            exitCode: 1,
+            worktreeMap: new Map(),
+            issueInfoMap: new Map(),
+            config,
+            mergedOptions,
+            logWriter: null,
+          };
+        }
+
+        if (plan.allComplete) {
           console.log(
             chalk.yellow(
-              `\n  All issues already completed. Use --force to re-run.`,
+              `\n  All chain links already completed. Use --force to re-run.`,
             ),
           );
           shutdown.dispose();
@@ -679,6 +738,76 @@ export class RunOrchestrator {
             mergedOptions,
             logWriter: null,
           };
+        }
+
+        if (plan.skipped.length > 0) {
+          chainResume = plan;
+          issueNumbers = plan.active;
+          const resumeAt = plan.resumeBaseCommit
+            ? plan.resumeBaseCommit.slice(0, 8)
+            : (plan.resumeBase ?? "base");
+          for (const s of plan.skipped) {
+            console.log(
+              chalk.yellow(
+                `  !  #${s.issueNumber}: already ${s.status} — skipping (use --force to re-run)`,
+              ),
+            );
+          }
+          console.log(
+            chalk.cyan(
+              `  ↻ Resuming chain at #${plan.resumeIssue} from ${resumeAt}` +
+                ` (${plan.resumeBase})`,
+            ),
+          );
+        }
+      } else {
+        // ── Non-chain skip guard (unchanged) ───────────────────────────
+        const activeIssues: number[] = [];
+        for (const issueNumber of issueNumbers) {
+          try {
+            const issueState = await stateManager.getIssueState(issueNumber);
+            if (
+              issueState &&
+              (issueState.status === "ready_for_merge" ||
+                issueState.status === "merged")
+            ) {
+              console.log(
+                chalk.yellow(
+                  `  !  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,
+                ),
+              );
+            } else {
+              activeIssues.push(issueNumber);
+            }
+          } catch (error) {
+            logNonFatalWarning(
+              `  !  State lookup failed for #${issueNumber}, including anyway...`,
+              error,
+              config.verbose,
+            );
+            activeIssues.push(issueNumber);
+          }
+        }
+        if (activeIssues.length < issueNumbers.length) {
+          issueNumbers = activeIssues;
+          if (issueNumbers.length === 0) {
+            console.log(
+              chalk.yellow(
+                `\n  All issues already completed. Use --force to re-run.`,
+              ),
+            );
+            shutdown.dispose();
+            return {
+              results: [],
+              logPath: null,
+              exitCode: 0,
+              worktreeMap: new Map(),
+              issueInfoMap: new Map(),
+              config,
+              mergedOptions,
+              logWriter: null,
+            };
+          }
         }
       }
     }
@@ -767,11 +896,15 @@ export class RunOrchestrator {
         title: issueInfoMap.get(num)?.title || `Issue #${num}`,
       }));
       if (mergedOptions.chain) {
+        // On resume (#760), provision the first incomplete link from the
+        // completed prefix's committed tip (resumeBase) instead of the base
+        // branch, so the chain rebuilds onto the work already done.
+        const chainBase = chainResume?.resumeBase ?? baseBranch;
         worktreeMap = await ensureWorktreesChain(
           issueData,
           config.verbose,
           manifest.packageManager,
-          baseBranch,
+          chainBase,
         );
       } else {
         worktreeMap = await ensureWorktrees(
@@ -810,6 +943,7 @@ export class RunOrchestrator {
       services: { logWriter, stateManager, shutdownManager: shutdown },
       packageManager: manifest.packageManager,
       baseBranch,
+      chainResume,
       onProgress,
       onPhasePlan: init.onPhasePlan,
       phasePauseHandle,
@@ -964,6 +1098,62 @@ export class RunOrchestrator {
 
       if (shutdown?.shuttingDown) {
         break;
+      }
+
+      // #760: On chain resume, the completed prefix was skipped, so the first
+      // active link (i === 0) is now the resume point. The #748 successor-rebase
+      // below only fires for i > 0, so explicitly rebase this first link onto
+      // the last completed link's committed tip (resumeBase). This is the
+      // authoritative correctness gate: provisioning may have created the
+      // worktree fresh (already on resumeBase → no-op) or rebased an existing
+      // one, but a provisioning-time rebase failure only warns and continues —
+      // here we fail fast so the link never silently executes on the wrong base.
+      const chainResume = this.cfg.chainResume;
+      if (options.chain && i === 0 && chainResume?.resumeBase) {
+        const activeWorktree = this.cfg.worktreeMap.get(issueNumber);
+        if (activeWorktree) {
+          const rebase = rebaseOntoLocalBranch(
+            activeWorktree.path,
+            chainResume.resumeBase,
+            this.cfg.config.verbose,
+          );
+          if (!rebase.success) {
+            console.log(
+              chalk.yellow(
+                `  ⚠️  Chain resume broken: could not rebase #${issueNumber} onto resume base ${chainResume.resumeBase}` +
+                  (rebase.conflict ? " — merge conflict" : "") +
+                  `. Stopping the chain; #${issueNumber} and any later issues were not run.`,
+              ),
+            );
+            results.push({
+              issueNumber,
+              success: false,
+              phaseResults: [],
+              durationSeconds: 0,
+              loopTriggered: false,
+              abortReason: rebase.conflict
+                ? `chain resume rebase conflict onto ${chainResume.resumeBase}`
+                : `chain resume rebase failed onto ${chainResume.resumeBase}: ${rebase.error ?? "unknown error"}`,
+            });
+            break;
+          }
+        } else {
+          console.log(
+            chalk.yellow(
+              `  ⚠️  Chain resume broken: no worktree for #${issueNumber}. ` +
+                `Stopping the chain; #${issueNumber} and any later issues were not run.`,
+            ),
+          );
+          results.push({
+            issueNumber,
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+            abortReason: `chain resume could not be established: missing worktree for #${issueNumber}`,
+          });
+          break;
+        }
       }
 
       // #748: Successors were provisioned up-front (ensureWorktreesChain) while

@@ -1124,14 +1124,28 @@ export async function runIssueWithLogging(
     }
   }
 
-  // Create checkpoint commit in chain mode after QA passes
+  // Create checkpoint commit in chain mode after QA passes.
+  // #760: chain resume rebases the next link onto this checkpoint, so a failure
+  // here is not silent — warn prominently and record it on the result, since a
+  // later resume of a downstream link will fail fast without it (AC-4).
+  let checkpointFailed = false;
   if (success && chainMode && worktreePath) {
-    createCheckpointCommit(
+    const checkpointOk = createCheckpointCommit(
       worktreePath,
       issueNumber,
       config.verbose,
       baseBranch,
     );
+    if (!checkpointOk) {
+      checkpointFailed = true;
+      log(
+        chalk.yellow(
+          `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — ` +
+            `chain resume from this link is unavailable. Re-running the chain ` +
+            `will redo #${issueNumber} (use --force to redo the whole chain).`,
+        ),
+      );
+    }
   }
 
   // Rebase onto the base branch before PR creation (unless --no-rebase)
@@ -1224,5 +1238,6 @@ export async function runIssueWithLogging(
     loopTriggered,
     prNumber,
     prUrl,
+    checkpointFailed,
   };
 }
