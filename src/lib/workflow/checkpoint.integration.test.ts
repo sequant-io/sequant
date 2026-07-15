@@ -9,9 +9,9 @@
  * Pair with the mocked unit tests in src/commands/run.test.ts.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { spawnSync } from "child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createCheckpointCommit } from "./worktree-manager.js";
@@ -112,6 +112,38 @@ describe("createCheckpointCommit (integration)", () => {
       "HEAD",
     ).trim();
     expect(changed).toBe("src/feature.ts");
+  });
+
+  it("warns prominently (non-verbose) and returns false when the commit step fails (#760 AC-4)", () => {
+    // Chain resume rebases the next link onto this checkpoint, so a commit
+    // failure must not be verbose-gated. Force `git commit` to fail via a
+    // failing pre-commit hook (staging still succeeds), then assert the warning
+    // fires even with verbose=false and the function reports failure.
+    const hookPath = join(repoDir, ".git/hooks/pre-commit");
+    writeFileSync(hookPath, "#!/bin/sh\nexit 1\n");
+    chmodSync(hookPath, 0o755);
+
+    writeFileSync(join(repoDir, "src/feature.ts"), "export const v = 9;\n");
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const headBefore = git(repoDir, "rev-parse", "HEAD");
+      const result = createCheckpointCommit(repoDir, 42, false, "main");
+      const headAfter = git(repoDir, "rev-parse", "HEAD");
+
+      expect(result).toBe(false);
+      expect(headAfter).toBe(headBefore); // no checkpoint commit written
+
+      // The warning is emitted even though verbose === false.
+      const warned = logSpy.mock.calls
+        .map((c) => String(c[0]))
+        .some((line) =>
+          /Could not create checkpoint commit for #42/.test(line),
+        );
+      expect(warned).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 
   it("returns true with no new commit when the tree is clean (AC-5)", () => {
