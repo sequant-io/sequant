@@ -53,6 +53,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
 | `--stacked` | Stack PRs: non-first PRs target predecessor branch (implies `--chain`) | `false` |
 | `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
+| `--strict-preflight` | Make `--chain` content pre-flight warnings (missing AC section, dependency/overlap order, closed issues) fatal before any worktree is provisioned | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
 | `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
