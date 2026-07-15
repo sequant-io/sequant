@@ -255,6 +255,52 @@ gh pr merge 3 --squash
 Option B: Single combined review
 - Review the final branch which contains all changes
 
+### Chain Pre-flight
+
+Every `--chain` run of 2+ issues starts with a content pre-flight. It reads each
+issue once and points out cheap, high-cost-to-miss problems **before the first
+worktree is provisioned** — an unready or mis-ordered chain is much cheaper to
+fix at the front door than after three worktrees exist.
+
+It warns on four things:
+
+| Warning | Fires when |
+|---------|------------|
+| Missing AC | An issue has no Acceptance Criteria section, or the section has no checklist items |
+| Dependency order | An issue declares `Blocked by #N` / `Depends on: #N` and #N runs *after* it in your CLI order |
+| File-overlap order | Two issues are predicted to modify the same file, and your CLI order contradicts the ascending land order (the same prediction `/assess` shows) |
+| Closed issue | An issue is already CLOSED on GitHub |
+
+**Warnings never block by default.** They are advice, not a gate — a warning
+usually means "look at this", not "you are wrong". Order that looks odd to the
+pre-flight is often deliberate.
+
+```text
+  ⚠ #39 declares it is blocked by / depends on #38, but #38 runs AFTER #39 in
+    the chain order — reorder so #38 comes first.
+```
+
+The checks run against the order **you typed**, not the dependency-sorted order,
+so `sequant run 39 38 --chain` still warns even though the sorter would have
+reordered it anyway. The point is to tell you the declared order and your order
+disagree.
+
+Only line-leading markers count as declarations, so prose that merely mentions
+`blocked by #N` mid-sentence — or shows it inside a code fence — is ignored.
+
+**Making warnings fatal:**
+
+Add `--strict-preflight` to turn any warning into a hard stop, exiting `1`
+before provisioning anything. Useful in CI, where an unready chain should fail
+loudly rather than burn a runner:
+
+```bash
+npx sequant run 38 39 40 --chain --strict-preflight
+```
+
+If `gh` cannot fetch an issue, that issue's checks are skipped with a note — the
+pre-flight never fails a run on its own.
+
 ### Stacked PRs
 
 `--stacked` builds on `--chain` and changes only one thing: each non-first PR
