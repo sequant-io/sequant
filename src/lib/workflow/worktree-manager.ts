@@ -1093,11 +1093,14 @@ passed QA in chain mode. It serves as a recovery point if later issues fail.`;
 
   if (commitResult.status !== 0) {
     const error = commitResult.stderr.toString();
-    if (verbose) {
-      console.log(
-        chalk.yellow(`    !  Could not create checkpoint commit: ${error}`),
-      );
-    }
+    // #760: chain resume rebases the next link onto this checkpoint, so a
+    // commit failure is surfaced regardless of --verbose (the call site adds
+    // the resume-impact warning; here we show the underlying git error).
+    console.log(
+      chalk.yellow(
+        `    !  Could not create checkpoint commit for #${issueNumber}: ${error.trim()}`,
+      ),
+    );
     return false;
   }
 

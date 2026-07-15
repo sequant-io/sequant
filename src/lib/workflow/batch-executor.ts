@@ -1124,14 +1124,34 @@ export async function runIssueWithLogging(
     }
   }
 
-  // Create checkpoint commit in chain mode after QA passes
+  // Create checkpoint commit in chain mode after QA passes.
+  // #760: chain resume rebases the next link onto this checkpoint, so a failure
+  // here is not silent — warn prominently and record it on the result (AC-4).
+  //
+  // Note the status above is already `ready_for_merge`, so a re-run reads this
+  // link as a completed prefix and does NOT redo it. Its uncommitted work is
+  // therefore absent from the branch tip, which `computeChainResumePlan` detects
+  // (dirty worktree → fail fast) rather than wrong-basing the next link. The
+  // message states that outcome exactly: the work must be committed, or --force.
+  let checkpointFailed = false;
   if (success && chainMode && worktreePath) {
-    createCheckpointCommit(
+    const checkpointOk = createCheckpointCommit(
       worktreePath,
       issueNumber,
       config.verbose,
       baseBranch,
     );
+    if (!checkpointOk) {
+      checkpointFailed = true;
+      log(
+        chalk.yellow(
+          `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
+            `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
+            `ready_for_merge, so a re-run will skip it and refuse to resume the chain here until the ` +
+            `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`,
+        ),
+      );
+    }
   }
 
   // Rebase onto the base branch before PR creation (unless --no-rebase)
@@ -1224,5 +1244,6 @@ export async function runIssueWithLogging(
     loopTriggered,
     prNumber,
     prUrl,
+    checkpointFailed,
   };
 }
