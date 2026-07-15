@@ -325,6 +325,13 @@ export interface RunOptions {
    */
   qaGate?: boolean;
   /**
+   * Make `--chain` content pre-flight warnings fatal (#762).
+   * By default the pre-flight (missing AC section, dependency-order and
+   * file-overlap-order contradictions, closed issues) only warns. When true,
+   * any warning aborts the run BEFORE the first worktree is provisioned.
+   */
+  strictPreflight?: boolean;
+  /**
    * Base branch for worktree creation.
    * Resolution priority: this CLI flag → settings.run.defaultBase → 'main'
    */
