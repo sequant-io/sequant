@@ -102,6 +102,15 @@ describe("chain resume (integration, #760)", () => {
     return {
       resolveBranchTip: (branch) => branchTip(mainRepo, branch),
       resolveBaseTip: () => branchTip(mainRepo, "main"),
+      isWorktreeDirty: (worktreePath) => {
+        // Mirrors run-orchestrator's isWorktreeDirty against real git.
+        const r = spawnSync(
+          "git",
+          ["-C", worktreePath, "status", "--porcelain"],
+          { encoding: "utf-8" },
+        );
+        return r.status === 0 && r.stdout.trim().length > 0;
+      },
     };
   }
 
@@ -212,6 +221,82 @@ describe("chain resume (integration, #760)", () => {
     expect(plan.failFast).toBeDefined();
     expect(plan.failFast).toContain(link1Branch);
     expect(plan.resumeBase).toBeUndefined();
+  });
+
+  it("fails fast when the completed link's checkpoint never landed, leaving work uncommitted", () => {
+    // #1 committed its exec work but its checkpoint commit failed, so trailing
+    // changes are still dirty in the worktree and absent from the branch tip.
+    // Status was already written as ready_for_merge, so the planner would
+    // otherwise treat this incomplete tip as a valid resume base.
+    writeFileSync(join(link1Worktree, "feature-1.ts"), "export const a = 1;\n");
+    git(link1Worktree, "add", "feature-1.ts");
+    git(link1Worktree, "commit", "-m", "feat(#1): exec work");
+    writeFileSync(
+      join(link1Worktree, "feature-1.ts"),
+      "export const a = 1;\nexport const trailing = 2;\n",
+    );
+
+    const plan = computeChainResumePlan(
+      [
+        {
+          issueNumber: 1,
+          status: "ready_for_merge",
+          branch: link1Branch,
+          worktree: link1Worktree,
+        },
+        {
+          issueNumber: 2,
+          status: "in_progress",
+          branch: link2Branch,
+          worktree: link2Worktree,
+        },
+      ],
+      "main",
+      repoResolver(),
+    );
+
+    expect(plan.failFast).toBeDefined();
+    expect(plan.failFast).toContain("uncommitted changes");
+    expect(plan.resumeBase).toBeUndefined();
+  });
+
+  it("does not fail fast once the completed link's worktree is clean", () => {
+    // Same shape as above, but the trailing work is committed (the checkpoint
+    // landed) — the tip is now complete and is a valid resume base.
+    writeFileSync(join(link1Worktree, "feature-1.ts"), "export const a = 1;\n");
+    git(link1Worktree, "add", "feature-1.ts");
+    git(link1Worktree, "commit", "-m", "feat(#1): exec work");
+    git(
+      link1Worktree,
+      "commit",
+      "--allow-empty",
+      "-m",
+      "checkpoint(#1): QA passed",
+    );
+    const link1Checkpoint = git(link1Worktree, "rev-parse", "HEAD");
+
+    const plan = computeChainResumePlan(
+      [
+        {
+          issueNumber: 1,
+          status: "ready_for_merge",
+          branch: link1Branch,
+          worktree: link1Worktree,
+        },
+        {
+          issueNumber: 2,
+          status: "in_progress",
+          branch: link2Branch,
+          worktree: link2Worktree,
+        },
+      ],
+      "main",
+      repoResolver(),
+    );
+
+    expect(plan.failFast).toBeUndefined();
+    expect(plan.resumeBase).toBe(link1Branch);
+    expect(plan.resumeBaseCommit).toBe(link1Checkpoint);
   });
 
   it("resumes from the base branch when the completed prefix was merged (AC-3 merged)", () => {

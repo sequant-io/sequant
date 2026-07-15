@@ -27,6 +27,8 @@ export interface ChainResumeSkip {
   status: "ready_for_merge" | "merged";
   /** The link's local feature branch (from state), if known. */
   branch?: string;
+  /** The link's worktree path (from state), if known — used for the dirty check. */
+  worktree?: string;
 }
 
 /** The computed plan for resuming a partially-completed chain. */
@@ -63,13 +65,22 @@ export interface CompletedLinkResolver {
   resolveBranchTip(branch: string): string | undefined;
   /** Resolve the base branch tip (for merged-resume reporting). */
   resolveBaseTip(): string | undefined;
+  /**
+   * True iff the worktree has uncommitted changes (tracked or non-ignored
+   * untracked). Used to detect a resume base whose checkpoint never landed —
+   * see the dirty-tip fail-fast in {@link computeChainResumePlan}. Must return
+   * false (not throw) when the worktree is gone or unreadable; branch-tip
+   * resolution governs that case instead.
+   */
+  isWorktreeDirty(worktreePath: string): boolean;
 }
 
-/** An ordered chain link with its persisted state (status + branch). */
+/** An ordered chain link with its persisted state (status + branch + worktree). */
 export interface ChainLinkState {
   issueNumber: number;
   status?: string;
   branch?: string;
+  worktree?: string;
 }
 
 const COMPLETED_STATUSES = new Set(["ready_for_merge", "merged"]);
@@ -100,6 +111,7 @@ export function computeChainResumePlan(
         issueNumber: link.issueNumber,
         status: link.status as "ready_for_merge" | "merged",
         branch: link.branch,
+        worktree: link.worktree,
       });
       firstIncomplete++;
     } else {
@@ -160,6 +172,26 @@ export function computeChainResumePlan(
           `the resume base is unreconstructable. Re-run with --force to redo the chain from scratch.`,
       };
     }
+    // The branch exists, but a tip is only a valid resume base if it actually
+    // contains the link's work. `createCheckpointCommit` sweeps trailing
+    // uncommitted changes into a checkpoint commit; when it fails (commit hook,
+    // staging error, or unrelated dirty files) the status was *already* written
+    // as ready_for_merge, so this link still reads as a completed prefix while
+    // its tip is missing work. Rebasing the successor onto it would be exactly
+    // the silent wrong-base execution AC-3 forbids — fail fast instead.
+    if (last.worktree && resolver.isWorktreeDirty(last.worktree)) {
+      return {
+        skipped,
+        active,
+        resumeIssue: active[0],
+        allComplete: false,
+        failFast:
+          `#${last.issueNumber} is ready_for_merge but its worktree has uncommitted changes — ` +
+          `its checkpoint commit never landed, so branch "${last.branch}" is missing that work and ` +
+          `resuming #${active[0]} here would build on an incomplete base. Commit them in ${last.worktree}, ` +
+          `or re-run with --force to redo the chain from scratch.`,
+      };
+    }
     resumeBase = last.branch;
     resumeBaseCommit = tip;
   }
@@ -172,4 +204,55 @@ export function computeChainResumePlan(
     resumeIssue: active[0],
     allComplete: false,
   };
+}
+
+/** The subset of persisted issue state the resume planner reads. */
+export interface PersistedLinkState {
+  status?: string;
+  branch?: string;
+  worktree?: string;
+}
+
+/**
+ * Read each link's persisted state and compute the resume plan.
+ *
+ * Split out of `run-orchestrator.ts` so the state-reading half of resume — in
+ * particular "a state lookup failure must treat the link as *incomplete*", the
+ * conservative choice that re-executes rather than skipping on bad data — is
+ * testable without standing up an orchestrator.
+ *
+ * @param issueNumbers Chain issues in execution order.
+ * @param baseBranch The run's base branch.
+ * @param getIssueState Reads persisted state for one issue (may reject).
+ * @param resolver Git-ref resolver.
+ * @param onStateError Called when a lookup throws; the link is then treated as
+ *   incomplete (no status), so it stays in `active`.
+ */
+export async function planChainResumeFromState(
+  issueNumbers: number[],
+  baseBranch: string,
+  getIssueState: (
+    issueNumber: number,
+  ) => Promise<PersistedLinkState | null | undefined>,
+  resolver: CompletedLinkResolver,
+  onStateError?: (issueNumber: number, error: unknown) => void,
+): Promise<ChainResumePlan> {
+  const orderedLinks: ChainLinkState[] = [];
+  for (const issueNumber of issueNumbers) {
+    let status: string | undefined;
+    let branch: string | undefined;
+    let worktree: string | undefined;
+    try {
+      const issueState = await getIssueState(issueNumber);
+      status = issueState?.status;
+      branch = issueState?.branch;
+      worktree = issueState?.worktree;
+    } catch (error) {
+      // Unknown state → treat as incomplete and re-execute. Skipping on a
+      // failed lookup could silently drop an issue the user meant to run.
+      onStateError?.(issueNumber, error);
+    }
+    orderedLinks.push({ issueNumber, status, branch, worktree });
+  }
+  return computeChainResumePlan(orderedLinks, baseBranch, resolver);
 }
