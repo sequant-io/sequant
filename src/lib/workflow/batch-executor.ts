@@ -1126,8 +1126,13 @@ export async function runIssueWithLogging(
 
   // Create checkpoint commit in chain mode after QA passes.
   // #760: chain resume rebases the next link onto this checkpoint, so a failure
-  // here is not silent — warn prominently and record it on the result, since a
-  // later resume of a downstream link will fail fast without it (AC-4).
+  // here is not silent — warn prominently and record it on the result (AC-4).
+  //
+  // Note the status above is already `ready_for_merge`, so a re-run reads this
+  // link as a completed prefix and does NOT redo it. Its uncommitted work is
+  // therefore absent from the branch tip, which `computeChainResumePlan` detects
+  // (dirty worktree → fail fast) rather than wrong-basing the next link. The
+  // message states that outcome exactly: the work must be committed, or --force.
   let checkpointFailed = false;
   if (success && chainMode && worktreePath) {
     const checkpointOk = createCheckpointCommit(
@@ -1140,9 +1145,10 @@ export async function runIssueWithLogging(
       checkpointFailed = true;
       log(
         chalk.yellow(
-          `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — ` +
-            `chain resume from this link is unavailable. Re-running the chain ` +
-            `will redo #${issueNumber} (use --force to redo the whole chain).`,
+          `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
+            `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
+            `ready_for_merge, so a re-run will skip it and refuse to resume the chain here until the ` +
+            `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`,
         ),
       );
     }

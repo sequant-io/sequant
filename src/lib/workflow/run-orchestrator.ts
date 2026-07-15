@@ -82,6 +82,30 @@ function revParseRef(ref: string): string | undefined {
   const sha = result.stdout.trim();
   return sha.length > 0 ? sha : undefined;
 }
+
+/**
+ * True iff `worktreePath` has uncommitted changes (`git status --porcelain`,
+ * which already honours .gitignore). Used by the chain resume planner (#760) to
+ * reject a resume base whose checkpoint commit never landed.
+ *
+ * Returns false when the path is missing or not a worktree: an unreadable
+ * worktree can't be judged dirty, and the branch-tip check already covers the
+ * destroyed-link case.
+ */
+function isWorktreeDirty(worktreePath: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", worktreePath, "status", "--porcelain"],
+    {
+      stdio: "pipe",
+      encoding: "utf-8",
+    },
+  );
+  if (result.status !== 0) {
+    return false;
+  }
+  return result.stdout.trim().length > 0;
+}
 import {
   getIssueInfo,
   sortByDependencies,
@@ -92,7 +116,7 @@ import {
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import {
-  computeChainResumePlan,
+  planChainResumeFromState,
   type ChainResumePlan,
   type CompletedLinkResolver,
 } from "./chain-resume.js";
@@ -671,29 +695,23 @@ export class RunOrchestrator {
         // never fires → it silently builds on main). Instead compute a
         // chain-correct plan that resumes at the first incomplete link,
         // rebased onto the completed prefix's committed tip.
-        const orderedLinks = [];
-        for (const issueNumber of issueNumbers) {
-          let status: string | undefined;
-          let branch: string | undefined;
-          try {
-            const issueState = await stateManager.getIssueState(issueNumber);
-            status = issueState?.status;
-            branch = issueState?.branch;
-          } catch (error) {
+        const resolver: CompletedLinkResolver = {
+          resolveBranchTip: (branch) => revParseRef(branch),
+          resolveBaseTip: () => revParseRef(baseBranch),
+          isWorktreeDirty,
+        };
+        const plan = await planChainResumeFromState(
+          issueNumbers,
+          baseBranch,
+          (issueNumber) => stateManager.getIssueState(issueNumber),
+          resolver,
+          (issueNumber, error) =>
             logNonFatalWarning(
               `  !  State lookup failed for #${issueNumber}, treating as incomplete...`,
               error,
               config.verbose,
-            );
-          }
-          orderedLinks.push({ issueNumber, status, branch });
-        }
-
-        const resolver: CompletedLinkResolver = {
-          resolveBranchTip: (branch) => revParseRef(branch),
-          resolveBaseTip: () => revParseRef(baseBranch),
-        };
-        const plan = computeChainResumePlan(orderedLinks, baseBranch, resolver);
+            ),
+        );
 
         if (plan.failFast) {
           console.log(

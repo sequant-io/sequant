@@ -145,6 +145,27 @@ export function displaySummary(
     });
   }
 
+  // #760: a chain link whose checkpoint commit failed keeps its own work but
+  // loses the recovery point resume depends on, and the per-issue warning has
+  // long scrolled past by now on a multi-hour chain. Restate it at the summary,
+  // where the user is actually looking, so the next run's fail-fast is expected.
+  const checkpointFailures = results.filter((r) => r.checkpointFailed);
+  if (checkpointFailures.length > 0) {
+    console.log(
+      colors.warning(
+        `  ⚠️  Checkpoint commit failed for ${checkpointFailures
+          .map((r) => `#${r.issueNumber}`)
+          .join(", ")} — uncommitted work is missing from the feature branch.`,
+      ),
+    );
+    console.log(
+      colors.muted(
+        "     Resuming this chain will stop at that link until the work is committed (or use --force).",
+      ),
+    );
+    console.log("");
+  }
+
   if (mergedOptions.reflect && results.length > 0) {
     const reflection = analyzeRun({
       results,
