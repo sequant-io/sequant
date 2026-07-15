@@ -34,9 +34,9 @@ Some background.
 `;
 
 /**
- * An issue whose AC section uses bare checkboxes (no \`AC-N:\` prefix) — copied
- * verbatim from this feature's own issue (#762). ac-parser's AC-N patterns do
- * NOT match these, so this is the false-positive case the fallback guards.
+ * An issue whose AC section uses bare checkboxes (no \`AC-N:\` prefix) — the
+ * shape of this feature's own issue (#762), abridged. ac-parser's AC-N patterns
+ * do NOT match these, so this is the false-positive case the fallback guards.
  */
 const BARE_CHECKBOX_AC_BODY = `## Proposal
 
@@ -86,9 +86,7 @@ describe("hasNonEmptyAcSection", () => {
 
 describe("parseDeclaredBlockers", () => {
   it("catches the verbatim `Blocked by #38` marker (the AC-2 motivating example)", () => {
-    expect(
-      parseDeclaredBlockers("This is Blocked by #38 until it lands."),
-    ).toEqual([38]);
+    expect(parseDeclaredBlockers("Blocked by #38\n")).toEqual([38]);
   });
 
   it("catches `depends on #N` and bold `**Depends on**: #N`", () => {
@@ -96,17 +94,41 @@ describe("parseDeclaredBlockers", () => {
     expect(parseDeclaredBlockers("**Depends on**: #456")).toEqual([456]);
   });
 
+  it("catches a marker written as a list item", () => {
+    expect(parseDeclaredBlockers("- Blocked by #77\n")).toEqual([77]);
+  });
+
   it("dedups repeated markers and preserves first-seen order", () => {
     expect(
-      parseDeclaredBlockers(
-        "Blocked by #10. Also depends on #11. Depends on #10.",
-      ),
+      parseDeclaredBlockers("Blocked by #10\nDepends on #11\nBlocked by #10\n"),
     ).toEqual([10, 11]);
   });
 
   it("ignores markers inside fenced code blocks", () => {
     const body = "Prose.\n\n```\n# example: blocked by #99\n```\n";
     expect(parseDeclaredBlockers(body)).toEqual([]);
+  });
+
+  it("ignores a marker inside an inline code span (documentation example)", () => {
+    expect(
+      parseDeclaredBlockers("`Blocked by #99` is the marker format.\n"),
+    ).toEqual([]);
+  });
+
+  it("does not parse `Blocked by 5 days` as issue #5 (the `#` is required)", () => {
+    expect(parseDeclaredBlockers("Blocked by 5 days of review.\n")).toEqual([]);
+  });
+
+  it("ignores mid-sentence prose mentions — VERBATIM #762 body lines", () => {
+    // Copied verbatim from issue #762's own body. Neither #38 nor #36 is a real
+    // blocker of #762 — both are examples inside prose. An unanchored match
+    // reported `blockers=[38, 36]`, which under --strict-preflight would have
+    // hard-aborted a legitimate `run 762 38 --chain`.
+    const line12 =
+      '- Declared dependency markers ("blocked by #N", "depends on #N") in issue bodies are checked against the CLI order; warn on contradiction (e.g. `run 39 38 --chain` when #39 says blocked by #38).';
+    const line22 =
+      '- [ ] Unit tests cover each warning against verbatim issue-body fixtures (real markers like "Blocked by #36", not synthetic combined fixtures).';
+    expect(parseDeclaredBlockers(`${line12}\n${line22}\n`)).toEqual([]);
   });
 });
 

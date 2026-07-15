@@ -124,6 +124,7 @@ sequant doctor              # Verify installation health
 | `--sequential` | Run issues one at a time | off (parallel) |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | off |
 | `--qa-gate` | Wait for QA pass before next issue in chain (requires `--chain`) | off |
+| `--strict-preflight` | Make `--chain` content pre-flight warnings fatal instead of advisory (requires `--chain`) | off (warn only) |
 | `--phases <list>` | Phases to run | `spec,exec,qa` |
 | `--resume` | Resume from last completed phase (reads GitHub markers) | off |
 | `--base <branch>` | Base branch for worktree creation | `main` (or `settings.run.defaultBase`) |
