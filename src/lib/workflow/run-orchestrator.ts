@@ -114,6 +114,7 @@ import {
   emitRunIdLine,
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
+import { runChainPreflight } from "./chain-preflight.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import {
   planChainResumeFromState,
@@ -239,6 +240,13 @@ export interface ResolvedRun {
   config: ExecutionConfig;
   /** Parsed + dep-sorted issue numbers (pre-state-guard) */
   issueNumbers: number[];
+  /**
+   * Raw CLI issue order BEFORE `sortByDependencies` reorders it (#762).
+   * The chain content pre-flight must compare against this order — comparing
+   * against the dep-sorted `issueNumbers` would make the dependency-order and
+   * file-overlap-order checks dead code, since the sorter already fixed them.
+   */
+  rawIssueOrder: number[];
   /** Resolved batches if --batch specified, else null */
   batches: number[][] | null;
   /** Resolved base branch (CLI → settings → auto-detect → "main") */
@@ -553,6 +561,9 @@ export class RunOrchestrator {
         .filter((n) => !isNaN(n));
     }
 
+    // Capture the raw CLI order before dep-sorting (#762 pre-flight needs it).
+    const rawIssueOrder = [...issueNumbers];
+
     if (issueNumbers.length > 1 && !resolvedBatches) {
       issueNumbers = sortByDependencies(issueNumbers);
     }
@@ -572,6 +583,7 @@ export class RunOrchestrator {
       mergedOptions,
       config,
       issueNumbers,
+      rawIssueOrder,
       batches: resolvedBatches,
       baseBranch,
       stack: manifest.stack,
@@ -895,6 +907,48 @@ export class RunOrchestrator {
           mergedOptions,
           logWriter: null,
         };
+      }
+    }
+
+    // ── Chain content pre-flight (#762) ────────────────────────────────
+    // Warn-by-default; `--strict-preflight` turns warnings fatal. Runs BEFORE
+    // any worktree is provisioned. Uses the RAW CLI order (not the dep-sorted
+    // `issueNumbers`) so the dependency-order / file-overlap checks aren't
+    // masked by `sortByDependencies`, filtered to issues still active after the
+    // state guard / lock acquisition.
+    if (mergedOptions.chain && issueNumbers.length > 1) {
+      const activeSet = new Set(issueNumbers);
+      const preflightOrder = resolved.rawIssueOrder.filter((n) =>
+        activeSet.has(n),
+      );
+      const preflightWarnings = await runChainPreflight(preflightOrder);
+      if (preflightWarnings.length > 0) {
+        for (const w of preflightWarnings) {
+          bracketedConsoleLog(
+            phasePauseHandle,
+            chalk.yellow(`  ⚠ ${w.message}`),
+          );
+        }
+        if (mergedOptions.strictPreflight) {
+          bracketedConsoleLog(
+            phasePauseHandle,
+            chalk.red(
+              `\n  ✖ --strict-preflight: ${preflightWarnings.length} pre-flight ` +
+                `warning(s) — aborting before any worktree is provisioned.`,
+            ),
+          );
+          shutdown.dispose();
+          return {
+            results: [],
+            logPath: null,
+            exitCode: 1,
+            worktreeMap: new Map(),
+            issueInfoMap: new Map(),
+            config,
+            mergedOptions,
+            logWriter: null,
+          };
+        }
       }
     }
 
