@@ -120,21 +120,35 @@ For each proposal, specify:
 
 ### **Documentation Health Check**
 
-Review CLAUDE.md size and relevance:
-- Current line count (target: 700-800)
-- Sections that feel bloated
-- Sections that are missing
-- Redundancy check
-- Extract candidates (sections >50 lines)
-- Recommendation: [Prune | Expand | Restructure | Extract | Good as-is]
+**CLAUDE.md is an index, not a knowledge store.** Durable knowledge belongs in
+auto-memory, `docs/`, or the relevant skill; CLAUDE.md holds only what must be
+loaded into *every* session (commit rules, hook gotchas, skill-invocation
+rules). A short CLAUDE.md is a sign the other tiers are doing their job — do
+**not** recommend padding it toward some line count. There is no target length.
+
+Review CLAUDE.md relevance:
+- Does every line still apply, and is it still accurate?
+- Anything that only matters in one workflow → move to that skill or `docs/`
+- Anything that is durable session-to-session context → auto-memory
+- Redundancy check (same rule stated here and in a skill)
+- Extract candidates (sections >50 lines — CLAUDE.md should rarely have any)
+- Recommendation: [Prune | Restructure | Extract | Good as-is]
+
+Also check the **memory** tier, which carries most of this repo's knowledge:
+- Entries citing script flags, CLI behavior, or `file:line` **rot silently** —
+  spot-check any entry you relied on this session against current code and fix
+  it. A wrong memory is worse than a missing one.
+- Index (`MEMORY.md`) one-liners still accurate?
 
 ### **Action Items**
 
-Generate a checklist:
-- [ ] Add section to CLAUDE.md: [topic]
-- [ ] Update slash command: [command name]
-- [ ] Move to docs/archive/: [file name]
-- [ ] Create new command: [command name]
+Generate a checklist. Prefer concrete targets — a file, a memory entry, a
+command — over intentions:
+- [ ] Correct/remove a stale memory entry: [name] (verify against current code first)
+- [ ] Add a memory entry for: [durable lesson]
+- [ ] Update skill: [name] — remember all three skill dirs
+- [ ] Update docs: [path] (check main README + marketplace README + docs/)
+- [ ] Add a pointer to CLAUDE.md: [one line + link] — only if needed most sessions
 - [ ] Remove outdated content: [location]
 
 ## Workflow Analytics
@@ -172,7 +186,7 @@ At the end of reflection, ask:
 - [ ] **Session Summary** - What was accomplished, what went well, friction points
 - [ ] **Effectiveness Analysis** - Token efficiency, context gathering, pattern reuse
 - [ ] **Proposed Changes** - Specific changes with target files and rationale
-- [ ] **Documentation Health** - Line count, bloat assessment, recommendations
+- [ ] **Documentation Health** - CLAUDE.md relevance/accuracy (not length) + memory-tier rot check
 - [ ] **Action Items** - Checklist of concrete next steps
 
 **DO NOT respond until all items are verified.**

@@ -70,26 +70,42 @@ Focus on QA/review effectiveness after `/qa`:
 
 ## Good Reflection Examples
 
-### Documentation Improvement
+Note what these have in common: each names a **specific file and a specific
+wrong line**, and each was *verified* before being proposed. A reflection that
+proposes fixing something you have not opened is a guess.
 
-> **Friction Point:** Spent 10 minutes searching for how neighborhood extraction works across multiple files.
+### Correcting a stale memory
+
+> **Friction Point:** Followed a memory that prescribed `echo y | cleanup-worktree.sh`; the script had since grown a real `--yes` flag and a merge gate (#750).
 >
-> **Root Cause:** Process is documented in docs/AUTO_NEIGHBORHOOD_ENRICHMENT.md (tier 2) but not referenced in CLAUDE.md's discovery pipeline section (tier 1).
+> **Root Cause:** Memory entries citing script flags rot silently when the script ships a change. The entry read as authoritative and was 67 days old.
 >
 > **Proposal:**
-> - **Type:** Add
-> - **Target:** CLAUDE.md, line 230 (Discovery Methods section)
-> - **Content:** Add one-line reference: "Neighborhoods auto-extracted via ZIP mapping (see docs/AUTO_NEIGHBORHOOD_ENRICHMENT.md)"
+> - **Type:** Update
+> - **Target:** `feedback_cleanup_worktree_after_gh_merge`
+> - **Content:** Replace the `echo y |` workaround with the shipped flags; add the `--delete-branch`-fails-when-a-worktree-holds-the-branch trap.
+> - **Priority:** High (a wrong memory is worse than a missing one — it gets trusted)
+> - **Risk:** Low (verified against the script's `--help` first)
+
+### Retiring guidance that a skill already implements
+
+> **Friction Point:** Was about to propose adding a diff-size threshold to `/qa` so small diffs skip sub-agents.
+>
+> **Root Cause:** The proposal was based on the skill text actually executed, which came from a **stale plugin cache** (1.20.3) rather than the repo (2.8.0). The repo's `/qa` already has the size gate. Invoking `sequant:qa` resolves to the installed plugin; bare `qa` resolves to `.claude/skills/`.
+>
+> **Proposal:**
+> - **Type:** Withdraw + document the routing trap
+> - **Target:** the proposal itself; memory entry for the skew
+> - **Priority:** High (the finding was an artifact, and acting on it would have duplicated shipped work)
+> - **Risk:** None — verification *removed* work rather than adding it
+
+### Pruning content inherited from another project
+
+> **Bloat:** `references/documentation-tiers.md` prescribed a 700–800 line CLAUDE.md target and named `ARCHITECTURE.md`, `DATA_PIPELINE.md`, `ADMIN_CMS_ARCHITECTURE.md` as "current docs". None exist here; CLAUDE.md is 13 lines by design. Its "**Expand:** <600 lines" rule would have demanded ~590 lines of invented content.
+>
+> **Proposal:**
+> - **Type:** Restructure
+> - **Target:** `references/documentation-tiers.md` (×3 skill dirs)
+> - **Action:** Rewrite around this repo's real tiers (CLAUDE.md index → auto-memory → `docs/` → skills → code comments); drop all line targets.
 > - **Priority:** Medium
-> - **Risk:** Low (just adding a signpost)
-
-### Documentation Pruning
-
-> **Bloat:** CLAUDE.md has 150 lines on Mapbox troubleshooting that solved a one-time issue 6 months ago.
->
-> **Proposal:**
-> - **Type:** Remove + Archive
-> - **Target:** CLAUDE.md lines 450-600
-> - **Action:** Move to docs/archive/mapbox-troubleshooting-2024.md with note "Archived: Issue resolved in react-map-gl v7.1.0"
-> - **Priority:** High (saves 150 lines in hot path)
-> - **Risk:** Low (still searchable if issue recurs)
+> - **Risk:** Low (verified every named doc was absent before rewriting)
