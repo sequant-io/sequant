@@ -58,7 +58,7 @@ function buildMarkerRegex(markers: DepMarker[]): RegExp {
  * a backticked marker here is an example, a backticked path there is the target.
  * Keep the two separate (see PR #770).
  */
-export function stripCodeAndComments(body: string): string {
+function stripCodeAndComments(body: string): string {
   return body
     .replace(/```[\s\S]*?```/g, "")
     .replace(/<!--[\s\S]*?-->/g, "")

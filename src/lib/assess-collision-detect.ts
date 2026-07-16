@@ -93,7 +93,7 @@ const THREE_DIR_SYNC_PATTERN =
  * prose count, paths inside a code block don't" behavior the AC-5 guard
  * specifies.
  *
- * Do NOT unify this with `chain-preflight.ts:stripCodeAndComments`, which
+ * Do NOT unify this with `dependency-markers.ts:stripCodeAndComments`, which
  * looks nearly identical but additionally strips inline spans. The two have
  * opposite requirements for the same syntax: there a backticked marker is a
  * documentation example to discard, here a backticked path is the entire
