@@ -751,6 +751,109 @@ describe("TTYRenderer", () => {
   });
 });
 
+describe("recovered phase failure (#766)", () => {
+  // Drive the renderer's shared state machine (NonTTY is the simplest surface)
+  // through the qa-fails-then-recovers sequence and assert the issue is not
+  // left pinned `failed`.
+  function makeRenderer(): NonTTYRenderer {
+    return new NonTTYRenderer({
+      stdoutWrite: buffer().write,
+      noColor: true,
+      now: () => FIXED_NOW,
+      wallClock: () => FIXED_DATE,
+      nonTtyHeartbeatMs: 0,
+    });
+  }
+
+  function statusOf(r: NonTTYRenderer, issue: number): string {
+    return r["issues"].get(issue)!.status;
+  }
+
+  it("de-escalates to done after a loop fails then a later iteration recovers (AC-1/AC-8)", () => {
+    const r = makeRenderer();
+    r.registerIssue({
+      issueNumber: 760,
+      plannedPhases: ["spec", "exec", "qa"],
+    });
+    const done = (phase: string) => {
+      r.onEvent({ issue: 760, phase, event: "start" });
+      r.onEvent({ issue: 760, phase, event: "complete", durationSeconds: 1 });
+    };
+    done("spec");
+    done("exec");
+    // qa fails on iteration 1
+    r.onEvent({ issue: 760, phase: "qa", event: "start" });
+    r.onEvent({
+      issue: 760,
+      phase: "qa",
+      event: "failed",
+      error: "AC not met",
+    });
+    // loop runs and fails
+    r.onEvent({ issue: 760, phase: "loop", event: "start", iteration: 1 });
+    r.onEvent({
+      issue: 760,
+      phase: "loop",
+      event: "failed",
+      error: "loop crashed",
+      iteration: 1,
+    });
+    expect(statusOf(r, 760)).toBe("failed"); // qa slot is still failed here
+    // iteration 2: exec + qa re-run and pass
+    done("exec");
+    done("qa");
+    expect(statusOf(r, 760)).toBe("done");
+    r.dispose();
+  });
+
+  it("keeps a #762-style all-failed run failed when qa never recovers (negative guard)", () => {
+    const r = makeRenderer();
+    r.registerIssue({
+      issueNumber: 762,
+      plannedPhases: ["spec", "exec", "qa"],
+    });
+    r.onEvent({ issue: 762, phase: "spec", event: "start" });
+    r.onEvent({
+      issue: 762,
+      phase: "spec",
+      event: "complete",
+      durationSeconds: 1,
+    });
+    r.onEvent({ issue: 762, phase: "exec", event: "start" });
+    r.onEvent({
+      issue: 762,
+      phase: "exec",
+      event: "complete",
+      durationSeconds: 1,
+    });
+    r.onEvent({ issue: 762, phase: "qa", event: "start" });
+    r.onEvent({
+      issue: 762,
+      phase: "qa",
+      event: "failed",
+      error: "Timeout after 1800s",
+    });
+    r.onEvent({ issue: 762, phase: "loop", event: "start", iteration: 1 });
+    r.onEvent({
+      issue: 762,
+      phase: "loop",
+      event: "failed",
+      error: "loop failed",
+      iteration: 1,
+    });
+    r.onEvent({ issue: 762, phase: "qa", event: "start", iteration: 2 });
+    r.onEvent({
+      issue: 762,
+      phase: "qa",
+      event: "failed",
+      error: "Connection closed",
+      iteration: 2,
+    });
+    expect(statusOf(r, 762)).toBe("failed");
+    r.dispose();
+  });
+});
+
 describe("renderRunSummary (AC-12-15)", () => {
   it("renders passed + failed issues in a grid + rollup", () => {
     const buf = buffer();

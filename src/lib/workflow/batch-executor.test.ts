@@ -720,6 +720,151 @@ describe("runIssueWithLogging — #739: turn-capped phase signal (AC-3)", () => 
   });
 });
 
+// #766 AC-6: the loop phase must reach the run log. The writer/schema layer is
+// covered in recovered-failure.integration.test.ts, but that test hand-writes
+// the loop entry — it would pass even if batch-executor never logged one. These
+// drive `runIssueWithLogging` through a real fail → loop → recover sequence and
+// assert the PRODUCER: deleting the `logWriter.logPhase(loopPhaseLog)` call
+// must fail here.
+describe("runIssueWithLogging — #766: loop phase reaches the run log (AC-6)", () => {
+  /**
+   * `createPhaseLogFromTiming` is mocked module-wide, so give it an identifiable
+   * return value: whatever it builds is what `logPhase` should receive.
+   */
+  function trackPhaseLogs(): { logPhase: ReturnType<typeof vi.fn> } {
+    vi.mocked(createPhaseLogFromTiming).mockImplementation(((
+      phase: string,
+      issueNumber: number,
+      startTime: Date,
+      endTime: Date,
+      status: string,
+      options?: Record<string, unknown>,
+    ) => ({
+      phase,
+      issueNumber,
+      startTime,
+      endTime,
+      status,
+      ...options,
+    })) as never);
+    return { logPhase: vi.fn() };
+  }
+
+  /** exec always passes; qa fails until `qaFailures` is exhausted. */
+  function scriptFailThenRecover(qaFailures: number, loopResult: PhaseResult) {
+    let qaSeen = 0;
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation((async (
+      _ctx: unknown,
+      phase: string,
+    ) => {
+      if (phase === "loop") return loopResult;
+      if (phase === "qa") {
+        qaSeen++;
+        return qaSeen <= qaFailures
+          ? {
+              phase: "qa",
+              success: false,
+              durationSeconds: 5,
+              error: "AC not met",
+            }
+          : { phase: "qa", success: true, durationSeconds: 5 };
+      }
+      return { phase, success: true, durationSeconds: 5 };
+    }) as never);
+  }
+
+  it("logs a failed loop with phase, status, duration, and error", async () => {
+    const { logPhase } = trackPhaseLogs();
+    scriptFailThenRecover(1, {
+      phase: "loop",
+      success: false,
+      durationSeconds: 12,
+      error: "loop crashed",
+    } as PhaseResult);
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 766,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: { logPhase } as never, stateManager: null },
+    });
+
+    const loopLog = logPhase.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((l) => l?.phase === "loop");
+
+    // The producer ran at all — this is what the writer-level test cannot see.
+    expect(loopLog).toBeDefined();
+    // AC-6's four required fields.
+    expect(loopLog!.status).toBe("failure");
+    expect(loopLog!.error).toBe("loop crashed");
+    expect(loopLog!.startTime).toBeInstanceOf(Date);
+    expect(loopLog!.endTime).toBeInstanceOf(Date);
+    // Duration is derived by createPhaseLogFromTiming from these two.
+    expect((loopLog!.endTime as Date).getTime()).toBeGreaterThanOrEqual(
+      (loopLog!.startTime as Date).getTime(),
+    );
+  });
+
+  it("maps a timed-out loop to `timeout`, not `failure`", async () => {
+    const { logPhase } = trackPhaseLogs();
+    scriptFailThenRecover(1, {
+      phase: "loop",
+      success: false,
+      durationSeconds: 1800,
+      error: "Timeout after 1800s",
+    } as PhaseResult);
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 766,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: { logPhase } as never, stateManager: null },
+    });
+
+    const loopLog = logPhase.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((l) => l?.phase === "loop");
+
+    expect(loopLog).toBeDefined();
+    expect(loopLog!.status).toBe("timeout");
+  });
+
+  it("logs a successful loop on the recovery path (#760's shape)", async () => {
+    // qa fails once, the loop fixes it, iteration 2 passes. The loop entry must
+    // still be in the log — it's the phase that decided the card's verdict.
+    const { logPhase } = trackPhaseLogs();
+    scriptFailThenRecover(1, {
+      phase: "loop",
+      success: true,
+      durationSeconds: 30,
+    } as PhaseResult);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 760,
+        config: { phases: ["exec", "qa"], qualityLoop: true, maxIterations: 3 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: { logPhase } as never, stateManager: null },
+    });
+
+    const loopLog = logPhase.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((l) => l?.phase === "loop");
+
+    expect(loopLog).toBeDefined();
+    expect(loopLog!.status).toBe("success");
+    // And the run genuinely recovered — the premise of the #760 bug.
+    expect(result.success).toBe(true);
+  });
+});
+
 // #488: buildLoopContext — pure function, no mocking needed
 describe("buildLoopContext", () => {
   function makeResult(overrides: Partial<PhaseResult> = {}): PhaseResult {

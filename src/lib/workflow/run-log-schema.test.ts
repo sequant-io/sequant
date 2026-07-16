@@ -424,6 +424,7 @@ describe("createEmptyRunLog", () => {
       totalIssues: 0,
       passed: 0,
       failed: 0,
+      partial: 0,
       totalDurationSeconds: 0,
     });
   });

@@ -53,6 +53,8 @@ interface RunToolResponse {
     total: number;
     passed: number;
     failed: number;
+    /** Issues that ended `partial` — timed out, no failure, no recovery (#766). */
+    partial: number;
     durationSeconds: number;
   };
   phases: string;
@@ -258,6 +260,7 @@ export function buildStructuredResponse(
       total: runLog.summary.totalIssues,
       passed: runLog.summary.passed,
       failed: runLog.summary.failed,
+      partial: runLog.summary.partial ?? 0,
       durationSeconds: runLog.summary.totalDurationSeconds,
     },
     phases: phasesRan || runLog.config.phases.join(","),
@@ -324,6 +327,7 @@ function buildFallbackResponse(
       total: issueNumbers.length,
       passed: overallStatus === "success" ? issueNumbers.length : 0,
       failed: overallStatus === "failure" ? issueNumbers.length : 0,
+      partial: 0,
       durationSeconds: 0,
     },
     phases,

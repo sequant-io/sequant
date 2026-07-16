@@ -94,6 +94,59 @@ describe("RunOrchestrator.getSnapshot", () => {
     expect(snap.issues[0].phases[0].status).toBe("failed");
   });
 
+  // #766 — a phase that fails on an early quality-loop iteration must not pin
+  // the live card `failed` once a later iteration recovers.
+  describe("recovered phase failure (#766)", () => {
+    function runToRecovery(orch: RunOrchestrator): void {
+      const progress = orch["cfg"].onProgress!;
+      // iteration 1: spec+exec pass, qa fails, loop runs and fails
+      progress(1, "spec", "start");
+      progress(1, "spec", "complete", { durationSeconds: 1 });
+      progress(1, "exec", "start");
+      progress(1, "exec", "complete", { durationSeconds: 1 });
+      progress(1, "qa", "start");
+      progress(1, "qa", "failed", { error: "AC not met" });
+      progress(1, "loop", "start", { iteration: 1 });
+      progress(1, "loop", "failed", { error: "loop crashed", iteration: 1 });
+      // iteration 2: exec + qa re-run and pass (slots overwrite by name)
+      progress(1, "exec", "start", { iteration: 2 });
+      progress(1, "exec", "complete", { durationSeconds: 1, iteration: 2 });
+      progress(1, "qa", "start", { iteration: 2 });
+      progress(1, "qa", "complete", { durationSeconds: 1, iteration: 2 });
+    }
+
+    it("finalizes passed after a loop fails then a later iteration succeeds (AC-1/AC-8)", () => {
+      const orch = makeOrchestrator([1]);
+      runToRecovery(orch);
+      const snap = orch.getSnapshot();
+      expect(snap.issues[0].status).toBe("passed");
+      // The stale loop slot is still recorded as failed — it just no longer
+      // pins the issue.
+      expect(snap.issues[0].phases.find((p) => p.name === "loop")?.status).toBe(
+        "failed",
+      );
+    });
+
+    it("keeps a #762-style all-failed run red when qa never recovers (negative guard)", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "spec", "start");
+      progress(1, "spec", "complete", { durationSeconds: 1 });
+      progress(1, "exec", "start");
+      progress(1, "exec", "complete", { durationSeconds: 1 });
+      progress(1, "qa", "start");
+      progress(1, "qa", "failed", { error: "Timeout after 1800s" });
+      progress(1, "loop", "start", { iteration: 1 });
+      progress(1, "loop", "failed", { error: "loop failed", iteration: 1 });
+      // iteration 2: exec passes but qa dies again (max iter, no further loop)
+      progress(1, "exec", "start", { iteration: 2 });
+      progress(1, "exec", "complete", { durationSeconds: 1, iteration: 2 });
+      progress(1, "qa", "start", { iteration: 2 });
+      progress(1, "qa", "failed", { error: "Connection closed", iteration: 2 });
+      expect(orch.getSnapshot().issues[0].status).toBe("failed");
+    });
+  });
+
   it("forwards onProgress events to an external callback", () => {
     const events: Array<[number, string, string]> = [];
     const config: ExecutionConfig = {

@@ -255,6 +255,7 @@ describe("buildStructuredResponse", () => {
       total: 2,
       passed: 1,
       failed: 1,
+      partial: 0,
       durationSeconds: 300,
     });
   });

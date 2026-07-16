@@ -20,6 +20,7 @@ import type {
   RunResult,
 } from "../lib/workflow/run-orchestrator.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
+import { LOOP_PHASE } from "../lib/workflow/status-derivation.js";
 import type { IssueResult } from "../lib/workflow/types.js";
 
 /**
@@ -84,7 +85,19 @@ export function displayConfig(r: ResolvedRun): void {
  * Convert workflow `IssueResult` to renderer `IssueSummary`.
  */
 function toIssueSummary(r: IssueResult): IssueSummary {
-  const failedPhase = r.phaseResults.find((p) => !p.success);
+  // #766: the reason to show is the LAST failing attempt, not the first.
+  // `phaseResults` accumulates every attempt across every quality-loop
+  // iteration, so `.find()` (first-wins) rendered a stale first-iteration
+  // reason: #762's cell read `Timeout after 1800s` when its real last failure
+  // was an API drop. `verdict`/`unmetCount` below hang off the same entry, so
+  // they were stale for the same reason. `loop` is excluded on the same grounds
+  // the card and log exclude it (see `status-derivation.ts`) — it is auxiliary
+  // recovery, and a trailing loop failure would mask the phase that actually
+  // failed. Reverse scan rather than `findLast`: tsconfig pins `lib: ES2022`
+  // and `findLast` is ES2023.
+  const failedPhase = [...r.phaseResults]
+    .reverse()
+    .find((p) => !p.success && p.phase !== LOOP_PHASE);
   const summary: IssueSummary = {
     issueNumber: r.issueNumber,
     success: r.success,

@@ -128,6 +128,7 @@ import { type MetricPhase, determineOutcome } from "./metrics-schema.js";
 import { getTokenUsageForRun } from "./token-utils.js";
 import type { SequantSettings } from "../settings.js";
 import { resolveRunOptions, buildExecutionConfig } from "./config-resolver.js";
+import { pipelineHasFailed } from "./status-derivation.js";
 
 /**
  * Build the stack-manifest line emitted into PR bodies under --stacked.
@@ -474,8 +475,14 @@ export class RunOrchestrator {
 
     if (event === "failed") {
       const prev: IssueEventStatus = state.status;
-      state.status = "failed";
-      state.completedAt = new Date();
+      // #766: a loop-phase failure alone must not pin the issue `failed` — the
+      // outer quality loop may still recover on a later iteration. Derive from
+      // the phase slots (loop excluded) so only a genuine non-loop failure marks
+      // the issue failed; otherwise hold `running` until a later event reaches a
+      // terminal verdict (a subsequent iteration always follows a loop failure).
+      const nowFailed = pipelineHasFailed(state.phases);
+      state.status = nowFailed ? "failed" : "running";
+      if (nowFailed) state.completedAt = new Date();
       void this.emitter.emit("phase_failed", {
         issueNumber: issue,
         phase,
@@ -483,11 +490,11 @@ export class RunOrchestrator {
         error: extra?.error ?? "unknown",
         iteration: extra?.iteration,
       });
-      if (prev !== "failed") {
+      if (prev !== state.status) {
         void this.emitter.emit("issue_status_changed", {
           issueNumber: issue,
           from: prev,
-          to: "failed",
+          to: state.status,
         });
       }
       return;
@@ -506,9 +513,10 @@ export class RunOrchestrator {
     );
     if (allDone) {
       const prev: IssueEventStatus = state.status;
-      state.status = state.phases.some((ph) => ph.status === "failed")
-        ? "failed"
-        : "passed";
+      // #766: exclude a stale failed `loop` slot so a run that failed the loop
+      // on an early iteration and then recovered finalizes as `passed`, not
+      // `failed`. An unrecovered failure still leaves a non-loop phase failed.
+      state.status = pipelineHasFailed(state.phases) ? "failed" : "passed";
       state.completedAt = new Date();
       if (prev !== state.status) {
         void this.emitter.emit("issue_status_changed", {
