@@ -30,6 +30,27 @@ export const EXCLUDED_PATHS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Markdown H1/H2 section headings whose bodies are background/citation prose,
+ * not statements of intent-to-modify. A path named *only* under one of these
+ * is a reference to existing code, not a file the issue will touch — so the
+ * whole section is stripped before path extraction.
+ *
+ * Match is case-insensitive and prefix-based, so `## Motivation — concrete
+ * recent miss` and `## Additional context (see #533)` both match. This is the
+ * cheap version of the #556 proximity-weighting mitigation (#769): exclude
+ * background sections wholesale rather than scoring per-path distance to AC
+ * bullets. "A path appears only in background" ⟺ "the path is absent from the
+ * foreground", so stripping these sections up front subsumes per-path tagging.
+ */
+export const BACKGROUND_SECTIONS: ReadonlySet<string> = new Set([
+  "references",
+  "context",
+  "motivation",
+  "additional context",
+  "see also",
+]);
+
+/**
  * Slash-command names recognized as references to a skill's SKILL.md.
  * Used by the slash-command-skill derivation rule when an issue body
  * also signals 3-dir sync — the skill name maps deterministically to the
@@ -105,6 +126,40 @@ function stripCodeBlocksAndComments(body: string): string {
 }
 
 /**
+ * Remove background/citation sections (see `BACKGROUND_SECTIONS`) so a path
+ * named only as a reference — under `## References`, `## Context`, etc. — is
+ * not counted as a modification target (#769).
+ *
+ * A section runs from its H1/H2 heading to the next H1/H2 heading (or EOF);
+ * `###`+ subsections belong to their parent section and are dropped with it.
+ * Only H1/H2 headings toggle sections — a `### Detail` inside a stripped
+ * `## Additional context` must not resurrect the rest of the section.
+ *
+ * Run this *after* `stripCodeBlocksAndComments` so a fenced block containing a
+ * `## `-prefixed line can't be misread as a real heading.
+ */
+function stripBackgroundSections(body: string): string {
+  const kept: string[] = [];
+  let stripping = false;
+  for (const line of body.split("\n")) {
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading && heading[1].length <= 2) {
+      const text = heading[2].trim().toLowerCase();
+      stripping = false;
+      for (const section of BACKGROUND_SECTIONS) {
+        if (text.startsWith(section)) {
+          stripping = true;
+          break;
+        }
+      }
+      if (stripping) continue; // drop the heading line itself
+    }
+    if (!stripping) kept.push(line);
+  }
+  return kept.join("\n");
+}
+
+/**
  * Collapse a fully-qualified skill-mirror path to its canonical bare form.
  *
  * The repo maintains three byte-identical mirrors of every skill file
@@ -129,7 +184,9 @@ function normalizeSkillMirrorPath(path: string): string {
  * targets-of-modification.
  *
  * Strategy:
- *   1. Strip fenced code blocks and HTML comments (AC-5 guard).
+ *   1. Strip fenced code blocks and HTML comments (AC-5 guard), then strip
+ *      background/citation sections (#769) so a path named only under
+ *      `## References`, `## Context`, etc. isn't counted as a target.
  *   2. Pull every backtick-quoted path matching the source-tree regex,
  *      normalizing skill-mirror paths to their canonical bare form.
  *   3. If the body mentions "3-dir sync", also pull bare
@@ -145,7 +202,7 @@ function normalizeSkillMirrorPath(path: string): string {
  */
 export function extractPathsFromIssueBody(body: string): Set<string> {
   const paths = new Set<string>();
-  const cleaned = stripCodeBlocksAndComments(body);
+  const cleaned = stripBackgroundSections(stripCodeBlocksAndComments(body));
 
   for (const m of cleaned.matchAll(PATH_REGEX)) {
     paths.add(normalizeSkillMirrorPath(m[1]));

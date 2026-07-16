@@ -15,9 +15,12 @@ The detector runs automatically during Step 5 whenever ≥2 PROCEED issues are p
 
 For each issue body, paths are extracted in this order:
 
-### 1. Strip code blocks and HTML comments
+### 1. Strip code blocks, HTML comments, and background sections
 
-Fenced code blocks (```` ``` … ``` ````) and HTML comments (`<!-- … -->`) are removed before any path matching. This is the **AC-5 false-positive guard**: paths quoted as code in prose count, paths inside a code block don't.
+Two pre-extraction strips run before any path matching:
+
+- **Code blocks and HTML comments.** Fenced code blocks (```` ``` … ``` ````) and HTML comments (`<!-- … -->`) are removed. This is the **AC-5 false-positive guard**: paths quoted as code in prose count, paths inside a code block don't.
+- **Background/citation sections (#769).** Content under any H1/H2 heading whose text prefix-matches `BACKGROUND_SECTIONS` — `References`, `Context`, `Motivation`, `Additional context`, `See also` (case-insensitive) — is removed, up to the next H1/H2 heading. A path named *only* under such a section is a citation of existing code, not a file the issue will modify, so it no longer contributes to the path set. A path named in an AC bullet (or any other foreground section) survives even when it is *also* cited under `## References`.
 
 ### 2. Backtick-quoted source paths (PATH_REGEX)
 
@@ -85,9 +88,9 @@ These paths are stripped from every issue's path set before pairwise intersectio
 
 `EXCLUDED_PATHS` in `src/lib/assess-collision-detect.ts` is the canonical list. To add or remove an entry, edit that constant; this document and the skill prose pick up the change automatically.
 
-### Code block / HTML comment stripping
+### Code block / HTML comment / background-section stripping
 
-Step 1 of the extraction (above) removes all fenced code blocks and HTML comments before path matching. A path mentioned **only** inside one of those will not contribute to the issue's path set.
+Step 1 of the extraction (above) removes all fenced code blocks, HTML comments, and background/citation sections (`## References`, `## Context`, `## Motivation`, `## Additional context`, `## See also`) before path matching. A path mentioned **only** inside one of those will not contribute to the issue's path set. This is what stops sibling issues that all cite the same background doc under `## References` from being reported as a phantom collision (#769).
 
 ### Path-shape constraints
 
@@ -95,7 +98,7 @@ The PATH_REGEX requires a directory prefix (one of the six tracked roots) and a 
 
 ## Tuning notes
 
-- **Proximity weighting** is not implemented. The original feature design proposed weighting paths inside `- [ ] **AC-N:**` bullets higher than paths in "Motivation" or "Additional context". Adding it is a follow-up if the false-positive rate becomes a problem in practice; leave it out until evidence demands it.
+- **Background-section exclusion is implemented (#769); proximity *scoring* is not.** The original design (#556) proposed weighting paths by proximity to `- [ ] **AC-N:**` bullets. #769 shipped the cheap version of that mitigation instead — strip whole background sections (`BACKGROUND_SECTIONS`: `References`, `Context`, `Motivation`, `Additional context`, `See also`) before extraction, so a path cited *only* as background drops out while AC-bullet paths survive. The fuller per-path scoring model remains a follow-up if wholesale section exclusion proves too blunt (e.g. a real target named only under `## Context` becomes a false negative); leave it out until evidence demands it.
 - **Cost.** For 13 issues (the realistic batch ceiling), pairwise comparison is 78 pairs — cheap, no real performance concern. Don't optimize prematurely.
 
 ## Output rules
