@@ -35,17 +35,206 @@ fi
 
 _TMPDIR="${TMPDIR:-/tmp}"
 
-# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
-if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+# Log sink (#763 AC-5c: blocked-command history must survive to be a useful
+# regression corpus, so $TMPDIR — which macOS purges — is a last resort only).
+#
+# This block MUST stay identical to the one in post-tool.sh. The two hooks
+# write the *same* claude-timing.log (START here, END there) and the same
+# claude-quality.log, so any divergence silently splits every START/END pair
+# across two files.
+#
+# Every candidate is absolute and lives outside the repo. A repo-local or
+# relative path is wrong three times over: it resolves against the hook's cwd
+# (which Claude Code does not pin), it yields one sink per directory instead
+# of the single corpus AC-5 asks for, and — worst — creating it inside a repo
+# makes `git status --porcelain` non-empty, which silently defeats the
+# no-changes guard further down that reads exactly that output.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
   _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
-  mkdir -p "$_LOG_DIR"
+elif [[ -n "${HOME:-}" ]]; then
+  _LOG_DIR="${HOME}/.sequant/logs"
 else
   _LOG_DIR="${_TMPDIR}"
 fi
+mkdir -p "$_LOG_DIR" 2>/dev/null || _LOG_DIR="${_TMPDIR}"
 
 TIMING_LOG="${_LOG_DIR}/claude-timing.log"
 HOOK_LOG="${_LOG_DIR}/claude-hook.log"
 PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
+
+# === HELPERS ===
+
+# rotate_log <file> — keep the last 500 lines once a log passes 1000, to
+# prevent unbounded growth. Shared by TIMING_LOG and HOOK_LOG (#763 AC-5b).
+rotate_log() {
+    local f="$1"
+    if [[ -f "$f" ]]; then
+        local lc
+        lc=$(wc -l < "$f" 2>/dev/null || echo 0)
+        if [[ "$lc" -gt 1000 ]]; then
+            tail -500 "$f" > "${f}.tmp" && mv "${f}.tmp" "$f"
+        fi
+    fi
+}
+
+# redact_secrets <content> — mask known token shapes before they reach a log.
+# Mirrors the detection patterns in check_secrets(). $TOOL_INPUT can carry
+# tokens (a `gh` body, an inline export), and HOOK_LOG now records full
+# command text, so redaction is required (#763 AC-5a). This covers the same
+# six shapes check_secrets detects; other secret formats are not masked.
+redact_secrets() {
+    printf '%s' "$1" | sed -E \
+        -e 's/sk-[a-zA-Z0-9]{32,}/[REDACTED]/g' \
+        -e 's/sk_live_[a-zA-Z0-9]{24,}/[REDACTED]/g' \
+        -e 's/AKIA[A-Z0-9]{16}/[REDACTED]/g' \
+        -e 's/ghp_[a-zA-Z0-9]{36}/[REDACTED]/g' \
+        -e 's/xoxb-[0-9]{10,}(-[a-zA-Z0-9]+)+/[REDACTED]/g' \
+        -e 's/AIza[a-zA-Z0-9_-]{35}/[REDACTED]/g'
+}
+
+# log_block <rule-id> — record which guard fired and the offending command
+# (redacted) to a single rotated sink, so blocks can be audited and turned
+# into a real regression corpus (#763 AC-5). Writes to HOOK_LOG only; the
+# human-facing HOOK_BLOCKED message still goes to stderr at each call site.
+log_block() {
+    local rule="$1" redacted
+    redacted=$(redact_secrets "$TOOL_INPUT")
+    printf '%s BLOCKED [%s] %s\n' "$(date +%s.%N)" "$rule" "$redacted" >> "$HOOK_LOG"
+    rotate_log "$HOOK_LOG"
+}
+
+# emit_segments <command> — split a shell command into the pieces the shell
+# would actually execute, and print each (one per line) with inert text removed
+# and leading env-assignments stripped, so guards can match a segment's
+# *command words* without tripping on payload text carried as an argument (#763).
+#
+# Command-word positions (a guard MAY match here):
+#   - each segment between the operators ; && || | and newline
+#   - the body of a subshell `( ... )` and of a command substitution `$( ... )`,
+#     including `$( ... )` inside double quotes — the shell runs those.
+#
+# Inert (a guard must NEVER match here):
+#   - single-quoted text: the shell expands nothing inside it
+#   - double-quoted text, except for `$( ... )`
+#   - heredoc bodies: they are stdin *data*, not code. This one is load-bearing.
+#     The standard commit idiom is `git commit -m "$(cat <<'EOF' ... EOF)"`;
+#     without skipping the body, a commit message that merely *mentions*
+#     `git push --force` would be blocked — which would reintroduce the
+#     #564/#570 false-positive class through the command-substitution door.
+#
+# Argument positions are deliberately NOT command words, so `xargs sudo ...`
+# and `bash -c "sudo ..."` are allowed: the guarded word is data being handed
+# to another program, and treating it as code is what produced #564/#570.
+#
+# This is deliberately NOT a full shell parser: it does not emulate backslash
+# escapes or globbing — acceptable for an accident-prevention layer (the real
+# security boundary is Claude Code's permission system, not this hook). A
+# crafted quoted string could in principle hide an operator; that is out of
+# scope for a non-adversarial guard.
+emit_segments() {
+    printf '%s' "$1" | awk '
+    function emit(s,   t) {
+        t = s
+        sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+        # Drop leading VAR=val assignments so `FOO=bar sudo ...` still keys off `sudo`.
+        while (match(t, /^[A-Za-z_][A-Za-z0-9_]*=[^ \t]*[ \t]+/)) t = substr(t, RLENGTH + 1)
+        if (length(t) > 0) print t
+    }
+    BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    { full = (NR == 1) ? $0 : full "\n" $0 }
+    END {
+        n = length(full); seg = ""; cur = ""; depth = 0; nhd = 0
+        for (i = 1; i <= n; i++) {
+            c = substr(full, i, 1)
+            nc = (i < n) ? substr(full, i + 1, 1) : ""
+
+            # Single-quoted: wholly inert until the closing quote.
+            if (cur == sq) { if (c == sq) cur = ""; continue }
+
+            # Double-quoted: inert, except that $( ... ) is live code.
+            if (cur == dq) {
+                if (c == "$" && nc == "(") {
+                    emit(seg); seg = ""
+                    stack[++depth] = dq; cur = ""; i++
+                    continue
+                }
+                if (c == dq) cur = ""
+                continue
+            }
+
+            # --- live context ---
+            if (c == sq) { cur = sq; seg = seg " "; continue }
+            if (c == dq) { cur = dq; seg = seg " "; continue }
+
+            # Heredoc introducer: << or <<-, but not the <<< herestring. Record
+            # the delimiter; the body itself is skipped at the newline below.
+            if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                j = i + 2
+                if (substr(full, j, 1) == "-") j++
+                while (j <= n && substr(full, j, 1) ~ /[ \t]/) j++
+                q = substr(full, j, 1); delim = ""
+                if (q == sq || q == dq) {
+                    j++
+                    while (j <= n && substr(full, j, 1) != q) { delim = delim substr(full, j, 1); j++ }
+                    j++
+                } else {
+                    while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
+                }
+                if (length(delim) > 0) hd[++nhd] = delim
+                seg = seg " "; i = j - 1
+                continue
+            }
+
+            # Subshell / command substitution: the body is live code.
+            if (c == "$" && nc == "(") { emit(seg); seg = ""; stack[++depth] = cur; cur = ""; i++; continue }
+            if (c == "(")              { emit(seg); seg = ""; stack[++depth] = cur; continue }
+            if (c == ")")              { emit(seg); seg = ""; if (depth > 0) cur = stack[depth--]; continue }
+
+            if (c == ";" || c == "&" || c == "|") {
+                emit(seg); seg = ""
+                if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
+                continue
+            }
+
+            if (c == "\n") {
+                emit(seg); seg = ""
+                # Any heredocs opened on the line just ended: their bodies are
+                # data, so skip forward to each delimiter line.
+                while (nhd > 0) {
+                    d = hd[1]
+                    for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
+                    nhd--
+                    while (i < n) {
+                        ls = i + 1
+                        le = index(substr(full, ls), "\n")
+                        if (le == 0) { line = substr(full, ls); i = n }
+                        else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                        t = line
+                        sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                        if (t == d) break
+                    }
+                }
+                continue
+            }
+            seg = seg c
+        }
+        emit(seg)
+    }
+    '
+}
+
+# seg_match <ere> — 0 if any command segment of the current Bash command
+# matches the extended regex. Precompute $SEGMENTS once per invocation so a
+# dozen guards do not each re-run the splitter (#763 AC-9).
+seg_match() {
+    [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
+}
+
+# Precompute the segment list once, for Bash commands only.
+SEGMENTS=""
+if [[ "$TOOL_NAME" == "Bash" ]]; then
+    SEGMENTS=$(emit_segments "$TOOL_INPUT")
+fi
 
 # === AGENT ID DETECTION ===
 # For parallel agents, detect group ID from marker files
@@ -70,58 +259,74 @@ fi
 
 # === LOG ROTATION ===
 # Rotate if over 1000 lines to prevent unbounded growth
-if [[ -f "$TIMING_LOG" ]]; then
-    LINE_COUNT=$(wc -l < "$TIMING_LOG" 2>/dev/null || echo 0)
-    if [[ "$LINE_COUNT" -gt 1000 ]]; then
-        tail -500 "$TIMING_LOG" > "${TIMING_LOG}.tmp" && mv "${TIMING_LOG}.tmp" "$TIMING_LOG"
-    fi
-fi
+rotate_log "$TIMING_LOG"
 
 # === CATASTROPHIC BLOCKS ===
 # These should NEVER run in any automated context
 # Only check Bash commands — Write/Edit content may contain these as config strings
+#
+# Every guard below matches against $SEGMENTS (quote-stripped command words),
+# not the raw command string. This is what fixes #763: body text such as
+# `gh issue create --body "...git push --force..."` carries the token inside a
+# quoted argument, so it never appears as a command word and cannot trip a
+# guard — which is why the old `^gh (issue|pr) ` carve-outs are gone entirely.
+# Conversely a real command chained after an allowed one
+# (`gh issue list && git push --force`) is its own segment and still blocks.
 if [[ "$TOOL_NAME" == "Bash" ]]; then
 
-# Secrets/credentials
-# Skip check for gh commands (comment/pr bodies may contain example text)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) '; then
-    # Pattern requires command to START with file reader (not match in quoted strings)
-    if echo "$TOOL_INPUT" | grep -qE '^(cat|less|head|tail|more) .*\.(env|pem|key)'; then
-        echo "HOOK_BLOCKED: Reading secret file" | tee -a "$HOOK_LOG" >&2
-        exit 2
-    fi
-
-    if echo "$TOOL_INPUT" | grep -qE '^(cat|less) .*~/\.(ssh|aws|gnupg|config/gh)'; then
-        echo "HOOK_BLOCKED: Reading credential directory" | tee -a "$HOOK_LOG" >&2
-        exit 2
-    fi
-fi
-
-# Bare environment dump
-if echo "$TOOL_INPUT" | grep -qE '^(env|printenv|export)$'; then
-    echo "HOOK_BLOCKED: Environment dump" | tee -a "$HOOK_LOG" >&2
+# Secrets/credentials — a file reader at command-word position
+if seg_match '^(cat|less|head|tail|more) .*\.(env|pem|key)'; then
+    log_block "secret-file"
+    echo "HOOK_BLOCKED: Reading secret file" >&2
     exit 2
 fi
 
-# Destructive system commands
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'sudo|rm -rf /|rm -rf ~|rm -rf \$HOME'; then
-    echo "HOOK_BLOCKED: Destructive system command" | tee -a "$HOOK_LOG" >&2
+if seg_match '^(cat|less) .*~/\.(ssh|aws|gnupg|config/gh)'; then
+    log_block "credential-dir"
+    echo "HOOK_BLOCKED: Reading credential directory" >&2
+    exit 2
+fi
+
+# Bare environment dump
+if seg_match '^(env|printenv|export)$'; then
+    log_block "env-dump"
+    echo "HOOK_BLOCKED: Environment dump" >&2
+    exit 2
+fi
+
+# Privilege escalation — `sudo` at a command-word position only (#763 AC-2).
+# The `rm -rf /|~|$HOME` alternation that used to live here was deleted (AC-1):
+# it was pure redundancy with Claude Code's native dangerous-rm analyzer (which
+# still fires under bypassPermissions and covers root / top-level / home /
+# workspace-ancestor targets), and its `rm -rf /` substring matched every
+# absolute path, blocking ordinary worktree/scratch deletes. `sudo` is NOT
+# natively covered, so it stays — but keyed off the command word, so
+# `echo 'never sudo'` and `grep -r sudoku src/` are allowed.
+#
+# Because this guard has no native backstop, emit_segments treats every
+# position the shell would execute as a command word: plain, chained,
+# `( sudo ... )`, `$(sudo ...)`, and `"$(sudo ...)"` all block. Argument
+# positions (`xargs sudo ...`, `bash -c "sudo ..."`) are an accepted gap —
+# there the word is data handed to another program, and matching it is the
+# mistake that produced #564/#570.
+if seg_match '^sudo( |$)'; then
+    log_block "sudo"
+    echo "HOOK_BLOCKED: sudo command" >&2
     exit 2
 fi
 
 # Deployment (should never happen in issue automation)
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'vercel (deploy|--prod)|terraform (apply|destroy)|kubectl (apply|delete)'; then
-    echo "HOOK_BLOCKED: Deployment command" | tee -a "$HOOK_LOG" >&2
+if seg_match 'vercel (deploy|--prod)|terraform (apply|destroy)|kubectl (apply|delete)'; then
+    log_block "deployment"
+    echo "HOOK_BLOCKED: Deployment command" >&2
     exit 2
 fi
 
 # Force push
 # Pattern requires -f to be a standalone flag (not part of branch name like -fix)
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git push.*(--force| -f($| ))'; then
-    echo "HOOK_BLOCKED: Force push" | tee -a "$HOOK_LOG" >&2
+if seg_match 'git push.*(--force| -f($| ))'; then
+    log_block "force-push"
+    echo "HOOK_BLOCKED: Force push" >&2
     exit 2
 fi
 
@@ -130,11 +335,10 @@ fi
 # - Unpushed commits on main/master
 # - Uncommitted changes (staged or unstaged)
 # - Unfinished merge in progress
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git reset.*(--hard|origin)'; then
+if seg_match 'git reset.*(--hard|origin)'; then
     CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
     BLOCK_REASONS=""
-    
+
     # Check 1: Unpushed commits (only on main/master)
     if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
         UNPUSHED=$(git log origin/$CURRENT_BRANCH..HEAD --oneline 2>/dev/null | wc -l | tr -d ' ')
@@ -142,21 +346,22 @@ if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | gre
             BLOCK_REASONS="${BLOCK_REASONS}  - $UNPUSHED unpushed commit(s) on $CURRENT_BRANCH\n"
         fi
     fi
-    
+
     # Check 2: Uncommitted changes (staged or unstaged)
     UNCOMMITTED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     if [[ "$UNCOMMITTED" -gt 0 ]]; then
         BLOCK_REASONS="${BLOCK_REASONS}  - $UNCOMMITTED uncommitted file(s)\n"
     fi
-    
+
     # Check 3: Unfinished merge
     GIT_DIR=$(git rev-parse --git-dir 2>/dev/null || echo ".git")
     if [[ -f "$GIT_DIR/MERGE_HEAD" ]]; then
         BLOCK_REASONS="${BLOCK_REASONS}  - Unfinished merge in progress\n"
     fi
-    
+
     # Block if any reasons found
     if [[ -n "$BLOCK_REASONS" ]]; then
+        log_block "git-reset-hard"
         {
             echo "HOOK_BLOCKED: git reset --hard would lose local work:"
             echo -e "$BLOCK_REASONS"
@@ -165,15 +370,15 @@ if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | gre
             echo "    git stash                        # save changes"
             echo "    git merge --abort                # cancel merge"
             echo "  Or run directly in terminal (outside Claude Code) to bypass"
-        } | tee -a "$HOOK_LOG" >&2
+        } >&2
         exit 2
     fi
 fi
 
 # CI/CD triggers (automation shouldn't trigger more automation)
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#570)
-if ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'gh workflow run'; then
-    echo "HOOK_BLOCKED: Workflow trigger" | tee -a "$HOOK_LOG" >&2
+if seg_match 'gh workflow run'; then
+    log_block "workflow-trigger"
+    echo "HOOK_BLOCKED: Workflow trigger" >&2
     exit 2
 fi
 
@@ -230,28 +435,29 @@ check_sensitive_files() {
 
 if [[ "${CLAUDE_HOOKS_SECURITY:-true}" != "false" ]]; then
     # Security checks for git commit
-    # Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
-    if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+    if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
         # Skip security checks if --no-verify is used
         if ! echo "$TOOL_INPUT" | grep -qE -- '--no-verify'; then
             # Check staged files for secrets
             STAGED_CONTENT=$(git diff --cached 2>/dev/null || true)
             if [[ -n "$STAGED_CONTENT" ]] && check_secrets "$STAGED_CONTENT"; then
+                log_block "staged-secret"
                 {
                     echo "HOOK_BLOCKED: Hardcoded secret detected in staged changes"
                     echo "  Use 'git commit --no-verify' to bypass if this is a false positive"
-                } | tee -a "$HOOK_LOG" >&2
+                } >&2
                 exit 2
             fi
 
             # Check for sensitive files in commit
             STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
             if [[ -n "$STAGED_FILES" ]] && check_sensitive_files "$STAGED_FILES"; then
+                log_block "sensitive-file"
                 {
                     echo "HOOK_BLOCKED: Sensitive file in commit (${STAGED_FILES})"
                     echo "  Files like .env, *.pem, *.key should not be committed"
                     echo "  Use 'git commit --no-verify' to bypass if this is intentional"
-                } | tee -a "$HOOK_LOG" >&2
+                } >&2
                 exit 2
             fi
         fi
@@ -263,8 +469,7 @@ fi
 # --- No-Changes Guard (AC-7) ---
 # Block commits when there are no staged or unstaged changes (prevents empty commits)
 # Skips for --amend since amending doesn't require new changes
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
-if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     if ! echo "$TOOL_INPUT" | grep -qE -- '--amend|--allow-empty'; then
         # Extract target directory from cd command if present (for worktree commits)
         # Handles: "cd /path && git commit" or "cd /path; git commit"
@@ -281,7 +486,8 @@ if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|p
         fi
 
         if [[ "$CHANGES" -eq 0 ]]; then
-            echo "HOOK_BLOCKED: No changes to commit. Stage files with 'git add' first." | tee -a "$HOOK_LOG" >&2
+            log_block "no-changes"
+            echo "HOOK_BLOCKED: No changes to commit. Stage files with 'git add' first." >&2
             exit 2
         fi
     fi
@@ -291,8 +497,7 @@ fi
 # Warn (but don't block) when committing outside a feature worktree
 # This catches accidental commits to main repo during feature work
 QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
-if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     CWD=$(pwd)
     if ! echo "$CWD" | grep -qE 'worktrees/feature/'; then
         echo "$(date +%H:%M:%S) WORKTREE_WARNING: Committing outside feature worktree ($CWD)" >> "$QUALITY_LOG"
@@ -303,8 +508,7 @@ fi
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
-# Skip for gh issue/pr commands — body text may legitimately reference these tokens (#564)
-if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|pr) ' && echo "$TOOL_INPUT" | grep -qE 'git commit'; then
+if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     # Extract message from -m flag
     MSG=""
 
@@ -331,6 +535,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|p
         # Also accepts ! for breaking changes: feat!: or feat(scope)!:
         PATTERN='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf)(\([^)]+\))?(!)?\s*:'
         if ! echo "$MSG" | grep -qE "$PATTERN"; then
+            log_block "commit-format"
             {
                 echo "HOOK_BLOCKED: Commit must follow conventional commits format"
                 echo "  Expected: type(scope): description"
@@ -342,7 +547,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && ! echo "$TOOL_INPUT" | grep -qE '^gh (issue|p
                 fi
                 echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
                 echo "  Got: $MSG"
-            } | tee -a "$HOOK_LOG" >&2
+            } >&2
             exit 2
         fi
     fi
@@ -377,7 +582,8 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
         # AC-4 (Issue #31): Check worktree directory exists before path validation
         # Prevents Write tool from creating non-existent worktree directories
         if [[ ! -d "$EXPECTED_WORKTREE" ]]; then
-            echo "HOOK_BLOCKED: Worktree does not exist: $EXPECTED_WORKTREE" | tee -a "$HOOK_LOG" >&2
+            log_block "worktree-missing"
+            echo "HOOK_BLOCKED: Worktree does not exist: $EXPECTED_WORKTREE" >&2
             exit 2
         fi
 
@@ -399,6 +605,7 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
                 echo "$(date +%H:%M:%S) WORKTREE_BLOCKED: Edit outside expected worktree" >> "$QUALITY_LOG"
                 echo "  Expected: $EXPECTED_WORKTREE" >> "$QUALITY_LOG"
                 echo "  Got: $FILE_PATH" >> "$QUALITY_LOG"
+                log_block "worktree-boundary"
                 {
                     echo "HOOK_BLOCKED: File operation must be within worktree"
                     echo "  Worktree: $EXPECTED_WORKTREE"
@@ -406,7 +613,7 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
                     if [[ -n "${SEQUANT_ISSUE:-}" ]]; then
                         echo "  Issue: #$SEQUANT_ISSUE"
                     fi
-                } | tee -a "$HOOK_LOG" >&2
+                } >&2
                 exit 2
             fi
         fi
@@ -437,7 +644,8 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
                 # macOS: use lockf
                 exec 200>"$LOCK_FILE"
                 if ! lockf -t 30 200 2>/dev/null; then
-                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a "$HOOK_LOG" >&2
+                    log_block "file-lock"
+                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" >&2
                     exit 2
                 fi
                 # Lock will be released when the file descriptor closes (process exits)
@@ -445,7 +653,8 @@ if [[ "${CLAUDE_HOOKS_FILE_LOCKING:-true}" == "true" ]]; then
                 # Linux: use flock
                 exec 200>"$LOCK_FILE"
                 if ! flock -w 30 200 2>/dev/null; then
-                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" | tee -a "$HOOK_LOG" >&2
+                    log_block "file-lock"
+                    echo "HOOK_BLOCKED: File locked by another agent: $FILE_PATH" >&2
                     exit 2
                 fi
             fi
