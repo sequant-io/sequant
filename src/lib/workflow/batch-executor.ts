@@ -1054,6 +1054,31 @@ export async function runIssueWithLogging(
           const loopEndTime = new Date();
           phaseResults.push(loopResult);
 
+          // #766: record the loop phase in the run log — spec (:655) and the
+          // regular phases (:982) log via logWriter, but the loop was never
+          // logged, so a loop that decided the card's verdict was absent from
+          // the log you'd use to debug it (AC-6). Loop status never determines
+          // the issue verdict (see deriveIssueLogStatus), but the entry with
+          // phase/status/duration/error must exist.
+          if (logWriter) {
+            const loopPhaseLog = createPhaseLogFromTiming(
+              "loop",
+              issueNumber,
+              loopStartTime,
+              loopEndTime,
+              loopResult.success
+                ? "success"
+                : loopResult.error?.includes("Timeout")
+                  ? "timeout"
+                  : "failure",
+              {
+                error: loopResult.error,
+                capped: loopResult.capped,
+              },
+            );
+            logWriter.logPhase(loopPhaseLog);
+          }
+
           // Emit loop completion/failure progress event (AC-8)
           const loopDurationSec = Math.round(
             (loopEndTime.getTime() - loopStartTime.getTime()) / 1000,

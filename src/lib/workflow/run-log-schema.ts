@@ -240,6 +240,13 @@ export const RunSummarySchema = z.object({
   passed: z.number().int().nonnegative(),
   /** Number of issues that failed */
   failed: z.number().int().nonnegative(),
+  /**
+   * Number of issues that ended `partial` — timed out with no genuine failure
+   * and no recovery (#766). Given its own bucket so an all-partial run no longer
+   * vanishes from both `passed` and `failed` (the `0 passed · 0 failed` bug).
+   * `.default(0)` keeps logs written before this field parseable.
+   */
+  partial: z.number().int().nonnegative().default(0),
   /** Total execution time in seconds */
   totalDurationSeconds: z.number().nonnegative(),
 });
@@ -320,6 +327,7 @@ export function createEmptyRunLog(
       totalIssues: 0,
       passed: 0,
       failed: 0,
+      partial: 0,
       totalDurationSeconds: 0,
     },
     startCommit: options?.startCommit,
@@ -406,6 +414,11 @@ export function finalizeRunLog(
   const failed = runLog.issues.filter(
     (i: IssueLog) => i.status === "failure",
   ).length;
+  // #766: `partial` gets its own bucket so an all-partial run isn't counted as
+  // `0 passed · 0 failed` — it landed in neither before.
+  const partial = runLog.issues.filter(
+    (i: IssueLog) => i.status === "partial",
+  ).length;
 
   return {
     ...runLog,
@@ -414,8 +427,33 @@ export function finalizeRunLog(
       totalIssues: runLog.issues.length,
       passed,
       failed,
+      partial,
       totalDurationSeconds,
     },
     endCommit: options?.endCommit ?? runLog.endCommit,
   };
+}
+
+/**
+ * Derive an issue's overall log status from its phase log entries (#766).
+ *
+ * Phases are appended in execution order, so the last entry for a given phase
+ * name is its latest attempt — that attempt wins. This lets a `timeout`/
+ * `failure` that a later quality-loop iteration recovers from de-escalate to
+ * `success`, keeping the JSON log consistent with the live card and summary
+ * table (AC-3/AC-5). `loop` is auxiliary recovery and never determines the
+ * verdict (mirrors the live-card rule); an unrecovered failure still leaves a
+ * non-loop phase failed. Priority among latest attempts: failure > timeout >
+ * success.
+ */
+export function deriveIssueLogStatus(phases: PhaseLog[]): IssueStatus {
+  const latest = new Map<string, PhaseStatus>();
+  for (const p of phases) {
+    if (p.phase === "loop") continue;
+    latest.set(p.phase, p.status);
+  }
+  const statuses = [...latest.values()];
+  if (statuses.some((s) => s === "failure")) return "failure";
+  if (statuses.some((s) => s === "timeout")) return "partial";
+  return "success";
 }

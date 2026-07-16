@@ -114,6 +114,9 @@ function displayLogSummary(
 ): void {
   const passed = log.summary.passed;
   const failed = log.summary.failed;
+  // #766: `partial` gets its own bucket so an all-partial run isn't rendered as
+  // `0 passed, 0 failed` (older logs predate the field → default to 0).
+  const partial = log.summary.partial ?? 0;
   const total = log.summary.totalIssues;
   const status =
     failed > 0
@@ -132,7 +135,9 @@ function displayLogSummary(
   );
   console.log(
     chalk.gray(
-      `  Status: ${status} (${passed}/${total} passed, ${failed} failed)`,
+      `  Status: ${status} (${passed}/${total} passed, ${failed} failed` +
+        (partial > 0 ? `, ${partial} partial` : "") +
+        `)`,
     ),
   );
   console.log(chalk.gray(`  Phases: ${log.config.phases.join(" → ")}`));

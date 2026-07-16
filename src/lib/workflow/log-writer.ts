@@ -26,6 +26,7 @@ import {
   type IssueStatus,
   createEmptyRunLog,
   finalizeRunLog,
+  deriveIssueLogStatus,
   generateLogFilename,
   LOG_PATHS,
 } from "./run-log-schema.js";
@@ -139,12 +140,11 @@ export class LogWriter {
 
     issue.phases = [...(issue.phases ?? []), phaseLog];
 
-    // Update issue status based on phase result
-    if (phaseLog.status === "failure") {
-      issue.status = "failure";
-    } else if (phaseLog.status === "timeout" && issue.status !== "failure") {
-      issue.status = "partial";
-    }
+    // #766: derive from the latest attempt of each phase (loop excluded) rather
+    // than pinning failure/partial forever. A timeout or failure that a later
+    // quality-loop iteration recovers from no longer sticks, so the JSON log
+    // agrees with the live card and summary table (AC-3/AC-5).
+    issue.status = deriveIssueLogStatus(issue.phases);
 
     if (this.verbose) {
       console.log(
