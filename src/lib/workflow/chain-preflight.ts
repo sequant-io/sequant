@@ -31,6 +31,7 @@ import {
   extractPathsFromIssueBody,
   detectFileCollisions,
 } from "../assess-collision-detect.js";
+import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 
 /** The class of content problem a warning describes. */
 export type PreflightWarningKind =
@@ -58,60 +59,18 @@ export interface PreflightIssue {
 }
 
 /**
- * Matches a declared blocker marker: `depends on #N` or `blocked by #N`,
- * optionally bold-wrapped, colon-separated, and/or written as a list item.
- * Extends the `depends on`-only regex in `batch-executor.ts:parseDependencies`
- * to also catch `blocked by`, which is the exact phrasing in this feature's
- * motivating example (`Blocked by #36`). Kept local so the sorter's ordering
- * semantics are untouched (#762 Open Question #3 — deliberately warn-only).
- *
- * Anchored to line start because a *declaration* is a line about the issue's
- * own dependencies, whereas prose that merely mentions the marker mid-sentence
- * is not. #762's own body is the motivating case: it contains both `...when #39
- * says blocked by #38` and `...real markers like "Blocked by #36"` as examples,
- * and an unanchored match reported #762 as blocked by #38 and #36 — exactly the
- * false inference #604 says is worse than none. That matters most under
- * `--strict-preflight`, where a bogus warning hard-aborts a legitimate chain.
- *
- * The `#` is required (unlike the looser `#?` in `parseDependencies`) so a line
- * such as `Blocked by 5 days of review` cannot parse as issue #5.
- */
-const BLOCKER_MARKER_REGEX =
-  /^\s*(?:[-*]\s*)?\*?\*?(?:depends\s+on|blocked\s+by)\*?\*?:?\s*#(\d+)/gim;
-
-/**
- * Strip fenced code blocks, inline code spans, and HTML comments so blocker
- * markers inside quoted shell snippets, documentation examples, or commented-out
- * drafts don't count as real declarations. Inline spans are matched within a
- * single line so an unbalanced backtick cannot swallow the rest of the body.
- *
- * Deliberately diverges from `assess-collision-detect.ts:stripCodeBlocksAndComments`,
- * which keeps inline spans: its PATH_REGEX only matches backtick-wrapped paths,
- * so stripping them there would find nothing. Same syntax, opposite meaning —
- * a backticked marker here is an example, a backticked path there is the target.
- * Keep the two separate.
- */
-function stripCodeAndComments(body: string): string {
-  return body
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/`[^`\n]*`/g, "");
-}
-
-/**
  * Parse the issue numbers a body declares itself blocked by / dependent on.
  * Catches both `depends on #N` and `blocked by #N` (deduped, order-preserving).
- * Only line-leading markers count as declarations — see BLOCKER_MARKER_REGEX
- * for why mid-sentence prose mentions are deliberately ignored.
+ * Only line-leading markers count as declarations — see the shared
+ * `dependency-markers.ts` parser for why mid-sentence prose mentions are
+ * deliberately ignored.
+ *
+ * The pre-flight honors BOTH markers (unlike `batch-executor.ts`, which honors
+ * only `depends on` so the sorter's ordering semantics stay untouched — #762
+ * Open Q #3). The hardened mechanics are shared; the marker set is per-caller.
  */
 export function parseDeclaredBlockers(body: string): number[] {
-  const cleaned = stripCodeAndComments(body);
-  const found: number[] = [];
-  for (const m of cleaned.matchAll(BLOCKER_MARKER_REGEX)) {
-    const n = parseInt(m[1], 10);
-    if (!isNaN(n) && !found.includes(n)) found.push(n);
-  }
-  return found;
+  return parseBodyDependencyMarkers(body, ["depends on", "blocked by"]);
 }
 
 /**
