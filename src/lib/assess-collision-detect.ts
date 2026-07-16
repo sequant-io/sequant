@@ -92,6 +92,13 @@ const THREE_DIR_SYNC_PATTERN =
  * single-backtick wrapper, so this gives us the "paths quoted as code in
  * prose count, paths inside a code block don't" behavior the AC-5 guard
  * specifies.
+ *
+ * Do NOT unify this with `chain-preflight.ts:stripCodeAndComments`, which
+ * looks nearly identical but additionally strips inline spans. The two have
+ * opposite requirements for the same syntax: there a backticked marker is a
+ * documentation example to discard, here a backticked path is the entire
+ * signal. Adding its inline-span strip to this function would delete every
+ * path PATH_REGEX is looking for and silently return an empty set.
  */
 function stripCodeBlocksAndComments(body: string): string {
   return body.replace(/```[\s\S]*?```/g, "").replace(/<!--[\s\S]*?-->/g, "");

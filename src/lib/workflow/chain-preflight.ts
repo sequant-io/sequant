@@ -84,6 +84,12 @@ const BLOCKER_MARKER_REGEX =
  * markers inside quoted shell snippets, documentation examples, or commented-out
  * drafts don't count as real declarations. Inline spans are matched within a
  * single line so an unbalanced backtick cannot swallow the rest of the body.
+ *
+ * Deliberately diverges from `assess-collision-detect.ts:stripCodeBlocksAndComments`,
+ * which keeps inline spans: its PATH_REGEX only matches backtick-wrapped paths,
+ * so stripping them there would find nothing. Same syntax, opposite meaning —
+ * a backticked marker here is an example, a backticked path there is the target.
+ * Keep the two separate.
  */
 function stripCodeAndComments(body: string): string {
   return body
