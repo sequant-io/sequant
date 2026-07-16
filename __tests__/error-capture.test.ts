@@ -462,8 +462,12 @@ describe("Error Category Constants", () => {
       expect(ERROR_CATEGORIES).toContain("hook_failure");
       expect(ERROR_CATEGORIES).toContain("build_error");
       expect(ERROR_CATEGORIES).toContain("timeout");
+      // rate_limit / billing added by #761 AC-6 — driver-structured only,
+      // never produced by classifyError.
+      expect(ERROR_CATEGORIES).toContain("rate_limit");
+      expect(ERROR_CATEGORIES).toContain("billing");
       expect(ERROR_CATEGORIES).toContain("unknown");
-      expect(ERROR_CATEGORIES).toHaveLength(6);
+      expect(ERROR_CATEGORIES).toHaveLength(8);
     });
   });
 });

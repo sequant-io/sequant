@@ -9,6 +9,7 @@ import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import type { SequantError } from "../errors.js";
+import type { ErrorCategory } from "./error-classifier.js";
 
 // Importing the registry triggers its side-effect registrations (built-ins
 // live at the bottom of phase-registry.ts), guaranteeing the registry is
@@ -274,6 +275,14 @@ export interface IssueResult {
    * failing fast (AC-3) is expected, not surprising.
    */
   checkpointFailed?: boolean;
+  /**
+   * Bounded-enum classification of the failure that halted this issue (#761
+   * AC-7), derived from the last non-loop failing phase's `structuredError`
+   * (preferred) or stderr-regex classification. Carried into
+   * `.sequant/metrics.json` — enum only, never a message string (metrics
+   * privacy contract). Absent on success.
+   */
+  failureCategory?: ErrorCategory;
 }
 
 /**

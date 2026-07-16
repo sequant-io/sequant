@@ -19,6 +19,11 @@ import type {
   ResolvedRun,
   RunResult,
 } from "../lib/workflow/run-orchestrator.js";
+import {
+  BillingError,
+  RateLimitError,
+  formatRateLimitMessage,
+} from "../lib/errors.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 import { LOOP_PHASE } from "../lib/workflow/status-derivation.js";
 import type { IssueResult } from "../lib/workflow/types.js";
@@ -123,6 +128,44 @@ function toIssueSummary(r: IssueResult): IssueSummary {
 }
 
 /**
+ * Detect a chain halted by a rate-limit/billing failure and build the summary
+ * notice for it (#761 AC-5). Returns null when the run wasn't a chain, no
+ * issue failed, or the halting failure wasn't rate-limit-classified.
+ *
+ * Extracted from `displaySummary` so the halt-and-print decision is testable
+ * standalone — the same treatment #760 gave `planChainResumeFromState` when it
+ * hit the executeSequential testability wall.
+ *
+ * The failing phase is found with the same reverse non-loop scan as
+ * `toIssueSummary` (#766): the classification must describe the LAST attempt,
+ * not a stale first-iteration failure.
+ *
+ * @internal Exported for testing
+ */
+export function buildRateLimitHaltNotice(
+  results: IssueResult[],
+  chainEnabled: boolean,
+): { issueNumber: number; label: string } | null {
+  if (!chainEnabled) return null;
+  // Chain mode halts at the first failed link, so at most one failed issue
+  // exists; scan defensively anyway.
+  for (const r of results) {
+    if (r.success) continue;
+    const failedPhase = [...r.phaseResults]
+      .reverse()
+      .find((p) => !p.success && p.phase !== LOOP_PHASE);
+    const err = failedPhase?.structuredError;
+    if (err instanceof RateLimitError || err instanceof BillingError) {
+      return {
+        issueNumber: r.issueNumber,
+        label: formatRateLimitMessage(err.metadata),
+      };
+    }
+  }
+  return null;
+}
+
+/**
  * Print post-run summary: per-issue grid, log path, reflection, tips.
  *
  * If a renderer is provided (default path), delegate to its `renderSummary`
@@ -174,6 +217,29 @@ export function displaySummary(
     console.log(
       colors.muted(
         "     Resuming this chain will stop at that link until the work is committed (or use --force).",
+      ),
+    );
+    console.log("");
+  }
+
+  // #761: a chain halted by a rate limit already stopped at the right link,
+  // but the labeled cause has long scrolled past by now (same rationale as the
+  // #760 restatement above), and #760 added no resume flag — resume IS
+  // re-running the identical command. Say both explicitly, or the halt reads
+  // as a bug and the resume path stays undiscovered.
+  const rateLimitHalt = buildRateLimitHaltNotice(
+    results,
+    mergedOptions.chain === true,
+  );
+  if (rateLimitHalt) {
+    console.log(
+      colors.warning(
+        `  ⚠️  ${rateLimitHalt.label} — chain halted at #${rateLimitHalt.issueNumber}.`,
+      ),
+    );
+    console.log(
+      colors.muted(
+        `     Re-run the same command to resume from #${rateLimitHalt.issueNumber} (no flag needed; completed links are skipped).`,
       ),
     );
     console.log("");
