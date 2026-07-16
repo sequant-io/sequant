@@ -299,8 +299,9 @@ describe("formatCollisionAnnotations", () => {
     ]);
     expect(out.chainSuggestion).toBeDefined();
     expect(out.chainSuggestion).toMatch(
-      /^Chain: npx sequant run 10 20 30 --chain --qa-gate -Q\b/,
+      /^Chain: npx sequant run 10 20 30 --chain -Q\b/,
     );
+    expect(out.chainSuggestion).not.toContain("--qa-gate");
     expect(out.chainSuggestion).toContain("src/lib/foo.ts");
   });
 
@@ -309,7 +310,7 @@ describe("formatCollisionAnnotations", () => {
       { issues: [10, 20, 30], file: "src/lib/foo.ts" },
     ]);
     expect(out.chainSuggestion).toContain(
-      "chain length≥3 historically 1/6 = 17%",
+      "chain length≥3 historically 1/6 = 17%, predates the #748/#749 fixes",
     );
     expect(out.chainSuggestion).toContain(
       "docs/reference/chain-mode-analysis-2026-05.md",
