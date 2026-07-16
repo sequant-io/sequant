@@ -23,6 +23,7 @@ import {
   BillingError,
   RateLimitError,
   formatRateLimitMessage,
+  isBillingFailure,
 } from "../lib/errors.js";
 import { analyzeRun, formatReflection } from "../lib/workflow/run-reflect.js";
 import { LOOP_PHASE } from "../lib/workflow/status-derivation.js";
@@ -156,10 +157,17 @@ export function buildRateLimitHaltNotice(
       .find((p) => !p.success && p.phase !== LOOP_PHASE);
     const err = failedPhase?.structuredError;
     if (err instanceof RateLimitError || err instanceof BillingError) {
-      return {
-        issueNumber: r.issueNumber,
-        label: formatRateLimitMessage(err.metadata),
-      };
+      // Event-derived errors get their message from formatRateLimitMessage, so
+      // re-deriving from metadata is exact and includes resetsAt. But errors
+      // from the assistant-error channel carry no billing/reset metadata —
+      // re-deriving there would mislabel a BillingError as "Rate limited"
+      // (isBillingFailure({}) is false) — so fall back to the typed message
+      // when the metadata carries no signal.
+      const label =
+        err.metadata.resetsAt !== undefined || isBillingFailure(err.metadata)
+          ? formatRateLimitMessage(err.metadata)
+          : err.message;
+      return { issueNumber: r.issueNumber, label };
     }
   }
   return null;

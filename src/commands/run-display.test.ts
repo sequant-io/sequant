@@ -305,6 +305,32 @@ describe("displaySummary — rate-limit chain halt notice (#761)", () => {
     expect(output).toContain("chain halted at #55");
   });
 
+  it("does not mislabel a metadata-less billing halt as rate-limited (assistant-error channel)", () => {
+    // A billing_error arriving via the assistant-error channel has empty
+    // metadata; re-deriving the label from metadata would say "Rate limited".
+    const notice = buildRateLimitHaltNotice(
+      [
+        issueResult({
+          issueNumber: 56,
+          success: false,
+          phaseResults: [
+            {
+              phase: "exec",
+              success: false,
+              error: "Billing error",
+              structuredError: new BillingError("Billing error", {
+                assistantError: "billing_error",
+              }),
+            } as PhaseResult,
+          ],
+        }),
+      ],
+      true,
+    );
+
+    expect(notice).toEqual({ issueNumber: 56, label: "Billing error" });
+  });
+
   it("stays silent outside chain mode (no #760 resume semantics to point at)", () => {
     const output = capture(runResult([rateLimitedIssue(102)], {}));
 
