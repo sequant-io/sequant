@@ -855,7 +855,7 @@ export CLAUDE_HOOKS_SMART_TESTS=true
 When enabled, smart tests will:
 - Auto-run related tests after each file edit during Phase 2 (EXEC)
 - Catch regressions immediately instead of waiting for explicit `npm test`
-- Log results to `/tmp/claude-tests.log` for debugging
+- Log results to `claude-tests.log` for debugging (`/logs/`, else `/.sequant/logs/`)
 
 **Benefits:**
 - Faster feedback loop during implementation

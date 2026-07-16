@@ -51,13 +51,28 @@ fi
 
 _TMPDIR="${TMPDIR:-/tmp}"
 
-# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates)
-if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+# Log sink (#763 AC-5c: blocked-command history must survive to be a useful
+# regression corpus, so $TMPDIR — which macOS purges — is a last resort only).
+#
+# This block MUST stay identical to the one in pre-tool.sh. The two hooks
+# write the *same* claude-timing.log (START there, END here) and the same
+# claude-quality.log, so any divergence silently splits every START/END pair
+# across two files.
+#
+# Every candidate is absolute and lives outside the repo. A repo-local or
+# relative path is wrong three times over: it resolves against the hook's cwd
+# (which Claude Code does not pin), it yields one sink per directory instead
+# of the single corpus AC-5 asks for, and — worst — creating it inside a repo
+# makes `git status --porcelain` non-empty, which silently defeats pre-tool.sh's
+# no-changes guard that reads exactly that output.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
   _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
-  mkdir -p "$_LOG_DIR"
+elif [[ -n "${HOME:-}" ]]; then
+  _LOG_DIR="${HOME}/.sequant/logs"
 else
   _LOG_DIR="${_TMPDIR}"
 fi
+mkdir -p "$_LOG_DIR" 2>/dev/null || _LOG_DIR="${_TMPDIR}"
 
 TIMING_LOG="${_LOG_DIR}/claude-timing.log"
 QUALITY_LOG="${_LOG_DIR}/claude-quality.log"

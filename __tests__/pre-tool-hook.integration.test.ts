@@ -20,7 +20,13 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,12 +46,13 @@ const HOOK_COPIES: Array<[label: string, path: string]> = [
   ],
 ];
 
-// Isolated log home so the hook's timing/block logs never land in the repo
-// under test. The hook writes to $CLAUDE_PLUGIN_DATA/logs when set (the real
-// plugin scenario); without it the fallback is a repo-local .sequant/logs,
-// which would show up in `git status` and break the no-changes guard's
-// emptiness check for these bare test repos (#763). Pointing the logs at a
-// throwaway dir keeps the tested repos clean.
+// Isolated log home so the hook's timing/block logs never land in a real
+// directory. The hook writes to $CLAUDE_PLUGIN_DATA/logs when set (the real
+// plugin scenario), falling back to $HOME/.sequant/logs — always outside the
+// repo, so it cannot dirty `git status` (see the "hook log sink" describe
+// block below, which exercises that fallback explicitly). Forcing
+// CLAUDE_PLUGIN_DATA here just keeps these tests hermetic; it must NOT be the
+// only branch under test, since the fallback is what real npm/CI users hit.
 const LOG_HOME = mkdtempSync(join(tmpdir(), "pre-tool-loghome-"));
 
 // Strip env vars that the hook treats as worktree/parallel context — those
@@ -645,6 +652,263 @@ describe.each(HOOK_COPIES)(
       } finally {
         rmSync(pluginData, { recursive: true, force: true });
       }
+    });
+
+    // === Command-word coverage: every position the shell would actually
+    // execute is a command word, not just the head of a top-level segment.
+    // This guard has no native Claude Code backstop, so a narrow reading here
+    // would leave sequant's agents with less protection than before #763.
+
+    it("blocks `sudo` inside a subshell: `( sudo apt install x )`", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "( sudo apt install evil )",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
+    });
+
+    it("blocks `sudo` in an unquoted command substitution: `echo $(sudo ...)`", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "echo $(sudo apt install evil)",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
+    });
+
+    it('blocks `sudo` in a double-quoted command substitution: `echo "$(sudo ...)"`', () => {
+      // Double quotes do NOT disable command substitution — the shell runs it,
+      // so it is a command-word position.
+      const { code, stderr } = runHook(
+        hookPath,
+        'echo "$(sudo apt install evil)"',
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
+    });
+
+    it("blocks `sudo` nested in a subshell inside a substitution", () => {
+      const { code } = runHook(
+        hookPath,
+        'echo "$( ( sudo apt install evil ) )"',
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+    });
+
+    it('blocks reading a secret file via substitution: `--body "$(cat .env)"`', () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        'gh pr create --body "$(cat .env)"',
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Reading secret file/);
+    });
+
+    // Accepted gaps: an *argument* position is not a command word. Treating it
+    // as one is precisely the mistake that produced #564/#570, so these are
+    // deliberate — locked in so a future "tightening" is a conscious decision.
+    it("allows `xargs sudo ...` (argument position, documented gap)", () => {
+      const { code } = runHook(
+        hookPath,
+        "echo pkg | xargs sudo apt install",
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+    });
+
+    it('allows `bash -c "sudo ..."` (argument position, documented gap)', () => {
+      const { code } = runHook(
+        hookPath,
+        'bash -c "sudo apt install evil"',
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+    });
+
+    // === Heredoc bodies are stdin DATA, not code.
+    // This is the regression that guards the whole command-substitution
+    // feature above: `git commit -m "$(cat <<'EOF' ... EOF)"` is the standard
+    // commit idiom, and once $( ) inside double quotes became live, a commit
+    // message that merely *mentions* a guarded command would be blocked —
+    // reintroducing the #564/#570 false-positive class through a new door.
+    // These cases fail loudly if heredoc skipping is ever removed.
+    it("allows a heredoc commit message that mentions `git push --force`", () => {
+      const cmd = [
+        `git commit -m "$(cat <<'EOF'`,
+        "docs: explain that git push --force is blocked",
+        "EOF",
+        `)"`,
+      ].join("\n");
+      const { stderr } = runHook(hookPath, cmd, cleanRepo);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: Force push/);
+    });
+
+    it("allows a heredoc commit message that mentions sudo and a deploy", () => {
+      const cmd = [
+        `git commit -m "$(cat <<'EOF'`,
+        "chore: document that sudo and vercel deploy --prod are blocked",
+        "EOF",
+        `)"`,
+      ].join("\n");
+      const { stderr } = runHook(hookPath, cmd, cleanRepo);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: (sudo|Deployment)/);
+    });
+
+    it("allows an unquoted-delimiter heredoc body mentioning a guarded command", () => {
+      const cmd = [
+        `git commit -m "$(cat <<EOF`,
+        "fix: mention git push --force here",
+        "EOF",
+        `)"`,
+      ].join("\n");
+      const { stderr } = runHook(hookPath, cmd, cleanRepo);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: Force push/);
+    });
+
+    it("allows a `<<-` indented heredoc body mentioning a guarded command", () => {
+      const cmd = [
+        `git commit -m "$(cat <<-EOF`,
+        "\tfeat: git push --force inside an indented heredoc",
+        "\tEOF",
+        `)"`,
+      ].join("\n");
+      const { stderr } = runHook(hookPath, cmd, cleanRepo);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: Force push/);
+    });
+
+    it("allows a PR body heredoc mentioning guarded commands", () => {
+      const cmd = [
+        `gh pr create --body "$(cat <<EOF`,
+        "This PR explains why git push --force and vercel deploy --prod are blocked.",
+        "EOF",
+        `)"`,
+      ].join("\n");
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    // `<<<` is a herestring, not a heredoc — it must not swallow the rest of
+    // the command as if it were a heredoc body.
+    it("treats `<<<` as a herestring, still blocking a real chained command", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        'grep x <<< "text" && git push --force',
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Force push/);
+    });
+  },
+);
+
+// === Log sink (#763 AC-5c) ===
+// Every test above forces CLAUDE_PLUGIN_DATA, so the *fallback* branch — the
+// one real npm/CI users hit — went entirely unexercised. That blind spot is
+// what let two defects ship: a cwd-relative sink that scattered .sequant/ dirs
+// into whatever directory the hook ran in, and a pre/post divergence that split
+// every START/END timing pair across two files. These drive the fallback
+// directly, with CLAUDE_PLUGIN_DATA unset and HOME redirected.
+const HOOK_PAIRS: Array<[label: string, pre: string, post: string]> = [
+  [
+    "templates/hooks",
+    join(REPO_ROOT, "templates", "hooks", "pre-tool.sh"),
+    join(REPO_ROOT, "templates", "hooks", "post-tool.sh"),
+  ],
+  [
+    "hooks",
+    join(REPO_ROOT, "hooks", "pre-tool.sh"),
+    join(REPO_ROOT, "hooks", "post-tool.sh"),
+  ],
+  [
+    ".claude/hooks",
+    join(REPO_ROOT, ".claude", "hooks", "pre-tool.sh"),
+    join(REPO_ROOT, ".claude", "hooks", "post-tool.sh"),
+  ],
+];
+
+describe.each(HOOK_PAIRS)(
+  "hook log sink, CLAUDE_PLUGIN_DATA unset (#763 AC-5c) [%s]",
+  (_label, preHook, postHook) => {
+    let fakeHome: string;
+    let repo: string;
+
+    function fallbackEnv(): NodeJS.ProcessEnv {
+      const env = { ...process.env };
+      delete env.SEQUANT_WORKTREE;
+      delete env.SEQUANT_ISSUE;
+      delete env.CLAUDE_HOOKS_DISABLED;
+      delete env.CLAUDE_PLUGIN_DATA; // force the fallback branch
+      env.HOME = fakeHome;
+      return env;
+    }
+
+    function run(hook: string, command: string, tool = "Bash") {
+      return spawnSync("bash", [hook], {
+        input: JSON.stringify({
+          tool_name: tool,
+          tool_input: { command },
+        }),
+        cwd: repo,
+        env: fallbackEnv(),
+        encoding: "utf8",
+      });
+    }
+
+    beforeAll(() => {
+      fakeHome = mkdtempSync(join(tmpdir(), "pre-tool-home-"));
+      repo = mkdtempSync(join(tmpdir(), "pre-tool-sink-repo-"));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      writeFileSync(join(repo, "a.txt"), "a\n");
+      spawnSync("git", ["add", "a.txt"], { cwd: repo });
+      spawnSync("git", ["commit", "-qm", "feat: init"], { cwd: repo });
+    });
+
+    afterAll(() => {
+      rmSync(fakeHome, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
+    });
+
+    it("writes logs under $HOME, never into the repo", () => {
+      run(preHook, "git status");
+      const status = spawnSync("git", ["status", "--porcelain"], {
+        cwd: repo,
+        encoding: "utf8",
+      });
+      // The hook must leave no trace in the working tree.
+      expect(status.stdout.trim()).toBe("");
+      expect(existsSync(join(repo, ".sequant"))).toBe(false);
+      expect(
+        existsSync(join(fakeHome, ".sequant", "logs", "claude-timing.log")),
+      ).toBe(true);
+    });
+
+    it("pairs START and END in a single claude-timing.log across pre+post", () => {
+      const timing = join(fakeHome, ".sequant", "logs", "claude-timing.log");
+      rmSync(timing, { force: true });
+      run(preHook, "git status");
+      run(postHook, "git status");
+      const log = readFileSync(timing, "utf8");
+      // Both halves of the pair must land in the SAME file, or the timing
+      // instrumentation this hook exists to feed is silently broken.
+      expect(log).toMatch(/START Bash/);
+      expect(log).toMatch(/END Bash/);
+    });
+
+    it("does not defeat the no-changes guard by dirtying the repo", () => {
+      // Regression: a repo-local log dir made `git status --porcelain`
+      // non-empty, so the guard concluded there WERE changes and allowed an
+      // empty commit — the hook's own side effect turning off the hook's guard.
+      const result = run(preHook, 'git commit -m "feat: x"');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
     });
   },
 );

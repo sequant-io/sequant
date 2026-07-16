@@ -35,15 +35,26 @@ fi
 
 _TMPDIR="${TMPDIR:-/tmp}"
 
-# Use CLAUDE_PLUGIN_DATA for persistent logs (survives plugin updates).
-# Fallback is a repo-local .sequant/logs/ rather than $TMPDIR, which macOS
-# purges (#763 AC-5c: blocked-command history must survive to be a useful
-# regression corpus). $TMPDIR remains only as a last resort if neither
-# location is writable.
-if [[ -n "${CLAUDE_PLUGIN_DATA}" ]]; then
+# Log sink (#763 AC-5c: blocked-command history must survive to be a useful
+# regression corpus, so $TMPDIR — which macOS purges — is a last resort only).
+#
+# This block MUST stay identical to the one in post-tool.sh. The two hooks
+# write the *same* claude-timing.log (START here, END there) and the same
+# claude-quality.log, so any divergence silently splits every START/END pair
+# across two files.
+#
+# Every candidate is absolute and lives outside the repo. A repo-local or
+# relative path is wrong three times over: it resolves against the hook's cwd
+# (which Claude Code does not pin), it yields one sink per directory instead
+# of the single corpus AC-5 asks for, and — worst — creating it inside a repo
+# makes `git status --porcelain` non-empty, which silently defeats the
+# no-changes guard further down that reads exactly that output.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
   _LOG_DIR="${CLAUDE_PLUGIN_DATA}/logs"
+elif [[ -n "${HOME:-}" ]]; then
+  _LOG_DIR="${HOME}/.sequant/logs"
 else
-  _LOG_DIR=".sequant/logs"
+  _LOG_DIR="${_TMPDIR}"
 fi
 mkdir -p "$_LOG_DIR" 2>/dev/null || _LOG_DIR="${_TMPDIR}"
 
@@ -92,17 +103,34 @@ log_block() {
     rotate_log "$HOOK_LOG"
 }
 
-# emit_segments <command> — split a shell command into its top-level segments
-# and print each (one per line) with quoted substrings removed and leading
-# env-assignments stripped, so guards can match a segment's *command words*
-# without tripping on payload text carried inside quotes (#763).
+# emit_segments <command> — split a shell command into the pieces the shell
+# would actually execute, and print each (one per line) with inert text removed
+# and leading env-assignments stripped, so guards can match a segment's
+# *command words* without tripping on payload text carried as an argument (#763).
 #
-# This is deliberately NOT a full shell parser: it splits on the operators
-# ; && || | and newline, and understands single/double quotes. It does not
-# emulate command substitution, backslash escapes, or globbing — acceptable
-# for an accident-prevention layer (the real security boundary is Claude
-# Code's permission system, not this hook). A crafted quoted string could in
-# principle hide an operator; that is out of scope for a non-adversarial guard.
+# Command-word positions (a guard MAY match here):
+#   - each segment between the operators ; && || | and newline
+#   - the body of a subshell `( ... )` and of a command substitution `$( ... )`,
+#     including `$( ... )` inside double quotes — the shell runs those.
+#
+# Inert (a guard must NEVER match here):
+#   - single-quoted text: the shell expands nothing inside it
+#   - double-quoted text, except for `$( ... )`
+#   - heredoc bodies: they are stdin *data*, not code. This one is load-bearing.
+#     The standard commit idiom is `git commit -m "$(cat <<'EOF' ... EOF)"`;
+#     without skipping the body, a commit message that merely *mentions*
+#     `git push --force` would be blocked — which would reintroduce the
+#     #564/#570 false-positive class through the command-substitution door.
+#
+# Argument positions are deliberately NOT command words, so `xargs sudo ...`
+# and `bash -c "sudo ..."` are allowed: the guarded word is data being handed
+# to another program, and treating it as code is what produced #564/#570.
+#
+# This is deliberately NOT a full shell parser: it does not emulate backslash
+# escapes or globbing — acceptable for an accident-prevention layer (the real
+# security boundary is Claude Code's permission system, not this hook). A
+# crafted quoted string could in principle hide an operator; that is out of
+# scope for a non-adversarial guard.
 emit_segments() {
     printf '%s' "$1" | awk '
     function emit(s,   t) {
@@ -115,18 +143,79 @@ emit_segments() {
     BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
     { full = (NR == 1) ? $0 : full "\n" $0 }
     END {
-        n = length(full); seg = ""; inq = ""
+        n = length(full); seg = ""; cur = ""; depth = 0; nhd = 0
         for (i = 1; i <= n; i++) {
             c = substr(full, i, 1)
-            if (inq != "") { if (c == inq) inq = ""; continue }
-            if (c == sq || c == dq) { inq = c; seg = seg " "; continue }
             nc = (i < n) ? substr(full, i + 1, 1) : ""
+
+            # Single-quoted: wholly inert until the closing quote.
+            if (cur == sq) { if (c == sq) cur = ""; continue }
+
+            # Double-quoted: inert, except that $( ... ) is live code.
+            if (cur == dq) {
+                if (c == "$" && nc == "(") {
+                    emit(seg); seg = ""
+                    stack[++depth] = dq; cur = ""; i++
+                    continue
+                }
+                if (c == dq) cur = ""
+                continue
+            }
+
+            # --- live context ---
+            if (c == sq) { cur = sq; seg = seg " "; continue }
+            if (c == dq) { cur = dq; seg = seg " "; continue }
+
+            # Heredoc introducer: << or <<-, but not the <<< herestring. Record
+            # the delimiter; the body itself is skipped at the newline below.
+            if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                j = i + 2
+                if (substr(full, j, 1) == "-") j++
+                while (j <= n && substr(full, j, 1) ~ /[ \t]/) j++
+                q = substr(full, j, 1); delim = ""
+                if (q == sq || q == dq) {
+                    j++
+                    while (j <= n && substr(full, j, 1) != q) { delim = delim substr(full, j, 1); j++ }
+                    j++
+                } else {
+                    while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
+                }
+                if (length(delim) > 0) hd[++nhd] = delim
+                seg = seg " "; i = j - 1
+                continue
+            }
+
+            # Subshell / command substitution: the body is live code.
+            if (c == "$" && nc == "(") { emit(seg); seg = ""; stack[++depth] = cur; cur = ""; i++; continue }
+            if (c == "(")              { emit(seg); seg = ""; stack[++depth] = cur; continue }
+            if (c == ")")              { emit(seg); seg = ""; if (depth > 0) cur = stack[depth--]; continue }
+
             if (c == ";" || c == "&" || c == "|") {
                 emit(seg); seg = ""
                 if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
                 continue
             }
-            if (c == "\n") { emit(seg); seg = ""; continue }
+
+            if (c == "\n") {
+                emit(seg); seg = ""
+                # Any heredocs opened on the line just ended: their bodies are
+                # data, so skip forward to each delimiter line.
+                while (nhd > 0) {
+                    d = hd[1]
+                    for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
+                    nhd--
+                    while (i < n) {
+                        ls = i + 1
+                        le = index(substr(full, ls), "\n")
+                        if (le == 0) { line = substr(full, ls); i = n }
+                        else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                        t = line
+                        sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                        if (t == d) break
+                    }
+                }
+                continue
+            }
             seg = seg c
         }
         emit(seg)
@@ -213,6 +302,13 @@ fi
 # absolute path, blocking ordinary worktree/scratch deletes. `sudo` is NOT
 # natively covered, so it stays — but keyed off the command word, so
 # `echo 'never sudo'` and `grep -r sudoku src/` are allowed.
+#
+# Because this guard has no native backstop, emit_segments treats every
+# position the shell would execute as a command word: plain, chained,
+# `( sudo ... )`, `$(sudo ...)`, and `"$(sudo ...)"` all block. Argument
+# positions (`xargs sudo ...`, `bash -c "sudo ..."`) are an accepted gap —
+# there the word is data handed to another program, and matching it is the
+# mistake that produced #564/#570.
 if seg_match '^sudo( |$)'; then
     log_block "sudo"
     echo "HOOK_BLOCKED: sudo command" >&2
