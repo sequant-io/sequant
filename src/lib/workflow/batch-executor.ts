@@ -32,6 +32,7 @@ import {
   filterResumedPhases,
 } from "./worktree-manager.js";
 import { executePhaseWithRetry } from "./phase-executor.js";
+import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
 import {
   detectPhasesFromLabels,
@@ -209,19 +210,15 @@ export function parseDependencies(issueNumber: number): number[] {
     const data = JSON.parse(result.stdout.toString());
     const dependencies: number[] = [];
 
-    // Parse from body: "Depends on: #123" or "**Depends on**: #123"
+    // Parse from body: line-leading "Depends on: #123" / "**Depends on**: #123".
+    // Delegates to the shared, hardened parser (#767): mid-sentence prose,
+    // in-fence examples, and inline-code mentions are ignored, and the `#` is
+    // required. Honors ONLY `depends on` — the sorter must not start reordering
+    // on `blocked by`, which would be a new silent-reorder class (#762 Open Q #3).
     if (data.body) {
-      const bodyMatch = data.body.match(
-        /\*?\*?depends\s+on\*?\*?:?\s*#?(\d+)/gi,
+      dependencies.push(
+        ...parseBodyDependencyMarkers(data.body, ["depends on"]),
       );
-      if (bodyMatch) {
-        for (const match of bodyMatch) {
-          const numMatch = match.match(/(\d+)/);
-          if (numMatch) {
-            dependencies.push(parseInt(numMatch[1], 10));
-          }
-        }
-      }
     }
 
     // Parse from labels: "depends-on/123" or "depends-on-123"
