@@ -565,7 +565,10 @@ Automatically removes worktrees before PR merge to prevent branch deletion failu
 
 ### Timing Instrumentation
 
-Logs tool execution times to `/tmp/claude-timing.log` for performance analysis.
+Logs tool execution times to `claude-timing.log` for performance analysis —
+`${CLAUDE_PLUGIN_DATA}/logs/` for plugin users, otherwise `${HOME}/.sequant/logs/`.
+`pre-tool.sh` writes START and `post-tool.sh` writes END, so both hooks must
+resolve the same directory (#763).
 
 ### Rollback Mechanism
 

@@ -112,11 +112,16 @@ The plugin bundles an MCP server that starts automatically:
 
 ## Log Storage
 
-Hook logs are stored in:
-- **Plugin users:** `${CLAUDE_PLUGIN_DATA}/logs/` (persistent across updates)
-- **npm/CI users:** `${TMPDIR:-/tmp}/` (session-scoped)
+Hook logs are stored in the first location available:
+1. **Plugin users:** `${CLAUDE_PLUGIN_DATA}/logs/` (persistent across updates)
+2. **npm/CI users:** `${HOME}/.sequant/logs/` (persistent; one sink shared by the main repo and every worktree)
+3. **Last resort** (no `HOME`): `${TMPDIR:-/tmp}/` — session-scoped, and macOS purges it
 
 Log files: `claude-timing.log`, `claude-hook.log`, `claude-quality.log`, `claude-tests.log`
+
+`pre-tool.sh` and `post-tool.sh` resolve this location with an identical block and share `claude-timing.log` (START from pre, END from post) and `claude-quality.log`. Changing the location in one hook without the other splits every START/END pair across two files (#763).
+
+The log directory deliberately lives **outside the repo**: creating it inside one would make `git status --porcelain` non-empty, which silently defeats the pre-tool no-changes guard that reads exactly that output.
 
 ## Troubleshooting
 

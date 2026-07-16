@@ -43,7 +43,7 @@ AC-1: Timing logs capture start/end of each tool call
 **Test Scenario:**
 - Given: Claude Code session with hooks enabled
 - When: Any tool is invoked (e.g., Edit, Read)
-- Then: /tmp/claude-timing.log contains START and END with tool name and timestamp
+- Then: claude-timing.log contains START (from pre-tool.sh) and END (from post-tool.sh) with tool name and timestamp, both in the SAME file — /logs/ for plugin users, else /.sequant/logs/
 
 **Integration Points:**
 - Claude Code hook system (stdin JSON input)

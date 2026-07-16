@@ -245,14 +245,20 @@ git rev-parse --abbrev-ref HEAD
 
 ### Hook Log
 
-All blocked operations are logged for debugging:
+All blocked operations are logged for debugging, with the offending command and
+the specific rule that fired (secrets redacted). Logs go to
+`${CLAUDE_PLUGIN_DATA}/logs/` for plugin users, otherwise `${HOME}/.sequant/logs/`:
 
 ```bash
+# Resolve the log directory the hooks are using
+LOG_DIR="${CLAUDE_PLUGIN_DATA:+$CLAUDE_PLUGIN_DATA/logs}"
+LOG_DIR="${LOG_DIR:-$HOME/.sequant/logs}"
+
 # View blocked operations
-cat /tmp/claude-hook.log
+cat "$LOG_DIR/claude-hook.log"
 
 # View quality warnings
-cat /tmp/claude-quality.log
+cat "$LOG_DIR/claude-quality.log"
 ```
 
 ## Common Operations
