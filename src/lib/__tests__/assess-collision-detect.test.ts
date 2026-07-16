@@ -118,6 +118,127 @@ medium — shared heuristic + 2 skill updates + 3-dir sync + tests + docs. Estim
 \`spec → exec → qa\` with \`-Q\` (skill changes + 3-dir sync + new reference doc + CHANGELOG)
 `;
 
+// ─── Verbatim negative fixtures (#760/#761/#762 — cite one doc under
+//     ## References, modify none of it; #769 phantom-collision class) ──────
+
+const ISSUE_760_BODY = `## Context
+
+The #604 forensics showed 3 of the 5 recorded chain failures (two rate-limit cascades, one QA API timeout) killed the whole chain even though earlier links had completed and checkpointed — a rerun the next day of one of them (f317530c → b9c08e29) succeeded. Chain mode already writes a \`checkpoint(#N): QA passed\` commit after each successful link (\`createCheckpointCommit\`, \`worktree-manager.ts\`) and describes it as a "recovery point if later issues fail", but **nothing consumes it**: on any link failure the loop does an unconditional \`break\` (\`run-orchestrator.ts\`) and a re-run redoes completed issues from scratch.
+
+This is the highest-leverage chain improvement identified: it converts "chain dead, 1–3 hours wasted" into "re-run picks up at the failed link" for the dominant failure classes.
+
+## Proposal
+
+Re-running \`sequant run A B C --chain\` after a partial failure should skip links that already completed (state.json status \`ready_for_merge\` + existing worktree/branch with checkpoint) and resume execution at the first incomplete link, re-establishing the successor rebase chain from the last good link's committed tip (the #748-fixed \`rebaseOntoLocalBranch\` path). Whether this is automatic on re-run or an explicit \`--resume-chain\` flag is a design decision for /spec — automatic detection must not silently skip an issue the user intended to redo.
+
+## Acceptance Criteria
+
+- [ ] Re-running the same \`--chain\` invocation after a mid-chain failure does not re-execute links whose issues are \`ready_for_merge\` with an intact worktree; execution resumes at the first incomplete link, rebased onto the last completed link's local committed tip.
+- [ ] Skipped links are reported explicitly in output (issue number, why it was skipped, which commit the resume point is).
+- [ ] A completed link whose worktree/branch has been destroyed (e.g. merged + cleaned mid-way) is handled: either re-established from the merged base or the chain fails fast with a clear message — no silent wrong-base execution.
+- [ ] \`createCheckpointCommit\` failure is no longer silent (currently warns and continues, \`worktree-manager.ts\` ~1094-1102): if the recovery point can't be written, the run says so prominently, since resume depends on it.
+- [ ] Integration test with real git: run a 3-link chain, force link 2 to fail, re-run, assert link 1 is skipped and link 2 branches from link 1's tip (\`merge-base --is-ancestor\`, same pattern as the #752 test).
+
+## Out of scope
+
+Automatic retry within the same run (separate concern), rate-limit detection/backoff (companion issue), \`--stacked\` PR-base rewriting on resume beyond what the normal path already does.
+
+## References
+
+- \`docs/reference/chain-mode-analysis-2026-05.md\` (#604) — failure taxonomy; per-issue success 61.5% when the chain reaches an issue vs 17% whole-chain at length≥3
+- #748 / PR #752 — successor rebase mechanics this must reuse
+- #592 — known pre-flight gap for in_progress-but-merged issues, relevant to skip detection
+`;
+
+const ISSUE_761_BODY = `> ### ⚠️ STATUS: ACs rewritten — read [the clarification comment](https://github.com/sequant-io/sequant/issues/761#issuecomment-4982116722) before implementing
+>
+> The **Acceptance Criteria below have been replaced** (see § at the bottom). Corrections to the Context/Proposal sections, which are otherwise left as filed:
+>
+> - **The forensic logs are gone.** No \`f317530c\` / \`058048af\` run log survives in \`.sequant/logs/\`. The original AC-1/AC-5 mandated validating signatures against them and were **unsatisfiable**. The log-scraping method is dropped entirely.
+> - **#732 superseded the method.** Structured SDK rate-limit signals (\`RateLimitError\` / \`RateLimitMetadata\`) already exist; regex-scraping logs would re-introduce what #732 removed.
+> - **"Nothing classifies rate-limit signatures in the chain loop"** — half true. Classification exists in the phase executor; what's missing is that the abort path **discards** it (\`drivers/claude-code.ts:287-294\`). That is the root cause.
+> - **The chain does NOT cascade across links** — it already halts at the first failure (\`run-orchestrator.ts:1337-1345\`). The ~30+ min burn is real but happens *inside a single phase* via a retry ladder of up to 4 × 1800s.
+> - **Retry-with-backoff does NOT already exist.** The retryable branch is a bare \`continue\` with no delay. Bounded retry ≠ backoff.
+>
+> **Retitle suggested:** this is not "halt the chain" — the chain already halts. It is *"stop burning ~2 hours of doomed retries inside one phase, and say why it stopped."*
+
+## Context
+
+2 of the 5 recorded chain failures in the #604 forensics were Claude Code 5-hour rate-limit hits mid-run (f317530c 2026-03-23, 058048af 2026-03-25). In both, the limit manifested as 1800s phase timeouts that cascaded — burning ~30+ minutes per timed-out phase before the chain died, with no indication that the root cause was a rate limit rather than a real failure. Chain mode is structurally the most exposed surface: wall clock scales with length (avg 78.9 min, observed up to 228 min), so a 4-issue chain has ~4× the rate-limit window of a single run. #452 (PR #455) added retry-with-backoff for transient spec-phase failures, but nothing classifies rate-limit signatures in the chain loop.
+
+## Proposal
+
+Blocking for a 5-hour window is impractical, so the goal is **fail fast and fail labeled**, not wait-and-retry:
+
+- Detect the rate-limit signature in phase output/exit (the specific patterns should be pulled from the two forensic run logs in \`.sequant/logs/\`).
+- On detection mid-chain: skip the remaining 1800s timeout ladder, halt the chain immediately, and report "rate limited — chain halted after #N; resume when the window resets" with the exact resume command.
+- Short exponential backoff (à la #452) is appropriate only for transient blips, not window exhaustion — classify the two cases rather than retrying blindly.
+
+Pairs with #760: a labeled rate-limit halt plus chain resume turns this failure class from fatal into a pause.
+
+## Acceptance Criteria
+
+> **Rewritten.** Rationale + evidence in [the clarification comment](https://github.com/sequant-io/sequant/issues/761#issuecomment-4982116722). The original log-signature ACs are dropped (logs gone; #732 supersedes the method). Ordered by dependency — AC-1 is load-bearing.
+
+- [ ] **AC-1:** The abort/timeout path at \`drivers/claude-code.ts:287-294\` attaches \`structuredError\` via \`buildStructuredError(rateLimitInfo, assistantError, apiRetryError)\`, matching the sibling catch path at \`:302\`. A rate limit that manifests as a hang must stay classifiable downstream. *Without this, every AC below is unreachable.*
+- [ ] **AC-2:** A rate limit whose \`resetsAt\` is beyond a short threshold does **not** consume cold-start retries. Model on the \`capped\` precedent (\`phase-executor.ts:906-908\`): explicit early return skipping all retries. A window resetting in hours cannot be retried into success.
+- [ ] **AC-3:** The MCP fallback gate (\`phase-executor.ts:972-978\`) additionally checks \`!failureIsRateLimited\`, alongside \`!failureIsBilling && !failureIsCapped\`. A throttle must not trigger "retrying without MCP".
+- [ ] **AC-4:** Transient rate-limit retries get **real backoff** — reuse the injected \`delayFn\` (\`phase-executor.ts:825\`) rather than inventing a mechanism. **This does not exist today**; the current branch is a bare \`continue\`. Bounded retry alone is not the AC.
+- [ ] **AC-5:** On chain halt, the run summary prints the resume affordance. Implement in \`run-display.ts:119 displaySummary\`, not at the orchestrator break — that is where #760 already restates checkpoint failures for the same reason (*"the per-issue warning has long scrolled past by now on a multi-hour chain"*, \`run-display.ts:149-151\`), and \`RunResult\` there carries \`mergedOptions\`. **Note:** #760 added no resume flag — resume is re-running the *identical* command. The output must say so explicitly, or it reads as a bug. Use \`formatRateLimitMessage\` (\`errors.ts:313\`); include \`resetsAt\` when present.
+- [ ] **AC-6:** \`structuredError\` is threaded into \`batch-executor.ts:942\` and \`:623\` in preference to \`classifyError\`, and \`rate_limit\` / \`billing\` are added to \`ERROR_CATEGORIES\` (\`error-classifier.ts:19-27\`) and \`errorTypeToCategory\` (\`:34-49\`). Prerequisite for AC-7.
+- [ ] **AC-7:** \`.sequant/metrics.json\` records a bounded-enum \`failureCategory\` on \`MetricRunSchema\`, threaded from \`PhaseResult.structuredError\` → \`IssueResult\` → \`recordRun\` (\`run-orchestrator.ts:1545\`). Enum only — no message strings (privacy contract, \`metrics-schema.ts:69-77\`).
+- [ ] **AC-8:** Tests. **\`phase-executor.test.ts:722\` — "still retries a transient rate-limit failure (RateLimitError is retryable)" — pins the behavior AC-2 changes and must be inverted.** Copy the shape of the \`BillingError\` non-retryable + MCP-skip tests at \`:651-692\`. Add an abort-path test asserting AC-1 (a hang carrying \`rateLimitInfo\` yields a classified failure, not a bare timeout).
+- [ ] **AC-9:** Before implementing AC-2's branch on \`rateLimitType\`, **validate against a real captured rejection** that window exhaustion actually arrives with \`rateLimitType\` populated. **[UNRESOLVED]** whether the SDK can emit a window rejection as \`assistant.error: "rate_limit"\` *without* a paired \`rate_limit_event\` — if it can, window detection degrades to indistinguishable, AC-2 needs a fallback rule, and the metadata-dropping map at \`claude-code.ts:363-376\` needs fixing too. Validate against a real capture, not a mocked event.
+
+### Notes for the implementer
+
+- **Testability wall:** there are no orchestrator tests for \`executeSequential\`'s break path. The #760 commit called this out — *"there were no orchestrator tests at all, which is why the seam the original #748 bug lived in went untested"* — and extracted \`planChainResumeFromState\` (\`chain-resume.ts:231\`) to be testable standalone. AC-5 will hit the same wall and likely wants the same treatment. \`chain-resume.integration.test.ts\` is the natural home for an end-to-end halt-and-print test.
+
+## Out of scope
+
+Scheduling runs around limit windows, token budgeting, resume itself (#760).
+
+## References
+
+- \`docs/reference/chain-mode-analysis-2026-05.md\` (#604) — rate-limit exposure classified as structural
+- #452 / PR #455 — existing transient-failure retry precedent
+
+`;
+
+const ISSUE_762_BODY = `## Context
+
+\`sequant run --chain\` validates flag combinations only (\`run.ts\`: --stacked/--no-chain, --chain/--batch, etc.); there is zero content-level validation of the issues being chained. Issues run in the order given on the CLI with no check that the order matches actual dependencies, that the issues have acceptance criteria at all, or that declared blockers ("blocked by #N") are consistent with the chain order. The #133 incident (chain 114 → 116: QA fixes on the predecessor invalidated the already-built successor) is the historical example of the class this catches cheapest at the front door.
+
+Most of the machinery already exists: \`src/lib/assess-collision-detect.ts\` does pairwise file-overlap prediction and ordering for /assess, and /assess's chain detection already parses "depends on #N" / "blocked by #N" markers.
+
+## Proposal
+
+A fast pre-flight at chain start, **warn-by-default** (the #604 philosophy: suggest, never auto-decide — false dependency inference is worse than none):
+
+- Each issue exists, is open, and has a non-empty Acceptance Criteria section (warn if missing).
+- Declared dependency markers ("blocked by #N", "depends on #N") in issue bodies are checked against the CLI order; warn on contradiction (e.g. \`run 39 38 --chain\` when #39 says blocked by #38).
+- Predicted file-overlap ordering (reuse \`detectFileCollisions\`) is compared against the CLI order; warn on mismatch.
+- Warnings print before the first worktree is provisioned; a \`--strict-preflight\` (or similar) opt-in turns warnings into a hard stop. Naming/UX is /spec's call.
+
+## Acceptance Criteria
+
+- [ ] \`--chain\` runs print pre-flight warnings for: missing/empty AC section, CLI order contradicting declared dependency markers, CLI order contradicting predicted file-overlap order.
+- [ ] Warnings never block by default; an opt-in flag makes them fatal before any worktree is provisioned.
+- [ ] Pre-flight reuses \`assess-collision-detect\` rather than reimplementing overlap prediction; no new heuristics beyond what /assess already does.
+- [ ] Runs a closed/merged-issue check consistent with the existing #305 guard (and notes the #592 in_progress-but-merged gap if not fixed by then).
+- [ ] Unit tests cover each warning against verbatim issue-body fixtures (real markers like "Blocked by #36", not synthetic combined fixtures).
+
+## Out of scope
+
+Spec-completeness scoring or any LLM-based judgment of issue quality; auto-reordering the chain; blocking on unmerged predecessor PRs (chains intentionally branch from local committed work).
+
+## References
+
+- #133 / PR #136 — the downstream-staleness incident this class of check front-loads
+- \`docs/reference/chain-mode-analysis-2026-05.md\` (#604) — 0/5 recorded failures were content-caused; hence warn-only default
+- \`src/lib/assess-collision-detect.ts\` — existing overlap/order machinery to reuse
+`;
+
 // ─── extractPathsFromIssueBody ──────────────────────────────────────────────
 
 describe("extractPathsFromIssueBody", () => {
@@ -133,16 +254,31 @@ describe("extractPathsFromIssueBody", () => {
     expect(paths.has("skills/qa/SKILL.md")).toBe(false);
   });
 
-  it("normalizes mirror-qualified .claude/skills/assess/SKILL.md to assess/SKILL.md (issue #552)", () => {
+  it("extracts #552's real modification targets but not its Motivation-only citation (#769)", () => {
     const paths = extractPathsFromIssueBody(ISSUE_552_BODY);
 
-    // Mirror-qualified paths normalize to the canonical bare form.
-    expect(paths.has("assess/SKILL.md")).toBe(true);
-
-    // Bare 'qa/SKILL.md' and 'spec/SKILL.md' under 3-dir-sync are
-    // already canonical.
+    // qa/SKILL.md and spec/SKILL.md are #552's actual targets — named in its
+    // AC-4 ('3-dir sync ... for both spec/SKILL.md and qa/SKILL.md'), which
+    // lives in the foreground Acceptance Criteria section.
     expect(paths.has("qa/SKILL.md")).toBe(true);
     expect(paths.has("spec/SKILL.md")).toBe(true);
+
+    // `.claude/skills/assess/SKILL.md` appears ONLY under
+    // '## Motivation — concrete recent miss', where #552 cites it as the file
+    // #533's AC named — background, not a file #552 touches. Before #769 this
+    // leaked in as a phantom target (normalized to assess/SKILL.md); section
+    // stripping now correctly drops it.
+    expect(paths.has("assess/SKILL.md")).toBe(false);
+  });
+
+  it("normalizes a mirror-qualified path to canonical bare form when it survives to the foreground", () => {
+    // Guards normalizeSkillMirrorPath directly: a mirror-qualified path in a
+    // non-background section (no heading → foreground) collapses to bare form.
+    const paths = extractPathsFromIssueBody(
+      "Modifies `.claude/skills/qa/SKILL.md` per the plan.",
+    );
+    expect(paths.has("qa/SKILL.md")).toBe(true);
+    expect(paths.has(".claude/skills/qa/SKILL.md")).toBe(false);
   });
 
   it("does not extract paths mentioned only inside fenced code blocks", () => {
@@ -192,6 +328,64 @@ edit qa/SKILL.md and 3-dir sync across .claude/skills/
     const paths = extractPathsFromIssueBody(body);
     expect(paths.size).toBe(0);
   });
+
+  // ─── Section-aware extraction (#769) ──────────────────────────────────────
+
+  it("does not extract a path cited only under a background section (AC-1)", () => {
+    const body = `## Summary
+
+Fixes a thing.
+
+## References
+
+- \`docs/reference/chain-mode-analysis-2026-05.md\` (#604) — background reading
+- \`src/lib/some-helper.ts\` — machinery to reuse
+`;
+    const paths = extractPathsFromIssueBody(body);
+    expect(paths.has("docs/reference/chain-mode-analysis-2026-05.md")).toBe(
+      false,
+    );
+    expect(paths.has("src/lib/some-helper.ts")).toBe(false);
+    expect(paths.size).toBe(0);
+  });
+
+  it("strips Context / Motivation / Additional context / See also, case- and suffix-insensitively (AC-1)", () => {
+    const body = `## Context
+
+Cites \`src/lib/ctx.ts\`.
+
+## Motivation — concrete recent miss
+
+Cites \`src/lib/mot.ts\`.
+
+## Additional context (see #533)
+
+Cites \`src/lib/add.ts\`.
+
+## See also
+
+Cites \`src/lib/also.ts\`.
+`;
+    const paths = extractPathsFromIssueBody(body);
+    expect(paths.size).toBe(0);
+  });
+
+  it("still extracts an AC-bullet path even when the same path is also cited under References (AC-2)", () => {
+    const body = `## Acceptance Criteria
+
+- [ ] AC-1: Modify \`src/lib/foo.ts\` to add the guard.
+
+## References
+
+- \`src/lib/foo.ts\` — current implementation
+- \`src/lib/bar.ts\` — cited only here, not a target
+`;
+    const paths = extractPathsFromIssueBody(body);
+    // Foreground AC occurrence survives despite the References citation.
+    expect(paths.has("src/lib/foo.ts")).toBe(true);
+    // A path present only under References is dropped.
+    expect(paths.has("src/lib/bar.ts")).toBe(false);
+  });
 });
 
 // ─── detectFileCollisions ───────────────────────────────────────────────────
@@ -217,6 +411,28 @@ describe("detectFileCollisions", () => {
         /^(?:\.claude\/skills|templates\/skills|skills)\/qa\/SKILL\.md$/,
       );
     }
+  });
+
+  it("returns no collision for #760/#761/#762 — each cites the same doc only under ## References (AC-3)", () => {
+    // All three issues cite `docs/reference/chain-mode-analysis-2026-05.md`
+    // solely in their ## References section and modify none of it. Before
+    // #769 this produced a three-way phantom collision (and, being ≥3, a
+    // bogus chain suggestion). Section-aware extraction drops the citation,
+    // so there is no collision at all — no order lines, no warnings, no chain.
+    const issuePaths = new Map<number, Set<string>>([
+      [760, extractPathsFromIssueBody(ISSUE_760_BODY)],
+      [761, extractPathsFromIssueBody(ISSUE_761_BODY)],
+      [762, extractPathsFromIssueBody(ISSUE_762_BODY)],
+    ]);
+
+    const collisions = detectFileCollisions(issuePaths);
+    expect(collisions).toEqual([]);
+
+    // Nothing to annotate: no order lines, no warnings, no chain suggestion.
+    const annotations = formatCollisionAnnotations(collisions);
+    expect(annotations.orderLines).toEqual([]);
+    expect(annotations.warnings).toEqual([]);
+    expect(annotations.chainSuggestion).toBeUndefined();
   });
 
   it("does not flag overlap when one issue mentions qa/SKILL.md only inside a code block (AC-6 fixture)", () => {
