@@ -21,6 +21,7 @@ import logUpdate from "log-update";
 import stringWidth from "string-width";
 import { formatElapsedTime, formatTimestamp } from "./format.js";
 import type { PhasePauseHandle } from "../workflow/types.js";
+import { pipelineHasFailed } from "../workflow/status-derivation.js";
 import type {
   IssueRegistration,
   IssueState,
@@ -277,8 +278,12 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
     } else if (phase.startedAt !== undefined) {
       phase.durationMs = this.now() - phase.startedAt;
     }
-    state.status = "failed";
-    state.completedAt = this.now();
+    // #766: derive from the phase slots (loop excluded) instead of pinning
+    // `failed`, so a loop failure on an early quality-loop iteration doesn't
+    // stick after a later iteration recovers. Mirrors the orchestrator's card.
+    const nowFailed = pipelineHasFailed(state.phases);
+    state.status = nowFailed ? "failed" : "running";
+    if (nowFailed) state.completedAt = this.now();
     state.currentPhase = undefined;
     if (event.error !== undefined) state.failureReason = event.error;
 
@@ -297,14 +302,15 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
 
   /** Mark an issue done after PR is recorded — derived from phase completion. */
   protected maybeMarkIssueDone(state: IssueState): void {
-    if (state.status === "failed") return;
     const allTerminal = state.phases.every(
       (p) => p.status === "done" || p.status === "failed",
     );
     if (allTerminal && state.phases.length > 0) {
-      state.status = state.phases.some((p) => p.status === "failed")
-        ? "failed"
-        : "done";
+      // #766: derive the verdict (loop excluded) so a run that failed the loop
+      // on an early iteration and then recovered every planned phase resolves
+      // to `done`. No early `failed` guard: a stale loop failure must be able
+      // to de-escalate once the pipeline recovers.
+      state.status = pipelineHasFailed(state.phases) ? "failed" : "done";
       state.completedAt = this.now();
     }
   }
@@ -312,7 +318,10 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
   // ------------ Hooks for subclasses ------------
 
   protected afterEvent(_event: ProgressEvent, state: IssueState): void {
-    if (state.status !== "failed") this.maybeMarkIssueDone(state);
+    // #766: always re-derive — `maybeMarkIssueDone` guards internally and must
+    // run even when `state.status` is currently `failed` so a recovered loop
+    // failure can de-escalate to `done`.
+    this.maybeMarkIssueDone(state);
     this.afterStateChange();
   }
 

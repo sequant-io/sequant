@@ -115,6 +115,7 @@ describe("LogWriter", () => {
         totalIssues: 0,
         passed: 0,
         failed: 0,
+        partial: 0,
         totalDurationSeconds: 0,
       });
     });
@@ -233,13 +234,20 @@ describe("LogWriter", () => {
       expect(runLog!.issues[0].status).toBe("partial");
     });
 
-    it("should keep failure status even if subsequent phase times out", async () => {
+    it("should keep failure status even if a subsequent phase times out", async () => {
+      // #766: status derives from the latest attempt of EACH phase (failure >
+      // timeout > success). A hard failure in one phase must not be masked by a
+      // timeout in a different, later phase.
       const writer = new LogWriter();
       await writer.initialize(mockConfig);
       writer.startIssue(123, "Test Issue", []);
 
       const failedPhase: PhaseLog = { ...mockPhaseLog, status: "failure" };
-      const timedOutPhase: PhaseLog = { ...mockPhaseLog, status: "timeout" };
+      const timedOutPhase: PhaseLog = {
+        ...mockPhaseLog,
+        phase: "qa",
+        status: "timeout",
+      };
 
       writer.logPhase(failedPhase);
       writer.logPhase(timedOutPhase);
@@ -247,6 +255,21 @@ describe("LogWriter", () => {
 
       const runLog = writer.getRunLog();
       expect(runLog!.issues[0].status).toBe("failure");
+    });
+
+    it("de-escalates a timeout-pinned partial when a later attempt of the same phase succeeds (#766)", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+
+      // qa times out (→ partial), then a later attempt of qa succeeds. The
+      // partial must clear — it was recovered, not a terminal failure (AC-5).
+      writer.logPhase({ ...mockPhaseLog, phase: "qa", status: "timeout" });
+      writer.logPhase({ ...mockPhaseLog, phase: "qa", status: "success" });
+      writer.completeIssue();
+
+      const runLog = writer.getRunLog();
+      expect(runLog!.issues[0].status).toBe("success");
     });
 
     it("should throw if no current issue", async () => {
