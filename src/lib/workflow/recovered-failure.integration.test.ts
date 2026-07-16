@@ -141,7 +141,11 @@ describe("recovered failure — three outputs agree (#766 AC-3/AC-7)", () => {
     orch.markDone();
   });
 
-  it("logs the loop phase with phase/status/duration/error (AC-6)", async () => {
+  // NOTE: this asserts the writer/schema layer round-trips a loop entry — it
+  // hand-writes the entry, so it does NOT cover AC-6's producer. The
+  // batch-executor call site that emits it is covered in
+  // `batch-executor.test.ts` ("#766: loop phase reaches the run log (AC-6)").
+  it("round-trips a hand-written loop entry through the writer and schema", async () => {
     const issue = 760;
     const writer = new LogWriter();
     await writer.initialize(runConfig);
