@@ -3,6 +3,15 @@
 // scope by #564: destructive system commands, deployment commands, git reset
 // outer guard, and gh workflow run.
 //
+// Reworked in Issue #763: the `^gh (issue|pr) ` prefix carve-outs were removed
+// entirely and replaced with segment-aware, command-word matching. The carve-
+// outs could be disarmed by prefixing a real `gh issue`/`gh pr` command
+// (`gh issue list && git push --force` walked through the force-push guard),
+// and re-broke on any `cd <dir> && gh issue ...` prefix. The #763 describe
+// block at the bottom of this file encodes both failure directions — anchored
+// bypass (must still block) and body-text / cd-prefix false positives (must
+// still allow) — the exact directions the pre-#763 suite lacked.
+//
 // The hook script is mirrored across three locations (templates/hooks/,
 // hooks/, and .claude/hooks/), none of which are symlinks. To prevent
 // future drift in any one copy, this suite parametrizes every assertion
@@ -11,7 +20,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +40,14 @@ const HOOK_COPIES: Array<[label: string, path: string]> = [
   ],
 ];
 
+// Isolated log home so the hook's timing/block logs never land in the repo
+// under test. The hook writes to $CLAUDE_PLUGIN_DATA/logs when set (the real
+// plugin scenario); without it the fallback is a repo-local .sequant/logs,
+// which would show up in `git status` and break the no-changes guard's
+// emptiness check for these bare test repos (#763). Pointing the logs at a
+// throwaway dir keeps the tested repos clean.
+const LOG_HOME = mkdtempSync(join(tmpdir(), "pre-tool-loghome-"));
+
 // Strip env vars that the hook treats as worktree/parallel context — those
 // would change behavior for unrelated reasons.
 function cleanEnv(): NodeJS.ProcessEnv {
@@ -38,6 +55,7 @@ function cleanEnv(): NodeJS.ProcessEnv {
   delete env.SEQUANT_WORKTREE;
   delete env.SEQUANT_ISSUE;
   delete env.CLAUDE_HOOKS_DISABLED;
+  env.CLAUDE_PLUGIN_DATA = LOG_HOME;
   return env;
 }
 
@@ -219,14 +237,17 @@ describe.each(HOOK_COPIES)(
 
     // AC-5 (#570): regression — real destructive commands STILL block
 
-    it("#570 AC-5 destructive: blocks real `sudo rm -rf /tmp/x`", () => {
+    // #763 AC-1/AC-2: the `rm -rf /|~|$HOME` alternation was deleted; `:108`
+    // is now a command-word `sudo` guard with its own message. `sudo rm ...`
+    // therefore blocks via the sudo guard, not the old "Destructive" one.
+    it("#570 AC-5 destructive: blocks real `sudo rm -rf /tmp/x` (now via sudo guard)", () => {
       const { code, stderr } = runHook(
         hookPath,
         "sudo rm -rf /tmp/x",
         cleanRepo,
       );
       expect(code).toBe(2);
-      expect(stderr).toMatch(/HOOK_BLOCKED: Destructive system command/);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
     });
 
     it("#570 AC-5 deployment: blocks real `vercel deploy --prod`", () => {
@@ -283,7 +304,9 @@ describe.each(HOOK_COPIES)(
         cleanRepo,
       );
       expect(code).toBe(2);
-      expect(stderr).toMatch(/HOOK_BLOCKED: Destructive system command/);
+      // #763: the destructive alternation is gone; `sudo` still blocks, now
+      // with its own dedicated message.
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
     });
 
     it("#570 regression deployment: `echo gh issue && vercel deploy` is still blocked", () => {
@@ -374,6 +397,253 @@ describe.each(HOOK_COPIES)(
         expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
       } finally {
         rmSync(repo, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
+// === Issue #763: segment-aware guards; no `^gh (issue|pr) ` carve-outs ===
+//
+// The carve-outs are gone. Guards now match against the *command words* of
+// each shell segment (quotes stripped), so:
+//   - a real command chained after an allowed one still blocks (anchored
+//     bypass — the regression #564/#570 opened), and
+//   - a token that appears only inside a quoted argument, or a command behind
+//     a `cd <dir> &&` prefix, is allowed (the false positives the carve-outs
+//     papered over, including the `cd`-prefix case that re-broke on filing).
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh segment-aware guards (#763) [%s]",
+  (_label, hookPath) => {
+    let cleanRepo: string;
+
+    beforeAll(() => {
+      cleanRepo = mkdtempSync(join(tmpdir(), "pre-tool-763-"));
+      spawnSync("git", ["init", "-q"], { cwd: cleanRepo });
+      spawnSync("git", ["config", "user.email", "test@test"], {
+        cwd: cleanRepo,
+      });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
+    });
+
+    afterAll(() => {
+      rmSync(cleanRepo, { recursive: true, force: true });
+    });
+
+    // Dirty-repo helper: git reset --hard only blocks when there is work to
+    // lose, so the anchored-bypass reset case needs an uncommitted file.
+    function withDirtyRepo(fn: (repo: string) => void): void {
+      const repo = mkdtempSync(join(tmpdir(), "pre-tool-763-dirty-"));
+      try {
+        spawnSync("git", ["init", "-q"], { cwd: repo });
+        spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+        spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        fn(repo);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    }
+
+    // === AC-3: anchored bypass — a real gh issue/pr command chained with a
+    // destructive payload must STILL block. Each row is the exact bypass from
+    // the issue's evidence table. These are the cases the pre-#763 suite
+    // missed (it used `echo gh issue && …`, which never matched `^gh (issue|pr) `).
+    it("AC-3 anchored bypass: `gh issue list && git push --force` blocks", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "gh issue list && git push --force",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Force push/);
+    });
+
+    it("AC-3 anchored bypass: `gh pr view 1 && vercel deploy --prod` blocks", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "gh pr view 1 && vercel deploy --prod",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Deployment command/);
+    });
+
+    it("AC-3 anchored bypass: `gh issue list && gh workflow run release.yml` blocks", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "gh issue list && gh workflow run release.yml",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Workflow trigger/);
+    });
+
+    it("AC-3 anchored bypass: `gh issue list && sudo rm -rf /var/lib` blocks", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "gh issue list && sudo rm -rf /var/lib",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
+    });
+
+    it("AC-3 anchored bypass: `gh issue list && git reset --hard origin/main` blocks (dirty repo)", () => {
+      withDirtyRepo((repo) => {
+        const { code, stderr } = runHook(
+          hookPath,
+          "gh issue list && git reset --hard origin/main",
+          repo,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: git reset --hard would lose local work/,
+        );
+      });
+    });
+
+    // AC-3: `:295` worktree validation is warn-only. Prefixing a gh command
+    // must not turn it into an exit-2 block — assert no regression.
+    it("AC-3 warn-only: `gh issue list && git commit -m 'feat: x'` does not exit 2 on the worktree warning", () => {
+      // Stage a change so the no-changes guard does not fire; use a valid
+      // conventional message so the commit-format guard does not fire. What
+      // remains is the warn-only worktree check, which must never exit 2.
+      const repo = mkdtempSync(join(tmpdir(), "pre-tool-763-warn-"));
+      try {
+        spawnSync("git", ["init", "-q"], { cwd: repo });
+        spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+        spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        spawnSync("git", ["add", "f.txt"], { cwd: repo });
+        const { code } = runHook(
+          hookPath,
+          "gh issue list && git commit -m 'feat: x'",
+          repo,
+        );
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    // === AC-4: false positives stay fixed WITHOUT the carve-out. Body text
+    // and the `cd <dir> &&` prefix must be allowed.
+    it('AC-4: `gh issue create --body "...git push --force..."` is allowed', () => {
+      const cmd = `gh issue create --title "x" --body "run git push --force only when rebasing"`;
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    it('AC-4: `cd <dir> && gh issue create --title "...git push --force..."` is allowed (the cd-prefix case that re-broke on filing)', () => {
+      const cmd = `cd ${cleanRepo} && gh issue create --title "fix: git push --force disarms guard" --body "details"`;
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    it('AC-4: `cd <dir> && gh pr comment 1 --body "...sudo rm -rf /..."` is allowed', () => {
+      const cmd = `cd ${cleanRepo} && gh pr comment 1 --body "never run sudo rm -rf / on prod"`;
+      const { code } = runHook(hookPath, cmd, cleanRepo);
+      expect(code).toBe(0);
+    });
+
+    // === AC-1: the `rm` alternation is gone; ordinary absolute-path deletes
+    // that the old `/`-substring match blocked are now allowed. Catastrophic
+    // deletes are left to Claude Code's native analyzer.
+    it("AC-1: `rm -rf /tmp/scratch/build` is allowed (no longer substring-blocked)", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "rm -rf /tmp/scratch/build",
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED/);
+    });
+
+    it("AC-1: an absolute worktree-path delete is allowed", () => {
+      const { code } = runHook(
+        hookPath,
+        "rm -rf /Users/dev/Projects/worktrees/feature/38-cell-protocol",
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+    });
+
+    // === AC-2: `sudo` guard matches only at a command-word position. A naive
+    // anchor was empirically shown to still block the `echo` case, so these
+    // are tested, not eyeballed.
+    it("AC-2: `echo 'never use sudo here'` is allowed (sudo inside a quoted arg)", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        `echo 'never use sudo here'`,
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: sudo/);
+    });
+
+    it("AC-2: `grep -r sudoku src/` is allowed (sudo is a substring of a word)", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "grep -r sudoku src/",
+        cleanRepo,
+      );
+      expect(code).toBe(0);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: sudo/);
+    });
+
+    it('AC-2: `git commit -m "docs: sudo policy"` does not fire the sudo guard', () => {
+      // May block for no-changes, but MUST NOT block as a sudo command.
+      const { stderr } = runHook(
+        hookPath,
+        `git commit -m "docs: sudo policy"`,
+        cleanRepo,
+      );
+      expect(stderr).not.toMatch(/HOOK_BLOCKED: sudo/);
+    });
+
+    it("AC-2: real `sudo rm -rf /var/lib` blocks with the sudo message", () => {
+      const { code, stderr } = runHook(
+        hookPath,
+        "sudo rm -rf /var/lib",
+        cleanRepo,
+      );
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: sudo command/);
+    });
+
+    // === AC-5: blocked commands are logged with the offending text + the rule
+    // that fired, redacted, to a single sink.
+    it("AC-5: a block logs the command text and rule id, with secrets redacted", () => {
+      const pluginData = mkdtempSync(join(tmpdir(), "pre-tool-763-plugin-"));
+      try {
+        // Build the token at runtime so no secret-shaped literal is committed
+        // (it would trip both this very hook's secret check and GitHub push
+        // protection). Still matches check_secrets' `ghp_[a-zA-Z0-9]{36}`.
+        const token = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
+        const cmd = `sudo rm -rf /var/lib # token ${token}`;
+        const payload = JSON.stringify({
+          tool_name: "Bash",
+          tool_input: { command: cmd },
+        });
+        const result = spawnSync("bash", [hookPath], {
+          input: payload,
+          cwd: cleanRepo,
+          env: { ...cleanEnv(), CLAUDE_PLUGIN_DATA: pluginData },
+          encoding: "utf8",
+        });
+        expect(result.status).toBe(2);
+
+        const log = readFileSync(
+          join(pluginData, "logs", "claude-hook.log"),
+          "utf8",
+        );
+        // Rule id present, command text present, token redacted.
+        expect(log).toMatch(/BLOCKED \[sudo\]/);
+        expect(log).toContain("sudo rm -rf /var/lib");
+        expect(log).not.toContain(token);
+        expect(log).toContain("[REDACTED]");
+      } finally {
+        rmSync(pluginData, { recursive: true, force: true });
       }
     });
   },

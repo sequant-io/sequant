@@ -42,7 +42,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 ### Prerequisites
 
 **An AI coding agent — one of:**
-- [Claude Code](https://claude.ai/code) — default agent
+- [Claude Code](https://claude.ai/code) — default agent. **Recommended: Claude Code ≥ 2.1.208.** The pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer (which fires even under `bypassPermissions`) instead of re-implementing catastrophic-delete detection; that analyzer's command-substitution coverage landed in 2.1.208. This is a recommendation, not an enforced floor — plugins cannot declare a minimum Claude Code version, so nothing gates install, and the pre-2.1.208 command-substitution gap (e.g. `echo "$(rm -rf ~)"`) is accepted rather than guarded.
 - [Aider](https://aider.chat/) — alternative, via `--agent aider`
 
 **Always required (both):**
