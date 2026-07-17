@@ -31,6 +31,7 @@ Every `sequant run` execution records metrics to `.sequant/metrics.json`. This e
 | `duration` | Total run time (seconds) | Performance metric |
 | `model` | Model used (e.g., "opus") | Configuration |
 | `flags` | CLI flags used | Configuration |
+| `failureCategory` | Why a failed run halted (e.g., `rate_limit`, `billing`, `timeout`) | Bounded enum only — never error message text |
 | `metrics.filesChanged` | Number of files changed | Aggregate count |
 | `metrics.linesAdded` | Lines of code added | Aggregate count |
 | `metrics.qaIterations` | QA retry count | Performance metric |
@@ -145,8 +146,15 @@ interface MetricRun {
   duration: number;        // Seconds
   model: string;           // e.g., "opus"
   flags: string[];         // e.g., ["--chain"]
+  failureCategory?: FailureCategory;  // Only on failed runs; absent on success
   metrics: RunMetrics;
 }
+
+// Closed enum (shared with the run-log error classifier) — schema validation
+// rejects any other value, so error message text can never reach this file.
+type FailureCategory =
+  | "context_overflow" | "api_error" | "hook_failure" | "build_error"
+  | "timeout" | "rate_limit" | "billing" | "unknown";
 
 interface RunMetrics {
   tokensUsed: number;        // Total tokens (input + output)
