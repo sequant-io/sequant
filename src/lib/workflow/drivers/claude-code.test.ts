@@ -347,8 +347,49 @@ describe("ClaudeCodeDriver", () => {
       expect(result.error).toBe("Out of credits");
     });
 
-    it("does NOT mask a genuine timeout/abort with a prior rate-limit signal (#732)", async () => {
-      // A rejected event was seen, but the throw is an abort → timeout wins.
+    // === #761 AC-1: the abort/timeout path stays classifiable ===
+    //
+    // Inverts the former "#732 does NOT mask a genuine timeout" pin. That pin
+    // encoded the root cause of #761: a rate limit that manifests as a hang
+    // hits the abort path, which discarded the already-captured failure-grade
+    // `rateLimitInfo` and returned a bare `Timeout after Ns` — sending a
+    // closed window into the full retry + MCP-fallback ladder. Only
+    // failure-grade signals are ever captured (the `allowed_warning` test
+    // above pins that), so attaching them cannot mislabel a genuine timeout.
+
+    it("classifies a hang after a rejected rate_limit_event instead of reporting a bare timeout (#761 AC-1)", async () => {
+      // Transient throttle arrives as a stream event, then the SDK stalls and
+      // the phase timeout aborts — the forensic signature this issue is about.
+      queryMock.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield INIT;
+          yield {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              resetsAt: 1_700_000_000,
+              rateLimitType: "five_hour",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          };
+          throw new Error("AbortError: operation aborted");
+        },
+      });
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(false);
+      const err = result.structuredError as SequantError;
+      expect(err).toBeInstanceOf(RateLimitError);
+      // resetsAt metadata survives for the executor's window-exhaustion check.
+      expect(err.metadata.resetsAt).toBe(1_700_000_000);
+      // The labeled cause replaces the bare timeout string.
+      expect(result.error).toMatch(/^Rate limited — resets at /);
+    });
+
+    it("classifies a hang after a billing rejection on the abort path (#761 AC-1)", async () => {
       queryMock.mockReturnValue({
         async *[Symbol.asyncIterator]() {
           yield INIT;
@@ -369,9 +410,71 @@ describe("ClaudeCodeDriver", () => {
       const result = await driver.executePhase("prompt", baseConfig());
 
       expect(result.success).toBe(false);
-      // Abort path returns first — no structuredError, timeout message intact.
+      expect(result.structuredError).toBeInstanceOf(BillingError);
+      expect(result.error).toBe("Out of credits");
+    });
+
+    it("still reports a bare timeout when no rate-limit signal was seen (genuine timeout unmasked)", async () => {
+      // Regression guard for the original #732 intent: with no failure-grade
+      // signal captured, the abort path must stay a plain timeout.
+      queryMock.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield INIT;
+          throw new Error("AbortError: operation aborted");
+        },
+      });
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(false);
       expect(result.structuredError).toBeUndefined();
       expect(result.error).toMatch(/^Timeout after \d+s$/);
+    });
+
+    it("does not classify an abort after only an informational allowed_warning event", async () => {
+      // Informational events are never captured as failure signals, so a
+      // warning followed by a genuine timeout stays a bare timeout.
+      queryMock.mockReturnValue({
+        async *[Symbol.asyncIterator]() {
+          yield INIT;
+          yield {
+            type: "rate_limit_event",
+            rate_limit_info: { status: "allowed_warning", utilization: 0.8 },
+            uuid: "u1",
+            session_id: "sess-1",
+          };
+          throw new Error("AbortError: operation aborted");
+        },
+      });
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.structuredError).toBeUndefined();
+      expect(result.error).toMatch(/^Timeout after \d+s$/);
+    });
+
+    it("records the originating assistant-error variant in metadata (#761 AC-9)", async () => {
+      // The assistant-error channel carries no resetsAt/rateLimitType; the
+      // variant is preserved so `rate_limit` and `overloaded` stay
+      // distinguishable downstream instead of collapsing into one shape.
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          { type: "assistant", message: { content: [] }, error: "rate_limit" },
+          RESULT_ERROR,
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      const err = result.structuredError as SequantError;
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect(err.metadata.assistantError).toBe("rate_limit");
+      // No resetsAt → downstream treats it as transient (AC-2 fallback rule).
+      expect(err.metadata.resetsAt).toBeUndefined();
     });
 
     it("leaves structuredError undefined on success", async () => {

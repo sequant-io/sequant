@@ -21,7 +21,11 @@ import {
   type BatchExecutionContext,
   type ProgressCallback,
 } from "./types.js";
-import { classifyError, errorTypeToCategory } from "./error-classifier.js";
+import {
+  classifyError,
+  errorTypeToCategory,
+  type ErrorCategory,
+} from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
 import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
 import {
@@ -422,6 +426,30 @@ export async function executeBatch(
   return results;
 }
 
+/**
+ * Derive the bounded-enum failure category for a failed issue (#761 AC-7).
+ *
+ * Scans for the LAST non-loop failing phase — the same reverse scan
+ * `toIssueSummary` uses (#766), so the recorded category and the displayed
+ * failure reason describe the same attempt. Prefers the driver's structured
+ * cause over stderr-regex classification (#732). Returns only the enum value;
+ * message strings never leave this function (metrics privacy contract).
+ *
+ * @internal Exported for testing
+ */
+export function deriveFailureCategory(
+  phaseResults: PhaseResult[],
+): ErrorCategory | undefined {
+  const failedPhase = [...phaseResults]
+    .reverse()
+    .find((p) => !p.success && p.phase !== "loop");
+  if (!failedPhase) return undefined;
+  const typedError =
+    failedPhase.structuredError ??
+    classifyError(failedPhase.stderrTail ?? [], failedPhase.exitCode);
+  return errorTypeToCategory(typedError);
+}
+
 export async function runIssueWithLogging(
   ctx: IssueExecutionContext,
 ): Promise<IssueResult> {
@@ -614,13 +642,14 @@ export async function runIssueWithLogging(
     // Log spec phase result
     // Note: Spec runs in main repo, not worktree, so no git diff stats
     if (logWriter) {
-      // Build errorContext from captured stderr/stdout tails (#447)
+      // Build errorContext from captured stderr/stdout tails (#447). Prefer
+      // the driver's structured cause (#761 AC-6) — stderr-regex
+      // classification never sees the SDK's rate-limit/billing signals.
       let specErrorContext: ErrorContext | undefined;
       if (!specResult.success && specResult.stderrTail) {
-        const specError = classifyError(
-          specResult.stderrTail ?? [],
-          specResult.exitCode,
-        );
+        const specError =
+          specResult.structuredError ??
+          classifyError(specResult.stderrTail ?? [], specResult.exitCode);
         specErrorContext = {
           stderrTail: specResult.stderrTail ?? [],
           stdoutTail: specResult.stdoutTail ?? [],
@@ -688,6 +717,7 @@ export async function runIssueWithLogging(
         phaseResults,
         durationSeconds,
         loopTriggered: false,
+        failureCategory: deriveFailureCategory(phaseResults),
       };
     }
 
@@ -933,13 +963,14 @@ export async function runIssueWithLogging(
         const cacheMetrics =
           phase === "qa" ? readCacheMetrics(worktreePath) : undefined;
 
-        // Build errorContext from captured stderr/stdout tails (#447, AC-7/AC-8)
+        // Build errorContext from captured stderr/stdout tails (#447, AC-7/AC-8).
+        // Prefer the driver's structured cause (#761 AC-6) — stderr-regex
+        // classification never sees the SDK's rate-limit/billing signals.
         let errorContext: ErrorContext | undefined;
         if (!result.success && result.stderrTail) {
-          const typedError = classifyError(
-            result.stderrTail ?? [],
-            result.exitCode,
-          );
+          const typedError =
+            result.structuredError ??
+            classifyError(result.stderrTail ?? [], result.exitCode);
           errorContext = {
             stderrTail: result.stderrTail ?? [],
             stdoutTail: result.stdoutTail ?? [],
@@ -1267,5 +1298,6 @@ export async function runIssueWithLogging(
     prNumber,
     prUrl,
     checkpointFailed,
+    failureCategory: success ? undefined : deriveFailureCategory(phaseResults),
   };
 }

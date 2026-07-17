@@ -14,6 +14,8 @@ import {
   BuildError,
   TimeoutError,
   SubprocessError,
+  RateLimitError,
+  BillingError,
 } from "../src/lib/errors.js";
 import {
   classifyError,
@@ -187,6 +189,15 @@ describe("AC-7: classifyError returns typed error instances", () => {
 
     const err4 = new SubprocessError("test", {});
     expect(errorTypeToCategory(err4)).toBe("unknown");
+  });
+
+  it("maps rate-limit and billing errors to their own categories (#761 AC-6)", () => {
+    expect(errorTypeToCategory(new RateLimitError("Rate limited"))).toBe(
+      "rate_limit",
+    );
+    expect(errorTypeToCategory(new BillingError("Out of credits"))).toBe(
+      "billing",
+    );
   });
 });
 

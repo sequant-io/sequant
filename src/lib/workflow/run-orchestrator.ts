@@ -1550,6 +1550,13 @@ export class RunOrchestrator {
     if (mergedOptions.testgen) cliFlags.push("--testgen");
     const tokenUsage = getTokenUsageForRun(undefined, true);
     const passed = results.filter((r) => r.success).length;
+    // #761 AC-7: record why the run failed, as a bounded enum. Sequential and
+    // chain runs halt at the first failure, so the first categorized failed
+    // issue is the halting one; in parallel runs it is the earliest-listed
+    // failure. Undefined on success — the field is omitted from the record.
+    const failureCategory = results.find(
+      (r) => !r.success && r.failureCategory,
+    )?.failureCategory;
     await metricsWriter.recordRun({
       issues: issueNumbers,
       phases: Array.from(allPhases),
@@ -1557,6 +1564,7 @@ export class RunOrchestrator {
       duration: totalDuration,
       model: process.env.ANTHROPIC_MODEL ?? "opus",
       flags: cliFlags,
+      failureCategory,
       metrics: {
         tokensUsed: tokenUsage.tokensUsed,
         filesChanged: totalFilesChanged,

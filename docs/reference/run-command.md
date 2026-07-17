@@ -195,6 +195,17 @@ Worktrees are provisioned up front, but at that moment a successor's predecessor
 
 If a successor cannot be rebased onto its predecessor — a merge conflict, or (should-not-happen) a missing worktree — the link is broken: the successor would otherwise build on the wrong base and silently miss its predecessor's work, and that break would cascade to every later issue. Rather than ship a misleadingly "chained" PR, Sequant aborts the rebase (restoring the branch), prints a warning, and **stops the chain** — the conflicted issue and all later issues are left unrun, exactly like a stop-on-failure. Resolve the conflict (e.g. rebase the predecessor's work manually) and re-run the chain. The stopped issue is reported in the run summary with an abort reason.
 
+**Rate-limit halts fail fast and are labeled:**
+
+A Claude rate limit hit mid-chain used to manifest as cascading phase timeouts — each retry burning up to a full `--timeout` window against the same closed limit. Sequant now classifies rate limits from the SDK's structured signals (including ones that manifest as a hang): a limit whose reset lies more than a few minutes out **skips all phase retries and the MCP fallback** and halts the chain immediately, while a transient throttle is retried with short exponential backoff. When a chain halts this way, the run summary restates the cause and what to do next:
+
+```
+⚠️  Rate limited — resets at 14:30 — chain halted at #102.
+    Re-run the same command to resume from #102 (no flag needed; completed links are skipped).
+```
+
+Resume is the standard chain resume: re-running the identical command skips the completed prefix and picks up at the halted link (see "Broken chain links" above and the checkpoint notes below). Failed runs also record a `failureCategory` (e.g. `rate_limit`, `billing`) in `.sequant/metrics.json` — see [analytics.md](./analytics.md).
+
 **Checkpoint Commits:**
 
 After each issue passes QA, a checkpoint commit is automatically created. This serves as a recovery point if later issues in the chain fail.

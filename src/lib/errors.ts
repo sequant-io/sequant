@@ -275,6 +275,15 @@ export function isRateLimitFailureInfo(info: RateLimitInfoLike): boolean {
 }
 
 /**
+ * Normalize a `resetsAt` timestamp to milliseconds. The SDK does not pin the
+ * unit, so use the same heuristic everywhere a `resetsAt` is compared or
+ * displayed: values below ~1e12 are seconds, otherwise milliseconds.
+ */
+export function resetsAtToMs(resetsAt: number): number {
+  return resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
+}
+
+/**
  * Format a Unix timestamp (seconds or ms) as a local time string.
  *
  * Bare `HH:MM` when the reset falls on the current local calendar day;
@@ -284,8 +293,7 @@ export function isRateLimitFailureInfo(info: RateLimitInfoLike): boolean {
  * included whenever the reset is not today.
  */
 function formatResetTime(resetsAt: number): string {
-  // Heuristic: values below ~1e12 are seconds, otherwise milliseconds.
-  const ms = resetsAt < 1e12 ? resetsAt * 1000 : resetsAt;
+  const ms = resetsAtToMs(resetsAt);
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
