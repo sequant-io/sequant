@@ -18,6 +18,7 @@
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { ERROR_CATEGORIES } from "./error-classifier.js";
 
 /**
  * Outcome of a workflow run
@@ -25,6 +26,17 @@ import { z } from "zod";
 export const RunOutcomeSchema = z.enum(["success", "partial", "failed"]);
 
 export type RunOutcome = z.infer<typeof RunOutcomeSchema>;
+
+/**
+ * Bounded-enum classification of the failure that ended a run (#761 AC-7).
+ *
+ * Sourced from `ERROR_CATEGORIES` so the metric can never carry free text —
+ * error *messages* stay excluded per the privacy contract above MetricRunSchema
+ * (they could contain sensitive info); a closed enum cannot.
+ */
+export const FailureCategorySchema = z.enum(ERROR_CATEGORIES);
+
+export type FailureCategory = z.infer<typeof FailureCategorySchema>;
 
 /**
  * Available phases (aligned with run-log-schema.ts)
@@ -92,6 +104,12 @@ export const MetricRunSchema = z.object({
   model: z.string(),
   /** CLI flags used (e.g., ["--chain", "--sequential"]) */
   flags: z.array(z.string()),
+  /**
+   * Category of the failure that ended the run (#761 AC-7). Optional and
+   * enum-only; absent on success and on records written before this field
+   * existed (additive — no `version` bump required).
+   */
+  failureCategory: FailureCategorySchema.optional(),
   /** Aggregate metrics */
   metrics: RunMetricsSchema,
 });
@@ -137,6 +155,7 @@ export function createMetricRun(options: {
   duration: number;
   model?: string;
   flags?: string[];
+  failureCategory?: FailureCategory;
   metrics?: Partial<RunMetrics>;
 }): MetricRun {
   return {
@@ -148,6 +167,7 @@ export function createMetricRun(options: {
     duration: options.duration,
     model: options.model ?? "unknown",
     flags: options.flags ?? [],
+    failureCategory: options.failureCategory,
     metrics: {
       tokensUsed: options.metrics?.tokensUsed ?? 0,
       filesChanged: options.metrics?.filesChanged ?? 0,

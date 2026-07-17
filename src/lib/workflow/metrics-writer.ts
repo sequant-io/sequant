@@ -30,6 +30,7 @@ import {
   type MetricPhase,
   type RunOutcome,
   type RunMetrics,
+  type FailureCategory,
   MetricsSchema,
   METRICS_FILE_PATH,
   createEmptyMetrics,
@@ -155,6 +156,7 @@ export class MetricsWriter {
     duration: number;
     model?: string;
     flags?: string[];
+    failureCategory?: FailureCategory;
     metrics?: Partial<RunMetrics>;
   }): Promise<MetricRun> {
     const metrics = await this.getMetrics();

@@ -19,6 +19,9 @@ import {
   createThrottledReporter,
   SPEC_EXTRA_RETRIES,
   SPEC_RETRY_BACKOFF_MS,
+  RATE_LIMIT_RETRY_BACKOFF_MS,
+  RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS,
+  isWindowExhaustedRateLimit,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
@@ -478,6 +481,44 @@ describe("getPhasePrompt", () => {
   });
 });
 
+describe("isWindowExhaustedRateLimit (#761 AC-2)", () => {
+  const NOW = 1_800_000_000_000; // fixed ms epoch for determinism
+
+  it("is false for a non-rate-limit error and for undefined", () => {
+    expect(
+      isWindowExhaustedRateLimit(new BillingError("Out of credits"), NOW),
+    ).toBe(false);
+    expect(isWindowExhaustedRateLimit(undefined, NOW)).toBe(false);
+  });
+
+  it("is false when metadata carries no resetsAt (AC-9 fallback: treat as transient)", () => {
+    expect(
+      isWindowExhaustedRateLimit(new RateLimitError("Rate limited"), NOW),
+    ).toBe(false);
+  });
+
+  it("is false when the reset is within the threshold (worth retrying)", () => {
+    const err = new RateLimitError("Rate limited", {
+      resetsAt: NOW + RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS, // exactly at — not beyond
+    });
+    expect(isWindowExhaustedRateLimit(err, NOW)).toBe(false);
+  });
+
+  it("is true when the reset lies beyond the threshold (ms unit)", () => {
+    const err = new RateLimitError("Rate limited", {
+      resetsAt: NOW + RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS + 1,
+    });
+    expect(isWindowExhaustedRateLimit(err, NOW)).toBe(true);
+  });
+
+  it("normalizes a seconds-unit resetsAt before comparing", () => {
+    const err = new RateLimitError("Rate limited", {
+      resetsAt: NOW / 1000 + 2 * 60 * 60, // seconds, 2h out
+    });
+    expect(isWindowExhaustedRateLimit(err, NOW)).toBe(true);
+  });
+});
+
 describe("executePhaseWithRetry", () => {
   const baseConfig: ExecutionConfig = {
     phases: ["exec"],
@@ -719,20 +760,60 @@ describe("executePhaseWithRetry", () => {
     expect(mcpDisabledCall).toBeUndefined();
   });
 
-  it("still retries a transient rate-limit failure (RateLimitError is retryable)", async () => {
-    // Genuine-duration failure with a retryable RateLimitError → one more
-    // attempt is allowed, unlike the non-retryable billing case.
-    const executePhaseFn = vi
-      .fn()
-      .mockResolvedValueOnce(
-        makeResult({
-          durationSeconds: 120,
-          structuredError: new RateLimitError("Rate limited — resets at 14:30"),
+  // === #761: rate-limit window exhaustion vs transient throttle ===
+  //
+  // Inverts the former "still retries a transient rate-limit failure" pin: a
+  // rate limit whose `resetsAt` lies hours out CANNOT be retried into success,
+  // so it must skip every rung of the ladder (AC-2). Only metadata-absent /
+  // near-reset rate limits stay transient — and those now retry with real
+  // backoff instead of a bare `continue` (AC-4).
+
+  it("does NOT retry a window-exhausted rate limit (resetsAt hours out skips all retries, AC-2)", async () => {
+    const resetsAt = Date.now() + 2 * 60 * 60 * 1000; // 2h out, in ms
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 120,
+        error: "Rate limited — resets at 14:30",
+        structuredError: new RateLimitError("Rate limited — resets at 14:30", {
+          resetsAt,
+          rateLimitType: "five_hour",
         }),
-      )
-      .mockResolvedValueOnce(
-        makeResult({ success: true, durationSeconds: 130 }),
-      );
+      }),
+    );
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(result.success).toBe(false);
+    // Single attempt: no cold-start retries, no MCP fallback.
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    const mcpDisabledCall = executePhaseFn.mock.calls.find(
+      (call) => (call[2] as ExecutionConfig).mcp === false,
+    );
+    expect(mcpDisabledCall).toBeUndefined();
+    // The labeled cause survives to the caller.
+    expect(result.error).toBe("Rate limited — resets at 14:30");
+  });
+
+  it("skips retries for a window-exhausted rate limit even in the cold-start window (AC-2)", async () => {
+    // Rate-limit rejections return fast; without the pre-duration check this
+    // would be mistaken for a cold-start failure and retried immediately.
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 5,
+        structuredError: new RateLimitError("Rate limited", {
+          resetsAt: Date.now() + 3 * 60 * 60 * 1000,
+        }),
+      }),
+    );
 
     const result = await executePhaseWithRetry(
       1,
@@ -745,8 +826,170 @@ describe("executePhaseWithRetry", () => {
       executePhaseFn,
     );
 
+    expect(result.success).toBe(false);
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles a seconds-unit resetsAt (SDK does not pin the unit)", async () => {
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        durationSeconds: 5,
+        structuredError: new RateLimitError("Rate limited", {
+          resetsAt: Math.floor(Date.now() / 1000) + 2 * 60 * 60, // seconds
+        }),
+      }),
+    );
+
+    await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+    );
+
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a metadata-absent rate limit as transient, with real backoff (AC-4, AC-9 fallback)", async () => {
+    // No `resetsAt` (e.g. assistant-error channel) → transient path, but the
+    // retry must wait via the injected delayFn, not re-spawn immediately.
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResult({
+          durationSeconds: 120,
+          structuredError: new RateLimitError("Rate limited"),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 130 }),
+      );
+    const delayFn = vi.fn().mockResolvedValue(undefined);
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
     expect(result.success).toBe(true);
     expect(executePhaseFn).toHaveBeenCalledTimes(2);
+    expect(delayFn).toHaveBeenCalledTimes(1);
+    expect(delayFn).toHaveBeenCalledWith(RATE_LIMIT_RETRY_BACKOFF_MS);
+  });
+
+  it("doubles the backoff per transient rate-limit retry (AC-4)", async () => {
+    const rateLimited = () =>
+      makeResult({
+        durationSeconds: 10,
+        structuredError: new RateLimitError("Rate limited"),
+      });
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 130 }),
+      );
+    const delayFn = vi.fn().mockResolvedValue(undefined);
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(delayFn.mock.calls.map((c) => c[0])).toEqual([
+      RATE_LIMIT_RETRY_BACKOFF_MS,
+      RATE_LIMIT_RETRY_BACKOFF_MS * 2,
+    ]);
+  });
+
+  it("does not trigger the MCP fallback for a rate-limited failure (AC-3)", async () => {
+    // Transient rate limit exhausts all attempts: the throttle must not be
+    // mislabeled as an MCP issue and re-spawned without MCP.
+    const rateLimited = () =>
+      makeResult({
+        durationSeconds: 120,
+        error: "Rate limited",
+        structuredError: new RateLimitError("Rate limited"),
+      });
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(rateLimited())
+      .mockResolvedValueOnce(rateLimited());
+    const delayFn = vi.fn().mockResolvedValue(undefined);
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig, // mcp: true
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    expect(result.success).toBe(false);
+    // 3 transient attempts (with backoff), NO 4th mcp-disabled fallback call.
+    expect(executePhaseFn).toHaveBeenCalledTimes(3);
+    const mcpDisabledCall = executePhaseFn.mock.calls.find(
+      (call) => (call[2] as ExecutionConfig).mcp === false,
+    );
+    expect(mcpDisabledCall).toBeUndefined();
+  });
+
+  it("still retries a rate limit resetting inside the threshold (near-reset is transient)", async () => {
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResult({
+          durationSeconds: 120,
+          structuredError: new RateLimitError("Rate limited", {
+            resetsAt: Date.now() + 60 * 1000, // 1 min out — worth waiting for
+          }),
+        }),
+      )
+      .mockResolvedValueOnce(
+        makeResult({ success: true, durationSeconds: 130 }),
+      );
+    const delayFn = vi.fn().mockResolvedValue(undefined);
+
+    const result = await executePhaseWithRetry(
+      1,
+      "exec",
+      baseConfig,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(2);
+    expect(delayFn).toHaveBeenCalledTimes(1);
   });
 
   // === #739: turn-capped phases (orchestrator-level) ===

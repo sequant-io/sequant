@@ -28,7 +28,13 @@ import type {
   ResumeHandle,
 } from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
-import { ApiError, BillingError } from "../errors.js";
+import {
+  ApiError,
+  BillingError,
+  RateLimitError,
+  SequantError,
+  resetsAtToMs,
+} from "../errors.js";
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 
@@ -119,6 +125,48 @@ const SPEC_RETRY_STRATEGY = phaseRegistry.get("spec").retryStrategy;
 export const SPEC_RETRY_BACKOFF_MS = SPEC_RETRY_STRATEGY?.backoffMs ?? 5000;
 /** @internal Exported for testing only */
 export const SPEC_EXTRA_RETRIES = SPEC_RETRY_STRATEGY?.extraRetries ?? 1;
+
+/**
+ * A rate limit whose window resets further out than this is treated as
+ * exhausted rather than transient (#761 AC-2): no retry can succeed inside a
+ * closed window, so consuming cold-start retries (each burning up to a full
+ * `phaseTimeout`) only delays the labeled halt. Five minutes comfortably
+ * exceeds any backoff this executor performs while staying far below the
+ * five-hour/seven-day windows the check exists to catch.
+ *
+ * @internal Exported for testing only
+ */
+export const RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS = 5 * 60 * 1000;
+
+/**
+ * Base backoff for transient rate-limit retries (#761 AC-4), doubled per
+ * attempt (5s, 10s). Same scale as `SPEC_RETRY_BACKOFF_MS` — long enough to
+ * outlive a momentary throttle, short enough to be negligible next to a
+ * phase's runtime.
+ *
+ * @internal Exported for testing only
+ */
+export const RATE_LIMIT_RETRY_BACKOFF_MS = 5000;
+
+/**
+ * True when a failure is a rate limit whose reset lies beyond
+ * {@link RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS} — i.e. window exhaustion, not a
+ * transient throttle. Metadata-absent rate limits (the assistant-error channel
+ * carries no `resetsAt`, see #761 AC-9) return false and fall through to the
+ * transient path: with no timing signal, retry-with-backoff is the safe
+ * default, skipping all retries is not.
+ *
+ * @internal Exported for testing only
+ */
+export function isWindowExhaustedRateLimit(
+  error: SequantError | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!(error instanceof RateLimitError)) return false;
+  const resetsAt = error.metadata.resetsAt;
+  if (typeof resetsAt !== "number") return false;
+  return resetsAtToMs(resetsAt) - now > RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS;
+}
 
 export function parseQaVerdict(output: string): QaVerdict | null {
   if (!output) return null;
@@ -907,6 +955,46 @@ export async function executePhaseWithRetry(
         return lastResult;
       }
 
+      // Window-exhausted rate limit (#761 AC-2): the reset is hours away, so
+      // every retry re-spawns into the same closed window — worst case
+      // ~4 × phaseTimeout (≈2h) of doomed attempts before the run halts.
+      // Modelled on the `capped` early return above: skip all remaining
+      // cold-start retries and (via the return) the MCP fallback. Checked
+      // before the duration branch because a rate-limit rejection typically
+      // fails fast and would otherwise be mistaken for a cold-start failure.
+      if (isWindowExhaustedRateLimit(lastResult.structuredError)) {
+        if (config.verbose) {
+          bracketedConsoleLog(
+            spinner,
+            chalk.yellow(
+              `\n    ✕ ${lastResult.error ?? "Rate limited"} — window exhausted, skipping retries`,
+            ),
+          );
+        }
+        return lastResult;
+      }
+
+      // Transient rate limit (#761 AC-4): retry, but with real backoff — the
+      // bare `continue` this replaces re-spawned immediately into the same
+      // throttle. Reuses the injected `delayFn`; delay doubles per attempt.
+      // Metadata-absent rate limits land here by design (AC-9 fallback rule).
+      if (
+        lastResult.structuredError instanceof RateLimitError &&
+        attempt < COLD_START_MAX_RETRIES
+      ) {
+        const backoffMs = RATE_LIMIT_RETRY_BACKOFF_MS * 2 ** attempt;
+        if (config.verbose) {
+          bracketedConsoleLog(
+            spinner,
+            chalk.yellow(
+              `\n    ⟳ ${lastResult.error ?? "Rate limited"} — backing off ${backoffMs}ms before retry... (attempt ${attempt + 2}/${COLD_START_MAX_RETRIES + 1})`,
+            ),
+          );
+        }
+        await delayFn(backoffMs);
+        continue;
+      }
+
       // Genuine failure (took long enough to be real work) → skip cold-start retries.
       // Use error classification (AC-9): if the error is retryable (e.g., API
       // rate limit, transient 503), allow one more attempt even for genuine failures.
@@ -969,12 +1057,18 @@ export async function executePhaseWithRetry(
   // intent is documented and future code paths can't accidentally re-spawn a
   // capped phase without MCP.
   const failureIsCapped = lastResult!.capped === true;
+  // A throttle must not trigger "retrying without MCP" (#761 AC-3): MCP was
+  // never the cause, and the re-spawn burns up to another full phaseTimeout
+  // against the same limit while mislabeling the failure as MCP-related.
+  const failureIsRateLimited =
+    lastResult!.structuredError instanceof RateLimitError;
   if (
     config.mcp &&
     !lastResult!.success &&
     !skipColdStartRetry &&
     !failureIsBilling &&
-    !failureIsCapped
+    !failureIsCapped &&
+    !failureIsRateLimited
   ) {
     bracketedConsoleLog(
       spinner,

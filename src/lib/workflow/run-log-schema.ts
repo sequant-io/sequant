@@ -98,13 +98,19 @@ export const ErrorContextSchema = z.object({
   stdoutTail: z.array(z.string()),
   /** Process exit code */
   exitCode: z.number().int().optional(),
-  /** Classified error category (legacy, kept for backwards compatibility) */
+  /**
+   * Classified error category (legacy, kept for backwards compatibility).
+   * Keep in sync with `ERROR_CATEGORIES` in `error-classifier.ts` —
+   * `rate_limit` / `billing` added by #761 AC-6.
+   */
   category: z.enum([
     "context_overflow",
     "api_error",
     "hook_failure",
     "build_error",
     "timeout",
+    "rate_limit",
+    "billing",
     "unknown",
   ]),
   /** Typed error class name (AC-8), e.g. "ApiError", "BuildError" */

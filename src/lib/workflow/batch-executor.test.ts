@@ -7,9 +7,12 @@ import type {
 import type { RunOptions } from "./batch-executor.js";
 import {
   buildLoopContext,
+  deriveFailureCategory,
   emitProgressLine,
   withActivityHook,
 } from "./batch-executor.js";
+import { classifyError } from "./error-classifier.js";
+import { BillingError, RateLimitError, TimeoutError } from "../errors.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
@@ -48,7 +51,11 @@ vi.mock("./git-diff-utils.js", () => ({
   getCommitHash: vi.fn(),
 }));
 
-vi.mock("./error-classifier.js", () => ({
+// Keep the real errorTypeToCategory/ERROR_CATEGORIES — deriveFailureCategory
+// (#761 AC-7) routes through them on every failure return — but stub
+// classifyError so tests control the fallback classification.
+vi.mock("./error-classifier.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./error-classifier.js")>()),
   classifyError: vi.fn().mockReturnValue("unknown"),
 }));
 
@@ -1149,5 +1156,66 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
     // The verdict is forwarded as the 8th arg so the PR body surfaces the
     // "not A+" note.
     expect(mockCreatePR.mock.calls[0][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
+  });
+});
+
+describe("deriveFailureCategory (#761 AC-7)", () => {
+  beforeEach(() => {
+    vi.mocked(classifyError).mockClear();
+  });
+
+  const failedPhase = (overrides: Partial<PhaseResult>): PhaseResult =>
+    ({ phase: "exec", success: false, ...overrides }) as PhaseResult;
+
+  it("returns undefined when nothing failed", () => {
+    expect(
+      deriveFailureCategory([{ phase: "exec", success: true } as PhaseResult]),
+    ).toBeUndefined();
+    expect(deriveFailureCategory([])).toBeUndefined();
+  });
+
+  it("prefers the structured cause over stderr classification", () => {
+    const category = deriveFailureCategory([
+      failedPhase({
+        structuredError: new RateLimitError("Rate limited"),
+        stderrTail: ["something about a build error"],
+      }),
+    ]);
+
+    expect(category).toBe("rate_limit");
+    expect(vi.mocked(classifyError)).not.toHaveBeenCalled();
+  });
+
+  it("maps a billing failure to the billing category", () => {
+    expect(
+      deriveFailureCategory([
+        failedPhase({ structuredError: new BillingError("Out of credits") }),
+      ]),
+    ).toBe("billing");
+  });
+
+  it("falls back to stderr classification when no structured cause exists", () => {
+    vi.mocked(classifyError).mockReturnValueOnce(
+      new TimeoutError("Timeout after 1800s"),
+    );
+
+    const category = deriveFailureCategory([
+      failedPhase({ stderrTail: ["Timeout after 1800s"] }),
+    ]);
+
+    expect(category).toBe("timeout");
+  });
+
+  it("classifies the LAST non-loop failing attempt (#766 reverse scan)", () => {
+    // First iteration timed out, loop recovered, final attempt rate-limited:
+    // the recorded category must describe the halt, not the stale first try.
+    const category = deriveFailureCategory([
+      failedPhase({ structuredError: undefined }),
+      { phase: "loop", success: true } as PhaseResult,
+      failedPhase({ structuredError: new RateLimitError("Rate limited") }),
+      { phase: "loop", success: false } as PhaseResult, // trailing loop noise
+    ]);
+
+    expect(category).toBe("rate_limit");
   });
 });

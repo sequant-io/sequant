@@ -152,6 +152,47 @@ describe("metrics-schema", () => {
 
       expect(() => MetricRunSchema.parse(invalid)).toThrow();
     });
+
+    // === #761 AC-7: failureCategory ===
+
+    it("accepts a bounded-enum failureCategory (#761 AC-7)", () => {
+      const run = createMetricRun({
+        issues: [761],
+        phases: ["exec"],
+        outcome: "failed",
+        duration: 100,
+        failureCategory: "rate_limit",
+      });
+
+      expect(() => MetricRunSchema.parse(run)).not.toThrow();
+      expect(run.failureCategory).toBe("rate_limit");
+    });
+
+    it("stays optional — pre-#761 records without failureCategory still parse", () => {
+      const run = createMetricRun({
+        issues: [1],
+        phases: ["exec"],
+        outcome: "success",
+        duration: 100,
+      });
+
+      expect(run.failureCategory).toBeUndefined();
+      expect(() => MetricRunSchema.parse(run)).not.toThrow();
+    });
+
+    it("rejects a free-text failureCategory (privacy contract: enum only)", () => {
+      const run = {
+        ...createMetricRun({
+          issues: [1],
+          phases: ["exec"],
+          outcome: "failed",
+          duration: 100,
+        }),
+        failureCategory: "Rate limited — resets at 14:30",
+      };
+
+      expect(() => MetricRunSchema.parse(run)).toThrow();
+    });
   });
 
   describe("RunMetricsSchema", () => {

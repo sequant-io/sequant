@@ -175,6 +175,30 @@ describe("MetricsWriter", () => {
       expect(run.metrics.filesChanged).toBe(15);
       expect(run.metrics.linesAdded).toBe(800);
     });
+
+    it("persists failureCategory on failed runs and omits it otherwise (#761 AC-7)", async () => {
+      await writer.recordRun({
+        issues: [761],
+        phases: ["exec"],
+        outcome: "failed",
+        duration: 100,
+        failureCategory: "rate_limit",
+      });
+      await writer.recordRun({
+        issues: [762],
+        phases: ["exec"],
+        outcome: "success",
+        duration: 100,
+      });
+
+      const metrics = await writer.getMetrics();
+      expect(metrics.runs[0].failureCategory).toBe("rate_limit");
+      expect(metrics.runs[1].failureCategory).toBeUndefined();
+      // The persisted JSON never contains the key for successful runs.
+      const raw = fs.readFileSync(metricsPath, "utf-8");
+      expect(raw).toContain('"failureCategory": "rate_limit"');
+      expect(raw.match(/failureCategory/g)).toHaveLength(1);
+    });
   });
 
   describe("getAllRuns", () => {

@@ -8,9 +8,14 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { displaySummary } from "./run-display.js";
+import { displaySummary, buildRateLimitHaltNotice } from "./run-display.js";
+import { BillingError, RateLimitError } from "../lib/errors.js";
 import type { RunResult } from "../lib/workflow/run-orchestrator.js";
-import type { IssueResult, PhaseResult } from "../lib/workflow/types.js";
+import type {
+  IssueResult,
+  PhaseResult,
+  RunOptions,
+} from "../lib/workflow/types.js";
 import type {
   RunRenderer,
   SummaryRenderInput,
@@ -27,7 +32,10 @@ function issueResult(overrides: Partial<IssueResult> = {}): IssueResult {
   };
 }
 
-function runResult(results: IssueResult[]): RunResult {
+function runResult(
+  results: IssueResult[],
+  mergedOptions: Partial<RunOptions> = {},
+): RunResult {
   return {
     results,
     logPath: null,
@@ -35,7 +43,7 @@ function runResult(results: IssueResult[]): RunResult {
     worktreeMap: new Map(),
     issueInfoMap: new Map(),
     config: { dryRun: false, phases: [], qualityLoop: false },
-    mergedOptions: {},
+    mergedOptions,
     logWriter: null,
   } as unknown as RunResult;
 }
@@ -225,5 +233,187 @@ describe("displaySummary — checkpoint failure notice (#760)", () => {
     );
 
     expect(output).not.toContain("Checkpoint commit failed");
+  });
+});
+
+/**
+ * #761 AC-5 — a chain halted by a rate limit restates the labeled cause at
+ * the summary (the per-phase error scrolled past hours ago) and spells out
+ * that resume is re-running the identical command (#760 added no flag).
+ */
+describe("displaySummary — rate-limit chain halt notice (#761)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function rateLimitedIssue(issueNumber: number): IssueResult {
+    return issueResult({
+      issueNumber,
+      success: false,
+      phaseResults: [
+        {
+          phase: "exec",
+          success: false,
+          error: "Rate limited — resets at 14:30",
+          structuredError: new RateLimitError(
+            "Rate limited — resets at 14:30",
+            { resetsAt: 1_700_000_000, rateLimitType: "five_hour" },
+          ),
+        } as PhaseResult,
+      ],
+    });
+  }
+
+  it("prints the labeled cause, the halted link, and the resume affordance", () => {
+    const output = capture(
+      runResult([issueResult({ issueNumber: 101 }), rateLimitedIssue(102)], {
+        chain: true,
+      }),
+    );
+
+    // formatRateLimitMessage label with resetsAt included.
+    expect(output).toMatch(/Rate limited — resets at /);
+    expect(output).toContain("chain halted at #102");
+    // The resume affordance must say resume IS re-running the same command.
+    expect(output).toContain("Re-run the same command to resume from #102");
+  });
+
+  it("labels a billing halt with the billing cause", () => {
+    const output = capture(
+      runResult(
+        [
+          issueResult({
+            issueNumber: 55,
+            success: false,
+            phaseResults: [
+              {
+                phase: "qa",
+                success: false,
+                error: "Out of credits",
+                structuredError: new BillingError("Out of credits", {
+                  overageDisabledReason: "out_of_credits",
+                }),
+              } as PhaseResult,
+            ],
+          }),
+        ],
+        { chain: true },
+      ),
+    );
+
+    expect(output).toContain("Out of credits");
+    expect(output).toContain("chain halted at #55");
+  });
+
+  it("does not mislabel a metadata-less billing halt as rate-limited (assistant-error channel)", () => {
+    // A billing_error arriving via the assistant-error channel has empty
+    // metadata; re-deriving the label from metadata would say "Rate limited".
+    const notice = buildRateLimitHaltNotice(
+      [
+        issueResult({
+          issueNumber: 56,
+          success: false,
+          phaseResults: [
+            {
+              phase: "exec",
+              success: false,
+              error: "Billing error",
+              structuredError: new BillingError("Billing error", {
+                assistantError: "billing_error",
+              }),
+            } as PhaseResult,
+          ],
+        }),
+      ],
+      true,
+    );
+
+    expect(notice).toEqual({ issueNumber: 56, label: "Billing error" });
+  });
+
+  it("stays silent outside chain mode (no #760 resume semantics to point at)", () => {
+    const output = capture(runResult([rateLimitedIssue(102)], {}));
+
+    expect(output).not.toContain("chain halted");
+  });
+
+  it("stays silent when the chain halted on a non-rate-limit failure", () => {
+    const output = capture(
+      runResult(
+        [
+          issueResult({
+            issueNumber: 7,
+            success: false,
+            phaseResults: [
+              {
+                phase: "exec",
+                success: false,
+                error: "build failed",
+              } as PhaseResult,
+            ],
+          }),
+        ],
+        { chain: true },
+      ),
+    );
+
+    expect(output).not.toContain("chain halted");
+  });
+
+  it("classifies from the LAST non-loop failing attempt (#766 reverse scan)", () => {
+    // First iteration failed on a timeout, quality loop ran, the final
+    // attempt died rate-limited — the notice must reflect the last attempt.
+    const notice = buildRateLimitHaltNotice(
+      [
+        issueResult({
+          issueNumber: 9,
+          success: false,
+          phaseResults: [
+            {
+              phase: "qa",
+              success: false,
+              error: "Timeout after 1800s",
+            } as PhaseResult,
+            { phase: "loop", success: true } as PhaseResult,
+            {
+              phase: "qa",
+              success: false,
+              error: "Rate limited",
+              structuredError: new RateLimitError("Rate limited"),
+            } as PhaseResult,
+          ],
+        }),
+      ],
+      true,
+    );
+
+    expect(notice).toEqual({ issueNumber: 9, label: "Rate limited" });
+  });
+
+  it("does not let a trailing loop failure mask the rate-limited phase", () => {
+    const notice = buildRateLimitHaltNotice(
+      [
+        issueResult({
+          issueNumber: 11,
+          success: false,
+          phaseResults: [
+            {
+              phase: "exec",
+              success: false,
+              error: "Rate limited",
+              structuredError: new RateLimitError("Rate limited"),
+            } as PhaseResult,
+            {
+              phase: "loop",
+              success: false,
+              error: "loop crashed",
+            } as PhaseResult,
+          ],
+        }),
+      ],
+      true,
+    );
+
+    expect(notice).toEqual({ issueNumber: 11, label: "Rate limited" });
   });
 });

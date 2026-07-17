@@ -285,10 +285,27 @@ export class ClaudeCodeDriver implements AgentDriver {
       const error = err instanceof Error ? err.message : String(err);
 
       if (error.includes("abort") || error.includes("AbortError")) {
+        // A rate limit can manifest as a hang rather than a stream event
+        // reaching the result: the SDK stalls, the phase timeout fires, and
+        // the abort lands here. Only failure-grade signals are ever captured
+        // (see the stream loop), so attaching them cannot mask a genuine
+        // timeout — with no signal, `abortStructuredError` is undefined and
+        // the bare timeout message survives unchanged (#761 AC-1). Without
+        // this, the captured `rateLimitInfo` was discarded and downstream
+        // classification saw only `Timeout after Ns`, sending a closed
+        // rate-limit window into the full retry + MCP-fallback ladder.
+        const abortStructuredError = this.buildStructuredError(
+          rateLimitInfo,
+          assistantError,
+          apiRetryError,
+        );
         return {
           success: false,
           output: capturedOutput,
-          error: `Timeout after ${config.phaseTimeout}s`,
+          error:
+            abortStructuredError?.message ??
+            `Timeout after ${config.phaseTimeout}s`,
+          structuredError: abortStructuredError,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
         };
@@ -297,8 +314,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       // If the stream surfaced a failure-grade rate-limit/billing signal before
       // throwing, prefer that typed cause (#732) over the raw thrown message — a
       // mid-stream throw after a *rejected* rate_limit_event is very likely the
-      // proximate cause. Abort/timeout is handled above first, so a genuine
-      // timeout is never masked by a stale rate-limit signal.
+      // proximate cause.
       const structuredError = this.buildStructuredError(
         rateLimitInfo,
         assistantError,
@@ -359,17 +375,30 @@ export class ClaudeCodeDriver implements AgentDriver {
    * Map the SDK's assistant/api-retry error enum to a typed error. Only
    * rate-limit / billing variants are mapped; other variants (auth, etc.)
    * return undefined and defer to the existing classification path.
+   *
+   * The assistant-error channel carries no `resetsAt`/`rateLimitType` (the
+   * enum is the whole signal — `SDKAssistantMessageError` is a bare string),
+   * so the originating variant is recorded in metadata to keep `rate_limit`
+   * and `overloaded` distinguishable downstream (#761 AC-9). With no
+   * `resetsAt`, these errors are treated as transient by the executor's
+   * window-exhaustion check — the mandatory metadata-absent fallback.
    */
   private errorFromAssistantError(
     error: SDKAssistantMessageError | undefined,
   ): SequantError | undefined {
     switch (error) {
       case "billing_error":
-        return new BillingError("Billing error");
+        return new BillingError("Billing error", {
+          assistantError: "billing_error",
+        });
       case "rate_limit":
-        return new RateLimitError("Rate limited");
+        return new RateLimitError("Rate limited", {
+          assistantError: "rate_limit",
+        });
       case "overloaded":
-        return new RateLimitError("API overloaded");
+        return new RateLimitError("API overloaded", {
+          assistantError: "overloaded",
+        });
       default:
         return undefined;
     }

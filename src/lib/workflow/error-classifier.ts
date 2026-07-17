@@ -15,13 +15,22 @@ import {
   SubprocessError,
 } from "../errors.js";
 
-/** All recognized error categories (kept for backwards compatibility). */
+/**
+ * All recognized error categories (kept for backwards compatibility).
+ *
+ * `rate_limit` / `billing` (#761 AC-6) only arise from the driver's structured
+ * errors — `classifyError` never produces them, since stderr text cannot
+ * distinguish a window-exhausted limit from a transient 429 (`api_error`).
+ * Keep in sync with the inline category enum in `run-log-schema.ts`.
+ */
 export const ERROR_CATEGORIES = [
   "context_overflow",
   "api_error",
   "hook_failure",
   "build_error",
   "timeout",
+  "rate_limit",
+  "billing",
   "unknown",
 ] as const;
 
@@ -43,6 +52,10 @@ export function errorTypeToCategory(error: SequantError): ErrorCategory {
       return "build_error";
     case "TimeoutError":
       return "timeout";
+    case "RateLimitError":
+      return "rate_limit";
+    case "BillingError":
+      return "billing";
     default:
       return "unknown";
   }
