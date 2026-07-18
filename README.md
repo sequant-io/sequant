@@ -68,6 +68,8 @@ Pick the path that matches **where you run Sequant**:
 /sequant:setup
 ```
 
+> **Plugins do not auto-update.** Claude Code pins a plugin to the version you installed and never updates it on its own — even as new releases ship. To pick up a new version, run `claude plugin update sequant@sequant`, then restart Claude Code. Sequant's pre-tool hook warns once a day when your installed version falls behind the marketplace.
+
 **Headless / CI (npm package)** — drive runs from the terminal or a CI job:
 ```bash
 npm install sequant          # or: pnpm add / yarn add / bun add sequant
