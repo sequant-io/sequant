@@ -281,6 +281,8 @@ Or browse in \`/plugin > Discover\`.
 
 After installing, run \`/sequant:setup\` to configure your project.
 
+> **Plugins do not auto-update.** Claude Code pins a plugin to the version you installed. To pick up a new release, run \`claude plugin update sequant@sequant\`, then restart Claude Code.
+
 ### npm (power users / CI)
 
 \`\`\`bash
