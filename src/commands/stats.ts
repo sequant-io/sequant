@@ -19,6 +19,7 @@ import {
   MetricsSchema,
   type Metrics,
   type MetricRun,
+  type FailureCategory,
   METRICS_FILE_PATH,
 } from "../lib/workflow/metrics-schema.js";
 
@@ -375,7 +376,7 @@ function displayStats(stats: AggregateStats, logDir: string): void {
  * unknown = classified as unknown, unclassified = never classified.
  */
 interface FailureCategoryBucket {
-  category: string;
+  category: FailureCategory | "unclassified";
   count: number;
 }
 
@@ -437,7 +438,7 @@ function loadMetrics(): Metrics | null {
 function calculateFailureCategoryBreakdown(
   runs: MetricRun[],
 ): FailureCategoryBucket[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<FailureCategory | "unclassified", number>();
   for (const run of runs) {
     if (run.outcome !== "failed") continue;
     const category = run.failureCategory ?? "unclassified";
