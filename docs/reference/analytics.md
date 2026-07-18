@@ -90,6 +90,11 @@ either filter is set — its schema stores issue numbers only, not labels.
     Partial: 6
     Failed: 3
 
+  Failure Categories (3 failed runs)
+  ─────────────────────────────────
+  rate_limit    2 (67%)
+  unclassified  1 (33%)
+
   Averages
   ─────────────────────────────────
   Files changed: 6.2
@@ -104,6 +109,26 @@ either filter is set — its schema stores issue numbers only, not labels.
 
   Data stored locally in .sequant/metrics.json
 ```
+
+### Failure Category Breakdown
+
+When at least one run has `outcome: "failed"`, `sequant stats` shows a
+**Failure Categories** section next to the outcome counts, computed from
+`MetricRun.failureCategory` (recorded since #761). It answers "what's killing
+my runs — rate limits or real failures?" directly from metrics, without
+needing run logs to still exist (logs rotate; metrics don't).
+
+- Buckets are counted **over failed runs only** and sorted by count.
+- Runs recorded before #761 have no `failureCategory` and are bucketed as
+  `unclassified` — distinct from the `unknown` enum value (`unknown` means
+  "classified as unknown"; `unclassified` means "recorded before
+  classification existed").
+- The section is hidden entirely when there are zero failed runs.
+- `sequant stats --json` includes the same breakdown as `failureCategories`
+  (array of `{ category, count }`), alongside the per-run `failureCategory`
+  already present in `runs[]`.
+- With `--label`/`--since`, output switches to run-log mode (see the note
+  above), so the metrics-based breakdown does not appear on filtered cohorts.
 
 ## Insights
 
