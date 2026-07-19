@@ -179,10 +179,11 @@ describe("stats failureCategory breakdown (#783)", () => {
     consoleSpy.mockRestore();
   });
 
-  describe("AC-1: renders breakdown from MetricRun.failureCategory over failed runs", () => {
+  describe("AC-1: renders breakdown from MetricRun.failureCategory over runs with a failure", () => {
     it("renders 'Failure Categories' with per-category count and percentage for a mixed corpus", async () => {
-      // Given: 2x rate_limit failed, 1x build_error failed, 1 pre-#761 failed,
-      // 1 success, 1 partial
+      // Given: 2x rate_limit failed, 1x build_error failed, 1 pre-#761 failed
+      // (no category), 1 success, 1 partial carrying a timeout category.
+      // Counted set = failed + partial = 5 runs (success excluded).
       mockFilesystem(
         makeMetrics([
           makeRun("failed", "rate_limit"),
@@ -190,7 +191,7 @@ describe("stats failureCategory breakdown (#783)", () => {
           makeRun("failed", "build_error"),
           makeRun("failed"),
           makeRun("success"),
-          makeRun("partial"),
+          makeRun("partial", "timeout"),
         ]),
       );
 
@@ -199,10 +200,11 @@ describe("stats failureCategory breakdown (#783)", () => {
 
       // Then
       const output = joinedOutput(consoleSpy);
-      expect(output).toContain("Failure Categories (4 failed runs)");
-      expect(output).toMatch(/rate_limit\s+2 \(50%\)/);
-      expect(output).toMatch(/build_error\s+1 \(25%\)/);
-      expect(output).toMatch(/unclassified\s+1 \(25%\)/);
+      expect(output).toContain("Failure Categories (5 runs with a failure)");
+      expect(output).toMatch(/rate_limit\s+2 \(40%\)/);
+      expect(output).toMatch(/build_error\s+1 \(20%\)/);
+      expect(output).toMatch(/timeout\s+1 \(20%\)/); // partial run's category counted
+      expect(output).toMatch(/unclassified\s+1 \(20%\)/);
     });
 
     it("sorts buckets by count descending", async () => {
@@ -233,7 +235,7 @@ describe("stats failureCategory breakdown (#783)", () => {
       await statsCommand({});
 
       const output = joinedOutput(consoleSpy);
-      expect(output).toContain("Failure Categories (1 failed run)");
+      expect(output).toContain("Failure Categories (1 run with a failure)");
       expect(output).toMatch(/unclassified\s+1 \(100%\)/);
     });
 
@@ -251,13 +253,13 @@ describe("stats failureCategory breakdown (#783)", () => {
     });
   });
 
-  describe("AC-3: section hidden with zero failed runs", () => {
-    it("does not print the section header for a success/partial-only corpus", async () => {
+  describe("AC-3: section hidden when no run recorded a failure", () => {
+    it("does not print the section header for a success-only corpus", async () => {
       mockFilesystem(
         makeMetrics([
           makeRun("success"),
           makeRun("success"),
-          makeRun("partial"),
+          makeRun("success"),
         ]),
       );
 
@@ -266,6 +268,18 @@ describe("stats failureCategory breakdown (#783)", () => {
       const output = joinedOutput(consoleSpy);
       expect(output).toContain("SEQUANT ANALYTICS");
       expect(output).not.toContain("Failure Categories");
+    });
+
+    it("DOES show the section when the only non-success run is a partial", async () => {
+      // A partial run always had >=1 failed issue, so it is a "run with a
+      // failure" and must appear (bucketed unclassified when no category).
+      mockFilesystem(makeMetrics([makeRun("success"), makeRun("partial")]));
+
+      await statsCommand({});
+
+      const output = joinedOutput(consoleSpy);
+      expect(output).toContain("Failure Categories (1 run with a failure)");
+      expect(output).toMatch(/unclassified\s+1 \(100%\)/);
     });
   });
 
@@ -328,14 +342,14 @@ describe("stats failureCategory breakdown (#783)", () => {
       await statsCommand({});
 
       const output = joinedOutput(consoleSpy);
-      expect(output).toContain("Failure Categories (3 failed runs)");
+      expect(output).toContain("Failure Categories (3 runs with a failure)");
       expect(output).toMatch(/unclassified\s+3 \(100%\)/);
       expect(output).not.toContain("NaN");
     });
 
-    it("does not count categories carried by non-failed runs", async () => {
+    it("counts categories carried by partial runs alongside failed runs", async () => {
       // Given: a partial run carrying failureCategory (run-orchestrator records
-      // it when >=1 issue fails) plus one categorized failed run
+      // it when >=1 issue fails) plus one categorized failed run. Both count.
       mockFilesystem(
         makeMetrics([
           makeRun("partial", "timeout"),
@@ -345,11 +359,28 @@ describe("stats failureCategory breakdown (#783)", () => {
 
       await statsCommand({});
 
-      // Then: only the failed run counts (AC-1 literal: "over failed runs")
+      // Then: both the partial and the failed run count toward the breakdown
       const output = joinedOutput(consoleSpy);
-      expect(output).toContain("Failure Categories (1 failed run)");
+      expect(output).toContain("Failure Categories (2 runs with a failure)");
+      expect(output).toMatch(/rate_limit\s+1 \(50%\)/);
+      expect(output).toMatch(/timeout\s+1 \(50%\)/);
+    });
+
+    it("excludes success runs even in a mixed corpus", async () => {
+      // Success runs never carry a failureCategory and must not appear.
+      mockFilesystem(
+        makeMetrics([
+          makeRun("success"),
+          makeRun("success"),
+          makeRun("failed", "rate_limit"),
+        ]),
+      );
+
+      await statsCommand({});
+
+      const output = joinedOutput(consoleSpy);
+      expect(output).toContain("Failure Categories (1 run with a failure)");
       expect(output).toMatch(/rate_limit\s+1 \(100%\)/);
-      expect(output).not.toContain("timeout");
     });
   });
 });
