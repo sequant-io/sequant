@@ -19,6 +19,7 @@ import {
   MetricsSchema,
   type Metrics,
   type MetricRun,
+  type FailureCategory,
   METRICS_FILE_PATH,
 } from "../lib/workflow/metrics-schema.js";
 
@@ -367,6 +368,19 @@ function displayStats(stats: AggregateStats, logDir: string): void {
 }
 
 /**
+ * One bucket of the failure-category breakdown (#783).
+ *
+ * `category` is either a FailureCategory enum value or the synthetic
+ * "unclassified" bucket for records written before #761 added the field.
+ * "unclassified" is deliberately distinct from the enum's "unknown":
+ * unknown = classified as unknown, unclassified = never classified.
+ */
+interface FailureCategoryBucket {
+  category: FailureCategory | "unclassified";
+  count: number;
+}
+
+/**
  * Local metrics analytics
  */
 interface MetricsAnalytics {
@@ -374,6 +388,7 @@ interface MetricsAnalytics {
   successCount: number;
   partialCount: number;
   failedCount: number;
+  failureCategories: FailureCategoryBucket[];
   successRate: number;
   avgTokensPerRun: number;
   avgFilesChanged: number;
@@ -409,6 +424,37 @@ function loadMetrics(): Metrics | null {
 }
 
 /**
+ * Compute the failure-category breakdown over runs that recorded a failure —
+ * outcome "failed" (every issue failed) or "partial" (at least one issue
+ * failed) (#783).
+ *
+ * NOTE — deviation from AC-1's literal "over failed runs" wording: partial runs
+ * also carry a failureCategory (recorded whenever >=1 issue fails) and are
+ * genuine signal for "what's killing my runs", so they are counted here by
+ * explicit user decision. Success runs never carry the field and are excluded.
+ *
+ * Runs without the field (pre-#761 records, or a partial whose failure was
+ * never categorized) are bucketed as "unclassified" — never dropped and never
+ * conflated with the "unknown" enum value.
+ *
+ * Pure function of the passed runs array, so any upstream cohort filtering is
+ * automatically respected (computed after filtering, not before).
+ */
+function calculateFailureCategoryBreakdown(
+  runs: MetricRun[],
+): FailureCategoryBucket[] {
+  const counts = new Map<FailureCategory | "unclassified", number>();
+  for (const run of runs) {
+    if (run.outcome === "success") continue;
+    const category = run.failureCategory ?? "unclassified";
+    counts.set(category, (counts.get(category) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category));
+}
+
+/**
  * Calculate analytics from metrics
  */
 function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
@@ -420,6 +466,7 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
       successCount: 0,
       partialCount: 0,
       failedCount: 0,
+      failureCategories: [],
       successRate: 0,
       avgTokensPerRun: 0,
       avgFilesChanged: 0,
@@ -441,6 +488,8 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
   const successCount = runs.filter((r) => r.outcome === "success").length;
   const partialCount = runs.filter((r) => r.outcome === "partial").length;
   const failedCount = runs.filter((r) => r.outcome === "failed").length;
+
+  const failureCategories = calculateFailureCategoryBreakdown(runs);
 
   const successRate = (successCount / runs.length) * 100;
 
@@ -500,6 +549,7 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
     successCount,
     partialCount,
     failedCount,
+    failureCategories,
     successRate,
     avgTokensPerRun,
     avgFilesChanged,
@@ -630,6 +680,30 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
     console.log(
       `  ${colors.error("\u2717 Failed")}    ${analytics.failedCount} (${failedRate.toFixed(0)}%)    ${failedBar}`,
     );
+  }
+
+  // Failure-category breakdown (#783) \u2014 adjacent to the outcome bars above.
+  // Counts runs that recorded a failure (outcome "failed" or "partial"); hidden
+  // entirely when there are none (AC-3).
+  if (analytics.failureCategories.length > 0) {
+    const failureRunCount = analytics.failureCategories.reduce(
+      (sum, b) => sum + b.count,
+      0,
+    );
+    const runNoun =
+      failureRunCount === 1 ? "run with a failure" : "runs with a failure";
+    console.log(
+      ui.sectionHeader(`Failure Categories (${failureRunCount} ${runNoun})`),
+    );
+    const pad = Math.max(
+      ...analytics.failureCategories.map((b) => b.category.length),
+    );
+    for (const bucket of analytics.failureCategories) {
+      const pct = ((bucket.count / failureRunCount) * 100).toFixed(0);
+      console.log(
+        `  ${bucket.category.padEnd(pad)}  ${bucket.count} (${pct}%)`,
+      );
+    }
   }
 
   // Averages table
@@ -937,6 +1011,8 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
         partialCount: analytics.partialCount,
         failedCount: analytics.failedCount,
         successRate: analytics.successRate,
+        // Failure-category breakdown over failed runs (#783 AC-5)
+        failureCategories: analytics.failureCategories,
         avgTokensPerRun: analytics.avgTokensPerRun,
         avgFilesChanged: analytics.avgFilesChanged,
         avgLinesAdded: analytics.avgLinesAdded,
