@@ -62,7 +62,7 @@ sequant_logs       # Review past run results
 
 - **Plugin install:** Instant — skills and hooks load immediately
 - **`/sequant:setup`:** ~10 seconds — creates config and detects stack
-- **MCP server:** Starts automatically via `npx sequant@latest serve` (stdio transport)
+- **MCP server:** Starts automatically via `npx -y sequant@<version> serve` (stdio transport), pinned to the plugin's release version (#793)
 - **First `/fullsolve`:** 10–30 minutes depending on issue complexity
 
 ## Plugin vs npm
@@ -122,13 +122,17 @@ After `/sequant:setup`, edit `.sequant/settings.json` to customize:
 
 ## MCP Server Details
 
-The plugin bundles an MCP server that starts automatically:
+The plugin bundles an MCP server that starts automatically. The bundled
+`.mcp.json` pins `sequant` to the plugin's release version (#793) — the build
+step stamps the concrete version in place of `@latest`, so an `npx` reconnect
+never re-resolves `@latest` (which was surfacing as `-32000` after releases).
+You pick up a new version when you update the plugin:
 
 ```json
 {
   "sequant": {
     "command": "npx",
-    "args": ["-y", "sequant@latest", "serve"]
+    "args": ["-y", "sequant@2.9.0", "serve"]
   }
 }
 ```

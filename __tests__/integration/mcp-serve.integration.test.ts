@@ -17,6 +17,7 @@ import * as net from "net";
 import {
   detectMcpClients,
   getSequantMcpConfig,
+  getSequantPackageSpec,
   addSequantToMcpConfig,
 } from "../../src/lib/mcp-config.js";
 
@@ -266,7 +267,8 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       const config = getSequantMcpConfig();
 
       expect(config.command).toBe("npx");
-      expect(config.args).toEqual(["-y", "sequant@latest", "serve"]);
+      // Pinned to the installed version, not @latest (#793).
+      expect(config.args).toEqual(["-y", getSequantPackageSpec(), "serve"]);
     });
 
     it("should add sequant config to an existing MCP config file", () => {
