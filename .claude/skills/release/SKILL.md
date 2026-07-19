@@ -512,8 +512,11 @@ Release v{version} Complete
     npx sequant@{new}
 
   Install (plugin):
-    /plugin marketplace update sequant-io/sequant
-    /plugin install sequant
+    /plugin marketplace update sequant-io/sequant   # refreshes the marketplace LISTING only
+    /plugin install sequant                         # new installs
+
+  Update an existing plugin install:
+    claude plugin update sequant@sequant            # then restart Claude Code
 
 Verification:
   [x] npm view shows correct version
@@ -527,6 +530,11 @@ Next steps:
   - Announce release (if major/minor)
   - Update dependent projects
   - Monitor for issues
+  - Installed plugins do NOT pick up this release automatically: Claude Code
+    pins each install at its installed version, and `/plugin marketplace
+    update` refreshes only the marketplace listing. Each existing install
+    updates only via `claude plugin update sequant@sequant` + restart
+    (the pre-tool hook nags stale installs once a day — #784)
 ```
 
 ## Dry Run Mode
