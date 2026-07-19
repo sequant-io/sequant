@@ -675,12 +675,15 @@ Render each comment as follows:
 1. **Pick the template by verdict.** For issue `#N`'s action, use the matching single-mode template (`#### PROCEED`, `#### REWRITE`, etc.) and fill it exactly as single mode would, including — where that template defines them:
    - the `#<N> — <Title>` / `<State> · <labels>` header,
    - the section separators the template defines,
-   - the `Commands:` block with the **resolved `CMD_PREFIX`** (Step-1 probe — `sequant` when a global is on PATH, else `npx sequant`) and the **real current flags** for that issue — the same flags the dashboard's `Commands:` line assigned to `#N` (e.g. `-Q`, `--security-review`, `--phases exec,qa`),
-   - the `<phases> · <N> ACs` line.
+   - the `Commands:` block with the **resolved `CMD_PREFIX`** (Step-1 probe — `sequant` when a global is on PATH, else `npx sequant`) and the **real current flags** for that issue. When the dashboard batched several issues onto one `run` line (e.g. `run 461 460 458 443 -Q`), restate just `#N`'s own single-issue invocation (`run 458 -Q`): the shared flags that applied to `#N`, plus any per-issue flags the dashboard listed separately for it (e.g. `#412`'s `--security-review`, `#411`'s `--phases exec,qa`),
+   - the `<phases> · <N> ACs` line,
+   - for **CLOSE**, the `Cleanup:` block populated with just `#N`'s cleanup commands, de-aggregated from the dashboard's combined `Cleanup:` block.
 
    Reference these templates rather than re-copying their bodies here — they are the single source of truth (avoids drift). Verdicts whose template omits a field (CLOSE / CLARIFY / PARK / MERGE have no `Commands:` or `<phases> · <N> ACs` line) simply omit it, exactly as the template shows.
 
-2. **Carry per-issue warnings.** Any `⚠` line from the batch dashboard that concerns `#N` (collision/conflict, churn, staleness, dual-concern, partial-AC) is placed in that issue's comment in the template's warning slot — the `⚠ ...` region between the trailing separators. Drop the leading `#N` from the dashboard warning text, since the comment is already scoped to that issue. For CLOSE / CLARIFY / PARK / MERGE templates (which have a single trailing separator block, no `Commands:`), place the `⚠` in the same between-separators region.
+2. **Carry per-issue warnings.** Any `⚠` line from the batch dashboard that concerns `#N` (collision/conflict, churn, staleness, dual-concern, partial-AC) is carried into that issue's comment, with the leading `#N` dropped (the comment is already scoped to that issue). Placement depends on whether the verdict's template defines a warning slot:
+   - **PROCEED / REWRITE** — the template already defines a `⚠ ...` region between its two trailing separators; place the warning there.
+   - **CLOSE / CLARIFY / PARK / MERGE** — these templates have no `⚠` region (just a single trailing separator before the markers). Add the warning as its own separator-delimited block immediately above the marker block, so the tail reads: `<trailing separator>` → `⚠ ...` → `<separator>` → `<!-- assess:action=... -->`. This is the sole case where a posted comment extends a slot-less template; every other field still follows Step 1's "omit what the template omits." When an issue has no `⚠`, the template is emitted unchanged.
 
 3. **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, prepend `buildSupersessionHeader(priors)` immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also emit the `⚠ Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning in the warning slot (per step 2). When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for full protocol.
 
@@ -739,6 +742,22 @@ Flags:
 <!-- assess:action=PROCEED -->
 <!-- assess:phases=spec,exec,qa -->
 <!-- assess:quality-loop=true -->
+```
+
+For a verdict whose template has no `⚠` slot, the carried warning becomes its own separator-delimited block above the markers (Step 2). Posted comment on a **PARK** issue the churn detector flagged:
+
+```
+#530 — Measure real-world assess latency across 20 repos
+Open · task, needs-data
+────────────────────────────────────────────────────────────────
+
+→ PARK — Blocked on manual measurement not yet scheduled
+  Resume after: latency sampling run completes
+────────────────────────────────────────────────────────────────
+⚠ Re-assessed 3 times since 2026-06-30 without execution — possible blocker or low priority
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PARK -->
 ```
 
 ## Notes
