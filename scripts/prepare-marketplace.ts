@@ -148,11 +148,26 @@ function main(): void {
       cpSync(templatesHooksDir, outputHooksDir, { recursive: true });
     }
 
-    // 4. Copy .mcp.json (MCP server config for plugin users)
+    // 4. Copy .mcp.json (MCP server config for plugin users), pinning the
+    //    server to this release's version (#793). The source template stays on
+    //    `sequant@latest` (portable, tracks HEAD for contributors), but the
+    //    distributed plugin config is stamped with the concrete version so an
+    //    npx reconnect never re-resolves `@latest` — the reinstall-on-release
+    //    that surfaced as `-32000`. Plugin users pick up the new pin when they
+    //    update the plugin. `npm run prepare:marketplace` already runs on every
+    //    release path, so the stamp stays in sync automatically.
     console.log("📋 Copying MCP server config...");
     const mcpJsonPath = join(PROJECT_ROOT, "templates", "mcp.json");
     if (existsSync(mcpJsonPath)) {
-      cpSync(mcpJsonPath, join(OUTPUT_DIR, ".mcp.json"));
+      const packageVersion = JSON.parse(
+        readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+      ).version as string;
+      const pinnedMcp = readFileSync(mcpJsonPath, "utf8").replace(
+        /sequant@latest/g,
+        `sequant@${packageVersion}`,
+      );
+      writeFileSync(join(OUTPUT_DIR, ".mcp.json"), pinnedMcp);
+      console.log(`   Pinned MCP server to sequant@${packageVersion}`);
     } else {
       console.error(
         "❌ templates/mcp.json not found. Plugin users won't get MCP server.",
@@ -204,6 +219,10 @@ function validate(): void {
     const mcpConfig = JSON.parse(readFileSync(outputMcpJson, "utf8"));
     // Plugin .mcp.json uses flat format (server name as top-level key)
     const sequantServer = mcpConfig?.sequant;
+    const args: unknown = sequantServer?.args;
+    const pin = Array.isArray(args)
+      ? args.find((a) => typeof a === "string" && a.startsWith("sequant@"))
+      : undefined;
     if (!sequantServer) {
       console.error("  ❌ .mcp.json missing sequant server entry");
       errors++;
@@ -212,8 +231,14 @@ function validate(): void {
         '  ❌ .mcp.json must use "npx" command (not hardcoded paths)',
       );
       errors++;
+    } else if (!pin || pin === "sequant@latest") {
+      // Must be a concrete pin (#793) — `@latest` re-resolves on every reconnect.
+      console.error(
+        `  ❌ .mcp.json must pin a concrete sequant version (got ${pin ?? "no sequant@ arg"}, not sequant@latest)`,
+      );
+      errors++;
     } else {
-      console.log("  ✅ .mcp.json (MCP server config)");
+      console.log(`  ✅ .mcp.json (MCP server config, pinned ${pin})`);
     }
   } else {
     console.error(

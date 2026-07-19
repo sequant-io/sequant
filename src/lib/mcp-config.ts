@@ -8,9 +8,31 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { getVersion } from "./version.js";
 
 /** Path to the project-level MCP config file used by Claude Code */
 export const PROJECT_MCP_JSON = ".mcp.json";
+
+/**
+ * npm package specifier used to launch the MCP server (#793).
+ *
+ * We pin to the installed version rather than `@latest` so that `npx` does not
+ * re-resolve and reinstall the package on the first MCP reconnect after every
+ * sequant release — the reinstall was surfacing as an opaque
+ * `Failed to reconnect to sequant: -32000` when npx's cache was corrupted
+ * (npm ENOTEMPTY). `setup`/`update` (re)write this pin, so the MCP server
+ * tracks new releases when the user runs `sequant update` — matching how the
+ * plugin cache already pins. See docs/troubleshooting.md ("MCP Server Issues").
+ *
+ * Falls back to `latest` if the installed version cannot be resolved, so a
+ * failed lookup never writes a bogus `sequant@0.0.0` pin into `.mcp.json`.
+ */
+export function getSequantPackageSpec(): string {
+  const version = getVersion();
+  return version && version !== "0.0.0"
+    ? `sequant@${version}`
+    : "sequant@latest";
+}
 
 export type McpClientType = "claude-desktop" | "cursor" | "vscode-continue";
 
@@ -41,7 +63,7 @@ export function getSequantMcpConfig(options?: {
 }): Record<string, unknown> {
   const config: Record<string, unknown> = {
     command: "npx",
-    args: ["-y", "sequant@latest", "serve"],
+    args: ["-y", getSequantPackageSpec(), "serve"],
   };
 
   // Add cwd for clients that don't run from the project directory
@@ -235,4 +257,80 @@ export function createProjectMcpJson(
     return { created: false, merged: true, skipped: false };
   }
   return { created: true, merged: false, skipped: false };
+}
+
+export interface SyncMcpPinResult {
+  updated: boolean;
+  /** Why no rewrite happened, when updated === false. */
+  reason?: "no-file" | "no-entry" | "no-pin" | "already-current";
+  /** Previous package spec, when updated === true (e.g. "sequant@latest"). */
+  from?: string;
+  /** New package spec, when updated === true (e.g. "sequant@2.9.0"). */
+  to?: string;
+}
+
+/**
+ * Re-pin an existing project `.mcp.json` sequant entry to the installed version (#793).
+ *
+ * Unlike {@link createProjectMcpJson} (which skips when a sequant entry already
+ * exists), this is the `update`/`sync` path: it refreshes the version pin so the
+ * MCP server tracks the release the user just updated to. It only rewrites the
+ * `sequant@<version>` token inside `args` and leaves everything else untouched.
+ *
+ * No-ops (returns `updated: false`) when:
+ * - `.mcp.json` doesn't exist (`no-file`) — we never create it here; that's init's job
+ * - there's no sequant server entry (`no-entry`)
+ * - the entry uses a local-binary form with no `sequant@…` arg (`no-pin`) — a
+ *   deliberate contributor override we must not clobber
+ * - the pin already matches the installed version (`already-current`)
+ *
+ * With `opts.dryRun`, computes `from`/`to` and returns `updated: true` for a
+ * pending change but does not write the file — the caller reports it as a preview.
+ */
+export function syncSequantMcpPin(
+  projectDir?: string,
+  opts?: { dryRun?: boolean },
+): SyncMcpPinResult {
+  const mcpJsonPath = path.resolve(projectDir ?? ".", PROJECT_MCP_JSON);
+  if (!fs.existsSync(mcpJsonPath)) {
+    return { updated: false, reason: "no-file" };
+  }
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(fs.readFileSync(mcpJsonPath, "utf-8"));
+  } catch {
+    // Corrupt file — leave it alone rather than overwriting user content.
+    return { updated: false, reason: "no-file" };
+  }
+
+  const servers = config?.mcpServers as Record<string, unknown> | undefined;
+  const sequant = servers?.sequant as { args?: unknown } | undefined;
+  if (!sequant) {
+    return { updated: false, reason: "no-entry" };
+  }
+
+  const args = sequant.args;
+  if (!Array.isArray(args)) {
+    return { updated: false, reason: "no-pin" };
+  }
+
+  const pinIndex = args.findIndex(
+    (a) => typeof a === "string" && a.startsWith("sequant@"),
+  );
+  if (pinIndex === -1) {
+    return { updated: false, reason: "no-pin" };
+  }
+
+  const from = args[pinIndex] as string;
+  const to = getSequantPackageSpec();
+  if (from === to) {
+    return { updated: false, reason: "already-current" };
+  }
+
+  if (!opts?.dryRun) {
+    args[pinIndex] = to;
+    fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+  }
+  return { updated: true, from, to };
 }

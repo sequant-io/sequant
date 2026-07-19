@@ -394,6 +394,47 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
    claude -p "Say hello" --print
    ```
 
+## MCP Server Issues
+
+### MCP server won't (re)connect — `Failed to reconnect: -32000`
+
+**Problem:** Claude Code fails to start or reconnect the `sequant` MCP server, most often reported through `/plugin` or `/mcp` as `Failed to reconnect to sequant: -32000`. The `-32000` is a generic JSON-RPC transport error — it means the server process never came up, not that sequant itself crashed.
+
+**Most common cause — a corrupted npx cache slot.** The `.mcp.json` launches the server with `npx -y sequant@<version> serve`. Any time npx has to (re)install that package, a half-written or interrupted cache can turn into a hard failure. This is most likely with an `sequant@latest` config (the pre-#793 default, and still what an un-updated install carries), because `@latest` forces npx to re-resolve and reinstall whenever the published latest changes — so the reconnect **right after a `sequant` release** is exactly when it bites. Sequant now pins a concrete version by default (see [MCP Server → Version pinning](features/mcp-server.md#add-the-mcp-config)), which removes that per-release reinstall; run `sequant update` (or update the plugin) to move an old `@latest` config onto a pin. The underlying error is an npm bug — an atomic-rename collision with a leftover temp directory:
+
+```
+npm error code ENOTEMPTY
+npm error syscall rename
+npm error ENOTEMPTY: directory not empty, rename
+  '.../_npx/<hash>/node_modules/sequant' -> '.../_npx/<hash>/node_modules/.sequant-XXXXXXXX'
+```
+
+Because this happens **inside npx, before `sequant serve` runs**, sequant cannot detect or self-heal it — the fix is to clear the stale cache entry.
+
+**Solutions:**
+
+1. Confirm it's the npx cache (not a sequant bug) by running the exact launch command by hand and reading the real error:
+   ```bash
+   npx -y sequant@latest serve
+   # A healthy start prints: "Sequant MCP server started (stdio)"
+   # A cache problem prints the ENOTEMPTY rename error above
+   ```
+
+2. Remove the leftover temp directory (surgical — only touches the stale staging dir):
+   ```bash
+   rm -rf ~/.npm/_npx/*/node_modules/.sequant-*
+   ```
+
+3. If that isn't enough, clear npx's cached copy of sequant more broadly, then let it reinstall:
+   ```bash
+   npm cache clean --force
+   npx -y sequant@latest serve   # re-download; expect the "started (stdio)" line
+   ```
+
+4. Reconnect in Claude Code (re-run `/plugin` or `/mcp`, or restart the session).
+
+**If it recurs on every release:** you're almost certainly still on an `sequant@latest` config. The durable fix is to **pin the version** so reconnects stop reinstalling: run `sequant update` (it rewrites `.mcp.json` to `sequant@<installed version>`), or update the Claude Code plugin (its bundled config is pinned to the release). Multiple Node prefixes on `PATH` (e.g. `fnm`/`nvm` **and** Homebrew) also make npx cache corruption more likely, because different node versions share and race on the same `~/.npm/_npx` cache — standardizing on one node manager helps. As a last resort you can point the MCP entry at a locally-installed binary (`sequant serve` instead of `npx -y sequant@<version> serve`) if you have a global install — but do **not** commit that form to `.mcp.json`, since other contributors rely on the `npx` fallback. See #793.
+
 ## Update Issues
 
 ### Conflicts during update

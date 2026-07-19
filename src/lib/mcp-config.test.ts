@@ -10,16 +10,21 @@ import {
   detectMcpClients,
   addSequantToMcpConfig,
   getSequantMcpConfig,
+  getSequantPackageSpec,
   isSequantInProjectMcpJson,
   createProjectMcpJson,
+  syncSequantMcpPin,
 } from "./mcp-config.js";
 
 describe("mcp-config", () => {
   describe("getSequantMcpConfig", () => {
-    it("should return config with npx command", () => {
+    it("should return config with npx command pinned to the installed version", () => {
       const config = getSequantMcpConfig();
       expect(config.command).toBe("npx");
-      expect(config.args).toEqual(["-y", "sequant@latest", "serve"]);
+      // Pinned to the installed version, not @latest (#793).
+      expect(config.args).toEqual(["-y", getSequantPackageSpec(), "serve"]);
+      expect(config.args).not.toContain("sequant@latest");
+      expect(getSequantPackageSpec()).toMatch(/^sequant@\d+\.\d+\.\d+/);
     });
 
     it("should include cwd for claude-desktop", () => {
@@ -264,7 +269,7 @@ describe("mcp-config", () => {
       expect(content.mcpServers.sequant.command).toBe("npx");
       expect(content.mcpServers.sequant.args).toEqual([
         "-y",
-        "sequant@latest",
+        getSequantPackageSpec(),
         "serve",
       ]);
     });
@@ -372,6 +377,104 @@ describe("mcp-config", () => {
       // Array replaced with proper object
       expect(Array.isArray(content.mcpServers)).toBe(false);
       expect(content.mcpServers.sequant.command).toBe("npx");
+    });
+  });
+
+  describe("syncSequantMcpPin (#793)", () => {
+    const tmpDir = path.join(os.tmpdir(), "sequant-mcp-pin-test-" + Date.now());
+    const mcpPath = () => path.join(tmpDir, ".mcp.json");
+
+    beforeEach(() => {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function writeMcp(sequant: unknown): void {
+      fs.writeFileSync(mcpPath(), JSON.stringify({ mcpServers: { sequant } }));
+    }
+
+    it("rewrites a stale pin to the installed version", () => {
+      writeMcp({ command: "npx", args: ["-y", "sequant@0.0.1", "serve"] });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result.updated).toBe(true);
+      expect(result.from).toBe("sequant@0.0.1");
+      expect(result.to).toBe(getSequantPackageSpec());
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant.args).toEqual([
+        "-y",
+        getSequantPackageSpec(),
+        "serve",
+      ]);
+    });
+
+    it("rewrites an @latest pin to the installed version", () => {
+      writeMcp({ command: "npx", args: ["-y", "sequant@latest", "serve"] });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result.updated).toBe(true);
+      expect(result.from).toBe("sequant@latest");
+      expect(result.to).toBe(getSequantPackageSpec());
+    });
+
+    it("is a no-op when the pin already matches the installed version", () => {
+      writeMcp({
+        command: "npx",
+        args: ["-y", getSequantPackageSpec(), "serve"],
+      });
+
+      const before = fs.readFileSync(mcpPath(), "utf-8");
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({ updated: false, reason: "already-current" });
+      // File untouched.
+      expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(before);
+    });
+
+    it("does not create .mcp.json when it is absent", () => {
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({ updated: false, reason: "no-file" });
+      expect(fs.existsSync(mcpPath())).toBe(false);
+    });
+
+    it("no-ops when there is no sequant entry", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({ mcpServers: { other: { command: "node" } } }),
+      );
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({ updated: false, reason: "no-entry" });
+    });
+
+    it("does not clobber a local-binary override with no sequant@ arg", () => {
+      writeMcp({ command: "sequant", args: ["serve"] });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({ updated: false, reason: "no-pin" });
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant.args).toEqual(["serve"]);
+    });
+
+    it("dryRun previews the change without writing", () => {
+      writeMcp({ command: "npx", args: ["-y", "sequant@0.0.1", "serve"] });
+      const before = fs.readFileSync(mcpPath(), "utf-8");
+
+      const result = syncSequantMcpPin(tmpDir, { dryRun: true });
+
+      expect(result.updated).toBe(true);
+      expect(result.from).toBe("sequant@0.0.1");
+      expect(result.to).toBe(getSequantPackageSpec());
+      // File must be untouched on a dry run.
+      expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(before);
     });
   });
 });
