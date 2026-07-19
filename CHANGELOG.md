@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-07-18
+
 ### Added
 
 - **`sequant stats` surfaces a failure-category breakdown from `.sequant/metrics.json` (#783)** — #761 started recording a bounded-enum `failureCategory` on failed runs, but nothing displayed it. The metrics-based display now shows a **Failure Categories** section next to the outcome bars, counting `MetricRun.failureCategory` over runs that recorded a failure (sorted by count, with percentages). The breakdown counts both `failed` runs (every issue failed) and `partial` runs (at least one issue failed) — a deliberate widening of AC-1's literal "over failed runs" wording, since a partial run's failed issue is equally the answer to "what's killing my runs"; success runs are excluded. Runs with no recorded category (pre-#761 records, or an uncategorized partial) are bucketed as `unclassified` — deliberately distinct from the `unknown` enum value (`unknown` = classified as unknown; `unclassified` = no category recorded). The section is hidden entirely when no run recorded a failure, and `sequant stats --json` includes the same breakdown as `failureCategories`. Cohort filters (`--label`/`--since`) continue to force run-log mode per #640, so the metrics breakdown never renders on a pre-filter corpus. (#783)
