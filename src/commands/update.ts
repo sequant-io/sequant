@@ -19,6 +19,7 @@ import {
 } from "../lib/stacks.js";
 import { writeFile } from "../lib/fs.js";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
+import { syncSequantMcpPin } from "../lib/mcp-config.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
@@ -161,6 +162,19 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       await saveConfig(config);
       console.log(chalk.green("✔ Configuration saved\n"));
     }
+  }
+
+  // Re-pin the project .mcp.json MCP server to the installed version (#793).
+  // Independent of template changes: a version-only upgrade leaves every
+  // template unchanged (so the flow would short-circuit at "Everything is up to
+  // date" below) but should still refresh the pin so the MCP server tracks the
+  // release the user just updated to. Runs here, before that short-circuit.
+  const mcpPin = syncSequantMcpPin(process.cwd(), { dryRun: options.dryRun });
+  if (mcpPin.updated) {
+    const verb = options.dryRun ? "Would update" : "Updated";
+    console.log(
+      chalk.blue(`${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}`),
+    );
   }
 
   // Compute changes using the shared, variable-aware comparison.

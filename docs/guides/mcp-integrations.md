@@ -6,6 +6,8 @@
 
 MCP (Model Context Protocol) servers extend Claude's capabilities with specialized tools. Sequant supports three optional MCP integrations that enhance specific workflows.
 
+> **Looking for Sequant's own MCP server?** This guide covers the *optional third-party* MCPs below. Sequant also ships its **own** MCP server (`sequant serve`, tools `sequant_status`/`sequant_run`/`sequant_logs`), configured in `.mcp.json`. It's pinned to your installed version rather than `@latest` so reconnects don't reinstall on every release (#793) — `sequant init` writes the pin and `sequant update` refreshes it. See [MCP Server → Version pinning](../features/mcp-server.md#add-the-mcp-config), and [Troubleshooting → MCP Server Issues](../troubleshooting.md#mcp-server-issues) if a reconnect fails with `-32000`.
+
 ## Supported MCPs
 
 | MCP Server | Skills Enhanced | Purpose |

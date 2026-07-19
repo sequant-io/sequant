@@ -107,7 +107,8 @@ vi.mock("../lib/mcp-config.js", () => ({
   addSequantToMcpConfig: vi.fn(() => true),
   getSequantMcpConfig: vi.fn(() => ({
     command: "npx",
-    args: ["-y", "sequant@latest", "serve"],
+    // Pinned to the installed version (#793); representative value for the mock.
+    args: ["-y", "sequant@9.9.9", "serve"],
   })),
   isSequantInProjectMcpJson: vi.fn(() => false),
   createProjectMcpJson: vi.fn(() => ({

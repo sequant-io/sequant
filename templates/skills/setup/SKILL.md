@@ -387,7 +387,7 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 
 **MCP tools not available:**
 - Ensure Node.js 22.12+ is installed (`node --version`)
-- The MCP server starts automatically via `npx sequant@latest serve`
+- The MCP server starts automatically via `npx -y sequant@<version> serve` (pinned to your installed version, not `@latest`, so reconnects don't reinstall on every release — see #793)
 - Check Claude Code settings if tools don't appear
 
 **Settings not being picked up:**
