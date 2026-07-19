@@ -8,7 +8,7 @@
     {
       "name": "sequant",
       "description": "AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Includes 17 skills, workflow MCP tools, and pre/post-tool hooks.",
-      "version": "2.8.0",
+      "version": "2.9.0",
       "author": {
         "name": "sequant-io",
         "email": "hello@sequant.io"

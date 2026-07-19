@@ -16,6 +16,12 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.9
+
+- **`--chain` survives a failed link** — re-running a partially-completed chain resumes from its last good link, skipping the completed prefix and rebasing onto that committed tip instead of redoing hours of finished work (#760). A warn-by-default content pre-flight also runs before the first worktree is provisioned, flagging missing ACs, mis-ordered dependencies, predicted file overlaps, and closed issues; `--strict-preflight` makes any warning a hard stop (#762).
+- **Rate limits stop burning hours** — a rate limit hit inside a phase now skips doomed cold-start retries, and the run summary labels the chain halt with its cause and how to resume, instead of cascading into a ~2h retry ladder (#761).
+- **Stale plugin-cache warning** — `pre-tool.sh` now prints a once-per-day, network-free reminder (`claude plugin update sequant@sequant`) when a plugin-channel install has drifted behind the marketplace (#784, #788).
+
 ### What's new in 2.8
 
 - **Clearer failures when an agent stops early** — phases that hit a turn cap now preserve their partial work and halt cleanly for resume instead of discarding it (#739, #733), and rate-limit/out-of-credits failures are named for what they are (with reset time and credit-purchase hints) rather than buried under generic retry noise (#732).

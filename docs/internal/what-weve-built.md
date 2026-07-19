@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.8.0
+# What We've Built: Sequant v2.9.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,14 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.9.0)
+
+- **`--chain` resumes from its last good link** - Re-running a partially-completed chain skips the contiguous prefix of completed links and rebases onto the last good tip, instead of redoing hours of finished work (#760)
+- **`--chain` content pre-flight** - A warn-by-default check runs before the first worktree is provisioned, flagging missing ACs, mis-ordered dependency markers, predicted file overlaps, and closed issues; `--strict-preflight` turns any warning into a hard stop (#762)
+- **Stale plugin-cache warning** - `pre-tool.sh` compares the running plugin's version against the local marketplace clone and prints a once-per-day, network-free remedy line when a plugin-channel install has drifted behind (#784, hardened in #788)
+- **`sequant stats` failure-category breakdown** - Surfaces the bounded-enum `failureCategory` recorded in `.sequant/metrics.json`, counting failure causes across failed and partial runs alongside the outcome bars (#783)
+- **Mid-phase rate-limit classification** - A rate limit inside a phase now skips doomed cold-start retries and the run summary labels the chain halt with its cause and resume affordance, instead of burning ~2h of retry ladder (#761)
+
 ### Recent Additions (v2.8.0)
 
 - **`/assess` picks `sequant run` vs `npx sequant run`** - Probes for a global install and emits the invocation that matches the environment, avoiding npx version-skew in copy-pasted commands (#740)
@@ -1140,7 +1148,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.8.0
+**Current Version:** 2.9.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1150,7 +1158,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.8.0                                │
+│                              SEQUANT v2.9.0                                │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
