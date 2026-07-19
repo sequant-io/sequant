@@ -130,6 +130,27 @@ cleaned up by:
   `worktree-isolation` module
 - `git worktree prune` — git's built-in stale worktree cleanup
 
+### `cleanup-worktree.sh` flags and remote-branch safety
+
+Local teardown (the worktree plus its local branch) always runs, freeing the
+branch lock for a subsequent `gh pr merge --delete-branch`. The **remote**
+branch, however, is hard-gated: it is deleted only when the branch's PR is
+`MERGED` or an explicit override flag is passed. Deleting an open PR's head
+branch makes GitHub close the PR unmerged, so an unmerged PR's remote branch is
+left intact by default.
+
+| Flag | Effect |
+|------|--------|
+| `-y`, `--yes` | Skip the confirmation prompt (for automation). Does **not** override the merge gate on remote deletion. |
+| `--delete-remote` | Delete the remote branch even when the PR is not merged. Still honors the confirmation prompt. |
+| `--force` | Implies both `--yes` and `--delete-remote`. |
+| `-h`, `--help` | Print usage and exit. |
+
+The confirmation prompt only appears when the PR is not merged. In a
+non-interactive context (no TTY) with no confirm flag, the script exits safely
+without changes instead of stalling on `read` — pass `--yes` or `--force` to
+proceed.
+
 ## API Reference
 
 ### `createSubWorktree(issueWorktreePath, agentIndex)`
