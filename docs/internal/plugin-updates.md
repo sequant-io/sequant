@@ -28,17 +28,23 @@ Plugins from Anthropic's official marketplace auto-update by default. Since Sequ
 
 ### For Third-Party Marketplaces (Sequant)
 
-Auto-update is **disabled by default** for third-party plugins. Users get updates in two ways:
+Auto-update is **disabled by default** for third-party plugins. Claude Code
+pins an install to the commit SHA it was installed from and never moves it on
+its own — an install can silently run months behind the marketplace (the
+motivating incident for #784: a 1.20.3 cache through ~15 releases while the
+marketplace clone on the same disk said 2.8.0). Users get updates in two ways:
 
-#### 1. Manual Marketplace Update
+#### 1. Manual Plugin Update
 
 ```bash
-# Update the marketplace catalog
-/plugin marketplace update sequant-io/sequant
-
-# Reinstall to get latest version
-/plugin install sequant
+# Update the installed plugin, then restart Claude Code
+claude plugin update sequant@sequant
 ```
+
+Note the distinction: `/plugin marketplace update sequant-io/sequant`
+refreshes only the local marketplace *listing* — it does not touch any
+installed plugin. The pre-tool hook warns once a day when the installed
+version falls behind the marketplace clone (#784).
 
 #### 2. Enable Auto-Updates
 
@@ -60,7 +66,11 @@ With `autoUpdate: true`, the plugin will be updated when Claude Code restarts.
 
 ## Update Notifications
 
-When a new version is available, users see a notification on Claude Code restart. This applies whether auto-update is enabled or not.
+Do not rely on Claude Code to surface staleness: the #784 incident showed a
+4-month-stale install with no visible signal. Sequant's own pre-tool hook is
+the reliable nudge — it compares the running plugin's version against the
+local marketplace clone and prints a once-a-day stderr warning with the
+update command.
 
 To disable all update notifications:
 ```bash
@@ -252,17 +262,22 @@ npx sequant status
 
 ### Plugin Not Updating
 
-1. Verify marketplace is registered:
+1. Update the installed plugin directly (then restart Claude Code):
+   ```
+   claude plugin update sequant@sequant
+   ```
+
+2. If that fails, verify the marketplace is registered:
    ```
    /plugin marketplace list
    ```
 
-2. Force marketplace refresh:
+3. Force a marketplace listing refresh (does not update installs):
    ```
    /plugin marketplace update sequant-io/sequant
    ```
 
-3. Reinstall plugin:
+4. Last resort — reinstall the plugin:
    ```
    /plugin uninstall sequant
    /plugin install sequant
@@ -280,9 +295,8 @@ Upgrade each independently:
 # npm
 npm update -g sequant
 
-# Plugin (in Claude Code)
-/plugin marketplace update sequant-io/sequant
-/plugin install sequant
+# Plugin (then restart Claude Code)
+claude plugin update sequant@sequant
 ```
 
 ### Downgrading

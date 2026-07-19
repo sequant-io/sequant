@@ -261,6 +261,38 @@ fi
 # Rotate if over 1000 lines to prevent unbounded growth
 rotate_log "$TIMING_LOG"
 
+# === PLUGIN STALENESS CHECK (#784) ===
+# Claude Code pins plugin installs to a commit SHA and never auto-updates
+# them, so an installed cache can run months-old skills/hooks while the
+# marketplace clone on the same disk tracks main and stays current. Compare
+# the running plugin's version against the local marketplace clone and nudge.
+# Warn-only (never blocks, exit code untouched), rate-limited to once per
+# day via a stamp file, zero network, grep/sed only. Gated on the script's
+# own path so repo-local dev copies (hooks/, templates/hooks/,
+# .claude/hooks/) never warn — only real cache installs resolve under
+# */plugins/cache/*.
+_STALE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+if [[ "$_STALE_SCRIPT_DIR" == */plugins/cache/* ]]; then
+    _STALE_STAMP="${_LOG_DIR}/plugin-stale-warned.stamp"
+    _STALE_TODAY="$(date +%Y-%m-%d)"
+    if [[ "$(cat "$_STALE_STAMP" 2>/dev/null)" != "$_STALE_TODAY" ]]; then
+        # The plugin root is one level above hooks/; the plugins root is the
+        # prefix before /plugins/cache/, so a relocated CLAUDE_CONFIG_DIR
+        # works without hardcoding ~/.claude. marketplace.json's only
+        # "version" key is the plugin entry's, so first match is correct.
+        _STALE_RUNNING_JSON="${_STALE_SCRIPT_DIR%/hooks}/.claude-plugin/plugin.json"
+        _STALE_MARKET_JSON="${_STALE_SCRIPT_DIR%%/plugins/cache/*}/plugins/marketplaces/sequant/.claude-plugin/marketplace.json"
+        if [[ -f "$_STALE_RUNNING_JSON" && -f "$_STALE_MARKET_JSON" ]]; then
+            _STALE_RUNNING_VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_STALE_RUNNING_JSON" 2>/dev/null | head -1)
+            _STALE_MARKET_VER=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_STALE_MARKET_JSON" 2>/dev/null | head -1)
+            if [[ -n "$_STALE_RUNNING_VER" && -n "$_STALE_MARKET_VER" && "$_STALE_RUNNING_VER" != "$_STALE_MARKET_VER" ]]; then
+                echo "sequant plugin v${_STALE_RUNNING_VER} is stale (marketplace has v${_STALE_MARKET_VER}) — run: claude plugin update sequant@sequant, then restart Claude Code" >&2
+                printf '%s' "$_STALE_TODAY" > "$_STALE_STAMP" 2>/dev/null || true
+            fi
+        fi
+    fi
+fi
+
 # === CATASTROPHIC BLOCKS ===
 # These should NEVER run in any automated context
 # Only check Bash commands — Write/Edit content may contain these as config strings
