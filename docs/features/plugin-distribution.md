@@ -78,6 +78,33 @@ sequant_logs       # Review past run results
 
 **Plugin** is for interactive Claude Code users. **npm** is for power users, CI pipelines, and programmatic access.
 
+## Keeping the plugin up to date
+
+**Plugins do not auto-update.** Claude Code pins an install to the version (commit SHA) you installed it at and never moves it on its own — even as new releases ship. An install can silently run months-old skills and hooks while newer versions are available.
+
+To pick up a new release, update the installed plugin and restart Claude Code:
+
+```
+claude plugin update sequant@sequant
+```
+
+Note the distinction from refreshing the marketplace listing:
+
+| Command | What it does |
+|---------|--------------|
+| `claude plugin update sequant@sequant` | Updates the **installed plugin** to the latest marketplace version (restart Claude Code after). |
+| `/plugin marketplace update sequant-io/sequant` | Refreshes only the local marketplace **listing** — it does not touch any installed plugin. |
+
+### Staleness warning
+
+`pre-tool.sh` compares the running plugin's version against the local marketplace clone and prints a single warn-only line to stderr when the install falls behind:
+
+```
+sequant plugin v<installed> is stale (marketplace has v<latest>) — run: claude plugin update sequant@sequant, then restart Claude Code
+```
+
+The check is zero-network (grep/sed/awk only), never blocks the tool call, and is rate-limited to once per day via a stamp file. It only fires for real plugin-cache installs (paths under `plugins/cache/`) — repo-local dev copies never warn. See [Plugin Updates & Versioning](../internal/plugin-updates.md) for the full versioning and auto-update opt-in details.
+
 ## Configuration
 
 After `/sequant:setup`, edit `.sequant/settings.json` to customize:

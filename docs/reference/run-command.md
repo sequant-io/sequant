@@ -166,6 +166,8 @@ This is useful for complex issues where initial implementation may need refineme
 npx sequant run 42 --quality-loop --max-iterations 5
 ```
 
+When a phase fails on one iteration but **recovers** on a later one, the issue is reported as passed consistently across the live view, the summary table, and the JSON log — a transient failure that the loop later fixes is not left showing as `failed`. The summary's failure reason reflects the *last* failing attempt, not the first.
+
 ### Chain Mode
 
 Run dependent issues where each branches from the previous:
@@ -209,6 +211,14 @@ Resume is the standard chain resume: re-running the identical command skips the 
 **Checkpoint Commits:**
 
 After each issue passes QA, a checkpoint commit is automatically created. This serves as a recovery point if later issues in the chain fail.
+
+**Resuming a partially-completed chain:**
+
+If a chain stops part-way (a failed link, a broken rebase, or a rate-limit halt), just **re-run the identical command** — no extra flag needed. Sequant skips the contiguous prefix of links that are already `ready_for_merge`/`merged` and resumes at the first incomplete link, provisioning it from (and rebasing it onto) the last completed link's committed tip rather than `main`. Skipped links are listed explicitly in the run output with their resume commit.
+
+- A `merged` prefix resumes from the base branch (its work is already in `origin/main`).
+- If a completed link's branch and checkpoint are both gone and its tip cannot be reconstructed, resume **fails fast** with a clear message instead of silently building the successor on the wrong base.
+- `--force` bypasses resume entirely and redoes the whole chain from scratch.
 
 The checkpoint stages **only the files touched by the current issue's commits** (computed via `git diff --name-only baseBranch...HEAD`). Files dirty outside that scope — for example, `.claude/memory.md` or `.sequant-manifest.json` modified by `sequant sync` or mid-run Claude Code memory writes — are **not** swept into the checkpoint.
 
