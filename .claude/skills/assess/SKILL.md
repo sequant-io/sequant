@@ -668,16 +668,78 @@ Every separator and section is conditional. If there are no warnings, no chain, 
 
 After displaying output, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
 
-If confirmed, post a structured comment to each issue via `gh issue comment`. Each posted comment should include:
-- **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, prepend `buildSupersessionHeader(priors)` immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also emit a `⚠ Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning in the dashboard. When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for full protocol.
-- The action headline (`→ ACTION — reason`)
-- The workflow (for PROCEED/REWRITE)
-- Standard HTML markers on separate lines:
-  ```
-  <!-- assess:action=PROCEED -->
-  <!-- assess:phases=spec,exec,qa -->
-  <!-- assess:quality-loop=true -->
-  ```
+If confirmed, post a structured comment to each issue via `gh issue comment`. **Each posted comment is rendered with the single-mode template that matches that issue's verdict** — the same `#### PROCEED / CLOSE / CLARIFY / PARK / MERGE / REWRITE` templates defined under [Single Mode (1 issue)](#single-mode-1-issue) above. There is no separate, thinner shape for posted comments: the batch **dashboard** in chat and the **posted comment** on each issue are the only two formats, and the posted comment always reuses the single-mode template for its verdict. (Note: this is *not* a reversal of #453 — the single-mode templates are themselves the streamlined, scan-friendly format.)
+
+Render each comment as follows:
+
+1. **Pick the template by verdict.** For issue `#N`'s action, use the matching single-mode template (`#### PROCEED`, `#### REWRITE`, etc.) and fill it exactly as single mode would, including — where that template defines them:
+   - the `#<N> — <Title>` / `<State> · <labels>` header,
+   - the section separators the template defines,
+   - the `Commands:` block with the **resolved `CMD_PREFIX`** (Step-1 probe — `sequant` when a global is on PATH, else `npx sequant`) and the **real current flags** for that issue — the same flags the dashboard's `Commands:` line assigned to `#N` (e.g. `-Q`, `--security-review`, `--phases exec,qa`),
+   - the `<phases> · <N> ACs` line.
+
+   Reference these templates rather than re-copying their bodies here — they are the single source of truth (avoids drift). Verdicts whose template omits a field (CLOSE / CLARIFY / PARK / MERGE have no `Commands:` or `<phases> · <N> ACs` line) simply omit it, exactly as the template shows.
+
+2. **Carry per-issue warnings.** Any `⚠` line from the batch dashboard that concerns `#N` (collision/conflict, churn, staleness, dual-concern, partial-AC) is placed in that issue's comment in the template's warning slot — the `⚠ ...` region between the trailing separators. Drop the leading `#N` from the dashboard warning text, since the comment is already scoped to that issue. For CLOSE / CLARIFY / PARK / MERGE templates (which have a single trailing separator block, no `Commands:`), place the `⚠` in the same between-separators region.
+
+3. **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, prepend `buildSupersessionHeader(priors)` immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also emit the `⚠ Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning in the warning slot (per step 2). When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for full protocol.
+
+4. **Machine markers.** The posted comment keeps the single-mode **3-line** marker block — one directive per line, and only those directives the verdict defines:
+   ```
+   <!-- assess:action=PROCEED -->
+   <!-- assess:phases=spec,exec,qa -->
+   <!-- assess:quality-loop=true -->
+   ```
+   Do **not** use the batch dashboard's compact one-line marker (`<!-- #N assess:action=… assess:phases=… -->`) in a posted comment — that form is for the chat dashboard only.
+
+The chat batch dashboard is unchanged — this step governs only what lands on each issue.
+
+### Batch: dashboard vs posted comment
+
+A batch run shows one scannable dashboard in chat, then posts one single-mode comment per issue. The two are distinct by design: the dashboard is a triage table across all issues; each comment is the full single-mode assessment for that one issue.
+
+Dashboard (chat) — excerpt for #458:
+
+```
+ #    Action     Reason                              Run
+ 458  PROCEED    Parallel UX + race condition          spec → exec → qa
+────────────────────────────────────────────────────────────────
+Commands:
+  npx sequant run 458 -Q
+────────────────────────────────────────────────────────────────
+⚠ #458  Dual concern (UX + race) across 4 files
+
+Flags:
+  -Q     dual concern across 4 files
+────────────────────────────────────────────────────────────────
+
+<!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+```
+
+Posted comment on issue #458 (single-mode PROCEED template — `#N` dropped from the warning, 3-line markers):
+
+```
+#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ PROCEED — Both root causes confirmed in codebase
+
+Commands:
+  npx sequant run 458 -Q
+
+spec → exec → qa · 8 ACs
+
+Flags:
+  -Q     dual concern across 4 files
+────────────────────────────────────────────────────────────────
+⚠ Dual concern (UX + race) across 4 files
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PROCEED -->
+<!-- assess:phases=spec,exec,qa -->
+<!-- assess:quality-loop=true -->
+```
 
 ## Notes
 
@@ -708,4 +770,5 @@ If confirmed, post a structured comment to each issue via `gh issue comment`. Ea
 - [ ] Supersession header prepended when prior assess comments exist (`buildSupersessionHeader`)
 - [ ] Churn warning included in dashboard when `detectChurn(...).isChurn === true`
 - [ ] Batch mode: table is the primary output, no per-issue detail sections
+- [ ] Persist step: each posted comment uses the single-mode verdict template (not the dashboard shape or a thinner form), with per-issue `⚠` carried into the warning slot and the 3-line marker block
 - [ ] Single mode: focused summary with separators between sections
