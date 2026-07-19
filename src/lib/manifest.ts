@@ -3,6 +3,7 @@
  */
 
 import { readFile, writeFile, fileExists } from "./fs.js";
+import { compareVersions } from "./version-check.js";
 import type { PackageManager } from "./stacks.js";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -35,22 +36,6 @@ const PACKAGE_VERSION = pkg.version as string;
 
 export function getPackageVersion(): string {
   return PACKAGE_VERSION;
-}
-
-/**
- * Compare two semver versions.
- * Returns: 1 if a > b, -1 if a < b, 0 if equal
- */
-function compareVersions(a: string, b: string): number {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const numA = partsA[i] || 0;
-    const numB = partsB[i] || 0;
-    if (numA > numB) return 1;
-    if (numA < numB) return -1;
-  }
-  return 0;
 }
 
 export interface Manifest {

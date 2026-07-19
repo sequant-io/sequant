@@ -249,18 +249,13 @@ export function isCacheFresh(cache: VersionCache): boolean {
  * Fetch the latest version from npm registry with timeout
  */
 export async function fetchLatestVersion(): Promise<string | null> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), VERSION_CHECK_TIMEOUT);
-
   try {
     const response = await fetch(NPM_REGISTRY_URL, {
-      signal: controller.signal,
+      signal: AbortSignal.timeout(VERSION_CHECK_TIMEOUT),
       headers: {
         Accept: "application/json",
       },
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return null;
@@ -269,7 +264,6 @@ export async function fetchLatestVersion(): Promise<string | null> {
     const data = (await response.json()) as { version?: string };
     return data.version || null;
   } catch {
-    clearTimeout(timeoutId);
     return null;
   }
 }
