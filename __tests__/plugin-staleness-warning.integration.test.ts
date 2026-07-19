@@ -20,7 +20,14 @@
 
 import { describe, it, expect, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, cpSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  writeFileSync,
+  cpSync,
+  readFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,15 +67,19 @@ interface StagedInstall {
  *
  *   <root>/plugins/cache/sequant/sequant/<runningVersion>/hooks/pre-tool.sh
  *   <root>/plugins/cache/sequant/sequant/<runningVersion>/.claude-plugin/plugin.json
- *   <root>/plugins/marketplaces/sequant/.claude-plugin/marketplace.json
+ *   <root>/plugins/marketplaces/<marketplaceDir>/.claude-plugin/marketplace.json
  *
  * Pass `marketplaceJson: null` to omit the marketplace clone entirely, or a
- * string to control its exact (possibly unparsable) content.
+ * string to control its exact (possibly unparsable) content. `marketplaceDir`
+ * controls the marketplace clone's directory name (default "sequant"); pass a
+ * different name to prove the check scans for the clone rather than assuming
+ * the directory is named "sequant" (#788 AC-1).
  */
 function stageInstall(
   hookSource: string,
   runningVersion: string,
   marketplaceJson: string | null,
+  marketplaceDir = "sequant",
 ): StagedInstall {
   const root = mkdtempSync(join(tmpdir(), "plugin-stale-"));
   roots.push(root);
@@ -94,7 +105,7 @@ function stageInstall(
       root,
       "plugins",
       "marketplaces",
-      "sequant",
+      marketplaceDir,
       ".claude-plugin",
     );
     mkdirSync(marketDir, { recursive: true });
@@ -252,5 +263,145 @@ describe.each(HOOK_COPIES)(
       expect(code).toBe(0);
       expect(warningLines(stderr)).toHaveLength(0);
     });
+
+    // #788 AC-1: the marketplace clone is located by scanning, so a clone
+    // whose directory is NOT named "sequant" (Claude Code may name it after
+    // the source slug) is still found. This is the gap the pre-#788 hardcoded
+    // path missed — and which the old test could not catch because it staged
+    // the exact directory name the code assumed.
+    it("#788 AC-1: finds the marketplace clone under a non-'sequant' dir name", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "1.20.3",
+        marketplaceWithVersion("2.8.0"),
+        "sequant-io", // clone dir named differently from "sequant"
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      const lines = warningLines(stderr);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain("marketplace has v2.8.0");
+    });
+
+    // #788 AC-1: a marketplace clone that does NOT declare the sequant plugin
+    // is skipped (no false version read from an unrelated marketplace).
+    it("#788 AC-1: ignores a marketplace clone that does not list sequant", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "1.20.3",
+        JSON.stringify({
+          name: "other-marketplace",
+          plugins: [{ name: "something-else", version: "9.9.9" }],
+        }),
+        "other-marketplace",
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      expect(warningLines(stderr)).toHaveLength(0);
+    });
+
+    // #788 AC-2: the install is AHEAD of the marketplace — not stale, silent.
+    // The pre-#788 string-inequality check warned here incorrectly.
+    it("#788 AC-2: no warning when the install is ahead of the marketplace", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "3.0.0",
+        marketplaceWithVersion("2.8.0"),
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      expect(warningLines(stderr)).toHaveLength(0);
+    });
+
+    // #788 AC-2: behind by a single patch level still warns.
+    it("#788 AC-2: warns when behind by a patch level (2.8.0 < 2.8.1)", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "2.8.0",
+        marketplaceWithVersion("2.8.1"),
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      expect(warningLines(stderr)).toHaveLength(1);
+    });
+
+    // #788 AC-2: numeric (not lexicographic) component compare — 1.20.3 is
+    // AHEAD of 1.9.0 because 20 > 9, so it must stay silent. A string compare
+    // would treat "1.20.3" != "1.9.0" and warn.
+    it("#788 AC-2: numeric component compare (1.20.3 is ahead of 1.9.0)", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "1.20.3",
+        marketplaceWithVersion("1.9.0"),
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      expect(warningLines(stderr)).toHaveLength(0);
+    });
+
+    // #788 AC-2: trailing-zero equivalence — "2.8" equals "2.8.0", silent.
+    it("#788 AC-2: treats 2.8 and 2.8.0 as equal (no warning)", () => {
+      const { hookPath } = stageInstall(
+        hookSource,
+        "2.8",
+        marketplaceWithVersion("2.8.0"),
+      );
+      const { code, stderr } = runHook(hookPath);
+      expect(code).toBe(0);
+      expect(warningLines(stderr)).toHaveLength(0);
+    });
   },
 );
+
+/**
+ * Extract the "PLUGIN STALENESS CHECK" block from a hook file: from its
+ * `# === PLUGIN STALENESS CHECK` header up to the next `# === ` section.
+ */
+function extractStalenessBlock(hookPath: string): string {
+  const src = readFileSync(hookPath, "utf8");
+  const start = src.indexOf("# === PLUGIN STALENESS CHECK");
+  expect(start).toBeGreaterThan(-1);
+  const after = src.indexOf("\n# === ", start + 1);
+  return after === -1 ? src.slice(start) : src.slice(start, after);
+}
+
+// #788 AC-3: the staleness check must never touch the network. This guards
+// against a future edit introducing a network-invoking command into the
+// block — the whole point of the feature is a zero-network local comparison.
+describe.each(HOOK_COPIES)(
+  "plugin staleness check contains no network commands (#788 AC-3) [%s]",
+  (_label, hookPath) => {
+    it("invokes no network commands in the staleness block", () => {
+      const block = extractStalenessBlock(hookPath);
+      // Match the tools as command words (start of line or after a shell
+      // operator/whitespace), so the substring "git" inside a comment word
+      // like "digit" cannot trip the guard.
+      const networkTool =
+        /(^|[\s;&|(])(curl|wget|nc|ncat|ping|ssh|scp|gh|git|npm|npx|http|fetch)([\s;&|)]|$)/m;
+      const match = block.match(networkTool);
+      expect(
+        match,
+        match ? `unexpected network-capable command: ${match[0].trim()}` : "",
+      ).toBeNull();
+    });
+  },
+);
+
+// #788 AC-4: the generated marketplace README must document that plugins do
+// not auto-update and show the `claude plugin update` command. #787 added
+// this note to the prepare-marketplace.ts template but only verified it by
+// manual regeneration; this asserts the template keeps it.
+describe("generated marketplace README documents plugin updates (#788 AC-4)", () => {
+  const templateSrc = readFileSync(
+    join(REPO_ROOT, "scripts", "prepare-marketplace.ts"),
+    "utf8",
+  );
+
+  it("template mentions that plugins do not auto-update", () => {
+    expect(templateSrc.toLowerCase()).toContain("auto-update");
+  });
+
+  it("template shows the `claude plugin update` command", () => {
+    expect(templateSrc).toContain("claude plugin update sequant@sequant");
+  });
+});
