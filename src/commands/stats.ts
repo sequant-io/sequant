@@ -424,13 +424,18 @@ function loadMetrics(): Metrics | null {
 }
 
 /**
- * Compute the failure-category breakdown over failed runs (#783).
+ * Compute the failure-category breakdown over runs that recorded a failure —
+ * outcome "failed" (every issue failed) or "partial" (at least one issue
+ * failed) (#783).
  *
- * Only runs with outcome === "failed" are counted — partial runs may carry a
- * failureCategory (recorded when >=1 issue fails) but are excluded per the
- * issue's "over failed runs" contract. Failed runs without the field (pre-#761
- * records) are bucketed as "unclassified", never dropped and never conflated
- * with the "unknown" enum value.
+ * NOTE — deviation from AC-1's literal "over failed runs" wording: partial runs
+ * also carry a failureCategory (recorded whenever >=1 issue fails) and are
+ * genuine signal for "what's killing my runs", so they are counted here by
+ * explicit user decision. Success runs never carry the field and are excluded.
+ *
+ * Runs without the field (pre-#761 records, or a partial whose failure was
+ * never categorized) are bucketed as "unclassified" — never dropped and never
+ * conflated with the "unknown" enum value.
  *
  * Pure function of the passed runs array, so any upstream cohort filtering is
  * automatically respected (computed after filtering, not before).
@@ -440,7 +445,7 @@ function calculateFailureCategoryBreakdown(
 ): FailureCategoryBucket[] {
   const counts = new Map<FailureCategory | "unclassified", number>();
   for (const run of runs) {
-    if (run.outcome !== "failed") continue;
+    if (run.outcome === "success") continue;
     const category = run.failureCategory ?? "unclassified";
     counts.set(category, (counts.get(category) ?? 0) + 1);
   }
@@ -678,19 +683,23 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
   }
 
   // Failure-category breakdown (#783) \u2014 adjacent to the outcome bars above.
-  // Hidden entirely when there are no failed runs (AC-3).
-  if (analytics.failedCount > 0 && analytics.failureCategories.length > 0) {
-    const runNoun = analytics.failedCount === 1 ? "failed run" : "failed runs";
+  // Counts runs that recorded a failure (outcome "failed" or "partial"); hidden
+  // entirely when there are none (AC-3).
+  if (analytics.failureCategories.length > 0) {
+    const failureRunCount = analytics.failureCategories.reduce(
+      (sum, b) => sum + b.count,
+      0,
+    );
+    const runNoun =
+      failureRunCount === 1 ? "run with a failure" : "runs with a failure";
     console.log(
-      ui.sectionHeader(
-        `Failure Categories (${analytics.failedCount} ${runNoun})`,
-      ),
+      ui.sectionHeader(`Failure Categories (${failureRunCount} ${runNoun})`),
     );
     const pad = Math.max(
       ...analytics.failureCategories.map((b) => b.category.length),
     );
     for (const bucket of analytics.failureCategories) {
-      const pct = ((bucket.count / analytics.failedCount) * 100).toFixed(0);
+      const pct = ((bucket.count / failureRunCount) * 100).toFixed(0);
       console.log(
         `  ${bucket.category.padEnd(pad)}  ${bucket.count} (${pct}%)`,
       );
