@@ -199,7 +199,7 @@ If a successor cannot be rebased onto its predecessor — a merge conflict, or (
 
 **Rate-limit halts fail fast and are labeled:**
 
-A Claude rate limit hit mid-chain used to manifest as cascading phase timeouts — each retry burning up to a full `--timeout` window against the same closed limit. Sequant now classifies rate limits from the SDK's structured signals (including ones that manifest as a hang): a limit whose reset lies more than a few minutes out **skips all phase retries and the MCP fallback** and halts the chain immediately, while a transient throttle is retried with short exponential backoff. When a chain halts this way, the run summary restates the cause and what to do next:
+A Claude rate limit or an "Out of credits" billing failure hit mid-chain used to manifest as cascading phase timeouts — each retry burning up to a full `--timeout` window against the same closed limit. Sequant now classifies rate limits and billing failures from the SDK's structured signals (including ones that manifest as a hang): a limit whose reset lies more than a few minutes out (or an out-of-credits failure) **skips all phase retries and the MCP fallback** and halts the chain immediately, while a transient throttle is retried with short exponential backoff. The **`-Q` quality loop honors this halt too** — it will not spawn `/loop` or burn its remaining iterations on a closed window, so a billing/rate-limit stop surfaces its real cause instead of cascading into a downstream `QA completed without a parseable verdict`. When a chain halts this way, the run summary restates the cause and what to do next:
 
 ```
 ⚠️  Rate limited — resets at 14:30 — chain halted at #102.
