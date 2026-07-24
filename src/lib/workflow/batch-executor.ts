@@ -39,7 +39,7 @@ import {
   executePhaseWithRetry,
   isWindowExhaustedRateLimit,
 } from "./phase-executor.js";
-import { BillingError, resetsAtToMs } from "../errors.js";
+import { BillingError } from "../errors.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
 import {
@@ -480,20 +480,22 @@ export function isBillingOrWindowHalt(result: PhaseResult): boolean {
 
 /**
  * Human-readable halt reason for a billing / rate-limit-window failure (#799
- * AC-3). Surfaces the driver's real cause (`Out of credits` / rate-limit
- * message) and appends the reset time when the SDK provided one, so the
- * phase-failed line and run summary name the actual cause instead of a
- * downstream `QA completed without a parseable verdict`.
+ * AC-3). Surfaces the driver's real cause verbatim — `result.error` is already
+ * the well-formatted message the driver built via `formatRateLimitMessage`
+ * (`Out of credits` for billing, `Rate limited — resets at <local time>` for a
+ * throttle with a known reset), so the phase-failed line and run summary name
+ * the actual cause instead of a downstream `QA completed without a parseable
+ * verdict`.
+ *
+ * Do NOT re-append `resetsAt` here: the rate-limit message already carries the
+ * reset time, and doing so produced a doubled, timezone-inconsistent string
+ * (`… resets at 07-24 14:32 — resets at 2026-…Z`). Credits failures carry no
+ * reset time by design (they need purchasing, not a window wait).
  *
  * @internal Exported for testing
  */
 export function billingHaltReason(result: PhaseResult): string {
-  const base = result.error ?? "Out of credits";
-  const resetsAt = result.structuredError?.metadata.resetsAt;
-  if (typeof resetsAt === "number") {
-    return `${base} — resets at ${new Date(resetsAtToMs(resetsAt)).toISOString()}`;
-  }
-  return base;
+  return result.error ?? "Out of credits";
 }
 
 export async function runIssueWithLogging(

@@ -749,6 +749,18 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
     mockExecutePhase.mockResolvedValue(billingResult);
 
     const onProgress = vi.fn();
+    // Spy state manager so AC-4 (resumable, not a hard failure) can be asserted
+    // on the actual status write, not just the returned success flag.
+    const updateIssueStatus = vi.fn();
+    const stateManager = {
+      getIssueState: vi.fn(),
+      initializeIssue: vi.fn(),
+      updateIssueStatus,
+      updatePRInfo: vi.fn(),
+      updatePhaseStatus: vi.fn(),
+      updateResumeHandle: vi.fn(),
+      updateWorktreeInfo: vi.fn(),
+    };
 
     const result = await runIssueWithLogging({
       ...makeCtx({
@@ -762,6 +774,10 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
         options: { autoDetectPhases: false },
       }),
       onProgress,
+      services: {
+        logWriter: null,
+        stateManager: stateManager as never,
+      },
     });
 
     // AC-1: exec ran exactly once — no /loop spawn, no second exec attempt.
@@ -780,21 +796,31 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
 
     // AC-3: metrics category is `billing` (via deriveFailureCategory).
     expect(result.failureCategory).toBe("billing");
-    // AC-4: not a hard success; state stays resumable (no AC_NOT_MET recorded).
+    // AC-4: not a hard success; final state is `in_progress` (resumable), and
+    // it is never marked `ready_for_merge` — so a re-run resumes the link.
     expect(result.success).toBe(false);
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("in_progress");
+    expect(finalStatuses).not.toContain("ready_for_merge");
   });
 
-  it("halts on a window-exhausted rate limit and surfaces the reset time (rate-limit variant)", async () => {
-    // resetsAt an hour out (in seconds) → window exhausted, not transient.
+  it("halts on a window-exhausted rate limit and surfaces the reset time exactly once (rate-limit variant)", async () => {
+    // resetsAt an hour out (in seconds) → window exhausted, not transient. The
+    // driver already formats the reset time INTO result.error (see
+    // formatRateLimitMessage / claude-code driver), so billingHaltReason must
+    // surface it verbatim — NOT re-append a second, timezone-inconsistent copy.
     const resetsAtSeconds = Math.floor(Date.now() / 1000) + 3600;
     const rateLimitResult: PhaseResult = {
       phase: "exec",
       success: false,
       durationSeconds: 5,
-      error: "Rate limited",
-      structuredError: new RateLimitError("Rate limited", {
-        resetsAt: resetsAtSeconds,
-      }),
+      error: "Rate limited — resets at 07-24 14:32",
+      structuredError: new RateLimitError(
+        "Rate limited — resets at 07-24 14:32",
+        {
+          resetsAt: resetsAtSeconds,
+        },
+      ),
     };
     mockExecutePhase.mockReset();
     mockExecutePhase.mockResolvedValue(rateLimitResult);
@@ -819,11 +845,14 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
     expect(calledPhases).toEqual(["exec"]);
     expect(calledPhases).not.toContain("loop");
 
-    // AC-3: failed event names the cause and includes the reset time.
+    // AC-3: failed event names the cause and includes the reset time — exactly
+    // once (regression guard for the doubled-reset-time bug).
     const failedCall = onProgress.mock.calls.find(
       (c) => c[1] === "exec" && c[2] === "failed",
     );
-    expect((failedCall![3] as { error: string }).error).toMatch(/resets at/i);
+    const failedError = (failedCall![3] as { error: string }).error;
+    expect(failedError).toBe("Rate limited — resets at 07-24 14:32");
+    expect(failedError.match(/resets at/gi)).toHaveLength(1);
 
     expect(result.failureCategory).toBe("rate_limit");
     expect(result.success).toBe(false);
