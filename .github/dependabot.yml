@@ -13,6 +13,12 @@ updates:
           - "minor"
           - "patch"
     open-pull-requests-limit: 10
+    ignore:
+      # TypeScript 7 (native port) is outside the peer range of typescript-eslint
+      # 8.x (peer: >=4.8.4 <6.1.0), so the major bump fails `npm ci` with ERESOLVE.
+      # Blocked until typescript-eslint ships TS7 support. Re-evaluate then. (#780)
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
