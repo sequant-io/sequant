@@ -668,16 +668,19 @@ export async function runIssueWithLogging(
         /* progress errors must not halt */
       }
     } else {
-      // Mirror the main phase loop (#739): a turn-capped spec phase surfaces the
-      // distinct "partial output preserved" signal rather than a generic failure
-      // reason, so the cap is recognizable on the spec path too (it has its own
-      // failure handling, separate from the main loop). The partial output is
-      // preserved in `phaseResults` (pushed above) and the run still halts via
-      // the early return below.
+      // Mirror the main phase loop (#739/#799): a turn-capped spec phase surfaces
+      // the distinct "partial output preserved" signal, and a billing /
+      // rate-limit-window failure names the real cause — so both are recognizable
+      // on the spec path too (it has its own failure handling, separate from the
+      // main loop). The spec phase already halts on any failure via the early
+      // return below; routing billing through billingHaltReason only keeps the
+      // message/fallback symmetric with the main loop.
       const extra = {
         error: specResult.capped
           ? "turn cap reached — partial output preserved (resume to continue)"
-          : (specResult.error ?? "unknown"),
+          : isBillingOrWindowHalt(specResult)
+            ? billingHaltReason(specResult)
+            : (specResult.error ?? "unknown"),
       };
       emitProgressLine(issueNumber, "spec", "failed", extra);
       try {

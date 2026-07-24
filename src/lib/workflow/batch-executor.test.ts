@@ -858,6 +858,47 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
     expect(result.success).toBe(false);
   });
 
+  it("surfaces the billing cause on a spec-phase failure and halts (sibling site)", async () => {
+    // The spec phase has its own failure handling, separate from the main loop,
+    // and early-returns on any failure (no /loop). A billing spec failure must
+    // still name the real cause + record failureCategory `billing` — symmetric
+    // with the #739 capped spec sibling. autoDetectPhases:true routes through
+    // the spec block.
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "spec",
+      success: false,
+      durationSeconds: 5,
+      error: "Out of credits",
+      structuredError: new BillingError("Out of credits"),
+    } as PhaseResult);
+
+    const onProgress = vi.fn();
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 801,
+        title: "Out of credits in spec",
+        options: { autoDetectPhases: true },
+      }),
+      onProgress,
+    });
+
+    // Only spec ran — early return, no exec/qa/loop.
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["spec"]);
+    expect(calledPhases).not.toContain("loop");
+
+    const specFailed = onProgress.mock.calls.find(
+      (c) => c[1] === "spec" && c[2] === "failed",
+    );
+    expect((specFailed![3] as { error: string }).error).toMatch(
+      /out of credits/i,
+    );
+    expect(result.failureCategory).toBe("billing");
+    expect(result.success).toBe(false);
+  });
+
   it("does NOT halt on a transient (metadata-absent) rate limit (AC-2 fallback)", () => {
     // A rate limit with no resetsAt has no timing signal → keep today's
     // retry/loop behavior rather than skipping iterations.
