@@ -35,7 +35,11 @@ import {
   readCacheMetrics,
   filterResumedPhases,
 } from "./worktree-manager.js";
-import { executePhaseWithRetry } from "./phase-executor.js";
+import {
+  executePhaseWithRetry,
+  isWindowExhaustedRateLimit,
+} from "./phase-executor.js";
+import { BillingError, resetsAtToMs } from "../errors.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
 import {
@@ -450,6 +454,48 @@ export function deriveFailureCategory(
   return errorTypeToCategory(typedError);
 }
 
+/**
+ * "Halt, don't loop" predicate for the outer `-Q` quality loop (#799).
+ *
+ * A billing / out-of-credits failure (`BillingError`) or a window-exhausted
+ * rate limit (reset hours away, per `isWindowExhaustedRateLimit`) cannot be
+ * recovered by re-running the phase — every retry re-spawns into the same
+ * closed window and, worse, mislabels the halt as a downstream
+ * `QA completed without a parseable verdict`. Mirrors the `haltedByCap` (#739)
+ * treatment: surface the real cause and halt so the user resumes once credits
+ * or the rate-limit window are restored.
+ *
+ * A transient / metadata-absent rate limit is NOT a halt: it returns false and
+ * keeps today's outer-loop behavior (the inner retry ladder in `phase-executor`
+ * handles its backoff, per #761 AC-4/AC-9).
+ *
+ * @internal Exported for testing
+ */
+export function isBillingOrWindowHalt(result: PhaseResult): boolean {
+  return (
+    result.structuredError instanceof BillingError ||
+    isWindowExhaustedRateLimit(result.structuredError)
+  );
+}
+
+/**
+ * Human-readable halt reason for a billing / rate-limit-window failure (#799
+ * AC-3). Surfaces the driver's real cause (`Out of credits` / rate-limit
+ * message) and appends the reset time when the SDK provided one, so the
+ * phase-failed line and run summary name the actual cause instead of a
+ * downstream `QA completed without a parseable verdict`.
+ *
+ * @internal Exported for testing
+ */
+export function billingHaltReason(result: PhaseResult): string {
+  const base = result.error ?? "Out of credits";
+  const resetsAt = result.structuredError?.metadata.resetsAt;
+  if (typeof resetsAt === "number") {
+    return `${base} — resets at ${new Date(resetsAtToMs(resetsAt)).toISOString()}`;
+  }
+  return base;
+}
+
 export async function runIssueWithLogging(
   ctx: IssueExecutionContext,
 ): Promise<IssueResult> {
@@ -841,6 +887,11 @@ export async function runIssueWithLogging(
   // retry too, not just the inner /loop spawn — re-running a capped phase
   // would only cap again, and "surface + halt" means the user resumes.
   let haltedByCap = false;
+  // Set when a phase fails with a billing / out-of-credits error or a
+  // window-exhausted rate limit (#799): like the turn cap, re-running the phase
+  // (or spawning /loop) cannot succeed while the window is closed, so halt the
+  // outer quality loop and let the user resume once credits/window are restored.
+  let haltedByBilling = false;
 
   while (iteration < maxIterations) {
     iteration++;
@@ -936,7 +987,12 @@ export async function runIssueWithLogging(
         const extra = {
           error: result.capped
             ? "turn cap reached — partial output preserved (resume to continue)"
-            : (result.error ?? "unknown"),
+            : isBillingOrWindowHalt(result)
+              ? // Billing / rate-limit-window halt (#799): name the real cause so
+                // the run summary doesn't cascade into a downstream
+                // `QA completed without a parseable verdict`.
+                billingHaltReason(result)
+              : (result.error ?? "unknown"),
           iteration,
         };
         emitProgressLine(issueNumber, phase, "failed", extra);
@@ -1042,13 +1098,27 @@ export async function runIssueWithLogging(
         if (result.capped) {
           haltedByCap = true;
         }
+        // Billing / rate-limit-window failure (#799): halt the outer quality
+        // loop for the same reason as the turn cap — re-running the phase or
+        // spawning /loop cannot succeed while credits/window are exhausted, and
+        // doing so mislabels the halt as a downstream unparseable-verdict error.
+        if (isBillingOrWindowHalt(result)) {
+          haltedByBilling = true;
+        }
 
         // If quality loop enabled, run loop phase to fix issues.
         // A turn-capped phase (#739) is incomplete, not a genuine quality
         // failure: skip the loop and halt cleanly ("surface + halt"). Spawning
         // /loop on partial output would act on incomplete work — exactly the
         // risk the capped path is meant to avoid. The user resumes instead.
-        if (useQualityLoop && iteration < maxIterations && !result.capped) {
+        // A billing / rate-limit-window halt (#799) is skipped for the same
+        // reason: /loop would re-spawn into the same closed window.
+        if (
+          useQualityLoop &&
+          iteration < maxIterations &&
+          !result.capped &&
+          !haltedByBilling
+        ) {
           // #624 Item 3 (AC-3.3): the loop phase carries the current outer
           // iteration so the live-zone status cell can show `loop N/M`.
           const loopStartExtra: { iteration: number } = { iteration };
@@ -1152,7 +1222,9 @@ export async function runIssueWithLogging(
 
     // A turn-capped phase (#739) halts the outer quality-loop retry as well —
     // re-running would only cap again; the partial work is already preserved.
-    if (haltedByCap) {
+    // A billing / rate-limit-window failure (#799) halts for the same reason:
+    // the retry re-spawns into the same closed window and cannot progress.
+    if (haltedByCap || haltedByBilling) {
       break;
     }
 

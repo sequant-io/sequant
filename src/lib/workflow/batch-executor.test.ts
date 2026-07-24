@@ -6,9 +6,11 @@ import type {
 } from "./types.js";
 import type { RunOptions } from "./batch-executor.js";
 import {
+  billingHaltReason,
   buildLoopContext,
   deriveFailureCategory,
   emitProgressLine,
+  isBillingOrWindowHalt,
   withActivityHook,
 } from "./batch-executor.js";
 import { classifyError } from "./error-classifier.js";
@@ -16,7 +18,10 @@ import { BillingError, RateLimitError, TimeoutError } from "../errors.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
-vi.mock("./phase-executor.js", () => ({
+vi.mock("./phase-executor.js", async (importOriginal) => ({
+  // Keep the real isWindowExhaustedRateLimit — #799's billing/window halt
+  // predicate relies on it; only executePhaseWithRetry needs to be a spy.
+  ...(await importOriginal<typeof import("./phase-executor.js")>()),
   executePhaseWithRetry: vi.fn(),
 }));
 
@@ -724,6 +729,136 @@ describe("runIssueWithLogging — #739: turn-capped phase signal (AC-3)", () => 
     expect(specResult?.capped).toBe(true);
     expect(specResult?.output).toBe("partial spec");
     expect(result.success).toBe(false);
+  });
+});
+
+// #799: a billing / out-of-credits failure (or a window-exhausted rate limit)
+// under the `-Q` quality loop must halt immediately — like the #739 turn cap —
+// instead of spawning /loop and burning the remaining iterations, which
+// mislabels the halt as a downstream "unparseable verdict".
+describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast under -Q", () => {
+  it("halts the outer quality loop on a BillingError exec (no second attempt, no /loop)", async () => {
+    const billingResult: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: "Out of credits",
+      structuredError: new BillingError("Out of credits"),
+    };
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue(billingResult);
+
+    const onProgress = vi.fn();
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 799,
+        title: "Out of credits under -Q",
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      onProgress,
+    });
+
+    // AC-1: exec ran exactly once — no /loop spawn, no second exec attempt.
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["exec"]);
+    expect(calledPhases).not.toContain("loop");
+
+    // AC-3: the failed event names the real cause, not a downstream verdict error.
+    const failedCall = onProgress.mock.calls.find(
+      (c) => c[1] === "exec" && c[2] === "failed",
+    );
+    expect(failedCall).toBeDefined();
+    expect((failedCall![3] as { error: string }).error).toMatch(
+      /out of credits/i,
+    );
+
+    // AC-3: metrics category is `billing` (via deriveFailureCategory).
+    expect(result.failureCategory).toBe("billing");
+    // AC-4: not a hard success; state stays resumable (no AC_NOT_MET recorded).
+    expect(result.success).toBe(false);
+  });
+
+  it("halts on a window-exhausted rate limit and surfaces the reset time (rate-limit variant)", async () => {
+    // resetsAt an hour out (in seconds) → window exhausted, not transient.
+    const resetsAtSeconds = Math.floor(Date.now() / 1000) + 3600;
+    const rateLimitResult: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: "Rate limited",
+      structuredError: new RateLimitError("Rate limited", {
+        resetsAt: resetsAtSeconds,
+      }),
+    };
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue(rateLimitResult);
+
+    const onProgress = vi.fn();
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 800,
+        title: "Rate-limit window under -Q",
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      onProgress,
+    });
+
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["exec"]);
+    expect(calledPhases).not.toContain("loop");
+
+    // AC-3: failed event names the cause and includes the reset time.
+    const failedCall = onProgress.mock.calls.find(
+      (c) => c[1] === "exec" && c[2] === "failed",
+    );
+    expect((failedCall![3] as { error: string }).error).toMatch(/resets at/i);
+
+    expect(result.failureCategory).toBe("rate_limit");
+    expect(result.success).toBe(false);
+  });
+
+  it("does NOT halt on a transient (metadata-absent) rate limit (AC-2 fallback)", () => {
+    // A rate limit with no resetsAt has no timing signal → keep today's
+    // retry/loop behavior rather than skipping iterations.
+    const transient: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      structuredError: new RateLimitError("Rate limited"),
+    };
+    expect(isBillingOrWindowHalt(transient)).toBe(false);
+
+    // A generic failure is likewise not a billing/window halt.
+    const generic: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: "boom",
+    };
+    expect(isBillingOrWindowHalt(generic)).toBe(false);
+  });
+
+  it("billingHaltReason falls back to the base message when no reset time is present", () => {
+    const result: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: "Out of credits",
+      structuredError: new BillingError("Out of credits"),
+    };
+    expect(billingHaltReason(result)).toBe("Out of credits");
   });
 });
 
