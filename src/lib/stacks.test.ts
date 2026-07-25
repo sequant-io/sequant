@@ -673,6 +673,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("npx");
     expect(config.install).toBe("npm install");
     expect(config.installSilent).toBe("npm install --silent");
+    expect(config.ciInstall).toBe("npm ci");
   });
 
   it("returns correct bun commands", () => {
@@ -681,6 +682,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("bunx");
     expect(config.install).toBe("bun install");
     expect(config.installSilent).toBe("bun install --silent");
+    expect(config.ciInstall).toBe("bun install --frozen-lockfile");
   });
 
   it("returns correct yarn commands", () => {
@@ -689,6 +691,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("yarn dlx");
     expect(config.install).toBe("yarn install");
     expect(config.installSilent).toBe("yarn install --silent");
+    expect(config.ciInstall).toBe("yarn install --immutable");
   });
 
   it("returns correct pnpm commands", () => {
@@ -697,6 +700,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("pnpm dlx");
     expect(config.install).toBe("pnpm install");
     expect(config.installSilent).toBe("pnpm install --silent");
+    expect(config.ciInstall).toBe("pnpm install --frozen-lockfile");
   });
 
   it("returns correct pip commands", () => {
@@ -705,6 +709,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("python -m");
     expect(config.install).toBe("pip install");
     expect(config.installSilent).toBe("pip install -q");
+    expect(config.ciInstall).toBe("pip install -q");
   });
 
   it("returns correct poetry commands", () => {
@@ -713,6 +718,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("poetry run");
     expect(config.install).toBe("poetry install");
     expect(config.installSilent).toBe("poetry install -q");
+    expect(config.ciInstall).toBe("poetry install -q");
   });
 
   it("returns correct uv commands", () => {
@@ -721,6 +727,7 @@ describe("getPackageManagerCommands", () => {
     expect(config.exec).toBe("uvx");
     expect(config.install).toBe("uv pip install");
     expect(config.installSilent).toBe("uv pip install -q");
+    expect(config.ciInstall).toBe("uv pip install -q");
   });
 });
 
