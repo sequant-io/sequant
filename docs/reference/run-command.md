@@ -382,8 +382,12 @@ order; see [merger skill docs](../../.claude/skills/merger/SKILL.md).
 > **`--qa-gate` is deprecated as of #795 and does nothing.**
 >
 > It is still accepted — passing it will not error, so existing scripts keep
-> working — but it prints a deprecation notice and has no effect on execution.
-> It will be removed in a future major release.
+> working — but it prints a deprecation notice on **stderr** and has no effect
+> on execution. It will be removed in a future major release.
+>
+> The notice is not silenced by `--quiet`, which suppresses progress and
+> version output rather than warnings. Because it goes to stderr, it never
+> reaches a script that pipes `sequant run`'s stdout.
 
 **Why it was removed.** The flag promised to "wait for QA pass before starting
 the next issue in a chain." `--chain` already does that, and more strictly: the

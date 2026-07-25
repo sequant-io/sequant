@@ -72,6 +72,19 @@ export function deprecatedFlagNotices(options: RunOptions): string[] {
  * Lives here rather than inline in `run.ts` to keep that adapter under the
  * #503 AC-2 200-LOC budget, alongside the pure resolver it wraps.
  *
+ * Two deliberate choices, both flagged because a future reader may mistake
+ * them for oversights:
+ *
+ * 1. **stderr, not stdout.** Deprecation notices are warnings, and warnings
+ *    go on stderr (same as `abort.ts`). This keeps a script's piped stdout
+ *    clean while still surfacing the notice on a terminal.
+ * 2. **Not gated on `options.quiet`.** `--quiet` suppresses progress and
+ *    version chatter; it is not a warning switch. The scripts most likely to
+ *    still pass `--qa-gate` are CI scripts, which are also the most likely to
+ *    pass `--quiet` — suppressing there would defeat the deprecation window
+ *    for exactly its target audience. Silencing warnings should be an
+ *    explicit opt-out, not a side effect of asking for less progress output.
+ *
  * `runCommand` calls this immediately after the header box, ahead of the
  * manifest and settings checks: a dead flag is a fact about argv, not about
  * project state, so it should be reported even from an uninitialized
@@ -79,6 +92,6 @@ export function deprecatedFlagNotices(options: RunOptions): string[] {
  */
 export function warnDeprecatedFlags(options: RunOptions): void {
   for (const notice of deprecatedFlagNotices(options)) {
-    console.log(chalk.yellow(`  !  ${notice}`));
+    console.error(chalk.yellow(`  !  ${notice}`));
   }
 }

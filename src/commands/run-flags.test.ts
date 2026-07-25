@@ -5,11 +5,12 @@
  * on a TTY), and AC-4 (`--no-tui` and non-TTY degrade to the line renderer).
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   deprecatedFlagNotices,
   normalizeQualityLoop,
   resolveTuiEnabled,
+  warnDeprecatedFlags,
 } from "./run-flags.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 
@@ -95,5 +96,45 @@ describe("deprecatedFlagNotices (#795 AC-2)", () => {
     expect(deprecatedFlagNotices({ qaGate: true })[0]).not.toMatch(
       /requires --chain/,
     );
+  });
+});
+
+describe("warnDeprecatedFlags (#795 AC-2)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("writes the notice to stderr, not stdout", () => {
+    // Deprecation notices are warnings. Routing them to stdout would pollute
+    // the piped output of any script that consumes `sequant run`.
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const out = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    warnDeprecatedFlags({ qaGate: true });
+
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(err.mock.calls[0][0]).toMatch(/--qa-gate is deprecated/);
+    expect(out).not.toHaveBeenCalled();
+  });
+
+  it("is NOT suppressed by --quiet", () => {
+    // `--quiet` suppresses progress and version chatter; it is not a warning
+    // switch. CI scripts are both the likeliest holders of a stale --qa-gate
+    // and the likeliest users of --quiet, so gating here would silence the
+    // deprecation window for exactly its target audience.
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    warnDeprecatedFlags({ qaGate: true, quiet: true });
+
+    expect(err).toHaveBeenCalledTimes(1);
+    expect(err.mock.calls[0][0]).toMatch(/--qa-gate is deprecated/);
+  });
+
+  it("emits nothing when no deprecated flag is set", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    warnDeprecatedFlags({ chain: true, quiet: true });
+
+    expect(err).not.toHaveBeenCalled();
   });
 });
