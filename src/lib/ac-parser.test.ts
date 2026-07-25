@@ -34,6 +34,100 @@ describe("AC Parser", () => {
       );
     });
 
+    // #808: the bold-ID-without-colon style matched none of the four original
+    // patterns, so an issue written this way parsed as ZERO ACs — silently.
+    it("should parse bold AC markers with no colon", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] **AC-1** User can login with email and password
+- [ ] **AC-2** Session persists across page refreshes
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(2);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe(
+        "User can login with email and password",
+      );
+      expect(criteria[1].id).toBe("AC-2");
+      expect(criteria[1].description).toBe(
+        "Session persists across page refreshes",
+      );
+    });
+
+    it("should parse the no-colon letter-number form (e.g., B2)", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **B2** /spec extracts and stores ACs in state\n",
+      );
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].id).toBe("B2");
+      expect(criteria[0].description).toBe(
+        "/spec extracts and stores ACs in state",
+      );
+    });
+
+    it("should parse a checked box with a no-colon bold marker", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [x] **AC-1** Completed criterion\n",
+      );
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe("Completed criterion");
+    });
+
+    it("should absorb a colon placed outside the bold markers", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1**: Description after an outside colon\n",
+      );
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].id).toBe("AC-1");
+      // Without the `:?` in the pattern this would be ": Description after…".
+      expect(criteria[0].description).toBe(
+        "Description after an outside colon",
+      );
+    });
+
+    it("should not treat a non-identifier bold label as an AC", () => {
+      const issueBody = `
+- [ ] **Note** this is just a checklist item
+- [ ] **Verify** the deployment looks right
+- [ ] **TODO** something else
+`;
+
+      expect(parseAcceptanceCriteria(issueBody)).toEqual([]);
+    });
+
+    it("should parse issue #803's body verbatim (regression fixture)", () => {
+      // Copied unmodified from https://github.com/sequant-io/sequant/issues/803
+      // as originally authored. This body produced 0 ACs before #808.
+      const issueBody = `## Acceptance Criteria
+
+- [ ] **AC-1** After assembling the combined state and before running test/build, \`combined-branch-test.ts\` reinstalls dependencies when the lockfile changed (compare lockfile vs the base, or install unconditionally). Use the **detected package manager** (this repo is pnpm; don't hardcode \`npm install\`).
+- [ ] **AC-2** With deps reinstalled, a combined state whose branches only changed the lockfile (added a dep) reports \`npm test\`/\`npm run build\` **passed** — reproduce the #109-113-class scenario in a test/fixture and assert no false BLOCKED.
+- [ ] **AC-3** When test/build genuinely fails, the finding message includes a **non-empty reason**: fall back to a stdout tail when stderr is empty (both truncated). No more \`failed on combined state: \` with nothing after it.
+- [ ] **AC-4** Install failures themselves are surfaced distinctly (a bad merged lockfile → clear "dependency install failed" finding, not a downstream mystery test failure).
+- [ ] **AC-5** Regression test covering: (a) lockfile-changed combined state passes after reinstall, (b) empty-stderr failure still yields a diagnosable message.
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.map((c) => c.id)).toEqual([
+        "AC-1",
+        "AC-2",
+        "AC-3",
+        "AC-4",
+        "AC-5",
+      ]);
+      expect(criteria[3].description).toContain(
+        "Install failures themselves are surfaced distinctly",
+      );
+    });
+
     it("should parse letter-number format (e.g., B2)", () => {
       const issueBody = `
 ## Acceptance Criteria
