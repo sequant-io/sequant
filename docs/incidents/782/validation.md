@@ -30,8 +30,16 @@ Both record `"startCommit": "b1bedbc8fac0babfa4c26a6104612c91f17bba00"` — whic
 merge commit**. The captures are post-#781 by construction, so the structured `errorContext`
 persistence #761 added was live when they were written.
 
-Corroborated independently in `.sequant/metrics.json`: both runs carry
-`"failureCategory": "billing"`.
+Corroborated independently by the metrics writer — a separate code path from the run logger — which
+recorded `"failureCategory": "billing"` for both runs.
+
+> **Why these files are copied here rather than referenced in place.** `.sequant/` is **gitignored**,
+> and run-log rotation is capped at `maxFiles: 100` (`.sequant/settings.json`). The originals are
+> already being evicted — the directory was observed dropping from 100 to 99 entries while this
+> validation was being written. Referencing `.sequant/logs/…` or `.sequant/metrics.json` would have
+> produced a record whose evidence expires and which no reader could independently verify. Both run
+> logs are therefore committed verbatim, and the two matching `metrics.json` entries are excerpted
+> into [`captures/2026-07-18/metrics-excerpt.json`](captures/2026-07-18/metrics-excerpt.json).
 
 Both `errorContext` payloads are identical in shape:
 
@@ -85,7 +93,7 @@ Partially. What the artifacts actually show, without rounding up:
 | MCP fallback skipped | ✅ | `failureIsBilling` gate, `phase-executor.ts` — a `BillingError` cannot reach the fallback | **Code-level guarantee, not a log observation.** The run log persists `stderrTail`/`stdoutTail` from the agent, not the executor's own console output, so a "retrying without MCP" line would not appear in these artifacts either way. The captures neither confirm nor refute it; the gate does. |
 | Non-retryable classification held | ✅ | `"isRetryable": false` persisted | Directly observed in both captures |
 | "Window exhausted, skipping retries" | ⚠️ did **not** fire | classified `BillingError`, which the predicate excludes by design | Observed (`errorType: "BillingError"`) + code-level |
-| Cold-start retries skipped | ⚠️ **no** — they ran | see below | **Inferred** from cumulative duration; see the limitation note |
+| Cold-start retries skipped | ⚠️ **no** — 3 spawns ran | see below | Deduced from control flow + the cumulative 17.47s; count is provable, the per-attempt split is not |
 
 **Why the window branch didn't fire.** The rejection also carried
 `overageDisabledReason: "out_of_credits"`, so `isBillingFailure()` → `createRateLimitError()`
@@ -107,9 +115,16 @@ This is **known, intended behavior, not a defect** — the code comment above th
 return says so explicitly ("unlike the billing case which still cold-start-retries in the <60s
 window"). Recorded for completeness; not filed as a bug.
 
-> **Limitation, stated rather than glossed:** the run log stores no per-attempt records, so the
-> exact attempt count is not directly observable. Three attempts of ~5.8s fits 17.47s, but that is
-> arithmetic inference, not measurement.
+**The attempt count is exactly 3, and that is deducible rather than guessed.** The cumulative phase
+time is 17.47s, so *every* attempt necessarily ran under 60s. Walking the ladder for a `BillingError`
+at sub-60s: it is not `capped`; `isWindowExhaustedRateLimit` is false (not a `RateLimitError`); the
+transient-backoff branch requires `instanceof RateLimitError`, so it is skipped; and `duration >= 60`
+is false — leaving only the fall-through cold-start retry. No branch can exit early, so the loop runs
+attempts 0, 1 and 2 and then exhausts. Three agent spawns against an account with no credits.
+
+> **What is *not* measured:** the run log stores no per-attempt records, so the split across those
+> three attempts (~5.8s each) is arithmetic. The count itself is not — it follows from the control
+> flow above.
 
 **Residual:** a pure `RateLimitError` window rejection — limit hit while credits remain — is still
 unwitnessed. The metadata channel is proven; the specific branch is proven only by counterfactual.
