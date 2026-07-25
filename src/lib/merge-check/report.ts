@@ -6,6 +6,7 @@
  */
 
 import { spawnSync } from "child_process";
+import { resolveFailureReason, toCommandResult } from "./command-result.js";
 import type {
   MergeReport,
   CheckResult,
@@ -316,8 +317,11 @@ export function postReportToGitHub(report: MergeReport): void {
     );
 
     if (result.status !== 0) {
+      // Same never-empty reason resolution as the combined-branch test (#803):
+      // `gh` usually writes to stderr, but a killed or unspawnable process
+      // leaves it empty, which would print a message with nothing after it.
       console.error(
-        `Failed to post comment on PR #${branch.prNumber}: ${result.stderr}`,
+        `Failed to post comment on PR #${branch.prNumber}: ${resolveFailureReason(toCommandResult(result))}`,
       );
     }
   }
