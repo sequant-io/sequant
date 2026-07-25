@@ -297,7 +297,7 @@ program
   )
   .option(
     "--qa-gate",
-    "Wait for QA pass before starting next issue in chain (requires --chain)",
+    "DEPRECATED (#795): no-op, still accepted. --chain already halts on any failed issue, QA included",
   )
   .option(
     "--strict-preflight",

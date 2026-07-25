@@ -223,4 +223,34 @@ describe("run command flag surface (#705)", () => {
   it("--no-tui parses without error (AC-4)", () => {
     expect(() => runDryRun("--no-tui")).not.toThrow();
   });
+
+  // #795 AC-2: --qa-gate is deprecated to a no-op. It must keep parsing so
+  // existing scripts don't hard-error, must warn, and must no longer abort the
+  // run when --chain is absent.
+  describe("#795: --qa-gate deprecation", () => {
+    it("--qa-gate without --chain warns instead of aborting the run", () => {
+      const output = runDryRun("--qa-gate");
+
+      // Before #795 this printed "❌ --qa-gate requires --chain flag" and
+      // returned early, so the run never started. Both halves matter: the
+      // notice must appear AND the old abort message must be gone.
+      expect(output).toMatch(/--qa-gate is deprecated/);
+      expect(output).not.toMatch(/requires --chain/);
+    });
+
+    it("--qa-gate with --chain still parses and warns", () => {
+      const output = runDryRun("--qa-gate --chain");
+
+      expect(output).toMatch(/--qa-gate is deprecated/);
+    });
+
+    it("run --help describes --qa-gate as deprecated, not as gating", () => {
+      const help = execSync(`node ${cliPath} run --help`, execOptions);
+
+      expect(help).toMatch(/--qa-gate/);
+      expect(help).toMatch(/DEPRECATED/);
+      // The removed promise: help text must no longer claim it waits for QA.
+      expect(help).not.toMatch(/Wait for QA pass/);
+    });
+  });
 });

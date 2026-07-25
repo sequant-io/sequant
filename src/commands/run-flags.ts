@@ -1,14 +1,16 @@
 /**
  * Run flag normalization (#705) — keeps run.ts thin (#503 AC-2: <200 LOC).
  *
- * Two pure resolvers for the `run` command's flag surface:
+ * Pure resolvers for the `run` command's flag surface:
  *   - `normalizeQualityLoop`: ORs the hidden `-q` alias into `--quality-loop`.
  *   - `resolveTuiEnabled`: decides whether the boxed Ink TUI mounts.
+ *   - `deprecatedFlagNotices`: messages for flags kept only for compatibility.
  *
  * Extracted as pure functions so the flag behavior is unit-testable without
  * driving the full `runCommand` side effects.
  */
 
+import chalk from "chalk";
 import type { RunOptions } from "../lib/workflow/types.js";
 
 /**
@@ -38,4 +40,45 @@ export function resolveTuiEnabled(
   isTTY: boolean,
 ): boolean {
   return options.tui !== false && isTTY && !options.quiet;
+}
+
+/**
+ * #795: notices for flags that still parse but no longer do anything.
+ *
+ * `--qa-gate` promised to "wait for QA pass before starting the next issue in
+ * chain", but the chain loop halts on any failed link unconditionally, so the
+ * flag never changed behavior and no runtime path ever wrote the
+ * `waiting_for_qa_gate` status it advertised. It is kept parseable so existing
+ * scripts do not hard-error — the previous `--qa-gate requires --chain` check
+ * aborted the whole run, which is exactly the breakage a deprecation window
+ * exists to avoid — and it no longer requires `--chain`.
+ *
+ * Returned rather than printed so the wording is unit-testable without driving
+ * `runCommand`'s side effects.
+ */
+export function deprecatedFlagNotices(options: RunOptions): string[] {
+  const notices: string[] = [];
+  if (options.qaGate) {
+    notices.push(
+      "--qa-gate is deprecated and has no effect (#795). --chain already halts the chain on any failed issue, QA included. Remove the flag; it will be deleted in a future major release.",
+    );
+  }
+  return notices;
+}
+
+/**
+ * Prints every notice from {@link deprecatedFlagNotices}.
+ *
+ * Lives here rather than inline in `run.ts` to keep that adapter under the
+ * #503 AC-2 200-LOC budget, alongside the pure resolver it wraps.
+ *
+ * `runCommand` calls this immediately after the header box, ahead of the
+ * manifest and settings checks: a dead flag is a fact about argv, not about
+ * project state, so it should be reported even from an uninitialized
+ * directory where those checks would return early.
+ */
+export function warnDeprecatedFlags(options: RunOptions): void {
+  for (const notice of deprecatedFlagNotices(options)) {
+    console.log(chalk.yellow(`  !  ${notice}`));
+  }
 }

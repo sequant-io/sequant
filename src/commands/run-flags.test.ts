@@ -6,7 +6,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { normalizeQualityLoop, resolveTuiEnabled } from "./run-flags.js";
+import {
+  deprecatedFlagNotices,
+  normalizeQualityLoop,
+  resolveTuiEnabled,
+} from "./run-flags.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 
 describe("normalizeQualityLoop (#705 AC-1)", () => {
@@ -61,5 +65,35 @@ describe("resolveTuiEnabled (#705 AC-3, AC-4, AC-2)", () => {
 
   it("quiet beats the TUI default regardless of --no-tui (AC-2 precedence)", () => {
     expect(resolveTuiEnabled({ quiet: true, tui: false }, true)).toBe(false);
+  });
+});
+
+describe("deprecatedFlagNotices (#795 AC-2)", () => {
+  it("returns no notices when --qa-gate is absent", () => {
+    expect(deprecatedFlagNotices({})).toEqual([]);
+    expect(deprecatedFlagNotices({ chain: true })).toEqual([]);
+  });
+
+  it("returns a notice when --qa-gate is set", () => {
+    const notices = deprecatedFlagNotices({ qaGate: true });
+
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatch(/--qa-gate is deprecated/);
+    // The notice must tell the user what to do instead, not just that it died.
+    expect(notices[0]).toMatch(/--chain already halts/);
+  });
+
+  it("returns the notice regardless of --chain (no longer a hard requirement)", () => {
+    // Before #795, --qa-gate without --chain printed an error and aborted the
+    // whole run. Both combinations must now produce the same advisory notice.
+    expect(deprecatedFlagNotices({ qaGate: true })).toEqual(
+      deprecatedFlagNotices({ qaGate: true, chain: true }),
+    );
+  });
+
+  it("never mentions the removed 'requires --chain' constraint", () => {
+    expect(deprecatedFlagNotices({ qaGate: true })[0]).not.toMatch(
+      /requires --chain/,
+    );
   });
 });

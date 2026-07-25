@@ -52,7 +52,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--sequential` | Run issues in order, stop on first failure (see [Execution Model](#execution-model)) | `false` |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | `false` |
 | `--stacked` | Stack PRs: non-first PRs target predecessor branch (implies `--chain`) | `false` |
-| `--qa-gate` | Wait for QA pass before starting next issue (requires `--chain`) | `false` |
+| `--qa-gate` | **Deprecated (#795) — no-op.** Still accepted so existing scripts keep working; prints a deprecation notice. `--chain` already halts on any failed issue, QA included. See [QA Gate Mode](#qa-gate-mode-deprecated) | `false` |
 | `--strict-preflight` | Make `--chain` content pre-flight warnings (missing AC section, dependency/overlap order, closed issues) fatal before any worktree is provisioned | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
@@ -377,82 +377,46 @@ order; see [merger skill docs](../../.claude/skills/merger/SKILL.md).
 - **2-issue stacks are manifest-only.** With `run 100 101 --stacked`, both PRs target `main` (#100 is first, #101 is last; there is no middle PR to gain an incremental-diff benefit). The stack manifest still renders, but the base-branch behavior is identical to plain `--chain`. Use `--stacked` for chains of 3+ issues.
 - **The final PR shows the cumulative diff.** Because the last branch still rebases onto `main` before its PR is created (preserving existing `--chain` behavior and the partial-landing default for AC-3), reviewers see the entire stack's diff on the final PR — not its incremental change vs. its predecessor. Only the middle PRs show incremental diffs.
 
-### QA Gate Mode
+### QA Gate Mode (deprecated)
 
-Add `--qa-gate` to pause the chain when QA fails, preventing downstream issues from building on potentially broken code:
+> **`--qa-gate` is deprecated as of #795 and does nothing.**
+>
+> It is still accepted — passing it will not error, so existing scripts keep
+> working — but it prints a deprecation notice and has no effect on execution.
+> It will be removed in a future major release.
+
+**Why it was removed.** The flag promised to "wait for QA pass before starting
+the next issue in a chain." `--chain` already does that, and more strictly: the
+chain loop halts on **any** failed issue, whether the failure came from `qa` or
+from any other phase. The `--qa-gate` branch in the chain loop re-checked for a
+QA failure immediately before an unconditional break, so it could never change
+the outcome. Everything this section previously documented — a `⏸️ QA Gate`
+pause banner, a `waiting_for_qa_gate` status written during a run, distinct
+recovery steps — described behavior no runtime path ever produced.
+
+**What to use instead.** Nothing: drop the flag. `--chain` alone gives you the
+gating behavior, since a failed link stops the chain before any successor is
+started.
 
 ```bash
+# Before
 npx sequant run 1 2 3 --sequential --chain --qa-gate
+
+# After — identical behavior
+npx sequant run 1 2 3 --sequential --chain
 ```
 
-**What happens:**
-
-1. Issue #1 runs through spec → exec → qa
-2. If QA passes: Continue to Issue #2
-3. If QA fails: Chain pauses with clear messaging
-
-**QA Gate Pause Output:**
-
-```text
-  ⏸️  QA Gate
-     Issue #1 QA did not pass. Chain paused.
-     Fix QA issues and re-run, or run /loop to auto-fix.
-```
-
-**State Tracking:**
-
-When QA gate pauses a chain, the issue status is set to `waiting_for_qa_gate`. Check status with:
+Combine `--chain` with `--quality-loop` if you want failures auto-retried
+before the chain gives up:
 
 ```bash
-sequant status --issues
+npx sequant run 1 2 3 --sequential --chain --quality-loop
 ```
 
-**When to Use QA Gate:**
-
-- Complex chains where later issues depend heavily on earlier ones
-- When QA findings in early issues could invalidate later implementations
-- Production-critical chains where you want to ensure quality at each step
-
-**When NOT to Use QA Gate:**
-
-- Simple, independent issues that don't build on each other
-- When you want maximum speed and can fix issues later
-- Chains where issues are mostly independent despite the branch structure
-
-**Recovery from QA Gate Pause:**
-
-Option A: Fix and re-run
-```bash
-# Fix the QA issues manually
-cd ../worktrees/feature/1-xxx
-# Make fixes...
-git commit -m "fix: address QA findings"
-
-# Re-run the full chain
-npx sequant run 1 2 3 --sequential --chain --qa-gate
-```
-
-Option B: Use /loop to auto-fix
-```bash
-# In the worktree, run loop to auto-fix
-/loop 1
-
-# Then re-run the chain
-npx sequant run 1 2 3 --sequential --chain --qa-gate
-```
-
-**Combining with Quality Loop:**
-
-You can combine `--qa-gate` with `--quality-loop` for automatic retry:
-
-```bash
-npx sequant run 1 2 3 --sequential --chain --qa-gate --quality-loop
-```
-
-This will:
-1. Run each issue through phases
-2. If a phase fails, automatically retry with `/loop`
-3. If QA still fails after max iterations, pause the chain
+**Note on `waiting_for_qa_gate`.** The status value itself is retained in the
+state schema and is still handled by `sequant status`, reconciliation, and
+state cleanup. Legacy `.sequant/state.json` files written by older versions can
+contain it, and those entries must still reconcile correctly (see #606).
 
 ### CI/Scripting Mode
 
