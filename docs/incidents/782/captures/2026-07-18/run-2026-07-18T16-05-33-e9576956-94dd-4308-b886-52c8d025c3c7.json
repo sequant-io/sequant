@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "runId": "e9576956-94dd-4308-b886-52c8d025c3c7",
+  "startTime": "2026-07-18T16:05:33.202Z",
+  "config": {
+    "phases": [
+      "spec",
+      "exec",
+      "qa"
+    ],
+    "sequential": false,
+    "qualityLoop": true,
+    "maxIterations": 3
+  },
+  "issues": [
+    {
+      "issueNumber": 784,
+      "title": "feat(hooks): warn when the installed plugin cache is stale — plugin-channel installs never auto-update",
+      "labels": [
+        "enhancement"
+      ],
+      "status": "failure",
+      "phases": [
+        {
+          "phase": "spec",
+          "issueNumber": 784,
+          "startTime": "2026-07-18T16:05:37.753Z",
+          "endTime": "2026-07-18T16:05:54.476Z",
+          "durationSeconds": 16.723,
+          "status": "failure",
+          "error": "Out of credits",
+          "errorContext": {
+            "stderrTail": [],
+            "stdoutTail": [
+              "You've hit your session limit · resets 11:30am (America/Chicago)"
+            ],
+            "category": "billing",
+            "errorType": "BillingError",
+            "errorMetadata": {
+              "resetsAt": 1784392200,
+              "rateLimitType": "five_hour",
+              "overageDisabledReason": "out_of_credits"
+            },
+            "isRetryable": false
+          }
+        }
+      ],
+      "totalDurationSeconds": 16.723
+    }
+  ],
+  "summary": {
+    "totalIssues": 1,
+    "passed": 0,
+    "failed": 1,
+    "partial": 0,
+    "totalDurationSeconds": 21.302
+  },
+  "startCommit": "b1bedbc8fac0babfa4c26a6104612c91f17bba00",
+  "endTime": "2026-07-18T16:05:54.504Z",
+  "endCommit": "b1bedbc8fac0babfa4c26a6104612c91f17bba00"
+}

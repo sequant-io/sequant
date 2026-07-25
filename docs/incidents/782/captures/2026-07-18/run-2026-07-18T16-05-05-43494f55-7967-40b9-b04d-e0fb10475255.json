@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "runId": "43494f55-7967-40b9-b04d-e0fb10475255",
+  "startTime": "2026-07-18T16:05:05.537Z",
+  "config": {
+    "phases": [
+      "spec",
+      "exec",
+      "qa"
+    ],
+    "sequential": false,
+    "qualityLoop": true,
+    "maxIterations": 3
+  },
+  "issues": [
+    {
+      "issueNumber": 783,
+      "title": "feat(stats): surface failureCategory breakdown from metrics.json",
+      "labels": [
+        "enhancement",
+        "cli"
+      ],
+      "status": "failure",
+      "phases": [
+        {
+          "phase": "spec",
+          "issueNumber": 783,
+          "startTime": "2026-07-18T16:05:11.125Z",
+          "endTime": "2026-07-18T16:05:28.595Z",
+          "durationSeconds": 17.47,
+          "status": "failure",
+          "error": "Out of credits",
+          "errorContext": {
+            "stderrTail": [],
+            "stdoutTail": [
+              "You've hit your session limit · resets 11:30am (America/Chicago)"
+            ],
+            "category": "billing",
+            "errorType": "BillingError",
+            "errorMetadata": {
+              "resetsAt": 1784392200,
+              "rateLimitType": "five_hour",
+              "overageDisabledReason": "out_of_credits"
+            },
+            "isRetryable": false
+          }
+        }
+      ],
+      "totalDurationSeconds": 17.47
+    }
+  ],
+  "summary": {
+    "totalIssues": 1,
+    "passed": 0,
+    "failed": 1,
+    "partial": 0,
+    "totalDurationSeconds": 23.089
+  },
+  "startCommit": "b1bedbc8fac0babfa4c26a6104612c91f17bba00",
+  "endTime": "2026-07-18T16:05:28.626Z",
+  "endCommit": "b1bedbc8fac0babfa4c26a6104612c91f17bba00"
+}
