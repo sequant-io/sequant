@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`- [ ] **AC-1** Desc` (bold identifier, no colon) no longer parses as zero acceptance criteria (#808)** — all four patterns in `src/lib/ac-parser.ts` required a colon attached to the AC identifier, so a very common authoring style matched nothing at all and `extractAcceptanceCriteria()` returned an empty set. It failed **silently**: no warning, no error, just zero ACs written to `.sequant/state.json`, an empty AC coverage table in `/qa`, and nothing for the `/spec` AC linter to lint — a run could complete having verified nothing. Hit on #803, whose five ACs were authored exactly this way and were only noticed because `/spec` printed the parsed count. Adds a fifth pattern matching `- [ ] **AC-1** Description`, which also covers the no-hyphen form (`**B2**`), checked boxes, and — via a trailing optional colon — the `**AC-1**: Description` variant where the colon sits outside the bold markers. Deliberately limited to the **bold** form: a bare `- [ ] AC1 something` is ambiguous against ordinary checklist prose, and widening that far would trade a silent miss for silent false positives. The `\d+` requirement on the identifier keeps non-identifier bold labels (`**Note**`, `**Verify**`, `**TODO**`) from being mistaken for ACs, which is covered by its own guard test. All existing colon-bearing formats parse unchanged. (#808)
+
 ## [2.9.0] - 2026-07-18
 
 ### Added

@@ -41,6 +41,9 @@ import {
  * - `- [ ] **B2:** Description`
  * - `- [ ] **AC1:** Description`
  * - `- [ ] **AC-1: Description**` (bold wraps ID + description)
+ * - `- [ ] **AC-1** Description` (bold ID, no colon)
+ * - `- [ ] **AC-1**: Description` (colon outside the bold)
+ * - `- [ ] AC-1: Description`
  */
 const AC_PATTERNS = [
   // Pattern 1: `- [ ] **AC-1:** Description` or `- [x] **AC-1:** Description`
@@ -51,6 +54,21 @@ const AC_PATTERNS = [
   /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]+-?\d+):\s*(.+?)\*\*\s*(.*)$/gim,
   // Pattern 4: `- [ ] AC-1: Description` (no bold)
   /^-\s*\[[x\s]\]\s*([A-Za-z]+-?\d+):\s*(.+)$/gim,
+  // Pattern 5: `- [ ] **AC-1** Description` / `- [ ] **AC-1**: Description` (#808)
+  //
+  // The colon-less form is a very common authoring style, and before this
+  // pattern existed it matched nothing at all — an issue written this way
+  // parsed as ZERO acceptance criteria, silently, with no warning anywhere
+  // downstream (#803's five ACs were written exactly like this).
+  //
+  // The trailing `:?` also absorbs a colon placed *outside* the bold, which
+  // would otherwise land in the description as a leading ": ".
+  //
+  // Deliberately requires the bold markers. A bare `- [ ] AC1 something` is
+  // ambiguous against ordinary checklist prose, so widening that far would
+  // trade a silent miss for silent false positives. The `\d+` at the end of
+  // the ID keeps non-identifier bold labels (`**Note**`, `**Verify**`) out.
+  /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]+-?\d+)\*\*:?\s*(.+)$/gim,
 ];
 
 /**
@@ -144,6 +162,8 @@ function parseACLine(line: string): { id: string; description: string } | null {
  * - `- [ ] **AC-1:** Description`
  * - `- [ ] **B2:** Description`
  * - `- [ ] **AC-1: Description**` (bold wraps ID + description)
+ * - `- [ ] **AC-1** Description` (bold ID, no colon)
+ * - `- [ ] **AC-1**: Description` (colon outside the bold)
  * - `- [ ] AC-1: Description`
  *
  * @param issueBody - The full GitHub issue body markdown
