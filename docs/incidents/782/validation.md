@@ -80,12 +80,12 @@ against production evidence, not assumed.
 
 Partially. What the artifacts actually show, without rounding up:
 
-| | Outcome | Evidence |
-|---|---|---|
-| MCP fallback skipped | ✅ | `failureIsBilling` gate, `phase-executor.ts`; no "retrying without MCP" line, and an MCP re-spawn would have added a full phase attempt to the duration |
-| Non-retryable classification held | ✅ | `"isRetryable": false` persisted |
-| "Window exhausted, skipping retries" | ⚠️ did **not** fire | classified `BillingError`, which the predicate excludes by design |
-| Cold-start retries skipped | ⚠️ **no** — they ran | see below |
+| | Outcome | Evidence | Kind of evidence |
+|---|---|---|---|
+| MCP fallback skipped | ✅ | `failureIsBilling` gate, `phase-executor.ts` — a `BillingError` cannot reach the fallback | **Code-level guarantee, not a log observation.** The run log persists `stderrTail`/`stdoutTail` from the agent, not the executor's own console output, so a "retrying without MCP" line would not appear in these artifacts either way. The captures neither confirm nor refute it; the gate does. |
+| Non-retryable classification held | ✅ | `"isRetryable": false` persisted | Directly observed in both captures |
+| "Window exhausted, skipping retries" | ⚠️ did **not** fire | classified `BillingError`, which the predicate excludes by design | Observed (`errorType: "BillingError"`) + code-level |
+| Cold-start retries skipped | ⚠️ **no** — they ran | see below | **Inferred** from cumulative duration; see the limitation note |
 
 **Why the window branch didn't fire.** The rejection also carried
 `overageDisabledReason: "out_of_credits"`, so `isBillingFailure()` → `createRateLimitError()`
@@ -136,12 +136,20 @@ target on the real path. One caveat worth carrying into that design: the observe
 Auto-wait should gate on `RateLimitError` rather than on the presence of `resetsAt` alone, since
 `BillingError` carries a `resetsAt` too.
 
-## Regression guard
+## Regression guards
 
-`src/lib/workflow/phase-executor.test.ts` → `"#761 AC-9 validation against the real 2026-07-18
-capture (#782)"` replays the captured payload through `createRateLimitError` and
-`isWindowExhaustedRateLimit`, including the counterfactual above.
+Two, at both sites that consume this classifier. Each reads the **committed capture files** rather
+than an inlined copy, so the artifacts above and the tests cannot drift apart.
 
-Existing coverage for these functions is entirely synthetic. This test pins the **real field names
-and units** so SDK field drift — a renamed `resetsAt`, a changed unit, a dropped `rateLimitType` —
-breaks a test instead of silently disabling the #761 branch.
+| Site | Test | What it pins |
+|---|---|---|
+| `src/lib/workflow/phase-executor.test.ts` | `"#761 AC-9 validation against the real 2026-07-18 capture (#782)"` | Replays the payload through `createRateLimitError` + `isWindowExhaustedRateLimit`, including the counterfactual above |
+| `src/lib/workflow/batch-executor.test.ts` | `"halts on the real 2026-07-18 capture (#782 …)"` | #799's outer-loop halt (`isBillingOrWindowHalt` / `billingHaltReason`) — the cross-file sibling that consumes the same classifier |
+
+Existing coverage at **both** sites is entirely synthetic. These tests pin the **real field names
+and units**, so SDK field drift — a renamed `resetsAt`, a changed unit, a dropped `rateLimitType` —
+breaks a test instead of silently disabling the #761 branch or the #799 halt (which would bring back
+the `QA completed without a parseable verdict` mislabel).
+
+Verified non-tautological by mutation: stripping `rateLimitType` and shortening `resetsAt` to one
+minute out fails all three phase-executor assertions, the counterfactual among them.
