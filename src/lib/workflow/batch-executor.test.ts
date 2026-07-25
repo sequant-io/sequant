@@ -14,7 +14,14 @@ import {
   withActivityHook,
 } from "./batch-executor.js";
 import { classifyError } from "./error-classifier.js";
-import { BillingError, RateLimitError, TimeoutError } from "../errors.js";
+import { readFileSync } from "node:fs";
+import {
+  BillingError,
+  RateLimitError,
+  TimeoutError,
+  createRateLimitError,
+} from "../errors.js";
+import type { RateLimitInfoLike } from "../errors.js";
 
 // Mock all heavy dependencies so we can test runIssueWithLogging in isolation
 
@@ -918,6 +925,49 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
       error: "boom",
     };
     expect(isBillingOrWindowHalt(generic)).toBe(false);
+  });
+
+  it("halts on the real 2026-07-18 capture (#782 — production sample, not synthetic)", () => {
+    // Cross-file sibling of the #782 validation in phase-executor.test.ts.
+    // #799's outer-loop halt consumes the same classifier, so the one real
+    // rejection we have on file belongs here too: if SDK drift changed the
+    // payload shape, this predicate would silently stop halting the -Q loop
+    // and #799's "QA completed without a parseable verdict" mislabel returns.
+    // Every other test around this one is synthetic.
+    // Full write-up: docs/incidents/782/validation.md
+    const capture = JSON.parse(
+      readFileSync(
+        new URL(
+          "../../../docs/incidents/782/captures/2026-07-18/run-2026-07-18T16-05-05-43494f55-7967-40b9-b04d-e0fb10475255.json",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    ) as {
+      issues: {
+        phases: {
+          durationSeconds: number;
+          errorContext: { errorMetadata: RateLimitInfoLike };
+        }[];
+      }[];
+    };
+    const phase = capture.issues[0].phases[0];
+    const structuredError = createRateLimitError(
+      phase.errorContext.errorMetadata,
+    );
+
+    const result: PhaseResult = {
+      phase: "spec",
+      success: false,
+      durationSeconds: phase.durationSeconds,
+      error: structuredError.message,
+      structuredError,
+    };
+
+    expect(isBillingOrWindowHalt(result)).toBe(true);
+    // The halt reason surfaces the driver's real cause, not a downstream
+    // "QA completed without a parseable verdict".
+    expect(billingHaltReason(result)).toBe("Out of credits");
   });
 
   it("billingHaltReason falls back to the base message when no reset time is present", () => {
