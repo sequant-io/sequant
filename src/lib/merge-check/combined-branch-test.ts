@@ -15,6 +15,15 @@ import type {
 } from "./types.js";
 import { getBranchRef } from "./types.js";
 import { PM_CONFIG, detectPackageManagerSync } from "../stacks.js";
+import {
+  toCommandResult,
+  resolveFailureReason,
+  type CommandResult,
+} from "./command-result.js";
+
+// Re-exported for the existing test suite and any downstream consumer that
+// imported these from here before they moved to ./command-result.js.
+export { resolveFailureReason, type CommandResult };
 
 /**
  * Lockfile names for the JS package managers we support. Kept in sync with the
@@ -37,9 +46,6 @@ const LOCKFILES = [
 const INSTALL_TIMEOUT_MS = 300_000; // 5 min
 const TEST_BUILD_TIMEOUT_MS = 600_000; // 10 min
 
-/** Max characters of captured output included in a failure message. */
-const REASON_MAX_CHARS = 500;
-
 /** Ref the combined state is built on top of, and compared against. */
 const BASE_REF = "origin/main";
 
@@ -52,19 +58,6 @@ interface MergeAttempt {
   success: boolean;
   conflictFiles?: string[];
   error?: string;
-}
-
-/**
- * Outcome of a spawned command, normalized across success, non-zero exit,
- * signal termination, and spawn failure.
- */
-export interface CommandResult {
-  ok: boolean;
-  stdout: string;
-  stderr: string;
-  status: number | null;
-  signal: string | null;
-  spawnError?: string;
 }
 
 /**
@@ -105,55 +98,12 @@ export function runPackageManagerCommand(
     stdio: "pipe",
     encoding: "utf-8",
     timeout: timeoutMs,
+    // On Windows the package managers are `.cmd` shims, which CreateProcess
+    // will not resolve from a bare "npm"/"pnpm". `command` is always a constant
+    // from PM_CONFIG — never user input — so there is nothing to inject here.
+    shell: process.platform === "win32",
   });
-  return {
-    ok: result.status === 0,
-    stdout: result.stdout?.trim() ?? "",
-    stderr: result.stderr?.trim() ?? "",
-    status: result.status ?? null,
-    signal: result.signal ?? null,
-    spawnError: result.error?.message,
-  };
-}
-
-/**
- * Produce a human-readable, never-empty reason for a failed command (#803).
- *
- * The previous reason was `stderr.slice(0, 500)` alone, so any failure that
- * wrote only to stdout — which is where vitest and tsc put their diagnostics —
- * reported `failed on combined state: ` with nothing after it.
- *
- * Falls through: stderr → stdout tail → spawn error → signal → exit code. The
- * stdout *tail* is used because test runners put the failure summary last.
- *
- * @internal Exported for testing
- */
-export function resolveFailureReason(result: CommandResult): string {
-  if (result.stderr) {
-    return truncateHead(result.stderr);
-  }
-  if (result.stdout) {
-    return truncateTail(result.stdout);
-  }
-  if (result.spawnError) {
-    return result.spawnError;
-  }
-  if (result.signal) {
-    return `no output; killed by signal ${result.signal} (likely a timeout)`;
-  }
-  return `no output; exited with code ${result.status ?? "unknown"}`;
-}
-
-function truncateHead(text: string): string {
-  return text.length > REASON_MAX_CHARS
-    ? `${text.slice(0, REASON_MAX_CHARS)}…`
-    : text;
-}
-
-function truncateTail(text: string): string {
-  return text.length > REASON_MAX_CHARS
-    ? `…${text.slice(-REASON_MAX_CHARS)}`
-    : text;
+  return toCommandResult(result);
 }
 
 /**
@@ -189,21 +139,25 @@ export function runCombinedBranchTest(
   const pm = detectPackageManagerSync(repoRoot);
   const pmConfig = PM_CONFIG[pm];
 
-  // Set once we install against the combined lockfile, so the caller's
-  // node_modules can be put back afterwards.
-  let installedCombinedDeps = false;
+  // Flipped the moment we start installing against the combined lockfile, so
+  // the caller's node_modules can be put back afterwards. A mutable holder
+  // rather than a return value: if runChecks throws, a return value never
+  // arrives and the restore would be skipped precisely when the tree is most
+  // likely to be inconsistent.
+  const installState: InstallState = { installedCombinedDeps: false };
 
   // Save current branch to restore in the cleanup step
   const originalBranch = git(["rev-parse", "--abbrev-ref", "HEAD"], repoRoot);
 
   try {
-    installedCombinedDeps = runChecks(
+    runChecks(
       branches,
       repoRoot,
       tempBranch,
       pmConfig,
       branchResults,
       batchFindings,
+      installState,
     );
   } finally {
     // Restore original branch and delete temp branch
@@ -219,7 +173,7 @@ export function runCombinedBranchTest(
     // `npm install` normalizes and rewrites the lockfile, which would leave
     // the user's restored branch with a dirty working tree that this check
     // never asked them for.
-    if (installedCombinedDeps) {
+    if (installState.installedCombinedDeps) {
       const restoreInstall = runPackageManagerCommand(
         pmConfig.ciInstall,
         repoRoot,
@@ -240,11 +194,16 @@ export function runCombinedBranchTest(
   return buildResult(branchResults, batchFindings, startTime);
 }
 
+/** Tracks whether the combined state's dependencies were installed. */
+interface InstallState {
+  installedCombinedDeps: boolean;
+}
+
 /**
  * Assemble the combined state and run install/test/build against it.
  *
- * Mutates `branchResults` and `batchFindings`; returns whether dependencies
- * were installed against the combined lockfile (so the caller can restore them).
+ * Mutates `branchResults`, `batchFindings`, and `installState` — the last so
+ * the caller's cleanup can restore node_modules even if this function throws.
  */
 function runChecks(
   branches: BranchInfo[],
@@ -253,7 +212,8 @@ function runChecks(
   pmConfig: (typeof PM_CONFIG)[keyof typeof PM_CONFIG],
   branchResults: BranchCheckResult[],
   batchFindings: CheckFinding[],
-): boolean {
+  installState: InstallState,
+): void {
   const mergeAttempts: MergeAttempt[] = [];
 
   // Fetch latest from remote
@@ -267,7 +227,7 @@ function runChecks(
       severity: "error",
       message: `Failed to create temp branch: ${createResult.stderr}`,
     });
-    return false;
+    return;
   }
 
   // Merge each feature branch
@@ -339,7 +299,7 @@ function runChecks(
       severity: "error",
       message: `${failedMerges.length}/${branches.length} branches had merge conflicts — skipping test/build`,
     });
-    return false;
+    return;
   }
 
   // Reinstall dependencies when the merged branches moved the lockfile (#803).
@@ -351,14 +311,17 @@ function runChecks(
   // it will not rewrite the lockfile (which would dirty the temp branch and
   // break the checkout during cleanup), and it fails loudly on a lockfile that
   // is inconsistent with package.json.
-  let installedCombinedDeps = false;
   if (lockfileChanged(repoRoot, BASE_REF)) {
+    // Marked before the install runs, not after: a frozen install deletes
+    // node_modules up front, so even a failed or interrupted one leaves the
+    // caller's tree needing a restore.
+    installState.installedCombinedDeps = true;
+
     const installResult = runPackageManagerCommand(
       pmConfig.ciInstall,
       repoRoot,
       INSTALL_TIMEOUT_MS,
     );
-    installedCombinedDeps = true;
 
     if (!installResult.ok) {
       // Surface install failures on their own terms rather than letting them
@@ -368,7 +331,7 @@ function runChecks(
         severity: "error",
         message: `Dependency install failed on combined state (\`${pmConfig.ciInstall}\`) — skipping test/build. The merged lockfile may be inconsistent with package.json: ${resolveFailureReason(installResult)}`,
       });
-      return installedCombinedDeps;
+      return;
     }
 
     batchFindings.push({
@@ -419,8 +382,6 @@ function runChecks(
           message: `\`${buildCommand}\` failed on combined state: ${resolveFailureReason(buildOutcome)}`,
         },
   );
-
-  return installedCombinedDeps;
 }
 
 export function buildResult(
