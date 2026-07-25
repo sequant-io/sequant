@@ -214,9 +214,14 @@ export function runCombinedBranchTest(
     // We installed the combined state's dependency tree into the caller's
     // node_modules; put it back so the restored branch is not left running
     // against another branch's dependencies.
+    //
+    // Frozen again, for the same reason as the forward install: a plain
+    // `npm install` normalizes and rewrites the lockfile, which would leave
+    // the user's restored branch with a dirty working tree that this check
+    // never asked them for.
     if (installedCombinedDeps) {
       const restoreInstall = runCommand(
-        pmConfig.installSilent,
+        pmConfig.ciInstall,
         repoRoot,
         INSTALL_TIMEOUT_MS,
       );
@@ -224,7 +229,7 @@ export function runCombinedBranchTest(
         batchFindings.push({
           check: "combined-branch-test",
           severity: "warning",
-          message: `Dependencies were reinstalled for the combined state but could not be restored for \`${restoreBranch}\`. Run \`${pmConfig.install}\` to resync node_modules: ${resolveFailureReason(restoreInstall)}`,
+          message: `Dependencies were reinstalled for the combined state but could not be restored for \`${restoreBranch}\`. Run \`${pmConfig.ciInstall}\` to resync node_modules: ${resolveFailureReason(restoreInstall)}`,
         });
       }
     }

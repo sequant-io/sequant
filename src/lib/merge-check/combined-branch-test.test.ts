@@ -170,22 +170,48 @@ describe("runCombinedBranchTest — dependency reinstall (#803 AC-1, AC-2)", () 
 
     runCombinedBranchTest(BRANCHES, REPO_ROOT);
 
-    const restoreIdx = indexOfCommand("npm install --silent");
-    const checkoutBackIdx = spawnedCommands().findIndex(
+    const commands = spawnedCommands();
+    const checkoutBackIdx = commands.findIndex(
       (c) => c === "git checkout main",
     );
-    expect(restoreIdx).toBeGreaterThan(checkoutBackIdx);
+    const installIndexes = commands.flatMap((c, i) =>
+      c === "npm ci" ? [i] : [],
+    );
+
+    // One install for the combined state, one to put the caller's tree back.
+    expect(installIndexes).toHaveLength(2);
+    expect(installIndexes[0]).toBeLessThan(checkoutBackIdx);
+    expect(installIndexes[1]).toBeGreaterThan(checkoutBackIdx);
+  });
+
+  it("restores with a frozen install so the caller's lockfile is not rewritten", () => {
+    mockRun({ lockfileChanged: true });
+
+    runCombinedBranchTest(BRANCHES, REPO_ROOT);
+
+    // A plain `npm install` normalizes the lockfile, which would leave the
+    // user's restored branch dirty.
+    expect(spawnedCommands()).not.toContain("npm install --silent");
+    expect(spawnedCommands()).not.toContain("npm install");
   });
 
   it("warns, without failing the check, when node_modules cannot be restored", () => {
-    mockRun({
-      lockfileChanged: true,
-      overrides: {
-        "npm install --silent": spawnResult({
-          status: 1,
-          stderr: "ENOSPC: no space left on device",
-        }),
-      },
+    // Forward install succeeds, restore install fails.
+    let installCalls = 0;
+    mockRun({ lockfileChanged: true });
+    const passthrough = mockSpawnSync.getMockImplementation()!;
+    mockSpawnSync.mockImplementation((bin, args, opts) => {
+      const command = `${bin as string} ${((args as string[]) ?? []).join(" ")}`;
+      if (command === "npm ci") {
+        installCalls += 1;
+        if (installCalls === 2) {
+          return spawnResult({
+            status: 1,
+            stderr: "ENOSPC: no space left on device",
+          });
+        }
+      }
+      return passthrough(bin, args, opts);
     });
 
     const result = runCombinedBranchTest(BRANCHES, REPO_ROOT);
