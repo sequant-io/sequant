@@ -1,0 +1,46 @@
+{
+  "_provenance": {
+    "source": ".sequant/metrics.json (runs[]) — gitignored and subject to rotation, so the two relevant entries are excerpted here verbatim",
+    "extractedOn": "2026-07-25",
+    "why": "Independent corroboration for AC-1: the run logs and the metrics writer classified these failures identically (failureCategory: billing), from separate code paths.",
+    "note": "Excerpt only — the two matching entries out of 103 runs. Field values are unmodified."
+  },
+  "runs": [
+    {
+      "id": "94e69183-e4fd-4aae-98f6-8844d717a0c5",
+      "date": "2026-07-18T16:05:28.688Z",
+      "issues": [783],
+      "phases": ["spec"],
+      "outcome": "failed",
+      "duration": 17.508,
+      "model": "opus",
+      "flags": ["--quality-loop", "--testgen"],
+      "failureCategory": "billing",
+      "metrics": {
+        "tokensUsed": 0,
+        "filesChanged": 0,
+        "linesAdded": 0,
+        "acceptanceCriteria": 0,
+        "qaIterations": 0
+      }
+    },
+    {
+      "id": "25ce8d0c-199e-4dcf-bba6-51b1330c5c45",
+      "date": "2026-07-18T16:05:54.526Z",
+      "issues": [784],
+      "phases": ["spec"],
+      "outcome": "failed",
+      "duration": 16.746,
+      "model": "opus",
+      "flags": ["--quality-loop"],
+      "failureCategory": "billing",
+      "metrics": {
+        "tokensUsed": 0,
+        "filesChanged": 0,
+        "linesAdded": 0,
+        "acceptanceCriteria": 0,
+        "qaIterations": 0
+      }
+    }
+  ]
+}

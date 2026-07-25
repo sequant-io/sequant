@@ -5,6 +5,7 @@ vi.mock("child_process", () => ({
   execFileSync: vi.fn(),
 }));
 
+import { readFileSync } from "node:fs";
 import { execSync, execFileSync } from "child_process";
 import {
   parseQaVerdict,
@@ -26,7 +27,13 @@ import {
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
 import { ShutdownManager } from "../shutdown.js";
-import { BillingError, RateLimitError } from "../errors.js";
+import {
+  BillingError,
+  RateLimitError,
+  createRateLimitError,
+  resetsAtToMs,
+} from "../errors.js";
+import type { RateLimitInfoLike } from "../errors.js";
 
 // Mock agents-md module
 vi.mock("../agents-md.js", () => ({
@@ -517,6 +524,119 @@ describe("isWindowExhaustedRateLimit (#761 AC-2)", () => {
     });
     expect(isWindowExhaustedRateLimit(err, NOW)).toBe(true);
   });
+});
+
+describe("#761 AC-9 validation against the real 2026-07-18 capture (#782)", () => {
+  // Production sample, NOT a synthetic fixture. These are the verbatim run logs
+  // from the first real rate-limit rejection captured after PR #781 shipped the
+  // structured `errorContext` persistence (both record startCommit b1bedbc, the
+  // #781 merge commit itself). Reading the committed artifacts rather than
+  // inlining a copy means the doc capture and this test cannot drift apart.
+  //
+  // Purpose: pin the REAL SDK field names and units. The sibling
+  // `isWindowExhaustedRateLimit` suite above is entirely synthetic, so a
+  // renamed `resetsAt`, a changed unit, or a dropped `rateLimitType` would slip
+  // through it while silently disabling the #761 window-exhaustion branch.
+  // Full write-up: docs/incidents/782/validation.md
+  const CAPTURE_DIR = new URL(
+    "../../../docs/incidents/782/captures/2026-07-18/",
+    import.meta.url,
+  );
+  const CAPTURES = [
+    "run-2026-07-18T16-05-05-43494f55-7967-40b9-b04d-e0fb10475255.json",
+    "run-2026-07-18T16-05-33-e9576956-94dd-4308-b886-52c8d025c3c7.json",
+  ];
+
+  interface CapturedPhase {
+    startTime: string;
+    errorContext: {
+      errorType: string;
+      isRetryable: boolean;
+      errorMetadata: RateLimitInfoLike & { assistantError?: string };
+    };
+  }
+
+  function loadCapture(file: string): CapturedPhase {
+    const raw = JSON.parse(
+      readFileSync(new URL(file, CAPTURE_DIR), "utf8"),
+    ) as { issues: { phases: CapturedPhase[] }[] };
+    return raw.issues[0].phases[0];
+  }
+
+  it.each(CAPTURES)(
+    "AC-1: %s arrived on the structured rate_limit_event channel with rateLimitType/resetsAt populated",
+    (file) => {
+      const { errorContext } = loadCapture(file);
+
+      // The discriminator named in #782: the bare `assistant.error` fallback
+      // stamps `assistantError` and carries no timing fields; the
+      // `rate_limit_event` branch is the only source of resetsAt/rateLimitType.
+      expect(errorContext.errorMetadata.assistantError).toBeUndefined();
+      expect(errorContext.errorMetadata.rateLimitType).toBe("five_hour");
+      expect(typeof errorContext.errorMetadata.resetsAt).toBe("number");
+
+      // The seconds-vs-ms heuristic must decode this real value correctly —
+      // 1784392200 → 2026-07-18T16:30:00Z, matching the human-readable
+      // "resets 11:30am (America/Chicago)" the CLI printed alongside it.
+      expect(
+        new Date(
+          resetsAtToMs(errorContext.errorMetadata.resetsAt!),
+        ).toISOString(),
+      ).toBe("2026-07-18T16:30:00.000Z");
+    },
+  );
+
+  it.each(CAPTURES)(
+    "AC-2: %s classifies as a non-retryable BillingError, preserving the window metadata",
+    (file) => {
+      const { errorContext } = loadCapture(file);
+      const err = createRateLimitError(errorContext.errorMetadata);
+
+      // Credits were exhausted too (overageDisabledReason: out_of_credits), so
+      // isBillingFailure wins and this is NOT a RateLimitError — which is why
+      // the "window exhausted, skipping retries" line never printed.
+      expect(err).toBeInstanceOf(BillingError);
+      expect(err.isRetryable).toBe(false);
+      expect(errorContext.errorType).toBe("BillingError");
+      expect(errorContext.isRetryable).toBe(false);
+
+      // The window metadata survives onto the error even on the billing path.
+      expect(err.metadata.rateLimitType).toBe("five_hour");
+      expect(err.metadata.resetsAt).toBe(errorContext.errorMetadata.resetsAt);
+
+      // A BillingError is excluded from the window predicate by design.
+      expect(
+        isWindowExhaustedRateLimit(
+          err,
+          new Date(errorContext.startTime).getTime(),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each(CAPTURES)(
+    "AC-2 counterfactual: %s minus the credits flag would have taken the window-exhausted branch",
+    (file) => {
+      const { errorContext, startTime } = loadCapture(file);
+      const phaseStartMs = new Date(startTime).getTime();
+
+      // Same payload, credits still available — i.e. a pure window rejection,
+      // the case that remains unwitnessed in production. This is the load-bearing
+      // #761 AC-9 claim: the metadata alone is sufficient to drive the branch.
+      const { overageDisabledReason: _dropped, ...windowOnly } =
+        errorContext.errorMetadata;
+      const err = createRateLimitError(windowOnly);
+
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect(isWindowExhaustedRateLimit(err, phaseStartMs)).toBe(true);
+
+      // The reset was ~24.8 min out at phase start — comfortably beyond the
+      // 5-minute threshold, not a borderline pass.
+      const leadMs = resetsAtToMs(windowOnly.resetsAt!) - phaseStartMs;
+      expect(leadMs).toBeGreaterThan(RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS);
+      expect(leadMs / 60_000).toBeGreaterThan(20);
+    },
+  );
 });
 
 describe("executePhaseWithRetry", () => {
