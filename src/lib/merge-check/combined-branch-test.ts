@@ -94,7 +94,7 @@ function git(
  * @param timeoutMs Kill the command after this long
  * @internal Exported for testing
  */
-export function runCommand(
+export function runPackageManagerCommand(
   command: string,
   cwd: string,
   timeoutMs: number,
@@ -220,7 +220,7 @@ export function runCombinedBranchTest(
     // the user's restored branch with a dirty working tree that this check
     // never asked them for.
     if (installedCombinedDeps) {
-      const restoreInstall = runCommand(
+      const restoreInstall = runPackageManagerCommand(
         pmConfig.ciInstall,
         repoRoot,
         INSTALL_TIMEOUT_MS,
@@ -353,7 +353,7 @@ function runChecks(
   // is inconsistent with package.json.
   let installedCombinedDeps = false;
   if (lockfileChanged(repoRoot, BASE_REF)) {
-    const installResult = runCommand(
+    const installResult = runPackageManagerCommand(
       pmConfig.ciInstall,
       repoRoot,
       INSTALL_TIMEOUT_MS,
@@ -380,7 +380,11 @@ function runChecks(
 
   // Run the test suite
   const testCommand = `${pmConfig.run} test`;
-  const testResult = runCommand(testCommand, repoRoot, TEST_BUILD_TIMEOUT_MS);
+  const testResult = runPackageManagerCommand(
+    testCommand,
+    repoRoot,
+    TEST_BUILD_TIMEOUT_MS,
+  );
   batchFindings.push(
     testResult.ok
       ? {
@@ -397,7 +401,7 @@ function runChecks(
 
   // Run the build
   const buildCommand = `${pmConfig.run} build`;
-  const buildOutcome = runCommand(
+  const buildOutcome = runPackageManagerCommand(
     buildCommand,
     repoRoot,
     TEST_BUILD_TIMEOUT_MS,
