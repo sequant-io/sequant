@@ -76,7 +76,7 @@ Posts per-issue merge readiness reports as comments on each PR.
 
 | Check | What It Does | Verdict |
 |-------|-------------|---------|
-| **Combined Branch Test** | Creates temp branch, merges all feature branches, runs `npm test && npm run build` | FAIL if merge conflict or test/build failure |
+| **Combined Branch Test** | Creates temp branch, merges all feature branches, reinstalls dependencies if the merge moved a lockfile, then runs the detected package manager's `test` and `build` scripts | FAIL if merge conflict, dependency install failure, or test/build failure |
 | **Template Mirroring** | Verifies `.claude/skills/` changes have matching `templates/skills/` updates (and vice versa for `hooks/`) | WARN if unmirrored changes found |
 | **File Overlap Detection** | Flags files modified by multiple issues in the batch, classifies as additive vs conflicting | WARN if overlaps found |
 
@@ -156,8 +156,9 @@ Each PR receives a per-issue report showing its specific findings and the batch-
 | #298 | Add test tautology | PASS |
 
 ## Combined Branch Test
-- npm test passed on combined state
-- npm run build passed on combined state
+- Lockfile changed in the combined state — reinstalled dependencies with `npm ci`
+- `npm run test` passed on combined state
+- `npm run build` passed on combined state
 
 ## Mirroring
 - Modified .claude/skills/qa/SKILL.md but not templates/skills/qa/SKILL.md

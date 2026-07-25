@@ -4,6 +4,7 @@
 
 import { existsSync } from "fs";
 import { readdir } from "fs/promises";
+import { join } from "path";
 import { fileExists, readFile } from "./fs.js";
 
 /**
@@ -54,13 +55,7 @@ const SKIP_DIRECTORIES = [
  * Supported package managers
  */
 export type PackageManager =
-  | "npm"
-  | "bun"
-  | "yarn"
-  | "pnpm"
-  | "pip"
-  | "poetry"
-  | "uv";
+  "npm" | "bun" | "yarn" | "pnpm" | "pip" | "poetry" | "uv";
 
 /**
  * Package manager command configuration
@@ -70,6 +65,7 @@ export interface PackageManagerConfig {
   exec: string; // e.g., "npx", "bunx", "yarn dlx"
   install: string; // e.g., "npm install", "bun install" (all deps)
   installSilent: string; // e.g., "npm install --silent", "bun install --silent"
+  ciInstall: string; // e.g., "npm ci", "pnpm install --frozen-lockfile" (lockfile-faithful, never rewrites it)
   addPkg: string; // e.g., "npm install", "pnpm add" (add a specific package)
   removePkg: string; // e.g., "npm uninstall", "pnpm remove"
   updatePkg: string; // e.g., "npm update", "pnpm update"
@@ -84,6 +80,7 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "npx",
     install: "npm install",
     installSilent: "npm install --silent",
+    ciInstall: "npm ci",
     addPkg: "npm install",
     removePkg: "npm uninstall",
     updatePkg: "npm update",
@@ -93,6 +90,7 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "bunx",
     install: "bun install",
     installSilent: "bun install --silent",
+    ciInstall: "bun install --frozen-lockfile",
     addPkg: "bun add",
     removePkg: "bun remove",
     updatePkg: "bun update",
@@ -102,6 +100,7 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "yarn dlx",
     install: "yarn install",
     installSilent: "yarn install --silent",
+    ciInstall: "yarn install --immutable",
     addPkg: "yarn add",
     removePkg: "yarn remove",
     updatePkg: "yarn upgrade",
@@ -111,16 +110,20 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "pnpm dlx",
     install: "pnpm install",
     installSilent: "pnpm install --silent",
+    ciInstall: "pnpm install --frozen-lockfile",
     addPkg: "pnpm add",
     removePkg: "pnpm remove",
     updatePkg: "pnpm update",
   },
-  // Python package managers
+  // Python package managers. None of these has a distinct "frozen lockfile"
+  // install mode the way npm/pnpm/yarn/bun do (poetry install already honors
+  // poetry.lock), so ciInstall mirrors installSilent rather than inventing a flag.
   pip: {
     run: "python -m",
     exec: "python -m",
     install: "pip install",
     installSilent: "pip install -q",
+    ciInstall: "pip install -q",
     addPkg: "pip install",
     removePkg: "pip uninstall",
     updatePkg: "pip install --upgrade",
@@ -130,6 +133,7 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "poetry run",
     install: "poetry install",
     installSilent: "poetry install -q",
+    ciInstall: "poetry install -q",
     addPkg: "poetry add",
     removePkg: "poetry remove",
     updatePkg: "poetry update",
@@ -139,6 +143,7 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     exec: "uvx",
     install: "uv pip install",
     installSilent: "uv pip install -q",
+    ciInstall: "uv pip install -q",
     addPkg: "uv pip install",
     removePkg: "uv pip uninstall",
     updatePkg: "uv pip install --upgrade",
@@ -207,10 +212,16 @@ export async function detectPackageManager(): Promise<PackageManager | null> {
 /**
  * Synchronous version of detectPackageManager for use in startup code.
  * Only checks JS lockfiles (not Python) since sequant is a Node.js tool.
+ *
+ * @param root Directory to look for lockfiles in. Defaults to the process cwd,
+ *        which is what startup code wants; callers that operate on a specific
+ *        repository (e.g. merge-check) must pass that repo's root instead.
  */
-export function detectPackageManagerSync(): PackageManager {
+export function detectPackageManagerSync(
+  root: string = process.cwd(),
+): PackageManager {
   for (const { file, pm } of LOCKFILE_PRIORITY) {
-    if (existsSync(file)) {
+    if (existsSync(join(root, file))) {
       return pm;
     }
   }
