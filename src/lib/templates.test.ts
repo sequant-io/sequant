@@ -396,6 +396,20 @@ describe("templates", () => {
         "# my-project Constitution\n\n## Custom Principle\nKeep it.\n";
       await seedConstitution(custom);
 
+      // A stale non-customizable tree file must still be refreshed by the
+      // same call that preserves the constitution (AC-1's "trees still
+      // refresh" clause).
+      const SKILL_TREE_LOCAL = ".claude/skills/exec/SKILL.md";
+      await mkdir(join(templatesDir, "skills", "exec"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "skills", "exec", "SKILL.md"),
+        "exec skill v{{PROJECT_NAME}}\n",
+      );
+      await mkdir(join(cwdDir, ".claude", "skills", "exec"), {
+        recursive: true,
+      });
+      await fsWriteFile(join(cwdDir, SKILL_TREE_LOCAL), "stale skill\n");
+
       const result = await copyTemplates("generic");
 
       const content = await fsReadFile(
@@ -404,6 +418,12 @@ describe("templates", () => {
       );
       expect(content).toBe(custom); // untouched
       expect(result.preservedCustomizable).toContain(CONSTITUTION_LOCAL);
+
+      // Tree file overwritten with the rendered template, not preserved.
+      expect(await fsReadFile(join(cwdDir, SKILL_TREE_LOCAL), "utf-8")).toBe(
+        "exec skill vmy-project\n",
+      );
+      expect(result.preservedCustomizable).not.toContain(SKILL_TREE_LOCAL);
     });
 
     it("overwrites the customization only when overwriteCustomizable is set — not force (AC-2)", async () => {
