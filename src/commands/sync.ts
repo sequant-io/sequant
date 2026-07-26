@@ -18,6 +18,7 @@ import {
   computeTemplateChanges,
   listTemplateFiles,
   getTemplatesDir,
+  isCustomizableFile,
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
@@ -322,30 +323,47 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
   // Preview path: report exactly what the apply would write, then stop without
   // mutating (#722). This branch is only reached when `force` is set or the
-  // version marker mismatches — i.e. the path that runs `copyTemplates(force:
-  // true)` and rewrites the whole tree. (A matching-version, non-force dry-run
-  // already returned at the report-only short-circuit above, which never
-  // mutates.) `copyTemplates` does NOT protect in-place customizations the way
-  // `update` does — the force copy overwrites them — so the preview counts
-  // `local-override` files alongside `new`/`modified`. Reporting only
-  // new+modified would under-report the write-set, the exact divergence #722
-  // is about.
+  // version marker mismatches — i.e. the path that runs `copyTemplates` and
+  // rewrites the whole tree. (A matching-version, non-force dry-run already
+  // returned at the report-only short-circuit above, which never mutates.)
+  //
+  // Since #814 the apply path PRESERVES in-place customizations (files in
+  // CUSTOMIZABLE_FILES) under a plain sync and only overwrites them under an
+  // explicit `--force`. The preview must mirror that split exactly, or it would
+  // re-introduce the dry-run/apply divergence #722 is about: partition the
+  // `local-override` set into preserved (plain sync) vs overwritten (--force,
+  // or a non-customizable `.local`-twin the tree copy still rewrites).
   if (dryRun) {
     const changes = await computeTemplateChanges(manifest.stack, tokens);
     const newFiles = changes.filter((c) => c.status === "new");
     const modifiedFiles = changes.filter((c) => c.status === "modified");
     const localOverrides = changes.filter((c) => c.status === "local-override");
-    const toWrite = [...newFiles, ...modifiedFiles, ...localOverrides];
+    const preservedOverrides = force
+      ? []
+      : localOverrides.filter((c) => isCustomizableFile(c.path));
+    const overwrittenOverrides = localOverrides.filter(
+      (c) => force || !isCustomizableFile(c.path),
+    );
+    const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
 
     if (!quiet) {
       console.log(chalk.bold("Summary (dry-run):"));
       console.log(chalk.green(`  New files: ${newFiles.length}`));
       console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
-      console.log(
-        chalk.blue(
-          `  Local overrides (overwritten by sync): ${localOverrides.length}`,
-        ),
-      );
+      if (preservedOverrides.length > 0) {
+        console.log(
+          chalk.blue(
+            `  Customizable (preserved): ${preservedOverrides.length}`,
+          ),
+        );
+      }
+      if (overwrittenOverrides.length > 0) {
+        console.log(
+          chalk.blue(
+            `  Local overrides (overwritten): ${overwrittenOverrides.length}`,
+          ),
+        );
+      }
 
       if (modifiedFiles.length > 0) {
         console.log(chalk.bold("\nModified files:"));
@@ -359,11 +377,19 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
           console.log(chalk.green(`  ${file.path}`));
         }
       }
-      if (localOverrides.length > 0) {
+      if (preservedOverrides.length > 0) {
         console.log(
-          chalk.bold("\nLocal overrides (will be overwritten by sync):"),
+          chalk.bold(
+            "\nCustomizable files (preserved — run `sync --force` to replace):",
+          ),
         );
-        for (const file of localOverrides) {
+        for (const file of preservedOverrides) {
+          console.log(chalk.blue(`  ${file.path}`));
+        }
+      }
+      if (overwrittenOverrides.length > 0) {
+        console.log(chalk.bold("\nLocal overrides (will be overwritten):"));
+        for (const file of overwrittenOverrides) {
           console.log(chalk.blue(`  ${file.path}`));
         }
       }
@@ -385,16 +411,55 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     return;
   }
 
-  // Copy templates with force to overwrite existing files
+  // Copy templates: always refresh the managed trees, but only overwrite
+  // user-owned CUSTOMIZABLE_FILES (e.g. the constitution) when the user
+  // explicitly passed --force. These are two distinct notions of "force" and
+  // conflating them is what silently ate the constitution (#814).
   const copyOptions: CopyTemplatesOptions = {
-    force: true, // Always overwrite when syncing
+    force: true, // Always overwrite the managed skills/agents/hooks trees
+    overwriteCustomizable: force, // Clobber user-owned files only on explicit --force
   };
+
+  // AC-3: under --force, announce which customizable files are about to be
+  // overwritten *before* writing them, so the destructive action is never
+  // silent. Reuse the diff path's `local-override` classification (the same
+  // set --dry-run reports), narrowed to CUSTOMIZABLE_FILES.
+  if (force && !quiet) {
+    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const overwrites = changes.filter(
+      (c) => c.status === "local-override" && isCustomizableFile(c.path),
+    );
+    if (overwrites.length > 0) {
+      console.log(
+        chalk.yellow(
+          `Overwriting ${overwrites.length} customizable file(s) (--force):`,
+        ),
+      );
+      for (const file of overwrites) {
+        console.log(chalk.yellow(`  ${file.path}`));
+      }
+    }
+  }
 
   if (!quiet) {
     console.log(chalk.blue("Copying templates..."));
   }
 
-  await copyTemplates(manifest.stack, tokens, copyOptions);
+  const { preservedCustomizable } = await copyTemplates(
+    manifest.stack,
+    tokens,
+    copyOptions,
+  );
+
+  // AC-4: on a plain sync, report each customizable file that was preserved so
+  // the apply path's output matches what --dry-run already promises (#722).
+  if (!quiet && preservedCustomizable.length > 0) {
+    for (const file of preservedCustomizable) {
+      console.log(
+        chalk.blue(`  preserved: ${file} — run \`sync --force\` to replace`),
+      );
+    }
+  }
 
   // Update version markers
   await updateSkillsVersion();
