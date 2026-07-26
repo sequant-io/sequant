@@ -831,7 +831,16 @@ export async function ensureWorktree(
     // Use detected package manager or default to npm
     const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
     const pmConfig = PM_CONFIG[pm];
-    const [cmd, ...args] = pmConfig.installSilent.split(" ");
+    // ciInstall, not installSilent: a plain `npm install` normalizes and
+    // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
+    // newer npm committed), so every provisioned worktree started dirty. That
+    // one unstaged file cascaded: rebaseBeforePR refused to run, stale
+    // worktrees read as having "uncommitted changes" and were never recreated,
+    // and chain checkpoints skipped on an out-of-scope dirty file. A frozen
+    // install never touches the lockfile. Same substitution #803 made for
+    // merge-check's combined-branch test. The `!existsSync(node_modules)`
+    // guard above means `npm ci`'s wipe-and-reinstall has nothing to wipe.
+    const [cmd, ...args] = pmConfig.ciInstall.split(" ");
     spawnSync(cmd, args, {
       cwd: worktreePath,
       stdio: "pipe",
@@ -1175,7 +1184,11 @@ export function reinstallIfLockfileChanged(
 
   const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
   const pmConfig = PM_CONFIG[pm];
-  const [cmd, ...args] = pmConfig.installSilent.split(" ");
+  // ciInstall for the same reason as provisioning (see ensureWorktree): this
+  // reinstall exists because a rebase pulled in a NEW lockfile, so installing
+  // exactly what that lockfile says — never rewriting it — is the semantic
+  // the function's own name promises.
+  const [cmd, ...args] = pmConfig.ciInstall.split(" ");
 
   const installResult = spawnSync(cmd, args, {
     cwd: worktreePath,
