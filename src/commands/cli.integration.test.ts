@@ -8,7 +8,11 @@
  * tests because they mocked `fs`. We only caught it after releasing v1.5.4.
  */
 
-import { execSync, ExecSyncOptionsWithStringEncoding } from "child_process";
+import {
+  execSync,
+  spawnSync,
+  ExecSyncOptionsWithStringEncoding,
+} from "child_process";
 import { describe, it, expect } from "vitest";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -222,5 +226,68 @@ describe("run command flag surface (#705)", () => {
 
   it("--no-tui parses without error (AC-4)", () => {
     expect(() => runDryRun("--no-tui")).not.toThrow();
+  });
+
+  // #795 AC-2: --qa-gate is deprecated to a no-op. It must keep parsing so
+  // existing scripts don't hard-error, must warn, and must no longer abort the
+  // run when --chain is absent.
+  describe("#795: --qa-gate deprecation", () => {
+    // The notice goes to stderr (it is a warning), so these assertions need
+    // both streams — `runDryRun` above returns stdout only. spawnSync rather
+    // than a `2>&1` / `2>/dev/null` execSync: no shell means no cmd.exe-vs-sh
+    // redirection difference, and the streams stay separable so a single run
+    // can assert "on stderr AND not on stdout".
+    const runDryRunStreams = (
+      ...flags: string[]
+    ): { stdout: string; stderr: string } => {
+      const r = spawnSync(
+        process.execPath,
+        [cliPath, "run", "1", ...flags, "--dry-run"],
+        { cwd: projectRoot, encoding: "utf-8" },
+      );
+      return { stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    };
+
+    it("--qa-gate without --chain warns instead of aborting the run", () => {
+      const { stdout, stderr } = runDryRunStreams("--qa-gate");
+
+      // Before #795 this printed "❌ --qa-gate requires --chain flag" and
+      // returned early, so the run never started. Both halves matter: the
+      // notice must appear AND the old abort message must be gone.
+      expect(stderr).toMatch(/--qa-gate is deprecated/);
+      expect(stdout + stderr).not.toMatch(/requires --chain/);
+    });
+
+    it("--qa-gate with --chain still parses and warns", () => {
+      expect(runDryRunStreams("--qa-gate", "--chain").stderr).toMatch(
+        /--qa-gate is deprecated/,
+      );
+    });
+
+    it("routes the notice to stderr, keeping stdout clean", () => {
+      // A consuming script that pipes stdout must not receive the warning.
+      expect(runDryRunStreams("--qa-gate").stdout).not.toMatch(
+        /--qa-gate is deprecated/,
+      );
+    });
+
+    it("still warns under --quiet (a warning, not progress output)", () => {
+      // --quiet suppresses version chatter and progress; it is not a warning
+      // switch. CI scripts are the likeliest to still pass --qa-gate AND the
+      // likeliest to pass --quiet, so gating here would silence the
+      // deprecation for exactly its target audience.
+      expect(runDryRunStreams("--qa-gate", "--quiet").stderr).toMatch(
+        /--qa-gate is deprecated/,
+      );
+    });
+
+    it("run --help describes --qa-gate as deprecated, not as gating", () => {
+      const help = execSync(`node ${cliPath} run --help`, execOptions);
+
+      expect(help).toMatch(/--qa-gate/);
+      expect(help).toMatch(/DEPRECATED/);
+      // The removed promise: help text must no longer claim it waits for QA.
+      expect(help).not.toMatch(/Wait for QA pass/);
+    });
   });
 });
