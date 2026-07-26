@@ -203,7 +203,10 @@ program
   .description(
     "Sync skills and templates from the Sequant package (non-interactive)",
   )
-  .option("-f, --force", "Sync even if versions match")
+  .option(
+    "-f, --force",
+    "Sync even if versions match; also overwrites in-place customizations (e.g. the constitution)",
+  )
   .option("-q, --quiet", "Suppress output")
   .option(
     "-d, --dry-run",
