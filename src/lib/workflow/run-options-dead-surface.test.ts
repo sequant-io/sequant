@@ -25,6 +25,22 @@ const typesPath = join(dirname(fileURLToPath(import.meta.url)), "types.ts");
 const typesSource = readFileSync(typesPath, "utf8");
 
 /**
+ * `typesSource` with comments removed.
+ *
+ * The reintroduction check needs to tell a *declaration* from a *mention*, and
+ * the only thing that reliably separates them is whether the text is code or a
+ * comment. Earlier drafts tried to encode that as a line-anchored pattern,
+ * which was both too strict and too loose: it still missed `readonly x?: b`,
+ * `"x"?: b`, `x ?: b`, and a field sharing a line with its predecessor -- all
+ * valid TypeScript -- while remaining one prose sentence away from a false
+ * positive. Deleting the comments removes the ambiguity at the source, so the
+ * declaration pattern can stay permissive without ever matching prose.
+ */
+const typesCode = typesSource
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/\/\/.*$/gm, "");
+
+/**
  * Slice out the `RunOptions` interface body so assertions cannot accidentally
  * match an unrelated declaration elsewhere in the file.
  */
@@ -66,35 +82,63 @@ describe("RunOptions dead-surface guard (#810)", () => {
     // wanted later, it must arrive with a CLI flag and a runtime consumer --
     // re-adding a bare field puts the same misleading comment back.
     //
-    // Two deliberate choices here, both learned the hard way:
+    // Three deliberate choices, each one a hole a previous draft fell into:
     //
-    // 1. Anchored to a line-start field declaration, NOT a bare
-    //    `\breuseWorktrees\b` substring. The first draft used the substring
-    //    form and failed immediately -- on the doc comment below, which names
-    //    the removed field in prose. A guard that trips on any mention of the
-    //    thing it guards cannot survive its own rationale being written down.
+    // 1. Matched against comment-stripped code, not raw source. The first
+    //    draft searched for a bare `\breuseWorktrees\b` substring and failed
+    //    immediately -- on the doc comment below, which names the removed
+    //    field in prose. A guard that trips on any mention of the thing it
+    //    guards cannot survive its own rationale being written down.
     //
-    // 2. Scanned against the WHOLE file, not `runOptionsBody()`. Scoping this
-    //    check to the sliced interface bought nothing -- the line-anchored
-    //    pattern already cannot match prose -- but it inherited the slice's
-    //    failure mode: a stray `}` in any doc comment truncates the body, and
-    //    a field declared past the truncation point reads as absent. That is a
-    //    silently-passing guard, the exact defect class #810 exists to remove.
-    //    A `reuseWorktrees` field declared anywhere in this file is a
-    //    regression regardless of which interface holds it, so scan it all.
-    expect(typesSource).not.toMatch(/^\s*reuseWorktrees\??\s*:/m);
+    // 2. Scanned across the WHOLE file, not the `runOptionsBody()` slice. That
+    //    slice can be truncated by a stray `}` in a doc comment, and a field
+    //    declared past the truncation point then reads as absent -- a silently
+    //    passing guard, the exact defect class #810 exists to remove. A
+    //    `reuseWorktrees` declaration anywhere in this file is a regression
+    //    regardless of which interface holds it.
+    //
+    // 3. Permissive about the shape of the declaration. Anchoring to
+    //    `^\s*name` looked precise but silently missed four valid TypeScript
+    //    spellings -- `readonly reuseWorktrees?:`, `"reuseWorktrees"?:`,
+    //    `reuseWorktrees ?:`, and a field sharing a line with its predecessor.
+    //    Precision in the wrong dimension is just a blind spot with a tidy
+    //    regex. Comment-stripping (choice 1) is what makes this safe: with no
+    //    prose left to match, the pattern can afford to be generous.
+    expect(typesCode).not.toMatch(/\breuseWorktrees\b["']?\s*\??\s*:/);
   });
 
   it("marks experimentalTui as intentionally inert so sweeps do not re-flag it", () => {
-    // The marker must sit in experimentalTui's own doc comment, not merely
-    // somewhere in the file -- a sweeper reads the declaration site.
+    // The marker must sit in experimentalTui's OWN doc comment, not merely
+    // somewhere in the file -- a sweeper reads the declaration site, so that
+    // is where the answer has to be.
     const body = runOptionsBody();
-    const decl = body.indexOf("experimentalTui?: boolean;");
-    expect(decl, "experimentalTui declaration not found").toBeGreaterThan(-1);
+
+    // Located by pattern rather than the exact string `experimentalTui?:
+    // boolean;`. An exact match would quietly stop finding the declaration if
+    // the type were widened to `boolean | undefined`, a `readonly` added, or
+    // prettier rewrapped the line -- and "declaration not found" would then be
+    // indistinguishable from "marker absent" to anyone reading the failure.
+    const declMatch = /\bexperimentalTui\b["']?\s*\??\s*:/.exec(body);
+    expect(declMatch, "experimentalTui declaration not found").not.toBeNull();
+    const decl = declMatch!.index;
 
     const commentStart = body.lastIndexOf("/**", decl);
-    const docComment = body.slice(commentStart, decl);
+    expect(
+      commentStart,
+      "experimentalTui has no preceding doc comment at all",
+    ).toBeGreaterThan(-1);
 
+    // Guard against borrowing a *neighbour's* comment: if experimentalTui's own
+    // doc block were deleted, `lastIndexOf` would happily return the previous
+    // field's block and scan that instead. Nothing but whitespace may sit
+    // between the comment's `*/` and the declaration.
+    const between = body.slice(body.indexOf("*/", commentStart) + 2, decl);
+    expect(
+      between.trim(),
+      "the nearest doc comment belongs to a different field",
+    ).toBe("");
+
+    const docComment = body.slice(commentStart, decl);
     expect(docComment).toMatch(/INTENTIONALLY INERT/);
     expect(docComment).toMatch(/#810/);
   });
