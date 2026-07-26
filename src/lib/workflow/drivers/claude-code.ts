@@ -30,6 +30,9 @@ import type {
 export class ClaudeCodeDriver implements AgentDriver {
   name = "claude-code";
 
+  /** Phases run slash-command skills from `.claude/skills/` (#813). */
+  resolvesSkills = true;
+
   /**
    * Track session ID across calls so callers can implement resume.
    * Set after each executePhase() call.

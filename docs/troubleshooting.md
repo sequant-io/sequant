@@ -283,6 +283,26 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
 
 3. Restart Claude Code to reload skills.
 
+### Run fails with "Skills pre-flight failed"
+
+**Problem:** `sequant run` exits immediately with `✖ Skills pre-flight failed: missing .claude/skills/ directory` (or a list of missing skills).
+
+**Cause:** `.claude/skills/` is a hard runtime dependency of `sequant run` — phase agents load skills from the project directory only, so user-scope or plugin installs cannot substitute for it. The directory is easy to lose in consumer projects because it is untracked by default (an untracked-file cleanup deletes it silently).
+
+**Solutions:**
+
+1. Reinstall the skills:
+   ```bash
+   sequant sync
+   ```
+
+2. Commit `.claude/skills/` to your repository so a fresh checkout keeps working:
+   ```bash
+   git add .claude/skills && git commit -m "chore: track sequant skills"
+   ```
+
+**Note:** The pre-flight only applies to drivers that resolve skills (the default `claude-code` driver). Aider runs are unaffected.
+
 ### Permission denied on hooks
 
 **Problem:** Hook scripts fail with permission errors.
