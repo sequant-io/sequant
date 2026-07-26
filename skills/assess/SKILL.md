@@ -198,9 +198,13 @@ Triggers (any one):
 
 Format: `Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
 
-Flag references:
-- `--chain` chains issues (each branches from previous; implies `--sequential`)
+Flag references (only `--chain` itself is emitted by default — the rest are conditional):
+- `--chain` — each successor is rebased onto the predecessor's committed work before it runs; implies `--sequential`
 - `--base <branch>` — issue references a feature branch
+- `--stacked` — implies `--chain`; non-first PRs target the predecessor branch instead of main. Never add it to the default `Chain:` line. Mention it only for 3+ chained issues where incremental PR review is the point (2-issue stacks are manifest-only, so it buys nothing there), and note that it constrains merge order — `/merger` warns when stacked PRs are processed out of order.
+- `--strict-preflight` — turns `--chain`'s content pre-flight warnings (missing AC section, dependency/overlap order, closed issues) into a hard stop before any worktree is provisioned. Rarely worth suggesting here: assess already routes AC-less issues to `?` and blocked issues to `‖`, so the set that reaches a `Chain:` line normally clears the pre-flight anyway. Mention it only when a chain member's ACs or dependency markers are expected to change before the run.
+
+**Chain resume (#760):** When a `Chain:` line covers issues where some links are already complete (`ready_for_merge` or `merged`), the line still lists the **full original issue set** — do not trim it to the incomplete links. `run-orchestrator.ts` computes a chain-correct resume plan from the full list: it skips the completed prefix and rebases the first incomplete link onto that prefix's committed tip. Trimming leaves that link at index 0, where the successor-rebase never fires and it silently builds on `main` (the #748 bug). Only a *contiguous* leading run of completed links is skipped, so a complete → incomplete → complete sequence re-executes the trailing link too. The single-issue `--phases exec,qa   # resume` idiom does not apply inside a `Chain:` line.
 
 ### Step 5: Conflict Detection
 
@@ -293,7 +297,7 @@ The commands block is headed by `Commands:` — no box-drawing, no character cou
 
 1. Only PROCEED and REWRITE issues get commands
 2. Group by identical phases + flags → same line
-3. Resume issues get `# resume` comment
+3. Resume issues get `# resume` comment (does not apply inside a `Chain:` line — see "Chain resume" in Step 4)
 4. Rewrite issues get `# restart` comment
 5. Chain mode issues use `--chain` flag (see `Chain:` annotation rules below)
 6. If ALL issues share the same workflow, emit a single command
