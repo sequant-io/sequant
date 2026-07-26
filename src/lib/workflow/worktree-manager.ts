@@ -280,7 +280,11 @@ export function checkWorktreeFreshness(
     );
     if (countResult.status === 0) {
       result.commitsBehind = parseInt(countResult.stdout.toString().trim(), 10);
-      // Consider stale if more than 5 commits behind (configurable threshold)
+      // Consider stale if more than 5 commits behind. NOT configurable — the
+      // threshold is the literal below, and a stale-but-clean worktree is
+      // force-removed and rebuilt on the strength of it (see the recreate
+      // branch in `ensureWorktree`). Surfaced in #810; left as a literal here
+      // because making it configurable is a behavior change, not a comment fix.
       result.isStale = result.commitsBehind > 5;
     }
   }

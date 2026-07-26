@@ -1547,7 +1547,7 @@ fi
 
    Fields without runtime `mergedOptions.X` usage are internal-only and don't need CLI registration:
    - `autoDetectPhases` — set programmatically, not user-facing
-   - `worktreeIsolation` — environment-controlled
+   - `worktreeIsolation` — programmatic callers only: no `--worktree-isolation` flag exists and `getEnvConfig` never sets it (#810)
    - Fields only used in type signatures without runtime access
 
    **Detection:** If `grep "mergedOptions.$field"` returns no matches, the field is internal-only.

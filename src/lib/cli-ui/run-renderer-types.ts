@@ -198,11 +198,6 @@ export interface RenderOptions {
    */
   maxLoopIterations?: number;
   /**
-   * When true, `renderSummary` is rendered even if no issues were registered.
-   * Default: false (matches existing displaySummary behaviour).
-   */
-  alwaysRenderSummary?: boolean;
-  /**
    * #647: inject a `log-update` instance (typically built via
    * `createLogUpdate(stream)` against a custom stream). Used by the
    * scrollback-harness regression test to drive the real `log-update`
