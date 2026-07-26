@@ -41,7 +41,20 @@ function runOptionsBody(): string {
     if (typesSource[i] === "{") depth++;
     else if (typesSource[i] === "}") {
       depth--;
-      if (depth === 0) return typesSource.slice(open, i + 1);
+      if (depth === 0) {
+        // The interface's real closing brace sits at column 0; every brace
+        // inside the body is indented. A stray `}` in a doc comment would
+        // close the walk early and hand back a truncated body, which callers
+        // would then scan clean without ever knowing they saw a fragment.
+        // Refuse the slice rather than return a partial one.
+        if (i > 0 && typesSource[i - 1] !== "\n") {
+          throw new Error(
+            "RunOptions brace-walk stopped at an indented `}` (likely a stray " +
+              "brace in a doc comment) — refusing a possibly truncated body.",
+          );
+        }
+        return typesSource.slice(open, i + 1);
+      }
     }
   }
   throw new Error("Unbalanced braces while scanning RunOptions");
@@ -53,12 +66,23 @@ describe("RunOptions dead-surface guard (#810)", () => {
     // wanted later, it must arrive with a CLI flag and a runtime consumer --
     // re-adding a bare field puts the same misleading comment back.
     //
-    // Anchored to a line-start field declaration, NOT a bare `\breuseWorktrees\b`
-    // substring. The first draft used the substring form and failed immediately
-    // on the doc comment below that names the removed field in prose. A guard
-    // that trips on any mention of the thing it guards cannot survive its own
-    // rationale being written down.
-    expect(runOptionsBody()).not.toMatch(/^\s*reuseWorktrees\??\s*:/m);
+    // Two deliberate choices here, both learned the hard way:
+    //
+    // 1. Anchored to a line-start field declaration, NOT a bare
+    //    `\breuseWorktrees\b` substring. The first draft used the substring
+    //    form and failed immediately -- on the doc comment below, which names
+    //    the removed field in prose. A guard that trips on any mention of the
+    //    thing it guards cannot survive its own rationale being written down.
+    //
+    // 2. Scanned against the WHOLE file, not `runOptionsBody()`. Scoping this
+    //    check to the sliced interface bought nothing -- the line-anchored
+    //    pattern already cannot match prose -- but it inherited the slice's
+    //    failure mode: a stray `}` in any doc comment truncates the body, and
+    //    a field declared past the truncation point reads as absent. That is a
+    //    silently-passing guard, the exact defect class #810 exists to remove.
+    //    A `reuseWorktrees` field declared anywhere in this file is a
+    //    regression regardless of which interface holds it, so scan it all.
+    expect(typesSource).not.toMatch(/^\s*reuseWorktrees\??\s*:/m);
   });
 
   it("marks experimentalTui as intentionally inert so sweeps do not re-flag it", () => {
