@@ -14,6 +14,7 @@ import {
   isCustomizableFile,
   buildTemplateVariables,
   computeTemplateChanges,
+  copyTemplates,
   CUSTOMIZABLE_FILES,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
@@ -341,6 +342,134 @@ describe("templates", () => {
       const after = await computeTemplateChanges("generic");
       expect(after.find((c) => c.path === SKILL_LOCAL)?.status).toBe(
         "local-override",
+      );
+    });
+  });
+
+  // Write-path protection for CUSTOMIZABLE_FILES (#814). Hermetic: a temp
+  // templates tree + temp cwd, so copyTemplates writes into a throwaway
+  // `.claude/`. The one CUSTOMIZABLE_FILES entry (constitution) is exercised
+  // through the real copy — not the diff path.
+  describe("copyTemplates customizable-file preservation (#814)", () => {
+    const CONSTITUTION_LOCAL = ".claude/memory/constitution.md";
+    // constitution template rendered with PROJECT_NAME=my-project
+    const RENDERED = "# my-project Constitution\n";
+    let prevCwd: string;
+    let cwdDir: string;
+    let templatesDir: string;
+
+    beforeEach(async () => {
+      prevCwd = process.cwd();
+      cwdDir = await mkdtemp(join(tmpdir(), "sequant-copy-cwd-"));
+      templatesDir = await mkdtemp(join(tmpdir(), "sequant-copy-tpl-"));
+      process.chdir(cwdDir);
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      // Deterministic PROJECT_NAME via package.json
+      await fsWriteFile(
+        join(cwdDir, "package.json"),
+        JSON.stringify({ name: "my-project" }),
+      );
+
+      // Seed the temp templates tree with just the constitution
+      await mkdir(join(templatesDir, "memory"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "memory", "constitution.md"),
+        "# {{PROJECT_NAME}} Constitution\n",
+      );
+    });
+
+    afterEach(async () => {
+      process.chdir(prevCwd);
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      await rm(cwdDir, { recursive: true, force: true });
+      await rm(templatesDir, { recursive: true, force: true });
+    });
+
+    async function seedConstitution(content: string): Promise<void> {
+      await mkdir(join(cwdDir, ".claude", "memory"), { recursive: true });
+      await fsWriteFile(join(cwdDir, CONSTITUTION_LOCAL), content);
+    }
+
+    it("preserves an in-place customized constitution under a plain copy (AC-1, AC-2)", async () => {
+      const custom =
+        "# my-project Constitution\n\n## Custom Principle\nKeep it.\n";
+      await seedConstitution(custom);
+
+      const result = await copyTemplates("generic");
+
+      const content = await fsReadFile(
+        join(cwdDir, CONSTITUTION_LOCAL),
+        "utf-8",
+      );
+      expect(content).toBe(custom); // untouched
+      expect(result.preservedCustomizable).toContain(CONSTITUTION_LOCAL);
+    });
+
+    it("overwrites the customization only when overwriteCustomizable is set — not force (AC-2)", async () => {
+      const custom = "# my-project Constitution\n\n## Custom\nKeep it.\n";
+      await seedConstitution(custom);
+
+      // `force` refreshes trees but must NOT clobber the customizable file.
+      const forced = await copyTemplates("generic", undefined, {
+        force: true,
+      });
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        custom,
+      );
+      expect(forced.preservedCustomizable).toContain(CONSTITUTION_LOCAL);
+
+      // The dedicated opt-in overwrites it.
+      const opted = await copyTemplates("generic", undefined, {
+        overwriteCustomizable: true,
+      });
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        RENDERED,
+      );
+      expect(opted.preservedCustomizable).toHaveLength(0);
+    });
+
+    it("creates a missing constitution on a fresh install (AC-5)", async () => {
+      // Nothing seeded under .claude → the file is written, not preserved.
+      const result = await copyTemplates("generic");
+
+      const content = await fsReadFile(
+        join(cwdDir, CONSTITUTION_LOCAL),
+        "utf-8",
+      );
+      expect(content).toBe(RENDERED);
+      expect(result.preservedCustomizable).toHaveLength(0);
+    });
+
+    it("rewrites an identical constitution without flagging it preserved", async () => {
+      // Installed == rendered → harmless rewrite, not a preserved skip.
+      await seedConstitution(RENDERED);
+
+      const result = await copyTemplates("generic");
+
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        RENDERED,
+      );
+      expect(result.preservedCustomizable).toHaveLength(0);
+    });
+
+    it("pins the round trip: plain copy preserves, opt-in replaces (AC-6)", async () => {
+      const custom =
+        "# my-project Constitution\n\n## Team Rule\nAlways review.\n";
+      await seedConstitution(custom);
+
+      // Plain copy (what a plain `sync` runs) → customization survives.
+      await copyTemplates("generic");
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        custom,
+      );
+
+      // Opt-in copy (what `sync --force` runs) → replaced with the template.
+      await copyTemplates("generic", undefined, {
+        overwriteCustomizable: true,
+      });
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        RENDERED,
       );
     });
   });

@@ -283,6 +283,15 @@ export interface CopyTemplatesOptions {
   noSymlinks?: boolean;
   /** Force replacement of existing files/symlinks */
   force?: boolean;
+  /**
+   * Opt in to overwriting in-place customizations (files in `CUSTOMIZABLE_FILES`,
+   * e.g. the constitution) that already exist and differ from the rendered
+   * template. Deliberately separate from `force`: `force` refreshes the managed
+   * skills/agents/hooks trees, but that always-on tree overwrite must NOT imply
+   * consent to clobber user-owned files. Only an explicit user `--force` sets
+   * this. A missing or identical customizable file is written regardless (#814).
+   */
+  overwriteCustomizable?: boolean;
   /** Additional stacks to include in constitution notes (for multi-stack projects) */
   additionalStacks?: string[];
 }
@@ -403,11 +412,24 @@ export async function copyTemplates(
   stack: string,
   tokens?: Record<string, string>,
   options: CopyTemplatesOptions = {},
-): Promise<{ scriptsSymlinked: boolean; symlinkResults?: SymlinkResult[] }> {
+): Promise<{
+  scriptsSymlinked: boolean;
+  symlinkResults?: SymlinkResult[];
+  /**
+   * Customizable files that already existed, differed from the rendered
+   * template, and were left untouched because `overwriteCustomizable` was not
+   * set. Normalized to forward slashes so callers can report them verbatim.
+   */
+  preservedCustomizable: string[];
+}> {
   const templatesDir = getTemplatesDir();
 
   // Single source of truth for template variables (shared with the diff path)
   const variables = await buildTemplateVariables(stack, tokens, options);
+
+  // Customizable files skipped on the write path (see copyDir), surfaced to the
+  // caller so it can report them without a second diff pass (#814).
+  const preservedCustomizable: string[] = [];
 
   async function copyDir(srcDir: string, destDir: string): Promise<void> {
     try {
@@ -424,6 +446,24 @@ export async function copyTemplates(
           // Read, process, and write
           let content = await readFile(srcPath);
           content = processTemplate(content, variables);
+
+          // Protect in-place customizations on the write path. A file in
+          // CUSTOMIZABLE_FILES that already exists and differs from the
+          // rendered template is preserved unless the caller explicitly opted
+          // in via `overwriteCustomizable`. A missing file (fresh install) or
+          // an identical one falls through and is written as usual (#814).
+          if (
+            !options.overwriteCustomizable &&
+            isCustomizableFile(destPath) &&
+            (await fileExists(destPath))
+          ) {
+            const existing = await readFile(destPath);
+            if (existing !== content) {
+              preservedCustomizable.push(destPath.replace(/\\/g, "/"));
+              continue;
+            }
+          }
+
           await writeFile(destPath, content);
 
           // Make shell scripts executable
@@ -487,5 +527,5 @@ export async function copyTemplates(
   // Write skills version marker for sync detection
   await writeFile(SKILLS_VERSION_PATH, getPackageVersion());
 
-  return { scriptsSymlinked, symlinkResults };
+  return { scriptsSymlinked, symlinkResults, preservedCustomizable };
 }

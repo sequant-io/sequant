@@ -15,12 +15,16 @@ vi.mock("../lib/manifest.js", () => ({
   getPackageVersion: vi.fn(() => "1.1.0"),
 }));
 
-// Mock templates
+// Mock templates. `isCustomizableFile` is a pure allow-list check, so mirror
+// the real implementation rather than a bare vi.fn() (sync.ts calls it to
+// classify the write-set).
 vi.mock("../lib/templates.js", () => ({
   copyTemplates: vi.fn(),
   computeTemplateChanges: vi.fn(),
   listTemplateFiles: vi.fn(),
   getTemplatesDir: vi.fn(() => "/pkg/templates"),
+  isCustomizableFile: (localPath: string): boolean =>
+    [".claude/memory/constitution.md"].includes(localPath.replace(/\\/g, "/")),
 }));
 
 // Mock config
@@ -541,14 +545,22 @@ describe("sync command", () => {
       mockReadFile.mockResolvedValue("1.0.0");
       mockGetPackageVersion.mockReturnValue("1.1.0");
       mockGetConfig.mockResolvedValue(null);
-      mockCopyTemplates.mockResolvedValue({ scriptsSymlinked: false });
+      mockCopyTemplates.mockResolvedValue({
+        scriptsSymlinked: false,
+        preservedCustomizable: [],
+      });
 
       await syncCommand({ quiet: true });
 
+      // Plain sync refreshes the trees (force:true) but does NOT opt into
+      // overwriting user-owned customizable files (#814).
       expect(mockCopyTemplates).toHaveBeenCalledWith(
         "nextjs",
         {},
-        { force: true },
+        {
+          force: true,
+          overwriteCustomizable: false,
+        },
       );
       expect(mockWriteFile).toHaveBeenCalled();
     });
@@ -602,11 +614,10 @@ describe("sync command", () => {
         expect(process.exitCode).toBe(1);
       });
 
-      it("counts local-overrides in the write-set (never under-reports, AC-1)", async () => {
-        // `sync`'s apply is `copyTemplates(force:true)`, which overwrites in-place
-        // customizations (it does NOT protect them the way `update` does). The
-        // preview must therefore include local-overrides, or it would under-report
-        // exactly the way #722 describes.
+      it("reports a customizable file as preserved, not written, under a plain dry-run (#814 AC-4)", async () => {
+        // Since #814 the apply path PRESERVES CUSTOMIZABLE_FILES under a plain
+        // sync, so the preview must show them as preserved — not "will be
+        // overwritten" — and must not count them as pending write-set work.
         mockGetManifest.mockResolvedValue({
           version: "1.0.0",
           stack: "nextjs",
@@ -630,11 +641,45 @@ describe("sync command", () => {
         await syncCommand({ dryRun: true });
 
         const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
-        expect(output).toContain("Local overrides (overwritten by sync): 1");
+        expect(output).toContain("Customizable (preserved): 1");
+        expect(output).toContain("sync --force");
         expect(output).toContain(".claude/memory/constitution.md");
-        expect(output).not.toContain("already up to date");
+        expect(output).not.toContain("will be overwritten");
         expect(mockCopyTemplates).not.toHaveBeenCalled();
-        // A pending overwrite still counts as work for the CI gate.
+        // Nothing else drifts and the customizable file is preserved → no work.
+        expect(process.exitCode).toBe(0);
+      });
+
+      it("previews a customizable file as overwritten under --force (#814 AC-3)", async () => {
+        // With an explicit --force the customizable file IS part of the
+        // write-set; the preview mirrors the apply and gates CI with exit 1.
+        mockGetManifest.mockResolvedValue({
+          version: "1.1.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockFileExists.mockResolvedValue(true);
+        mockReadFile.mockResolvedValue("1.1.0");
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/memory/constitution.md",
+            templatePath: "templates/memory/constitution.md",
+            status: "local-override",
+            rendered: "template",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true, force: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("Local overrides (overwritten): 1");
+        expect(output).toContain("will be overwritten");
+        expect(output).not.toContain("(preserved)");
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
         expect(process.exitCode).toBe(1);
       });
 
@@ -710,11 +755,107 @@ describe("sync command", () => {
       mockReadFile.mockResolvedValue("1.1.0");
       mockGetPackageVersion.mockReturnValue("1.1.0");
       mockGetConfig.mockResolvedValue(null);
-      mockCopyTemplates.mockResolvedValue({ scriptsSymlinked: false });
+      mockComputeTemplateChanges.mockResolvedValue([]);
+      mockCopyTemplates.mockResolvedValue({
+        scriptsSymlinked: false,
+        preservedCustomizable: [],
+      });
 
       await syncCommand({ force: true, quiet: true });
 
-      expect(mockCopyTemplates).toHaveBeenCalled();
+      // --force opts into overwriting user-owned customizable files (#814).
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        {},
+        {
+          force: true,
+          overwriteCustomizable: true,
+        },
+      );
+    });
+
+    it("announces customizable overwrites on stdout before copying under --force (#814 AC-3)", async () => {
+      // AC-3: an explicit --force still overwrites CUSTOMIZABLE_FILES, but must
+      // say so on stdout *before* the copy runs — no silent clobber.
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/memory/constitution.md",
+          templatePath: "templates/memory/constitution.md",
+          status: "local-override",
+          rendered: "template",
+        },
+      ]);
+
+      const announceOrder: string[] = [];
+      const logSpy = vi
+        .spyOn(console, "log")
+        .mockImplementation((msg?: unknown) => {
+          announceOrder.push(String(msg));
+        });
+      mockCopyTemplates.mockImplementation(async () => {
+        announceOrder.push("<<copyTemplates>>");
+        return { scriptsSymlinked: false, preservedCustomizable: [] };
+      });
+
+      await syncCommand({ force: true });
+
+      const output = announceOrder.join("\n");
+      expect(output).toContain("Overwriting 1 customizable file(s) (--force)");
+      expect(output).toContain(".claude/memory/constitution.md");
+      // The announcement precedes the actual copy.
+      const announceIdx = announceOrder.findIndex((l) =>
+        l.includes("Overwriting 1 customizable file(s)"),
+      );
+      const copyIdx = announceOrder.indexOf("<<copyTemplates>>");
+      expect(announceIdx).toBeGreaterThanOrEqual(0);
+      expect(copyIdx).toBeGreaterThan(announceIdx);
+      logSpy.mockRestore();
+    });
+
+    it("reports preserved customizable files on stdout under a plain sync (#814 AC-4)", async () => {
+      // AC-4: plain sync preserves CUSTOMIZABLE_FILES and reports each one, so
+      // the apply path's output matches the --dry-run promise (#722).
+      mockGetManifest.mockResolvedValue({
+        version: "1.0.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.0.0"); // marker < package → apply path
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockCopyTemplates.mockResolvedValue({
+        scriptsSymlinked: false,
+        preservedCustomizable: [".claude/memory/constitution.md"],
+      });
+
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand();
+
+      const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(output).toContain(
+        "preserved: .claude/memory/constitution.md — run `sync --force` to replace",
+      );
+      // Plain sync must NOT opt into overwriting user-owned files.
+      expect(mockCopyTemplates).toHaveBeenCalledWith(
+        "nextjs",
+        {},
+        {
+          force: true,
+          overwriteCustomizable: false,
+        },
+      );
     });
   });
 });
