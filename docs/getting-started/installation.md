@@ -119,6 +119,8 @@ After installation:
 .sequant-manifest.json   # Version tracking
 ```
 
+> **Commit `.claude/skills/` to your repository.** The directory is a hard runtime dependency of `sequant run`: phase agents load skills from project scope only (not from user-level or plugin installs), so if the directory is missing — for example, deleted by an untracked-file cleanup — every run fails. `sequant run` pre-flights the skills install and exits with a clear error naming the remedy (`sequant sync`) instead of failing mid-run.
+
 ## Next Steps
 
 - [Your First Workflow](first-workflow.md) — Solve your first issue

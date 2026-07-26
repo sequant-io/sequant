@@ -66,6 +66,9 @@ describe("ClaudeCodeDriver", () => {
     expect(typeof driver.executePhase).toBe("function");
     expect(typeof driver.isAvailable).toBe("function");
     expect(typeof driver.name).toBe("string");
+    // #813: claude-code resolves phases via .claude/skills/, so the run
+    // skills pre-flight must be active for this driver.
+    expect(driver.resolvesSkills).toBe(true);
   });
 
   describe("error_max_turns handling (#733, AC-1)", () => {

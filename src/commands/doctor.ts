@@ -7,6 +7,7 @@ import { execSync } from "child_process";
 import { ui, colors } from "../lib/cli-ui.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
+import { checkSkillsInstalled } from "../lib/skills-check.js";
 import { getManifest } from "../lib/manifest.js";
 import {
   commandExists,
@@ -211,9 +212,12 @@ export async function doctorCommand(
     });
   }
 
-  // Check 2: Skills directory
-  const skillsExist = await fileExists(".claude/skills");
-  if (skillsExist) {
+  // Checks 2+3: Skills directory + core skills. Shared with the `run`
+  // pre-flight via checkSkillsInstalled (#813) so the layout cannot drift.
+  const coreSkills = ["spec", "exec", "qa"];
+  const { skillsDirExists, missingSkills } =
+    await checkSkillsInstalled(coreSkills);
+  if (skillsDirExists) {
     checks.push({
       name: "Skills",
       status: "pass",
@@ -227,14 +231,6 @@ export async function doctorCommand(
     });
   }
 
-  // Check 3: Core skills present
-  const coreSkills = ["spec", "exec", "qa"];
-  const missingSkills: string[] = [];
-  for (const skill of coreSkills) {
-    if (!(await fileExists(`.claude/skills/${skill}/SKILL.md`))) {
-      missingSkills.push(skill);
-    }
-  }
   if (missingSkills.length === 0) {
     checks.push({
       name: "Core Skills",
