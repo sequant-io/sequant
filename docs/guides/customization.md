@@ -31,7 +31,15 @@ Sequant uses a two-layer system:
 
 ## Customizing the Constitution
 
-The constitution in `.claude/memory/constitution.md` defines project-wide rules. To add your own rules:
+The constitution in `.claude/memory/constitution.md` defines project-wide rules. You can customize it two ways:
+
+### Edit it in place (safe)
+
+`.claude/memory/constitution.md` is treated as a **customizable file**: once you edit it and it differs from the rendered template, plain `sequant update` and `sequant sync` **preserve your edits** — they will not overwrite the file, and they report it as preserved (`preserved: .claude/memory/constitution.md — run \`sync --force\` to replace`). Only an explicit `sequant sync --force` (or `sequant update --force`) rewrites it back to the bundled template, and `--force` announces the overwrite on stdout before writing. A missing constitution is always (re)created on a fresh install.
+
+### Add rules via a `.local` overlay
+
+To layer additional rules on top of the managed constitution without touching it at all:
 
 1. Create `.claude/.local/memory/constitution.md`
 2. Add your project-specific rules
