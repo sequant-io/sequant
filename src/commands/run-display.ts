@@ -82,9 +82,9 @@ export function displayConfig(r: ResolvedRun): void {
       chalk.gray(`  Chain mode: enabled (each issue branches from previous)`),
     );
   }
-  if (r.mergedOptions.qaGate) {
-    console.log(chalk.gray(`  QA gate: enabled (chain waits for QA pass)`));
-  }
+  // #795 deliberately prints nothing for `--qa-gate`: the old
+  // `QA gate: enabled (chain waits for QA pass)` line advertised gating the
+  // flag never performed. `runCommand` prints a deprecation notice instead.
 }
 
 /**

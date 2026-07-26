@@ -306,34 +306,104 @@ describe("RunOrchestrator", () => {
       expect(results[1].issueNumber).toBe(101);
     });
 
-    it("should stop chain if QA fails with qaGate enabled", async () => {
+    // #795: a chain halts on ANY failed link. The predecessor `--qa-gate`
+    // branch re-tested for a QA failure immediately before the same
+    // unconditional break, so it could never alter the outcome.
+    //
+    // The test this replaced ("should stop chain if QA fails with qaGate
+    // enabled") asserted only the QA-failure + qaGate case, which the
+    // unconditional break satisfies whether or not the gate exists — it
+    // passed against the inert code and against the fix, so it had no power
+    // to detect the defect. The cases below discriminate: they vary the
+    // failing phase and the flag independently and assert the halt is
+    // identical across all four combinations.
+    const chainHaltCases: Array<{
+      name: string;
+      qaGate: boolean;
+      failingPhase: "qa" | "exec";
+    }> = [
+      { name: "QA failure with --qa-gate", qaGate: true, failingPhase: "qa" },
+      {
+        name: "QA failure without --qa-gate",
+        qaGate: false,
+        failingPhase: "qa",
+      },
+      {
+        name: "non-QA failure with --qa-gate",
+        qaGate: true,
+        failingPhase: "exec",
+      },
+      {
+        name: "non-QA failure without --qa-gate",
+        qaGate: false,
+        failingPhase: "exec",
+      },
+    ];
+
+    it.each(chainHaltCases)(
+      "halts the chain on a failed link — $name",
+      async ({ qaGate, failingPhase }) => {
+        const cfg = makeOrchestratorConfig({
+          options: { chain: true, qaGate } as RunOptions,
+          issueInfoMap: new Map([
+            [100, { title: "Issue 100", labels: [] }],
+            [101, { title: "Issue 101", labels: [] }],
+            [102, { title: "Issue 102", labels: [] }],
+          ]),
+          worktreeMap: makeChainWorktreeMap([100, 101, 102]),
+        });
+        mockRunIssue
+          .mockResolvedValueOnce(
+            makeIssueResult({ issueNumber: 100, success: true }),
+          )
+          .mockResolvedValueOnce(
+            makeIssueResult({
+              issueNumber: 101,
+              success: false,
+              phaseResults: [{ phase: failingPhase, success: false }],
+            }),
+          );
+
+        const orchestrator = new RunOrchestrator(cfg);
+        const results = await orchestrator.execute([100, 101, 102]);
+
+        // #102 is never started, regardless of failing phase or flag.
+        expect(results).toHaveLength(2);
+        expect(mockRunIssue).toHaveBeenCalledTimes(2);
+      },
+    );
+
+    it("#795: --qa-gate does not let the chain continue past a non-QA failure", async () => {
+      // The one behavior "make it actually gate" (rejected option 2) would have
+      // introduced. Pinned so a future re-implementation is a deliberate
+      // decision, not an accident: chain successors rebase onto the
+      // predecessor's committed work, so continuing past a failed exec would
+      // build every successor on an absent base.
       const cfg = makeOrchestratorConfig({
         options: { chain: true, qaGate: true } as RunOptions,
         issueInfoMap: new Map([
           [100, { title: "Issue 100", labels: [] }],
           [101, { title: "Issue 101", labels: [] }],
-          [102, { title: "Issue 102", labels: [] }],
         ]),
-        worktreeMap: makeChainWorktreeMap([100, 101, 102]),
+        worktreeMap: makeChainWorktreeMap([100, 101]),
       });
-      mockRunIssue
-        .mockResolvedValueOnce(
-          makeIssueResult({ issueNumber: 100, success: true }),
-        )
-        .mockResolvedValueOnce(
-          makeIssueResult({
-            issueNumber: 101,
-            success: false,
-            phaseResults: [{ phase: "qa", success: false }],
-          }),
-        );
+      mockRunIssue.mockResolvedValueOnce(
+        makeIssueResult({
+          issueNumber: 100,
+          success: false,
+          phaseResults: [
+            { phase: "exec", success: false },
+            { phase: "qa", success: true },
+          ],
+        }),
+      );
 
       const orchestrator = new RunOrchestrator(cfg);
-      const results = await orchestrator.execute([100, 101, 102]);
+      const results = await orchestrator.execute([100, 101]);
 
-      // Stops at 101 due to QA gate
-      expect(results).toHaveLength(2);
-      expect(mockRunIssue).toHaveBeenCalledTimes(2);
+      // Even with a *passing* qa phase on the result, the failed link halts.
+      expect(results).toHaveLength(1);
+      expect(mockRunIssue).toHaveBeenCalledTimes(1);
     });
   });
 

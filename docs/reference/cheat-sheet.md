@@ -123,7 +123,7 @@ sequant doctor              # Verify installation health
 |------|-------------|---------|
 | `--sequential` | Run issues one at a time | off (parallel) |
 | `--chain` | Chain issues: each branches from previous (implies `--sequential`) | off |
-| `--qa-gate` | Wait for QA pass before next issue in chain (requires `--chain`) | off |
+| `--qa-gate` | **Deprecated (#795) — no-op**, still accepted. `--chain` already halts on any failed issue | off |
 | `--strict-preflight` | Make `--chain` content pre-flight warnings fatal instead of advisory (requires `--chain`) | off (warn only) |
 | `--phases <list>` | Phases to run | `spec,exec,qa` |
 | `--resume` | Resume from last completed phase (reads GitHub markers) | off |
@@ -184,9 +184,9 @@ Runs all issues with auto-retry on failures.
 
 #### Sequential chain (each builds on previous)
 ```bash
-npx sequant run 101 102 103 --sequential --chain --qa-gate
+npx sequant run 101 102 103 --sequential --chain
 ```
-Each issue branches from the last; waits for QA pass before continuing.
+Each issue branches from the last; a failed issue halts the chain before any successor starts.
 
 #### Resume a failed run
 ```bash

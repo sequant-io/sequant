@@ -10,7 +10,11 @@ import { parseBatches } from "../lib/workflow/batch-executor.js";
 import { RunOrchestrator } from "../lib/workflow/run-orchestrator.js";
 import { displayConfig, displaySummary } from "./run-display.js";
 import { buildProgressWiring } from "./run-progress.js";
-import { normalizeQualityLoop, resolveTuiEnabled } from "./run-flags.js";
+import {
+  normalizeQualityLoop,
+  resolveTuiEnabled,
+  warnDeprecatedFlags,
+} from "./run-flags.js";
 
 // Re-export public API for backwards compatibility
 export * from "./run-compat.js";
@@ -25,6 +29,7 @@ export async function runCommand(
   options.qualityLoop = normalizeQualityLoop(options);
 
   console.log(ui.headerBox("SEQUANT WORKFLOW"));
+  warnDeprecatedFlags(options);
 
   if (!options.quiet) {
     try {
@@ -76,10 +81,6 @@ export async function runCommand(
         `❌ Invalid --concurrency value: ${options.concurrency}. Must be a positive integer.`,
       ),
     );
-    return;
-  }
-  if (options.qaGate && !options.chain) {
-    console.log(chalk.red("❌ --qa-gate requires --chain flag"));
     return;
   }
 

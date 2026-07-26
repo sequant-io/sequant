@@ -166,15 +166,17 @@ origin/main
 
 Each issue builds on the previous, starting from the integration branch.
 
-### Chain Mode with --qa-gate
+### Chain Mode Halts on Failure
 
-For critical chains where you want to ensure each issue passes QA before the next begins:
+For critical chains where you want to ensure each issue succeeds before the next begins, plain `--chain` is enough:
 
 ```bash
-npx sequant run 117 118 119 --sequential --chain --qa-gate --base feature/dashboard
+npx sequant run 117 118 119 --sequential --chain --base feature/dashboard
 ```
 
-This prevents downstream issues from building on potentially broken code.
+A failed issue halts the chain before any successor is started, which prevents downstream issues from building on potentially broken code.
+
+> The old `--qa-gate` flag is deprecated as of #795 and does nothing — it is still accepted, but `--chain` alone already provides this behavior, and for *every* failing phase rather than only `qa`.
 
 ### Example: Dashboard Feature Development
 

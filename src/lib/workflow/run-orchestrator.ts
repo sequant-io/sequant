@@ -1342,15 +1342,12 @@ export class RunOrchestrator {
       });
       results.push(result);
 
-      if (!result.success) {
-        if (options.qaGate && options.chain) {
-          const qaFailed = result.phaseResults.some(
-            (p) => p.phase === "qa" && !p.success,
-          );
-          if (qaFailed) break;
-        }
-        break;
-      }
+      // A chain halts on ANY failed link, QA or otherwise: every successor
+      // rebases onto its predecessor's committed work, so continuing past a
+      // failure would build on a broken or absent base. #795 removed a
+      // `--qa-gate` branch here that re-tested for a QA failure before this
+      // same unconditional break — it could never change the outcome.
+      if (!result.success) break;
     }
 
     return results;

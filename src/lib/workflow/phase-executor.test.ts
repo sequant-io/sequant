@@ -1936,11 +1936,15 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.verdict).toBe("AC_MET_BUT_NOT_A_PLUS");
     });
 
-    it("AC_MET_BUT_NOT_A_PLUS does not trip the --qa-gate chain break (#749 AC-2)", () => {
-      // run-orchestrator.ts:1076-1080 breaks a --qa-gate --chain on a
-      // predecessor whose phaseResults contain `p.phase === "qa" && !p.success`.
-      // With the #749 fix the qa result is success, so that predicate is false
-      // and the chain proceeds past an AC_MET_BUT_NOT_A_PLUS predecessor.
+    it("AC_MET_BUT_NOT_A_PLUS keeps the qa phase successful so a chain proceeds (#749 AC-2)", () => {
+      // #795 rewrote this test. It used to re-create the chain-break predicate
+      // (`p.phase === "qa" && !p.success`) inline and assert on that local
+      // expression — but that predicate lived in the `--qa-gate` branch, which
+      // #795 deleted as dead code, so the assertion no longer corresponded to
+      // anything in production. The chain now halts purely on the issue-level
+      // `!result.success`, which is driven by this phase result: keeping the qa
+      // phase `success: true` for AC_MET_BUT_NOT_A_PLUS is what actually lets a
+      // chain proceed past such a predecessor, so that is what we assert.
       const agentResult = makeAgentResult({
         output: "### Verdict: AC_MET_BUT_NOT_A_PLUS",
       });
@@ -1950,10 +1954,8 @@ describe("mapAgentSuccessToPhaseResult", () => {
         60,
         "/tmp/wt",
       );
-      const chainBreaks = [qaResult].some(
-        (p) => p.phase === "qa" && !p.success,
-      );
-      expect(chainBreaks).toBe(false);
+      expect(qaResult.phase).toBe("qa");
+      expect(qaResult.success).toBe(true);
     });
 
     it("fails when output is present but no verdict is parseable (#534)", () => {

@@ -295,9 +295,15 @@ program
     "--stacked",
     "Stack PRs: middle PRs target predecessor branch instead of main; first/last target main (implies --chain)",
   )
+  // #795: deliberately a visible `.option()`, NOT `.hideHelp()` like
+  // `--experimental-tui` below. The two are different cases: `--qa-gate`
+  // shipped in #133 and was documented across four user-facing docs, so users
+  // need to find the deprecation notice; `--experimental-tui` was never
+  // advertised. A flag that still works but is absent from --help is the worst
+  // of both worlds — scripts keep passing it and nothing explains why to stop.
   .option(
     "--qa-gate",
-    "Wait for QA pass before starting next issue in chain (requires --chain)",
+    "DEPRECATED (#795): no-op, still accepted. --chain already halts on any failed issue, QA included",
   )
   .option(
     "--strict-preflight",
