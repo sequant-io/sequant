@@ -315,8 +315,6 @@ export interface RunOptions {
   autoDetectPhases?: boolean;
   /** Enable automatic worktree creation for issue isolation */
   worktreeIsolation?: boolean;
-  /** Reuse existing worktrees instead of creating new ones */
-  reuseWorktrees?: boolean;
   /** Suppress version warnings and non-essential output */
   quiet?: boolean;
   /** Chain issues: each branches from previous (requires --sequential) */
@@ -413,6 +411,17 @@ export interface RunOptions {
    * #705: now a hidden no-op alias — the boxed Ink TUI is the default, so
    * `--experimental-tui` only parses for backward compatibility and no longer
    * gates rendering. Kept so existing scripts/muscle-memory don't break.
+   *
+   * INTENTIONALLY INERT — do not delete (#810). A dead-surface sweep of
+   * `RunOptions` will correctly observe that nothing branches on this field.
+   * That is the design, not a defect: the flag's whole job is to parse and do
+   * nothing, so scripts written against #705 keep working. Its inertness is
+   * asserted, not incidental — `run-flags.test.ts` ("--experimental-tui is a
+   * no-op"), `cli.integration.test.ts` (hidden from `--help`, still parses),
+   * and `run-tui.integration.test.ts` all pin it. Contrast `reuseWorktrees`,
+   * removed in #810: that field had no flag, no consumer, and no test, so it
+   * promised behavior nothing delivered. The distinction is a flag deliberately
+   * kept parseable versus a type field nobody could ever reach.
    */
   experimentalTui?: boolean;
   /**
