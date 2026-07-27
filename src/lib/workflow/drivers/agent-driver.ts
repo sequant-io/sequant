@@ -104,6 +104,14 @@ export interface AgentDriver {
   /** Human-readable name for logging */
   name: string;
 
+  /**
+   * True when this driver executes phases by resolving slash-command skills
+   * from the project's `.claude/skills/` directory (claude-code). Drivers
+   * whose prompts do the work inline (aider's `driverOverrides` templates)
+   * return false, and the `run` skills pre-flight (#813) is skipped for them.
+   */
+  resolvesSkills: boolean;
+
   /** Execute a phase prompt and return structured result */
   executePhase(
     prompt: string,

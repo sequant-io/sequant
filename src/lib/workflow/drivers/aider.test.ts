@@ -93,6 +93,9 @@ describe("AiderDriver", () => {
       expect(driver.name).toBe("aider");
       expect(typeof driver.executePhase).toBe("function");
       expect(typeof driver.isAvailable).toBe("function");
+      // #813: aider phases use inline driverOverrides prompts, so the run
+      // skills pre-flight is skipped for this driver.
+      expect(driver.resolvesSkills).toBe(false);
     });
   });
 
