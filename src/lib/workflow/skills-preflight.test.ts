@@ -67,6 +67,34 @@ describe("resolveRequiredSkills (#813 AC-2)", () => {
     expect(skills).toContain("loop");
   });
 
+  it("includes loop when labels auto-enable the quality loop in auto-detect mode", () => {
+    const skills = resolveRequiredSkills({
+      ...EXPLICIT_BASE,
+      autoDetectPhases: true,
+      qualityLoop: false,
+      issueInfoMap: infoMap([[1, ["complex"]]]),
+    });
+    expect(skills).toContain("loop");
+  });
+
+  it("requires testgen for --testgen even when spec is not in the pipeline (resume path)", () => {
+    const skills = resolveRequiredSkills({
+      ...EXPLICIT_BASE,
+      phases: ["exec", "qa"] as Phase[],
+      testgen: true,
+    });
+    expect(skills).toContain("testgen");
+  });
+
+  it("requires security-review for --security-review even when spec is not in the pipeline", () => {
+    const skills = resolveRequiredSkills({
+      ...EXPLICIT_BASE,
+      phases: ["exec", "qa"] as Phase[],
+      securityReview: true,
+    });
+    expect(skills).toContain("security-review");
+  });
+
   it("resolves label-detected pipelines per issue in auto-detect mode", () => {
     const skills = resolveRequiredSkills({
       ...EXPLICIT_BASE,
@@ -159,5 +187,14 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
       cwd: root,
     });
     expect(result.ok).toBe(false);
+  });
+
+  it("skips (does not throw) on an unknown driver name — executor owns that error", async () => {
+    const result = await runSkillsPreflight({
+      ...EXPLICIT_BASE,
+      agent: "no-such-driver",
+      cwd: root,
+    });
+    expect(result).toEqual({ ok: true });
   });
 });
