@@ -66,8 +66,25 @@ export type SkillsPreflightResult =
  * Explicit-phase runs start from `phases` as given; auto-detect runs start
  * from each issue's label-detected pipeline. Both then apply the additive
  * `--testgen` / `--security-review` / UI-label rules via
- * `determinePhasesForIssue`, and the loop skill is added when the quality
- * loop is enabled (it is invoked the same way as any phase skill).
+ * `determinePhasesForIssue`.
+ *
+ * Two deliberate over-approximations keep late-added phases covered:
+ *
+ * - An explicit `--testgen` / `--security-review` flag requires its skill
+ *   unconditionally, even when `determinePhasesForIssue` would not insert
+ *   the phase because `spec` is absent from the pipeline. On a resume where
+ *   spec already completed, batch-executor inserts the phase anyway
+ *   (`phases.includes("spec") || specAlreadyRan`), and the pre-flight cannot
+ *   cheaply know `specAlreadyRan` — requiring the skill the user asked for
+ *   is the safe superset.
+ * - The loop skill is required when the quality loop is enabled up front OR
+ *   when any issue's labels would auto-enable it (`complex`/`refactor`/...,
+ *   via `detectPhasesFromLabels().qualityLoop`), since the loop skill is
+ *   invoked the same way as any phase skill.
+ *
+ * Phases recommended later by spec output (`parseRecommendedWorkflow`)
+ * remain unknowable at pre-flight time — the accepted gap documented on
+ * #813.
  *
  * Exported for direct unit testing (AC-2).
  */
@@ -88,11 +105,14 @@ export function resolveRequiredSkills(
     securityReview: input.securityReview,
   };
   const requiredPhases = new Set<string>();
+  let qualityLoop = input.qualityLoop;
   for (const issueNumber of input.issueNumbers) {
     const labels = input.issueInfoMap.get(issueNumber)?.labels ?? [];
-    const basePhases = input.autoDetectPhases
-      ? detectPhasesFromLabels(labels).phases
-      : input.phases;
+    const detected = input.autoDetectPhases
+      ? detectPhasesFromLabels(labels)
+      : null;
+    if (detected?.qualityLoop) qualityLoop = true;
+    const basePhases = detected ? detected.phases : input.phases;
     for (const phase of determinePhasesForIssue(
       basePhases,
       labels,
@@ -101,7 +121,9 @@ export function resolveRequiredSkills(
       requiredPhases.add(phase);
     }
   }
-  if (input.qualityLoop) requiredPhases.add("loop");
+  if (input.testgen) requiredPhases.add("testgen");
+  if (input.securityReview) requiredPhases.add("security-review");
+  if (qualityLoop) requiredPhases.add("loop");
 
   return [...requiredPhases].map((phase) => phaseRegistry.get(phase).skill);
 }
@@ -114,9 +136,18 @@ export function resolveRequiredSkills(
 export async function runSkillsPreflight(
   input: SkillsPreflightInput,
 ): Promise<SkillsPreflightResult> {
-  const driver = getDriver(input.agent, {
-    aiderSettings: input.aiderSettings,
-  });
+  let driver;
+  try {
+    driver = getDriver(input.agent, {
+      aiderSettings: input.aiderSettings,
+    });
+  } catch {
+    // Unknown driver name (bad `settings.run.agent`). Don't let the
+    // pre-flight be the thing that crashes the run with a raw throw —
+    // skip it and let phase-executor surface the unknown-driver error
+    // through its normal per-issue failure path.
+    return { ok: true };
+  }
   if (!driver.resolvesSkills) return { ok: true };
 
   const requiredSkills = resolveRequiredSkills(input);
