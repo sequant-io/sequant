@@ -823,7 +823,12 @@ fi
 **Procedure:**
 
 ```bash
-# 1. Gate: is the board uniformly red? Skip everything below if not.
+# 0. Default to "not infra-blocked" so every early exit below is safe.
+infra_blocked='{"blocked":false}'
+
+# 1. Gate: is the board uniformly red? Everything below is skipped if not.
+ci_buckets=$(gh pr checks "$pr_number" --json bucket --jq '.[].bucket' 2>/dev/null || true)
+
 all_failing=$(SEQUANT_QA_CI_BUCKETS="$ci_buckets" npx tsx -e '
   (async () => {
     const m = await import("./src/lib/qa/infra-blocked-ci.ts");
@@ -834,23 +839,50 @@ all_failing=$(SEQUANT_QA_CI_BUCKETS="$ci_buckets" npx tsx -e '
 ' 2>/dev/null || echo "false")
 
 if [[ "$all_failing" == "true" ]]; then
-  # 2. Fetch annotations for the head commit's check runs.
+  # 2. Resolve the head commit and list its check runs with annotation URLs.
   head_sha=$(gh pr view "$pr_number" --json headRefOid -q '.headRefOid')
-  annotations_json=$(gh api "repos/{owner}/{repo}/commits/${head_sha}/check-runs" \
-    --jq '[.check_runs[] | {checkName: .name, annotationsUrl: .output.annotations_url}]')
 
-  # 3. Collect annotations per check, stopping at the first signature match.
+  # 3. Fetch each check's annotations and assemble one array for the detector.
   #    Cost is bounded by the all-failing gate: this only ever runs on a fully
-  #    red PR, and returns on the first match — a lockout annotates every check.
+  #    red PR. Each request is individually fault-tolerant — a 404/rate-limit
+  #    yields [] for that check rather than aborting the scan.
   #    Do NOT pre-filter on `output.annotations_count`: it is absent from the
   #    captured incident fixture, so a zero there would silently skip detection.
+  checks_json=$(gh api "repos/{owner}/{repo}/commits/${head_sha}/check-runs" \
+      --jq '.check_runs[] | {checkName: .name, annotationsUrl: .output.annotations_url}' 2>/dev/null \
+    | while IFS= read -r row; do
+        url=$(printf '%s' "$row" | jq -r '.annotationsUrl // empty')
+        ann='[]'
+        if [[ -n "$url" ]]; then
+          ann=$(gh api "$url" 2>/dev/null \
+            | jq -c 'if type == "array" then . else [] end' 2>/dev/null || echo '[]')
+          [[ -z "$ann" ]] && ann='[]'
+        fi
+        printf '%s' "$row" | jq -c --argjson ann "$ann" '{checkName, annotations: $ann}'
+      done \
+    | jq -s -c '.' 2>/dev/null || echo '[]')
 
-  # 4. Classify.
-  #    detectInfraBlockedCi(checks) → {blocked, message, checkName}
-  #    Matches /job was not started/i on the annotation `message` only.
-  #    `annotation_level` is deliberately NOT gated on — see the module docs.
+  # 4. Classify. Matches /job was not started/i on the annotation `message`
+  #    only; `annotation_level` is deliberately NOT gated on (see module docs).
+  #    Returns on the first match — a lockout annotates every check.
+  infra_blocked=$(SEQUANT_QA_CI_CHECKS="$checks_json" npx tsx -e '
+    (async () => {
+      const m = await import("./src/lib/qa/infra-blocked-ci.ts");
+      let checks = [];
+      try { checks = JSON.parse(process.env.SEQUANT_QA_CI_CHECKS || "[]"); } catch {}
+      console.log(JSON.stringify(m.detectInfraBlockedCi(checks)));
+    })();
+  ' 2>/dev/null || echo '{"blocked":false}')
 fi
+
+# 5. Consume. `blocked` drives the classification table below; `message` is
+#    reproduced verbatim in the report; `checkName` names its source.
+blocked=$(printf '%s' "$infra_blocked" | jq -r '.blocked // false')
+blocked_message=$(printf '%s' "$infra_blocked" | jq -r '.message // empty')
+blocked_check=$(printf '%s' "$infra_blocked" | jq -r '.checkName // empty')
 ```
+
+Every failure path above degrades to `{"blocked":false}`, which falls through to today's unchanged mapping. An API error must never be reported as infra-blocked, and must never crash the QA phase.
 
 Both predicates live in `src/lib/qa/infra-blocked-ci.ts` (pure, unit-tested against the captured incident fixture), mirroring the `markdown-only-ci.ts` split: detection in TypeScript, `gh api` plumbing here.
 

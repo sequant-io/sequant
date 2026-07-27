@@ -204,3 +204,63 @@ describe("detectInfraBlockedCi — non-matching input (AC-4)", () => {
     ).toEqual({ blocked: false });
   });
 });
+
+describe("detectInfraBlockedCi — malformed API payloads degrade, never throw", () => {
+  // `/qa` feeds this raw `gh api` output. A failed annotations request returns
+  // an object where an array is expected; iterating it throws and would take
+  // down the QA phase for the exact broken-CI case this detector exists to
+  // handle gracefully. These pin degradation rather than crash.
+
+  it("returns not-blocked when annotations is a gh api error object", () => {
+    const ghError = {
+      message: "Not Found",
+      documentation_url: "https://docs.github.com",
+    };
+    expect(
+      detectInfraBlockedCi([
+        { checkName: "conform (vertical)", annotations: ghError },
+      ] as unknown as AnnotatedCheck[]),
+    ).toEqual({ blocked: false });
+  });
+
+  it("skips a malformed check but still matches a well-formed later one", () => {
+    expect(
+      detectInfraBlockedCi([
+        {
+          checkName: "broken",
+          annotations: { message: "Not Found" },
+        },
+        {
+          checkName: "conform (vertical)",
+          annotations: [FIXTURE_ANNOTATION],
+        },
+      ] as unknown as AnnotatedCheck[]),
+    ).toEqual({
+      blocked: true,
+      message: FIXTURE_ANNOTATION.message,
+      checkName: "conform (vertical)",
+    });
+  });
+
+  it("returns not-blocked when checks itself is not an array", () => {
+    expect(
+      detectInfraBlockedCi({
+        message: "Bad credentials",
+      } as unknown as AnnotatedCheck[]),
+    ).toEqual({ blocked: false });
+  });
+
+  it("returns not-blocked for null/undefined entries in the checks array", () => {
+    expect(
+      detectInfraBlockedCi([null, undefined] as unknown as AnnotatedCheck[]),
+    ).toEqual({ blocked: false });
+  });
+
+  it("returns not-blocked when annotations is a bare string", () => {
+    expect(
+      detectInfraBlockedCi([
+        { checkName: "x", annotations: "job was not started" },
+      ] as unknown as AnnotatedCheck[]),
+    ).toEqual({ blocked: false });
+  });
+});

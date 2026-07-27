@@ -87,14 +87,26 @@ export interface InfraBlockedResult {
  * lockout, every check carries the same annotation, so one is representative
  * and the caller can stop fetching.
  *
+ * Deliberately defensive about its input shape. Callers feed this raw `gh api`
+ * output, and a failed annotations request (404, rate limit, revoked token)
+ * yields an *object* — `{"message":"Not Found"}` — where an array is expected.
+ * Iterating that throws. Since the whole point of this detector is to keep a
+ * broken-CI situation from derailing the QA phase, a malformed payload must
+ * degrade to "not infra-blocked", never crash the run.
+ *
  * @param checks - Failing checks with their fetched annotations.
  * @returns `{ blocked: true, message, checkName }` on a match, else `{ blocked: false }`.
  */
 export function detectInfraBlockedCi(
   checks: readonly AnnotatedCheck[],
 ): InfraBlockedResult {
+  if (!Array.isArray(checks)) return { blocked: false };
+
   for (const check of checks) {
-    for (const annotation of check.annotations ?? []) {
+    const annotations = check?.annotations;
+    if (!Array.isArray(annotations)) continue;
+
+    for (const annotation of annotations) {
       const message = annotation?.message;
       if (typeof message === "string" && NOT_STARTED_SIGNATURE.test(message)) {
         return { blocked: true, message, checkName: check.checkName };
