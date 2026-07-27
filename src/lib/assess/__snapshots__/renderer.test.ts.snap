@@ -1,0 +1,162 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`batch dashboard snapshots (AC-30) > renders the full dashboard with the ACs column and a chain suggestion 1`] = `
+" #    Action     ACs Reason                    Run
+ 185  PROCEED    6   Domain error standardiza… spec → exec → qa
+ 186  PROCEED    9   React Query hooks…        spec → testgen → exec → test → qa
+────────────────────────────────────────────────────────────────
+Commands:
+  npx sequant run 185 -Q
+  npx sequant run 186 -Q --testgen
+────────────────────────────────────────────────────────────────
+Order: 185 → 186 (185 changes fetchApi error format that 186
+       consumes)
+
+Chain: npx sequant run 185 186 --chain -Q --testgen
+       # alternative — use if 186 should branch from 185's work
+
+Flags:
+  --testgen  #186 testable ACs (UI hooks + API integration)
+────────────────────────────────────────────────────────────────
+
+<!-- #185 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #186 assess:action=PROCEED assess:phases=spec,testgen,exec,test,qa assess:quality-loop=true -->"
+`;
+
+exports[`batch dashboard snapshots (AC-30) > renders the full dashboard without the ACs column 1`] = `
+" #    Action     Reason                        Run
+ 462  PARK       Manual measurement task       ‖
+ 461  PROCEED    Exact label matching          spec → exec → qa
+ 412  PROCEED    Auth bug (domain: auth adds…  spec → security-review → exec → qa
+ 411  PROCEED    Config path normalization     ◂ exec → qa
+ 405  REWRITE    PR #380 200+ commits behind   ⟳ spec → exec → qa
+ 447  CLOSE      PR #457 merged                —
+────────────────────────────────────────────────────────────────
+Commands:
+  npx sequant run 461 -Q
+  npx sequant run 412 -Q --security-review
+  npx sequant run 411 -Q --phases exec,qa   # resume
+  npx sequant run 405 -Q                    # restart
+────────────────────────────────────────────────────────────────
+Order: 460 → 461 (460 adds batch-executor tests that 461's label
+       matching depends on)
+
+⚠ #405  Stale 30+ days, ACs still valid
+⚠ #412  bug + auth labels — auth (domain) adds security-review phase
+
+Flags:
+  -Q                 multi-file scope across most PROCEED issues
+  --security-review  #412 auth label requires a security review
+  --phases exec,qa   #411 resume — prior spec marker already exists
+────────────────────────────────────────────────────────────────
+Cleanup:
+  gh issue close 447                 # PR #457 merged
+  gh issue edit 461 --add-label cli  # missing label
+────────────────────────────────────────────────────────────────
+
+<!-- #462 assess:action=PARK -->
+<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #412 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
+<!-- #411 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #447 assess:action=CLOSE -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders CLARIFY 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ CLARIFY — No acceptance criteria
+
+Need: Explicit AC checkboxes with verification methods
+  Without ACs, /qa has nothing to measure the diff against
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=CLARIFY -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders CLOSE 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ CLOSE — Resolved by PR #457
+────────────────────────────────────────────────────────────────
+Cleanup:
+  gh issue close 447                              # PR #457 merged
+  git worktree remove ../worktrees/feature/447-x
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=CLOSE -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders MERGE 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ MERGE → #823 — 85% scope overlap on the renderer
+  This issue:  Fix the misaligned columns
+  Target:      Move all rendering into a CLI subcommand
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=MERGE -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders PARK 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ PARK — Blocked on manual measurement not yet scheduled
+  Resume after: latency sampling run completes
+────────────────────────────────────────────────────────────────
+⚠ Re-assessed 3 times since 2026-06-30 without execution — possible blocker or low priority
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PARK -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders PROCEED 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ PROCEED — Both root causes confirmed in codebase
+
+Commands:
+  npx sequant run 458 -Q
+
+spec → exec → qa · 8 ACs
+
+Flags:
+  -Q  dual concern across 4 files
+────────────────────────────────────────────────────────────────
+⚠ Dual concern (UX + race) across 4 files
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=PROCEED -->
+<!-- assess:phases=spec,exec,qa -->
+<!-- assess:quality-loop=true -->"
+`;
+
+exports[`renderSingle — verdict templates (AC-15) > renders REWRITE 1`] = `
+"#458 — Parallel run UX freeze + reconcileState race condition
+Open · bug, enhancement, cli
+────────────────────────────────────────────────────────────────
+
+→ REWRITE — PR #380 is 200+ commits behind
+
+Commands:
+  npx sequant run 405 -Q  # fresh start
+
+spec → exec → qa · 5 ACs
+────────────────────────────────────────────────────────────────
+⚠ Branch diverged 30+ days ago; ACs still valid
+────────────────────────────────────────────────────────────────
+
+<!-- assess:action=REWRITE -->
+<!-- assess:phases=spec,exec,qa -->
+<!-- assess:quality-loop=true -->"
+`;
