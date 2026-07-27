@@ -212,11 +212,17 @@ function wrapAnnotation(
  *
  * The second column starts at `max(width of first column) + BLOCK_GUTTER`, so
  * the gutter adapts to content instead of being a hand-authored offset.
+ *
+ * Returns `[]` for no rows. Every current call site is already guarded by a
+ * `.length` check, but `Math.max()` of an empty list is `-Infinity`, which would
+ * turn into a `RangeError` inside `padTo`'s `repeat()` — a sharp edge to leave
+ * for the next caller.
  */
 function alignedBlock(
   rows: Array<{ left: string; right?: string }>,
   commentPrefix = "",
 ): string[] {
+  if (rows.length === 0) return [];
   const gutter =
     Math.max(...rows.map((row) => stringWidth(row.left))) + BLOCK_GUTTER;
   return rows.map((row) =>
@@ -230,11 +236,21 @@ function alignedBlock(
 // Shared section builders
 // ---------------------------------------------------------------------------
 
+/**
+ * A labeled block, or nothing at all.
+ *
+ * Each builder returns `[]` for no entries rather than a bare header. Emitting
+ * `Flags:` with no flags under it would be its own defect — the Section
+ * Visibility Rules say an empty section disappears entirely — and it keeps the
+ * callers' `.length` guards from being the only thing standing between an empty
+ * array and malformed output.
+ */
 function commandLines(
   commands: AssessCommand[],
   prefix: string,
   header = "Commands:",
 ): string[] {
+  if (commands.length === 0) return [];
   const rows = commands.map((command) => ({
     left: `${prefix} ${command.args}`,
     right: command.comment,
@@ -243,6 +259,7 @@ function commandLines(
 }
 
 function flagLines(flags: AssessFlag[]): string[] {
+  if (flags.length === 0) return [];
   return [
     "Flags:",
     ...alignedBlock(flags.map((f) => ({ left: f.flag, right: f.reason }))),
@@ -250,6 +267,7 @@ function flagLines(flags: AssessFlag[]): string[] {
 }
 
 function cleanupLines(cleanup: AssessCleanup[]): string[] {
+  if (cleanup.length === 0) return [];
   return [
     "Cleanup:",
     ...alignedBlock(
@@ -333,9 +351,13 @@ export function renderBatch(result: AssessResult): string {
     );
   }
 
-  if (result.commands?.length) {
+  // Section visibility is decided in exactly one place — the builder. Callers
+  // ask "did that produce anything?" rather than re-deriving emptiness, so
+  // there is no second `.length` check to drift out of step with the first.
+  const commands = commandLines(result.commands ?? [], commandPrefix);
+  if (commands.length > 0) {
     lines.push(SEPARATOR);
-    lines.push(...commandLines(result.commands, commandPrefix));
+    lines.push(...commands);
   }
 
   // Order: → ⚠ → Chain: → Flags:, blank-line separated, inside one separator pair.
@@ -365,9 +387,10 @@ export function renderBatch(result: AssessResult): string {
       ),
     );
   }
-  if (result.flags?.length) {
+  const flags = flagLines(result.flags ?? []);
+  if (flags.length > 0) {
     if (annotations.length > 0) annotations.push("");
-    annotations.push(...flagLines(result.flags));
+    annotations.push(...flags);
   }
 
   if (annotations.length > 0) {
@@ -375,17 +398,14 @@ export function renderBatch(result: AssessResult): string {
     lines.push(...annotations);
   }
 
-  if (result.cleanup?.length) {
+  const cleanup = cleanupLines(result.cleanup ?? []);
+  if (cleanup.length > 0) {
     lines.push(SEPARATOR);
-    lines.push(...cleanupLines(result.cleanup));
+    lines.push(...cleanup);
   }
 
   // Closing separator, but only if something opened one after the table.
-  if (
-    result.commands?.length ||
-    annotations.length > 0 ||
-    result.cleanup?.length
-  ) {
+  if (commands.length > 0 || annotations.length > 0 || cleanup.length > 0) {
     lines.push(SEPARATOR);
   }
 
@@ -414,9 +434,10 @@ function singleHeader(issue: AssessIssue): string[] {
 function workflowBody(issue: AssessIssue, prefix: string): string[] {
   const lines: string[] = [];
 
-  if (issue.command) {
+  const commands = commandLines(issue.command ? [issue.command] : [], prefix);
+  if (commands.length > 0) {
     lines.push("");
-    lines.push(...commandLines([issue.command], prefix));
+    lines.push(...commands);
   }
 
   if (issue.phases?.length) {
@@ -425,9 +446,10 @@ function workflowBody(issue: AssessIssue, prefix: string): string[] {
     lines.push(`${issue.phases.join(" → ")}${acs}`);
   }
 
-  if (issue.flags?.length) {
+  const flags = flagLines(issue.flags ?? []);
+  if (flags.length > 0) {
     lines.push("");
-    lines.push(...flagLines(issue.flags));
+    lines.push(...flags);
   }
 
   return lines;
@@ -488,8 +510,9 @@ export function renderSingle(result: AssessResult): string {
 
   lines.push(SEPARATOR);
 
-  if (issue.cleanup?.length) {
-    lines.push(...cleanupLines(issue.cleanup));
+  const cleanup = cleanupLines(issue.cleanup ?? []);
+  if (cleanup.length > 0) {
+    lines.push(...cleanup);
     lines.push(SEPARATOR);
   }
 

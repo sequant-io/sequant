@@ -616,6 +616,62 @@ describe("render dispatch", () => {
   });
 });
 
+describe("empty-section robustness", () => {
+  // The section builders own visibility: callers ask "did that produce
+  // anything?" rather than re-deriving emptiness, so there is no second
+  // `.length` check to drift out of step. Deleting a builder's guard fails
+  // these tests — verified by mutation, not assumed.
+  it("renders empty commands/flags/cleanup as nothing at all", () => {
+    const output = renderBatch(
+      batch({ commands: [], flags: [], cleanup: [], orders: [], warnings: [] }),
+    );
+
+    expect(output).not.toContain("Commands:");
+    expect(output).not.toContain("Flags:");
+    expect(output).not.toContain("Cleanup:");
+    expect([...output.matchAll(/^\u2500+$/gm)]).toHaveLength(0);
+  });
+
+  it("does not throw on empty section arrays", () => {
+    expect(() =>
+      renderBatch(batch({ commands: [], flags: [], cleanup: [] })),
+    ).not.toThrow();
+  });
+
+  it("renders a single-mode issue with empty per-issue arrays", () => {
+    const output = renderSingle(
+      single({ warnings: [], flags: [], cleanup: [], phases: ["spec", "qa"] }),
+    );
+
+    expect(output).not.toContain("Flags:");
+    expect(output).not.toContain("Cleanup:");
+    expect(output).not.toContain("\u26a0");
+    expect(output).toContain("<!-- assess:action=PROCEED -->");
+  });
+});
+
+describe("marker form boundary (AC-14, AC-39)", () => {
+  // The compact batch marker is chat-only by design and `assess-comment-parser`
+  // does not recognise it — its pattern requires `assess:` immediately after
+  // `<!--`. The skill forbids posting a dashboard for exactly this reason.
+  // Locking the asymmetry in as intent rather than accident.
+  it("batch emits the compact form, which the comment parser does not read", () => {
+    const output = renderBatch(batch());
+
+    expect(output).toContain("<!-- #461 assess:action=PROCEED");
+    expect(parseAssessMarkers(output).action).toBeUndefined();
+  });
+
+  it("single emits the 3-line form, which the comment parser does read", () => {
+    const output = renderSingle(
+      single({ phases: ["spec", "exec", "qa"], qualityLoop: true }),
+    );
+
+    expect(output).toContain("<!-- assess:action=PROCEED -->");
+    expect(parseAssessMarkers(output).action).toBe("PROCEED");
+  });
+});
+
 describe("marker round-trip (AC-39)", () => {
   it("feeds single-mode output back through parseAssessMarkers", () => {
     const output = renderSingle(
