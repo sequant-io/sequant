@@ -103,6 +103,9 @@ fi
 | `### Required Fixes` or `### Recommendations` | Actionable items to fix |
 
 **Parsing QA comment:**
+
+> **Run the exclusion filter first.** Before any extraction below, apply § "Excluded Finding Classes" (Step 2) to rebind `qa_comment`. Extracting first and filtering afterwards is too late — `not_met_acs` and `recommendations` would already carry the non-actionable findings.
+
 ```bash
 # Extract verdict from QA comment
 verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print $2}' || true)
@@ -165,12 +168,43 @@ Extract:
 - Specific recommendations
 - Required fixes
 
+#### Excluded Finding Classes (REQUIRED)
+
+Some QA findings are real but **not fixable by a code change**. Feeding them to the loop burns iterations rewriting working code and never clears the finding. **Run this filter immediately after fetching the QA comment and before any extraction** (`verdict`, `not_met_acs`, `recommendations` in Step 1's "Parsing QA comment" block) — it rebinds `qa_comment`, so every downstream consumer sees the filtered text with no other change. Filtering after extraction has no effect. This is the same break-don't-loop discipline that applies to `AC_MET_BUT_NOT_A_PLUS`.
+
+| Class | Marker in the QA comment | Why it is not actionable |
+|-------|--------------------------|--------------------------|
+| Infra-blocked CI | `<!-- qa:ci-infra-blocked -->` | Every check failed without a runner ever starting (e.g. an Actions spending-limit lockout). The cause is account/infrastructure state; no diff can turn the checks green. See `qa/SKILL.md` § "Infra-Blocked CI Detection". |
+
+```bash
+# Drop the marked findings when QA flagged CI as infra-blocked, so its
+# NEEDS_VERIFICATION AC items are never mistaken for actionable findings.
+# Range is EXCLUSIVE of the next `### ` header — a `sed '/marker/,/^### /d'`
+# range would delete that header too and orphan the following section's
+# content (verified: it silently swallows `### Required Fixes`).
+qa_comment_raw="$qa_comment"   # keep the original so the cause can be reported verbatim
+
+if echo "$qa_comment" | grep -q '<!-- qa:ci-infra-blocked -->'; then
+  echo "CI is infra-blocked — excluding CI findings from loop input."
+  # Rebind qa_comment: every downstream extraction reads this variable.
+  qa_comment=$(echo "$qa_comment_raw" | awk '
+    /<!-- qa:ci-infra-blocked -->/ { skip = 1; next }
+    skip && /^### /               { skip = 0 }
+    !skip
+  ')
+fi
+```
+
+When the marker is absent this is a byte-identical pass-through, so unmarked QA comments parse exactly as before.
+
+**If every finding was excluded**, treat the iteration as having no actionable issues and exit via Step 3 — do **not** run a fix pass. Report the excluded cause verbatim from `$qa_comment_raw` so the human sees what actually needs doing (resolve the billing/infrastructure condition, then re-run QA).
+
 ### Step 3: Check Exit Conditions
 
 **Exit loop if:**
 - Verdict is `READY_FOR_MERGE` - Nothing to fix!
 - Verdict is `NEEDS_VERIFICATION` - Pending external verification
-- No actionable issues found
+- No actionable issues found (**after** applying "Excluded Finding Classes" above)
 - Max iterations reached (3 by default)
 
 **Continue loop if:**
