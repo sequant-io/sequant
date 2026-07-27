@@ -172,6 +172,7 @@ export function resolveRunOptions(
     qualityLoop: defined.qualityLoop ?? settings.run.qualityLoop,
     maxIterations: defined.maxIterations ?? settings.run.maxIterations,
     noSmartTests: defined.noSmartTests ?? !settings.run.smartTests,
+    autoWaitMinutes: defined.autoWaitMinutes ?? settings.run.autoWaitMinutes,
     // Agent settings
     isolateParallel: defined.isolateParallel ?? settings.agents.isolateParallel,
     // Env overrides
@@ -231,6 +232,12 @@ export function buildExecutionConfig(
     noSmartTests: mergedOptions.noSmartTests ?? false,
     mcp: mcpEnabled,
     retry: retryEnabled,
+    // #804: default 0 (off) — the whole regression contract for auto-wait is
+    // that an unset flag leaves the #761/#799 halt path untouched.
+    autoWaitMinutes:
+      mergedOptions.autoWaitMinutes ??
+      settings.run.autoWaitMinutes ??
+      DEFAULT_CONFIG.autoWaitMinutes,
     agent: mergedOptions.agent ?? settings.run.agent,
     aiderSettings: settings.run.aider,
     isolateParallel: mergedOptions.isolateParallel,

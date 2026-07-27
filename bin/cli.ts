@@ -322,6 +322,11 @@ program
     "Disable automatic retry with MCP fallback (useful for debugging)",
   )
   .option(
+    "--auto-wait <minutes>",
+    "Total minutes to wait for an exhausted rate-limit window to reopen instead of halting (default: 0, off)",
+    parseInt,
+  )
+  .option(
     "--resume",
     "Resume from last completed phase (reads phase markers from GitHub)",
   )

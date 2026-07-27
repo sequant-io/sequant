@@ -399,12 +399,13 @@ export class RunOrchestrator {
   private applyProgressEvent(
     issue: number,
     phase: string,
-    event: "start" | "complete" | "failed" | "activity",
+    event: "start" | "complete" | "failed" | "activity" | "waiting",
     extra?: {
       durationSeconds?: number;
       error?: string;
       text?: string;
       iteration?: number;
+      wakeAtMs?: number;
     },
   ): void {
     const state = this.issueStates.get(issue);
@@ -438,6 +439,24 @@ export class RunOrchestrator {
           to: "running",
         });
       }
+      return;
+    }
+
+    // #804 AC-7: an auto-wait is a *paused running* phase, not a terminal one.
+    // This branch must precede the complete/failed fall-through below, which
+    // would otherwise close out the phase the moment a wait began. Surfaces the
+    // wait through the same `nowLine` the TUI already renders.
+    if (event === "waiting") {
+      if (!state.currentPhase || state.currentPhase.name !== phase) return;
+      const line = extra?.text;
+      if (!line) return;
+      state.currentPhase.nowLine = line;
+      state.currentPhase.lastActivityAt = new Date();
+      void this.emitter.emit("progress", {
+        issueNumber: issue,
+        phase,
+        text: line,
+      });
       return;
     }
 

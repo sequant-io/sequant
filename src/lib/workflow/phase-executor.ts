@@ -33,8 +33,11 @@ import {
   BillingError,
   RateLimitError,
   SequantError,
+  formatRateLimitMessage,
+  formatResetTime,
   resetsAtToMs,
 } from "../errors.js";
+import { formatElapsedTime } from "../cli-ui/format.js";
 import { phaseRegistry } from "./phase-registry.js";
 import { bracketedConsoleLog } from "./notice.js";
 
@@ -166,6 +169,291 @@ export function isWindowExhaustedRateLimit(
   const resetsAt = error.metadata.resetsAt;
   if (typeof resetsAt !== "number") return false;
   return resetsAtToMs(resetsAt) - now > RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS;
+}
+
+/**
+ * Buffer added to a rate-limit reset before waking (#804 AC-5). `resetsAt` is a
+ * floor, not an exact moment: clock skew between this host and the API, plus
+ * server-side rounding, otherwise produce an immediate second rejection on
+ * wake. One minute is negligible against the five-hour/seven-day windows this
+ * exists for.
+ *
+ * @internal Exported for testing only
+ */
+export const AUTO_WAIT_BUFFER_MS = 60 * 1000;
+
+/**
+ * Hard cap on auto-waits per issue (#804 AC-6), independent of the minutes
+ * budget. A window that is still closed on wake must not produce an unbounded
+ * pause loop, so the count bounds the *number* of pauses while
+ * `autoWaitMinutes` bounds their *total duration*. Either bound being spent
+ * halts with today's labeled message.
+ *
+ * @internal Exported for testing only
+ */
+export const AUTO_WAIT_MAX_WAITS = 2;
+
+/**
+ * Granularity of the auto-wait sleep (#804 AC-7). The wait is performed as a
+ * series of ticks rather than one multi-hour `delayFn` call so that (a) the
+ * renderer/heartbeat can be refreshed with the remaining time, and (b) a
+ * Ctrl-C is observed promptly instead of at the wake time.
+ *
+ * @internal Exported for testing only
+ */
+export const AUTO_WAIT_TICK_MS = 15 * 1000;
+
+/**
+ * Mutable per-issue accounting for auto-wait (#804 AC-6).
+ *
+ * Deliberately per-ISSUE, not per-phase: `executePhaseWithRetry` runs once per
+ * phase, so a ledger created inside it would grant every phase its own full
+ * budget and bound. `runIssueWithLogging` creates one and threads it through
+ * all of an issue's phases.
+ */
+export interface AutoWaitLedger {
+  /** Total wait budget in ms. `0` disables auto-wait entirely. */
+  budgetMs: number;
+  /** Number of waits already granted for this issue. */
+  waits: number;
+  /** Cumulative ms already spent waiting for this issue. */
+  spentMs: number;
+}
+
+/**
+ * Build a fresh ledger from a minutes budget. A missing, negative or
+ * non-finite budget yields a disabled ledger (`budgetMs: 0`) — the default,
+ * which preserves pre-#804 behavior exactly.
+ */
+export function createAutoWaitLedger(budgetMinutes?: number): AutoWaitLedger {
+  const minutes =
+    typeof budgetMinutes === "number" && Number.isFinite(budgetMinutes)
+      ? Math.max(0, budgetMinutes)
+      : 0;
+  return { budgetMs: minutes * 60 * 1000, waits: 0, spentMs: 0 };
+}
+
+/**
+ * Decide whether to wait out an exhausted rate-limit window (#804 AC-3).
+ *
+ * Deliberately separate from {@link isWindowExhaustedRateLimit} and
+ * {@link RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS}, which answer *"is this transient
+ * or exhausted?"*. This answers a different question — *"am I willing to wait
+ * that long?"* — and fires ONLY once the former is already true. Keeping them
+ * apart is what leaves `autoWaitMinutes` the single user-facing dial for the
+ * wait-vs-halt outcome.
+ *
+ * Returns `null` (no wait — halt as before) when:
+ * - auto-wait is off, or the per-issue wait count is spent;
+ * - the failure is not a window-exhausted `RateLimitError`. A `BillingError`
+ *   lands here: it is a sibling class, not a subclass, so the `instanceof`
+ *   check inside `isWindowExhaustedRateLimit` excludes it. That is load-bearing
+ *   — the real #782 capture shows billing failures DO carry `resetsAt`
+ *   (`rateLimitType: "five_hour"`), so gating on the timestamp's presence
+ *   instead of the error type would wait out a credits failure that no amount
+ *   of waiting can heal (AC-4);
+ * - the reset has already passed (nothing to wait for);
+ * - the required wait exceeds the budget REMAINING, not the total (AC-6).
+ *
+ * @internal Exported for testing only
+ */
+export function shouldAutoWaitForReset(
+  error: SequantError | undefined,
+  ledger: AutoWaitLedger,
+  now: number = Date.now(),
+): { waitMs: number; wakeAtMs: number } | null {
+  if (ledger.budgetMs <= 0) return null;
+  if (ledger.waits >= AUTO_WAIT_MAX_WAITS) return null;
+  if (!isWindowExhaustedRateLimit(error, now)) return null;
+
+  // Narrowed by isWindowExhaustedRateLimit: a RateLimitError with a numeric
+  // resetsAt. All arithmetic stays in epoch ms (AC-5) — resetsAtToMs first,
+  // buffer after, formatting only ever for display.
+  const resetsAt = (error as RateLimitError).metadata.resetsAt as number;
+  const wakeAtMs = resetsAtToMs(resetsAt) + AUTO_WAIT_BUFFER_MS;
+  const waitMs = wakeAtMs - now;
+  if (waitMs <= 0) return null;
+
+  const remainingMs = ledger.budgetMs - ledger.spentMs;
+  if (waitMs > remainingMs) return null;
+
+  return { waitMs, wakeAtMs };
+}
+
+/**
+ * Sleep until an auto-wait's wake time, in ticks (#804 AC-7).
+ *
+ * Chunking the sleep is what makes a multi-hour pause survivable:
+ * - `onTick` refreshes the live display so the wait is visible rather than a
+ *   silent stall (the #574 complaint at 60x scale);
+ * - each tick races the injected `delayFn` against the abort signal, so Ctrl-C
+ *   returns immediately instead of blocking until the wake.
+ *
+ * Reuses the caller's `delayFn` so the wait stays fully test-injectable.
+ *
+ * Returns the ms actually slept and whether the wait was aborted.
+ *
+ * @internal Exported for testing only
+ */
+export async function waitForWindowReset(
+  waitMs: number,
+  options: {
+    delayFn: (ms: number) => Promise<void>;
+    signal?: AbortSignal;
+    onTick?: (remainingMs: number) => void;
+    now?: () => number;
+    tickMs?: number;
+  },
+): Promise<{ sleptMs: number; aborted: boolean }> {
+  const { delayFn, signal, onTick } = options;
+  const now = options.now ?? Date.now;
+  const tickMs = options.tickMs ?? AUTO_WAIT_TICK_MS;
+
+  const startedAt = now();
+  const deadline = startedAt + waitMs;
+
+  // Two independent notions of "how much is left", and the loop honors
+  // whichever expires first:
+  //   - `budgetLeft` counts down by the slices actually requested. This is what
+  //     terminates the loop, and it does so after a fixed number of iterations
+  //     regardless of what the clock does — without it, an injected delayFn
+  //     that resolves instantly (every test) would spin against the wall clock
+  //     until the real reset time arrived.
+  //   - the `deadline` check ends the wait early when real time has outrun the
+  //     slices, e.g. a laptop resumed from sleep mid-wait.
+  let budgetLeft = waitMs;
+  let sleptMs = 0;
+
+  // ONE abort listener for the whole wait, not one per tick. A 5-hour wait is
+  // ~1200 ticks; registering inside the loop would pile up that many listeners
+  // (and as many pending promises) on a single signal, tripping Node's
+  // max-listeners warning and leaking until the wait ended.
+  const abortPromise = signal
+    ? new Promise<boolean>((resolve) => {
+        signal.addEventListener("abort", () => resolve(true), { once: true });
+      })
+    : null;
+
+  for (;;) {
+    if (signal?.aborted) {
+      return { sleptMs: Math.max(sleptMs, now() - startedAt), aborted: true };
+    }
+
+    const clockLeft = deadline - now();
+    const remainingMs = Math.min(budgetLeft, clockLeft);
+    if (remainingMs <= 0) break;
+
+    onTick?.(remainingMs);
+
+    const sliceMs = Math.min(tickMs, remainingMs);
+    budgetLeft -= sliceMs;
+    sleptMs += sliceMs;
+
+    // The injected delayFn exposes no timer handle, so an in-flight slice
+    // cannot be cleared on abort. Racing bounds the *observed* Ctrl-C latency
+    // to ~0 regardless; only the orphaned timer runs on, and it is one tick
+    // long, not one window long.
+    if (abortPromise) {
+      const aborted = await Promise.race([
+        delayFn(sliceMs).then(() => false),
+        abortPromise,
+      ]);
+      if (aborted) {
+        // This slice never completed — don't bill the ledger for it.
+        sleptMs -= sliceMs;
+        return { sleptMs: Math.max(sleptMs, now() - startedAt), aborted: true };
+      }
+    } else {
+      await delayFn(sliceMs);
+    }
+  }
+
+  return {
+    sleptMs: Math.max(sleptMs, now() - startedAt),
+    aborted: signal?.aborted === true,
+  };
+}
+
+/**
+ * Run one granted auto-wait end to end (#804): emit the live notices, sleep,
+ * update the ledger, and report whether Ctrl-C interrupted it.
+ *
+ * Shared by both arms of the retry ladder (the cold-start loop and the
+ * `skipColdStartRetry` single-attempt path) so the two cannot drift on
+ * bookkeeping or messaging.
+ *
+ * @internal Exported for testing only
+ */
+export async function performAutoWait(
+  issueNumber: number,
+  phase: Phase,
+  config: ExecutionConfig,
+  decision: { waitMs: number; wakeAtMs: number },
+  ledger: AutoWaitLedger,
+  error: RateLimitError,
+  delayFn: (ms: number) => Promise<void>,
+  shutdownManager?: ShutdownManager,
+  spinner?: PhasePauseHandle,
+): Promise<{ aborted: boolean }> {
+  // Count the wait BEFORE sleeping. If the process dies mid-wait the ledger is
+  // gone anyway, but an exception on the sleep path must not hand back a free
+  // retry — the bound exists to stop unbounded pause loops.
+  ledger.waits += 1;
+
+  // AC-5: reuse the driver's own formatter for the cause rather than
+  // re-deriving a timestamp, and render the wake time (a distinct value —
+  // reset plus buffer) through the same `formatResetTime` convention.
+  const cause = formatRateLimitMessage(error.metadata);
+  const wakeLabel = formatResetTime(decision.wakeAtMs);
+  const header = `${cause} · auto-wait ${ledger.waits}/${AUTO_WAIT_MAX_WAITS} — resuming at ${wakeLabel}`;
+
+  bracketedConsoleLog(
+    spinner,
+    chalk.yellow(
+      `\n    ⏸ ${header} (${formatElapsedTime(decision.waitMs / 1000)})`,
+    ),
+  );
+
+  const emit = (remainingMs: number, done: boolean) => {
+    try {
+      config.onAutoWait?.({
+        issueNumber,
+        phase,
+        wakeAtMs: decision.wakeAtMs,
+        remainingMs,
+        message: done
+          ? `${cause} · auto-wait complete`
+          : `${header} · ${formatElapsedTime(remainingMs / 1000)} left`,
+        done,
+      });
+    } catch {
+      // Liveness notices must never disrupt the run.
+    }
+  };
+
+  // AC-7: a registered controller is aborted by ShutdownManager on SIGINT, so
+  // Ctrl-C ends the wait instead of blocking until the wake.
+  const controller = new AbortController();
+  shutdownManager?.addAbortController(controller);
+  try {
+    const { sleptMs, aborted } = await waitForWindowReset(decision.waitMs, {
+      delayFn,
+      signal: controller.signal,
+      onTick: (remainingMs) => emit(remainingMs, false),
+    });
+    ledger.spentMs += sleptMs;
+    emit(0, true);
+
+    if (aborted) {
+      bracketedConsoleLog(
+        spinner,
+        chalk.yellow(`    ✕ Auto-wait interrupted — halting`),
+      );
+    }
+    return { aborted };
+  } finally {
+    shutdownManager?.removeAbortController(controller);
+  }
 }
 
 export function parseQaVerdict(output: string): QaVerdict | null {
@@ -872,6 +1160,15 @@ export async function executePhaseWithRetry(
   /** @internal Injected for testing — defaults to setTimeout-based delay */
   delayFn: (ms: number) => Promise<void> = (ms) =>
     new Promise((resolve) => setTimeout(resolve, ms)),
+  /**
+   * Per-issue auto-wait accounting (#804). Deliberately the LAST parameter:
+   * the #761/#799 regression tests call this function positionally with
+   * `executePhaseFn` at 8 and `delayFn` at 9, and AC-2 requires those tests to
+   * pass unmodified. Defaults to a fresh disabled-or-config-derived ledger, so
+   * a caller that does not thread one still gets correct (bounded) behavior —
+   * just scoped to this phase rather than the issue.
+   */
+  autoWaitLedger: AutoWaitLedger = createAutoWaitLedger(config.autoWaitMinutes),
 ): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
   // Skip retry logic if explicitly disabled
   if (config.retry === false) {
@@ -903,28 +1200,55 @@ export async function executePhaseWithRetry(
   };
 
   if (skipColdStartRetry) {
-    // Single attempt — no cold-start retry loop
-    lastResult = await executePhaseFn(
-      issueNumber,
-      phase,
-      config,
-      resumeHandle,
-      worktreePath,
-      shutdownManager,
-      spinner,
-    );
+    // Single attempt — no cold-start retry loop. The only thing that re-enters
+    // this loop is a granted auto-wait (#804): `maxRetries: 0` means "a retry
+    // cannot help", but a reopened rate-limit window is precisely the case
+    // where it can. Bounded by AUTO_WAIT_MAX_WAITS.
+    for (;;) {
+      lastResult = await executePhaseFn(
+        issueNumber,
+        phase,
+        config,
+        resumeHandle,
+        worktreePath,
+        shutdownManager,
+        spinner,
+      );
 
-    if (lastResult.success) {
-      return lastResult;
-    }
+      if (lastResult.success) {
+        return lastResult;
+      }
 
-    // Turn-capped phase (#739): incomplete-but-not-hard-failed. A retry cannot
-    // un-cap a turn limit, so short-circuit before any fallback — same rationale
-    // as the billing skip (#732), but capped must skip *all* retries (incl.
-    // cold-start), so an explicit early return is required, not just a guard
-    // flag at the MCP gate.
-    if (lastResult.capped) {
-      return lastResult;
+      // Turn-capped phase (#739): incomplete-but-not-hard-failed. A retry cannot
+      // un-cap a turn limit, so short-circuit before any fallback — same rationale
+      // as the billing skip (#732), but capped must skip *all* retries (incl.
+      // cold-start), so an explicit early return is required, not just a guard
+      // flag at the MCP gate.
+      if (lastResult.capped) {
+        return lastResult;
+      }
+
+      // #804: without this, `--auto-wait` would silently not cover the `loop`
+      // phase — the one phase registered with `maxRetries: 0` — and a window
+      // limit hitting /loop would still hard-halt with the flag set.
+      const decision = shouldAutoWaitForReset(
+        lastResult.structuredError,
+        autoWaitLedger,
+      );
+      if (!decision) break;
+
+      const { aborted } = await performAutoWait(
+        issueNumber,
+        phase,
+        config,
+        decision,
+        autoWaitLedger,
+        lastResult.structuredError as RateLimitError,
+        delayFn,
+        shutdownManager,
+        spinner,
+      );
+      if (aborted) return lastResult;
     }
   } else {
     // Phase 1: Cold-start retry attempts (with MCP enabled if configured)
@@ -963,6 +1287,37 @@ export async function executePhaseWithRetry(
       // before the duration branch because a rate-limit rejection typically
       // fails fast and would otherwise be mistaken for a cold-start failure.
       if (isWindowExhaustedRateLimit(lastResult.structuredError)) {
+        // #804: opt-in auto-wait. Sits between phase attempts (never inside a
+        // spawn), so `phaseTimeout` is not implicated. Returns null — and this
+        // falls through to today's halt — whenever auto-wait is off, the
+        // budget/bound is spent, or the failure is billing rather than a rate
+        // limit.
+        const decision = shouldAutoWaitForReset(
+          lastResult.structuredError,
+          autoWaitLedger,
+        );
+        if (decision) {
+          const { aborted } = await performAutoWait(
+            issueNumber,
+            phase,
+            config,
+            decision,
+            autoWaitLedger,
+            lastResult.structuredError as RateLimitError,
+            delayFn,
+            shutdownManager,
+            spinner,
+          );
+          if (!aborted) {
+            // A wait is not a cold-start retry, so it must not consume one:
+            // the loop's `attempt++` cancels this out. Bounded by
+            // AUTO_WAIT_MAX_WAITS, which is what makes this safe from looping.
+            attempt--;
+            continue;
+          }
+          return lastResult;
+        }
+
         if (config.verbose) {
           bracketedConsoleLog(
             spinner,
