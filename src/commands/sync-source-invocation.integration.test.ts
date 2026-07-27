@@ -58,7 +58,7 @@ describe("sync invoked from source under tsx (#822)", () => {
     await rm(projectDir, { recursive: true, force: true });
   });
 
-  function runSync(extraEnv: Record<string, string> = {}) {
+  function runCli(args: string[], extraEnv: Record<string, string> = {}) {
     const env = { ...process.env, NO_COLOR: "1", ...extraEnv };
     // Must not be inherited from the developer's shell — it would mask the
     // resolution being tested.
@@ -67,13 +67,16 @@ describe("sync invoked from source under tsx (#822)", () => {
       env.SEQUANT_TEMPLATES_DIR = extraEnv.SEQUANT_TEMPLATES_DIR;
     }
 
-    return spawnSync(tsxBin, [cliSource, "sync"], {
+    return spawnSync(tsxBin, [cliSource, ...args], {
       cwd: projectDir,
       encoding: "utf-8",
       env,
       timeout: 120_000,
     });
   }
+
+  const runSync = (extraEnv: Record<string, string> = {}) =>
+    runCli(["sync"], extraEnv);
 
   it("installs the core skills, not just the version marker (AC-3)", async () => {
     const result = runSync();
@@ -103,5 +106,23 @@ describe("sync invoked from source under tsx (#822)", () => {
     expect(output).toContain(missing);
     // The original failure mode was a success banner over an empty tree.
     expect(output).not.toContain("✔ Synced");
+  });
+
+  // AC-2 names `init` alongside `sync`; without this the init half of the guard
+  // is only covered by the unit-level mock, which stubs the guard out entirely.
+  it("init also exits non-zero naming the missing path (AC-2)", async () => {
+    const missing = join(projectDir, "no-such-templates");
+
+    const result = runCli(["init", "--yes", "--skip-setup"], {
+      SEQUANT_TEMPLATES_DIR: missing,
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(`${result.stdout}${result.stderr}`).toContain(missing);
+    // The guard sits ahead of every write, so a broken install must not leave
+    // a half-provisioned project behind.
+    expect(await fileExists(join(projectDir, ".claude", "settings.json"))).toBe(
+      false,
+    );
   });
 });
