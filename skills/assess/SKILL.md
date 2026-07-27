@@ -458,30 +458,7 @@ Set `mode: "single"` with exactly one entry in `issues[]`. The renderer selects 
 
 **Markers.** Single mode emits the 3-line block (`<!-- assess:action=… -->` / `assess:phases` / `assess:quality-loop`); batch mode emits the compact one-line-per-issue form. The renderer picks the right one from `mode` — never hand-write markers.
 
-Example (PROCEED, generated output):
-
-```
-#458 — Parallel run UX freeze + reconcileState race condition
-Open · bug, enhancement, cli
-────────────────────────────────────────────────────────────────
-
-→ PROCEED — Both root causes confirmed in codebase
-
-Commands:
-  npx sequant run 458 -Q
-
-spec → exec → qa · 8 ACs
-
-Flags:
-  -Q  dual concern across 4 files
-────────────────────────────────────────────────────────────────
-⚠ Dual concern (UX + race) across 4 files
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=PROCEED -->
-<!-- assess:phases=spec,exec,qa -->
-<!-- assess:quality-loop=true -->
-```
+The rendered shape for each verdict is shown in [Batch: dashboard vs posted comment](#batch-dashboard-vs-posted-comment) under `## Persist Analysis`, where the same single-mode payload is the posted comment — one worked example, not two copies to keep in sync.
 
 ---
 
