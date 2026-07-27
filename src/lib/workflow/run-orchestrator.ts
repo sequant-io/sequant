@@ -335,6 +335,21 @@ export class RunOrchestrator {
   }
 
   /**
+   * The wrapped progress sink handed to the batch executor — every phase
+   * lifecycle event enters the orchestrator through here.
+   *
+   * @internal Exported for testing only. `applyProgressEvent` is private and
+   * depends on `issueStates`/`phaseStartTimes`/`emitter`, so there is no way
+   * to exercise its branches short of a full `run()`. Without this seam the
+   * #804 `waiting` branch would be untestable — and an untested `waiting`
+   * branch is not cosmetic: falling through to the complete/failed handler
+   * marks a merely-paused phase `failed` and emits `phase_failed`.
+   */
+  getProgressCallback(): ProgressCallback {
+    return this.cfg.onProgress!;
+  }
+
+  /**
    * Point-in-time view of the entire run.
    *
    * Safe under concurrent reads: the returned object contains only freshly
