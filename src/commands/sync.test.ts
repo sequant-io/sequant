@@ -23,6 +23,10 @@ vi.mock("../lib/templates.js", () => ({
   computeTemplateChanges: vi.fn(),
   listTemplateFiles: vi.fn(),
   getTemplatesDir: vi.fn(() => "/pkg/templates"),
+  // Templates-root guard (#822). Defaults to "present" so the existing suite
+  // exercises the paths past the guard; the guard's own failure branch is
+  // covered by its dedicated test below.
+  assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
   isCustomizableFile: (localPath: string): boolean =>
     [".claude/memory/constitution.md"].includes(localPath.replace(/\\/g, "/")),
 }));
