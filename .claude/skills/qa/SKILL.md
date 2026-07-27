@@ -808,7 +808,7 @@ fi
 | `QUEUED` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | `IN_PROGRESS` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | (empty response) | - | `N/A` | No CI configured |
-| (all checks `fail`, infra-blocked) | `fail` | `NEEDS_VERIFICATION` | Does not block merge; **not loopable** |
+| (all checks `fail`, infra-blocked) | `fail` | `PENDING` | → `NEEDS_VERIFICATION`; does not block merge; **not loopable** |
 
 \* Pending checks may be reclassified as `MET` (informational) when the diff is markdown-only and the check name matches `qa.markdownOnlySafeCiPatterns` — see "Markdown-Only Diff Relaxation" below for the gating-vs-relaxed partitioning rules. Failed checks are never relaxed.
 
@@ -858,10 +858,13 @@ Both predicates live in `src/lib/qa/infra-blocked-ci.ts` (pure, unit-tested agai
 
 | Rule | Effect |
 |------|--------|
-| CI-dependent AC status | `NEEDS_VERIFICATION` — **never** `NOT_MET` |
-| Verdict impact | Does not block merge on CI grounds; non-CI ACs still gate normally |
+| CI-dependent AC status | `PENDING` — **never** `NOT_MET` |
+| Resulting verdict | `NEEDS_VERIFICATION`, via §7's existing `pending_count > 0` branch |
+| Verdict impact | Never forces `AC_NOT_MET` on CI grounds; non-CI ACs still gate normally |
 | Report content | The annotation `message` **verbatim** as the action item |
 | Quality loop | Finding is **not loopable** — see "Loop Exclusion" below |
+
+> **Why the AC status is `PENDING`, not `NEEDS_VERIFICATION`.** `NEEDS_VERIFICATION` is a **verdict** value, not an AC status. §7 counts only `MET` / `PARTIALLY_MET` / `PENDING` / `NOT_MET`; an AC stamped `NEEDS_VERIFICATION` would fall into no bucket, increment no counter, and let the algorithm fall through to `READY_FOR_MERGE` on a fully-red board — worse than the misclassification this section exists to fix. Marking the AC `PENDING` routes it through the existing `pending_count > 0 → NEEDS_VERIFICATION` branch, which is the outcome intended. (Issue #820's AC-2 phrases this as "map to `NEEDS_VERIFICATION`"; that names the verdict, and `PENDING` is how this skill's vocabulary produces it.)
 
 **Loop Exclusion (REQUIRED):**
 
@@ -878,7 +881,7 @@ An infra-blocked CI finding is not actionable by a code change, so it must never
 **Cause (verbatim, from `<check name>` annotation):** The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
 
 **CI Summary:** N failed (0 started)
-**CI-related AC items:** AC-4 ("Tests pass in CI") → NEEDS_VERIFICATION (infra-blocked, not a code defect)
+**CI-related AC items:** AC-4 ("Tests pass in CI") → PENDING (infra-blocked, not a code defect) → verdict `NEEDS_VERIFICATION`
 **Action:** Resolve the infrastructure condition above, then re-run QA. Excluded from the quality loop — no code fix applies.
 ```
 
@@ -954,7 +957,7 @@ CI status affects the final verdict through the standard verdict algorithm:
 - CI `PENDING` (gating) → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
 - CI `PENDING` (relaxed via the markdown-only block below) → AC item marked `MET` → no impact on verdict
 - CI `failure` → AC item marked `NOT_MET` → Verdict: `AC_NOT_MET`
-- CI `failure` (all checks, infra-blocked per the block above) → AC item marked `NEEDS_VERIFICATION` → does not force `AC_NOT_MET`; the finding is excluded from `/loop`
+- CI `failure` (all checks, infra-blocked per the block above) → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION` (never `AC_NOT_MET`); the finding is excluded from `/loop`
 - CI `success` → AC item marked `MET` → No additional impact
 - No CI → AC item marked `N/A` → No impact on verdict
 
