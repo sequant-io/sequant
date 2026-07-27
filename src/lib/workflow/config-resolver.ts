@@ -128,6 +128,15 @@ interface CommanderRawOptions extends RunOptions {
   retry?: boolean;
   rebase?: boolean;
   pr?: boolean;
+  /**
+   * #804: Commander derives the option key from the FLAG name, so
+   * `--auto-wait <minutes>` arrives as `autoWait`, not `autoWaitMinutes`.
+   * The flag name is user-facing (and fixed by the issue); the settings key
+   * carries its unit per house style (`maxSizeMB`, `durationSeconds`). They
+   * therefore cannot match, and without the mapping below the flag parses,
+   * shows up in `--help`, and silently does nothing — the #305 failure mode.
+   */
+  autoWait?: number;
 }
 
 /**
@@ -144,6 +153,10 @@ export function normalizeCommanderOptions(options: RunOptions): RunOptions {
     ...(raw.retry === false && { noRetry: true }),
     ...(raw.rebase === false && { noRebase: true }),
     ...(raw.pr === false && { noPr: true }),
+    // #804: map the flag-derived key onto the interface field. Guarded on
+    // `undefined` (not truthiness) so an explicit `--auto-wait 0` still
+    // overrides a non-zero setting.
+    ...(raw.autoWait !== undefined && { autoWaitMinutes: raw.autoWait }),
   };
 }
 

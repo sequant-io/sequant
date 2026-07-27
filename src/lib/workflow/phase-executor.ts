@@ -234,6 +234,19 @@ export function createAutoWaitLedger(budgetMinutes?: number): AutoWaitLedger {
 }
 
 /**
+ * A granted auto-wait: how long to sleep, when to wake, and the narrowed
+ * rate-limit error that justified it (carried so callers need no cast).
+ */
+export interface AutoWaitDecision {
+  /** Ms to sleep. Always > 0. */
+  waitMs: number;
+  /** Epoch ms to wake at — `resetsAt` normalized to ms, plus the buffer. */
+  wakeAtMs: number;
+  /** The rate limit that triggered the wait. Never a `BillingError`. */
+  error: RateLimitError;
+}
+
+/**
  * Decide whether to wait out an exhausted rate-limit window (#804 AC-3).
  *
  * Deliberately separate from {@link isWindowExhaustedRateLimit} and
@@ -261,15 +274,24 @@ export function shouldAutoWaitForReset(
   error: SequantError | undefined,
   ledger: AutoWaitLedger,
   now: number = Date.now(),
-): { waitMs: number; wakeAtMs: number } | null {
+): AutoWaitDecision | null {
   if (ledger.budgetMs <= 0) return null;
   if (ledger.waits >= AUTO_WAIT_MAX_WAITS) return null;
+
+  // These two guards duplicate checks inside `isWindowExhaustedRateLimit`, and
+  // that duplication is deliberate: TypeScript cannot narrow through a boolean
+  // helper, so without them the lines below need `as RateLimitError` /
+  // `as number` casts. Real narrowing beats a cast in the one function that
+  // decides whether to pause a run for hours. The classifier below still owns
+  // the "transient or exhausted?" question (AC-3) — these only prove types.
+  if (!(error instanceof RateLimitError)) return null;
+  const resetsAt = error.metadata.resetsAt;
+  if (typeof resetsAt !== "number") return null;
+
   if (!isWindowExhaustedRateLimit(error, now)) return null;
 
-  // Narrowed by isWindowExhaustedRateLimit: a RateLimitError with a numeric
-  // resetsAt. All arithmetic stays in epoch ms (AC-5) — resetsAtToMs first,
-  // buffer after, formatting only ever for display.
-  const resetsAt = (error as RateLimitError).metadata.resetsAt as number;
+  // All arithmetic stays in epoch ms (AC-5) — resetsAtToMs first, buffer
+  // after, formatting only ever for display.
   const wakeAtMs = resetsAtToMs(resetsAt) + AUTO_WAIT_BUFFER_MS;
   const waitMs = wakeAtMs - now;
   if (waitMs <= 0) return null;
@@ -277,7 +299,8 @@ export function shouldAutoWaitForReset(
   const remainingMs = ledger.budgetMs - ledger.spentMs;
   if (waitMs > remainingMs) return null;
 
-  return { waitMs, wakeAtMs };
+  // Carry the narrowed error forward so callers don't have to re-cast it.
+  return { waitMs, wakeAtMs, error };
 }
 
 /**
@@ -388,9 +411,8 @@ export async function performAutoWait(
   issueNumber: number,
   phase: Phase,
   config: ExecutionConfig,
-  decision: { waitMs: number; wakeAtMs: number },
+  decision: AutoWaitDecision,
   ledger: AutoWaitLedger,
-  error: RateLimitError,
   delayFn: (ms: number) => Promise<void>,
   shutdownManager?: ShutdownManager,
   spinner?: PhasePauseHandle,
@@ -403,7 +425,7 @@ export async function performAutoWait(
   // AC-5: reuse the driver's own formatter for the cause rather than
   // re-deriving a timestamp, and render the wake time (a distinct value —
   // reset plus buffer) through the same `formatResetTime` convention.
-  const cause = formatRateLimitMessage(error.metadata);
+  const cause = formatRateLimitMessage(decision.error.metadata);
   const wakeLabel = formatResetTime(decision.wakeAtMs);
   const header = `${cause} · auto-wait ${ledger.waits}/${AUTO_WAIT_MAX_WAITS} — resuming at ${wakeLabel}`;
 
@@ -1243,7 +1265,6 @@ export async function executePhaseWithRetry(
         config,
         decision,
         autoWaitLedger,
-        lastResult.structuredError as RateLimitError,
         delayFn,
         shutdownManager,
         spinner,
@@ -1303,7 +1324,6 @@ export async function executePhaseWithRetry(
             config,
             decision,
             autoWaitLedger,
-            lastResult.structuredError as RateLimitError,
             delayFn,
             shutdownManager,
             spinner,

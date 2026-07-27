@@ -27,10 +27,11 @@ import {
   isWindowHalt,
   getEnvConfig,
 } from "./batch-executor.js";
-import { buildExecutionConfig } from "./config-resolver.js";
+import { buildExecutionConfig, resolveRunOptions } from "./config-resolver.js";
 import { DEFAULT_CONFIG } from "./types.js";
-import type { ExecutionConfig, PhaseResult } from "./types.js";
-import { RunSettingsSchema } from "../settings.js";
+import type { ExecutionConfig, PhaseResult, RunOptions } from "./types.js";
+import { ShutdownManager } from "../shutdown.js";
+import { DEFAULT_SETTINGS, RunSettingsSchema } from "../settings.js";
 import type { SequantSettings } from "../settings.js";
 import {
   BillingError,
@@ -506,7 +507,7 @@ describe("#804 executePhaseWithRetry — auto-wait in the retry ladder", () => {
       { ...baseConfig, autoWaitMinutes: 600 },
       undefined,
       undefined,
-      shutdownManager as never,
+      shutdownManager as unknown as ShutdownManager,
       undefined,
       executePhaseFn,
       delayFn,
@@ -639,9 +640,14 @@ describe("#804 halt predicate separability (AC-8)", () => {
 });
 
 describe("#804 configuration plumbing (AC-1)", () => {
-  const settings = {
-    run: RunSettingsSchema.parse({}),
-  } as SequantSettings;
+  // Build from the real DEFAULT_SETTINGS rather than a `{ run }`-only stub:
+  // `resolveRunOptions` also reads `settings.agents`, so a partial cast
+  // produces a TypeError that has nothing to do with what is under test.
+  const withRun = (run: Partial<SequantSettings["run"]>): SequantSettings => ({
+    ...DEFAULT_SETTINGS,
+    run: RunSettingsSchema.parse(run),
+  });
+  const settings = withRun({});
 
   it("defaults to 0 — off — at every layer", () => {
     expect(DEFAULT_CONFIG.autoWaitMinutes).toBe(0);
@@ -656,10 +662,36 @@ describe("#804 configuration plumbing (AC-1)", () => {
     ).toBe(90);
   });
 
+  it("AC-1: Commander's `autoWait` key maps onto `autoWaitMinutes` end-to-end", () => {
+    // Commander derives the option key from the FLAG (`--auto-wait`), so it
+    // emits `autoWait` — NOT `autoWaitMinutes`. Without the normalization in
+    // `normalizeCommanderOptions`, the flag parses, appears in `--help`, and
+    // silently does nothing: the #305 failure mode, and the reason AC-1 says
+    // "end-to-end" rather than "the option is registered".
+    const fromCommander = { autoWait: 90 } as RunOptions;
+    const resolved = resolveRunOptions(fromCommander, settings);
+    expect(resolved.autoWaitMinutes).toBe(90);
+    expect(buildExecutionConfig(resolved, settings, 1).autoWaitMinutes).toBe(
+      90,
+    );
+  });
+
+  it("an explicit `--auto-wait 0` overrides a non-zero setting", () => {
+    // Guarded on `undefined` rather than truthiness — 0 is a meaningful value
+    // (it is how a user turns auto-wait OFF for one run).
+    const withSetting = withRun({ autoWaitMinutes: 120 });
+    const resolved = resolveRunOptions(
+      { autoWait: 0 } as RunOptions,
+      withSetting,
+    );
+    expect(resolved.autoWaitMinutes).toBe(0);
+    expect(buildExecutionConfig(resolved, withSetting, 1).autoWaitMinutes).toBe(
+      0,
+    );
+  });
+
   it("settings supply the value when the flag is absent", () => {
-    const withSetting = {
-      run: RunSettingsSchema.parse({ autoWaitMinutes: 45 }),
-    } as SequantSettings;
+    const withSetting = withRun({ autoWaitMinutes: 45 });
     expect(buildExecutionConfig({}, withSetting, 1).autoWaitMinutes).toBe(45);
   });
 
