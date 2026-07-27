@@ -12,6 +12,7 @@
  */
 import * as fs from "fs";
 import { formatElapsedTime } from "../cli-ui/format.js";
+import { formatResetTime } from "../errors.js";
 import type { ShutdownManager } from "../shutdown.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
@@ -51,6 +52,12 @@ interface PhaseEntry {
   startedAt: number;
   /** Set once a stall warning has fired; cleared when activity resumes. */
   warningFired: boolean;
+  /**
+   * #804: epoch ms at which an in-progress auto-wait ends, or `undefined` when
+   * the phase is not waiting. While set, the heartbeat reports the wait and
+   * the stall warning is suppressed — see {@link LivenessHeartbeat.pauseForWait}.
+   */
+  waitingUntil?: number;
 }
 
 interface PhaseKey {
@@ -168,6 +175,36 @@ export class LivenessHeartbeat {
     }
   }
 
+  /**
+   * Mark a phase as auto-waiting for a rate-limit window to reopen (#804 AC-7).
+   *
+   * This is not cosmetic. The stall detector's activity proxy is the mtime of
+   * `.sequant/state.json`, and an auto-wait produces no writes by definition —
+   * so a multi-hour wait would otherwise trip the "no log activity" warning
+   * within minutes and report an entirely expected pause as a stall. Marking
+   * the phase both relabels the heartbeat line with the wake time and
+   * suppresses that false warning.
+   *
+   * No-op for an untracked phase, so an out-of-order or late notice cannot
+   * resurrect a stopped entry.
+   */
+  pauseForWait(key: PhaseKey, wakeAtMs: number): void {
+    const entry = this.phases.get(keyFor(key));
+    if (!entry) return;
+    entry.waitingUntil = wakeAtMs;
+    // Clear any warning already fired so a genuine stall after the wait can
+    // still warn once.
+    entry.warningFired = false;
+  }
+
+  /** Clear the auto-wait marker set by {@link pauseForWait} (#804). */
+  resumeFromWait(key: PhaseKey): void {
+    const entry = this.phases.get(keyFor(key));
+    if (!entry) return;
+    entry.waitingUntil = undefined;
+    entry.warningFired = false;
+  }
+
   /** Test hook: drive a poll synchronously without waiting on real timers. */
   tickNow(): void {
     this.tick();
@@ -179,6 +216,17 @@ export class LivenessHeartbeat {
     const now = this.now();
 
     for (const entry of this.phases.values()) {
+      // #804: an auto-waiting phase has its own liveness story. Handled before
+      // the mtime read because the wait produces no file activity at all — the
+      // stall detector's proxy is meaningless here, and the `mtimeMs === null`
+      // early-continue below would otherwise leave the wait completely silent.
+      if (entry.waitingUntil !== undefined) {
+        if (this.tty) {
+          this.writeWaitHeartbeat(entry, Math.max(0, now - entry.startedAt));
+        }
+        continue;
+      }
+
       let mtimeMs: number | null;
       try {
         const stat = fs.statSync(this.livenessFile);
@@ -223,6 +271,24 @@ export class LivenessHeartbeat {
     // \r rewrites current line; \x1b[K clears the rest in case the new line is
     // shorter than the old one.
     const line = `\r  ▸ #${entry.issueNumber}  ${entry.phase}  (${elapsed} elapsed, last log update ${sinceActivity} ago)[K`;
+    this.stdoutWrite(line);
+  }
+
+  /**
+   * Heartbeat line for a phase paused on an auto-wait (#804). Names the wake
+   * time and the remaining wait so a multi-hour pause is legibly deliberate
+   * rather than indistinguishable from a hang.
+   */
+  private writeWaitHeartbeat(
+    entry: PhaseEntry,
+    elapsedSinceStartMs: number,
+  ): void {
+    if (this.stopped || entry.waitingUntil === undefined) return;
+    const elapsed = formatElapsedTime(Math.floor(elapsedSinceStartMs / 1000));
+    const remainingMs = Math.max(0, entry.waitingUntil - this.now());
+    const remaining = formatElapsedTime(Math.floor(remainingMs / 1000));
+    const wake = formatResetTime(entry.waitingUntil);
+    const line = `\r  ⏸ #${entry.issueNumber}  ${entry.phase}  (${elapsed} elapsed, rate-limit window — resuming at ${wake}, ${remaining} left)\x1b[K`;
     this.stdoutWrite(line);
   }
 

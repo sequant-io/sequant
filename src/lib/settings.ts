@@ -122,6 +122,18 @@ export interface RunSettings {
    */
   retry: boolean;
   /**
+   * Total minutes willing to wait for an exhausted rate-limit window to reopen
+   * before halting the run (#804).
+   *
+   * `0` (default) disables auto-wait: a window-exhausted rate limit halts
+   * immediately, exactly as it did before #804. Any positive value is a TOTAL
+   * budget per issue, not a per-occurrence allowance.
+   *
+   * The wait is in-process — it does not survive closing the terminal.
+   * Overridable per-invocation with `--auto-wait <minutes>`.
+   */
+  autoWaitMinutes: number;
+  /**
    * Threshold for stale branch detection in pre-flight checks.
    * If feature branch is more than this many commits behind main,
    * QA/test skills block execution and recommend rebase.
@@ -327,6 +339,7 @@ export const RunSettingsSchema = z.object({
   defaultBase: z.string().optional(),
   mcp: z.boolean().default(true),
   retry: z.boolean().default(true),
+  autoWaitMinutes: z.number().min(0).default(0),
   staleBranchThreshold: z.number().default(5),
   resolvedIssueTTL: z.number().default(7),
   pmRun: z.string().optional(),
@@ -685,6 +698,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     rotation: DEFAULT_ROTATION_SETTINGS,
     mcp: true, // Enable MCP servers by default in headless mode
     retry: true, // Enable automatic retry with MCP fallback by default
+    autoWaitMinutes: 0, // #804: auto-wait off by default — window exhaustion halts
     staleBranchThreshold: 5, // Block QA/test if feature is >5 commits behind main
     resolvedIssueTTL: 7, // Auto-prune resolved issues after 7 days
     relay: true, // Enable interactive relay (#383) by default

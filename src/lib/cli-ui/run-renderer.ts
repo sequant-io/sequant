@@ -20,6 +20,7 @@ import chalk from "chalk";
 import logUpdate from "log-update";
 import stringWidth from "string-width";
 import { formatElapsedTime, formatTimestamp } from "./format.js";
+import { formatResetTime } from "../errors.js";
 import type { PhasePauseHandle } from "../workflow/types.js";
 import { pipelineHasFailed } from "../workflow/status-derivation.js";
 import type {
@@ -257,6 +258,22 @@ abstract class BaseRenderer implements RunRenderer, PhasePauseHandle {
       }
       // Clear any sub-status from a prior phase.
       state.subStatus = undefined;
+      return;
+    }
+
+    // #804 AC-7: an auto-wait pauses a phase rather than ending it. Presence of
+    // `wakeAtMs` distinguishes an in-progress wait from the terminal notice
+    // that resumes it, so the live zone never strands a "waiting" cell.
+    if (event.event === "waiting") {
+      if (event.wakeAtMs !== undefined) {
+        phase.status = "waiting";
+        phase.wakeAtMs = event.wakeAtMs;
+        state.subStatus = event.text;
+      } else {
+        if (phase.status === "waiting") phase.status = "running";
+        phase.wakeAtMs = undefined;
+        state.subStatus = undefined;
+      }
       return;
     }
 
@@ -1309,6 +1326,12 @@ export class TTYRenderer extends BaseRenderer {
               `${p.name} ✔${p.durationMs ? ` ${formatElapsedTime(p.durationMs / 1000)}` : ""}`,
             );
           if (p.status === "failed") return c.red(`${p.name} ✘`);
+          // #804: a paused phase reads as `qa waiting 14:33`, so the wake time
+          // is visible in the live zone itself, not only the sub-status line.
+          if (p.status === "waiting")
+            return c.yellow(
+              `${p.name} waiting${p.wakeAtMs ? ` ${formatResetTime(p.wakeAtMs)}` : ""}`,
+            );
           if (p.status === "running") return c.cyan(`${p.name} running`);
           // #672 AC-3: pending cells render as `name –` (en dash) so the live
           // zone reads as a roadmap when a phase plan is set via registration

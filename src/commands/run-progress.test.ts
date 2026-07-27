@@ -177,3 +177,142 @@ describe("buildProgressWiring — activity event filter (#543)", () => {
     });
   });
 });
+
+// #804 AC-7: unlike `activity`, a `waiting` event MUST reach both display
+// paths — it is the only signal during a pause that can last hours.
+describe("buildProgressWiring — waiting event routing (#804)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const WAKE = 1_800_000_000_000;
+
+  describe("renderer branch (default mode)", () => {
+    function captureOnEvent(): ReturnType<typeof vi.fn> {
+      const onEvent = vi.fn();
+      mockCreateRunRenderer.mockReturnValue({
+        onEvent,
+        registerIssue: vi.fn(),
+        setPhasePlan: vi.fn(),
+        setPullRequest: vi.fn(),
+        pause: vi.fn(),
+        resume: vi.fn(),
+        renderSummary: vi.fn(),
+        dispose: vi.fn(),
+      } as unknown as ReturnType<typeof createRunRenderer>);
+      return onEvent;
+    }
+
+    it("forwards a waiting event with its wake time", () => {
+      const onEvent = captureOnEvent();
+      const { onProgress } = buildProgressWiring({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [804],
+        phaseTimeoutSeconds: 60,
+      });
+
+      onProgress!(804, "qa", "waiting", {
+        text: "Rate limited · auto-wait 1/2",
+        wakeAtMs: WAKE,
+      });
+
+      expect(onEvent).toHaveBeenCalledWith({
+        issue: 804,
+        phase: "qa",
+        event: "waiting",
+        text: "Rate limited · auto-wait 1/2",
+        wakeAtMs: WAKE,
+      });
+    });
+
+    it("forwards the terminal notice with wakeAtMs undefined", () => {
+      const onEvent = captureOnEvent();
+      const { onProgress } = buildProgressWiring({
+        tuiEnabled: false,
+        quiet: false,
+        issueNumbers: [804],
+        phaseTimeoutSeconds: 60,
+      });
+
+      // The absence of wakeAtMs is what tells the renderer to clear the
+      // waiting state — dropping it would strand a `waiting` cell forever.
+      onProgress!(804, "qa", "waiting", { text: "done" });
+
+      expect(onEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "waiting", wakeAtMs: undefined }),
+      );
+    });
+  });
+
+  describe("heartbeat branch (-s / quiet mode)", () => {
+    function captureHeartbeat() {
+      const fns = {
+        start: vi.fn(),
+        stop: vi.fn(),
+        pauseForWait: vi.fn(),
+        resumeFromWait: vi.fn(),
+      };
+      MockLivenessHeartbeat.mockImplementation(function (this: typeof fns) {
+        Object.assign(this, fns);
+      } as unknown as new () => InstanceType<typeof LivenessHeartbeat>);
+      return fns;
+    }
+
+    it("marks the phase as waiting rather than stopping it", () => {
+      const fns = captureHeartbeat();
+      const { onProgress } = buildProgressWiring({
+        tuiEnabled: false,
+        quiet: true,
+        issueNumbers: [804],
+        phaseTimeoutSeconds: 60,
+      });
+
+      onProgress!(804, "qa", "waiting", { text: "waiting…", wakeAtMs: WAKE });
+
+      expect(fns.pauseForWait).toHaveBeenCalledWith(
+        { issueNumber: 804, phase: "qa" },
+        WAKE,
+      );
+      // The load-bearing negative: without the early return, `waiting` falls
+      // into the `else` and calls stop(), which deletes the phase entry — a
+      // multi-hour wait would then have NO liveness signal at all.
+      expect(fns.stop).not.toHaveBeenCalled();
+      expect(fns.start).not.toHaveBeenCalled();
+    });
+
+    it("clears the waiting mark on the terminal notice", () => {
+      const fns = captureHeartbeat();
+      const { onProgress } = buildProgressWiring({
+        tuiEnabled: false,
+        quiet: true,
+        issueNumbers: [804],
+        phaseTimeoutSeconds: 60,
+      });
+
+      onProgress!(804, "qa", "waiting", { text: "done" });
+
+      expect(fns.resumeFromWait).toHaveBeenCalledWith({
+        issueNumber: 804,
+        phase: "qa",
+      });
+      expect(fns.stop).not.toHaveBeenCalled();
+    });
+
+    it("still stops the phase on a genuine completion after a wait", () => {
+      const fns = captureHeartbeat();
+      const { onProgress } = buildProgressWiring({
+        tuiEnabled: false,
+        quiet: true,
+        issueNumbers: [804],
+        phaseTimeoutSeconds: 60,
+      });
+
+      onProgress!(804, "qa", "waiting", { text: "waiting…", wakeAtMs: WAKE });
+      onProgress!(804, "qa", "waiting", { text: "done" });
+      onProgress!(804, "qa", "complete");
+
+      expect(fns.stop).toHaveBeenCalledTimes(1);
+    });
+  });
+});

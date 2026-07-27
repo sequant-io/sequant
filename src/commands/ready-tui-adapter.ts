@@ -96,7 +96,12 @@ export class ReadySnapshotAdapter {
         if (event === "failed") this.status = "failed";
         break;
       }
-      case "activity": {
+      // #804: an auto-wait surfaces here the same way activity does — as a
+      // refreshed nowLine on the still-running phase. Sharing one body is
+      // deliberate: a wait must NOT reach the complete/failed case, which
+      // would close out a phase that is merely paused.
+      case "activity":
+      case "waiting": {
         if (this.currentPhase) {
           this.currentPhase = {
             ...this.currentPhase,

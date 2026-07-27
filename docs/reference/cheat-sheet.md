@@ -145,6 +145,7 @@ sequant doctor              # Verify installation health
 |------|-------------|---------|
 | `--no-mcp` | Disable MCP server injection | off |
 | `--timeout <seconds>` | Timeout per phase in seconds | `1800` |
+| `--auto-wait <minutes>` | Total minutes to wait for an exhausted rate-limit window to reopen instead of halting (never waits on out-of-credits; in-process only) | `0` (off) |
 | `--batch <issues>` | Group issues to run together (e.g., `--batch "1 2"`) | `[]` |
 
 **Output**

@@ -36,6 +36,7 @@ import {
   filterResumedPhases,
 } from "./worktree-manager.js";
 import {
+  createAutoWaitLedger,
   executePhaseWithRetry,
   isWindowExhaustedRateLimit,
 } from "./phase-executor.js";
@@ -74,8 +75,12 @@ export type {
  */
 
 /**
- * Wrap an `ExecutionConfig` with an `onActivity` hook that re-emits each
- * agent-output ping as a `"activity"` progress event for the dashboard (#543).
+ * Wrap an `ExecutionConfig` with the runtime liveness hooks:
+ * - `onActivity` — re-emits each agent-output ping as an `"activity"` progress
+ *   event for the dashboard (#543).
+ * - `onAutoWait` — re-emits each auto-wait tick as a `"waiting"` progress
+ *   event so the renderer and heartbeat can show the pause and its wake time
+ *   (#804 AC-7).
  *
  * Returns the input config unchanged when no `onProgress` callback is set,
  * so non-TUI runs pay no overhead.
@@ -96,6 +101,18 @@ export function withActivityHook(
         onProgress(issueNumber, phase, "activity", { text });
       } catch {
         // Activity events must never disrupt the run.
+      }
+    },
+    onAutoWait: (notice) => {
+      try {
+        onProgress(issueNumber, phase, "waiting", {
+          text: notice.message,
+          // Omitted on the terminal notice — its absence is what tells the
+          // consumers to clear the waiting state.
+          wakeAtMs: notice.done ? undefined : notice.wakeAtMs,
+        });
+      } catch {
+        // Liveness notices must never disrupt the run.
       }
     },
   };
@@ -357,6 +374,18 @@ export function getEnvConfig(): Partial<RunOptions> {
     config.securityReview = true;
   }
 
+  // #804: the env layer for --auto-wait. `resolveRunOptions` does NOT route
+  // through the `ConfigResolver` class (it uses `??` chains + this function),
+  // so numeric coercion is explicit here rather than free via `coerceEnvValue`.
+  // Non-numeric and negative values are ignored so a typo cannot silently
+  // enable an unbounded wait.
+  if (process.env.SEQUANT_AUTO_WAIT_MINUTES) {
+    const autoWait = parseInt(process.env.SEQUANT_AUTO_WAIT_MINUTES, 10);
+    if (!isNaN(autoWait) && autoWait >= 0) {
+      config.autoWaitMinutes = autoWait;
+    }
+  }
+
   return config;
 }
 
@@ -472,10 +501,40 @@ export function deriveFailureCategory(
  * @internal Exported for testing
  */
 export function isBillingOrWindowHalt(result: PhaseResult): boolean {
-  return (
-    result.structuredError instanceof BillingError ||
-    isWindowExhaustedRateLimit(result.structuredError)
-  );
+  return isBillingHalt(result) || isWindowHalt(result);
+}
+
+/**
+ * The billing half of {@link isBillingOrWindowHalt} (#804 AC-8).
+ *
+ * Split out because the two causes stopped being interchangeable once
+ * `--auto-wait` existed: a closed window can now reopen on its own, while
+ * out-of-credits cannot — credits are purchased, not waited out. Callers that
+ * need to reason about recoverability must be able to tell them apart.
+ *
+ * @internal Exported for testing
+ */
+export function isBillingHalt(result: PhaseResult): boolean {
+  return result.structuredError instanceof BillingError;
+}
+
+/**
+ * The rate-limit-window half of {@link isBillingOrWindowHalt} (#804 AC-8).
+ *
+ * NOTE — this predicate needed no behavioral change for auto-wait, and that is
+ * a deliberate finding rather than an oversight. AC-8 anticipated that a phase
+ * which waits and then succeeds would still halt the `-Q` loop. It cannot:
+ * every call site (`:~700` spec, `:~1030` progress label, `:~1150` halt flag)
+ * sits inside the `else` of an `if (result.success)`, so a successful
+ * post-wait result never reaches this predicate at all. When auto-wait does
+ * NOT fire — the default, an exhausted budget, or a spent wait bound — the
+ * result is still a failure carrying a window-exhausted `RateLimitError`, and
+ * halting is then the correct outcome (#799 behavior, preserved exactly).
+ *
+ * @internal Exported for testing
+ */
+export function isWindowHalt(result: PhaseResult): boolean {
+  return isWindowExhaustedRateLimit(result.structuredError);
 }
 
 /**
@@ -526,6 +585,10 @@ export async function runIssueWithLogging(
   let loopTriggered = false;
   // Cross-phase resume token, driver-tagged and cwd-bound (#674).
   let resumeHandle: ResumeHandle | undefined;
+  // #804 AC-6: ONE ledger for the whole issue. Created here rather than inside
+  // `executePhaseWithRetry` because the bound and the budget are per-issue —
+  // a per-phase ledger would silently grant every phase its own full budget.
+  const autoWaitLedger = createAutoWaitLedger(config.autoWaitMinutes);
 
   // In parallel mode, suppress per-issue terminal output to prevent interleaving.
   // The caller (run.ts) handles progress display via updateProgress().
@@ -634,6 +697,9 @@ export async function runIssueWithLogging(
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
       phasePauseHandle,
+      undefined, // executePhaseFn — use the default
+      undefined, // delayFn — use the default
+      autoWaitLedger, // #804: shared across every phase of this issue
     );
     const specEndTime = new Date();
 
@@ -950,6 +1016,9 @@ export async function runIssueWithLogging(
         worktreePath,
         shutdownManager,
         phasePauseHandle,
+        undefined, // executePhaseFn — use the default
+        undefined, // delayFn — use the default
+        autoWaitLedger, // #804: shared across every phase of this issue
       );
       const phaseEndTime = new Date();
 
@@ -1153,6 +1222,9 @@ export async function runIssueWithLogging(
             worktreePath,
             shutdownManager,
             phasePauseHandle,
+            undefined, // executePhaseFn — use the default
+            undefined, // delayFn — use the default
+            autoWaitLedger, // #804: shared across every phase of this issue
           );
           const loopEndTime = new Date();
           phaseResults.push(loopResult);

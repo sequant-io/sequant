@@ -164,6 +164,14 @@ export interface ExecutionConfig {
    */
   onActivity?: (text: string) => void;
   /**
+   * Runtime callback invoked while an auto-wait (#804) is in progress, once
+   * per tick plus once when it ends. Used to keep the renderer and the `-q`
+   * heartbeat showing the wait and its wake time, so a multi-hour pause reads
+   * as deliberate rather than as the silent stall of #574. Not serialized —
+   * set per-call by the orchestrator, like {@link onActivity}.
+   */
+  onAutoWait?: (notice: AutoWaitNotice) => void;
+  /**
    * Enable interactive relay (#383). When true, phase-executor sets
    * `SEQUANT_RELAY=true` in the agent environment so the PostToolUse hook
    * starts polling `<worktree>/.sequant/relay/inbox.jsonl` for user messages.
@@ -179,6 +187,43 @@ export interface ExecutionConfig {
    * QA pass does NOT skip the checks that catch the #318/#529/#570 class.
    */
   fullQa?: boolean;
+  /**
+   * Total wait budget, in minutes, for auto-waiting out an exhausted
+   * rate-limit window (#804). `0` (the default) disables auto-wait entirely,
+   * preserving the #761/#799 halt behavior byte-for-byte.
+   *
+   * When a phase fails with a window-exhausted `RateLimitError` whose reset
+   * lies within the remaining budget, the executor sleeps until the reset and
+   * retries the phase instead of returning the failure. Named for the
+   * *behavior* (waiting), not the mechanism, so it survives a future move from
+   * in-process sleep to out-of-process rescheduling.
+   *
+   * This is a TOTAL budget across the issue, not a per-occurrence allowance —
+   * see {@link AutoWaitLedger}.
+   */
+  autoWaitMinutes?: number;
+}
+
+/**
+ * A single liveness notice emitted during an auto-wait (#804 AC-7).
+ */
+export interface AutoWaitNotice {
+  /** Issue the wait belongs to. */
+  issueNumber: number;
+  /** Phase whose retry is being waited for. */
+  phase: string;
+  /** Epoch ms at which the wait ends (reset + buffer). */
+  wakeAtMs: number;
+  /** Ms remaining at the time of this notice. `0` on the final notice. */
+  remainingMs: number;
+  /**
+   * Display string, already formatted. Built from `formatRateLimitMessage`
+   * plus the wake time — never by re-appending `resetsAt` to an
+   * already-formatted driver message (the #799 doubled-string trap).
+   */
+  message: string;
+  /** True on the terminal notice, once the wait has ended or been aborted. */
+  done: boolean;
 }
 
 /**
@@ -198,6 +243,7 @@ export const DEFAULT_CONFIG: ExecutionConfig = {
   dryRun: false,
   mcp: true,
   retry: true,
+  autoWaitMinutes: 0,
 };
 
 // Re-export QaVerdict from run-log-schema (single source of truth)
@@ -350,6 +396,13 @@ export interface RunOptions {
    */
   noMcp?: boolean;
   /**
+   * Total minutes willing to wait for an exhausted rate-limit window to reopen
+   * before halting (#804). `0` (default) keeps today's immediate halt.
+   * Resolution priority: this CLI flag → SEQUANT_AUTO_WAIT_MINUTES →
+   * settings.run.autoWaitMinutes → default (0).
+   */
+  autoWaitMinutes?: number;
+  /**
    * Resume from last completed phase.
    * Reads phase markers from GitHub issue comments and skips completed phases.
    */
@@ -480,16 +533,27 @@ export interface BatchResult {
  * `"activity"` (#543): sub-phase activity ping. `extra.text` carries a short
  * one-line snippet (e.g. last line of agent output) for the dashboard's
  * `nowLine`. Fires at most ~10 Hz from the phase executor.
+ *
+ * `"waiting"` (#804): an auto-wait for a rate-limit window is in progress.
+ * `extra.text` is the display message and `extra.wakeAtMs` the wake time;
+ * a `"waiting"` event WITHOUT `wakeAtMs` is the terminal notice that clears
+ * the waiting state. Unlike `"activity"`, this must reach both display paths
+ * — a multi-hour pause with no signal is the #574 complaint at 60x scale.
  */
 export type ProgressCallback = (
   issue: number,
   phase: string,
-  event: "start" | "complete" | "failed" | "activity",
+  event: "start" | "complete" | "failed" | "activity" | "waiting",
   extra?: {
     durationSeconds?: number;
     error?: string;
     iteration?: number;
     text?: string;
+    /**
+     * `"waiting"` (#804): epoch ms at which an auto-wait ends. Absent on the
+     * terminal notice, which clears the waiting state.
+     */
+    wakeAtMs?: number;
   },
 ) => void;
 

@@ -335,6 +335,21 @@ export class RunOrchestrator {
   }
 
   /**
+   * The wrapped progress sink handed to the batch executor — every phase
+   * lifecycle event enters the orchestrator through here.
+   *
+   * @internal Exported for testing only. `applyProgressEvent` is private and
+   * depends on `issueStates`/`phaseStartTimes`/`emitter`, so there is no way
+   * to exercise its branches short of a full `run()`. Without this seam the
+   * #804 `waiting` branch would be untestable — and an untested `waiting`
+   * branch is not cosmetic: falling through to the complete/failed handler
+   * marks a merely-paused phase `failed` and emits `phase_failed`.
+   */
+  getProgressCallback(): ProgressCallback {
+    return this.cfg.onProgress!;
+  }
+
+  /**
    * Point-in-time view of the entire run.
    *
    * Safe under concurrent reads: the returned object contains only freshly
@@ -399,12 +414,13 @@ export class RunOrchestrator {
   private applyProgressEvent(
     issue: number,
     phase: string,
-    event: "start" | "complete" | "failed" | "activity",
+    event: "start" | "complete" | "failed" | "activity" | "waiting",
     extra?: {
       durationSeconds?: number;
       error?: string;
       text?: string;
       iteration?: number;
+      wakeAtMs?: number;
     },
   ): void {
     const state = this.issueStates.get(issue);
@@ -438,6 +454,24 @@ export class RunOrchestrator {
           to: "running",
         });
       }
+      return;
+    }
+
+    // #804 AC-7: an auto-wait is a *paused running* phase, not a terminal one.
+    // This branch must precede the complete/failed fall-through below, which
+    // would otherwise close out the phase the moment a wait began. Surfaces the
+    // wait through the same `nowLine` the TUI already renders.
+    if (event === "waiting") {
+      if (!state.currentPhase || state.currentPhase.name !== phase) return;
+      const line = extra?.text;
+      if (!line) return;
+      state.currentPhase.nowLine = line;
+      state.currentPhase.lastActivityAt = new Date();
+      void this.emitter.emit("progress", {
+        issueNumber: issue,
+        phase,
+        text: line,
+      });
       return;
     }
 
