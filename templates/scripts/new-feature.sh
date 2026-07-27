@@ -176,6 +176,34 @@ if [ -f "${MAIN_REPO_DIR}/.claude/settings.local.json" ]; then
     cp "${MAIN_REPO_DIR}/.claude/settings.local.json" .claude/settings.local.json
 fi
 
+# Frozen install (#826). `npm install` normalizes and REWRITES package-lock.json
+# whenever the local npm disagrees with the npm that committed it — observed:
+# npm 10 stripping the `libc` fields a newer npm wrote via dependabot. Every
+# freshly provisioned worktree then started with an unstaged lockfile, and that
+# one dirty file cascades: `rebaseBeforePR` refuses to run so the #295 stale-base
+# guard silently never fires, `checkWorktreeFreshness` counts it as uncommitted
+# work so stale worktrees are never recreated, and chain checkpoints skip on an
+# "unrelated dirty file" — breaking chain resume (#760) on every link.
+#
+# `npm ci` never rewrites the lockfile. #816 made this same substitution for the
+# TypeScript provisioning path; this script was missed by that fix.
+#
+# The enclosing `[ ! -d node_modules ]` guard means this only ever runs against
+# an absent node_modules, which is exactly `npm ci`'s precondition.
+frozen_install() {
+    if ! npm ci --silent; then
+        echo -e "${RED}❌ Dependency install failed (npm ci).${NC}" >&2
+        echo -e "${YELLOW}   The committed package-lock.json is out of sync with package.json.${NC}" >&2
+        echo -e "${YELLOW}   Fix in the main repo, then re-run:${NC}" >&2
+        echo -e "${YELLOW}     npm install --package-lock-only && git commit package-lock.json${NC}" >&2
+        echo -e "${YELLOW}   Worktree left in place at: $(pwd)${NC}" >&2
+        # Explicit exit rather than relying on `set -e` so the cause is named:
+        # a bare abort here leaves a half-provisioned worktree with no
+        # explanation of why (AC-4).
+        exit 1
+    fi
+}
+
 # Install dependencies if needed
 if [ ! -d "node_modules" ]; then
     # Check for npm install cache optimization (opt-in via SEQUANT_NPM_CACHE=true)
@@ -200,14 +228,14 @@ if [ ! -d "node_modules" ]; then
                 cp -r "${MAIN_REPO_DIR}/node_modules" ./node_modules
             else
                 echo -e "${BLUE}📦 Installing dependencies (package-lock changed)...${NC}"
-                npm install --silent
+                frozen_install
                 # Update cache hash
                 mkdir -p "$CACHE_DIR"
                 echo "$CURRENT_HASH" > "$HASH_FILE"
             fi
         else
             echo -e "${BLUE}📦 Installing dependencies (initializing cache)...${NC}"
-            npm install --silent
+            frozen_install
             # Initialize cache hash
             if [ -n "$CURRENT_HASH" ]; then
                 mkdir -p "$CACHE_DIR"
@@ -216,7 +244,7 @@ if [ ! -d "node_modules" ]; then
         fi
     else
         echo -e "${BLUE}📦 Installing dependencies...${NC}"
-        npm install --silent
+        frozen_install
     fi
 fi
 
