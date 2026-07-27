@@ -233,51 +233,166 @@ For each active worktree, check `git diff --name-only main...HEAD` for file over
 
 False-positive guards and tunables (excluded paths, the path regex, the slash-command-skill derivation rule) are documented in [`references/predicted-collision-detection.md`](references/predicted-collision-detection.md) so they can change without editing this skill.
 
+### Step 6: Render Output
+
+**Mandatory. This step produces the first content in the response.** Steps 1–5 produce judgment; Step 6 produces the output block. A narrative summary, a TLDR paragraph, a preamble, or an `AskUserQuestion` **never** satisfies this step — if the rendered block is not the first thing in the response, the step did not happen.
+
+Build the `AssessResult` JSON, write it to a temp file, and run the renderer:
+
+```bash
+ASSESS_JSON="${TMPDIR:-/tmp}/assess-$$.json"
+cat > "$ASSESS_JSON" <<'JSON'
+{ ...AssessResult, per the schema in "Output Format" below... }
+JSON
+$CMD_PREFIX assess-render "$ASSESS_JSON"
+```
+
+`$CMD_PREFIX` is the prefix resolved in Step 1 (`sequant` when a global is on PATH, else `npx sequant`) — the same prefix used for every emitted `run` command. Never mix prefixes within one assessment.
+
+**Paste the command's stdout verbatim.** Do not re-wrap it, re-align it, re-order its sections, or wrap it in a fence. Column widths, separator widths, section visibility, and the HTML markers are all computed by the renderer; editing its output reintroduces exactly the drift this step exists to remove.
+
+**Fallback (renderer unavailable or payload rejected).** If the command exits non-zero — an older install without the subcommand, or a payload the schema rejects — emit one line naming the failure:
+
+```
+⚠ assess-render failed: <first line of stderr> — dashboard hand-rendered
+```
+
+then render the dashboard by hand from the format documented below, and fix the payload if the error names a field. **Never** substitute prose for the block; a hand-drawn table that is slightly ragged is still the deliverable, a paragraph is not.
+
+**Ordering.** The rendered block comes first, before any commentary. `## Persist Analysis` — including its `AskUserQuestion` — runs only after the block has been emitted.
+
 ---
 
 ## Output Format
 
-### Batch Mode (2+ issues)
+The renderer owns all **geometry** — column widths, padding, separator width, section spacing, and marker syntax. This section documents the **schema** you fill and the **semantics** you must get right. It deliberately contains no offsets to reproduce by hand: character counting in a prompt is the defect #823 removed.
 
-**Design principle:** Dashboard first. Copy-pasteable commands. Silence means healthy.
+Schema source of truth: `src/lib/assess/types.ts`. Validation errors name the offending field (`issues[0].action: ...`), so a rejected payload tells you what to fix.
 
-**Table column rules:** The "Reason" column must not be truncated mid-word. If a row's reason text would exceed the column width, prefer abbreviating the reason to a shorter synonym rather than cutting a word in half. Column widths should adapt to content — do not force a fixed table width.
+### AssessResult schema
+
+Top level:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `mode` | yes | `"batch"` (dashboard) or `"single"` (one issue, and every posted comment) |
+| `commandPrefix` | yes | Step-1 `CMD_PREFIX` — `"sequant"` or `"npx sequant"`. Applied to every `run` command the renderer emits |
+| `issues[]` | yes | One entry per assessed issue; `single` mode takes exactly one |
+| `commands[]` | no | `{ args, comment? }` — `args` excludes the prefix, e.g. `"run 461 460 -Q"`; `comment` becomes a trailing `# resume` / `# restart` |
+| `orders[]` | no | `Order:` annotation strings, e.g. `"460 → 461 (460 adds tests 461 depends on)"` |
+| `warnings[]` | no | `{ issue?, text }` — `issue` prefixes the line with `#N` |
+| `chain` | no | `{ args, reason }` — suggest-only alternative topology |
+| `flags[]` | no | `{ flag, reason }` — one entry per **distinct** flag across all commands |
+| `cleanup[]` | no | `{ command, reason? }` — `git`/`gh` commands, emitted without a prefix |
+
+Per issue (`issues[]`):
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `number`, `action`, `reason` | yes | `action` is one of the six in [Fixed Action Vocabulary](#fixed-action-vocabulary) |
+| `run` | batch only | The `Run` column value — a workflow (`"spec → exec → qa"`) or a symbol. Never truncated |
+| `acCount` | no | Drives the conditional `ACs` column. Omit when the issue has no `- [ ]` checkboxes |
+| `phases[]`, `qualityLoop` | when applicable | Written to the HTML markers. Records the **full resolved** workflow even when the displayed command uses shorthand flags |
+| `title`, `state`, `labels[]` | single only | The `#N — Title` / `State · labels` header |
+| `command` | single, PROCEED/REWRITE | This issue's own single-issue invocation |
+| `supersession` | no | `buildSupersessionHeader(priors)` output; emitted above the verdict line |
+| `warnings[]`, `flags[]`, `cleanup[]` | no | Per-issue, for single mode. Warning text has the leading `#N` already dropped |
+| `mergeTarget`, `scopeSelf`, `scopeTarget` | MERGE | Target issue and the two scope summaries |
+| `need`, `needDetail` | CLARIFY | `need` is required |
+| `resumeAfter` | PARK | Required |
+
+**Conditional `ACs` column.** Set `acCount` on **every** issue or on none. The renderer shows the column only when all issues carry it — partial values erode trust in the table.
+
+### Worked example
+
+Generated by `sequant assess-render`. Regenerate rather than hand-edit — hand-edited examples are how the geometry drifted in the first place.
+
+Payload (abridged to the fields that matter):
+
+```json
+{
+  "mode": "batch",
+  "commandPrefix": "npx sequant",
+  "issues": [
+    { "number": 462, "action": "PARK", "reason": "Manual measurement task", "run": "‖" },
+    { "number": 461, "action": "PROCEED", "reason": "Exact label matching", "run": "spec → exec → qa",
+      "phases": ["spec","exec","qa"], "qualityLoop": true },
+    { "number": 412, "action": "PROCEED", "reason": "Auth bug (domain: auth adds security review phase)",
+      "run": "spec → security-review → exec → qa",
+      "phases": ["spec","security-review","exec","qa"], "qualityLoop": true },
+    { "number": 411, "action": "PROCEED", "reason": "Config path normalization", "run": "◂ exec → qa",
+      "phases": ["exec","qa"], "qualityLoop": true },
+    { "number": 405, "action": "REWRITE", "reason": "PR #380 200+ commits behind", "run": "⟳ spec → exec → qa",
+      "phases": ["spec","exec","qa"], "qualityLoop": true },
+    { "number": 447, "action": "CLOSE", "reason": "PR #457 merged", "run": "—" }
+  ],
+  "commands": [
+    { "args": "run 461 -Q" },
+    { "args": "run 412 -Q --security-review" },
+    { "args": "run 411 -Q --phases exec,qa", "comment": "resume" },
+    { "args": "run 405 -Q", "comment": "restart" }
+  ],
+  "orders": ["460 → 461 (460 adds batch-executor tests that 461's label matching depends on)"],
+  "warnings": [
+    { "issue": 405, "text": "Stale 30+ days, ACs still valid" },
+    { "issue": 412, "text": "bug + auth labels — auth (domain) adds security-review phase" }
+  ],
+  "flags": [
+    { "flag": "-Q", "reason": "multi-file scope across most PROCEED issues" },
+    { "flag": "--security-review", "reason": "#412 auth label requires a security review" },
+    { "flag": "--phases exec,qa", "reason": "#411 resume — prior spec marker already exists" }
+  ],
+  "cleanup": [
+    { "command": "gh issue close 447", "reason": "PR #457 merged" },
+    { "command": "gh issue edit 461 --add-label cli", "reason": "missing label" }
+  ]
+}
+```
+
+Output:
 
 ```
- #    Action     [ACs]  Reason                              Run
-<N>   <ACTION>   [N]    <short reason>                       <workflow or symbol>
-<N>   <ACTION>   [N]    <short reason>                       <workflow or symbol>
-...
+ #    Action     Reason                        Run
+ 462  PARK       Manual measurement task       ‖
+ 461  PROCEED    Exact label matching          spec → exec → qa
+ 412  PROCEED    Auth bug (domain: auth adds…  spec → security-review → exec → qa
+ 411  PROCEED    Config path normalization     ◂ exec → qa
+ 405  REWRITE    PR #380 200+ commits behind   ⟳ spec → exec → qa
+ 447  CLOSE      PR #457 merged                —
 ────────────────────────────────────────────────────────────────
 Commands:
-  <CMD_PREFIX> run <N1> <N2> <flags>
-  <CMD_PREFIX> run <N3> <flags>              # resume
+  npx sequant run 461 -Q
+  npx sequant run 412 -Q --security-review
+  npx sequant run 411 -Q --phases exec,qa   # resume
+  npx sequant run 405 -Q                    # restart
 ────────────────────────────────────────────────────────────────
-Order: <N> → <N> (<dependency reason>)
+Order: 460 → 461 (460 adds batch-executor tests that 461's label
+       matching depends on)
 
-⚠ #<N>  <warning>
-⚠ #<N>  <warning>
-
-Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <reason>
+⚠ #405  Stale 30+ days, ACs still valid
+⚠ #412  bug + auth labels — auth (domain) adds security-review phase
 
 Flags:
-  <flag>                <one-line reason>
-  <flag>                <one-line reason>
+  -Q                 multi-file scope across most PROCEED issues
+  --security-review  #412 auth label requires a security review
+  --phases exec,qa   #411 resume — prior spec marker already exists
 ────────────────────────────────────────────────────────────────
 Cleanup:
-  <executable command>                 # reason
-  <executable command>                 # reason
+  gh issue close 447                 # PR #457 merged
+  gh issue edit 461 --add-label cli  # missing label
 ────────────────────────────────────────────────────────────────
 
-<!-- For posting to individual issues, use standard marker format: -->
-<!-- assess:action=<ACTION> -->
-<!-- assess:phases=<csv> -->
-<!-- assess:quality-loop=<bool> -->
+<!-- #462 assess:action=PARK -->
+<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #412 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
+<!-- #411 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
+<!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
+<!-- #447 assess:action=CLOSE -->
 ```
 
-**`ACs` column (conditional):** Include the `ACs` column only when every assessed issue has at least one explicit `- [ ]` checkbox AC in its body. Otherwise omit the column entirely — do not show partial values. The counter prevents eroding table trust when some issues use implicit/narrative ACs.
+Note the deliberate overflow: `#412`'s `Run` value runs past the separator rather than being clipped. Long workflows are exactly where truncation would lose the most information.
 
-#### Run Column Symbols
+### Run Column Symbols
 
 | Symbol | Meaning | Example |
 |--------|---------|---------|
@@ -291,239 +406,59 @@ Cleanup:
 | `‖` | Blocked/deferred | Dependency or manual |
 | `—` | No action needed | Already closed/merged |
 
-#### Commands Block Rules
-
-The commands block is headed by `Commands:` — no box-drawing, no character counting. The header label is the visual anchor.
+### Commands Block Rules
 
 1. Only PROCEED and REWRITE issues get commands
-2. Group by identical phases + flags → same line
-3. Resume issues get `# resume` comment (does not apply inside a `Chain:` line — see "Chain resume" in Step 4)
-4. Rewrite issues get `# restart` comment
-5. Chain mode issues use `--chain` flag (see `Chain:` annotation rules below)
-6. If ALL issues share the same workflow, emit a single command
-7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple commands of at most 6 issues each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
-8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts:186`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — additive flags: `--testgen` and `--security-review` (`bin/cli.ts:208-209`). Use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Use `--security-review` instead of `--phases spec,security-review,exec,qa`. The posted marker (`<!-- assess:phases=… -->`) records the full resolved workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
-9. **Command prefix:** Substitute the Step-1 `CMD_PREFIX` for **every** emitted `sequant run` command — the Commands block, the `Chain:` line, and both single-issue detail-mode commands (PROCEED and the REWRITE "fresh start"). `Cleanup:` commands are `git`/`gh`, not `sequant`, so they are unaffected. A resolvable global `sequant` on PATH yields `sequant run …`; npx-only yields `npx sequant run …` (the default). Never mix prefixes within a single assessment.
+2. Group by identical phases + flags → same `commands[]` entry
+3. Resume issues get `"comment": "resume"` (does not apply inside a `Chain:` line — see "Chain resume" in Step 4)
+4. Rewrite issues get `"comment": "restart"`
+5. Chain mode issues use `--chain` (see `chain` in Annotation Rules below)
+6. If ALL issues share the same workflow, emit a single entry
+7. **Line splitting:** When a single command would contain more than 6 issue numbers, split into multiple entries of at most 6 each, grouped by compatible workflow. Example: 11 issues → two commands (6 + 5)
+8. **Minimal flags:** Omit `--phases` when the resulting workflow equals the CLI default (registered at `bin/cli.ts`, defined as `DEFAULT_PHASES` in `src/lib/workflow/types.ts`). Prefer additive flags over restating phases — additive flags: `--testgen` and `--security-review`. Use `--testgen` instead of `--phases spec,testgen,exec,qa` (or `…,testgen,…,test,qa` for ui-labelled issues, since `phase-mapper.determinePhasesForIssue` auto-adds `test` from the ui label). Use `--security-review` instead of `--phases spec,security-review,exec,qa`. The issue's `phases[]` records the **full resolved** workflow regardless — markers are machine-readable, displayed commands are human shorthand. This intentional divergence is fine: parsers consume markers, humans copy commands.
+9. **Command prefix:** Set `commandPrefix` once from the Step-1 probe. The renderer applies it to the `Commands:` block, the `Chain:` line, and single-mode commands alike, so prefixes cannot be mixed. `cleanup[]` entries are `git`/`gh` and carry no prefix.
 
-#### Annotation Rules
+### Annotation Rules
 
-Emit annotations in this order between the separators that follow `Commands:`:
-`Order:` → `⚠` warnings → `Chain:` → `Flags:`. `Cleanup:` goes in its own block after. Omit any section (and its surrounding blank line) when it has no content.
+The renderer emits `Order:` → `⚠` → `Chain:` → `Flags:` in that order, then `Cleanup:` in its own block, and omits any section whose array is empty or absent. What you control is the **content**:
 
-- **`Order:`** — Only when sequencing matters. Include the **reason** for the ordering, not just `(<filename>)`. Prefer dependency reasoning over filename.
-  - Good: `Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)`
-  - Good: `Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)`
-  - Avoid bare filenames when a reason is clearer.
-  - **Exception:** When the sequencing reason **is** a file collision (two issues both modify the same file), the filename **is** the reason and is acceptable verbatim. Example: `Order: 460 → 461 (qa/SKILL.md)` — the bare filename communicates the conflict directly.
+- **`orders[]`** — Only when sequencing matters. Include the **reason** for the ordering, not just `(<filename>)`.
+  - Good: `185 → 186 (185 changes fetchApi error format that 186 consumes)`
+  - Good: `460 → 461 (460 adds batch-executor tests that 461's label matching depends on)`
+  - **Exception:** When the sequencing reason **is** a file collision (two issues both modify the same file), the filename **is** the reason and is acceptable verbatim: `460 → 461 (qa/SKILL.md)`.
 
-- **`⚠` warnings** — Only non-obvious signals (complexity, staleness, dual concerns, partial-AC satisfaction). One line each, prefixed with issue number. Warnings can note when part of an AC is already satisfied in the codebase:
-  - `⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected`
-  - `⚠ #412  bug + auth labels — domain label (auth) takes priority over bug`
+- **`warnings[]`** — Only non-obvious signals (complexity, staleness, dual concerns, partial-AC satisfaction). One entry each, with `issue` set in batch mode. Warnings can note when part of an AC is already satisfied in the codebase:
+  - `{ "issue": 185, "text": "Domain errors already exist in repository layer — scope may be smaller than expected" }`
+  - `{ "issue": 412, "text": "bug + auth labels — domain label (auth) takes priority over bug" }`
 
-- **`Chain:`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology. Does not replace the default per-issue commands. Format:
-  `Chain: <CMD_PREFIX> run <N1> <N2> --chain -Q <phases>   # alternative — <one-line reason>` (`<CMD_PREFIX>` resolved in Step 1)
+- **`chain`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology; it does not replace the default per-issue commands. The renderer formats it as `Chain: <prefix> <args>` plus an indented `# alternative — <reason>` line.
 
-- **`Flags:`** — Only when non-default flags appear in the commands and the reason isn't obvious. One line per **distinct** flag used across all commands. Omit entire section when `-Q` is the only non-default flag AND its reason is obvious (e.g., all issues are enhancements). Format:
-  ```
-  Flags:
-    -Q                   9+ ACs or multi-file scope
-    --testgen            testable ACs detected (UI hooks + API integration)
-    --phases ...,test    ui label → browser verification
-  ```
+- **`flags[]`** — Only when non-default flags appear in the commands and the reason isn't obvious. One entry per **distinct** flag used across all commands. Omit the array entirely when `-Q` is the only non-default flag AND its reason is obvious (e.g. all issues are enhancements).
 
-- **`Cleanup:`** — Only when actionable (stale branches, merged-but-open issues, label changes). Show as executable commands with `# reason` comments.
+- **`cleanup[]`** — Only when actionable (stale branches, merged-but-open issues, label changes). Executable commands with a `reason`.
 
-- **"All clear" is silence** — no annotation means no issues.
-
-#### Batch Example (mixed states, with label priority)
-
-Not all issues have explicit `- [ ]` checkboxes, so the `ACs` column is omitted.
-
-> **Prefix in examples:** The worked examples in this doc show the `npx sequant` default (the zero-install path). When the Step-1 probe resolves a global `sequant` on PATH, `CMD_PREFIX="sequant"` and every emitted command uses `sequant run …` instead — consistently within one assessment (see Commands Block Rule #9).
-
-```
- #    Action     Reason                              Run
- 462  PARK       Manual measurement task              ‖
- 461  PROCEED    Exact label matching                  spec → exec → qa
- 460  PROCEED    batch-executor tests                  spec → exec → qa
- 458  PROCEED    Parallel UX + race condition          spec → exec → qa
- 447  CLOSE      PR #457 merged                        —
- 443  PROCEED    Consolidate gh calls                  spec → exec → qa
- 412  PROCEED    Auth bug (domain: auth adds review)   spec → security-review → exec → qa
- 411  PROCEED    Config path normalization              ◂ exec → qa
- 405  REWRITE    PR #380 200+ commits behind           ⟳ spec → exec → qa
-────────────────────────────────────────────────────────────────
-Commands:
-  npx sequant run 461 460 458 443 -Q
-  npx sequant run 412 -Q --security-review
-  npx sequant run 411 -Q --phases exec,qa     # resume
-  npx sequant run 405 -Q                      # restart
-────────────────────────────────────────────────────────────────
-Order: 460 → 461 (460 adds batch-executor tests that 461's label matching depends on)
-
-⚠ #458  Dual concern (UX + race) across 4 files
-⚠ #405  Stale 30+ days, ACs still valid
-⚠ #412  bug + auth labels — auth (domain) adds security-review phase
-
-Flags:
-  -Q                              multi-file scope across most PROCEED issues
-  --security-review               #412 auth label → security review required
-  --phases exec,qa                #411 resume — prior spec marker already exists
-────────────────────────────────────────────────────────────────
-Cleanup:
-  git worktree remove .../447-...      # merged, stale worktree
-  gh issue close 447                   # PR #457 merged
-  gh issue edit 461 --add-label cli    # missing label
-────────────────────────────────────────────────────────────────
-
-<!-- #462 assess:action=PARK -->
-<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #460 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #447 assess:action=CLOSE -->
-<!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #412 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
-<!-- #411 assess:action=PROCEED assess:phases=exec,qa assess:quality-loop=true -->
-<!-- #405 assess:action=REWRITE assess:phases=spec,exec,qa assess:quality-loop=true -->
-```
-
-#### Batch Example (dependent issues with testgen, chain suggestion)
-
-All issues have explicit checkbox ACs, so the `ACs` column is shown. A dependency is detected (185 → 186), so a `Chain:` suggestion appears alongside the default commands.
-
-```
- #    Action    ACs  Reason                           Run
- 185  PROCEED    6   Domain error standardization      spec → exec → qa
- 186  PROCEED    9   React Query hooks migration       spec → testgen → exec → test → qa
-────────────────────────────────────────────────────────────────
-Commands:
-  npx sequant run 185 -Q
-  npx sequant run 186 -Q --testgen
-────────────────────────────────────────────────────────────────
-Order: 185 → 186 (185 changes fetchApi error format that 186 consumes)
-
-⚠ #185  Domain errors already exist in repository layer — scope may be smaller than expected
-⚠ #186  @tanstack/react-query not installed; large scope (9 hooks + optimistic updates)
-
-Chain: npx sequant run 185 186 --chain -Q --testgen
-       # alternative — use if 186 should branch from 185's work
-
-Flags:
-  --testgen             #186 testable ACs (UI hooks + API integration); ui label auto-adds test phase
-────────────────────────────────────────────────────────────────
-
-<!-- #185 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #186 assess:action=PROCEED assess:phases=spec,testgen,exec,test,qa assess:quality-loop=true -->
-```
-
-#### Batch Example (all clean)
-
-When every issue is PROCEED with no warnings, no dependencies, and no non-default flags beyond an obvious `-Q`, the output is minimal. The `Flags:` section is omitted because `-Q` is obvious here (all PROCEED enhancements).
-
-```
- #    Action     Reason                              Run
- 461  PROCEED    Exact label matching                  spec → exec → qa
- 460  PROCEED    batch-executor tests                  spec → exec → qa
- 443  PROCEED    Consolidate gh calls                  spec → exec → qa
-────────────────────────────────────────────────────────────────
-Commands:
-  npx sequant run 461 460 443 -Q
-────────────────────────────────────────────────────────────────
-
-<!-- #461 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #460 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #443 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-```
-
-Silence means clean — no `Order:`, no `⚠`, no `Chain:`, no `Flags:`, no `Cleanup:`.
-
-#### Batch Example (large batch, 13 issues with Rule 7 split)
-
-When assessing 9+ issues, commands are split per Rule 7 (max 6 issue numbers per line), and the table adapts to content width. Mixed AC styles across issues → `ACs` column omitted.
-
-```
- #    Action     Reason                                   Run
- 503  PROCEED    Fix typo in error output                   spec → exec → qa
- 502  PROCEED    Update deprecated API call                 spec → exec → qa
- 501  PROCEED    Add retry logic to API client              spec → exec → qa
- 500  PROCEED    Fix token refresh race condition           spec → security-review → exec → qa
- 499  PROCEED    Dashboard chart rendering bug              spec → exec → test → qa
- 498  PROCEED    Update error messages                      spec → exec → qa
- 497  PROCEED    Refactor batch executor                    spec → exec → qa
- 496  PARK       Blocked on #490 schema migration           ‖
- 495  PROCEED    CLI help text improvements                 spec → exec → qa
- 494  PROCEED    Assess batch formatting fix                spec → exec → qa
- 493  CLOSE      Duplicate of #491                          —
- 492  PROCEED    Add export command                         spec → exec → qa
- 491  PROCEED    Normalize config paths                     spec → exec → qa
-────────────────────────────────────────────────────────────────
-Commands:
-  npx sequant run 503 502 501 499 498 497 -Q
-  npx sequant run 495 494 492 491 -Q
-  npx sequant run 500 -Q --security-review
-────────────────────────────────────────────────────────────────
-Order: 497 → 492 (497 refactors batch-executor internals that 492's export command uses)
-
-⚠ #500  bug + auth labels — auth (domain) adds security-review phase
-⚠ #499  bug + ui labels — ui (domain) adds test phase
-
-Flags:
-  --security-review     #500 auth label → security review required
-────────────────────────────────────────────────────────────────
-Cleanup:
-  gh issue close 493                   # duplicate of #491
-────────────────────────────────────────────────────────────────
-
-<!-- #503 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #502 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #501 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #500 assess:action=PROCEED assess:phases=spec,security-review,exec,qa assess:quality-loop=true -->
-<!-- #499 assess:action=PROCEED assess:phases=spec,exec,test,qa assess:quality-loop=true -->
-<!-- #498 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #497 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #496 assess:action=PARK -->
-<!-- #495 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #494 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #493 assess:action=CLOSE -->
-<!-- #492 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-<!-- #491 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
-```
-
----
+- **"All clear" is silence** — an absent array means no issues, and the renderer drops the section and its separator with it.
 
 ### Single Mode (1 issue)
 
-More context since you're focused on one issue. Separators between every section.
+Set `mode: "single"` with exactly one entry in `issues[]`. The renderer selects the template from that issue's `action` and draws the header, separators, and marker block; you supply the fields.
 
-#### PROCEED
+| Verdict | Fields the template uses |
+|---------|--------------------------|
+| **PROCEED** | `reason`, `command`, `phases[]`, `acCount`, `flags[]`, `warnings[]` |
+| **REWRITE** | same as PROCEED; set `command.comment` to `"fresh start"`, and put the stale/diverged detail in `warnings[]` |
+| **CLOSE** | `reason` (with evidence), `cleanup[]` |
+| **CLARIFY** | `reason` (what's missing), `need`, `needDetail` |
+| **PARK** | `reason`, `resumeAfter` |
+| **MERGE** | `reason` (overlap description), `mergeTarget`, `scopeSelf`, `scopeTarget` |
 
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
+**`flags[]` in single mode:** omit entirely when `-Q` is the only non-default flag AND the reason is obvious (a straightforward enhancement). Do not repeat obvious flags.
 
-→ PROCEED — <one-line reason>
+**Warnings.** PROCEED and REWRITE have a `⚠` region before the marker block. CLOSE / CLARIFY / PARK / MERGE do not, so the renderer gives a carried warning its own separator-delimited block above the markers. Either way you just set `warnings[]`.
 
-Commands:
-  <CMD_PREFIX> run <N> <flags>
+**Markers.** Single mode emits the 3-line block (`<!-- assess:action=… -->` / `assess:phases` / `assess:quality-loop`); batch mode emits the compact one-line-per-issue form. The renderer picks the right one from `mode` — never hand-write markers.
 
-<phases> · <N> ACs
-
-Flags:
-  <flag>        <one-line reason>
-────────────────────────────────────────────────────────────────
-⚠ <warning if any>
-⚠ Conflict: #<N> also modifies <path>
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=PROCEED -->
-<!-- assess:phases=<csv> -->
-<!-- assess:quality-loop=<bool> -->
-```
-
-**`Flags:` (single mode):** Indented list of each enabled non-default flag with a one-line reason. Omit the entire `Flags:` section when `-Q` is the only non-default flag AND the reason is obvious (e.g., a straightforward enhancement). Do not repeat obvious flags.
-
-Example with `Flags:` (non-obvious `-Q` + `--testgen`):
+Example (PROCEED, generated output):
 
 ```
 #458 — Parallel run UX freeze + reconcileState race condition
@@ -538,115 +473,14 @@ Commands:
 spec → exec → qa · 8 ACs
 
 Flags:
-  -Q     dual concern across 4 files
+  -Q  dual concern across 4 files
+────────────────────────────────────────────────────────────────
+⚠ Dual concern (UX + race) across 4 files
 ────────────────────────────────────────────────────────────────
 
 <!-- assess:action=PROCEED -->
 <!-- assess:phases=spec,exec,qa -->
 <!-- assess:quality-loop=true -->
-```
-
-Example omitting `Flags:` (obvious `-Q` for a standard enhancement):
-
-```
-#443 — Consolidate gh CLI calls
-Open · enhancement
-────────────────────────────────────────────────────────────────
-
-→ PROCEED — Codebase matches spec, 5 ACs
-
-Commands:
-  npx sequant run 443 -Q
-
-spec → exec → qa · 5 ACs
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=PROCEED -->
-<!-- assess:phases=spec,exec,qa -->
-<!-- assess:quality-loop=true -->
-```
-
-#### CLOSE
-
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
-
-→ CLOSE — <reason with evidence>
-────────────────────────────────────────────────────────────────
-Cleanup:
-  <executable commands>                # reason
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=CLOSE -->
-```
-
-#### CLARIFY
-
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
-
-→ CLARIFY — <what's missing>
-
-Need: <specific information required>
-  <details about why this blocks work>
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=CLARIFY -->
-```
-
-#### PARK
-
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
-
-→ PARK — <reason>
-  Resume after: <condition>
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=PARK -->
-```
-
-#### MERGE
-
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
-
-→ MERGE → #<target> — <overlap description>
-  This issue: <scope summary>
-  Target:     <scope summary>
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=MERGE -->
-```
-
-#### REWRITE
-
-```
-#<N> — <Title>
-<State> · <labels>
-────────────────────────────────────────────────────────────────
-
-→ REWRITE — <reason>
-
-Commands:
-  <CMD_PREFIX> run <N> <flags>                 # fresh start
-
-<phases> · <N> ACs
-────────────────────────────────────────────────────────────────
-⚠ <stale/diverged details>
-────────────────────────────────────────────────────────────────
-
-<!-- assess:action=REWRITE -->
-<!-- assess:phases=<csv> -->
-<!-- assess:quality-loop=<bool> -->
 ```
 
 ---
@@ -670,34 +504,27 @@ Every separator and section is conditional. If there are no warnings, no chain, 
 
 ## Persist Analysis
 
-After displaying output, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
+**Precondition: Step 6 has already emitted the rendered output block.** This step never runs first. If the block is not yet in the response, go back and emit it — a prose summary does not satisfy Step 6, and the `AskUserQuestion` below must not precede it.
 
-If confirmed, post a structured comment to each issue via `gh issue comment`. **Each posted comment is rendered with the single-mode template that matches that issue's verdict** — the same `#### PROCEED / CLOSE / CLARIFY / PARK / MERGE / REWRITE` templates defined under [Single Mode (1 issue)](#single-mode-1-issue) above. There is no separate, thinner shape for posted comments: the batch **dashboard** in chat and the **posted comment** on each issue are the only two formats, and the posted comment always reuses the single-mode template for its verdict. (Note: this is *not* a reversal of #453 — the single-mode templates are themselves the streamlined, scan-friendly format.)
+With the block emitted, prompt the user to save using `AskUserQuestion` with options "Yes (Recommended)" and "No".
+
+If confirmed, post a structured comment to each issue via `gh issue comment`. **Each posted comment is the renderer's single-mode output for that issue's verdict** — the same `mode: "single"` payload described under [Single Mode (1 issue)](#single-mode-1-issue) above, rendered by the same `assess-render` call. There is no separate, thinner shape for posted comments: the batch **dashboard** in chat and the **posted comment** on each issue are the only two formats. (Note: this is *not* a reversal of #453 — the single-mode templates are themselves the streamlined, scan-friendly format.)
 
 Render each comment as follows:
 
-1. **Pick the template by verdict.** For issue `#N`'s action, use the matching single-mode template (`#### PROCEED`, `#### REWRITE`, etc.) and fill it exactly as single mode would, including — where that template defines them:
-   - the `#<N> — <Title>` / `<State> · <labels>` header,
-   - the section separators the template defines,
-   - the `Commands:` block with the **resolved `CMD_PREFIX`** (Step-1 probe — `sequant` when a global is on PATH, else `npx sequant`) and the **real current flags** for that issue. When the dashboard batched several issues onto one `run` line (e.g. `run 461 460 458 443 -Q`), restate just `#N`'s own single-issue invocation (`run 458 -Q`): the shared flags that applied to `#N`, plus any per-issue flags the dashboard listed separately for it (e.g. `#412`'s `--security-review`, `#411`'s `--phases exec,qa`),
-   - the `<phases> · <N> ACs` line,
-   - for **CLOSE**, the `Cleanup:` block populated with just `#N`'s cleanup commands, de-aggregated from the dashboard's combined `Cleanup:` block.
+1. **Build a `mode: "single"` payload for each issue and render it.** For `#N`, fill `issues[0]` from the [Single Mode](#single-mode-1-issue) field table and run `assess-render` again — once per issue. The renderer selects the template from `action`, draws the header and separators, and omits every field the verdict does not define. What you supply:
+   - `title`, `state`, `labels[]` for the `#<N> — <Title>` / `<State> · <labels>` header,
+   - `command` — `#N`'s **own single-issue** invocation with the **real current flags**. When the dashboard batched several issues onto one `run` line (e.g. `run 461 460 458 443 -Q`), restate just `#N`'s own (`run 458 -Q`): the shared flags that applied to `#N`, plus any per-issue flags the dashboard listed separately for it (e.g. `#412`'s `--security-review`, `#411`'s `--phases exec,qa`),
+   - `phases[]` and `acCount` for the `<phases> · <N> ACs` line,
+   - for **CLOSE**, `cleanup[]` populated with just `#N`'s commands, de-aggregated from the dashboard's combined `Cleanup:` block.
 
-   Reference these templates rather than re-copying their bodies here — they are the single source of truth (avoids drift). Verdicts whose template omits a field (CLOSE / CLARIFY / PARK / MERGE have no `Commands:` or `<phases> · <N> ACs` line) simply omit it, exactly as the template shows.
+   `commandPrefix` is the same Step-1 `CMD_PREFIX` the dashboard used — never mix prefixes across one assessment. Verdicts that omit a field (CLOSE / CLARIFY / PARK / MERGE have no `command` and no `phases[]`) simply leave it unset, and the corresponding lines disappear.
 
-2. **Carry per-issue warnings.** Any `⚠` line from the batch dashboard that concerns `#N` (collision/conflict, churn, staleness, dual-concern, partial-AC) is carried into that issue's comment, with the leading `#N` dropped (the comment is already scoped to that issue). Placement depends on whether the verdict's template defines a warning slot:
-   - **PROCEED / REWRITE** — the template already defines a `⚠ ...` region between its two trailing separators; place the warning there.
-   - **CLOSE / CLARIFY / PARK / MERGE** — these templates have no `⚠` region (just a single trailing separator before the markers). Add the warning as its own separator-delimited block immediately above the marker block, so the tail reads: `<trailing separator>` → `⚠ ...` → `<separator>` → `<!-- assess:action=... -->`. This is the sole case where a posted comment extends a slot-less template; every other field still follows Step 1's "omit what the template omits." When an issue has no `⚠`, the template is emitted unchanged.
+2. **Carry per-issue warnings.** Any `⚠` line from the batch dashboard that concerns `#N` (collision/conflict, churn, staleness, dual-concern, partial-AC) goes into that issue's `warnings[]`, with the leading `#N` dropped — the comment is already scoped to that issue. Placement is the renderer's job: PROCEED and REWRITE have a `⚠` region before the marker block, while CLOSE / CLARIFY / PARK / MERGE have no such slot and get their own separator-delimited block above the markers instead. When an issue has no `⚠`, leave `warnings[]` unset and the section vanishes.
 
-3. **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, prepend `buildSupersessionHeader(priors)` immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also emit the `⚠ Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning in the warning slot (per step 2). When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for full protocol.
+3. **Supersession header** (when priors exist): If `findAllAssessComments` returned ≥1 prior, put `buildSupersessionHeader(priors)` in the issue's `supersession` field — the renderer emits it immediately above the `→ ACTION — reason` line. When `detectChurn(...).isChurn === true`, also add the `Re-assessed N times since <firstDate> without execution — possible blocker or low priority` warning to `warnings[]` (per step 2). When `shouldPromptOnConflict(prior, new) === true`, confirm with the user via `AskUserQuestion` before posting. See "Prior Assessment Detection" in Step 1 for the full protocol.
 
-4. **Machine markers.** The posted comment keeps the single-mode **3-line** marker block — one directive per line, and only those directives the verdict defines:
-   ```
-   <!-- assess:action=PROCEED -->
-   <!-- assess:phases=spec,exec,qa -->
-   <!-- assess:quality-loop=true -->
-   ```
-   Do **not** use the batch dashboard's compact one-line marker (`<!-- #N assess:action=… assess:phases=… -->`) in a posted comment — that form is for the chat dashboard only.
+4. **Machine markers.** The renderer derives these from `mode`, `action`, `phases[]`, and `qualityLoop`: single mode emits the 3-line block, batch mode the compact one-line-per-issue form. Never hand-write a marker, and never paste the dashboard's compact form into a posted comment.
 
 The chat batch dashboard is unchanged — this step governs only what lands on each issue.
 
@@ -708,8 +535,8 @@ A batch run shows one scannable dashboard in chat, then posts one single-mode co
 Dashboard (chat) — excerpt for #458:
 
 ```
- #    Action     Reason                              Run
- 458  PROCEED    Parallel UX + race condition          spec → exec → qa
+ #    Action     Reason                        Run
+ 458  PROCEED    Parallel UX + race condition  spec → exec → qa
 ────────────────────────────────────────────────────────────────
 Commands:
   npx sequant run 458 -Q
@@ -717,7 +544,7 @@ Commands:
 ⚠ #458  Dual concern (UX + race) across 4 files
 
 Flags:
-  -Q     dual concern across 4 files
+  -Q  dual concern across 4 files
 ────────────────────────────────────────────────────────────────
 
 <!-- #458 assess:action=PROCEED assess:phases=spec,exec,qa assess:quality-loop=true -->
@@ -738,7 +565,7 @@ Commands:
 spec → exec → qa · 8 ACs
 
 Flags:
-  -Q     dual concern across 4 files
+  -Q  dual concern across 4 files
 ────────────────────────────────────────────────────────────────
 ⚠ Dual concern (UX + race) across 4 files
 ────────────────────────────────────────────────────────────────
@@ -777,6 +604,7 @@ Open · task, needs-data
 
 **Before responding, verify:**
 
+- [ ] **The response opens with the rendered output block** — not a summary, preamble, TLDR, or question. If Step 6's renderer output is not the first content, stop and emit it.
 - [ ] Every issue has exactly one action in the table
 - [ ] Run column uses correct symbol for the action/state
 - [ ] `ACs` column included only when every issue has explicit `- [ ]` checkboxes
