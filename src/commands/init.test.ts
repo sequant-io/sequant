@@ -53,6 +53,10 @@ vi.mock("../lib/templates.js", () => ({
   copyTemplates: vi.fn(() =>
     Promise.resolve({ scriptsSymlinked: true, symlinkResults: [] }),
   ),
+  // Templates-root guard (#822). Defaults to "present" so this suite exercises
+  // the paths past the guard; the guard's own failure branch is covered in
+  // templates.test.ts and sync-source-invocation.integration.test.ts.
+  assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
 }));
 
 // Mock manifest

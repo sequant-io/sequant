@@ -16,7 +16,7 @@ import {
   getPackageManagerCommands,
   STACKS,
 } from "../lib/stacks.js";
-import { copyTemplates } from "../lib/templates.js";
+import { copyTemplates, assertTemplatesDirExists } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import {
@@ -123,6 +123,17 @@ function logDefault(label: string, value: string): void {
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
+  // Fail loudly on a missing templates root before any prompt or write, so a
+  // broken install can never half-provision a project. Placed ahead of the
+  // --upgrade-skills branch, which reads the same directory (#822).
+  try {
+    await assertTemplatesDirExists();
+  } catch (error) {
+    console.log(chalk.red(`❌ ${(error as Error).message}`));
+    process.exitCode = 1;
+    return;
+  }
+
   // Handle --upgrade-skills: update skill files from installed package templates
   if (options.upgradeSkills) {
     await upgradeSkills();
