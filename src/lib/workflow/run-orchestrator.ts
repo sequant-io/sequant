@@ -115,6 +115,7 @@ import {
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { runChainPreflight } from "./chain-preflight.js";
+import { runSkillsPreflight } from "./skills-preflight.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import {
   planChainResumeFromState,
@@ -964,6 +965,55 @@ export class RunOrchestrator {
     const issueInfoMap = new Map<number, { title: string; labels: string[] }>();
     for (const issueNumber of issueNumbers) {
       issueInfoMap.set(issueNumber, await getIssueInfo(issueNumber));
+    }
+
+    // ── Skills pre-flight (#813) ───────────────────────────────────────
+    // Fail fast when the driver resolves phases via `.claude/skills/` and a
+    // required skill is missing — BEFORE any worktree is provisioned or
+    // per-issue state entry written. Without this, the phase agent hunts for
+    // a slash command that can never resolve and the run surfaces as a bogus
+    // "spec retry" failure. Skipped for non-skill drivers (aider) and for
+    // --dry-run (no agent executes).
+    if (!config.dryRun) {
+      const preflight = await runSkillsPreflight({
+        agent: config.agent,
+        aiderSettings: config.aiderSettings,
+        phases: config.phases,
+        autoDetectPhases: resolved.autoDetectPhases,
+        qualityLoop: config.qualityLoop,
+        testgen: mergedOptions.testgen,
+        securityReview: mergedOptions.securityReview,
+        issueNumbers,
+        issueInfoMap,
+      });
+      if (!preflight.ok) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),
+        );
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.red(`    ${preflight.remedy}`),
+        );
+        shutdown.dispose();
+        return {
+          results: issueNumbers.map((issueNumber) => ({
+            issueNumber,
+            success: false,
+            phaseResults: [],
+            durationSeconds: 0,
+            loopTriggered: false,
+            abortReason: `skills pre-flight failed: ${preflight.cause}`,
+          })),
+          logPath: null,
+          exitCode: 1,
+          worktreeMap: new Map(),
+          issueInfoMap,
+          config,
+          mergedOptions,
+          logWriter: null,
+        };
+      }
     }
 
     const useWorktreeIsolation =

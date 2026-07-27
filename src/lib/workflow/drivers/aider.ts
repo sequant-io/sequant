@@ -20,6 +20,9 @@ import type { AiderSettings } from "../../settings.js";
 export class AiderDriver implements AgentDriver {
   name = "aider";
 
+  /** Aider phases use inline `driverOverrides` prompts — no skills (#813). */
+  resolvesSkills = false;
+
   private settings?: AiderSettings;
 
   constructor(settings?: AiderSettings) {
