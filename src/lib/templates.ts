@@ -2,7 +2,8 @@
  * Template management - copy and process templates
  */
 
-import { readdir, chmod } from "fs/promises";
+import { readdir, chmod, stat } from "fs/promises";
+import { existsSync, readFileSync } from "fs";
 import { join, dirname, relative, isAbsolute } from "path";
 import { fileURLToPath } from "url";
 import { diffLines } from "diff";
@@ -22,20 +23,153 @@ import { getStackConfig, getStackNotes, getMultiStackNotes } from "./stacks.js";
 import { isNativeWindows } from "./system.js";
 import { getProjectName } from "./project-name.js";
 
+/**
+ * Offsets from this module's directory to the bundled `templates/` root, in
+ * probe order. This module lives at `src/lib/templates.ts`, so it sits three
+ * levels below the package root once compiled (`dist/src/lib/templates.js`) but
+ * only two when executed straight from source under `tsx` (`src/lib/`).
+ *
+ * The compiled offset is listed first so consumers — who always run the compiled
+ * binary — keep byte-identical behavior. See #822.
+ */
+const TEMPLATES_DIR_OFFSETS = [
+  ["..", "..", "..", "templates"], // compiled: dist/src/lib → <pkg>/templates
+  ["..", "..", "templates"], // source (tsx): src/lib → <repo>/templates
+] as const;
+
+/**
+ * How well a candidate path matches "the templates root of *this* package".
+ *
+ * `package-root` outranks `exists` because the two offsets are not mutually
+ * exclusive: from a source tree at `<repo>/src/lib`, the *compiled* offset
+ * resolves to `<repo>/../templates` — a directory one level **above** the repo.
+ * A bare existence probe would happily bind to an unrelated `templates/` that
+ * happens to sit beside the checkout. Requiring the candidate's parent to be
+ * the sequant package root removes that ambiguity without walking the tree.
+ */
+export type TemplatesCandidateRank = "package-root" | "exists" | "missing";
+
+/**
+ * Resolve the templates root relative to a module directory, given a ranking
+ * function.
+ *
+ * Split out from `getTemplatesDir` purely so both layouts are testable: a test
+ * cannot relocate `import.meta.url`, so without injection the "works from both
+ * layouts" assertion could only ever exercise whichever layout the test runner
+ * happens to use.
+ *
+ * Resolution order: the first `package-root` candidate, else the first that
+ * merely `exists` (keeps any layout that works today working, even one whose
+ * package root is not where we expect), else the **compiled** offset — so the
+ * caller's error message names the canonical expected location rather than a
+ * source-tree guess.
+ */
+export function resolveTemplatesDirFrom(
+  baseDir: string,
+  rank: (candidate: string) => TemplatesCandidateRank,
+): string {
+  const candidates = TEMPLATES_DIR_OFFSETS.map((offset) =>
+    join(baseDir, ...offset),
+  );
+  const ranked = candidates.map((candidate) => ({
+    candidate,
+    rank: rank(candidate),
+  }));
+
+  return (
+    ranked.find((c) => c.rank === "package-root")?.candidate ??
+    ranked.find((c) => c.rank === "exists")?.candidate ??
+    candidates[0]
+  );
+}
+
+/**
+ * Rank a candidate by checking whether it exists and whether its parent is the
+ * sequant package root. Anchoring on `package.json` mirrors how every other
+ * root resolver in this codebase locates the package (`version.ts`,
+ * `manifest.ts`, `bin/preflight.ts`).
+ */
+function rankTemplatesCandidate(candidate: string): TemplatesCandidateRank {
+  if (!existsSync(candidate)) {
+    return "missing";
+  }
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(candidate, "..", "package.json"), "utf-8"),
+    );
+    if (pkg.name === "sequant") {
+      return "package-root";
+    }
+  } catch {
+    // No readable/parseable package.json beside it — still a usable directory,
+    // just not a positively identified package root.
+  }
+  return "exists";
+}
+
+/**
+ * Memoized bundled-templates path. Resolution is now stat-backed rather than a
+ * pure string join, and `getTemplateContent` calls it once per template file
+ * during a drift scan — ~2ms per scan uncached, on a pre-flight path #708
+ * deliberately keeps in the 2-5ms range. The install layout cannot change
+ * within a process, so caching it is safe. Only the *bundled* resolution is
+ * cached; the env override is re-read every call, so tests that set and unset
+ * `SEQUANT_TEMPLATES_DIR` are unaffected.
+ */
+let cachedBundledTemplatesDir: string | undefined;
+
 // Get the package templates directory
 export function getTemplatesDir(): string {
   // Allow overriding the templates source (used by tests; also lets the dir be
-  // relocated without relying on the compiled-output layout below).
+  // relocated without relying on the compiled-output layout below). Returned
+  // verbatim — the override is authoritative and is never probed, so a bad
+  // value surfaces at `assertTemplatesDirExists` rather than silently falling
+  // back to the bundled tree.
   if (process.env.SEQUANT_TEMPLATES_DIR) {
     return process.env.SEQUANT_TEMPLATES_DIR;
   }
 
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  // Compiled structure: dist/src/lib/templates.js
-  // So we need ../../../templates to reach project root templates/
-  const devPath = join(__dirname, "..", "..", "..", "templates");
+  if (cachedBundledTemplatesDir === undefined) {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    cachedBundledTemplatesDir = resolveTemplatesDirFrom(
+      __dirname,
+      rankTemplatesCandidate,
+    );
+  }
+  return cachedBundledTemplatesDir;
+}
 
-  return devPath;
+/**
+ * Resolve the templates root and fail loudly when it does not exist.
+ *
+ * A missing templates *root* means the install is broken: every `copyDir` call
+ * below would hit `copyDir`'s per-directory ENOENT skip, no-op, and let the
+ * caller print a success message over an empty tree (#822). That skip is
+ * deliberate for individual subdirectories — a stack may legitimately ship
+ * without `memory/` — but it must not absorb the whole source tree.
+ *
+ * Throws rather than printing so the lib layer stays free of presentation;
+ * commands catch and render.
+ */
+export async function assertTemplatesDirExists(): Promise<string> {
+  const templatesDir = getTemplatesDir();
+  // A *directory* check, not a bare existence check: a stray file at that path
+  // would pass `access()` and then fail deeper in `readdir` with the same silent
+  // ENOTDIR-shaped confusion this guard exists to prevent.
+  let isDirectory: boolean;
+  try {
+    isDirectory = (await stat(templatesDir)).isDirectory();
+  } catch {
+    isDirectory = false;
+  }
+  if (isDirectory) {
+    return templatesDir;
+  }
+  throw new Error(
+    `Bundled templates directory not found: ${templatesDir}\n` +
+      "This usually means the Sequant install is incomplete or was run from an unexpected layout.\n" +
+      "Reinstall sequant, or set SEQUANT_TEMPLATES_DIR to the templates/ directory.",
+  );
 }
 
 /**

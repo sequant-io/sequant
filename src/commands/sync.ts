@@ -18,6 +18,7 @@ import {
   computeTemplateChanges,
   listTemplateFiles,
   getTemplatesDir,
+  assertTemplatesDirExists,
   isCustomizableFile,
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
@@ -269,6 +270,18 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     console.log(
       chalk.red("❌ Sequant is not initialized. Run `sequant init` first."),
     );
+    process.exitCode = 1;
+    return;
+  }
+
+  // Fail loudly on a missing templates root before anything reads or writes.
+  // This must precede the version fast path below: that path diffs against the
+  // same (missing) directory, sees no drift, and reports "already up to date"
+  // over an empty tree — the second-run trap in #822.
+  try {
+    await assertTemplatesDirExists();
+  } catch (error) {
+    console.log(chalk.red(`❌ ${(error as Error).message}`));
     process.exitCode = 1;
     return;
   }

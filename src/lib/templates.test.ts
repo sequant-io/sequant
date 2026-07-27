@@ -15,7 +15,11 @@ import {
   buildTemplateVariables,
   computeTemplateChanges,
   copyTemplates,
+  resolveTemplatesDirFrom,
+  getTemplatesDir,
+  assertTemplatesDirExists,
   CUSTOMIZABLE_FILES,
+  type TemplatesCandidateRank,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
 
@@ -188,6 +192,157 @@ describe("templates", () => {
       // On Windows template paths are assembled with backslashes; the
       // protection must still recognize the constitution.
       expect(isCustomizableFile(".claude\\memory\\constitution.md")).toBe(true);
+    });
+  });
+
+  // #822: the resolver was calibrated for the compiled layout only, so running
+  // from source under tsx landed one level above the repo root and every copy
+  // silently no-opped. `resolveTemplatesDirFrom` takes the module dir and a
+  // ranking function precisely so both layouts can be pinned here —
+  // `import.meta.url` cannot be relocated from inside a test.
+  describe("resolveTemplatesDirFrom (#822)", () => {
+    const COMPILED_BASE = "/pkg/dist/src/lib";
+    const SOURCE_BASE = "/repo/src/lib";
+
+    // Rank helper: `packageRoot` paths rank as the sequant package root,
+    // `present` paths merely exist, everything else is missing.
+    const ranker =
+      (opts: { packageRoot?: string[]; present?: string[] }) =>
+      (candidate: string): TemplatesCandidateRank => {
+        if (opts.packageRoot?.includes(candidate)) return "package-root";
+        if (opts.present?.includes(candidate)) return "exists";
+        return "missing";
+      };
+
+    it("resolves the package root from the compiled layout (dist/src/lib)", () => {
+      expect(
+        resolveTemplatesDirFrom(
+          COMPILED_BASE,
+          ranker({ packageRoot: [join("/pkg", "templates")] }),
+        ),
+      ).toBe(join("/pkg", "templates"));
+    });
+
+    it("resolves the repo root from a source-tree tsx invocation (src/lib)", () => {
+      // The regression itself: before #822 this returned `/templates` (three up
+      // from `/repo/src/lib`), one level ABOVE the repo, and every copy no-opped.
+      expect(
+        resolveTemplatesDirFrom(
+          SOURCE_BASE,
+          ranker({ packageRoot: [join("/repo", "templates")] }),
+        ),
+      ).toBe(join("/repo", "templates"));
+    });
+
+    it("ignores a stray templates/ beside the repo in favor of the package root", () => {
+      // From `/repo/src/lib` the compiled offset lands on `/templates` — an
+      // unrelated directory that happens to sit next to the checkout. It exists,
+      // but it is not the sequant package root, so it must lose.
+      expect(
+        resolveTemplatesDirFrom(
+          SOURCE_BASE,
+          ranker({
+            present: [join("/", "templates")],
+            packageRoot: [join("/repo", "templates")],
+          }),
+        ),
+      ).toBe(join("/repo", "templates"));
+    });
+
+    it("prefers the compiled offset when both candidates are package roots", () => {
+      // Guards the probe order: consumers always run the compiled binary, so an
+      // ambiguous tree must keep resolving exactly as it did before #822.
+      expect(
+        resolveTemplatesDirFrom(
+          COMPILED_BASE,
+          ranker({
+            packageRoot: [
+              join("/pkg", "templates"),
+              join("/pkg/dist", "templates"),
+            ],
+          }),
+        ),
+      ).toBe(join("/pkg", "templates"));
+    });
+
+    it("accepts a merely-existing candidate when no package root is identified", () => {
+      // Back-compat: a layout whose package.json is not where we expect still
+      // resolves rather than hard-failing.
+      expect(
+        resolveTemplatesDirFrom(
+          COMPILED_BASE,
+          ranker({ present: [join("/pkg", "templates")] }),
+        ),
+      ).toBe(join("/pkg", "templates"));
+    });
+
+    it("falls back to the compiled offset when neither candidate exists", () => {
+      // The fallback is what `assertTemplatesDirExists` names in its error, so
+      // it must be the canonical expected location, not a source-tree guess.
+      expect(resolveTemplatesDirFrom(COMPILED_BASE, () => "missing")).toBe(
+        join("/pkg", "templates"),
+      );
+    });
+  });
+
+  describe("getTemplatesDir (#822)", () => {
+    const originalOverride = process.env.SEQUANT_TEMPLATES_DIR;
+
+    afterEach(() => {
+      if (originalOverride === undefined) {
+        delete process.env.SEQUANT_TEMPLATES_DIR;
+      } else {
+        process.env.SEQUANT_TEMPLATES_DIR = originalOverride;
+      }
+    });
+
+    it("returns SEQUANT_TEMPLATES_DIR verbatim when set", () => {
+      process.env.SEQUANT_TEMPLATES_DIR = "/custom/templates";
+      expect(getTemplatesDir()).toBe("/custom/templates");
+    });
+
+    it("resolves a real templates tree when run from source under vitest", async () => {
+      // This suite executes the TypeScript source (src/lib), i.e. exactly the
+      // layout that was broken. Before the fix this pointed one level above the
+      // repo and `skills/` did not exist.
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      const dir = getTemplatesDir();
+      expect(await fileExists(join(dir, "skills"))).toBe(true);
+    });
+  });
+
+  describe("assertTemplatesDirExists (#822)", () => {
+    const originalOverride = process.env.SEQUANT_TEMPLATES_DIR;
+
+    afterEach(() => {
+      if (originalOverride === undefined) {
+        delete process.env.SEQUANT_TEMPLATES_DIR;
+      } else {
+        process.env.SEQUANT_TEMPLATES_DIR = originalOverride;
+      }
+    });
+
+    it("returns the resolved directory when it exists", async () => {
+      const templatesDir = join(testDir, "templates");
+      await mkdir(templatesDir, { recursive: true });
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      await expect(assertTemplatesDirExists()).resolves.toBe(templatesDir);
+    });
+
+    it("throws naming the missing path", async () => {
+      const missing = join(testDir, "does-not-exist", "templates");
+      process.env.SEQUANT_TEMPLATES_DIR = missing;
+
+      await expect(assertTemplatesDirExists()).rejects.toThrow(missing);
+    });
+
+    it("throws when the path exists but is a file, not a directory", async () => {
+      const notADir = join(testDir, "templates-file");
+      await fsWriteFile(notADir, "not a directory");
+      process.env.SEQUANT_TEMPLATES_DIR = notADir;
+
+      await expect(assertTemplatesDirExists()).rejects.toThrow(notADir);
     });
   });
 
@@ -447,6 +602,26 @@ describe("templates", () => {
         RENDERED,
       );
       expect(opted.preservedCustomizable).toHaveLength(0);
+    });
+
+    // #822 AC-2, second clause: hardening the *root* must not tighten the
+    // per-subdirectory ENOENT skip. A stack that ships without `agents/`,
+    // `hooks/` or `scripts/` — as this temp tree does — still copies cleanly.
+    it("skips absent template subdirectories without failing (#822 AC-2)", async () => {
+      await mkdir(join(templatesDir, "skills", "exec"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "skills", "exec", "SKILL.md"),
+        "exec skill\n",
+      );
+
+      // Only `memory/` and `skills/` exist in the templates tree.
+      await expect(copyTemplates("generic")).resolves.toBeDefined();
+
+      expect(
+        await fileExists(join(cwdDir, ".claude", "skills", "exec", "SKILL.md")),
+      ).toBe(true);
+      // The absent subdirs simply produced nothing — no throw, no partial state.
+      expect(await fileExists(join(cwdDir, ".claude", "agents"))).toBe(false);
     });
 
     it("creates a missing constitution on a fresh install (AC-5)", async () => {
