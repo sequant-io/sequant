@@ -64,6 +64,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--testgen` | Run testgen phase after spec | `false` |
 | `--batch "<issues>"` | Group issues to run together | - |
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
+| `--auto-wait <minutes>` | Total minutes willing to wait for an exhausted rate-limit window to reopen instead of halting. See [Auto-wait](#auto-wait-for-a-rate-limit-window) | `0` (off) |
 
 ### Available Phases
 
@@ -207,6 +208,43 @@ A Claude rate limit or an "Out of credits" billing failure hit mid-chain used to
 ```
 
 Resume is the standard chain resume: re-running the identical command skips the completed prefix and picks up at the halted link (see "Broken chain links" above and the checkpoint notes below). Failed runs also record a `failureCategory` (e.g. `rate_limit`, `billing`) in `.sequant/metrics.json` — see [analytics.md](./analytics.md).
+
+#### Auto-wait for a rate-limit window
+
+**Default: off.** Without `--auto-wait`, the halt described above is unchanged — a window whose reset is hours away stops the run immediately.
+
+`--auto-wait <minutes>` says how long you are willing to wait *in total* for the window to reopen. When a phase fails on an exhausted rate-limit window whose reset fits the remaining budget, Sequant sleeps until the reset (plus a ~60 s buffer, since the reset is a floor) and retries the phase instead of halting:
+
+```bash
+npx sequant run 42 --auto-wait 360   # wait up to 6 hours total for a 5-hour window
+```
+
+Equivalent settings key and environment variable:
+
+```json
+{ "run": { "autoWaitMinutes": 360 } }
+```
+
+```bash
+SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
+```
+
+**What it will and won't wait for:**
+
+| Failure | Waits? | Why |
+|---------|--------|-----|
+| Rate limit, reset within the remaining budget | ✅ | The window reopens on its own |
+| Rate limit, reset beyond the budget | ❌ | You said you would not wait that long — halts as before |
+| Rate limit with no reset time | ❌ | No timing signal; falls through to the existing short exponential backoff |
+| **Out of credits (billing)** | ❌ **never** | Credits are purchased, not waited out. Note these failures *do* carry a reset timestamp, so the gate is the error type, not the presence of a timestamp |
+
+**Bounds.** At most **2** waits per issue, and `--auto-wait` is a **total** budget across the whole issue, not a per-occurrence allowance. Two 20-minute waits spend 40 minutes of a 60-minute budget; a third window rejection halts with the usual labeled message. A window still closed on wake can therefore never produce an unbounded pause loop.
+
+**The wait is visible and interruptible.** The live dashboard marks the phase `waiting` with its wake time, and `-s/--quiet` mode's heartbeat reports the remaining wait rather than firing its "no log activity" stall warning. Ctrl-C ends the wait promptly instead of blocking until the wake.
+
+**Locks are held for the duration.** A waiting run keeps its worktree and issue locks. This is deliberate rather than an oversight: Claude rate limits are **account-wide**, so no other run could make progress during that window anyway — releasing the locks would only invite a second run to fail against the same closed window.
+
+**In-process only.** The wait is a sleep inside the running process: it does **not** survive closing the terminal, and there is no scheduled re-entry. Durable out-of-process resume (persist a wake time, exit, let a scheduler re-enter) is deliberately out of scope here. For long waits, run under `tmux`/`screen` or leave the terminal open.
 
 **Checkpoint Commits:**
 
@@ -591,7 +629,8 @@ You can configure defaults in `.sequant/settings.json`:
     "qualityLoop": false,
     "maxIterations": 3,
     "smartTests": true,
-    "mcp": true
+    "mcp": true,
+    "autoWaitMinutes": 0
   }
 }
 ```

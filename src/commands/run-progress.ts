@@ -105,6 +105,18 @@ export function buildProgressWiring(args: {
     onProgress = (issue, phase, event, extra) => {
       // #543: activity events only feed the TUI's nowLine — skip the line renderer.
       if (event === "activity") return;
+      // #804 AC-7: unlike activity, a waiting event MUST reach the renderer —
+      // it is the only signal during a pause that can last hours.
+      if (event === "waiting") {
+        renderer.onEvent({
+          issue,
+          phase,
+          event,
+          text: extra?.text,
+          wakeAtMs: extra?.wakeAtMs,
+        });
+        return;
+      }
       // #624 Item 3: pass the outer-loop iteration through so the renderer can
       // render `(attempt N/M)` / `loop N/M`.
       renderer.onEvent({
@@ -117,8 +129,20 @@ export function buildProgressWiring(args: {
       });
     };
   } else if (heartbeat) {
-    onProgress = (issue, phase, event) => {
+    onProgress = (issue, phase, event, extra) => {
       if (event === "activity") return;
+      // #804 AC-7: mark/clear the auto-wait so the heartbeat reports the wait
+      // and, critically, does not report it as a stall. Must be handled before
+      // the `else` below, which would otherwise `stop()` the phase entirely and
+      // leave a multi-hour wait with no liveness signal at all.
+      if (event === "waiting") {
+        if (extra?.wakeAtMs !== undefined) {
+          heartbeat.pauseForWait({ issueNumber: issue, phase }, extra.wakeAtMs);
+        } else {
+          heartbeat.resumeFromWait({ issueNumber: issue, phase });
+        }
+        return;
+      }
       if (event === "start")
         heartbeat.start({
           issueNumber: issue,

@@ -287,12 +287,16 @@ export function resetsAtToMs(resetsAt: number): number {
  * Format a Unix timestamp (seconds or ms) as a local time string.
  *
  * Bare `HH:MM` when the reset falls on the current local calendar day;
- * date-qualified `MM-DD HH:MM` otherwise. Multi-day windows
+ * date-qualified `MM-DD HH:MM` otherwise. Also used for #804's auto-wait wake
+ * time (a wake is `resetsAt + buffer`, already in ms, which `resetsAtToMs`
+ * passes through unchanged) so both render in one convention.
+ *
+ * Multi-day windows
  * (`rateLimitType: seven_day*`) can reset days out — a bare `HH:MM` there reads
  * as "later today" and misleads the user (#732 QA follow-up), so the date is
  * included whenever the reset is not today.
  */
-function formatResetTime(resetsAt: number): string {
+export function formatResetTime(resetsAt: number): string {
   const ms = resetsAtToMs(resetsAt);
   const d = new Date(ms);
   const hh = String(d.getHours()).padStart(2, "0");

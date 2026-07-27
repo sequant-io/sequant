@@ -5,7 +5,7 @@
  * decides whether to update the live zone, append an event line, or both.
  */
 
-export type ProgressEventKind = "start" | "complete" | "failed";
+export type ProgressEventKind = "start" | "complete" | "failed" | "waiting";
 
 /** Raw event from batch-executor `emitProgressLine` / `onProgress` callbacks. */
 export interface ProgressEvent {
@@ -21,16 +21,35 @@ export interface ProgressEvent {
    * cell as `loop N/M` (#624 Item 3).
    */
   iteration?: number;
+  /**
+   * `"waiting"` (#804): display message for an in-progress auto-wait.
+   */
+  text?: string;
+  /**
+   * `"waiting"` (#804): epoch ms at which the auto-wait ends. Absent on the
+   * terminal notice, which returns the phase to `running`.
+   */
+  wakeAtMs?: number;
 }
 
 /** Per-phase status tracked inside the renderer state machine. */
 export interface PhaseState {
   name: string;
-  status: "pending" | "running" | "done" | "failed";
+  /**
+   * `"waiting"` (#804) is a *paused* running phase, not a terminal state: the
+   * phase spawn has failed on an exhausted rate-limit window and the executor
+   * is sleeping until it reopens. It returns to `"running"` on wake.
+   */
+  status: "pending" | "running" | "done" | "failed" | "waiting";
   startedAt?: number;
   durationMs?: number;
   /** Loop iteration label (e.g. "loop 2/3"). */
   loopIteration?: number;
+  /**
+   * #804: epoch ms at which an in-progress auto-wait ends. Set only while
+   * `status === "waiting"`; cleared on resume.
+   */
+  wakeAtMs?: number;
   /**
    * #624 Item 4: normalized signature of the most recent failure for THIS
    * phase (ANSI-stripped, lowercased, first 80 chars, trimmed). Per-phase so

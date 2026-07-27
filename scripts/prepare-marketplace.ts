@@ -369,6 +369,23 @@ sequant ready        # Boxed pre-flight: which issues are ready to run?
 
 See the [\`sequant ready\` command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/ready-command.md) for the full pre-flight readiness check.
 
+## Riding out a rate-limit window
+
+By default, a rate limit whose window reopens hours from now halts the run, so a multi-hour job needs a manual restart. \`--auto-wait <minutes>\` opts into waiting instead:
+
+\`\`\`bash
+sequant run 42 --auto-wait 360   # wait up to 6 hours total for the window to reopen
+\`\`\`
+
+- **Off by default** (\`0\`) — the halt behavior is unchanged unless you ask for the wait.
+- The value is a **total** budget per issue, not per occurrence, capped at 2 waits.
+- **Never waits on out-of-credits failures** — credits are purchased, not waited out. (These do carry a reset timestamp, so the gate is the error type, not the timestamp.)
+- The wait is shown live and Ctrl-C ends it promptly.
+- **In-process only: it does not survive closing the terminal.** Use \`tmux\`/\`screen\` for long waits.
+- Worktree and issue locks are held throughout — deliberate, since Claude rate limits are account-wide and no other run could progress during the window anyway.
+
+Also settable as \`run.autoWaitMinutes\` or \`SEQUANT_AUTO_WAIT_MINUTES\`. Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
+
 ## Documentation
 
 - [Getting Started](https://github.com/sequant-io/sequant/tree/main/docs/getting-started)
