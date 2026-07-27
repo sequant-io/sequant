@@ -87,6 +87,7 @@ import {
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { abortCommand } from "../src/commands/abort.js";
+import { assessRenderCommand } from "../src/commands/assess-render.js";
 import { getManifest } from "../src/lib/manifest.js";
 import { phaseRegistry } from "../src/lib/workflow/phase-registry.js";
 
@@ -485,6 +486,17 @@ program
   .action((issue: string, options: ReadyCommandOptions) =>
     readyCommand(issue, options),
   );
+
+// #823: internal surface for the /assess skill, deliberately hidden from the
+// top-level help — it takes a JSON payload no human hand-writes. `sequant
+// assess-render --help` still works for debugging.
+program
+  .command("assess-render", { hidden: true })
+  .description(
+    "(internal) Render an /assess AssessResult JSON payload to stdout",
+  )
+  .argument("<file>", "Path to an AssessResult JSON file")
+  .action(assessRenderCommand);
 
 program
   .command("conventions")
