@@ -165,12 +165,42 @@ Extract:
 - Specific recommendations
 - Required fixes
 
+#### Excluded Finding Classes (REQUIRED)
+
+Some QA findings are real but **not fixable by a code change**. Feeding them to the loop burns iterations rewriting working code and never clears the finding. Filter these out of the extracted set *before* Step 3 counts actionable issues — the same break-don't-loop discipline that applies to `AC_MET_BUT_NOT_A_PLUS`.
+
+| Class | Marker in the QA comment | Why it is not actionable |
+|-------|--------------------------|--------------------------|
+| Infra-blocked CI | `<!-- qa:ci-infra-blocked -->` | Every check failed without a runner ever starting (e.g. an Actions spending-limit lockout). The cause is account/infrastructure state; no diff can turn the checks green. See `qa/SKILL.md` § "Infra-Blocked CI Detection". |
+
+```bash
+# Drop the marked findings when QA flagged CI as infra-blocked, so its
+# NEEDS_VERIFICATION AC items are never mistaken for actionable findings.
+# Range is EXCLUSIVE of the next `### ` header — a `sed '/marker/,/^### /d'`
+# range would delete that header too and orphan the following section's
+# content (verified: it silently swallows `### Required Fixes`).
+if echo "$qa_comment" | grep -q '<!-- qa:ci-infra-blocked -->'; then
+  echo "CI is infra-blocked — excluding CI findings from loop input."
+  actionable=$(echo "$qa_comment" | awk '
+    /<!-- qa:ci-infra-blocked -->/ { skip = 1; next }
+    skip && /^### /               { skip = 0 }
+    !skip
+  ')
+else
+  actionable="$qa_comment"
+fi
+```
+
+When the marker is absent this is a byte-identical pass-through, so unmarked QA comments parse exactly as before.
+
+**If every finding was excluded**, treat the iteration as having no actionable issues and exit via Step 3 — do **not** run a fix pass. Report the excluded cause verbatim so the human sees what actually needs doing (resolve the billing/infrastructure condition, then re-run QA).
+
 ### Step 3: Check Exit Conditions
 
 **Exit loop if:**
 - Verdict is `READY_FOR_MERGE` - Nothing to fix!
 - Verdict is `NEEDS_VERIFICATION` - Pending external verification
-- No actionable issues found
+- No actionable issues found (**after** applying "Excluded Finding Classes" above)
 - Max iterations reached (3 by default)
 
 **Continue loop if:**

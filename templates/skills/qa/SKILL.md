@@ -17,6 +17,7 @@ allowed-tools:
   - Bash(gh pr diff:*)
   - Bash(gh pr comment:*)
   - Bash(gh pr checks:*)
+  - Bash(gh api:*)
   - Bash(semgrep:*)
   - Bash(npx semgrep:*)
   - Bash(npx tsx scripts/semgrep-scan.ts:*)
@@ -800,15 +801,88 @@ fi
 | State | Bucket | AC Status | Verdict Impact |
 |-------|--------|-----------|----------------|
 | `SUCCESS` | `pass` | `MET` | No impact |
-| `FAILURE` | `fail` | `NOT_MET` | Blocks merge |
-| `CANCELLED` | `fail` | `NOT_MET` | Blocks merge |
+| `FAILURE` | `fail` | `NOT_MET` † | Blocks merge |
+| `CANCELLED` | `fail` | `NOT_MET` † | Blocks merge |
 | `SKIPPED` | `pass` | `N/A` | No impact |
 | `PENDING` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | `QUEUED` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | `IN_PROGRESS` | `pending` | `PENDING` * | → `NEEDS_VERIFICATION` * |
 | (empty response) | - | `N/A` | No CI configured |
+| (all checks `fail`, infra-blocked) | `fail` | `NEEDS_VERIFICATION` | Does not block merge; **not loopable** |
 
 \* Pending checks may be reclassified as `MET` (informational) when the diff is markdown-only and the check name matches `qa.markdownOnlySafeCiPatterns` — see "Markdown-Only Diff Relaxation" below for the gating-vs-relaxed partitioning rules. Failed checks are never relaxed.
+
+† Failed checks map to `NOT_MET` **unless** the infra-blocked signature is detected — see "Infra-Blocked CI Detection" immediately below. Run that check **before** applying this mapping.
+
+#### Infra-Blocked CI Detection
+
+**Purpose:** A repository that has hit its GitHub Actions spending limit fails *every* check within seconds: no runner is ever allocated, so no step runs. `gh pr checks` and `gh run view` report these as ordinary failures, so the default `FAILURE → NOT_MET` mapping marks CI-dependent ACs unmet for a condition **no code change can fix** — and those findings then feed `/loop`, burning iterations "fixing" code that isn't broken. The real cause exists only as a check-run annotation.
+
+**When to run:** Only when **every** check returned by `gh pr checks` is in the `fail` bucket. A mix of real failures and fail-fast ones is *not* the signature, so healthy and partially-failing CI never pays for the extra API calls and its mapping is untouched.
+
+**Procedure:**
+
+```bash
+# 1. Gate: is the board uniformly red? Skip everything below if not.
+all_failing=$(SEQUANT_QA_CI_BUCKETS="$ci_buckets" npx tsx -e '
+  (async () => {
+    const m = await import("./src/lib/qa/infra-blocked-ci.ts");
+    const checks = (process.env.SEQUANT_QA_CI_BUCKETS || "")
+      .split("\n").filter(Boolean).map((bucket) => ({ bucket }));
+    console.log(String(m.allChecksFailing(checks)));
+  })();
+' 2>/dev/null || echo "false")
+
+if [[ "$all_failing" == "true" ]]; then
+  # 2. Fetch annotations for the head commit's check runs.
+  head_sha=$(gh pr view "$pr_number" --json headRefOid -q '.headRefOid')
+  annotations_json=$(gh api "repos/{owner}/{repo}/commits/${head_sha}/check-runs" \
+    --jq '[.check_runs[] | {checkName: .name, annotationsUrl: .output.annotations_url}]')
+
+  # 3. Collect annotations per check, stopping at the first signature match.
+  #    Cost is bounded by the all-failing gate: this only ever runs on a fully
+  #    red PR, and returns on the first match — a lockout annotates every check.
+  #    Do NOT pre-filter on `output.annotations_count`: it is absent from the
+  #    captured incident fixture, so a zero there would silently skip detection.
+
+  # 4. Classify.
+  #    detectInfraBlockedCi(checks) → {blocked, message, checkName}
+  #    Matches /job was not started/i on the annotation `message` only.
+  #    `annotation_level` is deliberately NOT gated on — see the module docs.
+fi
+```
+
+Both predicates live in `src/lib/qa/infra-blocked-ci.ts` (pure, unit-tested against the captured incident fixture), mirroring the `markdown-only-ci.ts` split: detection in TypeScript, `gh api` plumbing here.
+
+**Classification when `blocked === true`:**
+
+| Rule | Effect |
+|------|--------|
+| CI-dependent AC status | `NEEDS_VERIFICATION` — **never** `NOT_MET` |
+| Verdict impact | Does not block merge on CI grounds; non-CI ACs still gate normally |
+| Report content | The annotation `message` **verbatim** as the action item |
+| Quality loop | Finding is **not loopable** — see "Loop Exclusion" below |
+
+**Loop Exclusion (REQUIRED):**
+
+An infra-blocked CI finding is not actionable by a code change, so it must never reach `/loop` — the same break-don't-loop discipline `AC_MET_BUT_NOT_A_PLUS` follows. When emitting the finding, mark it with the machine-readable marker `<!-- qa:ci-infra-blocked -->` so the loop skill can exclude it (see `loop/SKILL.md` § "Excluded Finding Classes"). Never list an infra-blocked CI item under `### Required Fixes`.
+
+**Output (REQUIRED when `blocked === true`):**
+
+```markdown
+### CI Status
+
+<!-- qa:ci-infra-blocked -->
+
+**CI is infra-blocked — every check failed without starting. This is not a code failure.**
+**Cause (verbatim, from `<check name>` annotation):** The job was not started because recent account payments have failed or your spending limit needs to be increased. Please check the 'Billing & plans' section in your settings
+
+**CI Summary:** N failed (0 started)
+**CI-related AC items:** AC-4 ("Tests pass in CI") → NEEDS_VERIFICATION (infra-blocked, not a code defect)
+**Action:** Resolve the infrastructure condition above, then re-run QA. Excluded from the quality loop — no code fix applies.
+```
+
+**If `blocked === false`** (no annotation matched, or not all checks failing), apply the standard mapping above unchanged.
 
 **CI-Related AC Detection:**
 
@@ -880,6 +954,7 @@ CI status affects the final verdict through the standard verdict algorithm:
 - CI `PENDING` (gating) → AC item marked `PENDING` → Verdict: `NEEDS_VERIFICATION`
 - CI `PENDING` (relaxed via the markdown-only block below) → AC item marked `MET` → no impact on verdict
 - CI `failure` → AC item marked `NOT_MET` → Verdict: `AC_NOT_MET`
+- CI `failure` (all checks, infra-blocked per the block above) → AC item marked `NEEDS_VERIFICATION` → does not force `AC_NOT_MET`; the finding is excluded from `/loop`
 - CI `success` → AC item marked `MET` → No additional impact
 - No CI → AC item marked `N/A` → No impact on verdict
 
