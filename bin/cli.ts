@@ -460,6 +460,20 @@ program
   .option("--review", "Run Phase 1 + 2 + 3 AI briefing")
   .option("--all", "Run all phases")
   .option("--post", "Post report to GitHub as PR comments")
+  .option(
+    "--watch",
+    "Poll each PR's CI checks until terminal, then run merge-check (never merges)",
+  )
+  .option(
+    "--interval <seconds>",
+    "Watch poll interval in seconds (default 30)",
+    (v) => parseInt(v, 10),
+  )
+  .option(
+    "--timeout <seconds>",
+    "Watch give-up timeout in seconds (default 1800)",
+    (v) => parseInt(v, 10),
+  )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .action(mergeCommand);

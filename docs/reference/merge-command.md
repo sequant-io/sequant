@@ -50,6 +50,37 @@ npx sequant merge 265 298 299 300 --check --post
 
 Posts per-issue merge readiness reports as comments on each PR.
 
+### Wait for CI, Then Verify (`--watch`)
+
+```bash
+npx sequant merge 818 --watch
+```
+
+`--watch` kills the "merge after green" polling loop: instead of running
+merge-check against checks that are still in flight, it polls each resolved PR's
+CI rollup until **every** check reaches a terminal state, then runs the normal
+merge-check phases and prints the usual report. When the command exits, the
+verdict is real.
+
+Key properties:
+
+- **It never merges.** `--watch` only decides _when_ the existing report runs —
+  the human merge gate is unchanged.
+- **Foreground only.** A plain in-process poll loop — no daemon, no background
+  process, no OS notifications. Chain on the exit code if you want a
+  notification (`sequant merge 818 --watch && notify-send ready`).
+- **Composes with the depth flags and `--post`** — e.g.
+  `sequant merge 818 --watch --scan --post` waits for CI, then runs the Phase
+  1+2 checks and posts the report.
+- **Dispatch blocks short-circuit to BLOCKED** instead of polling until timeout:
+  a `CONFLICTING` mergeable state (merge conflicts block CI dispatch), zero
+  checks after a dispatch-blocking condition, and a uniformly-failing board
+  whose check-run annotations show the runner was never started (GitHub Actions
+  billing/spending-limit lockout) are each detected and reported with the cause.
+
+Uses `GitHubProvider` with `statusCheckRollup` (the `--json checks` field is
+known-broken).
+
 ## Options & Settings
 
 | Option | Description | Default |
@@ -59,6 +90,9 @@ Posts per-issue merge readiness reports as comments on each PR.
 | `--review` | Run Phase 1 + 2 + 3 AI briefing (stub) | - |
 | `--all` | Run all phases | - |
 | `--post` | Post report to GitHub as PR comments | - |
+| `--watch` | Wait for each PR's CI checks to reach a terminal state before running merge-check (never merges) | - |
+| `--interval <seconds>` | Watch poll interval | `30` |
+| `--timeout <seconds>` | Watch give-up timeout | `1800` (30 min) |
 | `--json` | Output as JSON (for scripting) | - |
 | `-v, --verbose` | Enable verbose output | - |
 
@@ -68,7 +102,8 @@ Posts per-issue merge readiness reports as comments on each PR.
 |------|---------|
 | `0` | All checks pass (READY) |
 | `1` | Warnings found (NEEDS_ATTENTION) |
-| `2` | Failures found (BLOCKED) |
+| `2` | Failures found, or a dispatch block detected under `--watch` (BLOCKED) |
+| `3` | `--watch` timed out before CI reached a terminal state |
 
 ## Checks Performed
 
