@@ -56,9 +56,9 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--strict-preflight` | Make `--chain` content pre-flight warnings (missing AC section, dependency/overlap order, closed issues) fatal before any worktree is provisioned | `false` |
 | `-d, --dry-run` | Preview without execution | `false` |
 | `-v, --verbose` | Show detailed output | `false` |
-| `--timeout <seconds>` | Timeout per phase | `1800` (30 min) |
+| `--timeout <seconds>` | Timeout per phase. Whole seconds only — `30m` and `abc` are rejected rather than read as `30` (#833) | `1800` (30 min) |
 | `-Q, --quality-loop` | Enable auto-retry on failures (`-q` is a hidden alias — both enable it) | `false` |
-| `--max-iterations <n>` | Max iterations for quality loop | `3` |
+| `--max-iterations <n>` | Max iterations for quality loop. Whole number ≥ 1 (#833) | `3` |
 | `-s, --quiet` | Suppress version warnings and non-essential output (heartbeat-only liveness; `-q` no longer maps here — see #705) | `false` |
 | `--no-tui` | Disable the default boxed Ink dashboard; use the line phase-matrix renderer. Non-TTY output auto-degrades. (`--experimental-tui` is a hidden no-op alias.) | TUI on (TTY) |
 | `--testgen` | Run testgen phase after spec | `false` |
