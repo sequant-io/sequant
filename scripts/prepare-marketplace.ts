@@ -386,6 +386,22 @@ sequant run 42 --auto-wait 360   # wait up to 6 hours total for the window to re
 
 Also settable as \`run.autoWaitMinutes\` or \`SEQUANT_AUTO_WAIT_MINUTES\`. Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
 
+## Wait for CI, then verify (\`merge --watch\`)
+
+\`sequant merge <issue> --watch\` kills the "merge after green" polling loop: it waits for the PR's CI checks to finish before running merge-check, so the verdict is real the moment the command exits.
+
+\`\`\`bash
+sequant merge 818 --watch                 # poll CI to terminal, then run merge-check
+sequant merge 818 --watch --scan --post   # composes with depth flags and --post
+\`\`\`
+
+- **It never merges** — \`--watch\` only decides _when_ the existing report runs; the human merge gate stays.
+- **Foreground only** — a plain poll loop, no daemon or OS notifications. Chain on the exit code to notify yourself.
+- **Configurable** \`--interval <seconds>\` (default 30) and \`--timeout <seconds>\` (default 1800); a timeout exits with a distinct code (3).
+- **Dispatch blocks short-circuit to BLOCKED** with the cause — merge conflicts (\`CONFLICTING\`), zero checks after a dispatch block, and a runner-never-started billing lockout — instead of polling until timeout.
+
+Full details in the [merge command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/merge-command.md).
+
 ## Documentation
 
 - [Getting Started](https://github.com/sequant-io/sequant/tree/main/docs/getting-started)

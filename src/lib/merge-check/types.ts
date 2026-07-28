@@ -176,6 +176,15 @@ export interface MergeCommandOptions {
   json?: boolean;
   /** Enable verbose output */
   verbose?: boolean;
+  /**
+   * Watch mode (#818): poll each resolved PR's CI rollup until every check is
+   * terminal, then run the normal merge-check report. Never merges.
+   */
+  watch?: boolean;
+  /** Watch poll interval in seconds (default 30). Only used with `watch`. */
+  interval?: number;
+  /** Watch give-up timeout in seconds (default 1800). Only used with `watch`. */
+  timeout?: number;
 }
 
 /**

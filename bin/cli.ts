@@ -114,6 +114,32 @@ function validatePhasesFlag(value: string): string {
   return value;
 }
 
+/**
+ * Build a commander coercion for a positive-integer *seconds* flag.
+ *
+ * A bare `parseInt` is unsafe here: `parseInt("abc", 10)` is `NaN`, which is not
+ * nullish and so survives a `?? default`, and `parseInt("30m", 10)` silently
+ * yields `30` — the user asked for 30 minutes and got 30 seconds. Requiring the
+ * whole string to be digits rejects both instead of accepting a value that is
+ * unusable or quietly wrong.
+ */
+function parsePositiveSeconds(flag: string): (value: string) => number {
+  return (value: string): number => {
+    if (!/^\d+$/.test(value.trim())) {
+      throw new InvalidArgumentError(
+        `${flag} expects a whole number of seconds (got '${value}').`,
+      );
+    }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      throw new InvalidArgumentError(
+        `${flag} must be at least 1 second (got '${value}').`,
+      );
+    }
+    return parsed;
+  };
+}
+
 const program = new Command();
 
 // Handle --no-color before parsing
@@ -460,6 +486,20 @@ program
   .option("--review", "Run Phase 1 + 2 + 3 AI briefing")
   .option("--all", "Run all phases")
   .option("--post", "Post report to GitHub as PR comments")
+  .option(
+    "--watch",
+    "Poll each PR's CI checks until terminal, then run merge-check (never merges)",
+  )
+  .option(
+    "--interval <seconds>",
+    "Watch poll interval in seconds (default 30)",
+    parsePositiveSeconds("--interval"),
+  )
+  .option(
+    "--timeout <seconds>",
+    "Watch give-up timeout in seconds (default 1800)",
+    parsePositiveSeconds("--timeout"),
+  )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .action(mergeCommand);
