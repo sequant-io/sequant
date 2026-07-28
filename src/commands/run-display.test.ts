@@ -290,6 +290,31 @@ describe("displaySummary — ready-gate outcome (#817)", () => {
     const output = capture(runResult([issueResult({ issueNumber: 1 })]));
     expect(output).not.toContain("Ready gate");
   });
+
+  it("reports a crashed gate as 'did not run' rather than omitting it", () => {
+    // A gate crash is non-fatal (the PR still opens), but the user opted into a
+    // second look. If the summary omitted the issue entirely, a run whose gate
+    // died would be indistinguishable from one that gated cleanly — the user
+    // would believe the extra QA pass happened when it never did.
+    const output = capture(
+      runResult([
+        issueResult({
+          issueNumber: 819,
+          readyGateError: "settings unreadable",
+        }),
+      ]),
+    );
+
+    expect(output).toContain("Ready gate");
+    expect(output).toContain("#819");
+    expect(output).toContain("did not run");
+    expect(output).toContain("settings unreadable");
+    // The remediation must be actionable, not just a complaint.
+    expect(output).toContain("sequant ready 819");
+    // A failed gate must never be rendered as a clean pass.
+    expect(output).not.toContain("AC_MET");
+    expect(output).not.toContain("waiting_for_human_merge");
+  });
 });
 
 /**

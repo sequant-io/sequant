@@ -253,4 +253,33 @@ describe("run --ready-gate wiring (#817)", () => {
     );
     expect(mockCreatePR).toHaveBeenCalledTimes(1);
   });
+
+  it("a failed gate is reported, not swallowed", async () => {
+    // The status staying `ready_for_merge` above is correct — the run degraded
+    // to a standard run and nothing is blocked. But that alone makes a crashed
+    // gate indistinguishable from a run that never asked for one, so the reason
+    // has to survive onto the result for the summary to render it. Without
+    // this, opting into `--ready-gate` and getting no gate at all is silent.
+    mockRunReadyGate.mockRejectedValueOnce(new Error("boom"));
+    const result = await runIssueWithLogging(
+      makeCtx({ config: { readyGate: true } }),
+    );
+
+    expect(result.readyGateError).toBe("boom");
+    // Mutually exclusive with a real outcome — a crash must never look gated.
+    expect(result.readyGate).toBeUndefined();
+    // And the PR body must not claim a gate report it never produced.
+    expect(mockCreatePR.mock.calls[0]?.[8]).toBeUndefined();
+  });
+
+  it("a successful gate leaves no failure marker", async () => {
+    // Guards the inverse: `readyGateError` must not be set on the happy path,
+    // or every gated run would render a spurious "did not run" line.
+    const result = await runIssueWithLogging(
+      makeCtx({ config: { readyGate: true } }),
+    );
+
+    expect(result.readyGate).toEqual(cannedGate);
+    expect(result.readyGateError).toBeUndefined();
+  });
 });
