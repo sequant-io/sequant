@@ -302,5 +302,10 @@ export function buildExecutionConfig(
     aiderSettings: settings.run.aider,
     isolateParallel: mergedOptions.isolateParallel,
     relayEnabled,
+    // #817: opt-in only, no settings backing (AC-4). A missing `--ready-gate`
+    // resolves to false, keeping the run path byte-identical (AC-5). This is the
+    // load-bearing wire the #795 inert-flag class guards against — the flag is
+    // useless if it stops reaching the executor here.
+    readyGate: mergedOptions.readyGate ?? false,
   };
 }

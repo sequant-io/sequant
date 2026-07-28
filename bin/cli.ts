@@ -362,6 +362,13 @@ program
     "--no-pr",
     "Skip PR creation after successful QA (manual PR workflow)",
   )
+  // #817: opt-in post-QA ready gate. Reuses the `sequant ready` engine and its
+  // bounds (policy from settings.ready.policy, iteration cap, stagnation guard,
+  // Non-Goals) — no new policy surface. Never merges; stops at the human gate.
+  .option(
+    "--ready-gate",
+    "After phases succeed, run the post-QA ready gate (qa→loop→qa to the configured policy) — never merges, stops at the human merge gate",
+  )
   .option(
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",

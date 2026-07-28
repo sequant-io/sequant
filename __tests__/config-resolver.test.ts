@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   ConfigResolver,
+  buildExecutionConfig,
   normalizeCommanderOptions,
   resolveRunOptions,
 } from "../src/lib/workflow/config-resolver.js";
@@ -411,5 +412,74 @@ describe("resolveRunOptions", () => {
     expect(result.qualityLoop).toBe(true);
     // settings timeout=1800 should survive, not be clobbered by undefined
     expect(result.timeout).toBe(1800);
+  });
+});
+
+// === #817 AC-3: --ready-gate reaches ExecutionConfig ===
+
+/**
+ * Behavioral wiring guard for `--ready-gate` (#817 AC-3).
+ *
+ * AC-3's contract is literal: "a test fails if the flag stops reaching the
+ * engine (the #795 inert-flag class)". The source-level guard in
+ * `run-options-dead-surface.test.ts` asserts only that the substring
+ * `readyGate: mergedOptions.readyGate` appears in this resolver — which a
+ * behavior-preserving mutation walks straight past. Mutating the mapping to
+ * `mergedOptions.readyGate && false` left the flag permanently inert with 145
+ * tests green, which is #795 verbatim.
+ *
+ * These assertions close that hole behaviorally, mirroring the pattern
+ * `--auto-wait` (#804) established in `auto-wait.test.ts` ("the CLI flag
+ * reaches ExecutionConfig" + the Commander-key round-trip). Mutation-verified:
+ * see the PR body for the recorded delete-and-confirm results.
+ */
+describe("buildExecutionConfig: --ready-gate wiring (#817 AC-3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetEnvConfig.mockReturnValue({});
+  });
+
+  it("the CLI flag reaches ExecutionConfig", () => {
+    expect(
+      buildExecutionConfig({ readyGate: true } as RunOptions, makeSettings(), 1)
+        .readyGate,
+    ).toBe(true);
+  });
+
+  it("defaults to false when the flag is absent (AC-5 default-off)", () => {
+    // AC-5's whole contract is that an unset flag leaves the run path
+    // byte-identical, so the default must be `false` — not `undefined`.
+    expect(
+      buildExecutionConfig({} as RunOptions, makeSettings(), 1).readyGate,
+    ).toBe(false);
+  });
+
+  it("survives the resolveRunOptions hop end-to-end (Commander key → config)", () => {
+    // Commander derives the option key from the flag (`--ready-gate` →
+    // `readyGate`), so the real path is cliOptions → resolveRunOptions →
+    // buildExecutionConfig. A whitelist or rename anywhere in that chain
+    // silently re-inerts the flag; this drives the whole hop.
+    const resolved = resolveRunOptions(
+      { readyGate: true } as RunOptions,
+      makeSettings(),
+    );
+    expect(resolved.readyGate).toBe(true);
+    expect(buildExecutionConfig(resolved, makeSettings(), 1).readyGate).toBe(
+      true,
+    );
+  });
+
+  it("no settings key can switch the gate on (AC-4: opt-in only)", () => {
+    // AC-4 forbids new configuration surface: the flag is the *only* way in.
+    // A settings-backed default would be a new policy surface and would also
+    // break AC-5's byte-identical-without-the-flag guarantee.
+    const settings = makeSettings() as SequantSettings & {
+      ready?: { policy: string };
+    };
+    settings.ready = { policy: "a-plus" };
+    expect(
+      buildExecutionConfig({} as RunOptions, settings as SequantSettings, 1)
+        .readyGate,
+    ).toBe(false);
   });
 });
