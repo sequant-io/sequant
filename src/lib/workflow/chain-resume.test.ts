@@ -225,6 +225,153 @@ describe("computeChainResumePlan (#760)", () => {
   });
 });
 
+/**
+ * #837: `--chain --ready-gate` terminal statuses.
+ *
+ * A gated link never reaches `ready_for_merge` by design (#817) — it ends in
+ * `waiting_for_human_merge` (threshold reached) or `blocked` (guard halt).
+ * Before #837 neither was in COMPLETED_STATUSES, so resuming re-executed every
+ * already-gated link from phase 0: a full spec/exec/qa pipeline plus another
+ * full-weight ready gate, silently, on exactly the runs a user opted into for
+ * extra rigor.
+ *
+ * These are the mutation-sensitive gates: dropping `waiting_for_human_merge`
+ * from COMPLETED_STATUSES must fail them.
+ */
+describe("computeChainResumePlan — ready-gate terminal statuses (#837)", () => {
+  it("waiting_for_human_merge is a completed prefix — the gated link is skipped, NOT re-executed (AC-1, AC-4)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", "feature/1-a", "/wt/1"),
+        link(2, "in_progress", "feature/2-b", "/wt/2"),
+      ],
+      "main",
+      resolver({ "feature/1-a": "sha-gated1" }),
+    );
+    // The gate: #1 must land in `skipped`, never in `active`.
+    expect(plan.skipped.map((s) => s.issueNumber)).toEqual([1]);
+    expect(plan.active).toEqual([2]);
+    expect(plan.active).not.toContain(1);
+    expect(plan.skipped[0].status).toBe("waiting_for_human_merge");
+    // ...and its committed tip becomes the resume base, not `main` (#748).
+    expect(plan.resumeBase).toBe("feature/1-a");
+    expect(plan.resumeBaseCommit).toBe("sha-gated1");
+    expect(plan.resumeIssue).toBe(2);
+    expect(plan.failFast).toBeUndefined();
+  });
+
+  it("peels a multi-link gated prefix, mixed with ready_for_merge and merged (AC-1)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "merged", "feature/1-a"),
+        link(2, "ready_for_merge", "feature/2-b"),
+        link(3, "waiting_for_human_merge", "feature/3-c"),
+        link(4, "in_progress", "feature/4-d"),
+      ],
+      "main",
+      resolver({ "feature/3-c": "sha-gated3" }),
+    );
+    expect(plan.skipped.map((s) => s.issueNumber)).toEqual([1, 2, 3]);
+    expect(plan.active).toEqual([4]);
+    expect(plan.resumeBase).toBe("feature/3-c");
+  });
+
+  it("a fully gated chain is allComplete — nothing re-executed (AC-1)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", "feature/1-a"),
+        link(2, "waiting_for_human_merge", "feature/2-b"),
+      ],
+      "main",
+      resolver(),
+    );
+    expect(plan.allComplete).toBe(true);
+    expect(plan.active).toEqual([]);
+  });
+
+  it("blocked is NOT a completed prefix — a guard-halted link is re-executed, never silently skipped (AC-2)", () => {
+    // `blocked` means the ready gate halted and the link needs human attention.
+    // Skipping it would report it as passed when it demonstrably did not.
+    const plan = computeChainResumePlan(
+      [
+        link(1, "blocked", "feature/1-a", "/wt/1"),
+        link(2, "in_progress", "feature/2-b", "/wt/2"),
+      ],
+      "main",
+      resolver({ "feature/1-a": "sha-blocked1" }),
+    );
+    expect(plan.skipped).toEqual([]);
+    expect(plan.active).toEqual([1, 2]);
+    expect(plan.resumeBase).toBeUndefined();
+    expect(plan.allComplete).toBe(false);
+  });
+
+  it("blocked after a gated prefix stops the peel and becomes the resume point (AC-2)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", "feature/1-a"),
+        link(2, "blocked", "feature/2-b"),
+        link(3, "waiting_for_human_merge", "feature/3-c"),
+      ],
+      "main",
+      resolver({ "feature/1-a": "sha-gated1" }),
+    );
+    // #1 peels; #2 halts the peel; #3 sits behind a hole and is re-executed.
+    expect(plan.skipped.map((s) => s.issueNumber)).toEqual([1]);
+    expect(plan.active).toEqual([2, 3]);
+    expect(plan.resumeIssue).toBe(2);
+  });
+
+  it("dirty worktree on a gated resume base still fails fast, and names the gated status (AC-3)", () => {
+    // The checkpoint commit failed, so `feature/1-a`'s tip is missing #1's work
+    // — rebasing #2 onto it is the wrong-base execution AC-3 forbids.
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", "feature/1-a", "/wt/1"),
+        link(2, "in_progress", "feature/2-b", "/wt/2"),
+      ],
+      "main",
+      resolver({ "feature/1-a": "sha-gated1" }, "basetip0000", ["/wt/1"]),
+    );
+    expect(plan.failFast).toBeDefined();
+    expect(plan.failFast).toContain("#1");
+    expect(plan.failFast).toContain("uncommitted changes");
+    expect(plan.failFast).toContain("/wt/1");
+    // The message must name the status actually persisted, not `ready_for_merge`
+    // — a gated link never reaches that status.
+    expect(plan.failFast).toContain("waiting_for_human_merge");
+    expect(plan.resumeBase).toBeUndefined();
+    expect(plan.resumeIssue).toBe(2);
+  });
+
+  it("gated link with a destroyed branch fails fast, naming the gated status (AC-3)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", "feature/1-a", "/wt/1"),
+        link(2, "in_progress", "feature/2-b", "/wt/2"),
+      ],
+      "main",
+      resolver({ "feature/1-a": undefined }),
+    );
+    expect(plan.failFast).toContain("no longer exists");
+    expect(plan.failFast).toContain("waiting_for_human_merge");
+    expect(plan.resumeBase).toBeUndefined();
+  });
+
+  it("gated link with no branch recorded fails fast, naming the gated status (AC-3)", () => {
+    const plan = computeChainResumePlan(
+      [
+        link(1, "waiting_for_human_merge", undefined, "/wt/1"),
+        link(2, "in_progress", "feature/2-b"),
+      ],
+      "main",
+      resolver(),
+    );
+    expect(plan.failFast).toContain("no branch is recorded");
+    expect(plan.failFast).toContain("waiting_for_human_merge");
+  });
+});
+
 describe("planChainResumeFromState (#760)", () => {
   const stateSource =
     (states: Record<number, PersistedLinkState | undefined>) =>
@@ -304,5 +451,23 @@ describe("planChainResumeFromState (#760)", () => {
     expect(plan.skipped).toEqual([]);
     expect(plan.allComplete).toBe(false);
     expect(plan.failFast).toBeUndefined();
+  });
+
+  it("reads a gated link's persisted status and peels it, but not a blocked one (#837)", async () => {
+    // End-to-end through the state-reading half: the statuses `--ready-gate`
+    // actually persists must survive the state → planner hop.
+    const plan = await planChainResumeFromState(
+      [1, 2, 3],
+      "main",
+      stateSource({
+        1: { status: "waiting_for_human_merge", branch: "feature/1-a" },
+        2: { status: "blocked", branch: "feature/2-b" },
+        3: { status: "waiting_for_human_merge", branch: "feature/3-c" },
+      }),
+      resolver({ "feature/1-a": "sha-gated1" }),
+    );
+    expect(plan.skipped.map((s) => s.issueNumber)).toEqual([1]);
+    expect(plan.active).toEqual([2, 3]);
+    expect(plan.resumeBase).toBe("feature/1-a");
   });
 });

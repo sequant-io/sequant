@@ -122,6 +122,7 @@ import {
   type ChainResumePlan,
   type CompletedLinkResolver,
 } from "./chain-resume.js";
+import { isCompletedIssueStatus } from "./completed-status.js";
 import { MetricsWriter } from "./metrics-writer.js";
 import { WorkflowEventEmitter } from "./event-emitter.js";
 import type { IssueEventStatus } from "./event-emitter.js";
@@ -839,11 +840,7 @@ export class RunOrchestrator {
         for (const issueNumber of issueNumbers) {
           try {
             const issueState = await stateManager.getIssueState(issueNumber);
-            if (
-              issueState &&
-              (issueState.status === "ready_for_merge" ||
-                issueState.status === "merged")
-            ) {
+            if (issueState && isCompletedIssueStatus(issueState.status)) {
               console.log(
                 chalk.yellow(
                   `  !  #${issueNumber}: already ${issueState.status} — skipping (use --force to re-run)`,

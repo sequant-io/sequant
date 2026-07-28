@@ -460,7 +460,9 @@ export interface RunOptions {
   noPr?: boolean;
   /**
    * Force re-execution of issues even if they have completed status.
-   * Bypasses the pre-flight state guard that skips ready_for_merge/merged issues.
+   * Bypasses the pre-flight state guard that skips completed issues — see
+   * `isCompletedIssueStatus` (completed-status.ts) for exactly which statuses
+   * that covers, and why `blocked` is not one of them.
    */
   force?: boolean;
   /**
