@@ -10,6 +10,9 @@ import type { ShutdownManager } from "../shutdown.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import type { SequantError } from "../errors.js";
 import type { ErrorCategory } from "./error-classifier.js";
+// Type-only import — erased at compile, so the ready-gate ⇄ types cycle is
+// purely nominal (ready-gate.ts imports these types back, also type-only).
+import type { ReadyResult } from "./ready-gate.js";
 
 // Importing the registry triggers its side-effect registrations (built-ins
 // live at the bottom of phase-registry.ts), guaranteeing the registry is
@@ -188,6 +191,17 @@ export interface ExecutionConfig {
    */
   fullQa?: boolean;
   /**
+   * Run the post-QA ready gate after the standard phases succeed (#817).
+   *
+   * When true, `runIssueWithLogging` invokes the existing `sequant ready`
+   * engine (`runReadyGate`) at the PR seam — before rebase/PR so the gate's
+   * auto-fix commits land in the PR — driving the issue to the configured
+   * `settings.ready.policy` threshold. It NEVER merges: the run terminates with
+   * the issue in `waiting_for_human_merge` (ready) or `blocked` (guard halt).
+   * Default off; when unset the run path is byte-identical to pre-#817.
+   */
+  readyGate?: boolean;
+  /**
    * Total wait budget, in minutes, for auto-waiting out an exhausted
    * rate-limit window (#804). `0` (the default) disables auto-wait entirely,
    * preserving the #761/#799 halt behavior byte-for-byte.
@@ -329,6 +343,14 @@ export interface IssueResult {
    * privacy contract). Absent on success.
    */
   failureCategory?: ErrorCategory;
+  /**
+   * Outcome of the post-QA ready gate (#817), present only when the run was
+   * invoked with `--ready-gate` and the gate actually ran (i.e. the standard
+   * phases succeeded). Carries the terminal reason, the persisted issue status
+   * (`waiting_for_human_merge` / `blocked` — never merged), and the rendered
+   * report the summary and PR body surface. Absent on runs without the flag.
+   */
+  readyGate?: ReadyResult;
 }
 
 /**
@@ -489,6 +511,16 @@ export interface RunOptions {
    * Resolution priority: this CLI flag → settings.run.relay → default (true).
    */
   relay?: boolean;
+  /**
+   * Run the post-QA ready gate after the standard phases succeed (#817). Set via
+   * `--ready-gate`. When true, the run drives the issue to the configured
+   * `settings.ready.policy` threshold through the existing `sequant ready`
+   * engine before creating the PR, then STOPS at the human merge gate — it never
+   * merges. Off by default; opt-in only, so an unset flag leaves the run path
+   * (including the #749 break-to-PR behavior) unchanged. Reuses `ready`'s policy
+   * and bounds wholesale — no new settings accompany this flag.
+   */
+  readyGate?: boolean;
 }
 
 /**

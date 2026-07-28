@@ -209,6 +209,25 @@ export function displaySummary(
     });
   }
 
+  // #817: when `--ready-gate` ran, surface each issue's gate outcome (threshold
+  // reached vs guard halt) in the summary the same way `sequant ready` reports
+  // it — the "never merged" contract and stop reason are the human's cue to
+  // review and merge manually. Only issues that actually ran the gate carry it.
+  const gated = results.filter((r) => r.readyGate);
+  if (gated.length > 0) {
+    console.log(colors.muted("  Ready gate (#817) — never merged:"));
+    for (const r of gated) {
+      const g = r.readyGate!;
+      const label = g.ready
+        ? colors.success(`✓ ${g.reason}`)
+        : colors.warning(`⚠️  ${g.reason}`);
+      console.log(
+        `     #${r.issueNumber}: ${label} · policy \`${g.policy}\` · ${g.iterations} QA pass(es) · status \`${g.issueStatus}\``,
+      );
+    }
+    console.log("");
+  }
+
   // #760: a chain link whose checkpoint commit failed keeps its own work but
   // loses the recovery point resume depends on, and the per-issue warning has
   // long scrolled past by now on a multi-hour chain. Restate it at the summary,

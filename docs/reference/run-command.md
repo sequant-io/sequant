@@ -65,6 +65,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--batch "<issues>"` | Group issues to run together | - |
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
 | `--auto-wait <minutes>` | Total minutes willing to wait for an exhausted rate-limit window to reopen instead of halting. See [Auto-wait](#auto-wait-for-a-rate-limit-window) | `0` (off) |
+| `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate-post-qa-second-look) | `false` (off) |
 
 ### Available Phases
 
@@ -245,6 +246,31 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 **Locks are held for the duration.** A waiting run keeps its worktree and issue locks. This is deliberate rather than an oversight: Claude rate limits are **account-wide**, so no other run could make progress during that window anyway — releasing the locks would only invite a second run to fail against the same closed window.
 
 **In-process only.** The wait is a sleep inside the running process: it does **not** survive closing the terminal, and there is no scheduled re-entry. Durable out-of-process resume (persist a wake time, exit, let a scheduler re-enter) is deliberately out of scope here. For long waits, run under `tmux`/`screen` or leave the terminal open.
+
+### Ready Gate (post-QA second look)
+
+**Default: off.** `--ready-gate` opts a `sequant run` into the same post-QA gate as [`sequant ready`](ready-command.md), without the second manual command. It automates the maintainer's habitual any-gaps → fix-gaps → merge triple: after a fresh `/qa` accepts an issue, drive one more full-weight `qa → loop → qa` pass to catch what the first pass missed, then hand back to a human.
+
+```bash
+npx sequant run 42 --ready-gate      # phases, then the gate, then a PR — never merges
+```
+
+**When the gate runs.** Once an issue's standard phases succeed, and **before** the PR is created — so any fixes the gate makes are committed into the branch the PR opens on. Without the flag, nothing changes: a run still breaks to PR as before (an `AC_MET_BUT_NOT_A_PLUS` verdict is surfaced in the PR body per #749, not re-driven).
+
+**It never merges.** The gate is the reusable engine behind `sequant ready`; its contract is unchanged here. The run terminates with the PR open and the issue persisted as `waiting_for_human_merge` (gate reached its threshold) or `blocked` (a guard — `MAX_ITERATIONS`, `TOKEN_BUDGET`, `LOOP_NO_DIFF`, or a failed loop — halted it first). The human merge gate is deliberate policy.
+
+**No new knobs.** Everything the gate needs comes from the machinery you already configure:
+
+| Behavior | Source |
+|----------|--------|
+| Gate policy (`ac` / `a-plus`) | `ready.policy` in `.sequant/settings.json` |
+| Iteration cap | the run's `--max-iterations` / `run.maxIterations` |
+| Token budget | disabled on the run path (the iteration cap bounds cost) |
+| Stagnation guard, Non-Goals handling | internal to the gate engine (Non-Goals parsed from the issue body) |
+
+Under the default `ac` policy an `AC_MET_BUT_NOT_A_PLUS` verdict is already at threshold, so the gate's value there is the **fresh second look** — a re-verification that can surface (and then loop-fix) an `AC_NOT_MET` the first pass accepted — not an automatic push to A+. Set `ready.policy` to `a-plus` to drive toward `READY_FOR_MERGE`.
+
+The gate outcome (threshold reached vs guard halt) is surfaced in both the end-of-run summary and the PR body, the same way `sequant ready` reports it.
 
 **Checkpoint Commits:**
 

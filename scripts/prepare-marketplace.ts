@@ -386,6 +386,21 @@ sequant run 42 --auto-wait 360   # wait up to 6 hours total for the window to re
 
 Also settable as \`run.autoWaitMinutes\` or \`SEQUANT_AUTO_WAIT_MINUTES\`. Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
 
+## Running the ready gate inside \`run\`
+
+\`--ready-gate\` opts a \`sequant run\` into the same post-QA gate as \`sequant ready\`, without the second manual command — it automates the habitual any-gaps → fix-gaps second look:
+
+\`\`\`bash
+sequant run 42 --ready-gate   # phases, then the gate, then a PR — never merges
+\`\`\`
+
+- **Off by default** — without the flag the run path is unchanged.
+- Once the standard phases pass, the gate runs a full-weight \`qa → loop → qa\` pass (to \`ready.policy\`) **before** the PR opens, so its fixes land in the PR.
+- **It never merges.** The run stops at the human merge gate with the issue \`waiting_for_human_merge\` (threshold reached) or \`blocked\` (a guard halted it).
+- Reuses \`ready\`'s policy, iteration cap, and stagnation guard — **no new settings**.
+
+Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#ready-gate-post-qa-second-look).
+
 ## Documentation
 
 - [Getting Started](https://github.com/sequant-io/sequant/tree/main/docs/getting-started)
