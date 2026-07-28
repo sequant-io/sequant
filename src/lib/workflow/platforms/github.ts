@@ -18,6 +18,7 @@ import type {
   PRStatus,
   Comment,
 } from "./platform-provider.js";
+import type { AnnotatedCheck } from "../../qa/infra-blocked-ci.js";
 
 /**
  * PR merge status values (matches the casing returned by `gh pr view`).
@@ -68,6 +69,32 @@ export interface BatchGitHubResult {
   pullRequests: Record<number, BatchPRInfo>;
   error?: string;
 }
+
+/**
+ * A single entry in a PR's `statusCheckRollup`.
+ *
+ * `gh pr view N --json statusCheckRollup` returns a heterogeneous array of two
+ * shapes, discriminated by `__typename`:
+ *  - `CheckRun` (GitHub Actions / Checks API): progress in `status`
+ *    (QUEUED | IN_PROGRESS | COMPLETED) with the outcome in `conclusion`.
+ *  - `StatusContext` (legacy commit statuses): combined state in `state`
+ *    (EXPECTED | PENDING | SUCCESS | FAILURE | ERROR).
+ * Only the fields the watch loop consumes are typed; unknown fields are ignored.
+ */
+export interface RollupEntry {
+  __typename?: string;
+  name?: string;
+  context?: string;
+  /** CheckRun progress. */
+  status?: string;
+  /** CheckRun outcome. */
+  conclusion?: string;
+  /** StatusContext combined state. */
+  state?: string;
+}
+
+/** PR mergeability as reported by `gh pr view --json mergeable`. */
+export type MergeableState = "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
 
 export class GitHubProvider implements PlatformProvider {
   name = "github";
@@ -582,6 +609,181 @@ export class GitHubProvider implements PlatformProvider {
       return result.status === 0;
     } catch {
       return false;
+    }
+  }
+
+  // ─── Watch / CI-rollup helpers (for `merge --watch`, #818) ─────────
+
+  /**
+   * Fetch a PR's status-check rollup via `statusCheckRollup`.
+   *
+   * Uses `statusCheckRollup`, NOT the known-broken `--json checks` field
+   * (#443 / #818). Returns the raw heterogeneous entries; callers classify
+   * terminal-ness with the helpers in `merge-check/watch.ts`. Returns `[]` on
+   * any error so a transient `gh` failure degrades to "no checks yet" rather
+   * than crashing a poll loop.
+   */
+  getStatusCheckRollupSync(prNumber: number): RollupEntry[] {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "pr",
+          "view",
+          String(prNumber),
+          "--json",
+          "statusCheckRollup",
+          "-q",
+          ".statusCheckRollup",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      if (result.status !== 0 || !result.stdout) return [];
+      const parsed = JSON.parse(result.stdout);
+      return Array.isArray(parsed) ? (parsed as RollupEntry[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Fetch a PR's mergeability state via `--json mergeable`.
+   *
+   * Right after a push GitHub reports `UNKNOWN` while it recomputes, then
+   * settles to `MERGEABLE` or `CONFLICTING`. `merge --watch` treats
+   * `CONFLICTING` as a dispatch block: CI never starts against an unmergeable
+   * ref. Returns `UNKNOWN` on any error — the safe default that keeps the loop
+   * polling rather than falsely reporting a conflict.
+   */
+  getMergeableStateSync(prNumber: number): MergeableState {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "pr",
+          "view",
+          String(prNumber),
+          "--json",
+          "mergeable",
+          "-q",
+          ".mergeable",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+      );
+      if (result.status === 0 && result.stdout) {
+        const state = result.stdout.toString().trim().toUpperCase();
+        if (
+          state === "MERGEABLE" ||
+          state === "CONFLICTING" ||
+          state === "UNKNOWN"
+        ) {
+          return state;
+        }
+      }
+    } catch {
+      // fall through to UNKNOWN
+    }
+    return "UNKNOWN";
+  }
+
+  /**
+   * Get a PR's head commit SHA via `--json headRefOid`.
+   *
+   * Needed to query the commit's check-run annotations for the billing-lockout
+   * signature. Returns `null` on error.
+   */
+  getPRHeadShaSync(prNumber: number): string | null {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "pr",
+          "view",
+          String(prNumber),
+          "--json",
+          "headRefOid",
+          "-q",
+          ".headRefOid",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 10000 },
+      );
+      if (result.status === 0 && result.stdout) {
+        const sha = result.stdout.toString().trim();
+        return sha || null;
+      }
+    } catch {
+      // fall through to null
+    }
+    return null;
+  }
+
+  /**
+   * Fetch check-run annotations for a commit, shaped for `detectInfraBlockedCi`.
+   *
+   * Lists the commit's check runs (per_page=100, no pagination needed for the
+   * billing-lockout case — every run carries the same annotation, so the first
+   * page is representative), then fetches annotations for each run that reports
+   * any. Used only when the whole board is failing, to recognise the "job was
+   * not started" signature (#820). Degrades to `[]` on any error (404, rate
+   * limit, revoked token) so a broken-CI situation never crashes the watch
+   * loop — `detectInfraBlockedCi` then reads that as "not infra-blocked".
+   */
+  getCheckRunAnnotationsSync(headSha: string): AnnotatedCheck[] {
+    try {
+      const listResult = spawnSync(
+        "gh",
+        [
+          "api",
+          `repos/{owner}/{repo}/commits/${headSha}/check-runs?per_page=100`,
+          "-q",
+          ".check_runs",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      if (listResult.status !== 0 || !listResult.stdout) return [];
+      const runs = JSON.parse(listResult.stdout);
+      if (!Array.isArray(runs)) return [];
+
+      const annotated: AnnotatedCheck[] = [];
+      for (const run of runs as Array<{
+        id?: number | string;
+        name?: string;
+        output?: { annotations_count?: number };
+      }>) {
+        const checkName = typeof run?.name === "string" ? run.name : "unknown";
+        const id = run?.id;
+        if (typeof id !== "number" && typeof id !== "string") continue;
+        // Skip runs that explicitly report zero annotations; keep fetching when
+        // the count is unknown, so a missing field never hides the signature.
+        const count = run?.output?.annotations_count;
+        if (typeof count === "number" && count === 0) continue;
+
+        const annResult = spawnSync(
+          "gh",
+          ["api", `repos/{owner}/{repo}/check-runs/${id}/annotations`],
+          {
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+            timeout: 15000,
+          },
+        );
+        if (annResult.status !== 0 || !annResult.stdout) {
+          annotated.push({ checkName, annotations: [] });
+          continue;
+        }
+        try {
+          const annotations = JSON.parse(annResult.stdout);
+          annotated.push({
+            checkName,
+            annotations: Array.isArray(annotations) ? annotations : [],
+          });
+        } catch {
+          annotated.push({ checkName, annotations: [] });
+        }
+      }
+      return annotated;
+    } catch {
+      return [];
     }
   }
 

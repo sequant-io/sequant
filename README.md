@@ -239,7 +239,7 @@ Most work goes through a handful of top-level commands. The rest are either pipe
 | `/assess <issues…>` | Triage one or more issues; emits a dashboard + ready-to-paste `run` commands (6-action vocabulary). |
 | `npx sequant run <issues…>` | Headless equivalent of `/fullsolve`; batches run in parallel. Add `-Q` for the quality loop. |
 | `/qa <issue>` | Code review + quality gate; posts findings as issue comments. |
-| `npx sequant merge <issues…>` | Batch integration QA before merging. |
+| `npx sequant merge <issues…>` | Batch integration QA before merging. Add `--watch` to wait for each PR's CI checks to finish (configurable `--interval`/`--timeout`), then run the checks and report — it never merges. |
 
 ### Pipeline internals
 
