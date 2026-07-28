@@ -80,59 +80,59 @@ describe("#833 numeric flags are validated at the CLI boundary", () => {
 
   // Positive control. Without it the suite would pass just as happily if these
   // flags rejected *every* value, which would be a worse bug than the one being
-  // fixed. Each invocation below is chosen to exit without doing real work:
+  // fixed. Each invocation is chosen to exit without doing real work:
   //
   //   run   — a deliberately bad `--phases` throws during coercion, after the
   //           numeric flag has already been accepted. No workflow starts.
   //   ready — issue #999999 has no worktree, so it exits before any phase.
   //   abort — no running session for #999999, so it exits before any signal.
+  //
+  // `reached` is what stops these from passing vacuously. Asserting only the
+  // *absence* of a coercion error would stay green if the command started
+  // failing earlier for some unrelated reason — the flag would never be parsed
+  // at all and the test would still report success. Pinning the specific
+  // downstream message proves the run actually got past argument coercion.
   it.each([
     [
       "a valid --timeout on run",
       ["run", "1", "--timeout", "60", "--phases", "bogus"],
+      /Unknown phase 'bogus'/,
     ],
     [
       "a valid --max-iterations on run",
       ["run", "1", "--max-iterations", "5", "--phases", "bogus"],
+      /Unknown phase 'bogus'/,
     ],
     [
       "a valid --concurrency on run",
       ["run", "1", "--concurrency", "3", "--phases", "bogus"],
+      /Unknown phase 'bogus'/,
     ],
     [
       "--auto-wait 0, the documented 'off' value (#804)",
       ["run", "1", "--auto-wait", "0", "--phases", "bogus"],
+      /Unknown phase 'bogus'/,
     ],
     [
       "a valid --timeout on ready",
       ["ready", "999999", "--timeout", "60", "--json"],
+      /No worktree found for issue #999999/,
     ],
     [
       "a valid --budget on ready",
       ["ready", "999999", "--budget", "50000", "--json"],
+      /No worktree found for issue #999999/,
     ],
     [
       "--grace 0, meaning escalate immediately",
       ["abort", "999999", "--grace", "0", "--json"],
+      /No relay PID found for #999999/,
     ],
-  ])("accepts %s", (_label, args) => {
+  ])("accepts %s", (_label, args, reached) => {
     const { output } = runCli(args);
     expect(output).not.toMatch(/expects a whole number/);
     expect(output).not.toMatch(/must be at least/);
-  });
-
-  it("the positive control really does exit during parsing, not mid-run", () => {
-    // Guards the control above: if `--phases bogus` ever stopped throwing, the
-    // `run` cases would start real workflows instead of proving anything.
-    const { status, output } = runCli([
-      "run",
-      "1",
-      "--timeout",
-      "60",
-      "--phases",
-      "bogus",
-    ]);
-    expect(output).toMatch(/Unknown phase 'bogus'/);
-    expect(status).not.toBe(0);
+    // Proves the command got *past* coercion rather than dying before it.
+    expect(output).toMatch(reached);
   });
 });
