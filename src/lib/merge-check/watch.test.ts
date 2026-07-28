@@ -12,6 +12,10 @@ import {
   isRollupEntryTerminal,
   classifyTick,
   waitForChecks,
+  resolveWatchTiming,
+  DEFAULT_WATCH_INTERVAL_S,
+  DEFAULT_WATCH_TIMEOUT_S,
+  MIN_WATCH_INTERVAL_MS,
   type WatchGitHub,
 } from "./watch.js";
 import type {
@@ -299,5 +303,84 @@ describe("waitForChecks", () => {
     );
     // No SHA → no annotations → detector says not-blocked → real terminal verdict.
     expect(result.status).toBe("terminal");
+  });
+
+  // Regression: a malformed `--interval`/`--timeout` used to reach the loop as
+  // NaN, making `now >= deadline` permanently false and `setTimeout` fire
+  // immediately — an unbounded, zero-delay `gh` spawn loop that never exits.
+  // The fake clock only advances via the injected sleep, so a loop that fails
+  // to sleep also fails to advance time: an unguarded loop hangs here forever
+  // rather than failing an assertion, hence the explicit poll ceiling.
+  it.each([
+    ["NaN interval and NaN timeout", NaN, NaN],
+    ["valid interval, NaN timeout", 1000, NaN],
+    ["zero interval, valid timeout", 0, 60_000],
+    ["negative timeout", 1000, -1],
+  ])(
+    "always terminates and sleeps a real interval: %s",
+    async (_label, intervalMs, timeoutMs) => {
+      const gh = fakeGitHub({
+        getStatusCheckRollupSync: () => [checkRun("IN_PROGRESS")],
+      });
+      let polls = 0;
+      let clock = 0;
+      const sleep = vi.fn(async (ms: number) => {
+        polls++;
+        if (polls > 5000) throw new Error("runaway loop: never timed out");
+        // A zero/NaN delay would leave the clock frozen and loop forever.
+        expect(ms).toBeGreaterThanOrEqual(1000);
+        clock += ms;
+      });
+
+      const result = await waitForChecks(
+        42,
+        { intervalMs, timeoutMs },
+        gh,
+        sleep,
+        () => clock,
+      );
+
+      expect(result.status).toBe("timeout");
+      expect(polls).toBeLessThan(5000);
+    },
+    10_000,
+  );
+});
+
+describe("resolveWatchTiming", () => {
+  it("applies defaults when flags are omitted", () => {
+    expect(resolveWatchTiming({})).toEqual({
+      intervalMs: DEFAULT_WATCH_INTERVAL_S * 1000,
+      timeoutMs: DEFAULT_WATCH_TIMEOUT_S * 1000,
+    });
+  });
+
+  it("passes through valid values", () => {
+    expect(resolveWatchTiming({ interval: 5, timeout: 60 })).toEqual({
+      intervalMs: 5000,
+      timeoutMs: 60_000,
+    });
+  });
+
+  // The motivating defect: `parseInt("abc", 10)` is NaN, which is not nullish
+  // and so survived the previous `?? DEFAULT`.
+  it.each([
+    ["NaN (e.g. --timeout abc)", NaN],
+    ["undefined", undefined],
+    ["zero", 0],
+    ["negative", -30],
+    ["Infinity", Infinity],
+  ])("falls back to defaults for %s", (_label, bad) => {
+    expect(resolveWatchTiming({ interval: bad, timeout: bad })).toEqual({
+      intervalMs: DEFAULT_WATCH_INTERVAL_S * 1000,
+      timeoutMs: DEFAULT_WATCH_TIMEOUT_S * 1000,
+    });
+  });
+
+  it("clamps a sub-second interval up to the floor", () => {
+    // Guards against zero-delay `gh` spawn loops tripping rate limits.
+    expect(resolveWatchTiming({ interval: 0.1 }).intervalMs).toBe(
+      MIN_WATCH_INTERVAL_MS,
+    );
   });
 });

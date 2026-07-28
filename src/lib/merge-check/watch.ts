@@ -171,6 +171,54 @@ export interface WatchOptions {
   onPoll?: (message: string) => void;
 }
 
+/** Default watch poll interval (seconds) when `--interval` is not given. */
+export const DEFAULT_WATCH_INTERVAL_S = 30;
+/** Default watch timeout (seconds) when `--timeout` is not given: 30 minutes. */
+export const DEFAULT_WATCH_TIMEOUT_S = 1800;
+
+/**
+ * Smallest poll interval we will ever use, in milliseconds.
+ *
+ * A zero/sub-second interval turns the gate into a tight `gh`-spawning loop that
+ * can trip GitHub rate limiting, so the floor is enforced even against an
+ * explicit request.
+ */
+export const MIN_WATCH_INTERVAL_MS = 1000;
+
+/**
+ * Convert user-supplied `--interval`/`--timeout` *seconds* into validated
+ * milliseconds, falling back to the defaults for anything unusable.
+ *
+ * Why this exists: `??` only defends against `null`/`undefined`, and
+ * `parseInt("abc", 10)` yields `NaN`, which is neither. A `NaN` timeout makes
+ * `start + timeoutMs` `NaN`, so `now >= deadline` is permanently false and the
+ * watch loop never gives up; a `NaN`/`0` interval makes `setTimeout` fire
+ * immediately, so it never sleeps either. The two combine into an unbounded,
+ * zero-delay poll loop. This mirrors the numeric-input guards used elsewhere in
+ * the codebase (`batch-executor.ts` `maxIter`/`autoWait`, `merge.ts` issue-number
+ * parsing) rather than trusting the raw flag value.
+ *
+ * The CLI rejects malformed values outright (see `bin/cli.ts`); this is the
+ * defence for programmatic callers that build `MergeCommandOptions` directly.
+ */
+export function resolveWatchTiming(options: {
+  interval?: number;
+  timeout?: number;
+}): { intervalMs: number; timeoutMs: number } {
+  const seconds = (value: number | undefined, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) && value > 0
+      ? value
+      : fallback;
+
+  return {
+    intervalMs: Math.max(
+      MIN_WATCH_INTERVAL_MS,
+      seconds(options.interval, DEFAULT_WATCH_INTERVAL_S) * 1000,
+    ),
+    timeoutMs: seconds(options.timeout, DEFAULT_WATCH_TIMEOUT_S) * 1000,
+  };
+}
+
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -189,7 +237,25 @@ export async function waitForChecks(
   sleepFn: (ms: number) => Promise<void> = defaultSleep,
   nowFn: () => number = Date.now,
 ): Promise<WatchResult> {
-  const { intervalMs, timeoutMs, onPoll } = options;
+  const { onPoll } = options;
+
+  // Defensive normalisation. `resolveWatchTiming` already sanitises the CLI
+  // path, but the loop itself must be incapable of running away: a non-finite
+  // deadline makes `now >= deadline` permanently false (never times out) and a
+  // non-finite/zero interval makes `setTimeout` fire immediately (never
+  // sleeps), which together spawn `gh` in a tight loop forever. `timeoutMs: 0`
+  // is deliberately preserved — callers use it to mean "deadline already
+  // exhausted, poll once then give up" (see the shared deadline in
+  // `runWatchGate`).
+  const intervalMs = Math.max(
+    MIN_WATCH_INTERVAL_MS,
+    Number.isFinite(options.intervalMs) ? options.intervalMs : 0,
+  );
+  const timeoutMs =
+    Number.isFinite(options.timeoutMs) && options.timeoutMs >= 0
+      ? options.timeoutMs
+      : DEFAULT_WATCH_TIMEOUT_S * 1000;
+
   const start = nowFn();
   const deadline = start + timeoutMs;
   let polls = 0;
