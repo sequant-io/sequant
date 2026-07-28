@@ -2,67 +2,34 @@
  * Chain resume planning (#760).
  *
  * When a `--chain` run fails mid-way, earlier links may already be complete
- * (see {@link COMPLETED_STATUSES}) with a checkpoint commit on their feature
- * branch (`createCheckpointCommit`, worktree-manager.ts). Re-running the same
- * chain should skip that completed prefix and resume at the first incomplete
- * link, rebased onto the last completed link's committed tip — NOT `main`
- * (which is the #748 wrong-base failure this reuses the #748 rebase path to
- * avoid).
+ * (see `completed-status.ts`) with a checkpoint commit on their feature branch
+ * (`createCheckpointCommit`, worktree-manager.ts). Re-running the same chain
+ * should skip that completed prefix and resume at the first incomplete link,
+ * rebased onto the last completed link's committed tip — NOT `main` (which is
+ * the #748 wrong-base failure this reuses the #748 rebase path to avoid).
  *
- * The existing pre-flight guard (`run-orchestrator.ts`) already drops
- * `ready_for_merge`/`merged` issues from the run, but it is chain-unaware:
- * dropping the completed prefix leaves the first incomplete link at index 0,
- * where `executeSequential`'s successor-rebase never fires, so it silently
- * builds on `main`. This module computes a *chain-correct* resume plan that
- * preserves the completed prefix as the resume base.
+ * The non-chain pre-flight guard (`run-orchestrator.ts`) drops completed issues
+ * from the run using the same {@link isCompletedIssueStatus} predicate, but it
+ * is chain-unaware: dropping the completed prefix leaves the first incomplete
+ * link at index 0, where `executeSequential`'s successor-rebase never fires, so
+ * it silently builds on `main`. This module computes a *chain-correct* resume
+ * plan that preserves the completed prefix as the resume base.
  *
  * The planner is pure over an injected {@link CompletedLinkResolver} so the
  * skip/fail-fast state machine (AC-3) is unit-testable without real git; the
  * real-git rebase is covered by the integration test.
  */
 
-/**
- * Persisted issue statuses that mark a chain link as done for prefix-peeling.
- *
- * `waiting_for_human_merge` is here because of #817's `--ready-gate` (#837): a
- * gated link deliberately terminates there rather than `ready_for_merge`, which
- * would read as auto-merge-ready and defeat the human merge gate. Without it,
- * resuming a `--chain --ready-gate` run re-executed every already-gated link
- * from phase 0 — a full spec/exec/qa pipeline plus another full-weight gate.
- *
- * `blocked` is deliberately NOT here, for two reasons:
- *
- * 1. It is a *generic* member of `IssueStatusSchema` ("waiting on external input
- *    or dependency"), not a ready-gate-exclusive terminal. Admitting it would
- *    silently apply to every other writer of that status, present and future.
- * 2. A guard halt IS the human-attention signal. Skipping it as a completed
- *    prefix would report the link as passed when it demonstrably did not.
- *
- * So a `blocked` link stays in `active` and is re-executed. That is the same
- * conservative rule already applied to links whose state lookup fails (see
- * {@link planChainResumeFromState}): re-running wastes tokens, but silently
- * dropping an issue the user must look at is the worse failure. Once the user
- * clears the blocker, the re-run is what lets the chain make progress.
- *
- * Single source of truth for both the runtime check and {@link CompletedStatus},
- * so the set and the type cannot drift apart.
- */
-const COMPLETED_STATUSES = [
-  "ready_for_merge",
-  "merged",
-  "waiting_for_human_merge",
-] as const;
-
-/** A persisted status that counts as a completed chain link. */
-export type CompletedStatus = (typeof COMPLETED_STATUSES)[number];
-
-const COMPLETED_STATUS_SET = new Set<string>(COMPLETED_STATUSES);
+import {
+  isCompletedIssueStatus,
+  type CompletedIssueStatus,
+} from "./completed-status.js";
 
 /** A completed link that will be skipped (not re-executed) on resume. */
 export interface ChainResumeSkip {
   issueNumber: number;
   /** Why it was skipped — the terminal-ish status that made it complete. */
-  status: CompletedStatus;
+  status: CompletedIssueStatus;
   /** The link's local feature branch (from state), if known. */
   branch?: string;
   /** The link's worktree path (from state), if known — used for the dirty check. */
@@ -143,10 +110,10 @@ export function computeChainResumePlan(
   const skipped: ChainResumeSkip[] = [];
   let firstIncomplete = 0;
   for (const link of orderedLinks) {
-    if (link.status && COMPLETED_STATUS_SET.has(link.status)) {
+    if (isCompletedIssueStatus(link.status)) {
       skipped.push({
         issueNumber: link.issueNumber,
-        status: link.status as CompletedStatus,
+        status: link.status,
         branch: link.branch,
         worktree: link.worktree,
       });
