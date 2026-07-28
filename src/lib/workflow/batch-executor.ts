@@ -20,7 +20,9 @@ import {
   type IssueExecutionContext,
   type BatchExecutionContext,
   type ProgressCallback,
+  type PhasePauseHandle,
 } from "./types.js";
+import type { ShutdownManager } from "../shutdown.js";
 import {
   classifyError,
   errorTypeToCategory,
@@ -54,6 +56,14 @@ import {
   deactivateRelay,
   type ActivationResult,
 } from "../relay/activation.js";
+import { getSettings } from "../settings.js";
+import { GitHubProvider } from "./platforms/github.js";
+import {
+  runReadyGate,
+  parseNonGoals,
+  type ReadyResult,
+  type ReadyPhaseRunner,
+} from "./ready-gate.js";
 
 // Re-export types moved to types.ts (#402)
 export type {
@@ -555,6 +565,138 @@ export function isWindowHalt(result: PhaseResult): boolean {
  */
 export function billingHaltReason(result: PhaseResult): string {
   return result.error ?? "Out of credits";
+}
+
+/**
+ * Arguments for {@link runReadyGateForIssue}. Deliberately a flat primitive
+ * bag rather than the full `IssueExecutionContext` so the helper stays cheap to
+ * unit-test in isolation.
+ */
+interface ReadyGateForIssueArgs {
+  issueNumber: number;
+  worktreePath: string;
+  config: ExecutionConfig;
+  shutdownManager?: ShutdownManager;
+  phasePauseHandle?: PhasePauseHandle;
+  onProgress?: ProgressCallback;
+  log: (message: string) => void;
+  /** @internal Injected for testing — defaults to the real engine. */
+  runGate?: typeof runReadyGate;
+  /** @internal Injected for testing — defaults to on-disk settings. */
+  getSettingsFn?: typeof getSettings;
+  /** @internal Injected for testing — defaults to a real GitHubProvider. */
+  fetchBody?: (issueNumber: number) => string | null;
+}
+
+/**
+ * Run the post-QA ready gate (#817) for a single issue at the run path's
+ * post-success / pre-PR seam.
+ *
+ * Mirrors `src/commands/ready.ts`'s driver: resolve the policy from
+ * `settings.ready.policy` (no per-run override — AC-4 forbids new surface),
+ * parse the issue's Non-Goals for report-only classification, wrap
+ * `executePhaseWithRetry` as the gate's phase runner, and delegate the whole
+ * qa→loop→qa loop to `runReadyGate`. The token budget stays disabled (parity
+ * with `sequant ready` invoked without `--budget`); the `maxIterations` cap
+ * already bounds cost.
+ *
+ * A gate failure is non-fatal: the standard-phase work is already committed to
+ * the worktree, so we log a warning and fall through to normal PR creation
+ * rather than aborting the run (the issue then keeps its `ready_for_merge`
+ * status — the run has degraded to a standard run, and nothing about the work
+ * is actually blocked).
+ *
+ * The failure is returned rather than swallowed. A dropped gate must not be
+ * invisible: the caller opted in with `--ready-gate`, so a run whose gate never
+ * executed has to look different in the summary from one that gated cleanly —
+ * otherwise a crashed gate is indistinguishable from an approved one, and the
+ * whole point of the flag (a second look actually happened) is silently lost.
+ */
+async function runReadyGateForIssue(
+  args: ReadyGateForIssueArgs,
+): Promise<{ result?: ReadyResult; error?: string }> {
+  const {
+    issueNumber,
+    worktreePath,
+    config,
+    shutdownManager,
+    phasePauseHandle,
+    onProgress,
+    log,
+  } = args;
+  const runGate = args.runGate ?? runReadyGate;
+  const getSettingsFn = args.getSettingsFn ?? getSettings;
+  const fetchBody =
+    args.fetchBody ??
+    ((n: number) => new GitHubProvider().fetchIssueBodySync(String(n)));
+
+  try {
+    const settings = await getSettingsFn();
+    const policy = settings.ready.policy;
+
+    // Non-Goals feed the gate's report-only classification (ac mode never
+    // auto-fixes Non-Goal-touching findings). Best-effort — an unavailable
+    // body just yields no Non-Goals.
+    const body = fetchBody(issueNumber);
+    const nonGoals = body ? parseNonGoals(body) : [];
+
+    // The gate's phase runner: same executePhaseWithRetry wrapper ready.ts
+    // uses, bound to this issue's worktree, shutdown manager, and pause handle.
+    const runPhase: ReadyPhaseRunner = (phase, phaseConfig, wt) =>
+      executePhaseWithRetry(
+        issueNumber,
+        phase,
+        phaseConfig,
+        undefined,
+        wt,
+        shutdownManager,
+        phasePauseHandle,
+      );
+
+    log(
+      chalk.blue(
+        `\n  Ready gate (#817) — policy: ${policy}, max iterations: ${config.maxIterations}`,
+      ),
+    );
+
+    const result = await runGate({
+      issueNumber,
+      worktreePath,
+      policy,
+      maxIterations: config.maxIterations,
+      // AC-4: budget stays disabled on the run path (parity with `ready` sans
+      // `--budget`); maxIterations bounds cost.
+      tokenBudget: undefined,
+      nonGoals,
+      phaseTimeout: config.phaseTimeout,
+      mcp: config.mcp,
+      verbose: config.verbose,
+      runPhase,
+      onProgress,
+    });
+
+    log(
+      result.ready
+        ? chalk.green(
+            `  ✓ Ready gate: ${result.reason} — awaiting human merge (never merged)`,
+          )
+        : chalk.yellow(
+            `  ⚠️  Ready gate halted: ${result.reason} — needs human review`,
+          ),
+    );
+
+    return { result };
+  } catch (err) {
+    // Non-fatal: keep the run going to PR with the standard status, but hand
+    // the reason back so the summary can say the gate did NOT run.
+    const error = err instanceof Error ? err.message : String(err);
+    log(
+      chalk.yellow(
+        `  ⚠️  Ready gate failed for #${issueNumber}: ${error} — continuing to PR without the gate.`,
+      ),
+    );
+    return { error };
+  }
 }
 
 export async function runIssueWithLogging(
@@ -1316,10 +1458,41 @@ export async function runIssueWithLogging(
   // not whether all accumulated phase results passed (which would fail after loop recovery)
   const success = completedSuccessfully;
 
-  // Update final issue status in state
+  // #817: opt-in post-QA ready gate. When the standard phases succeed AND
+  // `--ready-gate` was passed, drive the existing `sequant ready` engine
+  // (qa→loop→qa to the configured policy) against this worktree BEFORE
+  // checkpoint/rebase/PR — so the gate's auto-fix commits land in the PR. The
+  // engine NEVER merges; it terminates with the issue `waiting_for_human_merge`
+  // (ready) or `blocked` (guard halt). Without the flag this block is skipped
+  // entirely, keeping the run path byte-identical (AC-5).
+  const readyGateOutcome =
+    config.readyGate && success && worktreePath
+      ? await runReadyGateForIssue({
+          issueNumber,
+          worktreePath,
+          config,
+          shutdownManager,
+          phasePauseHandle,
+          onProgress,
+          log,
+        })
+      : undefined;
+  const readyGateResult = readyGateOutcome?.result;
+  // Surfaced separately from `readyGateResult` so a gate that *crashed* renders
+  // differently in the summary from one that ran — a silently-skipped gate on a
+  // run the user explicitly opted into is the failure mode worth naming.
+  const readyGateError = readyGateOutcome?.error;
+
+  // Update final issue status in state. When the gate ran it owns the terminal
+  // status (never `ready_for_merge` — that would read as auto-merge-ready and
+  // defeat the human merge gate the gate deliberately stops at).
   if (stateManager) {
     try {
-      const finalStatus = success ? "ready_for_merge" : "in_progress";
+      const finalStatus = readyGateResult
+        ? readyGateResult.issueStatus
+        : success
+          ? "ready_for_merge"
+          : "in_progress";
       await stateManager.updateIssueStatus(issueNumber, finalStatus);
     } catch {
       // State tracking errors shouldn't stop execution
@@ -1402,6 +1575,9 @@ export async function runIssueWithLogging(
       labels,
       stackOptions,
       qaVerdict,
+      // #817 AC-6: surface the ready-gate outcome in the PR body the same way
+      // `sequant ready` reports it (threshold reached vs guard halt).
+      readyGateResult?.report,
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;
@@ -1448,5 +1624,9 @@ export async function runIssueWithLogging(
     prUrl,
     checkpointFailed,
     failureCategory: success ? undefined : deriveFailureCategory(phaseResults),
+    // #817: present only when `--ready-gate` ran the gate; the summary renders
+    // its terminal reason (AC-6).
+    readyGate: readyGateResult,
+    readyGateError,
   };
 }
