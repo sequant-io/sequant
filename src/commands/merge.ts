@@ -23,13 +23,9 @@ import {
 } from "../lib/merge-check/index.js";
 import type { MergeCommandOptions } from "../lib/merge-check/types.js";
 import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
-import { waitForChecks } from "../lib/merge-check/watch.js";
+import { waitForChecks, resolveWatchTiming } from "../lib/merge-check/watch.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 
-/** Default watch poll interval (seconds) when `--interval` is not given. */
-const DEFAULT_WATCH_INTERVAL_S = 30;
-/** Default watch timeout (seconds) when `--timeout` is not given: 30 minutes. */
-const DEFAULT_WATCH_TIMEOUT_S = 1800;
 /** Exit code for a watch that timed out — distinct from the 0/1/2 verdicts. */
 const EXIT_WATCH_TIMEOUT = 3;
 
@@ -145,8 +141,9 @@ async function runWatchGate(
     return true;
   }
 
-  const intervalMs = (options.interval ?? DEFAULT_WATCH_INTERVAL_S) * 1000;
-  const timeoutMs = (options.timeout ?? DEFAULT_WATCH_TIMEOUT_S) * 1000;
+  // Validated, never NaN — the shared deadline below depends on it (a NaN
+  // deadline would make every per-PR `remaining` NaN and defeat --timeout).
+  const { intervalMs, timeoutMs } = resolveWatchTiming(options);
   const deadline = Date.now() + timeoutMs;
 
   if (unresolved.length > 0 && !options.json) {
