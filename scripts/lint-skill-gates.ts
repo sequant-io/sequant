@@ -427,6 +427,40 @@ export function parseTemplateSections(content: string): Templates {
   return result;
 }
 
+/** Anchor for §7's Manual Test AC Enforcement detection pattern. */
+const MANUAL_TEST_ANCHOR = 'manual_test_acs=$(echo "$spec_comment"';
+/** Anchor for the step-3a gate that consumes that pattern. */
+const STEP_3A_ANCHOR = "Manual test AC enforcement check";
+
+/**
+ * Compile §7's live Manual Test AC Enforcement detection pattern.
+ *
+ * The pattern lives in SKILL.md as a `grep -iE '(...)'` and is the single
+ * source of truth. Reading it back rather than restating it anywhere means
+ * weakening the shipped pattern is detectable — `lintSkillContent` fails loud
+ * when step 3a declares this enforcement but the pattern cannot be compiled,
+ * and the test suite asserts the compiled pattern still matches the evidence
+ * phrasings it is supposed to catch (#819 AC-4).
+ *
+ * Scoped to the `manual_test_acs=` assignment so an unrelated `grep -iE`
+ * elsewhere in the file cannot satisfy it. Returns null when the skill has no
+ * such block.
+ */
+export function parseEvidenceAcPattern(content: string): RegExp | null {
+  const anchor = content.indexOf(MANUAL_TEST_ANCHOR);
+  if (anchor === -1) return null;
+  const region = content.slice(anchor, anchor + 600);
+  const match = /grep -iE '\((.+?)\)'/.exec(region);
+  if (!match) return null;
+  try {
+    return new RegExp(match[1], "i");
+  } catch {
+    // An ERE that JavaScript cannot compile is a real problem worth surfacing,
+    // not something to swallow into a silent null.
+    return null;
+  }
+}
+
 /**
  * Normalize a section name for cross-list comparison.
  *
@@ -716,6 +750,24 @@ export function lintSkillContent(content: string): FileResult {
         "I1 and I2 cannot be evaluated. Fix parseVerdictAlgorithm() — do not treat this as a pass.",
     });
     return { skipped: false, violations };
+  }
+
+  // If §7 declares step-3a manual-test AC enforcement, the detection pattern it
+  // runs on must be readable. Deleting or malforming the pattern would leave the
+  // declared enforcement with nothing behind it — the same prose-only condition
+  // I1 exists to catch, one level down.
+  if (
+    content.includes(STEP_3A_ANCHOR) &&
+    parseEvidenceAcPattern(content) === null
+  ) {
+    violations.push({
+      invariant: "PARSE",
+      subject: "Manual Test AC Enforcement",
+      message:
+        "§7 declares step-3a manual test AC enforcement, but no compilable " +
+        `\`grep -iE\` pattern was found in the \`${MANUAL_TEST_ANCHOR}\` block. ` +
+        "The declared enforcement has no detection behind it.",
+    });
   }
 
   const algorithmSection = sections.find((s) =>

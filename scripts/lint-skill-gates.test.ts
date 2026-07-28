@@ -13,6 +13,7 @@ import {
   lintSkillGates,
   parseChecklists,
   parseDeclaredOutputName,
+  parseEvidenceAcPattern,
   parseSections,
   parseTemplateSections,
   parseVerdictAlgorithm,
@@ -420,30 +421,11 @@ describe("AC-3 — §2h is wired into §7", () => {
 });
 
 describe("AC-6 — §7 recognises evidence-naming ACs", () => {
-  /**
-   * Extract the live detection pattern from §7's Manual Test AC Enforcement
-   * block and compile it.
-   *
-   * Reading the pattern out of SKILL.md rather than restating it here keeps
-   * SKILL.md the single source of truth: weaken the shipped pattern and this
-   * test fails. The search is scoped to the `manual_test_acs=` assignment so a
-   * `grep -iE` elsewhere in the file cannot satisfy it.
-   */
-  function evidenceAcPattern(): RegExp {
-    const content = realSkill();
-    const anchor = content.indexOf('manual_test_acs=$(echo "$spec_comment"');
-    expect(
-      anchor,
-      "manual_test_acs assignment not found in qa/SKILL.md",
-    ).toBeGreaterThan(-1);
-    const region = content.slice(anchor, anchor + 600);
-    const match = /grep -iE '\((.+?)\)'/.exec(region);
-    expect(
-      match,
-      "no grep -iE pattern found in the manual_test_acs block",
-    ).not.toBeNull();
-    return new RegExp(match![1], "i");
-  }
+  // Every test below compiles the pattern straight out of the shipped
+  // SKILL.md via parseEvidenceAcPattern, rather than restating it here. That
+  // keeps SKILL.md the single source of truth: weaken the shipped pattern and
+  // these fail. The call is inlined per test rather than hidden behind a local
+  // helper so each block visibly exercises production code.
 
   // #819's AC-4, verbatim from the issue body. The automated /qa pass marked
   // this MET on "unchanged by construction" reasoning; no corpus check was run,
@@ -455,32 +437,44 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     "issue bodies shows no behavior change.";
 
   it("matches #819's AC-4 text", () => {
-    expect(evidenceAcPattern().test(ISSUE_819_AC4)).toBe(true);
+    const pattern = parseEvidenceAcPattern(realSkill());
+    expect(pattern).not.toBeNull();
+    expect(ISSUE_819_AC4).toMatch(pattern!);
   });
 
   it("matches each evidence-naming phrasing the AC calls out", () => {
-    const pattern = evidenceAcPattern();
-    expect(pattern.test("verified by a corpus check over the run logs")).toBe(
-      true,
-    );
-    expect(pattern.test("checked against several real recent PR bodies")).toBe(
-      true,
-    );
-    expect(pattern.test("confirmed across 12 samples from production")).toBe(
-      true,
-    );
-    expect(pattern.test("behavior sampled from the last release")).toBe(true);
+    const pattern = parseEvidenceAcPattern(realSkill());
+    expect(pattern).not.toBeNull();
+    expect("verified by a corpus check over the run logs").toMatch(pattern!);
+    expect("checked against several real recent PR bodies").toMatch(pattern!);
+    expect("confirmed across 12 samples from production").toMatch(pattern!);
+    expect("behavior sampled from the last release").toMatch(pattern!);
   });
 
   it("does not match an AC that names no verification evidence", () => {
-    const pattern = evidenceAcPattern();
+    const pattern = parseEvidenceAcPattern(realSkill())!;
+    expect(pattern).not.toBeNull();
     // #834's own AC-3 — a pure structural claim, verifiable from the file itself.
     expect(
-      pattern.test(
-        "§2h CLI Registration Verification is wired — cli_registration_status " +
-          "declared in §7 step 2 and branched in step 4 flooring at AC_NOT_MET.",
-      ),
-    ).toBe(false);
-    expect(pattern.test("The lint runs as its own CI step.")).toBe(false);
+      "§2h CLI Registration Verification is wired — cli_registration_status " +
+        "declared in §7 step 2 and branched in step 4 flooring at AC_NOT_MET.",
+    ).not.toMatch(pattern);
+    expect("The lint runs as its own CI step.").not.toMatch(pattern);
+  });
+
+  it("fails loud when the declared enforcement has no pattern behind it", () => {
+    // Deleting the shipped pattern must be a lint violation, not a silent
+    // downgrade — step 3a would otherwise declare enforcement with nothing
+    // behind it, the same prose-only condition I1 exists to catch.
+    const content = mutate(
+      realSkill(),
+      "grep -iE '(\\*\\*Verification:\\*\\*\\s*Manual Test",
+      "grep -F 'Manual Test",
+    );
+    const result = lintSkillContent(content);
+    expect(invariants(result.violations)).toContain("PARSE");
+    expect(messagesFor(result.violations, "PARSE").join("\n")).toContain(
+      "has no detection behind it",
+    );
   });
 });
