@@ -507,8 +507,9 @@ export function parseEvidenceAcPattern(content: string): RegExp | null {
   try {
     return new RegExp(match[1], "i");
   } catch {
-    // An ERE that JavaScript cannot compile is a real problem worth surfacing,
-    // not something to swallow into a silent null.
+    // Null is not a swallowed error here: lintSkillContent turns a null from
+    // any of these three parsers into a PARSE violation, so an ERE that
+    // JavaScript cannot compile fails the build rather than passing quietly.
     return null;
   }
 }
@@ -804,18 +805,24 @@ export function lintSkillContent(content: string): FileResult {
     return { skipped: false, violations };
   }
 
-  // If §7 declares step-3a manual-test AC enforcement, BOTH halves of that
-  // detection must be readable — `grep` finds the lines, `awk` says which AC
-  // each belongs to. Deleting or malforming either leaves the declared
-  // enforcement with nothing behind it, the same prose-only condition I1 exists
-  // to catch, one level down. Checking only the grep half is how mutation
-  // testing found the awk half could be stripped with a green suite.
+  // If §7 declares step-3a manual-test AC enforcement, ALL THREE patterns it
+  // runs on must be readable: `grep` finds the candidate lines, and awk's
+  // anchor plus match block together say which AC each line belongs to.
+  // Deleting or malforming any one leaves the declared enforcement with nothing
+  // behind it — the same prose-only condition I1 exists to catch, one level
+  // down. Checking only the grep half is how mutation testing found the awk
+  // half could be stripped with a green suite.
   if (content.includes(STEP_3A_ANCHOR)) {
     const halves: Array<[string, RegExp | null, string]> = [
       ["detection", parseEvidenceAcPattern(content), MANUAL_TEST_ANCHOR],
       [
         "AC-ID attribution",
         parseEvidenceAcIdPattern(content),
+        MANUAL_AC_ID_ANCHOR,
+      ],
+      [
+        "AC-declaration anchor",
+        parseAcHeaderPattern(content),
         MANUAL_AC_ID_ANCHOR,
       ],
     ];

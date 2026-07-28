@@ -517,6 +517,22 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     expect(parseMessages).not.toContain("its detection half");
   });
 
+  it("fails loud when the AC-declaration anchor is removed", () => {
+    // The third pattern in the same pipeline. Removing the anchor entirely
+    // leaves awk with no notion of which AC a matched line belongs to, so
+    // attribution can never produce an ID — the failure this issue found by
+    // running §7's pipeline for real.
+    const anchorGutted = mutate(
+      realSkill(),
+      "/^(#+ AC-[0-9]+|\\*\\*AC-[0-9]+|- \\[[ x]\\] (\\*\\*)?AC-[0-9]+)/{ac=$0}",
+      "{ac=$0}",
+    );
+    const result = lintSkillContent(anchorGutted);
+    expect(messagesFor(result.violations, "PARSE").join("\n")).toContain(
+      "AC-declaration anchor half",
+    );
+  });
+
   it("fails loud when the declared enforcement has no pattern behind it", () => {
     // Deleting the shipped pattern must be a lint violation, not a silent
     // downgrade — step 3a would otherwise declare enforcement with nothing
