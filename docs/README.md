@@ -52,6 +52,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Logging](reference/logging.md) — Log configuration
 - [Telemetry](reference/telemetry.md) — Telemetry settings
 - [Permissions](reference/permissions.md) — Permission precedence and configuration
+- [Security: Trust Model](reference/security-trust-model.md) — Untrusted issue/PR text and prompt-injection hardening for public-repo runs
 - [Platform Requirements](reference/platform-requirements.md) — GitHub dependency and alternatives
 
 ### Stack-Specific Guides

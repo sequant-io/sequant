@@ -37,7 +37,7 @@ import {
 /**
  * Resolve log directory path
  */
-function resolveLogDir(customPath?: string): string {
+export function resolveLogDir(customPath?: string): string {
   if (customPath) {
     return customPath.replace("~", os.homedir());
   }
