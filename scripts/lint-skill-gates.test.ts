@@ -462,6 +462,28 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     expect("The lint runs as its own CI step.").not.toMatch(pattern);
   });
 
+  it("carries the same terms on the awk AC-ID extraction line", () => {
+    // §7 detects evidence-naming ACs with `grep`, then attributes matches to AC
+    // IDs with a second `awk` pattern. Mutation testing showed the tests above
+    // gate only the grep line: stripping the terms from awk alone left the suite
+    // green while AC-ID attribution silently stopped working. Scoped to the
+    // `manual_ac_ids=` block so the grep line cannot satisfy it.
+    const content = realSkill();
+    const anchor = content.indexOf('manual_ac_ids=$(echo "$spec_comment"');
+    expect(anchor).toBeGreaterThan(-1);
+    const awkBlock = content.slice(anchor, anchor + 500);
+    for (const term of [
+      "corpus check",
+      "against several real",
+      "[0-9]+ samples?",
+      "sampled",
+    ]) {
+      expect(awkBlock, `awk AC-ID extraction is missing "${term}"`).toContain(
+        term,
+      );
+    }
+  });
+
   it("fails loud when the declared enforcement has no pattern behind it", () => {
     // Deleting the shipped pattern must be a lint violation, not a silent
     // downgrade — step 3a would otherwise declare enforcement with nothing
