@@ -2,29 +2,34 @@
  * Chain resume planning (#760).
  *
  * When a `--chain` run fails mid-way, earlier links may already be complete
- * (`ready_for_merge`) with a checkpoint commit on their feature branch
+ * (see `completed-status.ts`) with a checkpoint commit on their feature branch
  * (`createCheckpointCommit`, worktree-manager.ts). Re-running the same chain
  * should skip that completed prefix and resume at the first incomplete link,
  * rebased onto the last completed link's committed tip — NOT `main` (which is
  * the #748 wrong-base failure this reuses the #748 rebase path to avoid).
  *
- * The existing pre-flight guard (`run-orchestrator.ts`) already drops
- * `ready_for_merge`/`merged` issues from the run, but it is chain-unaware:
- * dropping the completed prefix leaves the first incomplete link at index 0,
- * where `executeSequential`'s successor-rebase never fires, so it silently
- * builds on `main`. This module computes a *chain-correct* resume plan that
- * preserves the completed prefix as the resume base.
+ * The non-chain pre-flight guard (`run-orchestrator.ts`) drops completed issues
+ * from the run using the same {@link isCompletedIssueStatus} predicate, but it
+ * is chain-unaware: dropping the completed prefix leaves the first incomplete
+ * link at index 0, where `executeSequential`'s successor-rebase never fires, so
+ * it silently builds on `main`. This module computes a *chain-correct* resume
+ * plan that preserves the completed prefix as the resume base.
  *
  * The planner is pure over an injected {@link CompletedLinkResolver} so the
  * skip/fail-fast state machine (AC-3) is unit-testable without real git; the
  * real-git rebase is covered by the integration test.
  */
 
+import {
+  isCompletedIssueStatus,
+  type CompletedIssueStatus,
+} from "./completed-status.js";
+
 /** A completed link that will be skipped (not re-executed) on resume. */
 export interface ChainResumeSkip {
   issueNumber: number;
   /** Why it was skipped — the terminal-ish status that made it complete. */
-  status: "ready_for_merge" | "merged";
+  status: CompletedIssueStatus;
   /** The link's local feature branch (from state), if known. */
   branch?: string;
   /** The link's worktree path (from state), if known — used for the dirty check. */
@@ -47,9 +52,10 @@ export interface ChainResumePlan {
   /** First incomplete issue number (the resume point), if any. */
   resumeIssue?: number;
   /**
-   * Set when resume cannot proceed safely (AC-3): a `ready_for_merge` link's
-   * branch/checkpoint is gone and its tip is unreconstructable. The caller must
-   * abort rather than silently execute the successor on the wrong base.
+   * Set when resume cannot proceed safely (AC-3): an unmerged completed link's
+   * (`ready_for_merge` or `waiting_for_human_merge`) branch/checkpoint is gone
+   * and its tip is unreconstructable. The caller must abort rather than
+   * silently execute the successor on the wrong base.
    */
   failFast?: string;
   /** True when every link in the chain is already complete. */
@@ -83,8 +89,6 @@ export interface ChainLinkState {
   worktree?: string;
 }
 
-const COMPLETED_STATUSES = new Set(["ready_for_merge", "merged"]);
-
 /**
  * Compute a chain-correct resume plan.
  *
@@ -106,10 +110,10 @@ export function computeChainResumePlan(
   const skipped: ChainResumeSkip[] = [];
   let firstIncomplete = 0;
   for (const link of orderedLinks) {
-    if (link.status && COMPLETED_STATUSES.has(link.status)) {
+    if (isCompletedIssueStatus(link.status)) {
       skipped.push({
         issueNumber: link.issueNumber,
-        status: link.status as "ready_for_merge" | "merged",
+        status: link.status,
         branch: link.branch,
         worktree: link.worktree,
       });
@@ -145,10 +149,11 @@ export function computeChainResumePlan(
     resumeBase = baseBranch;
     resumeBaseCommit = resolver.resolveBaseTip();
   } else {
-    // ready_for_merge: the checkpoint tip lives only on the local feature
-    // branch. If that branch is gone (worktree/branch destroyed mid-way), the
-    // tip is unreconstructable — fail fast instead of wrong-basing the
-    // successor onto main (which would miss the completed link's work).
+    // ready_for_merge / waiting_for_human_merge: the checkpoint tip lives only
+    // on the local feature branch. If that branch is gone (worktree/branch
+    // destroyed mid-way), the tip is unreconstructable — fail fast instead of
+    // wrong-basing the successor onto main (which would miss the completed
+    // link's work).
     if (!last.branch) {
       return {
         skipped,
@@ -156,7 +161,7 @@ export function computeChainResumePlan(
         resumeIssue: active[0],
         allComplete: false,
         failFast:
-          `#${last.issueNumber} is ready_for_merge but no branch is recorded in state — ` +
+          `#${last.issueNumber} is ${last.status} but no branch is recorded in state — ` +
           `cannot reconstruct the resume base. Re-run with --force to redo the chain from scratch.`,
       };
     }
@@ -168,17 +173,20 @@ export function computeChainResumePlan(
         resumeIssue: active[0],
         allComplete: false,
         failFast:
-          `#${last.issueNumber} is ready_for_merge but its branch "${last.branch}" no longer exists — ` +
+          `#${last.issueNumber} is ${last.status} but its branch "${last.branch}" no longer exists — ` +
           `the resume base is unreconstructable. Re-run with --force to redo the chain from scratch.`,
       };
     }
     // The branch exists, but a tip is only a valid resume base if it actually
     // contains the link's work. `createCheckpointCommit` sweeps trailing
     // uncommitted changes into a checkpoint commit; when it fails (commit hook,
-    // staging error, or unrelated dirty files) the status was *already* written
-    // as ready_for_merge, so this link still reads as a completed prefix while
-    // its tip is missing work. Rebasing the successor onto it would be exactly
-    // the silent wrong-base execution AC-3 forbids — fail fast instead.
+    // staging error, or unrelated dirty files) a completed status was *already*
+    // written — `ready_for_merge` on a plain run, or `waiting_for_human_merge`
+    // when #817's `--ready-gate` owned the terminal status (#837) — so this link
+    // still reads as a completed prefix while its tip is missing work. Both
+    // statuses reach this branch, so the check covers gated links too. Rebasing
+    // the successor onto such a tip would be exactly the silent wrong-base
+    // execution AC-3 forbids — fail fast instead.
     if (last.worktree && resolver.isWorktreeDirty(last.worktree)) {
       return {
         skipped,
@@ -186,7 +194,7 @@ export function computeChainResumePlan(
         resumeIssue: active[0],
         allComplete: false,
         failFast:
-          `#${last.issueNumber} is ready_for_merge but its worktree has uncommitted changes — ` +
+          `#${last.issueNumber} is ${last.status} but its worktree has uncommitted changes — ` +
           `its checkpoint commit never landed, so branch "${last.branch}" is missing that work and ` +
           `resuming #${active[0]} here would build on an incomplete base. Commit them in ${last.worktree}, ` +
           `or re-run with --force to redo the chain from scratch.`,

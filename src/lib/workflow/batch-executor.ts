@@ -1486,13 +1486,16 @@ export async function runIssueWithLogging(
   // Update final issue status in state. When the gate ran it owns the terminal
   // status (never `ready_for_merge` — that would read as auto-merge-ready and
   // defeat the human merge gate the gate deliberately stops at).
+  // Hoisted out of the `if (stateManager)` block below because the checkpoint
+  // warning also has to name this status, and naming the wrong one is exactly
+  // the #837 inaccuracy being fixed here.
+  const finalStatus = readyGateResult
+    ? readyGateResult.issueStatus
+    : success
+      ? "ready_for_merge"
+      : "in_progress";
   if (stateManager) {
     try {
-      const finalStatus = readyGateResult
-        ? readyGateResult.issueStatus
-        : success
-          ? "ready_for_merge"
-          : "in_progress";
       await stateManager.updateIssueStatus(issueNumber, finalStatus);
     } catch {
       // State tracking errors shouldn't stop execution
@@ -1503,11 +1506,17 @@ export async function runIssueWithLogging(
   // #760: chain resume rebases the next link onto this checkpoint, so a failure
   // here is not silent — warn prominently and record it on the result (AC-4).
   //
-  // Note the status above is already `ready_for_merge`, so a re-run reads this
-  // link as a completed prefix and does NOT redo it. Its uncommitted work is
-  // therefore absent from the branch tip, which `computeChainResumePlan` detects
-  // (dirty worktree → fail fast) rather than wrong-basing the next link. The
-  // message states that outcome exactly: the work must be committed, or --force.
+  // Note a completed status was already written above — `ready_for_merge`, or
+  // `waiting_for_human_merge` when #817's `--ready-gate` owned the terminal
+  // status (#837) — so a re-run reads this link as a completed prefix and does
+  // NOT redo it. Its uncommitted work is therefore absent from the branch tip,
+  // which `computeChainResumePlan` detects (dirty worktree → fail fast) rather
+  // than wrong-basing the next link. The message states that outcome exactly:
+  // the work must be committed, or --force.
+  //
+  // A gate that halted (`blocked`) is NOT a completed prefix, so that link is
+  // re-executed on resume rather than skipped — see COMPLETED_STATUSES in
+  // chain-resume.ts.
   let checkpointFailed = false;
   if (success && chainMode && worktreePath) {
     const checkpointOk = createCheckpointCommit(
@@ -1522,7 +1531,7 @@ export async function runIssueWithLogging(
         chalk.yellow(
           `  ⚠️  Checkpoint commit for #${issueNumber} could not be created — its uncommitted ` +
             `changes are NOT on branch ${branch ?? "the feature branch"}. #${issueNumber} stays ` +
-            `ready_for_merge, so a re-run will skip it and refuse to resume the chain here until the ` +
+            `${finalStatus}, so a re-run will skip it and refuse to resume the chain here until the ` +
             `work is committed in ${worktreePath} (or re-run with --force to redo the whole chain).`,
         ),
       );
