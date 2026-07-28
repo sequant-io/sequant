@@ -69,14 +69,12 @@ describe("#833 numeric flags are validated at the CLI boundary", () => {
     (command, flag, badValue, expected) => {
       const { status, output } = runCli([command, "1", flag, badValue]);
       expect(output).toMatch(expected);
+      // The error must echo the offending value — "invalid" alone doesn't tell
+      // the user which of their flags is wrong.
+      expect(output).toContain(`(got '${badValue}')`);
       expect(status).not.toBe(0);
     },
   );
-
-  it("echoes the offending value in the error", () => {
-    const { output } = runCli(["run", "1", "--timeout", "30m"]);
-    expect(output).toMatch(/\(got '30m'\)/);
-  });
 
   // Positive control. Without it the suite would pass just as happily if these
   // flags rejected *every* value, which would be a worse bug than the one being

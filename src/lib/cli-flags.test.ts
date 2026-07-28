@@ -14,23 +14,26 @@ import { describe, it, expect } from "vitest";
 import { InvalidArgumentError } from "commander";
 import { parseWholeNumber, parsePositiveSeconds } from "./cli-flags.js";
 
+// Each test calls `parsePositiveSeconds` directly rather than through a
+// describe-scope alias. Hoisting it would read fine but hides which production
+// symbol the block actually exercises — from a reader and from the tautology
+// detector, which counts a block with no directly-imported call as vacuous.
 describe("#833 parsePositiveSeconds", () => {
-  const parse = parsePositiveSeconds("--timeout");
-
   it("accepts a plain whole number of seconds", () => {
-    expect(parse("60")).toBe(60);
-    expect(parse("1")).toBe(1);
-    expect(parse("1800")).toBe(1800);
+    expect(parsePositiveSeconds("--timeout")("60")).toBe(60);
+    expect(parsePositiveSeconds("--timeout")("1")).toBe(1);
+    expect(parsePositiveSeconds("--timeout")("1800")).toBe(1800);
   });
 
   it("tolerates surrounding whitespace", () => {
-    expect(parse(" 60 ")).toBe(60);
+    expect(parsePositiveSeconds("--timeout")(" 60 ")).toBe(60);
   });
 
   // AC-3: non-integer input is rejected instead of coerced to NaN.
   it.each(["abc", "", "   ", "NaN", "Infinity", "1e3", "0x10", "--"])(
     "rejects non-integer input %j",
     (bad) => {
+      const parse = parsePositiveSeconds("--timeout");
       expect(() => parse(bad)).toThrow(InvalidArgumentError);
       expect(() => parse(bad)).toThrow(
         /--timeout expects a whole number of seconds/,
@@ -42,7 +45,7 @@ describe("#833 parsePositiveSeconds", () => {
   it.each(["30m", "30s", "5min", "1.5", "2h"])(
     "rejects the silent-misparse form %j rather than reading its numeric prefix",
     (bad) => {
-      expect(() => parse(bad)).toThrow(
+      expect(() => parsePositiveSeconds("--timeout")(bad)).toThrow(
         /--timeout expects a whole number of seconds/,
       );
     },
@@ -52,14 +55,18 @@ describe("#833 parsePositiveSeconds", () => {
   // setTimeout as a 0ms delay) or on `ready` (discarded by a `> 0` guard), so
   // rejecting it removes no working behavior.
   it("rejects 0 and negative values", () => {
-    expect(() => parse("0")).toThrow(/--timeout must be at least 1 second/);
-    expect(() => parse("-5")).toThrow(
+    expect(() => parsePositiveSeconds("--timeout")("0")).toThrow(
+      /--timeout must be at least 1 second/,
+    );
+    expect(() => parsePositiveSeconds("--timeout")("-5")).toThrow(
       /--timeout expects a whole number of seconds/,
     );
   });
 
   it("rejects values beyond the safe-integer range", () => {
-    expect(() => parse("9".repeat(20))).toThrow(/must be at least 1 second/);
+    expect(() => parsePositiveSeconds("--timeout")("9".repeat(20))).toThrow(
+      /must be at least 1 second/,
+    );
   });
 
   it("names the flag it was built for, not a generic one", () => {
@@ -69,7 +76,9 @@ describe("#833 parsePositiveSeconds", () => {
   });
 
   it("echoes the offending value so the user can see the typo", () => {
-    expect(() => parse("30m")).toThrow(/\(got '30m'\)/);
+    expect(() => parsePositiveSeconds("--timeout")("30m")).toThrow(
+      /\(got '30m'\)/,
+    );
   });
 });
 

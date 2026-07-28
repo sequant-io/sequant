@@ -16,7 +16,11 @@
  */
 
 import { ui, colors } from "../lib/cli-ui.js";
-import { getSettings, type ReadyPolicy } from "../lib/settings.js";
+import {
+  getSettings,
+  type ReadyPolicy,
+  type SequantSettings,
+} from "../lib/settings.js";
 import { listWorktrees } from "../lib/workflow/worktree-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
@@ -27,6 +31,8 @@ import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import type { ProgressCallback } from "../lib/workflow/types.js";
+import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
+import { positiveOr } from "../lib/workflow/config-resolver.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -72,6 +78,48 @@ export function resolvePolicy(
 }
 
 /**
+ * Resolve the numeric limits for a ready-gate run: CLI → settings → default.
+ *
+ * #833: these previously guarded only the CLI value (`typeof x === "number" &&
+ * x > 0`) and fell straight through to `settings.run.*` unchecked. But
+ * `settings.run.timeout` is user-authored JSON, and `ready`'s value does NOT
+ * pass through `buildExecutionConfig` — `ready-gate.ts`'s `buildPhaseConfig`
+ * assembles its own `ExecutionConfig`. So a `"timeout": 0` in settings.json
+ * reached `setTimeout` as a 0 ms delay and aborted every ready-gate phase on
+ * its first tick, with no warning: the #833 defect, on the path the original
+ * fix did not cover. Chaining `positiveOr` leaves no layer unchecked.
+ *
+ * @internal Exported for testing only.
+ */
+export function resolveReadyLimits(
+  options: Pick<ReadyCommandOptions, "maxIterations" | "budget" | "timeout">,
+  settings: Pick<SequantSettings, "run">,
+): {
+  maxIterations: number;
+  tokenBudget: number | undefined;
+  phaseTimeout: number;
+} {
+  return {
+    maxIterations: positiveOr(
+      options.maxIterations,
+      positiveOr(settings.run.maxIterations, DEFAULT_CONFIG.maxIterations),
+    ),
+    // Budget is genuinely optional — `undefined` means "no budget", not "use a
+    // default" — so it keeps the two-state form rather than chaining.
+    tokenBudget:
+      typeof options.budget === "number" &&
+      Number.isFinite(options.budget) &&
+      options.budget > 0
+        ? options.budget
+        : undefined,
+    phaseTimeout: positiveOr(
+      options.timeout,
+      positiveOr(settings.run.timeout, DEFAULT_CONFIG.phaseTimeout),
+    ),
+  };
+}
+
+/**
  * Locate the worktree path for an issue from `git worktree list`.
  *
  * @internal Exported for testing only.
@@ -100,18 +148,10 @@ export async function readyCommand(
 
   const settings = await getSettings();
   const policy = resolvePolicy(options.policy, settings.ready.policy);
-  const maxIterations =
-    typeof options.maxIterations === "number" && options.maxIterations > 0
-      ? options.maxIterations
-      : settings.run.maxIterations;
-  const tokenBudget =
-    typeof options.budget === "number" && options.budget > 0
-      ? options.budget
-      : undefined;
-  const phaseTimeout =
-    typeof options.timeout === "number" && options.timeout > 0
-      ? options.timeout
-      : settings.run.timeout;
+  const { maxIterations, tokenBudget, phaseTimeout } = resolveReadyLimits(
+    options,
+    settings,
+  );
   const mcp = options.mcp !== false;
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
