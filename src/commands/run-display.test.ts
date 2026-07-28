@@ -236,6 +236,62 @@ describe("displaySummary — checkpoint failure notice (#760)", () => {
   });
 });
 
+describe("displaySummary — ready-gate outcome (#817)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const readyGate = (overrides = {}) => ({
+    issueNumber: 817,
+    policy: "ac" as const,
+    ready: true,
+    reason: "AC_MET" as const,
+    issueStatus: "waiting_for_human_merge" as const,
+    iterations: 1,
+    finalVerdict: "AC_MET_BUT_NOT_A_PLUS" as const,
+    autoFixed: [],
+    remaining: [],
+    tokensUsed: 0,
+    report: "",
+    ...overrides,
+  });
+
+  it("surfaces the gate reason and never-merged status for a gated issue", () => {
+    const output = capture(
+      runResult([issueResult({ issueNumber: 817, readyGate: readyGate() })]),
+    );
+
+    expect(output).toContain("Ready gate");
+    expect(output).toContain("never merged");
+    expect(output).toContain("#817");
+    expect(output).toContain("AC_MET");
+    expect(output).toContain("waiting_for_human_merge");
+  });
+
+  it("flags a guard halt distinctly from a clean threshold", () => {
+    const output = capture(
+      runResult([
+        issueResult({
+          issueNumber: 818,
+          readyGate: readyGate({
+            ready: false,
+            reason: "MAX_ITERATIONS",
+            issueStatus: "blocked",
+          }),
+        }),
+      ]),
+    );
+
+    expect(output).toContain("MAX_ITERATIONS");
+    expect(output).toContain("blocked");
+  });
+
+  it("stays silent when no issue ran the gate (flag off)", () => {
+    const output = capture(runResult([issueResult({ issueNumber: 1 })]));
+    expect(output).not.toContain("Ready gate");
+  });
+});
+
 /**
  * #761 AC-5 — a chain halted by a rate limit restates the labeled cause at
  * the summary (the per-phase error scrolled past hours ago) and spells out
