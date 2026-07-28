@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # Clean up a worktree after PR is merged
-# Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+# Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
+# <branch> accepts an issue number / substring (`123`), a glob
+# (`feature/123-*`), or the full branch name — all resolve to the same worktree
+# and, since #838, to the same underlying branch ref.
 # Example: ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
 #
 # The remote branch is deleted ONLY when the branch's PR is MERGED (the
@@ -28,7 +31,12 @@ NC='\033[0m'
 # Print CLI usage/help (kept in sync with the header comment above).
 print_usage() {
     cat <<'USAGE'
-Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
+
+<branch> may be any of (all resolve to the same worktree):
+  838                    an issue number, or any substring of the branch
+  feature/838-*          a glob
+  feature/838-fix-thing  the full branch name
 
 Clean up a feature worktree. The remote branch is deleted ONLY when the
 branch's PR is MERGED (the documented post-merge contract) or when an
