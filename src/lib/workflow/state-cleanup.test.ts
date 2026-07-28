@@ -1,7 +1,8 @@
 /**
- * Tests for reconcileStateAtStartup — Issues #592, #606
- * Covers: AC-1, AC-3, AC-6, AC-7 for both in_progress (#592) and
- * waiting_for_qa_gate (#606) → merged escalation when remote merged.
+ * Tests for reconcileStateAtStartup — Issues #592, #606, #837
+ * Covers: AC-1, AC-3, AC-6, AC-7 for in_progress (#592),
+ * waiting_for_qa_gate (#606), and waiting_for_human_merge (#837) → merged
+ * escalation when remote merged.
  *
  * The pre-existing ready_for_merge → merged path is also covered as a
  * regression guard for the loop guard relaxation.
@@ -9,8 +10,11 @@
  * AC-2 (pre-flight guard at run-orchestrator.ts skips with the existing
  * "already merged — skipping (use --force to re-run)" voice) is not
  * directly asserted here. Escalating to `merged` is sufficient by
- * construction: the existing #305 pre-flight guard already short-circuits
- * on `ready_for_merge || merged` and is unchanged by #592 / #606.
+ * construction: the #305 pre-flight guard short-circuits on any completed
+ * status and is unchanged by #592 / #606. As of #837 that guard consults
+ * `isCompletedIssueStatus` (completed-status.ts) rather than an inline
+ * `ready_for_merge || merged` pair, and so also covers
+ * waiting_for_human_merge — see completed-status.test.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -220,6 +224,57 @@ describe("reconcileStateAtStartup escalation", () => {
     );
     expect(persisted.issues["606"].status).toBe("merged");
     expect(persisted.issues["606"].resolvedAt).toBeDefined();
+  });
+
+  it("#837: advances waiting_for_human_merge to merged when PR is MERGED on GitHub", async () => {
+    // #817's `--ready-gate` terminates a gated issue here rather than
+    // ready_for_merge. Without this status in the sweep, a gated issue whose PR
+    // a human then merged stayed waiting_for_human_merge forever.
+    mockPRStatus = "MERGED";
+
+    const state = createEmptyState();
+    state.issues["837"] = makeIssue({
+      number: 837,
+      status: "waiting_for_human_merge",
+      pr: { number: 839, url: "https://github.com/test/test/pull/839" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([837]);
+    expect(mockGetPRMergeStatusSync).toHaveBeenCalledWith(839);
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["837"].status).toBe("merged");
+    expect(persisted.issues["837"].resolvedAt).toBeDefined();
+  });
+
+  it("#837: blocked stays out of the sweep — a guard-halted issue is not merge-pending", async () => {
+    // `blocked` is the ready gate's OTHER terminal. It is deliberately absent
+    // from both this sweep and `isCompletedIssueStatus`.
+    mockPRStatus = "MERGED";
+
+    const state = createEmptyState();
+    state.issues["900"] = makeIssue({
+      number: 900,
+      status: "blocked",
+      pr: { number: 901, url: "https://github.com/test/test/pull/901" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.advanced).toEqual([]);
+    expect(mockGetPRMergeStatusSync).not.toHaveBeenCalled();
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["900"].status).toBe("blocked");
   });
 
   it("AC-6 (#606): leaves waiting_for_qa_gate untouched when GitHub is unreachable and no merge commit found", async () => {
