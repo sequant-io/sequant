@@ -13,6 +13,7 @@ import {
   lintSkillGates,
   parseChecklists,
   parseDeclaredOutputName,
+  parseAcHeaderPattern,
   parseEvidenceAcIdPattern,
   parseEvidenceAcPattern,
   parseSections,
@@ -473,6 +474,30 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     expect(pattern).not.toBeNull();
     expect(ISSUE_819_AC4).toMatch(pattern!);
     expect("The lint runs as its own CI step.").not.toMatch(pattern!);
+  });
+
+  it("anchors AC attribution on every declaration form real spec comments use", () => {
+    // Found by running §7's actual shell pipeline against this issue's own spec
+    // comment: grep matched the evidence-naming line, then awk attributed it to
+    // NO AC, because the anchor covered only `#+ AC-N` / `**AC-N` headings. A
+    // measured corpus of 18 recent issues (#533–#822) put the checkbox forms at
+    // 134 declarations vs 94 for the heading forms — so attribution was silent
+    // for the majority of real ACs while detection reported matches.
+    const pattern = parseAcHeaderPattern(realSkill());
+    expect(pattern).not.toBeNull();
+    for (const form of [
+      "- [ ] **AC-6** verified by a corpus check of real issue bodies",
+      "- [ ] AC-6 verified by a corpus check of real issue bodies",
+      "### AC-6: verified by a corpus check of real issue bodies",
+      "#### AC-6: verified by a corpus check",
+      "**AC-6:** verified by a corpus check of real issue bodies",
+    ]) {
+      expect(form, `anchor fails to attribute: ${form}`).toMatch(pattern!);
+    }
+    // Ordinary prose must not be mistaken for a declaration, or every later
+    // match would be misattributed to it.
+    expect("Some prose mentioning a corpus check").not.toMatch(pattern!);
+    expect("  - [ ] indented non-AC checklist item").not.toMatch(pattern!);
   });
 
   it("fails loud when the AC-ID attribution half loses its pattern entirely", () => {

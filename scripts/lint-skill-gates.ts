@@ -461,6 +461,30 @@ export function parseEvidenceAcIdPattern(content: string): RegExp | null {
 }
 
 /**
+ * Compile the awk program's AC-declaration anchor — the `/.../{ac=$0}` block
+ * that decides which AC a matched line is attributed to.
+ *
+ * This is the third pattern in the same two-pass pipeline and the easiest to
+ * get silently wrong: it only has to *miss* a declaration form for attribution
+ * to go quiet while detection still reports matches. A measured corpus of 18
+ * recent issues found the `- [ ] **AC-N**` checkbox form outnumbering heading
+ * forms, so an anchor covering only headings loses the majority of real ACs —
+ * the same class as the #547 awk-anchor bugs §6c documents.
+ */
+export function parseAcHeaderPattern(content: string): RegExp | null {
+  const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
+  if (anchor === -1) return null;
+  const region = content.slice(anchor, anchor + 600);
+  const match = /awk '[^']*?\/(\^\(.+?)\/\{ac=\$0\}/.exec(region);
+  if (!match) return null;
+  try {
+    return new RegExp(match[1], "i");
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Compile §7's live Manual Test AC Enforcement detection pattern.
  *
  * The pattern lives in SKILL.md as a `grep -iE '(...)'` and is the single

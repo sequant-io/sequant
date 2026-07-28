@@ -2478,9 +2478,15 @@ manual_test_acs=$(echo "$spec_comment" | \
   grep -iE '(\*\*Verification:\*\*\s*Manual Test|\*\*Verify:\*\*\s*|try .*, confirm|verify by|test that|verify:?\s*manual|corpus check|against several real|[0-9]+ samples?|sampled)' || true)
 
 # 3. Extract AC IDs associated with those lines
-# Scan backwards from each match to find the nearest ### AC-N header
+# Scan backwards from each match to find the nearest AC-N declaration.
+# The anchor must cover every AC declaration form real spec comments use. A
+# measured corpus of 18 recent issues found `- [ ] **AC-N**` (102) and
+# `- [ ] AC-N` (32) — the checkbox forms — outnumbering `#+ AC-N` (70) and
+# `**AC-N` (24) combined. Anchoring on headings alone left attribution silent
+# for ~59% of declarations: detection matched the line, then reported no AC for
+# it. Same class as the #547 awk-anchor bugs documented in §6c.
 manual_ac_ids=$(echo "$spec_comment" | \
-  awk 'BEGIN{IGNORECASE=1} /^(#+ AC-[0-9]+|\*\*AC-[0-9]+)/{ac=$0} /Manual Test|\*\*Verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/{print ac}' | \
+  awk 'BEGIN{IGNORECASE=1} /^(#+ AC-[0-9]+|\*\*AC-[0-9]+|- \[[ x]\] (\*\*)?AC-[0-9]+)/{ac=$0} /Manual Test|\*\*Verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/{print ac}' | \
   grep -oE 'AC-[0-9]+' | sort -u || true)
 ```
 
