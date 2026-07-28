@@ -13,6 +13,7 @@ import {
   lintSkillGates,
   parseChecklists,
   parseDeclaredOutputName,
+  parseEvidenceAcIdPattern,
   parseEvidenceAcPattern,
   parseSections,
   parseTemplateSections,
@@ -462,26 +463,33 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     expect("The lint runs as its own CI step.").not.toMatch(pattern);
   });
 
-  it("carries the same terms on the awk AC-ID extraction line", () => {
+  it("attributes an evidence-naming AC to its AC ID via the awk half too", () => {
     // §7 detects evidence-naming ACs with `grep`, then attributes matches to AC
-    // IDs with a second `awk` pattern. Mutation testing showed the tests above
-    // gate only the grep line: stripping the terms from awk alone left the suite
-    // green while AC-ID attribution silently stopped working. Scoped to the
-    // `manual_ac_ids=` block so the grep line cannot satisfy it.
-    const content = realSkill();
-    const anchor = content.indexOf('manual_ac_ids=$(echo "$spec_comment"');
-    expect(anchor).toBeGreaterThan(-1);
-    const awkBlock = content.slice(anchor, anchor + 500);
-    for (const term of [
-      "corpus check",
-      "against several real",
-      "[0-9]+ samples?",
-      "sampled",
-    ]) {
-      expect(awkBlock, `awk AC-ID extraction is missing "${term}"`).toContain(
-        term,
-      );
-    }
+    // IDs with a second `awk` pattern carrying the same terms. Mutation testing
+    // showed the tests above gate only the grep line: stripping the terms from
+    // awk alone left the suite green while attribution silently stopped working,
+    // so detection would find the line and then report no AC for it.
+    const pattern = parseEvidenceAcIdPattern(realSkill());
+    expect(pattern).not.toBeNull();
+    expect(ISSUE_819_AC4).toMatch(pattern!);
+    expect("The lint runs as its own CI step.").not.toMatch(pattern!);
+  });
+
+  it("fails loud when the AC-ID attribution half loses its pattern entirely", () => {
+    // Distinct from the test above: that one catches the *terms* being weakened
+    // (behaviorally, via #819's AC-4); this one catches the awk match block being
+    // removed outright, which would leave detection with nothing to attribute to.
+    // The grep half and the awk half are checked independently.
+    const awkGutted = mutate(
+      realSkill(),
+      "{ac=$0} /Manual Test",
+      "{ac=$0} MUTATED-NO-PATTERN",
+    );
+    const result = lintSkillContent(awkGutted);
+    const parseMessages = messagesFor(result.violations, "PARSE").join("\n");
+    expect(parseMessages).toContain("AC-ID attribution half");
+    // The grep half is untouched, so only one half should be reported.
+    expect(parseMessages).not.toContain("its detection half");
   });
 
   it("fails loud when the declared enforcement has no pattern behind it", () => {

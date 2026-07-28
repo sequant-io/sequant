@@ -429,8 +429,36 @@ export function parseTemplateSections(content: string): Templates {
 
 /** Anchor for §7's Manual Test AC Enforcement detection pattern. */
 const MANUAL_TEST_ANCHOR = 'manual_test_acs=$(echo "$spec_comment"';
-/** Anchor for the step-3a gate that consumes that pattern. */
+/** Anchor for the awk pass that attributes those matches to AC IDs. */
+const MANUAL_AC_ID_ANCHOR = 'manual_ac_ids=$(echo "$spec_comment"';
+/** Anchor for the step-3a gate that consumes both. */
 const STEP_3A_ANCHOR = "Manual test AC enforcement check";
+
+/**
+ * Compile §7's AC-ID attribution pattern — the second `awk` half of Manual Test
+ * AC Enforcement.
+ *
+ * Detection is two passes: `grep` finds the lines, `awk` walks back to the
+ * nearest `AC-N` header to say *which* AC each line belongs to. Both carry the
+ * same term list, so both must be kept in step; mutation testing showed that
+ * gating only the `grep` half let the `awk` half be stripped with a green
+ * suite, leaving attribution silently broken.
+ *
+ * Extracts the awk program's second `/.../` block. Compiled case-insensitively
+ * to match the program's own `BEGIN{IGNORECASE=1}`.
+ */
+export function parseEvidenceAcIdPattern(content: string): RegExp | null {
+  const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
+  if (anchor === -1) return null;
+  const region = content.slice(anchor, anchor + 600);
+  const match = /\{ac=\$0\}\s*\/(.+?)\/\{print ac\}/.exec(region);
+  if (!match) return null;
+  try {
+    return new RegExp(match[1], "i");
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Compile §7's live Manual Test AC Enforcement detection pattern.
@@ -752,22 +780,32 @@ export function lintSkillContent(content: string): FileResult {
     return { skipped: false, violations };
   }
 
-  // If §7 declares step-3a manual-test AC enforcement, the detection pattern it
-  // runs on must be readable. Deleting or malforming the pattern would leave the
-  // declared enforcement with nothing behind it — the same prose-only condition
-  // I1 exists to catch, one level down.
-  if (
-    content.includes(STEP_3A_ANCHOR) &&
-    parseEvidenceAcPattern(content) === null
-  ) {
-    violations.push({
-      invariant: "PARSE",
-      subject: "Manual Test AC Enforcement",
-      message:
-        "§7 declares step-3a manual test AC enforcement, but no compilable " +
-        `\`grep -iE\` pattern was found in the \`${MANUAL_TEST_ANCHOR}\` block. ` +
-        "The declared enforcement has no detection behind it.",
-    });
+  // If §7 declares step-3a manual-test AC enforcement, BOTH halves of that
+  // detection must be readable — `grep` finds the lines, `awk` says which AC
+  // each belongs to. Deleting or malforming either leaves the declared
+  // enforcement with nothing behind it, the same prose-only condition I1 exists
+  // to catch, one level down. Checking only the grep half is how mutation
+  // testing found the awk half could be stripped with a green suite.
+  if (content.includes(STEP_3A_ANCHOR)) {
+    const halves: Array<[string, RegExp | null, string]> = [
+      ["detection", parseEvidenceAcPattern(content), MANUAL_TEST_ANCHOR],
+      [
+        "AC-ID attribution",
+        parseEvidenceAcIdPattern(content),
+        MANUAL_AC_ID_ANCHOR,
+      ],
+    ];
+    for (const [half, pattern, anchor] of halves) {
+      if (pattern !== null) continue;
+      violations.push({
+        invariant: "PARSE",
+        subject: "Manual Test AC Enforcement",
+        message:
+          `§7 declares step-3a manual test AC enforcement, but its ${half} half ` +
+          `has no compilable pattern in the \`${anchor}\` block. ` +
+          "The declared enforcement has no detection behind it.",
+      });
+    }
   }
 
   const algorithmSection = sections.find((s) =>
