@@ -33,7 +33,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const typesPath = join(dirname(fileURLToPath(import.meta.url)), "types.ts");
+const here = dirname(fileURLToPath(import.meta.url));
+const typesPath = join(here, "types.ts");
 const typesSource = readFileSync(typesPath, "utf8");
 
 /**
@@ -161,5 +162,76 @@ describe("RunOptions dead-surface guard (#810)", () => {
     const docComment = body.slice(commentStart, decl);
     expect(docComment).toMatch(/INTENTIONALLY INERT/);
     expect(docComment).toMatch(/#810/);
+  });
+});
+
+/**
+ * Live-surface guard for `readyGate` (#817) — the INVERSE of the checks above.
+ *
+ * `--qa-gate` (#795) shipped *declared but unwired* and had to be deprecated;
+ * that is the failure class `--ready-gate` was designed against. Where the
+ * `reuseWorktrees` test guards a field staying deleted, this one guards a field
+ * staying *connected*: if any link in bin/cli → RunOptions → ExecutionConfig →
+ * config-resolver → batch-executor consumer drops, the flag goes inert again
+ * and one of these assertions fails. The behavioral proof that the flag reaches
+ * `runReadyGate` lives in `ready-gate-run.test.ts`; this is the cheap
+ * source-level tripwire that fails even if someone deletes that behavioral test.
+ */
+describe("readyGate live-surface guard (#817)", () => {
+  const read = (rel: string): string => readFileSync(join(here, rel), "utf8");
+
+  it("declares readyGate on both RunOptions and ExecutionConfig", () => {
+    // Comment-stripped so a prose mention can't satisfy the guard (same lesson
+    // the reuseWorktrees check learned the hard way).
+    const code = typesSource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const decls = code.match(/\breadyGate\b["']?\s*\??\s*:/g) ?? [];
+    // One on RunOptions, one on ExecutionConfig, one on IssueResult (the gate
+    // outcome) — at minimum the two input declarations must both be present.
+    expect(decls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("registers --ready-gate as an option on the `run` command in bin/cli.ts", () => {
+    // Without the `.option()` registration the flag does not exist at all —
+    // Commander rejects `run <n> --ready-gate` with "unknown option". That is a
+    // loud failure rather than the silent #795 class, but it is still the first
+    // link of AC-3's cli → RunOptions → ExecutionConfig → executor chain.
+    //
+    // Scoped to the `run` command's own section (same extraction as
+    // assess-skill.test.ts) so a mention in another command's help text, a
+    // comment, or a doc string cannot satisfy the assertion.
+    const cliSource = readFileSync(join(here, "../../../bin/cli.ts"), "utf8");
+    const runSection = cliSource.match(
+      /\.command\("run"\)[\s\S]*?(?=\n\s*program\n|\nprogram\.parse)/,
+    );
+    expect(runSection).not.toBeNull();
+    const longFlags = [
+      ...runSection![0].matchAll(/\.option\(\s*"([^"]+)"/g),
+    ].flatMap((m) => m[1].match(/--([a-z][a-z-]*)/g) ?? []);
+    expect(longFlags).toContain("--ready-gate");
+  });
+
+  it("maps RunOptions.readyGate into ExecutionConfig in the config resolver", () => {
+    // The load-bearing wire: without this, the flag parses but never reaches
+    // the executor — exactly the #795 inert-flag failure.
+    //
+    // NOTE: this is a source-shape tripwire only. A behaviour-preserving edit
+    // (e.g. `mergedOptions.readyGate && false`) keeps this regex matching while
+    // re-inerting the flag, so it is NOT sufficient on its own — the binding
+    // assertions live in `__tests__/config-resolver.test.ts`
+    // ("--ready-gate wiring (#817 AC-3)"), which mutation-testing confirms do
+    // fail on exactly that edit. Keep both: this one survives deletion of the
+    // behavioral suite, that one survives a source-shape-preserving mutation.
+    expect(read("config-resolver.ts")).toMatch(
+      /readyGate:\s*mergedOptions\.readyGate/,
+    );
+  });
+
+  it("has a runtime consumer that invokes the gate in batch-executor", () => {
+    const src = read("batch-executor.ts");
+    // The guarded call site: the flag gates the engine invocation.
+    expect(src).toMatch(/config\.readyGate/);
+    expect(src).toMatch(/runReadyGate/);
   });
 });

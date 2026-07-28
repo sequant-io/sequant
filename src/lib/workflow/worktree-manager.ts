@@ -1398,11 +1398,18 @@ function qaVerdictNote(verdict?: string): string | null {
  * @param opts.qaVerdict QA verdict for the run; a non-A+ stopping state
  *   (anything other than `READY_FOR_MERGE`) surfaces a note so a human reviewer
  *   sees why the run broke to PR without reaching A+ (#749).
+ * @param opts.readyGateReport Rendered `sequant ready` gap report (#817). Set
+ *   only when the run used `--ready-gate`; surfaces the gate outcome (threshold
+ *   reached vs guard halt) in the PR body the same way `sequant ready` does.
  * @internal Exported for testing
  */
 export function buildAutomatedPRBody(
   issueNumber: number,
-  opts?: { stackManifest?: string; qaVerdict?: string },
+  opts?: {
+    stackManifest?: string;
+    qaVerdict?: string;
+    readyGateReport?: string;
+  },
 ): string {
   const bodyLines = [
     `## Summary`,
@@ -1414,9 +1421,17 @@ export function buildAutomatedPRBody(
   ];
   // #749: surface a non-A+ QA verdict in the PR body (not just the run log) so
   // a reviewer sees why the run broke to PR rather than reaching A+.
-  const note = qaVerdictNote(opts?.qaVerdict);
-  if (note) {
-    bodyLines.push(note, ``);
+  //
+  // #817: when the ready gate ran, its report already carries the terminal
+  // verdict and stop reason (a superset of the #749 note), so prefer it and
+  // suppress the standalone note to avoid a contradictory double-headline.
+  if (opts?.readyGateReport) {
+    bodyLines.push(opts.readyGateReport, ``);
+  } else {
+    const note = qaVerdictNote(opts?.qaVerdict);
+    if (note) {
+      bodyLines.push(note, ``);
+    }
   }
   // #605 AC-4: emit stack manifest before the trailer so reviewers see the
   // chain at the top of the body. Manifest is only set under --stacked.
@@ -1442,6 +1457,9 @@ export function buildAutomatedPRBody(
  * @param stackOptions When set under --stacked, `prBase` overrides the default
  *   PR target (otherwise gh defaults to the repo's default branch) and
  *   `stackManifest` is appended to the PR body. (#605)
+ * @param qaVerdict QA verdict surfaced in the PR body when non-A+ (#749).
+ * @param readyGateReport Rendered `sequant ready` gap report, set only when the
+ *   run used `--ready-gate` (#817).
  * @returns PRCreationResult with PR info or error
  * @internal Exported for testing
  */
@@ -1454,6 +1472,7 @@ export function createPR(
   labels?: string[],
   stackOptions?: { prBase?: string; stackManifest?: string },
   qaVerdict?: string,
+  readyGateReport?: string,
 ): PRCreationResult {
   const github = new GitHubProvider();
 
@@ -1508,6 +1527,7 @@ export function createPR(
   const prBody = buildAutomatedPRBody(issueNumber, {
     stackManifest: stackOptions?.stackManifest,
     qaVerdict,
+    readyGateReport,
   });
 
   const prResult = github.createPRCliSync(
