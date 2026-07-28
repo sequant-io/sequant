@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 
 import {
   canonicalizeSectionName,
+  findUppercaseInAwkPattern,
   checkI1,
   checkI2,
   checkI3,
@@ -14,6 +15,7 @@ import {
   parseChecklists,
   parseDeclaredOutputName,
   parseAcHeaderPattern,
+  parseAcScopeResetClause,
   parseEvidenceAcIdPattern,
   parseEvidenceAcPattern,
   parseSections,
@@ -500,6 +502,52 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     expect("  - [ ] indented non-AC checklist item").not.toMatch(pattern!);
   });
 
+  it("scopes attribution so prose after the AC list is not credited to the last AC", () => {
+    // Measured over 18 real issues before this clause existed: 5 of 9
+    // attributions were wrong, including a `| AC-7 | … |` coverage row credited
+    // to AC-8 and a `| AC-4 | … |` row credited to AC-6. The clause is what
+    // makes attribution stop at a non-AC heading.
+    expect(parseAcScopeResetClause(realSkill())).not.toBeNull();
+  });
+
+  it("fails loud when the scope-reset clause is removed", () => {
+    const noReset = mutate(
+      realSkill(),
+      '!isdecl && /^#+ / { ac = "" }',
+      "# scope reset removed",
+    );
+    expect(parseAcScopeResetClause(noReset)).toBeNull();
+    expect(
+      messagesFor(lintSkillContent(noReset).violations, "PARSE").join("\n"),
+    ).toContain("no scope-reset clause");
+  });
+
+  it("keeps both awk patterns lowercase, since they match tolower($0)", () => {
+    // `BEGIN{IGNORECASE=1}` is a gawk extension and a silent no-op on macOS's
+    // awk, where `Manual test` and `Corpus check` (both present in the corpus)
+    // were therefore missed. The fix lowercases the input, which makes any
+    // uppercase literal dead — so the literals must stay lowercase.
+    const skill = realSkill();
+    for (const pattern of [
+      parseAcHeaderPattern(skill),
+      parseEvidenceAcIdPattern(skill),
+    ]) {
+      expect(pattern).not.toBeNull();
+      expect(findUppercaseInAwkPattern(pattern!)).toEqual([]);
+    }
+  });
+
+  it("fails loud when an uppercase literal is reintroduced into an awk pattern", () => {
+    const upper = mutate(
+      realSkill(),
+      "tolower($0) ~ /manual test|",
+      "tolower($0) ~ /Manual Test|",
+    );
+    expect(
+      messagesFor(lintSkillContent(upper).violations, "PARSE").join("\n"),
+    ).toContain("can never fire");
+  });
+
   it("fails loud when the AC-ID attribution half loses its pattern entirely", () => {
     // Distinct from the test above: that one catches the *terms* being weakened
     // (behaviorally, via #819's AC-4); this one catches the awk match block being
@@ -507,8 +555,8 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     // The grep half and the awk half are checked independently.
     const awkGutted = mutate(
       realSkill(),
-      "{ac=$0} /Manual Test",
-      "{ac=$0} MUTATED-NO-PATTERN",
+      "tolower($0) ~ /manual test|",
+      "MUTATED-NO-PATTERN /manual test|",
     );
     const result = lintSkillContent(awkGutted);
     const parseMessages = messagesFor(result.violations, "PARSE").join("\n");
@@ -524,8 +572,8 @@ describe("AC-6 — §7 recognises evidence-naming ACs", () => {
     // running §7's pipeline for real.
     const anchorGutted = mutate(
       realSkill(),
-      "/^(#+ AC-[0-9]+|\\*\\*AC-[0-9]+|- \\[[ x]\\] (\\*\\*)?AC-[0-9]+)/{ac=$0}",
-      "{ac=$0}",
+      "isdecl = (tolower($0) ~ /",
+      "isdecl = (MUTATED(",
     );
     const result = lintSkillContent(anchorGutted);
     expect(messagesFor(result.violations, "PARSE").join("\n")).toContain(

@@ -433,6 +433,12 @@ const MANUAL_TEST_ANCHOR = 'manual_test_acs=$(echo "$spec_comment"';
 const MANUAL_AC_ID_ANCHOR = 'manual_ac_ids=$(echo "$spec_comment"';
 /** Anchor for the step-3a gate that consumes both. */
 const STEP_3A_ANCHOR = "Manual test AC enforcement check";
+/**
+ * How far past an anchor to look for its pattern. Wide enough to span the awk
+ * program's four clauses, narrow enough that an unrelated later command in the
+ * same section cannot satisfy the match.
+ */
+const PATTERN_REGION_CHARS = 1200;
 
 /**
  * Compile §7's AC-ID attribution pattern — the second `awk` half of Manual Test
@@ -450,8 +456,8 @@ const STEP_3A_ANCHOR = "Manual test AC enforcement check";
 export function parseEvidenceAcIdPattern(content: string): RegExp | null {
   const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
   if (anchor === -1) return null;
-  const region = content.slice(anchor, anchor + 600);
-  const match = /\{ac=\$0\}\s*\/(.+?)\/\{print ac\}/.exec(region);
+  const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
+  const match = /tolower\(\$0\) ~ \/(.+?)\/ \{ print ac \}/.exec(region);
   if (!match) return null;
   try {
     return new RegExp(match[1], "i");
@@ -474,8 +480,8 @@ export function parseEvidenceAcIdPattern(content: string): RegExp | null {
 export function parseAcHeaderPattern(content: string): RegExp | null {
   const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
   if (anchor === -1) return null;
-  const region = content.slice(anchor, anchor + 600);
-  const match = /awk '[^']*?\/(\^\(.+?)\/\{ac=\$0\}/.exec(region);
+  const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
+  const match = /isdecl = \(tolower\(\$0\) ~ \/(.+?)\/\)/.exec(region);
   if (!match) return null;
   try {
     return new RegExp(match[1], "i");
@@ -501,7 +507,7 @@ export function parseAcHeaderPattern(content: string): RegExp | null {
 export function parseEvidenceAcPattern(content: string): RegExp | null {
   const anchor = content.indexOf(MANUAL_TEST_ANCHOR);
   if (anchor === -1) return null;
-  const region = content.slice(anchor, anchor + 600);
+  const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
   const match = /grep -iE '\((.+?)\)'/.exec(region);
   if (!match) return null;
   try {
@@ -512,6 +518,38 @@ export function parseEvidenceAcPattern(content: string): RegExp | null {
     // JavaScript cannot compile fails the build rather than passing quietly.
     return null;
   }
+}
+
+/**
+ * Find the awk clause that clears the current AC on a non-AC heading.
+ *
+ * Without it, every matching line downstream is attributed to whichever AC was
+ * declared last — plan steps, QA prose, and coverage-table rows about a
+ * *different* AC. Measured over 18 real issues, 5 of 9 attributions were wrong
+ * that way, so this clause is load-bearing rather than defensive and gets the
+ * same fail-loud treatment as the patterns themselves.
+ */
+export function parseAcScopeResetClause(content: string): string | null {
+  const anchor = content.indexOf(MANUAL_AC_ID_ANCHOR);
+  if (anchor === -1) return null;
+  const region = content.slice(anchor, anchor + PATTERN_REGION_CHARS);
+  const match = /!isdecl && \/\^#\+ \/ \{ ac = "" \}/.exec(region);
+  return match ? match[0] : null;
+}
+
+/**
+ * Uppercase letters in an awk pattern that is matched against `tolower($0)`.
+ *
+ * Such a pattern can never fire. This is the failure mode introduced by fixing
+ * the `BEGIN{IGNORECASE=1}` portability bug (that pragma is a gawk extension
+ * and a silent no-op on macOS's awk): the fix lowercases the input, so every
+ * literal must be lowercase too, and a later edit adding `Manual Test` back
+ * would silently stop matching.
+ */
+export function findUppercaseInAwkPattern(pattern: RegExp): string[] {
+  // Only literal letters matter — `[0-9]`, escapes and quantifiers cannot be
+  // uppercase, and character classes are not used with uppercase ranges here.
+  return [...new Set(pattern.source.match(/[A-Z]/g) ?? [])];
 }
 
 /**
@@ -835,6 +873,35 @@ export function lintSkillContent(content: string): FileResult {
           `§7 declares step-3a manual test AC enforcement, but its ${half} half ` +
           `has no compilable pattern in the \`${anchor}\` block. ` +
           "The declared enforcement has no detection behind it.",
+      });
+    }
+
+    // The awk program matches against `tolower($0)`, so an uppercase literal in
+    // either awk pattern can never fire.
+    for (const [half, pattern] of halves.slice(1)) {
+      if (pattern === null) continue;
+      const upper = findUppercaseInAwkPattern(pattern);
+      if (upper.length === 0) continue;
+      violations.push({
+        invariant: "PARSE",
+        subject: "Manual Test AC Enforcement",
+        message:
+          `§7's ${half} pattern contains uppercase ${upper.map((c) => `"${c}"`).join(", ")} ` +
+          "but is matched against `tolower($0)`, so it can never fire. " +
+          "Lowercase the literal, or the term is dead.",
+      });
+    }
+
+    // The scope-reset clause is what stops prose and coverage-table rows from
+    // being credited to the last AC declared. Its absence is silent, so gate it.
+    if (parseAcScopeResetClause(content) === null) {
+      violations.push({
+        invariant: "PARSE",
+        subject: "Manual Test AC Enforcement",
+        message:
+          '§7\'s AC attribution has no scope-reset clause (`!isdecl && /^#+ / { ac = "" }`), ' +
+          "so every matching line downstream is credited to the last AC declared — " +
+          "measured at 5 wrong attributions out of 9 over 18 real issues before it was added.",
       });
     }
   }

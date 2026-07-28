@@ -2477,17 +2477,37 @@ spec_comment=$(gh issue view <issue-number> --json comments --jq \
 manual_test_acs=$(echo "$spec_comment" | \
   grep -iE '(\*\*Verification:\*\*\s*Manual Test|\*\*Verify:\*\*\s*|try .*, confirm|verify by|test that|verify:?\s*manual|corpus check|against several real|[0-9]+ samples?|sampled)' || true)
 
-# 3. Extract AC IDs associated with those lines
-# Scan backwards from each match to find the nearest AC-N declaration.
-# The anchor must cover every AC declaration form real spec comments use. A
-# measured corpus of 18 recent issues found `- [ ] **AC-N**` (102) and
-# `- [ ] AC-N` (32) — the checkbox forms — outnumbering `#+ AC-N` (70) and
-# `**AC-N` (24) combined. Anchoring on headings alone left attribution silent
-# for ~59% of declarations: detection matched the line, then reported no AC for
-# it. Same class as the #547 awk-anchor bugs documented in §6c.
-manual_ac_ids=$(echo "$spec_comment" | \
-  awk 'BEGIN{IGNORECASE=1} /^(#+ AC-[0-9]+|\*\*AC-[0-9]+|- \[[ x]\] (\*\*)?AC-[0-9]+)/{ac=$0} /Manual Test|\*\*Verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/{print ac}' | \
-  grep -oE 'AC-[0-9]+' | sort -u || true)
+# 3. Extract AC IDs associated with those lines.
+#
+# Three properties this program has to get right, each verified against a
+# corpus of 18 real issues (#533–#822):
+#
+#   (a) Declaration forms. The anchor covers every form real spec comments use.
+#       Measured: `- [ ] **AC-N**` (102) and `- [ ] AC-N` (32) — the checkbox
+#       forms — outnumber `#+ AC-N` (70) and `**AC-N` (24) combined. Anchoring
+#       on headings alone left attribution silent for ~59% of declarations:
+#       detection matched the line, then reported no AC for it. Same class as
+#       the #547 awk-anchor bugs documented in §6c.
+#
+#   (b) Scope. A non-AC heading CLEARS the current AC. Without this, every
+#       matching line downstream — plan steps, QA prose, a coverage-table row
+#       about a *different* AC — is attributed to whichever AC was declared
+#       last. Measured on the same corpus: 5 of 9 attributions were wrong,
+#       including a `| AC-7 | … |` row credited to AC-8 and a `| AC-4 | … |`
+#       row credited to AC-6. An AC-declaration line is not treated as a
+#       clearing heading, and a marker on a later line (`**Verification:**
+#       Manual Test` under `### AC-3:`) still attributes to its AC.
+#
+#   (c) Portability. `tolower($0) ~ /…/` rather than `BEGIN{IGNORECASE=1}`,
+#       which is a gawk extension and a silent no-op on macOS's awk. Measured:
+#       `Manual test` and `Corpus check` appear in the corpus and would be
+#       missed there. All pattern literals below are therefore lowercase.
+manual_ac_ids=$(echo "$spec_comment" | awk '
+  { isdecl = (tolower($0) ~ /^(#+ ac-[0-9]+|\*\*ac-[0-9]+|- \[[ x]\] (\*\*)?ac-[0-9]+)/) }
+  isdecl { ac = $0 }
+  !isdecl && /^#+ / { ac = "" }
+  tolower($0) ~ /manual test|\*\*verify:\*\*|try .*, confirm|verify by|test that|corpus check|against several real|[0-9]+ samples?|sampled/ { print ac }
+' | grep -oE 'AC-[0-9]+' | sort -u || true)
 ```
 
 **If manual-test ACs are detected**, include this section in QA output:
