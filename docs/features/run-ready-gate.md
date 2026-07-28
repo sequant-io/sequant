@@ -40,6 +40,19 @@ sequant run 42 -Q --ready-gate
 
 The gate outcome (threshold reached vs guard halt) is surfaced in both the end-of-run summary and the PR body, the same way `sequant ready` reports it.
 
+### If the gate itself fails
+
+A gate error is deliberately non-fatal: the phase work is already committed, so the run logs a warning and continues to open the PR rather than abandoning it. The issue keeps the standard `ready_for_merge` status — the run has degraded to an ordinary run, and nothing about the work is blocked.
+
+That degradation is **reported, never silent**. The summary lists the issue under the ready-gate section with an explicit `✗ gate did not run`, the underlying error, and the remediation:
+
+```
+  Ready gate (#817) — never merged:
+     #42: ✗ gate did not run · <error> · PR opened ungated — re-run `sequant ready 42`
+```
+
+Without that line a crashed gate would look identical to a clean one, and you would believe a second look happened when it never did.
+
 ## Options & Settings
 
 | Option | Description | Default |

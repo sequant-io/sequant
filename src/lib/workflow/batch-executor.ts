@@ -603,12 +603,18 @@ interface ReadyGateForIssueArgs {
  * A gate failure is non-fatal: the standard-phase work is already committed to
  * the worktree, so we log a warning and fall through to normal PR creation
  * rather than aborting the run (the issue then keeps its `ready_for_merge`
- * status). Returns `undefined` on that path so the summary/PR body simply omit
- * the gate section.
+ * status — the run has degraded to a standard run, and nothing about the work
+ * is actually blocked).
+ *
+ * The failure is returned rather than swallowed. A dropped gate must not be
+ * invisible: the caller opted in with `--ready-gate`, so a run whose gate never
+ * executed has to look different in the summary from one that gated cleanly —
+ * otherwise a crashed gate is indistinguishable from an approved one, and the
+ * whole point of the flag (a second look actually happened) is silently lost.
  */
 async function runReadyGateForIssue(
   args: ReadyGateForIssueArgs,
-): Promise<ReadyResult | undefined> {
+): Promise<{ result?: ReadyResult; error?: string }> {
   const {
     issueNumber,
     worktreePath,
@@ -679,17 +685,17 @@ async function runReadyGateForIssue(
           ),
     );
 
-    return result;
+    return { result };
   } catch (err) {
-    // Non-fatal: keep the run going to PR with the standard status.
+    // Non-fatal: keep the run going to PR with the standard status, but hand
+    // the reason back so the summary can say the gate did NOT run.
+    const error = err instanceof Error ? err.message : String(err);
     log(
       chalk.yellow(
-        `  ⚠️  Ready gate failed for #${issueNumber}: ${
-          err instanceof Error ? err.message : String(err)
-        } — continuing to PR without the gate.`,
+        `  ⚠️  Ready gate failed for #${issueNumber}: ${error} — continuing to PR without the gate.`,
       ),
     );
-    return undefined;
+    return { error };
   }
 }
 
@@ -1459,7 +1465,7 @@ export async function runIssueWithLogging(
   // engine NEVER merges; it terminates with the issue `waiting_for_human_merge`
   // (ready) or `blocked` (guard halt). Without the flag this block is skipped
   // entirely, keeping the run path byte-identical (AC-5).
-  const readyGateResult =
+  const readyGateOutcome =
     config.readyGate && success && worktreePath
       ? await runReadyGateForIssue({
           issueNumber,
@@ -1471,6 +1477,11 @@ export async function runIssueWithLogging(
           log,
         })
       : undefined;
+  const readyGateResult = readyGateOutcome?.result;
+  // Surfaced separately from `readyGateResult` so a gate that *crashed* renders
+  // differently in the summary from one that ran — a silently-skipped gate on a
+  // run the user explicitly opted into is the failure mode worth naming.
+  const readyGateError = readyGateOutcome?.error;
 
   // Update final issue status in state. When the gate ran it owns the terminal
   // status (never `ready_for_merge` — that would read as auto-merge-ready and
@@ -1616,5 +1627,6 @@ export async function runIssueWithLogging(
     // #817: present only when `--ready-gate` ran the gate; the summary renders
     // its terminal reason (AC-6).
     readyGate: readyGateResult,
+    readyGateError,
   };
 }

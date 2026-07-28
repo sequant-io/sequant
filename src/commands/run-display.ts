@@ -213,11 +213,22 @@ export function displaySummary(
   // reached vs guard halt) in the summary the same way `sequant ready` reports
   // it — the "never merged" contract and stop reason are the human's cue to
   // review and merge manually. Only issues that actually ran the gate carry it.
-  const gated = results.filter((r) => r.readyGate);
+  //
+  // A gate that *failed* is listed here too. It is non-fatal (the PR still
+  // opens), but omitting it would make a run whose gate crashed look exactly
+  // like one that gated cleanly — the user opted into a second look and needs
+  // to know it never happened.
+  const gated = results.filter((r) => r.readyGate || r.readyGateError);
   if (gated.length > 0) {
     console.log(colors.muted("  Ready gate (#817) — never merged:"));
     for (const r of gated) {
-      const g = r.readyGate!;
+      if (!r.readyGate) {
+        console.log(
+          `     #${r.issueNumber}: ${colors.warning("✗ gate did not run")} · ${r.readyGateError} · PR opened ungated — re-run \`sequant ready ${r.issueNumber}\``,
+        );
+        continue;
+      }
+      const g = r.readyGate;
       const label = g.ready
         ? colors.success(`✓ ${g.reason}`)
         : colors.warning(`⚠️  ${g.reason}`);

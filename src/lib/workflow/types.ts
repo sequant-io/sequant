@@ -351,6 +351,17 @@ export interface IssueResult {
    * report the summary and PR body surface. Absent on runs without the flag.
    */
   readyGate?: ReadyResult;
+  /**
+   * Why the ready gate did NOT run, when `--ready-gate` was requested but the
+   * gate threw (#817). Mutually exclusive with {@link IssueResult.readyGate}.
+   *
+   * A gate crash is deliberately non-fatal — the phase work is already
+   * committed and the PR still opens — but it must not be silent. Without this
+   * field a run whose gate died is byte-identical in the summary to one that
+   * never asked for a gate, so the user believes a second look happened when it
+   * did not. The summary renders this as an explicit "gate did not run" line.
+   */
+  readyGateError?: string;
 }
 
 /**

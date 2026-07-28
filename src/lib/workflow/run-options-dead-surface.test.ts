@@ -192,9 +192,37 @@ describe("readyGate live-surface guard (#817)", () => {
     expect(decls.length).toBeGreaterThanOrEqual(2);
   });
 
+  it("registers --ready-gate as an option on the `run` command in bin/cli.ts", () => {
+    // Without the `.option()` registration the flag does not exist at all —
+    // Commander rejects `run <n> --ready-gate` with "unknown option". That is a
+    // loud failure rather than the silent #795 class, but it is still the first
+    // link of AC-3's cli → RunOptions → ExecutionConfig → executor chain.
+    //
+    // Scoped to the `run` command's own section (same extraction as
+    // assess-skill.test.ts) so a mention in another command's help text, a
+    // comment, or a doc string cannot satisfy the assertion.
+    const cliSource = readFileSync(join(here, "../../../bin/cli.ts"), "utf8");
+    const runSection = cliSource.match(
+      /\.command\("run"\)[\s\S]*?(?=\n\s*program\n|\nprogram\.parse)/,
+    );
+    expect(runSection).not.toBeNull();
+    const longFlags = [
+      ...runSection![0].matchAll(/\.option\(\s*"([^"]+)"/g),
+    ].flatMap((m) => m[1].match(/--([a-z][a-z-]*)/g) ?? []);
+    expect(longFlags).toContain("--ready-gate");
+  });
+
   it("maps RunOptions.readyGate into ExecutionConfig in the config resolver", () => {
     // The load-bearing wire: without this, the flag parses but never reaches
     // the executor — exactly the #795 inert-flag failure.
+    //
+    // NOTE: this is a source-shape tripwire only. A behaviour-preserving edit
+    // (e.g. `mergedOptions.readyGate && false`) keeps this regex matching while
+    // re-inerting the flag, so it is NOT sufficient on its own — the binding
+    // assertions live in `__tests__/config-resolver.test.ts`
+    // ("--ready-gate wiring (#817 AC-3)"), which mutation-testing confirms do
+    // fail on exactly that edit. Keep both: this one survives deletion of the
+    // behavioral suite, that one survives a source-shape-preserving mutation.
     expect(read("config-resolver.ts")).toMatch(
       /readyGate:\s*mergedOptions\.readyGate/,
     );
