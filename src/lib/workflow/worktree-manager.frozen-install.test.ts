@@ -26,7 +26,10 @@ vi.mock("child_process", () => ({
   spawn: vi.fn(),
 }));
 
-import { reinstallIfLockfileChanged } from "./worktree-manager.js";
+import {
+  reinstallIfLockfileChanged,
+  installWorktreeDeps,
+} from "./worktree-manager.js";
 import { PM_CONFIG } from "../stacks.js";
 
 /** Result shape spawnSync callers in worktree-manager expect. */
@@ -71,6 +74,63 @@ describe("reinstallIfLockfileChanged uses a frozen install", () => {
     expect(result).toBe(false);
     const nonGit = spawnSyncMock.mock.calls.filter(([cmd]) => cmd !== "git");
     expect(nonGit).toHaveLength(0);
+  });
+});
+
+describe("installWorktreeDeps surfaces a failed provisioning install (#846)", () => {
+  it("warns naming the failure when `npm ci` exits non-zero (no lockfile)", () => {
+    // A repo with no lockfile makes `npm ci` hard-fail: status 1, message on
+    // stderr, no node_modules. Assert the failure is reported, not swallowed.
+    spawnSyncMock.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(
+        "npm error The `npm ci` command can only install with an existing package-lock.json",
+      ),
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const ok = installWorktreeDeps("/tmp/wt", "npm", false);
+
+    expect(ok).toBe(false); // warn-and-continue, not throw (AC-1)
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output, "no warning was emitted").toMatch(
+      /Dependency install failed/,
+    );
+    expect(output).toContain("package-lock.json"); // stderr surfaced (AC-1)
+    expect(output).toContain("npm ci"); // resolved command for rerun (AC-2)
+
+    logSpy.mockRestore();
+  });
+
+  it("still names the command when stderr is empty", () => {
+    spawnSyncMock.mockReturnValue({
+      status: 1,
+      stdout: Buffer.from(""),
+      stderr: Buffer.from(""),
+    });
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const ok = installWorktreeDeps("/tmp/wt", "npm", false);
+
+    expect(ok).toBe(false);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).toContain("npm ci"); // command alone is enough to act on
+
+    logSpy.mockRestore();
+  });
+
+  it("returns true and warns nothing on a successful install", () => {
+    spawnSyncMock.mockReturnValue(ok());
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const result = installWorktreeDeps("/tmp/wt", "npm", false);
+
+    expect(result).toBe(true);
+    const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(output).not.toMatch(/Dependency install failed/);
+
+    logSpy.mockRestore();
   });
 });
 
