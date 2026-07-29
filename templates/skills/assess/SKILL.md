@@ -251,7 +251,9 @@ $CMD_PREFIX assess-render "$ASSESS_JSON"
 
 `$CMD_PREFIX` is the prefix resolved in Step 1 (`sequant` when a global is on PATH, else `npx sequant`) — the same prefix used for every emitted `run` command. Never mix prefixes within one assessment.
 
-**Paste the command's stdout verbatim.** Do not re-wrap it, re-align it, re-order its sections, or wrap it in a fence. Column widths, separator widths, section visibility, and the HTML markers are all computed by the renderer; editing its output reintroduces exactly the drift this step exists to remove.
+**Paste the command's stdout verbatim, wrapped in a fenced code block.** The fence is required in chat: the output lands in a markdown-rendered transcript, and unfenced the table header (` #    Action …`) parses as a markdown heading — the `#` is swallowed and the header row breaks alignment with its own data rows. Inside the fence, do not re-wrap, re-align, or re-order anything. Column widths, separator widths, section visibility, and the HTML markers are all computed by the renderer; editing its output reintroduces exactly the drift this step exists to remove.
+
+The fence is **chat-only**. Posted issue comments (see `## Persist Analysis`) stay unfenced — fencing them on GitHub would render the `<!-- assess:… -->` markers as visible text instead of keeping them machine-readable and invisible.
 
 **Fallback (renderer unavailable or payload rejected).** If the command exits non-zero — an older install without the subcommand, or a payload the schema rejects — emit one line naming the failure:
 
@@ -285,6 +287,7 @@ Top level:
 | `warnings[]` | no | `{ issue?, text }` — `issue` prefixes the line with `#N` |
 | `chain` | no | `{ args, reason }` — suggest-only alternative topology |
 | `flags[]` | no | `{ flag, reason }` — one entry per **distinct** flag across all commands |
+| `considered[]` | no | `{ flag, reason }` — flags evaluated but **not** applied, with the why-not reason |
 | `cleanup[]` | no | `{ command, reason? }` — `git`/`gh` commands, emitted without a prefix |
 
 Per issue (`issues[]`):
@@ -298,7 +301,7 @@ Per issue (`issues[]`):
 | `title`, `state`, `labels[]` | single only | The `#N — Title` / `State · labels` header |
 | `command` | single, PROCEED/REWRITE | This issue's own single-issue invocation |
 | `supersession` | no | `buildSupersessionHeader(priors)` output; emitted above the verdict line |
-| `warnings[]`, `flags[]`, `cleanup[]` | no | Per-issue, for single mode. Warning text has the leading `#N` already dropped |
+| `warnings[]`, `flags[]`, `considered[]`, `cleanup[]` | no | Per-issue, for single mode. Warning text has the leading `#N` already dropped |
 | `mergeTarget`, `scopeSelf`, `scopeTarget` | MERGE | Target issue and the two scope summaries |
 | `need`, `needDetail` | CLARIFY | `need` is required |
 | `resumeAfter` | PARK | Required |
@@ -344,6 +347,9 @@ Payload (abridged to the fields that matter):
     { "flag": "--security-review", "reason": "#412 auth label requires a security review" },
     { "flag": "--phases exec,qa", "reason": "#411 resume — prior spec marker already exists" }
   ],
+  "considered": [
+    { "flag": "--testgen", "reason": "no ui/frontend labels or testable-AC signals in the batch" }
+  ],
   "cleanup": [
     { "command": "gh issue close 447", "reason": "PR #457 merged" },
     { "command": "gh issue edit 461 --add-label cli", "reason": "missing label" }
@@ -378,6 +384,9 @@ Flags:
   -Q                 multi-file scope across most PROCEED issues
   --security-review  #412 auth label requires a security review
   --phases exec,qa   #411 resume — prior spec marker already exists
+
+Considered:
+  --testgen  no ui/frontend labels or testable-AC signals in the batch
 ────────────────────────────────────────────────────────────────
 Cleanup:
   gh issue close 447                 # PR #457 merged
@@ -422,7 +431,7 @@ Note the deliberate overflow: `#412`'s `Run` value runs past the separator rathe
 
 ### Annotation Rules
 
-The renderer emits `Order:` → `⚠` → `Chain:` → `Flags:` in that order, then `Cleanup:` in its own block, and omits any section whose array is empty or absent. What you control is the **content**:
+The renderer emits `Order:` → `⚠` → `Chain:` → `Flags:` → `Considered:` in that order, then `Cleanup:` in its own block, and omits any section whose array is empty or absent. What you control is the **content**:
 
 - **`orders[]`** — Only when sequencing matters. Include the **reason** for the ordering, not just `(<filename>)`.
   - Good: `185 → 186 (185 changes fetchApi error format that 186 consumes)`
@@ -433,13 +442,15 @@ The renderer emits `Order:` → `⚠` → `Chain:` → `Flags:` in that order, t
   - `{ "issue": 185, "text": "Domain errors already exist in repository layer — scope may be smaller than expected" }`
   - `{ "issue": 412, "text": "bug + auth labels — domain label (auth) takes priority over bug" }`
 
-- **`chain`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology; it does not replace the default per-issue commands. The renderer formats it as `Chain: <prefix> <args>` plus an indented `# alternative — <reason>` line.
+- **`chain`** — Only when 2+ PROCEED issues have a detected dependency (see "Chain detection" in Step 4). Suggests an alternative execution topology; it does not replace the default per-issue commands. The renderer formats it as `Chain: <prefix> <args>` plus an indented `# alternative — <reason>` line. When the batch has 2+ PROCEED issues and no chain is suggested, record the why-not in `considered[]` instead of staying silent.
 
-- **`flags[]`** — Only when non-default flags appear in the commands and the reason isn't obvious. One entry per **distinct** flag used across all commands. Omit the array entirely when `-Q` is the only non-default flag AND its reason is obvious (e.g. all issues are enhancements).
+- **`flags[]`** — One entry per **distinct** non-default flag used across all commands, **including `-Q`**, each with a one-line reason. Always emitted when any command carries a non-default flag — there is no "obvious flag" exemption. (The old omit-when-obvious carve-out was a remnant of the v3.0 streamline that dropped flag reasoning; restored per #522's intent.)
+
+- **`considered[]`** — The why-**not** reasoning: candidate flags whose trigger you actually evaluated and declined, each with a one-line reason. Include an entry for `--chain` whenever the batch has 2+ PROCEED issues but no dependency was detected, and for `--testgen` / `--security-review` when their label/AC triggers were checked and not met. Do not enumerate every flag that exists — only ones a reader would plausibly expect to see applied. Rendered as a `Considered:` block after `Flags:`.
 
 - **`cleanup[]`** — Only when actionable (stale branches, merged-but-open issues, label changes). Executable commands with a `reason`.
 
-- **"All clear" is silence** — an absent array means no issues, and the renderer drops the section and its separator with it.
+- **"All clear" is silence** — an absent array means no issues, and the renderer drops the section and its separator with it. `considered[]` is the deliberate exception: a declined trigger is signal, not noise, so it earns a line where pure absence of problems does not.
 
 ### Single Mode (1 issue)
 
@@ -447,14 +458,14 @@ Set `mode: "single"` with exactly one entry in `issues[]`. The renderer selects 
 
 | Verdict | Fields the template uses |
 |---------|--------------------------|
-| **PROCEED** | `reason`, `command`, `phases[]`, `acCount`, `flags[]`, `warnings[]` |
+| **PROCEED** | `reason`, `command`, `phases[]`, `acCount`, `flags[]`, `considered[]`, `warnings[]` |
 | **REWRITE** | same as PROCEED; set `command.comment` to `"fresh start"`, and put the stale/diverged detail in `warnings[]` |
 | **CLOSE** | `reason` (with evidence), `cleanup[]` |
 | **CLARIFY** | `reason` (what's missing), `need`, `needDetail` |
 | **PARK** | `reason`, `resumeAfter` |
 | **MERGE** | `reason` (overlap description), `mergeTarget`, `scopeSelf`, `scopeTarget` |
 
-**`flags[]` in single mode:** omit entirely when `-Q` is the only non-default flag AND the reason is obvious (a straightforward enhancement). Do not repeat obvious flags.
+**`flags[]` in single mode:** same rule as batch — one entry per distinct non-default flag on the command, including `-Q`, each with its reason. `considered[]` carries any why-not entries that concern this issue (`--chain` never applies to a single-issue assessment, so it only appears here when the assessment was part of a batch).
 
 **Warnings.** PROCEED and REWRITE have a `⚠` region before the marker block. CLOSE / CLARIFY / PARK / MERGE do not, so the renderer gives a carried warning its own separator-delimited block above the markers. Either way you just set `warnings[]`.
 
@@ -473,11 +484,12 @@ The rendered shape for each verdict is shown in [Batch: dashboard vs posted comm
 | `Order:` | File conflicts or dependencies require sequencing |
 | `⚠` warnings | Non-obvious signals exist (complexity, staleness, dual concerns, partial-AC satisfaction) |
 | `Chain:` | 2+ PROCEED issues with detected dependency (suggest-only) |
-| `Flags:` | Non-default flags appear AND `-Q` is not the sole flag with an obvious reason |
+| `Flags:` | Any command carries a non-default flag (including `-Q`) — no obviousness exemption |
+| `Considered:` | A candidate flag's trigger was evaluated and declined (`--chain` with 2+ PROCEED issues, `--testgen`/`--security-review` when checked) |
 | `Cleanup:` | Stale branches, merged-but-open issues, or label changes |
 | Separators | Between sections that are both shown; omit if adjacent section is omitted |
 
-Every separator and section is conditional. If there are no warnings, no chain, no flags, and no cleanup, the output is just: table → separator → `Commands:` block → separator → markers.
+Every separator and section is conditional. If there are no warnings, no chain, no flags, no considered entries, and no cleanup, the output is just: table → separator → `Commands:` block → separator → markers.
 
 ---
 
@@ -584,6 +596,7 @@ Open · task, needs-data
 **Before responding, verify:**
 
 - [ ] **The response opens with the rendered output block** — not a summary, preamble, TLDR, or question. If Step 6's renderer output is not the first content, stop and emit it.
+- [ ] Chat output is wrapped in a fenced code block (verbatim inside); posted comments are NOT fenced
 - [ ] Every issue has exactly one action in the table
 - [ ] Run column uses correct symbol for the action/state
 - [ ] `ACs` column included only when every issue has explicit `- [ ]` checkboxes
@@ -591,7 +604,8 @@ Open · task, needs-data
 - [ ] Commands block only contains PROCEED and REWRITE issues, grouped by compatible workflow
 - [ ] `testgen` included when ui/frontend + enhancement/feature labels OR testable-AC signals
 - [ ] `Chain:` suggested (not auto-applied) when 2+ PROCEED issues have a detected dependency
-- [ ] `Flags:` section present when non-default flags appear (unless only obvious `-Q`)
+- [ ] `Flags:` section present whenever any command carries a non-default flag, `-Q` included — no obviousness exemption
+- [ ] `Considered:` entries recorded for declined triggers (`--chain` with 2+ PROCEED issues; `--testgen`/`--security-review` when evaluated)
 - [ ] `Order:` annotations carry dependency **reasoning**, not bare filenames
 - [ ] `⚠` warnings include partial-AC satisfaction where applicable
 - [ ] Separators appear between every shown section; omitted when adjacent section is omitted
