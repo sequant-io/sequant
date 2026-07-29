@@ -2,6 +2,9 @@
  * Tests for AC Parser
  */
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   parseAcceptanceCriteria,
@@ -9,6 +12,16 @@ import {
   hasAcceptanceCriteria,
   inferVerificationMethod,
 } from "./ac-parser.js";
+
+// Real, unmodified GitHub issue bodies committed under __fixtures__ so the
+// tests are hermetic (no network). See issue #850.
+const FIXTURE_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "__fixtures__",
+  "ac-parser",
+);
+const readFixture = (issue: number): string =>
+  readFileSync(join(FIXTURE_DIR, `issue-${issue}.md`), "utf8");
 
 describe("AC Parser", () => {
   describe("parseAcceptanceCriteria", () => {
@@ -301,6 +314,150 @@ Some notes here.
       expect(criteria.length).toBe(2);
       expect(criteria[0].id).toBe("B2");
       expect(criteria[1].id).toBe("B3");
+    });
+  });
+
+  // #850: human-written issues rarely prefix their ACs with IDs, so before
+  // this every hand-authored issue parsed to zero ACs. Bare checkbox items are
+  // now honored, but ONLY under an explicit `## Acceptance Criteria` heading.
+  describe("bare-checkbox ACs under an Acceptance Criteria heading (#850)", () => {
+    // AC-1: bare checkboxes under the heading parse with synthesized stable IDs
+    it("parses bare checkboxes under the heading with synthesized IDs", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] An npm run gen-types script writes the generated section
+- [ ] Custom aliases are preserved
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.map((c) => c.id)).toEqual(["AC-1", "AC-2"]);
+      expect(criteria[0].description).toBe(
+        "An npm run gen-types script writes the generated section",
+      );
+      expect(criteria[1].description).toBe("Custom aliases are preserved");
+    });
+
+    // AC-1: IDs must be deterministic across re-parses of the same body
+    it("synthesizes IDs deterministically across re-parses", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] First requirement
+- [ ] Second requirement
+`;
+
+      const first = parseAcceptanceCriteria(issueBody).map((c) => c.id);
+      const second = parseAcceptanceCriteria(issueBody).map((c) => c.id);
+
+      expect(first).toEqual(second);
+      expect(first).toEqual(["AC-1", "AC-2"]);
+    });
+
+    // AC-1: heading match is case-insensitive (real issue #703 uses lowercase)
+    it("matches the heading case-insensitively", () => {
+      const issueBody = `## Acceptance criteria
+
+- [ ] Lowercase-heading requirement
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].id).toBe("AC-1");
+    });
+
+    // AC-1: a synthesized ID must never collide with an explicit AC-N on
+    // another line (the seenIds dedupe would otherwise silently drop it).
+    it("skips IDs already taken by explicit markers to avoid collisions", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] **AC-1:** Explicit first criterion
+- [ ] A bare criterion that must not collide with AC-1
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(2);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe("Explicit first criterion");
+      // Synthesized ID skips the taken AC-1 rather than being dropped.
+      expect(criteria[1].id).toBe("AC-2");
+      expect(criteria[1].description).toBe(
+        "A bare criterion that must not collide with AC-1",
+      );
+    });
+
+    // AC-2: bare checkboxes with NO AC heading anywhere are not misread as ACs
+    it("ignores bare checkboxes when there is no AC heading", () => {
+      const issueBody = `## Open questions
+
+- [ ] Should we cache the result?
+- [ ] What is the frequency floor?
+
+## Test plan
+
+- [ ] Manual smoke test
+`;
+
+      expect(parseAcceptanceCriteria(issueBody)).toEqual([]);
+    });
+
+    // AC-2: the AC section closes at the next heading — later checklists are
+    // not swept in.
+    it("stops honoring bare checkboxes at the next heading", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] The one real criterion
+
+## Open questions
+
+- [ ] Not an AC
+- [ ] Also not an AC
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].id).toBe("AC-1");
+      expect(criteria[0].description).toBe("The one real criterion");
+    });
+
+    // AC-3: real matcha-maps issue bodies parse to their expected counts.
+    // Positive fixtures exercise the new bare-checkbox path; #745 exercises the
+    // existing ID path (it was rewritten to `**AC-N:**` form as a workaround —
+    // see its own <sub> note referencing #850); #750 is the AC-2 negative case.
+    it("parses real bare-checkbox issue #686 to 4 ACs", () => {
+      const criteria = parseAcceptanceCriteria(readFixture(686));
+      expect(criteria.length).toBe(4);
+      expect(criteria.map((c) => c.id)).toEqual([
+        "AC-1",
+        "AC-2",
+        "AC-3",
+        "AC-4",
+      ]);
+    });
+
+    it("parses real lowercase-heading issue #703 to 2 ACs", () => {
+      const criteria = parseAcceptanceCriteria(readFixture(703));
+      expect(criteria.length).toBe(2);
+      expect(criteria.map((c) => c.id)).toEqual(["AC-1", "AC-2"]);
+    });
+
+    it("parses real ID-prefixed issue #745 to a non-zero count", () => {
+      // #745 was rewritten into `**AC-N:**` form; it validates that the
+      // existing ID path still yields a non-zero count (AC-3 + AC-4).
+      const criteria = parseAcceptanceCriteria(readFixture(745));
+      expect(criteria.length).toBeGreaterThan(0);
+      expect(criteria.length).toBe(6);
+    });
+
+    // AC-2 (negative): #750 has NO `## Acceptance Criteria` heading — only
+    // `## Open questions ...` bare checkboxes — so it must parse to zero. This
+    // resolves the AC-2-vs-AC-3 contradiction the spec surfaced (Q2): AC-2 is
+    // the actual requirement; a non-zero here would re-open the "any checklist
+    // is an AC" ambiguity the parser is meant to guard against.
+    it("parses real headingless issue #750 to zero ACs (AC-2 guard)", () => {
+      expect(parseAcceptanceCriteria(readFixture(750))).toEqual([]);
     });
   });
 

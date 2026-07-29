@@ -6,6 +6,12 @@
  * Also supports alternate formats: `- [ ] **B2:** Description`
  * And bold-wrapped format: `- [ ] **AC-1: Description**`
  *
+ * Bare checkbox items (`- [ ] Some requirement`, no ID prefix) are also
+ * honored, but ONLY under an explicit `## Acceptance Criteria` heading, where
+ * they receive synthesized stable IDs. Human-authored issues rarely prefix
+ * their ACs with IDs, so without this every hand-written issue parsed to zero
+ * ACs — blinding every downstream AC consumer (#850).
+ *
  * @example
  * ```typescript
  * import { parseAcceptanceCriteria } from './ac-parser';
@@ -70,6 +76,28 @@ const AC_PATTERNS = [
   // the ID keeps non-identifier bold labels (`**Note**`, `**Verify**`) out.
   /^-\s*\[[x\s]\]\s*\*\*([A-Za-z]+-?\d+)\*\*:?\s*(.+)$/gim,
 ];
+
+/**
+ * Matches an `## Acceptance Criteria` heading (any level, case-insensitive).
+ *
+ * Real issues vary the casing — #703 uses `## Acceptance criteria` (lowercase
+ * "criteria") — so the match must be case-insensitive. The trailing `\b` lets
+ * a suffix follow ("Acceptance Criteria (v2)") without demanding an exact end.
+ */
+const AC_HEADING_RE = /^#{1,6}\s+acceptance\s+criteria\b/i;
+
+/**
+ * Matches any markdown ATX heading. Used to detect when the AC section ends —
+ * the next heading of any level closes it, mirroring `parseNonGoals` in
+ * `ready-gate.ts`.
+ */
+const HEADING_RE = /^#{1,6}\s+/;
+
+/**
+ * Matches a bare checkbox item with no ID prefix: `- [ ] Some requirement`.
+ * Honored only inside the AC section (see {@link parseAcceptanceCriteria}).
+ */
+const BARE_CHECKBOX_RE = /^-\s*\[[x\s]\]\s*(.+)$/i;
 
 /**
  * Keywords that suggest verification method
@@ -166,6 +194,12 @@ function parseACLine(line: string): { id: string; description: string } | null {
  * - `- [ ] **AC-1**: Description` (colon outside the bold)
  * - `- [ ] AC-1: Description`
  *
+ * Bare checkbox items without an ID prefix (`- [ ] Some requirement`) are also
+ * parsed, but ONLY under an explicit `## Acceptance Criteria` heading, where
+ * they receive synthesized stable IDs (`AC-1`, `AC-2`, ...). This keeps
+ * unrelated checklists elsewhere in the body (Open Questions, Test Plan) from
+ * being misread as ACs, while letting ordinary human-written issues parse.
+ *
  * @param issueBody - The full GitHub issue body markdown
  * @returns Array of parsed acceptance criteria
  */
@@ -175,21 +209,55 @@ export function parseAcceptanceCriteria(
   const criteria: AcceptanceCriterion[] = [];
   const seenIds = new Set<string>();
 
-  // Split into lines and process each
+  const push = (id: string, description: string): void => {
+    if (seenIds.has(id)) return;
+    seenIds.add(id);
+    criteria.push(
+      createAcceptanceCriterion(
+        id,
+        description,
+        inferVerificationMethod(description),
+      ),
+    );
+  };
+
+  // Split into lines and process each. `inAcSection` tracks whether the
+  // current line falls under an `## Acceptance Criteria` heading; it toggles on
+  // every heading and closes at the next heading of any level (same boundary
+  // rule as `parseNonGoals` in ready-gate.ts). `bareCount` numbers synthesized
+  // IDs for bare checkboxes in appearance order.
   const lines = issueBody.split("\n");
+  let inAcSection = false;
+  let bareCount = 0;
 
   for (const line of lines) {
+    if (HEADING_RE.test(line)) {
+      inAcSection = AC_HEADING_RE.test(line);
+      continue;
+    }
+
+    // Existing ID-prefixed patterns run on every line, regardless of section,
+    // so previously-parsable issues are unaffected (AC-4).
     const parsed = parseACLine(line);
-    if (parsed && !seenIds.has(parsed.id)) {
-      seenIds.add(parsed.id);
-      const verificationMethod = inferVerificationMethod(parsed.description);
-      criteria.push(
-        createAcceptanceCriterion(
-          parsed.id,
-          parsed.description,
-          verificationMethod,
-        ),
-      );
+    if (parsed) {
+      push(parsed.id, parsed.description);
+      continue;
+    }
+
+    // Bare-checkbox fallback: only inside the AC section (AC-1/AC-2).
+    if (inAcSection) {
+      const bare = line.match(BARE_CHECKBOX_RE);
+      const description = bare?.[1].trim();
+      if (description) {
+        // Synthesize `AC-<n>`, skipping any ID already taken by an explicit
+        // marker so a synthesized ID can never collide with (and be silently
+        // dropped against) a hand-written one.
+        let id: string;
+        do {
+          id = `AC-${++bareCount}`;
+        } while (seenIds.has(id));
+        push(id, description);
+      }
     }
   }
 
