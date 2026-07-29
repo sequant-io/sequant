@@ -24,6 +24,10 @@ import {
   isLocalNodeModulesInstall,
 } from "../src/lib/version-check.js";
 import { configureUI, banner } from "../src/lib/cli-ui.js";
+import {
+  parseWholeNumber,
+  parsePositiveSeconds,
+} from "../src/lib/cli-flags.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 import {
   detectPackageManagerSync,
@@ -112,32 +116,6 @@ function validatePhasesFlag(value: string): string {
     );
   }
   return value;
-}
-
-/**
- * Build a commander coercion for a positive-integer *seconds* flag.
- *
- * A bare `parseInt` is unsafe here: `parseInt("abc", 10)` is `NaN`, which is not
- * nullish and so survives a `?? default`, and `parseInt("30m", 10)` silently
- * yields `30` — the user asked for 30 minutes and got 30 seconds. Requiring the
- * whole string to be digits rejects both instead of accepting a value that is
- * unusable or quietly wrong.
- */
-function parsePositiveSeconds(flag: string): (value: string) => number {
-  return (value: string): number => {
-    if (!/^\d+$/.test(value.trim())) {
-      throw new InvalidArgumentError(
-        `${flag} expects a whole number of seconds (got '${value}').`,
-      );
-    }
-    const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed) || parsed < 1) {
-      throw new InvalidArgumentError(
-        `${flag} must be at least 1 second (got '${value}').`,
-      );
-    }
-    return parsed;
-  };
 }
 
 const program = new Command();
@@ -283,7 +261,13 @@ program
   .option("--sequential", "Stop on first issue failure (default: continue)")
   .option("-d, --dry-run", "Preview without execution")
   .option("-v, --verbose", "Verbose output with streaming")
-  .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
+  // #833: `parseInt` here let `--timeout abc` reach `setTimeout` as `NaN`,
+  // which clamps to 0 and aborts every phase the moment it starts.
+  .option(
+    "--timeout <seconds>",
+    "Timeout per phase in seconds",
+    parsePositiveSeconds("--timeout"),
+  )
   .option("--log-json", "Enable structured JSON logging (default: true)")
   .option("--no-log", "Disable JSON logging for this run")
   .option("--log-path <path>", "Custom log directory path")
@@ -298,10 +282,16 @@ program
       "Alias for -Q/--quality-loop",
     ).hideHelp(),
   )
+  // #833: a `NaN` bound makes `while (iteration < maxIterations)` in
+  // `batch-executor.ts` false on entry, so the issue silently runs zero phases.
   .option(
     "--max-iterations <n>",
     "Max iterations for quality loop (default: 3)",
-    parseInt,
+    parseWholeNumber("--max-iterations", {
+      min: 1,
+      unit: "iterations",
+      unitSingular: "iteration",
+    }),
   )
   .option(
     "--batch <issues>",
@@ -351,7 +341,14 @@ program
   .option(
     "--auto-wait <minutes>",
     "Total minutes to wait for an exhausted rate-limit window to reopen instead of halting (default: 0, off)",
-    parseInt,
+    // #833: min 0 — #804 defines 0 as "off", so 0 is a meaningful value here
+    // and must keep parsing. `NaN` was silently coerced to 0 by
+    // `createAutoWaitLedger`, so `--auto-wait 30m` quietly bought 30 minutes.
+    parseWholeNumber("--auto-wait", {
+      min: 0,
+      unit: "minutes",
+      unitSingular: "minute",
+    }),
   )
   .option(
     "--resume",
@@ -383,7 +380,10 @@ program
   .option(
     "--concurrency <n>",
     "Max concurrent issues in parallel mode (default: 3)",
-    parseInt,
+    // #833: `run.ts` already rejects non-integers, but only after `parseInt`
+    // has silently turned `--concurrency 3x` into 3. Validating the raw string
+    // catches that; the downstream check stays as a programmatic backstop.
+    parseWholeNumber("--concurrency", { min: 1 }),
   )
   .option(
     "--isolate-parallel",
@@ -463,7 +463,14 @@ program
   .option(
     "--grace <seconds>",
     "Seconds to wait after SIGINT before escalating (default: 10)",
-    parseInt,
+    // #833: min 0 — `--grace 0` means "escalate immediately" and is meaningful.
+    // `NaN` was worse than useless: `Math.max(0, NaN * 1000)` is `NaN`, so the
+    // grace period was skipped entirely and SIGTERM followed at once.
+    parseWholeNumber("--grace", {
+      min: 0,
+      unit: "seconds",
+      unitSingular: "second",
+    }),
   )
   .option("--json", "Output as JSON")
   .action((issueArg: string | undefined, options: Record<string, unknown>) => {
@@ -524,14 +531,30 @@ program
   .option(
     "--max-iterations <n>",
     "Max QA passes before halting for human review (default: settings.run.maxIterations)",
-    parseInt,
+    // #833: `ready.ts` guards each of these three with `> 0`, so `NaN` already
+    // fell back to the default rather than reaching a timer. What it could not
+    // catch is the silent misparse — `--budget 10k` became 10, `--timeout 30m`
+    // became 30 seconds — and a fallback is not the same as telling the user.
+    parseWholeNumber("--max-iterations", {
+      min: 1,
+      unit: "iterations",
+      unitSingular: "iteration",
+    }),
   )
   .option(
     "--budget <tokens>",
     "Token budget; halt cleanly with a 'needs human' message on exhaustion",
-    parseInt,
+    parseWholeNumber("--budget", {
+      min: 1,
+      unit: "tokens",
+      unitSingular: "token",
+    }),
   )
-  .option("--timeout <seconds>", "Timeout per phase in seconds", parseInt)
+  .option(
+    "--timeout <seconds>",
+    "Timeout per phase in seconds",
+    parsePositiveSeconds("--timeout"),
+  )
   .option("--no-mcp", "Disable MCP server injection in headless mode")
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")

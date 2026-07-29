@@ -202,6 +202,40 @@ export function resolveRunOptions(
 }
 
 /**
+ * Fall back to `fallback` unless `value` is a usable positive number.
+ *
+ * `??` alone is not enough for these (#833). `NaN` is not nullish, so a
+ * malformed value survives `?? default` and flows on into `setTimeout`, which
+ * clamps a `NaN` delay to 0 and aborts the phase on its first tick, or into
+ * `while (iteration < maxIterations)`, which is false on entry and runs zero
+ * phases. Both read as a phase/agent fault rather than a bad input, which is
+ * what makes the silent version expensive. Non-finite and non-positive values
+ * therefore fall back *to* the default instead of through it.
+ *
+ * `bin/cli.ts` rejects these at the flag boundary with a message naming the
+ * flag — that is the user-facing fix. This is the structural backstop for
+ * programmatic callers, `settings.json`, and whatever calls this next.
+ *
+ * Exported because `phaseTimeout` has two producers, not one: this module and
+ * `commands/ready.ts`, whose value reaches the driver through
+ * `ready-gate.ts`'s own `buildPhaseConfig` and never passes through
+ * `buildExecutionConfig`. Guarding only here would have left that path open.
+ * Chain it to express the layering — CLI, then settings, then the default:
+ *
+ * ```ts
+ * positiveOr(options.timeout, positiveOr(settings.run.timeout, DEFAULT))
+ * ```
+ */
+export function positiveOr(
+  value: number | undefined,
+  fallback: number,
+): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+}
+
+/**
  * Build an ExecutionConfig from merged RunOptions and settings.
  * Extracts the phase-timeout, MCP, retry, and mode resolution logic
  * that was previously inline in run.ts.
@@ -239,9 +273,22 @@ export function buildExecutionConfig(
     parallel: isParallel,
     dryRun: mergedOptions.dryRun ?? false,
     verbose: mergedOptions.verbose ?? false,
-    phaseTimeout: mergedOptions.timeout ?? DEFAULT_CONFIG.phaseTimeout,
+    // #833: chained so the layering is CLI → settings → default, matching
+    // `commands/ready.ts`. A malformed CLI value falls back to the user's
+    // configured setting rather than skipping past it to the hardcoded
+    // default; a malformed setting falls back to the default. In the normal
+    // path `mergedOptions` already carries the settings value, so this only
+    // differs when one of the two layers is unusable — which is the case that
+    // matters.
+    phaseTimeout: positiveOr(
+      mergedOptions.timeout,
+      positiveOr(settings.run.timeout, DEFAULT_CONFIG.phaseTimeout),
+    ),
     qualityLoop: mergedOptions.qualityLoop ?? false,
-    maxIterations: mergedOptions.maxIterations ?? DEFAULT_CONFIG.maxIterations,
+    maxIterations: positiveOr(
+      mergedOptions.maxIterations,
+      positiveOr(settings.run.maxIterations, DEFAULT_CONFIG.maxIterations),
+    ),
     noSmartTests: mergedOptions.noSmartTests ?? false,
     mcp: mcpEnabled,
     retry: retryEnabled,
