@@ -300,14 +300,21 @@ export async function reconcileStateAtStartup(
     const advanced: number[] = [];
     const stillPending: number[] = [];
 
-    // Find issues in ready_for_merge, in_progress, or waiting_for_qa_gate state.
+    // Find issues whose PR may have merged since their status was written.
     // in_progress covers PRs merged outside this session (#592).
     // waiting_for_qa_gate covers PRs merged before the next QA-gate run (#606).
+    // waiting_for_human_merge covers #817's `--ready-gate` terminal: a gated
+    // issue never reaches ready_for_merge, so without it a gated issue whose PR
+    // a human then merged stayed here forever and never advanced to merged
+    // (#837). Note this list is deliberately WIDER than `isCompletedIssueStatus`
+    // — it asks "might this have a merged PR?", not "is this done?", which is
+    // why in_progress belongs here but not there.
     for (const [issueNumStr, issueState] of Object.entries(state.issues)) {
       if (
         issueState.status !== "ready_for_merge" &&
         issueState.status !== "in_progress" &&
-        issueState.status !== "waiting_for_qa_gate"
+        issueState.status !== "waiting_for_qa_gate" &&
+        issueState.status !== "waiting_for_human_merge"
       ) {
         continue;
       }
