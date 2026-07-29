@@ -535,6 +535,7 @@ async function displayIssueState(options: StatusCommandOptions): Promise<void> {
     } else {
       console.log(chalk.red(`\nError reading state: ${error}`));
     }
+    process.exitCode = 1;
   }
 }
 
@@ -550,6 +551,7 @@ async function handleRebuild(options: StatusCommandOptions): Promise<void> {
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.success) process.exitCode = 1;
     return;
   }
 
@@ -565,6 +567,7 @@ async function handleRebuild(options: StatusCommandOptions): Promise<void> {
     }
   } else {
     console.log(chalk.red(`✗ Rebuild failed: ${result.error}`));
+    process.exitCode = 1;
   }
 }
 
@@ -594,6 +597,7 @@ async function handleCleanup(options: StatusCommandOptions): Promise<void> {
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.success) process.exitCode = 1;
     return;
   }
 
@@ -660,5 +664,6 @@ async function handleCleanup(options: StatusCommandOptions): Promise<void> {
     }
   } else {
     console.log(chalk.red(`✗ Cleanup failed: ${result.error}`));
+    process.exitCode = 1;
   }
 }

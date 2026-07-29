@@ -830,4 +830,29 @@ describe("init command", () => {
       expect(output).toContain("Claude Code MCP server config");
     });
   });
+
+  // #848 (AC-3 audit): `--upgrade-skills` with no installed skills directory
+  // printed a red error and bare-returned at exit 0. It must set exit 1 so a
+  // scripted upgrade can detect the failure.
+  describe("--upgrade-skills exit code (#848)", () => {
+    let prevExitCode: typeof process.exitCode;
+
+    beforeEach(() => {
+      prevExitCode = process.exitCode;
+      process.exitCode = undefined;
+    });
+
+    afterEach(() => {
+      process.exitCode = prevExitCode;
+    });
+
+    it("sets exit 1 when no skills directory is found", async () => {
+      // Default mockFileExists → false, so `.claude/skills` is absent.
+      await initCommand({ upgradeSkills: true });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("No skills directory found");
+      expect(process.exitCode).toBe(1);
+    });
+  });
 });

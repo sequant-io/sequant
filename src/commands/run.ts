@@ -52,6 +52,7 @@ export async function runCommand(
     console.log(
       chalk.red("❌ Sequant is not initialized. Run `sequant init` first."),
     );
+    process.exitCode = 1;
     return;
   }
 
@@ -61,6 +62,7 @@ export async function runCommand(
   // we evaluate any --chain-dependent constraint below.
   if (options.stacked && options.chain === false) {
     console.log(chalk.red("❌ --stacked cannot be combined with --no-chain"));
+    process.exitCode = 1;
     return;
   }
   if (options.stacked) {
@@ -70,6 +72,7 @@ export async function runCommand(
   // Validate constraints
   if (options.chain && options.batch?.length) {
     console.log(chalk.red("❌ --chain cannot be used with --batch"));
+    process.exitCode = 1;
     return;
   }
   if (
@@ -81,6 +84,7 @@ export async function runCommand(
         `❌ Invalid --concurrency value: ${options.concurrency}. Must be a positive integer.`,
       ),
     );
+    process.exitCode = 1;
     return;
   }
 
