@@ -68,6 +68,17 @@ export const AssessFlagSchema = z
 export type AssessFlag = z.infer<typeof AssessFlagSchema>;
 
 /**
+ * A `Considered:` entry — a flag or topology (`--chain`, `--testgen`,
+ * `--security-review`, …) whose trigger was evaluated and **not** met, plus the
+ * one-line reason it was not applied. Restores the why-not reasoning the
+ * original `/solve` format carried ("Also consider:") that the v3.0 redesign
+ * dropped and #522 only partially restored.
+ */
+export const AssessConsideredSchema = AssessFlagSchema;
+
+export type AssessConsidered = z.infer<typeof AssessConsideredSchema>;
+
+/**
  * A `⚠` warning. In batch mode `issue` scopes it to a row (`⚠ #458 ...`); in a
  * posted single-mode comment the number is dropped because the comment is
  * already scoped to that issue.
@@ -114,6 +125,8 @@ export const AssessIssueSchema = z
     /** Per-issue warnings with the leading `#N` already dropped. */
     warnings: z.array(z.string().min(1)).optional(),
     flags: z.array(AssessFlagSchema).optional(),
+    /** Flags evaluated but not applied, each with its why-not reason. */
+    considered: z.array(AssessConsideredSchema).optional(),
     cleanup: z.array(AssessCleanupSchema).optional(),
 
     // --- verdict-specific ---
@@ -165,6 +178,8 @@ export const AssessResultSchema = z
     warnings: z.array(AssessWarningSchema).optional(),
     chain: AssessChainSchema.optional(),
     flags: z.array(AssessFlagSchema).optional(),
+    /** Flags evaluated but not applied, each with its why-not reason. */
+    considered: z.array(AssessConsideredSchema).optional(),
     cleanup: z.array(AssessCleanupSchema).optional(),
   })
   .strict()

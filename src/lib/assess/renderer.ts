@@ -266,6 +266,19 @@ function flagLines(flags: AssessFlag[]): string[] {
   ];
 }
 
+/**
+ * `Considered:` — flags whose trigger was evaluated and not met, with the
+ * why-not reason. Same two-column geometry as `Flags:`; the header is what
+ * distinguishes applied from declined.
+ */
+function consideredLines(considered: AssessFlag[]): string[] {
+  if (considered.length === 0) return [];
+  return [
+    "Considered:",
+    ...alignedBlock(considered.map((f) => ({ left: f.flag, right: f.reason }))),
+  ];
+}
+
 function cleanupLines(cleanup: AssessCleanup[]): string[] {
   if (cleanup.length === 0) return [];
   return [
@@ -360,7 +373,8 @@ export function renderBatch(result: AssessResult): string {
     lines.push(...commands);
   }
 
-  // Order: → ⚠ → Chain: → Flags:, blank-line separated, inside one separator pair.
+  // Order: → ⚠ → Chain: → Flags: → Considered:, blank-line separated, inside
+  // one separator pair.
   const annotations: string[] = [];
   for (const order of result.orders ?? []) {
     annotations.push(...wrapAnnotation(`Order: ${order}`, "Order: ".length));
@@ -391,6 +405,11 @@ export function renderBatch(result: AssessResult): string {
   if (flags.length > 0) {
     if (annotations.length > 0) annotations.push("");
     annotations.push(...flags);
+  }
+  const considered = consideredLines(result.considered ?? []);
+  if (considered.length > 0) {
+    if (annotations.length > 0) annotations.push("");
+    annotations.push(...considered);
   }
 
   if (annotations.length > 0) {
@@ -450,6 +469,12 @@ function workflowBody(issue: AssessIssue, prefix: string): string[] {
   if (flags.length > 0) {
     lines.push("");
     lines.push(...flags);
+  }
+
+  const considered = consideredLines(issue.considered ?? []);
+  if (considered.length > 0) {
+    lines.push("");
+    lines.push(...considered);
   }
 
   return lines;

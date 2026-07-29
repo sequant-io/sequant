@@ -110,6 +110,12 @@ const EXAMPLES: Record<string, unknown> = {
         reason: "#411 resume — prior spec marker already exists",
       },
     ],
+    considered: [
+      {
+        flag: "--testgen",
+        reason: "no ui/frontend labels or testable-AC signals in the batch",
+      },
+    ],
     cleanup: [
       { command: "gh issue close 447", reason: "PR #457 merged" },
       { command: "gh issue edit 461 --add-label cli", reason: "missing label" },

@@ -621,13 +621,21 @@ describe("empty-section robustness", () => {
   // anything?" rather than re-deriving emptiness, so there is no second
   // `.length` check to drift out of step. Deleting a builder's guard fails
   // these tests — verified by mutation, not assumed.
-  it("renders empty commands/flags/cleanup as nothing at all", () => {
+  it("renders empty commands/flags/considered/cleanup as nothing at all", () => {
     const output = renderBatch(
-      batch({ commands: [], flags: [], cleanup: [], orders: [], warnings: [] }),
+      batch({
+        commands: [],
+        flags: [],
+        considered: [],
+        cleanup: [],
+        orders: [],
+        warnings: [],
+      }),
     );
 
     expect(output).not.toContain("Commands:");
     expect(output).not.toContain("Flags:");
+    expect(output).not.toContain("Considered:");
     expect(output).not.toContain("Cleanup:");
     expect([...output.matchAll(/^\u2500+$/gm)]).toHaveLength(0);
   });
@@ -647,6 +655,72 @@ describe("empty-section robustness", () => {
     expect(output).not.toContain("Cleanup:");
     expect(output).not.toContain("\u26a0");
     expect(output).toContain("<!-- assess:action=PROCEED -->");
+  });
+});
+
+describe("Considered: — why-not reasoning", () => {
+  const CONSIDERED = [
+    {
+      flag: "--chain",
+      reason: "no dependencies detected among PROCEED issues",
+    },
+    {
+      flag: "--testgen",
+      reason: "no ui/feature labels or testable-AC signals",
+    },
+  ];
+
+  it("renders after Flags: in the batch annotation group, blank-line separated", () => {
+    const output = renderBatch(
+      batch({
+        flags: [{ flag: "-Q", reason: "multi-file bug fixes" }],
+        considered: CONSIDERED,
+      }),
+    );
+
+    const lines = output.split("\n");
+    const flagsAt = lines.indexOf("Flags:");
+    const consideredAt = lines.indexOf("Considered:");
+    expect(flagsAt).toBeGreaterThan(-1);
+    expect(consideredAt).toBeGreaterThan(flagsAt);
+    expect(lines[consideredAt - 1]).toBe("");
+    expect(lines[consideredAt + 1]).toBe(
+      "  --chain    no dependencies detected among PROCEED issues",
+    );
+    expect(lines[consideredAt + 2]).toBe(
+      "  --testgen  no ui/feature labels or testable-AC signals",
+    );
+  });
+
+  it("renders alone in the annotation section when no flags are applied", () => {
+    const output = renderBatch(batch({ considered: [CONSIDERED[0]] }));
+
+    expect(output).not.toContain("Flags:");
+    expect(output).toContain("Considered:");
+    // Inside a separator pair, like every other annotation.
+    const lines = output.split("\n");
+    const consideredAt = lines.indexOf("Considered:");
+    expect(lines[consideredAt - 1]).toMatch(/^─+$/);
+  });
+
+  it("renders in single mode after the flags block", () => {
+    const output = renderSingle(
+      single({
+        phases: ["spec", "exec", "qa"],
+        qualityLoop: true,
+        command: { args: "run 458 -Q" },
+        flags: [{ flag: "-Q", reason: "dual concern across 4 files" }],
+        considered: [CONSIDERED[0]],
+      }),
+    );
+
+    const lines = output.split("\n");
+    const flagsAt = lines.indexOf("Flags:");
+    const consideredAt = lines.indexOf("Considered:");
+    expect(consideredAt).toBeGreaterThan(flagsAt);
+    expect(output).toContain(
+      "  --chain  no dependencies detected among PROCEED issues",
+    );
   });
 });
 
