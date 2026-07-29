@@ -176,26 +176,96 @@ if [ -f "${MAIN_REPO_DIR}/.claude/settings.local.json" ]; then
     cp "${MAIN_REPO_DIR}/.claude/settings.local.json" .claude/settings.local.json
 fi
 
-# Frozen install (#826). `npm install` normalizes and REWRITES package-lock.json
-# whenever the local npm disagrees with the npm that committed it — observed:
-# npm 10 stripping the `libc` fields a newer npm wrote via dependabot. Every
-# freshly provisioned worktree then started with an unstaged lockfile, and that
-# one dirty file cascades: `rebaseBeforePR` refuses to run so the #295 stale-base
-# guard silently never fires, `checkWorktreeFreshness` counts it as uncommitted
-# work so stale worktrees are never recreated, and chain checkpoints skip on an
-# "unrelated dirty file" — breaking chain resume (#760) on every link.
+# Package-manager resolution for the frozen install below (#847).
 #
-# `npm ci` never rewrites the lockfile. #816 made this same substitution for the
-# TypeScript provisioning path; this script was missed by that fix.
+# SOURCE OF TRUTH: src/lib/stacks.ts. The lockfile priority here MUST match
+# LOCKFILE_PRIORITY (bun.lockb → bun.lock → yarn.lock → pnpm-lock.yaml →
+# package-lock.json, npm fallback), and each frozen command MUST match the
+# corresponding PM_CONFIG[pm].ciInstall verbatim. A vitest drift-guard
+# (__tests__/new-feature-frozen-install.integration.test.ts) asserts every
+# ciInstall string appears here, converting drift from silent to failing.
+#
+# Detection is lockfile-existence only — it never reads package.json's
+# `packageManager` field — exactly like detectPackageManagerSync, so
+# multi-lockfile conflict behavior matches the TS path by construction.
+# Runs in the directory being provisioned (the worktree cwd).
+detect_package_manager() {
+    if [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+        echo "bun"
+    elif [ -f "yarn.lock" ]; then
+        echo "yarn"
+    elif [ -f "pnpm-lock.yaml" ]; then
+        echo "pnpm"
+    else
+        # package-lock.json OR no lockfile → npm (matches the TS fallback).
+        echo "npm"
+    fi
+}
+
+# Frozen (lockfile-faithful) install command per PM — mirrors PM_CONFIG.ciInstall.
+pm_ci_install() {
+    case "$1" in
+        bun)  echo "bun install --frozen-lockfile" ;;
+        yarn) echo "yarn install --immutable" ;;
+        pnpm) echo "pnpm install --frozen-lockfile" ;;
+        *)    echo "npm ci" ;;
+    esac
+}
+
+# Expected lockfile name for the detected PM (drives the AC-3 failure message).
+pm_lockfile() {
+    case "$1" in
+        # A bun project may commit either lockfile; name the one present.
+        bun)  if [ -f "bun.lock" ] && [ ! -f "bun.lockb" ]; then echo "bun.lock"; else echo "bun.lockb"; fi ;;
+        yarn) echo "yarn.lock" ;;
+        pnpm) echo "pnpm-lock.yaml" ;;
+        *)    echo "package-lock.json" ;;
+    esac
+}
+
+# PM-appropriate recovery command when the lockfile is out of sync (AC-3).
+pm_recovery() {
+    case "$1" in
+        bun)  echo "bun install && git commit bun.lockb" ;;
+        yarn) echo "yarn install && git commit yarn.lock" ;;
+        pnpm) echo "pnpm install --lockfile-only && git commit pnpm-lock.yaml" ;;
+        *)    echo "npm install --package-lock-only && git commit package-lock.json" ;;
+    esac
+}
+
+# Frozen install (#826). `npm install` (and every PM's default install)
+# normalizes and REWRITES the lockfile whenever the local tool disagrees with
+# the one that committed it — observed: npm 10 stripping the `libc` fields a
+# newer npm wrote via dependabot. Every freshly provisioned worktree then
+# started with an unstaged lockfile, and that one dirty file cascades:
+# `rebaseBeforePR` refuses to run so the #295 stale-base guard silently never
+# fires, `checkWorktreeFreshness` counts it as uncommitted work so stale
+# worktrees are never recreated, and chain checkpoints skip on an "unrelated
+# dirty file" — breaking chain resume (#760) on every link.
+#
+# The frozen mode (`npm ci`, `pnpm install --frozen-lockfile`, …) never
+# rewrites the lockfile. #816 made this substitution for the TypeScript
+# provisioning path but hardcoded npm here; #847 resolves the command from the
+# project's detected package manager so pnpm/yarn/bun projects no longer run
+# `npm ci` against a non-npm lockfile and fail naming a file they don't use.
 #
 # The enclosing `[ ! -d node_modules ]` guard means this only ever runs against
-# an absent node_modules, which is exactly `npm ci`'s precondition.
+# an absent node_modules, which is exactly the frozen install's precondition.
 frozen_install() {
-    if ! npm ci --silent; then
-        echo -e "${RED}❌ Dependency install failed (npm ci).${NC}" >&2
-        echo -e "${YELLOW}   The committed package-lock.json is out of sync with package.json.${NC}" >&2
+    local pm ci_cmd lockfile recovery
+    pm="$(detect_package_manager)"
+    ci_cmd="$(pm_ci_install "$pm")"
+    lockfile="$(pm_lockfile "$pm")"
+    recovery="$(pm_recovery "$pm")"
+
+    echo -e "${BLUE}   Package manager: ${pm} (${ci_cmd})${NC}"
+    # Unquoted on purpose: split the resolved command into words. The values
+    # are fixed literals from the tables above, not user input.
+    if ! $ci_cmd; then
+        echo -e "${RED}❌ Dependency install failed (${ci_cmd}).${NC}" >&2
+        echo -e "${YELLOW}   The committed ${lockfile} is out of sync with package.json.${NC}" >&2
         echo -e "${YELLOW}   Fix in the main repo, then re-run:${NC}" >&2
-        echo -e "${YELLOW}     npm install --package-lock-only && git commit package-lock.json${NC}" >&2
+        echo -e "${YELLOW}     ${recovery}${NC}" >&2
         echo -e "${YELLOW}   Worktree left in place at: $(pwd)${NC}" >&2
         # Explicit exit rather than relying on `set -e` so the cause is named:
         # a bare abort here leaves a half-provisioned worktree with no
@@ -204,18 +274,31 @@ frozen_install() {
     fi
 }
 
-# Install dependencies if needed
-if [ ! -d "node_modules" ]; then
-    # Check for npm install cache optimization (opt-in via SEQUANT_NPM_CACHE=true)
+# Install dependencies if needed.
+# Gate on package.json too (#847): a non-JS project has no lockfile and no
+# manifest, so it would otherwise fall through to `npm ci` and fail. Skip it.
+if [ ! -d "node_modules" ] && [ -f "package.json" ]; then
+    # Check for install cache optimization (opt-in via SEQUANT_NPM_CACHE=true)
     if [ "${SEQUANT_NPM_CACHE:-false}" = "true" ]; then
         CACHE_DIR="../worktrees/.npm-cache"
         HASH_FILE="${CACHE_DIR}/.package-lock-hash"
 
-        # Calculate current package-lock hash (cross-platform)
-        if command -v md5sum &> /dev/null; then
-            CURRENT_HASH=$(md5sum "${MAIN_REPO_DIR}/package-lock.json" | cut -d' ' -f1)
+        # Hash the RESOLVED lockfile, not a hardcoded package-lock.json (#847).
+        # On a pnpm/yarn/bun project the old code hashed a missing file: macOS
+        # `md5 -q` aborts under `set -e`, and Linux `md5sum | cut` masks the
+        # failure and caches an empty hash. Guarding on the resolved lockfile's
+        # existence avoids invoking the hasher on an absent path entirely.
+        CACHE_PM="$(detect_package_manager)"
+        CACHE_LOCKFILE="$(pm_lockfile "$CACHE_PM")"
+        LOCK_PATH="${MAIN_REPO_DIR}/${CACHE_LOCKFILE}"
+
+        # Calculate current lockfile hash (cross-platform)
+        if [ ! -f "$LOCK_PATH" ]; then
+            CURRENT_HASH=""
+        elif command -v md5sum &> /dev/null; then
+            CURRENT_HASH=$(md5sum "$LOCK_PATH" | cut -d' ' -f1)
         elif command -v md5 &> /dev/null; then
-            CURRENT_HASH=$(md5 -q "${MAIN_REPO_DIR}/package-lock.json")
+            CURRENT_HASH=$(md5 -q "$LOCK_PATH")
         else
             CURRENT_HASH=""
         fi
