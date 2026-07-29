@@ -122,6 +122,11 @@ jobs:
       - name: Lint skill calls
         run: npm run lint:skill-calls
 
+      # Asserts /qa's declared verdict floors are reachable from its §7
+      # algorithm. §2h's gate was prose-only from the day it shipped (#834).
+      - name: Lint skill gates
+        run: npm run lint:skill-gates
+
       - name: Check skill sync
         run: npm run lint:skill-sync
 
