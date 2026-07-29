@@ -63,9 +63,9 @@ npx sequant ready 712 --max-iterations 4 --budget 300000 --json
 | Flag | Description |
 |------|-------------|
 | `--policy <ac\|a-plus>` | Gate policy. Overrides `ready.policy` in settings. Invalid values fall back to settings/default. |
-| `--max-iterations <n>` | Max QA passes before halting for human review (default: `run.maxIterations`). |
-| `--budget <tokens>` | Token budget; on exhaustion the command halts cleanly with a "needs human" message rather than looping. |
-| `--timeout <seconds>` | Per-phase timeout (default: `run.timeout`). |
+| `--max-iterations <n>` | Max QA passes before halting for human review (default: `run.maxIterations`). Whole number ≥ 1. |
+| `--budget <tokens>` | Token budget; on exhaustion the command halts cleanly with a "needs human" message rather than looping. Whole number ≥ 1 — `10k` is rejected, not read as `10` (#833). |
+| `--timeout <seconds>` | Per-phase timeout (default: `run.timeout`). Whole seconds only — `30m` and `abc` are rejected rather than read as `30` (#833). |
 | `--no-mcp` | Disable MCP server injection in headless mode. |
 | `--json` | Emit a structured JSON result instead of the markdown report. |
 | `-v, --verbose` | Verbose phase output. |

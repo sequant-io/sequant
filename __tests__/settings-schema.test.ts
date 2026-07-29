@@ -101,11 +101,26 @@ describe("AC-1: SettingsSchema - Zod schema matching SettingsDefaults", () => {
   });
 
   describe("edge cases", () => {
-    it("should handle zero values in numeric fields", () => {
-      const result = SettingsSchema.safeParse({ run: { timeout: 0 } });
+    it("should handle zero values in unconstrained numeric fields", () => {
+      // #833 narrowed this deliberately. It previously asserted `run.timeout: 0`
+      // parses — but that value has no working meaning: it reaches `setTimeout`
+      // as a 0 ms delay and aborts every phase on its first tick. The old
+      // expectation pinned the permissiveness that made the bug silent, so the
+      // case moved to a field where 0 IS meaningful (0 = warn on any drift).
+      const result = SettingsSchema.safeParse({
+        run: { staleBranchThreshold: 0 },
+      });
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.run.timeout).toBe(0);
+        expect(result.data.run.staleBranchThreshold).toBe(0);
+      }
+    });
+
+    it("should reject zero for fields that feed a timer or loop bound", () => {
+      // #833: the counterpart to the above — these three must NOT accept 0.
+      for (const key of ["timeout", "concurrency", "maxIterations"]) {
+        const result = SettingsSchema.safeParse({ run: { [key]: 0 } });
+        expect(result.success, `run.${key} should reject 0`).toBe(false);
       }
     });
 
