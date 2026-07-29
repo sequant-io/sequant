@@ -13,7 +13,7 @@ import {
   spawnSync,
   ExecSyncOptionsWithStringEncoding,
 } from "child_process";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync } from "fs";
@@ -21,7 +21,19 @@ import { existsSync, readFileSync } from "fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "../..");
 const cliPath = resolve(projectRoot, "dist/bin/cli.js");
-const distExists = existsSync(resolve(projectRoot, "dist"));
+
+// Build handled by vitest globalSetup (vitest.global-setup.ts). Fail loudly if
+// it is missing rather than skip (#842 AC-6) — this file previously carried a
+// `describe.skipIf(!distExists)` block whose only test asserted
+// `expect(distExists).toBe(true)`, i.e. it was skipped in exactly the case it
+// would have failed, so it could never fail at all.
+beforeAll(() => {
+  if (!existsSync(cliPath)) {
+    throw new Error(
+      `dist/bin/cli.js not found at ${cliPath}. Run 'npm run build' first.`,
+    );
+  }
+});
 
 // Read package.json version for comparison
 const packageJson = JSON.parse(
@@ -131,14 +143,6 @@ describe("CLI version integration", () => {
     }
 
     expect(output.trim()).toBe(expectedVersion);
-  });
-});
-
-// Separate describe block for tests that should be skipped if dist/ doesn't exist
-// This allows the main tests to build first, but provides a skip mechanism for docs
-describe.skipIf(!distExists)("CLI version (pre-built)", () => {
-  it("dist/ directory exists", () => {
-    expect(distExists).toBe(true);
   });
 });
 
