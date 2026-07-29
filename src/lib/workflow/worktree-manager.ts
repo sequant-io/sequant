@@ -516,6 +516,63 @@ export function filterResumedPhases(
 }
 
 /**
+ * Run the frozen dependency install for a freshly provisioned worktree and
+ * surface (rather than swallow) a failed install.
+ *
+ * Mirrors the status check in `reinstallIfLockfileChanged` (#846): a plain
+ * `npm install` self-heals a stale/absent lockfile, but the frozen `npm ci`
+ * hard-fails (exit 1, no node_modules). Without this check a failing install
+ * left a silently dependency-less worktree whose breakage only surfaced later
+ * as a confusing phase error. The warning names the resolved command so the
+ * user can rerun it by hand.
+ *
+ * @returns true if the install succeeded, false if it failed (warn-and-continue)
+ * @internal Exported for testing
+ */
+export function installWorktreeDeps(
+  worktreePath: string,
+  packageManager: string | undefined,
+  verbose: boolean,
+): boolean {
+  if (verbose) {
+    console.log(chalk.gray(`    Installing dependencies...`));
+  }
+  // Use detected package manager or default to npm
+  const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
+  const pmConfig = PM_CONFIG[pm];
+  // ciInstall, not installSilent: a plain `npm install` normalizes and
+  // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
+  // newer npm committed), so every provisioned worktree started dirty. That
+  // one unstaged file cascaded: rebaseBeforePR refused to run, stale
+  // worktrees read as having "uncommitted changes" and were never recreated,
+  // and chain checkpoints skipped on an out-of-scope dirty file. A frozen
+  // install never touches the lockfile. Same substitution #803 made for
+  // merge-check's combined-branch test. The `!existsSync(node_modules)`
+  // guard at the call site means `npm ci`'s wipe-and-reinstall has nothing
+  // to wipe.
+  const [cmd, ...args] = pmConfig.ciInstall.split(" ");
+  const command = [cmd, ...args].join(" ");
+
+  const installResult = spawnSync(cmd, args, {
+    cwd: worktreePath,
+    stdio: "pipe",
+  });
+
+  if (installResult.status !== 0) {
+    // stderr may be empty on some failures — the resolved command alone is
+    // enough to act on, so always name it (AC-2).
+    const error = installResult.stderr?.toString().trim() ?? "";
+    const detail = error ? `: ${error}` : "";
+    console.log(
+      chalk.yellow(`    !  Dependency install failed (${command})${detail}`),
+    );
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Create or reuse a worktree for an issue
  * @param baseBranch - Optional branch to use as base instead of origin/main (for chain mode)
  * @param chainMode - If true and branch exists, rebase onto baseBranch instead of using as-is
@@ -825,26 +882,7 @@ export async function ensureWorktree(
   // Install dependencies if needed
   const nodeModulesPath = path.join(worktreePath, "node_modules");
   if (!existsSync(nodeModulesPath)) {
-    if (verbose) {
-      console.log(chalk.gray(`    Installing dependencies...`));
-    }
-    // Use detected package manager or default to npm
-    const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-    const pmConfig = PM_CONFIG[pm];
-    // ciInstall, not installSilent: a plain `npm install` normalizes and
-    // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
-    // newer npm committed), so every provisioned worktree started dirty. That
-    // one unstaged file cascaded: rebaseBeforePR refused to run, stale
-    // worktrees read as having "uncommitted changes" and were never recreated,
-    // and chain checkpoints skipped on an out-of-scope dirty file. A frozen
-    // install never touches the lockfile. Same substitution #803 made for
-    // merge-check's combined-branch test. The `!existsSync(node_modules)`
-    // guard above means `npm ci`'s wipe-and-reinstall has nothing to wipe.
-    const [cmd, ...args] = pmConfig.ciInstall.split(" ");
-    spawnSync(cmd, args, {
-      cwd: worktreePath,
-      stdio: "pipe",
-    });
+    installWorktreeDeps(worktreePath, packageManager, verbose);
   }
 
   if (verbose) {
