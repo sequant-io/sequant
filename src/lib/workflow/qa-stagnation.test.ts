@@ -317,6 +317,10 @@ describe("snapshotLoopProgress (.sequant/ exclusion)", () => {
     execSync("git init -q -b main", { cwd: repo });
     execSync("git config user.email test@test.local", { cwd: repo });
     execSync("git config user.name test", { cwd: repo });
+    // Contributors with global commit signing have no pinentry in a test run,
+    // so the commits below died with "gpg: signing failed". CI has no signing
+    // key and never noticed.
+    execSync("git config commit.gpgsign false", { cwd: repo });
     fs.writeFileSync(path.join(repo, "README.md"), "seed\n");
     execSync("git add README.md && git commit -q -m seed", { cwd: repo });
   });
@@ -449,6 +453,10 @@ describe("qa-loop integration (AC-4)", () => {
     execSync("git init -q -b main", { cwd: repo });
     execSync("git config user.email test@test.local", { cwd: repo });
     execSync("git config user.name test", { cwd: repo });
+    // Contributors with global commit signing have no pinentry in a test run,
+    // so the commits below died with "gpg: signing failed". CI has no signing
+    // key and never noticed.
+    execSync("git config commit.gpgsign false", { cwd: repo });
     fs.writeFileSync(path.join(repo, "README.md"), "seed\n");
     execSync("git add README.md && git commit -q -m seed", { cwd: repo });
   });

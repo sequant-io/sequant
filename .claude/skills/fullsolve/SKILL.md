@@ -673,7 +673,9 @@ Post completion comment to issue with:
 gh pr merge <N> --squash
 
 # 2. Clean up worktree (removes local worktree + branch)
-./scripts/cleanup-worktree.sh feature/<issue-number>-*
+# Quote the glob: the script resolves the pattern itself, and zsh aborts on an
+# unmatched unquoted glob before the script ever runs.
+./scripts/cleanup-worktree.sh 'feature/<issue-number>-*'
 
 # 3. Issue auto-closes if commit message contains "Fixes #N"
 ```

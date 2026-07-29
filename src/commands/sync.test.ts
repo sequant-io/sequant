@@ -36,6 +36,16 @@ vi.mock("../lib/config.js", () => ({
   getConfig: vi.fn(),
 }));
 
+// Mock the MCP pin (#793). `syncSequantMcpPin` reads and writes `.mcp.json`
+// through node's `fs` directly, so it bypasses the `../lib/fs.js` mock above.
+// These tests never chdir, which means an unmocked call resolves
+// `process.cwd()` to the sequant repo itself and rewrites the real tracked
+// `.mcp.json`. Verified: without this mock, `vitest run src/commands/sync.test.ts`
+// leaves ` M .mcp.json` behind.
+vi.mock("../lib/mcp-config.js", () => ({
+  syncSequantMcpPin: vi.fn(() => ({ updated: false, reason: "no-file" })),
+}));
+
 import {
   getSkillsVersion,
   areSkillsOutdated,
@@ -50,7 +60,9 @@ import {
   listTemplateFiles,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
+import { syncSequantMcpPin } from "../lib/mcp-config.js";
 
+const mockSyncMcpPin = vi.mocked(syncSequantMcpPin);
 const mockFileExists = vi.mocked(fileExists);
 const mockReadFile = vi.mocked(readFile);
 const mockWriteFile = vi.mocked(writeFile);
@@ -66,6 +78,9 @@ describe("sync command", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.spyOn(console, "log").mockImplementation(() => {});
+    // resetAllMocks strips the factory implementation, so restore a valid
+    // SyncMcpPinResult — sync.ts reads `.updated` off the return value.
+    mockSyncMcpPin.mockReturnValue({ updated: false, reason: "no-file" });
   });
 
   afterEach(() => {
@@ -426,6 +441,64 @@ describe("sync command", () => {
           String(c[0]).includes("already up to date"),
         ),
       ).toBe(true);
+    });
+
+    it("re-pins .mcp.json even on the up-to-date fast path (#793)", async () => {
+      // The pin must run BEFORE the "already up to date" early return. A
+      // version-only upgrade leaves every template byte-identical, so this
+      // fast path is exactly the case where the pin most needs refreshing —
+      // and it was the case `update` handled but `sync` silently skipped.
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.1.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([
+        {
+          path: ".claude/skills/exec/SKILL.md",
+          templatePath: "templates/skills/exec/SKILL.md",
+          status: "unchanged",
+          rendered: "x",
+        },
+      ]);
+      mockSyncMcpPin.mockReturnValue({
+        updated: true,
+        from: "sequant@latest",
+        to: "sequant@1.1.0",
+      });
+
+      const logSpy = vi.spyOn(console, "log");
+      await syncCommand();
+
+      expect(mockSyncMcpPin).toHaveBeenCalledTimes(1);
+      expect(
+        logSpy.mock.calls.some((c) => String(c[0]).includes("MCP pin")),
+      ).toBe(true);
+    });
+
+    it("passes dryRun through to the .mcp.json pin so a preview never writes (#793)", async () => {
+      mockGetManifest.mockResolvedValue({
+        version: "1.1.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.0.0");
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue([]);
+
+      await syncCommand({ dryRun: true });
+
+      expect(mockSyncMcpPin).toHaveBeenCalledWith(expect.any(String), {
+        dryRun: true,
+      });
     });
 
     it("reports drift instead of false up-to-date when content differs at equal version", async () => {

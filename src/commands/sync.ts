@@ -23,6 +23,7 @@ import {
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
+import { syncSequantMcpPin } from "../lib/mcp-config.js";
 import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
 import {
   generateAgentsMd,
@@ -298,6 +299,21 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // Get config tokens for template processing
   const config = await getConfig();
   const tokens = config?.tokens || {};
+
+  // Re-pin the project .mcp.json MCP server to the installed version (#793).
+  // `syncSequantMcpPin`'s contract has always named this the `update`/`sync`
+  // path, but only `update` ever called it, so a `sync` left the pin stale.
+  // Placed here for the same reason update.ts states: it must precede the
+  // "already up to date" fast path below, because a version-only upgrade
+  // leaves every template byte-identical and returns early — and that is
+  // exactly the case where the pin most needs refreshing.
+  const mcpPin = syncSequantMcpPin(process.cwd(), { dryRun });
+  if (mcpPin.updated && !quiet) {
+    const verb = dryRun ? "Would update" : "Updated";
+    console.log(
+      chalk.blue(`${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}`),
+    );
+  }
 
   // The version marker is only a fast-path hint — verify actual content before
   // claiming "up to date". On a version match we still diff bundled templates

@@ -119,6 +119,10 @@ beforeEach(() => {
   git(["init", "-q", "-b", "main"]);
   git(["config", "user.email", "t@example.com"]);
   git(["config", "user.name", "t"]);
+  // Contributors with a global `commit.gpgsign=true` have no pinentry in a
+  // test run, so every commit below would die with "gpg: signing failed".
+  // CI has no signing key and never noticed. Same line the other fixtures use.
+  git(["config", "commit.gpgsign", "false"]);
   writeFileSync(join(repo, "f.txt"), "x\n");
   git(["add", "."]);
   git(["commit", "-q", "-m", "init"]);
@@ -170,6 +174,24 @@ describe("cleanup-worktree.sh branch resolution (#838)", () => {
         encoding: "utf8",
       }).stdout.trim();
       expect(branches).toBe("");
+    });
+
+    it("actually deletes the remote branch on a MERGED PR", () => {
+      stubGh(true);
+      runCleanup(arg);
+
+      // The third consumer of the resolved ref (alongside `gh pr list --head`
+      // and `git branch -D`) is `git push origin --delete`, and it is the one
+      // this file never asserted. That line is `2>/dev/null || true`, so a
+      // regression reintroducing the RAW argument there deletes nothing and
+      // still prints "Cleanup complete!" at exit 0 — the exact silent-failure
+      // class #838 exists to close.
+      const remote = spawnSync(
+        "git",
+        ["ls-remote", "--heads", "origin", BRANCH],
+        { cwd: repo, encoding: "utf8" },
+      ).stdout.trim();
+      expect(remote).toBe("");
     });
 
     it("still refuses an UNMERGED PR non-interactively (#750 preserved)", () => {
