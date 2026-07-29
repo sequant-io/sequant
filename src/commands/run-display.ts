@@ -188,10 +188,12 @@ export function displaySummary(
   if (results.length === 0) return;
 
   const issueSummaries = results.map(toIssueSummary);
-  const totalSeconds = results.reduce(
-    (sum, r) => sum + (r.durationSeconds ?? 0),
-    0,
-  );
+  // #867: run wall clock, computed once by the orchestrator (RunResult), NOT
+  // `results.reduce(sum + durationSeconds)`. Under --parallel that sum
+  // double-counts overlapping issues and over-reports by ~the concurrency
+  // factor (a 36m 18s run printed 1h 12m at concurrency 3). The orchestrator is
+  // the only component that brackets the whole run, so it owns this value.
+  const totalSeconds = result.wallClockDurationSeconds;
 
   if (renderer) {
     renderer.renderSummary({
