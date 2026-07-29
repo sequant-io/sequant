@@ -226,11 +226,24 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
   });
 
   // Drift guard: the shell case table must stay in lockstep with PM_CONFIG.
-  // Deleting or editing a ciInstall string in the script fails exactly here.
-  it("drift guard: each JS ciInstall in PM_CONFIG appears verbatim in the script", () => {
+  // Editing a ciInstall string in the pm_ci_install() table fails exactly here.
+  //
+  // Scoped to the pm_ci_install() function body ONLY — the ciInstall strings
+  // also appear in the file's explanatory comment, so a whole-file substring
+  // match would be satisfied by that prose and pass even when the actual
+  // command table is wrong (verified by mutation: pnpm→"npm ci" in the table
+  // must fail this test, and against the whole file it did not). See the
+  // "delimited region" rule in CLAUDE.md § Testing.
+  it("drift guard: each JS ciInstall in PM_CONFIG appears verbatim in the pm_ci_install table", () => {
     const script = readFileSync(SCRIPT, "utf8");
+    const match = script.match(/pm_ci_install\(\)\s*\{([\s\S]*?)\n\}/);
+    expect(
+      match,
+      "pm_ci_install() function not found in script",
+    ).not.toBeNull();
+    const table = match![1];
     for (const pm of ["npm", "pnpm", "yarn", "bun"] as const) {
-      expect(script).toContain(PM_CONFIG[pm].ciInstall);
+      expect(table).toContain(PM_CONFIG[pm].ciInstall);
     }
   });
 });
