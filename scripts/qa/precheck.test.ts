@@ -418,7 +418,12 @@ describe("parseArgs", () => {
 // CLI integration — actually shell out to verify wiring works
 // ---------------------------------------------------------------------------
 
-describe("precheck CLI (integration)", () => {
+// #842 AC-3: these shell out to `npx tsx` with 30 s and 60 s child timeouts,
+// but the file name has no `.integration.` infix, so it lands in the `unit`
+// project and inherited vitest's 5 s default — both child timeouts were
+// unreachable, and an `npx tsx` spawn under load (7.5-17.8 s measured) could
+// blow the budget outright. 90 s sits strictly above the larger child timeout.
+describe("precheck CLI (integration)", { timeout: 90_000 }, () => {
   it("--help prints usage and exits 0", () => {
     const out = execSync(`npx tsx ${CLI_PATH} --help`, {
       encoding: "utf-8",
