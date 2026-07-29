@@ -2,9 +2,12 @@
 
 # Clean up a worktree after PR is merged
 # Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
-# <branch> accepts an issue number / substring (`123`), a glob
-# (`feature/123-*`), or the full branch name — all resolve to the same worktree
-# and, since #838, to the same underlying branch ref.
+# <branch> accepts an issue number / substring (`123`), a QUOTED glob
+# (`'feature/123-*'`), or the full branch name — all resolve to the same
+# worktree and, since #838, to the same underlying branch ref.
+# Quote the glob: this script resolves the pattern itself, so it must arrive
+# unexpanded. zsh (the default macOS shell) aborts on an unmatched unquoted
+# glob before the script ever runs; bash would pass it through literally.
 # Example: ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
 #
 # The remote branch is deleted ONLY when the branch's PR is MERGED (the
@@ -35,8 +38,12 @@ Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
 
 <branch> may be any of (all resolve to the same worktree):
   838                    an issue number, or any substring of the branch
-  feature/838-*          a glob
+  'feature/838-*'        a glob — MUST be quoted (see below)
   feature/838-fix-thing  the full branch name
+
+Quote the glob form. This script resolves the pattern itself, so it must
+arrive unexpanded; zsh aborts on an unmatched unquoted glob before the
+script ever runs.
 
 Clean up a feature worktree. The remote branch is deleted ONLY when the
 branch's PR is MERGED (the documented post-merge contract) or when an
