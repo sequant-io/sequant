@@ -24,7 +24,11 @@ function runCli(args: string[] = []): { stdout: string; exitCode: number } {
   }
 }
 
-describe("tautology-detector-cli", () => {
+// #842 AC-3: the 30 s child timeout above must be strictly below the vitest
+// timeout, or whichever fires first is a coin flip. This file is in the
+// `integration` project, whose floor is also 30 s — equal, not greater — so it
+// states its own ceiling rather than relying on that floor.
+describe("tautology-detector-cli", { timeout: 60_000 }, () => {
   it("runs with --json flag and produces valid JSON", () => {
     const { stdout, exitCode } = runCli(["--json"]);
     expect(exitCode).toBe(0);
