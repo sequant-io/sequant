@@ -62,7 +62,11 @@ export function IssueBox({
         <Text color={border}>{headerTitle}</Text>
         <Text color={DIVIDER_COLOR}>
           phase {displayPhaseN}/{total} •{" "}
-          <ElapsedTimer startedAt={state.startedAt} />
+          <ElapsedTimer
+            startedAt={state.startedAt}
+            completedAt={state.completedAt}
+            now={now}
+          />
         </Text>
       </Box>
 
