@@ -507,6 +507,46 @@ export function parseQaVerdict(output: string): QaVerdict | null {
 }
 
 /**
+ * Deferral/continuation markers that signal a QA agent ended its turn intending
+ * to continue *later* — as if a subsequent turn or a background poll were
+ * available to it. Seeded from the #853 live repro, whose QA turn deferred to a
+ * background CI poll and "the completion notification" instead of emitting a
+ * verdict. Matched as lowercased literal substrings (ReDoS-safe) against the
+ * output tail only.
+ */
+const QA_DEFERRAL_MARKERS = [
+  "i'll pick this up",
+  "pick this up on the completion",
+  "completion notification",
+  "background poll",
+  "when the background",
+  "when ci ",
+  "later turn",
+  "i'll invoke",
+] as const;
+
+/**
+ * Distinguish a QA turn that produced *no verdict at all* from one whose output
+ * was present but unparseable (#853). Returns true when the output is empty /
+ * whitespace, or when its tail contains deferral language — the agent treating
+ * its one-shot phase as if a later turn were available.
+ *
+ * Both cases are hard failures either way; this only refines which message is
+ * emitted, so a false positive is harmless (it swaps one failing message for
+ * another). Kept deliberately conservative and literal to stay ReDoS-safe.
+ *
+ * @internal Exported for testing only.
+ */
+export function endedWithoutVerdict(output: string | undefined): boolean {
+  if (!output || output.trim().length === 0) return true;
+  // Scan the tail only: deferral language lives at the end of the turn, where
+  // the agent signs off planning to continue. A larger window would also catch
+  // a mid-review aside that says "later" without deferring the whole turn.
+  const tail = output.slice(-2000).toLowerCase();
+  return QA_DEFERRAL_MARKERS.some((marker) => tail.includes(marker));
+}
+
+/**
  * Parse condensed QA summary from QA phase output (#434).
  *
  * Handles multiple AC table formats produced by the QA skill:
@@ -770,12 +810,20 @@ export function mapAgentSuccessToPhaseResult(
       };
     }
     if (!verdict) {
-      // #534: a null verdict (empty or unparseable output) is not success.
+      // #534: a null verdict is not success. #853 splits this into two classes
+      // so the message is not misleading. A turn that deferred to a later turn
+      // (or produced no output) never emitted a verdict — reporting that as
+      // "unparseable" sends a debugger to inspect a verdict regex that was
+      // never the problem. Both remain hard failures (`success:false`); only
+      // the message differs.
+      const error = endedWithoutVerdict(agentResult.output)
+        ? "QA ended without producing a verdict — the phase is one-shot; the agent deferred to a later turn or emitted no output"
+        : "QA completed without a parseable verdict";
       return {
         phase,
         success: false,
         durationSeconds,
-        error: "QA completed without a parseable verdict",
+        error,
         ...resume,
         output: agentResult.output,
         summary,
