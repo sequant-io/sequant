@@ -1,7 +1,10 @@
 #!/bin/bash
 
 # Clean up a worktree after PR is merged
-# Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+# Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
+# <branch> accepts an issue number / substring (`123`), a glob
+# (`feature/123-*`), or the full branch name — all resolve to the same worktree
+# and, since #838, to the same underlying branch ref.
 # Example: ./scripts/cleanup-worktree.sh feature/123-add-user-dashboard
 #
 # The remote branch is deleted ONLY when the branch's PR is MERGED (the
@@ -28,7 +31,12 @@ NC='\033[0m'
 # Print CLI usage/help (kept in sync with the header comment above).
 print_usage() {
     cat <<'USAGE'
-Usage: ./scripts/cleanup-worktree.sh [flags] <branch-name>
+Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
+
+<branch> may be any of (all resolve to the same worktree):
+  838                    an issue number, or any substring of the branch
+  feature/838-*          a glob
+  feature/838-fix-thing  the full branch name
 
 Clean up a feature worktree. The remote branch is deleted ONLY when the
 branch's PR is MERGED (the documented post-merge contract) or when an
@@ -101,17 +109,56 @@ if [ -z "$BRANCH_NAME" ]; then
     exit 1
 fi
 
-# Find worktree path. Parse porcelain (which separates path/branch onto distinct
-# lines) so paths containing whitespace survive intact, and so we match against
-# the branch ref rather than against a free-form `grep` over the entire line —
-# the latter false-matches whenever the branch name appears in the path string.
-WORKTREE_PATH=$(git worktree list --porcelain | awk -v target="$BRANCH_NAME" '
-  /^worktree / { sub(/^worktree /, ""); path = $0 }
-  /^branch refs\/heads\// {
-    sub(/^branch refs\/heads\//, "")
-    if (index($0, target) > 0) { print path; exit }
-  }
-')
+# Find the worktree path AND the full branch ref it belongs to. Parse porcelain
+# (which separates path/branch onto distinct lines) so paths containing
+# whitespace survive intact, and so we match against the branch ref rather than
+# against a free-form `grep` over the entire line — the latter false-matches
+# whenever the branch name appears in the path string.
+#
+# #838 fixes two defects that both live here:
+#
+#  1. The matcher was a literal substring search, so the `feature/<issue>-*`
+#     form that fullsolve/SKILL.md, exec/SKILL.md and docs/troubleshooting.md
+#     all prescribe compared the `*` literally and failed with "Worktree not
+#     found". The `case` glob arm below makes the documented form work.
+#  2. Only the path was captured, so every downstream consumer re-used the
+#     caller's raw shorthand. `gh pr list --head`, `git branch -D` and
+#     `git push origin --delete` all match EXACTLY and silently no-op on a
+#     shorthand — and the latter two are `|| true`-suppressed, so the script
+#     printed "Cleanup complete!" while leaving the branch behind. Resolve once
+#     here; everything below uses $RESOLVED_BRANCH.
+#
+# Implemented with bash `case` rather than awk so glob matching is native and
+# no regex-escaping dance is needed. `while IFS= read -r` preserves whitespace
+# in paths (the #575 hardening); `mapfile` is deliberately avoided — macOS
+# ships bash 3.2, where it does not exist.
+WORKTREE_PATH=""
+RESOLVED_BRANCH=""
+_wt_path=""
+while IFS= read -r _line; do
+    case "$_line" in
+        "worktree "*)
+            _wt_path="${_line#worktree }"
+            ;;
+        "branch refs/heads/"*)
+            _wt_branch="${_line#branch refs/heads/}"
+            # Two accepted forms, in one test:
+            #   *"$BRANCH_NAME"*  quoted -> literal substring  (`838`)
+            #   $BRANCH_NAME      unquoted -> shell glob       (`feature/838-*`)
+            # The glob arm is what makes the documented `feature/<issue>-*`
+            # form work; before #838 the matcher was a pure substring search,
+            # so the asterisk was compared literally and the documented
+            # invocation died with "Worktree not found".
+            case "$_wt_branch" in
+                *"$BRANCH_NAME"* | $BRANCH_NAME)
+                    WORKTREE_PATH="$_wt_path"
+                    RESOLVED_BRANCH="$_wt_branch"
+                    break
+                    ;;
+            esac
+            ;;
+    esac
+done < <(git worktree list --porcelain)
 
 if [ -z "$WORKTREE_PATH" ]; then
     echo -e "${RED}❌ Error: Worktree not found for branch: $BRANCH_NAME${NC}"
@@ -121,12 +168,17 @@ if [ -z "$WORKTREE_PATH" ]; then
     exit 1
 fi
 
-echo -e "${BLUE}🧹 Cleaning up worktree for: $BRANCH_NAME${NC}"
+echo -e "${BLUE}🧹 Cleaning up worktree for: $RESOLVED_BRANCH${NC}"
 echo -e "${BLUE}Path: $WORKTREE_PATH${NC}"
 echo ""
 
-# Check if PR is merged
-PR_STATUS=$(gh pr list --head "$BRANCH_NAME" --state merged --json number,state --jq '.[0].state' 2>/dev/null || echo "")
+# Check if PR is merged. Queries the RESOLVED ref (#838): `--head` is an exact
+# match, so passing the caller's shorthand here reported "not merged" for every
+# invocation form except a full literal branch name — including the
+# `feature/<issue>-*` form the skills and docs prescribe. A warning that always
+# fires carries no signal and makes --yes/--force the mandatory incantation,
+# which re-arms the very bypass reflex #750 removed.
+PR_STATUS=$(gh pr list --head "$RESOLVED_BRANCH" --state merged --json number,state --jq '.[0].state' 2>/dev/null || echo "")
 
 # Confirmation gate — only reached when the PR is NOT merged. When MERGED we
 # short-circuit past this entirely (no prompt, no TTY check) so the documented
@@ -179,9 +231,11 @@ fi
 echo -e "${BLUE}📂 Removing worktree...${NC}"
 git worktree remove "$WORKTREE_PATH" --force
 
-# Delete local branch
+# Delete local branch. Uses the RESOLVED ref (#838) — `git branch -D 817` finds
+# no such branch and, being `|| true`-suppressed, failed silently: the script
+# reported "Cleanup complete!" while leaving the branch behind.
 echo -e "${BLUE}🌿 Deleting local branch...${NC}"
-git branch -D "$BRANCH_NAME" 2>/dev/null || true
+git branch -D "$RESOLVED_BRANCH" 2>/dev/null || true
 
 # Delete remote branch — hard-gated on merge state. Only delete when the PR is
 # MERGED or an explicit override flag (--delete-remote/--force) was passed.
@@ -189,7 +243,8 @@ git branch -D "$BRANCH_NAME" 2>/dev/null || true
 # PR's head branch makes GitHub close the PR unmerged, stranding the work.
 if [ "$PR_STATUS" = "MERGED" ] || [ "$DELETE_REMOTE" = true ]; then
     echo -e "${BLUE}☁️  Deleting remote branch...${NC}"
-    git push origin --delete "$BRANCH_NAME" 2>/dev/null || true
+    # Resolved ref (#838): same silent-no-op class as the local delete above.
+    git push origin --delete "$RESOLVED_BRANCH" 2>/dev/null || true
 else
     echo -e "${YELLOW}⏭️  Skipped remote-branch delete (PR not merged; pass --delete-remote or --force to override).${NC}"
 fi
