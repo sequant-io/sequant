@@ -12,7 +12,11 @@
 
 import { describe, it, expect } from "vitest";
 import { InvalidArgumentError } from "commander";
-import { parseWholeNumber, parsePositiveSeconds } from "./cli-flags.js";
+import {
+  parseWholeNumber,
+  parsePositiveSeconds,
+  type WholeNumberOptions,
+} from "./cli-flags.js";
 
 // Each test calls `parsePositiveSeconds` directly rather than through a
 // describe-scope alias. Hoisting it would read fine but hides which production
@@ -122,4 +126,118 @@ describe("#833 parseWholeNumber", () => {
       expect(Number.isNaN(result)).toBe(false);
     }
   });
+});
+
+// #845 — the eight sites `bin/cli.ts` migrated off bare `parseInt`. This table
+// mirrors the exact `parseWholeNumber(...)` configs wired in `bin/cli.ts`; it
+// documents the intended coercion per flag and pins each boundary that AC-4
+// requires to keep parsing. That the flags are actually *attached* to these
+// configs (and not silently reverted to `parseInt`) is proven separately by
+// numeric-flags.integration.test.ts, which spawns the real CLI.
+describe("#845 the eight migrated flags", () => {
+  type FlagCase = {
+    site: string;
+    flag: string;
+    opts: WholeNumberOptions;
+    // A unit-suffixed value that `parseInt` would have silently truncated.
+    suffixed: string;
+    reject: RegExp;
+    // A boundary that currently parses and must keep parsing (AC-4).
+    boundary: string;
+    expected: number;
+  };
+
+  const CASES: FlagCase[] = [
+    {
+      site: "status [issue]",
+      flag: "issue",
+      opts: { min: 1 },
+      suffixed: "999999x",
+      reject: /issue expects a whole number \(got '999999x'\)/,
+      boundary: "123",
+      expected: 123,
+    },
+    {
+      site: "status --max-age",
+      flag: "--max-age",
+      opts: { min: 1, unit: "days" },
+      suffixed: "1w",
+      reject: /--max-age expects a whole number of days \(got '1w'\)/,
+      boundary: "7",
+      expected: 7,
+    },
+    {
+      site: "prompt --wait",
+      flag: "--wait",
+      opts: { min: 0, unit: "seconds", unitSingular: "second" },
+      suffixed: "30m",
+      reject: /--wait expects a whole number of seconds \(got '30m'\)/,
+      // The critical boundary: 0 = "don't block" (prompt.ts:259), so min:0.
+      boundary: "0",
+      expected: 0,
+    },
+    {
+      site: "logs --last",
+      flag: "--last",
+      opts: { min: 1 },
+      suffixed: "30m",
+      reject: /--last expects a whole number \(got '30m'\)/,
+      boundary: "30",
+      expected: 30,
+    },
+    {
+      site: "logs --issue",
+      flag: "--issue",
+      opts: { min: 1 },
+      suffixed: "817x",
+      reject: /--issue expects a whole number \(got '817x'\)/,
+      boundary: "817",
+      expected: 817,
+    },
+    {
+      site: "dashboard --port",
+      flag: "--port",
+      opts: { min: 1 },
+      suffixed: "3100x",
+      reject: /--port expects a whole number \(got '3100x'\)/,
+      boundary: "3100",
+      expected: 3100,
+    },
+    {
+      site: "serve --port",
+      flag: "--port",
+      opts: { min: 1 },
+      suffixed: "3199x",
+      reject: /--port expects a whole number \(got '3199x'\)/,
+      boundary: "3199",
+      expected: 3199,
+    },
+    {
+      site: "state clean --max-age",
+      flag: "--max-age",
+      opts: { min: 1, unit: "days" },
+      suffixed: "1w",
+      reject: /--max-age expects a whole number of days \(got '1w'\)/,
+      boundary: "7",
+      expected: 7,
+    },
+  ];
+
+  // AC-1: the unit-suffixed value is rejected, not read as its numeric prefix.
+  it.each(CASES)(
+    "$site rejects the suffixed value $suffixed",
+    ({ flag, opts, suffixed, reject }) => {
+      const parse = parseWholeNumber(flag, opts);
+      expect(() => parse(suffixed)).toThrow(InvalidArgumentError);
+      expect(() => parse(suffixed)).toThrow(reject);
+    },
+  );
+
+  // AC-4: the boundary value that already parsed keeps parsing, unchanged.
+  it.each(CASES)(
+    "$site preserves the boundary value $boundary",
+    ({ flag, opts, boundary, expected }) => {
+      expect(parseWholeNumber(flag, opts)(boundary)).toBe(expected);
+    },
+  );
 });

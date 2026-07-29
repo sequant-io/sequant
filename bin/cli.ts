@@ -229,13 +229,21 @@ program
 program
   .command("status")
   .description("Show Sequant version, configuration, and workflow state")
-  .argument("[issue]", "Issue number to show details for", parseInt)
+  .argument(
+    "[issue]",
+    "Issue number to show details for",
+    parseWholeNumber("issue", { min: 1 }),
+  )
   .option("--issues", "Show all tracked issues")
   .option("--json", "Output as JSON")
   .option("--rebuild", "Rebuild state from run logs")
   .option("--cleanup", "Clean up stale/orphaned entries")
   .option("--dry-run", "Preview cleanup without changes")
-  .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .option(
+    "--max-age <days>",
+    "Remove entries older than N days",
+    parseWholeNumber("--max-age", { min: 1, unit: "days" }),
+  )
   .option(
     "--all",
     "Show all entries including expired; with --cleanup removes all orphaned",
@@ -421,7 +429,11 @@ program
   .option(
     "--wait <seconds>",
     "Block until a reply arrives or the timeout elapses (#645, Gap 4)",
-    parseInt,
+    parseWholeNumber("--wait", {
+      min: 0,
+      unit: "seconds",
+      unitSingular: "second",
+    }),
   )
   .option("--json", "Output as JSON")
   .action((args: string[], options: Record<string, unknown>) => {
@@ -585,9 +597,17 @@ program
   .command("logs")
   .description("View and analyze workflow run logs")
   .option("-p, --path <path>", "Custom log directory path")
-  .option("-n, --last <n>", "Show last N runs", parseInt)
+  .option(
+    "-n, --last <n>",
+    "Show last N runs",
+    parseWholeNumber("--last", { min: 1 }),
+  )
   .option("--json", "Output as JSON")
-  .option("-i, --issue <number>", "Filter by issue number", parseInt)
+  .option(
+    "-i, --issue <number>",
+    "Filter by issue number",
+    parseWholeNumber("--issue", { min: 1 }),
+  )
   .option("--failed", "Show only failed runs")
   .option("--rotate", "Rotate logs (delete oldest to meet thresholds)")
   .option("-d, --dry-run", "Show what would be rotated without deleting")
@@ -614,7 +634,11 @@ program
 program
   .command("dashboard")
   .description("Start visual workflow dashboard in browser")
-  .option("-p, --port <port>", "Port to run server on", parseInt)
+  .option(
+    "-p, --port <port>",
+    "Port to run server on",
+    parseWholeNumber("--port", { min: 1 }),
+  )
   .option("--no-open", "Don't automatically open browser")
   .option("-v, --verbose", "Enable verbose logging")
   .action(dashboardCommand);
@@ -627,7 +651,11 @@ program
     "Transport type: stdio (default) or sse",
     "stdio",
   )
-  .option("--port <port>", "Port for SSE transport (default: 3100)", parseInt)
+  .option(
+    "--port <port>",
+    "Port for SSE transport (default: 3100)",
+    parseWholeNumber("--port", { min: 1 }),
+  )
   .action(async (options: Record<string, unknown>) => {
     const mod = await import("../src/commands/serve.js").catch(() => null);
     if (!mod) {
@@ -669,7 +697,11 @@ stateCmd
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .option("-d, --dry-run", "Preview cleanup without changes")
-  .option("--max-age <days>", "Remove entries older than N days", parseInt)
+  .option(
+    "--max-age <days>",
+    "Remove entries older than N days",
+    parseWholeNumber("--max-age", { min: 1, unit: "days" }),
+  )
   .option("--all", "Remove all orphaned entries (merged and abandoned)")
   .action(stateCleanCommand);
 
