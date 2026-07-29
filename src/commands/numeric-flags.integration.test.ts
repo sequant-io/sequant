@@ -134,3 +134,69 @@ describe("#833 numeric flags are validated at the CLI boundary", () => {
     expect(output).toMatch(reached);
   });
 });
+
+/**
+ * #845 — the eight numeric options #833 left on bare `parseInt`.
+ *
+ * These are the end-to-end reproductions from the issue body, run against the
+ * real built CLI. Testing them here (not only as unit calls in
+ * `cli-flags.test.ts`) is what proves each flag is actually *wired* to its
+ * coercion: a unit test on `parseWholeNumber` stays green even if `bin/cli.ts`
+ * silently reverts a flag to `parseInt`. Coercion runs during commander's parse
+ * phase, so every rejection exits before the action handler — no server binds,
+ * no cleanup runs (the AC-2 "fail-open" guarantee for `--max-age`).
+ */
+describe("#845 the eight migrated flags are validated at the CLI boundary", () => {
+  // `[argv, bad value echoed, expected message fragment]`. Values are the exact
+  // misparses demonstrated in the issue (`30m`, `1w`, `3100x`, ...).
+  const REJECTED_845: Array<[string[], string, RegExp]> = [
+    // AC-1: unit-suffixed value rejected with #833's message shape.
+    [["status", "999999x"], "999999x", /issue expects a whole number/],
+    [["logs", "--last", "30m"], "30m", /--last expects a whole number/],
+    [["logs", "--issue", "817x"], "817x", /--issue expects a whole number/],
+    [
+      ["prompt", "817", "hello", "--wait", "30m"],
+      "30m",
+      /--wait expects a whole number of seconds/,
+    ],
+    // AC-2: `--max-age` rejects `1w` instead of silently narrowing to 1 day.
+    [
+      ["status", "--max-age", "1w"],
+      "1w",
+      /--max-age expects a whole number of days/,
+    ],
+    [
+      ["state", "clean", "--max-age", "1w"],
+      "1w",
+      /--max-age expects a whole number of days/,
+    ],
+    // AC-3: both port flags reject `3100x` rather than binding the truncation.
+    [
+      ["dashboard", "--port", "3100x"],
+      "3100x",
+      /--port expects a whole number/,
+    ],
+    [["serve", "--port", "3199x"], "3199x", /--port expects a whole number/],
+  ];
+
+  it.each(REJECTED_845)(
+    "`sequant %s` is rejected before anything runs",
+    (argv, badValue, expected) => {
+      const { status, output } = runCli(argv);
+      expect(output).toMatch(expected);
+      expect(output).toContain(`(got '${badValue}')`);
+      expect(status).not.toBe(0);
+    },
+  );
+
+  // AC-4: `--wait 0` is the one boundary that changes shape here — `min: 0`,
+  // not `parsePositiveSeconds`, because `prompt.ts:259` reads 0 as "don't
+  // block". Proven end-to-end: 0 is accepted (no coercion error) and the
+  // command reaches its liveness check for a session that doesn't exist.
+  it("accepts --wait 0, the documented no-wait value", () => {
+    const { output } = runCli(["prompt", "999999", "test", "--wait", "0"]);
+    expect(output).not.toMatch(/expects a whole number/);
+    expect(output).not.toMatch(/must be at least/);
+    expect(output).toMatch(/No relay PID found for #999999/);
+  });
+});
