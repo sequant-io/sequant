@@ -117,4 +117,15 @@ describe("update command — dry-run exit code (#724)", () => {
 
     expect(process.exitCode).toBe(1);
   });
+
+  // #848: the not-initialized rejection bare-returned at exit 0, matching the
+  // same bug fixed in run.ts. (The issue premise wrongly cited update.ts as a
+  // correct reference — only sync.ts set the code on this branch.)
+  it("sets exit code 1 when Sequant is not initialized (#848)", async () => {
+    mockGetManifest.mockResolvedValue(null);
+
+    await updateCommand({ dryRun: true });
+
+    expect(process.exitCode).toBe(1);
+  });
 });

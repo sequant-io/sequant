@@ -19,6 +19,12 @@ import {
 // Re-export public API for backwards compatibility
 export * from "./run-compat.js";
 
+// #848: red pre-flight rejection + non-zero exit (process.exitCode, not exit()).
+function rejectPreflight(message: string): void {
+  console.log(chalk.red(message));
+  process.exitCode = 1;
+}
+
 /** Parse CLI args → validate → delegate to RunOrchestrator.run() → display summary. */
 export async function runCommand(
   issues: string[],
@@ -49,37 +55,31 @@ export async function runCommand(
 
   const manifest = await getManifest();
   if (!manifest) {
-    console.log(
-      chalk.red("❌ Sequant is not initialized. Run `sequant init` first."),
-    );
+    rejectPreflight("❌ Sequant is not initialized. Run `sequant init` first.");
     return;
   }
-
   const settings = await getSettings();
 
   // #605: --stacked implies --chain; reject explicit --no-chain combo before
   // we evaluate any --chain-dependent constraint below.
   if (options.stacked && options.chain === false) {
-    console.log(chalk.red("❌ --stacked cannot be combined with --no-chain"));
+    rejectPreflight("❌ --stacked cannot be combined with --no-chain");
     return;
   }
   if (options.stacked) {
     options.chain = true;
   }
 
-  // Validate constraints
   if (options.chain && options.batch?.length) {
-    console.log(chalk.red("❌ --chain cannot be used with --batch"));
+    rejectPreflight("❌ --chain cannot be used with --batch");
     return;
   }
   if (
     options.concurrency !== undefined &&
     (options.concurrency < 1 || !Number.isInteger(options.concurrency))
   ) {
-    console.log(
-      chalk.red(
-        `❌ Invalid --concurrency value: ${options.concurrency}. Must be a positive integer.`,
-      ),
+    rejectPreflight(
+      `❌ Invalid --concurrency value: ${options.concurrency}. Must be a positive integer.`,
     );
     return;
   }

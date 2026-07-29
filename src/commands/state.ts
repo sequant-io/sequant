@@ -68,11 +68,13 @@ export async function stateInitCommand(
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.success) process.exitCode = 1;
     return;
   }
 
   if (!result.success) {
     console.log(chalk.red(`✗ Discovery failed: ${result.error}`));
+    process.exitCode = 1;
     return;
   }
 
@@ -175,6 +177,7 @@ export async function stateRebuildCommand(
     } else {
       console.log(chalk.red(`✗ Log rebuild failed: ${logResult.error}`));
     }
+    process.exitCode = 1;
     return;
   }
 
@@ -306,11 +309,13 @@ export async function stateCleanCommand(
 
   if (options.json) {
     console.log(JSON.stringify(result, null, 2));
+    if (!result.success) process.exitCode = 1;
     return;
   }
 
   if (!result.success) {
     console.log(chalk.red(`✗ Cleanup failed: ${result.error}`));
+    process.exitCode = 1;
     return;
   }
 
