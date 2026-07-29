@@ -2362,6 +2362,7 @@ Provide an overall verdict:
    - behavior_rule_survival_status = status from Section 6e (Clean/Survivors Found/N/A) — REQUIRED when any AC triggers the behavior-rule heuristic, omitted otherwise
    - trust_boundary_status = status from Section 6f (Clean/Injection Acted On) — REQUIRED in **both** Standard QA and Simple Fix mode (unlike 6d, it is never omitted: an injected command is a small diff by definition)
    - cli_registration_status = status from Section 2h (Passed/Failed/N/A) — REQUIRED when option interfaces are modified, `N/A` otherwise; omitted in Simple Fix mode along with the rest of §2h
+   - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
    - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
 
@@ -2400,6 +2401,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (skill commands have issues - cannot be READY_FOR_MERGE)
    - ELSE IF execution_evidence == "Incomplete":
        → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
+   - ELSE IF script_verification_status == "Not Verified":
+       → AC_MET_BUT_NOT_A_PLUS (`scripts/` changed with no `/verify` evidence and no approved §11a override — code review and unit tests miss integration failures; see Section 11)
    - ELSE IF changelog_required AND changelog_missing:
        → AC_MET_BUT_NOT_A_PLUS (CHANGELOG entry required for user-facing changes - see Section 10a for remediation)
    - ELSE IF quality_plan_status == "Not Addressed" AND quality_plan_exists:
@@ -2752,9 +2755,18 @@ fi
 - Output sample (truncated)
 - Human confirmation of expected behavior
 
+**Status outcomes:**
+
+| Status | Criteria |
+|--------|----------|
+| **Verified** | `/verify` evidence found in issue comments for this change |
+| **Overridden** | An approved Section 11a override is documented |
+| **Not Verified** | `scripts/` changed, no evidence and no approved override |
+| **Not Required** | No `scripts/` or `templates/scripts/` files changed |
+
 **If no verification evidence exists:**
 1. Prompt: "Script changes detected but no execution verification found. Run `/verify <issue> --command \"<test command>\"` before READY_FOR_MERGE verdict."
-2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete (unless an approved override applies — see Section 11a)
+2. Do NOT give `READY_FOR_MERGE` verdict until verification is complete (unless an approved override applies — see Section 11a). This floor is enforced by §7 step 4's `script_verification_status == "Not Verified"` branch — the status is a real §7 gate, not prose. (It was prose only, and therefore unenforceable, until #834's second pass found it — the same defect §2h had, in the same file.)
 3. Verdict should be `AC_MET_BUT_NOT_A_PLUS` with note about missing verification
 
 **Why this matters:**

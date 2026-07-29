@@ -67,16 +67,49 @@ const ALGORITHM_MARKER = "Verdict Determination Algorithm";
 /**
  * Phrases by which a section declares that it can floor or cap the verdict.
  *
- * The first three are #834's I1 list verbatim. `verdict floors at` is a fourth
- * addition: §6e phrases its (correctly wired) floor that way, so without it a
- * section could declare a floor in §6e's style and escape I1 entirely. Adding
- * a phrase can only widen what I1 checks — it cannot make a wired section fail.
+ * #834 opened with the three phrases named in the issue, then added
+ * `verdict floors at` on noticing §6e's wording. That was still hand-picking —
+ * the same mistake §6c exists to prevent — and it missed two live cases: §1 and
+ * §11 both say "Do NOT give `READY_FOR_MERGE`", and §11 had no §7 gate at all,
+ * making it a second §2h that shipped right past the lint built to catch §2h.
+ *
+ * This list is now DERIVED: every line in `qa/SKILL.md` that pairs a
+ * constraining verb with a verdict constant was enumerated, and the list covers
+ * all of them. When adding a phrase, re-run that enumeration rather than
+ * guessing — a phrase list that has never been run against its own corpus is
+ * exactly the silent-detection-failure class this file exists to stop.
+ *
+ * Widening is safe: a phrase can only bring more sections under I1, never make
+ * a correctly wired one fail.
  */
 const VERDICT_FLOOR_PHRASES = [
   "floor the verdict at",
   "verdict cannot be",
   "maximum verdict",
   "verdict floors at",
+  "do not give `ready_for_merge`",
+  "blocks merge until",
+  "not sufficient for merge",
+];
+
+/**
+ * §7 step-1 AC counters. A section may be wired through the AC-status path
+ * instead of a named gate token: it expresses its outcome as an AC status, and
+ * step 1's counters carry it into step 4. §7 step 3a blesses this explicitly
+ * ("No new verdict branch needed — PENDING … flow through the existing
+ * pending_count > 0 → NEEDS_VERIFICATION path").
+ *
+ * §1 (CI Status Check) is wired this way: a pending check marks its AC PENDING,
+ * which reaches NEEDS_VERIFICATION via `pending_count`. Treating that as
+ * unwired would be a false positive, so I1 accepts either mechanism — but the
+ * section must NAME the counter it routes through, the same way §2h now names
+ * its step-4 branch. An unstated mechanism is indistinguishable from none.
+ */
+const AC_STATUS_COUNTERS = [
+  "pending_count",
+  "not_met_count",
+  "partial_count",
+  "met_count",
 ];
 
 /**
@@ -613,16 +646,26 @@ export function checkI1(
       .filter(([, ref]) => ref === section.id)
       .map(([token]) => token);
 
+    // Second legitimate mechanism: the section expresses its outcome as an AC
+    // status and names the §7 step-1 counter that carries it. See
+    // AC_STATUS_COUNTERS.
+    const routedCounter = AC_STATUS_COUNTERS.find((c) =>
+      section.body.includes(c),
+    );
+
     if (attributed.length === 0) {
+      if (routedCounter) continue;
       violations.push({
         invariant: "I1",
         subject: `§${section.id}`,
         line: section.line,
         message:
           `§${section.id} (${section.title}) declares a verdict floor ("${phrase}") but no §7 ` +
-          `step-2 status token is attributed to Section ${section.id}. The gate can never fire. ` +
-          `Add a token to §7 step 2 ("… = status from Section ${section.id} (…)") and branch on ` +
-          `it in step 4, mirroring §6f/trust_boundary_status.`,
+          `step-2 status token is attributed to Section ${section.id}, and it does not name an ` +
+          `AC-status counter it routes through. The gate can never fire. Either add a token to ` +
+          `§7 step 2 ("… = status from Section ${section.id} (…)") and branch on it in step 4 ` +
+          `(mirroring §6f/trust_boundary_status), or — if the section's outcome is an AC status — ` +
+          `say so by naming the counter (e.g. \`pending_count\`), the way §1 does.`,
       });
       continue;
     }
@@ -643,7 +686,14 @@ export function checkI1(
 }
 
 /**
- * I2 — every §7 step-2 token must attribute to a section that exists.
+ * I2 — every §7 step-2 token must attribute to a section that exists, and do so
+ * unambiguously.
+ *
+ * `qa/SKILL.md` currently has two `### 1.` sections (CI Status Check, Context
+ * and AC Alignment). That is harmless while no token attributes to Section 1,
+ * so this does NOT demand cosmetic renumbering — it fires only when a token
+ * actually points at a duplicated id, i.e. when the ambiguity becomes
+ * load-bearing and "status from Section 1" stops having one answer.
  */
 export function checkI2(
   sections: Section[],
@@ -651,6 +701,24 @@ export function checkI2(
 ): Violation[] {
   const violations: Violation[] = [];
   const known = new Set(sections.map((s) => s.id));
+  const duplicated = new Map<string, string[]>();
+  for (const s of sections) {
+    duplicated.set(s.id, [...(duplicated.get(s.id) ?? []), s.title]);
+  }
+
+  for (const [token, ref] of algorithm.step2Tokens) {
+    const titles = duplicated.get(ref);
+    if (!titles || titles.length < 2) continue;
+    violations.push({
+      invariant: "I2",
+      subject: token,
+      line: algorithm.line,
+      message:
+        `§7 step 2 attributes \`${token}\` to Section ${ref}, but ${titles.length} sections share ` +
+        `that number (${titles.map((t) => `"${t}"`).join(", ")}). "status from Section ${ref}" has ` +
+        "no single answer — renumber one of them so the gate names exactly one producer.",
+    });
+  }
   for (const [token, ref] of algorithm.step2Tokens) {
     if (ref === "") {
       violations.push({

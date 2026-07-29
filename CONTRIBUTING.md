@@ -182,6 +182,31 @@ mirrored go in the documented `EXCLUDE` allowlist in
 `scripts/check-skill-sync.ts`; dotfiles and dot-directories are skipped
 automatically.
 
+### Editing `/qa`'s verdict gates
+
+`npm run lint:skill-gates` (CI-enforced) checks that `/qa`'s stated enforcement
+and its §7 verdict algorithm actually agree. Background: §2h declared
+`verdict CANNOT be READY_FOR_MERGE` and §11 declared `Do NOT give
+READY_FOR_MERGE`, but neither had a §7 gate — both were prose that could never
+fire, one of them from the day it shipped (#834).
+
+**If you add or edit a `/qa` section that constrains the verdict**, it must be
+reachable from §7 by one of two mechanisms:
+
+| Mechanism | What to write |
+|-----------|---------------|
+| **Gate token** | Add `<name>_status = status from Section <N> (…)` to §7 step 2 **and** an `ELSE IF <name>_status == "…"` branch to step 4. Point the section's prose at that branch, the way §2h and §6f do. |
+| **AC-status routing** | If the section's outcome is an AC status rather than a gate, say so and **name the §7 step-1 counter** it flows through (e.g. `pending_count`), the way §1 does. An unstated mechanism is indistinguishable from none. |
+
+The lint also requires that every `(REQUIRED` section declaring an output
+section is listed in **both** mode checklists (Standard, and either Simple Fix's
+required list or its explicit omitted list), and that the output templates and
+checklists agree in both directions.
+
+It fails loud by design: a region that is present but unparseable is reported as
+a violation rather than silently passing, since a quiet parser would make the
+lint the same tautology it exists to prevent.
+
 ### Adding a New Stack
 
 1. Create `stacks/mystack.yaml`:

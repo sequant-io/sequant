@@ -178,6 +178,72 @@ describe("I1 — a declared verdict floor must be reachable from §7", () => {
     expect(violations[0].message).toContain("cli_registration_status");
   });
 
+  it("catches a NEWLY ADDED section that declares a floor with no wiring", () => {
+    // The lint's actual value is forward-looking: not that it detects §2h's
+    // historical defect, but that it stops the next §2h from shipping. Every
+    // other I1 test mutates existing wiring, so that path had no coverage.
+    // Simulates a contributor adding §6g tomorrow, phrased in each of the
+    // shipped styles.
+    for (const declaration of [
+      "**CRITICAL:** If the widget check fails, verdict CANNOT be `READY_FOR_MERGE`.",
+      "A failure here should floor the verdict at `AC_NOT_MET`.",
+      "| Status | Maximum Verdict |",
+      "1. Do NOT give `READY_FOR_MERGE` verdict until the widget check passes",
+    ]) {
+      const withNewSection = realSkill().replace(
+        "### 7. A+ Status Verdict",
+        [
+          "### 6g. Widget Verification (REQUIRED for widgets)",
+          "",
+          declaration,
+          "",
+          "### 7. A+ Status Verdict",
+        ].join("\n"),
+      );
+      const content = parseVerdictAlgorithm(withNewSection)!;
+      const sections = parseSections(withNewSection);
+      expect(
+        sections.some((s) => s.id === "6g"),
+        "new section was not parsed",
+      ).toBe(true);
+
+      const violations = checkI1(sections, content, "7");
+      expect(
+        violations.map((v) => v.subject),
+        `unwired §6g not caught when declared as: ${declaration}`,
+      ).toContain("§6g");
+    }
+  });
+
+  it("accepts AC-status routing as wiring when the section names its counter", () => {
+    // §1 (CI Status Check) says "Do NOT give READY_FOR_MERGE …" and has no gate
+    // token — it routes a pending check into an AC status, which §7 step 1
+    // counts. §7 step 3a blesses that mechanism explicitly, so flagging §1 would
+    // be a false positive. It qualifies only because it NAMES `pending_count`.
+    const content = realSkill();
+    const sections = parseSections(content);
+    const ci = sections.find(
+      (s) => s.id === "1" && s.title.startsWith("CI Status Check"),
+    )!;
+    expect(ci.body).toContain("pending_count");
+    expect(
+      checkI1(sections, parseVerdictAlgorithm(content)!, "7").map(
+        (v) => v.subject,
+      ),
+    ).not.toContain("§1");
+
+    // Strip the counter and the same section becomes an unwired floor.
+    const unnamed = ci.body.replace(/pending_count/g, "some_other_thing");
+    const stripped = content.replace(ci.body, unnamed);
+    expect(
+      checkI1(
+        parseSections(stripped),
+        parseVerdictAlgorithm(stripped)!,
+        "7",
+      ).map((v) => v.subject),
+    ).toContain("§1");
+  });
+
   it("does not false-positive on §6a, whose token has no `_status` suffix", () => {
     // A name-shape heuristic (`[a-z_]+_status`) would flag §6a, §6c and §6d.
     // I1 asks §7 which section a token is attributed to instead.
