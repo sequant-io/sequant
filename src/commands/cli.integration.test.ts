@@ -195,41 +195,45 @@ describe("run command flag surface (#705)", () => {
 
   // AC-1: `-q` and `-Q` both enable the quality loop and neither enables quiet.
   // AC-5: `--experimental-tui` still parses without error. Use --dry-run so the
-  // CLI parses flags and exits without executing a real workflow.
-  const runDryRun = (flag: string): string => {
-    try {
-      return execSync(`node ${cliPath} run 1 ${flag} --dry-run`, execOptions);
-    } catch (error) {
-      const execError = error as {
-        status: number | null;
-        stdout: string;
-        stderr: string;
-      };
-      // A parse error exits non-zero with the message on stderr; surface it so
-      // the assertion fails with context rather than a generic throw.
-      throw new Error(
-        `CLI run 1 ${flag} --dry-run crashed with exit code ${execError.status}.\n` +
-          `stdout: ${execError.stdout}\n` +
-          `stderr: ${execError.stderr}`,
-      );
-    }
+  // CLI parses flags without executing a real workflow.
+  //
+  // These tests run in the repo root, which is not itself an initialized Sequant
+  // project, so every run trips the not-initialized pre-flight guard in run.ts.
+  // That guard prints "Sequant is not initialized" — but only *after* Commander
+  // has parsed every flag, so reaching it proves the flag under test was accepted.
+  // Since #848 the guard exits 1 (was 0), so exit-0 is no longer a valid
+  // "parsed OK" proxy; assert on the guard's output instead. A genuine Commander
+  // usage error (unknown option) never reaches the guard and prints
+  // "error: unknown option" to stderr.
+  const expectFlagAccepted = (flag: string): void => {
+    const r = spawnSync(
+      process.execPath,
+      [cliPath, "run", "1", flag, "--dry-run"],
+      { cwd: projectRoot, encoding: "utf-8" },
+    );
+    const stdout = r.stdout ?? "";
+    const stderr = r.stderr ?? "";
+    // Reached the pre-flight guard ⇒ Commander parsed every flag, incl. `flag`.
+    expect(stdout + stderr).toMatch(/Sequant is not initialized/);
+    // ...and it was not rejected as an unknown option.
+    expect(stderr).not.toMatch(/error: unknown option/);
   };
 
   it("-q parses without error (hidden quality-loop alias) (AC-1)", () => {
-    // Must not throw — proves the hidden `-q` alias is accepted by Commander.
-    expect(() => runDryRun("-q")).not.toThrow();
+    // Proves the hidden `-q` alias is accepted by Commander.
+    expectFlagAccepted("-q");
   });
 
   it("-Q parses without error (AC-1)", () => {
-    expect(() => runDryRun("-Q")).not.toThrow();
+    expectFlagAccepted("-Q");
   });
 
   it("--experimental-tui still parses as a hidden no-op alias (AC-5)", () => {
-    expect(() => runDryRun("--experimental-tui")).not.toThrow();
+    expectFlagAccepted("--experimental-tui");
   });
 
   it("--no-tui parses without error (AC-4)", () => {
-    expect(() => runDryRun("--no-tui")).not.toThrow();
+    expectFlagAccepted("--no-tui");
   });
 
   // #795 AC-2: --qa-gate is deprecated to a no-op. It must keep parsing so
