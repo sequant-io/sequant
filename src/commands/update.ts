@@ -77,6 +77,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     console.log(
       chalk.red("❌ Sequant is not initialized. Run `sequant init` first."),
     );
+    process.exitCode = 1;
     return;
   }
 

@@ -687,6 +687,7 @@ async function upgradeSkills(): Promise<void> {
     console.log(
       chalk.red("No skills directory found. Run `sequant init` first."),
     );
+    process.exitCode = 1;
     return;
   }
 
