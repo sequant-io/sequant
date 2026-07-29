@@ -100,6 +100,9 @@ describe.each(HOOK_COPIES)(
         cwd: cleanRepo,
       });
       spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: cleanRepo });
     });
 
     afterAll(() => {
@@ -220,6 +223,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         const cmd = `gh issue comment 1 --body "if conflicted, run git reset --hard origin/main"`;
         const { code } = runHook(hookPath, cmd, repo);
@@ -276,6 +282,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         const { code, stderr } = runHook(
           hookPath,
@@ -363,6 +372,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         const cmd =
           'gh issue comment --body "if conflicted, run `git reset --hard origin/main`..."';
@@ -397,6 +409,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         spawnSync("git", ["add", "f.txt"], { cwd: repo });
         const { stderr } = runHook(hookPath, "git commit -m 'feat: x'", repo);
@@ -430,6 +445,9 @@ describe.each(HOOK_COPIES)(
         cwd: cleanRepo,
       });
       spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: cleanRepo });
     });
 
     afterAll(() => {
@@ -444,6 +462,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         fn(repo);
       } finally {
@@ -520,6 +541,9 @@ describe.each(HOOK_COPIES)(
         spawnSync("git", ["init", "-q"], { cwd: repo });
         spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
         spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+        // No pinentry in a test run when the contributor has global commit
+        // signing on; CI has no signing key and never noticed.
+        spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
         writeFileSync(join(repo, "f.txt"), "hello\n");
         spawnSync("git", ["add", "f.txt"], { cwd: repo });
         const { code } = runHook(
@@ -866,6 +890,9 @@ describe.each(HOOK_PAIRS)(
       spawnSync("git", ["init", "-q"], { cwd: repo });
       spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
       spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
       writeFileSync(join(repo, "a.txt"), "a\n");
       spawnSync("git", ["add", "a.txt"], { cwd: repo });
       spawnSync("git", ["commit", "-qm", "feat: init"], { cwd: repo });

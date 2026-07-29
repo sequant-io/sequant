@@ -43,7 +43,9 @@ Common issues and solutions when using Sequant.
 
 2. Clean up using the cleanup script:
    ```bash
-   ./scripts/cleanup-worktree.sh feature/<issue-number>-*
+   ./scripts/cleanup-worktree.sh 'feature/<issue-number>-*'
+   # Quote the glob — the script resolves the pattern itself, and zsh aborts
+   # on an unmatched unquoted glob before the script ever runs.
    # Local worktree + branch are always removed. The remote branch is deleted
    # only when the PR is merged — an unmerged PR's remote branch is left intact
    # so GitHub doesn't close the PR unmerged.

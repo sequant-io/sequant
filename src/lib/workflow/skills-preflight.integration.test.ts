@@ -70,7 +70,10 @@ describe("run skills pre-flight (#813 AC-5 integration)", () => {
     execSync("git init -b main", { cwd: repo, stdio: "pipe" });
     writeFileSync(join(repo, "README.md"), "# test\n");
     execSync(
-      "git add . && git -c user.email=t@t -c user.name=t commit -m init",
+      // `-c commit.gpgsign=false`: contributors with global commit signing have
+      // no pinentry in a test run, so this commit died with "gpg: signing
+      // failed". CI has no signing key and never noticed.
+      "git add . && git -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -m init",
       {
         cwd: repo,
         stdio: "pipe",
