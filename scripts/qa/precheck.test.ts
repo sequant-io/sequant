@@ -1,22 +1,22 @@
 /**
- * QA Precheck — unit + integration tests.
+ * QA Precheck — unit tests (in-process only).
  *
  * Coverage:
  *   - extractFixtures: fenced / blockquote / prefix shapes; Setup gating; empty body
  *   - extractACIDs + diffACIDs: literal-id diff (no text-comparison rationalization)
  *   - extractIdentifiersFromDiff: TS declaration shapes; test-file exclusion
  *   - runPrecheck (integration): injected sources flow through to a well-formed JSON
- *   - CLI: --help, --out, real issue body via fixtures
+ *
+ * The CLI tests (`--help`, `--out`) live in `precheck-cli.integration.test.ts`:
+ * they spawn `npx tsx` subprocesses, which belong in the `integration` project
+ * (serialized, 30 s floor), not here under the unit project's 5 s default and
+ * parallel file execution (#842).
  *
  * Fixture inputs are taken from real-shape inputs (issue #609 body, PR #547
  * verbatim-fixture regression) — NOT synthetic chimeras, per
  * feedback_synthetic_test_fixture_trap.md.
  */
 import { describe, it, expect } from "vitest";
-import * as fs from "fs";
-import * as os from "os";
-import * as path from "path";
-import { execSync } from "child_process";
 import {
   extractFixtures,
   extractACIDs,
@@ -25,8 +25,6 @@ import {
   runPrecheck,
   parseArgs,
 } from "./precheck.js";
-
-const CLI_PATH = path.resolve(__dirname, "precheck.ts");
 
 // ---------------------------------------------------------------------------
 // extractFixtures
@@ -411,49 +409,5 @@ describe("parseArgs", () => {
     const args = parseArgs(["--issue", "609"]);
     expect(args.baseSha).toBeNull();
     expect(args.headSha).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// CLI integration — actually shell out to verify wiring works
-// ---------------------------------------------------------------------------
-
-// #842 AC-3: these shell out to `npx tsx` with 30 s and 60 s child timeouts,
-// but the file name has no `.integration.` infix, so it lands in the `unit`
-// project and inherited vitest's 5 s default — both child timeouts were
-// unreachable, and an `npx tsx` spawn under load (7.5-17.8 s measured) could
-// blow the budget outright. 90 s sits strictly above the larger child timeout.
-describe("precheck CLI (integration)", { timeout: 90_000 }, () => {
-  it("--help prints usage and exits 0", () => {
-    const out = execSync(`npx tsx ${CLI_PATH} --help`, {
-      encoding: "utf-8",
-      cwd: path.resolve(__dirname, "../.."),
-      timeout: 30000,
-    });
-    expect(out).toContain("QA Precheck");
-    expect(out).toContain("--issue");
-    expect(out).toContain("--out");
-  });
-
-  it("--out writes a JSON file with the expected schema", () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "precheck-"));
-    const outPath = path.join(tmpDir, "precheck.json");
-    try {
-      execSync(`npx tsx ${CLI_PATH} --out ${outPath}`, {
-        encoding: "utf-8",
-        cwd: path.resolve(__dirname, "../.."),
-        timeout: 60000,
-        // No --issue: precheck runs with null issue, gh fetch returns null,
-        // and we still write a fail/not_applicable result.
-      });
-      const body = JSON.parse(fs.readFileSync(outPath, "utf-8"));
-      expect(body.schemaVersion).toBe(1);
-      expect(body.checks).toHaveProperty("fixtures");
-      expect(body.checks).toHaveProperty("siblingGrep");
-      expect(body.checks).toHaveProperty("acLiteralDiff");
-      expect(typeof body.generatedAt).toBe("string");
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
   });
 });
