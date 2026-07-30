@@ -97,6 +97,22 @@ echo
 DTRACE_PID=""
 if [[ $EUID -eq 0 ]]; then
   echo "── dtrace (root) ──"
+
+  # Distinguish "the probe does not exist on this machine" from "my D script
+  # has a compile error". Both surface as `invalid probe specifier`, and they
+  # have opposite remedies: the first means tier 3 is unavailable and the plan
+  # must route around it; the second is a bug in this script, fixable in
+  # minutes. Guessing between them wastes the investigation's time.
+  dtrace -l -n 'proc:::signal-send' >"$OUT/probe-list.txt" 2>&1
+  PROBE_ROWS=$(grep -c "signal-send" "$OUT/probe-list.txt" 2>/dev/null || echo 0)
+  if [[ "$PROBE_ROWS" -gt 0 ]]; then
+    note "probe proc:::signal-send EXISTS on this machine"
+    note "→ if arming fails below, the fault is this script's D code, not SIP"
+  else
+    note "probe proc:::signal-send NOT LISTED — the provider is unavailable"
+    note "→ SIP is withholding it; no D script can reach it on this machine"
+    head -3 "$OUT/probe-list.txt" | sed 's/^/     /'
+  fi
   dtrace -q -n '
     proc:::signal-send /args[2] == 9 || args[2] == 15/ {
       printf("sig=%d sender=%s[%d] target=%s[%d] target_pgid=%d\n",
@@ -108,7 +124,15 @@ if [[ $EUID -eq 0 ]]; then
   if kill -0 "$DTRACE_PID" 2>/dev/null; then
     note "dtrace armed (pid $DTRACE_PID)"
   else
-    bad "dtrace exited immediately — SIP is blocking it"
+    if [[ "$PROBE_ROWS" -gt 0 ]]; then
+      bad "dtrace failed to arm even though the probe EXISTS — bug in this script's D code"
+      note "the probe is reachable; fix the action block rather than blaming SIP"
+    else
+      bad "dtrace cannot arm — SIP is withholding proc:::signal-send on this machine"
+      note "tier 3 (sender identification) is UNAVAILABLE here. It is the only"
+      note "layer that names the killer, so plan on tiers 1 and 2, which do not"
+      note "need dtrace, rather than waiting on a capture that cannot happen."
+    fi
     note "$(head -3 "$OUT/dtrace.err" 2>/dev/null)"
     DTRACE_PID=""
   fi
