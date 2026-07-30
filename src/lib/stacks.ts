@@ -229,6 +229,47 @@ export function detectPackageManagerSync(
 }
 
 /**
+ * Resolve the package manager for a directory, preferring a declared value and
+ * falling back to live lockfile detection.
+ *
+ * The declared value is a *snapshot* — the worktree manifest records whatever
+ * `sequant init` saw, so it is absent on manifest-less or pre-init trees. The
+ * old spelling at those call sites was `(declared as keyof typeof PM_CONFIG)
+ * || "npm"`, which assumed npm whenever the snapshot was missing while the
+ * shell provisioning path (`templates/scripts/new-feature.sh`, PM-aware since
+ * #847) detected live from the lockfile. On a pnpm/yarn/bun project without a
+ * manifest the two paths therefore disagreed about the project's package
+ * manager — the dual-producer drift class of #833. Detecting here makes the
+ * TypeScript path agree with the shell path by construction (#870).
+ *
+ * The own-property membership test also retires that unchecked cast: a
+ * declared value outside `PackageManager` (a hand-edited manifest, a future
+ * `"npm@10"` spelling) used to index `PM_CONFIG` to `undefined` and throw on
+ * the next property access. Such a value now routes to detection instead.
+ * Python managers (`pip`/`poetry`/`uv`) are `PM_CONFIG` keys, so a declared
+ * Python manager still wins over the JS-only detector.
+ *
+ * The test is `hasOwnProperty`, deliberately not `in`: `in` walks the
+ * prototype chain, so `"toString"`, `"constructor"`, and `"__proto__"` would
+ * all pass it and be returned as if they named a package manager. Indexing
+ * `PM_CONFIG` with one yields an inherited function (or `Object.prototype`)
+ * whose `ciInstall` is `undefined`, crashing the caller on `.split(" ")` —
+ * reintroducing the exact failure this guard exists to prevent.
+ *
+ * @param declared Package manager recorded in the manifest, if any
+ * @param root Directory whose lockfiles decide the fallback
+ */
+export function resolvePackageManager(
+  declared: string | undefined,
+  root: string,
+): PackageManager {
+  if (declared && Object.prototype.hasOwnProperty.call(PM_CONFIG, declared)) {
+    return declared as PackageManager;
+  }
+  return detectPackageManagerSync(root);
+}
+
+/**
  * Get package manager command configuration
  */
 export function getPackageManagerCommands(
