@@ -286,13 +286,14 @@ phaseRegistry.register({
   name: "qa",
   skill: "qa",
   promptTemplate:
-    "Review the implementation for GitHub issue #{issue} against acceptance criteria. Run the /qa {issue} workflow.",
+    "Review the implementation for GitHub issue #{issue} against acceptance criteria. Run the /qa {issue} workflow. Your turn is one-shot: you must emit a `### Verdict:` line before the turn ends — deferring to a later turn or a background CI poll is not available.",
   requiresWorktree: true,
   driverOverrides: {
     aider: {
       promptTemplate: `Review the changes for GitHub issue #{issue}.
 Run 'npm test' and 'npm run build' to verify everything works.
 Check each acceptance criterion from the issue comments.
+Your turn is one-shot: emit a verdict now — do not defer to a later turn or a background CI poll. If the tree is unreviewable, emit AC_NOT_MET (code-caused red CI) or NEEDS_VERIFICATION (pending/infra-blocked CI); never end without a verdict.
 Output a verdict: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, or AC_NOT_MET
 with format "### Verdict: <VERDICT>" followed by an explanation.`,
     },
