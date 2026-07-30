@@ -401,6 +401,71 @@ describe("LockManager — forceAcquire / signalOther", () => {
     }
   });
 
+  it("signalOther refuses to signal a holder past the age ceiling (#856)", () => {
+    // The dangerous case `--force --signal-other` could hit: a lock abandoned
+    // weeks ago whose PID the OS has since recycled onto an unrelated live
+    // process. isPidAlive says "alive" — correctly, for a different program —
+    // so the liveness probe cannot catch this. Only the age can.
+    const calls: number[] = [];
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true, // recycled PID answers "alive"
+    });
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      calls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: 28809, // the real 505.lock PID
+        hostname: "host-a",
+        startedAt: new Date(
+          Date.now() - 76 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        command: "npx sequant run 505",
+      });
+      expect(result).toEqual({ sent: false, reason: "stale-pid-untrusted" });
+      // The critical assertion: no signal was delivered to the stranger.
+      expect(calls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther still signals a recent holder (age-guard negative control)", () => {
+    const calls: number[] = [];
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      calls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        command: "npx sequant run 1",
+      });
+      expect(result).toEqual({ sent: true, reason: "sent" });
+      expect(calls).toEqual([9999]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
   it("signalOther refuses to signal the manager's own PID without probing isPidAlive (#637)", () => {
     let probed = 0;
     const mgr = new LockManager({

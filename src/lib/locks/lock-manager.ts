@@ -343,6 +343,15 @@ export class LockManager {
     if (holder.pid === this.pid || holder.pid === process.ppid) {
       return { sent: false, reason: "self-or-parent" };
     }
+    // #856: past the absolute ceiling, the PID is no longer trustworthy
+    // identity — the OS has almost certainly recycled it onto an unrelated
+    // process. `acquire` already treats such a lock as abandoned; signalling
+    // it would kill a stranger's program on behalf of a lock nobody holds.
+    // The liveness probe below cannot catch this: a recycled PID *is* alive.
+    const ageMs = this.now() - Date.parse(holder.startedAt);
+    if (Number.isFinite(ageMs) && ageMs > this.maxLockAgeMs) {
+      return { sent: false, reason: "stale-pid-untrusted" };
+    }
     if (!this.isPidAlive(holder.pid))
       return { sent: false, reason: "pid-dead" };
     try {
