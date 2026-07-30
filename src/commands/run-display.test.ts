@@ -10,6 +10,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { displaySummary, buildRateLimitHaltNotice } from "./run-display.js";
 import { BillingError, RateLimitError } from "../lib/errors.js";
+import { formatElapsedTime } from "../lib/cli-ui/format.js";
+import {
+  createEmptyRunLog,
+  finalizeRunLog,
+  type RunConfig,
+} from "../lib/workflow/run-log-schema.js";
 import type { RunResult } from "../lib/workflow/run-orchestrator.js";
 import type {
   IssueResult,
@@ -35,6 +41,14 @@ function issueResult(overrides: Partial<IssueResult> = {}): IssueResult {
 function runResult(
   results: IssueResult[],
   mergedOptions: Partial<RunOptions> = {},
+  // #867: the orchestrator now hands the summary a single wall-clock value.
+  // Default to the per-issue sum so pre-#867 tests (which never assert duration)
+  // keep their prior rendered output; #867's tests pass an explicit wall clock
+  // that diverges from the sum.
+  wallClockDurationSeconds = results.reduce(
+    (sum, r) => sum + (r.durationSeconds ?? 0),
+    0,
+  ),
 ): RunResult {
   return {
     results,
@@ -45,7 +59,31 @@ function runResult(
     config: { dryRun: false, phases: [], qualityLoop: false },
     mergedOptions,
     logWriter: null,
+    wallClockDurationSeconds,
   } as unknown as RunResult;
+}
+
+/**
+ * Capture what `displaySummary` writes to stdout via the renderless path — the
+ * SUMMARY header is emitted through `process.stdout.write` (renderRunSummary),
+ * not `console.log`, so `capture` above misses it.
+ */
+function captureStdout(result: RunResult): string {
+  const chunks: string[] = [];
+  const outSpy = vi
+    .spyOn(process.stdout, "write")
+    .mockImplementation((s: string | Uint8Array) => {
+      chunks.push(typeof s === "string" ? s : s.toString());
+      return true;
+    });
+  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    displaySummary(result);
+    return chunks.join("");
+  } finally {
+    outSpy.mockRestore();
+    logSpy.mockRestore();
+  }
 }
 
 /** Capture everything displaySummary prints. */
@@ -496,5 +534,124 @@ describe("displaySummary — rate-limit chain halt notice (#761)", () => {
     );
 
     expect(notice).toEqual({ issueNumber: 11, label: "Rate limited" });
+  });
+});
+
+/**
+ * #867 — the SUMMARY header duration is the run's WALL CLOCK, computed once by
+ * the orchestrator (`RunResult.wallClockDurationSeconds`), NOT the sum of
+ * per-issue durations. Under `--parallel` that sum double-counts overlapping
+ * issues and over-reports by ~the concurrency factor: a 36m 18s run printed
+ * 1h 12m at concurrency 3 (run 21feec76 in the issue body).
+ *
+ * These tests drive `displaySummary` from a `RunResult` — through the bug site
+ * at `run-display.ts` — not `renderSummary({totalDurationSeconds})`, which would
+ * test the renderer and pass against unfixed code (AC-6).
+ */
+describe("displaySummary — run wall clock, not per-issue sum (#867)", () => {
+  // Verbatim from the measured run in the issue body (run 21feec76):
+  //   start 15:32:29.443Z → end 16:08:47.777Z = 2178.334s = 36m 18s (wall clock)
+  //   per-issue durations 855.655 + 961.65 + 1203.303 + 1302.296 = 4322.904s
+  //   = 1h 12m — exactly what the pre-#867 reduce misprinted.
+  const RUN_STARTED_AT = Date.parse("2026-07-29T15:32:29.443Z");
+  const RUN_ENDED_AT = Date.parse("2026-07-29T16:08:47.777Z");
+  const MEASURED_WALL_CLOCK = (RUN_ENDED_AT - RUN_STARTED_AT) / 1000; // 2178.334
+  const MEASURED_PER_ISSUE = [855.655, 961.65, 1203.303, 1302.296];
+
+  const LOG_CONFIG: RunConfig = {
+    phases: ["exec"],
+    sequential: false,
+    qualityLoop: false,
+    maxIterations: 1,
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // AC-5/AC-6/AC-7/AC-8: the regression gate. Restoring the `reduce` sum at
+  // run-display.ts makes exactly THIS test fail (the AC-4 test below stays
+  // green, since sum ≈ wall clock there).
+  it("prints wall clock for a >2× parallel fixture; logs and SUMMARY agree", () => {
+    // AC-5: a 3-concurrent run whose per-issue sum exceeds wall clock by >2×.
+    // Two waves of 3 concurrent issues: 6 × 600s = 3600s summed, but the run's
+    // wall clock is 1200s (20m). A summing implementation prints 1h; the >2×
+    // gap means summing cannot satisfy the wall-clock assertion.
+    const PARALLEL_WALL_CLOCK = 1200;
+    const PARALLEL_SUM = 6 * 600;
+    expect(PARALLEL_SUM).toBeGreaterThan(2 * PARALLEL_WALL_CLOCK); // fixture guard
+    const parallel = runResult(
+      Array.from({ length: 6 }, (_, i) =>
+        issueResult({ issueNumber: 900 + i, durationSeconds: 600 }),
+      ),
+      {},
+      PARALLEL_WALL_CLOCK,
+    );
+
+    // AC-6: driven through displaySummary from a RunResult (the bug site).
+    const input = captureSummaryInput(parallel);
+    expect(input.totalDurationSeconds).toBe(PARALLEL_WALL_CLOCK); // wall clock
+    expect(input.totalDurationSeconds).not.toBe(PARALLEL_SUM); // not the sum
+
+    // AC-6: and the wall-clock value reaches the rendered SUMMARY header.
+    const parallelOut = captureStdout(parallel);
+    expect(parallelOut).toContain(
+      `· ${formatElapsedTime(PARALLEL_WALL_CLOCK)} ·`,
+    ); // "· 20m ·"
+    expect(parallelOut).not.toContain(formatElapsedTime(PARALLEL_SUM)); // not "1h"
+
+    // Verbatim motivating example: the exact measured run reproduces 36m 18s,
+    // never the summed 1h 12m.
+    const measuredOut = captureStdout(
+      runResult(
+        MEASURED_PER_ISSUE.map((d, i) =>
+          issueResult({ issueNumber: 850 + i, durationSeconds: d }),
+        ),
+        {},
+        MEASURED_WALL_CLOCK,
+      ),
+    );
+    expect(measuredOut).toContain("36m 18s");
+    expect(measuredOut).not.toContain("1h 12m");
+
+    // AC-7: `sequant logs --last 1` renders log.summary.totalDurationSeconds
+    // (logs.ts:133); the live SUMMARY renders RunResult.wallClockDurationSeconds.
+    // Threading the run origin into the log means both are (end - start)/1000
+    // from the SAME start, so they report the same number for the same run.
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(RUN_ENDED_AT);
+      const log = finalizeRunLog(
+        createEmptyRunLog(LOG_CONFIG, { startTime: new Date(RUN_STARTED_AT) }),
+      );
+      const summaryDuration = captureSummaryInput(
+        runResult(
+          MEASURED_PER_ISSUE.map((d, i) =>
+            issueResult({ issueNumber: 850 + i, durationSeconds: d }),
+          ),
+          {},
+          MEASURED_WALL_CLOCK,
+        ),
+      ).totalDurationSeconds;
+      expect(log.summary.totalDurationSeconds).toBe(MEASURED_WALL_CLOCK);
+      expect(log.summary.totalDurationSeconds).toBe(summaryDuration);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // AC-4: a sequential (concurrency-1) run is unchanged by the fix — issues run
+  // back-to-back so wall clock ≈ the per-issue sum. This passes with OR without
+  // the reduce, pinning the fix as a no-op for serial runs.
+  it("leaves a sequential run's duration unchanged (sum ≈ wall clock)", () => {
+    const results = [
+      issueResult({ issueNumber: 1, durationSeconds: 120 }),
+      issueResult({ issueNumber: 2, durationSeconds: 180 }),
+    ];
+    const SEQUENTIAL_WALL_CLOCK = 300; // ≈ 120 + 180, serial execution
+    const input = captureSummaryInput(
+      runResult(results, {}, SEQUENTIAL_WALL_CLOCK),
+    );
+    expect(input.totalDurationSeconds).toBe(300);
   });
 });
