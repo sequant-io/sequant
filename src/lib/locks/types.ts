@@ -96,6 +96,13 @@ export type SignalReason =
   | "cross-host"
   | "self-or-parent"
   | "pid-dead"
+  /**
+   * Holder is past the absolute age ceiling, so its PID is not trustworthy
+   * identity (#856). Signalling it would target whatever process the OS has
+   * since recycled that PID onto — an unrelated program, killed by a
+   * `--force --signal-other` aimed at a lock abandoned weeks ago.
+   */
+  | "stale-pid-untrusted"
   | "kill-failed";
 
 /** Outcome of `LockManager.signalOther()`. */

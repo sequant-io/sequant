@@ -8,12 +8,22 @@ with a clear error and the rest of the batch continues.
 
 ## Stale recovery
 
-Locks are auto-cleared in three situations:
+Locks are auto-cleared in four situations:
 
-1. Same host, PID no longer alive → cleared immediately (covers SIGKILL and
+1. **Any lock older than 24 hours** → cleared unconditionally (#856). This is
+   checked first and does not care about host, PID liveness, or
+   `--skip-pid-check`. Rule 2 treats a live PID as proof that the lock is
+   held, but a PID is only stable identity while its process lives — once the
+   OS recycles it, an abandoned lock points at an unrelated process and reads
+   as held forever. (Observed: `505.lock` from 2026-05-14 blocked #505 for 76
+   days.) It is also the only recovery path for a lock leaked by a SIGKILLed
+   run, where no in-process release handler can fire. 24h is ~48× the
+   30-minute phase timeout and 4× the skill-lock TTL, so no real run reaches
+   it. Override with `SEQUANT_MAX_LOCK_AGE_MS=<milliseconds>`.
+2. Same host, PID no longer alive → cleared immediately (covers SIGKILL and
    crashes).
-2. Cross-host, lock older than 2 hours → cleared by age.
-3. Manual: `sequant locks clear <issue>` (with safety check by default).
+3. Cross-host, lock older than 2 hours → cleared by age.
+4. Manual: `sequant locks clear <issue>` (with safety check by default).
 
 ## Taking over an active session
 
@@ -21,6 +31,12 @@ Locks are auto-cleared in three situations:
 `--signal-other` to also SIGTERM the prior PID (same host, alive only). Plain
 `--force` does not signal — use it when you already know the other session is
 dead.
+
+`--signal-other` refuses to signal a holder past the 24h ceiling
+(`stale-pid-untrusted`, #856). At that age the recorded PID is not reliable
+identity, and the liveness probe cannot tell the difference: a recycled PID
+_is_ alive — it just belongs to someone else's program. Signalling it would
+SIGTERM an unrelated process on behalf of a lock nobody holds.
 
 ## Inspecting locks
 
@@ -52,6 +68,9 @@ holder's own host. The default skill-lock TTL is **6h** (separate from the
 2h cross-host TTL) — long enough to cover virtually every `/fullsolve` run
 including multi-iteration QA loops. Override per-process via
 `SEQUANT_SKILL_LOCK_TTL_MS=<milliseconds>`.
+
+The 24h ceiling above bounds this too: even a skill lock whose PID is somehow
+alive is released after 24h regardless.
 
 A skill that crashes mid-run leaves at most a 6h orphan; clear it manually
 with `sequant locks clear <issue>` to recover sooner. The skill's explicit
