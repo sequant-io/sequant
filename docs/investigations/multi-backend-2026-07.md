@@ -14,7 +14,7 @@ Supporting a second agent backend needs **no restructure**: the `AgentDriver` se
 - The claude-code driver is **not** a CLI subprocess — it calls the Agent SDK's `query()` in-process (`drivers/claude-code.ts`) with `settingSources: ["project"]`, `bypassPermissions`, Claude-Desktop-derived `mcpServers`. Skills/subagents/hooks are loaded by the SDK from `.claude/`.
 - The aider driver proves the subprocess pattern end to end (all 9 phases have hand-written override prompts) but is a working *driver*, not a working *product*: ~5-line prompts replace the ~18k-line skill tree; no hooks, subagents, resume, or structured errors.
 - QA verdict extraction is regex over concatenated assistant text (`parseQaVerdict`, `parseQaSummary` in `phase-executor.ts`) — any backend that runs the QA skill (or pins the output format) feeds it unchanged.
-- 28 `SEQUANT_*` env vars form a driver-agnostic contract between orchestrator and skills; they pass through any spawn env.
+- `SEQUANT_*` env vars form a driver-agnostic contract between orchestrator and skills (28 distinct identifiers codebase-wide; ~21 of them are set for phase agents); they pass through any spawn env.
 - Found during the investigation: `ready-gate.ts:buildPhaseConfig` never plumbs `agent`/driver settings, so ready-gate phases silently run claude-code regardless of config → #863.
 
 ## Why opencode fits
