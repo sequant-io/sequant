@@ -130,7 +130,60 @@ phase claude started.
 - **Stale PID / lock reuse**, and the MCP group-kill at `src/mcp/tools/run.ts`
   (`detached: true` is set, so `kill(-pid)` targets a genuine group leader).
 
-## What is still unproven (AC-1, AC-2, AC-3)
+## AC-3 result — MCP shutdown does **not** cause the hang (measured)
+
+Run 2026-07-30. Flipped exactly the variable `--no-mcp` flips — the Agent SDK's
+`mcpServers` option (`drivers/claude-code.ts:118`, sourced from
+`getMcpServersConfig()`) — holding prompt, cwd, settings and permission mode
+constant. 3 reps per arm, alternating. Teardown measured as **last `TurnEnd` →
+`SessionEnd`** per session from `.entire/logs/entire.log`.
+
+| Arm     | MCP servers | Teardown gap        | Mean      | Wall clock |
+| ------- | ----------- | ------------------- | --------- | ---------- |
+| MCP ON  | 15          | 1.69s, 0.82s, 1.17s | **1.23s** | 25.0s      |
+| MCP OFF | 0           | 1.23s, 1.52s, 1.54s | **1.43s** | 19.9s      |
+
+**Conclusion:** MCP presence does not lengthen teardown — the MCP-off arm was
+marginally _slower_, well inside noise. Both arms sit ~50× below the victim band
+(58–96s) and within the same order as the 0.36s healthy baseline. MCP costs
+~5s of **startup**, not teardown. This confirms AC-2's redirect by measurement
+rather than by argument: the ~12 live MCP servers seen at each death were a
+symptom of never reaching teardown, not its cause.
+
+**Limits of this result, stated plainly:**
+
+- n=3 per arm on a trivial prompt; no hang occurred in any run. It establishes
+  that MCP presence alone does not produce a 58–96s gap. It cannot prove MCP is
+  irrelevant _during_ a hang, because no hang was reproduced.
+- These were direct SDK queries, not full `sequant run` phases. Same driver
+  mechanism and same `mcpServers` option, but not the same surrounding process
+  tree.
+
+### Method validation
+
+The measurement reproduces the original investigation's numbers from the same
+log, which is why it can be trusted:
+
+| Published gap | Reproduced | At death timestamp     |
+| ------------- | ---------- | ---------------------- |
+| 92.7s         | **92.71s** | 2026-07-29T01:39:36 ✅ |
+| 58.0s         | **57.99s** | 2026-07-29T01:36:05 ✅ |
+
+Note the metric is `TurnEnd → SessionEnd`, **not** `SessionStop → SessionEnd`.
+`entire` records `SessionStop` as a session phase transition (`idle`/`active` →
+`ended`), which pairs with `SessionEnd` for only 10 of 555 sessions and yields
+nonsense multi-day gaps. The Claude Code Stop hook fires at end-of-assistant-turn,
+which `entire` logs as `TurnEnd`.
+
+### A long teardown alone does not get you killed
+
+On 2026-07-29 there were **8** sessions with a 30–120s teardown gap. Two are
+known victims (the 92.71s and 57.99s rows above). The other **6 survived**. So
+the post-turn hang is necessary but not sufficient for the kill — consistent
+with the bg-pty trigger depending on contended socket/adoption state rather than
+on hang duration.
+
+## What is still unproven (AC-1, AC-2)
 
 These acceptance criteria require catching the hang live. The issue body states
 the hang is **not reproducible on demand** — a later run with identical `-Q` flags
@@ -153,10 +206,7 @@ sudo dtrace -n 'proc:::signal-send /args[2] == 15 || args[2] == 9/ { printf("%d 
 
 ### Sharper repro matrix
 
-AC-3's `--no-mcp` control is still worth running, but it now tests the wrong
-variable: the post-turn hang and the kill are **one** upstream defect, and the ~12
-live MCP servers are a downstream symptom of never reaching teardown, not the
-cause. The informative matrix is instead:
+With MCP eliminated as a cause (AC-3 above), the remaining informative matrix is:
 
 {backgrounded vs foreground launch} × {concurrent same-cwd interactive session vs none}
 
