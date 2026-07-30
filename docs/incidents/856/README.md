@@ -23,7 +23,7 @@ SIGKILL**.
 
 Background Bash tasks run under a detached helper
 (`claude --bg-pty-host <sock> <cols> <rows> -- <cmd>`); a claude session is the
-*client* that connects to that socket. Extracted from the 2.1.220 binary
+_client_ that connects to that socket. Extracted from the 2.1.220 binary
 (minified, reformatted):
 
 ```js
@@ -49,7 +49,7 @@ Telemetry names for upstream searchability: `tengu_bg_ptyhost_crash`,
   socket won't accept** — precisely "hangs after finishing its turn". A clean exit
   makes `process.kill(t, 0)` throw, taking the graceful branch, so it is never
   killed at any lifetime. No other mechanism found on the machine keys on that state.
-- **Simultaneous teardown + parent death.** It is a *process-group* kill. Verified
+- **Simultaneous teardown + parent death.** It is a _process-group_ kill. Verified
   live: an SDK-spawned phase `claude`, all its MCP servers, and the parent
   `sequant run` share one pgid. One group signal produces the entire observed
   pattern, including all ~12 MCP servers quitting inside a 60ms window.
@@ -72,23 +72,23 @@ wedged-but-alive listener). **Unresolved — needs the live capture.**
 /usr/bin/log show --predicate 'process == "mDNSResponder" AND eventMessage CONTAINS "claude"'
 ```
 
-| PID | lifetime | outcome |
-|---|---|---|
-| 21762 | 107.08s | KILLED (parent died 01:21:57) |
-| 33738 | 106.23s | KILLED (parent died 01:36:05) |
-| 40181 | 105.41s | KILLED (parent died 01:39:36) |
-| 17241 | 316s | exited normally — no blanket cap |
-| outside-session phase | 131.7s | clean exit, survived past 106s |
+| PID                   | lifetime | outcome                          |
+| --------------------- | -------- | -------------------------------- |
+| 21762                 | 107.08s  | KILLED (parent died 01:21:57)    |
+| 33738                 | 106.23s  | KILLED (parent died 01:36:05)    |
+| 40181                 | 105.41s  | KILLED (parent died 01:39:36)    |
+| 17241                 | 316s     | exited normally — no blanket cap |
+| outside-session phase | 131.7s   | clean exit, survived past 106s   |
 
 Spread across the three deaths: **1.7s**.
 
 Victims identified by transcript — all three, to the second:
 
-| session | project dir | first entry | last entry | wall | `run_in_background` calls |
-|---|---|---|---|---|---|
-| `2b7de5d9` | worktrees/feature-848 | 06:20:10.848Z | 06:21:57.075Z | 106.2s | 1 |
-| `78565ed5` | Projects/sequant (main) | 06:34:20.059Z | 06:36:05.464Z | 105.4s | 0 |
-| `a5d0bda3` | Projects/sequant (main) | 06:37:52.232Z | 06:39:36.828Z | 104.6s | 0 |
+| session    | project dir             | first entry   | last entry    | wall   | `run_in_background` calls |
+| ---------- | ----------------------- | ------------- | ------------- | ------ | ------------------------- |
+| `2b7de5d9` | worktrees/feature-848   | 06:20:10.848Z | 06:21:57.075Z | 106.2s | 1                         |
+| `78565ed5` | Projects/sequant (main) | 06:34:20.059Z | 06:36:05.464Z | 105.4s | 0                         |
+| `a5d0bda3` | Projects/sequant (main) | 06:37:52.232Z | 06:39:36.828Z | 104.6s | 0                         |
 
 Last-entry timestamps equal the three parent-death times exactly.
 
@@ -126,7 +126,7 @@ phase claude started.
   only signals the PID in its own lockfile.
 - **jetsam / memory pressure / sandbox denials / TMOUT / ulimit** — all negative.
 - **Concurrent process-group kill from the test suite** — the successful
-  outside-session run began 6 minutes *after* the last death; no overlap.
+  outside-session run began 6 minutes _after_ the last death; no overlap.
 - **Stale PID / lock reuse**, and the MCP group-kill at `src/mcp/tools/run.ts`
   (`detached: true` is set, so `kill(-pid)` targets a genuine group leader).
 
@@ -181,12 +181,12 @@ extracted strings and telemetry names above; version 2.1.220.
 ## What this repo changed in response
 
 sequant cannot prevent an uncatchable `SIGKILL`. What it can do is stop
-*misreporting* the aftermath, and recover from the debris:
+_misreporting_ the aftermath, and recover from the debris:
 
-| Change | File |
-|---|---|
-| Terminated run exits `128+signum`, prints the cause, and names this doc for SIGTERM | `src/lib/shutdown.ts` |
-| In-flight issues are logged as aborted with their cause instead of `success` | `src/lib/workflow/log-writer.ts` |
-| Zero completed phases is a `failure`, not a pass | `src/lib/workflow/run-log-schema.ts` |
-| `sequant logs` renders an aborted run as `ABORTED` with the signal | `src/commands/logs.ts` |
-| Locks leaked by a SIGKILLed run self-clear after 24h instead of blocking forever | `src/lib/locks/lock-manager.ts` |
+| Change                                                                              | File                                 |
+| ----------------------------------------------------------------------------------- | ------------------------------------ |
+| Terminated run exits `128+signum`, prints the cause, and names this doc for SIGTERM | `src/lib/shutdown.ts`                |
+| In-flight issues are logged as aborted with their cause instead of `success`        | `src/lib/workflow/log-writer.ts`     |
+| Zero completed phases is a `failure`, not a pass                                    | `src/lib/workflow/run-log-schema.ts` |
+| `sequant logs` renders an aborted run as `ABORTED` with the signal                  | `src/commands/logs.ts`               |
+| Locks leaked by a SIGKILLed run self-clear after 24h instead of blocking forever    | `src/lib/locks/lock-manager.ts`      |
