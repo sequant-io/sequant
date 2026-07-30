@@ -265,6 +265,24 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
     expect(r.stderr).not.toContain("npm install --package-lock-only");
   });
 
+  it("AC-3: a manifest-only project (no lockfile) is told the lockfile is MISSING, not out of sync", () => {
+    // package.json with no lockfile falls back to npm, and `npm ci` fails
+    // because it requires a lockfile. "The committed package-lock.json is out
+    // of sync" describes a file that doesn't exist; the message must say the
+    // lockfile is missing instead. The recovery command is right either way —
+    // `npm install --package-lock-only` generates the file.
+    seedProject(null); // package.json only
+    stubPm("npm", 1); // npm ci fails: no lockfile to install from
+    stubPm("pnpm", 0);
+
+    const r = runNewFeature();
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("No package-lock.json found");
+    expect(r.stderr).not.toContain("out of sync");
+    // Recovery command still points at generating + committing the lockfile.
+    expect(r.stderr).toContain("npm install --package-lock-only");
+  });
+
   it("gate: a project with no package.json skips install entirely (no npm ci)", () => {
     seedProject(null); // no package.json committed
     rmSync(join(repo, "package.json"));
@@ -288,9 +306,14 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
   describe("SEQUANT_NPM_CACHE branch", () => {
     const CACHE_ENV = { SEQUANT_NPM_CACHE: "true" };
 
-    /** Where the script keeps its cache, relative to the main repo. */
+    /**
+     * Where the script keeps its cache, relative to the main repo. The hash
+     * file is keyed by the repo's basename ("repo" in this fixture): the
+     * `.npm-cache` dir is shared by every project under the same parent, and
+     * an unkeyed hash file made sibling projects thrash each other's cache.
+     */
     function hashFile(): string {
-      return join(sandbox, "worktrees", ".npm-cache", ".lockfile-hash");
+      return join(sandbox, "worktrees", ".npm-cache", ".lockfile-hash-repo");
     }
 
     it("hashes the RESOLVED lockfile on a pnpm project and installs with pnpm", () => {
@@ -348,6 +371,34 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
       expect(lstatSync(copied).isSymbolicLink()).toBe(true);
       // Relative link ⇒ still resolves inside the copy.
       expect(existsSync(join(copied, "index.js"))).toBe(true);
+    });
+
+    it("ignores an unkeyed (shared) hash file left by another project", () => {
+      // `../worktrees/.npm-cache` is shared by every repo under the same
+      // parent directory. Before the per-project keying, a sibling project's
+      // run overwrote the single `.lockfile-hash`, making the two projects
+      // alternate cache misses forever. Pin the keying: a stale SHARED-name
+      // file — even one whose content happens to match this project's hash —
+      // must not be read as a cache hit.
+      seedProject("pnpm-lock.yaml");
+      mkdirSync(join(repo, "node_modules"), { recursive: true });
+      stubPm("pnpm", 0);
+
+      const hash = createHash("md5")
+        .update(readFileSync(join(repo, "pnpm-lock.yaml")))
+        .digest("hex");
+      mkdirSync(join(sandbox, "worktrees", ".npm-cache"), { recursive: true });
+      writeFileSync(
+        join(sandbox, "worktrees", ".npm-cache", ".lockfile-hash"),
+        `${hash}\n`,
+      );
+
+      const r = runNewFeature(CACHE_ENV);
+      expect(r.status).toBe(0);
+      // The shared file is not this project's cache: a real install must run,
+      // and the keyed hash file must be written alongside the stale one.
+      expect(callsFor("pnpm")).toContain("pnpm install --frozen-lockfile");
+      expect(readFileSync(hashFile(), "utf8").trim()).toBe(hash);
     });
 
     it("does not abort on a non-npm project whose lockfile hash is unavailable", () => {

@@ -295,7 +295,17 @@ frozen_install() {
     # empty for every PM but npm, where it expands to nothing.
     if ! $ci_cmd $quiet; then
         echo -e "${RED}❌ Dependency install failed (${ci_cmd}).${NC}" >&2
-        echo -e "${YELLOW}   The committed ${lockfile} is out of sync with package.json.${NC}" >&2
+        # Distinguish "no lockfile at all" from "lockfile out of sync" (#847):
+        # a manifest-only project falls back to npm and `npm ci` fails because
+        # it REQUIRES a lockfile — telling that user their "committed
+        # package-lock.json is out of sync" describes a file they don't have.
+        # The recovery command is the same either way: it generates the
+        # lockfile if absent and re-syncs it if present.
+        if [ ! -f "$lockfile" ]; then
+            echo -e "${YELLOW}   No ${lockfile} found — ${ci_cmd} requires a committed lockfile.${NC}" >&2
+        else
+            echo -e "${YELLOW}   The committed ${lockfile} is out of sync with package.json.${NC}" >&2
+        fi
         echo -e "${YELLOW}   Fix in the main repo, then re-run:${NC}" >&2
         echo -e "${YELLOW}     ${recovery}${NC}" >&2
         echo -e "${YELLOW}   Worktree left in place at: $(pwd)${NC}" >&2
@@ -317,10 +327,15 @@ if [ ! -d "node_modules" ] && [ -f "package.json" ]; then
         # `worktrees/feature/worktrees/.npm-cache` — a level deeper than the
         # `../worktrees/` the worktrees themselves live in.
         CACHE_DIR="${MAIN_REPO_DIR}/../worktrees/.npm-cache"
-        # Named for the resolved lockfile, not package-lock.json specifically
-        # (#847). Renaming invalidates any existing cache once, which costs one
-        # extra install and then self-heals.
-        HASH_FILE="${CACHE_DIR}/.lockfile-hash"
+        # Named for the resolved lockfile, not package-lock.json specifically,
+        # and keyed by project (#847): `../worktrees/` is shared by every repo
+        # in the same parent directory, so a single hash file made two projects
+        # alternate cache misses as each overwrote the other's hash. A stale
+        # hash can only cost a redundant install, never a wrong copy — the hit
+        # path copies this project's own node_modules — but the thrash defeats
+        # the cache. Renaming invalidates any existing cache once, which costs
+        # one extra install and then self-heals.
+        HASH_FILE="${CACHE_DIR}/.lockfile-hash-$(basename "$MAIN_REPO_DIR")"
 
         # Hash the RESOLVED lockfile, not a hardcoded package-lock.json (#847).
         # On a pnpm/yarn/bun project the old code hashed a missing file: macOS
