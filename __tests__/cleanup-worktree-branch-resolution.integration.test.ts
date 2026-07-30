@@ -237,3 +237,131 @@ describe("cleanup-worktree.sh branch resolution (#838)", () => {
     expect(r.stdout).not.toContain("Worktree not found");
   });
 });
+
+// Tests for Issue #844 — the branch resolver was an UNANCHORED substring match
+// with first-match-wins and no ambiguity check, so `838` matched
+// `feature/1838-other-work` and deleted the wrong branch (local AND remote,
+// since #838). The fix anchors bare numbers to the issue-number position and
+// makes any 2+-way match fatal. Each documented input form (bare number, glob,
+// full name) gets a multi-match fixture here (AC-4).
+//
+// The module-level beforeEach already provisions `feature/838-cleanup-branch-
+// resolution`; these tests add their own worktrees on non-conflicting issue
+// numbers so that seed branch never perturbs the assertions.
+describe("cleanup-worktree.sh anchored resolution + ambiguity (#844)", () => {
+  /** Add a linked worktree on a fresh branch; returns its path. */
+  function addWorktree(branch: string, dirName: string): string {
+    const p = join(sandbox, dirName);
+    git(["worktree", "add", "-q", "-b", branch, p]);
+    return p;
+  }
+
+  /** Branches that currently exist locally (trimmed, decorators stripped). */
+  function localBranches(): string[] {
+    return spawnSync("git", ["branch", "--format=%(refname:short)"], {
+      cwd: repo,
+      encoding: "utf8",
+    })
+      .stdout.split("\n")
+      .map((b) => b.trim())
+      .filter(Boolean);
+  }
+
+  it("AC-1: a bare number anchors — `900` resolves feature/900-fix, never feature/1900-other", () => {
+    addWorktree("feature/900-fix", "wt-900");
+    addWorktree("feature/1900-other", "wt-1900");
+    stubGh(false); // not merged → resolver runs, then exits before any teardown
+
+    const r = spawnSync("bash", [SCRIPT, "900"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    });
+
+    // Resolved the anchored branch, and the 1838-style decoy was never even a
+    // candidate (no ambiguity error, no wrong-branch resolution).
+    expect(r.stdout).toContain("feature/900-fix");
+    expect(r.stdout).not.toContain("feature/1900-other");
+    expect(r.stdout + r.stderr).not.toContain("ambiguous");
+    // Nothing torn down (unmerged, non-interactive → safe exit).
+    expect(localBranches()).toContain("feature/1900-other");
+  });
+
+  it("AC-2/AC-4 (bare number): `901` matching two branches exits non-zero and lists both", () => {
+    addWorktree("feature/901-alpha", "wt-901a");
+    addWorktree("feature/901-beta", "wt-901b");
+    stubGh(true); // even a MERGED PR must not rescue an ambiguous match
+
+    const r = spawnSync("bash", [SCRIPT, "901"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    });
+
+    const out = r.stdout + r.stderr;
+    expect(r.status).not.toBe(0);
+    expect(out).toContain("ambiguous");
+    expect(out).toContain("feature/901-alpha");
+    expect(out).toContain("feature/901-beta");
+    // First-match-wins is exactly what we refuse: neither branch is deleted.
+    const branches = localBranches();
+    expect(branches).toContain("feature/901-alpha");
+    expect(branches).toContain("feature/901-beta");
+  });
+
+  it("AC-3/AC-4 (glob): over-broad `feature/*` matching multiple branches is rejected", () => {
+    addWorktree("feature/902-alpha", "wt-902");
+    addWorktree("feature/903-beta", "wt-903");
+    stubGh(true);
+
+    const r = spawnSync("bash", [SCRIPT, "feature/*"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    });
+
+    const out = r.stdout + r.stderr;
+    expect(r.status).not.toBe(0);
+    expect(out).toContain("ambiguous");
+    // The seed 838 branch plus both new ones are all candidates; none deleted.
+    const branches = localBranches();
+    expect(branches).toContain("feature/902-alpha");
+    expect(branches).toContain("feature/903-beta");
+    expect(branches).toContain(BRANCH);
+  });
+
+  it("AC-3: a glob matching exactly one branch still resolves normally", () => {
+    addWorktree("feature/902-alpha", "wt-902");
+    addWorktree("feature/903-beta", "wt-903");
+    stubGh(false); // resolves uniquely, then exits (unmerged, non-interactive)
+
+    const r = spawnSync("bash", [SCRIPT, "feature/902-*"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    });
+
+    expect(r.stdout + r.stderr).not.toContain("ambiguous");
+    expect(r.stdout).not.toContain("Worktree not found");
+    expect(r.stdout).toContain("feature/902-alpha");
+  });
+
+  it("AC-4 (full name): exact tier wins — coexisting feature/838-fix{,-more} is not ambiguous", () => {
+    // Both are legal simultaneously (new-feature.sh truncates the title slug),
+    // so typing the full name must resolve to exactly it, not trip the check.
+    addWorktree("feature/838-fix", "wt-838fix");
+    addWorktree("feature/838-fix-more", "wt-838fixmore");
+    stubGh(false);
+
+    const r = spawnSync("bash", [SCRIPT, "feature/838-fix"], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    });
+
+    expect(r.stdout + r.stderr).not.toContain("ambiguous");
+    expect(r.stdout).toContain("feature/838-fix");
+    // The superstring branch survives — it was never a match.
+    expect(localBranches()).toContain("feature/838-fix-more");
+  });
+});
