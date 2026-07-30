@@ -390,11 +390,14 @@ describe("runReadyGate — AC-6 runaway protection", () => {
 // ─── runReadyGate: #534 regression guards (AC-5) ─────────────────────────────
 
 describe("runReadyGate — AC-5 #534 regression guard", () => {
-  it("a null / unparseable QA verdict is never ready", async () => {
+  it("a null / unparseable QA verdict is never ready — and reports NO_VERDICT, not NO_IMPLEMENTATION (#853)", async () => {
     const { runPhase } = scriptedRunner([qaResult(null)]);
     const result = await runReadyGate(baseOpts({ runPhase }));
 
-    expect(result.reason).toBe("NO_IMPLEMENTATION");
+    // #853: a deferred/unparseable QA turn says nothing about whether an
+    // implementation exists — labelling it NO_IMPLEMENTATION sent debuggers
+    // to the wrong place. It must be the distinct NO_VERDICT reason.
+    expect(result.reason).toBe("NO_VERDICT");
     expect(result.ready).toBe(false);
     expect(result.finalVerdict).toBeNull();
   });

@@ -54,7 +54,9 @@ export interface ReadyCommandOptions {
 /**
  * Exit code from a ready result.
  * - 0: ready (awaiting human merge)
- * - 1: not ready — needs human intervention (budget/iterations/stagnation)
+ * - 1: not ready — needs human intervention (budget/iterations/stagnation,
+ *      or a NO_VERDICT QA turn (#853): the implementation may exist, so this
+ *      is a re-run case, not the "nothing there" exit)
  * - 2: not ready — no implementation (#534) or hard error
  */
 export function getReadyExitCode(result: ReadyResult): number {
