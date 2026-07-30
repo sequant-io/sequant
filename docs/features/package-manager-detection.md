@@ -154,11 +154,12 @@ Then use the matching package manager's commands (see table above).
 
 **Symptoms:** Older projects don't have `packageManager` field
 
-**Solution:** This is normal for projects initialized before this feature. Worktree
-provisioning falls back to detecting the package manager from the lockfile in the
-worktree, so a manifest-less pnpm/yarn/bun project still gets that manager's frozen
-install (#870); npm is used only when no lockfile is present either. Other consumers
-(notably `sequant update`) still assume npm when the field is absent. To update:
+**Solution:** This is normal for projects initialized before this feature. Sequant
+falls back to detecting the package manager from your lockfile whenever the manifest
+does not record one (#870), so a manifest-less pnpm/yarn/bun project still gets that
+manager's commands — both the frozen install during worktree provisioning and the
+`PM_RUN` token `sequant update` backfills. npm is used only when no lockfile is
+present either. To record it explicitly:
 
 ```bash
 # Re-initialize to detect package manager
