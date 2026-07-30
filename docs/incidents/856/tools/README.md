@@ -33,12 +33,24 @@ Without sudo it reports **PARTIALLY verified** and says so explicitly — the
 poller half is proven, the sender-identification half is not. Do not read a
 negative dtrace result as evidence until the sudo run passes.
 
+## The rest
+
 Kept so the AC-3 result is reproducible rather than a claim, and so the next
 occurrence of the hang can be measured the same way.
 
-Both are standalone Node scripts — no build, no sequant import. Paths to
-`entire.log` and the Claude desktop config are machine-specific constants at the
-top of each file; adjust before reuse.
+All of these are standalone — no build, no sequant import. The `.mjs` files run
+under plain `node`, the `.sh` files under bash 3.2 (macOS ships no `setsid` and
+no `timeout`, so neither is used). Paths to `entire.log` and the Claude desktop
+config are machine-specific constants near the top of each file; adjust before
+reuse.
+
+| Script                   | Purpose                                                 | sudo                                     |
+| ------------------------ | ------------------------------------------------------- | ---------------------------------------- |
+| `verify-capture.sh`      | **Run first.** Positive-control test of the capture rig | optional (required for the dtrace layer) |
+| `watch-signals.sh`       | Record signal deliveries + process-tree deaths          | optional                                 |
+| `induce-bgpty-hang.sh`   | Deterministically wedge a bg-pty host (tier 2)          | no                                       |
+| `teardown-gap.mjs`       | Per-session `TurnEnd → SessionEnd` gap                  | no                                       |
+| `ac3-mcp-experiment.mjs` | The AC-3 MCP on/off comparison                          | no                                       |
 
 ## `teardown-gap.mjs`
 
