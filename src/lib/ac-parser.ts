@@ -230,6 +230,17 @@ export function parseAcceptanceCriteria(
   let inAcSection = false;
   let bareCount = 0;
 
+  // Pre-scan for explicit IDs anywhere in the body. Synthesis must skip IDs
+  // owned by explicit markers even when the marker appears on a LATER line —
+  // otherwise a bare checkbox listed before `**AC-1:**` under the same heading
+  // synthesizes AC-1 first and the author's explicit AC-1 is silently dropped
+  // by the first-occurrence dedupe.
+  const explicitIds = new Set<string>();
+  for (const line of lines) {
+    const parsed = parseACLine(line);
+    if (parsed) explicitIds.add(parsed.id);
+  }
+
   for (const line of lines) {
     if (HEADING_RE.test(line)) {
       inAcSection = AC_HEADING_RE.test(line);
@@ -250,12 +261,12 @@ export function parseAcceptanceCriteria(
       const description = bare?.[1].trim();
       if (description) {
         // Synthesize `AC-<n>`, skipping any ID already taken by an explicit
-        // marker so a synthesized ID can never collide with (and be silently
-        // dropped against) a hand-written one.
+        // marker — before OR after this line — so a synthesized ID can never
+        // collide with (and be silently dropped against) a hand-written one.
         let id: string;
         do {
           id = `AC-${++bareCount}`;
-        } while (seenIds.has(id));
+        } while (seenIds.has(id) || explicitIds.has(id));
         push(id, description);
       }
     }

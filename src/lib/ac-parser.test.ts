@@ -387,6 +387,25 @@ Some notes here.
       );
     });
 
+    // AC-1: a synthesized ID must also skip explicit markers that appear on a
+    // LATER line — otherwise the bare item claims AC-1 first and the author's
+    // explicit AC-1 is silently dropped by the first-occurrence dedupe.
+    it("skips IDs taken by explicit markers that appear after the bare item", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] A bare criterion listed first
+- [ ] **AC-1:** Explicit criterion listed second
+`;
+
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(2);
+      expect(criteria[0].id).toBe("AC-2");
+      expect(criteria[0].description).toBe("A bare criterion listed first");
+      expect(criteria[1].id).toBe("AC-1");
+      expect(criteria[1].description).toBe("Explicit criterion listed second");
+    });
+
     // AC-2: bare checkboxes with NO AC heading anywhere are not misread as ACs
     it("ignores bare checkboxes when there is no AC heading", () => {
       const issueBody = `## Open questions
