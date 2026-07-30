@@ -63,13 +63,23 @@ describe("LockManager — integration: two-process contention", () => {
     "second concurrent process is blocked when the first holds the lock",
     { timeout: 20_000 },
     async () => {
-      // Spawn process A — acquires and holds for 1s.
+      // Spawn process A — acquires and holds until this test closes its stdin.
+      //
+      // #856: A used to release on a fixed 1s timer, which races process B's
+      // `tsx` boot. Whenever the transform cache is cold — i.e. right after
+      // any edit to this module, exactly when the test matters most — B took
+      // longer than 1s to start, A had already released, and B then acquired
+      // a genuinely free lock. The failure reads as "contention is broken"
+      // but is really the harness measuring an empty window. Holding until
+      // stdin closes removes the window rather than widening it: A cannot
+      // release before B has had its turn.
       const script = `
         import { LockManager } from ${JSON.stringify(MODULE_PATH)};
         const mgr = new LockManager({ locksDir: ${JSON.stringify(dir)} });
         const r = mgr.acquire(42, "first");
         process.stdout.write(JSON.stringify(r) + "\\n");
-        setTimeout(() => { mgr.release(42); process.exit(0); }, 1000);
+        process.stdin.on("end", () => { mgr.release(42); process.exit(0); });
+        process.stdin.resume();
       `;
       const child = spawn(TSX_BIN, ["--eval", script], {
         env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
@@ -88,11 +98,12 @@ describe("LockManager — integration: two-process contention", () => {
         }, 50);
       });
 
-      // Process B should be blocked.
+      // Process B should be blocked — A is still holding, guaranteed.
       const b = runAcquireSync(dir, 42, "second");
       expect(b.acquired).toBe(false);
 
-      // Wait for A to release.
+      // Now let A release, and wait for it to exit.
+      child.stdin.end();
       await new Promise<void>((res) => child.on("exit", () => res()));
       expect(existsSync(join(dir, "42.lock"))).toBe(false);
 

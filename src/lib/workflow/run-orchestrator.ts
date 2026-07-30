@@ -747,8 +747,12 @@ export class RunOrchestrator {
     const shutdown = new ShutdownManager();
     if (logWriter) {
       const writer = logWriter;
-      shutdown.registerCleanup("Finalize run logs", async () => {
-        await writer.finalize();
+      // #856: forward the abort cause into the log. This cleanup runs on the
+      // SIGINT/SIGTERM path, where no phase result will ever arrive for the
+      // in-flight issue — without the context, `finalize()` writes that issue
+      // out as if the run had simply ended.
+      shutdown.registerCleanup("Finalize run logs", async (abort) => {
+        await writer.finalize(abort ? { aborted: abort } : undefined);
       });
     }
 
