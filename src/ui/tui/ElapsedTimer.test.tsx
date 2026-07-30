@@ -18,6 +18,13 @@ function plainSeconds(text: string): number {
   return Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
 }
 
+/**
+ * Ink render tests need more than the `unit` project's 5s default — see the
+ * longer note in `App.test.tsx` (#880). File scope for the same reason: the
+ * flush test is the worst case, not the only exposed one.
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("ElapsedTimer", () => {
   it("renders --:-- when startedAt is missing (AC-5)", () => {
     const { lastFrame } = render(<ElapsedTimer now={Date.now()} />);

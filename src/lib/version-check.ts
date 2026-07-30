@@ -11,7 +11,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import {
   detectPackageManagerSync,
-  getPackageManagerCommands,
+  resolvePackageManagerConfig,
 } from "./stacks.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -369,7 +369,12 @@ export function getVersionWarning(
 
   if (isLocalInstall) {
     const pm = detectPackageManagerSync();
-    const pmConfig = getPackageManagerCommands(pm);
+    // Resolved, not read off PM_CONFIG: `updatePkg` is one of the fields whose
+    // yarn spelling depends on the major (berry `yarn up` vs classic
+    // `yarn upgrade`), and this string is a command we are telling the user to
+    // run. Both `detectPackageManagerSync` and the resolver read the cwd, which
+    // is the project this local install belongs to (#871).
+    const pmConfig = resolvePackageManagerConfig(pm, process.cwd());
     return `sequant ${latestVersion} is available (you have ${currentVersion})
    Run: ${pmConfig.updatePkg} sequant
    Note: You have sequant as a local dependency. npx uses your node_modules version.`;

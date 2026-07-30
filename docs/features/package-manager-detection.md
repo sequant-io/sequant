@@ -49,8 +49,29 @@ Sequant uses the correct commands for each package manager:
 |-----------------|------------|-----------------|-------------|-------------|----------------|----------------|
 | npm | `npm run <script>` | `npx <pkg>` | `npm install` | `npm install <pkg>` | `npm uninstall <pkg>` | `npm update <pkg>` |
 | Bun | `bun run <script>` | `bunx <pkg>` | `bun install` | `bun add <pkg>` | `bun remove <pkg>` | `bun update <pkg>` |
-| Yarn | `yarn <script>` | `yarn dlx <pkg>` | `yarn install` | `yarn add <pkg>` | `yarn remove <pkg>` | `yarn upgrade <pkg>` |
+| Yarn 2+ (berry) | `yarn <script>` | `yarn dlx <pkg>` | `yarn install` | `yarn add <pkg>` | `yarn remove <pkg>` | `yarn up <pkg>` |
+| Yarn 1 (classic) | `yarn <script>` | `npx <pkg>` | `yarn install` | `yarn add <pkg>` | `yarn remove <pkg>` | `yarn upgrade <pkg>` |
 | pnpm | `pnpm run <script>` | `pnpm dlx <pkg>` | `pnpm install` | `pnpm add <pkg>` | `pnpm remove <pkg>` | `pnpm update <pkg>` |
+
+### Yarn 1 vs Yarn 2+
+
+Yarn 1 (classic) and Yarn 2+ (berry) are different CLIs that share the
+`yarn.lock` filename, so lockfile detection alone cannot tell them apart. Sequant
+detects the major separately, in this order:
+
+1. `packageManager: "yarn@<major>"` in `package.json` (Corepack's pin)
+2. `.yarnrc.yml` — berry only; Yarn 1 reads `.yarnrc`
+3. The `yarn.lock` header — Yarn 1 writes `# yarn lockfile v1`, berry writes `__metadata:`
+4. Nothing recognizable → assume berry
+
+The pin outranks the lockfile because flag acceptance is decided by the yarn
+binary that *runs*, not by the lockfile it *reads*: a Yarn 1 lockfile under
+`packageManager: "yarn@4"` still gets berry's flags, since yarn 4 is what
+executes.
+
+The commands that differ are the frozen install (`yarn install --immutable` on
+berry, `yarn install --frozen-lockfile` on Yarn 1), package execution, and the
+update command — see the table above.
 
 ### Where Commands Are Used
 
@@ -154,7 +175,12 @@ Then use the matching package manager's commands (see table above).
 
 **Symptoms:** Older projects don't have `packageManager` field
 
-**Solution:** This is normal for projects initialized before this feature. Sequant defaults to npm. To update:
+**Solution:** This is normal for projects initialized before this feature. Sequant
+falls back to detecting the package manager from your lockfile whenever the manifest
+does not record one (#870), so a manifest-less pnpm/yarn/bun project still gets that
+manager's commands — both the frozen install during worktree provisioning and the
+`PM_RUN` token `sequant update` backfills. npm is used only when no lockfile is
+present either. To record it explicitly:
 
 ```bash
 # Re-initialize to detect package manager
