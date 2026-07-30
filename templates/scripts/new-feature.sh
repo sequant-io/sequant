@@ -183,7 +183,8 @@ fi
 # package-lock.json, npm fallback), and each frozen command MUST match the
 # corresponding PM_CONFIG[pm].ciInstall verbatim. A vitest drift-guard
 # (__tests__/new-feature-frozen-install.integration.test.ts) asserts every
-# ciInstall string appears here, converting drift from silent to failing.
+# ciInstall string appears in pm_ci_install() and every PM_CONFIG[pm].run
+# string in pm_run(), converting drift from silent to failing.
 #
 # Detection is lockfile-existence only — it never reads package.json's
 # `packageManager` field — exactly like detectPackageManagerSync, so
@@ -223,10 +224,39 @@ pm_lockfile() {
     esac
 }
 
+# Quiet flag for the frozen install, appended at the CALL SITE rather than
+# folded into pm_ci_install so the drift guard keeps matching PM_CONFIG's
+# ciInstall verbatim. Only npm gets one: `npm ci --silent` is what this script
+# ran before #847, and dropping it made every npm provisioning noisier than it
+# used to be. The others are left alone deliberately — `yarn install` has no
+# equivalent, and pnpm/bun's silencing flags are untested here, so inventing
+# them would trade a cosmetic regression for a real one.
+pm_quiet_flag() {
+    case "$1" in
+        npm) echo "--silent" ;;
+        *)   echo "" ;;
+    esac
+}
+
+# Run-script prefix per PM — mirrors PM_CONFIG.run (npm/pnpm/bun take `run`,
+# yarn does not). Drives the next-steps hint, which hardcoded `npm run dev`
+# even on a pnpm project until #847's follow-up pass.
+pm_run() {
+    case "$1" in
+        bun)  echo "bun run" ;;
+        yarn) echo "yarn" ;;
+        pnpm) echo "pnpm run" ;;
+        *)    echo "npm run" ;;
+    esac
+}
+
 # PM-appropriate recovery command when the lockfile is out of sync (AC-3).
 pm_recovery() {
     case "$1" in
-        bun)  echo "bun install && git commit bun.lockb" ;;
+        # Defer to pm_lockfile rather than repeating a name: a bun.lock project
+        # was told to `git commit bun.lockb`, a file it does not have — the
+        # same wrong-file misdirection AC-3 exists to eliminate.
+        bun)  echo "bun install && git commit $(pm_lockfile bun)" ;;
         yarn) echo "yarn install && git commit yarn.lock" ;;
         pnpm) echo "pnpm install --lockfile-only && git commit pnpm-lock.yaml" ;;
         *)    echo "npm install --package-lock-only && git commit package-lock.json" ;;
@@ -252,16 +282,18 @@ pm_recovery() {
 # The enclosing `[ ! -d node_modules ]` guard means this only ever runs against
 # an absent node_modules, which is exactly the frozen install's precondition.
 frozen_install() {
-    local pm ci_cmd lockfile recovery
+    local pm ci_cmd lockfile recovery quiet
     pm="$(detect_package_manager)"
     ci_cmd="$(pm_ci_install "$pm")"
     lockfile="$(pm_lockfile "$pm")"
     recovery="$(pm_recovery "$pm")"
+    quiet="$(pm_quiet_flag "$pm")"
 
     echo -e "${BLUE}   Package manager: ${pm} (${ci_cmd})${NC}"
     # Unquoted on purpose: split the resolved command into words. The values
-    # are fixed literals from the tables above, not user input.
-    if ! $ci_cmd; then
+    # are fixed literals from the tables above, not user input. `quiet` is
+    # empty for every PM but npm, where it expands to nothing.
+    if ! $ci_cmd $quiet; then
         echo -e "${RED}❌ Dependency install failed (${ci_cmd}).${NC}" >&2
         echo -e "${YELLOW}   The committed ${lockfile} is out of sync with package.json.${NC}" >&2
         echo -e "${YELLOW}   Fix in the main repo, then re-run:${NC}" >&2
@@ -280,8 +312,15 @@ frozen_install() {
 if [ ! -d "node_modules" ] && [ -f "package.json" ]; then
     # Check for install cache optimization (opt-in via SEQUANT_NPM_CACHE=true)
     if [ "${SEQUANT_NPM_CACHE:-false}" = "true" ]; then
-        CACHE_DIR="../worktrees/.npm-cache"
-        HASH_FILE="${CACHE_DIR}/.package-lock-hash"
+        # Anchored to the main repo, not the cwd: execution is inside the new
+        # worktree by this point, so the old relative path resolved to
+        # `worktrees/feature/worktrees/.npm-cache` — a level deeper than the
+        # `../worktrees/` the worktrees themselves live in.
+        CACHE_DIR="${MAIN_REPO_DIR}/../worktrees/.npm-cache"
+        # Named for the resolved lockfile, not package-lock.json specifically
+        # (#847). Renaming invalidates any existing cache once, which costs one
+        # extra install and then self-heals.
+        HASH_FILE="${CACHE_DIR}/.lockfile-hash"
 
         # Hash the RESOLVED lockfile, not a hardcoded package-lock.json (#847).
         # On a pnpm/yarn/bun project the old code hashed a missing file: macOS
@@ -307,10 +346,20 @@ if [ ! -d "node_modules" ] && [ -f "package.json" ]; then
         if [ -n "$CURRENT_HASH" ] && [ -f "$HASH_FILE" ] && [ -d "${MAIN_REPO_DIR}/node_modules" ]; then
             CACHED_HASH=$(cat "$HASH_FILE" 2>/dev/null || echo "")
             if [ "$CURRENT_HASH" = "$CACHED_HASH" ]; then
-                echo -e "${GREEN}⚡ Using cached node_modules (package-lock unchanged)${NC}"
-                cp -r "${MAIN_REPO_DIR}/node_modules" ./node_modules
+                echo -e "${GREEN}⚡ Using cached node_modules (lockfile unchanged)${NC}"
+                # `-R`, not `-r` (#847). Making this branch reachable for
+                # pnpm/yarn/bun exposed a difference the npm-only past hid:
+                # BSD `cp -r` DEREFERENCES symlinks, so a pnpm node_modules —
+                # a farm of relative links into `.pnpm/` — is expanded into
+                # full real copies, and any dangling link (an optional dep, a
+                # `.bin` entry for another platform) makes cp exit non-zero,
+                # which `set -e` turns into a half-provisioned worktree.
+                # `cp -R` preserves symlinks on both BSD and GNU; the links
+                # are relative, so they still resolve inside the copy. It is
+                # also more faithful for npm, whose `.bin/` entries are links.
+                cp -R "${MAIN_REPO_DIR}/node_modules" ./node_modules
             else
-                echo -e "${BLUE}📦 Installing dependencies (package-lock changed)...${NC}"
+                echo -e "${BLUE}📦 Installing dependencies (lockfile changed)...${NC}"
                 frozen_install
                 # Update cache hash
                 mkdir -p "$CACHE_DIR"
@@ -336,7 +385,7 @@ echo -e "${GREEN}✅ Worktree created successfully!${NC}"
 echo ""
 echo -e "${YELLOW}📍 Next steps:${NC}"
 echo -e "  1. cd ${WORKTREE_DIR}"
-echo -e "  2. npm run dev"
+echo -e "  2. $(pm_run "$(detect_package_manager)") dev"
 echo -e "  3. Work on issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}"
 echo -e "  4. git add . && git commit -m \"Your message\""
 echo -e "  5. git push -u origin ${BRANCH_NAME}"

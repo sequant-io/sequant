@@ -19,6 +19,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   mkdtempSync,
   rmSync,
@@ -27,6 +28,8 @@ import {
   existsSync,
   chmodSync,
   mkdirSync,
+  symlinkSync,
+  lstatSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -102,12 +105,21 @@ function seedProject(lockfile: string | null): void {
   git(["push", "-q", "origin", "main"]);
 }
 
-function runNewFeature() {
+function runNewFeature(extraEnv: Record<string, string> = {}) {
   return spawnSync("bash", [SCRIPT, ISSUE], {
     cwd: repo,
     encoding: "utf8",
-    env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+    env: { ...process.env, PATH: `${binDir}:${process.env.PATH}`, ...extraEnv },
   });
+}
+
+/** Absolute path of the worktree the script provisions for ISSUE. */
+function worktreeDir(): string {
+  return spawnSync(
+    "bash",
+    ["-c", `ls -d ${join(sandbox, "worktrees")}/feature/${ISSUE}-* | head -1`],
+    { encoding: "utf8" },
+  ).stdout.trim();
 }
 
 beforeEach(() => {
@@ -162,14 +174,8 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
 
     // The frozen install must not dirty the tree. A stray unstaged lockfile is
     // the #826/#760 cascade this whole mechanism exists to prevent.
-    const wt = join(sandbox, "worktrees");
-    const branchDir = spawnSync(
-      "bash",
-      ["-c", `ls -d ${wt}/feature/${ISSUE}-* | head -1`],
-      { encoding: "utf8" },
-    ).stdout.trim();
     const status = spawnSync("git", ["status", "--porcelain"], {
-      cwd: branchDir,
+      cwd: worktreeDir(),
       encoding: "utf8",
     }).stdout.trim();
     expect(status).toBe("");
@@ -193,6 +199,55 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
     expect(r.status).toBe(0);
     expect(callsFor("yarn")).toContain("yarn install --immutable");
     expect(callsFor("npm")).toBe("");
+  });
+
+  it("AC-1: a bun project runs `bun install --frozen-lockfile`", () => {
+    seedProject("bun.lockb");
+    stubPm("bun", 0);
+    stubPm("npm", 0);
+
+    const r = runNewFeature();
+    expect(r.status).toBe(0);
+    expect(callsFor("bun")).toContain("bun install --frozen-lockfile");
+    expect(callsFor("npm")).toBe("");
+  });
+
+  it("AC-3: a bun.lock-only project names bun.lock, not bun.lockb", () => {
+    // pm_lockfile's bun arm is the one table entry with real branching: a bun
+    // project may commit either lockfile, and the failure message must name
+    // the one actually present.
+    seedProject("bun.lock");
+    stubPm("bun", 1); // simulate lockfile out of sync
+
+    const r = runNewFeature();
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("bun.lock");
+    expect(r.stderr).not.toContain("bun.lockb");
+  });
+
+  it("npm keeps its pre-#847 quiet install (`npm ci --silent`)", () => {
+    // #847 resolved the command from PM_CONFIG.ciInstall, which is bare
+    // `npm ci` — silently dropping the `--silent` this script ran before and
+    // making every npm provisioning noisier. The flag belongs at the call
+    // site so the drift guard still matches ciInstall verbatim.
+    seedProject("package-lock.json");
+    stubPm("npm", 0);
+
+    const r = runNewFeature();
+    expect(r.status).toBe(0);
+    expect(callsFor("npm")).toContain("npm ci --silent");
+  });
+
+  it("the next-steps hint uses the detected PM's run command, not `npm run`", () => {
+    seedProject("pnpm-lock.yaml");
+    stubPm("pnpm", 0);
+
+    const r = runNewFeature();
+    expect(r.status).toBe(0);
+    // Anchored on the step number: "pnpm run dev" contains "npm run dev", so a
+    // bare not.toContain("npm run dev") can never pass.
+    expect(r.stdout).toContain("2. pnpm run dev");
+    expect(r.stdout).not.toContain("2. npm run dev");
   });
 
   it("AC-3: a failed pnpm install names pnpm-lock.yaml, not package-lock.json", () => {
@@ -225,6 +280,88 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
     expect(callsFor("npm")).toBe("");
   });
 
+  // The SEQUANT_NPM_CACHE branch. Opt-in, and before #847 it was effectively
+  // npm-only: on a pnpm/yarn/bun project it hashed a missing package-lock.json,
+  // which aborts under `set -e` on macOS (`md5 -q`) and caches an empty hash on
+  // Linux (`md5sum | cut` swallows the failure). Fixing it made the branch
+  // reachable for those PMs for the first time, so it needs its own coverage.
+  describe("SEQUANT_NPM_CACHE branch", () => {
+    const CACHE_ENV = { SEQUANT_NPM_CACHE: "true" };
+
+    /** Where the script keeps its cache, relative to the main repo. */
+    function hashFile(): string {
+      return join(sandbox, "worktrees", ".npm-cache", ".lockfile-hash");
+    }
+
+    it("hashes the RESOLVED lockfile on a pnpm project and installs with pnpm", () => {
+      seedProject("pnpm-lock.yaml");
+      // node_modules must be absent from the worktree but present in the main
+      // repo for the cache paths to be exercised at all.
+      mkdirSync(join(repo, "node_modules"), { recursive: true });
+      stubPm("pnpm", 0);
+      stubPm("npm", 0);
+
+      const r = runNewFeature(CACHE_ENV);
+      expect(r.status).toBe(0);
+      expect(callsFor("pnpm")).toContain("pnpm install --frozen-lockfile");
+      expect(callsFor("npm")).toBe("");
+
+      // The hash must be the pnpm lockfile's, not an empty string standing in
+      // for a package-lock.json the project doesn't have.
+      const expected = createHash("md5")
+        .update(readFileSync(join(repo, "pnpm-lock.yaml")))
+        .digest("hex");
+      expect(existsSync(hashFile())).toBe(true);
+      expect(readFileSync(hashFile(), "utf8").trim()).toBe(expected);
+    });
+
+    it("reuses cached node_modules on a hash hit and preserves symlinks (cp -R)", () => {
+      seedProject("pnpm-lock.yaml");
+      stubPm("pnpm", 0);
+
+      // A pnpm node_modules is a farm of relative symlinks into .pnpm/. BSD
+      // `cp -r` dereferences them — expanding the copy and failing outright on
+      // a dangling link, which `set -e` turns into a half-provisioned worktree.
+      const nm = join(repo, "node_modules");
+      mkdirSync(join(nm, ".pnpm", "dep@1.0.0", "node_modules", "dep"), {
+        recursive: true,
+      });
+      writeFileSync(
+        join(nm, ".pnpm", "dep@1.0.0", "node_modules", "dep", "index.js"),
+        "module.exports = 1;\n",
+      );
+      symlinkSync(".pnpm/dep@1.0.0/node_modules/dep", join(nm, "dep"));
+
+      // Pre-seed a matching hash so the run takes the cache-HIT path.
+      const hash = createHash("md5")
+        .update(readFileSync(join(repo, "pnpm-lock.yaml")))
+        .digest("hex");
+      mkdirSync(join(sandbox, "worktrees", ".npm-cache"), { recursive: true });
+      writeFileSync(hashFile(), `${hash}\n`);
+
+      const r = runNewFeature(CACHE_ENV);
+      expect(r.status).toBe(0);
+      // Cache hit ⇒ no install at all.
+      expect(callsFor("pnpm")).toBe("");
+
+      const copied = join(worktreeDir(), "node_modules", "dep");
+      expect(lstatSync(copied).isSymbolicLink()).toBe(true);
+      // Relative link ⇒ still resolves inside the copy.
+      expect(existsSync(join(copied, "index.js"))).toBe(true);
+    });
+
+    it("does not abort on a non-npm project whose lockfile hash is unavailable", () => {
+      // The pre-#847 failure mode, pinned: a yarn project with the cache on
+      // must fall through to a normal frozen install, not die in the hasher.
+      seedProject("yarn.lock");
+      stubPm("yarn", 0);
+
+      const r = runNewFeature(CACHE_ENV);
+      expect(r.status).toBe(0);
+      expect(callsFor("yarn")).toContain("yarn install --immutable");
+    });
+  });
+
   // Drift guard: the shell case table must stay in lockstep with PM_CONFIG.
   // Editing a ciInstall string in the pm_ci_install() table fails exactly here.
   //
@@ -244,6 +381,18 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
     const table = match![1];
     for (const pm of ["npm", "pnpm", "yarn", "bun"] as const) {
       expect(table).toContain(PM_CONFIG[pm].ciInstall);
+    }
+  });
+
+  // Same guard for the run-script table behind the next-steps hint. Scoped to
+  // pm_run()'s body for the same reason: `npm run` appears in prose elsewhere.
+  it("drift guard: each JS run prefix in PM_CONFIG appears verbatim in the pm_run table", () => {
+    const script = readFileSync(SCRIPT, "utf8");
+    const match = script.match(/pm_run\(\)\s*\{([\s\S]*?)\n\}/);
+    expect(match, "pm_run() function not found in script").not.toBeNull();
+    const table = match![1];
+    for (const pm of ["npm", "pnpm", "yarn", "bun"] as const) {
+      expect(table).toContain(PM_CONFIG[pm].run);
     }
   });
 });
