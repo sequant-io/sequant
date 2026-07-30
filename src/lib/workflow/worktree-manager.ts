@@ -9,7 +9,7 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { PM_CONFIG } from "../stacks.js";
+import { PM_CONFIG, resolvePackageManager } from "../stacks.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
@@ -537,9 +537,11 @@ export function installWorktreeDeps(
   if (verbose) {
     console.log(chalk.gray(`    Installing dependencies...`));
   }
-  // Use detected package manager or default to npm
-  const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  const pmConfig = PM_CONFIG[pm];
+  // The manifest's packageManager is a snapshot and may be absent; detect from
+  // the worktree's own lockfile in that case so this agrees with what
+  // new-feature.sh would run for the same project (#870).
+  const pmConfig =
+    PM_CONFIG[resolvePackageManager(packageManager, worktreePath)];
   // ciInstall, not installSilent: a plain `npm install` normalizes and
   // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
   // newer npm committed), so every provisioned worktree started dirty. That
@@ -1220,8 +1222,10 @@ export function reinstallIfLockfileChanged(
     chalk.blue(`    Reinstalling dependencies (lockfile changed)...`),
   );
 
-  const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  const pmConfig = PM_CONFIG[pm];
+  // Same manifest-snapshot caveat as installWorktreeDeps — detect from the
+  // worktree's lockfile when the manifest did not record a manager (#870).
+  const pmConfig =
+    PM_CONFIG[resolvePackageManager(packageManager, worktreePath)];
   // ciInstall for the same reason as provisioning (see ensureWorktree): this
   // reinstall exists because a rebase pulled in a NEW lockfile, so installing
   // exactly what that lockfile says — never rewriting it — is the semantic

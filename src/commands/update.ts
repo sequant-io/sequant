@@ -16,6 +16,7 @@ import {
   getStackConfig,
   PM_CONFIG,
   getPackageManagerCommands,
+  resolvePackageManager,
 } from "../lib/stacks.js";
 import { writeFile } from "../lib/fs.js";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
@@ -81,6 +82,16 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     return;
   }
 
+  // Resolved once for the whole command. The manifest's packageManager is a
+  // snapshot taken at `sequant init`, so it is absent on pre-1.3.0 installs —
+  // exactly the population the PM_RUN backfill below exists to serve. The
+  // three sites that used to spell this `(manifest.packageManager as keyof
+  // typeof PM_CONFIG) || "npm"` therefore assumed npm for those installs, and
+  // wrote an npm PM_RUN token into a pnpm/yarn/bun project's config (#870).
+  // The root is the cwd because `update` operates on the project in place,
+  // the same directory `getManifest` and `syncSequantMcpPin` read.
+  const pm = resolvePackageManager(manifest.packageManager, process.cwd());
+
   const packageVersion = getPackageVersion();
   console.log(chalk.gray(`Current version: ${manifest.version}`));
   console.log(chalk.gray(`Stack: ${manifest.stack}`));
@@ -110,7 +121,6 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
     // Add PM_RUN if missing (for existing installs before v1.3.0)
     if (!tokens.PM_RUN) {
-      const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
       const pmConfig = getPackageManagerCommands(pm);
       tokens.PM_RUN = pmConfig.run;
       config.tokens = tokens;
@@ -125,7 +135,6 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     const defaultDevUrl = stackConfig.devUrl;
 
     // Get package manager run command
-    const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
     const pmConfig = getPackageManagerCommands(pm);
 
     if (options.force || options.yes) {
@@ -292,8 +301,6 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   );
 
   if (packageJsonUpdated) {
-    // Use detected package manager or default to npm
-    const pm = (manifest.packageManager as keyof typeof PM_CONFIG) || "npm";
     const pmConfig = PM_CONFIG[pm];
     console.log(
       chalk.blue(`\npackage.json updated, running ${pmConfig.install}...`),
