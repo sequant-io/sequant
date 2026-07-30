@@ -1,6 +1,9 @@
 # #856 — `sequant run` killed at ~106s by an external signal
 
-**Status:** cause identified with high confidence; **not** confirmed by live capture.
+**Status:** ⚠️ **cause NOT settled.** An earlier revision of this doc called the
+bg-pty watchdog "high confidence" — that was overstated. Runtime inspection on
+2026-07-30 found a stronger candidate the original sweep never reached. See
+[Runtime findings](#runtime-findings-2026-07-30--the-daemon-and-the-auth-window).
 **Date of incident:** 2026-07-29 (three deaths, 01:21:57 / 01:36:05 / 01:39:36 local).
 **Verdict:** upstream defect in Claude Code 2.1.220, not a sequant bug.
 
@@ -183,6 +186,71 @@ the post-turn hang is necessary but not sufficient for the kill — consistent
 with the bg-pty trigger depending on contended socket/adoption state rather than
 on hang duration.
 
+## Runtime findings 2026-07-30 — the daemon, and the auth window
+
+The original sweep read the binary's strings and inferred a mechanism. Actually
+watching the runtime changes the picture.
+
+### Background tasks run under a transient daemon, not a bare bg-pty host
+
+`CLAUDE_BG_BACKEND` is `"daemon"`. `~/.claude/daemon.log` shows the daemon
+spawning bg-pty hosts as a **spare pool**:
+
+```
+[bg] bg: control socket bound at /tmp/cc-daemon-502/022955cc/control.sock
+[bg] bg spare spawned host pid=33010
+[bg] bg claimed-spare faf32d80 (spare)
+```
+
+So bg-pty hosts are real — but they exist only while the daemon does, and the
+daemon is `origin=transient`:
+
+```
+[supervisor] idle 5s with no clients — exiting
+[supervisor] shutting down (cause=idle_exit, uptime=64996s, leases=0, live_workers=0)
+```
+
+**This is why a naive check finds nothing.** Backgrounding a task with no daemon
+running produces a plain child of the interactive `claude` in its own pgid — no
+host, no socket. Any experiment that assumes a host is present will report a
+false negative. Start the daemon first, then locate the spare host.
+
+Note the pgid detail: the backgrounded task's shell is its **own** group leader,
+separate from the interactive session's group. A group kill of that tree takes
+out `sequant run` and its children while leaving the interactive session alive —
+exactly the observed pattern (the spawning session, pid 70335, is still running).
+
+### The daemon lost its auth token 17 minutes before the first death
+
+The last daemon state change before the incident:
+
+```
+[2026-07-29T06:04:22.520Z] [supervisor] auth: proactive refresh starting
+[2026-07-29T06:04:22.601Z] [supervisor] auth: proactive refresh failed, signalling re-auth required
+[2026-07-29T06:04:22.628Z] [supervisor] auth: headless daemon cannot complete OAuth — run `claude auth login` to refresh
+[2026-07-29T06:04:22.632Z] [supervisor] auth: no token found, will re-check keychain every 30s
+```
+
+| Event                   | UTC                 | Relative to auth loss |
+| ----------------------- | ------------------- | --------------------- |
+| daemon auth lost        | 06:04:22            | —                     |
+| victim 1 started / died | 06:20:10 / 06:21:57 | +15.8 / +17.6 min     |
+| victim 2 started / died | 06:34:20 / 06:36:05 | +30.0 / +31.7 min     |
+| victim 3 started / died | 06:37:52 / 06:39:36 | +33.5 / +35.2 min     |
+
+**All three victims started after the daemon lost its token, and no run has died
+outside that window.** A phase `claude` whose supervising daemon cannot
+authenticate is a plausible cause of both halves at once: an agent that finishes
+its turn and then blocks on an auth-dependent teardown step, and a supervisor
+that eventually tears the tree down.
+
+This is a **correlation across three samples**, not a proven cause. It is stated
+here because it is the strongest untested lead and — unlike the intermittent
+hang — it is directly inducible.
+
+Caveat: the daemon log contains no entry at any of the three death timestamps.
+Whatever killed them did not log it there.
+
 ## What is still unproven (AC-1, AC-2)
 
 These acceptance criteria require catching the hang live. The issue body states
@@ -204,11 +272,52 @@ sudo dtrace -n 'proc:::signal-send /args[2] == 15 || args[2] == 9/ { printf("%d 
 
 "External SIGTERM" in the original finding was **inferred, not captured**.
 
-### Sharper repro matrix
+### How to test this — three tiers, cheapest first
 
-With MCP eliminated as a cause (AC-3 above), the remaining informative matrix is:
+Ordered by cost, and each is worth running even if the next is skipped. Every
+one produces a usable answer including when it comes back negative.
 
-{backgrounded vs foreground launch} × {concurrent same-cwd interactive session vs none}
+**Tier 1 — induce the auth window (cheapest, best lead, no sudo).**
+The only condition that distinguishes every victim from every survivor is that
+the daemon had no token. That is reproducible on demand:
+
+1. Get the daemon running (start any backgrounded task) and confirm in
+   `~/.claude/daemon.log`.
+2. Invalidate its token — let a session sit until proactive refresh fails, or
+   remove the keychain entry so the refresh path errors the same way. Confirm
+   the `auth: no token found` line appears.
+3. Launch `sequant run <issue>` **backgrounded from inside an interactive
+   session**, with `tools/watch-signals.sh --no-dtrace` recording.
+4. Watch for death at ~106s.
+
+Positive → AC-1 and AC-2 both collapse to "unauthenticated daemon tears down its
+background tree", and the fix is upstream plus a sequant-side pre-flight auth
+check. Negative → the auth correlation is coincidence across three samples, which
+is worth knowing before anyone builds on it.
+
+**Tier 2 — induce the wedged host (deterministic, tests the bg-pty theory).**
+`tools/induce-bgpty-hang.sh`. The watchdog's condition is "host pid alive but
+socket won't accept", and `kill -STOP` produces exactly that — so the mechanism
+can be tested without waiting for the intermittent trigger. **Requires the
+daemon to be running first**, or there is no host to stop.
+
+**Tier 3 — name the sender (needs sudo; SIP may block it).**
+`sudo tools/watch-signals.sh`. Only dtrace identifies the sender directly. SIP is
+enabled on the affected machine, so the script runs a preflight that proves the
+probe fires before you trust its silence — an empty capture under SIP means
+"unknown", never "nothing was sent". Capture signal **9 and 15**.
+
+Two things make this cheaper than it was. First, the run's own stdout at
+`tasks/b6byn5iih.output` shows `Received SIGTERM` — the first signal is
+**catchable**, so it is observable without kernel tracing. Second, the sequence
+recorded there ends after `✓ Aborted 1 active phase` with no cleanup task
+reported, which is the SIGTERM→SIGKILL escalation caught in the act.
+
+### Remaining repro matrix
+
+With MCP eliminated (AC-3 above), the remaining axes are:
+
+{daemon authed vs unauthed} × {backgrounded vs foreground launch} × {concurrent same-cwd session vs none}
 
 Prediction: foreground launches from a plain shell never die (consistent with the
 131.7s and 316s clean specimens and a terminal-launched run 771); backgrounded
