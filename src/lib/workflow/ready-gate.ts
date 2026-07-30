@@ -62,8 +62,14 @@ export type ReadyTerminalReason =
   | "LOOP_NO_DIFF"
   /** Guard: `/loop` phase itself failed. Needs human. */
   | "LOOP_FAILED"
-  /** #534: zero-diff exec or null/unparseable QA verdict. Not ready. */
-  | "NO_IMPLEMENTATION";
+  /** #534: zero-diff exec worktree — nothing was built. Not ready. */
+  | "NO_IMPLEMENTATION"
+  /**
+   * #853: QA ran but produced no verdict (deferred its one-shot turn, or
+   * output was unparseable). Distinct from NO_IMPLEMENTATION — the
+   * implementation may be complete; it is the *review* that is missing.
+   */
+  | "NO_VERDICT";
 
 /** A single gap surfaced by QA, classified for the report. */
 export interface ReadyGapItem {
@@ -304,7 +310,9 @@ export function formatReadyReport(result: ReadyResult): string {
     ? "✅ READY — awaiting human merge decision"
     : result.reason === "NO_IMPLEMENTATION"
       ? "⛔ NOT READY — no implementation detected"
-      : "⚠️ NOT READY — needs human intervention";
+      : result.reason === "NO_VERDICT"
+        ? "⛔ NOT READY — QA produced no verdict"
+        : "⚠️ NOT READY — needs human intervention";
 
   const reasonText: Record<ReadyTerminalReason, string> = {
     AC_MET:
@@ -319,7 +327,9 @@ export function formatReadyReport(result: ReadyResult): string {
     LOOP_FAILED:
       "The fix loop phase failed. A human should investigate before merging.",
     NO_IMPLEMENTATION:
-      "Zero-diff worktree or null/unparseable QA verdict — there is nothing to certify (#534 guard).",
+      "Zero-diff worktree — there is nothing to certify (#534 guard).",
+    NO_VERDICT:
+      "QA ran but produced no verdict (deferred one-shot turn or unparseable output) — there is nothing to certify (#534/#853 guard). The implementation may exist; re-run the gate once QA emits a verdict.",
   };
 
   const lines: string[] = [];
@@ -467,9 +477,13 @@ export async function runReadyGate(
 
     const verdict = qaResult.verdict ?? null;
 
-    // #534 guard: a null/unparseable verdict is never "ready".
+    // #534 guard: a null verdict is never "ready". #853: report it as
+    // NO_VERDICT, not NO_IMPLEMENTATION — a deferred/unparseable QA turn says
+    // nothing about whether an implementation exists, and the misleading label
+    // sent debuggers to the wrong place (same class as the phase-executor
+    // "unparseable verdict" split).
     if (!verdict) {
-      return finish("NO_IMPLEMENTATION");
+      return finish("NO_VERDICT");
     }
     // #534 guard: an empty worktree (no commits, no uncommitted work) is never
     // "ready" — replays the #529/#570 empty-branch class.
