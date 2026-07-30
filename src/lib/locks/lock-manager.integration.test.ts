@@ -8,8 +8,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync, spawn } from "child_process";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
-import { tmpdir } from "os";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
+import { hostname, tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -164,6 +170,72 @@ describe("LockManager — integration: two-process contention", () => {
       // A new same-host run should auto-clear (PID is dead) and acquire.
       const next = runAcquireSync(dir, 42, "next");
       expect(next.acquired).toBe(true);
+    },
+  );
+
+  it(
+    "an abandoned lock whose PID has been recycled onto a live process is cleared (#856)",
+    { timeout: 20_000 },
+    async () => {
+      // The production shape of related defect 3: `.sequant/locks/505.lock`,
+      // written 2026-05-14, PID 28809 long since recycled. The same-host
+      // branch of classifyStaleness asked "is that PID alive?", got yes from
+      // an unrelated process, and reported the lock fresh — forever.
+      //
+      // PID 1 stands in for the recycled PID: always alive, never ours, and
+      // `process.kill(1, 0)` from a normal user throws EPERM, which
+      // `defaultIsPidAlive` correctly reads as alive. So this lock is
+      // indistinguishable from a live holder by PID alone — only the age
+      // ceiling can free it.
+      const thirtyDaysAgo = new Date(
+        Date.now() - 30 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      writeFileSync(
+        join(dir, "42.lock"),
+        JSON.stringify(
+          {
+            pid: 1,
+            hostname: hostname(),
+            startedAt: thirtyDaysAgo,
+            command: "npx sequant run 42",
+          },
+          null,
+          2,
+        ),
+      );
+
+      const next = runAcquireSync(dir, 42, "after-recycle");
+      expect(next.acquired).toBe(true);
+
+      // And the lock on disk is now ours, not the abandoned one.
+      const holder = JSON.parse(readFileSync(join(dir, "42.lock"), "utf-8"));
+      expect(holder.pid).not.toBe(1);
+      expect(holder.command).toBe("after-recycle");
+    },
+  );
+
+  it(
+    "a recent lock on a live PID is still respected (age-ceiling negative control)",
+    { timeout: 20_000 },
+    async () => {
+      // Guards the obvious over-correction: the ceiling must not make every
+      // same-host lock clearable.
+      writeFileSync(
+        join(dir, "43.lock"),
+        JSON.stringify(
+          {
+            pid: 1,
+            hostname: hostname(),
+            startedAt: new Date().toISOString(),
+            command: "npx sequant run 43",
+          },
+          null,
+          2,
+        ),
+      );
+
+      const blocked = runAcquireSync(dir, 43, "should-be-blocked");
+      expect(blocked.acquired).toBe(false);
     },
   );
 
