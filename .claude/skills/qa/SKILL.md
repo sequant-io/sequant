@@ -140,7 +140,6 @@ Include this marker in every `gh issue comment` that represents QA completion.
 
 Do not do exec-style repair work inside the QA turn and then defer the verdict — review the tree as presented and emit the matching verdict from the four values.
 
-
 ## Behavior
 
 Invocation:
@@ -2042,11 +2041,16 @@ fi
 # file content is load-bearing: all 19 sequant SKILL.md files mention these
 # tokens in unrelated example code, so a content-grep gate fires for ~100%
 # of skill-md PRs and the cost-saving intent of #608 / #609 evaporates.
+# The regex-literal alternative is anchored to `/^…/` and `(?…)` forms
+# (matching Step 1's own detection block): an earlier unanchored `/[^/]+/`
+# matched ANY two slashes — file paths, `/plugin` commands, prose pairs like
+# `/exec`/`/loop` — and fired on 10 of 12 real skill-md commits sampled from
+# main, ~70% of them pattern-free (#853 QA finding).
 pattern_files=$(git diff origin/main...HEAD --name-only | \
   grep -E '^(\.claude/skills|templates/skills|skills)/.*\.md$' | \
   while read -r f; do
     if git diff origin/main...HEAD -- "$f" | grep -E '^\+[^+]' | \
-       grep -qE '\b(grep|awk|jq|sed)\b|/[^/]+/[gim]?'; then
+       grep -qE '\b(grep|awk|jq|sed)\b|/\^[^/]+/|\(\?[:=!]'; then
       echo "$f"
     fi
   done || true)
