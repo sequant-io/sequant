@@ -238,7 +238,13 @@ detect_package_manager() {
 # Echoes "1" for classic, "2" for berry. Runs in the worktree cwd.
 detect_yarn_major() {
     local declared
-    declared="$(tr '\n' ' ' < package.json 2>/dev/null \
+    # `cat … | tr`, not `tr … < package.json`: a failed `<` redirection is
+    # reported by the SHELL before the command's own `2>/dev/null` applies, so
+    # the redirect form leaks `package.json: No such file or directory` onto
+    # stderr during provisioning of a yarn repo that has no package.json.
+    # `cat`'s error is the command's own, so it is suppressible.
+    declared="$(cat package.json 2>/dev/null \
+        | tr '\n' ' ' \
         | grep -o '"packageManager"[[:space:]]*:[[:space:]]*"yarn@v\{0,1\}[0-9]\{1,\}' \
         | head -1 \
         | sed 's/.*yarn@v\{0,1\}//')"
