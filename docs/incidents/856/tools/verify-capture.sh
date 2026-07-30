@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+# #856 — prove the capture rig works BEFORE relying on it.
+#
+# WHY THIS EXISTS
+#
+# The event we are hunting is rare, destructive, and takes down its own
+# process tree. We get one shot at recording it. If the rig is broken, an
+# empty capture file is indistinguishable from "nothing killed anything" —
+# and that reads as exoneration when it is really instrument failure. Every
+# claim this investigation makes from a *negative* result depends on having
+# proved the instrument fires on a *positive* one first.
+#
+# So: stage a fake victim with the same shape as the real one (a process
+# group with children), group-kill it with the same TERM→KILL escalation the
+# real incident showed, and assert the rig caught it.
+#
+# WHAT IT CHECKS
+#
+#   1. The poller records the victim's processes disappearing.
+#   2. dtrace records BOTH signals (15 and 9) — not just 15, which is the
+#      predicate the original AC specified and which would miss the group
+#      SIGKILL entirely.
+#   3. dtrace's fields are populated, not blanked by SIP — a probe that fires
+#      with an empty target pgid tells you nothing about who killed whom.
+#   4. THE RIG SURVIVES THE KILL. A watcher sharing the victim's process
+#      group dies with it and loses exactly the tail you needed. This is the
+#      failure mode most likely to go unnoticed, because everything looks
+#      fine until the one time it matters.
+#
+# Usage:
+#   ./verify-capture.sh            # poller checks only (no sudo)
+#   sudo ./verify-capture.sh       # adds the dtrace checks
+#
+set -uo pipefail
+
+OUT="/tmp/856-verify-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUT"
+echo "artifacts: $OUT"
+echo
+
+PASS=0
+FAIL=0
+ok()   { echo "  ✅ $1"; PASS=$((PASS+1)); }
+bad()  { echo "  ❌ $1"; FAIL=$((FAIL+1)); }
+note() { echo "     $1"; }
+
+# macOS has no `timeout`/`gtimeout` and no `setsid`. Bound a command by
+# backgrounding it and killing it after N seconds.
+run_bounded() { # run_bounded <seconds> <cmd...>
+  local secs="$1"; shift
+  "$@" &
+  local pid=$!
+  ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) &
+  local timer=$!
+  wait "$pid" 2>/dev/null
+  kill -TERM "$timer" 2>/dev/null
+}
+
+# ── Stage a sacrificial victim in its OWN process group ──────────────────────
+# `set -m` (job control) puts each background job in a fresh process group —
+# the stand-in for `setsid`, which macOS does not ship. The victim mimics the
+# real shape: a group leader with children, so a group signal hits several
+# pids at once the way it did in the incident.
+set -m
+( sleep 120 & sleep 120 & wait ) >/dev/null 2>&1 &
+VICTIM_LEADER=$!
+set +m
+
+sleep 1
+VICTIM_PGID=$(ps -o pgid= -p "$VICTIM_LEADER" 2>/dev/null | tr -d ' ')
+MY_PGID=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+
+if [[ -z "$VICTIM_PGID" ]]; then
+  echo "❌ could not stage a victim process group — aborting"
+  exit 1
+fi
+
+echo "victim leader pid=$VICTIM_LEADER pgid=$VICTIM_PGID"
+echo "this script   pid=$$ pgid=$MY_PGID"
+echo
+
+# Check 4 (setup half): the rig must NOT share the victim's process group.
+echo "── isolation ──"
+if [[ "$VICTIM_PGID" == "$MY_PGID" ]]; then
+  bad "rig shares the victim's process group — a group kill would take the rig down too"
+  note "this invalidates every capture; fix the harness before continuing"
+else
+  ok "rig is in a different process group from the victim ($MY_PGID vs $VICTIM_PGID)"
+fi
+
+ps -Ao pid,ppid,pgid,command | awk -v g="$VICTIM_PGID" '$3==g' >"$OUT/victim-group.txt"
+VICTIM_COUNT=$(wc -l <"$OUT/victim-group.txt" | tr -d ' ')
+note "victim group has $VICTIM_COUNT process(es)"
+echo
+
+# ── Arm the rig ──────────────────────────────────────────────────────────────
+DTRACE_PID=""
+if [[ $EUID -eq 0 ]]; then
+  echo "── dtrace (root) ──"
+  dtrace -q -n '
+    proc:::signal-send /args[2] == 9 || args[2] == 15/ {
+      printf("sig=%d sender=%s[%d] target=%s[%d] target_pgid=%d\n",
+             args[2], execname, pid,
+             args[1]->pr_fname, args[1]->pr_pid, args[1]->pr_pgid);
+    }' >"$OUT/signals.txt" 2>"$OUT/dtrace.err" &
+  DTRACE_PID=$!
+  sleep 3 # let the probe attach before we generate the signals
+  if kill -0 "$DTRACE_PID" 2>/dev/null; then
+    note "dtrace armed (pid $DTRACE_PID)"
+  else
+    bad "dtrace exited immediately — SIP is blocking it"
+    note "$(head -3 "$OUT/dtrace.err" 2>/dev/null)"
+    DTRACE_PID=""
+  fi
+else
+  echo "── dtrace: SKIPPED (not root) ──"
+  note "re-run with sudo to verify the sender-identification layer"
+fi
+echo
+
+# Poller: snapshot the victim group before and after.
+ps -Ao pid,pgid,command | awk -v g="$VICTIM_PGID" '$2==g {print $1}' | sort >"$OUT/before.txt"
+
+# ── Fire the same escalation the incident showed ─────────────────────────────
+# The recovered run output shows `Received SIGTERM` then a truncated cleanup,
+# i.e. TERM first, KILL shortly after. Reproduce that ordering.
+echo "── firing group TERM → KILL at pgid $VICTIM_PGID ──"
+kill -TERM "-$VICTIM_PGID" 2>/dev/null && note "sent group SIGTERM" || bad "group SIGTERM failed"
+sleep 1
+kill -KILL "-$VICTIM_PGID" 2>/dev/null && note "sent group SIGKILL" || note "group SIGKILL not needed (already gone)"
+sleep 2
+
+ps -Ao pid,pgid,command | awk -v g="$VICTIM_PGID" '$2==g {print $1}' | sort >"$OUT/after.txt"
+echo
+
+# ── Assertions ───────────────────────────────────────────────────────────────
+echo "── results ──"
+
+# 1. Poller layer: did the victims actually disappear?
+GONE=$(comm -23 "$OUT/before.txt" "$OUT/after.txt" | wc -l | tr -d ' ')
+if [[ "$GONE" -gt 0 ]]; then
+  ok "poller layer: observed $GONE process(es) disappear from the victim group"
+else
+  bad "poller layer: no processes recorded as gone — the poller cannot see deaths"
+fi
+
+# 4. (assertion half) The rig survived the kill it was watching.
+if kill -0 $$ 2>/dev/null; then
+  ok "rig survived the group kill"
+fi
+
+if [[ -n "$DTRACE_PID" ]]; then
+  kill -TERM "$DTRACE_PID" 2>/dev/null
+  sleep 1
+
+  # 2. Both signals captured? A 15-only capture is the original AC's mistake.
+  if grep -q "sig=15" "$OUT/signals.txt" 2>/dev/null; then
+    ok "dtrace captured SIGTERM (15)"
+  else
+    bad "dtrace did NOT capture SIGTERM — an empty real capture would be meaningless"
+  fi
+  if grep -q "sig=9" "$OUT/signals.txt" 2>/dev/null; then
+    ok "dtrace captured SIGKILL (9) — the signal the original predicate omitted"
+  else
+    bad "dtrace did NOT capture SIGKILL — this is the PRIMARY kill; a rig that misses it falsely exonerates"
+  fi
+
+  # 3. Fields populated, and attribution correct?
+  if grep -q "target_pgid=$VICTIM_PGID" "$OUT/signals.txt" 2>/dev/null; then
+    ok "dtrace attributed the kill to the correct target pgid ($VICTIM_PGID)"
+  else
+    bad "dtrace fired but target_pgid never matched the victim — attribution is unreliable"
+    note "without this, a real capture cannot tell you WHOSE group died"
+  fi
+  if grep -qE "sender=[a-zA-Z0-9_.-]+\[[0-9]+\]" "$OUT/signals.txt" 2>/dev/null; then
+    ok "dtrace populated the sender field (SIP is not blanking args)"
+  else
+    bad "sender field is empty — the one thing only dtrace can tell you is unavailable"
+  fi
+
+  note "captured $(wc -l <"$OUT/signals.txt" | tr -d ' ') signal line(s) total"
+fi
+
+# Clean up any survivor.
+kill -KILL "-$VICTIM_PGID" 2>/dev/null || true
+
+echo
+echo "── verdict ──"
+echo "  $PASS passed, $FAIL failed"
+
+if [[ "$FAIL" -ne 0 ]]; then
+  echo "  ❌ Rig is NOT trustworthy. Do not interpret an empty capture as 'nothing"
+  echo "     was sent' — fix the failures above first, or you will exonerate the"
+  echo "     real killer on the strength of a broken instrument."
+elif [[ -z "$DTRACE_PID" ]]; then
+  # Deliberately NOT "verified". The poller can tell you a tree died and when;
+  # only dtrace can tell you WHO sent the signal, and that layer was never
+  # exercised in this run. Declaring the rig verified here would license
+  # exactly the false-exoneration this script exists to prevent.
+  echo "  ⚠️  PARTIALLY verified — poller layer only."
+  echo "     Proven: deaths are observed and timestamped, and the rig outlives"
+  echo "     the group kill."
+  echo "     NOT proven: that dtrace fires at all on this machine. SIP is the"
+  echo "     open question, and it gates the only layer that names the sender."
+  echo "     An empty signals.txt from a real capture would be UNKNOWN, not"
+  echo "     evidence. Re-run with sudo before relying on a negative result."
+else
+  echo "  ✅ Rig fully verified — poller and dtrace both fired on a known kill,"
+  echo "     with correct attribution. A subsequent EMPTY capture is now"
+  echo "     meaningful evidence rather than instrument failure."
+fi
+echo "  artifacts: $OUT"
+[[ "$FAIL" -eq 0 ]]

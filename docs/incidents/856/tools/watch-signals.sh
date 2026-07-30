@@ -37,18 +37,51 @@ fi
 
 if [[ $USE_DTRACE -eq 1 ]]; then
   # Preflight: prove the probe actually fires before relying on its silence.
+  #
+  # An earlier version of this block was wrong in four ways, each of which
+  # would have produced a confident but meaningless capture:
+  #   - it sent SIGTERM to `$$`, i.e. killed this watcher rather than a target;
+  #   - it used `timeout`, which macOS does not ship (the preflight simply
+  #     errored out, and the failure read as "SIP blocked it");
+  #   - it probed only signal 15, so it could pass while SIGKILL — the primary
+  #     kill in this incident — went unobserved;
+  #   - it never checked the arg fields populate, so SIP could allow the probe
+  #     and still blank the sender.
+  # For the full positive-control version, see verify-capture.sh.
   echo "--- dtrace preflight ---"
-  ( sleep 2; kill -TERM $$ 2>/dev/null || true ) &
-  timeout 5 dtrace -q -n '
-    proc:::signal-send /args[2] == 15/ {
-      printf("PREFLIGHT ok\n"); exit(0);
-    }' >"$OUT/preflight.txt" 2>&1
-  if grep -q "PREFLIGHT ok" "$OUT/preflight.txt"; then
-    echo "✅ dtrace signal-send probe works"
+  dtrace -q -n '
+    proc:::signal-send /args[2] == 9 || args[2] == 15/ {
+      printf("PREFLIGHT sig=%d sender=%s[%d] target_pgid=%d\n",
+             args[2], execname, pid, args[1]->pr_pgid);
+    }' >"$OUT/preflight.txt" 2>&1 &
+  PRE_PID=$!
+  sleep 3
+
+  # Signal a throwaway child — never this script.
+  ( sleep 30 ) &
+  BAIT=$!
+  sleep 1
+  kill -TERM "$BAIT" 2>/dev/null
+  ( sleep 30 ) &
+  BAIT2=$!
+  sleep 1
+  kill -KILL "$BAIT2" 2>/dev/null
+  sleep 2
+  kill -TERM "$PRE_PID" 2>/dev/null
+  wait "$PRE_PID" 2>/dev/null
+
+  PRE_15=$(grep -c "PREFLIGHT sig=15" "$OUT/preflight.txt" 2>/dev/null || echo 0)
+  PRE_9=$(grep -c "PREFLIGHT sig=9" "$OUT/preflight.txt" 2>/dev/null || echo 0)
+  if [[ "$PRE_15" -gt 0 && "$PRE_9" -gt 0 ]]; then
+    echo "✅ dtrace signal-send probe fires for BOTH signal 15 and signal 9"
+  elif [[ "$PRE_15" -gt 0 || "$PRE_9" -gt 0 ]]; then
+    echo "⚠️  dtrace fired for only one of the two signals (15:$PRE_15 9:$PRE_9)."
+    echo "   A capture missing signal 9 cannot exonerate anything — the primary"
+    echo "   kill in this incident is a group SIGKILL."
   else
     echo "❌ dtrace probe did NOT fire — SIP is likely blocking it."
     echo "   Treat any empty dtrace capture as UNKNOWN, not as 'nothing sent'."
-    cat "$OUT/preflight.txt"
+    head -5 "$OUT/preflight.txt"
   fi
 
   # CRITICAL: capture signal 9 as well as 15. The primary kill is a group
