@@ -242,12 +242,19 @@ export function detectPackageManagerSync(
  * manager — the dual-producer drift class of #833. Detecting here makes the
  * TypeScript path agree with the shell path by construction (#870).
  *
- * The `in PM_CONFIG` membership test also retires that unchecked cast: a
+ * The own-property membership test also retires that unchecked cast: a
  * declared value outside `PackageManager` (a hand-edited manifest, a future
  * `"npm@10"` spelling) used to index `PM_CONFIG` to `undefined` and throw on
  * the next property access. Such a value now routes to detection instead.
  * Python managers (`pip`/`poetry`/`uv`) are `PM_CONFIG` keys, so a declared
  * Python manager still wins over the JS-only detector.
+ *
+ * The test is `hasOwnProperty`, deliberately not `in`: `in` walks the
+ * prototype chain, so `"toString"`, `"constructor"`, and `"__proto__"` would
+ * all pass it and be returned as if they named a package manager. Indexing
+ * `PM_CONFIG` with one yields an inherited function (or `Object.prototype`)
+ * whose `ciInstall` is `undefined`, crashing the caller on `.split(" ")` —
+ * reintroducing the exact failure this guard exists to prevent.
  *
  * @param declared Package manager recorded in the manifest, if any
  * @param root Directory whose lockfiles decide the fallback
@@ -256,7 +263,7 @@ export function resolvePackageManager(
   declared: string | undefined,
   root: string,
 ): PackageManager {
-  if (declared && declared in PM_CONFIG) {
+  if (declared && Object.prototype.hasOwnProperty.call(PM_CONFIG, declared)) {
     return declared as PackageManager;
   }
   return detectPackageManagerSync(root);
