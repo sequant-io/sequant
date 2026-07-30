@@ -17,6 +17,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const spawnSyncMock = vi.hoisted(() => vi.fn());
 
@@ -146,6 +149,96 @@ describe("PM_CONFIG frozen-install invariants", () => {
         `${pm}: ciInstall must not be the rewriting install`,
       ).not.toBe(PM_CONFIG[pm].installSilent);
       expect(PM_CONFIG[pm].ciInstall).not.toBe(PM_CONFIG[pm].install);
+    }
+  });
+});
+
+// Yarn 1 vs Yarn 2+ at both TypeScript install sites — issue #871.
+//
+// `PM_CONFIG.yarn.ciInstall` is berry-only (`--immutable`); Yarn 1 rejects it.
+// Both sites must therefore resolve the command against the worktree they are
+// installing into, not read it straight off PM_CONFIG. Real tmpdir fixtures are
+// used because only `child_process` is mocked here — `detectYarnMajor` reads the
+// filesystem, which is exactly the behavior under test.
+describe("yarn major is resolved per worktree (#871)", () => {
+  function yarnWorktree(lockContents: string): string {
+    const dir = mkdtempSync(join(tmpdir(), "wt-yarn-major-"));
+    writeFileSync(join(dir, "yarn.lock"), lockContents);
+    return dir;
+  }
+
+  const YARN_1_LOCK = "# yarn lockfile v1\n";
+  const BERRY_LOCK = "__metadata:\n  version: 8\n";
+
+  /** The install command spawned by the call under test. */
+  function spawnedInstall(): string {
+    const call = spawnSyncMock.mock.calls.find(([cmd]) => cmd !== "git");
+    expect(call, "no install command was spawned").toBeDefined();
+    const [cmd, args] = call!;
+    return [cmd, ...args].join(" ");
+  }
+
+  it("installWorktreeDeps runs the classic frozen install in a Yarn 1 worktree", () => {
+    const wt = yarnWorktree(YARN_1_LOCK);
+    try {
+      spawnSyncMock.mockReturnValue(ok());
+
+      expect(installWorktreeDeps(wt, "yarn", false)).toBe(true);
+      expect(spawnedInstall()).toBe("yarn install --frozen-lockfile");
+      // The bug: `--immutable` is what Yarn 1 errors out on.
+      expect(spawnedInstall()).not.toContain("--immutable");
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+    }
+  });
+
+  it("installWorktreeDeps keeps berry's frozen install in a Yarn 2+ worktree", () => {
+    const wt = yarnWorktree(BERRY_LOCK);
+    try {
+      spawnSyncMock.mockReturnValue(ok());
+
+      expect(installWorktreeDeps(wt, "yarn", false)).toBe(true);
+      expect(spawnedInstall()).toBe(PM_CONFIG.yarn.ciInstall);
+      expect(spawnedInstall()).toBe("yarn install --immutable");
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+    }
+  });
+
+  it("reinstallIfLockfileChanged resolves the same way in a Yarn 1 worktree", () => {
+    const wt = yarnWorktree(YARN_1_LOCK);
+    try {
+      // First spawnSync is the git lockfile probe; report yarn.lock changed.
+      spawnSyncMock
+        .mockReturnValueOnce(ok("yarn.lock\n"))
+        .mockReturnValue(ok());
+
+      expect(reinstallIfLockfileChanged(wt, "yarn", false)).toBe(true);
+      expect(spawnedInstall()).toBe("yarn install --frozen-lockfile");
+    } finally {
+      rmSync(wt, { recursive: true, force: true });
+    }
+  });
+
+  it("names the resolved classic command in the failure warning", () => {
+    const wt = yarnWorktree(YARN_1_LOCK);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      spawnSyncMock.mockReturnValue({
+        status: 1,
+        stdout: Buffer.from(""),
+        stderr: Buffer.from("error Unknown argument: immutable"),
+      });
+
+      expect(installWorktreeDeps(wt, "yarn", false)).toBe(false);
+      // A warning naming berry's command would send a Yarn 1 user off to rerun
+      // the very command that just failed.
+      const output = logSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+      expect(output).toContain("yarn install --frozen-lockfile");
+      expect(output).not.toContain("--immutable");
+    } finally {
+      logSpy.mockRestore();
+      rmSync(wt, { recursive: true, force: true });
     }
   });
 });

@@ -14,7 +14,11 @@ import type {
   CheckFinding,
 } from "./types.js";
 import { getBranchRef } from "./types.js";
-import { PM_CONFIG, detectPackageManagerSync } from "../stacks.js";
+import {
+  PM_CONFIG,
+  detectPackageManagerSync,
+  resolvePackageManagerConfig,
+} from "../stacks.js";
 import {
   toCommandResult,
   resolveFailureReason,
@@ -137,7 +141,11 @@ export function runCombinedBranchTest(
   const batchFindings: CheckFinding[] = [];
 
   const pm = detectPackageManagerSync(repoRoot);
-  const pmConfig = PM_CONFIG[pm];
+  // Resolved against the repo rather than read straight off PM_CONFIG: yarn's
+  // frozen install differs between classic and berry, and `pm` is "yarn" for
+  // both. Resolving once here fixes every `pmConfig.ciInstall` read downstream
+  // — three install commands and two user-facing messages (#871).
+  const pmConfig = resolvePackageManagerConfig(pm, repoRoot);
 
   // Flipped the moment we start installing against the combined lockfile, so
   // the caller's node_modules can be put back afterwards. A mutable holder

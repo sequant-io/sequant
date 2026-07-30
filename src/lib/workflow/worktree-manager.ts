@@ -9,7 +9,7 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { PM_CONFIG } from "../stacks.js";
+import { PM_CONFIG, resolvePackageManagerConfig } from "../stacks.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
@@ -539,7 +539,12 @@ export function installWorktreeDeps(
   }
   // Use detected package manager or default to npm
   const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  const pmConfig = PM_CONFIG[pm];
+  // Resolved against the worktree, not read straight off PM_CONFIG: yarn's
+  // frozen install differs between classic (`--frozen-lockfile`) and berry
+  // (`--immutable`), and both use `yarn.lock` so `pm` alone cannot say which
+  // (#871). The worktree is checked out by now, so its package.json /
+  // .yarnrc.yml / yarn.lock are all readable here.
+  const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
   // ciInstall, not installSilent: a plain `npm install` normalizes and
   // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
   // newer npm committed), so every provisioned worktree started dirty. That
@@ -1221,7 +1226,9 @@ export function reinstallIfLockfileChanged(
   );
 
   const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  const pmConfig = PM_CONFIG[pm];
+  // Resolved against the worktree for the same reason as provisioning — see
+  // installWorktreeDeps (#871).
+  const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
   // ciInstall for the same reason as provisioning (see ensureWorktree): this
   // reinstall exists because a rebase pulled in a NEW lockfile, so installing
   // exactly what that lockfile says — never rewriting it — is the semantic

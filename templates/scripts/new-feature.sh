@@ -186,9 +186,11 @@ fi
 # ciInstall string appears in pm_ci_install() and every PM_CONFIG[pm].run
 # string in pm_run(), converting drift from silent to failing.
 #
-# Detection is lockfile-existence only — it never reads package.json's
-# `packageManager` field — exactly like detectPackageManagerSync, so
-# multi-lockfile conflict behavior matches the TS path by construction.
+# WHICH package manager is lockfile-existence only — it never reads
+# package.json's `packageManager` field — exactly like detectPackageManagerSync,
+# so multi-lockfile conflict behavior matches the TS path by construction.
+# WHICH YARN is a separate question answered by detect_yarn_major below, and
+# that one does read `packageManager` (see its own comment for why).
 # Runs in the directory being provisioned (the worktree cwd).
 detect_package_manager() {
     if [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
@@ -203,11 +205,61 @@ detect_package_manager() {
     fi
 }
 
-# Frozen (lockfile-faithful) install command per PM — mirrors PM_CONFIG.ciInstall.
+# Yarn 1 (classic) vs Yarn 2+ (berry) — mirrors detectYarnMajor in stacks.ts.
+#
+# Both majors use `yarn.lock`, so detect_package_manager cannot tell them apart:
+# it answers "yarn", this answers "which yarn". Needed because the frozen install
+# flag was renamed between them (#871).
+#
+# Signal order follows one rule: flag acceptance is decided by the yarn binary
+# that RUNS, not by the lockfile it reads. So a Corepack pin outranks the
+# lockfile header — a yarn-1 lockfile under `packageManager: "yarn@4"` still gets
+# berry's `--immutable`, because yarn 4 is what executes and it rejects
+# `--frozen-lockfile`.
+#
+# The `packageManager` read is a sed pattern, not a JSON parse, to match what
+# stacks.ts does — pinning both paths to the same shape means they cannot
+# disagree about a given file, and it keeps `jq` off this script's dependency
+# list. A non-numeric pin (`yarn@stable`, `yarn@berry`) simply does not match and
+# falls through. The 1024-byte header read matches YARN_LOCK_HEADER_BYTES.
+#
+# Echoes "1" for classic, "2" for berry. Runs in the worktree cwd.
+detect_yarn_major() {
+    local declared
+    declared="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"yarn@v\{0,1\}\([0-9]\{1,\}\).*/\1/p' package.json 2>/dev/null | head -1)"
+    if [ -n "$declared" ]; then
+        # Every major above 1 is berry and shares berry's CLI surface.
+        if [ "$declared" = "1" ]; then echo "1"; else echo "2"; fi
+        return
+    fi
+    # .yarnrc.yml is berry-only; yarn 1 reads .yarnrc.
+    if [ -f ".yarnrc.yml" ]; then
+        echo "2"
+        return
+    fi
+    # Yarn 1 writes "# yarn lockfile v1"; berry writes "__metadata:" instead.
+    if head -c 1024 yarn.lock 2>/dev/null | grep -q "yarn lockfile v1"; then
+        echo "1"
+        return
+    fi
+    # Nothing recognizable → berry, the pre-#871 assumption. Keeps a contentless
+    # or unreadable yarn.lock behaving exactly as it did before.
+    echo "2"
+}
+
+# Frozen (lockfile-faithful) install command per PM — mirrors PM_CONFIG.ciInstall,
+# plus YARN_CLASSIC_CI_INSTALL for the yarn-1 spelling. Both yarn commands are
+# written out verbatim here because the drift guard scans this function's body.
 pm_ci_install() {
     case "$1" in
         bun)  echo "bun install --frozen-lockfile" ;;
-        yarn) echo "yarn install --immutable" ;;
+        yarn)
+            if [ "$(detect_yarn_major)" = "1" ]; then
+                echo "yarn install --frozen-lockfile"
+            else
+                echo "yarn install --immutable"
+            fi
+            ;;
         pnpm) echo "pnpm install --frozen-lockfile" ;;
         *)    echo "npm ci" ;;
     esac
