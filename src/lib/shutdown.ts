@@ -28,7 +28,58 @@ import chalk from "chalk";
  */
 interface CleanupTask {
   name: string;
-  task: () => Promise<void>;
+  task: (abort: AbortContext | null) => Promise<void>;
+}
+
+/**
+ * Why the process is shutting down, handed to every cleanup task so they can
+ * record the cause rather than silently persisting a truncated record (#856).
+ */
+export interface AbortContext {
+  /** Signal that triggered the shutdown, e.g. `SIGTERM`. */
+  signal: string;
+  /** Human-readable cause, from `describeSignalCause`. */
+  reason: string;
+}
+
+/** POSIX signal numbers for the signals we install handlers for. */
+const SIGNAL_NUMBERS: Record<string, number> = {
+  SIGINT: 2,
+  SIGTERM: 15,
+};
+
+/**
+ * Conventional shell exit code for death-by-signal: `128 + signum`
+ * (SIGINT → 130, SIGTERM → 143). Falls back to 1 for anything unmapped.
+ *
+ * #856: this used to be a flat `0`. A run killed from outside therefore
+ * exited *successfully*, so nothing downstream — CI, a wrapping script, the
+ * user reading `$?` — could tell a completed run from a terminated one.
+ */
+export function exitCodeForSignal(signal: string): number {
+  const num = SIGNAL_NUMBERS[signal];
+  return num === undefined ? 1 : 128 + num;
+}
+
+/**
+ * Human-readable cause for a termination signal (#856, AC-4).
+ *
+ * SIGINT is the user pressing Ctrl+C — self-explanatory. SIGTERM is not:
+ * no interactive user sends it by hand, so it always means something else
+ * killed the run, and the user needs to be told that rather than left to
+ * infer it from truncated output. The known offender on macOS is Claude
+ * Code's `[bg-pty]` host-dead watchdog, which group-SIGKILLs a process tree
+ * containing the run; see `docs/incidents/856/`.
+ */
+export function describeSignalCause(signal: string): string {
+  switch (signal) {
+    case "SIGINT":
+      return "interrupted by user (Ctrl+C)";
+    case "SIGTERM":
+      return "terminated by an external SIGTERM (not sent by sequant)";
+    default:
+      return `terminated by ${signal}`;
+  }
 }
 
 /**
@@ -58,6 +109,8 @@ export interface ShutdownManagerOptions {
 export class ShutdownManager {
   private cleanupTasks: CleanupTask[] = [];
   private _isShuttingDown = false;
+  /** Cause of the in-progress shutdown; null until a signal arrives (#856). */
+  private _abortContext: AbortContext | null = null;
   /** Active abort controllers — supports concurrent phase execution (#404) */
   private abortControllers = new Set<AbortController>();
   private forceExitTimeout: number;
@@ -96,6 +149,15 @@ export class ShutdownManager {
    */
   get shuttingDown(): boolean {
     return this._isShuttingDown;
+  }
+
+  /**
+   * Why the process is shutting down, or `null` if it isn't (#856).
+   * Lets code outside a cleanup task — e.g. a `finally` block that also
+   * finalizes state — record the same cause the cleanup tasks saw.
+   */
+  get abortContext(): AbortContext | null {
+    return this._abortContext;
   }
 
   /**
@@ -139,9 +201,14 @@ export class ShutdownManager {
    * This allows dependent cleanup to happen in correct order.
    *
    * @param name - Human-readable name for user feedback
-   * @param task - Async function to execute during cleanup
+   * @param task - Async function to execute during cleanup. Receives the
+   *   `AbortContext` when the shutdown was signal-triggered, or `null` on a
+   *   programmatic teardown. Tasks that don't care may ignore the argument.
    */
-  registerCleanup(name: string, task: () => Promise<void>): void {
+  registerCleanup(
+    name: string,
+    task: (abort: AbortContext | null) => Promise<void>,
+  ): void {
     this.cleanupTasks.push({ name, task });
   }
 
@@ -178,6 +245,14 @@ export class ShutdownManager {
 
     this._isShuttingDown = true;
 
+    // #856 AC-4: name the cause up front. A truncated run whose last words
+    // were "shutting down gracefully" reads as an orderly stop; it isn't one.
+    const abort: AbortContext = {
+      signal,
+      reason: describeSignalCause(signal),
+    };
+    this._abortContext = abort;
+
     this.output(
       chalk.yellow(`\n!  Received ${signal}, shutting down gracefully...`),
     );
@@ -205,7 +280,7 @@ export class ShutdownManager {
 
     for (const { name, task } of tasksToRun) {
       try {
-        await task();
+        await task(abort);
         this.output(chalk.green(`✓ ${name}`));
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -215,10 +290,31 @@ export class ShutdownManager {
 
     clearTimeout(forceExitTimer);
 
-    // Print summary
-    this.output(chalk.yellow("\nInterrupted. Cleanup complete."));
+    // #856 AC-4: report the abort AS an abort, with its cause and a non-zero
+    // exit code. The old banner ("Interrupted. Cleanup complete.") plus
+    // `exit(0)` made an externally-killed run indistinguishable from a
+    // successful one — and because this path exits the process, the normal
+    // `displaySummary` / `abortReason` rendering in run-display.ts is never
+    // reached, so this banner is the only thing the user sees.
+    const code = exitCodeForSignal(signal);
+    this.errorOutput(chalk.red(`\n✗ Run aborted — ${abort.reason}.`));
+    this.output(
+      chalk.yellow(
+        `  Cleanup completed. No phase results beyond this point were recorded.`,
+      ),
+    );
+    if (signal === "SIGTERM") {
+      this.output(
+        chalk.gray(
+          `  sequant does not send itself SIGTERM. If this run was launched as a\n` +
+            `  backgrounded task inside an interactive Claude Code session, see\n` +
+            `  docs/incidents/856/ — relaunch from a plain terminal instead.`,
+        ),
+      );
+    }
+    this.output(chalk.gray(`  Exit code: ${code}`));
 
-    this.exit(0);
+    this.exit(code);
   }
 
   /**
@@ -232,6 +328,7 @@ export class ShutdownManager {
     process.removeListener("SIGTERM", this.sigtermHandler);
     this.cleanupTasks = [];
     this.abortControllers.clear();
+    this._abortContext = null;
   }
 }
 

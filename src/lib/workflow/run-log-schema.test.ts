@@ -425,6 +425,7 @@ describe("createEmptyRunLog", () => {
       passed: 0,
       failed: 0,
       partial: 0,
+      aborted: 0,
       totalDurationSeconds: 0,
     });
   });
