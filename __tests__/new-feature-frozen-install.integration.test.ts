@@ -114,8 +114,16 @@ function seedProject(lockfile: string | null): void {
  * (#871). `seedProject` writes a contentless `# lock\n`, which carries no
  * version header and so exercises only the berry default.
  */
-function seedYarnProject(files: Record<string, string>): void {
-  writeFileSync(join(repo, "package.json"), '{"name":"fixture"}\n');
+function seedYarnProject(
+  files: Record<string, string>,
+  opts: { packageJson?: false } = {},
+): void {
+  // `packageJson: false` omits package.json entirely. Needed because every
+  // other seed writes one, which is precisely why the absent-file path went
+  // unexercised and leaked a stderr line (see the AC-2 stderr test below).
+  if (opts.packageJson !== false) {
+    writeFileSync(join(repo, "package.json"), '{"name":"fixture"}\n');
+  }
   for (const [name, contents] of Object.entries(files)) {
     writeFileSync(join(repo, name), contents);
   }
@@ -285,6 +293,58 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
       const r = runNewFeature();
       expect(r.status).toBe(0);
       expect(callsFor("yarn")).toContain("yarn install --frozen-lockfile");
+    });
+
+    // A yarn repo with no package.json skips the install entirely — the
+    // enclosing guard is `[ ! -d node_modules ] && [ -f "package.json" ]`,
+    // #847's skip for non-JS projects. Pinned because it is the reason the
+    // stderr-leak class below is NOT reachable from provisioning: writing this
+    // test is what showed that the guard makes the leak unobservable here, so
+    // the leak has to be gated at the function level instead.
+    it("AC-2: skips the install for a yarn repo with no package.json", () => {
+      seedYarnProject({ "yarn.lock": YARN_1_LOCK }, { packageJson: false });
+      stubPm("yarn", 0);
+
+      const r = runNewFeature();
+      expect(r.status).toBe(0);
+      expect(callsFor("yarn")).toBe("");
+      expect(r.stderr).not.toMatch(/package\.json: No such file/);
+    });
+
+    // `detect_yarn_major` reading an absent package.json, at the function level,
+    // which is where it IS reachable (the provisioning guard above short-circuits
+    // before this runs). Two distinct ways it can go wrong:
+    //
+    //   * aborting — the rung-1 pipeline ends in a `grep` that exits 1 when
+    //     there is no pin. Harmless only because the script sets `set -e`
+    //     WITHOUT `pipefail`; adding pipefail later would abort for every
+    //     project without a yarn pin, which is most of them.
+    //   * a stderr leak — `tr … < package.json 2>/dev/null` does NOT suppress
+    //     the missing-file error, because a failed `<` redirection is reported
+    //     by the shell before the command's own redirect applies. That shipped
+    //     briefly on this branch; `cat … | tr` makes it suppressible.
+    it("AC-1: detect_yarn_major handles an absent package.json under `set -e`", () => {
+      const fnMatch = readFileSync(SCRIPT, "utf8").match(
+        /^detect_yarn_major\(\) \{[\s\S]*?^\}/m,
+      );
+      expect(fnMatch, "detect_yarn_major() not found in script").not.toBeNull();
+      const helper = join(sandbox, "detect-absent-pkg.sh");
+      // `set -e` mirrors the real script (line 9), which is the condition that
+      // makes a non-zero exit inside this function fatal rather than ignored.
+      writeFileSync(helper, `set -e\n${fnMatch![0]}\ndetect_yarn_major\n`);
+
+      const dir = mkdtempSync(join(tmpdir(), "yarn-no-pkg-"));
+      try {
+        writeFileSync(join(dir, "yarn.lock"), YARN_1_LOCK);
+        // Deliberately no package.json.
+        const r = spawnSync("bash", [helper], { cwd: dir, encoding: "utf8" });
+
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.stdout.trim()).toBe("1");
+        expect(r.stderr).toBe("");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
     // The TS path and the shell path must answer identically for the same

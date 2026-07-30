@@ -691,13 +691,16 @@ describe("getPackageManagerCommands", () => {
     expect(config.ciInstall).toBe("bun install --frozen-lockfile");
   });
 
-  it("returns correct yarn commands", () => {
+  // PM_CONFIG.yarn is the BERRY baseline — classic spellings come from
+  // resolvePackageManagerConfig, which is what production reads (#871).
+  it("returns correct yarn commands (berry baseline)", () => {
     const config = getPackageManagerCommands("yarn");
     expect(config.run).toBe("yarn");
     expect(config.exec).toBe("yarn dlx");
     expect(config.install).toBe("yarn install");
     expect(config.installSilent).toBe("yarn install --silent");
     expect(config.ciInstall).toBe("yarn install --immutable");
+    expect(config.updatePkg).toBe("yarn up");
   });
 
   it("returns correct pnpm commands", () => {
@@ -1251,12 +1254,40 @@ describe("resolvePackageManagerConfig", () => {
     }
   });
 
-  it("changes only ciInstall for Yarn 1, leaving the rest of the config alone", () => {
+  // Every field whose berry spelling is wrong on classic, and no others. The
+  // exact set matters in both directions: a missing field ships a berry command
+  // to a Yarn 1 user, and an extra one ships a classic command to berry.
+  it("substitutes exactly the classic-vs-berry fields for Yarn 1", () => {
     writeFileSync(join(root, "yarn.lock"), "# yarn lockfile v1\n");
 
     expect(resolvePackageManagerConfig("yarn", root)).toEqual({
       ...PM_CONFIG.yarn,
       ciInstall: YARN_CLASSIC_CI_INSTALL,
+      // Yarn 1 has no `dlx`; npx ships with node.
+      exec: "npx",
+      // Berry renamed `upgrade` to `up`.
+      updatePkg: "yarn upgrade",
     });
+  });
+
+  it("leaves major-agnostic yarn fields untouched on classic", () => {
+    writeFileSync(join(root, "yarn.lock"), "# yarn lockfile v1\n");
+    const classic = resolvePackageManagerConfig("yarn", root);
+
+    for (const field of ["run", "install", "addPkg", "removePkg"] as const) {
+      expect(classic[field], `${field} is valid in both majors`).toBe(
+        PM_CONFIG.yarn[field],
+      );
+    }
+    // The one known hybrid the resolver deliberately does NOT fix — see the
+    // note on PM_CONFIG.yarn. Pinned so removing the field's override later is
+    // a deliberate act rather than an accident.
+    expect(classic.installSilent).toBe(PM_CONFIG.yarn.installSilent);
+  });
+
+  it("keeps every berry spelling for a Yarn 2+ project", () => {
+    writeFileSync(join(root, "yarn.lock"), "__metadata:\n  version: 8\n");
+
+    expect(resolvePackageManagerConfig("yarn", root)).toBe(PM_CONFIG.yarn);
   });
 });

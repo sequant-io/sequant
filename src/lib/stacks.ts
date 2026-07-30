@@ -95,19 +95,37 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     removePkg: "bun remove",
     updatePkg: "bun update",
   },
+  // Yarn 1 (classic) and Yarn 2+ (berry) are different CLIs sharing one
+  // lockfile name, so no single table can be right for both. This entry is the
+  // BERRY baseline; `resolvePackageManagerConfig(pm, root)` swaps in the classic
+  // spelling for the fields that differ. Read yarn commands through that
+  // resolver, never off this table, at any site that knows which project
+  // directory it is acting on (#871).
+  //
+  // Fields with no major-specific difference — `run`, `install`, `addPkg`,
+  // `removePkg` — are shared, so the resolver leaves them alone.
   yarn: {
     run: "yarn",
+    // Berry-only: `dlx` does not exist in Yarn 1. Resolver → `npx` for classic.
     exec: "yarn dlx",
     install: "yarn install",
+    // Left at the classic spelling deliberately. Berry's `yarn install` takes no
+    // `--silent`, but this field has NO consumer anywhere in the codebase, and
+    // guessing berry's quiet spelling without a yarn binary to check against
+    // would trade a dead-config wart for a real one — the same call
+    // new-feature.sh's `pm_quiet_flag` already made for pnpm/bun. Known
+    // remaining hybrid, and the one field the resolver does not fix.
     installSilent: "yarn install --silent",
-    // Yarn 2+ (berry) spelling. Yarn 1 rejects `--immutable` and wants
-    // `--frozen-lockfile` instead, so this string is only correct for berry —
-    // read it through resolvePackageManagerConfig(), never directly, at any
-    // site that knows which project directory it is installing into (#871).
+    // Berry-only: Yarn 1 rejects `--immutable` and wants `--frozen-lockfile`.
+    // Resolver → YARN_CLASSIC_CI_INSTALL for classic.
     ciInstall: "yarn install --immutable",
     addPkg: "yarn add",
     removePkg: "yarn remove",
-    updatePkg: "yarn upgrade",
+    // Berry renamed `yarn upgrade` to `yarn up`. This was the classic spelling
+    // until #871's follow-up, which made the whole entry berry-consistent —
+    // meaning the upgrade hint in version-check.ts was wrong for berry users.
+    // Resolver → `yarn upgrade` for classic.
+    updatePkg: "yarn up",
   },
   pnpm: {
     run: "pnpm run",
@@ -254,6 +272,22 @@ export function getPackageManagerCommands(
 export const YARN_CLASSIC_CI_INSTALL = "yarn install --frozen-lockfile";
 
 /**
+ * Yarn 1 (classic) spellings for every `PM_CONFIG.yarn` field whose berry value
+ * is wrong on classic. Applied by {@link resolvePackageManagerConfig}.
+ *
+ * `exec` is `npx` rather than a `yarn` subcommand because Yarn 1 has no
+ * `dlx` equivalent at all — npm ships with node, so `npx` is the run-a-binary
+ * -without-installing story a Yarn 1 project actually has.
+ *
+ * `installSilent` is deliberately absent — see the note on `PM_CONFIG.yarn`.
+ */
+const YARN_CLASSIC_OVERRIDES: Partial<PackageManagerConfig> = {
+  ciInstall: YARN_CLASSIC_CI_INSTALL,
+  exec: "npx",
+  updatePkg: "yarn upgrade",
+};
+
+/**
  * Bytes of `yarn.lock` scanned for its version header.
  *
  * Matches the `head -c` byte count in `new-feature.sh`'s `detect_yarn_major`.
@@ -340,6 +374,11 @@ function readYarnLockHeader(root: string): string {
  *
  * Mirrored by `detect_yarn_major` in `templates/scripts/new-feature.sh` (#871).
  *
+ * @internal Exported for testing — production code should go through
+ * {@link resolvePackageManagerConfig}, whose whole job is to apply this answer.
+ * The export exists so the cross-path agreement test can run this and the shell
+ * mirror against the same fixtures, which is the gate keeping the two in step.
+ *
  * @param root Directory to inspect. Defaults to the process cwd.
  * @returns 1 for Yarn 1 (classic), 2 for Yarn 2+ (berry)
  */
@@ -362,17 +401,22 @@ export function detectYarnMajor(root: string = process.cwd()): 1 | 2 {
  * against `root`.
  *
  * A drop-in replacement for `PM_CONFIG[pm]` at every call site that knows which
- * project directory it is acting on. Today it resolves exactly one thing —
- * yarn's frozen install, which differs between classic and berry (#871) — and
- * returns `PM_CONFIG[pm]` untouched for every other package manager.
+ * project directory it is acting on. `PM_CONFIG.yarn` is the berry baseline, so
+ * for a Yarn 1 project this substitutes every field whose berry spelling is
+ * wrong on classic — `ciInstall`, `exec`, and `updatePkg` (see
+ * {@link YARN_CLASSIC_OVERRIDES}). Every other package manager, and every
+ * major-agnostic yarn field, is returned untouched.
  *
- * Returning the whole config rather than just the resolved `ciInstall` string
- * keeps call sites that thread a `PackageManagerConfig` onward (e.g.
- * merge-check's combined-branch test, which reads `ciInstall` for three
- * commands and two user-facing messages) correct with a single-line change, and
- * gives the remaining berry/classic splits in `PM_CONFIG.yarn` — `exec: "yarn
- * dlx"` is berry-only, `updatePkg: "yarn upgrade"` is classic-only — one
- * obvious place to be fixed.
+ * Returning the whole config rather than one resolved string is what makes that
+ * cheap: call sites that thread a `PackageManagerConfig` onward — merge-check's
+ * combined-branch test reads `ciInstall` for three commands and two user-facing
+ * messages — stay correct with a single-line change, and each newly discovered
+ * classic/berry split is one entry in the overrides table rather than a new
+ * call-site edit.
+ *
+ * Resolve against the tree you are about to act on, not against wherever the
+ * process started: `root` decides the answer, and in merge-check the combined
+ * (post-merge) state can disagree with the pre-merge one.
  *
  * @param pm Package manager identity, e.g. from `detectPackageManagerSync`
  * @param root Directory whose files decide the directory-dependent commands
@@ -385,7 +429,7 @@ export function resolvePackageManagerConfig(
   if (pm !== "yarn" || detectYarnMajor(root) !== 1) {
     return config;
   }
-  return { ...config, ciInstall: YARN_CLASSIC_CI_INSTALL };
+  return { ...config, ...YARN_CLASSIC_OVERRIDES };
 }
 
 export interface StackConfig {

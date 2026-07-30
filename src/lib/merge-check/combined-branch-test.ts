@@ -15,10 +15,10 @@ import type {
 } from "./types.js";
 import { getBranchRef } from "./types.js";
 import {
-  PM_CONFIG,
   detectPackageManagerSync,
   resolvePackageManagerConfig,
 } from "../stacks.js";
+import type { PackageManager } from "../stacks.js";
 import {
   toCommandResult,
   resolveFailureReason,
@@ -143,8 +143,13 @@ export function runCombinedBranchTest(
   const pm = detectPackageManagerSync(repoRoot);
   // Resolved against the repo rather than read straight off PM_CONFIG: yarn's
   // frozen install differs between classic and berry, and `pm` is "yarn" for
-  // both. Resolving once here fixes every `pmConfig.ciInstall` read downstream
-  // — three install commands and two user-facing messages (#871).
+  // both (#871).
+  //
+  // This resolution describes the PRE-MERGE tree, which is what the restore
+  // install in the `finally` below runs against — it fires after
+  // `git checkout restoreBranch`, so the original branch's yarn major is the
+  // right one there. `runChecks` re-resolves for the combined state, where a
+  // merged branch may have changed the major.
   const pmConfig = resolvePackageManagerConfig(pm, repoRoot);
 
   // Flipped the moment we start installing against the combined lockfile, so
@@ -162,7 +167,7 @@ export function runCombinedBranchTest(
       branches,
       repoRoot,
       tempBranch,
-      pmConfig,
+      pm,
       branchResults,
       batchFindings,
       installState,
@@ -217,7 +222,7 @@ function runChecks(
   branches: BranchInfo[],
   repoRoot: string,
   tempBranch: string,
-  pmConfig: (typeof PM_CONFIG)[keyof typeof PM_CONFIG],
+  pm: PackageManager,
   branchResults: BranchCheckResult[],
   batchFindings: CheckFinding[],
   installState: InstallState,
@@ -309,6 +314,14 @@ function runChecks(
     });
     return;
   }
+
+  // Resolved HERE, after the merges landed, not from the caller's pre-merge
+  // resolution: the commands below run against the combined tree, and a merged
+  // branch can move the yarn major (a `packageManager` bump, a new
+  // `.yarnrc.yml`). Installing the combined state with the pre-merge major's
+  // frozen-install flag would fail on an unknown option and report a false
+  // BLOCKED — the exact failure class #803 added this install to prevent (#871).
+  const pmConfig = resolvePackageManagerConfig(pm, repoRoot);
 
   // Reinstall dependencies when the merged branches moved the lockfile (#803).
   // Without this, test/build run against the node_modules of whatever branch
