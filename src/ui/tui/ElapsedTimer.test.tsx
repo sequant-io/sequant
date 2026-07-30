@@ -130,8 +130,16 @@ describe("ElapsedTimer", () => {
     plain.tickNow(); // repaint at the later clock; a done issue must not move
     plain.dispose();
 
-    const plainDuration = /done · ([^·\n]+) ·/.exec(written.join(""))?.[1];
-    expect(plainDuration).toBeDefined();
+    // The LAST repaint, not the first. `written` accumulates every frame, and
+    // the frame emitted at completion is written when the renderer's clock still
+    // equals `completedAt` — there a frozen duration and a live one agree, so
+    // reading it would let a non-freezing plain renderer pass. Only the
+    // post-completion `tickNow()` frame distinguishes them.
+    const plainDurations = [
+      ...written.join("").matchAll(/done · ([^·\n]+) ·/g),
+    ].map((m) => m[1]);
+    expect(plainDurations.length).toBeGreaterThan(0);
+    const plainDuration = plainDurations[plainDurations.length - 1];
 
     const { lastFrame } = render(
       <ElapsedTimer
@@ -143,7 +151,7 @@ describe("ElapsedTimer", () => {
 
     // Three-way: both renderers agree with each other AND with the true span,
     // so the test can't pass by both being wrong in the same direction.
-    expect(tuiSeconds(lastFrame())).toBe(plainSeconds(plainDuration!));
+    expect(tuiSeconds(lastFrame())).toBe(plainSeconds(plainDuration));
     expect(tuiSeconds(lastFrame())).toBe(SPAN_MS / 1000);
   });
 });
