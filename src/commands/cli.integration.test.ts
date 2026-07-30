@@ -14,9 +14,10 @@ import {
   ExecSyncOptionsWithStringEncoding,
 } from "child_process";
 import { describe, it, expect, beforeAll } from "vitest";
-import { resolve, dirname } from "path";
+import { resolve, dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(__dirname, "../..");
@@ -197,27 +198,71 @@ describe("run command flag surface (#705)", () => {
   // AC-5: `--experimental-tui` still parses without error. Use --dry-run so the
   // CLI parses flags without executing a real workflow.
   //
-  // These tests run in the repo root, which is not itself an initialized Sequant
-  // project, so every run trips the not-initialized pre-flight guard in run.ts.
-  // That guard prints "Sequant is not initialized" — but only *after* Commander
-  // has parsed every flag, so reaching it proves the flag under test was accepted.
-  // Since #848 the guard exits 1 (was 0), so exit-0 is no longer a valid
-  // "parsed OK" proxy; assert on the guard's output instead. A genuine Commander
-  // usage error (unknown option) never reaches the guard and prints
-  // "error: unknown option" to stderr.
+  // The proxy for "Commander accepted this flag" is the not-initialized
+  // pre-flight guard in run.ts: it prints "Sequant is not initialized", but only
+  // *after* Commander has parsed every flag, so reaching it proves the flag under
+  // test was accepted. Since #848 the guard exits 1 (was 0), so exit-0 is no
+  // longer a valid "parsed OK" proxy; assert on the guard's output instead. A
+  // genuine Commander usage error (unknown option) never reaches the guard and
+  // prints "error: unknown option" to stderr — pinned by the positive control
+  // below, so this cannot pass vacuously.
+  //
+  // Spawned in an EMPTY TEMP DIR, not the repo root (#883). The guard fires on
+  // `getManifest()` returning null, and `MANIFEST_PATH` is cwd-relative with no
+  // upward walk — so whether it fires depends entirely on the spawn cwd. The repo
+  // root looks manifest-less on a fresh CI checkout (`.sequant-manifest.json` is
+  // gitignored) but NOT on a clone that has been `sequant init`\'d, where these
+  // four tests failed while CI stayed green. A directory we create ourselves is
+  // manifest-less by construction, in both environments.
+  const runInUninitializedDir = (
+    ...args: string[]
+  ): { stdout: string; stderr: string } => {
+    const cwd = mkdtempSync(join(tmpdir(), "sequant-cli-flags-"));
+    try {
+      const r = spawnSync(process.execPath, [cliPath, ...args], {
+        cwd,
+        encoding: "utf-8",
+      });
+      return { stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
+    } finally {
+      // Belt-and-braces before a recursive delete: only ever remove something we
+      // just created under the OS temp dir. An edit that points `cwd` at
+      // `projectRoot` while leaving this cleanup in place would recursively
+      // delete the working tree; the check makes that fail loudly instead.
+      if (!resolve(cwd).startsWith(resolve(tmpdir()))) {
+        throw new Error(`refusing to rm outside tmpdir: ${cwd}`);
+      }
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  };
+
   const expectFlagAccepted = (flag: string): void => {
-    const r = spawnSync(
-      process.execPath,
-      [cliPath, "run", "1", flag, "--dry-run"],
-      { cwd: projectRoot, encoding: "utf-8" },
+    const { stdout, stderr } = runInUninitializedDir(
+      "run",
+      "1",
+      flag,
+      "--dry-run",
     );
-    const stdout = r.stdout ?? "";
-    const stderr = r.stderr ?? "";
     // Reached the pre-flight guard ⇒ Commander parsed every flag, incl. `flag`.
     expect(stdout + stderr).toMatch(/Sequant is not initialized/);
     // ...and it was not rejected as an unknown option.
     expect(stderr).not.toMatch(/error: unknown option/);
   };
+
+  // Positive control for the proxy above. If an unknown option ALSO reached the
+  // guard, `expectFlagAccepted` would pass for any string and gate nothing —
+  // the failure mode that makes a green suite meaningless.
+  it("an unknown option is rejected and never reaches the pre-flight guard", () => {
+    const { stdout, stderr } = runInUninitializedDir(
+      "run",
+      "1",
+      "--definitely-not-a-flag",
+      "--dry-run",
+    );
+
+    expect(stderr).toMatch(/error: unknown option/);
+    expect(stdout + stderr).not.toMatch(/Sequant is not initialized/);
+  });
 
   it("-q parses without error (hidden quality-loop alias) (AC-1)", () => {
     // Proves the hidden `-q` alias is accepted by Commander.
