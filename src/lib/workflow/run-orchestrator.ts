@@ -286,6 +286,13 @@ export interface RunResult {
   mergedOptions: RunOptions;
   /** Log writer (for reflection access) */
   logWriter: LogWriter | null;
+  /**
+   * Run wall-clock duration in seconds, computed once by the orchestrator from
+   * the run's start and end (#867). The post-run summary reads THIS value rather
+   * than re-summing per-issue durations — under `--parallel` that sum
+   * double-counts overlapping issues and over-reports by ~the concurrency factor.
+   */
+  wallClockDurationSeconds: number;
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -652,6 +659,16 @@ export class RunOrchestrator {
   ): Promise<RunResult> {
     const { manifest, onProgress, phasePauseHandle, settings } = init;
 
+    // #867: capture the run's start before any service/log setup, so wall clock
+    // is independent of whether the log writer exists (AC-3: correct under
+    // --no-log and when log init fails). This single origin is the source of
+    // truth for both the printed summary and the run log (AC-2).
+    const runStartedAt = Date.now();
+    // Every `return` below — the success path and all six early exits — closes
+    // the bracket the same way, so the subtraction lives in one place rather
+    // than being restated per exit and left to drift.
+    const wallClock = () => (Date.now() - runStartedAt) / 1000;
+
     // ── Config resolution ──────────────────────────────────────────────
     const resolved = RunOrchestrator.resolveConfig(init, issueArgs, batches);
     const { mergedOptions, config, baseBranch } = resolved;
@@ -668,6 +685,7 @@ export class RunOrchestrator {
         config,
         mergedOptions,
         logWriter: null,
+        wallClockDurationSeconds: wallClock(),
       };
     }
 
@@ -692,6 +710,10 @@ export class RunOrchestrator {
           logPath: mergedOptions.logPath ?? settings.run.logPath,
           verbose: config.verbose,
           startCommit: getCommitHash(process.cwd()),
+          // #867: share the orchestrator's run origin so the log's stored
+          // wall clock (finalizeRunLog: (end-start)/1000) is derived from the
+          // same start as the summary — AC-2/AC-7 (one producer, two consumers).
+          startTime: new Date(runStartedAt),
         });
         await logWriter.initialize(runConfig);
         const runId = logWriter.getRunId();
@@ -792,6 +814,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
+            wallClockDurationSeconds: wallClock(),
           };
         }
 
@@ -811,6 +834,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
+            wallClockDurationSeconds: wallClock(),
           };
         }
 
@@ -876,6 +900,7 @@ export class RunOrchestrator {
               config,
               mergedOptions,
               logWriter: null,
+              wallClockDurationSeconds: wallClock(),
             };
           }
         }
@@ -946,6 +971,7 @@ export class RunOrchestrator {
           config,
           mergedOptions,
           logWriter: null,
+          wallClockDurationSeconds: wallClock(),
         };
       }
     }
@@ -987,6 +1013,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
+            wallClockDurationSeconds: wallClock(),
           };
         }
       }
@@ -1043,6 +1070,7 @@ export class RunOrchestrator {
           config,
           mergedOptions,
           logWriter: null,
+          wallClockDurationSeconds: wallClock(),
         };
       }
     }
@@ -1150,6 +1178,12 @@ export class RunOrchestrator {
         });
       }
 
+      // #867: the run's wall clock, computed once from the single origin. Both
+      // the metrics record and the RunResult below derive from this value — no
+      // consumer re-sums per-issue durations (which double-counts under
+      // --parallel). Same notion the log stores via finalizeRunLog above.
+      const wallClockDurationSeconds = wallClock();
+
       // ── Record metrics ─────────────────────────────────────────────
       if (!config.dryRun && results.length > 0) {
         try {
@@ -1159,6 +1193,7 @@ export class RunOrchestrator {
             results,
             worktreeMap,
             issueNumbers,
+            wallClockDurationSeconds,
           );
         } catch (metricsError) {
           logNonFatalWarning(
@@ -1179,6 +1214,7 @@ export class RunOrchestrator {
         config,
         mergedOptions,
         logWriter,
+        wallClockDurationSeconds,
       };
     } finally {
       orchestrator.markDone();
@@ -1579,12 +1615,14 @@ export class RunOrchestrator {
     results: IssueResult[],
     worktreeMap: Map<number, WorktreeInfo>,
     issueNumbers: number[],
+    wallClockDurationSeconds: number,
   ): Promise<void> {
     const metricsWriter = new MetricsWriter({ verbose: config.verbose });
-    const totalDuration = results.reduce(
-      (sum, r) => sum + (r.durationSeconds ?? 0),
-      0,
-    );
+    // #867: run wall clock, not the sum of per-issue durations — under
+    // --parallel that sum double-counts overlapping issues (same defect the
+    // SUMMARY header had). The orchestrator owns the run's start/end and passes
+    // the single authoritative value in.
+    const totalDuration = wallClockDurationSeconds;
     const allPhases = new Set<MetricPhase>();
     for (const result of results) {
       for (const pr of result.phaseResults) {

@@ -47,6 +47,13 @@ export interface LogWriterOptions {
   rotation?: RotationSettings;
   /** Git commit SHA at run start (AC-2) */
   startCommit?: string;
+  /**
+   * Run start timestamp (#867). When provided, the log's `startTime` uses this
+   * origin instead of self-stamping `new Date()` at initialize(), so the log's
+   * stored wall clock and the orchestrator's summary derive from one shared
+   * start. Defaults to now when omitted.
+   */
+  startTime?: Date;
 }
 
 /**
@@ -63,6 +70,7 @@ export class LogWriter {
   private verbose: boolean;
   private rotation: RotationSettings;
   private startCommit?: string;
+  private startTime?: Date;
 
   constructor(options: LogWriterOptions = {}) {
     this.logPath = options.logPath ?? LOG_PATHS.project;
@@ -70,6 +78,7 @@ export class LogWriter {
     this.verbose = options.verbose ?? false;
     this.rotation = options.rotation ?? DEFAULT_ROTATION_SETTINGS;
     this.startCommit = options.startCommit;
+    this.startTime = options.startTime;
   }
 
   /**
@@ -78,7 +87,10 @@ export class LogWriter {
    * @param config - Run configuration
    */
   async initialize(config: RunConfig): Promise<void> {
-    this.runLog = createEmptyRunLog(config, { startCommit: this.startCommit });
+    this.runLog = createEmptyRunLog(config, {
+      startCommit: this.startCommit,
+      startTime: this.startTime,
+    });
 
     // Ensure log directory exists
     await this.ensureLogDirectory(this.logPath);
