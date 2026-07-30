@@ -664,6 +664,10 @@ export class RunOrchestrator {
     // --no-log and when log init fails). This single origin is the source of
     // truth for both the printed summary and the run log (AC-2).
     const runStartedAt = Date.now();
+    // Every `return` below — the success path and all six early exits — closes
+    // the bracket the same way, so the subtraction lives in one place rather
+    // than being restated per exit and left to drift.
+    const wallClock = () => (Date.now() - runStartedAt) / 1000;
 
     // ── Config resolution ──────────────────────────────────────────────
     const resolved = RunOrchestrator.resolveConfig(init, issueArgs, batches);
@@ -681,7 +685,7 @@ export class RunOrchestrator {
         config,
         mergedOptions,
         logWriter: null,
-        wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+        wallClockDurationSeconds: wallClock(),
       };
     }
 
@@ -810,7 +814,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
-            wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+            wallClockDurationSeconds: wallClock(),
           };
         }
 
@@ -830,7 +834,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
-            wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+            wallClockDurationSeconds: wallClock(),
           };
         }
 
@@ -896,7 +900,7 @@ export class RunOrchestrator {
               config,
               mergedOptions,
               logWriter: null,
-              wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+              wallClockDurationSeconds: wallClock(),
             };
           }
         }
@@ -967,7 +971,7 @@ export class RunOrchestrator {
           config,
           mergedOptions,
           logWriter: null,
-          wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+          wallClockDurationSeconds: wallClock(),
         };
       }
     }
@@ -1009,7 +1013,7 @@ export class RunOrchestrator {
             config,
             mergedOptions,
             logWriter: null,
-            wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+            wallClockDurationSeconds: wallClock(),
           };
         }
       }
@@ -1066,7 +1070,7 @@ export class RunOrchestrator {
           config,
           mergedOptions,
           logWriter: null,
-          wallClockDurationSeconds: (Date.now() - runStartedAt) / 1000,
+          wallClockDurationSeconds: wallClock(),
         };
       }
     }
@@ -1178,7 +1182,7 @@ export class RunOrchestrator {
       // the metrics record and the RunResult below derive from this value — no
       // consumer re-sums per-issue durations (which double-counts under
       // --parallel). Same notion the log stores via finalizeRunLog above.
-      const wallClockDurationSeconds = (Date.now() - runStartedAt) / 1000;
+      const wallClockDurationSeconds = wallClock();
 
       // ── Record metrics ─────────────────────────────────────────────
       if (!config.dryRun && results.length > 0) {
