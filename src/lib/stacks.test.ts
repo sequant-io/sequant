@@ -1170,6 +1170,25 @@ describe("detectYarnMajor", () => {
     }
   });
 
+  // Legal JSON, and the input class where a line-oriented shell translation of
+  // this ladder disagreed with it — see the wrapped-pin cases in
+  // __tests__/new-feature-frozen-install.integration.test.ts.
+  it("reads a `packageManager` pin wrapped across lines", () => {
+    seed("yarn.lock", YARN_1_LOCK);
+    seed("package.json", '{\n  "packageManager":\n    "yarn@4.1.0"\n}\n');
+    expect(detectYarnMajor(root)).toBe(2);
+  });
+
+  // First-match semantics, pinned so the shell mirror has something to match.
+  it("takes the first `packageManager` pin when a file carries two", () => {
+    seed("yarn.lock", YARN_1_LOCK);
+    seed(
+      "package.json",
+      '{\n  "packageManager": "yarn@4.1.0",\n  "volta": { "packageManager": "yarn@1.22.22" }\n}\n',
+    );
+    expect(detectYarnMajor(root)).toBe(2);
+  });
+
   it("falls through a non-numeric pin (`yarn@stable`) to the lockfile header", () => {
     seed("yarn.lock", YARN_1_LOCK);
     seed("package.json", '{"name":"x","packageManager":"yarn@stable"}');

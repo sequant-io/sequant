@@ -217,16 +217,31 @@ detect_package_manager() {
 # berry's `--immutable`, because yarn 4 is what executes and it rejects
 # `--frozen-lockfile`.
 #
-# The `packageManager` read is a sed pattern, not a JSON parse, to match what
-# stacks.ts does — pinning both paths to the same shape means they cannot
-# disagree about a given file, and it keeps `jq` off this script's dependency
-# list. A non-numeric pin (`yarn@stable`, `yarn@berry`) simply does not match and
-# falls through. The 1024-byte header read matches YARN_LOCK_HEADER_BYTES.
+# The `packageManager` read is a text pattern, not a JSON parse, to match what
+# stacks.ts does and to keep `jq` off this script's dependency list. A
+# non-numeric pin (`yarn@stable`, `yarn@berry`) simply does not match and falls
+# through. The 1024-byte header read matches YARN_LOCK_HEADER_BYTES.
+#
+# Two details make the text pattern agree with the TypeScript regex on inputs
+# where a naive translation does NOT (both found by QA on this issue, and both
+# are the dual-producer drift class #833/#847 exists to close):
+#
+#   * `tr` collapses newlines FIRST, because the JS regex's `\s*` spans newlines
+#     while sed/grep are line-oriented. Without it, a pin wrapped as
+#     `"packageManager":\n  "yarn@4.1.0"` — legal JSON — is invisible here but
+#     read by stacks.ts, and the two paths return OPPOSITE majors.
+#   * `grep -o | head -1` takes the FIRST match, matching `String.match`. A
+#     `sed 's/.*"packageManager"…/'` would take the LAST, because its leading
+#     `.*` is greedy — a divergence the newline collapse would otherwise
+#     introduce for a file carrying two pins (e.g. one nested under `volta`).
 #
 # Echoes "1" for classic, "2" for berry. Runs in the worktree cwd.
 detect_yarn_major() {
     local declared
-    declared="$(sed -n 's/.*"packageManager"[[:space:]]*:[[:space:]]*"yarn@v\{0,1\}\([0-9]\{1,\}\).*/\1/p' package.json 2>/dev/null | head -1)"
+    declared="$(tr '\n' ' ' < package.json 2>/dev/null \
+        | grep -o '"packageManager"[[:space:]]*:[[:space:]]*"yarn@v\{0,1\}[0-9]\{1,\}' \
+        | head -1 \
+        | sed 's/.*yarn@v\{0,1\}//')"
     if [ -n "$declared" ]; then
         # Every major above 1 is berry and shares berry's CLI surface.
         if [ "$declared" = "1" ]; then echo "1"; else echo "2"; fi

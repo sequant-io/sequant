@@ -268,9 +268,16 @@ const YARN_LOCK_HEADER_BYTES = 1024;
  * Read the `packageManager` pin's yarn major from `package.json`, if declared.
  *
  * Deliberately a regex rather than `JSON.parse`: the shell path cannot parse
- * JSON without adding a `jq` dependency, so both paths match the same shape
- * and cannot disagree about a given file. A non-numeric pin (`yarn@stable`,
- * `yarn@berry`) does not match and falls through to the next signal.
+ * JSON without adding a `jq` dependency, so both paths match on text. A
+ * non-numeric pin (`yarn@stable`, `yarn@berry`) does not match and falls
+ * through to the next signal.
+ *
+ * Matching on text does NOT make the two paths agree for free — `\s*` here
+ * spans newlines and `.match` returns the first hit, neither of which a
+ * line-oriented `sed`/`grep` gives you. `detect_yarn_major` in
+ * `new-feature.sh` collapses newlines and takes the first match specifically
+ * to line up with this; see its comment for the two inputs that diverged
+ * before it did.
  *
  * @returns the declared major, or null when nothing is declared
  */

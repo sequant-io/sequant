@@ -316,6 +316,42 @@ describe("new-feature.sh frozen install is package-manager aware (#847)", () => 
           },
           2,
         ],
+        // The two inputs a naive shell translation gets wrong. Both were real
+        // divergences found by QA on this issue, in BOTH directions, and both
+        // are the reason `detect_yarn_major` collapses newlines and takes the
+        // first match rather than running a plain line-oriented `sed`.
+        //
+        // A pin wrapped across lines is legal JSON. `sed`/`grep` are
+        // line-oriented so `[[:space:]]*` cannot span the newline, while the
+        // TypeScript regex's `\s*` can — so the shell fell through to the
+        // lockfile header and the two paths returned OPPOSITE majors.
+        [
+          {
+            "yarn.lock": YARN_1_LOCK,
+            "package.json": '{\n  "packageManager":\n    "yarn@4.1.0"\n}\n',
+          },
+          2,
+        ],
+        [
+          {
+            "yarn.lock": BERRY_LOCK,
+            "package.json": '{\n  "packageManager":\n    "yarn@1.22.22"\n}\n',
+          },
+          1,
+        ],
+        // First-match semantics. Once newlines are collapsed, a greedy
+        // `sed 's/.*"packageManager"…/'` would take the LAST pin while
+        // `String.match` takes the first — so a file carrying two pins (here a
+        // top-level berry pin plus a nested `volta` classic one) must resolve
+        // to the top-level pin on both paths.
+        [
+          {
+            "yarn.lock": YARN_1_LOCK,
+            "package.json":
+              '{\n  "packageManager": "yarn@4.1.0",\n  "volta": { "packageManager": "yarn@1.22.22" }\n}\n',
+          },
+          2,
+        ],
       ];
 
       // The real function, lifted verbatim out of the real script — not a
