@@ -157,7 +157,49 @@ sleep 2
 ps -Ao pid,pgid,command | awk -v g="$VICTIM_PGID" '$2==g {print $1}' | sort >"$OUT/after.txt"
 echo
 
+# ── Canary layer: sender identification without dtrace ───────────────────────
+# On a SIP-enabled machine dtrace cannot supply the sender, but the kernel
+# hands it to the victim in siginfo_t.si_pid. Verify that layer here, because
+# it is the only remaining way to answer "who killed it".
+echo
+echo "── canary layer (SIP-free sender identification) ──"
+CANARY_SRC="$(dirname "$0")/signal-canary.c"
+CANARY_BIN="$OUT/signal-canary"
+CANARY_LOG="$OUT/canary.log"
+
+if [[ ! -f "$CANARY_SRC" ]]; then
+  bad "signal-canary.c not found next to this script"
+elif ! cc -O2 -Wall -o "$CANARY_BIN" "$CANARY_SRC" 2>"$OUT/canary-build.log"; then
+  bad "signal-canary.c failed to compile"
+  note "$(head -3 "$OUT/canary-build.log")"
+else
+  ok "signal-canary compiled"
+  set -m
+  "$CANARY_BIN" "$CANARY_LOG" -- sleep 60 >/dev/null 2>&1 &
+  CANARY_PID=$!
+  set +m
+  sleep 2
+  CANARY_PGID=$(ps -o pgid= -p "$CANARY_PID" 2>/dev/null | tr -d ' ')
+  # Group-directed, matching the incident's shape rather than a direct kill.
+  kill -TERM "-$CANARY_PGID" 2>/dev/null
+  sleep 2
+
+  if [[ -s "$CANARY_LOG" ]]; then
+    CANARY_SENDER=$(sed -n 's/.*sender_pid=\([0-9]*\).*/\1/p' "$CANARY_LOG" | head -1)
+    if [[ "$CANARY_SENDER" == "$$" ]]; then
+      ok "canary identified the sender correctly (pid $CANARY_SENDER) on a GROUP-directed signal"
+      note "this replaces the dtrace layer that SIP withholds"
+    else
+      bad "canary recorded sender=$CANARY_SENDER but the real sender was $$"
+    fi
+  else
+    bad "canary captured nothing — sender identification unavailable by any means"
+  fi
+  kill -KILL "-$CANARY_PGID" 2>/dev/null || true
+fi
+
 # ── Assertions ───────────────────────────────────────────────────────────────
+echo
 echo "── results ──"
 
 # 1. Poller layer: did the victims actually disappear?
@@ -217,17 +259,17 @@ if [[ "$FAIL" -ne 0 ]]; then
   echo "     was sent' — fix the failures above first, or you will exonerate the"
   echo "     real killer on the strength of a broken instrument."
 elif [[ -z "$DTRACE_PID" ]]; then
-  # Deliberately NOT "verified". The poller can tell you a tree died and when;
-  # only dtrace can tell you WHO sent the signal, and that layer was never
-  # exercised in this run. Declaring the rig verified here would license
-  # exactly the false-exoneration this script exists to prevent.
-  echo "  ⚠️  PARTIALLY verified — poller layer only."
-  echo "     Proven: deaths are observed and timestamped, and the rig outlives"
-  echo "     the group kill."
-  echo "     NOT proven: that dtrace fires at all on this machine. SIP is the"
-  echo "     open question, and it gates the only layer that names the sender."
-  echo "     An empty signals.txt from a real capture would be UNKNOWN, not"
-  echo "     evidence. Re-run with sudo before relying on a negative result."
+  # dtrace unavailable, but the canary covers sender identification, so this
+  # is no longer a crippling gap — say precisely which layers are proven.
+  echo "  ✅ Verified WITHOUT dtrace — poller + canary layers."
+  echo "     Proven: deaths are observed and timestamped, the rig outlives the"
+  echo "     group kill, and the canary names the sender of a group-directed"
+  echo "     signal via siginfo_t.si_pid."
+  echo "     Not exercised: dtrace. On a SIP-enabled machine it is withheld"
+  echo "     entirely (\`failed to match proc:::signal-send\`), which is why the"
+  echo "     canary exists. Its absence no longer blocks AC-1 — the canary"
+  echo "     answers the same question for any CATCHABLE signal, and the"
+  echo "     incident's first signal was a catchable SIGTERM."
 else
   echo "  ✅ Rig fully verified — poller and dtrace both fired on a known kill,"
   echo "     with correct attribution. A subsequent EMPTY capture is now"

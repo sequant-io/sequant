@@ -334,11 +334,40 @@ socket won't accept", and `kill -STOP` produces exactly that — so the mechanis
 can be tested without waiting for the intermittent trigger. **Requires the
 daemon to be running first**, or there is no host to stop.
 
-**Tier 3 — name the sender (needs sudo; SIP may block it).**
-`sudo tools/watch-signals.sh`. Only dtrace identifies the sender directly. SIP is
-enabled on the affected machine, so the script runs a preflight that proves the
-probe fires before you trust its silence — an empty capture under SIP means
-"unknown", never "nothing was sent". Capture signal **9 and 15**.
+**Tier 3 — name the sender. Use the canary; dtrace is unavailable here.**
+
+dtrace was the intended instrument and it is **confirmed dead on this machine**:
+
+```
+$ sudo dtrace -l -n 'proc:::signal-send'
+dtrace: failed to match proc:::signal-send: System Integrity Protection is on
+```
+
+Not "restricted" — withheld. No D script can reach the probe, and disabling SIP
+to debug this would be a bad trade.
+
+Use `tools/signal-canary.c` instead. A handler installed with `SA_SIGINFO`
+receives `siginfo_t.si_pid` — **the sending process** — and reading your own
+signal's metadata needs no privileges at all. The canary execs the real command
+as a child in the same process group, so a group-directed signal hits both, and
+logs the sender before passing the signal through unchanged.
+
+```sh
+cc -O2 -Wall -o signal-canary signal-canary.c
+./signal-canary /tmp/856-canary.log -- npx sequant run 123
+```
+
+Verified against both a direct and a **group-directed** SIGTERM; it names the
+sender correctly in each. `verify-capture.sh` exercises this layer, so the rig
+now reaches 5/5 with no sudo.
+
+This works **because the incident's first signal is catchable** — the recovered
+stdout shows `Received SIGTERM` before the truncated cleanup. The SIGKILL that
+follows remains unobservable by any in-process means, but it comes from the same
+actor, so identifying the TERM sender identifies the killer.
+
+Resolve the logged PID promptly (`ps -p <pid> -o pid,ppid,pgid,command`) — the
+sender may exit shortly after.
 
 Two things make this cheaper than it was. First, the run's own stdout at
 `tasks/b6byn5iih.output` shows `Received SIGTERM` — the first signal is

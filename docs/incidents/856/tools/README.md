@@ -29,9 +29,11 @@ it with the same TERM→KILL escalation the incident showed, and asserts:
    failure most likely to go unnoticed: everything looks fine until the one
    time it matters.
 
-Without sudo it reports **PARTIALLY verified** and says so explicitly — the
-poller half is proven, the sender-identification half is not. Do not read a
-negative dtrace result as evidence until the sudo run passes.
+On this machine dtrace is **confirmed unavailable** — `sudo dtrace -l -n
+'proc:::signal-send'` returns `failed to match ... System Integrity Protection
+is on`. That layer is therefore skipped, and sender identification is handled by
+`signal-canary.c` instead, which needs no privileges. The verifier exercises the
+canary and reaches 5/5 without sudo.
 
 ## The rest
 
@@ -44,13 +46,14 @@ no `timeout`, so neither is used). Paths to `entire.log` and the Claude desktop
 config are machine-specific constants near the top of each file; adjust before
 reuse.
 
-| Script                   | Purpose                                                 | sudo                                     |
-| ------------------------ | ------------------------------------------------------- | ---------------------------------------- |
-| `verify-capture.sh`      | **Run first.** Positive-control test of the capture rig | optional (required for the dtrace layer) |
-| `watch-signals.sh`       | Record signal deliveries + process-tree deaths          | optional                                 |
-| `induce-bgpty-hang.sh`   | Deterministically wedge a bg-pty host (tier 2)          | no                                       |
-| `teardown-gap.mjs`       | Per-session `TurnEnd → SessionEnd` gap                  | no                                       |
-| `ac3-mcp-experiment.mjs` | The AC-3 MCP on/off comparison                          | no                                       |
+| Script                   | Purpose                                                  | sudo                                     |
+| ------------------------ | -------------------------------------------------------- | ---------------------------------------- |
+| `verify-capture.sh`      | **Run first.** Positive-control test of the capture rig  | optional (required for the dtrace layer) |
+| `watch-signals.sh`       | Record signal deliveries + process-tree deaths           | optional                                 |
+| `induce-bgpty-hang.sh`   | Deterministically wedge a bg-pty host (tier 2)           | no                                       |
+| `signal-canary.c`        | Name the signal's sender via `siginfo_t.si_pid` (tier 3) | no                                       |
+| `teardown-gap.mjs`       | Per-session `TurnEnd → SessionEnd` gap                   | no                                       |
+| `ac3-mcp-experiment.mjs` | The AC-3 MCP on/off comparison                           | no                                       |
 
 ## `teardown-gap.mjs`
 
