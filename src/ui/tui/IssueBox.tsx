@@ -6,6 +6,7 @@ import {
   DIVIDER_COLOR,
   PHASE_GLYPHS,
   borderColorForIssue,
+  isTerminalStatus,
   phaseStatusColor,
 } from "./theme.js";
 import { Spinner } from "./Spinner.js";
@@ -62,7 +63,20 @@ export function IssueBox({
         <Text color={border}>{headerTitle}</Text>
         <Text color={DIVIDER_COLOR}>
           phase {displayPhaseN}/{total} •{" "}
-          <ElapsedTimer startedAt={state.startedAt} />
+          <ElapsedTimer
+            startedAt={state.startedAt}
+            // #866: only a terminal status may freeze the clock. Mirrors the
+            // plain renderer, which branches on status *before* reading
+            // `completedAt` (`run-renderer.ts` `statusHeader`) and so always
+            // measures a running issue against the live clock. Without this
+            // gate a stale `completedAt` on a running issue — what the #766
+            // quality-loop recovery used to publish — freezes the header while
+            // the issue is visibly working.
+            completedAt={
+              isTerminalStatus(state.status) ? state.completedAt : undefined
+            }
+            now={now}
+          />
         </Text>
       </Box>
 
