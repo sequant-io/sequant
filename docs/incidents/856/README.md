@@ -5,7 +5,8 @@ bg-pty watchdog "high confidence" — that was overstated. Runtime inspection on
 2026-07-30 found a stronger candidate the original sweep never reached. See
 [Runtime findings](#runtime-findings-2026-07-30--the-daemon-and-the-auth-window).
 **Date of incident:** 2026-07-29 (three deaths, 01:21:57 / 01:36:05 / 01:39:36 local).
-**Verdict:** upstream defect in Claude Code 2.1.220, not a sequant bug.
+**Verdict:** upstream, not a sequant bug — sequant is the victim, not the killer.
+Which upstream component is still open.
 
 This directory exists because the investigation lived only in GitHub issue comments,
 and `.sequant/` — where the raw evidence sat — is gitignored and rotates at 100 files.
@@ -19,10 +20,21 @@ A nested phase `claude` that **hangs after finishing its turn** is terminated at
 including the parent `sequant run`. A nested `claude` that exits cleanly is never
 killed, at any lifetime (specimens survived 316s, 131.7s, 26m54s, 22m49s).
 
-The killer is Claude Code's `[bg-pty]` host-dead watchdog issuing a **process-group
-SIGKILL**.
+The killer is something that issues a **process-group** signal: the whole tree
+dies together, and the run's own stdout records `Received SIGTERM` followed by a
+truncated cleanup — a SIGTERM the process caught, then an escalation it did not
+survive.
 
-## The mechanism
+Two candidates, neither confirmed:
+
+1. **The `[bg-pty]` host-dead watchdog** (below). Matches the discriminator
+   exactly, but rests on binary strings rather than observed behaviour.
+2. **The background daemon during its unauthenticated window** (see
+   [Runtime findings](#runtime-findings-2026-07-30--the-daemon-and-the-auth-window)).
+   Weaker mechanism detail, but it is the only condition separating all three
+   victims from every survivor, and it is inducible on demand.
+
+## Candidate 1 — the bg-pty watchdog
 
 Background Bash tasks run under a detached helper
 (`claude --bg-pty-host <sock> <cols> <rows> -- <cmd>`); a claude session is the
@@ -51,7 +63,9 @@ Telemetry names for upstream searchability: `tengu_bg_ptyhost_crash`,
 - **The discriminator.** The kill fires only when the host **pid is alive but its
   socket won't accept** — precisely "hangs after finishing its turn". A clean exit
   makes `process.kill(t, 0)` throw, taking the graceful branch, so it is never
-  killed at any lifetime. No other mechanism found on the machine keys on that state.
+  killed at any lifetime. No other mechanism found _in the binary's strings_ keys
+  on that state — but the sweep that concluded this never inspected the daemon,
+  so "no other mechanism" was never established.
 - **Simultaneous teardown + parent death.** It is a _process-group_ kill. Verified
   live: an SDK-spawned phase `claude`, all its MCP servers, and the parent
   `sequant run` share one pgid. One group signal produces the entire observed
