@@ -437,6 +437,16 @@ export class RunOrchestrator {
     if (event === "start") {
       const wasStatus: IssueEventStatus = state.status;
       if (!state.startedAt) state.startedAt = new Date();
+      // #866: a phase starting means the issue is live again, so any
+      // `completedAt` from an earlier terminal verdict is stale and must not
+      // outlive it. The #766 quality-loop recovery path reaches here holding
+      // one: a non-loop failure pins `failed` and stamps `completedAt` below,
+      // then iteration 2 re-runs the phase through this branch. Leaving it set
+      // published a completion time for a running issue — which froze the TUI's
+      // header clock for the whole recovery window. `startedAt` is deliberately
+      // NOT reset: the header measures the issue's total wall clock, spanning
+      // every iteration.
+      state.completedAt = undefined;
       state.status = "running";
       const now = new Date();
       this.phaseStartTimes.set(`${issue}:${phase}`, now.getTime());

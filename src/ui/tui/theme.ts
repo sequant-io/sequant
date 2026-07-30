@@ -60,6 +60,16 @@ export const ACTIVE_PHASE_COLOR = BRAND_ORANGE;
 export const ROLLUP_COLOR = BRAND_GREEN;
 
 /**
+ * `passed`/`failed` are terminal; `queued`/`running` mean the issue is still
+ * live. The single definition of that split for the TUI — `row-cap` uses it to
+ * decide which issues can roll up, and `IssueBox` uses it to decide whether the
+ * elapsed clock may freeze (#866).
+ */
+export function isTerminalStatus(status: IssueStatus): boolean {
+  return status === "passed" || status === "failed";
+}
+
+/**
  * Pick the border color for an issue.
  * Failed / passed states win over rotation; otherwise rotate by slot.
  */
