@@ -16,7 +16,7 @@
  * command actually spawned, with `child_process` mocked.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -134,6 +134,88 @@ describe("installWorktreeDeps surfaces a failed provisioning install (#846)", ()
     expect(output).not.toMatch(/Dependency install failed/);
 
     logSpy.mockRestore();
+  });
+});
+
+describe("manifest-less worktrees detect the package manager (#870)", () => {
+  // These are the gate tests for #870. Both functions used to resolve the PM as
+  // `(packageManager as keyof typeof PM_CONFIG) || "npm"`, so a worktree whose
+  // manifest recorded nothing was installed with `npm ci` even on a pnpm
+  // project — while new-feature.sh, PM-aware since #847, detected pnpm from the
+  // lockfile and ran `pnpm install --frozen-lockfile`. Reverting either call
+  // site to the bare `|| "npm"` must fail here.
+  //
+  // A real temp dir (not a mocked `fs`) backs the detection: only
+  // `child_process` is mocked in this file, and detectPackageManagerSync reads
+  // the filesystem via existsSync.
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "sequant-870-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The install command actually spawned, as a single string. */
+  function spawnedInstall(): string {
+    const call = spawnSyncMock.mock.calls.find(([cmd]) => cmd !== "git");
+    expect(call, "no install command was spawned").toBeDefined();
+    const [cmd, args] = call!;
+    return [cmd, ...args].join(" ");
+  }
+
+  it("installWorktreeDeps runs pnpm's frozen install on a manifest-less pnpm worktree", () => {
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    spawnSyncMock.mockReturnValue(ok());
+
+    expect(installWorktreeDeps(dir, undefined, false)).toBe(true);
+
+    // AC-2: byte-identical to new-feature.sh's `pnpm)` branch of
+    // pm_frozen_install, because both read PM_CONFIG.pnpm.ciInstall.
+    expect(spawnedInstall()).toBe("pnpm install --frozen-lockfile");
+    expect(spawnedInstall()).not.toBe(PM_CONFIG.npm.ciInstall);
+  });
+
+  it("reinstallIfLockfileChanged runs yarn's frozen install on a manifest-less yarn worktree", () => {
+    writeFileSync(join(dir, "yarn.lock"), "# yarn lockfile v1\n");
+    // First spawnSync is the `git diff` lockfile probe — report a change so the
+    // install path is reached; the install itself then succeeds.
+    spawnSyncMock.mockReturnValueOnce(ok("yarn.lock\n")).mockReturnValue(ok());
+
+    expect(reinstallIfLockfileChanged(dir, undefined, false)).toBe(true);
+
+    // Classic, not berry: this fixture's content is literally Yarn 1's
+    // `# yarn lockfile v1` header, and #871 (which landed after #870) resolves
+    // the frozen install per yarn major. The assertion read `--immutable` when
+    // #870 was written, because yarn then had one hardcoded spelling for both
+    // majors. So this test now pins the two features COMPOSING: #870 answers
+    // which manager from the lockfile when the manifest is silent, #871 answers
+    // which of that manager's commands from the same tree.
+    expect(spawnedInstall()).toBe("yarn install --frozen-lockfile");
+    expect(spawnedInstall()).not.toBe(PM_CONFIG.npm.ciInstall);
+  });
+
+  it("a declared manager still wins over the worktree's lockfile", () => {
+    // The manifest is the more specific signal when it exists; detection is
+    // only the fallback. Guards against over-correcting into always-detect.
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    spawnSyncMock.mockReturnValue(ok());
+
+    expect(installWorktreeDeps(dir, "bun", false)).toBe(true);
+
+    expect(spawnedInstall()).toBe(PM_CONFIG.bun.ciInstall);
+  });
+
+  it("a manifest-less worktree with no lockfile still falls back to npm", () => {
+    // detectPackageManagerSync's own npm default — behavior here is unchanged
+    // from before #870, and `npm ci` failing loudly is the #846 path.
+    spawnSyncMock.mockReturnValue(ok());
+
+    expect(installWorktreeDeps(dir, undefined, false)).toBe(true);
+
+    expect(spawnedInstall()).toBe("npm ci");
   });
 });
 

@@ -9,7 +9,10 @@ import chalk from "chalk";
 import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
-import { PM_CONFIG, resolvePackageManagerConfig } from "../stacks.js";
+import {
+  resolvePackageManager,
+  resolvePackageManagerConfig,
+} from "../stacks.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
@@ -537,14 +540,22 @@ export function installWorktreeDeps(
   if (verbose) {
     console.log(chalk.gray(`    Installing dependencies...`));
   }
-  // Use detected package manager or default to npm
-  const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  // Resolved against the worktree, not read straight off PM_CONFIG: yarn's
-  // frozen install differs between classic (`--frozen-lockfile`) and berry
-  // (`--immutable`), and both use `yarn.lock` so `pm` alone cannot say which
-  // (#871). The worktree is checked out by now, so its package.json /
-  // .yarnrc.yml / yarn.lock are all readable here.
-  const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
+  // Two independent questions, resolved in order against the worktree itself.
+  //
+  // WHICH manager: the manifest's packageManager is a snapshot and may be
+  // absent, so fall back to the worktree's own lockfile — that keeps this in
+  // agreement with what new-feature.sh would run for the same project (#870).
+  //
+  // WHICH commands for it: yarn's frozen install differs between classic
+  // (`--frozen-lockfile`) and berry (`--immutable`), and both majors use
+  // `yarn.lock`, so the manager's identity alone cannot say which (#871).
+  //
+  // The worktree is checked out by now, so its package.json / .yarnrc.yml /
+  // yarn.lock are all readable here.
+  const pmConfig = resolvePackageManagerConfig(
+    resolvePackageManager(packageManager, worktreePath),
+    worktreePath,
+  );
   // ciInstall, not installSilent: a plain `npm install` normalizes and
   // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
   // newer npm committed), so every provisioned worktree started dirty. That
@@ -1225,10 +1236,12 @@ export function reinstallIfLockfileChanged(
     chalk.blue(`    Reinstalling dependencies (lockfile changed)...`),
   );
 
-  const pm = (packageManager as keyof typeof PM_CONFIG) || "npm";
-  // Resolved against the worktree for the same reason as provisioning — see
-  // installWorktreeDeps (#871).
-  const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
+  // Same two-step resolution as installWorktreeDeps: manifest-or-lockfile for
+  // the manager (#870), then classic-vs-berry for its commands (#871).
+  const pmConfig = resolvePackageManagerConfig(
+    resolvePackageManager(packageManager, worktreePath),
+    worktreePath,
+  );
   // ciInstall for the same reason as provisioning (see ensureWorktree): this
   // reinstall exists because a rebase pulled in a NEW lockfile, so installing
   // exactly what that lockfile says — never rewriting it — is the semantic
