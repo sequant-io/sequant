@@ -265,6 +265,52 @@ hang — it is directly inducible.
 Caveat: the daemon log contains no entry at any of the three death timestamps.
 Whatever killed them did not log it there.
 
+### Sharpened 2026-07-30: every death falls inside the daemon's auth-broken window
+
+`~/.claude/daemon-auth-status.json` still reads, 33 hours later:
+
+```json
+{ "status": "auth_required", "since": 1785305062628 }
+```
+
+`since` = **2026-07-29T06:04:22.628Z** — the same instant as the daemon.log auth
+failure, to the millisecond. Placing that against the rest of the timeline:
+
+| Event                                         | UTC          |
+| --------------------------------------------- | ------------ |
+| daemon enters `auth_required`                 | **06:04:22** |
+| death 1                                       | 06:21:57     |
+| death 2                                       | 06:36:05     |
+| death 3                                       | 06:39:36     |
+| daemon idle-exits (`idle 5s with no clients`) | **09:48:23** |
+
+**All three deaths fall inside `[auth lost … daemon exit]`, and none has occurred
+in the 33 hours since the daemon went down.** That window is ~3.7 hours out of a
+multi-day record — the three deaths landing inside it, and nothing outside it,
+is a much tighter fit than "backgrounded launch" alone, which describes many
+surviving runs too.
+
+The candidate necessary conditions are therefore **both**:
+
+1. the background daemon is **alive**, and
+2. it is in **`auth_required`** state.
+
+That also explains the intermittency without appeal to luck: the vulnerable
+window opens when auth fails and closes when the daemon idle-exits. Outside it,
+backgrounded tasks bypass the daemon entirely.
+
+**Confirmed by direct observation**: with the daemon down (its current state), a
+backgrounded task is a plain child of the interactive `claude` in its own pgid —
+no daemon spawns, no bg-pty host exists, and no socket appears under
+`/tmp/cc-daemon-502/`. Reproducing either candidate mechanism therefore requires
+first getting the daemon back up, which the `auth_required` cooldown
+(`~/.claude/daemon-auth-cooldown`) currently prevents.
+
+**Falsifiable prediction:** restore auth, get the daemon running, then break its
+auth again while it stays alive — deaths should resume. If a backgrounded run
+dies with the daemon healthy, or survives indefinitely with the daemon alive and
+unauthenticated, this hypothesis is wrong.
+
 ## What is still unproven (AC-1, AC-2)
 
 These acceptance criteria require catching the hang live. The issue body states
