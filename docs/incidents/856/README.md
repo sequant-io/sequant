@@ -311,6 +311,30 @@ auth again while it stays alive — deaths should resume. If a backgrounded run
 dies with the daemon healthy, or survives indefinitely with the daemon alive and
 unauthenticated, this hypothesis is wrong.
 
+### Measured baseline, 2026-07-30 (daemon down)
+
+A canary-instrumented backgrounded task, launched from inside an interactive
+Claude session — the configuration every victim shared:
+
+```
+canary: armed pid=15517 pgid=15513
+EXITED rc=0        # ran the full 200s
+canary log: empty  # no catchable signal ever delivered
+```
+
+**Backgrounding is not sufficient on its own.** 200s is nearly double the ~106s
+threshold, so this rules out any unconditional "backgrounded tasks get killed at
+~106s" rule. It does **not** test the hypothesis — the daemon was down, i.e. the
+state already known to be non-vulnerable — so treat it as a negative control
+that bounds the claim, not as evidence about the auth window.
+
+It also confirms the canary runs stably for the full duration without perturbing
+the child, which is what makes it trustworthy for the real capture.
+
+This refines the standing workaround: the risk is not "never background a run",
+it is "do not background a run while the daemon is alive and unauthenticated" —
+a much narrower and checkable condition (`~/.claude/daemon-auth-status.json`).
+
 ## What is still unproven (AC-1, AC-2)
 
 These acceptance criteria require catching the hang live. The issue body states
