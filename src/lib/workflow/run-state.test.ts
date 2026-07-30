@@ -115,6 +115,43 @@ describe("RunOrchestrator.getSnapshot", () => {
       progress(1, "qa", "complete", { durationSeconds: 1, iteration: 2 });
     }
 
+    // #866 — the recovery window must not publish a completion time for an
+    // issue that is running again. Mutation-verified: removing
+    // `state.completedAt = undefined` from applyProgressEvent's `start` branch
+    // makes ONLY this test fail.
+    it("clears the stale completedAt when iteration 2 restarts the issue (#866)", () => {
+      const orch = makeOrchestrator([1]);
+      const progress = orch["cfg"].onProgress!;
+      progress(1, "spec", "start");
+      progress(1, "spec", "complete", { durationSeconds: 1 });
+      progress(1, "exec", "start");
+      progress(1, "exec", "complete", { durationSeconds: 1 });
+      progress(1, "qa", "start");
+      // A non-loop failure pins `failed` and stamps `completedAt`.
+      progress(1, "qa", "failed", { error: "AC not met" });
+      expect(orch.getSnapshot().issues[0].status).toBe("failed");
+      expect(orch.getSnapshot().issues[0].completedAt).toBeInstanceOf(Date);
+
+      progress(1, "loop", "start", { iteration: 1 });
+      progress(1, "loop", "failed", { error: "loop crashed", iteration: 1 });
+      // Iteration 2 makes the issue live again: the terminal stamp is now stale
+      // and every consumer must see it gone. `startedAt` survives — the header
+      // measures total wall clock across iterations.
+      progress(1, "exec", "start", { iteration: 2 });
+      const mid = orch.getSnapshot().issues[0];
+      expect(mid.status).toBe("running");
+      expect(mid.completedAt).toBeUndefined();
+      expect(mid.startedAt).toBeInstanceOf(Date);
+
+      // Finalizing re-stamps it.
+      progress(1, "exec", "complete", { durationSeconds: 1, iteration: 2 });
+      progress(1, "qa", "start", { iteration: 2 });
+      progress(1, "qa", "complete", { durationSeconds: 1, iteration: 2 });
+      const final = orch.getSnapshot().issues[0];
+      expect(final.status).toBe("passed");
+      expect(final.completedAt).toBeInstanceOf(Date);
+    });
+
     it("finalizes passed after a loop fails then a later iteration succeeds (AC-1/AC-8)", () => {
       const orch = makeOrchestrator([1]);
       runToRecovery(orch);

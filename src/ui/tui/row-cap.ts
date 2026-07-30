@@ -14,6 +14,7 @@
  */
 
 import type { IssueRuntimeState } from "../../lib/workflow/run-state.js";
+import { isTerminalStatus } from "./theme.js";
 
 /** Static row cap (matches the plain renderer's default). */
 export const DEFAULT_TUI_ROW_CAP = 10;
@@ -33,7 +34,7 @@ const FIXED_OVERHEAD = 4;
 
 /** A queued or running issue is "active"; passed/failed are terminal. */
 function isActive(issue: IssueRuntimeState): boolean {
-  return issue.status === "queued" || issue.status === "running";
+  return !isTerminalStatus(issue.status);
 }
 
 /**
