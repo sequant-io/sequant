@@ -318,10 +318,12 @@ export function generateLogFilename(runId: string, startTime: Date): string {
  */
 export function createEmptyRunLog(
   config: RunConfig,
-  options?: { startCommit?: string },
+  options?: { startCommit?: string; startTime?: Date },
 ): Omit<RunLog, "endTime"> {
   const runId = randomUUID();
-  const startTime = new Date().toISOString();
+  // #867: use the caller-supplied run origin when provided so the log's wall
+  // clock shares the orchestrator's start; fall back to now for standalone use.
+  const startTime = (options?.startTime ?? new Date()).toISOString();
 
   return {
     version: 1,
