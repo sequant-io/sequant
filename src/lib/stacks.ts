@@ -2,7 +2,7 @@
  * Stack detection and configuration
  */
 
-import { existsSync } from "fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync } from "fs";
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { fileExists, readFile } from "./fs.js";
@@ -95,15 +95,37 @@ export const PM_CONFIG: Record<PackageManager, PackageManagerConfig> = {
     removePkg: "bun remove",
     updatePkg: "bun update",
   },
+  // Yarn 1 (classic) and Yarn 2+ (berry) are different CLIs sharing one
+  // lockfile name, so no single table can be right for both. This entry is the
+  // BERRY baseline; `resolvePackageManagerConfig(pm, root)` swaps in the classic
+  // spelling for the fields that differ. Read yarn commands through that
+  // resolver, never off this table, at any site that knows which project
+  // directory it is acting on (#871).
+  //
+  // Fields with no major-specific difference — `run`, `install`, `addPkg`,
+  // `removePkg` — are shared, so the resolver leaves them alone.
   yarn: {
     run: "yarn",
+    // Berry-only: `dlx` does not exist in Yarn 1. Resolver → `npx` for classic.
     exec: "yarn dlx",
     install: "yarn install",
+    // Left at the classic spelling deliberately. Berry's `yarn install` takes no
+    // `--silent`, but this field has NO consumer anywhere in the codebase, and
+    // guessing berry's quiet spelling without a yarn binary to check against
+    // would trade a dead-config wart for a real one — the same call
+    // new-feature.sh's `pm_quiet_flag` already made for pnpm/bun. Known
+    // remaining hybrid, and the one field the resolver does not fix.
     installSilent: "yarn install --silent",
+    // Berry-only: Yarn 1 rejects `--immutable` and wants `--frozen-lockfile`.
+    // Resolver → YARN_CLASSIC_CI_INSTALL for classic.
     ciInstall: "yarn install --immutable",
     addPkg: "yarn add",
     removePkg: "yarn remove",
-    updatePkg: "yarn upgrade",
+    // Berry renamed `yarn upgrade` to `yarn up`. This was the classic spelling
+    // until #871's follow-up, which made the whole entry berry-consistent —
+    // meaning the upgrade hint in version-check.ts was wrong for berry users.
+    // Resolver → `yarn upgrade` for classic.
+    updatePkg: "yarn up",
   },
   pnpm: {
     run: "pnpm run",
@@ -276,6 +298,179 @@ export function getPackageManagerCommands(
   pm: PackageManager,
 ): PackageManagerConfig {
   return PM_CONFIG[pm];
+}
+
+/**
+ * Frozen install understood by Yarn 1 (classic).
+ *
+ * Yarn 2+ (berry) renamed this flag to `--immutable`, which is what
+ * `PM_CONFIG.yarn.ciInstall` carries. Both yarn spellings therefore exist, and
+ * both must appear in `new-feature.sh`'s `pm_ci_install()` table — the drift
+ * guard in `__tests__/new-feature-frozen-install.integration.test.ts` asserts
+ * exactly that, which is why this is a named export rather than a literal
+ * buried in `resolvePackageManagerConfig` (#871).
+ */
+export const YARN_CLASSIC_CI_INSTALL = "yarn install --frozen-lockfile";
+
+/**
+ * Yarn 1 (classic) spellings for every `PM_CONFIG.yarn` field whose berry value
+ * is wrong on classic. Applied by {@link resolvePackageManagerConfig}.
+ *
+ * `exec` is `npx` rather than a `yarn` subcommand because Yarn 1 has no
+ * `dlx` equivalent at all — npm ships with node, so `npx` is the run-a-binary
+ * -without-installing story a Yarn 1 project actually has.
+ *
+ * `installSilent` is deliberately absent — see the note on `PM_CONFIG.yarn`.
+ */
+const YARN_CLASSIC_OVERRIDES: Partial<PackageManagerConfig> = {
+  ciInstall: YARN_CLASSIC_CI_INSTALL,
+  exec: "npx",
+  updatePkg: "yarn upgrade",
+};
+
+/**
+ * Bytes of `yarn.lock` scanned for its version header.
+ *
+ * Matches the `head -c` byte count in `new-feature.sh`'s `detect_yarn_major`.
+ * Keeping the scanned region identical is what makes the two implementations
+ * agree by construction rather than by inspection: a whole-file `grep` in the
+ * shell against a prefix-only read in TypeScript would silently diverge on a
+ * lockfile that happens to mention the header string further down.
+ */
+const YARN_LOCK_HEADER_BYTES = 1024;
+
+/**
+ * Read the `packageManager` pin's yarn major from `package.json`, if declared.
+ *
+ * Deliberately a regex rather than `JSON.parse`: the shell path cannot parse
+ * JSON without adding a `jq` dependency, so both paths match on text. A
+ * non-numeric pin (`yarn@stable`, `yarn@berry`) does not match and falls
+ * through to the next signal.
+ *
+ * Matching on text does NOT make the two paths agree for free — `\s*` here
+ * spans newlines and `.match` returns the first hit, neither of which a
+ * line-oriented `sed`/`grep` gives you. `detect_yarn_major` in
+ * `new-feature.sh` collapses newlines and takes the first match specifically
+ * to line up with this; see its comment for the two inputs that diverged
+ * before it did.
+ *
+ * @returns the declared major, or null when nothing is declared
+ */
+function readDeclaredYarnMajor(root: string): 1 | 2 | null {
+  let raw: string;
+  try {
+    raw = readFileSync(join(root, "package.json"), "utf8");
+  } catch {
+    return null;
+  }
+  const match = raw.match(/"packageManager"\s*:\s*"yarn@v?(\d+)/);
+  if (!match) {
+    return null;
+  }
+  // Every major above 1 is berry and shares berry's CLI surface, so the return
+  // type is the *behavioral* split (classic vs. berry), not the literal major.
+  return match[1] === "1" ? 1 : 2;
+}
+
+/** Read the first {@link YARN_LOCK_HEADER_BYTES} of `yarn.lock` ("" if absent). */
+function readYarnLockHeader(root: string): string {
+  let fd: number;
+  try {
+    fd = openSync(join(root, "yarn.lock"), "r");
+  } catch {
+    return "";
+  }
+  try {
+    const buffer = Buffer.alloc(YARN_LOCK_HEADER_BYTES);
+    const bytesRead = readSync(fd, buffer, 0, YARN_LOCK_HEADER_BYTES, 0);
+    return buffer.toString("utf8", 0, bytesRead);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Detect whether a directory is a Yarn 1 (classic) or Yarn 2+ (berry) project.
+ *
+ * Yarn 1 and berry both use `yarn.lock`, so `detectPackageManagerSync` cannot
+ * tell them apart — it answers "yarn", and this answers "which yarn". They are
+ * separate axes on purpose: adding a `yarn1` member to `PackageManager` would
+ * leak a synthetic name into settings (`pmRun`), doctor output, and templates
+ * for what is, today, a one-flag difference.
+ *
+ * Signals, in order of authority. The ordering follows a single rule: **flag
+ * acceptance is decided by the yarn binary that runs, not by the lockfile it
+ * reads.** So a Corepack pin outranks the lockfile header — a yarn-1 lockfile
+ * under `packageManager: "yarn@4"` still gets berry's `--immutable`, because
+ * yarn 4 is what will execute and yarn 4 rejects `--frozen-lockfile`.
+ *
+ *   1. `packageManager: "yarn@<major>"` in `package.json` — Corepack pins the
+ *      binary.
+ *   2. `.yarnrc.yml` — a berry-only config file; yarn 1 reads `.yarnrc`.
+ *   3. `yarn.lock` header — yarn 1 writes `# yarn lockfile v1`; berry writes
+ *      `__metadata:` instead.
+ *   4. Nothing recognizable → berry, the pre-#871 assumption. Staying with it
+ *      keeps a contentless or unreadable `yarn.lock` behaving exactly as it did
+ *      before this function existed.
+ *
+ * Mirrored by `detect_yarn_major` in `templates/scripts/new-feature.sh` (#871).
+ *
+ * @internal Exported for testing — production code should go through
+ * {@link resolvePackageManagerConfig}, whose whole job is to apply this answer.
+ * The export exists so the cross-path agreement test can run this and the shell
+ * mirror against the same fixtures, which is the gate keeping the two in step.
+ *
+ * @param root Directory to inspect. Defaults to the process cwd.
+ * @returns 1 for Yarn 1 (classic), 2 for Yarn 2+ (berry)
+ */
+export function detectYarnMajor(root: string = process.cwd()): 1 | 2 {
+  const declared = readDeclaredYarnMajor(root);
+  if (declared !== null) {
+    return declared;
+  }
+  if (existsSync(join(root, ".yarnrc.yml"))) {
+    return 2;
+  }
+  if (readYarnLockHeader(root).includes("yarn lockfile v1")) {
+    return 1;
+  }
+  return 2;
+}
+
+/**
+ * Package manager commands for `pm`, with directory-dependent commands resolved
+ * against `root`.
+ *
+ * A drop-in replacement for `PM_CONFIG[pm]` at every call site that knows which
+ * project directory it is acting on. `PM_CONFIG.yarn` is the berry baseline, so
+ * for a Yarn 1 project this substitutes every field whose berry spelling is
+ * wrong on classic — `ciInstall`, `exec`, and `updatePkg` (see
+ * {@link YARN_CLASSIC_OVERRIDES}). Every other package manager, and every
+ * major-agnostic yarn field, is returned untouched.
+ *
+ * Returning the whole config rather than one resolved string is what makes that
+ * cheap: call sites that thread a `PackageManagerConfig` onward — merge-check's
+ * combined-branch test reads `ciInstall` for three commands and two user-facing
+ * messages — stay correct with a single-line change, and each newly discovered
+ * classic/berry split is one entry in the overrides table rather than a new
+ * call-site edit.
+ *
+ * Resolve against the tree you are about to act on, not against wherever the
+ * process started: `root` decides the answer, and in merge-check the combined
+ * (post-merge) state can disagree with the pre-merge one.
+ *
+ * @param pm Package manager identity, e.g. from `detectPackageManagerSync`
+ * @param root Directory whose files decide the directory-dependent commands
+ */
+export function resolvePackageManagerConfig(
+  pm: PackageManager,
+  root: string,
+): PackageManagerConfig {
+  const config = PM_CONFIG[pm];
+  if (pm !== "yarn" || detectYarnMajor(root) !== 1) {
+    return config;
+  }
+  return { ...config, ...YARN_CLASSIC_OVERRIDES };
 }
 
 export interface StackConfig {

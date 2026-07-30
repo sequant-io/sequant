@@ -391,7 +391,8 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
    ```bash
    npx sequant@latest run 123
    # or update your local install with your package manager
-   # npm update sequant / pnpm update sequant / yarn upgrade sequant / bun update sequant
+   # npm update sequant / pnpm update sequant / bun update sequant
+   # yarn 2+: yarn up sequant / yarn 1: yarn upgrade sequant
    ```
 
 2. Try running without MCP servers to isolate the issue:

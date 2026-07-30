@@ -11,7 +11,10 @@
  * the defect lives at (a missing call between the merge and the test run).
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>();
@@ -367,5 +370,123 @@ describe("resolveFailureReason (#803 AC-3, AC-5b)", () => {
   it("never returns an empty string", () => {
     expect(resolveFailureReason({ ...base, status: null })).not.toBe("");
     expect(resolveFailureReason(base)).not.toBe("");
+  });
+});
+
+// ============================================================================
+// Yarn major resolution (#871)
+// ============================================================================
+
+// merge-check was the third reader of `PM_CONFIG[pm].ciInstall` and had the
+// identical Yarn 1 defect: `--immutable` is berry-only syntax that Yarn 1
+// rejects. These use a real tmpdir as `repoRoot` because only `child_process`
+// is mocked in this file — `detectPackageManagerSync` and `detectYarnMajor`
+// read the filesystem, which is exactly what decides the command here.
+describe("runCombinedBranchTest — yarn major resolution (#871)", () => {
+  const YARN_1_LOCK = "# yarn lockfile v1\n";
+  const BERRY_LOCK = "__metadata:\n  version: 8\n";
+
+  let repo: string;
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), "merge-check-yarn-"));
+  });
+
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  /** Every yarn command line spawned, in order. */
+  function yarnCommands(): string[] {
+    return mockSpawnSync.mock.calls
+      .map(
+        ([bin, args]) =>
+          `${bin as string} ${((args as string[]) ?? []).join(" ")}`,
+      )
+      .filter((c) => c.startsWith("yarn "));
+  }
+
+  /** Only the yarn *install* lines — `yarn test`/`yarn build` also match above. */
+  function yarnInstalls(): string[] {
+    return yarnCommands().filter((c) => c.startsWith("yarn install"));
+  }
+
+  it("installs a Yarn 1 combined state with the classic frozen install", () => {
+    writeFileSync(join(repo, "yarn.lock"), YARN_1_LOCK);
+    mockRun({ lockfileChanged: true });
+
+    runCombinedBranchTest(BRANCHES, repo);
+
+    expect(yarnInstalls()).toContain("yarn install --frozen-lockfile");
+    // The bug: `--immutable` is what Yarn 1 errors out on, which would surface
+    // as a false BLOCKED from the install-failure branch.
+    expect(yarnCommands().join("\n")).not.toContain("--immutable");
+  });
+
+  it("installs a Yarn 2+ combined state with berry's frozen install", () => {
+    writeFileSync(join(repo, "yarn.lock"), BERRY_LOCK);
+    mockRun({ lockfileChanged: true });
+
+    runCombinedBranchTest(BRANCHES, repo);
+
+    expect(yarnInstalls()).toContain("yarn install --immutable");
+    expect(yarnCommands().join("\n")).not.toContain("--frozen-lockfile");
+  });
+
+  it("names the resolved classic command in the install-failure finding", () => {
+    writeFileSync(join(repo, "yarn.lock"), YARN_1_LOCK);
+    mockRun({
+      lockfileChanged: true,
+      overrides: {
+        "yarn install": spawnResult({ status: 1, stderr: "boom" }),
+      },
+    });
+
+    const result = runCombinedBranchTest(BRANCHES, repo);
+
+    // A finding naming berry's command would tell a Yarn 1 user to rerun the
+    // very command that just failed.
+    const messages = result.batchFindings.map((f) => f.message).join("\n");
+    expect(messages).toContain("yarn install --frozen-lockfile");
+    expect(messages).not.toContain("--immutable");
+  });
+
+  // The pre-merge resolution is correct for the RESTORE install (it runs after
+  // `git checkout` back to the original branch) but not for the combined state,
+  // which a merged branch can move to a different yarn major. Simulated by
+  // flipping the lockfile header the moment the temp branch is created — the
+  // point the real merge would have landed the change.
+  it("re-resolves for the combined state when a merge changes the yarn major", () => {
+    writeFileSync(join(repo, "yarn.lock"), YARN_1_LOCK);
+
+    mockSpawnSync.mockImplementation((bin, args) => {
+      const command = `${bin as string} ${((args as string[]) ?? []).join(" ")}`;
+      // The merge lands: the combined tree is now a berry project.
+      if (command.startsWith("git checkout -b merge-check/temp-")) {
+        writeFileSync(join(repo, "yarn.lock"), BERRY_LOCK);
+        return spawnResult();
+      }
+      // Cleanup checks out the original branch again: back to Yarn 1.
+      if (command.startsWith("git checkout")) {
+        writeFileSync(join(repo, "yarn.lock"), YARN_1_LOCK);
+        return spawnResult();
+      }
+      if (command.startsWith("git rev-parse")) {
+        return spawnResult({ stdout: "main" });
+      }
+      if (command.startsWith("git diff --name-only origin/main HEAD")) {
+        return spawnResult({ stdout: "yarn.lock" });
+      }
+      return spawnResult();
+    });
+
+    runCombinedBranchTest(BRANCHES, repo);
+
+    const installs = yarnInstalls();
+    // Combined install: berry, because that is what the merged tree declares.
+    expect(installs[0]).toBe("yarn install --immutable");
+    // Restore install: classic, because the original branch is checked out by
+    // then. A single up-front resolution cannot produce both.
+    expect(installs[1]).toBe("yarn install --frozen-lockfile");
   });
 });
