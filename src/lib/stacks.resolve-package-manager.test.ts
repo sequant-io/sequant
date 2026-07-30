@@ -60,6 +60,23 @@ describe("resolvePackageManager", () => {
     expect(resolvePackageManager("npm@10", dir)).toBe("yarn");
   });
 
+  it.each([
+    "toString",
+    "constructor",
+    "valueOf",
+    "hasOwnProperty",
+    "__proto__",
+  ])("routes the inherited Object.prototype key %j to detection", (key) => {
+    // Guards the `in` → `hasOwnProperty` choice. `in` walks the prototype
+    // chain, so each of these would pass the membership test and be returned
+    // as a package manager; `PM_CONFIG[key]` is then an inherited function
+    // (or Object.prototype) whose `ciInstall` is undefined, and the caller
+    // crashes on `.split(" ")` — the very failure this guard prevents.
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+
+    expect(resolvePackageManager(key, dir)).toBe("pnpm");
+  });
+
   it("falls back to npm when nothing is declared and no lockfile exists", () => {
     expect(resolvePackageManager(undefined, dir)).toBe("npm");
   });
