@@ -1,3 +1,12 @@
+// @tautology-skip: every test here drives production through a real
+// RunOrchestrator built by the `makeOrchestrator` helper, then fires the
+// orchestrator's OWN wrapped `onProgress` callback (`orch["cfg"].onProgress`)
+// and reads `orch.getSnapshot()`. The detector's imported-name body scan does
+// not follow helper functions or captured callbacks, so it reads every block as
+// "no production function calls". Same limitation, same pragma, as
+// run-renderer-672.test.ts. The #866 block below is mutation-verified —
+// removing `state.completedAt = undefined` from applyProgressEvent fails it —
+// which is direct proof these blocks reach production code.
 import { describe, it, expect } from "vitest";
 import { RunOrchestrator } from "./run-orchestrator.js";
 import type { ExecutionConfig } from "./types.js";
