@@ -286,6 +286,25 @@ sudo dtrace -n 'proc:::signal-send /args[2] == 15 || args[2] == 9/ { printf("%d 
 
 "External SIGTERM" in the original finding was **inferred, not captured**.
 
+### Step 0 — verify the capture rig, before anything else
+
+`tools/verify-capture.sh`. The event is one-shot: it is rare, it destroys its
+own process tree, and you do not get to ask it to happen again. A broken rig
+produces an empty capture file, and an empty file is indistinguishable from
+"nothing killed anything" — which is read as exoneration. **Every negative
+result below is worthless until the instrument has been shown to fire on a
+known positive.**
+
+The script stages a sacrificial process group shaped like the real victim,
+group-kills it with the same TERM→KILL escalation the incident showed, and
+asserts the rig caught it — including that dtrace records **signal 9 as well
+as 15**, that its fields are not blanked by SIP, and that **the rig outlives
+the kill it is watching** (a watcher inside the victim's process group dies
+with it and loses exactly the tail you needed).
+
+Without `sudo` it reports **PARTIALLY verified**: the poller half is proven,
+the sender-identification half is not.
+
 ### How to test this — three tiers, cheapest first
 
 Ordered by cost, and each is worth running even if the next is skipped. Every
