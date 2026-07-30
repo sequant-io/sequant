@@ -513,6 +513,15 @@ export function parseQaVerdict(output: string): QaVerdict | null {
  * background CI poll and "the completion notification" instead of emitting a
  * verdict. Matched as lowercased literal substrings (ReDoS-safe) against the
  * output tail only.
+ *
+ * The second group covers deferral-to-*user* phrasing, observed by running the
+ * detector against every `qa` phase output in 99 real `.sequant/logs` runs: a
+ * turn that ended "this needs a decision from you … Tell me which one and I'll
+ * execute it" (run-2026-06-06) is the same one-shot violation with the wait
+ * pointed at a human instead of a poll. Structural alternatives were tried
+ * against the same corpus and rejected: 19/45 outputs with a *parseable*
+ * verdict have no `Verdict`-labelled line at all, so label-presence cannot
+ * discriminate — a literal marker list is the shape that works here.
  */
 const QA_DEFERRAL_MARKERS = [
   "i'll pick this up",
@@ -523,6 +532,11 @@ const QA_DEFERRAL_MARKERS = [
   "when ci ",
   "later turn",
   "i'll invoke",
+  // Deferral-to-user (corpus-observed, run-2026-06-06T03-33-20):
+  "needs a decision from you",
+  "tell me which",
+  "let me know which",
+  "tell me and i'll",
 ] as const;
 
 /**
