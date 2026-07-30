@@ -2,9 +2,13 @@
 
 # Clean up a worktree after PR is merged
 # Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
-# <branch> accepts an issue number / substring (`123`), a QUOTED glob
+# <branch> accepts a bare issue number (`123`), a QUOTED glob
 # (`'feature/123-*'`), or the full branch name — all resolve to the same
 # worktree and, since #838, to the same underlying branch ref.
+# A bare number is ANCHORED to the issue-number position (#844): `838` resolves
+# `feature/838-*` and never `feature/1838-other-work`. When the argument matches
+# more than one worktree branch the script lists every candidate and exits
+# non-zero instead of silently deleting the first.
 # Quote the glob: this script resolves the pattern itself, so it must arrive
 # unexpanded. zsh (the default macOS shell) aborts on an unmatched unquoted
 # glob before the script ever runs; bash would pass it through literally.
@@ -37,9 +41,13 @@ print_usage() {
 Usage: ./scripts/cleanup-worktree.sh [flags] <branch>
 
 <branch> may be any of (all resolve to the same worktree):
-  838                    an issue number, or any substring of the branch
+  838                    a bare issue number — anchored to the issue-number
+                         position, so it never matches feature/1838-other-work
   'feature/838-*'        a glob — MUST be quoted (see below)
   feature/838-fix-thing  the full branch name
+
+An argument that matches more than one worktree branch is rejected: the script
+lists every candidate and exits non-zero rather than deleting the first.
 
 Quote the glob form. This script resolves the pattern itself, so it must
 arrive unexpanded; zsh aborts on an unmatched unquoted glob before the
@@ -116,31 +124,48 @@ if [ -z "$BRANCH_NAME" ]; then
     exit 1
 fi
 
-# Find the worktree path AND the full branch ref it belongs to. Parse porcelain
-# (which separates path/branch onto distinct lines) so paths containing
-# whitespace survive intact, and so we match against the branch ref rather than
-# against a free-form `grep` over the entire line — the latter false-matches
-# whenever the branch name appears in the path string.
+# Resolve $BRANCH_NAME to exactly one worktree AND its full branch ref. Both are
+# captured because every downstream consumer (`gh pr list --head`, `git branch
+# -D`, `git push origin --delete`) needs the EXACT ref, or it silently no-ops on
+# a shorthand and the script prints "Cleanup complete!" while leaving the branch
+# behind (the #838 defect $RESOLVED_BRANCH closes).
 #
-# #838 fixes two defects that both live here:
+# Matching is TIERED and anchored (#844). The old matcher was a single
+# unanchored substring test with first-match-wins and no ambiguity check:
 #
-#  1. The matcher was a literal substring search, so the `feature/<issue>-*`
-#     form that fullsolve/SKILL.md, exec/SKILL.md and docs/troubleshooting.md
-#     all prescribe compared the `*` literally and failed with "Worktree not
-#     found". The `case` glob arm below makes the documented form work.
-#  2. Only the path was captured, so every downstream consumer re-used the
-#     caller's raw shorthand. `gh pr list --head`, `git branch -D` and
-#     `git push origin --delete` all match EXACTLY and silently no-op on a
-#     shorthand — and the latter two are `|| true`-suppressed, so the script
-#     printed "Cleanup complete!" while leaving the branch behind. Resolve once
-#     here; everything below uses $RESOLVED_BRANCH.
+#     case "$_wt_branch" in *"$BRANCH_NAME"* | $BRANCH_NAME)
 #
-# Implemented with bash `case` rather than awk so glob matching is native and
-# no regex-escaping dance is needed. `while IFS= read -r` preserves whitespace
-# in paths (the #575 hardening); `mapfile` is deliberately avoided — macOS
-# ships bash 3.2, where it does not exist.
-WORKTREE_PATH=""
-RESOLVED_BRANCH=""
+# so `838` matched `feature/1838-other-work`, and whichever worktree porcelain
+# emitted first was torn down — local AND remote, since #838. Porcelain sorts
+# linked worktrees lexicographically by basename (`1838- < 838-`), so the
+# mis-resolution was deterministic, not a race. The tiers below anchor bare
+# numbers to the issue-number position and make any 2+-way match fatal.
+#
+# Tiers (first tier with any match decides; 2+ matches in a tier is fatal):
+#   1. exact    — branch == argument. Guards coexisting feature/838-fix and
+#                 feature/838-fix-more (both legal via new-feature.sh's title
+#                 truncation): the full name must resolve, not trip ambiguity.
+#   2. anchored — branch's last path segment == argument; plus, when the
+#                 argument is all digits, the sequant issue-number branch shapes
+#                 parseIssueNumberFromBranch (worktree-discovery.ts) recognizes:
+#                 feature/<N>-*, feature/<N>, issue-<N>, <N>-*.
+#   3. glob     — only when the argument itself contains * ? or [ : a plain
+#                 `case` glob over the branch ref. Keeps the documented, quoted
+#                 `feature/<issue>-*` form working, now behind the ambiguity gate.
+#
+# bash 3.2 (macOS floor): no arrays/mapfile. Candidates live in a
+# newline-delimited string of "<path>\t<branch>"; each tier re-scans it via
+# process substitution (which keeps loop-set counters in the current shell — a
+# pipe would lose them to a subshell). `while IFS= read -r` preserves whitespace
+# in paths (the #575 hardening).
+_TAB=$(printf '\t')
+
+# Collect candidate worktrees: porcelain stanzas carrying a branch ref, minus
+# the main worktree (first entry — without this, `'*'`/`'feature/*'` could
+# resolve to and `git worktree remove` it) and minus the `exec-agent-*`
+# sub-worktree branches parallel isolation leaves behind (real porcelain
+# candidates, per this script's own reaping below).
+CANDIDATES=""
 _wt_path=""
 while IFS= read -r _line; do
     case "$_line" in
@@ -149,23 +174,99 @@ while IFS= read -r _line; do
             ;;
         "branch refs/heads/"*)
             _wt_branch="${_line#branch refs/heads/}"
-            # Two accepted forms, in one test:
-            #   *"$BRANCH_NAME"*  quoted -> literal substring  (`838`)
-            #   $BRANCH_NAME      unquoted -> shell glob       (`feature/838-*`)
-            # The glob arm is what makes the documented `feature/<issue>-*`
-            # form work; before #838 the matcher was a pure substring search,
-            # so the asterisk was compared literally and the documented
-            # invocation died with "Worktree not found".
+            if [ "$_wt_path" = "$MAIN_WORKTREE" ]; then
+                continue
+            fi
             case "$_wt_branch" in
-                *"$BRANCH_NAME"* | $BRANCH_NAME)
-                    WORKTREE_PATH="$_wt_path"
-                    RESOLVED_BRANCH="$_wt_branch"
-                    break
-                    ;;
+                exec-agent-*) continue ;;
             esac
+            CANDIDATES="${CANDIDATES}${_wt_path}${_TAB}${_wt_branch}
+"
             ;;
     esac
 done < <(git worktree list --porcelain)
+
+# Classify the argument once: a bare issue number (all digits) enables the
+# anchored issue-number shapes; a glob metacharacter enables the glob tier.
+_is_number=false
+case "$BRANCH_NAME" in
+    ''|*[!0-9]*) ;;
+    *) _is_number=true ;;
+esac
+_is_glob=false
+case "$BRANCH_NAME" in
+    *[*?[]*) _is_glob=true ;;
+esac
+
+# Test one branch ref ($2) against one tier ($1); returns 0 on match. Called
+# only as an `if` condition, so a non-zero return never trips `set -e`.
+_branch_matches() {
+    case "$1" in
+        exact)
+            [ "$2" = "$BRANCH_NAME" ]
+            ;;
+        anchored)
+            # Last path segment equals the argument (covers `838-spaced`).
+            if [ "${2##*/}" = "$BRANCH_NAME" ]; then
+                return 0
+            fi
+            # All-digit argument: the sequant issue-number branch shapes.
+            if [ "$_is_number" = true ]; then
+                case "$2" in
+                    feature/"$BRANCH_NAME"-* | feature/"$BRANCH_NAME" \
+                        | issue-"$BRANCH_NAME" | "$BRANCH_NAME"-*)
+                        return 0
+                        ;;
+                esac
+            fi
+            return 1
+            ;;
+        glob)
+            case "$2" in
+                $BRANCH_NAME) return 0 ;;
+            esac
+            return 1
+            ;;
+    esac
+}
+
+# Walk the tiers in order; the first tier with any match decides. A tier with
+# 2+ matches is fatal (AC-2/AC-3): list every candidate and exit non-zero
+# rather than silently deleting the first.
+WORKTREE_PATH=""
+RESOLVED_BRANCH=""
+for _tier in exact anchored glob; do
+    # The glob tier only participates when the argument is itself a glob.
+    if [ "$_tier" = glob ] && [ "$_is_glob" != true ]; then
+        continue
+    fi
+
+    _match_count=0
+    _match_list=""
+    while IFS="$_TAB" read -r _cand_path _cand_branch; do
+        [ -n "$_cand_branch" ] || continue
+        if _branch_matches "$_tier" "$_cand_branch"; then
+            _match_count=$((_match_count + 1))
+            if [ "$_match_count" -eq 1 ]; then
+                WORKTREE_PATH="$_cand_path"
+                RESOLVED_BRANCH="$_cand_branch"
+            fi
+            _match_list="${_match_list}  ${_cand_branch}${_TAB}${_cand_path}
+"
+        fi
+    done < <(printf '%s' "$CANDIDATES")
+
+    if [ "$_match_count" -gt 1 ]; then
+        echo -e "${RED}❌ Error: '$BRANCH_NAME' is ambiguous — it matches ${_match_count} worktree branches:${NC}" >&2
+        printf '%s' "$_match_list" >&2
+        echo -e "${RED}Refusing to guess. Re-run with the full branch name to disambiguate.${NC}" >&2
+        exit 1
+    fi
+
+    if [ "$_match_count" -eq 1 ]; then
+        break
+    fi
+done
 
 if [ -z "$WORKTREE_PATH" ]; then
     echo -e "${RED}❌ Error: Worktree not found for branch: $BRANCH_NAME${NC}"

@@ -126,6 +126,20 @@ If QA determines AC_NOT_MET, emit:
 
 Include this marker in every `gh issue comment` that represents QA completion.
 
+## One-Shot Turn — Always Emit a Verdict
+
+**Your QA turn is single-shot.** There is no later turn, and no background poll you can wait on. Deferring — "I'll run `/qa` once CI goes green", "I'll pick this up on the completion notification", starting a background CI poll and ending your turn — is **not available to you**. The phase ends when your turn ends; if you have not emitted a verdict by then, the run records *no verdict was produced* and burns a quality-loop iteration on nothing. You must produce a `### Verdict: <VERDICT>` line before your turn ends, every time.
+
+**If the tree looks unreviewable, that is itself a verdict — never end silently:**
+
+| Situation | Verdict |
+|-----------|---------|
+| CI is red because of a code regression in the diff | `AC_NOT_MET` (the code does not pass; do not defer to "after I fix it") |
+| CI is pending, queued, or infra-blocked (not a code defect) | `NEEDS_VERIFICATION` (per the §CI Status mapping — re-run QA after CI reports) |
+| You are tempted to fix code yourself and re-review | Stop: fixing is `/exec`/`/loop` work, not QA. Emit the verdict for the tree **as it is now** and let the quality loop route the fix. |
+
+Do not do exec-style repair work inside the QA turn and then defer the verdict — review the tree as presented and emit the matching verdict from the four values.
+
 ## Behavior
 
 Invocation:
@@ -2027,11 +2041,16 @@ fi
 # file content is load-bearing: all 19 sequant SKILL.md files mention these
 # tokens in unrelated example code, so a content-grep gate fires for ~100%
 # of skill-md PRs and the cost-saving intent of #608 / #609 evaporates.
+# The regex-literal alternative is anchored to `/^…/` and `(?…)` forms
+# (matching Step 1's own detection block): an earlier unanchored `/[^/]+/`
+# matched ANY two slashes — file paths, `/plugin` commands, prose pairs like
+# `/exec`/`/loop` — and fired on 10 of 12 real skill-md commits sampled from
+# main, ~70% of them pattern-free (#853 QA finding).
 pattern_files=$(git diff origin/main...HEAD --name-only | \
   grep -E '^(\.claude/skills|templates/skills|skills)/.*\.md$' | \
   while read -r f; do
     if git diff origin/main...HEAD -- "$f" | grep -E '^\+[^+]' | \
-       grep -qE '\b(grep|awk|jq|sed)\b|/[^/]+/[gim]?'; then
+       grep -qE '\b(grep|awk|jq|sed)\b|/\^[^/]+/|\(\?[:=!]'; then
       echo "$f"
     fi
   done || true)
