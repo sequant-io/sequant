@@ -27,6 +27,26 @@ function snapshot(issues: IssueRuntimeState[]): RunSnapshot {
   };
 }
 
+/**
+ * Ink render tests need more than the `unit` vitest project's 5s default.
+ *
+ * The project deliberately keeps that default so a genuinely slow unit test
+ * stays a real signal (`vitest.config.ts` says so, and points at this
+ * local-override escape hatch). An Ink render is not slow logic, but it is not
+ * cheap either: in isolation the tests in this file measure 180-640ms each, and
+ * the render-plus-`advanceTimersByTimeAsync` case measured **5100ms** under the
+ * CPU contention of a full 229-file run — a timeout, not a wrong assertion
+ * (#880). Same class as #842: a test inheriting a default sized for something
+ * cheaper, except the cost here is an in-process TUI render, not a subprocess.
+ *
+ * Applied at FILE scope rather than to the one test that was observed failing.
+ * The flush test is the worst case, but a sibling that measures 640ms in
+ * isolation is on the same curve, and fixing only the observed instance leaves
+ * the class open. Still strictly local — every other file in the `unit` project
+ * keeps the 5s signal, which is what makes this safe (AC-2).
+ */
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("App row cap (#699 AC-4)", () => {
   it("renders a single box for the ready single-issue case", () => {
     const snap = snapshot([issue(699, "running")]);
