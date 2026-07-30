@@ -14,6 +14,7 @@ import {
   getPhasePrompt,
   executePhaseWithRetry,
   hasExecChanges,
+  endedWithoutVerdict,
   mapAgentSuccessToPhaseResult,
   mapAgentFailureToPhaseResult,
   resolveBaseRef,
@@ -146,6 +147,53 @@ Some analysis here.
 
 All acceptance criteria met.`;
     expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+  });
+});
+
+describe("endedWithoutVerdict (#853)", () => {
+  it("returns true for empty or whitespace-only output", () => {
+    expect(endedWithoutVerdict("")).toBe(true);
+    expect(endedWithoutVerdict(undefined)).toBe(true);
+    expect(endedWithoutVerdict("   \n\t  ")).toBe(true);
+  });
+
+  it("returns true for the verbatim #853 deferral transcript", () => {
+    const deferral =
+      "when the background poll reports CI green, I'll invoke **`/qa 848`** " +
+      "for the real verdict.\nI'll pick this up on the completion notification.";
+    expect(endedWithoutVerdict(deferral)).toBe(true);
+  });
+
+  it("returns true for a deferral-to-user transcript (corpus, run-2026-06-06)", () => {
+    // Verbatim tail of a real null-verdict QA turn from .sequant/logs: the
+    // agent ended its one-shot turn waiting on a *human* decision instead of a
+    // background poll — the same lifetime violation with the wait pointed at
+    // the user. The original marker set (seeded only from the #853 transcript)
+    // missed this; found by running the detector against all 99 run logs.
+    const deferralToUser = [
+      "PR is mergeable.",
+      "To actually move forward, this needs a decision from you (QA can't self-progress):",
+      "- **Merge PR #723** → I'll run `gh pr merge 723` (squash, delete branch).",
+      "- **File the follow-up issue** → `sync` should honor `local-override` like `update` (the pre-existing behavior the new dry-run surfaced).",
+      "- **Force a fresh review** → `/qa 722 --force` if you specifically want a new full adversarial pass at the same SHA.",
+      "- **Change the code first** → if you want the follow-up fixed *in this PR*, tell me and I'll implement it, which will create a new commit for QA to evaluate.",
+      "Tell me which one and I'll execute it. Repeating `/qa 722` unchanged will keep returning this same short-circuit.",
+    ].join("\n");
+    expect(endedWithoutVerdict(deferralToUser)).toBe(true);
+  });
+
+  it("returns false for substantive review prose with no deferral", () => {
+    expect(
+      endedWithoutVerdict("Reviewed all ACs; some review text but no verdict."),
+    ).toBe(false);
+  });
+
+  it("only scans the tail (deferral must be near the end)", () => {
+    // Deferral language buried under 3k chars of review after it should not
+    // trip the tail scan.
+    const buried =
+      "I'll pick this up later.\n" + "x".repeat(3000) + "\nFinal analysis.";
+    expect(endedWithoutVerdict(buried)).toBe(false);
   });
 });
 
@@ -1973,11 +2021,51 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.verdict).toBeUndefined();
     });
 
-    it("fails when output is empty (#534)", () => {
+    it("fails with the no-verdict message when output is empty (#534, #853)", () => {
+      // #853: an empty turn produced no verdict — it is not "unparseable". It
+      // now falls into the distinct no-verdict class alongside deferral.
       const agentResult = makeAgentResult({ output: "" });
       const result = mapAgentSuccessToPhaseResult(
         "qa",
         agentResult,
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("QA ended without producing a verdict");
+    });
+
+    it("classifies a deferral transcript distinctly from unparseable output (#853)", () => {
+      // AC-4: verbatim deferral language from the #853 repro (the QA agent
+      // ended its one-shot turn planning to continue on a later turn), with no
+      // verdict line. Must be reported as no-verdict-produced, NOT unparseable.
+      const deferralOutput = [
+        "Fixed the cli.integration.test.ts regression and the 200-line",
+        "thin-adapter cap violation. CI is now re-running on 37554ba0.",
+        "",
+        "**Next:** when the background poll reports CI green, I'll invoke",
+        "**`/qa 848`** for the real verdict (expected `READY_FOR_MERGE`).",
+        "If CI comes back red, I'll triage that failure first.",
+        "**I'll pick this up on the completion notification.**",
+      ].join("\n");
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        makeAgentResult({ output: deferralOutput }),
+        60,
+        "/tmp/wt",
+      );
+      expect(result.success).toBe(false);
+      expect(result.verdict).toBeUndefined();
+      expect(result.error).toContain("QA ended without producing a verdict");
+      expect(result.error).not.toBe("QA completed without a parseable verdict");
+    });
+
+    it("keeps the unparseable message for garbled output with no deferral (#853)", () => {
+      // The other side of the AC-1 split: non-empty output, no verdict, no
+      // deferral language stays on the original "unparseable" message.
+      const result = mapAgentSuccessToPhaseResult(
+        "qa",
+        makeAgentResult({ output: "Some review text but no verdict line" }),
         60,
         "/tmp/wt",
       );

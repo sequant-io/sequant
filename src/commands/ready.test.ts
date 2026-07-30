@@ -110,6 +110,14 @@ describe("getReadyExitCode (AC-4 / AC-5)", () => {
       getReadyExitCode(result({ ready: false, reason: "LOOP_NO_DIFF" })),
     ).toBe(1);
   });
+
+  it("no-verdict QA turn (#853) → 1, not the no-implementation 2", () => {
+    // The implementation may exist — QA simply never emitted a verdict — so
+    // this is a re-run case (1), not the "nothing there" exit (2).
+    expect(
+      getReadyExitCode(result({ ready: false, reason: "NO_VERDICT" })),
+    ).toBe(1);
+  });
 });
 
 describe("ReadyCommandOptions typing", () => {
