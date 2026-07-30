@@ -164,6 +164,24 @@ describe("endedWithoutVerdict (#853)", () => {
     expect(endedWithoutVerdict(deferral)).toBe(true);
   });
 
+  it("returns true for a deferral-to-user transcript (corpus, run-2026-06-06)", () => {
+    // Verbatim tail of a real null-verdict QA turn from .sequant/logs: the
+    // agent ended its one-shot turn waiting on a *human* decision instead of a
+    // background poll — the same lifetime violation with the wait pointed at
+    // the user. The original marker set (seeded only from the #853 transcript)
+    // missed this; found by running the detector against all 99 run logs.
+    const deferralToUser = [
+      "PR is mergeable.",
+      "To actually move forward, this needs a decision from you (QA can't self-progress):",
+      "- **Merge PR #723** → I'll run `gh pr merge 723` (squash, delete branch).",
+      "- **File the follow-up issue** → `sync` should honor `local-override` like `update` (the pre-existing behavior the new dry-run surfaced).",
+      "- **Force a fresh review** → `/qa 722 --force` if you specifically want a new full adversarial pass at the same SHA.",
+      "- **Change the code first** → if you want the follow-up fixed *in this PR*, tell me and I'll implement it, which will create a new commit for QA to evaluate.",
+      "Tell me which one and I'll execute it. Repeating `/qa 722` unchanged will keep returning this same short-circuit.",
+    ].join("\n");
+    expect(endedWithoutVerdict(deferralToUser)).toBe(true);
+  });
+
   it("returns false for substantive review prose with no deferral", () => {
     expect(
       endedWithoutVerdict("Reviewed all ACs; some review text but no verdict."),
