@@ -18,8 +18,34 @@ export const DEFAULT_STALE_AGE_MS = 2 * 60 * 60 * 1000; // 2h
  */
 export const DEFAULT_SKILL_LOCK_TTL_MS = 6 * 60 * 60 * 1000; // 6h
 
+/**
+ * Absolute age ceiling (ms) beyond which a lock is stale no matter what
+ * (#856). Unlike the two TTLs above this one is NOT conditional on host or
+ * PID liveness: the same-host branch of `classifyStaleness` treats a live PID
+ * as authoritative proof of freshness, so before this ceiling existed a lock
+ * whose PID had been recycled by the OS read as fresh forever and blocked its
+ * issue permanently (observed: `505.lock` from 2026-05-14, `708.lock`,
+ * `803.lock`). It is also the recovery path for locks leaked by a SIGKILLed
+ * run, where no in-process release handler can ever fire.
+ *
+ * 24h is ~48x the 30-minute default phase timeout and 4x
+ * `DEFAULT_SKILL_LOCK_TTL_MS`, so no real run can reach it.
+ *
+ * Override per-process via `SEQUANT_MAX_LOCK_AGE_MS` (milliseconds).
+ */
+export const DEFAULT_MAX_LOCK_AGE_MS = 24 * 60 * 60 * 1000; // 24h
+
 /** Default lock directory relative to the project root. */
 export const DEFAULT_LOCKS_DIR = ".sequant/locks";
+
+/**
+ * Why a lock is considered stale, or `null` when it is fresh.
+ *
+ * - `pid-dead` — same-host holder PID is gone.
+ * - `age-exceeded` — cross-host / skill-shell lock past its TTL.
+ * - `max-age-exceeded` — past the absolute ceiling; applies unconditionally.
+ */
+export type StaleReason = "pid-dead" | "age-exceeded" | "max-age-exceeded";
 
 /** On-disk lock payload. */
 export const LockFileSchema = z.object({
@@ -46,7 +72,7 @@ export type AcquireResult =
       lockPath: string;
       /** True when the holder appears stale and could be cleared with `--force`. */
       stale: boolean;
-      staleReason?: "pid-dead" | "age-exceeded" | null;
+      staleReason?: StaleReason | null;
     };
 
 /** Listing entry from `LockManager.list()`. */
@@ -55,7 +81,7 @@ export interface LockListing {
   holder: LockFile;
   ageMs: number;
   stale: boolean;
-  staleReason: "pid-dead" | "age-exceeded" | null;
+  staleReason: StaleReason | null;
   lockPath: string;
 }
 
@@ -70,6 +96,13 @@ export type SignalReason =
   | "cross-host"
   | "self-or-parent"
   | "pid-dead"
+  /**
+   * Holder is past the absolute age ceiling, so its PID is not trustworthy
+   * identity (#856). Signalling it would target whatever process the OS has
+   * since recycled that PID onto — an unrelated program, killed by a
+   * `--force --signal-other` aimed at a lock abandoned weeks ago.
+   */
+  | "stale-pid-untrusted"
   | "kill-failed";
 
 /** Outcome of `LockManager.signalOther()`. */

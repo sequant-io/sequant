@@ -25,6 +25,8 @@ function formatSignalLine(
       return `Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
     case "pid-dead":
       return `Could not signal PID ${pid} for #${issue} (already exited)`;
+    case "stale-pid-untrusted":
+      return `Refused to signal PID ${pid} for #${issue} (lock is past the age ceiling; that PID has likely been recycled onto an unrelated process)`;
     case "kill-failed":
       return `Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
     case "orchestrator":
