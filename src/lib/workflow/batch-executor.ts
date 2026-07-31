@@ -10,7 +10,7 @@
 
 import chalk from "chalk";
 import { spawnSync } from "child_process";
-import { createPhaseLogFromTiming } from "./log-writer.js";
+import { createPhaseLogFromTiming, LogWriter } from "./log-writer.js";
 import {
   Phase,
   ExecutionConfig,
@@ -399,6 +399,36 @@ export function getEnvConfig(): Partial<RunOptions> {
   return config;
 }
 
+/**
+ * Record an issue's completion in the run log in ONE place (#879): PR info, the
+ * PR-failure status flip, then finalize. Extracted so every batch loop shares a
+ * single completion sequence and cannot drift.
+ *
+ * The #879 defect was exactly such a drift: `markIssueFailed` was wired into
+ * `executeBatch`'s loop, but the live `sequant run` path is
+ * `RunOrchestrator.executeOneIssue`, which called `setPRInfo` + `completeIssue`
+ * without it — so a real run left the run-log status at `success` on a
+ * PR-creation failure. Both call sites now go through this helper.
+ *
+ * A PR-creation failure occurs after every phase has been logged, so
+ * `deriveIssueLogStatus` (last run at phase-log time) leaves the issue at
+ * `success`; the flip here is what counts it under `failed`. Safe post-hoc:
+ * no further phase is logged before `completeIssue`.
+ */
+export function recordIssueCompletion(
+  logWriter: LogWriter,
+  result: IssueResult,
+  issueNumber?: number,
+): void {
+  if (result.prNumber && result.prUrl) {
+    logWriter.setPRInfo(result.prNumber, result.prUrl, issueNumber);
+  }
+  if (result.prCreationError) {
+    logWriter.markIssueFailed(issueNumber);
+  }
+  logWriter.completeIssue(issueNumber);
+}
+
 export async function executeBatch(
   issueNumbers: number[],
   batchCtx: BatchExecutionContext,
@@ -455,22 +485,10 @@ export async function executeBatch(
     const result = await runIssueWithLogging(ctx);
     results.push(result);
 
-    // Record PR info in log before completing issue
-    if (logWriter && result.prNumber && result.prUrl) {
-      logWriter.setPRInfo(result.prNumber, result.prUrl);
-    }
-
-    // #879: a PR-creation failure occurs after every phase has been logged, so
-    // `deriveIssueLogStatus` (last run at phase-log time) would leave the issue
-    // at `success`. Override it to `failure` so the run log counts it under
-    // `failed`. Safe post-hoc: no further phase is logged before completeIssue.
-    if (logWriter && result.prCreationError) {
-      logWriter.markIssueFailed(issueNumber);
-    }
-
-    // Complete issue logging
+    // Record PR info, flip status on PR failure (#879), and finalize — all via
+    // the shared helper so this loop and the orchestrator path cannot drift.
     if (logWriter) {
-      logWriter.completeIssue();
+      recordIssueCompletion(logWriter, result, issueNumber);
     }
   }
 

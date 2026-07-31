@@ -73,7 +73,10 @@ vi.mock("./error-classifier.js", async (importOriginal) => ({
 
 import { executePhaseWithRetry } from "./phase-executor.js";
 import { createPhaseLogFromTiming } from "./log-writer.js";
-import { runIssueWithLogging } from "./batch-executor.js";
+import {
+  runIssueWithLogging,
+  recordIssueCompletion,
+} from "./batch-executor.js";
 import { createPR } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
@@ -1488,6 +1491,73 @@ describe("#879: a failed createPR fails the run (AC-5)", () => {
     expect(mockCreatePR).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.prCreationError).toBeUndefined();
+  });
+});
+
+describe("recordIssueCompletion (#879) — shared completion sequence", () => {
+  // Guards the LIVE path: RunOrchestrator.executeOneIssue and executeBatch both
+  // finalize an issue through this ONE helper, so a PR-creation failure flips the
+  // run-log status on every path. The #879 defect was that flip living only in
+  // executeBatch while the orchestrator path (the real `sequant run`) omitted it.
+  function spyLogWriter() {
+    return {
+      setPRInfo: vi.fn(),
+      markIssueFailed: vi.fn(),
+      completeIssue: vi.fn(),
+    };
+  }
+
+  function issueResult(overrides: Partial<IssueResult>): IssueResult {
+    return {
+      issueNumber: 765,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 1,
+      ...overrides,
+    };
+  }
+
+  it("marks the issue failed (before completing it) when the result carries a prCreationError", () => {
+    const lw = spyLogWriter();
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      issueResult({
+        issueNumber: 765,
+        success: false,
+        prCreationError: "gh pr create failed: No commits between main and …",
+      }),
+      765,
+    );
+
+    expect(lw.markIssueFailed).toHaveBeenCalledWith(765);
+    expect(lw.completeIssue).toHaveBeenCalledWith(765);
+    // The failure flip must precede completion, or completeIssue snapshots the
+    // still-"success" status.
+    expect(lw.markIssueFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      lw.completeIssue.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("records PR info and does NOT mark failed when the PR was created", () => {
+    const lw = spyLogWriter();
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      issueResult({
+        issueNumber: 766,
+        success: true,
+        prNumber: 900,
+        prUrl: "https://example.test/pr/900",
+      }),
+      766,
+    );
+
+    expect(lw.setPRInfo).toHaveBeenCalledWith(
+      900,
+      "https://example.test/pr/900",
+      766,
+    );
+    expect(lw.markIssueFailed).not.toHaveBeenCalled();
+    expect(lw.completeIssue).toHaveBeenCalledWith(766);
   });
 });
 
