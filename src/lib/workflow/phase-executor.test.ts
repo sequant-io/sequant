@@ -14,6 +14,7 @@ import {
   getPhasePrompt,
   executePhaseWithRetry,
   hasExecChanges,
+  classifyExecChanges,
   endedWithoutVerdict,
   mapAgentSuccessToPhaseResult,
   mapAgentFailureToPhaseResult,
@@ -1765,6 +1766,74 @@ describe("resolveBaseRef", () => {
   });
 });
 
+describe("classifyExecChanges (#879)", () => {
+  beforeEach(() => {
+    mockExecFileSync.mockReset();
+  });
+
+  /** Prime `resolveBaseRef` to fall back to origin/main (no recorded base). */
+  function mockNoRecordedBase(branch = "feature/879-foo"): void {
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(`${branch}\n`));
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("exit code 1");
+    });
+  }
+
+  it("returns { kind: 'commits' } when HEAD has commits ahead of base", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("3\n"));
+    expect(classifyExecChanges("/tmp/wt")).toEqual({ kind: "commits" });
+  });
+
+  it("returns { kind: 'uncommitted', paths } listing the dirty files", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(
+      Buffer.from(" M src/foo.ts\n?? src/new.ts\n"),
+    );
+    expect(classifyExecChanges("/tmp/wt")).toEqual({
+      kind: "uncommitted",
+      paths: ["src/foo.ts", "src/new.ts"],
+    });
+  });
+
+  it("names the destination path for a rename entry", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(
+      Buffer.from("R  src/old.ts -> src/new.ts\n"),
+    );
+    expect(classifyExecChanges("/tmp/wt")).toEqual({
+      kind: "uncommitted",
+      paths: ["src/new.ts"],
+    });
+  });
+
+  it("returns { kind: 'none' } for no commits and a clean tree", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockReturnValueOnce(Buffer.from(""));
+    expect(classifyExecChanges("/tmp/wt")).toEqual({ kind: "none" });
+  });
+
+  it("returns { kind: 'unknown' } (fail open) when rev-list throws", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("fatal: bad revision 'origin/main..HEAD'");
+    });
+    expect(classifyExecChanges("/tmp/wt")).toEqual({ kind: "unknown" });
+  });
+
+  it("returns { kind: 'unknown' } (fail open) when git status throws", () => {
+    mockNoRecordedBase();
+    mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("git status unavailable");
+    });
+    expect(classifyExecChanges("/tmp/wt")).toEqual({ kind: "unknown" });
+  });
+});
+
 describe("hasExecChanges", () => {
   beforeEach(() => {
     mockExecFileSync.mockReset();
@@ -1800,13 +1869,16 @@ describe("hasExecChanges", () => {
     expect(mockExecFileSync).toHaveBeenCalledTimes(3);
   });
 
-  it("returns true when there are uncommitted changes but no commits", () => {
+  it("returns false when there are uncommitted changes but no commits (#879)", () => {
+    // #879 behaviour change: uncommitted-only work is no longer a deliverable,
+    // so `hasExecChanges` reports false (was true under #534). The dirty-tree
+    // case is now handled distinctly by `classifyExecChanges` → `uncommitted`.
     mockNoRecordedBase();
     // git rev-list --count → "0"
     mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
     // git status --porcelain returns dirty output
     mockExecFileSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
-    expect(hasExecChanges("/tmp/wt")).toBe(true);
+    expect(hasExecChanges("/tmp/wt")).toBe(false);
     expect(mockExecFileSync).toHaveBeenCalledTimes(4);
   });
 
@@ -1880,11 +1952,11 @@ describe("hasExecChanges", () => {
       expect(hasExecChanges("/tmp/wt")).toBe(false);
     });
 
-    it("returns true when there are uncommitted changes even with zero commits vs recorded base", () => {
+    it("returns false when there are only uncommitted changes with zero commits vs recorded base (#879)", () => {
       mockRecordedBase("feature/epic");
       mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
       mockExecFileSync.mockReturnValueOnce(Buffer.from(" M src/foo.ts\n"));
-      expect(hasExecChanges("/tmp/wt")).toBe(true);
+      expect(hasExecChanges("/tmp/wt")).toBe(false);
     });
   });
 
@@ -2126,19 +2198,28 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.error).toBeUndefined();
     });
 
-    it("passes when exec left uncommitted work", () => {
+    it("fails and names the paths when exec left uncommitted work (#879, AC-1, AC-2)", () => {
+      // #879: uncommitted-only work is no longer counted as exec success — it
+      // cannot rebase, push, or become a PR. The phase fails and the message
+      // names the dirty paths so the work is discoverable from the run log.
       mockNoRecordedBase();
       // git rev-list --count → 0
       mockExecFileSync.mockReturnValueOnce(Buffer.from("0\n"));
       // git status --porcelain shows dirty tree
-      mockExecFileSync.mockReturnValueOnce(Buffer.from("?? src/new.ts\n"));
+      mockExecFileSync.mockReturnValueOnce(
+        Buffer.from("?? src/new.ts\n M src/foo.ts\n"),
+      );
       const result = mapAgentSuccessToPhaseResult(
         "exec",
         makeAgentResult({ output: "done" }),
         120,
         "/tmp/wt",
       );
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("uncommitted");
+      expect(result.error).toContain("src/new.ts");
+      expect(result.error).toContain("src/foo.ts");
+      expect(result.error).toContain("/tmp/wt");
     });
 
     it("fails when exec produced no commits and no uncommitted work (#534)", () => {

@@ -1414,6 +1414,83 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
   });
 });
 
+describe("#879: a failed createPR fails the run (AC-5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // All phases succeed; only PR creation varies per test.
+    mockExecutePhase.mockResolvedValue(successResult("exec"));
+  });
+
+  it("returns success:false with prCreationError when createPR fails after passing QA", async () => {
+    // The #879 repro: every phase passes, but the branch has no commits, so
+    // `gh pr create` fails. Before #879 this printed a warning and the issue
+    // still reported success. Now the issue result is a failure.
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: false,
+      error:
+        "gh pr create failed: GraphQL: No commits between main and feature/879",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "PR failure fails the run",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.prCreationError).toContain("No commits between main");
+  });
+
+  it("keeps success:true and leaves prCreationError unset when createPR succeeds (control)", async () => {
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 900,
+      prUrl: "https://example.test/pr/900",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "PR succeeds",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.prCreationError).toBeUndefined();
+  });
+
+  it("does not fail the run when --no-pr suppresses PR creation", async () => {
+    // `--no-pr` means "don't judge me on PRs" — createPR is never attempted,
+    // so a run with all phases passing stays successful.
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "no-pr run",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false, noPr: true },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.prCreationError).toBeUndefined();
+  });
+});
+
 describe("deriveFailureCategory (#761 AC-7)", () => {
   beforeEach(() => {
     vi.mocked(classifyError).mockClear();

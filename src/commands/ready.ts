@@ -57,11 +57,17 @@ export interface ReadyCommandOptions {
  * - 1: not ready — needs human intervention (budget/iterations/stagnation,
  *      or a NO_VERDICT QA turn (#853): the implementation may exist, so this
  *      is a re-run case, not the "nothing there" exit)
- * - 2: not ready — no implementation (#534) or hard error
+ * - 2: not ready — no implementation (#534), uncommitted-only work (#879), or
+ *      hard error. Same class: nothing certifiable exists on the branch.
  */
 export function getReadyExitCode(result: ReadyResult): number {
   if (result.ready) return 0;
-  if (result.reason === "NO_IMPLEMENTATION") return 2;
+  if (
+    result.reason === "NO_IMPLEMENTATION" ||
+    result.reason === "UNCOMMITTED_ONLY"
+  ) {
+    return 2;
+  }
   return 1;
 }
 

@@ -460,6 +460,14 @@ export async function executeBatch(
       logWriter.setPRInfo(result.prNumber, result.prUrl);
     }
 
+    // #879: a PR-creation failure occurs after every phase has been logged, so
+    // `deriveIssueLogStatus` (last run at phase-log time) would leave the issue
+    // at `success`. Override it to `failure` so the run log counts it under
+    // `failed`. Safe post-hoc: no further phase is logged before completeIssue.
+    if (logWriter && result.prCreationError) {
+      logWriter.markIssueFailed(issueNumber);
+    }
+
     // Complete issue logging
     if (logWriter) {
       logWriter.completeIssue();
@@ -1561,6 +1569,10 @@ export async function runIssueWithLogging(
   // Create PR after successful QA + rebase (unless --no-pr)
   let prNumber: number | undefined;
   let prUrl: string | undefined;
+  // #879: a PR-creation failure after passing QA must fail the run, not print a
+  // warning and leave the issue at `success`. Recorded here and folded into the
+  // returned `success` below.
+  let prCreationError: string | undefined;
   const shouldCreatePR = success && worktreePath && branch && !options.noPr;
   if (shouldCreatePR) {
     // #605: under --stacked, target predecessor branch (only for non-first,
@@ -1603,6 +1615,10 @@ export async function runIssueWithLogging(
           // State tracking errors shouldn't stop execution
         }
       }
+    } else if (prResult.attempted && !prResult.success) {
+      // #879: PR creation was attempted (branch/QA passed) but failed. This is
+      // a run failure — the deliverable never reached GitHub.
+      prCreationError = prResult.error ?? "PR creation failed";
     }
   }
 
@@ -1623,16 +1639,23 @@ export async function runIssueWithLogging(
     }
   }
 
+  // #879: fold a PR-creation failure into the issue's overall verdict. Phases
+  // all passed, but the run did not deliver — report it as failed.
+  const overallSuccess = success && !prCreationError;
+
   return {
     issueNumber,
-    success,
+    success: overallSuccess,
     phaseResults,
     durationSeconds,
     loopTriggered,
     prNumber,
     prUrl,
+    prCreationError,
     checkpointFailed,
-    failureCategory: success ? undefined : deriveFailureCategory(phaseResults),
+    failureCategory: overallSuccess
+      ? undefined
+      : deriveFailureCategory(phaseResults),
     // #817: present only when `--ready-gate` ran the gate; the summary renders
     // its terminal reason (AC-6).
     readyGate: readyGateResult,

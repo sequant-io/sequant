@@ -180,6 +180,25 @@ export class LogWriter {
   }
 
   /**
+   * Force the in-flight issue's status to `failure` (#879).
+   *
+   * `deriveIssueLogStatus` runs at phase-log time, so an issue whose phases all
+   * passed but whose PR creation then failed would otherwise be recorded as
+   * `success`. Call this after the last phase is logged and before
+   * {@link completeIssue} to count it under `failed`. No-op if the issue is not
+   * active. Reuses the existing `failure` enum — no schema change.
+   */
+  markIssueFailed(issueNumber?: number): void {
+    const issue = issueNumber
+      ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
+      : this.currentIssue;
+    if (!issue) {
+      return;
+    }
+    issue.status = "failure";
+  }
+
+  /**
    * Complete the current issue and add it to the run log
    */
   completeIssue(issueNumber?: number): void {

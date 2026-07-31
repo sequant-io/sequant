@@ -724,26 +724,63 @@ export function resolveBaseRef(cwd: string): string {
 }
 
 /**
- * Check whether the exec phase produced any changes in the worktree.
- * Returns true if HEAD has commits unique to it relative to the resolved
- * base ref (see {@link resolveBaseRef}) OR uncommitted work is present.
+ * Three-way classification of what the exec phase left in the worktree (#879).
  *
- * Uses `git rev-list --count <base>..HEAD` (commits reachable from HEAD
- * but not the base) instead of `git diff <base>..HEAD`, because the
- * two-dot diff also fires in reverse when the base has advanced past HEAD
- * — on stale branches that would falsely report "has commits" even when the
- * exec phase produced nothing, reintroducing the bug #534 is fixing.
+ * - `commits`: HEAD has commits unique to it relative to the base ref — real,
+ *   deliverable work that can rebase, push, and become a PR.
+ * - `uncommitted`: no such commits, but the tree is dirty. This is NOT a
+ *   deliverable: uncommitted work cannot rebase, push, or become a PR (#879's
+ *   defect — a dirty tree used to be counted as exec success, producing a run
+ *   that "passed" with no commits and no PR). `paths` names the dirty files.
+ * - `none`: no commits and a clean tree — exec produced literally nothing
+ *   (#534's original empty-branch class).
+ * - `unknown`: a git command failed. Callers fail OPEN on this (treat as work)
+ *   — a transient git error is better diagnosed as a real run than as a
+ *   spurious phase failure on every exec.
+ */
+export type ExecChangeState =
+  | { kind: "commits" }
+  | { kind: "uncommitted"; paths: string[] }
+  | { kind: "none" }
+  | { kind: "unknown" };
+
+/**
+ * Parse the file paths out of `git status --porcelain` (v1) output. Each line
+ * is `XY <path>` (two status chars + a space); renames are `R  <old> -> <new>`,
+ * for which we name the new path.
+ */
+function parsePorcelainPaths(porcelain: string): string[] {
+  return porcelain
+    .split("\n")
+    .map((line) => line.replace(/\s+$/, ""))
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      const rest = line.slice(3);
+      const arrow = rest.indexOf(" -> ");
+      return arrow >= 0 ? rest.slice(arrow + 4) : rest;
+    });
+}
+
+/**
+ * Classify what the exec phase produced in the worktree (#879).
+ *
+ * Uses `git rev-list --count <base>..HEAD` (commits reachable from HEAD but not
+ * the base) instead of `git diff <base>..HEAD`, because the two-dot diff also
+ * fires in reverse when the base has advanced past HEAD — on stale branches
+ * that would falsely report "has commits" even when exec produced nothing,
+ * reintroducing the bug #534 is fixing.
  *
  * The base ref defaults to `origin/main` but is overridden to the worktree's
- * recorded base (see #537) so zero-diff execs are still detected on
- * custom-base worktrees (e.g. those created with `--base feature/epic`).
+ * recorded base (see #537) so zero-diff execs are still detected on custom-base
+ * worktrees (e.g. those created with `--base feature/epic`).
  *
- * Fails open (returns true) on git errors — a missing origin ref is better
- * diagnosed as a real zero-diff run than as a false phase failure.
+ * Read-only: runs only `git rev-list` and `git status --porcelain`, so it never
+ * mutates the worktree — an exec phase that fails on an `uncommitted` result
+ * leaves the dirty files exactly where the agent left them (#879 AC-3).
  *
  * @internal Exported for testing only.
  */
-export function hasExecChanges(cwd: string): boolean {
+export function classifyExecChanges(cwd: string): ExecChangeState {
   const baseRef = resolveBaseRef(cwd);
   let commitsAhead: boolean;
   try {
@@ -756,20 +793,59 @@ export function hasExecChanges(cwd: string): boolean {
       .trim();
     commitsAhead = Number.parseInt(count, 10) > 0;
   } catch {
-    return true;
+    return { kind: "unknown" };
   }
-  if (commitsAhead) return true;
+  if (commitsAhead) return { kind: "commits" };
   try {
-    const porcelain = execFileSync("git", ["status", "--porcelain"], {
-      cwd,
-      stdio: "pipe",
-    })
-      .toString()
-      .trim();
-    return porcelain.length > 0;
+    // `--untracked-files=all` lists each new file individually rather than
+    // collapsing a wholly-untracked directory to its top-level path — so the
+    // #879 failure message names the actual files the agent left behind (AC-2).
+    const porcelain = execFileSync(
+      "git",
+      ["status", "--porcelain", "--untracked-files=all"],
+      { cwd, stdio: "pipe" },
+    ).toString();
+    const paths = parsePorcelainPaths(porcelain);
+    return paths.length > 0 ? { kind: "uncommitted", paths } : { kind: "none" };
   } catch {
-    return true;
+    return { kind: "unknown" };
   }
+}
+
+/**
+ * Check whether the exec phase produced deliverable work in the worktree.
+ *
+ * Thin boolean wrapper over {@link classifyExecChanges}: only `commits` (real
+ * work) and `unknown` (git error — fail open) count as "has changes". Note the
+ * #879 behaviour change: an `uncommitted`-only tree now returns **false**, since
+ * uncommitted work is not a deliverable. Both callers (the exec guard in
+ * {@link mapAgentSuccessToPhaseResult} and the ready gate) want this stricter
+ * semantics.
+ *
+ * @internal Exported for testing only.
+ */
+export function hasExecChanges(cwd: string): boolean {
+  const { kind } = classifyExecChanges(cwd);
+  return kind === "commits" || kind === "unknown";
+}
+
+/** Cap on how many dirty paths the #879 exec-failure message lists inline. */
+const MAX_UNCOMMITTED_PATHS_LISTED = 20;
+
+/**
+ * Build the exec-failure message for an `uncommitted`-only worktree (#879 AC-2).
+ * Names the dirty paths so the work is discoverable from the run log alone,
+ * capped at {@link MAX_UNCOMMITTED_PATHS_LISTED} to keep the log bounded.
+ */
+function formatUncommittedExecError(paths: string[], cwd: string): string {
+  const listed = paths.slice(0, MAX_UNCOMMITTED_PATHS_LISTED);
+  const remainder = paths.length - listed.length;
+  const suffix = remainder > 0 ? `, … and ${remainder} more` : "";
+  return (
+    `exec left ${paths.length} file(s) uncommitted and made no commits — ` +
+    `uncommitted work cannot rebase, push, or become a PR. The work is ` +
+    `preserved in ${cwd}: ${listed.join(", ")}${suffix}`
+  );
 }
 
 /**
@@ -856,17 +932,38 @@ export function mapAgentSuccessToPhaseResult(
     };
   }
 
-  if (phase === "exec" && !hasExecChanges(cwd)) {
-    // #534: an exec phase that produced nothing is not success.
-    return {
-      phase,
-      success: false,
-      durationSeconds,
-      error: "exec produced no changes (no commits, no uncommitted work)",
-      ...resume,
-      output: agentResult.output,
-      ...tails,
-    };
+  if (phase === "exec") {
+    // #534/#879: an exec phase that produced no deliverable commits is not
+    // success. Two distinct non-deliverable states, each with its own message:
+    //   - `none`: literally nothing (#534's empty-branch class).
+    //   - `uncommitted`: a dirty tree with no commits — used to be counted as
+    //     success (#879), but it cannot rebase, push, or become a PR. Failing
+    //     here (rather than auto-committing) preserves the work in place; the
+    //     message names the paths so it is discoverable from the run log alone.
+    // `commits`/`unknown` fall through to success (unknown fails open).
+    const changes = classifyExecChanges(cwd);
+    if (changes.kind === "none") {
+      return {
+        phase,
+        success: false,
+        durationSeconds,
+        error: "exec produced no changes (no commits, no uncommitted work)",
+        ...resume,
+        output: agentResult.output,
+        ...tails,
+      };
+    }
+    if (changes.kind === "uncommitted") {
+      return {
+        phase,
+        success: false,
+        durationSeconds,
+        error: formatUncommittedExecError(changes.paths, cwd),
+        ...resume,
+        output: agentResult.output,
+        ...tails,
+      };
+    }
   }
 
   return {
