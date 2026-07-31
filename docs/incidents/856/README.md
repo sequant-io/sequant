@@ -332,8 +332,27 @@ It also confirms the canary runs stably for the full duration without perturbing
 the child, which is what makes it trustworthy for the real capture.
 
 This refines the standing workaround: the risk is not "never background a run",
-it is "do not background a run while the daemon is alive and unauthenticated" —
-a much narrower and checkable condition (`~/.claude/daemon-auth-status.json`).
+it is "do not background a run while the daemon is alive and unauthenticated".
+
+⚠️ **But do not check that condition via `~/.claude/daemon-auth-status.json`.**
+An earlier revision of this doc recommended exactly that, and it is wrong. On
+2026-07-31 the file still read `{"status":"auth_required","since":...}` — 33
+hours stale — while `claude auth status` reported `loggedIn: true` on a healthy
+max subscription and no daemon was running at all. The file records the last
+state a daemon observed, and nothing clears it when the daemon exits or when
+auth is later restored. Reading it as "current auth" inverts the answer.
+
+Check instead:
+
+```sh
+claude auth status                       # is auth actually healthy?
+tail -3 ~/.claude/daemon.log             # did a daemon start, and in what state?
+ls /tmp/cc-daemon-502/                   # is a control socket live?
+```
+
+The vulnerable state requires **both** a live daemon _and_ a failing auth, so the
+daemon's own liveness is the first thing to establish — a stale status file with
+no daemon behind it is not a risk signal.
 
 ## What is still unproven (AC-1, AC-2)
 
