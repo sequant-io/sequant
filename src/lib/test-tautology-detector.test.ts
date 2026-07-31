@@ -453,6 +453,134 @@ describe("analyzeTestFile", () => {
   });
 });
 
+// Issue #885: subprocess-driven integration tests (e.g. cli.integration.test.ts)
+// import only node builtins and exercise production code by spawning the build
+// output (dist/bin/cli.js). Static import analysis can't see through the
+// process boundary, so before this fix every such block scored 100%
+// tautological. Detection keys on CONTENT (a spawn of a dist/ build path),
+// never on the filename or an opt-out annotation.
+describe("analyzeTestFile — subprocess-driven tests (#885)", () => {
+  it("counts a direct spawn of dist/ build output as production (AC-2)", () => {
+    // Arbitrary non-integration filename, only a node builtin imported, no
+    // @tautology-skip — so passing this cannot come from a filename or
+    // annotation shortcut; it must come from detecting the spawn itself.
+    const content = `
+      import { execSync } from "node:child_process";
+      import { resolve } from "node:path";
+      const cliPath = resolve(projectRoot, "dist/bin/cli.js");
+
+      it("runs the built CLI", () => {
+        const out = execSync(\`node \${cliPath} --version\`);
+        expect(out.trim()).toBe("1.2.3");
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/cli.smoke.test.ts");
+    expect(result.totalTests).toBe(1);
+    expect(result.tautologicalCount).toBe(0);
+    expect(result.testBlocks[0].isTautological).toBe(false);
+  });
+
+  it("counts an inline dist/ spawn (no build-path variable) as production (AC-2)", () => {
+    const content = `
+      import { execSync } from "node:child_process";
+      it("runs the built CLI inline", () => {
+        const out = execSync("node dist/bin/cli.js --version");
+        expect(out).toBeDefined();
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/inline.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(false);
+  });
+
+  it("counts a block that spawns the CLI via a closure helper as production (AC-1)", () => {
+    // The block never spawns directly — it calls runHelp(), which closes over
+    // cliPath and spawns. Detection must resolve the helper.
+    const content = `
+      import { execSync } from "node:child_process";
+      const cliPath = resolve(projectRoot, "dist/bin/cli.js");
+      const runHelp = (): string => {
+        return execSync(\`node \${cliPath} run --help\`);
+      };
+
+      it("uses the help via helper", () => {
+        const output = runHelp();
+        expect(output).toContain("Usage");
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/helper.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(false);
+  });
+
+  it("resolves spawn helpers transitively (helper that calls another helper) (AC-1)", () => {
+    // Mirrors cli.integration.test.ts: a test calls expectAccepted(), which
+    // calls run(), which spawns the CLI. Both indirection levels must resolve.
+    const content = `
+      import { spawnSync } from "node:child_process";
+      const cliPath = resolve(projectRoot, "dist/bin/cli.js");
+      const run = (...args: string[]): { stdout: string } => {
+        const r = spawnSync(process.execPath, [cliPath, ...args], { encoding: "utf-8" });
+        return { stdout: r.stdout ?? "" };
+      };
+      const expectAccepted = (flag: string): void => {
+        const { stdout } = run("run", "1", flag, "--dry-run");
+        expect(stdout).toBeDefined();
+      };
+
+      it("accepts the flag via a two-level helper", () => {
+        expectAccepted("-q");
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/transitive.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(false);
+  });
+
+  it("still flags a genuinely tautological block in a subprocess-driven file (AC-3)", () => {
+    // Same file has a real spawn block AND a do-nothing block. The fix must be
+    // per-block: it must not blanket-exempt the whole file.
+    const content = `
+      import { execSync } from "node:child_process";
+      const cliPath = resolve(projectRoot, "dist/bin/cli.js");
+
+      it("spawns the built CLI", () => {
+        execSync(\`node \${cliPath} status\`);
+      });
+
+      it("asserts only on locals", () => {
+        const x = 1 + 1;
+        expect(x).toBe(2);
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/mixed.test.ts");
+    expect(result.totalTests).toBe(2);
+    const spawnBlock = result.testBlocks.find(
+      (b) => b.description === "spawns the built CLI",
+    );
+    const localBlock = result.testBlocks.find(
+      (b) => b.description === "asserts only on locals",
+    );
+    expect(spawnBlock?.isTautological).toBe(false);
+    expect(localBlock?.isTautological).toBe(true);
+  });
+
+  it("does not treat a helper that references a dist/ string but never spawns as production (AC-5)", () => {
+    // buildDir is a build-output token, but describeBuild only concatenates it —
+    // no spawn. A block that merely calls describeBuild() calls nothing real.
+    const content = `
+      const buildDir = "dist/bin";
+      const describeBuild = (): string => {
+        return "the build dir is " + buildDir;
+      };
+
+      it("mentions the build dir but runs nothing real", () => {
+        const label = describeBuild();
+        expect(label).toContain("build dir");
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/nospawn.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(true);
+  });
+});
+
 describe("detectTautologicalTests", () => {
   it("aggregates results from multiple files", () => {
     const files = [
