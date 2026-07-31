@@ -66,22 +66,35 @@ mkdir -p "$_LOG_DIR" 2>/dev/null || _LOG_DIR="${_TMPDIR}"
 TIMING_LOG="${_LOG_DIR}/claude-timing.log"
 QUALITY_LOG="${_LOG_DIR}/claude-quality.log"
 TESTS_LOG="${_LOG_DIR}/claude-tests.log"
-PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
+
+# Parallel-group marker naming (#881). Source the shared helper next to this
+# hook so the project-scoped prefix stays identical to the writer and pre-tool.sh.
+_MARKER_HELPER="$(dirname "${BASH_SOURCE[0]:-$0}")/parallel-marker.sh"
+if [[ -f "$_MARKER_HELPER" ]]; then
+    # shellcheck source=parallel-marker.sh disable=SC1091
+    source "$_MARKER_HELPER"
+    PARALLEL_MARKER_PREFIX="$(parallel_marker_prefix)"
+else
+    PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
+fi
 
 # === AGENT ID DETECTION ===
-# For parallel agents, detect group ID from marker files
-# Format: ${_TMPDIR}/claude-parallel-<group-id>.marker
+# For parallel agents, detect group ID from marker files. The glob is scoped to
+# the current project's marker prefix (#881) so a foreign project's marker never
+# labels this session's timing rows.
 AGENT_ID=""
 IS_PARALLEL_AGENT="false"
+_MARKER_BASE=$(basename "$PARALLEL_MARKER_PREFIX")
 # Find marker files using find (works in both bash and zsh)
 while IFS= read -r marker; do
     if [[ -n "$marker" && -f "$marker" ]]; then
-        # Extract group ID from marker filename
-        AGENT_ID=$(basename "$marker" | sed 's/claude-parallel-//' | sed 's/\.marker//')
+        # Extract group ID: strip the project-scoped prefix and the suffix.
+        AGENT_ID=$(basename "$marker" .marker)
+        AGENT_ID=${AGENT_ID#"$_MARKER_BASE"}
         IS_PARALLEL_AGENT="true"
         break
     fi
-done < <(find "${_TMPDIR}" -maxdepth 1 -name "claude-parallel-*.marker" 2>/dev/null)
+done < <(find "${_TMPDIR}" -maxdepth 1 -name "${_MARKER_BASE}*.marker" 2>/dev/null)
 
 # === TIMING END ===
 # Include agent ID in log format if available (AC-4)
