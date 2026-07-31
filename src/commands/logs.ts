@@ -118,12 +118,18 @@ function displayLogSummary(
   // `0 passed, 0 failed` (older logs predate the field → default to 0).
   const partial = log.summary.partial ?? 0;
   const total = log.summary.totalIssues;
+  // #856: an aborted run is a failure, but saying only "FAILED" sends the
+  // reader hunting for a bug in their own code. The run never got to fail on
+  // its own terms — something killed it.
+  const aborted = log.summary.aborted ?? 0;
   const status =
-    failed > 0
-      ? chalk.red("FAILED")
-      : passed === total
-        ? chalk.green("PASSED")
-        : chalk.yellow("PARTIAL");
+    aborted > 0
+      ? chalk.red("ABORTED")
+      : failed > 0
+        ? chalk.red("FAILED")
+        : passed === total
+          ? chalk.green("PASSED")
+          : chalk.yellow("PARTIAL");
 
   console.log(chalk.blue(`\n  Run: ${log.runId.slice(0, 8)}...`));
   console.log(chalk.gray(`  File: ${filename}`));
@@ -141,6 +147,13 @@ function displayLogSummary(
     ),
   );
   console.log(chalk.gray(`  Phases: ${log.config.phases.join(" → ")}`));
+  if (log.abortedBy) {
+    console.log(
+      chalk.red(
+        `  Aborted: run terminated by ${log.abortedBy} — results below are incomplete`,
+      ),
+    );
+  }
 
   // Show issues
   for (const issue of log.issues) {

@@ -22,7 +22,7 @@ import {
   defaultIsPidAlive,
   resolveLocksDir,
 } from "./lock-manager.js";
-import { DEFAULT_STALE_AGE_MS } from "./types.js";
+import { DEFAULT_MAX_LOCK_AGE_MS, DEFAULT_STALE_AGE_MS } from "./types.js";
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "sequant-locks-test-"));
@@ -45,6 +45,75 @@ describe("classifyStaleness", () => {
       isPidAlive: () => true,
     });
     expect(result).toBeNull();
+  });
+
+  // ── #856: recycled PIDs must not read as fresh forever ────────────────
+  describe("absolute age ceiling (#856)", () => {
+    it("returns 'max-age-exceeded' for a same-host lock whose PID is alive but is older than 24h", () => {
+      // The exact production shape: `.sequant/locks/505.lock`, written
+      // 2026-05-14, PID 28809 long since recycled onto an unrelated live
+      // process. Before the ceiling this returned null — fresh — forever,
+      // permanently blocking #505 from ever running again.
+      const result = classifyStaleness({
+        holder: baseHolder,
+        myHostname: "host-a", // same host
+        now: new Date("2026-07-25T00:00:00Z").getTime(), // ~75 days later
+        staleAgeMs: DEFAULT_STALE_AGE_MS,
+        isPidAlive: () => true, // recycled PID answers "alive"
+      });
+      expect(result).toBe("max-age-exceeded");
+    });
+
+    it("still returns null for a same-host live PID inside the ceiling", () => {
+      const result = classifyStaleness({
+        holder: baseHolder,
+        myHostname: "host-a",
+        now: new Date("2026-05-11T20:00:00Z").getTime(), // 20h — under 24h
+        staleAgeMs: DEFAULT_STALE_AGE_MS,
+        isPidAlive: () => true,
+      });
+      expect(result).toBeNull();
+    });
+
+    it("overrides the 6h skill-shell TTL as well", () => {
+      const result = classifyStaleness({
+        holder: { ...baseHolder, skipPidCheck: true },
+        myHostname: "host-a",
+        now: new Date("2026-05-13T00:00:00Z").getTime(), // 48h
+        staleAgeMs: DEFAULT_STALE_AGE_MS,
+        skillLockTtlMs: 6 * 60 * 60 * 1000,
+        maxLockAgeMs: DEFAULT_MAX_LOCK_AGE_MS,
+        isPidAlive: () => true,
+      });
+      // Both rules fire; the ceiling is checked first and names the real
+      // reason — this lock is not merely past a TTL, it is abandoned.
+      expect(result).toBe("max-age-exceeded");
+    });
+
+    it("honours an explicit maxLockAgeMs override", () => {
+      const result = classifyStaleness({
+        holder: baseHolder,
+        myHostname: "host-a",
+        now: new Date("2026-05-11T00:10:00Z").getTime(), // 10 min
+        staleAgeMs: DEFAULT_STALE_AGE_MS,
+        maxLockAgeMs: 60_000, // 1 min ceiling
+        isPidAlive: () => true,
+      });
+      expect(result).toBe("max-age-exceeded");
+    });
+
+    it("does not fire when startedAt is unparseable", () => {
+      const result = classifyStaleness({
+        holder: { ...baseHolder, startedAt: "not-a-date" },
+        myHostname: "host-a",
+        now: Date.now(),
+        staleAgeMs: DEFAULT_STALE_AGE_MS,
+        isPidAlive: () => true,
+      });
+      // Unknown age must not be treated as infinitely old — that would clear
+      // a live holder's lock on a malformed timestamp.
+      expect(result).toBeNull();
+    });
   });
 
   it("returns 'pid-dead' when same-host PID is not alive", () => {
@@ -327,6 +396,71 @@ describe("LockManager — forceAcquire / signalOther", () => {
       });
       expect(result2).toEqual({ sent: false, reason: "cross-host" });
       expect(calls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther refuses to signal a holder past the age ceiling (#856)", () => {
+    // The dangerous case `--force --signal-other` could hit: a lock abandoned
+    // weeks ago whose PID the OS has since recycled onto an unrelated live
+    // process. isPidAlive says "alive" — correctly, for a different program —
+    // so the liveness probe cannot catch this. Only the age can.
+    const calls: number[] = [];
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true, // recycled PID answers "alive"
+    });
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      calls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: 28809, // the real 505.lock PID
+        hostname: "host-a",
+        startedAt: new Date(
+          Date.now() - 76 * 24 * 60 * 60 * 1000,
+        ).toISOString(),
+        command: "npx sequant run 505",
+      });
+      expect(result).toEqual({ sent: false, reason: "stale-pid-untrusted" });
+      // The critical assertion: no signal was delivered to the stranger.
+      expect(calls).toEqual([]);
+    } finally {
+      (process as unknown as { kill: typeof process.kill }).kill = originalKill;
+    }
+  });
+
+  it("signalOther still signals a recent holder (age-guard negative control)", () => {
+    const calls: number[] = [];
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      isPidAlive: () => true,
+    });
+    const originalKill = process.kill;
+    (process as unknown as { kill: typeof process.kill }).kill = ((
+      pid: number,
+    ) => {
+      calls.push(pid);
+      return true;
+    }) as typeof process.kill;
+    try {
+      const result = mgr.signalOther({
+        pid: 9999,
+        hostname: "host-a",
+        startedAt: new Date(Date.now() - 60_000).toISOString(),
+        command: "npx sequant run 1",
+      });
+      expect(result).toEqual({ sent: true, reason: "sent" });
+      expect(calls).toEqual([9999]);
     } finally {
       (process as unknown as { kill: typeof process.kill }).kill = originalKill;
     }

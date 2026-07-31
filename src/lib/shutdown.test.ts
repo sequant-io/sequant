@@ -3,7 +3,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ShutdownManager } from "./shutdown.js";
+import {
+  ShutdownManager,
+  describeSignalCause,
+  exitCodeForSignal,
+} from "./shutdown.js";
 
 describe("ShutdownManager", () => {
   let mockOutput: ReturnType<typeof vi.fn>;
@@ -84,7 +88,8 @@ describe("ShutdownManager", () => {
       await mgr.gracefulShutdown("SIGINT");
 
       expect(mgr.isShuttingDown).toBe(true);
-      expect(mockExit).toHaveBeenCalledWith(0);
+      // #856: 128 + SIGINT(2). A terminated run must not report success.
+      expect(mockExit).toHaveBeenCalledWith(130);
     });
 
     it("should abort the active controller", async () => {
@@ -194,12 +199,16 @@ describe("ShutdownManager", () => {
       );
     });
 
-    it("should exit with code 0 on successful shutdown", async () => {
+    it("should exit 128+signum after a clean shutdown, not 0 (#856)", async () => {
       const mgr = createManager();
 
       await mgr.gracefulShutdown("SIGINT");
 
-      expect(mockExit).toHaveBeenCalledWith(0);
+      // Cleanup succeeding does not make the *run* successful — it was cut
+      // short. Exiting 0 here is what let a SIGTERM'd run look like a pass to
+      // every caller that checks `$?`.
+      expect(mockExit).toHaveBeenCalledWith(130);
+      expect(mockExit).not.toHaveBeenCalledWith(0);
     });
   });
 
@@ -294,7 +303,7 @@ describe("ShutdownManager", () => {
       // Should not throw
       await mgr.gracefulShutdown("SIGINT");
 
-      expect(mockExit).toHaveBeenCalledWith(0);
+      expect(mockExit).toHaveBeenCalledWith(130);
     });
   });
 
@@ -333,7 +342,83 @@ describe("ShutdownManager", () => {
       expect(mockOutput).toHaveBeenCalledWith(
         expect.stringContaining("SIGTERM"),
       );
-      expect(mockExit).toHaveBeenCalledWith(0);
+      // #856: 128 + SIGTERM(15).
+      expect(mockExit).toHaveBeenCalledWith(143);
+    });
+  });
+
+  // ── #856: external termination must be surfaced as an abort ─────────────
+  describe("external termination surfacing (#856 AC-4)", () => {
+    it("maps signals to 128+signum exit codes", () => {
+      expect(exitCodeForSignal("SIGINT")).toBe(130);
+      expect(exitCodeForSignal("SIGTERM")).toBe(143);
+      // Unmapped signals still fail rather than silently succeeding.
+      expect(exitCodeForSignal("SIGHUP")).toBe(1);
+    });
+
+    it("distinguishes a user Ctrl+C from an external SIGTERM", () => {
+      expect(describeSignalCause("SIGINT")).toContain("user");
+      const term = describeSignalCause("SIGTERM");
+      expect(term).toContain("external");
+      // The point of the distinction: nobody types SIGTERM, so the user must
+      // be told this came from outside sequant rather than left guessing.
+      expect(term).toContain("not sent by sequant");
+    });
+
+    it("reports the abort and its cause on the error channel", async () => {
+      const mgr = createManager();
+
+      await mgr.gracefulShutdown("SIGTERM");
+
+      expect(mockErrorOutput).toHaveBeenCalledWith(
+        expect.stringContaining("aborted"),
+      );
+      expect(mockErrorOutput).toHaveBeenCalledWith(
+        expect.stringContaining("external SIGTERM"),
+      );
+    });
+
+    it("points SIGTERM victims at the known bg-pty cause", async () => {
+      const mgr = createManager();
+
+      await mgr.gracefulShutdown("SIGTERM");
+
+      const printed = mockOutput.mock.calls.flat().join("\n");
+      expect(printed).toContain("docs/incidents/856");
+    });
+
+    it("does not show the bg-pty pointer for a user Ctrl+C", async () => {
+      const mgr = createManager();
+
+      await mgr.gracefulShutdown("SIGINT");
+
+      const printed = mockOutput.mock.calls.flat().join("\n");
+      expect(printed).not.toContain("docs/incidents/856");
+    });
+
+    it("hands cleanup tasks the abort cause so they can record it", async () => {
+      const mgr = createManager();
+      const seen: Array<{ signal: string; reason: string } | null> = [];
+      mgr.registerCleanup("Finalize", async (abort) => {
+        seen.push(abort);
+      });
+
+      await mgr.gracefulShutdown("SIGTERM");
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.signal).toBe("SIGTERM");
+      expect(seen[0]?.reason).toContain("external");
+    });
+
+    it("exposes the abort context until dispose clears it", async () => {
+      const mgr = createManager();
+      expect(mgr.abortContext).toBeNull();
+
+      await mgr.gracefulShutdown("SIGTERM");
+      expect(mgr.abortContext?.signal).toBe("SIGTERM");
+
+      mgr.dispose();
+      expect(mgr.abortContext).toBeNull();
     });
   });
 });

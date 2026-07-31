@@ -208,6 +208,20 @@ export const IssueLogSchema = z.object({
   phases: z.array(PhaseLogSchema),
   /** Total execution time in seconds */
   totalDurationSeconds: z.number().nonnegative(),
+  /**
+   * Set when this issue never finished because the run was terminated from
+   * outside (#856). Reuses the `"failure"` status — additive boolean rather
+   * than a new `IssueStatus` enum value, matching the `capped` precedent
+   * above, so the persisted-log schema stays stable at `version: 1`.
+   *
+   * Without this, a run killed mid-flight persisted as `success`: `startIssue`
+   * seeds `status: "success"` and only `logPhase` ever revises it, so an issue
+   * whose first phase never completed was written out as a pass with an empty
+   * `phases[]`.
+   */
+  aborted: z.boolean().optional(),
+  /** Human-readable cause of the abort (e.g. `terminated by SIGTERM`). */
+  abortReason: z.string().optional(),
   /** PR number if created after successful QA */
   prNumber: z.number().int().positive().optional(),
   /** PR URL if created after successful QA */
@@ -253,6 +267,14 @@ export const RunSummarySchema = z.object({
    * `.default(0)` keeps logs written before this field parseable.
    */
   partial: z.number().int().nonnegative().default(0),
+  /**
+   * Number of issues cut short by an external signal (#856). A sub-count of
+   * `failed`, not a fourth disjoint bucket — aborted issues carry
+   * `status: "failure"` so existing consumers keep working, and this field
+   * says whether the failure was the run's own or something killing it.
+   * `.default(0)` keeps logs written before this field parseable.
+   */
+  aborted: z.number().int().nonnegative().default(0),
   /** Total execution time in seconds */
   totalDurationSeconds: z.number().nonnegative(),
 });
@@ -283,6 +305,11 @@ export const RunLogSchema = z.object({
   startCommit: z.string().optional(),
   /** Git commit SHA at run end (AC-2) */
   endCommit: z.string().optional(),
+  /**
+   * Signal that terminated the run, when it ended by external signal rather
+   * than by finishing (#856). Present iff at least one issue is `aborted`.
+   */
+  abortedBy: z.string().optional(),
 });
 
 export type RunLog = z.infer<typeof RunLogSchema>;
@@ -336,6 +363,7 @@ export function createEmptyRunLog(
       passed: 0,
       failed: 0,
       partial: 0,
+      aborted: 0,
       totalDurationSeconds: 0,
     },
     startCommit: options?.startCommit,
@@ -410,7 +438,7 @@ export function completePhaseLog(
  */
 export function finalizeRunLog(
   runLog: Omit<RunLog, "endTime">,
-  options?: { endCommit?: string },
+  options?: { endCommit?: string; abortedBy?: string },
 ): RunLog {
   const endTime = new Date();
   const startTime = new Date(runLog.startTime);
@@ -427,6 +455,11 @@ export function finalizeRunLog(
   const partial = runLog.issues.filter(
     (i: IssueLog) => i.status === "partial",
   ).length;
+  // #856: aborted issues are also counted in `failed` (they carry
+  // `status: "failure"`); this is the sub-count that says *why* they failed,
+  // so a run killed from outside is distinguishable from one whose phases
+  // genuinely failed.
+  const aborted = runLog.issues.filter((i: IssueLog) => i.aborted).length;
 
   return {
     ...runLog,
@@ -436,9 +469,13 @@ export function finalizeRunLog(
       passed,
       failed,
       partial,
+      aborted,
       totalDurationSeconds,
     },
     endCommit: options?.endCommit ?? runLog.endCommit,
+    ...((options?.abortedBy ?? runLog.abortedBy) && {
+      abortedBy: options?.abortedBy ?? runLog.abortedBy,
+    }),
   };
 }
 
@@ -453,6 +490,11 @@ export function finalizeRunLog(
  * verdict (mirrors the live-card rule); an unrecovered failure still leaves a
  * non-loop phase failed. Priority among latest attempts: failure > timeout >
  * success.
+ *
+ * An issue with no phase entries is a `failure`, not a `success` (#856). The
+ * only way to reach that state is for `startIssue` to have run while no phase
+ * ever completed — i.e. the run was cut short. Returning `success` there is
+ * what let a SIGTERM'd run persist as a pass with an empty `phases[]`.
  */
 export function deriveIssueLogStatus(phases: PhaseLog[]): IssueStatus {
   const latest = new Map<string, PhaseStatus>();
@@ -461,6 +503,7 @@ export function deriveIssueLogStatus(phases: PhaseLog[]): IssueStatus {
     latest.set(p.phase, p.status);
   }
   const statuses = [...latest.values()];
+  if (statuses.length === 0) return "failure";
   if (statuses.some((s) => s === "failure")) return "failure";
   if (statuses.some((s) => s === "timeout")) return "partial";
   return "success";

@@ -58,6 +58,8 @@ function formatSignalLine(
       return `  Refused to signal PID ${pid} for #${issue} (matches this process or its parent)`;
     case "pid-dead":
       return `  Could not signal PID ${pid} for #${issue} (already exited)`;
+    case "stale-pid-untrusted":
+      return `  Refused to signal PID ${pid} for #${issue} (lock is past the age ceiling; that PID has likely been recycled)`;
     case "kill-failed":
       return `  Could not signal PID ${pid} for #${issue} (kill syscall failed)`;
     case "orchestrator":
@@ -747,8 +749,12 @@ export class RunOrchestrator {
     const shutdown = new ShutdownManager();
     if (logWriter) {
       const writer = logWriter;
-      shutdown.registerCleanup("Finalize run logs", async () => {
-        await writer.finalize();
+      // #856: forward the abort cause into the log. This cleanup runs on the
+      // SIGINT/SIGTERM path, where no phase result will ever arrive for the
+      // in-flight issue — without the context, `finalize()` writes that issue
+      // out as if the run had simply ended.
+      shutdown.registerCleanup("Finalize run logs", async (abort) => {
+        await writer.finalize(abort ? { aborted: abort } : undefined);
       });
     }
 
