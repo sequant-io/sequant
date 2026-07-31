@@ -125,6 +125,19 @@ describe("deriveIssueLogStatus (#766)", () => {
     ).toBe("failure");
   });
 
+  it("treats an issue with no phase entries as a failure, not a pass (#856)", () => {
+    // The only way to reach this state is for startIssue() to have run while
+    // no phase ever completed — the run was cut short. Returning "success"
+    // here is what let a SIGTERM'd run persist as `passed: 1`.
+    expect(deriveIssueLogStatus([])).toBe("failure");
+  });
+
+  it("treats a loop-only phase list as a failure (#856)", () => {
+    // `loop` is excluded from the verdict, so a list containing only loop
+    // entries is empty for verdict purposes — no substantive phase finished.
+    expect(deriveIssueLogStatus([phaseLog("loop", "success")])).toBe("failure");
+  });
+
   it("prioritises a failure in one phase over a timeout in another", () => {
     expect(
       deriveIssueLogStatus([

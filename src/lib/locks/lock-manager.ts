@@ -7,6 +7,8 @@
  * `state.json`) keeps acquisition atomic — no read-modify-write race.
  *
  * Stale detection (in order):
+ *   0. Absolute ceiling (any host, any PID state): `startedAt > maxLockAgeMs
+ *      ago` → cleared. Guards against recycled PIDs and SIGKILL leaks (#856).
  *   1. `hostname === os.hostname()`: check `process.kill(pid, 0)`.
  *      Not alive → cleared.
  *   2. Cross-host: PID check is meaningless. Use age only.
@@ -33,6 +35,7 @@ import * as os from "os";
 
 import {
   DEFAULT_LOCKS_DIR,
+  DEFAULT_MAX_LOCK_AGE_MS,
   DEFAULT_SKILL_LOCK_TTL_MS,
   DEFAULT_STALE_AGE_MS,
   LockFileSchema,
@@ -40,6 +43,7 @@ import {
   type LockFile,
   type LockListing,
   type SignalOtherResult,
+  type StaleReason,
 } from "./types.js";
 
 export interface LockManagerOptions {
@@ -56,6 +60,12 @@ export interface LockManagerOptions {
    * the lock has to bridge long /fullsolve runs with multi-iteration QA loops.
    */
   skillLockTtlMs?: number;
+  /**
+   * Absolute age ceiling (ms). A lock older than this is stale regardless of
+   * host, PID liveness, or `skipPidCheck`. Default 24h. See
+   * `DEFAULT_MAX_LOCK_AGE_MS` (#856).
+   */
+  maxLockAgeMs?: number;
   /** Override for orchestrator detection (test seam). */
   orchestratorMode?: boolean;
   /** Override for `os.hostname()` (test seam). */
@@ -86,6 +96,20 @@ export function resolveLocksDir(explicit?: string): string {
  */
 export function resolveSkillLockTtlMs(): number | null {
   const raw = process.env.SEQUANT_SKILL_LOCK_TTL_MS;
+  if (raw === undefined || raw === "") return null;
+  const ms = Number.parseInt(raw, 10);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return ms;
+}
+
+/**
+ * Resolve `SEQUANT_MAX_LOCK_AGE_MS` (milliseconds) — env override for the
+ * absolute lock-age ceiling (#856). Returns `null` when unset or unparseable
+ * so the caller can fall back to the constructor option / default. Mirrors
+ * `resolveSkillLockTtlMs`.
+ */
+export function resolveMaxLockAgeMs(): number | null {
+  const raw = process.env.SEQUANT_MAX_LOCK_AGE_MS;
   if (raw === undefined || raw === "") return null;
   const ms = Number.parseInt(raw, 10);
   if (!Number.isFinite(ms) || ms <= 0) return null;
@@ -126,10 +150,25 @@ export function classifyStaleness(args: {
   staleAgeMs: number;
   /** TTL for skill-shell (skipPidCheck) locks; falls back to staleAgeMs. */
   skillLockTtlMs?: number;
+  /** Absolute ceiling; falls back to `DEFAULT_MAX_LOCK_AGE_MS`. */
+  maxLockAgeMs?: number;
   isPidAlive: (pid: number) => boolean;
-}): "pid-dead" | "age-exceeded" | null {
+}): StaleReason | null {
   const { holder, myHostname, now, staleAgeMs, isPidAlive } = args;
   const skillTtl = args.skillLockTtlMs ?? staleAgeMs;
+  const maxAge = args.maxLockAgeMs ?? DEFAULT_MAX_LOCK_AGE_MS;
+  const ageMs = now - Date.parse(holder.startedAt);
+  const ageKnown = Number.isFinite(ageMs);
+
+  // 0. Absolute ceiling, checked FIRST and unconditionally (#856). The
+  //    same-host branch below treats a live PID as proof of freshness, but a
+  //    PID is only a stable identity while its process lives — once the OS
+  //    recycles it, an abandoned lock points at an unrelated process and
+  //    reads as fresh forever. Nothing legitimate holds a lock this long
+  //    (24h vs a 30-minute phase timeout), so age wins over PID liveness
+  //    past the ceiling. Also the sole recovery path for locks leaked by a
+  //    SIGKILLed run, whose release handlers never got to run.
+  if (ageKnown && ageMs > maxAge) return "max-age-exceeded";
 
   // 1. Same-host PID check is authoritative — except when the holder asked
   //    us to skip it (skill shells exit before the lock is released; their
@@ -144,8 +183,7 @@ export function classifyStaleness(args: {
   //    with multi-iteration QA loops don't lose their own lock; cross-host
   //    uses the stricter staleAgeMs (default 2h).
   const ttl = holder.skipPidCheck ? skillTtl : staleAgeMs;
-  const ageMs = now - Date.parse(holder.startedAt);
-  if (!Number.isFinite(ageMs)) return null;
+  if (!ageKnown) return null;
   if (ageMs > ttl) return "age-exceeded";
   return null;
 }
@@ -154,6 +192,7 @@ export class LockManager {
   private readonly locksDir: string;
   private readonly staleAgeMs: number;
   private readonly skillLockTtlMs: number;
+  private readonly maxLockAgeMs: number;
   private readonly orchestratorMode: boolean;
   private readonly hostname: string;
   private readonly pid: number;
@@ -170,6 +209,8 @@ export class LockManager {
       options.skillLockTtlMs ??
       resolveSkillLockTtlMs() ??
       DEFAULT_SKILL_LOCK_TTL_MS;
+    this.maxLockAgeMs =
+      options.maxLockAgeMs ?? resolveMaxLockAgeMs() ?? DEFAULT_MAX_LOCK_AGE_MS;
     this.orchestratorMode = options.orchestratorMode ?? isOrchestratorMode();
     this.hostname = options.hostname ?? os.hostname();
     this.pid = options.pid ?? process.pid;
@@ -226,6 +267,7 @@ export class LockManager {
         now: this.now(),
         staleAgeMs: this.staleAgeMs,
         skillLockTtlMs: this.skillLockTtlMs,
+        maxLockAgeMs: this.maxLockAgeMs,
         isPidAlive: this.isPidAlive,
       });
       if (staleReason) {
@@ -300,6 +342,15 @@ export class LockManager {
     // (#637, defense follow-up to the #633 flake).
     if (holder.pid === this.pid || holder.pid === process.ppid) {
       return { sent: false, reason: "self-or-parent" };
+    }
+    // #856: past the absolute ceiling, the PID is no longer trustworthy
+    // identity — the OS has almost certainly recycled it onto an unrelated
+    // process. `acquire` already treats such a lock as abandoned; signalling
+    // it would kill a stranger's program on behalf of a lock nobody holds.
+    // The liveness probe below cannot catch this: a recycled PID *is* alive.
+    const ageMs = this.now() - Date.parse(holder.startedAt);
+    if (Number.isFinite(ageMs) && ageMs > this.maxLockAgeMs) {
+      return { sent: false, reason: "stale-pid-untrusted" };
     }
     if (!this.isPidAlive(holder.pid))
       return { sent: false, reason: "pid-dead" };
@@ -395,6 +446,7 @@ export class LockManager {
         now,
         staleAgeMs: this.staleAgeMs,
         skillLockTtlMs: this.skillLockTtlMs,
+        maxLockAgeMs: this.maxLockAgeMs,
         isPidAlive: this.isPidAlive,
       });
       out.push({
@@ -433,6 +485,7 @@ export class LockManager {
         now: this.now(),
         staleAgeMs: this.staleAgeMs,
         skillLockTtlMs: this.skillLockTtlMs,
+        maxLockAgeMs: this.maxLockAgeMs,
         isPidAlive: this.isPidAlive,
       });
       if (!staleReason) {

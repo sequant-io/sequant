@@ -8,8 +8,14 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync, spawn } from "child_process";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
-import { tmpdir } from "os";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
+import { hostname, tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -63,13 +69,23 @@ describe("LockManager — integration: two-process contention", () => {
     "second concurrent process is blocked when the first holds the lock",
     { timeout: 20_000 },
     async () => {
-      // Spawn process A — acquires and holds for 1s.
+      // Spawn process A — acquires and holds until this test closes its stdin.
+      //
+      // #856: A used to release on a fixed 1s timer, which races process B's
+      // `tsx` boot. Whenever the transform cache is cold — i.e. right after
+      // any edit to this module, exactly when the test matters most — B took
+      // longer than 1s to start, A had already released, and B then acquired
+      // a genuinely free lock. The failure reads as "contention is broken"
+      // but is really the harness measuring an empty window. Holding until
+      // stdin closes removes the window rather than widening it: A cannot
+      // release before B has had its turn.
       const script = `
         import { LockManager } from ${JSON.stringify(MODULE_PATH)};
         const mgr = new LockManager({ locksDir: ${JSON.stringify(dir)} });
         const r = mgr.acquire(42, "first");
         process.stdout.write(JSON.stringify(r) + "\\n");
-        setTimeout(() => { mgr.release(42); process.exit(0); }, 1000);
+        process.stdin.on("end", () => { mgr.release(42); process.exit(0); });
+        process.stdin.resume();
       `;
       const child = spawn(TSX_BIN, ["--eval", script], {
         env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
@@ -88,11 +104,12 @@ describe("LockManager — integration: two-process contention", () => {
         }, 50);
       });
 
-      // Process B should be blocked.
+      // Process B should be blocked — A is still holding, guaranteed.
       const b = runAcquireSync(dir, 42, "second");
       expect(b.acquired).toBe(false);
 
-      // Wait for A to release.
+      // Now let A release, and wait for it to exit.
+      child.stdin.end();
       await new Promise<void>((res) => child.on("exit", () => res()));
       expect(existsSync(join(dir, "42.lock"))).toBe(false);
 
@@ -153,6 +170,72 @@ describe("LockManager — integration: two-process contention", () => {
       // A new same-host run should auto-clear (PID is dead) and acquire.
       const next = runAcquireSync(dir, 42, "next");
       expect(next.acquired).toBe(true);
+    },
+  );
+
+  it(
+    "an abandoned lock whose PID has been recycled onto a live process is cleared (#856)",
+    { timeout: 20_000 },
+    async () => {
+      // The production shape of related defect 3: `.sequant/locks/505.lock`,
+      // written 2026-05-14, PID 28809 long since recycled. The same-host
+      // branch of classifyStaleness asked "is that PID alive?", got yes from
+      // an unrelated process, and reported the lock fresh — forever.
+      //
+      // PID 1 stands in for the recycled PID: always alive, never ours, and
+      // `process.kill(1, 0)` from a normal user throws EPERM, which
+      // `defaultIsPidAlive` correctly reads as alive. So this lock is
+      // indistinguishable from a live holder by PID alone — only the age
+      // ceiling can free it.
+      const thirtyDaysAgo = new Date(
+        Date.now() - 30 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      writeFileSync(
+        join(dir, "42.lock"),
+        JSON.stringify(
+          {
+            pid: 1,
+            hostname: hostname(),
+            startedAt: thirtyDaysAgo,
+            command: "npx sequant run 42",
+          },
+          null,
+          2,
+        ),
+      );
+
+      const next = runAcquireSync(dir, 42, "after-recycle");
+      expect(next.acquired).toBe(true);
+
+      // And the lock on disk is now ours, not the abandoned one.
+      const holder = JSON.parse(readFileSync(join(dir, "42.lock"), "utf-8"));
+      expect(holder.pid).not.toBe(1);
+      expect(holder.command).toBe("after-recycle");
+    },
+  );
+
+  it(
+    "a recent lock on a live PID is still respected (age-ceiling negative control)",
+    { timeout: 20_000 },
+    async () => {
+      // Guards the obvious over-correction: the ceiling must not make every
+      // same-host lock clearable.
+      writeFileSync(
+        join(dir, "43.lock"),
+        JSON.stringify(
+          {
+            pid: 1,
+            hostname: hostname(),
+            startedAt: new Date().toISOString(),
+            command: "npx sequant run 43",
+          },
+          null,
+          2,
+        ),
+      );
+
+      const blocked = runAcquireSync(dir, 43, "should-be-blocked");
+      expect(blocked.acquired).toBe(false);
     },
   );
 
