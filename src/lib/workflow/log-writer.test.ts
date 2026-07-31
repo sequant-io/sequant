@@ -116,6 +116,7 @@ describe("LogWriter", () => {
         passed: 0,
         failed: 0,
         partial: 0,
+        aborted: 0,
         totalDurationSeconds: 0,
       });
     });
@@ -409,6 +410,100 @@ describe("LogWriter", () => {
       expect(() => {
         writer.completeIssue();
       }).toThrow("No run log");
+    });
+  });
+
+  // ── #856: a run killed mid-flight must not persist as a success ────────
+  describe("aborted run logging (#856)", () => {
+    /** Read back the single log object handed to writeFileSync. */
+    function writtenLog(): {
+      issues: Array<{
+        status: string;
+        aborted?: boolean;
+        abortReason?: string;
+        phases: unknown[];
+      }>;
+      summary: { passed: number; failed: number; aborted: number };
+      abortedBy?: string;
+    } {
+      const call = (fs.writeFileSync as ReturnType<typeof vi.fn>).mock.calls[0];
+      return JSON.parse(call[1] as string);
+    }
+
+    it("records an issue with zero completed phases as a failure, not a pass", async () => {
+      // Reproduces run-2026-07-29T06-37-48-*.json exactly: startIssue ran,
+      // the phase never finished, the run was SIGTERM'd. That log claimed
+      // `status: "success"` and `summary.passed: 1`.
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+      // No logPhase() — the phase never completed.
+
+      await writer.finalize();
+
+      const log = writtenLog();
+      expect(log.issues[0].phases).toHaveLength(0);
+      expect(log.issues[0].status).toBe("failure");
+      expect(log.summary.passed).toBe(0);
+    });
+
+    it("marks in-flight issues aborted with their cause when finalizing under a signal", async () => {
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+
+      await writer.finalize({
+        aborted: {
+          signal: "SIGTERM",
+          reason: "terminated by an external SIGTERM (not sent by sequant)",
+        },
+      });
+
+      const log = writtenLog();
+      expect(log.issues[0].aborted).toBe(true);
+      expect(log.issues[0].abortReason).toContain("external SIGTERM");
+      expect(log.abortedBy).toBe("SIGTERM");
+      expect(log.summary.aborted).toBe(1);
+      // Aborts are a sub-count of failed, not a fourth disjoint bucket.
+      expect(log.summary.failed).toBe(1);
+      expect(log.summary.passed).toBe(0);
+    });
+
+    it("does not let a green prefix of phases turn an abort into a pass", async () => {
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+      writer.logPhase(mockPhaseLog); // spec: success
+      // ...then the run is killed during exec.
+
+      await writer.finalize({
+        aborted: { signal: "SIGTERM", reason: "terminated by SIGTERM" },
+      });
+
+      const log = writtenLog();
+      // deriveIssueLogStatus alone would say "success" here — one green spec
+      // and nothing else. The pipeline never reached a terminal state, so it
+      // is not a pass.
+      expect(log.issues[0].status).toBe("failure");
+      expect(log.issues[0].aborted).toBe(true);
+      expect(log.summary.passed).toBe(0);
+    });
+
+    it("leaves a normally finalized run untouched", async () => {
+      const writer = new LogWriter({ logPath: "/test/logs" });
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+      writer.logPhase(mockPhaseLog);
+      writer.completeIssue();
+
+      await writer.finalize();
+
+      const log = writtenLog();
+      expect(log.issues[0].status).toBe("success");
+      expect(log.issues[0].aborted).toBeUndefined();
+      expect(log.abortedBy).toBeUndefined();
+      expect(log.summary.passed).toBe(1);
+      expect(log.summary.aborted).toBe(0);
     });
   });
 

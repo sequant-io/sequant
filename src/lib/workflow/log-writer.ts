@@ -117,12 +117,17 @@ export class LogWriter {
       throw new Error("LogWriter not initialized. Call initialize() first.");
     }
 
+    // #856: seed pessimistically. This slot is only revised by `logPhase`, so
+    // an optimistic `"success"` seed became the persisted verdict for any
+    // issue whose first phase never completed — the exact shape of a run
+    // killed mid-flight. `completeIssue` re-derives from `phases` regardless,
+    // but the seed should not itself assert a pass that never happened.
     const issueData: Partial<IssueLog> = {
       issueNumber,
       title,
       labels,
       phases: [],
-      status: "success" as IssueStatus,
+      status: "failure" as IssueStatus,
       totalDurationSeconds: 0,
     };
 
@@ -200,8 +205,16 @@ export class LogWriter {
 
   /**
    * Complete the current issue and add it to the run log
+   *
+   * @param issueNumber - Issue to complete (defaults to the legacy single slot)
+   * @param abort - Set when the run is being torn down by an external signal
+   *   (#856). Marks the issue aborted with its cause instead of persisting
+   *   whatever verdict the incomplete phase list happens to imply.
    */
-  completeIssue(issueNumber?: number): void {
+  completeIssue(
+    issueNumber?: number,
+    abort?: { signal: string; reason: string },
+  ): void {
     if (!this.runLog) {
       throw new Error("No run log. Call initialize() first.");
     }
@@ -225,13 +238,27 @@ export class LogWriter {
         0,
       ) ?? 0;
 
+    // #856: derive from the phase list rather than trusting the slot's seed.
+    // An issue with no completed phase is a failure — the run was cut short.
+    //
+    // An abort forces `failure` even when every phase logged so far passed:
+    // the issue was still in flight when the signal arrived, so its pipeline
+    // never reached a terminal state and a partial prefix of green phases is
+    // not a pass. `abortReason` records why, so the log names its own cause
+    // instead of leaving a silently truncated record.
+    const status = abort ? "failure" : deriveIssueLogStatus(issue.phases ?? []);
+
     const issueLog: IssueLog = {
       issueNumber: issue.issueNumber!,
       title: issue.title!,
       labels: issue.labels!,
-      status: issue.status!,
+      status,
       phases: issue.phases!,
       totalDurationSeconds,
+      ...(abort && {
+        aborted: true,
+        abortReason: abort.reason,
+      }),
       ...(issue.prNumber != null && {
         prNumber: issue.prNumber,
       }),
@@ -265,24 +292,35 @@ export class LogWriter {
    *
    * @param options - Optional finalization options
    * @param options.endCommit - Git commit SHA at run end (AC-2)
+   * @param options.aborted - Set when finalizing because the run was
+   *   terminated by an external signal (#856). Every still-in-flight issue is
+   *   recorded as an abort naming its cause, and the run log carries
+   *   `abortedBy`. Without it, a killed run's log is indistinguishable from a
+   *   clean one that happened to do nothing.
    * @returns Path to the written log file
    */
-  async finalize(options?: { endCommit?: string }): Promise<string> {
+  async finalize(options?: {
+    endCommit?: string;
+    aborted?: { signal: string; reason: string };
+  }): Promise<string> {
     if (!this.runLog) {
       throw new Error("LogWriter not initialized.");
     }
 
+    const abort = options?.aborted;
+
     // Complete any pending issues (Map-based concurrent tracking)
     for (const issueNum of [...this.activeIssues.keys()]) {
-      this.completeIssue(issueNum);
+      this.completeIssue(issueNum, abort);
     }
     // Fallback: complete legacy currentIssue if not already handled
     if (this.currentIssue) {
-      this.completeIssue();
+      this.completeIssue(undefined, abort);
     }
 
     const finalLog = finalizeRunLog(this.runLog, {
       endCommit: options?.endCommit,
+      abortedBy: abort?.signal,
     });
     const filename = generateLogFilename(
       finalLog.runId,
