@@ -65,6 +65,14 @@ export class LogWriter {
   private activeIssues: Map<number, Partial<IssueLog>> = new Map();
   /** @deprecated Single-issue slot for backwards compatibility — use activeIssues */
   private currentIssue: Partial<IssueLog> | null = null;
+  /**
+   * Issue slots forced to `failure` by {@link markIssueFailed} (#879). Keyed on
+   * the slot object so it covers both the numbered and legacy `currentIssue`
+   * paths. `completeIssue` re-derives status from phases (#856), so a seeded
+   * `issue.status = "failure"` alone would be overwritten back to `success`;
+   * this marker survives that re-derivation.
+   */
+  private forcedFailures: WeakSet<Partial<IssueLog>> = new WeakSet();
   private logPath: string;
   private writeToUserLogs: boolean;
   private verbose: boolean;
@@ -201,6 +209,9 @@ export class LogWriter {
       return;
     }
     issue.status = "failure";
+    // completeIssue re-derives status from the phase list (#856), so the seed
+    // above is not enough on its own — mark the slot so completion honors it.
+    this.forcedFailures.add(issue);
   }
 
   /**
@@ -246,7 +257,13 @@ export class LogWriter {
     // never reached a terminal state and a partial prefix of green phases is
     // not a pass. `abortReason` records why, so the log names its own cause
     // instead of leaving a silently truncated record.
-    const status = abort ? "failure" : deriveIssueLogStatus(issue.phases ?? []);
+    // #879: markIssueFailed forces `failure` when every phase passed but a
+    // later step (e.g. PR creation) failed — same override intent as `abort`,
+    // so it must win over the phase-derived status too.
+    const status =
+      abort || this.forcedFailures.has(issue)
+        ? "failure"
+        : deriveIssueLogStatus(issue.phases ?? []);
 
     const issueLog: IssueLog = {
       issueNumber: issue.issueNumber!,
