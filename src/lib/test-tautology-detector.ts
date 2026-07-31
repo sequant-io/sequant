@@ -471,11 +471,19 @@ function referenceMatcher(name: string): RegExp {
 /**
  * Child-process spawn functions. A test that spawns the project's *build
  * output* is exercising production code across a process boundary that static
- * import analysis cannot see through — issue #885. Longer names are listed
- * first so the alternation prefers e.g. `execFileSync` over `exec`.
+ * import analysis cannot see through — issue #885.
+ *
+ * Two alternates by name ambiguity: the long names are unambiguous
+ * child-process API and match anywhere, including method-style calls from a
+ * namespace import (`cp.execSync(...)`). The short names (`exec`, `spawn`,
+ * `fork`) collide with unrelated methods — `RegExp.prototype.exec` most of
+ * all — so they must not be preceded by `.` (or an identifier char). The
+ * cost is that method-style callback `cp.exec(...)` no longer counts; tests
+ * that spawn build output overwhelmingly use the sync variants, and a false
+ * tautology report is loud where the `.exec()` collision was silent.
  */
 const SPAWN_PATTERN =
-  /\b(?:execFileSync|spawnSync|execSync|execFile|exec|fork|spawn)\s*\(/;
+  /(?:\b(?:execFileSync|spawnSync|execSync|execFile)\s*\(|(?<![\w$.])(?:exec|fork|spawn)\s*\()/;
 
 /**
  * Marker for the project's build-output directory. A spawn whose arguments

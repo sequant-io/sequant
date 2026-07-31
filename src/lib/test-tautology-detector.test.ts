@@ -562,6 +562,37 @@ describe("analyzeTestFile — subprocess-driven tests (#885)", () => {
     expect(localBlock?.isTautological).toBe(true);
   });
 
+  it("does not mask a tautology via method-style .exec() plus a dist/ token (AC-3)", () => {
+    // regex.exec() is RegExp.prototype.exec, not child_process.exec. A block
+    // that runs it against a build-path string but asserts only on locals
+    // calls nothing real and must stay flagged — the spawn matcher must not
+    // treat `.exec(` as a spawn.
+    const content = `
+      const cliPath = "dist/bin/cli.js";
+
+      it("matches the path with a regex", () => {
+        const match = /cli/.exec(cliPath);
+        expect(match).not.toBeNull();
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/regexexec.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(true);
+  });
+
+  it("still counts method-style sync spawns from a namespace import as production (AC-2)", () => {
+    // The unambiguous long names must keep matching in method position:
+    // cp.execSync(...) is child-process API even though it follows a dot.
+    const content = `
+      import * as cp from "node:child_process";
+      it("runs the built CLI via namespace import", () => {
+        const out = cp.execSync("node dist/bin/cli.js --version");
+        expect(out).toBeDefined();
+      });
+    `;
+    const result = analyzeTestFile(content, "src/commands/nsimport.test.ts");
+    expect(result.testBlocks[0].isTautological).toBe(false);
+  });
+
   it("does not treat a helper that references a dist/ string but never spawns as production (AC-5)", () => {
     // buildDir is a build-output token, but describeBuild only concatenates it —
     // no spawn. A block that merely calls describeBuild() calls nothing real.
