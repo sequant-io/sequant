@@ -4,6 +4,13 @@
  *
  * Reads test files from git diff and outputs tautology detection results.
  *
+ * Scope: this is a LOCAL / AGENT-SIDE ADVISORY, run by `/qa` via
+ * `.claude/skills/qa/scripts/quality-checks.sh`. It is inert in GitHub CI by
+ * design: `getChangedTestFiles()` diffs against `main`, but CI checks out with
+ * `fetch-depth: 1`, so no local `main` ref exists, the diff throws, and the
+ * detector reports zero changed files (exit 0). It therefore protects the
+ * pre-merge review loop, not CI. See issue #885 (AC-4) and #810.
+ *
  * Usage:
  *   npx tsx scripts/qa/tautology-detector-cli.ts [options]
  *

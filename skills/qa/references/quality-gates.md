@@ -122,6 +122,18 @@ A test block is flagged as tautological if:
 1. It's an `it()` or `test()` block
 2. It contains zero calls to functions imported from source modules
 3. Source modules are relative imports (`./`, `../`) excluding mocks/fixtures/test libraries
+4. AND it does not spawn the project's build output — a block that runs `dist/…`
+   via `execSync`/`spawnSync`/etc. (directly or through a helper) counts as
+   calling production code, since it exercises it across a process boundary that
+   static import analysis can't see through (#885)
+
+### Scope: local/agent-only advisory
+
+This gate runs inside `/qa` (`quality-checks.sh`), against `git diff main...HEAD`.
+It is **inert in GitHub CI by design**: CI checks out with `fetch-depth: 1`, so no
+local `main` ref exists, the diff throws, and the detector reports zero changed
+files. It protects the pre-merge review loop, not CI. Making it a hard CI gate
+would need `fetch-depth: 0` and a failure-mode policy — out of scope here (#885 AC-4, #810).
 
 ### Verdict Mapping
 
@@ -173,7 +185,9 @@ The `quality-checks.sh` script includes:
 **How it works:**
 1. Get test files from `git diff main...HEAD`
 2. For each test file, extract imports and test blocks
-3. Check if any imported production function is called within each test block
+3. Check if any imported production function is called within each test block —
+   or if the block spawns the `dist/` build output (directly or via a helper),
+   which counts as calling production code (#885)
 4. Report tautological tests with file:line references
 5. Block if >50% of test blocks are tautological
 
