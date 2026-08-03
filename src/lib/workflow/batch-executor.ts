@@ -429,6 +429,15 @@ export function recordIssueCompletion(
   logWriter.completeIssue(issueNumber);
 }
 
+/**
+ * @deprecated No live caller — `sequant run` executes issues via
+ * `RunOrchestrator.executeOneIssue`; this survives only as a
+ * `commands/run-compat` re-export. Do not build a new execution loop on it:
+ * any path that completes an issue MUST go through
+ * {@link recordIssueCompletion}, or the #879 status-drift returns (a
+ * completion path that skips the PR-failure flip logs a failed issue as
+ * `success`). Slated for removal with the run-compat surface.
+ */
 export async function executeBatch(
   issueNumbers: number[],
   batchCtx: BatchExecutionContext,
