@@ -460,24 +460,189 @@ function escapeRegex(str: string): string {
 }
 
 /**
- * Check if a test block contains calls to any of the imported production functions
+ * Build a whole-identifier reference matcher for `name`, bounded by
+ * non-identifier chars ([\w$]). Catches direct calls, method calls, callback
+ * references, and assignments while rejecting substring matches.
+ */
+function referenceMatcher(name: string): RegExp {
+  return new RegExp(`(?<![\\w$])${escapeRegex(name)}(?![\\w$])`);
+}
+
+/**
+ * Child-process spawn functions. A test that spawns the project's *build
+ * output* is exercising production code across a process boundary that static
+ * import analysis cannot see through — issue #885.
+ *
+ * Two alternates by name ambiguity: the long names are unambiguous
+ * child-process API and match anywhere, including method-style calls from a
+ * namespace import (`cp.execSync(...)`). The short names (`exec`, `spawn`,
+ * `fork`) collide with unrelated methods — `RegExp.prototype.exec` most of
+ * all — so they must not be preceded by `.` (or an identifier char). The
+ * cost is that method-style callback `cp.exec(...)` no longer counts; tests
+ * that spawn build output overwhelmingly use the sync variants, and a false
+ * tautology report is loud where the `.exec()` collision was silent.
+ */
+const SPAWN_PATTERN =
+  /(?:\b(?:execFileSync|spawnSync|execSync|execFile)\s*\(|(?<![\w$.])(?:exec|fork|spawn)\s*\()/;
+
+/**
+ * Marker for the project's build-output directory. A spawn whose arguments
+ * reach this path is running compiled production code.
+ */
+const BUILD_OUTPUT_PATTERN = /\bdist\//;
+
+/**
+ * Collect names of variables bound to a build-output path, e.g.
+ *   const cliPath = resolve(projectRoot, "dist/bin/cli.js");
+ * captures `cliPath`. Tests almost always spawn via such a handle rather than
+ * an inline string, so these names stand in for the literal build path.
+ *
+ * The right-hand side is statement-bounded (`[^;]`) so a match cannot bleed
+ * across declarations, and must contain the `dist/` marker.
+ */
+function collectBuildOutputVars(content: string): string[] {
+  const names = new Set<string>();
+  const pattern = /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\bdist\//g;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    names.add(match[1]);
+  }
+  return [...names];
+}
+
+/**
+ * Whether a code body references a build-output token: either the literal
+ * `dist/` marker or one of the collected build-path variable names.
+ */
+function referencesBuildOutput(
+  body: string,
+  buildOutputVars: string[],
+): boolean {
+  if (BUILD_OUTPUT_PATTERN.test(body)) {
+    return true;
+  }
+  return buildOutputVars.some((name) => referenceMatcher(name).test(body));
+}
+
+/**
+ * Whether a code body itself spawns the build output: it must contain BOTH a
+ * child-process spawn call AND a build-output token. Requiring co-occurrence
+ * keeps a helper that merely mentions `dist/` in a string (but never spawns)
+ * from counting as production (#885 AC-5).
+ */
+function spawnsBuildOutput(body: string, buildOutputVars: string[]): boolean {
+  return (
+    SPAWN_PATTERN.test(body) && referencesBuildOutput(body, buildOutputVars)
+  );
+}
+
+/**
+ * Extract module/describe-scope helper definitions (named block-bodied arrow
+ * consts) as { name, body } pairs.
+ *
+ * Anchors on `=> {` so a return-type object annotation
+ *   const run = (): { stdout: string } => { ... }
+ * is not mistaken for the function body. Params are matched with `[^()]*` (no
+ * nested parens) to keep the scan from running away across the file. Only
+ * block-bodied arrows are collected; the subprocess integration tests this
+ * targets all use them.
+ */
+function extractHelperDefinitions(
+  content: string,
+): Array<{ name: string; body: string }> {
+  const helpers: Array<{ name: string; body: string }> = [];
+  const pattern =
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^()]*\)\s*(?::[^=]*?)?=>\s*\{/g;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    if (isInsideString(content, match.index)) {
+      continue;
+    }
+    const name = match[1];
+    // The final `{` of the match is the function body's opening brace.
+    const braceIndex = match.index + match[0].length - 1;
+    const body = extractBlockBody(content.substring(braceIndex));
+    helpers.push({ name, body });
+  }
+  return helpers;
+}
+
+/**
+ * Collect the names of helper functions that spawn the build output, resolving
+ * indirection transitively: a helper that calls an already-known spawn helper
+ * is itself a spawn helper. This lets a test that only calls
+ * `expectFlagAccepted(...)` (which calls `runInUninitializedDir`, which spawns
+ * the CLI) count as exercising production code.
+ */
+function collectSpawnHandles(
+  content: string,
+  buildOutputVars: string[],
+): string[] {
+  const helpers = extractHelperDefinitions(content);
+  const handles = new Set<string>();
+
+  // Seed: helpers that directly spawn the build output.
+  for (const helper of helpers) {
+    if (spawnsBuildOutput(helper.body, buildOutputVars)) {
+      handles.add(helper.name);
+    }
+  }
+
+  // Transitive closure: a helper referencing a known spawn helper is one too.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const helper of helpers) {
+      if (handles.has(helper.name)) {
+        continue;
+      }
+      for (const known of handles) {
+        if (referenceMatcher(known).test(helper.body)) {
+          handles.add(helper.name);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return [...handles];
+}
+
+/**
+ * Check if a test block calls production code. A block counts as non-tautological
+ * when it references an imported production function, directly spawns the
+ * project's build output, or calls a helper that (transitively) does so.
+ *
+ * @param spawnHandles Names of describe/module-scope helpers that spawn the
+ *   build output (see {@link collectSpawnHandles}).
+ * @param buildOutputVars Variable names bound to a build-output path (see
+ *   {@link collectBuildOutputVars}).
  */
 export function testBlockCallsProductionCode(
   body: string,
   importedFunctions: ImportedFunction[],
+  spawnHandles: string[] = [],
+  buildOutputVars: string[] = [],
 ): boolean {
-  if (importedFunctions.length === 0) {
-    return false;
+  // 1. References an imported production function.
+  for (const fn of importedFunctions) {
+    if (referenceMatcher(fn.name).test(body)) {
+      return true;
+    }
   }
 
-  for (const fn of importedFunctions) {
-    // Check for any reference to the imported name bounded by non-identifier chars.
-    // Uses [\w$] to match JS identifier characters (letters, digits, _, $).
-    // This catches direct calls (fn()), method calls (ns.method()),
-    // callback references (arr.map(fn)), and assignments (const x = fn).
-    const escaped = escapeRegex(fn.name);
-    const referencePattern = new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`);
-    if (referencePattern.test(body)) {
+  // 2. Directly spawns the project's build output (#885). Static import
+  //    analysis can't see through a subprocess boundary, so a test that runs
+  //    `dist/bin/cli.js` looks import-less but exercises production code.
+  if (spawnsBuildOutput(body, buildOutputVars)) {
+    return true;
+  }
+
+  // 3. Calls a describe/module-scope helper that (transitively) spawns the
+  //    build output.
+  for (const handle of spawnHandles) {
+    if (referenceMatcher(handle).test(body)) {
       return true;
     }
   }
@@ -519,6 +684,8 @@ export function analyzeTestFile(
 
   try {
     const importedFunctions = extractImports(content);
+    const buildOutputVars = collectBuildOutputVars(content);
+    const spawnHandles = collectSpawnHandles(content, buildOutputVars);
     const testBlocks = extractTestBlocks(content);
 
     const analyzedBlocks: TestBlock[] = testBlocks.map((block) => ({
@@ -528,6 +695,8 @@ export function analyzeTestFile(
       isTautological: !testBlockCallsProductionCode(
         block.body,
         importedFunctions,
+        spawnHandles,
+        buildOutputVars,
       ),
     }));
 
