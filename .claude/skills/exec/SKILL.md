@@ -1522,8 +1522,25 @@ Look in the issue comments (especially from `/spec`) for:
    - Skip steps 1b and 5b
 
 1. **Create group marker before spawning agents:**
+
+   The marker name is **project-scoped** (#881) — a global name would redirect
+   worktree enforcement for every concurrent Claude session on the machine. Do
+   NOT hardcode the path; source the shared helper (the single source of truth
+   the hooks also read) and write the worktree path (line 1) plus the owning
+   project root (line 2):
    ```bash
-   touch /tmp/claude-parallel-group-1.marker
+   # Locate the shared marker helper next to the installed hooks.
+   MARKER_HELPER=""
+   for cand in \
+     "${CLAUDE_PLUGIN_ROOT:-}/hooks/parallel-marker.sh" \
+     "${CLAUDE_PROJECT_DIR:-}/.claude/hooks/parallel-marker.sh" \
+     ".claude/hooks/parallel-marker.sh"; do
+     [ -n "$cand" ] && [ -f "$cand" ] && { MARKER_HELPER="$cand"; break; }
+   done
+   source "$MARKER_HELPER"
+
+   MARKER=$(parallel_marker_path group-1)
+   { echo "[issue worktree path]"; parallel_marker_project_root; } > "$MARKER"
    ```
 
 1b. **Create sub-worktrees (isolation mode only):**
@@ -1575,7 +1592,9 @@ Look in the issue comments (especially from `/spec`) for:
 
 5. **Clean up marker and run post-group formatting:**
    ```bash
-   rm /tmp/claude-parallel-group-1.marker
+   # Remove this group's marker using the same project-scoped name as step 1.
+   # (Re-source the helper if $MARKER is not still in scope from step 1.)
+   rm -f "${MARKER:-$(source "$MARKER_HELPER"; parallel_marker_path group-1)}"
    npx prettier --write [files modified by agents]
    ```
 

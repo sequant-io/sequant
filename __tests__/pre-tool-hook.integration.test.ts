@@ -28,7 +28,7 @@ import {
   existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -102,7 +102,9 @@ describe.each(HOOK_COPIES)(
       spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
       // No pinentry in a test run when the contributor has global commit
       // signing on; CI has no signing key and never noticed.
-      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: cleanRepo });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: cleanRepo,
+      });
     });
 
     afterAll(() => {
@@ -447,7 +449,9 @@ describe.each(HOOK_COPIES)(
       spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
       // No pinentry in a test run when the contributor has global commit
       // signing on; CI has no signing key and never noticed.
-      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: cleanRepo });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: cleanRepo,
+      });
     });
 
     afterAll(() => {
@@ -936,6 +940,139 @@ describe.each(HOOK_PAIRS)(
       const result = run(preHook, 'git commit -m "feat: x"');
       expect(result.status).toBe(2);
       expect(result.stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+    });
+  },
+);
+
+// === Issue #881: parallel-group marker is project-scoped ===
+//
+// The marker filename used to be a global constant, so a parallel group in one
+// project redirected worktree enforcement for every concurrent Claude session
+// on the box: the reader globbed the whole temp dir and took the FIRST marker,
+// regardless of which project wrote it. A foreign marker pointing at a live,
+// unrelated worktree therefore blocked legitimate edits in the real worktree —
+// and, worse, pointed the guard somewhere meaningless for the session that lost
+// the race. The fix scopes the marker name to a per-project hash and stores the
+// owning project root inside the marker.
+//
+// These run against all three hook copies via HOOK_COPIES. TMPDIR is redirected
+// to a hermetic dir so only markers this test writes are visible; CLAUDE_PROJECT_DIR
+// is unset so the project root derives from the (git) cwd — the real worktree.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh parallel-group marker is project-scoped (#881) [%s]",
+  (_label, hookPath) => {
+    const HOOK_DIR = dirname(hookPath); // parallel-marker.sh sits next to it
+    let hermeticTmp: string;
+    let realWorktree: string; // the current project (a git repo)
+    let realFile: string;
+    let foreignLiveDir: string; // an unrelated, live directory
+
+    function markerEnv(): NodeJS.ProcessEnv {
+      const env = { ...process.env };
+      delete env.SEQUANT_WORKTREE;
+      delete env.SEQUANT_ISSUE;
+      delete env.CLAUDE_HOOKS_DISABLED;
+      delete env.CLAUDE_PROJECT_DIR; // force git-toplevel derivation from cwd
+      env.CLAUDE_PLUGIN_DATA = LOG_HOME;
+      env.TMPDIR = hermeticTmp;
+      return env;
+    }
+
+    function runEdit(filePath: string): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Edit",
+        tool_input: { file_path: filePath, old_string: "a", new_string: "b" },
+      });
+      const r = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd: realWorktree,
+        env: markerEnv(),
+        encoding: "utf8",
+      });
+      return { code: r.status ?? -1, stderr: r.stderr ?? "" };
+    }
+
+    // Ask the SAME helper the hook sources (in the same cwd/env) for the marker
+    // path and owning project root this project would use, so the positive
+    // control writes a genuinely-matching marker rather than a guessed name.
+    function ownMarker(): { path: string; root: string } {
+      const helper = join(HOOK_DIR, "parallel-marker.sh");
+      const r = spawnSync(
+        "bash",
+        [
+          "-c",
+          // Both helpers print without a trailing newline, so add explicit
+          // separators to keep the two values on distinct lines.
+          `source "${helper}"; parallel_marker_path group-1; echo; parallel_marker_project_root; echo`,
+        ],
+        { cwd: realWorktree, env: markerEnv(), encoding: "utf8" },
+      );
+      const lines = (r.stdout ?? "").split("\n");
+      return { path: (lines[0] ?? "").trim(), root: (lines[1] ?? "").trim() };
+    }
+
+    beforeAll(() => {
+      hermeticTmp = mkdtempSync(join(tmpdir(), "pre-tool-881-tmp-"));
+      realWorktree = mkdtempSync(join(tmpdir(), "pre-tool-881-real-"));
+      spawnSync("git", ["init", "-q"], { cwd: realWorktree });
+      spawnSync("git", ["config", "user.email", "test@test"], {
+        cwd: realWorktree,
+      });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: realWorktree });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: realWorktree,
+      });
+      realFile = join(realWorktree, "src.ts");
+      writeFileSync(realFile, "a\n");
+      foreignLiveDir = mkdtempSync(join(tmpdir(), "pre-tool-881-foreign-"));
+    });
+
+    afterAll(() => {
+      rmSync(hermeticTmp, { recursive: true, force: true });
+      rmSync(realWorktree, { recursive: true, force: true });
+      rmSync(foreignLiveDir, { recursive: true, force: true });
+    });
+
+    // AC-5: a foreign project's marker (non-matching filename hash) pointing at
+    // an unrelated LIVE directory must NOT redirect enforcement — an edit inside
+    // the real worktree is still permitted.
+    //
+    // Mutation-verify (per repo testing rule): revert the reader scoping — glob
+    // back to `claude-parallel-*` AND drop the line-2 owner guard in this hook
+    // copy — and exactly this assertion flips to exit 2 (worktree-boundary).
+    it("AC-5: a foreign live marker does not block an edit in the real worktree", () => {
+      const foreignMarker = join(
+        hermeticTmp,
+        // A non-md5 hash segment guarantees this never matches the current
+        // project's project-hashed prefix.
+        "claude-parallel-foreignprojecthash0000000000000000-group-1.marker",
+      );
+      writeFileSync(foreignMarker, `${foreignLiveDir}\n/some/other/project\n`);
+
+      const { code, stderr } = runEdit(realFile);
+      expect(stderr).not.toMatch(/HOOK_BLOCKED/);
+      expect(code).toBe(0);
+    });
+
+    // Positive control: scoping the readers must not disable enforcement. A
+    // marker written under THIS project's own scoped name and owner, pointing at
+    // a live foreign worktree, must still block an edit outside that worktree.
+    it("positive control: this project's own marker still enforces its worktree", () => {
+      const own = ownMarker();
+      expect(own.path).toContain("claude-parallel-");
+      expect(own.root.length).toBeGreaterThan(0);
+      // line 1 = enforced worktree (a live foreign dir), line 2 = this project's
+      // own root so the AC-3 owner guard accepts it.
+      writeFileSync(own.path, `${foreignLiveDir}\n${own.root}\n`);
+      try {
+        const { code, stderr } = runEdit(realFile);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: File operation must be within worktree/,
+        );
+      } finally {
+        rmSync(own.path, { force: true });
+      }
     });
   },
 );

@@ -60,7 +60,23 @@ mkdir -p "$_LOG_DIR" 2>/dev/null || _LOG_DIR="${_TMPDIR}"
 
 TIMING_LOG="${_LOG_DIR}/claude-timing.log"
 HOOK_LOG="${_LOG_DIR}/claude-hook.log"
-PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
+
+# Parallel-group marker naming (#881). The scheme lives in one sourced helper
+# next to this hook so the writer (/exec skill) and the readers (this hook and
+# post-tool.sh) cannot drift. PARALLEL_MARKER_PREFIX is project-scoped, so a
+# parallel group in another project no longer collides in the shared temp dir.
+_MARKER_HELPER="$(dirname "${BASH_SOURCE[0]:-$0}")/parallel-marker.sh"
+if [[ -f "$_MARKER_HELPER" ]]; then
+    # shellcheck source=parallel-marker.sh disable=SC1091
+    source "$_MARKER_HELPER"
+    PARALLEL_MARKER_PREFIX="$(parallel_marker_prefix)"
+    PARALLEL_MARKER_PROJECT_ROOT="$(parallel_marker_project_root)"
+else
+    # Helper missing (unexpected): fall back to the pre-#881 global prefix so the
+    # hook still functions, accepting the old cross-project collision risk.
+    PARALLEL_MARKER_PREFIX="${_TMPDIR}/claude-parallel-"
+    PARALLEL_MARKER_PROJECT_ROOT=""
+fi
 
 # === HELPERS ===
 
@@ -237,17 +253,20 @@ if [[ "$TOOL_NAME" == "Bash" ]]; then
 fi
 
 # === AGENT ID DETECTION ===
-# For parallel agents, detect group ID from marker files
-# Format: ${_TMPDIR}/claude-parallel-<group-id>.marker
+# For parallel agents, detect group ID from marker files. The glob is scoped to
+# the current project's marker prefix (#881) so a foreign project's marker never
+# labels this session's timing rows.
 AGENT_ID=""
+_MARKER_BASE=$(basename "$PARALLEL_MARKER_PREFIX")
 # Find marker files using find (works in both bash and zsh)
 while IFS= read -r marker; do
     if [[ -n "$marker" && -f "$marker" ]]; then
-        # Extract group ID from marker filename
-        AGENT_ID=$(basename "$marker" | sed 's/claude-parallel-//' | sed 's/\.marker//')
+        # Extract group ID: strip the project-scoped prefix and the suffix.
+        AGENT_ID=$(basename "$marker" .marker)
+        AGENT_ID=${AGENT_ID#"$_MARKER_BASE"}
         break
     fi
-done < <(find "${_TMPDIR}" -maxdepth 1 -name "claude-parallel-*.marker" 2>/dev/null)
+done < <(find "${_TMPDIR}" -maxdepth 1 -name "${_MARKER_BASE}*.marker" 2>/dev/null)
 
 # === TIMING START ===
 # Include agent ID in log format if available (AC-4)
@@ -631,10 +650,21 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
         EXPECTED_WORKTREE="$SEQUANT_WORKTREE"
     fi
 
-    # Priority 2: Fall back to parallel marker file
+    # Priority 2: Fall back to parallel marker file. The glob prefix is already
+    # scoped to this project's hash (#881, AC-2), so a foreign project's marker
+    # is not matched here. As defense-in-depth (AC-3), also verify the marker's
+    # stored owning project root (line 2) matches the current one before trusting
+    # it — a stale or hand-placed marker with a colliding name is ignored rather
+    # than allowed to redirect enforcement.
     if [[ -z "$EXPECTED_WORKTREE" ]]; then
         for marker in "${PARALLEL_MARKER_PREFIX}"*.marker; do
             if [[ -f "$marker" ]]; then
+                MARKER_PROJECT_ROOT=$(sed -n '2p' "$marker" 2>/dev/null || true)
+                if [[ -n "$MARKER_PROJECT_ROOT" && -n "$PARALLEL_MARKER_PROJECT_ROOT" \
+                      && "$MARKER_PROJECT_ROOT" != "$PARALLEL_MARKER_PROJECT_ROOT" ]]; then
+                    # Foreign owner — ignore this marker entirely.
+                    continue
+                fi
                 # Read expected worktree path from marker file (first line)
                 EXPECTED_WORKTREE=$(head -1 "$marker" 2>/dev/null || true)
                 break
