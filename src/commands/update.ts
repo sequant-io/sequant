@@ -19,6 +19,7 @@ import {
   resolvePackageManager,
 } from "../lib/stacks.js";
 import { writeFile } from "../lib/fs.js";
+import { chmod } from "fs/promises";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
 
@@ -287,6 +288,11 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
   for (const file of applySet) {
     await writeFile(file.path, file.rendered);
+    // Shell scripts (hooks, scripts/dev) need the exec bit, matching the
+    // copyTemplates write path.
+    if (file.path.endsWith(".sh")) {
+      await chmod(file.path, 0o755);
+    }
     updated++;
   }
 

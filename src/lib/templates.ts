@@ -297,6 +297,34 @@ export interface TemplateChange {
 }
 
 /**
+ * Map a bundled template path to the location `copyTemplates` installs it to,
+ * or `null` for templates the copy/diff cycle does not manage.
+ *
+ * This mirrors the routing in `copyTemplates` (write time) so
+ * `computeTemplateChanges` (diff time) can never report drift on a file init
+ * deliberately places elsewhere — `.claude/mcp.json`, `.claude/relay/*`, and
+ * `.claude/scripts/*` read as phantom "new" files on every fresh install when
+ * the diff assumed a flat `.claude/<relpath>` layout. #708 gives the same
+ * guarantee for the template *variables*; this covers the *destinations*.
+ *
+ * - `templates/mcp.json` → `null`: the project `.mcp.json` is generated and
+ *   version-pinned by `mcp-config.ts` (`syncSequantMcpPin`), never copied.
+ * - `templates/relay/` → `null`: not installed by `copyTemplates`.
+ * - `templates/scripts/` → `scripts/dev/`: symlinked on POSIX, copied on
+ *   Windows / `--no-symlinks`.
+ * - everything else → `.claude/<relpath>`.
+ */
+export function templateDestination(templatePath: string): string | null {
+  const normalized = templatePath.replace(/\\/g, "/");
+  if (normalized === "templates/mcp.json") return null;
+  if (normalized.startsWith("templates/relay/")) return null;
+  if (normalized.startsWith("templates/scripts/")) {
+    return normalized.replace("templates/scripts/", "scripts/dev/");
+  }
+  return normalized.replace("templates/", ".claude/");
+}
+
+/**
  * Compare bundled template content against what's installed under `.claude/`.
  *
  * Templates are rendered with the project's variables *before* comparison, so
@@ -315,12 +343,13 @@ export async function computeTemplateChanges(
   const changes: TemplateChange[] = [];
 
   for (const templatePath of templateFiles) {
-    // Normalize separators first: listTemplateFiles builds paths with the OS
-    // separator (backslashes on Windows), but the prefix swap and the .local/
-    // and customizable-file checks below all assume forward slashes (#708).
-    const localPath = templatePath
-      .replace(/\\/g, "/")
-      .replace("templates/", ".claude/");
+    // templateDestination normalizes separators (listTemplateFiles builds
+    // paths with the OS separator, backslashes on Windows — #708) and applies
+    // the same routing copyTemplates uses at write time.
+    const localPath = templateDestination(templatePath);
+    if (localPath === null) {
+      continue;
+    }
 
     // Skip .local files (user customizations are never overwritten)
     if (localPath.includes(".local/")) {
@@ -362,8 +391,12 @@ export async function computeTemplateChanges(
     // auto-skipped above because it lives under `.local/`. The directive sits at
     // the top, not end-of-file, so it fires reliably even in 3000-line skills.
     // See docs/guides/customization.md.
-    const localOverridePath = localPath.replace(".claude/", ".claude/.local/");
-    const hasLocalOverride = await fileExists(localOverridePath);
+    // Only `.claude/` files have `.local/` twins; for `scripts/dev/` paths the
+    // replace would be a no-op and the file would shadow itself as its own
+    // "override".
+    const hasLocalOverride =
+      localPath.startsWith(".claude/") &&
+      (await fileExists(localPath.replace(".claude/", ".claude/.local/")));
 
     if (hasLocalOverride || isCustomizableFile(localPath)) {
       changes.push({
