@@ -230,6 +230,30 @@ describe("displaySummary — failure reason is the last attempt (#766)", () => {
 
     expect(input.issues[0].failureReason).toBe("locked by PID 123");
   });
+
+  it("falls back to prCreationError when all phases passed but the PR failed (#879, AC-7)", () => {
+    // #879: PR creation failed after every phase passed — there is no failed
+    // phase, so without the prCreationError fallback the cell would read the
+    // useless "phase failed". The summary must name the real reason.
+    const input = captureSummaryInput(
+      runResult([
+        issueResult({
+          issueNumber: 879,
+          success: false,
+          phaseResults: [
+            phase({ phase: "exec", success: true }),
+            phase({ phase: "qa", success: true }),
+          ],
+          prCreationError:
+            "gh pr create failed: GraphQL: No commits between main and feature/879",
+        }),
+      ]),
+    );
+
+    expect(input.issues[0].failureReason).toContain("No commits between main");
+    // And the issue is counted under failed, not passed.
+    expect(input.issues[0].success).toBe(false);
+  });
 });
 
 describe("displaySummary — checkpoint failure notice (#760)", () => {

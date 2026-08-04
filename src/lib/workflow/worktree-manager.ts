@@ -1504,7 +1504,11 @@ export function buildAutomatedPRBody(
  * Push branch and create a PR after successful QA.
  *
  * Handles both fresh PR creation and detection of existing PRs.
- * Failures are warnings — they don't fail the run.
+ *
+ * Returns `{ success: false, error }` on failure. As of #879 the caller
+ * (`runIssueWithLogging`) treats an attempted-but-failed PR as a run failure:
+ * a passing run that produced no PR is not a success. This function itself
+ * still only reports — it never throws — so relay teardown runs regardless.
  *
  * @param worktreePath Path to the worktree
  * @param issueNumber Issue number

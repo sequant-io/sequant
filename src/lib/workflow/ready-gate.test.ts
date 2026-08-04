@@ -97,7 +97,7 @@ function baseOpts(
     maxIterations: 3,
     phaseTimeout: 1800,
     mcp: false,
-    hasChangesFn: () => true,
+    classifyChangesFn: () => ({ kind: "commits" }),
     readTokensUsed: () => 0,
     snapshotFn: progressingSnapshots(),
     ...overrides,
@@ -406,11 +406,32 @@ describe("runReadyGate — AC-5 #534 regression guard", () => {
     // QA somehow returns a positive verdict, but the worktree has no changes.
     const { runPhase } = scriptedRunner([qaResult("AC_MET_BUT_NOT_A_PLUS")]);
     const result = await runReadyGate(
-      baseOpts({ runPhase, hasChangesFn: () => false }),
+      baseOpts({ runPhase, classifyChangesFn: () => ({ kind: "none" }) }),
     );
 
     expect(result.reason).toBe("NO_IMPLEMENTATION");
     expect(result.ready).toBe(false);
+  });
+
+  it("an uncommitted-only worktree is not ready, distinctly from NO_IMPLEMENTATION (#879, AC-4)", async () => {
+    // QA returns a positive verdict, but the worktree is dirty with no commits.
+    // Distinct reason: work exists but cannot become a PR until committed.
+    const { runPhase } = scriptedRunner([qaResult("AC_MET_BUT_NOT_A_PLUS")]);
+    const result = await runReadyGate(
+      baseOpts({
+        runPhase,
+        classifyChangesFn: () => ({
+          kind: "uncommitted",
+          paths: ["src/foo.ts"],
+        }),
+      }),
+    );
+
+    expect(result.reason).toBe("UNCOMMITTED_ONLY");
+    expect(result.reason).not.toBe("NO_IMPLEMENTATION");
+    expect(result.ready).toBe(false);
+    // #879: its own headline + reason text, distinct from NO_IMPLEMENTATION.
+    expect(result.report).toContain("uncommitted");
   });
 });
 

@@ -35,7 +35,7 @@ import {
   compareLoopProgress,
   type LoopProgressSnapshot,
 } from "./qa-stagnation.js";
-import { hasExecChanges } from "./phase-executor.js";
+import { classifyExecChanges, type ExecChangeState } from "./phase-executor.js";
 import {
   readTokenUsageFiles,
   aggregateTokenUsage,
@@ -64,6 +64,12 @@ export type ReadyTerminalReason =
   | "LOOP_FAILED"
   /** #534: zero-diff exec worktree — nothing was built. Not ready. */
   | "NO_IMPLEMENTATION"
+  /**
+   * #879: the worktree is dirty but has no commits. Distinct from
+   * NO_IMPLEMENTATION — work exists, but uncommitted work cannot rebase, push,
+   * or become a PR, so it is not certifiable as-is. Re-run once it is committed.
+   */
+  | "UNCOMMITTED_ONLY"
   /**
    * #853: QA ran but produced no verdict (deferred its one-shot turn, or
    * output was unparseable). Distinct from NO_IMPLEMENTATION — the
@@ -142,8 +148,8 @@ export interface RunReadyGateOptions {
   onProgress?: ProgressCallback;
   /** Injectable token reader — defaults to reading `<worktree>/.sequant`. */
   readTokensUsed?: (worktreePath: string) => number;
-  /** Injectable change detector — defaults to {@link hasExecChanges}. */
-  hasChangesFn?: (cwd: string) => boolean;
+  /** Injectable change classifier — defaults to {@link classifyExecChanges}. */
+  classifyChangesFn?: (cwd: string) => ExecChangeState;
   /** Injectable loop-progress snapshot — defaults to {@link snapshotLoopProgress}. */
   snapshotFn?: (cwd: string) => LoopProgressSnapshot;
 }
@@ -310,9 +316,11 @@ export function formatReadyReport(result: ReadyResult): string {
     ? "✅ READY — awaiting human merge decision"
     : result.reason === "NO_IMPLEMENTATION"
       ? "⛔ NOT READY — no implementation detected"
-      : result.reason === "NO_VERDICT"
-        ? "⛔ NOT READY — QA produced no verdict"
-        : "⚠️ NOT READY — needs human intervention";
+      : result.reason === "UNCOMMITTED_ONLY"
+        ? "⛔ NOT READY — work is uncommitted"
+        : result.reason === "NO_VERDICT"
+          ? "⛔ NOT READY — QA produced no verdict"
+          : "⚠️ NOT READY — needs human intervention";
 
   const reasonText: Record<ReadyTerminalReason, string> = {
     AC_MET:
@@ -328,6 +336,8 @@ export function formatReadyReport(result: ReadyResult): string {
       "The fix loop phase failed. A human should investigate before merging.",
     NO_IMPLEMENTATION:
       "Zero-diff worktree — there is nothing to certify (#534 guard).",
+    UNCOMMITTED_ONLY:
+      "The worktree has uncommitted changes but no commits (#879 guard). Uncommitted work cannot rebase, push, or become a PR — commit it, then re-run the gate.",
     NO_VERDICT:
       "QA ran but produced no verdict (deferred one-shot turn or unparseable output) — there is nothing to certify (#534/#853 guard). The implementation may exist; re-run the gate once QA emits a verdict.",
   };
@@ -390,7 +400,7 @@ export async function runReadyGate(
     nonGoals = [],
   } = opts;
   const readTokensUsed = opts.readTokensUsed ?? defaultReadTokensUsed;
-  const hasChangesFn = opts.hasChangesFn ?? hasExecChanges;
+  const classifyChangesFn = opts.classifyChangesFn ?? classifyExecChanges;
   const snapshotFn = opts.snapshotFn ?? snapshotLoopProgress;
 
   // #697: run a phase while emitting live-progress events around it. `iteration`
@@ -485,10 +495,16 @@ export async function runReadyGate(
     if (!verdict) {
       return finish("NO_VERDICT");
     }
-    // #534 guard: an empty worktree (no commits, no uncommitted work) is never
-    // "ready" — replays the #529/#570 empty-branch class.
-    if (!hasChangesFn(worktreePath)) {
+    // #534/#879 guard: a worktree with no commits is never "ready". Split by
+    // cause so the report is not misleading: `none` is the empty-branch class
+    // (#529/#570), `uncommitted` is a dirty tree whose work cannot become a PR
+    // until committed (#879). `commits`/`unknown` continue (unknown fails open).
+    const changes = classifyChangesFn(worktreePath);
+    if (changes.kind === "none") {
       return finish("NO_IMPLEMENTATION");
+    }
+    if (changes.kind === "uncommitted") {
+      return finish("UNCOMMITTED_ONLY");
     }
 
     finalVerdict = verdict;

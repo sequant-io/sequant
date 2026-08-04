@@ -17,9 +17,18 @@
 
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { RunOrchestrator } from "./run-orchestrator.js";
-import type { RunInit } from "./run-orchestrator.js";
+import type { OrchestratorConfig, RunInit } from "./run-orchestrator.js";
+import { runIssueWithLogging } from "./batch-executor.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
-import type { RunOptions } from "./types.js";
+import type { ExecutionConfig, IssueResult, RunOptions } from "./types.js";
+
+// Only `runIssueWithLogging` is replaced — everything else (in particular
+// `recordIssueCompletion`, whose live-path wiring the #879 tests below pin)
+// stays real, so the empty-issue #867 tests above are unaffected.
+vi.mock("./batch-executor.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./batch-executor.js")>();
+  return { ...actual, runIssueWithLogging: vi.fn() };
+});
 
 function runInit(options: Partial<RunOptions> = {}): RunInit {
   return {
@@ -94,5 +103,112 @@ describe("RunOrchestrator.run — produces the run wall clock (#867)", () => {
     } finally {
       restore();
     }
+  });
+});
+
+describe("RunOrchestrator.executeOneIssue — live completion path (#879)", () => {
+  // `recordIssueCompletion` has its own unit tests (batch-executor.test.ts),
+  // but the #879 defect was never in the helper — it was the LIVE path
+  // (`executeOneIssue`, what `sequant run` actually executes) not calling the
+  // status flip at all while the unused `executeBatch` loop did. These tests
+  // drive `executeOneIssue` itself with only `runIssueWithLogging` mocked and
+  // the real `recordIssueCompletion` in between, so a future edit that reverts
+  // this path to bare `setPRInfo` + `completeIssue` fails here, not in review.
+  //
+  // `executeOneIssue` is private to TypeScript only; the cast is the same
+  // exported-for-testing trade-off `getProgressCallback` documents.
+
+  afterEach(() => {
+    vi.mocked(runIssueWithLogging).mockReset();
+  });
+
+  function spyLogWriter() {
+    return {
+      startIssue: vi.fn(),
+      setPRInfo: vi.fn(),
+      markIssueFailed: vi.fn(),
+      completeIssue: vi.fn(),
+    };
+  }
+
+  function issueResult(overrides: Partial<IssueResult>): IssueResult {
+    return {
+      issueNumber: 765,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 1,
+      ...overrides,
+    };
+  }
+
+  async function driveExecuteOneIssue(
+    result: IssueResult,
+    parallelIssueNumber?: number,
+  ) {
+    vi.mocked(runIssueWithLogging).mockResolvedValue(result);
+    const logWriter = spyLogWriter();
+    const orch = new RunOrchestrator({
+      config: { phases: ["exec"] } as ExecutionConfig,
+      options: {} as RunOptions,
+      issueInfoMap: new Map(),
+      worktreeMap: new Map(),
+      services: {
+        logWriter:
+          logWriter as unknown as OrchestratorConfig["services"]["logWriter"],
+      },
+    } as OrchestratorConfig);
+    const orchAny = orch as unknown as {
+      buildBatchContext(): unknown;
+      executeOneIssue(args: {
+        issueNumber: number;
+        batchCtx: unknown;
+        parallelIssueNumber?: number;
+      }): Promise<IssueResult>;
+    };
+    const returned = await orchAny.executeOneIssue({
+      issueNumber: result.issueNumber,
+      batchCtx: orchAny.buildBatchContext(),
+      parallelIssueNumber,
+    });
+    return { logWriter, returned };
+  }
+
+  it("flips the run-log status when the result carries a prCreationError", async () => {
+    const { logWriter, returned } = await driveExecuteOneIssue(
+      issueResult({
+        issueNumber: 765,
+        success: false,
+        prCreationError: "gh pr create failed: No commits between main and …",
+      }),
+      765,
+    );
+
+    expect(logWriter.markIssueFailed).toHaveBeenCalledWith(765);
+    expect(logWriter.completeIssue).toHaveBeenCalledWith(765);
+    // Flip before completion, or completeIssue snapshots the stale "success".
+    expect(logWriter.markIssueFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      logWriter.completeIssue.mock.invocationCallOrder[0],
+    );
+    expect(returned.success).toBe(false);
+  });
+
+  it("records PR info and does NOT flip status when the PR was created", async () => {
+    const { logWriter } = await driveExecuteOneIssue(
+      issueResult({
+        issueNumber: 766,
+        success: true,
+        prNumber: 900,
+        prUrl: "https://example.test/pr/900",
+      }),
+      766,
+    );
+
+    expect(logWriter.setPRInfo).toHaveBeenCalledWith(
+      900,
+      "https://example.test/pr/900",
+      766,
+    );
+    expect(logWriter.markIssueFailed).not.toHaveBeenCalled();
+    expect(logWriter.completeIssue).toHaveBeenCalledWith(766);
   });
 });

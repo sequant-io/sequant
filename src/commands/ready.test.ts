@@ -102,6 +102,13 @@ describe("getReadyExitCode (AC-4 / AC-5)", () => {
     ).toBe(2);
   });
 
+  it("uncommitted-only (#879) → 2, same class as no-implementation", () => {
+    // Nothing certifiable exists on the branch until the work is committed.
+    expect(
+      getReadyExitCode(result({ ready: false, reason: "UNCOMMITTED_ONLY" })),
+    ).toBe(2);
+  });
+
   it("other not-ready (needs human) → 1", () => {
     expect(
       getReadyExitCode(result({ ready: false, reason: "MAX_ITERATIONS" })),
