@@ -12,7 +12,7 @@ Run dependency audit when `package.json` is modified:
 
 ```bash
 # Check if package.json was modified
-pkg_modified=$(git diff main...HEAD --name-only | grep -E "^package\.json$" | head -1)
+pkg_modified=$(git diff origin/main...HEAD --name-only | grep -E "^package\.json$" | head -1)
 if [[ -n "$pkg_modified" ]]; then
   echo "package.json modified - running dependency audit"
 fi
@@ -22,7 +22,7 @@ fi
 
 ```bash
 # Get new dependencies (added in this branch)
-git diff main...HEAD -- package.json | grep '^\+.*":' | grep -v '^\+\+\+' | sed 's/.*"\([^"]*\)".*/\1/' | grep -v -E '^(@types/|version|name|description|scripts|devDependencies|dependencies|peerDependencies)$'
+git diff origin/main...HEAD -- package.json | grep '^\+.*":' | grep -v '^\+\+\+' | sed 's/.*"\([^"]*\)".*/\1/' | grep -v -E '^(@types/|version|name|description|scripts|devDependencies|dependencies|peerDependencies)$'
 ```
 
 ### Audit Criteria
@@ -112,7 +112,7 @@ npm audit --json 2>/dev/null | jq '.vulnerabilities | length'
 
 ```bash
 # Run on changed files only
-changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
+changed_files=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$')
 
 # N+1 query pattern (await in loop)
 grep -n -E 'for\s*\([^)]*\)\s*\{[^}]*await|\.forEach\([^)]*async' $changed_files 2>/dev/null
@@ -242,15 +242,15 @@ set -e
 echo "=== Anti-Pattern Detection ==="
 
 # Get changed files
-CHANGED_TS=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
-PKG_CHANGED=$(git diff main...HEAD --name-only | grep -E '^package\.json$' || true)
+CHANGED_TS=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
+PKG_CHANGED=$(git diff origin/main...HEAD --name-only | grep -E '^package\.json$' || true)
 
 # 1. Dependency Audit
 if [[ -n "$PKG_CHANGED" ]]; then
   echo ""
   echo "## Dependency Audit"
   # Get new deps
-  NEW_DEPS=$(git diff main...HEAD -- package.json | grep '^\+.*":' | grep -v '^\+\+\+' | sed 's/.*"\([^"]*\)".*/\1/' | grep -v -E '^(@types/|version|name|description|scripts|devDependencies|dependencies|peerDependencies|engines|repository|author|license|bugs|homepage|main|module|types)$' || true)
+  NEW_DEPS=$(git diff origin/main...HEAD -- package.json | grep '^\+.*":' | grep -v '^\+\+\+' | sed 's/.*"\([^"]*\)".*/\1/' | grep -v -E '^(@types/|version|name|description|scripts|devDependencies|dependencies|peerDependencies|engines|repository|author|license|bugs|homepage|main|module|types)$' || true)
 
   if [[ -n "$NEW_DEPS" ]]; then
     echo "New dependencies detected:"

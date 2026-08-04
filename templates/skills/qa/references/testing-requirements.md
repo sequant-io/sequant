@@ -106,7 +106,7 @@ For each AC, identify and test at least ONE edge case:
 **REQUIRED for `app/admin/` changes:**
 
 ```bash
-admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1)
+admin_modified=$(git diff origin/main...HEAD --name-only | grep -E "^app/admin/" | head -1)
 if [[ -n "$admin_modified" ]]; then
   echo "⚠️ Admin files modified - smoke test required"
 fi

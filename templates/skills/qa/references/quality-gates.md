@@ -129,7 +129,7 @@ A test block is flagged as tautological if:
 
 ### Scope: local/agent-only advisory
 
-This gate runs inside `/qa` (`quality-checks.sh`), against `git diff main...HEAD`.
+This gate runs inside `/qa` (`quality-checks.sh`), against `git diff origin/main...HEAD`.
 It is **inert in GitHub CI by design**: CI checks out with `fetch-depth: 1`, so no
 local `main` ref exists, the diff throws, and the detector reports zero changed
 files. It protects the pre-merge review loop, not CI. Making it a hard CI gate
@@ -183,7 +183,7 @@ The `quality-checks.sh` script includes:
 - Detection library: `src/lib/test-tautology-detector.ts`
 
 **How it works:**
-1. Get test files from `git diff main...HEAD`
+1. Get test files from `git diff origin/main...HEAD`
 2. For each test file, extract imports and test blocks
 3. Check if any imported production function is called within each test block —
    or if the block spawns the `dist/` build output (directly or via a helper),
@@ -386,11 +386,11 @@ Determine execution requirement based on what files were changed:
 
 ```bash
 # Detect change type
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs)
-cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs)
-ui_changed=$(git diff main...HEAD --name-only | grep -E "^(app|components|pages)/" | wc -l | xargs)
-types_only=$(git diff main...HEAD --name-only | grep -E "\.d\.ts$|^types/" | wc -l | xargs)
-tests_only=$(git diff main...HEAD --name-only | grep -E "\.test\.|\.spec\.|__tests__" | wc -l | xargs)
+scripts_changed=$(git diff origin/main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs)
+cli_changed=$(git diff origin/main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs)
+ui_changed=$(git diff origin/main...HEAD --name-only | grep -E "^(app|components|pages)/" | wc -l | xargs)
+types_only=$(git diff origin/main...HEAD --name-only | grep -E "\.d\.ts$|^types/" | wc -l | xargs)
+tests_only=$(git diff origin/main...HEAD --name-only | grep -E "\.test\.|\.spec\.|__tests__" | wc -l | xargs)
 ```
 
 ### Execution Matrix

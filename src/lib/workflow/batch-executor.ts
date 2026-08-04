@@ -29,7 +29,11 @@ import {
   type ErrorCategory,
 } from "./error-classifier.js";
 import type { ErrorContext } from "./run-log-schema.js";
-import { getGitDiffStats, getCommitHash } from "./git-diff-utils.js";
+import {
+  getGitDiffStats,
+  getCommitHash,
+  resolveDiffBase,
+} from "./git-diff-utils.js";
 import {
   createCheckpointCommit,
   rebaseBeforePR,
@@ -1256,14 +1260,24 @@ export async function runIssueWithLogging(
 
       // Log phase result with observability data (AC-1, AC-2, AC-3, AC-7)
       if (logWriter) {
-        // Capture git diff stats for worktree phases (AC-1, AC-3)
-        const diffStats = worktreePath
-          ? getGitDiffStats(worktreePath, baseBranch)
+        // Resolve the diff base once (#878): worktrees branch from
+        // origin/<base>, so both the diff stats and the phase-commit check
+        // must compare against the resolved ref, not the local branch name.
+        const resolvedDiffBase = worktreePath
+          ? resolveDiffBase(worktreePath, baseBranch ?? "main")
           : undefined;
 
-        // Capture commit hash after phase (AC-2)
+        // Capture git diff stats for worktree phases (AC-1, AC-3)
+        const diffStats =
+          worktreePath && resolvedDiffBase
+            ? getGitDiffStats(worktreePath, resolvedDiffBase)
+            : undefined;
+
+        // Capture commit hash after phase (AC-2) — undefined when the branch
+        // never moved off its base, so a base tip is not logged as the
+        // phase's commit (#878).
         const commitHash = worktreePath
-          ? getCommitHash(worktreePath)
+          ? getCommitHash(worktreePath, resolvedDiffBase)
           : undefined;
 
         // Read cache metrics for QA phase (AC-7)

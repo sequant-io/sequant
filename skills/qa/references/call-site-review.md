@@ -14,8 +14,8 @@ This review is **triggered** when new exported functions are detected in the dif
 # Detect new exported functions (added lines only)
 # Catches: export function foo, export async function foo,
 #          export const foo = () =>, export const foo = async () =>
-git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//'
-git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//'
+git diff origin/main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//'
+git diff origin/main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//'
 ```
 
 ## Review Steps
