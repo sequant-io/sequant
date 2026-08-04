@@ -1,9 +1,11 @@
-# Draft upstream report — Claude Code group-kills a backgrounded process tree at ~106s
+# Upstream report — Claude Code group-kills a backgrounded process tree at ~106s
 
-> Status: **draft, not yet filed.** File against `anthropics/claude-code` once a
-> maintainer-facing repro is captured, or file as-is citing the evidence below —
-> the correlation is strong even without the live capture. Version observed:
-> **2.1.220** (macOS, arm64).
+> Status: **filed 2026-08-04 as
+> [anthropics/claude-code#83728](https://github.com/anthropics/claude-code/issues/83728)**,
+> with a 2026-08-03 addendum: on 2.1.221 with healthy auth the daemon no longer
+> spawns on backgrounding at all, blocking the repro (and disproving the
+> auth-cooldown explanation for its absence). Versions observed: **2.1.220**
+> (incident), **2.1.221** (current). macOS, arm64.
 
 ## Summary
 
