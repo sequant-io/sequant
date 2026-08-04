@@ -114,9 +114,12 @@ function toIssueSummary(r: IssueResult): IssueSummary {
     prUrl: r.prUrl,
   };
   if (!r.success) {
+    // #879: a PR-creation failure has no failed phase — fall back to its error
+    // so the summary cell reads the real reason, not the useless "phase failed".
     summary.failureReason =
       failedPhase?.error ??
       r.abortReason ??
+      r.prCreationError ??
       `${failedPhase?.phase ?? "phase"} failed`;
     if (failedPhase?.verdict) {
       summary.qaVerdict = String(failedPhase.verdict);

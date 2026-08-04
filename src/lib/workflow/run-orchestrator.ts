@@ -113,6 +113,7 @@ import {
   sortByDependencies,
   parseBatches,
   runIssueWithLogging,
+  recordIssueCompletion,
   emitRunIdLine,
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
@@ -1607,11 +1608,12 @@ export class RunOrchestrator {
         }
       }
 
-      if (logWriter && result.prNumber && result.prUrl) {
-        logWriter.setPRInfo(result.prNumber, result.prUrl, parallelIssueNumber);
-      }
+      // Record PR info, flip status on a PR-creation failure (#879), and
+      // finalize — via the shared helper so this live path stays in lockstep
+      // with executeBatch. Before #879 this block omitted the failure flip, so
+      // a real `sequant run` left the run-log status at `success` on PR failure.
       if (logWriter) {
-        logWriter.completeIssue(parallelIssueNumber);
+        recordIssueCompletion(logWriter, result, parallelIssueNumber);
       }
 
       return result;

@@ -317,6 +317,14 @@ export interface IssueResult {
   /** PR URL if created after successful QA */
   prUrl?: string;
   /**
+   * Set when PR creation was attempted after passing QA but failed (#879).
+   * A failed `createPR` used to be a non-fatal yellow warning while the issue
+   * still reported success — so a run could "pass" while producing no PR. When
+   * present, `success` is false and the run summary counts the issue as failed
+   * with this string as the reason.
+   */
+  prCreationError?: string;
+  /**
    * Set when the issue was skipped because another sequant session holds
    * the per-issue lock (#625). Surfaced in the summary as
    * `locked by PID <n>`. When present, `success` is false and the issue

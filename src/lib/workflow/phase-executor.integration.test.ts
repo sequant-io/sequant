@@ -12,10 +12,23 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { spawnSync } from "child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  readFileSync,
+  existsSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { hasExecChanges, resolveBaseRef } from "./phase-executor.js";
+import {
+  hasExecChanges,
+  classifyExecChanges,
+  mapAgentSuccessToPhaseResult,
+  resolveBaseRef,
+} from "./phase-executor.js";
+import type { AgentPhaseResult } from "./drivers/index.js";
 
 function git(cwd: string, ...args: string[]): string {
   const result = spawnSync("git", ["-C", cwd, ...args], { encoding: "utf-8" });
@@ -124,10 +137,16 @@ describe("hasExecChanges with custom base (integration, #537)", () => {
     expect(hasExecChanges(work)).toBe(true);
   });
 
-  it("returns true when exec leaves uncommitted work even without new commits", () => {
+  it("returns false when exec leaves ONLY uncommitted work, no new commits (#879)", () => {
+    // #879 behaviour change: uncommitted-only work is not a deliverable, so
+    // `hasExecChanges` is false. `classifyExecChanges` names the dirty path.
     writeFileSync(join(work, "src/dirty.ts"), "export const d = 1;\n");
 
-    expect(hasExecChanges(work)).toBe(true);
+    expect(hasExecChanges(work)).toBe(false);
+    expect(classifyExecChanges(work)).toEqual({
+      kind: "uncommitted",
+      paths: ["src/dirty.ts"],
+    });
   });
 });
 
@@ -274,5 +293,91 @@ describe("hasExecChanges via real git worktree add (integration, #537 AC-6 end-t
     git(worktree, "add", "src/new.ts");
     git(worktree, "commit", "-m", "feat: new work on epic");
     expect(hasExecChanges(worktree)).toBe(true);
+  });
+});
+
+/**
+ * #879 exec-guard end-to-end: a worktree with uncommitted changes and no
+ * commits must fail the exec phase (AC-6), and that failure must leave the
+ * worktree and its dirty files byte-identical (AC-3) — the uncommitted work is
+ * the only copy, so the guard must never mutate it.
+ *
+ * Uses `git init` (no origin) so `resolveBaseRef` falls back to origin/main;
+ * `git rev-list origin/main..HEAD` then errors (no origin), which would fail
+ * OPEN. To exercise the real `uncommitted` path we push to a bare origin so the
+ * base resolves and the commit count is a true 0.
+ */
+describe("exec guard on an uncommitted-only worktree (integration, #879 AC-3/AC-6)", () => {
+  let origin: string;
+  let work: string;
+
+  function makeAgentResult(): AgentPhaseResult {
+    return { success: true, output: "done" };
+  }
+
+  beforeEach(() => {
+    origin = mkdtempSync(join(tmpdir(), "sequant-879-origin-"));
+    work = mkdtempSync(join(tmpdir(), "sequant-879-work-"));
+
+    git(origin, "init", "--bare", "--initial-branch=main");
+    git(work, "init", "--initial-branch=main");
+    git(work, "config", "user.email", "test@sequant.test");
+    git(work, "config", "user.name", "Test");
+    git(work, "config", "commit.gpgsign", "false");
+    git(work, "remote", "add", "origin", origin);
+
+    writeFileSync(join(work, "README.md"), "# repo\n");
+    git(work, "add", "README.md");
+    git(work, "commit", "-m", "M1: baseline");
+    git(work, "push", "-u", "origin", "main");
+
+    // Branch for the work; no commits added — exec will leave only dirty files.
+    git(work, "checkout", "-b", "feature/879-test");
+  });
+
+  afterEach(() => {
+    rmSync(origin, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  it("fails the exec phase and names the uncommitted paths (AC-6, AC-2)", () => {
+    mkdirSync(join(work, "src"), { recursive: true });
+    writeFileSync(join(work, "src/host-gate.ts"), "export const g = 1;\n");
+    writeFileSync(join(work, "middleware.ts"), "export const m = 1;\n");
+
+    const result = mapAgentSuccessToPhaseResult(
+      "exec",
+      makeAgentResult(),
+      120,
+      work,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("uncommitted");
+    expect(result.error).toContain("src/host-gate.ts");
+    expect(result.error).toContain("middleware.ts");
+  });
+
+  it("leaves the worktree and its dirty files untouched when it fails (AC-3)", () => {
+    mkdirSync(join(work, "src"), { recursive: true });
+    const dirtyPath = join(work, "src/host-gate.ts");
+    const dirtyContent = "export const g = 1;\n// real, complete work\n";
+    writeFileSync(dirtyPath, dirtyContent);
+
+    const statusBefore = git(work, "status", "--porcelain");
+
+    const result = mapAgentSuccessToPhaseResult(
+      "exec",
+      makeAgentResult(),
+      120,
+      work,
+    );
+
+    expect(result.success).toBe(false);
+    // The worktree and the dirty file survive, byte-identical.
+    expect(existsSync(dirtyPath)).toBe(true);
+    expect(readFileSync(dirtyPath, "utf-8")).toBe(dirtyContent);
+    // git status is unchanged — the guard mutated nothing.
+    expect(git(work, "status", "--porcelain")).toBe(statusBefore);
   });
 });

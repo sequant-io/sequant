@@ -297,6 +297,45 @@ describe("LogWriter", () => {
     });
   });
 
+  describe("markIssueFailed (#879)", () => {
+    it("overrides an all-success issue to failure and persists it in the run log (AC-7)", async () => {
+      // The #879 case: every phase passed (so deriveIssueLogStatus set
+      // `success` at logPhase time), but PR creation then failed. markIssueFailed
+      // flips the in-flight issue to `failure` after the last phase is logged.
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(765, "PR creation failed", ["bug"]);
+      writer.logPhase({ ...mockPhaseLog, issueNumber: 765, phase: "exec" });
+      writer.logPhase({ ...mockPhaseLog, issueNumber: 765, phase: "qa" });
+
+      writer.markIssueFailed(765);
+      writer.completeIssue(765);
+
+      const runLog = writer.getRunLog();
+      expect(runLog!.issues[0].status).toBe("failure");
+    });
+
+    it("targets the current issue when called with no issue number", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(765, "PR creation failed", ["bug"]);
+      writer.logPhase({ ...mockPhaseLog, issueNumber: 765, phase: "exec" });
+
+      writer.markIssueFailed();
+      writer.completeIssue();
+
+      const runLog = writer.getRunLog();
+      expect(runLog!.issues[0].status).toBe("failure");
+    });
+
+    it("is a no-op when there is no active issue", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+
+      expect(() => writer.markIssueFailed()).not.toThrow();
+    });
+  });
+
   describe("completeIssue", () => {
     it("should calculate total duration from phases", async () => {
       const writer = new LogWriter();

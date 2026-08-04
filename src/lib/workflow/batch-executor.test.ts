@@ -73,7 +73,10 @@ vi.mock("./error-classifier.js", async (importOriginal) => ({
 
 import { executePhaseWithRetry } from "./phase-executor.js";
 import { createPhaseLogFromTiming } from "./log-writer.js";
-import { runIssueWithLogging } from "./batch-executor.js";
+import {
+  runIssueWithLogging,
+  recordIssueCompletion,
+} from "./batch-executor.js";
 import { createPR } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
@@ -1411,6 +1414,150 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
     // The verdict is forwarded as the 8th arg so the PR body surfaces the
     // "not A+" note.
     expect(mockCreatePR.mock.calls[0][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
+  });
+});
+
+describe("#879: a failed createPR fails the run (AC-5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // All phases succeed; only PR creation varies per test.
+    mockExecutePhase.mockResolvedValue(successResult("exec"));
+  });
+
+  it("returns success:false with prCreationError when createPR fails after passing QA", async () => {
+    // The #879 repro: every phase passes, but the branch has no commits, so
+    // `gh pr create` fails. Before #879 this printed a warning and the issue
+    // still reported success. Now the issue result is a failure.
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: false,
+      error:
+        "gh pr create failed: GraphQL: No commits between main and feature/879",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "PR failure fails the run",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(false);
+    expect(result.prCreationError).toContain("No commits between main");
+  });
+
+  it("keeps success:true and leaves prCreationError unset when createPR succeeds (control)", async () => {
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 900,
+      prUrl: "https://example.test/pr/900",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "PR succeeds",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.prCreationError).toBeUndefined();
+  });
+
+  it("does not fail the run when --no-pr suppresses PR creation", async () => {
+    // `--no-pr` means "don't judge me on PRs" — createPR is never attempted,
+    // so a run with all phases passing stays successful.
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 879,
+        title: "no-pr run",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false, noPr: true },
+      }),
+      worktree: { path: "/tmp/wt-879", branch: "feature/879" },
+    });
+
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.prCreationError).toBeUndefined();
+  });
+});
+
+describe("recordIssueCompletion (#879) — shared completion sequence", () => {
+  // Guards the LIVE path: RunOrchestrator.executeOneIssue and executeBatch both
+  // finalize an issue through this ONE helper, so a PR-creation failure flips the
+  // run-log status on every path. The #879 defect was that flip living only in
+  // executeBatch while the orchestrator path (the real `sequant run`) omitted it.
+  function spyLogWriter() {
+    return {
+      setPRInfo: vi.fn(),
+      markIssueFailed: vi.fn(),
+      completeIssue: vi.fn(),
+    };
+  }
+
+  function issueResult(overrides: Partial<IssueResult>): IssueResult {
+    return {
+      issueNumber: 765,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 1,
+      ...overrides,
+    };
+  }
+
+  it("marks the issue failed (before completing it) when the result carries a prCreationError", () => {
+    const lw = spyLogWriter();
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      issueResult({
+        issueNumber: 765,
+        success: false,
+        prCreationError: "gh pr create failed: No commits between main and …",
+      }),
+      765,
+    );
+
+    expect(lw.markIssueFailed).toHaveBeenCalledWith(765);
+    expect(lw.completeIssue).toHaveBeenCalledWith(765);
+    // The failure flip must precede completion, or completeIssue snapshots the
+    // still-"success" status.
+    expect(lw.markIssueFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      lw.completeIssue.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("records PR info and does NOT mark failed when the PR was created", () => {
+    const lw = spyLogWriter();
+    recordIssueCompletion(
+      lw as unknown as Parameters<typeof recordIssueCompletion>[0],
+      issueResult({
+        issueNumber: 766,
+        success: true,
+        prNumber: 900,
+        prUrl: "https://example.test/pr/900",
+      }),
+      766,
+    );
+
+    expect(lw.setPRInfo).toHaveBeenCalledWith(
+      900,
+      "https://example.test/pr/900",
+      766,
+    );
+    expect(lw.markIssueFailed).not.toHaveBeenCalled();
+    expect(lw.completeIssue).toHaveBeenCalledWith(766);
   });
 });
 
