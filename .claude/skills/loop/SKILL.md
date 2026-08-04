@@ -334,7 +334,7 @@ After fixes are applied, re-run the phase that found issues:
   ```bash
   npm test
   npm run build
-  git diff main...HEAD --stat
+  git diff origin/main...HEAD --stat
   ```
 - Re-evaluate AC coverage
 - Update verdict

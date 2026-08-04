@@ -13,6 +13,7 @@ import {
   resolvePackageManager,
   resolvePackageManagerConfig,
 } from "../stacks.js";
+import { resolveDiffBase } from "./git-diff-utils.js";
 import { getResumablePhasesForIssue } from "./phase-detection.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
@@ -404,9 +405,10 @@ export function listWorktrees(): Array<{
  * Get changed files in a worktree compared to main
  */
 export function getWorktreeChangedFiles(worktreePath: string): string[] {
+  const diffBase = resolveDiffBase(worktreePath, "main");
   const result = spawnSync(
     "git",
-    ["-C", worktreePath, "diff", "--name-only", "main...HEAD"],
+    ["-C", worktreePath, "diff", "--name-only", `${diffBase}...HEAD`],
     { stdio: "pipe" },
   );
   if (result.status !== 0) return [];
@@ -425,9 +427,10 @@ export function getWorktreeDiffStats(worktreePath: string): {
   filesChanged: number;
   linesAdded: number;
 } {
+  const diffBase = resolveDiffBase(worktreePath, "main");
   const result = spawnSync(
     "git",
-    ["-C", worktreePath, "diff", "--stat", "main...HEAD"],
+    ["-C", worktreePath, "diff", "--stat", `${diffBase}...HEAD`],
     { stdio: "pipe" },
   );
 

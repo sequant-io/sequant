@@ -2,7 +2,7 @@
 
 `/assess` Step 5 inspects two sources of overlap between PROCEED issues:
 
-1. **Active-worktree overlap.** For each running worktree, `git diff --name-only main...HEAD` is intersected with the assessed issues' likely-touched files. Catches in-flight work.
+1. **Active-worktree overlap.** For each running worktree, `git diff --name-only origin/main...HEAD` is intersected with the assessed issues' likely-touched files. Catches in-flight work.
 2. **Predicted file-collision (this document).** For each pair of unstarted PROCEED issues, the detector reads issue bodies and predicts which pairs will modify the same file once both run in parallel worktrees.
 
 This document is the tunable surface for the predicted-collision heuristic. The skill prose in `SKILL.md` names the detection functions; the patterns and the exclusion list live here so they can change without skill edits.
