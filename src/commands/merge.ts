@@ -240,7 +240,17 @@ export async function mergeCommand(
     options.check = true;
   }
 
-  const repoRoot = getRepoRoot();
+  let repoRoot: string;
+  try {
+    repoRoot = getRepoRoot();
+  } catch {
+    console.error(
+      colors.error(
+        "❌ Not in a git repository. Run merge from inside your project repo.",
+      ),
+    );
+    process.exit(1);
+  }
   const issueNumbers = issues
     .map((i) => parseInt(i, 10))
     .filter((n) => !isNaN(n));
