@@ -78,16 +78,16 @@ else
   PREREQ_FAIL=true
 fi
 
-# 3. Node.js 22.12+ (for MCP server via npx)
+# 3. Node.js 22.13+ (for MCP server via npx)
 if node --version >/dev/null 2>&1; then
   NODE_VER=$(node --version | sed 's/v//' | cut -d. -f1)
   if [ "$NODE_VER" -ge 22 ] 2>/dev/null; then
     echo "✅ node: $(node --version) (>= 22)"
   else
-    echo "⚠️  node: $(node --version) — MCP server requires Node.js 22.12+. Upgrade recommended."
+    echo "⚠️  node: $(node --version) — MCP server requires Node.js 22.13+. Upgrade recommended."
   fi
 else
-  echo "⚠️  node: not found — MCP server (npx sequant serve) requires Node.js 22.12+"
+  echo "⚠️  node: not found — MCP server (npx sequant serve) requires Node.js 22.13+"
 fi
 
 if [ "$PREREQ_FAIL" = "true" ]; then
@@ -386,7 +386,7 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 - Check that the file is valid JSON/TOML
 
 **MCP tools not available:**
-- Ensure Node.js 22.12+ is installed (`node --version`)
+- Ensure Node.js 22.13+ is installed (`node --version`)
 - The MCP server starts automatically via `npx -y sequant@<version> serve` (pinned to your installed version, not `@latest`, so reconnects don't reinstall on every release — see #793)
 - Check Claude Code settings if tools don't appear
 

@@ -494,6 +494,19 @@ Run without colors for CI environments:
 npx sequant run 42 --no-color
 ```
 
+**Exit codes.** A job can gate on the exit code instead of parsing output:
+
+- `0` — the run completed successfully.
+- `1` — the run failed, a numeric flag was malformed (`--timeout 30m` is
+  rejected, not read as `30` — #833/#845), or a pre-flight rejected the
+  invocation (uninitialized project, missing prerequisites). Pre-flight
+  rejections exit non-zero across `run`/`update`/`state`/`status`/`init`
+  (#848).
+- `128 + signum` — the run was terminated by a signal (e.g. `143` = SIGTERM,
+  `130` = SIGINT). Externally-killed runs surface as aborts rather than
+  exiting `0` (#856).
+- `sync --dry-run` / `update --dry-run` exit non-zero when work is pending.
+
 ## Environment Variables
 
 | Variable | Description | Default |

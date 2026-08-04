@@ -107,6 +107,8 @@ sequant doctor              # Verify installation health
 | `sequant status [issue]` | Show version, config, workflow state |
 | `sequant run <issues...>` | Execute workflow headlessly |
 | `sequant ready <issue>` | Post-resolve A+ QA gate (drives to merge-readiness, never merges) |
+| `sequant resume` | Re-enter runs halted on a rate-limit window (see [halt-and-resume](halt-and-resume.md)) |
+| `sequant merge <issues...>` | Post-QA merge checks; `--watch` waits for CI first (never merges) |
 | `sequant state [init\|rebuild\|clean]` | Manage workflow state |
 | `sequant stats` | View local workflow analytics |
 | `sequant dashboard` | Launch real-time workflow dashboard |
@@ -135,6 +137,7 @@ sequant doctor              # Verify installation health
 |------|-------------|---------|
 | `-Q, --quality-loop` | Auto-retry on failures | off |
 | `--max-iterations <n>` | Max retry iterations | `3` |
+| `--ready-gate` | After phases pass, run the full `qa → loop → qa` ready gate before opening the PR (never merges, #817) | off |
 | `--testgen` | Run testgen phase after spec | off |
 | `--smart-tests` | Enable smart test detection | on |
 | `--no-smart-tests` | Disable smart test detection | — |
@@ -145,7 +148,7 @@ sequant doctor              # Verify installation health
 |------|-------------|---------|
 | `--no-mcp` | Disable MCP server injection | off |
 | `--timeout <seconds>` | Timeout per phase in seconds | `1800` |
-| `--auto-wait <minutes>` | Total minutes to wait for an exhausted rate-limit window to reopen instead of halting (never waits on out-of-credits; in-process only) | `0` (off) |
+| `--auto-wait <minutes>` | Total minutes to wait for an exhausted rate-limit window to reopen instead of halting (never waits on out-of-credits; in-process — see [halt-and-resume](halt-and-resume.md) for durable recovery) | `0` (off) |
 | `--batch <issues>` | Group issues to run together (e.g., `--batch "1 2"`) | `[]` |
 
 **Output**

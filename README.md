@@ -16,18 +16,24 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.10
+
+- **`--auto-wait <minutes>` rides out a rate-limit window** — opt in and a run whose limit window is hours out sleeps until it reopens and continues, instead of halting for a manual restart (#804). **Off by default**; the value is a *total* budget per issue, capped at 2 waits. Never waits on out-of-credits failures (credits are purchased, not waited out). The wait is in-process — for waits that must survive closing the terminal or a reboot, see halt-and-resume below; an exhausted `--auto-wait` budget still writes the halt record so `sequant resume` can pick up where it gave up. See [run-command.md](docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
+- **Durable halt-and-resume + `sequant resume`** — a run that fails on an exhausted rate-limit window now writes a durable halt record (with its `resumeAt` time) and exits cleanly, releasing the per-issue lock. `sequant resume` re-enters after the window reopens, skipping completed phases and issues — safe to invoke from cron/launchd for unattended machines (recipes in [halt-and-resume.md](docs/reference/halt-and-resume.md)) (#892).
+- **`--ready-gate` runs the post-QA ready gate inside `sequant run`** — opt in and, once an issue's standard phases succeed, `run` drives it through the same full-weight `qa → loop → qa` gate as `sequant ready` (to the configured `ready.policy`) **before** opening the PR, so the gate's fixes land in it. It automates the manual any-gaps/fix-gaps second look and **still stops at the human merge gate — it never merges** (#817). **Off by default**; without the flag the run path is unchanged (an `AC_MET_BUT_NOT_A_PLUS` verdict still breaks to PR per #749). Reuses `ready`'s policy, iteration cap, and stagnation guard — no new settings. See [run-command.md](docs/reference/run-command.md#ready-gate-post-qa-second-look).
+- **`sequant merge --watch` waits for CI, then reports** — instead of polling checks by hand, `merge --watch` waits for each PR's CI checks to finish, then runs the merge-check and reports the result. It never merges (#818).
+- **Stricter CLI contract for scripting** — malformed numeric flags (`--timeout 30m`, `--timeout abc`) are rejected with a clear error instead of silently coerced (#833, #845), and pre-flight rejections (uninitialized project, missing prerequisites) exit non-zero across `run`/`update`/`state`/`status`/`init` (#848). Runs terminated by a signal exit `128+signum` instead of `0` (#856).
+
 ### What's new in 2.9
 
 - **`--chain` survives a failed link** — re-running a partially-completed chain resumes from its last good link, skipping the completed prefix and rebasing onto that committed tip instead of redoing hours of finished work (#760). A warn-by-default content pre-flight also runs before the first worktree is provisioned, flagging missing ACs, mis-ordered dependencies, predicted file overlaps, and closed issues; `--strict-preflight` makes any warning a hard stop (#762).
 - **Rate limits stop burning hours** — a rate limit hit inside a phase now skips doomed cold-start retries, and the run summary labels the chain halt with its cause and how to resume, instead of cascading into a ~2h retry ladder (#761).
-- **`--auto-wait <minutes>` rides out a rate-limit window** — opt in and a run whose limit window is hours out sleeps until it reopens and continues, instead of halting for a manual restart (#804). **Off by default**; the value is a *total* budget per issue, capped at 2 waits. Never waits on out-of-credits failures (credits are purchased, not waited out). The wait is visible in the dashboard and Ctrl-C-interruptible, but is **in-process — it does not survive closing the terminal**. Locks are deliberately held throughout, since Claude rate limits are account-wide and no other run could progress anyway. See [run-command.md](docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
 - **Stale plugin-cache warning** — `pre-tool.sh` now prints a once-per-day, network-free reminder (`claude plugin update sequant@sequant`) when a plugin-channel install has drifted behind the marketplace (#784, #788).
-- **`--ready-gate` runs the post-QA ready gate inside `sequant run`** — opt in and, once an issue's standard phases succeed, `run` drives it through the same full-weight `qa → loop → qa` gate as `sequant ready` (to the configured `ready.policy`) **before** opening the PR, so the gate's fixes land in it. It automates the manual any-gaps/fix-gaps second look and **still stops at the human merge gate — it never merges** (#817). **Off by default**; without the flag the run path is unchanged (an `AC_MET_BUT_NOT_A_PLUS` verdict still breaks to PR per #749). Reuses `ready`'s policy, iteration cap, and stagnation guard — no new settings. See [run-command.md](docs/reference/run-command.md#ready-gate-post-qa-second-look).
 
 ### What's new in 2.8
 
 - **Clearer failures when an agent stops early** — phases that hit a turn cap now preserve their partial work and halt cleanly for resume instead of discarding it (#739, #733), and rate-limit/out-of-credits failures are named for what they are (with reset time and credit-purchase hints) rather than buried under generic retry noise (#732).
-- **Runtime Node-version guard** — `sequant` checks the running Node against its `engines.node` floor (`>=22.12.0`) at startup and exits with a friendly upgrade message instead of crashing later on a Node-22-only API (#734).
+- **Runtime Node-version guard** — `sequant` checks the running Node against its `engines.node` floor (`>=22.13.0`) at startup and exits with a friendly upgrade message instead of crashing later on a Node-22-only API (#734).
 - **`/assess` avoids npx version skew** — it now emits `sequant run …` when a global install is on `PATH` (and the unchanged `npx sequant run …` otherwise), so copy-pasted commands don't silently run a stale binary (#740).
 
 ### What's new in 2.7
@@ -57,7 +63,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 - [GitHub CLI](https://cli.github.com/) — run `gh auth login`
 - Git — for worktree-based isolation
 
-**For the npm/CLI install path:** Node.js 22.12+
+**For the npm/CLI install path:** Node.js 22.13+
 
 **Optional MCP (Model Context Protocol) servers — enhanced features:**
 - `chrome-devtools` — enables `/test` for browser-based UI testing

@@ -46,6 +46,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Run Command](reference/run-command.md) — Batch execution and CLI options
 - [Ready Command](reference/ready-command.md) — Post-resolve A+ QA gate (`sequant ready`)
 - [Merge Command](reference/merge-command.md) — Post-QA integration and merge
+- [Halt and Resume](reference/halt-and-resume.md) — Durable rate-limit recovery (`sequant resume`)
 - [State Command](reference/state-command.md) — Workflow state management
 - [Conventions Command](reference/conventions-command.md) — Codebase convention detection and overrides
 - [Analytics](reference/analytics.md) — Usage tracking and metrics

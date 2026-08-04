@@ -4,7 +4,7 @@ Automated smoke tests that verify skill documentation (SKILL.md) stays in sync w
 
 ## Prerequisites
 
-1. **Node.js 22.12+** — `node --version`
+1. **Node.js 22.13+** — `node --version`
 2. **Project dependencies installed** — `npm install`
 
 ## Setup
