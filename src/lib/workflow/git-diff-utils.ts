@@ -102,12 +102,90 @@ function parseNameStatus(output: string): Map<string, FileDiffStat["status"]> {
 }
 
 /**
+ * Resolve the ref diff stats should compare against (#878).
+ *
+ * Worktrees are created from `origin/<base>` (worktree-manager), but callers
+ * historically passed the bare branch name and the diff ran against the
+ * *local* ref. When local `<base>` lags the remote — routine, since nothing
+ * in the run path updates it — `<base>...HEAD` attributes commits the run
+ * never made (phantom filesModified).
+ *
+ * Candidates are the origin-qualified and bare forms of `baseBranch`
+ * (already-remote-qualified input keeps a single candidate). Among the
+ * candidates that resolve to a commit, pick the one nearest to HEAD
+ * (smallest `rev-list --count <cand>..HEAD`), preferring the
+ * origin-qualified form on a tie. Nearest-wins matches the worktree's
+ * actual creation point in both staleness directions: a stale local
+ * default branch (this issue) and a chain-mode worktree branched from a
+ * local base that is ahead of its pushed counterpart. Falls back to
+ * `baseBranch` verbatim when no candidate resolves (e.g. remote-less repo
+ * with a missing branch) — the diff then fails gracefully to empty, the
+ * pre-#878 behavior.
+ */
+export function resolveDiffBase(
+  worktreePath: string,
+  baseBranch: string,
+): string {
+  const candidates = baseBranch.startsWith("origin/")
+    ? [baseBranch]
+    : [`origin/${baseBranch}`, baseBranch];
+
+  let best: string | undefined;
+  let bestCount = Number.POSITIVE_INFINITY;
+
+  for (const candidate of candidates) {
+    const verify = spawnSync(
+      "git",
+      [
+        "-C",
+        worktreePath,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        `${candidate}^{commit}`,
+      ],
+      { stdio: "pipe", encoding: "utf-8" },
+    );
+    if (verify.status !== 0) continue;
+
+    const count = spawnSync(
+      "git",
+      ["-C", worktreePath, "rev-list", "--count", `${candidate}..HEAD`],
+      { stdio: "pipe", encoding: "utf-8" },
+    );
+    if (count.status !== 0) continue;
+
+    const n = Number.parseInt(count.stdout.trim(), 10);
+    if (Number.isNaN(n)) continue;
+
+    // Strict < keeps the earlier (origin-qualified) candidate on a tie.
+    if (n < bestCount) {
+      best = candidate;
+      bestCount = n;
+    }
+  }
+
+  return best ?? baseBranch;
+}
+
+/**
  * Get git commit SHA for a worktree (AC-2)
  *
+ * When `baseRef` is provided, returns undefined if HEAD has no commits
+ * unique to it (#878) — a branch that never moved off its base would
+ * otherwise log the base tip as if it were the phase's commit. Callers
+ * recording plain "where is HEAD" markers (run start/end) omit `baseRef`.
+ *
  * @param worktreePath - Path to the git worktree
- * @returns The current HEAD commit SHA, or undefined on error
+ * @param baseRef - Optional resolved base ref (see resolveDiffBase); when
+ *   given, a HEAD with zero commits past it yields undefined
+ * @returns The current HEAD commit SHA, or undefined on error / no unique
+ *   commits
  */
-export function getCommitHash(worktreePath: string): string | undefined {
+export function getCommitHash(
+  worktreePath: string,
+  baseRef?: string,
+): string | undefined {
   const result = spawnSync("git", ["-C", worktreePath, "rev-parse", "HEAD"], {
     stdio: "pipe",
     encoding: "utf-8",
@@ -117,6 +195,22 @@ export function getCommitHash(worktreePath: string): string | undefined {
     return undefined;
   }
 
+  if (baseRef !== undefined) {
+    const count = spawnSync(
+      "git",
+      ["-C", worktreePath, "rev-list", "--count", `${baseRef}..HEAD`],
+      { stdio: "pipe", encoding: "utf-8" },
+    );
+    // Fail open on git errors: a transient failure should not erase a real
+    // commit hash from the log — only a confirmed zero suppresses it.
+    if (count.status === 0) {
+      const n = Number.parseInt(count.stdout.trim(), 10);
+      if (n === 0) {
+        return undefined;
+      }
+    }
+  }
+
   return result.stdout.trim();
 }
 
@@ -124,7 +218,9 @@ export function getCommitHash(worktreePath: string): string | undefined {
  * Get git diff statistics for a worktree (AC-1, AC-3, AC-4)
  *
  * Efficiently captures both filesModified and fileDiffStats using
- * minimal git commands. Uses main...HEAD comparison by default.
+ * minimal git commands. The base is resolved via resolveDiffBase (#878) so
+ * the comparison targets the ref the worktree was actually created from
+ * (origin/<base> in the common case) rather than a possibly-stale local ref.
  *
  * @param worktreePath - Path to the git worktree
  * @param baseBranch - Branch to compare against (default: "main")
@@ -134,7 +230,7 @@ export function getGitDiffStats(
   worktreePath: string,
   baseBranch: string = "main",
 ): GitDiffStatsResult {
-  const diffRef = `${baseBranch}...HEAD`;
+  const diffRef = `${resolveDiffBase(worktreePath, baseBranch)}...HEAD`;
 
   // Get numstat for additions/deletions
   const numstatResult = spawnSync(
