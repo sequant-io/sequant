@@ -611,7 +611,7 @@ echo "Current branch: $CURRENT_BRANCH"
 1. **Test-to-Change Alignment:** For each source file you modified:
    ```bash
    # List changed source files (excluding tests)
-   changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.(test|spec)\.' || true)
+   changed=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.(test|spec)\.' || true)
 
    # For each, verify a corresponding test exists and covers the change
    for file in $changed; do
@@ -1122,7 +1122,7 @@ Do NOT silently skip checks. Always state which commands you intend to run and w
 Use the Glob tool to check for corresponding test files:
 ```
 # Get changed source files (excluding tests) from git
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
+changed=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
 
 # For each changed file, use the Glob tool to find matching test files
 # Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
@@ -1153,7 +1153,7 @@ changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep
 
 ```bash
 # Detect critical paths in changed files
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
+changed=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
 
 if [[ -n "$critical" ]]; then
@@ -1184,7 +1184,7 @@ fi
 
 ```bash
 # Get changed shell scripts
-shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$' || true)
+shell_scripts=$(git diff origin/main...HEAD --name-only | grep -E '\.sh$' || true)
 
 for script in $shell_scripts; do
   echo "Checking: $script"

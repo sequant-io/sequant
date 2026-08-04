@@ -216,7 +216,7 @@ Flag references (only `--chain` itself is emitted by default — the rest are co
 git worktree list --porcelain 2>/dev/null | grep "^worktree" | cut -d' ' -f2 || true
 ```
 
-For each active worktree, check `git diff --name-only main...HEAD` for file overlap with assessed issues.
+For each active worktree, check `git diff --name-only origin/main...HEAD` for file overlap with assessed issues.
 
 **Predicted file-collision (PROCEED issues).** Step 5 also runs a heuristic across the bodies of unstarted PROCEED issues to predict pairs that will modify the same file once executed in parallel. The detector lives in `src/lib/assess-collision-detect.ts` and exposes three pure functions:
 

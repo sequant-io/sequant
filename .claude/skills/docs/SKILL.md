@@ -61,14 +61,14 @@ gh pr list --search "head:feature/<issue-number>" --json number,headRefName
 gh pr diff <pr-number>
 
 # If no PR, use git diff from feature branch:
-git diff main...HEAD --name-only
-git diff main...HEAD
+git diff origin/main...HEAD --name-only
+git diff origin/main...HEAD
 ```
 
 **Step 4:** Detect documentation-only changes:
 ```bash
 # Count non-documentation files changed
-non_doc_files=$(git diff main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs || true)
+non_doc_files=$(git diff origin/main...HEAD --name-only | grep -vE '\.(md|mdx)$|^docs/' | wc -l | xargs || true)
 ```
 
 **Decision Logic:**
@@ -87,7 +87,7 @@ END IF
 When only documentation files (`.md`, `.mdx`, or files in `docs/`) were modified, skip template generation and post a confirmation comment instead.
 
 **Detection criteria - ALL of these must be true:**
-- `git diff main...HEAD --name-only` returns files
+- `git diff origin/main...HEAD --name-only` returns files
 - All changed files match: `*.md`, `*.mdx`, or `docs/*`
 
 **Early exit action:**

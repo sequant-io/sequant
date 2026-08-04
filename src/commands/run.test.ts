@@ -11,6 +11,15 @@ vi.mock("../lib/workflow/phase-detection.js", () => ({
   getResumablePhasesForIssue: vi.fn(),
 }));
 
+// Pin the resolved diff base: worktree-manager's diff helpers route through
+// resolveDiffBase (#890), whose real implementation would consume the mocked
+// spawnSync queue these tests configure for the diff call itself.
+vi.mock("../lib/workflow/git-diff-utils.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../lib/workflow/git-diff-utils.js")>();
+  return { ...actual, resolveDiffBase: vi.fn(() => "main") };
+});
+
 const mockSpawnSync = vi.mocked(spawnSync);
 
 // We need to import the functions after mocking

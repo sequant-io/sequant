@@ -266,7 +266,7 @@ if [[ "${CLAUDE_HOOKS_COVERAGE:-}" == "true" ]]; then
             COVERAGE_LOG="${_LOG_DIR}/claude-coverage.log"
 
             # Get changed source files (excluding tests)
-            changed_files=$(git diff main...HEAD --name-only 2>/dev/null | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
+            changed_files=$(git diff origin/main...HEAD --name-only 2>/dev/null | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
 
             if [[ -n "$changed_files" ]]; then
                 echo "$(date +%H:%M:%S) COVERAGE_ANALYSIS: Checking test coverage for changed files" >> "$QUALITY_LOG"

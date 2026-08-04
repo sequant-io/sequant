@@ -15,14 +15,27 @@ import {
   type QACacheState,
 } from "./qa-cache.js";
 
-// Mock execSync for git commands
+// Mock git commands. qa-cache invokes execFileSync("git", [...args]); the
+// factory bridges that to a string-command mock so per-test implementations
+// can keep matching full commands like "git diff main...HEAD".
 vi.mock("child_process", async () => {
   const actual = await vi.importActual("child_process");
+  const execSync = vi.fn();
   return {
     ...actual,
-    execSync: vi.fn(),
+    execSync,
+    execFileSync: vi.fn(
+      (file: string, args?: readonly string[], _opts?: unknown) =>
+        execSync([file, ...(args ?? [])].join(" ")),
+    ),
   };
 });
+
+// Pin the resolved diff base so mocked commands stay "git diff main...HEAD"
+// regardless of the repo state the test process happens to run in.
+vi.mock("./git-diff-utils.js", () => ({
+  resolveDiffBase: vi.fn(() => "main"),
+}));
 
 const mockedExecSync = vi.mocked(execSync);
 

@@ -9,8 +9,9 @@
  */
 
 import chalk from "chalk";
-import { execSync, execFileSync } from "child_process";
+import { execFileSync } from "child_process";
 import { ShutdownManager } from "../shutdown.js";
+import { resolveDiffBase } from "./git-diff-utils.js";
 import {
   Phase,
   ExecutionConfig,
@@ -1115,11 +1116,16 @@ async function executePhase(
   let files: string[] | undefined;
   if (config.agent && config.agent !== "claude-code") {
     try {
-      const output = execSync("git diff --name-only main...HEAD", {
-        cwd,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
+      const diffBase = resolveDiffBase(cwd, "main");
+      const output = execFileSync(
+        "git",
+        ["diff", "--name-only", `${diffBase}...HEAD`],
+        {
+          cwd,
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      ).trim();
       if (output) {
         files = output.split("\n").filter(Boolean);
       }
