@@ -245,7 +245,7 @@ SEQUANT_AUTO_WAIT_MINUTES=360 npx sequant run 42
 
 **Locks are held for the duration.** A waiting run keeps its worktree and issue locks. This is deliberate rather than an oversight: Claude rate limits are **account-wide**, so no other run could make progress during that window anyway — releasing the locks would only invite a second run to fail against the same closed window.
 
-**In-process only.** The wait is a sleep inside the running process: it does **not** survive closing the terminal, and there is no scheduled re-entry. Durable out-of-process resume (persist a wake time, exit, let a scheduler re-enter) is deliberately out of scope here. For long waits, run under `tmux`/`screen` or leave the terminal open.
+**In-process only.** The wait is a sleep inside the running process: it does **not** survive closing the terminal. For long waits, run under `tmux`/`screen` or leave the terminal open — or use the durable alternative: a run that halts on a waitable window writes a machine-readable `resumeAt` to issue state and releases its locks, and `sequant resume` (safe to schedule via cron/launchd) re-enters once the window reopens. See [halt-and-resume.md](halt-and-resume.md) (#892).
 
 ### Ready Gate (post-QA second look)
 

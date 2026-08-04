@@ -251,6 +251,7 @@ Most work goes through a handful of top-level commands. The rest are either pipe
 | Command | What it does |
 |---------|--------------|
 | `sequant ready <issue>` | Post-resolve full-weight A+ QA gate; drives to merge-readiness, then stops at the human merge gate (never merges). |
+| `sequant resume` | Re-enter runs halted on a rate-limit window once it reopens; no-op before `resumeAt`, so it is safe to schedule via cron/launchd. See [halt-and-resume.md](docs/reference/halt-and-resume.md). |
 | `/merger` | Multi-issue merge coordination. |
 | `/improve` | Codebase analysis and improvement discovery. |
 | `/security-review` | Deep security analysis. |

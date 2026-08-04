@@ -327,6 +327,84 @@ describe("StateManager", () => {
     });
   });
 
+  describe("windowHalt (#892)", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(892, "Durable halt issue");
+    });
+
+    it("records a halt with resumeAt/phase and a zeroed re-entry counter", async () => {
+      const resumeAtMs = 1_784_910_600_000;
+      await manager.updateWindowHalt(892, "qa", resumeAtMs);
+
+      const state = await manager.getState();
+      expect(state.issues["892"].windowHalt).toEqual({
+        resumeAt: new Date(resumeAtMs).toISOString(),
+        phase: "qa",
+        reentries: 0,
+      });
+    });
+
+    it("preserves the re-entry counter across repeated halts (AC-3: the bound must not reset on a still-closed window)", async () => {
+      await manager.updateWindowHalt(892, "qa", Date.now() + 3_600_000);
+      await manager.incrementWindowHaltReentries(892);
+      // Re-entry halts again on the same closed window: a fresh write must
+      // keep the consumed count, or the bound never trips.
+      await manager.updateWindowHalt(892, "qa", Date.now() + 7_200_000);
+
+      const state = await manager.getIssueState(892);
+      expect(state?.windowHalt?.reentries).toBe(1);
+    });
+
+    it("incrementWindowHaltReentries returns the new count and null without a halt record", async () => {
+      expect(await manager.incrementWindowHaltReentries(892)).toBeNull();
+
+      await manager.updateWindowHalt(892, "exec", Date.now() + 1000);
+      expect(await manager.incrementWindowHaltReentries(892)).toBe(1);
+      expect(await manager.incrementWindowHaltReentries(892)).toBe(2);
+    });
+
+    it("clearWindowHalt removes the record, counter included", async () => {
+      await manager.updateWindowHalt(892, "exec", Date.now() + 1000);
+      await manager.incrementWindowHaltReentries(892);
+      await manager.clearWindowHalt(892);
+
+      const state = await manager.getIssueState(892);
+      expect(state?.windowHalt).toBeUndefined();
+    });
+
+    it("clearWindowHalt is a no-op write when nothing is recorded", async () => {
+      const before = (await manager.getIssueState(892))!.lastActivity;
+      await new Promise((r) => setTimeout(r, 5));
+      await manager.clearWindowHalt(892);
+      const after = (await manager.getIssueState(892))!.lastActivity;
+      // No windowHalt → no state write → lastActivity untouched.
+      expect(after).toBe(before);
+    });
+
+    it("survives a fresh StateManager instance (AC-4: reboot durability)", async () => {
+      const resumeAtMs = Date.now() + 3_600_000;
+      await manager.updateWindowHalt(892, "qa", resumeAtMs);
+
+      const rebooted = new StateManager({ statePath });
+      const state = await rebooted.getIssueState(892);
+      expect(state?.windowHalt).toEqual({
+        resumeAt: new Date(resumeAtMs).toISOString(),
+        phase: "qa",
+        reentries: 0,
+      });
+    });
+
+    it("never throws for an untracked issue — halt bookkeeping must not mask the failure it describes", async () => {
+      await expect(
+        manager.updateWindowHalt(999, "exec", Date.now()),
+      ).resolves.toBeUndefined();
+      await expect(manager.clearWindowHalt(999)).resolves.toBeUndefined();
+      await expect(
+        manager.incrementWindowHaltReentries(999),
+      ).resolves.toBeNull();
+    });
+  });
+
   describe("updateResumeHandle (#674)", () => {
     beforeEach(async () => {
       await manager.initializeIssue(42, "Test Issue");
