@@ -18,6 +18,7 @@ import {
   createAutoWaitLedger,
   executePhaseWithRetry,
   isWindowExhaustedRateLimit,
+  performAutoWait,
   shouldAutoWaitForReset,
   waitForWindowReset,
 } from "./phase-executor.js";
@@ -740,19 +741,46 @@ describe("#804 against the real 2026-07-18 capture (#782)", () => {
   }
 
   it.each(CAPTURES)(
-    "%s: the real payload is a BillingError and must NOT auto-wait despite carrying resetsAt",
+    "%s: once its window has passed, the real payload is a BillingError and must NOT auto-wait",
     (file) => {
       const metadata = loadMetadata(file);
-      const error = createRateLimitError(metadata);
+      // #860 narrowed the classification: this same payload is a waitable
+      // RateLimitError while its five-hour window is live (asserted in the
+      // #860 fixture suite). Pin `now` explicitly after the reset — the
+      // regression this test guards is that an *aged* window (nothing left to
+      // wait for) stays terminal instead of granting a pointless wait.
+      const agedNow = resetsAtToMs(metadata.resetsAt!) + HOUR;
+      const error = createRateLimitError(metadata, agedNow);
 
-      // The load-bearing fact from docs/incidents/782/validation.md: real
-      // window-exhaustion metadata is present, but this rejection also carried
-      // `out_of_credits`, so it classifies as BillingError.
       expect(error).toBeInstanceOf(BillingError);
       expect(typeof metadata.resetsAt).toBe("number");
       expect(
-        shouldAutoWaitForReset(error, createAutoWaitLedger(600), Date.now()),
+        shouldAutoWaitForReset(error, createAutoWaitLedger(600), agedNow),
       ).toBeNull();
+    },
+  );
+
+  it.each(CAPTURES)(
+    "%s: #860 — at the captured instant the SAME payload is a live window and auto-wait fires",
+    (file) => {
+      const metadata = loadMetadata(file);
+      // Same instant as the counterfactual below: the captured phase started
+      // ~24.8 minutes before the reset, i.e. while the window was live.
+      const capturedNow = resetsAtToMs(metadata.resetsAt!) - 24.8 * MINUTE;
+      const error = createRateLimitError(metadata, capturedNow);
+
+      // Pre-#860 this was the inert path: BillingError, no wait, run dead at
+      // 02:00 with the wake time sitting unused in the metadata.
+      expect(error).toBeInstanceOf(RateLimitError);
+      const decision = shouldAutoWaitForReset(
+        error,
+        createAutoWaitLedger(60),
+        capturedNow,
+      );
+      expect(decision).not.toBeNull();
+      expect(decision!.wakeAtMs).toBe(
+        resetsAtToMs(metadata.resetsAt!) + AUTO_WAIT_BUFFER_MS,
+      );
     },
   );
 
@@ -781,4 +809,218 @@ describe("#804 against the real 2026-07-18 capture (#782)", () => {
       );
     },
   );
+});
+
+describe("#860 against the 26 captured five-hour-window payloads (AC-4, AC-5)", () => {
+  interface CapturedPayload {
+    project: string;
+    sourceFile: string;
+    errorMetadata: RateLimitInfoLike & { resetsAt: number };
+  }
+
+  const payloads: CapturedPayload[] = JSON.parse(
+    readFileSync(
+      new URL(
+        "../../../__tests__/fixtures/rate-limit-payloads-860.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+
+  it("loads the full evidence set", () => {
+    expect(payloads).toHaveLength(26);
+  });
+
+  it("AC-5: every captured payload grants an auto-wait at its captured instant", () => {
+    for (const p of payloads) {
+      // One hour before the recorded reset — inside the live window, as when
+      // each failure actually happened.
+      const liveNow = resetsAtToMs(p.errorMetadata.resetsAt) - HOUR;
+      const error = createRateLimitError(p.errorMetadata, liveNow);
+      expect(error).toBeInstanceOf(RateLimitError);
+
+      const decision = shouldAutoWaitForReset(
+        error,
+        createAutoWaitLedger(600),
+        liveNow,
+      );
+      expect(decision).not.toBeNull();
+      expect(decision!.wakeAtMs).toBe(
+        resetsAtToMs(p.errorMetadata.resetsAt) + AUTO_WAIT_BUFFER_MS,
+      );
+    }
+  });
+
+  it("AC-2: every captured payload is terminal once its window has passed", () => {
+    for (const p of payloads) {
+      const agedNow = resetsAtToMs(p.errorMetadata.resetsAt) + HOUR;
+      const error = createRateLimitError(p.errorMetadata, agedNow);
+      expect(error).toBeInstanceOf(BillingError);
+      expect(
+        shouldAutoWaitForReset(error, createAutoWaitLedger(600), agedNow),
+      ).toBeNull();
+    }
+  });
+
+  it("AC-5 end-to-end: a replayed five-hour-window payload waits and the phase retries", async () => {
+    // executePhaseWithRetry reads the real clock, so replay the captured
+    // payload with its reset re-based to 30 minutes from now — the shape
+    // (five_hour + out_of_credits + resetsAt) is verbatim from the capture.
+    const now = Date.now();
+    const rebased: RateLimitInfoLike = {
+      ...payloads[0].errorMetadata,
+      resetsAt: Math.floor((now + 30 * MINUTE) / 1000),
+    };
+    const error = createRateLimitError(rebased, now);
+    expect(error).toBeInstanceOf(RateLimitError);
+
+    const executePhaseFn = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeResult({ error: error.message, structuredError: error }),
+      )
+      .mockResolvedValueOnce(makeResult({ success: true }));
+    const delayFn = vi.fn(async () => {});
+
+    const result = await executePhaseWithRetry(
+      860,
+      "exec",
+      { ...baseConfig, autoWaitMinutes: 120 },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    expect(result.success).toBe(true);
+    expect(executePhaseFn).toHaveBeenCalledTimes(2);
+    const slept = delayFn.mock.calls.reduce((a, c) => a + (c[0] as number), 0);
+    expect(slept).toBeGreaterThan(25 * MINUTE);
+    expect(slept).toBeLessThanOrEqual(30 * MINUTE + AUTO_WAIT_BUFFER_MS);
+  });
+
+  it("AC-5 end-to-end: a replayed terminal-credits payload halts without waiting", async () => {
+    // The credits_required marker is the SDK's explicit "purchase needed"
+    // signal — terminal even with a live window attached (#860 AC-2).
+    const now = Date.now();
+    const terminal: RateLimitInfoLike = {
+      ...payloads[0].errorMetadata,
+      resetsAt: Math.floor((now + 30 * MINUTE) / 1000),
+      errorCode: "credits_required",
+    };
+    const error = createRateLimitError(terminal, now);
+    expect(error).toBeInstanceOf(BillingError);
+
+    const executePhaseFn = vi.fn().mockResolvedValue(
+      makeResult({
+        // Long enough to not read as a cold-start failure — the assertion is
+        // about the billing halt, not the unrelated cold-start ladder.
+        durationSeconds: 120,
+        error: error.message,
+        structuredError: error,
+      }),
+    );
+    const delayFn = vi.fn(async () => {});
+
+    const result = await executePhaseWithRetry(
+      860,
+      "exec",
+      { ...baseConfig, autoWaitMinutes: 120 },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      executePhaseFn,
+      delayFn,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("Out of credits");
+    expect(executePhaseFn).toHaveBeenCalledTimes(1);
+    expect(delayFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("#860 real-clock smoke — the wait machinery with NO injected timers", () => {
+  // Everything else in this file injects delayFn and now(). These tests run
+  // the tick loop against the real clock and real setTimeout at millisecond
+  // scale, so the production timer path is exercised at least once. (A real
+  // five-hour wait is untestable by definition; this covers the mechanism,
+  // not the duration.)
+  const realDelay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  it("sleeps a real 300ms in real ticks and reports real progress", async () => {
+    const ticks: number[] = [];
+    const started = Date.now();
+    const { sleptMs, aborted } = await waitForWindowReset(300, {
+      delayFn: realDelay,
+      tickMs: 100,
+      onTick: (remainingMs) => ticks.push(remainingMs),
+    });
+    const elapsed = Date.now() - started;
+
+    expect(aborted).toBe(false);
+    expect(sleptMs).toBeGreaterThanOrEqual(300);
+    expect(elapsed).toBeGreaterThanOrEqual(290); // real time actually passed
+    expect(elapsed).toBeLessThan(2000);
+    expect(ticks.length).toBeGreaterThanOrEqual(2); // chunked, not one sleep
+    // Remaining time decreases monotonically across real ticks.
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]).toBeLessThan(ticks[i - 1]);
+    }
+  });
+
+  it("a real abort mid-wait returns promptly, not at the wake", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 150);
+    const started = Date.now();
+    const { aborted } = await waitForWindowReset(5000, {
+      delayFn: realDelay,
+      tickMs: 100,
+      signal: controller.signal,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(aborted).toBe(true);
+    expect(elapsed).toBeLessThan(2000); // nowhere near the 5s wake
+  });
+
+  it("performAutoWait end-to-end on the real clock: notices, ledger, terminal notice", async () => {
+    const notices: Array<{ done: boolean; remainingMs: number }> = [];
+    const config: ExecutionConfig = {
+      ...baseConfig,
+      onAutoWait: (n) =>
+        notices.push({ done: n.done, remainingMs: n.remainingMs }),
+    };
+    const ledger = createAutoWaitLedger(600);
+    const decision = {
+      waitMs: 300,
+      wakeAtMs: Date.now() + 300,
+      error: new RateLimitError("Rate limited", {
+        resetsAt: Date.now() + 300,
+        rateLimitType: "five_hour",
+      }),
+    };
+
+    const { aborted } = await performAutoWait(
+      860,
+      "exec",
+      config,
+      decision,
+      ledger,
+      realDelay,
+    );
+
+    expect(aborted).toBe(false);
+    expect(ledger.waits).toBe(1);
+    expect(ledger.spentMs).toBeGreaterThanOrEqual(300);
+    expect(notices.length).toBeGreaterThanOrEqual(2);
+    const last = notices.at(-1)!;
+    expect(last.done).toBe(true);
+    expect(last.remainingMs).toBe(0);
+    expect(notices.slice(0, -1).every((n) => !n.done)).toBe(true);
+  });
 });

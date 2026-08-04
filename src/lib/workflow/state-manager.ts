@@ -475,6 +475,34 @@ export class StateManager {
   }
 
   /**
+   * Record or clear an in-progress auto-wait (#860). `wakeAtMs` sets the
+   * pause marker (and which phase is paused); `null` clears it on wake.
+   *
+   * Unlike the sibling updaters this NEVER throws on an untracked issue —
+   * it is called from a liveness hook during a live wait, and a bookkeeping
+   * miss must not interrupt the pause it is describing.
+   */
+  async updateAutoWait(
+    issueNumber: number,
+    phase: string,
+    wakeAtMs: number | null,
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState) return;
+
+      issueState.autoWait =
+        wakeAtMs === null
+          ? undefined
+          : { wakeAt: new Date(wakeAtMs).toISOString(), phase };
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+  }
+
+  /**
    * Update worktree information for an issue
    */
   async updateWorktreeInfo(

@@ -6,6 +6,7 @@
  * with graceful gating).
  */
 
+import { readFileSync } from "fs";
 import { describe, it, expect } from "vitest";
 import {
   SequantError,
@@ -15,6 +16,9 @@ import {
   formatRateLimitMessage,
   isBillingFailure,
   isRateLimitFailureInfo,
+  isWaitableWindow,
+  resetsAtToMs,
+  unrecognizedWindowHint,
   type RateLimitInfoLike,
 } from "../src/lib/errors.js";
 
@@ -191,5 +195,344 @@ describe("AC-7: createRateLimitError + 0.3.181 enrichment", () => {
     expect(err.message).toMatch(
       /^Rate limited — resets at \d{2}-\d{2} \d{2}:\d{2}$/,
     );
+  });
+});
+
+// === #860: waitable-window vs terminal-billing classification ===
+
+describe("#860 isWaitableWindow", () => {
+  // A fixed instant keeps every case deterministic; payload times are derived
+  // from it rather than the real clock.
+  const NOW = 1_784_900_000_000; // epoch ms
+  const FUTURE_S = Math.floor(NOW / 1000) + 3 * 3600; // +3h, epoch seconds
+  const PAST_S = Math.floor(NOW / 1000) - 3600; // -1h, epoch seconds
+
+  it("recognizes five_hour with a future resetsAt", () => {
+    expect(
+      isWaitableWindow({ rateLimitType: "five_hour", resetsAt: FUTURE_S }, NOW),
+    ).toBe(true);
+  });
+
+  it("prefix-matches seven_day model-qualified variants", () => {
+    expect(
+      isWaitableWindow(
+        { rateLimitType: "seven_day_opus", resetsAt: FUTURE_S },
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts an epoch-ms resetsAt via the shared unit heuristic", () => {
+    expect(
+      isWaitableWindow(
+        { rateLimitType: "five_hour", resetsAt: FUTURE_S * 1000 },
+        NOW,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a past resetsAt — nothing to wait for", () => {
+    expect(
+      isWaitableWindow({ rateLimitType: "five_hour", resetsAt: PAST_S }, NOW),
+    ).toBe(false);
+  });
+
+  it("rejects a missing resetsAt", () => {
+    expect(isWaitableWindow({ rateLimitType: "five_hour" }, NOW)).toBe(false);
+  });
+
+  it("AC-3: rejects an unrecognized window type (fail closed)", () => {
+    expect(
+      isWaitableWindow({ rateLimitType: "overage", resetsAt: FUTURE_S }, NOW),
+    ).toBe(false);
+  });
+
+  it("AC-3: rejects a missing rateLimitType (fail closed)", () => {
+    expect(isWaitableWindow({ resetsAt: FUTURE_S }, NOW)).toBe(false);
+  });
+});
+
+describe("#860 narrowed isBillingFailure + createRateLimitError", () => {
+  const NOW = 1_784_900_000_000;
+  const FUTURE_S = Math.floor(NOW / 1000) + 3 * 3600;
+  const PAST_S = Math.floor(NOW / 1000) - 3600;
+
+  /** The exact shape of all 26 captured subscription-window payloads. */
+  const capturedShape: RateLimitInfoLike = {
+    resetsAt: FUTURE_S,
+    rateLimitType: "five_hour",
+    overageDisabledReason: "out_of_credits",
+  };
+
+  it("AC-1: out_of_credits + live five-hour window is NOT a billing failure", () => {
+    expect(isBillingFailure(capturedShape, NOW)).toBe(false);
+  });
+
+  it("AC-1: the captured shape becomes a retryable RateLimitError with metadata intact", () => {
+    const err = createRateLimitError(capturedShape, NOW);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.isRetryable).toBe(true);
+    expect(err.metadata.resetsAt).toBe(FUTURE_S);
+    expect(err.metadata.rateLimitType).toBe("five_hour");
+    expect(err.metadata.overageDisabledReason).toBe("out_of_credits");
+    // The message names the reopening window, not a wallet failure.
+    expect(err.message).toMatch(/^Rate limited — resets at /);
+  });
+
+  it("AC-2: an explicit credits_required stays terminal even beside window evidence", () => {
+    const info: RateLimitInfoLike = {
+      ...capturedShape,
+      errorCode: "credits_required",
+    };
+    expect(isBillingFailure(info, NOW)).toBe(true);
+    const err = createRateLimitError(info, NOW);
+    expect(err).toBeInstanceOf(BillingError);
+    expect(err.message).toBe("Out of credits");
+  });
+
+  it("AC-2: out_of_credits with a PAST resetsAt stays terminal with the existing message", () => {
+    const info: RateLimitInfoLike = { ...capturedShape, resetsAt: PAST_S };
+    expect(isBillingFailure(info, NOW)).toBe(true);
+    expect(createRateLimitError(info, NOW)).toBeInstanceOf(BillingError);
+    expect(formatRateLimitMessage(info, NOW)).toBe("Out of credits");
+  });
+
+  it("AC-2: out_of_credits with no resetsAt stays terminal", () => {
+    expect(
+      isBillingFailure({ overageDisabledReason: "out_of_credits" }, NOW),
+    ).toBe(true);
+  });
+
+  it("AC-3: out_of_credits + unrecognized window type fails closed to terminal", () => {
+    const info: RateLimitInfoLike = {
+      resetsAt: FUTURE_S,
+      rateLimitType: "overage",
+      overageDisabledReason: "out_of_credits",
+    };
+    expect(isBillingFailure(info, NOW)).toBe(true);
+    expect(createRateLimitError(info, NOW)).toBeInstanceOf(BillingError);
+  });
+
+  it("retention is unchanged: the captured shape still counts as failure info", () => {
+    // isRateLimitFailureInfo keys on the raw billing markers, not the narrowed
+    // classification — otherwise the driver would drop the very events #860
+    // exists to keep (their `status` field is unproven in the captures).
+    expect(isRateLimitFailureInfo(capturedShape)).toBe(true);
+  });
+});
+
+// === #860 AC-4: all 26 captured payloads gate the classification ===
+
+describe("#860 AC-4: captured payload fixtures", () => {
+  interface CapturedPayload {
+    project: string;
+    sourceFile: string;
+    errorType: string;
+    errorMetadata: {
+      resetsAt: number;
+      rateLimitType: string;
+      overageDisabledReason: string;
+    };
+  }
+
+  const payloads: CapturedPayload[] = JSON.parse(
+    readFileSync(
+      new URL("./fixtures/rate-limit-payloads-860.json", import.meta.url),
+      "utf8",
+    ),
+  );
+
+  it("commits all 26 occurrences (22 ad-motion + 4 matcha-maps)", () => {
+    expect(payloads).toHaveLength(26);
+    expect(payloads.filter((p) => p.project === "ad-motion")).toHaveLength(22);
+    expect(payloads.filter((p) => p.project === "matcha-maps")).toHaveLength(4);
+  });
+
+  it("every capture was recorded as the misclassification under repair", () => {
+    // Provenance guard: each fixture entry is a real pre-#860 BillingError
+    // whose metadata carries the five-hour window shape.
+    for (const p of payloads) {
+      expect(p.errorType).toBe("BillingError");
+      expect(p.errorMetadata.rateLimitType).toBe("five_hour");
+      expect(p.errorMetadata.overageDisabledReason).toBe("out_of_credits");
+      expect(typeof p.errorMetadata.resetsAt).toBe("number");
+    }
+  });
+
+  it("AC-1/AC-4: every captured payload classifies as a waitable RateLimitError while its window is live", () => {
+    for (const p of payloads) {
+      // Pin `now` one hour before each payload's reset so the window is live,
+      // exactly as it was when the failure was recorded.
+      const now = resetsAtToMs(p.errorMetadata.resetsAt) - 3600_000;
+      expect(isWaitableWindow(p.errorMetadata, now)).toBe(true);
+      expect(isBillingFailure(p.errorMetadata, now)).toBe(false);
+      const err = createRateLimitError(p.errorMetadata, now);
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect(err.metadata.resetsAt).toBe(p.errorMetadata.resetsAt);
+    }
+  });
+
+  it("AC-2: the same payloads are terminal once their window has passed", () => {
+    for (const p of payloads) {
+      const now = resetsAtToMs(p.errorMetadata.resetsAt) + 3600_000;
+      expect(isBillingFailure(p.errorMetadata, now)).toBe(true);
+      expect(createRateLimitError(p.errorMetadata, now)).toBeInstanceOf(
+        BillingError,
+      );
+    }
+  });
+});
+
+// === #860 gap hardening: status guard, drift hint, seven_day combination ===
+
+describe("#860 hardening: informational statuses are never waitable", () => {
+  const NOW = 1_784_900_000_000;
+  const FUTURE_S = Math.floor(NOW / 1000) + 3 * 3600;
+
+  const windowShape: RateLimitInfoLike = {
+    resetsAt: FUTURE_S,
+    rateLimitType: "five_hour",
+    overageDisabledReason: "out_of_credits",
+  };
+
+  it("allowed_warning with the full window shape is NOT waitable — a stale warning must not buy a 5h sleep", () => {
+    // The driver retains marker-carrying warnings as failure-grade (#732
+    // semantics, unchanged). If the phase then fails for an unrelated reason,
+    // the warning is misattributed to the failure; classifying it waitable
+    // would turn that cheap misattribution into a multi-hour pause.
+    const info: RateLimitInfoLike = {
+      ...windowShape,
+      status: "allowed_warning",
+    };
+    expect(isWaitableWindow(info, NOW)).toBe(false);
+    expect(isBillingFailure(info, NOW)).toBe(true);
+    expect(createRateLimitError(info, NOW)).toBeInstanceOf(BillingError);
+  });
+
+  it("allowed with the full window shape is NOT waitable either", () => {
+    const info: RateLimitInfoLike = { ...windowShape, status: "allowed" };
+    expect(isWaitableWindow(info, NOW)).toBe(false);
+    expect(isBillingFailure(info, NOW)).toBe(true);
+  });
+
+  it("rejected status stays waitable", () => {
+    const info: RateLimitInfoLike = { ...windowShape, status: "rejected" };
+    expect(isWaitableWindow(info, NOW)).toBe(true);
+    expect(isBillingFailure(info, NOW)).toBe(false);
+  });
+
+  it("absent status stays waitable — the 26 captures carry no status field", () => {
+    expect(isWaitableWindow(windowShape, NOW)).toBe(true);
+    expect(isBillingFailure(windowShape, NOW)).toBe(false);
+  });
+});
+
+describe("#860 hardening: unrecognizedWindowHint (vocabulary-drift telemetry)", () => {
+  const NOW = 1_784_900_000_000;
+  const FUTURE_S = Math.floor(NOW / 1000) + 3 * 3600;
+  const PAST_S = Math.floor(NOW / 1000) - 3600;
+
+  const drifted: RateLimitInfoLike = {
+    resetsAt: FUTURE_S,
+    rateLimitType: "overage",
+    overageDisabledReason: "out_of_credits",
+  };
+
+  it("fires when the ONLY reason for terminal is an unrecognized window type", () => {
+    const hint = unrecognizedWindowHint(drifted, NOW);
+    expect(hint).toContain('unrecognized window type "overage"');
+    expect(hint).toContain("five_hour/seven_day");
+  });
+
+  it("reaches the user through formatRateLimitMessage", () => {
+    const msg = formatRateLimitMessage(drifted, NOW);
+    expect(msg).toMatch(/^Out of credits \(unrecognized window type "overage"/);
+    // And through the enriched variants.
+    expect(
+      formatRateLimitMessage(
+        { ...drifted, canUserPurchaseCredits: true },
+        NOW,
+      ),
+    ).toMatch(/^Out of credits — purchasable \(unrecognized window type/);
+  });
+
+  it("does NOT fire for an explicit credits_required (terminal on its own signal)", () => {
+    expect(
+      unrecognizedWindowHint({ ...drifted, errorCode: "credits_required" }, NOW),
+    ).toBeNull();
+    expect(
+      formatRateLimitMessage(
+        { ...drifted, errorCode: "credits_required" },
+        NOW,
+      ),
+    ).toBe("Out of credits");
+  });
+
+  it("does NOT fire for a missing rateLimitType — absence is not drift evidence", () => {
+    expect(
+      unrecognizedWindowHint(
+        { resetsAt: FUTURE_S, overageDisabledReason: "out_of_credits" },
+        NOW,
+      ),
+    ).toBeNull();
+  });
+
+  it("does NOT fire for a recognized type, a past reset, or an informational status", () => {
+    expect(
+      unrecognizedWindowHint({ ...drifted, rateLimitType: "five_hour" }, NOW),
+    ).toBeNull();
+    expect(
+      unrecognizedWindowHint({ ...drifted, resetsAt: PAST_S }, NOW),
+    ).toBeNull();
+    expect(
+      unrecognizedWindowHint({ ...drifted, status: "allowed_warning" }, NOW),
+    ).toBeNull();
+  });
+
+  it("plain terminal messages are unchanged (AC-2 contract)", () => {
+    expect(
+      formatRateLimitMessage(
+        { overageDisabledReason: "out_of_credits" },
+        NOW,
+      ),
+    ).toBe("Out of credits");
+    expect(
+      formatRateLimitMessage(
+        {
+          resetsAt: PAST_S,
+          rateLimitType: "five_hour",
+          overageDisabledReason: "out_of_credits",
+        },
+        NOW,
+      ),
+    ).toBe("Out of credits");
+  });
+});
+
+describe("#860 hardening: seven_day + out_of_credits (unobserved, allowlisted by judgment)", () => {
+  // No capture shows this combination; the allowlist admits it per AC-1's
+  // "(or another window type)". These tests pin the intended semantics so the
+  // judgment is explicit rather than incidental.
+  const NOW = 1_784_900_000_000;
+  const FUTURE_S = Math.floor(NOW / 1000) + 5 * 24 * 3600; // 5 days out
+
+  const sevenDay: RateLimitInfoLike = {
+    resetsAt: FUTURE_S,
+    rateLimitType: "seven_day_opus",
+    overageDisabledReason: "out_of_credits",
+  };
+
+  it("classifies waitable while live, with a date-qualified reset message", () => {
+    const err = createRateLimitError(sevenDay, NOW);
+    expect(err).toBeInstanceOf(RateLimitError);
+    // Multi-day reset must carry the date (#732 convention).
+    expect(err.message).toMatch(
+      /^Rate limited — resets at \d{2}-\d{2} \d{2}:\d{2}$/,
+    );
+  });
+
+  it("is terminal once the window has passed", () => {
+    const aged = resetsAtToMs(FUTURE_S) + 3600_000;
+    expect(createRateLimitError(sevenDay, aged)).toBeInstanceOf(BillingError);
   });
 });

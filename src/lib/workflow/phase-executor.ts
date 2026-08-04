@@ -261,10 +261,14 @@ export interface AutoWaitDecision {
  * - the failure is not a window-exhausted `RateLimitError`. A `BillingError`
  *   lands here: it is a sibling class, not a subclass, so the `instanceof`
  *   check inside `isWindowExhaustedRateLimit` excludes it. That is load-bearing
- *   — the real #782 capture shows billing failures DO carry `resetsAt`
- *   (`rateLimitType: "five_hour"`), so gating on the timestamp's presence
+ *   — a `BillingError` may still carry `resetsAt` (an explicit
+ *   `credits_required`, or a window that has already passed — see the #860
+ *   narrowing in `isBillingFailure`), so gating on the timestamp's presence
  *   instead of the error type would wait out a credits failure that no amount
- *   of waiting can heal (AC-4);
+ *   of waiting can heal (AC-4). Since #860, a *live* recognized window
+ *   (`five_hour`/`seven_day*` + future reset) classifies as `RateLimitError`
+ *   upstream even when `out_of_credits` is present, which is what lets the
+ *   real captured subscription payloads reach this decision at all;
  * - the reset has already passed (nothing to wait for);
  * - the required wait exceeds the budget REMAINING, not the total (AC-6).
  *

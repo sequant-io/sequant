@@ -291,6 +291,42 @@ describe("StateManager", () => {
     });
   });
 
+  describe("updateAutoWait (#860)", () => {
+    beforeEach(async () => {
+      await manager.initializeIssue(860, "Waitable window issue");
+    });
+
+    it("records the pause with wake time and phase, then clears it on wake", async () => {
+      const wakeAtMs = 1_784_910_600_000;
+      await manager.updateAutoWait(860, "exec", wakeAtMs);
+
+      let state = await manager.getState();
+      expect(state.issues["860"].autoWait).toEqual({
+        wakeAt: new Date(wakeAtMs).toISOString(),
+        phase: "exec",
+      });
+
+      await manager.updateAutoWait(860, "exec", null);
+      state = await manager.getState();
+      expect(state.issues["860"].autoWait).toBeUndefined();
+    });
+
+    it("bumps lastActivity so the pause reads as fresh, not stale", async () => {
+      const before = (await manager.getIssueState(860))!.lastActivity;
+      // lastActivity has second-level ISO granularity; ensure a measurable gap.
+      await new Promise((r) => setTimeout(r, 5));
+      await manager.updateAutoWait(860, "exec", Date.now() + 3_600_000);
+      const after = (await manager.getIssueState(860))!.lastActivity;
+      expect(Date.parse(after)).toBeGreaterThanOrEqual(Date.parse(before));
+    });
+
+    it("never throws for an untracked issue — bookkeeping must not disturb a live wait", async () => {
+      await expect(
+        manager.updateAutoWait(999, "exec", Date.now()),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   describe("updateResumeHandle (#674)", () => {
     beforeEach(async () => {
       await manager.initializeIssue(42, "Test Issue");

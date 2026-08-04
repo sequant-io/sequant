@@ -113,6 +113,9 @@ export function registerStatusTool(server: McpServer): void {
                 phases: issueState.phases,
                 worktree: issueState.worktree,
                 pr: issueState.pr,
+                // #860: surfaced so MCP pollers see a deliberate rate-limit
+                // pause (with its wake time) instead of a stale in-progress.
+                autoWait: issueState.autoWait,
                 lastActivity: issueState.lastActivity,
                 nextAction: getNextActionHint(issueState),
                 lastSynced: reconcileResult.lastSynced,

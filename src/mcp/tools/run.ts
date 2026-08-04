@@ -18,6 +18,7 @@ import { resolve, dirname, join } from "path";
 import { existsSync } from "fs";
 import { readdir, readFile } from "fs/promises";
 import { homedir } from "os";
+import { formatResetTime } from "../../lib/errors.js";
 import { LOG_PATHS, RunLogSchema } from "../../lib/workflow/run-log-schema.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
 import { registerRun, unregisterRun } from "../run-registry.js";
@@ -360,14 +361,22 @@ export function parseRunIdLine(line: string): string | null {
 export interface ProgressEvent {
   issue: number;
   phase: string;
-  event: "start" | "complete" | "failed";
+  event: "start" | "complete" | "failed" | "waiting";
   durationSeconds?: number;
   error?: string;
+  /** #860: epoch ms of the auto-wait wake; absent on the terminal notice. */
+  wakeAtMs?: number;
+  /** #860: ms remaining in the auto-wait (0 on the terminal notice). */
+  remainingMs?: number;
 }
 
 /**
  * Parse a SEQUANT_PROGRESS line emitted by the batch executor.
  * Returns the parsed event or null if the line isn't a progress line.
+ *
+ * `waiting` events (#860) are the auto-wait liveness signal: a run paused on
+ * a rate-limit window emits one per minute so an MCP client sees a deliberate
+ * pause with a wake time rather than silence indistinguishable from a hang.
  */
 export function parseProgressLine(line: string): ProgressEvent | null {
   if (!line.startsWith(PROGRESS_LINE_PREFIX)) return null;
@@ -379,7 +388,8 @@ export function parseProgressLine(line: string): ProgressEvent | null {
       typeof json.event === "string" &&
       (json.event === "start" ||
         json.event === "complete" ||
-        json.event === "failed")
+        json.event === "failed" ||
+        json.event === "waiting")
     ) {
       const result: ProgressEvent = {
         issue: json.issue,
@@ -391,6 +401,12 @@ export function parseProgressLine(line: string): ProgressEvent | null {
       }
       if (typeof json.error === "string") {
         result.error = json.error;
+      }
+      if (typeof json.wakeAtMs === "number") {
+        result.wakeAtMs = json.wakeAtMs;
+      }
+      if (typeof json.remainingMs === "number") {
+        result.remainingMs = json.remainingMs;
       }
       return result;
     }
@@ -452,6 +468,13 @@ export function formatProgressMessage(event: ProgressEvent): string {
     case "failed": {
       const reason = event.error ? ` \u2014 ${event.error}` : "";
       return `${prefix}: ${event.phase} \u2717${reason}`;
+    }
+    case "waiting": {
+      // #860: name the wake time so a paused run reads as deliberate.
+      if (event.wakeAtMs === undefined) {
+        return `${prefix}: ${event.phase} auto-wait complete \u2014 resuming`;
+      }
+      return `${prefix}: ${event.phase} \u23f8 rate-limit window \u2014 resuming at ${formatResetTime(event.wakeAtMs)}`;
     }
   }
 }

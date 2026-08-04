@@ -254,13 +254,112 @@ export interface RateLimitInfoLike {
 }
 
 /**
- * True when the rate-limit info represents a billing/credits failure (which a
- * retry cannot fix), rather than a transient throttle.
+ * Recognized rate-limit *window* vocabulary — limit types whose exhaustion is
+ * a pause that reopens at `resetsAt`, not a wallet state. `five_hour` is the
+ * subscription session window; `seven_day` is prefix-matched because the SDK
+ * emits model-qualified variants (`seven_day*`, see {@link formatResetTime}).
+ *
+ * Deliberately an allowlist (#860 AC-3): this encodes an inference about
+ * Anthropic's payload vocabulary, so an unlisted type (e.g. `overage`) must
+ * fail closed to the terminal billing path rather than into a five-hour sleep.
  */
-export function isBillingFailure(info: RateLimitInfoLike): boolean {
+const WAITABLE_WINDOW_TYPE_RE = /^(five_hour|seven_day)/;
+
+/**
+ * True when the rate-limit info describes an exhausted *window* that will
+ * reopen at a known future time: a recognized window `rateLimitType` plus a
+ * `resetsAt` still in the future (#860 AC-1).
+ *
+ * This is the discriminator between "subscription window closed until 07:00"
+ * and "account needs credits". The fields that would answer that directly
+ * (`canUserPurchaseCredits`, `hasChargeableSavedPaymentMethod`) are absent
+ * from every real captured payload, so the window shape is the proxy — and
+ * any unrecognized shape returns false (fail closed, #860 AC-3).
+ *
+ * Explicitly informational statuses (`allowed` / `allowed_warning`) are never
+ * waitable. The driver retains marker-carrying warnings as failure-grade
+ * (pre-#732 semantics, unchanged), so a stale "you are nearing your limit"
+ * warning can be misattributed to an unrelated phase failure — classifying it
+ * waitable would upgrade that misattribution from a cheap immediate halt to a
+ * multi-hour sleep. The 26 real captures carry no `status` field at all, so
+ * absent status stays waitable; only a status that affirmatively says
+ * "not a rejection" is excluded.
+ */
+export function isWaitableWindow(
+  info: RateLimitInfoLike,
+  now: number = Date.now(),
+): boolean {
+  if (info.status === "allowed" || info.status === "allowed_warning") {
+    return false;
+  }
+  if (typeof info.rateLimitType !== "string") return false;
+  if (!WAITABLE_WINDOW_TYPE_RE.test(info.rateLimitType)) return false;
+  if (typeof info.resetsAt !== "number") return false;
+  return resetsAtToMs(info.resetsAt) > now;
+}
+
+/**
+ * Vocabulary-drift telemetry for the #860 fail-closed path: returns a hint
+ * string when a payload was terminal ONLY because its `rateLimitType` is not
+ * in the recognized window allowlist — i.e. it carries `out_of_credits` plus a
+ * live future `resetsAt` and a *present but unrecognized* window type, and no
+ * explicit `credits_required`. If Anthropic renames or adds a window type,
+ * the halt message names the rejected type instead of silently reading as an
+ * ordinary wallet failure. A missing `rateLimitType` is NOT drift evidence
+ * (API-account payloads may legitimately omit it), so no hint fires there.
+ */
+export function unrecognizedWindowHint(
+  info: RateLimitInfoLike,
+  now: number = Date.now(),
+): string | null {
+  if (info.errorCode === "credits_required") return null;
+  if (info.overageDisabledReason !== "out_of_credits") return null;
+  if (info.status === "allowed" || info.status === "allowed_warning") {
+    return null;
+  }
+  if (typeof info.rateLimitType !== "string") return null;
+  if (WAITABLE_WINDOW_TYPE_RE.test(info.rateLimitType)) return null;
+  if (typeof info.resetsAt !== "number") return null;
+  if (resetsAtToMs(info.resetsAt) <= now) return null;
+  return `unrecognized window type "${info.rateLimitType}" with a future reset — treated as terminal (auto-wait recognizes five_hour/seven_day)`;
+}
+
+/**
+ * True when the info carries an explicit billing/credits marker, regardless
+ * of whether a live window would make it waitable. This is the pre-#860
+ * `isBillingFailure` predicate, kept for failure-*detection* sites
+ * ({@link isRateLimitFailureInfo}) whose retention semantics must not narrow.
+ */
+function hasBillingMarkers(info: RateLimitInfoLike): boolean {
   return (
     info.errorCode === "credits_required" ||
     info.overageDisabledReason === "out_of_credits"
+  );
+}
+
+/**
+ * True when the rate-limit info represents a billing/credits failure (which
+ * waiting cannot fix), rather than a transient throttle or an exhausted
+ * window.
+ *
+ * Narrowed by #860: a subscription plan hitting its five-hour cap with
+ * overage disabled emits `overageDisabledReason: "out_of_credits"` *plus* a
+ * window type and a live `resetsAt` — a pause, not a wallet failure. That
+ * shape is excluded here so it classifies as a retryable {@link RateLimitError}
+ * and `--auto-wait` (#804) can act on it. An explicit
+ * `errorCode: "credits_required"` stays terminal even alongside window
+ * evidence — it is the SDK's direct "purchase needed" signal (#860 AC-2).
+ * Anything short of the full recognized window shape remains terminal
+ * (fail closed, #860 AC-3).
+ */
+export function isBillingFailure(
+  info: RateLimitInfoLike,
+  now: number = Date.now(),
+): boolean {
+  if (info.errorCode === "credits_required") return true;
+  return (
+    info.overageDisabledReason === "out_of_credits" &&
+    !isWaitableWindow(info, now)
   );
 }
 
@@ -269,9 +368,16 @@ export function isBillingFailure(info: RateLimitInfoLike): boolean {
  * billing), as opposed to an informational `allowed` / `allowed_warning`
  * event. The driver uses this to avoid mis-attributing a stale warning event
  * to an unrelated phase failure.
+ *
+ * Built on the raw billing *markers*, not the #860-narrowed classification:
+ * the captured five-hour payloads cannot prove they carried
+ * `status: "rejected"`, so narrowing here could silently drop the very events
+ * #860 exists to keep (they'd fall back to a metadata-less assistant error and
+ * auto-wait would stay inert). Retention semantics are unchanged; only the
+ * billing-vs-waitable *classification* narrowed.
  */
 export function isRateLimitFailureInfo(info: RateLimitInfoLike): boolean {
-  return info.status === "rejected" || isBillingFailure(info);
+  return info.status === "rejected" || hasBillingMarkers(info);
 }
 
 /**
@@ -321,16 +427,30 @@ export function formatResetTime(resetsAt: number): string {
  * - transient throttle → "Rate limited — resets at HH:MM" (date-qualified as
  *   "MM-DD HH:MM" when the reset is not today; reset time omitted entirely when
  *   `resetsAt` is absent)
+ *
+ * `now` feeds the #860 waitable-window classification so message and error
+ * type are derived against the same instant (and tests can pin the clock).
+ * A waitable window renders through the rate-limited branch — its reset time
+ * is the actionable fact; "Out of credits" would misname a pause as a wallet
+ * failure.
  */
-export function formatRateLimitMessage(info: RateLimitInfoLike): string {
-  if (isBillingFailure(info)) {
+export function formatRateLimitMessage(
+  info: RateLimitInfoLike,
+  now: number = Date.now(),
+): string {
+  if (isBillingFailure(info, now)) {
+    // #860 drift telemetry: when the ONLY reason this is terminal is an
+    // unrecognized window type, say so — the message is the one channel that
+    // reaches run output, logs, and `PhaseResult.error` on every display path.
+    const hint = unrecognizedWindowHint(info, now);
+    const suffix = hint ? ` (${hint})` : "";
     if (info.canUserPurchaseCredits === true) {
-      return "Out of credits — purchasable";
+      return `Out of credits — purchasable${suffix}`;
     }
     if (info.canUserPurchaseCredits === false) {
-      return "Out of credits — hard limit";
+      return `Out of credits — hard limit${suffix}`;
     }
-    return "Out of credits";
+    return `Out of credits${suffix}`;
   }
   if (info.resetsAt !== undefined) {
     return `Rate limited — resets at ${formatResetTime(info.resetsAt)}`;
@@ -341,12 +461,15 @@ export function formatRateLimitMessage(info: RateLimitInfoLike): string {
 /**
  * Construct the appropriate typed error from structured rate-limit info.
  * Billing/credits failures become a non-retryable {@link BillingError};
- * transient throttles become a retryable {@link RateLimitError}.
+ * transient throttles AND exhausted-but-reopening windows (#860) become a
+ * retryable {@link RateLimitError}. `now` pins the waitable-window check to
+ * one instant across message and classification.
  */
 export function createRateLimitError(
   info: RateLimitInfoLike,
+  now: number = Date.now(),
 ): RateLimitError | BillingError {
-  const message = formatRateLimitMessage(info);
+  const message = formatRateLimitMessage(info, now);
   const metadata: RateLimitMetadata = {
     resetsAt: info.resetsAt,
     rateLimitType: info.rateLimitType,
@@ -355,7 +478,7 @@ export function createRateLimitError(
     canUserPurchaseCredits: info.canUserPurchaseCredits,
     hasChargeableSavedPaymentMethod: info.hasChargeableSavedPaymentMethod,
   };
-  return isBillingFailure(info)
+  return isBillingFailure(info, now)
     ? new BillingError(message, metadata)
     : new RateLimitError(message, metadata);
 }
