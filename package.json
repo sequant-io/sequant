@@ -6,12 +6,12 @@
   "bin": {
     "sequant": "dist/bin/cli.js"
   },
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     }
   },
   "files": [
@@ -21,7 +21,7 @@
     ".claude-plugin"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist/src dist/bin dist/dashboard && tsc",
     "dev": "tsx bin/cli.ts",
     "test": "vitest run",
     "lint": "eslint src/ bin/ --max-warnings 0",
@@ -79,7 +79,7 @@
   },
   "homepage": "https://sequant.io",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "peerDependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1"
