@@ -16,7 +16,7 @@ Before approving, verify the implementation integrates properly:
 ### 1. File Locations
 Are new files in correct directories per `scripts/README.md` structure?
 ```bash
-git diff main...HEAD --name-only | grep "^scripts/"
+git diff origin/main...HEAD --name-only | grep "^scripts/"
 ```
 
 ### 2. Pattern Compliance
@@ -54,7 +54,7 @@ If project uses a database with access controls:
 Verify new exports are imported somewhere using the Grep tool:
 ```
 # 1. Get new files from git
-new_files=$(git diff main...HEAD --name-only --diff-filter=A | grep -E "\.(ts|tsx)$" || true)
+new_files=$(git diff origin/main...HEAD --name-only --diff-filter=A | grep -E "\.(ts|tsx)$" || true)
 
 # 2. For each new file, use Grep to find exports:
 #    Grep(pattern="export (const|function|class|type|interface)", path="<file>", output_mode="content")

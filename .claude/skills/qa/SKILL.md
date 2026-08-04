@@ -237,7 +237,7 @@ The quality-checks.sh script outputs a cache status table:
 #### Cache Location
 
 Cache is stored at `.sequant/.cache/qa/cache.json` with the following structure:
-- `diffHash`: SHA256 hash of `git diff main...HEAD`
+- `diffHash`: SHA256 hash of `git diff origin/main...HEAD`
 - `configHash`: SHA256 hash of relevant config files
 - `result`: Check result (passed, message, details)
 - `ttl`: Time-to-live in milliseconds (default: 1 hour)
@@ -384,7 +384,7 @@ Include in QA output when branch is stale:
 
 3. **Review in the worktree:**
    - Navigate to the worktree directory to review the implementation
-   - Use `git diff main...HEAD` to see all changes made in the feature branch
+   - Use `git diff origin/main...HEAD` to see all changes made in the feature branch
    - Run `npm test` and `npm run build` in the worktree to verify everything works
    - Review the code changes against the AC checklist
 
@@ -1200,12 +1200,12 @@ issue_type="${SEQUANT_ISSUE_TYPE:-}"
 
 **Add RLS check if admin files modified:**
 ```bash
-admin_modified=$(git diff main...HEAD --name-only | grep -E "^app/admin/" | head -1 || true)
+admin_modified=$(git diff origin/main...HEAD --name-only | grep -E "^app/admin/" | head -1 || true)
 ```
 
 **Add skill sync check if skill files modified:**
 ```bash
-skill_modified=$(git diff main...HEAD --name-only | grep -E "^\.(claude/skills|skills|templates/skills)/" | head -1 || true)
+skill_modified=$(git diff origin/main...HEAD --name-only | grep -E "^\.(claude/skills|skills|templates/skills)/" | head -1 || true)
 ```
 If skill files are modified, the quality-checks.sh script automatically runs the three-directory sync check (section 12). If divergence is detected, this blocks `READY_FOR_MERGE` — verdict becomes `AC_MET_BUT_NOT_A_PLUS` with a note to run `npx tsx scripts/check-skill-sync.ts --fix`.
 
@@ -1321,7 +1321,7 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 Use the Glob tool to check for corresponding test files:
 ```
 # Get changed source files (excluding tests) from git
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
+changed=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep -v -E '\.test\.|\.spec\.|__tests__' || true)
 
 # For each changed file, use the Glob tool to find matching test files
 # Glob(pattern="**/${base}.test.*") or Glob(pattern="**/${base}.spec.*")
@@ -1365,7 +1365,7 @@ changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' | grep
 
 ```bash
 # Detect critical paths in changed files
-changed=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
+changed=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 critical=$(echo "$changed" | grep -E 'auth|payment|security|server-action|middleware|admin' || true)
 
 if [[ -n "$critical" ]]; then
@@ -1410,7 +1410,7 @@ See [test-quality-checklist.md](references/test-quality-checklist.md) for detail
 
 ```bash
 # Get changed TypeScript/JavaScript files
-changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
+changed_files=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx)$' || true)
 ```
 
 **Check for:**
@@ -1443,10 +1443,10 @@ See [anti-pattern-detection.md](references/anti-pattern-detection.md) for detect
 **Detection:**
 ```bash
 # Detect user-facing changes
-cli_added=$(git diff main...HEAD -- bin/cli.ts | grep -E '^\+.*\.command\(' | wc -l | xargs || true)
-new_commands=$(git diff main...HEAD --name-only | grep -E '^src/commands/' | wc -l | xargs || true)
-mcp_added=$(git diff main...HEAD --name-only | grep -E '^src/mcp/' | wc -l | xargs || true)
-config_changed=$(git diff main...HEAD --name-only | grep -E 'settings|config' | wc -l | xargs || true)
+cli_added=$(git diff origin/main...HEAD -- bin/cli.ts | grep -E '^\+.*\.command\(' | wc -l | xargs || true)
+new_commands=$(git diff origin/main...HEAD --name-only | grep -E '^src/commands/' | wc -l | xargs || true)
+mcp_added=$(git diff origin/main...HEAD --name-only | grep -E '^src/mcp/' | wc -l | xargs || true)
+config_changed=$(git diff origin/main...HEAD --name-only | grep -E 'settings|config' | wc -l | xargs || true)
 
 if [[ $((cli_added + new_commands + mcp_added + config_changed)) -gt 0 ]]; then
   echo "User-facing changes detected - running product review"
@@ -1501,8 +1501,8 @@ fi
 # Find new exported functions (added lines only)
 # Catches: export function foo, export async function foo,
 #          export const foo = () =>, export const foo = async () =>
-fn_exports=$(git diff main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}' || true)
-arrow_exports=$(git diff main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $2}' || true)
+fn_exports=$(git diff origin/main...HEAD | grep -E '^\+export (async )?function \w+' | sed 's/^+//' | grep -oE 'function \w+' | awk '{print $2}' || true)
+arrow_exports=$(git diff origin/main...HEAD | grep -E '^\+export const \w+ = (async )?\(' | sed 's/^+//' | grep -oE 'const \w+' | awk '{print $2}' || true)
 new_exports=$(echo -e "${fn_exports}\n${arrow_exports}" | sed '/^$/d' | sort -u)
 export_count=$(echo "$new_exports" | grep -c . || echo 0)
 
@@ -1618,7 +1618,7 @@ See [call-site-review.md](references/call-site-review.md) for detailed methodolo
 
 ```bash
 # Check if option interfaces or CLI file were modified
-option_files=$(git diff main...HEAD --name-only | grep -E "batch-executor\.ts|run\.ts|cli\.ts" || true)
+option_files=$(git diff origin/main...HEAD --name-only | grep -E "batch-executor\.ts|run\.ts|cli\.ts" || true)
 option_modified=$(echo "$option_files" | grep -v "^$" | wc -l | xargs || echo "0")
 
 if [[ $option_modified -gt 0 ]]; then
@@ -1637,7 +1637,7 @@ fi
 1. **Extract new interface fields from diff:**
    ```bash
    # Get new fields added to RunOptions (or similar interfaces)
-   new_fields=$(git diff main...HEAD -- src/lib/workflow/batch-executor.ts | \
+   new_fields=$(git diff origin/main...HEAD -- src/lib/workflow/batch-executor.ts | \
      grep -E '^\+\s+\w+\??: ' | \
      sed 's/.*+ *//' | \
      sed 's/\?.*//' | \
@@ -1649,7 +1649,7 @@ fi
    ```bash
    # For each new field, check if it's used at runtime
    for field in $new_fields; do
-     runtime_usage=$(git diff main...HEAD | grep -E "mergedOptions\.$field|options\.$field" || true)
+     runtime_usage=$(git diff origin/main...HEAD | grep -E "mergedOptions\.$field|options\.$field" || true)
      if [[ -n "$runtime_usage" ]]; then
        echo "Field '$field' has runtime usage - verify CLI registration"
      fi
@@ -1788,7 +1788,7 @@ This operationalizes the principle in `feedback_qa_second_look.md` (structured Q
 
 **Detect skill changes:**
 ```bash
-skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs || true)
+skills_changed=$(git diff origin/main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" | wc -l | xargs || true)
 ```
 
 **If skills_changed > 0, add these verification prompts:**
@@ -1819,8 +1819,8 @@ skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*
 
 **Detect change type:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
-cli_changed=$(git diff main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs || true)
+scripts_changed=$(git diff origin/main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
+cli_changed=$(git diff origin/main...HEAD --name-only | grep -E "(cli|commands?)" | wc -l | xargs || true)
 ```
 
 **If scripts/CLI changed, execute at least one smoke command:**
@@ -1861,7 +1861,7 @@ See [quality-gates.md](references/quality-gates.md) for detailed evidence requir
 
 **Detect skill changes:**
 ```bash
-skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" || true)
+skills_changed=$(git diff origin/main...HEAD --name-only | grep -E "^\.claude/skills/.*\.md$" || true)
 skill_count=$(echo "$skills_changed" | grep -c . || echo 0)
 ```
 
@@ -1994,9 +1994,9 @@ done
 **Detection:**
 ```bash
 # Detect workflow-affecting changes
-skills_changed=$(git diff main...HEAD --name-only | grep -E "^\.claude/skills/" | wc -l | xargs || true)
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
-cli_changed=$(git diff main...HEAD --name-only | grep -E "^(src/cli|bin)/" | wc -l | xargs || true)
+skills_changed=$(git diff origin/main...HEAD --name-only | grep -E "^\.claude/skills/" | wc -l | xargs || true)
+scripts_changed=$(git diff origin/main...HEAD --name-only | grep -E "^scripts/" | wc -l | xargs || true)
+cli_changed=$(git diff origin/main...HEAD --name-only | grep -E "^(src/cli|bin)/" | wc -l | xargs || true)
 
 if [[ $((skills_changed + scripts_changed + cli_changed)) -gt 0 ]]; then
   echo "Smoke test recommended for workflow changes"
@@ -2275,7 +2275,7 @@ fi
 # Per-AC survival check. Run once per behavior-rule AC.
 QA_AC_ID="AC-1" \
 QA_AC_TEXT="<verbatim AC description>" \
-QA_DIFF_PATHS="$(git diff main...HEAD --name-only | tr '\n' '|')" \
+QA_DIFF_PATHS="$(git diff origin/main...HEAD --name-only | tr '\n' '|')" \
 npx tsx -e '
 (async () => {
   const m = await import("./src/lib/heuristics/behavior-rule-detector.ts");
@@ -2386,7 +2386,7 @@ Provide an overall verdict:
    - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
 
 3. Browser testing enforcement check:
-   - Check if any .tsx files were changed: git diff main...HEAD --name-only | grep '\.tsx$' || true
+   - Check if any .tsx files were changed: git diff origin/main...HEAD --name-only | grep '\.tsx$' || true
    - Check if /test phase ran: look for test phase marker in issue comments
    - Check if issue has 'no-browser-test' label
    - IF .tsx files changed AND /test did NOT run AND no 'no-browser-test' label:
@@ -2454,7 +2454,7 @@ Before finalizing the verdict, check for missing browser test coverage:
 
 ```bash
 # Check if .tsx files were changed
-tsx_changed=$(git diff main...HEAD --name-only | grep '\.tsx$' || true)
+tsx_changed=$(git diff origin/main...HEAD --name-only | grep '\.tsx$' || true)
 
 # Check if /test phase ran (look for test phase marker in issue comments)
 test_ran=$(gh issue view <issue-number> --json comments --jq '[.comments[].body]' | \
@@ -2631,17 +2631,17 @@ See [quality-gates.md](references/quality-gates.md) for detailed verdict criteri
 
 ```bash
 # Type safety
-type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs || true)
+type_issues=$(git diff origin/main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs || true)
 
 # Deleted tests
-deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs || true)
+deleted_tests=$(git diff origin/main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs || true)
 
 # Scope check
-files_changed=$(git diff main...HEAD --name-only | wc -l | xargs)
+files_changed=$(git diff origin/main...HEAD --name-only | wc -l | xargs)
 
 # Size check
-additions=$(git diff main...HEAD --numstat | awk '{sum+=$1} END {print sum+0}')
-deletions=$(git diff main...HEAD --numstat | awk '{sum+=$2} END {print sum+0}')
+additions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$1} END {print sum+0}')
+deletions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$2} END {print sum+0}')
 
 # Security scan
 npx tsx scripts/lib/__tests__/run-security-scan.ts 2>/dev/null
@@ -2762,7 +2762,7 @@ When an entry exists, verify it follows the format:
 
 **Detection:**
 ```bash
-scripts_changed=$(git diff main...HEAD --name-only | grep -E "^(scripts/|templates/scripts/)" | wc -l | xargs || true)
+scripts_changed=$(git diff origin/main...HEAD --name-only | grep -E "^(scripts/|templates/scripts/)" | wc -l | xargs || true)
 if [[ $scripts_changed -gt 0 ]]; then
   echo "Script changes detected. Run /verify before READY_FOR_MERGE"
 fi
