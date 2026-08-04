@@ -147,7 +147,7 @@ if cache_check "type-safety"; then
   fi
 else
   CACHE_STATUS["type-safety"]="MISS"
-  type_issues=$(git diff main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs)
+  type_issues=$(git diff origin/main...HEAD | grep -E ":\s*any[,)]|as any" | wc -l | xargs)
   if [[ $type_issues -gt 0 ]]; then
     echo "⚠️  WARNING: $type_issues potential 'any' type usages"
     cache_set "type-safety" false "Found $type_issues potential 'any' type usages" "{\"count\":$type_issues}"
@@ -173,7 +173,7 @@ if cache_check "deleted-tests"; then
   fi
 else
   CACHE_STATUS["deleted-tests"]="MISS"
-  deleted_tests=$(git diff main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs)
+  deleted_tests=$(git diff origin/main...HEAD --diff-filter=D --name-only | grep -E "\\.test\\.|\\spec\\." | wc -l | xargs)
   if [[ $deleted_tests -gt 0 ]]; then
     echo "❌ BLOCKER: $deleted_tests test files deleted"
     cache_set "deleted-tests" false "Found $deleted_tests deleted test files" "{\"count\":$deleted_tests}"
@@ -187,15 +187,15 @@ fi
 # 3. Scope check - files changed (always fresh - cheap operation)
 # =============================================================================
 CACHE_STATUS["scope"]="SKIP"
-files_changed=$(git diff main...HEAD --name-only | wc -l | xargs)
+files_changed=$(git diff origin/main...HEAD --name-only | wc -l | xargs)
 echo "📊 Files changed: $files_changed"
 
 # =============================================================================
 # 4. Size check - LOC added/removed (always fresh - cheap operation)
 # =============================================================================
 CACHE_STATUS["size"]="SKIP"
-additions=$(git diff main...HEAD --numstat | awk '{sum+=$1} END {print sum+0}')
-deletions=$(git diff main...HEAD --numstat | awk '{sum+=$2} END {print sum+0}')
+additions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$1} END {print sum+0}')
+deletions=$(git diff origin/main...HEAD --numstat | awk '{sum+=$2} END {print sum+0}')
 net_change=$((additions - deletions))
 echo "📊 Diff size: +$additions -$deletions (net: $net_change lines)"
 
@@ -216,7 +216,7 @@ fi
 # =============================================================================
 echo ""
 echo "🔒 Checking database access patterns..."
-admin_files=$(git diff main...HEAD --name-only | grep -E "^app/admin/" || true)
+admin_files=$(git diff origin/main...HEAD --name-only | grep -E "^app/admin/" || true)
 if [[ -n "$admin_files" ]]; then
   echo "   Admin files modified - manually verify proper database access controls"
   echo "   (admin pages should use service/admin clients, not anonymous clients)"
@@ -229,7 +229,7 @@ fi
 # =============================================================================
 echo ""
 echo "🔌 Checking integration of new exports..."
-new_files=$(git diff main...HEAD --name-only --diff-filter=A | grep -E "\.(ts|tsx)$" || true)
+new_files=$(git diff origin/main...HEAD --name-only --diff-filter=A | grep -E "\.(ts|tsx)$" || true)
 if [[ -n "$new_files" ]]; then
   unintegrated=0
   for file in $new_files; do
@@ -315,7 +315,7 @@ else
 
   if [[ "$semgrep_available" == "true" ]]; then
     # Get changed files for targeted scan
-    changed_files=$(git diff main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx|py|go|rs)$' || true)
+    changed_files=$(git diff origin/main...HEAD --name-only | grep -E '\.(ts|tsx|js|jsx|py|go|rs)$' || true)
 
     if [[ -n "$changed_files" ]]; then
       # Run Semgrep with security rules on changed files
@@ -364,7 +364,7 @@ echo ""
 echo "🔬 Running test tautology detection..."
 
 # Check for test files in the diff
-test_files_in_diff=$(git diff main...HEAD --name-only | grep -E '\.(test|spec)\.[jt]sx?$' || true)
+test_files_in_diff=$(git diff origin/main...HEAD --name-only | grep -E '\.(test|spec)\.[jt]sx?$' || true)
 
 if [[ -z "$test_files_in_diff" ]]; then
   CACHE_STATUS["test-quality"]="SKIP"
@@ -431,7 +431,7 @@ fi
 # =============================================================================
 echo ""
 echo "🔍 Checking shell script semantics..."
-shell_scripts=$(git diff main...HEAD --name-only | grep -E '\.sh$' || true)
+shell_scripts=$(git diff origin/main...HEAD --name-only | grep -E '\.sh$' || true)
 if [[ -n "$shell_scripts" ]]; then
   for script in $shell_scripts; do
     if [[ -f "$script" ]]; then
@@ -460,7 +460,7 @@ fi
 # 12. Skill Sync Check (when skill files modified)
 # =============================================================================
 echo ""
-skill_files_changed=$(git diff main...HEAD --name-only | grep -E '^\.(claude/skills|skills|templates/skills)/' || true)
+skill_files_changed=$(git diff origin/main...HEAD --name-only | grep -E '^\.(claude/skills|skills|templates/skills)/' || true)
 if [[ -n "$skill_files_changed" ]]; then
   echo "🔍 Checking three-directory skill sync..."
   if [[ -f "scripts/check-skill-sync.ts" ]]; then

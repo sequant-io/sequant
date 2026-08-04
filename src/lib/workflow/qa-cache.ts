@@ -28,8 +28,9 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import { z } from "zod";
+import { resolveDiffBase } from "./git-diff-utils.js";
 
 /**
  * Check types that can be cached
@@ -82,7 +83,7 @@ export type CachedCheckResult = z.infer<typeof CachedCheckResultSchema>;
 export const QARunContextSchema = z.object({
   /** Git HEAD SHA at the time of QA completion */
   lastQACommitSHA: z.string(),
-  /** Diff hash (main...HEAD) at the time of QA */
+  /** Diff hash (resolved base...HEAD) at the time of QA */
   lastQADiffHash: z.string(),
   /** Map of AC ID → status from the last QA run */
   acStatuses: z.record(
@@ -127,6 +128,8 @@ export interface QACacheOptions {
   defaultTtl?: number;
   /** Enable verbose logging */
   verbose?: boolean;
+  /** Repository directory for git operations (default: process.cwd()) */
+  cwd?: string;
 }
 
 /**
@@ -187,12 +190,14 @@ export class QACache {
   private cacheDir: string;
   private defaultTtl: number;
   private verbose: boolean;
+  private cwd: string;
   private cachedState: QACacheState | null = null;
 
   constructor(options: QACacheOptions = {}) {
     this.cacheDir = options.cacheDir ?? DEFAULT_CACHE_DIR;
     this.defaultTtl = options.defaultTtl ?? DEFAULT_TTL;
     this.verbose = options.verbose ?? false;
+    this.cwd = options.cwd ?? process.cwd();
   }
 
   /**
@@ -203,14 +208,18 @@ export class QACache {
   }
 
   /**
-   * Compute hash of git diff between main and HEAD
+   * Compute hash of git diff between the resolved base and HEAD
    *
    * This provides a content-based cache key that changes when code changes.
+   * The base is resolved via resolveDiffBase so a stale local main does not
+   * leak merged-upstream content into the cache key (#890).
    */
   computeDiffHash(): string {
     try {
-      // Get the diff content between main and HEAD
-      const diff = execSync("git diff main...HEAD", {
+      // Get the diff content between the resolved base and HEAD
+      const base = resolveDiffBase(this.cwd, "main");
+      const diff = execFileSync("git", ["diff", `${base}...HEAD`], {
+        cwd: this.cwd,
         encoding: "utf-8",
         maxBuffer: 10 * 1024 * 1024, // 10MB buffer
       });
@@ -292,9 +301,15 @@ export class QACache {
    */
   async checkGlobalInvalidation(): Promise<boolean> {
     try {
-      const changedFiles = execSync("git diff main...HEAD --name-only", {
-        encoding: "utf-8",
-      })
+      const base = resolveDiffBase(this.cwd, "main");
+      const changedFiles = execFileSync(
+        "git",
+        ["diff", `${base}...HEAD`, "--name-only"],
+        {
+          cwd: this.cwd,
+          encoding: "utf-8",
+        },
+      )
         .trim()
         .split("\n")
         .filter(Boolean);
@@ -322,9 +337,15 @@ export class QACache {
     }
 
     try {
-      const changedFiles = execSync("git diff main...HEAD --name-only", {
-        encoding: "utf-8",
-      })
+      const base = resolveDiffBase(this.cwd, "main");
+      const changedFiles = execFileSync(
+        "git",
+        ["diff", `${base}...HEAD`, "--name-only"],
+        {
+          cwd: this.cwd,
+          encoding: "utf-8",
+        },
+      )
         .trim()
         .split("\n")
         .filter(Boolean);
@@ -519,7 +540,8 @@ export class QACache {
       return null;
     }
     try {
-      const diff = execSync(`git diff ${sinceCommit}...HEAD`, {
+      const diff = execFileSync("git", ["diff", `${sinceCommit}...HEAD`], {
+        cwd: this.cwd,
         encoding: "utf-8",
         maxBuffer: 10 * 1024 * 1024,
       });
@@ -548,9 +570,14 @@ export class QACache {
       return null;
     }
     try {
-      const output = execSync(`git diff ${sinceCommit}...HEAD --name-only`, {
-        encoding: "utf-8",
-      });
+      const output = execFileSync(
+        "git",
+        ["diff", `${sinceCommit}...HEAD`, "--name-only"],
+        {
+          cwd: this.cwd,
+          encoding: "utf-8",
+        },
+      );
 
       return output.trim().split("\n").filter(Boolean);
     } catch {

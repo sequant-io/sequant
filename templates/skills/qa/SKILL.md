@@ -375,7 +375,7 @@ Include in QA output when branch is stale:
 2. **Check implementation status:**
    - Navigate to worktree: `cd <worktree-path>`
    - Check for uncommitted changes: `git status`
-   - Check for committed changes: `git log --oneline main..HEAD`
+   - Check for committed changes: `git log --oneline origin/main..HEAD`
 
    **Status interpretation:**
    - **No commits AND no uncommitted changes:** Implementation may not be started
@@ -428,7 +428,7 @@ If no feature worktree exists (work was done directly on main):
 worktree_path=$(git worktree list | grep -i "<issue-number>" | awk '{print $1}' | head -1 || true)
 
 # 2. Check for commits on feature branch (vs main) — include ALL file types
-commits_exist=$(git log --oneline main..HEAD 2>/dev/null | head -1)
+commits_exist=$(git log --oneline origin/main..HEAD 2>/dev/null | head -1)
 
 # 3. Check for uncommitted changes
 uncommitted_changes=$(git status --porcelain | head -1)
@@ -437,7 +437,7 @@ uncommitted_changes=$(git status --porcelain | head -1)
 pr_exists=$(gh pr list --search "<issue-number>" --state open --json number -q '.[0].number' 2>/dev/null)
 
 # 5. Check for ANY file changes (including .md, prompt-only changes)
-any_diff=$(git diff --name-only main..HEAD 2>/dev/null | head -1 || true)
+any_diff=$(git diff --name-only origin/main..HEAD 2>/dev/null | head -1 || true)
 ```
 
 **IMPORTANT: Prompt-only and markdown-only changes ARE valid implementations.** Many issues (e.g., skill improvements, documentation features) are implemented entirely via `.md` file changes. The detection logic must count these as real implementation, not skip them.
@@ -466,7 +466,7 @@ Root cause analysis (#448) found that 33% of multi-attempt QA failures were caus
 | Cross-repo work | Landing page issue tracked in main repo (#393) | Check exec progress comments for cross-repo indicators |
 | Worktree mismatch | QA runs in wrong directory | Verify `pwd` matches expected worktree path |
 
-**If `git diff --name-only main..HEAD` shows files but standard detection says "NOT FOUND":**
+**If `git diff --name-only origin/main..HEAD` shows files but standard detection says "NOT FOUND":**
 1. The implementation exists — proceed with QA
 2. Adapt review approach to the file types changed (e.g., review .md changes for content quality rather than TypeScript compilation)
 
@@ -512,11 +512,11 @@ No code changes found to review. The acceptance criteria cannot be evaluated wit
 **CRITICAL — Before early exit, double-check for false negatives:**
 ```bash
 # Final safety check: are there ANY file changes vs main?
-any_changes=$(git diff --name-only main..HEAD 2>/dev/null | wc -l | xargs || echo "0")
+any_changes=$(git diff --name-only origin/main..HEAD 2>/dev/null | wc -l | xargs || echo "0")
 if [[ "$any_changes" -gt 0 ]]; then
   echo "WARNING: $any_changes files changed but detection said NOT FOUND"
   echo "Changed files:"
-  git diff --name-only main..HEAD 2>/dev/null | head -20
+  git diff --name-only origin/main..HEAD 2>/dev/null | head -20
   echo "Proceeding with QA instead of early exit."
   # DO NOT early exit — proceed with QA
 fi
@@ -2687,7 +2687,7 @@ If verdict is `READY_FOR_MERGE` or `AC_MET_BUT_NOT_A_PLUS`:
 
 **Wired into §7 verdict algorithm:** This gate is enforced via the `changelog_required AND changelog_missing` branch in §7 — when both conditions are true, the verdict is demoted from `READY_FOR_MERGE` to `AC_MET_BUT_NOT_A_PLUS`. The branch is no-op when `CHANGELOG.md` is absent or no user-facing commit prefix is detected.
 
-**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes — `feat`, `fix`, `perf`, `refactor`, `docs`, with optional scope (`(...)`) and breaking marker (`!`) — in `git log main..HEAD`. Projects whose commits don't follow this pattern silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
+**Caveat — conventional-commit dependency:** Detection requires conventional-commit prefixes — `feat`, `fix`, `perf`, `refactor`, `docs`, with optional scope (`(...)`) and breaking marker (`!`) — in `git log origin/main..HEAD`. Projects whose commits don't follow this pattern silently skip this gate (failsafe-off). Acceptable for sequant's typical user base; document in your project's contributing guide if you rely on this gate.
 
 **Detection:**
 
@@ -2703,7 +2703,7 @@ unreleased_entries=$(sed -n '/^## \[Unreleased\]/,/^## \[/p' CHANGELOG.md | grep
 
 # Determine if change is user-facing (new features, bug fixes, etc.)
 # Look at commit messages or file changes
-user_facing=$(git log main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs)(\([^)]*\))?!?:' | wc -l | xargs || true)
+user_facing=$(git log origin/main..HEAD --oneline | grep -iE '^[a-f0-9]+ (feat|fix|perf|refactor|docs)(\([^)]*\))?!?:' | wc -l | xargs || true)
 ```
 
 **Verification Logic:**

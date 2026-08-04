@@ -164,7 +164,7 @@ git worktree list --porcelain | grep -A2 "feature/$ISSUE" || true
 gh pr list --head "feature/$ISSUE-*" --json number,state,title
 
 # Verify worktree exists and has commits
-git -C <worktree-path> log --oneline main..HEAD
+git -C <worktree-path> log --oneline origin/main..HEAD
 ```
 
 Validation checklist:
@@ -179,7 +179,7 @@ Get files changed in each worktree:
 
 ```bash
 # For each worktree
-git -C <worktree-path> diff --name-only main...HEAD
+git -C <worktree-path> diff --name-only origin/main...HEAD
 ```
 
 Find overlapping files:
