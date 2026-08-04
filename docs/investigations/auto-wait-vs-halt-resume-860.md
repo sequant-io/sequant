@@ -56,3 +56,8 @@ scheduler re-invoke.
 
 That is a coherent feature, not a patch — which is exactly why it is recorded
 here and filed as a follow-up instead of being smuggled into #860.
+
+**Update (#892):** the follow-up shipped — `windowHalt.resumeAt` in issue
+state, the `sequant resume` re-entry command with its per-issue bound, and the
+scheduler recipe. See
+[docs/reference/halt-and-resume.md](../reference/halt-and-resume.md).

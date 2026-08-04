@@ -42,11 +42,13 @@ import {
   filterResumedPhases,
 } from "./worktree-manager.js";
 import {
+  AUTO_WAIT_BUFFER_MS,
   createAutoWaitLedger,
   executePhaseWithRetry,
   isWindowExhaustedRateLimit,
 } from "./phase-executor.js";
-import { BillingError } from "../errors.js";
+import { BillingError, RateLimitError, resetsAtToMs } from "../errors.js";
+import type { StateManager } from "./state-manager.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
 import {
@@ -675,6 +677,53 @@ export function billingHaltReason(result: PhaseResult): string {
 }
 
 /**
+ * Epoch ms after which a waitable-window halt can be re-entered (#892 AC-1):
+ * the window's `resetsAt` normalized to ms plus the same buffer auto-wait
+ * applies (`AUTO_WAIT_BUFFER_MS`), so in-process waits and durable halts wake
+ * on the same clock. Returns `null` when the result carries no future-reset
+ * rate-limit window — callers must then skip the `windowHalt` write rather
+ * than invent a resume time.
+ *
+ * @internal Exported for testing
+ */
+export function windowHaltResumeAtMs(result: PhaseResult): number | null {
+  if (!isWindowHalt(result)) return null;
+  const err = result.structuredError;
+  if (!(err instanceof RateLimitError)) return null;
+  const resetsAt = err.metadata.resetsAt;
+  if (typeof resetsAt !== "number") return null;
+  return resetsAtToMs(resetsAt) + AUTO_WAIT_BUFFER_MS;
+}
+
+/**
+ * Persist or clear the durable `windowHalt` record for a phase result (#892).
+ *
+ * A waitable-window failure writes `resumeAt` (preserving any re-entry count);
+ * every other outcome — success, or a failure whose cause is not a waitable
+ * window — clears the record so `sequant resume` never re-enters on a stale
+ * or non-waitable halt. Never throws: state bookkeeping must not mask the
+ * phase result it describes.
+ */
+async function recordWindowHaltState(
+  stateManager: StateManager | null | undefined,
+  issueNumber: number,
+  phase: string,
+  result: PhaseResult,
+): Promise<void> {
+  if (!stateManager) return;
+  try {
+    const resumeAtMs = result.success ? null : windowHaltResumeAtMs(result);
+    if (resumeAtMs !== null) {
+      await stateManager.updateWindowHalt(issueNumber, phase, resumeAtMs);
+    } else {
+      await stateManager.clearWindowHalt(issueNumber);
+    }
+  } catch {
+    // State tracking errors shouldn't stop execution
+  }
+}
+
+/**
  * Arguments for {@link runReadyGateForIssue}. Deliberately a flat primitive
  * bag rather than the full `IssueExecutionContext` so the helper stays cheap to
  * unit-test in isolation.
@@ -1085,6 +1134,10 @@ export async function runIssueWithLogging(
       }
     }
 
+    // Durable halt-and-resume (#892 AC-1): a waitable-window spec halt writes
+    // `resumeAt` so `sequant resume` can re-enter after the window reopens.
+    await recordWindowHaltState(stateManager, issueNumber, "spec", specResult);
+
     if (!specResult.success) {
       const durationSeconds = (Date.now() - startTime) / 1000;
       // Archive relay state on early exit (spec failure).
@@ -1452,6 +1505,10 @@ export async function runIssueWithLogging(
           // State tracking errors shouldn't stop execution
         }
       }
+
+      // Durable halt-and-resume (#892 AC-1): a waitable-window halt writes
+      // `resumeAt`; success or a non-window failure clears any stale record.
+      await recordWindowHaltState(stateManager, issueNumber, phase, result);
 
       if (result.success) {
         // Phase succeeded — RunRenderer (#618) updates state via onProgress.

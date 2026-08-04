@@ -61,6 +61,7 @@ import { updateCommand } from "../src/commands/update.js";
 import { doctorCommand } from "../src/commands/doctor.js";
 import { statusCommand } from "../src/commands/status.js";
 import { runCommand } from "../src/commands/run.js";
+import { resumeCommand } from "../src/commands/resume.js";
 import { logsCommand } from "../src/commands/logs.js";
 import { statsCommand } from "../src/commands/stats.js";
 import { dashboardCommand } from "../src/commands/dashboard.js";
@@ -416,6 +417,21 @@ program
     "Disable interactive relay (#383); `sequant prompt` cannot reach this run",
   )
   .action(runCommand);
+
+// Durable halt-and-resume re-entry (#892). Safe to invoke from cron/launchd:
+// a no-op (exit 0) until a halted issue's `resumeAt` passes.
+program
+  .command("resume")
+  .description(
+    "Re-enter runs halted on a rate-limit window (no-op until resumeAt; see docs/reference/halt-and-resume.md)",
+  )
+  .argument("[issues...]", "Issue numbers to resume (default: all halted)")
+  .option("-d, --dry-run", "Show what would be resumed without running")
+  // Arrow wrapper: commander passes the Command instance as a third
+  // positional, which must not land in resumeCommand's injectable deps param.
+  .action((issues: string[], options: { dryRun?: boolean }) =>
+    resumeCommand(issues, options),
+  );
 
 program
   .command("prompt")

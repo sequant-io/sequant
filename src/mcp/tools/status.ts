@@ -116,6 +116,9 @@ export function registerStatusTool(server: McpServer): void {
                 // #860: surfaced so MCP pollers see a deliberate rate-limit
                 // pause (with its wake time) instead of a stale in-progress.
                 autoWait: issueState.autoWait,
+                // #892: a durable window halt — resumable via `sequant
+                // resume` after `resumeAt` — is a pause, not a failure.
+                windowHalt: issueState.windowHalt,
                 lastActivity: issueState.lastActivity,
                 nextAction: getNextActionHint(issueState),
                 lastSynced: reconcileResult.lastSynced,

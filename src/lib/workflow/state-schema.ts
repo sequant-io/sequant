@@ -239,6 +239,15 @@ export const RelayStateSchema = z.object({
 export type RelayState = z.infer<typeof RelayStateSchema>;
 
 /**
+ * Maximum scheduler re-entries per window-halted issue (#892 AC-3). Mirrors
+ * `AUTO_WAIT_MAX_WAITS` (#804): both bound how often sequant returns to the
+ * same closed rate-limit window before declaring the halt terminal. Lives
+ * here — beside the `windowHalt.reentries` field it bounds — so display
+ * surfaces (`sequant status`) can import it without pulling in the run path.
+ */
+export const MAX_RESUME_REENTRIES = 2;
+
+/**
  * Complete state for a single issue
  */
 export const IssueStateSchema = z.object({
@@ -303,6 +312,29 @@ export const IssueStateSchema = z.object({
       wakeAt: z.string().datetime(),
       /** Phase that is paused. */
       phase: z.string(),
+    })
+    .optional(),
+  /**
+   * A durable halt on an exhausted rate-limit window (#892): the run exited
+   * cleanly (lock released) and can be re-entered by `sequant resume` once
+   * the window reopens at `resumeAt`. Unlike `autoWait` (a live in-process
+   * pause), this record survives reboots — it is the machine-readable
+   * contract between the halt and an unattended scheduler re-entry.
+   * Written at a waitable-window halt, cleared on any phase success or a
+   * non-window failure (the halt cause is then no longer waitable).
+   */
+  windowHalt: z
+    .object({
+      /** ISO timestamp after which re-entry can proceed (resetsAt + buffer). */
+      resumeAt: z.string().datetime(),
+      /** Phase that halted. */
+      phase: z.string(),
+      /**
+       * Re-entry attempts consumed (#892 AC-3). Incremented by `sequant
+       * resume` before each re-entry; a window that never reopens is bounded
+       * by MAX_RESUME_REENTRIES instead of ping-ponging a scheduler.
+       */
+      reentries: z.number().int().min(0),
     })
     .optional(),
   /** When the issue transitioned to a terminal status (merged/abandoned/closed) */
