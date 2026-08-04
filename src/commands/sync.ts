@@ -23,6 +23,7 @@ import {
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
+import { resolveCliInvocation } from "../lib/version-check.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
 import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
 import {
@@ -546,13 +547,17 @@ export async function checkAndWarnSkillsOutdated(
   const { outdated, currentVersion, packageVersion, contentDrift } =
     status ?? (await areSkillsOutdated());
 
+  // Name the invocation that reaches *this* build rather than assuming the
+  // documented `npm install sequant` shape — see resolveCliInvocation.
+  const cli = resolveCliInvocation();
+
   if (outdated) {
     console.log(
       chalk.yellow(
         `\n!  Skills are outdated (${currentVersion || "unknown"} → ${packageVersion})`,
       ),
     );
-    console.log(chalk.yellow("   Run: npx sequant sync\n"));
+    console.log(chalk.yellow(`   Run: ${cli} sync\n`));
     return true;
   }
 
@@ -566,9 +571,7 @@ export async function checkAndWarnSkillsOutdated(
       ),
     );
     console.log(
-      chalk.yellow(
-        "   Run: npx sequant sync --force (or npx sequant update)\n",
-      ),
+      chalk.yellow(`   Run: ${cli} sync --force (or ${cli} update)\n`),
     );
     return true;
   }

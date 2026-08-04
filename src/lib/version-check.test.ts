@@ -48,6 +48,8 @@ import {
   isCacheFresh,
   getCurrentVersion,
   isLocalNodeModulesInstall,
+  isNpxCacheInstall,
+  resolveCliInvocation,
   isGlobalInstall,
   isHomeStrayInstall,
   buildHomeStrayWarning,
@@ -331,6 +333,76 @@ describe("version-check utilities", () => {
       expect(isLocalNodeModulesInstall("/home/user/Projects/sequant")).toBe(
         false,
       );
+    });
+  });
+
+  describe("isNpxCacheInstall", () => {
+    it("returns a boolean when called with no args (default __dirname)", () => {
+      expect(typeof isNpxCacheInstall()).toBe("boolean");
+    });
+
+    it("returns true for POSIX npx cache installs", () => {
+      expect(
+        isNpxCacheInstall("/home/user/.npm/_npx/abc123/node_modules/sequant"),
+      ).toBe(true);
+    });
+
+    it("returns true for Windows npx cache installs", () => {
+      // The backslash form must survive normalization — the sibling predicate
+      // checks a `\\.npm\\_npx\\` variant *after* normalizing separators, where
+      // it can never match. Pinning the Windows path here keeps this one honest.
+      expect(
+        isNpxCacheInstall(
+          "C:\\Users\\foo\\.npm\\_npx\\abc123\\node_modules\\sequant",
+        ),
+      ).toBe(true);
+    });
+
+    it("returns false for project-local, global, and dev-checkout paths", () => {
+      expect(
+        isNpxCacheInstall("/home/user/projects/foo/node_modules/sequant"),
+      ).toBe(false);
+      expect(isNpxCacheInstall("/usr/local/lib/node_modules/sequant")).toBe(
+        false,
+      );
+      expect(isNpxCacheInstall("/home/user/Projects/sequant")).toBe(false);
+    });
+  });
+
+  describe("resolveCliInvocation", () => {
+    it("recommends `npx sequant` for a project-local dependency", () => {
+      // The documented install path (`npm install sequant`): npx resolves
+      // node_modules/.bin/sequant, and a bare `sequant` is not on PATH.
+      expect(
+        resolveCliInvocation(
+          "/home/user/projects/foo/node_modules/sequant/dist/src/lib",
+        ),
+      ).toBe("npx sequant");
+    });
+
+    it("recommends `npx sequant` when reached through the npx cache", () => {
+      expect(
+        resolveCliInvocation(
+          "/home/user/.npm/_npx/abc123/node_modules/sequant/dist/src/lib",
+        ),
+      ).toBe("npx sequant");
+    });
+
+    it("recommends bare `sequant` for a global install", () => {
+      expect(
+        resolveCliInvocation("/opt/homebrew/lib/node_modules/sequant/dist"),
+      ).toBe("sequant");
+    });
+
+    it("recommends bare `sequant` for an npm-linked dev checkout", () => {
+      // The regression this helper exists for. A linked checkout resolves
+      // through its realpath, so it matches neither the global nor the local
+      // pattern — recommending `npx sequant` here sends the user to the npx
+      // cache, which can hold an older *published* copy than the running build
+      // and rewrites the very files whose staleness raised the warning.
+      expect(
+        resolveCliInvocation("/Users/tony/Projects/sequant/dist/src/lib"),
+      ).toBe("sequant");
     });
   });
 
