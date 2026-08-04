@@ -14,6 +14,7 @@ import {
   isCustomizableFile,
   buildTemplateVariables,
   computeTemplateChanges,
+  templateDestination,
   copyTemplates,
   resolveTemplatesDirFrom,
   getTemplatesDir,
@@ -498,6 +499,82 @@ describe("templates", () => {
       expect(after.find((c) => c.path === SKILL_LOCAL)?.status).toBe(
         "local-override",
       );
+    });
+
+    // Phantom-drift regression: templates that copyTemplates routes elsewhere
+    // (scripts → scripts/dev) or never installs (mcp.json, relay/) must not be
+    // diffed against `.claude/<relpath>` — that made every fresh init report
+    // 5 permanent "new" files that `sync --force` could never clear.
+    it("diffs scripts against scripts/dev and skips mcp.json and relay entirely", async () => {
+      await fsWriteFile(
+        join(templatesDir, "mcp.json"),
+        '{"sequant":{"command":"npx"}}\n',
+      );
+      await mkdir(join(templatesDir, "relay"), { recursive: true });
+      await fsWriteFile(join(templatesDir, "relay", "frame.txt"), "frame\n");
+      await mkdir(join(templatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "scripts", "cleanup-worktree.sh"),
+        "#!/bin/bash\necho cleanup\n",
+      );
+      // Installed where copyTemplates actually puts it
+      await seedLocal(
+        "scripts/dev/cleanup-worktree.sh",
+        "#!/bin/bash\necho cleanup\n",
+      );
+
+      const changes = await computeTemplateChanges("generic");
+
+      expect(changes.some((c) => c.path.startsWith(".claude/scripts/"))).toBe(
+        false,
+      );
+      expect(changes.some((c) => c.path === ".claude/mcp.json")).toBe(false);
+      expect(changes.some((c) => c.path.includes("relay"))).toBe(false);
+      expect(
+        changes.find((c) => c.path === "scripts/dev/cleanup-worktree.sh")
+          ?.status,
+      ).toBe("unchanged");
+    });
+
+    it("classifies a diverged scripts/dev copy as modified, not its own local-override", async () => {
+      await mkdir(join(templatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/bash\necho v2\n",
+      );
+      await seedLocal("scripts/dev/new-feature.sh", "#!/bin/bash\necho v1\n");
+
+      const changes = await computeTemplateChanges("generic");
+
+      expect(
+        changes.find((c) => c.path === "scripts/dev/new-feature.sh")?.status,
+      ).toBe("modified");
+    });
+  });
+
+  describe("templateDestination", () => {
+    it("maps scripts to scripts/dev and everything else under .claude/", () => {
+      expect(templateDestination("templates/scripts/new-feature.sh")).toBe(
+        "scripts/dev/new-feature.sh",
+      );
+      expect(templateDestination("templates/skills/exec/SKILL.md")).toBe(
+        ".claude/skills/exec/SKILL.md",
+      );
+      expect(templateDestination("templates/settings.json")).toBe(
+        ".claude/settings.json",
+      );
+    });
+
+    it("returns null for templates copyTemplates never installs", () => {
+      expect(templateDestination("templates/mcp.json")).toBeNull();
+      expect(templateDestination("templates/relay/frame.txt")).toBeNull();
+    });
+
+    it("normalizes Windows separators before routing (#708)", () => {
+      expect(templateDestination("templates\\scripts\\new-feature.sh")).toBe(
+        "scripts/dev/new-feature.sh",
+      );
+      expect(templateDestination("templates\\mcp.json")).toBeNull();
     });
   });
 
