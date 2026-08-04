@@ -636,6 +636,36 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     fi
 fi
 
+# Resolve a path to its canonical form, tolerating components that do not exist
+# yet. Plain `realpath` fails outright on a missing path, and BSD/macOS realpath
+# has no `-m`. The old code fell back to the raw string on failure, which broke
+# the comparison below whenever the worktree path crossed a symlink: a Write
+# creating a NEW file resolved to nothing (raw "/tmp/.../x.ts") while the
+# existing worktree dir resolved through the symlink ("/private/tmp/.../"), so
+# the prefix test failed and writes *inside* the worktree were blocked. macOS
+# hits this every time, since /tmp is a symlink to /private/tmp.
+#
+# Walk up to the nearest existing ancestor, canonicalise that, then re-append
+# the missing tail so both sides normalise identically.
+resolve_path_allow_missing() {
+    local p="$1"
+    local suffix=""
+
+    while [[ ! -e "$p" && "$p" != "/" && "$p" != "." && -n "$p" ]]; do
+        suffix="/$(basename "$p")$suffix"
+        local parent
+        parent="$(dirname "$p")"
+        [[ "$parent" == "$p" ]] && break
+        p="$parent"
+    done
+
+    local resolved
+    resolved="$(realpath "$p" 2>/dev/null || echo "$p")"
+    # Avoid a doubled slash when the resolved ancestor is "/"
+    [[ "$resolved" == "/" ]] && resolved=""
+    echo "${resolved}${suffix}"
+}
+
 # === WORKTREE PATH ENFORCEMENT ===
 # Enforces that file operations stay within the designated worktree
 # Sources for worktree path (in priority order):
@@ -690,9 +720,14 @@ if [[ "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Write" ]]; then
         fi
 
         if [[ -n "$FILE_PATH" ]]; then
-            # Resolve to absolute path for consistent comparison
-            REAL_FILE_PATH=$(realpath "$FILE_PATH" 2>/dev/null || echo "$FILE_PATH")
-            REAL_WORKTREE=$(realpath "$EXPECTED_WORKTREE" 2>/dev/null || echo "$EXPECTED_WORKTREE")
+            # Resolve to canonical absolute paths for consistent comparison.
+            # resolve_path_allow_missing (defined above) tolerates a file that
+            # does not exist yet; a bare `realpath` fallback-to-raw-string broke
+            # new-file Writes whenever the worktree path crossed a symlink
+            # (macOS /tmp -> /private/tmp): the new file stayed raw while the
+            # existing worktree dir resolved, so the prefix test always failed.
+            REAL_FILE_PATH=$(resolve_path_allow_missing "$FILE_PATH")
+            REAL_WORKTREE=$(resolve_path_allow_missing "$EXPECTED_WORKTREE")
 
             # Check if file path is within the expected worktree
             if [[ "$REAL_FILE_PATH" != "$REAL_WORKTREE"* ]]; then
