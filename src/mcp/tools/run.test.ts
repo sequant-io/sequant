@@ -24,6 +24,7 @@ import {
   MAX_TOTAL_TIMEOUT,
 } from "./run.js";
 import type { ProgressEvent } from "./run.js";
+import { formatResetTime } from "../../lib/errors.js";
 import type { RunLog } from "../../lib/workflow/run-log-schema.js";
 import {
   emitProgressLine,
@@ -493,6 +494,29 @@ describe("parseProgressLine", () => {
     });
   });
 
+  it("#860: parses a waiting event with wakeAtMs and remainingMs", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":860,"phase":"exec","event":"waiting","wakeAtMs":1784910600000,"remainingMs":3600000}';
+    expect(parseProgressLine(line)).toEqual({
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      wakeAtMs: 1_784_910_600_000,
+      remainingMs: 3_600_000,
+    });
+  });
+
+  it("#860: parses the terminal waiting notice (no wakeAtMs)", () => {
+    const line =
+      'SEQUANT_PROGRESS:{"issue":860,"phase":"exec","event":"waiting","remainingMs":0}';
+    expect(parseProgressLine(line)).toEqual({
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      remainingMs: 0,
+    });
+  });
+
   it("should parse a valid failed event with error", () => {
     const line =
       'SEQUANT_PROGRESS:{"issue":325,"phase":"exec","event":"failed","error":"timeout"}';
@@ -649,6 +673,34 @@ describe("formatProgressMessage", () => {
       event: "failed",
     };
     expect(formatProgressMessage(event)).toBe("#384: qa \u2717");
+  });
+
+  it("#860: formats waiting events naming the wake time", () => {
+    const wakeAtMs = 1_784_910_600_000;
+    const event: ProgressEvent = {
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      wakeAtMs,
+      remainingMs: 3_600_000,
+    };
+    const msg = formatProgressMessage(event);
+    expect(msg).toContain("#860: exec");
+    expect(msg).toContain("rate-limit window");
+    // Timezone-independent: derive the expected clock string the same way.
+    expect(msg).toContain(`resuming at ${formatResetTime(wakeAtMs)}`);
+  });
+
+  it("#860: formats the terminal waiting notice as a resume", () => {
+    const event: ProgressEvent = {
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      remainingMs: 0,
+    };
+    expect(formatProgressMessage(event)).toBe(
+      "#860: exec auto-wait complete \u2014 resuming",
+    );
   });
 });
 

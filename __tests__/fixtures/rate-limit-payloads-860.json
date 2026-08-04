@@ -1,0 +1,496 @@
+[
+  {
+    "project": "matcha-maps",
+    "sourceFile": "run-2026-07-19T04-56-04-a3f00c4d-9013-4702-ba4c-128af790488b.json",
+    "runId": "a3f00c4d-9013-4702-ba4c-128af790488b",
+    "runStartTime": "2026-07-19T04:56:04.646Z",
+    "issueNumber": 726,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-19T04:59:04.482Z",
+    "phaseEndTime": "2026-07-19T05:29:07.758Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784453400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "matcha-maps",
+    "sourceFile": "run-2026-07-19T04-56-04-a3f00c4d-9013-4702-ba4c-128af790488b.json",
+    "runId": "a3f00c4d-9013-4702-ba4c-128af790488b",
+    "runStartTime": "2026-07-19T04:56:04.646Z",
+    "issueNumber": 726,
+    "phase": "verify",
+    "phaseStartTime": "2026-07-19T05:43:31.754Z",
+    "phaseEndTime": "2026-07-19T05:43:41.524Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784453400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "matcha-maps",
+    "sourceFile": "run-2026-07-19T04-56-04-a3f00c4d-9013-4702-ba4c-128af790488b.json",
+    "runId": "a3f00c4d-9013-4702-ba4c-128af790488b",
+    "runStartTime": "2026-07-19T04:56:04.646Z",
+    "issueNumber": 726,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-19T05:43:43.225Z",
+    "phaseEndTime": "2026-07-19T05:43:49.353Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784453400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "matcha-maps",
+    "sourceFile": "run-2026-07-19T07-08-02-6cd71bf8-4904-4751-8779-01c869549736.json",
+    "runId": "6cd71bf8-4904-4751-8779-01c869549736",
+    "runStartTime": "2026-07-19T07:08:02.984Z",
+    "issueNumber": 726,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-19T07:08:05.349Z",
+    "phaseEndTime": "2026-07-19T07:08:17.571Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784453400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-19T13-22-04-298e32dc-8ec2-4c5d-ad6c-3393ddb683f8.json",
+    "runId": "298e32dc-8ec2-4c5d-ad6c-3393ddb683f8",
+    "runStartTime": "2026-07-19T13:22:04.540Z",
+    "issueNumber": 81,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-19T13:31:04.821Z",
+    "phaseEndTime": "2026-07-19T13:58:23.266Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784478600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T04-52-27-6f28d895-14f6-4abb-82e8-75862e12cc65.json",
+    "runId": "6f28d895-14f6-4abb-82e8-75862e12cc65",
+    "runStartTime": "2026-07-24T04:52:27.410Z",
+    "issueNumber": 112,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-24T05:57:44.582Z",
+    "phaseEndTime": "2026-07-24T06:27:46.575Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784886000,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-30-21-520e5152-3034-4586-b7db-68ae57477d12.json",
+    "runId": "520e5152-3034-4586-b7db-68ae57477d12",
+    "runStartTime": "2026-07-24T14:30:21.173Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:30:33.794Z",
+    "phaseEndTime": "2026-07-24T14:50:14.668Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-31-09-113be45a-0e77-4466-a304-4ebab6665a34.json",
+    "runId": "113be45a-0e77-4466-a304-4ebab6665a34",
+    "runStartTime": "2026-07-24T14:31:09.307Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:31:10.746Z",
+    "phaseEndTime": "2026-07-24T14:50:05.115Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-31-46-d69ffe09-0e8c-4d42-ab58-d39dc892bb58.json",
+    "runId": "d69ffe09-0e8c-4d42-ab58-d39dc892bb58",
+    "runStartTime": "2026-07-24T14:31:46.106Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:31:47.466Z",
+    "phaseEndTime": "2026-07-24T14:49:57.152Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-32-54-d54278e3-2e54-43ca-9edb-e5f73af3190a.json",
+    "runId": "d54278e3-2e54-43ca-9edb-e5f73af3190a",
+    "runStartTime": "2026-07-24T14:32:54.517Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:32:56.311Z",
+    "phaseEndTime": "2026-07-24T14:49:47.932Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-33-39-9d38322f-2c29-452c-b21b-5fd5e161be39.json",
+    "runId": "9d38322f-2c29-452c-b21b-5fd5e161be39",
+    "runStartTime": "2026-07-24T14:33:39.035Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:33:40.815Z",
+    "phaseEndTime": "2026-07-24T14:49:39.414Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-34-25-dd894459-d9d2-4ef3-a672-4aefe255abd2.json",
+    "runId": "dd894459-d9d2-4ef3-a672-4aefe255abd2",
+    "runStartTime": "2026-07-24T14:34:25.264Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:34:27.243Z",
+    "phaseEndTime": "2026-07-24T14:49:30.494Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-35-02-8b5e08b3-b97d-400c-9e2e-1187f5459d38.json",
+    "runId": "8b5e08b3-b97d-400c-9e2e-1187f5459d38",
+    "runStartTime": "2026-07-24T14:35:02.394Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:35:04.154Z",
+    "phaseEndTime": "2026-07-24T14:49:21.721Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-35-51-af7d8ebf-3207-43d4-a86b-fd12c5b312f9.json",
+    "runId": "af7d8ebf-3207-43d4-a86b-fd12c5b312f9",
+    "runStartTime": "2026-07-24T14:35:51.978Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:35:53.583Z",
+    "phaseEndTime": "2026-07-24T14:49:13.202Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-36-34-9fe4ec5e-b4b3-4640-8d2d-95316f44c008.json",
+    "runId": "9fe4ec5e-b4b3-4640-8d2d-95316f44c008",
+    "runStartTime": "2026-07-24T14:36:34.488Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:36:36.040Z",
+    "phaseEndTime": "2026-07-24T14:49:03.374Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-37-15-dfed5bbc-7d29-45a3-b9eb-2d723ba1a4f0.json",
+    "runId": "dfed5bbc-7d29-45a3-b9eb-2d723ba1a4f0",
+    "runStartTime": "2026-07-24T14:37:15.822Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:37:18.122Z",
+    "phaseEndTime": "2026-07-24T14:48:52.677Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-38-08-637e63c6-d83f-4e72-a798-96034e9b0f27.json",
+    "runId": "637e63c6-d83f-4e72-a798-96034e9b0f27",
+    "runStartTime": "2026-07-24T14:38:08.109Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:38:09.696Z",
+    "phaseEndTime": "2026-07-24T14:48:43.162Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-39-09-e7e9ba52-17b0-4a0c-9ff4-a7b04b4020b6.json",
+    "runId": "e7e9ba52-17b0-4a0c-9ff4-a7b04b4020b6",
+    "runStartTime": "2026-07-24T14:39:09.627Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:39:11.564Z",
+    "phaseEndTime": "2026-07-24T14:48:32.969Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-40-11-99eb850b-0d64-40df-a0e5-9d6022b130d6.json",
+    "runId": "99eb850b-0d64-40df-a0e5-9d6022b130d6",
+    "runStartTime": "2026-07-24T14:40:11.533Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:40:13.251Z",
+    "phaseEndTime": "2026-07-24T14:48:17.712Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-41-30-22833f31-5168-4760-8bb2-d2c3b4360ad1.json",
+    "runId": "22833f31-5168-4760-8bb2-d2c3b4360ad1",
+    "runStartTime": "2026-07-24T14:41:30.707Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:41:33.795Z",
+    "phaseEndTime": "2026-07-24T14:48:02.662Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-43-43-dce2386b-221b-47c4-ac97-73468aa6a02e.json",
+    "runId": "dce2386b-221b-47c4-ac97-73468aa6a02e",
+    "runStartTime": "2026-07-24T14:43:43.877Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:43:56.682Z",
+    "phaseEndTime": "2026-07-24T14:47:45.338Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T14-46-05-07dd3aef-95d8-46ea-b1bf-fa0867fcf3e6.json",
+    "runId": "07dd3aef-95d8-46ea-b1bf-fa0867fcf3e6",
+    "runStartTime": "2026-07-24T14:46:05.587Z",
+    "issueNumber": 110,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-24T14:46:07.667Z",
+    "phaseEndTime": "2026-07-24T14:47:31.390Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784910600,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-24T19-35-55-fd22a5c7-58cf-4d79-ad53-73883147e35d.json",
+    "runId": "fd22a5c7-58cf-4d79-ad53-73883147e35d",
+    "runStartTime": "2026-07-24T19:35:55.318Z",
+    "issueNumber": 114,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-24T21:17:29.204Z",
+    "phaseEndTime": "2026-07-24T21:17:50.828Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1784934000,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-26T17-33-14-869c15e3-f469-466d-ad1b-ac3a4c5c881c.json",
+    "runId": "869c15e3-f469-466d-ad1b-ac3a4c5c881c",
+    "runStartTime": "2026-07-26T17:33:14.310Z",
+    "issueNumber": 132,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-26T17:33:17.360Z",
+    "phaseEndTime": "2026-07-26T17:40:15.441Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1785101400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-26T17-33-14-869c15e3-f469-466d-ad1b-ac3a4c5c881c.json",
+    "runId": "869c15e3-f469-466d-ad1b-ac3a4c5c881c",
+    "runStartTime": "2026-07-26T17:33:14.310Z",
+    "issueNumber": 131,
+    "phase": "exec",
+    "phaseStartTime": "2026-07-26T17:36:07.546Z",
+    "phaseEndTime": "2026-07-26T17:39:07.161Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1785101400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  },
+  {
+    "project": "ad-motion",
+    "sourceFile": "run-2026-07-26T17-40-16-c301c283-28d3-492b-9010-c7cbea88336b.json",
+    "runId": "c301c283-28d3-492b-9010-c7cbea88336b",
+    "runStartTime": "2026-07-26T17:40:16.156Z",
+    "issueNumber": 130,
+    "phase": "spec",
+    "phaseStartTime": "2026-07-26T17:40:17.685Z",
+    "phaseEndTime": "2026-07-26T17:40:32.714Z",
+    "error": "Out of credits",
+    "category": "billing",
+    "errorType": "BillingError",
+    "isRetryable": false,
+    "errorMetadata": {
+      "resetsAt": 1785101400,
+      "rateLimitType": "five_hour",
+      "overageDisabledReason": "out_of_credits"
+    }
+  }
+]

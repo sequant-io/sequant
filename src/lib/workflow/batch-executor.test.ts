@@ -12,6 +12,7 @@ import {
   emitProgressLine,
   isBillingOrWindowHalt,
   withActivityHook,
+  AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS,
 } from "./batch-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
@@ -1619,5 +1620,184 @@ describe("deriveFailureCategory (#761 AC-7)", () => {
     ]);
 
     expect(category).toBe("rate_limit");
+  });
+});
+
+// =============================================================================
+// #860 — withActivityHook: orchestrator waiting lines + state transitions
+// =============================================================================
+
+describe("withActivityHook (#860): auto-wait visibility on the orchestrator channel", () => {
+  const baseConfig = {
+    phases: ["exec"],
+    phaseTimeout: 60,
+    qualityLoop: false,
+    maxIterations: 1,
+    skipVerification: false,
+    sequential: false,
+    concurrency: 3,
+    parallel: false,
+    verbose: false,
+    noSmartTests: false,
+    dryRun: false,
+    mcp: false,
+  } as ExecutionConfig;
+
+  const ORIGINAL_ORCH = process.env.SEQUANT_ORCHESTRATOR;
+  let stderrSpy: ReturnType<typeof vi.spyOn>;
+  let captured: string[];
+
+  function setup(orchestrated: boolean): void {
+    captured = [];
+    if (orchestrated) {
+      process.env.SEQUANT_ORCHESTRATOR = "1";
+    } else {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+    }
+    stderrSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation((chunk: unknown) => {
+        captured.push(String(chunk));
+        return true;
+      });
+  }
+
+  function teardown(): void {
+    stderrSpy.mockRestore();
+    if (ORIGINAL_ORCH === undefined) {
+      delete process.env.SEQUANT_ORCHESTRATOR;
+    } else {
+      process.env.SEQUANT_ORCHESTRATOR = ORIGINAL_ORCH;
+    }
+    vi.useRealTimers();
+  }
+
+  function waitingLines(): Array<Record<string, unknown>> {
+    return captured
+      .filter((l) => l.startsWith("SEQUANT_PROGRESS:"))
+      .map(
+        (l) =>
+          JSON.parse(l.slice("SEQUANT_PROGRESS:".length)) as Record<
+            string,
+            unknown
+          >,
+      )
+      .filter((p) => p.event === "waiting");
+  }
+
+  function notice(overrides: Record<string, unknown> = {}) {
+    return {
+      issueNumber: 860,
+      phase: "exec",
+      wakeAtMs: 1_784_910_600_000,
+      remainingMs: 3_600_000,
+      message: "Rate limited · auto-wait 1/2",
+      done: false,
+      ...overrides,
+    } as Parameters<NonNullable<ExecutionConfig["onAutoWait"]>>[0];
+  }
+
+  it("emits a SEQUANT_PROGRESS waiting line under SEQUANT_ORCHESTRATOR even with no onProgress", () => {
+    setup(true);
+    try {
+      const wrapped = withActivityHook(baseConfig, 860, "exec", undefined);
+      expect(wrapped).not.toBe(baseConfig); // orchestrator channel is a consumer
+      wrapped.onAutoWait!(notice());
+
+      const lines = waitingLines();
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatchObject({
+        issue: 860,
+        phase: "exec",
+        event: "waiting",
+        wakeAtMs: 1_784_910_600_000,
+        remainingMs: 3_600_000,
+      });
+    } finally {
+      teardown();
+    }
+  });
+
+  it("throttles the per-15s ticks to one line per interval, then emits again after it", () => {
+    setup(true);
+    vi.useFakeTimers();
+    vi.setSystemTime(1_784_900_000_000);
+    try {
+      const wrapped = withActivityHook(baseConfig, 860, "exec", undefined);
+      wrapped.onAutoWait!(notice());
+      wrapped.onAutoWait!(notice({ remainingMs: 3_585_000 }));
+      wrapped.onAutoWait!(notice({ remainingMs: 3_570_000 }));
+      expect(waitingLines()).toHaveLength(1); // ticks inside the window absorbed
+
+      vi.setSystemTime(1_784_900_000_000 + AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS);
+      wrapped.onAutoWait!(notice({ remainingMs: 3_540_000 }));
+      expect(waitingLines()).toHaveLength(2);
+    } finally {
+      teardown();
+    }
+  });
+
+  it("the terminal notice emits a final line without wakeAtMs and re-arms for a second wait", () => {
+    setup(true);
+    try {
+      const wrapped = withActivityHook(baseConfig, 860, "exec", undefined);
+      wrapped.onAutoWait!(notice());
+      wrapped.onAutoWait!(notice({ done: true, remainingMs: 0 }));
+
+      const lines = waitingLines();
+      expect(lines).toHaveLength(2);
+      expect(lines[1].wakeAtMs).toBeUndefined();
+      expect(lines[1].remainingMs).toBe(0);
+
+      // A second wait announces immediately (throttle reset on done).
+      wrapped.onAutoWait!(notice({ wakeAtMs: 1_784_920_000_000 }));
+      expect(waitingLines()).toHaveLength(3);
+    } finally {
+      teardown();
+    }
+  });
+
+  it("a terminal notice with no preceding wait emits nothing", () => {
+    setup(true);
+    try {
+      const wrapped = withActivityHook(baseConfig, 860, "exec", undefined);
+      wrapped.onAutoWait!(notice({ done: true, remainingMs: 0 }));
+      expect(waitingLines()).toHaveLength(0);
+    } finally {
+      teardown();
+    }
+  });
+
+  it("calls onWaitTransition on wait start (wakeAtMs) and wake (null), once each", () => {
+    setup(false); // works without the orchestrator channel too
+    try {
+      const transitions: Array<number | null> = [];
+      const wrapped = withActivityHook(
+        baseConfig,
+        860,
+        "exec",
+        undefined,
+        (wakeAtMs) => transitions.push(wakeAtMs),
+      );
+      expect(wrapped).not.toBe(baseConfig); // the transition callback is a consumer
+      wrapped.onAutoWait!(notice());
+      wrapped.onAutoWait!(notice({ remainingMs: 3_585_000 }));
+      wrapped.onAutoWait!(notice({ done: true, remainingMs: 0 }));
+
+      expect(transitions).toEqual([1_784_910_600_000, null]);
+      expect(waitingLines()).toHaveLength(0); // no orchestrator env → no lines
+    } finally {
+      teardown();
+    }
+  });
+
+  it("still returns the input config unchanged when there is no consumer at all", () => {
+    setup(false);
+    try {
+      const wrapped = withActivityHook(baseConfig, 1, "exec", undefined);
+      expect(wrapped).toBe(baseConfig);
+    } finally {
+      teardown();
+    }
   });
 });

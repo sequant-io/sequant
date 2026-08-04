@@ -289,6 +289,22 @@ export const IssueStateSchema = z.object({
       originCwd: z.string(),
     })
     .optional(),
+  /**
+   * An in-progress auto-wait (#860): the phase is deliberately paused until a
+   * rate-limit window reopens at `wakeAt`. Written at wait start and cleared
+   * on wake, so `sequant status` can say "waiting until 07:01" instead of
+   * showing an hours-stale in-progress phase indistinguishable from a hang
+   * (#856). The write itself also refreshes `state.json`'s mtime — the
+   * activity proxy several liveness surfaces poll.
+   */
+  autoWait: z
+    .object({
+      /** ISO timestamp of the scheduled wake (resetsAt + buffer). */
+      wakeAt: z.string().datetime(),
+      /** Phase that is paused. */
+      phase: z.string(),
+    })
+    .optional(),
   /** When the issue transitioned to a terminal status (merged/abandoned/closed) */
   resolvedAt: z.string().datetime().optional(),
   /** Most recent activity timestamp */

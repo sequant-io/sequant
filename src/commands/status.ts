@@ -3,6 +3,7 @@
  */
 
 import chalk from "chalk";
+import { formatResetTime } from "../lib/errors.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { fileExists } from "../lib/fs.js";
@@ -186,6 +187,16 @@ function formatIssueState(issue: IssueState): string {
   lines.push(
     `            ${phases.map((p) => p.charAt(0).toUpperCase()).join(" ")}`,
   );
+
+  // #860: an auto-waiting issue is paused on purpose, not stalled — name the
+  // wake time so a multi-hour rate-limit pause is distinguishable from a hang.
+  if (issue.autoWait) {
+    lines.push(
+      chalk.yellow(
+        `    ⏸ Auto-wait: ${issue.autoWait.phase} paused — resuming at ${formatResetTime(new Date(issue.autoWait.wakeAt).getTime())}`,
+      ),
+    );
+  }
 
   // PR info
   if (issue.pr) {

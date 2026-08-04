@@ -387,6 +387,8 @@ export class NonTTYRenderer extends BaseRenderer {
   private readonly columnsOverride?: number;
   private readonly maxLoopIterations: number;
   private lastEventAt: number;
+  /** #860 AC-6: `issue:phase` keys whose auto-wait start line was emitted. */
+  private readonly announcedWaits = new Set<string>();
 
   constructor(options: RenderOptions) {
     super(options);
@@ -434,6 +436,17 @@ export class NonTTYRenderer extends BaseRenderer {
     const parts = running.map((s) => {
       const elapsedSec =
         s.startedAt !== undefined ? (this.now() - s.startedAt) / 1000 : 0;
+      // #860 AC-6: a phase paused on an auto-wait names its wake time instead
+      // of masquerading as ordinary running time — this heartbeat is the only
+      // periodic signal a non-TTY (background) run gets during a multi-hour
+      // wait, and without the wake time it is indistinguishable from a hang.
+      const waiting = s.phases.find(
+        (p) => p.name === s.currentPhase && p.status === "waiting",
+      );
+      if (waiting?.wakeAtMs !== undefined) {
+        const leftSec = Math.max(0, (waiting.wakeAtMs - this.now()) / 1000);
+        return `#${s.issueNumber} ${s.currentPhase} ⏸ rate-limit window — resuming at ${formatResetTime(waiting.wakeAtMs)} (${formatElapsedTime(leftSec)} left)`;
+      }
       return `#${s.issueNumber} ${s.currentPhase} (${formatElapsedTime(elapsedSec)})`;
     });
     this.emitLine(`⏱ still running: ${parts.join(", ")}`);
@@ -441,8 +454,39 @@ export class NonTTYRenderer extends BaseRenderer {
 
   protected afterEvent(event: ProgressEvent, state: IssueState): void {
     super.afterEvent(event, state);
+    // #860 AC-6: waiting notices are liveness, not progress. The wait emits a
+    // tick every ~15s, so counting them as events would hold `lastEventAt`
+    // fresh forever and silence the heartbeat for the entire multi-hour wait.
+    if (event.event === "waiting") {
+      this.emitWaitTransitionLine(event);
+      return;
+    }
     this.lastEventAt = this.now();
     this.emitEventLine(event, state);
+  }
+
+  /**
+   * Announce auto-wait transitions (#860 AC-6). Only the first notice of a
+   * wait and the terminal notice that ends it produce lines — the ~15s ticks
+   * in between are absorbed here (the periodic signal is `tickHeartbeat`).
+   * Before this, waiting events fell through `emitEventLine`'s failure branch
+   * and printed a spurious `✘` line per tick.
+   */
+  private emitWaitTransitionLine(event: ProgressEvent): void {
+    const key = `${event.issue}:${event.phase}`;
+    const c = colorize(this.noColor);
+    if (event.wakeAtMs !== undefined) {
+      if (this.announcedWaits.has(key)) return;
+      this.announcedWaits.add(key);
+      this.emitLine(
+        `${c.yellow("⏸")} #${event.issue} ${event.phase} ${event.text ?? `rate-limit window — resuming at ${formatResetTime(event.wakeAtMs)}`}`,
+      );
+    } else {
+      if (!this.announcedWaits.delete(key)) return;
+      this.emitLine(
+        `${c.cyan("▸")} #${event.issue} ${event.phase} ${event.text ?? "auto-wait complete — resuming"}`,
+      );
+    }
   }
 
   private emitEventLine(event: ProgressEvent, state: IssueState): void {
