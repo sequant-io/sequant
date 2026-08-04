@@ -317,7 +317,7 @@ sequant init
 
 ## What You Get
 
-### 17 Workflow Skills
+### 19 Workflow Skills
 
 | Skill | Purpose |
 |-------|---------|
@@ -337,6 +337,8 @@ sequant init
 | \`/security-review\` | Deep security analysis |
 | \`/solve\` | Generate the recommended workflow for one or more issues |
 | \`/merger\` | Multi-issue integration and merge |
+| \`/release\` | Version bump, git tag, GitHub release, npm publish |
+| \`/upstream\` | Monitor Claude Code releases for breaking changes |
 | \`/setup\` | Project initialization for plugin users |
 
 ### MCP Tools (automatic with plugin)
@@ -381,10 +383,14 @@ sequant run 42 --auto-wait 360   # wait up to 6 hours total for the window to re
 - The value is a **total** budget per issue, not per occurrence, capped at 2 waits.
 - **Never waits on out-of-credits failures** — credits are purchased, not waited out. (These do carry a reset timestamp, so the gate is the error type, not the timestamp.)
 - The wait is shown live and Ctrl-C ends it promptly.
-- **In-process only: it does not survive closing the terminal.** Use \`tmux\`/\`screen\` for long waits.
+- **In-process only: it does not survive closing the terminal** — for waits that must survive a closed terminal or reboot, use halt-and-resume below.
 - Worktree and issue locks are held throughout — deliberate, since Claude rate limits are account-wide and no other run could progress during the window anyway.
 
 Also settable as \`run.autoWaitMinutes\` or \`SEQUANT_AUTO_WAIT_MINUTES\`. Full details in the [run command reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
+
+### Durable recovery: \`sequant resume\`
+
+Without \`--auto-wait\` (or once its budget is exhausted), a run that fails on a waitable rate-limit window writes a durable halt record with its reset time and exits cleanly, releasing the per-issue lock. \`sequant resume\` re-enters after the window reopens, skipping completed phases and issues — safe to invoke repeatedly, so a single cron/launchd entry handles unattended machines. Recipes and full mechanics in the [halt-and-resume reference](https://github.com/sequant-io/sequant/blob/main/docs/reference/halt-and-resume.md).
 
 ## Wait for CI, then verify (\`merge --watch\`)
 

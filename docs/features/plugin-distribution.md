@@ -7,7 +7,7 @@ Sequant is available as a Claude Code plugin — install it directly from Claude
 1. **Claude Code** — [claude.ai/code](https://claude.ai/code)
 2. **GitHub CLI** — `gh auth status` (authenticated)
 3. **Git** — any recent version
-4. **Node.js 22.12+** — `node --version` (for MCP server via `npx`)
+4. **Node.js 22.13+** — `node --version` (for MCP server via `npx`)
 
 ## Setup
 
@@ -160,7 +160,7 @@ The log directory deliberately lives **outside the repo**: creating it inside on
 
 **Symptoms:** Skills work but `sequant_status` / `sequant_run` don't appear.
 
-**Solution:** Verify Node.js 22.12+ is installed (`node --version`). The MCP server requires `npx` which ships with Node.js. Restart Claude Code after installing Node.
+**Solution:** Verify Node.js 22.13+ is installed (`node --version`). The MCP server requires `npx` which ships with Node.js. Restart Claude Code after installing Node.
 
 ### `/sequant:setup` says "gh auth: not authenticated"
 

@@ -80,6 +80,19 @@ The loop terminates on the **first** of:
 - **`LOOP_NO_DIFF`** — the fix loop made no commit and no working-tree change (stagnation guard). → state `blocked`, exit `1`.
 - **No implementation (#534 guard)** — a zero-diff worktree (empty branch, the #529/#570 class) or a null/unparseable QA verdict is **never** reported ready. → state `blocked`, exit `2`.
 
+## Exit codes
+
+Scripting and CI can gate on the exit code:
+
+- `0` — ready (awaiting the human merge gate).
+- `1` — not ready, needs human intervention: iteration/budget cap hit,
+  stagnation guard tripped, or a `NO_VERDICT` QA turn (#853) — the
+  implementation may exist, so this is a re-run case.
+- `2` — nothing certifiable exists on the branch: `NO_IMPLEMENTATION` (no
+  commits, #534), `UNCOMMITTED_ONLY` (work exists but was never committed, so
+  it cannot rebase, push, or become a PR — #879), or a hard error (invalid
+  issue, uninitialized project).
+
 ## Live progress
 
 The gate runs a `qa → loop → qa` pipeline that can take several minutes. What you see while it runs depends on where output is going:

@@ -92,17 +92,18 @@ Run logs include `prNumber` and `prUrl` fields for programmatic access.
 
 ## Troubleshooting
 
-### PR not created after successful run
+### Run fails with a PR-creation error
 
-**Symptoms:** Run completes with all phases passing but no PR link in output.
+**Symptoms:** All phases pass but the run is reported as **failed** with a
+`prCreationError` (e.g. `git push failed: permission denied`) in the output and
+run log.
 
-**Solution:** Check that `gh` CLI is authenticated (`gh auth status`) and you have push access to the remote. Also verify `--no-pr` was not passed.
-
-### "git push failed" warning
-
-**Symptoms:** `⚠️ git push failed: permission denied` in output.
-
-**Solution:** Verify your git credentials and remote URL (`git remote -v`). The run still succeeds — only PR creation is skipped.
+**Solution:** Check that `gh` CLI is authenticated (`gh auth status`), your git
+credentials and remote URL are valid (`git remote -v`), and you have push
+access. Since #879, a failed push or PR creation **fails the run** instead of
+silently succeeding without a PR — the phase work is preserved on the issue
+branch, so fixing credentials and re-running picks it up. Only `--no-pr`
+legitimately skips PR creation without failing.
 
 ### PR already exists
 

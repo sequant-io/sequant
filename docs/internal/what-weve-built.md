@@ -751,7 +751,7 @@ Shell scripts in `templates/scripts/`:
 ### Recent Additions (v2.8.0)
 
 - **`/assess` picks `sequant run` vs `npx sequant run`** - Probes for a global install and emits the invocation that matches the environment, avoiding npx version-skew in copy-pasted commands (#740)
-- **Runtime Node-version preflight guard** - The CLI checks the running Node against the `engines.node` floor (`>=22.12.0`) at startup and exits with a friendly upgrade message instead of a later opaque crash (#734)
+- **Runtime Node-version preflight guard** - The CLI checks the running Node against the `engines.node` floor (`>=22.13.0`) at startup and exits with a friendly upgrade message instead of a later opaque crash (#734)
 - **Structured rate-limit / credits errors** - The driver reads the SDK's `rate_limit_event` / error signals and surfaces typed `RateLimitError` / `BillingError` (with reset time and credit-purchase hints), naming the real cause instead of generic MCP-fallback noise; billing failures skip the pointless no-MCP retry (#732)
 - **Partial output preserved on turn caps** - Turn-capped phases (orchestrator level #739, subagents #733) preserve partial work and halt cleanly for resume instead of discarding it as a hard failure
 - **Skill-mirror sync gate** - Reconciled drift across the three skill roots and added a `lint:skill-sync` CI gate so downstream installs never receive stale skill content (#738)

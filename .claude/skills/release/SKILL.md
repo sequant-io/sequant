@@ -399,7 +399,7 @@ npm run prepare:marketplace
 # Warn-only (regeneration above already fixes the artifact; this is a belt-and-suspenders signal).
 gen_readme="dist/marketplace/external_plugins/sequant/README.md"
 if [ -f "$gen_readme" ]; then
-  engines_floor=$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g,'')")  # e.g. 22.12.0
+  engines_floor=$(node -p "require('./package.json').engines.node.replace(/[^0-9.]/g,'')")  # e.g. 22.13.0
   readme_floor=$(grep -oE "Node\.js [0-9]+\.[0-9]+" "$gen_readme" | head -1 | grep -oE "[0-9]+\.[0-9]+" || true)
   if [ -n "$readme_floor" ] && [ "${engines_floor%.*}" != "$readme_floor" ]; then
     echo "Warning: generated marketplace README shows Node.js ${readme_floor}, package.json engines floor is ${engines_floor}"
