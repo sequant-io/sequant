@@ -22,6 +22,7 @@ import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
   getVersionWarning,
+  resolveCliInvocation,
 } from "../lib/version-check.js";
 import { areSkillsOutdated } from "./sync.js";
 import {
@@ -251,7 +252,7 @@ export async function doctorCommand(
     checks.push({
       name: "Skills Version",
       status: "warn",
-      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: npx sequant sync`,
+      message: `Outdated (${skillsStatus.currentVersion || "unknown"} → ${skillsStatus.packageVersion}) - run: ${resolveCliInvocation()} sync`,
     });
   } else {
     checks.push({

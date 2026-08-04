@@ -123,6 +123,48 @@ export function isLocalNodeModulesInstall(
 }
 
 /**
+ * Check if running from the npx cache (~/.npm/_npx/<hash>/node_modules/sequant).
+ *
+ * Separated from `isLocalNodeModulesInstall`, which deliberately excludes the
+ * cache: that predicate answers "is this a project dependency the user can
+ * `npm update`", while this one answers "did the user reach us through npx".
+ * Backslashes are normalized first, so the single forward-slash form also
+ * matches a Windows `…\.npm\_npx\…` path.
+ */
+export function isNpxCacheInstall(installPath: string = __dirname): boolean {
+  return installPath.replace(/\\/g, "/").includes("/.npm/_npx/");
+}
+
+/**
+ * Resolve the invocation to name in user-facing "run this next" messages.
+ *
+ * A hardcoded `npx sequant` is right for the documented install path (README:
+ * `npm install sequant` then `npx sequant init`) — npx resolves the project's
+ * `node_modules/.bin/sequant`, and a bare `sequant` would not be on PATH. It is
+ * wrong for a global or `npm link`ed install with no local dependency: there,
+ * `npx sequant` cannot resolve locally and falls through to the npx cache,
+ * which can hold an older *published* copy than the one currently running. The
+ * observed symptom is a remediation that fights itself — the recommended
+ * command reinstalls the very content whose staleness triggered the message.
+ *
+ * So recommend the form that actually reaches *this* build:
+ * - project-local dependency or npx cache → `npx sequant`
+ * - global, `npm link`ed, or a dev checkout → `sequant`
+ *
+ * A linked checkout resolves through its realpath (Node resolves symlinks
+ * unless `--preserve-symlinks` is set), so it looks like neither a global nor a
+ * local install and correctly lands on the bare form.
+ */
+export function resolveCliInvocation(
+  installPath: string = __dirname,
+): "sequant" | "npx sequant" {
+  return isLocalNodeModulesInstall(installPath) ||
+    isNpxCacheInstall(installPath)
+    ? "npx sequant"
+    : "sequant";
+}
+
+/**
  * Walk up from the given directory to find the directory containing
  * sequant's package.json. Returns null if not found.
  *
