@@ -21,7 +21,7 @@
  *   npx tsx scripts/semgrep-scan.ts src/api/ src/lib/
  */
 
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 
 import {
   checkSemgrepAvailability,
@@ -118,11 +118,13 @@ function getChangedFiles(): string[] {
     // #878: compare against the ref the worktree was created from
     // (origin/main when it exists) — a stale local main would attribute
     // already-merged files to this branch and scan the wrong code.
+    // Array-form execFileSync: the ref is never shell-interpreted.
     const base = resolveDiffBase(process.cwd(), "main");
-    const output = execSync(`git diff ${base}...HEAD --name-only`, {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const output = execFileSync(
+      "git",
+      ["diff", `${base}...HEAD`, "--name-only"],
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    );
     return output
       .split("\n")
       .filter((f) => f.trim())

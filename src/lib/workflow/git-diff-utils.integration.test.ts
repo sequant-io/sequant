@@ -91,16 +91,15 @@ describe("git-diff-utils integration (#878)", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("sanity: the setup reproduces the stale-local-ref state", () => {
-    const localMain = git(local, "rev-parse", "main");
-    const originMain = git(local, "rev-parse", "origin/main");
-    const head = git(worktree, "rev-parse", "HEAD");
-    expect(localMain).not.toBe(originMain);
-    expect(head).toBe(originMain);
-  });
-
   describe("getGitDiffStats (AC-1, AC-3)", () => {
     it("returns zero files for a fresh worktree when local base is behind", () => {
+      // Precondition: the fixture really is in the stale-local-ref state —
+      // local main behind origin/main, worktree HEAD at the origin tip.
+      const localMain = git(local, "rev-parse", "main");
+      const originMain = git(local, "rev-parse", "origin/main");
+      expect(localMain).not.toBe(originMain);
+      expect(git(worktree, "rev-parse", "HEAD")).toBe(originMain);
+
       // Pre-#878 behavior: main...HEAD resolved to the stale local main and
       // attributed the upstream commit's files to this (empty) branch.
       const result = getGitDiffStats(worktree, "main");
