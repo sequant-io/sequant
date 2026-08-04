@@ -25,12 +25,13 @@
  */
 
 import * as fs from "fs";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import {
   detectTautologicalTests,
   formatTautologyResults,
   getTautologyVerdictImpact,
 } from "../../src/lib/test-tautology-detector.js";
+import { resolveDiffBase } from "../../src/lib/workflow/git-diff-utils.js";
 
 interface CliArgs {
   json: boolean;
@@ -47,9 +48,16 @@ function parseArgs(): CliArgs {
 
 function getChangedTestFiles(): string[] {
   try {
-    const output = execSync("git diff main...HEAD --name-only", {
-      encoding: "utf-8",
-    });
+    // #878: compare against the ref the worktree was created from
+    // (origin/main when it exists) — a stale local main would attribute
+    // already-merged test files to this branch and scan the wrong code.
+    // Array-form execFileSync: the ref is never shell-interpreted.
+    const base = resolveDiffBase(process.cwd(), "main");
+    const output = execFileSync(
+      "git",
+      ["diff", `${base}...HEAD`, "--name-only"],
+      { encoding: "utf-8" },
+    );
     return output
       .trim()
       .split("\n")
