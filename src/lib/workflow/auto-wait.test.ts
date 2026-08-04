@@ -18,6 +18,7 @@ import {
   createAutoWaitLedger,
   executePhaseWithRetry,
   isWindowExhaustedRateLimit,
+  performAutoWait,
   shouldAutoWaitForReset,
   waitForWindowReset,
 } from "./phase-executor.js";
@@ -940,5 +941,86 @@ describe("#860 against the 26 captured five-hour-window payloads (AC-4, AC-5)", 
     expect(result.error).toBe("Out of credits");
     expect(executePhaseFn).toHaveBeenCalledTimes(1);
     expect(delayFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("#860 real-clock smoke — the wait machinery with NO injected timers", () => {
+  // Everything else in this file injects delayFn and now(). These tests run
+  // the tick loop against the real clock and real setTimeout at millisecond
+  // scale, so the production timer path is exercised at least once. (A real
+  // five-hour wait is untestable by definition; this covers the mechanism,
+  // not the duration.)
+  const realDelay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+  it("sleeps a real 300ms in real ticks and reports real progress", async () => {
+    const ticks: number[] = [];
+    const started = Date.now();
+    const { sleptMs, aborted } = await waitForWindowReset(300, {
+      delayFn: realDelay,
+      tickMs: 100,
+      onTick: (remainingMs) => ticks.push(remainingMs),
+    });
+    const elapsed = Date.now() - started;
+
+    expect(aborted).toBe(false);
+    expect(sleptMs).toBeGreaterThanOrEqual(300);
+    expect(elapsed).toBeGreaterThanOrEqual(290); // real time actually passed
+    expect(elapsed).toBeLessThan(2000);
+    expect(ticks.length).toBeGreaterThanOrEqual(2); // chunked, not one sleep
+    // Remaining time decreases monotonically across real ticks.
+    for (let i = 1; i < ticks.length; i++) {
+      expect(ticks[i]).toBeLessThan(ticks[i - 1]);
+    }
+  });
+
+  it("a real abort mid-wait returns promptly, not at the wake", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 150);
+    const started = Date.now();
+    const { aborted } = await waitForWindowReset(5000, {
+      delayFn: realDelay,
+      tickMs: 100,
+      signal: controller.signal,
+    });
+    const elapsed = Date.now() - started;
+
+    expect(aborted).toBe(true);
+    expect(elapsed).toBeLessThan(2000); // nowhere near the 5s wake
+  });
+
+  it("performAutoWait end-to-end on the real clock: notices, ledger, terminal notice", async () => {
+    const notices: Array<{ done: boolean; remainingMs: number }> = [];
+    const config: ExecutionConfig = {
+      ...baseConfig,
+      onAutoWait: (n) =>
+        notices.push({ done: n.done, remainingMs: n.remainingMs }),
+    };
+    const ledger = createAutoWaitLedger(600);
+    const decision = {
+      waitMs: 300,
+      wakeAtMs: Date.now() + 300,
+      error: new RateLimitError("Rate limited", {
+        resetsAt: Date.now() + 300,
+        rateLimitType: "five_hour",
+      }),
+    };
+
+    const { aborted } = await performAutoWait(
+      860,
+      "exec",
+      config,
+      decision,
+      ledger,
+      realDelay,
+    );
+
+    expect(aborted).toBe(false);
+    expect(ledger.waits).toBe(1);
+    expect(ledger.spentMs).toBeGreaterThanOrEqual(300);
+    expect(notices.length).toBeGreaterThanOrEqual(2);
+    const last = notices.at(-1)!;
+    expect(last.done).toBe(true);
+    expect(last.remainingMs).toBe(0);
+    expect(notices.slice(0, -1).every((n) => !n.done)).toBe(true);
   });
 });

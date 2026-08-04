@@ -31,7 +31,20 @@ Notably **absent** from all 26: `errorCode`, `canUserPurchaseCredits`,
 `hasChargeableSavedPaymentMethod` — the fields that would discriminate
 "subscription window" from "needs purchase" directly. This is why the #860
 classification uses the window shape (`rateLimitType` + future `resetsAt`) as
-the proxy, and fails closed on anything else.
+the proxy, and fails closed on anything else. Also absent from all 26: a
+`status` field — which is why event *retention* stayed on the raw billing
+markers, and why only an affirmatively informational status
+(`allowed`/`allowed_warning`) is excluded from the waitable classification.
+
+**Allowlist judgment:** `seven_day*` is admitted alongside `five_hour` per
+AC-1's "(or another window type)", but **no capture shows a
+`seven_day` + `out_of_credits` combination** — its semantics are pinned by
+tests (`rate-limit-errors.test.ts`, "#860 hardening: seven_day"), not by
+evidence. In practice a multi-day reset exceeds any sane `--auto-wait` budget,
+so the observable effect is limited to the halt message naming the reset time.
+Any *other* window type fails closed to terminal, and the halt message names
+the rejected type (`unrecognizedWindowHint`) so vocabulary drift is
+diagnosable from a run log.
 
 ## Provenance and redaction
 

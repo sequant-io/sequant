@@ -275,15 +275,53 @@ const WAITABLE_WINDOW_TYPE_RE = /^(five_hour|seven_day)/;
  * (`canUserPurchaseCredits`, `hasChargeableSavedPaymentMethod`) are absent
  * from every real captured payload, so the window shape is the proxy — and
  * any unrecognized shape returns false (fail closed, #860 AC-3).
+ *
+ * Explicitly informational statuses (`allowed` / `allowed_warning`) are never
+ * waitable. The driver retains marker-carrying warnings as failure-grade
+ * (pre-#732 semantics, unchanged), so a stale "you are nearing your limit"
+ * warning can be misattributed to an unrelated phase failure — classifying it
+ * waitable would upgrade that misattribution from a cheap immediate halt to a
+ * multi-hour sleep. The 26 real captures carry no `status` field at all, so
+ * absent status stays waitable; only a status that affirmatively says
+ * "not a rejection" is excluded.
  */
 export function isWaitableWindow(
   info: RateLimitInfoLike,
   now: number = Date.now(),
 ): boolean {
+  if (info.status === "allowed" || info.status === "allowed_warning") {
+    return false;
+  }
   if (typeof info.rateLimitType !== "string") return false;
   if (!WAITABLE_WINDOW_TYPE_RE.test(info.rateLimitType)) return false;
   if (typeof info.resetsAt !== "number") return false;
   return resetsAtToMs(info.resetsAt) > now;
+}
+
+/**
+ * Vocabulary-drift telemetry for the #860 fail-closed path: returns a hint
+ * string when a payload was terminal ONLY because its `rateLimitType` is not
+ * in the recognized window allowlist — i.e. it carries `out_of_credits` plus a
+ * live future `resetsAt` and a *present but unrecognized* window type, and no
+ * explicit `credits_required`. If Anthropic renames or adds a window type,
+ * the halt message names the rejected type instead of silently reading as an
+ * ordinary wallet failure. A missing `rateLimitType` is NOT drift evidence
+ * (API-account payloads may legitimately omit it), so no hint fires there.
+ */
+export function unrecognizedWindowHint(
+  info: RateLimitInfoLike,
+  now: number = Date.now(),
+): string | null {
+  if (info.errorCode === "credits_required") return null;
+  if (info.overageDisabledReason !== "out_of_credits") return null;
+  if (info.status === "allowed" || info.status === "allowed_warning") {
+    return null;
+  }
+  if (typeof info.rateLimitType !== "string") return null;
+  if (WAITABLE_WINDOW_TYPE_RE.test(info.rateLimitType)) return null;
+  if (typeof info.resetsAt !== "number") return null;
+  if (resetsAtToMs(info.resetsAt) <= now) return null;
+  return `unrecognized window type "${info.rateLimitType}" with a future reset — treated as terminal (auto-wait recognizes five_hour/seven_day)`;
 }
 
 /**
@@ -401,13 +439,18 @@ export function formatRateLimitMessage(
   now: number = Date.now(),
 ): string {
   if (isBillingFailure(info, now)) {
+    // #860 drift telemetry: when the ONLY reason this is terminal is an
+    // unrecognized window type, say so — the message is the one channel that
+    // reaches run output, logs, and `PhaseResult.error` on every display path.
+    const hint = unrecognizedWindowHint(info, now);
+    const suffix = hint ? ` (${hint})` : "";
     if (info.canUserPurchaseCredits === true) {
-      return "Out of credits — purchasable";
+      return `Out of credits — purchasable${suffix}`;
     }
     if (info.canUserPurchaseCredits === false) {
-      return "Out of credits — hard limit";
+      return `Out of credits — hard limit${suffix}`;
     }
-    return "Out of credits";
+    return `Out of credits${suffix}`;
   }
   if (info.resetsAt !== undefined) {
     return `Rate limited — resets at ${formatResetTime(info.resetsAt)}`;

@@ -357,12 +357,17 @@ export class ClaudeCodeDriver implements AgentDriver {
    * the `rate_limit_event` is itself a billing failure its richer metadata
    * (`canUserPurchaseCredits`, etc.) is preserved.
    *
-   * Counter-exception (#860): when the `rate_limit_event` carries waitable
-   * window evidence (recognized window type + future `resetsAt`), the richer
-   * structured signal wins over the bare `billing_error` enum. A subscription
-   * plan's five-hour exhaustion surfaces assistant-side as a billing error,
-   * and overriding on that enum here would strip the metadata `--auto-wait`
-   * needs and re-inert the feature this classification exists to enable.
+   * Counter-exception (#860): when the `rate_limit_event` carries the FULL
+   * captured subscription-window shape — waitable window evidence (recognized
+   * window type + future `resetsAt`) *plus* the `out_of_credits` marker — the
+   * richer structured signal wins over the bare `billing_error` enum. A
+   * subscription plan's five-hour exhaustion surfaces assistant-side as a
+   * billing error, and overriding on that enum here would strip the metadata
+   * `--auto-wait` needs and re-inert the feature this classification exists
+   * to enable. Deliberately no wider than the evidenced shape: a pure
+   * throttle event (window, no billing markers) beside a `billing_error`
+   * enum keeps the #732 rule — billing wins — because there the two signals
+   * genuinely conflict and no capture justifies trusting the throttle.
    */
   private buildStructuredError(
     rateLimitInfo: SDKRateLimitInfo | undefined,
@@ -371,10 +376,13 @@ export class ClaudeCodeDriver implements AgentDriver {
   ): SequantError | undefined {
     if (rateLimitInfo) {
       const err = createRateLimitError(rateLimitInfo);
+      const isCapturedSubscriptionShape =
+        isWaitableWindow(rateLimitInfo) &&
+        rateLimitInfo.overageDisabledReason === "out_of_credits";
       if (
         err instanceof RateLimitError &&
         assistantError === "billing_error" &&
-        !isWaitableWindow(rateLimitInfo)
+        !isCapturedSubscriptionShape
       ) {
         return new BillingError("Billing error");
       }

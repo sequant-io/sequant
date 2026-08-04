@@ -297,6 +297,42 @@ describe("ClaudeCodeDriver", () => {
       expect(err.metadata.rateLimitType).toBe("five_hour");
     });
 
+    it("#860: a pure throttle with a live window (no out_of_credits) still yields to billing_error", () => {
+      // The counter-exception is scoped to the CAPTURED subscription shape
+      // (window + out_of_credits). When a throttle event carries no billing
+      // markers and the assistant separately reports billing_error, the two
+      // signals genuinely conflict and the #732 rule stands: billing wins.
+      const futureResetsAt = Math.floor(Date.now() / 1000) + 3 * 3600;
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              resetsAt: futureResetsAt,
+              rateLimitType: "five_hour",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          },
+          {
+            type: "assistant",
+            message: { content: [] },
+            error: "billing_error",
+          },
+          RESULT_ERROR,
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      return driver.executePhase("prompt", baseConfig()).then((result) => {
+        const err = result.structuredError as SequantError;
+        expect(err).toBeInstanceOf(BillingError);
+        expect(result.error).toBe("Billing error");
+      });
+    });
+
     it("falls back to the assistant error field when no rate_limit_event is present (AC-1, AC-6)", async () => {
       queryMock.mockReturnValue(
         mockStream([

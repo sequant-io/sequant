@@ -94,10 +94,16 @@ export type {
  *   event for the dashboard (#543).
  * - `onAutoWait` — re-emits each auto-wait tick as a `"waiting"` progress
  *   event so the renderer and heartbeat can show the pause and its wake time
- *   (#804 AC-7).
+ *   (#804 AC-7). Under `SEQUANT_ORCHESTRATOR` it additionally emits throttled
+ *   `SEQUANT_PROGRESS` waiting lines (#860): an MCP-driven wait was previously
+ *   invisible on the JSON channel — indistinguishable from a hang — AND was
+ *   killed by the MCP inactivity timeout, which resets on progress lines.
+ *   Optionally notifies `onWaitTransition` on wait start/end so the caller
+ *   can persist the wait to issue state (`sequant status` truthfulness).
  *
- * Returns the input config unchanged when no `onProgress` callback is set,
- * so non-TUI runs pay no overhead.
+ * Returns the input config unchanged when there is no consumer at all (no
+ * `onProgress`, no orchestrator channel, no transition callback), so plain
+ * non-TUI runs pay no overhead.
  *
  * @internal Exported for testing only
  */
@@ -106,20 +112,30 @@ export function withActivityHook(
   issueNumber: number,
   phase: string,
   onProgress: ProgressCallback | undefined,
+  onWaitTransition?: (wakeAtMs: number | null) => void,
 ): ExecutionConfig {
-  if (!onProgress) return base;
+  const orchestrated = Boolean(process.env.SEQUANT_ORCHESTRATOR);
+  if (!onProgress && !orchestrated && !onWaitTransition) return base;
+
+  // Throttle the orchestrator waiting lines: the wait ticks every ~15s, and
+  // one JSON line per minute is enough to keep the MCP inactivity timeout
+  // alive (it resets on every SEQUANT_PROGRESS line) without bloating the
+  // captured stderr over a multi-hour pause.
+  let lastWaitLineAt = 0;
+  let waitAnnounced = false;
+
   return {
     ...base,
     onActivity: (text: string) => {
       try {
-        onProgress(issueNumber, phase, "activity", { text });
+        onProgress?.(issueNumber, phase, "activity", { text });
       } catch {
         // Activity events must never disrupt the run.
       }
     },
     onAutoWait: (notice) => {
       try {
-        onProgress(issueNumber, phase, "waiting", {
+        onProgress?.(issueNumber, phase, "waiting", {
           text: notice.message,
           // Omitted on the terminal notice — its absence is what tells the
           // consumers to clear the waiting state.
@@ -128,9 +144,44 @@ export function withActivityHook(
       } catch {
         // Liveness notices must never disrupt the run.
       }
+      try {
+        if (notice.done) {
+          if (waitAnnounced) {
+            waitAnnounced = false;
+            lastWaitLineAt = 0;
+            emitProgressLine(issueNumber, phase, "waiting", {
+              remainingMs: 0,
+            });
+            onWaitTransition?.(null);
+          }
+        } else {
+          if (!waitAnnounced) {
+            waitAnnounced = true;
+            onWaitTransition?.(notice.wakeAtMs);
+          }
+          const now = Date.now();
+          if (now - lastWaitLineAt >= AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS) {
+            lastWaitLineAt = now;
+            emitProgressLine(issueNumber, phase, "waiting", {
+              wakeAtMs: notice.wakeAtMs,
+              remainingMs: notice.remainingMs,
+            });
+          }
+        }
+      } catch {
+        // Liveness notices must never disrupt the run.
+      }
     },
   };
 }
+
+/**
+ * Cadence of orchestrator-channel waiting lines during an auto-wait (#860).
+ * See {@link withActivityHook}.
+ *
+ * @internal Exported for testing only
+ */
+export const AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS = 60_000;
 
 /**
  * Build enriched prompt context for the /loop phase from a failed phase result (#488).
@@ -174,8 +225,14 @@ export function buildLoopContext(failedResult: PhaseResult): string {
 export function emitProgressLine(
   issue: number,
   phase: string,
-  event: "start" | "complete" | "failed" = "start",
-  extra?: { durationSeconds?: number; error?: string; iteration?: number },
+  event: "start" | "complete" | "failed" | "waiting" = "start",
+  extra?: {
+    durationSeconds?: number;
+    error?: string;
+    iteration?: number;
+    wakeAtMs?: number;
+    remainingMs?: number;
+  },
 ): void {
   if (!process.env.SEQUANT_ORCHESTRATOR) return;
   const payload: Record<string, unknown> = { issue, phase, event };
@@ -189,6 +246,17 @@ export function emitProgressLine(
   // renderer) can label retried events as `(attempt N/M)` / `loop N/M`.
   if (extra?.iteration !== undefined) {
     payload.iteration = extra.iteration;
+  }
+  // #860: auto-wait liveness. `wakeAtMs` is present while waiting and absent
+  // on the terminal notice (`remainingMs: 0`), mirroring the in-process
+  // ProgressCallback convention. Every line — waiting included — resets the
+  // MCP inactivity timeout (prefix-matched in spawnAsync), which is what
+  // keeps a legitimate multi-hour pause from being killed as "no progress".
+  if (extra?.wakeAtMs !== undefined) {
+    payload.wakeAtMs = extra.wakeAtMs;
+  }
+  if (extra?.remainingMs !== undefined) {
+    payload.remainingMs = extra.remainingMs;
   }
   const line = `SEQUANT_PROGRESS:${JSON.stringify(payload)}\n`;
   process.stderr.write(line);
@@ -809,6 +877,23 @@ export async function runIssueWithLogging(
     }
   }
 
+  // #860: persist auto-wait transitions to issue state so `sequant status`
+  // reports "waiting until <wake>" instead of an hours-stale in-progress
+  // phase. Fire-and-forget — state bookkeeping must never disturb the wait
+  // it describes.
+  const makeWaitTransition = (
+    phase: string,
+  ): ((wakeAtMs: number | null) => void) | undefined =>
+    stateManager
+      ? (wakeAtMs) => {
+          void stateManager
+            .updateAutoWait(issueNumber, phase, wakeAtMs)
+            .catch(() => {
+              // Never let state bookkeeping disturb a live wait.
+            });
+        }
+      : undefined;
+
   // Activate relay (#383) if enabled. Tolerates errors — relay must never
   // block the underlying run.
   let relayActivation: ActivationResult | null = null;
@@ -873,7 +958,13 @@ export async function runIssueWithLogging(
     const specResult = await executePhaseWithRetry(
       issueNumber,
       "spec",
-      withActivityHook(config, issueNumber, "spec", onProgress),
+      withActivityHook(
+        config,
+        issueNumber,
+        "spec",
+        onProgress,
+        makeWaitTransition("spec"),
+      ),
       resumeHandle,
       worktreePath, // Will be ignored for spec (non-isolated phase)
       shutdownManager,
@@ -1192,7 +1283,13 @@ export async function runIssueWithLogging(
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
-        withActivityHook(issueConfig, issueNumber, phase, onProgress),
+        withActivityHook(
+          issueConfig,
+          issueNumber,
+          phase,
+          onProgress,
+          makeWaitTransition(phase),
+        ),
         resumeHandle,
         worktreePath,
         shutdownManager,
@@ -1408,7 +1505,13 @@ export async function runIssueWithLogging(
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
-            withActivityHook(loopConfig, issueNumber, "loop", onProgress),
+            withActivityHook(
+              loopConfig,
+              issueNumber,
+              "loop",
+              onProgress,
+              makeWaitTransition("loop"),
+            ),
             resumeHandle,
             worktreePath,
             shutdownManager,
