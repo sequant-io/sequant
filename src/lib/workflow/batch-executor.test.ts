@@ -1045,6 +1045,116 @@ describe("windowHaltResumeAtMs (#892)", () => {
   });
 });
 
+// #892 AC-1 wiring: the durable halt record must actually be written by
+// `runIssueWithLogging` at both halt sites (spec path and main phase loop) —
+// the pure helper above proves the arithmetic, these prove the producer.
+describe("runIssueWithLogging — windowHalt persistence (#892)", () => {
+  /** Minimal StateManager double: only the methods the flow under test calls. */
+  function makeStateManager() {
+    return {
+      updatePhaseStatus: vi.fn(),
+      updateResumeHandle: vi.fn(),
+      updateWindowHalt: vi.fn(),
+      clearWindowHalt: vi.fn(),
+      updateAutoWait: vi.fn(),
+      updateIssueStatus: vi.fn(),
+      updateWorktreeInfo: vi.fn(),
+      updatePRInfo: vi.fn(),
+    };
+  }
+
+  function windowHaltResult(phase: string, resetsAtSec: number): PhaseResult {
+    return {
+      phase: phase as PhaseResult["phase"],
+      success: false,
+      durationSeconds: 5,
+      error: "Rate limited",
+      structuredError: createRateLimitError({
+        rateLimitType: "five_hour",
+        resetsAt: resetsAtSec,
+      }),
+    };
+  }
+
+  it("a waitable-window SPEC halt writes windowHalt with resetsAt + buffer", async () => {
+    const resetsAtSec = Math.floor(Date.now() / 1000) + 3 * 3600;
+    mockExecutePhase.mockResolvedValue(windowHaltResult("spec", resetsAtSec));
+    const stateManager = makeStateManager();
+
+    const ctx = makeCtx({
+      issueNumber: 892,
+      options: { autoDetectPhases: true },
+    });
+    ctx.services.stateManager = stateManager as never;
+    const result = await runIssueWithLogging(ctx);
+
+    expect(result.success).toBe(false);
+    expect(stateManager.updateWindowHalt).toHaveBeenCalledWith(
+      892,
+      "spec",
+      resetsAtSec * 1000 + AUTO_WAIT_BUFFER_MS,
+    );
+    expect(stateManager.clearWindowHalt).not.toHaveBeenCalled();
+  });
+
+  it("a waitable-window MAIN-LOOP halt (exec) writes windowHalt for that phase", async () => {
+    const resetsAtSec = Math.floor(Date.now() / 1000) + 3 * 3600;
+    mockExecutePhase
+      .mockResolvedValueOnce(successResult("spec"))
+      .mockResolvedValueOnce(windowHaltResult("exec", resetsAtSec));
+    const stateManager = makeStateManager();
+
+    const ctx = makeCtx({
+      issueNumber: 892,
+      options: { autoDetectPhases: true },
+    });
+    ctx.services.stateManager = stateManager as never;
+    await runIssueWithLogging(ctx);
+
+    expect(stateManager.updateWindowHalt).toHaveBeenCalledWith(
+      892,
+      "exec",
+      resetsAtSec * 1000 + AUTO_WAIT_BUFFER_MS,
+    );
+  });
+
+  it("a billing halt clears instead of writing — credits cannot be waited out", async () => {
+    mockExecutePhase.mockResolvedValue({
+      phase: "spec",
+      success: false,
+      durationSeconds: 5,
+      error: "Out of credits",
+      structuredError: new BillingError("Out of credits"),
+    } as PhaseResult);
+    const stateManager = makeStateManager();
+
+    const ctx = makeCtx({
+      issueNumber: 892,
+      options: { autoDetectPhases: true },
+    });
+    ctx.services.stateManager = stateManager as never;
+    await runIssueWithLogging(ctx);
+
+    expect(stateManager.updateWindowHalt).not.toHaveBeenCalled();
+    expect(stateManager.clearWindowHalt).toHaveBeenCalledWith(892);
+  });
+
+  it("phase success clears any stale windowHalt (progress resets the record)", async () => {
+    mockExecutePhase.mockResolvedValue(successResult("exec"));
+    const stateManager = makeStateManager();
+
+    const ctx = makeCtx({
+      issueNumber: 892,
+      options: { autoDetectPhases: true },
+    });
+    ctx.services.stateManager = stateManager as never;
+    await runIssueWithLogging(ctx);
+
+    expect(stateManager.updateWindowHalt).not.toHaveBeenCalled();
+    expect(stateManager.clearWindowHalt).toHaveBeenCalledWith(892);
+  });
+});
+
 // #766 AC-6: the loop phase must reach the run log. The writer/schema layer is
 // covered in recovered-failure.integration.test.ts, but that test hand-writes
 // the loop entry — it would pass even if batch-executor never logged one. These
