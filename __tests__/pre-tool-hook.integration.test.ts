@@ -22,7 +22,9 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawnSync } from "node:child_process";
 import {
   mkdtempSync,
+  mkdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
   readFileSync,
   existsSync,
@@ -1073,6 +1075,75 @@ describe.each(HOOK_COPIES)(
       } finally {
         rmSync(own.path, { force: true });
       }
+    });
+  },
+);
+
+// Worktree-boundary canonicalisation must tolerate files that do not exist
+// yet. Plain `realpath` fails on a missing path, and the old fallback kept the
+// raw string — so when the worktree path crossed a symlink (macOS /tmp →
+// /private/tmp), a Write creating a NEW file compared its raw path against
+// the resolved worktree dir and was blocked, while edits to existing files
+// passed. Found downstream in a dogfood project, where the local fix was
+// clobbered by every template sync; resolve_path_allow_missing() is the
+// upstreamed cure. The symlink is constructed explicitly so the test does not
+// depend on the platform's tmpdir layout.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh worktree boundary resolves not-yet-existing files through symlinks [%s]",
+  (_label, hookPath) => {
+    let base: string;
+    let realDir: string; // the actual worktree directory
+    let linkPath: string; // symlinked path to it — what SEQUANT_WORKTREE gets
+
+    function symlinkEnv(): NodeJS.ProcessEnv {
+      const env = cleanEnv();
+      env.SEQUANT_WORKTREE = linkPath;
+      return env;
+    }
+
+    function runWrite(filePath: string): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Write",
+        tool_input: { file_path: filePath, content: "x" },
+      });
+      const r = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd: realDir,
+        env: symlinkEnv(),
+        encoding: "utf8",
+      });
+      return { code: r.status ?? -1, stderr: r.stderr ?? "" };
+    }
+
+    beforeAll(() => {
+      base = mkdtempSync(join(tmpdir(), "pre-tool-symlink-wt-"));
+      realDir = join(base, "real-worktree");
+      mkdirSync(realDir);
+      linkPath = join(base, "link-to-worktree");
+      symlinkSync(realDir, linkPath);
+    });
+
+    afterAll(() => {
+      rmSync(base, { recursive: true, force: true });
+    });
+
+    // The regression: a NEW file addressed through the symlinked worktree path
+    // must be allowed. Pre-fix, realpath resolved the worktree but not the
+    // missing file, the prefix test failed, and this exact Write exited 2.
+    it("allows creating a new file inside a symlinked worktree", () => {
+      const { code, stderr } = runWrite(join(linkPath, "sub", "new-file.ts"));
+      expect(stderr).not.toMatch(/HOOK_BLOCKED/);
+      expect(code).toBe(0);
+    });
+
+    // Positive control: canonicalisation must not disable enforcement — a
+    // new file genuinely outside the worktree still blocks.
+    it("still blocks a new file outside the worktree", () => {
+      const { code, stderr } = runWrite(join(base, "escape.ts"));
+      expect(code).toBe(2);
+      expect(stderr).toMatch(
+        /HOOK_BLOCKED: File operation must be within worktree/,
+      );
     });
   },
 );
