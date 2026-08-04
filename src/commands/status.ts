@@ -153,8 +153,12 @@ function getPhaseSymbol(phaseState: { status: string } | undefined): string {
 
 /**
  * Format a single issue state for display
+ *
+ * @internal Exported for testing only (#892: the windowHalt/autoWait pause
+ * lines are display contract — a halted issue must read as resumable, not as
+ * a bare failure).
  */
-function formatIssueState(issue: IssueState): string {
+export function formatIssueState(issue: IssueState): string {
   const lines: string[] = [];
 
   // Issue header

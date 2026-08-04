@@ -23,6 +23,8 @@ import type { IssueState } from "../lib/workflow/state-schema.js";
 import { isCompletedIssueStatus } from "../lib/workflow/completed-status.js";
 import { formatResetTime } from "../lib/errors.js";
 import type { RunOptions } from "../lib/workflow/types.js";
+import { LockManager, formatLockedMessage } from "../lib/locks/index.js";
+import type { LockFile } from "../lib/locks/index.js";
 import { runCommand } from "./run.js";
 
 // Re-exported for callers that treat the resume command as the feature's
@@ -142,18 +144,38 @@ export interface ResumeCommandOptions {
 }
 
 /**
+ * Injectable collaborators for {@link resumeCommand}.
+ *
+ * @internal For testing only — production callers (bin/cli.ts) omit this and
+ * get the real StateManager / LockManager / runCommand / clock. bin/cli.ts
+ * wraps the action in an arrow function so commander's third positional (the
+ * Command instance) can never land here.
+ */
+export interface ResumeCommandDeps {
+  stateManager?: StateManager;
+  runFn?: (issues: string[], options: RunOptions) => Promise<void>;
+  /** Read-only lock probe; defaults to `LockManager.check`. */
+  checkLock?: (issue: number) => LockFile | null;
+  now?: () => number;
+}
+
+/**
  * Command entry for `sequant resume [issues...]`.
  *
  * Exit contract (load-bearing for schedulers, AC-2):
  * - nothing halted / nothing due yet → exit 0 (quiet no-op);
  * - due issues → re-entry counter consumed, then delegates to the normal run
  *   path (its exit code stands);
+ * - a due issue whose lock is held by another session is skipped WITHOUT
+ *   consuming a re-entry (the run path would skip it anyway; someone is
+ *   already working on it) — exit 0 when that leaves nothing to run;
  * - only exhausted issues → exit 1 with the labeled terminal message, so a
  *   wrapper can alert a human instead of silently looping forever.
  */
 export async function resumeCommand(
   issues: string[],
   options: ResumeCommandOptions = {},
+  deps: ResumeCommandDeps = {},
 ): Promise<void> {
   const requested = issues.map((raw) => {
     const n = parseInt(raw, 10);
@@ -165,9 +187,14 @@ export async function resumeCommand(
   });
   if (process.exitCode === 1) return;
 
-  const stateManager = new StateManager();
+  const stateManager = deps.stateManager ?? new StateManager();
+  const runFn = deps.runFn ?? runCommand;
+  const checkLock =
+    deps.checkLock ?? ((issue: number) => new LockManager().check(issue));
+  const now = deps.now ?? Date.now;
+
   const states = await stateManager.getAllIssueStates();
-  const plan = planResume(states, requested, Date.now());
+  const plan = planResume(states, requested, now());
 
   if (
     plan.due.length === 0 &&
@@ -220,11 +247,37 @@ export async function resumeCommand(
     return;
   }
 
+  // Lock probe BEFORE consuming a re-entry: a due issue another session holds
+  // would be skipped by the run path's lock acquisition anyway, so consuming
+  // one of its bounded re-entries buys nothing. The probe is read-only and
+  // best-effort — a lock acquired in the window between this check and the
+  // run's own acquisition still costs the re-entry, which is the pre-existing
+  // (rare, recoverable) behavior, just with a much smaller race window.
+  const runnable: ResumeCandidate[] = [];
+  for (const candidate of plan.due) {
+    const holder = checkLock(candidate.issueNumber);
+    if (holder) {
+      console.log(
+        chalk.yellow(
+          `⏭ #${candidate.issueNumber} skipped — re-entry not consumed. ` +
+            formatLockedMessage(candidate.issueNumber, holder),
+        ),
+      );
+      continue;
+    }
+    runnable.push(candidate);
+  }
+  if (runnable.length === 0) {
+    // Every due issue is being worked on by another session: nothing for a
+    // scheduler to do this tick, nothing terminal — exit 0 and try later.
+    return;
+  }
+
   // Consume the re-entry BEFORE running (AC-3): a re-entry that halts again
   // on a still-closed window must already be counted, or the bound never
   // trips. A re-entry that makes progress clears the record (and counter)
   // via the halt path's success handling.
-  for (const candidate of plan.due) {
+  for (const candidate of runnable) {
     const count = await stateManager.incrementWindowHaltReentries(
       candidate.issueNumber,
     );
@@ -237,8 +290,8 @@ export async function resumeCommand(
     );
   }
 
-  await runCommand(
-    plan.due.map((candidate) => String(candidate.issueNumber)),
+  await runFn(
+    runnable.map((candidate) => String(candidate.issueNumber)),
     buildReentryRunOptions(),
   );
 }

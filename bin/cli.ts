@@ -427,7 +427,11 @@ program
   )
   .argument("[issues...]", "Issue numbers to resume (default: all halted)")
   .option("-d, --dry-run", "Show what would be resumed without running")
-  .action(resumeCommand);
+  // Arrow wrapper: commander passes the Command instance as a third
+  // positional, which must not land in resumeCommand's injectable deps param.
+  .action((issues: string[], options: { dryRun?: boolean }) =>
+    resumeCommand(issues, options),
+  );
 
 program
   .command("prompt")

@@ -46,9 +46,14 @@ npx sequant resume 42 57      # restrict to specific issues
 npx sequant resume --dry-run  # show the plan without consuming a re-entry
 ```
 
-Exit codes: `0` when there is nothing to do (nothing halted, or not yet due);
-the delegated run's exit code once a re-entry starts; `1` when the only halted
-issues have exhausted their re-entry bound.
+Exit codes: `0` when there is nothing to do (nothing halted, not yet due, or
+every due issue is locked by another session); the delegated run's exit code
+once a re-entry starts; `1` when the only halted issues have exhausted their
+re-entry bound.
+
+A due issue whose per-issue lock is held by another session is skipped
+**without consuming a re-entry** — someone is already working on it, and the
+run path would skip it anyway. The next scheduler tick retries normally.
 
 ## Re-entry bound
 

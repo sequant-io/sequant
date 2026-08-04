@@ -7,14 +7,20 @@
  * scoped to the delimited recipe region of the doc it asserts.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import type { IssueState } from "../lib/workflow/state-schema.js";
 import { MAX_RESUME_REENTRIES } from "../lib/workflow/state-schema.js";
+import { StateManager } from "../lib/workflow/state-manager.js";
+import type { LockFile } from "../lib/locks/index.js";
 import {
   buildReentryRunOptions,
   planResume,
   reentryBoundMessage,
+  resumeCommand,
 } from "./resume.js";
 
 const NOW = Date.parse("2026-08-04T12:00:00Z");
@@ -159,6 +165,167 @@ describe("buildReentryRunOptions (#892 AC-2)", () => {
     // key here would make a scheduled re-entry behave differently from the
     // attended `sequant run <issue> --resume` it stands in for.
     expect(buildReentryRunOptions()).toEqual({ resume: true });
+  });
+});
+
+// #892 QA follow-up: the command shell itself — arg validation, exit codes,
+// re-entry consumption, the lock-skip guard, and the delegation call — all via
+// injected deps against a REAL StateManager on a temp state file, so the
+// persistence side effects (counter increments) are asserted on disk, not on
+// mocks.
+describe("resumeCommand (#892)", () => {
+  let tempDir: string;
+  let stateManager: StateManager;
+  let runFn: ReturnType<typeof vi.fn>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let savedExitCode: typeof process.exitCode;
+
+  const NOT_LOCKED = (): LockFile | null => null;
+  const LOCKED = (): LockFile | null =>
+    ({
+      pid: 4242,
+      hostname: os.hostname(),
+      startedAt: new Date(NOW).toISOString(),
+      command: "npx sequant run 7",
+    }) as LockFile;
+
+  function loggedOutput(): string {
+    return logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+  }
+
+  async function seedHalt(
+    issueNumber: number,
+    resumeAt: string,
+    reentries = 0,
+  ): Promise<void> {
+    await stateManager.initializeIssue(issueNumber, `Issue ${issueNumber}`);
+    await stateManager.updateWindowHalt(
+      issueNumber,
+      "qa",
+      new Date(resumeAt).getTime(),
+    );
+    for (let i = 0; i < reentries; i++) {
+      await stateManager.incrementWindowHaltReentries(issueNumber);
+    }
+  }
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "resume-cmd-test-"));
+    stateManager = new StateManager({
+      statePath: path.join(tempDir, ".sequant", "state.json"),
+    });
+    runFn = vi.fn().mockResolvedValue(undefined);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    process.exitCode = savedExitCode;
+    logSpy.mockRestore();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function deps(overrides: Record<string, unknown> = {}) {
+    return {
+      stateManager,
+      runFn,
+      checkLock: NOT_LOCKED,
+      now: () => NOW,
+      ...overrides,
+    };
+  }
+
+  it("rejects a non-numeric issue argument with exit 1 and no run", async () => {
+    await resumeCommand(["abc"], {}, deps());
+    expect(process.exitCode).toBe(1);
+    expect(runFn).not.toHaveBeenCalled();
+  });
+
+  it("is a quiet no-op (exit 0) when nothing is halted", async () => {
+    await resumeCommand([], {}, deps());
+    expect(process.exitCode).toBeUndefined();
+    expect(runFn).not.toHaveBeenCalled();
+    expect(loggedOutput()).toContain("No halted issues to resume");
+  });
+
+  it("AC-2: before resumeAt it reports the reopen time and exits 0 without running", async () => {
+    await seedHalt(101, BEFORE);
+    await resumeCommand([], {}, deps());
+    expect(process.exitCode).toBeUndefined();
+    expect(runFn).not.toHaveBeenCalled();
+    expect(loggedOutput()).toContain("#101 not yet resumable");
+    // No re-entry consumed by a no-op tick.
+    const state = await stateManager.getIssueState(101);
+    expect(state?.windowHalt?.reentries).toBe(0);
+  });
+
+  it("AC-3: exhausted-only exits 1 with the labeled terminal message, no run", async () => {
+    await seedHalt(102, PAST, MAX_RESUME_REENTRIES);
+    await resumeCommand([], {}, deps());
+    expect(process.exitCode).toBe(1);
+    expect(runFn).not.toHaveBeenCalled();
+    expect(loggedOutput()).toContain("Rate limited — re-entry bound reached");
+  });
+
+  it("mixed exhausted + notYet exits 0 — something is still worth waiting for", async () => {
+    await seedHalt(101, BEFORE);
+    await seedHalt(102, PAST, MAX_RESUME_REENTRIES);
+    await resumeCommand([], {}, deps());
+    expect(process.exitCode).toBeUndefined();
+    expect(runFn).not.toHaveBeenCalled();
+  });
+
+  it("a due issue consumes one re-entry (persisted) and delegates with resume semantics", async () => {
+    await seedHalt(103, PAST);
+    await resumeCommand([], {}, deps());
+    expect(runFn).toHaveBeenCalledWith(["103"], { resume: true });
+    const state = await stateManager.getIssueState(103);
+    expect(state?.windowHalt?.reentries).toBe(1);
+  });
+
+  it("--dry-run neither consumes a re-entry nor runs", async () => {
+    await seedHalt(103, PAST);
+    await resumeCommand([], { dryRun: true }, deps());
+    expect(runFn).not.toHaveBeenCalled();
+    const state = await stateManager.getIssueState(103);
+    expect(state?.windowHalt?.reentries).toBe(0);
+    expect(loggedOutput()).toContain("dry run, not started");
+  });
+
+  it("a lock-held due issue is skipped WITHOUT consuming a re-entry (exit 0)", async () => {
+    await seedHalt(103, PAST);
+    await resumeCommand([], {}, deps({ checkLock: LOCKED }));
+    expect(runFn).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+    expect(loggedOutput()).toContain("#103 skipped — re-entry not consumed");
+    const state = await stateManager.getIssueState(103);
+    expect(state?.windowHalt?.reentries).toBe(0);
+  });
+
+  it("runs only the unlocked issues when locks cover a subset", async () => {
+    await seedHalt(103, PAST);
+    await seedHalt(104, PAST);
+    const lockOnly103 = (issue: number): LockFile | null =>
+      issue === 103 ? LOCKED() : null;
+    await resumeCommand([], {}, deps({ checkLock: lockOnly103 }));
+    expect(runFn).toHaveBeenCalledWith(["104"], { resume: true });
+    expect((await stateManager.getIssueState(103))?.windowHalt?.reentries).toBe(
+      0,
+    );
+    expect((await stateManager.getIssueState(104))?.windowHalt?.reentries).toBe(
+      1,
+    );
+  });
+
+  it("restricts to requested issue numbers", async () => {
+    await seedHalt(103, PAST);
+    await seedHalt(104, PAST);
+    await resumeCommand(["104"], {}, deps());
+    expect(runFn).toHaveBeenCalledWith(["104"], { resume: true });
+    expect((await stateManager.getIssueState(103))?.windowHalt?.reentries).toBe(
+      0,
+    );
   });
 });
 
