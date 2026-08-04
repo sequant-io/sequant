@@ -4,6 +4,7 @@
 
 import chalk from "chalk";
 import { formatResetTime } from "../lib/errors.js";
+import { MAX_RESUME_REENTRIES } from "../lib/workflow/state-schema.js";
 import { ui, colors } from "../lib/cli-ui.js";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { fileExists } from "../lib/fs.js";
@@ -194,6 +195,16 @@ function formatIssueState(issue: IssueState): string {
     lines.push(
       chalk.yellow(
         `    ⏸ Auto-wait: ${issue.autoWait.phase} paused — resuming at ${formatResetTime(new Date(issue.autoWait.wakeAt).getTime())}`,
+      ),
+    );
+  }
+
+  // #892: a window-halted issue exited cleanly (lock released) and is waiting
+  // for `sequant resume` — show the resume time instead of a bare failure.
+  if (issue.windowHalt) {
+    lines.push(
+      chalk.yellow(
+        `    ⏸ Halted: ${issue.windowHalt.phase} hit a rate-limit window — resumable at ${formatResetTime(new Date(issue.windowHalt.resumeAt).getTime())} via \`sequant resume\` (re-entries ${issue.windowHalt.reentries}/${MAX_RESUME_REENTRIES})`,
       ),
     );
   }

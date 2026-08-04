@@ -11,9 +11,11 @@ import {
   deriveFailureCategory,
   emitProgressLine,
   isBillingOrWindowHalt,
+  windowHaltResumeAtMs,
   withActivityHook,
   AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS,
 } from "./batch-executor.js";
+import { AUTO_WAIT_BUFFER_MS } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
 import {
@@ -983,6 +985,63 @@ describe("runIssueWithLogging — #799: billing / rate-limit-window fail-fast un
       structuredError: new BillingError("Out of credits"),
     };
     expect(billingHaltReason(result)).toBe("Out of credits");
+  });
+});
+
+// #892 AC-1: the durable halt writes resumeAt = resetsAt + the auto-wait
+// buffer, and ONLY for waitable-window halts — billing and transient failures
+// must return null so no `windowHalt` record is ever written for them.
+describe("windowHaltResumeAtMs (#892)", () => {
+  it("computes resetsAt + AUTO_WAIT_BUFFER_MS for a waitable window (same clock as auto-wait)", () => {
+    const resetsAtMs = Date.now() + 3 * 3_600_000; // window reopens in 3h
+    const result: PhaseResult = {
+      phase: "qa",
+      success: false,
+      durationSeconds: 5,
+      error: "Rate limited",
+      structuredError: createRateLimitError({
+        rateLimitType: "five_hour",
+        resetsAt: Math.floor(resetsAtMs / 1000), // SDK emits seconds
+      }),
+    };
+    expect(windowHaltResumeAtMs(result)).toBe(
+      Math.floor(resetsAtMs / 1000) * 1000 + AUTO_WAIT_BUFFER_MS,
+    );
+  });
+
+  it("returns null for a billing failure — credits are purchased, not waited out", () => {
+    const result: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      structuredError: new BillingError("Out of credits", {
+        // A real billing rejection can carry a reset time (#782); the gate is
+        // the error type, not the timestamp.
+        resetsAt: Math.floor((Date.now() + 3_600_000) / 1000),
+        rateLimitType: "five_hour",
+      }),
+    };
+    expect(windowHaltResumeAtMs(result)).toBeNull();
+  });
+
+  it("returns null for a transient (metadata-absent) rate limit", () => {
+    const result: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      structuredError: new RateLimitError("Rate limited"),
+    };
+    expect(windowHaltResumeAtMs(result)).toBeNull();
+  });
+
+  it("returns null for a generic failure", () => {
+    const result: PhaseResult = {
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: "boom",
+    };
+    expect(windowHaltResumeAtMs(result)).toBeNull();
   });
 });
 

@@ -503,6 +503,79 @@ export class StateManager {
   }
 
   /**
+   * Record a durable waitable-window halt (#892 AC-1). Preserves an existing
+   * re-entry counter so repeated halts on a still-closed window keep counting
+   * toward the re-entry bound instead of resetting it.
+   *
+   * Like `updateAutoWait`, NEVER throws on an untracked issue — it runs on a
+   * halt path where bookkeeping must not mask the real failure.
+   */
+  async updateWindowHalt(
+    issueNumber: number,
+    phase: string,
+    resumeAtMs: number,
+  ): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState) return;
+
+      issueState.windowHalt = {
+        resumeAt: new Date(resumeAtMs).toISOString(),
+        phase,
+        reentries: issueState.windowHalt?.reentries ?? 0,
+      };
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+  }
+
+  /**
+   * Clear a stale window-halt record (#892) — on any phase success (the
+   * window demonstrably reopened; progress also resets the re-entry counter)
+   * or a non-window failure (the halt cause is no longer waitable, so an
+   * unattended re-entry must not fire on it). No-ops (no state write) when
+   * nothing is recorded; never throws on an untracked issue.
+   */
+  async clearWindowHalt(issueNumber: number): Promise<void> {
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState?.windowHalt) return;
+
+      issueState.windowHalt = undefined;
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+  }
+
+  /**
+   * Consume one re-entry attempt for a halted issue (#892 AC-3). Returns the
+   * new count, or `null` when the issue has no window-halt record (nothing to
+   * resume). Called by `sequant resume` immediately before re-entry so a
+   * re-entry that halts again (window still closed) is already counted.
+   */
+  async incrementWindowHaltReentries(
+    issueNumber: number,
+  ): Promise<number | null> {
+    let newCount: number | null = null;
+    await this.withLock(async () => {
+      const state = await this.getState();
+      const issueState = state.issues[String(issueNumber)];
+      if (!issueState?.windowHalt) return;
+
+      issueState.windowHalt.reentries += 1;
+      newCount = issueState.windowHalt.reentries;
+      issueState.lastActivity = new Date().toISOString();
+
+      await this.saveState(state);
+    });
+    return newCount;
+  }
+
+  /**
    * Update worktree information for an issue
    */
   async updateWorktreeInfo(
