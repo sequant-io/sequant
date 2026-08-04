@@ -20,6 +20,16 @@ const DEFAULT_STALL_THRESHOLD_MS = 5 * 60_000;
 const DEFAULT_LIVENESS_FILE = ".sequant/state.json";
 const CLEANUP_NAME = "liveness-heartbeat";
 
+/**
+ * Cadence of the non-TTY auto-wait notice (#860 AC-6). Non-TTY output is
+ * append-only (no `\r` rewrite), so the TTY heartbeat's every-tick refresh
+ * would log ~600 lines over a five-hour wait. Five minutes keeps an unattended
+ * log legibly alive (~60 lines per five-hour window) without drowning it.
+ *
+ * @internal Exported for testing only
+ */
+export const NON_TTY_WAIT_NOTICE_INTERVAL_MS = 5 * 60_000;
+
 export interface LivenessHeartbeatOptions {
   /** Polling cadence for heartbeat ticks. Default: 30_000ms */
   pollIntervalMs?: number;
@@ -58,6 +68,13 @@ interface PhaseEntry {
    * the stall warning is suppressed — see {@link LivenessHeartbeat.pauseForWait}.
    */
   waitingUntil?: number;
+  /**
+   * #860 AC-6: epoch ms of the last non-TTY wait notice, so an unattended
+   * (append-only) log gets a periodic line rather than either silence or a
+   * line per poll tick. `undefined` until the first notice of a wait; cleared
+   * on resume so a later wait announces itself immediately again.
+   */
+  lastWaitNoticeAt?: number;
 }
 
 interface PhaseKey {
@@ -195,6 +212,8 @@ export class LivenessHeartbeat {
     // Clear any warning already fired so a genuine stall after the wait can
     // still warn once.
     entry.warningFired = false;
+    // #860 AC-6: a fresh wait announces itself on the next non-TTY tick.
+    entry.lastWaitNoticeAt = undefined;
   }
 
   /** Clear the auto-wait marker set by {@link pauseForWait} (#804). */
@@ -203,6 +222,7 @@ export class LivenessHeartbeat {
     if (!entry) return;
     entry.waitingUntil = undefined;
     entry.warningFired = false;
+    entry.lastWaitNoticeAt = undefined;
   }
 
   /** Test hook: drive a poll synchronously without waiting on real timers. */
@@ -223,6 +243,14 @@ export class LivenessHeartbeat {
       if (entry.waitingUntil !== undefined) {
         if (this.tty) {
           this.writeWaitHeartbeat(entry, Math.max(0, now - entry.startedAt));
+        } else if (
+          entry.lastWaitNoticeAt === undefined ||
+          now - entry.lastWaitNoticeAt >= NON_TTY_WAIT_NOTICE_INTERVAL_MS
+        ) {
+          // #860 AC-6: without this, a non-TTY wait emits nothing for hours —
+          // indistinguishable from the #856 hang. Append-only line, throttled.
+          this.writeNonTtyWaitNotice(entry);
+          entry.lastWaitNoticeAt = now;
         }
         continue;
       }
@@ -289,6 +317,21 @@ export class LivenessHeartbeat {
     const remaining = formatElapsedTime(Math.floor(remainingMs / 1000));
     const wake = formatResetTime(entry.waitingUntil);
     const line = `\r  ⏸ #${entry.issueNumber}  ${entry.phase}  (${elapsed} elapsed, rate-limit window — resuming at ${wake}, ${remaining} left)\x1b[K`;
+    this.stdoutWrite(line);
+  }
+
+  /**
+   * Append-only auto-wait notice for non-TTY runs (#860 AC-6). Same facts as
+   * {@link writeWaitHeartbeat} — wake time and remaining wait — but a plain
+   * `\n`-terminated line with no cursor control, throttled by the caller to
+   * {@link NON_TTY_WAIT_NOTICE_INTERVAL_MS} so an unattended log stays legible.
+   */
+  private writeNonTtyWaitNotice(entry: PhaseEntry): void {
+    if (this.stopped || entry.waitingUntil === undefined) return;
+    const remainingMs = Math.max(0, entry.waitingUntil - this.now());
+    const remaining = formatElapsedTime(Math.floor(remainingMs / 1000));
+    const wake = formatResetTime(entry.waitingUntil);
+    const line = `  ⏸ #${entry.issueNumber}  ${entry.phase}  rate-limit window — resuming at ${wake} (${remaining} left)\n`;
     this.stdoutWrite(line);
   }
 

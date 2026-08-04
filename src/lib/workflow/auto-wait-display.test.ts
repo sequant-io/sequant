@@ -13,8 +13,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
-import { LivenessHeartbeat } from "./heartbeat.js";
-import { TTYRenderer } from "../cli-ui/run-renderer.js";
+import {
+  LivenessHeartbeat,
+  NON_TTY_WAIT_NOTICE_INTERVAL_MS,
+} from "./heartbeat.js";
+import { NonTTYRenderer, TTYRenderer } from "../cli-ui/run-renderer.js";
 import { formatResetTime } from "../errors.js";
 
 vi.mock("fs", () => ({
@@ -211,5 +214,203 @@ describe("#804 AC-7 heartbeat — a wait is not a stall", () => {
       hb.resumeFromWait({ issueNumber: 999, phase: "qa" }),
     ).not.toThrow();
     hb.dispose();
+  });
+});
+
+describe("#860 AC-6 heartbeat — a non-TTY wait emits periodic progress naming the wake time", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(fs.statSync).mockReset();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const WAKE = FIXED_NOW + 3 * 60 * 60_000;
+
+  function makeNonTtyHb(now: () => number) {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const hb = new LivenessHeartbeat({
+      isTTY: false,
+      enabled: true,
+      pollIntervalMs: 30_000,
+      now,
+      stdoutWrite: (s) => stdout.push(s),
+      stderrWrite: (s) => stderr.push(s),
+    });
+    mockMtime(FIXED_NOW);
+    hb.start({ issueNumber: 860, phase: "exec", startedAt: FIXED_NOW });
+    hb.pauseForWait({ issueNumber: 860, phase: "exec" }, WAKE);
+    return { hb, stdout, stderr };
+  }
+
+  it("announces the wait on the first tick with wake time and remaining, as a plain line", () => {
+    const { hb, stdout } = makeNonTtyHb(() => FIXED_NOW);
+    hb.tickNow();
+
+    expect(stdout).toHaveLength(1);
+    const line = stdout[0];
+    expect(line).toContain("#860");
+    expect(line).toContain("rate-limit window");
+    expect(line).toContain(`resuming at ${formatResetTime(WAKE)}`);
+    expect(line).toContain("left");
+    // Append-only log line: newline-terminated, no cursor control.
+    expect(line.endsWith("\n")).toBe(true);
+    expect(line).not.toContain("\r");
+    expect(line).not.toContain(String.fromCharCode(27));
+    hb.dispose();
+  });
+
+  it("throttles to the notice interval instead of one line per poll tick", () => {
+    let clock = FIXED_NOW;
+    const { hb, stdout } = makeNonTtyHb(() => clock);
+    hb.tickNow(); // announce
+
+    // Poll ticks inside the throttle window stay silent.
+    clock = FIXED_NOW + 30_000;
+    hb.tickNow();
+    clock = FIXED_NOW + 4 * 60_000;
+    hb.tickNow();
+    expect(stdout).toHaveLength(1);
+
+    // Once the interval elapses, the next tick re-notices with updated time.
+    clock = FIXED_NOW + NON_TTY_WAIT_NOTICE_INTERVAL_MS;
+    hb.tickNow();
+    expect(stdout).toHaveLength(2);
+    expect(stdout[1]).toContain(`resuming at ${formatResetTime(WAKE)}`);
+    hb.dispose();
+  });
+
+  it("a wait after a resume announces itself immediately again", () => {
+    let clock = FIXED_NOW;
+    const { hb, stdout } = makeNonTtyHb(() => clock);
+    hb.tickNow();
+    expect(stdout).toHaveLength(1);
+
+    hb.resumeFromWait({ issueNumber: 860, phase: "exec" });
+    // Fresh mtime so the resumed tick doesn't fire an unrelated stall warning.
+    mockMtime(FIXED_NOW + 60_000);
+    clock = FIXED_NOW + 60_000;
+    hb.tickNow();
+    expect(stdout).toHaveLength(1); // no wait line while not waiting
+
+    hb.pauseForWait({ issueNumber: 860, phase: "exec" }, WAKE);
+    clock = FIXED_NOW + 90_000;
+    hb.tickNow();
+    expect(stdout).toHaveLength(2); // announced immediately, throttle reset
+    hb.dispose();
+  });
+
+  it("stall warnings stay suppressed for the whole non-TTY wait", () => {
+    let clock = FIXED_NOW;
+    const { hb, stderr } = makeNonTtyHb(() => clock);
+    clock = FIXED_NOW + 60 * 60_000; // an hour of no state.json writes
+    hb.tickNow();
+    expect(stderr.join("")).not.toContain("no log activity");
+    hb.dispose();
+  });
+});
+
+describe("#860 AC-6 NonTTYRenderer — waiting events in a background (default-mode) run", () => {
+  const WAKE = FIXED_NOW + 3 * 60 * 60_000;
+
+  function makeRenderer(nowRef: { now: number }) {
+    const out: string[] = [];
+    const r = new NonTTYRenderer({
+      stdoutWrite: (s: string) => out.push(s),
+      noColor: true,
+      now: () => nowRef.now,
+      wallClock: () => new Date(2026, 6, 26, 11, 0, 0, 0),
+      isTTY: false,
+      columns: 100,
+      noSignalListeners: true,
+    });
+    r.registerIssue({ issueNumber: 860 });
+    r.onEvent({ issue: 860, phase: "exec", event: "start" });
+    return { r, out };
+  }
+
+  function waitTick(r: NonTTYRenderer, text: string) {
+    r.onEvent({
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      text,
+      wakeAtMs: WAKE,
+    });
+  }
+
+  it("a waiting tick never prints the failure glyph", () => {
+    const nowRef = { now: FIXED_NOW };
+    const { r, out } = makeRenderer(nowRef);
+    waitTick(r, "Rate limited · auto-wait 1/2");
+
+    // Regression guard: waiting events used to fall through emitEventLine's
+    // start/complete/else chain into the failure branch — one spurious
+    // `✘ #860 exec` per 15-second tick for the whole multi-hour wait.
+    expect(out.join("")).not.toContain("✘");
+    r.dispose();
+  });
+
+  it("announces the wait once, absorbing the per-tick notices", () => {
+    const nowRef = { now: FIXED_NOW };
+    const { r, out } = makeRenderer(nowRef);
+    waitTick(r, "Rate limited · auto-wait 1/2 — resuming at 14:30");
+    const afterFirst = out.length;
+    expect(out.join("")).toContain("⏸ #860 exec");
+    expect(out.join("")).toContain("resuming at 14:30");
+
+    // The ~15s ticks that follow must not add a line each.
+    waitTick(r, "Rate limited · auto-wait 1/2 — resuming at 14:30 · 2h left");
+    waitTick(r, "Rate limited · auto-wait 1/2 — resuming at 14:30 · 1h left");
+    expect(out.length).toBe(afterFirst);
+    r.dispose();
+  });
+
+  it("the terminal notice emits a resume line and re-arms the announcement", () => {
+    const nowRef = { now: FIXED_NOW };
+    const { r, out } = makeRenderer(nowRef);
+    waitTick(r, "waiting…");
+    r.onEvent({
+      issue: 860,
+      phase: "exec",
+      event: "waiting",
+      text: "auto-wait complete",
+    });
+    expect(out.join("")).toContain("auto-wait complete");
+
+    const before = out.length;
+    waitTick(r, "second wait");
+    expect(out.length).toBe(before + 1); // announced again for a second wait
+    r.dispose();
+  });
+
+  it("the 60s heartbeat keeps firing during a wait and names the wake time", () => {
+    const nowRef = { now: FIXED_NOW };
+    const { r, out } = makeRenderer(nowRef);
+    waitTick(r, "waiting…");
+
+    // Waiting ticks are liveness, not progress — they must not hold
+    // `lastEventAt` fresh and silence the heartbeat for the whole wait.
+    nowRef.now = FIXED_NOW + 61_000;
+    r.tickHeartbeatNow();
+
+    const line = out.join("");
+    expect(line).toContain("still running");
+    expect(line).toContain(`resuming at ${formatResetTime(WAKE)}`);
+    expect(line).toContain("left");
+    r.dispose();
+  });
+
+  it("a normal run's heartbeat is unchanged when nothing waits", () => {
+    const nowRef = { now: FIXED_NOW };
+    const { r, out } = makeRenderer(nowRef);
+    nowRef.now = FIXED_NOW + 61_000;
+    r.tickHeartbeatNow();
+    const line = out.join("");
+    expect(line).toContain("still running: #860 exec");
+    expect(line).not.toContain("resuming at");
+    r.dispose();
   });
 });

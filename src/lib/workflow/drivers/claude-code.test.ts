@@ -258,6 +258,45 @@ describe("ClaudeCodeDriver", () => {
       expect(result.error).toBe("Billing error");
     });
 
+    it("#860: a live five-hour window survives a concurrent billing_error enum with metadata intact", async () => {
+      // The captured subscription-plan shape: five_hour + out_of_credits +
+      // future resetsAt. The assistant reports the same failure as a bare
+      // `billing_error` — pre-#860 that downgrade produced a metadata-less
+      // BillingError, stripping the resetsAt that --auto-wait needs.
+      const futureResetsAt = Math.floor(Date.now() / 1000) + 3 * 3600;
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              resetsAt: futureResetsAt,
+              rateLimitType: "five_hour",
+              overageDisabledReason: "out_of_credits",
+            },
+            uuid: "u1",
+            session_id: "sess-1",
+          },
+          {
+            type: "assistant",
+            message: { content: [] },
+            error: "billing_error",
+          },
+          RESULT_ERROR,
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      const err = result.structuredError as SequantError;
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect(err.isRetryable).toBe(true);
+      expect(err.metadata.resetsAt).toBe(futureResetsAt);
+      expect(err.metadata.rateLimitType).toBe("five_hour");
+    });
+
     it("falls back to the assistant error field when no rate_limit_event is present (AC-1, AC-6)", async () => {
       queryMock.mockReturnValue(
         mockStream([
