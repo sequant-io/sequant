@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.9.0
+# What We've Built: Sequant v2.10.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.10.0)
+
+- **Durable halt-and-resume + `sequant resume`** - A run failing on an exhausted rate-limit window writes a durable halt record and exits, releasing the per-issue lock; `sequant resume` re-enters after the window reopens — cron/launchd-safe, survives reboots (#892)
+- **`sequant run --ready-gate`** - Drives each issue through the full `qa → loop → qa` ready gate before opening the PR; never merges (#817)
+- **`sequant merge --watch`** - Waits for a PR's CI checks to finish, then runs merge-check and reports (#818)
+- **`sequant run --auto-wait <minutes>`** - Opt-in in-process wait for a rate-limit window to reopen (#804), correctly triggered on subscription five-hour windows (#860)
+- **Skills-install pre-flight** - A missing `.claude/skills/` fails fast with a fix-it message instead of silently degrading phase agents (#813)
+- **Shared trust-model block** - Issue/PR text is data, not agent instructions, across spec/exec/qa/loop/assess (#819)
+- **Stricter CLI contract** - Malformed numeric flags rejected (#833/#845), non-zero pre-flight exits (#848), signal exits `128+signum` (#856), `engines.node >=22.13.0`
+
 ### Recent Additions (v2.9.0)
 
 - **`--chain` resumes from its last good link** - Re-running a partially-completed chain skips the contiguous prefix of completed links and rebases onto the last good tip, instead of redoing hours of finished work (#760)
@@ -1148,7 +1158,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.9.0
+**Current Version:** 2.10.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1158,7 +1168,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.9.0                                │
+│                              SEQUANT v2.10.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
