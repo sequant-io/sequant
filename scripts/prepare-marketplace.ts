@@ -292,7 +292,7 @@ AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-en
 
 - **Git** with a GitHub remote
 - **GitHub CLI** (\`gh\`) authenticated (\`gh auth status\`)
-- **Node.js 22.12+** (for MCP server via \`npx\`)
+- **Node.js 22.13+** (for MCP server via \`npx\`)
 
 ## Installation
 
