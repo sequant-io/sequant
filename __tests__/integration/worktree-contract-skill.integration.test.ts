@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync } from "fs";
 import path from "path";
 
 const REPO_ROOT = path.resolve(__dirname, "../..");
@@ -24,10 +24,38 @@ const REPO_ROOT = path.resolve(__dirname, "../..");
 /** All three skill roots. `.claude/skills` is canonical; the others mirror it. */
 const SKILL_ROOTS = [".claude/skills", "templates/skills", "skills"] as const;
 
+/**
+ * Skills the orchestrator hands `SEQUANT_WORKTREE` and which therefore need
+ * the existence guard before they `cd` into it (#899 for exec, #904 for the
+ * rest). `/testgen` is absent deliberately: it has no orchestrated path.
+ */
+const EXISTENCE_GUARD_SKILLS = ["exec", "qa", "loop"] as const;
+
+/**
+ * Skills that locate a worktree themselves when run standalone. `/testgen`
+ * joins this list — it writes test files, so landing in a sibling project's
+ * worktree scatters stubs into an unrelated repo.
+ */
+const STANDALONE_LOOKUP_SKILLS = ["exec", "qa", "loop", "testgen"] as const;
+
 function readSkill(root: string, skill: string): string {
   const file = path.join(REPO_ROOT, root, skill, "SKILL.md");
   if (!existsSync(file)) throw new Error(`Missing skill file: ${file}`);
   return readFileSync(file, "utf8");
+}
+
+/** Every skill directory under a root that has a SKILL.md. */
+function allSkills(root: string): string[] {
+  const dir = path.join(REPO_ROOT, root);
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(
+      (e) =>
+        e.isDirectory() &&
+        !e.name.startsWith(".") &&
+        existsSync(path.join(dir, e.name, "SKILL.md")),
+    )
+    .map((e) => e.name)
+    .sort();
 }
 
 /**
@@ -43,6 +71,15 @@ function region(content: string, name: string): string {
     throw new Error(`Region "${name}" not found (begin=${begin}, end=${end})`);
   }
   return content.slice(begin, end);
+}
+
+/** Non-throwing `region`, for the completeness sweep over every skill. */
+function tryRegion(content: string, name: string): string | null {
+  try {
+    return region(content, name);
+  } catch {
+    return null;
+  }
 }
 
 /** Every `export SEQUANT_WORKTREE=...` line, across the whole file. */
@@ -132,6 +169,102 @@ describe.each(SKILL_ROOTS)("worktree contract in %s", (root) => {
       for (const line of globMentions) {
         expect(line).toMatch(/Do not glob|shared by every sibling repository/);
       }
+    });
+  });
+
+  // The same two defects existed in every skill the orchestrator hands
+  // SEQUANT_WORKTREE to, not only /exec. `/qa` reviewed the wrong tree,
+  // `/loop` and `/testgen` *wrote* into it. #904.
+  describe.each(EXISTENCE_GUARD_SKILLS)("%s existence guard", (skill) => {
+    it("verifies SEQUANT_WORKTREE before use and halts on failure", () => {
+      const body = region(
+        readSkill(root, skill),
+        "worktree-existence-guard (#899)",
+      );
+
+      expect(body).toContain("sequant worktree verify");
+      expect(body).toContain("exit 1");
+      for (const code of [
+        "SEQUANT_WORKTREE_NOT_FOUND",
+        "SEQUANT_WORKTREE_FOREIGN",
+        "SEQUANT_WORKTREE_ISSUE_MISMATCH",
+      ]) {
+        expect(body).toContain(code);
+      }
+    });
+  });
+
+  describe.each(STANDALONE_LOOKUP_SKILLS)("%s standalone lookup", (skill) => {
+    it("resolves through git rather than globbing the shared directory", () => {
+      const body = region(
+        readSkill(root, skill),
+        "worktree-standalone-lookup (#899)",
+      );
+
+      expect(body).toContain("sequant worktree resolve");
+      for (const line of body.split("\n")) {
+        if (!line.includes("../worktrees/")) continue;
+        expect(line).toMatch(
+          /Do not glob|shared by every sibling repository|which reports only/,
+        );
+      }
+    });
+  });
+
+  // Completeness invariants. The bug reached five skills by being copied, so
+  // pinning the three known sites is not enough — these fail on a NEW skill
+  // that reintroduces either pattern.
+  describe("no unguarded worktree adoption anywhere", () => {
+    it("every `cd $SEQUANT_WORKTREE` sits inside a verify-bearing guard region", () => {
+      const offenders: string[] = [];
+
+      for (const skill of allSkills(root)) {
+        const content = readSkill(root, skill);
+        if (!/cd\s+"?\$SEQUANT_WORKTREE"?/.test(content)) continue;
+
+        const guard = tryRegion(content, "worktree-existence-guard (#899)");
+        // Every occurrence must be inside the guard, and the guard must verify.
+        const outside = guard ? content.split(guard).join("") : content;
+        if (
+          !guard ||
+          !guard.includes("sequant worktree verify") ||
+          /cd\s+"?\$SEQUANT_WORKTREE"?/.test(outside)
+        ) {
+          offenders.push(skill);
+        }
+      }
+
+      expect(offenders).toEqual([]);
+    });
+
+    it("no skill instructs globbing ../worktrees/ or grepping the worktree list", () => {
+      const offenders: string[] = [];
+
+      for (const skill of allSkills(root)) {
+        for (const line of readSkill(root, skill).split("\n")) {
+          const globs = /(^|[^`])(ls|cat|cd)\s+\.\.\/worktrees\/feature\//.test(
+            line,
+          );
+          // Only issue-KEYED selection is a defect. `[^|]*` lets a flag sit
+          // between the command and the pipe (the `--porcelain` form), while
+          // the pattern check spares structural field greps like
+          // `grep "^worktree"`, which enumerate every worktree rather than
+          // picking one and therefore cannot mis-select.
+          // Capture only grep's own argument (up to the next pipe) —
+          // trailing stages such as `| cut -d' ' -f2` carry digits that
+          // would otherwise read as an issue number.
+          const pipedGrep = /git worktree list[^|]*\|\s*grep\s+([^|]*)/.exec(
+            line,
+          );
+          const greps =
+            pipedGrep !== null &&
+            /\$ISSUE|<issue-number>|<N>|feature\/|[0-9]/.test(pipedGrep[1]) &&
+            !/do not grep/i.test(line);
+          if (globs || greps) offenders.push(`${skill}: ${line.trim()}`);
+        }
+      }
+
+      expect(offenders).toEqual([]);
     });
   });
 
