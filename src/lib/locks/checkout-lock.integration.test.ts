@@ -15,8 +15,14 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { spawnSync } from "child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { spawn, spawnSync } from "child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { join, resolve, dirname } from "path";
 import { tmpdir, hostname } from "os";
 import { fileURLToPath } from "url";
@@ -506,6 +512,130 @@ describe("AC-4: hook/TypeScript staleness parity", () => {
       expect(hookStale, "hook disagrees with classifyStaleness").toBe(tsStale);
     },
   );
+});
+
+describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
+  // Everything above simulates the second session by writing a lock file.
+  // That exercises the guard but not the claim itself: that two real,
+  // concurrently-racing processes cannot both come away holding the tree.
+  // These spawn the built CLI for real and let the kernel arbitrate.
+  const CLI = join(REPO_ROOT, "dist/bin/cli.js");
+
+  /**
+   * Must use async `spawn`, NOT `spawnSync`. `spawnSync` blocks the event
+   * loop, so `Promise.all` over it would run the children strictly one after
+   * another -- the processes would never overlap and the "race" would be
+   * theatre. With `spawn` they are genuinely in flight together and the
+   * kernel arbitrates the O_CREAT|O_EXCL create.
+   */
+  function acquireAsync(issue: number, sessionId: string, locksDir: string) {
+    return new Promise<{ acquired: boolean; issue: number }>((resolve) => {
+      const child = spawn(
+        process.execPath,
+        [
+          CLI,
+          "locks",
+          "checkout",
+          "acquire",
+          `--issue=${issue}`,
+          `--session-id=${sessionId}`,
+          "--command=/fullsolve",
+          "--skip-pid-check",
+          "--json",
+        ],
+        {
+          env: {
+            ...process.env,
+            SEQUANT_LOCKS_DIR: locksDir,
+            SEQUANT_ORCHESTRATOR: "",
+          },
+        },
+      );
+      let stdout = "";
+      child.stdout.on("data", (c) => (stdout += String(c)));
+      child.on("close", () => {
+        let acquired = false;
+        try {
+          acquired = JSON.parse(stdout.trim()).acquired === true;
+        } catch {
+          acquired = false;
+        }
+        resolve({ acquired, issue });
+      });
+    });
+  }
+
+  it("exactly one of six racing sessions wins the checkout", async () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    const issues = [10, 23, 41, 55, 67, 78];
+
+    const results = await Promise.all(
+      issues.map((issue, i) => acquireAsync(issue, `session-${i}`, locksDir)),
+    );
+
+    const winners = results.filter((r) => r.acquired);
+    expect(winners).toHaveLength(1);
+
+    // And the lock on disk belongs to that winner — not merely "some lock".
+    const onDisk = JSON.parse(
+      readFileSync(join(locksDir, "checkout.lock"), "utf-8"),
+    );
+    expect(onDisk.issue).toBe(winners[0].issue);
+  });
+
+  it("the loser's refusal names the actual winner", async () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    const first = await acquireAsync(23, "session-A", locksDir);
+    expect(first.acquired).toBe(true);
+
+    const second = spawnSync(
+      process.execPath,
+      [
+        CLI,
+        "locks",
+        "checkout",
+        "acquire",
+        "--issue=10",
+        "--session-id=session-B",
+        "--command=/fullsolve 10",
+        "--skip-pid-check",
+      ],
+      {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          SEQUANT_LOCKS_DIR: locksDir,
+          SEQUANT_ORCHESTRATOR: "",
+        },
+      },
+    );
+
+    expect(second.status).toBe(1);
+    expect(second.stderr).toContain("#23");
+    expect(second.stderr).toContain("../worktrees/feature/10-*/");
+  });
+
+  it("release hands the checkout to the next session", async () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    await acquireAsync(23, "session-A", locksDir);
+
+    const released = spawnSync(
+      process.execPath,
+      [CLI, "locks", "checkout", "release", "--json"],
+      {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          SEQUANT_LOCKS_DIR: locksDir,
+          SEQUANT_ORCHESTRATOR: "",
+        },
+      },
+    );
+    expect(JSON.parse(released.stdout.trim()).released).toBe(true);
+
+    const next = await acquireAsync(10, "session-B", locksDir);
+    expect(next.acquired).toBe(true);
+  });
 });
 
 describe("AC-5: orchestrator/MCP mode stands down", () => {
