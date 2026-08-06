@@ -63,6 +63,72 @@ export const LockFileSchema = z.object({
 
 export type LockFile = z.infer<typeof LockFileSchema>;
 
+/**
+ * Filename of the checkout-scoped lock (#901), stored alongside the numeric
+ * `<issue>.lock` files. Deliberately non-numeric so `LockManager.list()` —
+ * which parses each filename as an issue number and skips anything else —
+ * ignores it rather than surfacing a bogus `NaN` issue.
+ */
+export const CHECKOUT_LOCK_FILENAME = "checkout.lock";
+
+/**
+ * On-disk payload for the checkout-scoped lock (#901).
+ *
+ * The per-issue lock from #625 is keyed on issue number, so two sessions
+ * working *different* issues take different lock files and never contend —
+ * yet `git checkout`, `reset`, `rebase` and `merge` are global to a working
+ * tree. This lock represents the tree itself.
+ *
+ * Extends `LockFileSchema` with:
+ *  - `issue` — which issue the holder is working on, so a refusal can name it
+ *    (AC-2) and point the loser at the right worktree (AC-3).
+ *  - `sessionId` — Claude Code's per-session id, read from the PreToolUse
+ *    stdin envelope. Optional: it is the *preferred* holder identity because a
+ *    skill shell's PID dies immediately after acquire, but the hook falls back
+ *    to `pid`+`hostname` when the envelope does not carry one, so nothing
+ *    depends on it being present.
+ */
+export const CheckoutLockFileSchema = LockFileSchema.extend({
+  issue: z.number().int().positive(),
+  sessionId: z.string().optional(),
+});
+
+export type CheckoutLockFile = z.infer<typeof CheckoutLockFileSchema>;
+
+/** Identity of the session asking for the checkout lock. */
+export interface CheckoutHolderIdentity {
+  /** Claude Code session id, when the caller knows it. */
+  sessionId?: string;
+  /** Falls back to these when `sessionId` is absent on either side. */
+  pid: number;
+  hostname: string;
+}
+
+/** Outcome of `CheckoutLock.acquire()`. */
+export type CheckoutAcquireResult =
+  | {
+      acquired: true;
+      lockPath: string;
+      /** True when the caller already held it — re-acquire is idempotent. */
+      reentrant: boolean;
+    }
+  | {
+      acquired: false;
+      holder: CheckoutLockFile;
+      lockPath: string;
+      stale: false;
+      staleReason: null;
+    };
+
+/** Listing entry for the checkout lock, mirroring `LockListing`. */
+export interface CheckoutLockListing {
+  holder: CheckoutLockFile;
+  ageMs: number;
+  stale: boolean;
+  staleReason: StaleReason | null;
+  lockPath: string;
+}
+
 /** Outcome of `LockManager.acquire()`. */
 export type AcquireResult =
   | { acquired: true; lockPath: string }

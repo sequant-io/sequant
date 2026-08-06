@@ -17,6 +17,12 @@ INPUT_JSON=$(cat)
 # Parse JSON using jq (preferred) or fallback to grep
 if command -v jq &>/dev/null; then
     TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')
+    # Claude Code's hook envelope carries the session id (same field
+    # capture-tokens.sh reads). Preferred holder identity for the checkout
+    # lock (#901): a skill shell's PID dies right after acquire, the session
+    # id does not. `// empty` keeps this safe if the field is ever absent —
+    # the guard then falls back to SEQUANT_ISSUE.
+    SESSION_ID=$(echo "$INPUT_JSON" | jq -r '.session_id // empty')
     # For Bash tool, extract .command from tool_input; for others, stringify the whole object
     if [[ "$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
@@ -25,6 +31,7 @@ if command -v jq &>/dev/null; then
     fi
 else
     TOOL_NAME=$(echo "$INPUT_JSON" | grep -oE '"tool_name"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+    SESSION_ID=$(echo "$INPUT_JSON" | grep -oE '"session_id"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     # For Bash tool, extract command from tool_input; for others, extract the whole object
     if [[ "$TOOL_NAME" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | grep -oE '"command"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
@@ -455,6 +462,113 @@ if seg_match 'git reset.*(--hard|origin)'; then
             echo "  Or run directly in terminal (outside Claude Code) to bypass"
         } >&2
         exit 2
+    fi
+fi
+
+# --- Checkout-scoped lock enforcement (Issue #901) ---
+# The per-issue lock (#625) keys on issue number, so two sessions working
+# *different* issues take different lock files and never contend. But
+# `git checkout`, `switch`, `reset`, `rebase`, `merge` and `cherry-pick` are
+# global to a working tree — the contended resource is the checkout, not the
+# issue. `.sequant/locks/checkout.lock` represents the tree; this guard is what
+# makes it binding, because the racing actor is an agent's Bash command, not
+# sequant's TypeScript (which mutates git almost exclusively via `git -C
+# <worktree>`).
+#
+# STALENESS IS A DELIBERATELY WEAKER SUBSET, NOT A MIRROR. The authoritative
+# rules live in `classifyStaleness` (src/lib/locks/lock-manager.ts) and are
+# shared by CheckoutLock. Transcribing them into shell would drift (#871), so
+# this guard checks only the absolute age ceiling and FAILS OPEN past it. A
+# lock this guard lets through is still caught by the TypeScript path; a lock
+# it blocks on is always genuinely fresh. Weaker-but-honest beats a mirror.
+#
+# AC-5: orchestrator/MCP mode is a no-op here too, matching LockManager and
+# CheckoutLock — `sequant run` drives its own worktree isolation and must not
+# be blocked by a lock its own skills took.
+if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
+   && seg_match 'git (checkout|switch|reset|rebase|merge|cherry-pick)( |$)' \
+   && ! seg_match 'git +-C ' \
+   && ! seg_match 'git checkout ([^ ]+ )?-- '; then
+
+    # Only the MAIN checkout is protected. A linked worktree has `.git` as a
+    # file; the main checkout has it as a directory — one stat, no subprocess.
+    _CO_ROOT="${PARALLEL_MARKER_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "")}"
+    if [[ -n "$_CO_ROOT" && -d "$_CO_ROOT/.git" ]]; then
+        _CO_LOCK="$_CO_ROOT/.sequant/locks/checkout.lock"
+
+        if [[ -f "$_CO_LOCK" ]]; then
+            if command -v jq &>/dev/null; then
+                _CO_HOLDER_ISSUE=$(jq -r '.issue // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_SESSION=$(jq -r '.sessionId // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_PID=$(jq -r '.pid // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_HOST=$(jq -r '.hostname // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_STARTED=$(jq -r '.startedAt // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_CMD=$(jq -r '.command // empty' "$_CO_LOCK" 2>/dev/null)
+            else
+                _CO_HOLDER_ISSUE=$(grep -oE '"issue"[[:space:]]*:[[:space:]]*[0-9]+' "$_CO_LOCK" | head -1 | grep -oE '[0-9]+$')
+                _CO_HOLDER_SESSION=$(grep -oE '"sessionId"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_PID=$(grep -oE '"pid"[[:space:]]*:[[:space:]]*[0-9]+' "$_CO_LOCK" | head -1 | grep -oE '[0-9]+$')
+                _CO_HOLDER_HOST=$(grep -oE '"hostname"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_STARTED=$(grep -oE '"startedAt"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_CMD=$(grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+            fi
+
+            # Age ceiling — the one staleness rule mirrored here, because an
+            # abandoned holder must never wedge the tree permanently (AC-4).
+            # Honors SEQUANT_MAX_LOCK_AGE_MS exactly as the TypeScript does.
+            _CO_MAX_AGE_MS="${SEQUANT_MAX_LOCK_AGE_MS:-86400000}"
+            _CO_FRESH=true
+            if [[ -n "$_CO_HOLDER_STARTED" ]]; then
+                # `startedAt` is ISO-8601 **UTC**. BSD `date -j -f` parses in
+                # LOCAL time, so without TZ=UTC the age comes out shifted by the
+                # UTC offset — west of UTC that is *negative*, and a stale lock
+                # then reads as fresh forever, wedging the tree (the exact
+                # failure AC-4 forbids). TZ=UTC pins the BSD branch; Linux/CI
+                # falls through to GNU `date -u -d`, which honors the trailing Z.
+                _CO_STARTED_EPOCH=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "${_CO_HOLDER_STARTED%%.*}" +%s 2>/dev/null \
+                    || date -u -d "$_CO_HOLDER_STARTED" +%s 2>/dev/null || echo "")
+                if [[ -n "$_CO_STARTED_EPOCH" ]]; then
+                    _CO_AGE_MS=$(( ( $(date +%s) - _CO_STARTED_EPOCH ) * 1000 ))
+                    # Negative age = clock skew between hosts. Treat as fresh
+                    # (block) rather than stale: refusing is recoverable, and
+                    # silently ignoring a live holder is not.
+                    if [[ "$_CO_AGE_MS" -gt 0 && "$_CO_AGE_MS" -gt "$_CO_MAX_AGE_MS" ]]; then
+                        _CO_FRESH=false
+                    fi
+                fi
+            fi
+
+            # Is this session the holder? sessionId is the only identity that
+            # survives a skill shell exiting between acquire and this call, so
+            # it wins when both sides have one. Otherwise fall back to the
+            # issue this session is working on.
+            _CO_IS_HOLDER=false
+            if [[ -n "$_CO_HOLDER_SESSION" && -n "$SESSION_ID" ]]; then
+                [[ "$_CO_HOLDER_SESSION" == "$SESSION_ID" ]] && _CO_IS_HOLDER=true
+            elif [[ -n "${SEQUANT_ISSUE:-}" && -n "$_CO_HOLDER_ISSUE" ]]; then
+                [[ "${SEQUANT_ISSUE}" == "$_CO_HOLDER_ISSUE" ]] && _CO_IS_HOLDER=true
+            fi
+
+            if [[ "$_CO_FRESH" == "true" && "$_CO_IS_HOLDER" == "false" ]]; then
+                log_block "checkout-lock"
+                {
+                    echo "HOOK_BLOCKED: Checkout held by another session"
+                    echo ""
+                    echo "  The working tree is held by the session working #${_CO_HOLDER_ISSUE:-?}"
+                    echo "  (PID ${_CO_HOLDER_PID:-?} on ${_CO_HOLDER_HOST:-?}, started ${_CO_HOLDER_STARTED:-?})."
+                    echo "  Command: ${_CO_HOLDER_CMD:-?}"
+                    echo ""
+                    echo "  Branch-mutating git here would race with that session."
+                    echo ""
+                    echo "  To proceed:"
+                    echo "    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/"
+                    echo "      (create it with: ./scripts/new-feature.sh <your-issue>)"
+                    echo "    • Or target it explicitly: git -C <worktree> <command>"
+                    echo "    • If that session is gone: sequant locks checkout clear"
+                } >&2
+                exit 2
+            fi
+        fi
     fi
 fi
 

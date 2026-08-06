@@ -88,6 +88,7 @@ import {
   locksReleaseCommand,
   locksCheckCommand,
   locksCheckBatchCommand,
+  locksCheckoutCommand,
 } from "../src/commands/locks.js";
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
@@ -785,6 +786,29 @@ locksCmd
   )
   .option("--json", "Output as JSON instead of canonical text lines")
   .action(locksCheckBatchCommand);
+
+// Checkout-scoped lock (#901). The per-issue locks above give no mutual
+// exclusion on the shared working tree — two sessions on different issues take
+// different lock files, yet `git checkout`/`reset`/`rebase`/`merge` are global
+// to the tree. This lock represents the tree itself.
+locksCmd
+  .command("checkout <action>")
+  .description(
+    "Working-tree lock: acquire|release|check|clear (guards branch-mutating git in the main checkout)",
+  )
+  .option("--issue <issue>", "Issue this session is working on (acquire)")
+  .option("--command <command>", "Human-readable command label", "unknown")
+  .option(
+    "--session-id <id>",
+    "Claude Code session id; preferred holder identity for skill shells",
+  )
+  .option(
+    "--skip-pid-check",
+    "Mark the lock so stale recovery skips same-host PID checks (use from skill shells)",
+  )
+  .option("-f, --force", "Clear even a fresh holder (clear)")
+  .option("--json", "Output as JSON")
+  .action(locksCheckoutCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).

@@ -250,9 +250,13 @@ Before creating any files, check if they already exist:
 
 **If work already exists:** Skip to the appropriate phase (e.g., if implementation is done, go to Phase 3 or 4).
 
-### 0.3 Acquire Concurrency Lock (#625)
+### 0.3 Acquire Concurrency Locks (#625, #901)
 
-**Before invoking `/spec`**, claim the per-issue concurrency lock. This prevents a second session (another `/fullsolve`, an `npx sequant run`, or another `/fullsolve` in a different window) from racing on the same issue and producing zero-diff exec failures.
+**Before invoking `/spec`**, claim the per-issue concurrency lock.
+
+**What this lock covers — and what it does not (#901).** The per-issue lock is keyed on the *issue number*. It prevents a second session from working on **the same issue** — another `/fullsolve <same-issue>`, an `npx sequant run <same-issue>`, or the same issue in a different window — and producing zero-diff exec failures.
+
+It is **not** a general concurrency guarantee. Two sessions working *different* issues take different lock files and never contend, even when they share one working tree. `git checkout`, `switch`, `reset`, `rebase`, `merge` and `cherry-pick` are global to a checkout, so the per-issue lock says nothing about them. That contention is covered by the separate **checkout lock** below.
 
 ```bash
 # Acquire lock for this issue. --skip-pid-check is required: the shell that
@@ -267,11 +271,37 @@ if ! npx sequant locks acquire <issue-number> \
 fi
 ```
 
-**Release contract:** Phase 5.5 releases the lock on the happy path. On ANY halt/abort branch (spec failure, exec exhausted, qa loop exhausted with AC_NOT_MET, unrecoverable error, stagnation halt), you MUST run `npx sequant locks release <issue-number> || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new abort path, add a release call there too.
+**Checkout lock (#901).** Claim the working tree as well, so a session on a *different* issue cannot run branch-mutating git in the same checkout. `pre-tool.sh` enforces this: a foreign session's `git checkout`/`switch`/`reset`/`rebase`/`merge`/`cherry-pick` in the main checkout is refused with a message naming the holder and its issue.
+
+```bash
+# Claim the shared working tree. Skip when you will work entirely inside a
+# feature worktree (`git -C <worktree> ...` is never blocked).
+npx sequant locks checkout acquire \
+    --issue=<issue-number> \
+    --command="/fullsolve <issue-number>" \
+    --skip-pid-check || true
+```
+
+Release it alongside the per-issue lock: `npx sequant locks checkout release || true`. Stale recovery matches the per-issue lock (same-host dead PID, age ceiling, `SEQUANT_MAX_LOCK_AGE_MS`), so an abandoned holder cannot wedge the checkout permanently.
+
+```bash
+# Acquire lock for this issue. --skip-pid-check is required: the shell that
+# runs this command exits immediately, so the lock's PID is dead by the time
+# the next check runs. Stale recovery falls back to age-only (2h).
+if ! npx sequant locks acquire <issue-number> \
+    --command="/fullsolve <issue-number>" \
+    --skip-pid-check; then
+  echo "❌ Another session is working on #<issue-number>. Run 'npx sequant locks list' for details."
+  echo "   If you're sure the holder is dead, run: npx sequant locks clear <issue-number>"
+  exit 1
+fi
+```
+
+**Release contract:** Phase 5.5 releases both locks on the happy path. On ANY halt/abort branch (spec failure, exec exhausted, qa loop exhausted with AC_NOT_MET, unrecoverable error, stagnation halt), you MUST run `npx sequant locks release <issue-number> || true` and `npx sequant locks checkout release || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new abort path, add a release call there too.
 
 **Backstop:** If a release is somehow missed, stale recovery clears the lock after 6h on the same host (`SEQUANT_SKILL_LOCK_TTL_MS` overrides). The user can also force-clear via `npx sequant locks clear <issue-number>`.
 
-**Orchestrator/MCP mode:** When `SEQUANT_ORCHESTRATOR` is set, `locks acquire` and `locks release` are no-ops (exit 0, no file touched). Safe to call unconditionally.
+**Orchestrator/MCP mode:** When `SEQUANT_ORCHESTRATOR` is set, `locks acquire`, `locks release` and every `locks checkout` action are no-ops (exit 0, no file touched), and the `pre-tool.sh` checkout guard stands down. Safe to call unconditionally.
 
 ## Phase 1: Planning (SPEC)
 
@@ -319,6 +349,7 @@ If `/spec` fails:
 ```bash
 # Release before halting — see Phase 0.3 release contract.
 npx sequant locks release <issue-number> || true
+npx sequant locks checkout release || true
 ```
 
 ```markdown
@@ -393,6 +424,7 @@ while exec_iteration < MAX_EXEC_ITERATIONS:
 ```bash
 # Release before halting — see Phase 0.3 release contract.
 npx sequant locks release <issue-number> || true
+npx sequant locks checkout release || true
 ```
 
 ```markdown
@@ -699,12 +731,13 @@ npx sequant doctor
 
 If any command fails, fix immediately on main before continuing. This catches issues like ESM compatibility bugs that unit tests may miss.
 
-### 5.5 Release Concurrency Lock (#625)
+### 5.5 Release Concurrency Locks (#625, #901)
 
-After the PR is created (or earlier if the workflow exits gracefully), release the lock so other sessions can claim it:
+After the PR is created (or earlier if the workflow exits gracefully), release both locks so other sessions can claim them:
 
 ```bash
 npx sequant locks release <issue-number> || true
+npx sequant locks checkout release || true
 ```
 
 `|| true` is intentional — release is idempotent; the lock may already have been cleared (orchestrator mode, age-based recovery, or manual `locks clear`). The exit code is informational only.
@@ -807,10 +840,11 @@ Ready for human review and merge.
 
 ## Error Recovery
 
-**Concurrency lock cleanup (#625, applies to every abort path below):**
+**Concurrency lock cleanup (#625, #901, applies to every abort path below):**
 
 ```bash
 npx sequant locks release <issue-number> || true
+npx sequant locks checkout release || true
 ```
 
 Run this BEFORE printing the halt/exit message in any of the branches below. The release call is idempotent (no-op when nothing is held, no-op in orchestrator mode), so calling it unconditionally on every error path is safe.
