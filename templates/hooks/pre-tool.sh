@@ -23,6 +23,10 @@ if command -v jq &>/dev/null; then
     # id does not. `// empty` keeps this safe if the field is ever absent —
     # the guard then falls back to SEQUANT_ISSUE.
     SESSION_ID=$(echo "$INPUT_JSON" | jq -r '.session_id // empty')
+    # The shell cwd the tool will run in. Distinct from CLAUDE_PROJECT_DIR,
+    # which stays pinned to the main checkout even while the agent works in a
+    # worktree — see the checkout-lock guard (#901).
+    HOOK_CWD=$(echo "$INPUT_JSON" | jq -r '.cwd // empty')
     # For Bash tool, extract .command from tool_input; for others, stringify the whole object
     if [[ "$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
@@ -32,6 +36,7 @@ if command -v jq &>/dev/null; then
 else
     TOOL_NAME=$(echo "$INPUT_JSON" | grep -oE '"tool_name"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     SESSION_ID=$(echo "$INPUT_JSON" | grep -oE '"session_id"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+    HOOK_CWD=$(echo "$INPUT_JSON" | grep -oE '"cwd"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     # For Bash tool, extract command from tool_input; for others, extract the whole object
     if [[ "$TOOL_NAME" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | grep -oE '"command"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
@@ -490,9 +495,28 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
    && ! seg_match 'git +-C ' \
    && ! seg_match 'git checkout ([^ ]+ )?-- '; then
 
-    # Only the MAIN checkout is protected. A linked worktree has `.git` as a
-    # file; the main checkout has it as a directory — one stat, no subprocess.
-    _CO_ROOT="${PARALLEL_MARKER_PROJECT_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || echo "")}"
+    # Only the MAIN checkout is protected — a command run inside a worktree
+    # touches only that worktree's HEAD and must never be blocked.
+    #
+    # Resolve where the command will ACTUALLY run. This must NOT use
+    # CLAUDE_PROJECT_DIR / PARALLEL_MARKER_PROJECT_ROOT: those name the
+    # *project* directory, which stays pinned to the main checkout even while
+    # the agent's shell sits in a worktree. Keying off them blocked legitimate
+    # in-worktree work — the guard's worst failure mode, since the whole point
+    # of the lock is to push sessions *into* worktrees.
+    #
+    # `.cwd` is part of Claude Code's PreToolUse envelope (verified against a
+    # live payload alongside `session_id`), with $PWD as the fallback.
+    _CO_CWD="${HOOK_CWD:-$PWD}"
+    # Honor a leading `cd <dir>` the same way the commit guard below does.
+    if echo "$TOOL_INPUT" | grep -qE '^cd [^;&|]+'; then
+        _CO_CD=$(echo "$TOOL_INPUT" | grep -oE '^cd [^;&|]+' | head -1 | sed 's/^cd //' | sed 's/[[:space:]]*$//')
+        [[ -n "$_CO_CD" && -d "$_CO_CD" ]] && _CO_CWD="$_CO_CD"
+    fi
+
+    # A linked worktree's toplevel has `.git` as a FILE; the main checkout has
+    # it as a directory.
+    _CO_ROOT=$(git -C "$_CO_CWD" rev-parse --show-toplevel 2>/dev/null || echo "")
     if [[ -n "$_CO_ROOT" && -d "$_CO_ROOT/.git" ]]; then
         _CO_LOCK="$_CO_ROOT/.sequant/locks/checkout.lock"
 

@@ -33,11 +33,44 @@ const BLOCKED_ISSUE = 10;
 
 let checkout: string;
 
-/** A directory that looks like a MAIN checkout: `.git` is a directory. */
+/**
+ * Hermetic git: no user config, no signing, no hooks. Mirrors the repo's
+ * global-setup convention so a developer's `commit.gpgsign=true` cannot break
+ * these fixtures.
+ */
+function git(cwd: string, ...args: string[]): void {
+  const result = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.name=sequant-test",
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      ...args,
+    ],
+    { cwd, encoding: "utf-8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  }
+}
+
+/**
+ * A REAL main checkout — the guard resolves the command's working directory
+ * with `git rev-parse --show-toplevel`, so a hand-made `.git` directory would
+ * not exercise the real path.
+ */
 function makeMainCheckout(): string {
   const dir = mkdtempSync(join(tmpdir(), "sequant-checkout-"));
-  mkdirSync(join(dir, ".git"), { recursive: true });
+  git(dir, "init", "-q", "-b", "main", ".");
   mkdirSync(join(dir, ".sequant/locks"), { recursive: true });
+  writeFileSync(join(dir, "README.md"), "fixture\n");
+  git(dir, "add", "-A");
+  git(dir, "commit", "-qm", "init");
   return dir;
 }
 
@@ -65,6 +98,17 @@ interface RunOpts {
   command: string;
   sessionId?: string;
   projectDir?: string;
+  /**
+   * The shell cwd the command runs in — the `cwd` field of Claude Code's
+   * PreToolUse envelope. Defaults to the checkout under test.
+   *
+   * This is deliberately independent of `projectDir` (CLAUDE_PROJECT_DIR).
+   * In a real session the two DIVERGE: the project dir stays pinned to the
+   * main checkout while the agent's shell moves into a worktree. An earlier
+   * version of these tests set them together, which hid a guard that blocked
+   * legitimate in-worktree work.
+   */
+  cwd?: string;
   env?: Record<string, string>;
 }
 
@@ -72,6 +116,7 @@ function runHook(opts: RunOpts): { status: number; stderr: string } {
   const payload: Record<string, unknown> = {
     tool_name: "Bash",
     tool_input: { command: opts.command },
+    cwd: opts.cwd ?? checkout,
   };
   if (opts.sessionId) payload.session_id = opts.sessionId;
 
@@ -215,21 +260,66 @@ describe("the guard does not fire where it must not", () => {
     ).toBe(0);
   });
 
-  it("does not protect a LINKED worktree (.git is a file there)", () => {
-    const wt = mkdtempSync(join(tmpdir(), "sequant-linked-wt-"));
+  it("does not block a command running inside a REAL linked worktree", () => {
+    // The guard's worst failure mode. CLAUDE_PROJECT_DIR stays pinned to the
+    // main checkout while the agent's shell sits in a worktree, so a guard
+    // keyed on the project dir blocks exactly the work the lock is trying to
+    // push people toward. Regression test: project dir and cwd DIVERGE here,
+    // as they do in a real session.
+    writeCheckoutLock(checkout);
+    const wt = join(checkout, "..", `wt-${Date.now() % 100000}`);
     try {
-      writeFileSync(join(wt, ".git"), "gitdir: /elsewhere/.git/worktrees/x\n");
-      mkdirSync(join(wt, ".sequant/locks"), { recursive: true });
-      writeCheckoutLock(wt);
+      git(checkout, "worktree", "add", "-q", "-b", "feature/10-x", wt);
+
+      const { status } = runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        projectDir: checkout, // <- main checkout, as Claude Code sets it
+        cwd: wt, //              <- but the shell is in the worktree
+      });
+
+      expect(status).toBe(0);
+    } finally {
+      spawnSync("git", ["worktree", "remove", "--force", wt], {
+        cwd: checkout,
+      });
+      rmSync(wt, { recursive: true, force: true });
+    }
+  });
+
+  it("still blocks when the shell is in the main checkout", () => {
+    // The other half of the divergence: same project dir, cwd IS the main
+    // checkout, so the guard must fire. Without this, the fix above could be
+    // "always allow" and still pass.
+    writeCheckoutLock(checkout);
+
+    expect(
+      runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        projectDir: checkout,
+        cwd: checkout,
+      }).status,
+    ).toBe(2);
+  });
+
+  it("honors a leading `cd <worktree> &&` in the command", () => {
+    writeCheckoutLock(checkout);
+    const wt = join(checkout, "..", `wtcd-${Date.now() % 100000}`);
+    try {
+      git(checkout, "worktree", "add", "-q", "-b", "feature/11-x", wt);
 
       expect(
         runHook({
-          command: "git checkout main",
+          command: `cd ${wt} && git checkout main`,
           sessionId: OTHER_SESSION,
-          projectDir: wt,
+          cwd: checkout, // shell starts in main, but cds into the worktree
         }).status,
       ).toBe(0);
     } finally {
+      spawnSync("git", ["worktree", "remove", "--force", wt], {
+        cwd: checkout,
+      });
       rmSync(wt, { recursive: true, force: true });
     }
   });
