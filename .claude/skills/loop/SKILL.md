@@ -19,6 +19,7 @@ allowed-tools:
   - mcp__context7__*  # Library documentation - falls back to web search if unavailable
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
+  - Bash(npx sequant worktree:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
@@ -217,22 +218,64 @@ When the marker is absent this is a byte-identical pass-through, so unmarked QA 
 ### Step 4: Locate Feature Worktree
 
 **If orchestrated (SEQUANT_WORKTREE is set):**
-- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
-- Skip the lookup steps below
+
+<!-- BEGIN: worktree-existence-guard (#899) -->
+
+**Verify the path before you use it. Never `cd` into it unchecked.** The value
+can name a worktree that was never created, or one belonging to a *different
+repository* — `../worktrees/` is one flat namespace shared by every repo under
+the same parent, and issue numbers are per-repo. A bare `cd` fails silently,
+and this skill **writes**: unguarded, it applies fixes and commits them in the
+main checkout, on whatever branch happens to be there.
+
+```bash
+npx sequant worktree verify "$SEQUANT_WORKTREE" --issue <issue-number> || {
+  echo "❌ HALT: SEQUANT_WORKTREE is not a usable worktree of this repository."
+  exit 1
+}
+cd "$SEQUANT_WORKTREE"
+```
+
+`verify` exits non-zero with one of these named errors. **Every one of them is
+a halt** — report it and stop; never edit or commit from the current directory
+as a fallback:
+
+| Error | Meaning |
+|-------|---------|
+| `SEQUANT_WORKTREE_NOT_FOUND` | Path is empty, an unexpanded glob, or not an existing directory |
+| `SEQUANT_WORKTREE_FOREIGN` | Real directory, but not a worktree of *this* repository (another project's, or stale) |
+| `SEQUANT_WORKTREE_ISSUE_MISMATCH` | A worktree of this repo, but its branch belongs to a different issue |
+
+Once verify passes, skip the lookup steps below.
+
+<!-- END: worktree-existence-guard (#899) -->
 
 **If standalone:**
 
-Find the worktree for this issue:
+<!-- BEGIN: worktree-standalone-lookup (#899) -->
+
+Resolve the worktree through git, not the filesystem:
+
 ```bash
-git worktree list | grep -E "feature.*<issue-number>" || true
+WORKTREE="$(npx sequant worktree resolve <issue-number>)" || {
+  echo "❌ HALT: no worktree for #<issue-number> in this repository."
+  exit 1
+}
+cd "$WORKTREE"
 ```
 
-Or check:
-```bash
-ls ../worktrees/feature/<issue-number>-*/
-```
+`sequant worktree resolve` reads `git worktree list` in the current repository
+— which reports only *this* repo's worktrees — and selects on the **branch**
+git reports, not the directory name.
 
-Navigate to the worktree directory for making fixes.
+**Do not glob `../worktrees/feature/<issue-number>-*`, and do not grep
+`git worktree list` for the issue number.** The first matches across sibling
+repositories, which share that directory; the second matches the printed path,
+so it keys on the directory slug — and a slug can drift from its own branch
+after a rename. Because this skill commits, landing in the wrong tree is
+destructive rather than merely wrong.
+
+<!-- END: worktree-standalone-lookup (#899) -->
 
 ### Step 5: Fix Identified Issues
 
@@ -511,12 +554,14 @@ Warning: No specific issues found in log.
 Recommend running /qa <N> for fresh assessment.
 ```
 
-**If worktree not found:**
+**If worktree not found** (`sequant worktree resolve` exited non-zero):
 ```
-Error: Feature worktree not found for issue #<N>
-Expected: ../worktrees/feature/<N>-*/
+Error: no worktree in this repository has a branch for issue #<N>
 Please run /exec <N> first to create the worktree.
 ```
+Report the resolver's own message (`WORKTREE_NOT_FOUND` or
+`WORKTREE_AMBIGUOUS`) rather than naming a filesystem path — the worktree is
+identified by its branch, not by a directory under `../worktrees/`.
 
 ## Configuration
 
