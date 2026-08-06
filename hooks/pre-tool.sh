@@ -513,29 +513,65 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
                 _CO_HOLDER_CMD=$(grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
             fi
 
-            # Age ceiling — the one staleness rule mirrored here, because an
-            # abandoned holder must never wedge the tree permanently (AC-4).
-            # Honors SEQUANT_MAX_LOCK_AGE_MS exactly as the TypeScript does.
-            _CO_MAX_AGE_MS="${SEQUANT_MAX_LOCK_AGE_MS:-86400000}"
+            # Staleness. These branches mirror `classifyStaleness`
+            # (src/lib/locks/lock-manager.ts) in the same order, because AC-4
+            # requires the checkout lock's stale recovery to match the per-issue
+            # lock's — same-host dead PID, age ceiling, and the env overrides.
+            # Implementing only a subset here would let a *dead* holder block
+            # the tree for up to 24h, which is the wedge AC-4 forbids.
+            #
+            # The three rules are plain comparisons plus one `kill -0`, so this
+            # is a small enough surface to keep honest; the "hook/TypeScript
+            # staleness parity" cases in checkout-lock.integration.test.ts pin
+            # both sides to the same verdict so they cannot drift silently
+            # (#871 — the repo's drift guard compares literal strings only and
+            # would not see a semantic divergence here).
+            _CO_MAX_AGE_MS="${SEQUANT_MAX_LOCK_AGE_MS:-86400000}"     # 24h ceiling
+            _CO_SKILL_TTL_MS="${SEQUANT_SKILL_LOCK_TTL_MS:-21600000}" # 6h skill-shell
+            _CO_STALE_AGE_MS=7200000                                  # 2h cross-host
             _CO_FRESH=true
+
+            # `startedAt` is ISO-8601 **UTC**. BSD `date -j -f` parses in LOCAL
+            # time, so without TZ=UTC the age comes out shifted by the UTC
+            # offset — west of UTC that is *negative*, and a stale lock then
+            # reads as fresh forever, wedging the tree. TZ=UTC pins the BSD
+            # branch; Linux/CI falls through to GNU `date -u -d`, which honors
+            # the trailing Z.
+            _CO_AGE_MS=""
             if [[ -n "$_CO_HOLDER_STARTED" ]]; then
-                # `startedAt` is ISO-8601 **UTC**. BSD `date -j -f` parses in
-                # LOCAL time, so without TZ=UTC the age comes out shifted by the
-                # UTC offset — west of UTC that is *negative*, and a stale lock
-                # then reads as fresh forever, wedging the tree (the exact
-                # failure AC-4 forbids). TZ=UTC pins the BSD branch; Linux/CI
-                # falls through to GNU `date -u -d`, which honors the trailing Z.
                 _CO_STARTED_EPOCH=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "${_CO_HOLDER_STARTED%%.*}" +%s 2>/dev/null \
                     || date -u -d "$_CO_HOLDER_STARTED" +%s 2>/dev/null || echo "")
                 if [[ -n "$_CO_STARTED_EPOCH" ]]; then
                     _CO_AGE_MS=$(( ( $(date +%s) - _CO_STARTED_EPOCH ) * 1000 ))
-                    # Negative age = clock skew between hosts. Treat as fresh
-                    # (block) rather than stale: refusing is recoverable, and
-                    # silently ignoring a live holder is not.
-                    if [[ "$_CO_AGE_MS" -gt 0 && "$_CO_AGE_MS" -gt "$_CO_MAX_AGE_MS" ]]; then
-                        _CO_FRESH=false
-                    fi
+                    # Negative age = clock skew between hosts. Treat as unknown
+                    # rather than stale: refusing is recoverable, silently
+                    # ignoring a live holder is not.
+                    [[ "$_CO_AGE_MS" -lt 0 ]] && _CO_AGE_MS=""
                 fi
+            fi
+
+            _CO_SKIP_PID=false
+            grep -q '"skipPidCheck"[[:space:]]*:[[:space:]]*true' "$_CO_LOCK" 2>/dev/null && _CO_SKIP_PID=true
+
+            # 0. Absolute ceiling, checked first and unconditionally (#856):
+            #    past it a PID is no longer trustworthy identity.
+            if [[ -n "$_CO_AGE_MS" && "$_CO_AGE_MS" -gt "$_CO_MAX_AGE_MS" ]]; then
+                _CO_FRESH=false
+            # 1. Same-host PID check is authoritative — unless the holder asked
+            #    us to skip it (a skill shell whose PID dies after acquire).
+            elif [[ "$_CO_HOLDER_HOST" == "$(hostname)" && "$_CO_SKIP_PID" == "false" ]]; then
+                # `kill -0` is a bash builtin: no subprocess on the hot path.
+                if [[ -n "$_CO_HOLDER_PID" ]] && ! kill -0 "$_CO_HOLDER_PID" 2>/dev/null; then
+                    _CO_FRESH=false
+                fi
+            # 2. Cross-host or skipPidCheck: the PID is meaningless, use age.
+            elif [[ -n "$_CO_AGE_MS" ]]; then
+                if [[ "$_CO_SKIP_PID" == "true" ]]; then
+                    _CO_TTL_MS="$_CO_SKILL_TTL_MS"
+                else
+                    _CO_TTL_MS="$_CO_STALE_AGE_MS"
+                fi
+                [[ "$_CO_AGE_MS" -gt "$_CO_TTL_MS" ]] && _CO_FRESH=false
             fi
 
             # Is this session the holder? sessionId is the only identity that

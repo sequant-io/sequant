@@ -289,6 +289,135 @@ describe("AC-4: stale recovery — an abandoned holder cannot wedge the checkout
   });
 });
 
+describe("AC-4: hook/TypeScript staleness parity", () => {
+  // The hook re-implements `classifyStaleness` in shell. #871 is the standing
+  // lesson that a shell transcription of TS logic drifts, and the repo's drift
+  // guard only compares literal strings — it cannot see a semantic divergence.
+  // So pin the two to the same verdict across the branch matrix instead.
+  //
+  // `stale === true` means recovery should kick in: the TypeScript re-acquires,
+  // and the hook stands down (exit 0). `stale === false` means both hold the
+  // tree: the TypeScript refuses, and the hook blocks (exit 2).
+  const HOUR = 60 * 60_000;
+  const cases: Array<{
+    name: string;
+    ageMs: number;
+    skipPidCheck: boolean;
+    pidAlive: boolean;
+    sameHost: boolean;
+    stale: boolean;
+  }> = [
+    // Rule 0 — absolute ceiling wins over a live PID (#856).
+    {
+      name: "26h old, live PID, same host",
+      ageMs: 26 * HOUR,
+      skipPidCheck: false,
+      pidAlive: true,
+      sameHost: true,
+      stale: true,
+    },
+    // Rule 1 — same-host PID check is authoritative.
+    {
+      name: "1h old, dead PID, same host",
+      ageMs: HOUR,
+      skipPidCheck: false,
+      pidAlive: false,
+      sameHost: true,
+      stale: true,
+    },
+    {
+      name: "1h old, live PID, same host",
+      ageMs: HOUR,
+      skipPidCheck: false,
+      pidAlive: true,
+      sameHost: true,
+      stale: false,
+    },
+    // Rule 2 — skipPidCheck falls back to the 6h skill TTL.
+    {
+      name: "1h old, skipPidCheck",
+      ageMs: HOUR,
+      skipPidCheck: true,
+      pidAlive: false,
+      sameHost: true,
+      stale: false,
+    },
+    {
+      name: "7h old, skipPidCheck",
+      ageMs: 7 * HOUR,
+      skipPidCheck: true,
+      pidAlive: false,
+      sameHost: true,
+      stale: true,
+    },
+    // Rule 2 — cross-host uses the stricter 2h TTL.
+    {
+      name: "1h old, cross-host",
+      ageMs: HOUR,
+      skipPidCheck: false,
+      pidAlive: true,
+      sameHost: false,
+      stale: false,
+    },
+    {
+      name: "3h old, cross-host",
+      ageMs: 3 * HOUR,
+      skipPidCheck: false,
+      pidAlive: true,
+      sameHost: false,
+      stale: true,
+    },
+  ];
+
+  it.each(cases)(
+    "$name -> stale=$stale in BOTH the hook and classifyStaleness",
+    async ({ ageMs, skipPidCheck, pidAlive, sameHost, stale }) => {
+      // A PID that is genuinely alive (this process) or genuinely dead.
+      const pid = pidAlive ? process.pid : 2_147_483_600;
+      const host = sameHost ? hostname() : "some-other-host";
+      const startedAt = new Date(Date.now() - ageMs).toISOString();
+
+      // --- hook verdict -------------------------------------------------
+      writeCheckoutLock(checkout, {
+        pid,
+        hostname: host,
+        startedAt,
+        sessionId: HOLDER_SESSION,
+        ...(skipPidCheck
+          ? { skipPidCheck: true }
+          : { skipPidCheck: undefined }),
+      });
+      const hookStale =
+        runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+          .status === 0;
+
+      // --- TypeScript verdict -------------------------------------------
+      const { classifyStaleness } = await import("./lock-manager.js");
+      const tsStale =
+        classifyStaleness({
+          holder: {
+            pid,
+            hostname: host,
+            startedAt,
+            command: "x",
+            ...(skipPidCheck ? { skipPidCheck: true } : {}),
+          },
+          myHostname: hostname(),
+          now: Date.now(),
+          staleAgeMs: 2 * HOUR,
+          skillLockTtlMs: 6 * HOUR,
+          maxLockAgeMs: 24 * HOUR,
+          isPidAlive: () => pidAlive,
+        }) !== null;
+
+      expect(tsStale, "classifyStaleness disagrees with the expectation").toBe(
+        stale,
+      );
+      expect(hookStale, "hook disagrees with classifyStaleness").toBe(tsStale);
+    },
+  );
+});
+
 describe("AC-5: orchestrator/MCP mode stands down", () => {
   it("does not block when SEQUANT_ORCHESTRATOR is set", () => {
     writeCheckoutLock(checkout);
