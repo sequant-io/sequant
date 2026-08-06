@@ -981,6 +981,14 @@ describe("LockManager — RunOrchestrator lockedResults flow (AC-18)", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  // This file lives in the `unit` project, which deliberately keeps vitest's
+  // 5s default because "a slow test is a real signal" there (vitest.config.ts).
+  // The signal here is genuine: the lazy import below pulls in the whole
+  // workflow package, whose transform cost lands right on that 5s line — it
+  // was measured failing at 5.06s and passing at 1.38s on the *same* commit,
+  // purely with machine load. That is a cold-import cost, not a behavioral
+  // slowdown, so the fix is a local override (the escape hatch the config
+  // documents) rather than widening the project default or splitting the file.
   it("buildLockedResult produces the IssueResult shape that flows into the summary", async () => {
     // Imported lazily so test failures in lock-manager don't masquerade as
     // workflow-package failures during file collection.
@@ -1004,7 +1012,7 @@ describe("LockManager — RunOrchestrator lockedResults flow (AC-18)", () => {
         command: "npx sequant run 100",
       },
     });
-  });
+  }, 30_000);
 
   it("batch with a pre-existing foreign lock skips that issue and proceeds with others", async () => {
     // Pre-write a fresh foreign lock for issue 100 — simulates another

@@ -17,6 +17,16 @@ INPUT_JSON=$(cat)
 # Parse JSON using jq (preferred) or fallback to grep
 if command -v jq &>/dev/null; then
     TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')
+    # Claude Code's hook envelope carries the session id (same field
+    # capture-tokens.sh reads). Preferred holder identity for the checkout
+    # lock (#901): a skill shell's PID dies right after acquire, the session
+    # id does not. `// empty` keeps this safe if the field is ever absent —
+    # the guard then falls back to SEQUANT_ISSUE.
+    SESSION_ID=$(echo "$INPUT_JSON" | jq -r '.session_id // empty')
+    # The shell cwd the tool will run in. Distinct from CLAUDE_PROJECT_DIR,
+    # which stays pinned to the main checkout even while the agent works in a
+    # worktree — see the checkout-lock guard (#901).
+    HOOK_CWD=$(echo "$INPUT_JSON" | jq -r '.cwd // empty')
     # For Bash tool, extract .command from tool_input; for others, stringify the whole object
     if [[ "$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
@@ -25,6 +35,8 @@ if command -v jq &>/dev/null; then
     fi
 else
     TOOL_NAME=$(echo "$INPUT_JSON" | grep -oE '"tool_name"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+    SESSION_ID=$(echo "$INPUT_JSON" | grep -oE '"session_id"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+    HOOK_CWD=$(echo "$INPUT_JSON" | grep -oE '"cwd"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     # For Bash tool, extract command from tool_input; for others, extract the whole object
     if [[ "$TOOL_NAME" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | grep -oE '"command"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
@@ -455,6 +467,168 @@ if seg_match 'git reset.*(--hard|origin)'; then
             echo "  Or run directly in terminal (outside Claude Code) to bypass"
         } >&2
         exit 2
+    fi
+fi
+
+# --- Checkout-scoped lock enforcement (Issue #901) ---
+# The per-issue lock (#625) keys on issue number, so two sessions working
+# *different* issues take different lock files and never contend. But
+# `git checkout`, `switch`, `reset`, `rebase`, `merge` and `cherry-pick` are
+# global to a working tree — the contended resource is the checkout, not the
+# issue. `.sequant/locks/checkout.lock` represents the tree; this guard is what
+# makes it binding, because the racing actor is an agent's Bash command, not
+# sequant's TypeScript (which mutates git almost exclusively via `git -C
+# <worktree>`).
+#
+# STALENESS IS A DELIBERATELY WEAKER SUBSET, NOT A MIRROR. The authoritative
+# rules live in `classifyStaleness` (src/lib/locks/lock-manager.ts) and are
+# shared by CheckoutLock. Transcribing them into shell would drift (#871), so
+# this guard checks only the absolute age ceiling and FAILS OPEN past it. A
+# lock this guard lets through is still caught by the TypeScript path; a lock
+# it blocks on is always genuinely fresh. Weaker-but-honest beats a mirror.
+#
+# AC-5: orchestrator/MCP mode is a no-op here too, matching LockManager and
+# CheckoutLock — `sequant run` drives its own worktree isolation and must not
+# be blocked by a lock its own skills took.
+if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
+   && seg_match 'git (checkout|switch|reset|rebase|merge|cherry-pick)( |$)' \
+   && ! seg_match 'git +-C ' \
+   && ! seg_match 'git checkout ([^ ]+ )?-- '; then
+
+    # Only the MAIN checkout is protected — a command run inside a worktree
+    # touches only that worktree's HEAD and must never be blocked.
+    #
+    # Resolve where the command will ACTUALLY run. This must NOT use
+    # CLAUDE_PROJECT_DIR / PARALLEL_MARKER_PROJECT_ROOT: those name the
+    # *project* directory, which stays pinned to the main checkout even while
+    # the agent's shell sits in a worktree. Keying off them blocked legitimate
+    # in-worktree work — the guard's worst failure mode, since the whole point
+    # of the lock is to push sessions *into* worktrees.
+    #
+    # `.cwd` is part of Claude Code's PreToolUse envelope (verified against a
+    # live payload alongside `session_id`), with $PWD as the fallback.
+    _CO_CWD="${HOOK_CWD:-$PWD}"
+    # Honor a leading `cd <dir>` the same way the commit guard below does.
+    if echo "$TOOL_INPUT" | grep -qE '^cd [^;&|]+'; then
+        _CO_CD=$(echo "$TOOL_INPUT" | grep -oE '^cd [^;&|]+' | head -1 | sed 's/^cd //' | sed 's/[[:space:]]*$//')
+        [[ -n "$_CO_CD" && -d "$_CO_CD" ]] && _CO_CWD="$_CO_CD"
+    fi
+
+    # A linked worktree's toplevel has `.git` as a FILE; the main checkout has
+    # it as a directory.
+    _CO_ROOT=$(git -C "$_CO_CWD" rev-parse --show-toplevel 2>/dev/null || echo "")
+    if [[ -n "$_CO_ROOT" && -d "$_CO_ROOT/.git" ]]; then
+        _CO_LOCK="$_CO_ROOT/.sequant/locks/checkout.lock"
+
+        if [[ -f "$_CO_LOCK" ]]; then
+            if command -v jq &>/dev/null; then
+                _CO_HOLDER_ISSUE=$(jq -r '.issue // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_SESSION=$(jq -r '.sessionId // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_PID=$(jq -r '.pid // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_HOST=$(jq -r '.hostname // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_STARTED=$(jq -r '.startedAt // empty' "$_CO_LOCK" 2>/dev/null)
+                _CO_HOLDER_CMD=$(jq -r '.command // empty' "$_CO_LOCK" 2>/dev/null)
+            else
+                _CO_HOLDER_ISSUE=$(grep -oE '"issue"[[:space:]]*:[[:space:]]*[0-9]+' "$_CO_LOCK" | head -1 | grep -oE '[0-9]+$')
+                _CO_HOLDER_SESSION=$(grep -oE '"sessionId"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_PID=$(grep -oE '"pid"[[:space:]]*:[[:space:]]*[0-9]+' "$_CO_LOCK" | head -1 | grep -oE '[0-9]+$')
+                _CO_HOLDER_HOST=$(grep -oE '"hostname"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_STARTED=$(grep -oE '"startedAt"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+                _CO_HOLDER_CMD=$(grep -oE '"command"[[:space:]]*:[[:space:]]*"[^"]*"' "$_CO_LOCK" | head -1 | cut -d'"' -f4)
+            fi
+
+            # Staleness. These branches mirror `classifyStaleness`
+            # (src/lib/locks/lock-manager.ts) in the same order, because AC-4
+            # requires the checkout lock's stale recovery to match the per-issue
+            # lock's — same-host dead PID, age ceiling, and the env overrides.
+            # Implementing only a subset here would let a *dead* holder block
+            # the tree for up to 24h, which is the wedge AC-4 forbids.
+            #
+            # The three rules are plain comparisons plus one `kill -0`, so this
+            # is a small enough surface to keep honest; the "hook/TypeScript
+            # staleness parity" cases in checkout-lock.integration.test.ts pin
+            # both sides to the same verdict so they cannot drift silently
+            # (#871 — the repo's drift guard compares literal strings only and
+            # would not see a semantic divergence here).
+            _CO_MAX_AGE_MS="${SEQUANT_MAX_LOCK_AGE_MS:-86400000}"     # 24h ceiling
+            _CO_SKILL_TTL_MS="${SEQUANT_SKILL_LOCK_TTL_MS:-21600000}" # 6h skill-shell
+            _CO_STALE_AGE_MS=7200000                                  # 2h cross-host
+            _CO_FRESH=true
+
+            # `startedAt` is ISO-8601 **UTC**. BSD `date -j -f` parses in LOCAL
+            # time, so without TZ=UTC the age comes out shifted by the UTC
+            # offset — west of UTC that is *negative*, and a stale lock then
+            # reads as fresh forever, wedging the tree. TZ=UTC pins the BSD
+            # branch; Linux/CI falls through to GNU `date -u -d`, which honors
+            # the trailing Z.
+            _CO_AGE_MS=""
+            if [[ -n "$_CO_HOLDER_STARTED" ]]; then
+                _CO_STARTED_EPOCH=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%S" "${_CO_HOLDER_STARTED%%.*}" +%s 2>/dev/null \
+                    || date -u -d "$_CO_HOLDER_STARTED" +%s 2>/dev/null || echo "")
+                if [[ -n "$_CO_STARTED_EPOCH" ]]; then
+                    _CO_AGE_MS=$(( ( $(date +%s) - _CO_STARTED_EPOCH ) * 1000 ))
+                    # Negative age = clock skew between hosts. Treat as unknown
+                    # rather than stale: refusing is recoverable, silently
+                    # ignoring a live holder is not.
+                    [[ "$_CO_AGE_MS" -lt 0 ]] && _CO_AGE_MS=""
+                fi
+            fi
+
+            _CO_SKIP_PID=false
+            grep -q '"skipPidCheck"[[:space:]]*:[[:space:]]*true' "$_CO_LOCK" 2>/dev/null && _CO_SKIP_PID=true
+
+            # 0. Absolute ceiling, checked first and unconditionally (#856):
+            #    past it a PID is no longer trustworthy identity.
+            if [[ -n "$_CO_AGE_MS" && "$_CO_AGE_MS" -gt "$_CO_MAX_AGE_MS" ]]; then
+                _CO_FRESH=false
+            # 1. Same-host PID check is authoritative — unless the holder asked
+            #    us to skip it (a skill shell whose PID dies after acquire).
+            elif [[ "$_CO_HOLDER_HOST" == "$(hostname)" && "$_CO_SKIP_PID" == "false" ]]; then
+                # `kill -0` is a bash builtin: no subprocess on the hot path.
+                if [[ -n "$_CO_HOLDER_PID" ]] && ! kill -0 "$_CO_HOLDER_PID" 2>/dev/null; then
+                    _CO_FRESH=false
+                fi
+            # 2. Cross-host or skipPidCheck: the PID is meaningless, use age.
+            elif [[ -n "$_CO_AGE_MS" ]]; then
+                if [[ "$_CO_SKIP_PID" == "true" ]]; then
+                    _CO_TTL_MS="$_CO_SKILL_TTL_MS"
+                else
+                    _CO_TTL_MS="$_CO_STALE_AGE_MS"
+                fi
+                [[ "$_CO_AGE_MS" -gt "$_CO_TTL_MS" ]] && _CO_FRESH=false
+            fi
+
+            # Is this session the holder? sessionId is the only identity that
+            # survives a skill shell exiting between acquire and this call, so
+            # it wins when both sides have one. Otherwise fall back to the
+            # issue this session is working on.
+            _CO_IS_HOLDER=false
+            if [[ -n "$_CO_HOLDER_SESSION" && -n "$SESSION_ID" ]]; then
+                [[ "$_CO_HOLDER_SESSION" == "$SESSION_ID" ]] && _CO_IS_HOLDER=true
+            elif [[ -n "${SEQUANT_ISSUE:-}" && -n "$_CO_HOLDER_ISSUE" ]]; then
+                [[ "${SEQUANT_ISSUE}" == "$_CO_HOLDER_ISSUE" ]] && _CO_IS_HOLDER=true
+            fi
+
+            if [[ "$_CO_FRESH" == "true" && "$_CO_IS_HOLDER" == "false" ]]; then
+                log_block "checkout-lock"
+                {
+                    echo "HOOK_BLOCKED: Checkout held by another session"
+                    echo ""
+                    echo "  The working tree is held by the session working #${_CO_HOLDER_ISSUE:-?}"
+                    echo "  (PID ${_CO_HOLDER_PID:-?} on ${_CO_HOLDER_HOST:-?}, started ${_CO_HOLDER_STARTED:-?})."
+                    echo "  Command: ${_CO_HOLDER_CMD:-?}"
+                    echo ""
+                    echo "  Branch-mutating git here would race with that session."
+                    echo ""
+                    echo "  To proceed:"
+                    echo "    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/"
+                    echo "      (create it with: ./scripts/new-feature.sh <your-issue>)"
+                    echo "    • Or target it explicitly: git -C <worktree> <command>"
+                    echo "    • If that session is gone: sequant locks checkout clear"
+                } >&2
+                exit 2
+            fi
+        fi
     fi
 fi
 
