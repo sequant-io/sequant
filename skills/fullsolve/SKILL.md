@@ -77,12 +77,17 @@ RIGHT: "Spec complete. Proceeding to exec..." [invokes /exec immediately]
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  ┌─────────┐                                                │
-│  │  SPEC   │ Plan implementation, extract AC                │
+│  │  SPEC   │ Plan implementation, extract AC (main repo)    │
 │  └────┬────┘                                                │
 │       │                                                     │
 │       ▼                                                     │
 │  ┌─────────┐                                                │
-│  │  EXEC   │ Implement in feature worktree                  │
+│  │WORKTREE │ Create it here; export the resolved path       │
+│  └────┬────┘                                                │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────┐                                                │
+│  │  EXEC   │ Verify the path, then implement inside it      │
 │  └────┬────┘                                                │
 │       │                                                     │
 │       ▼                                                     │
@@ -166,7 +171,7 @@ This skill acts as an **orchestrator** and sets environment variables for child 
 
 **Child skills detect orchestration via `SEQUANT_ORCHESTRATOR` and adjust behavior:**
 - `/spec`: Runs normally (first phase, no prior context)
-- `/exec`: Skips worktree creation, uses provided path
+- `/exec`: Skips worktree creation, but still verifies the provided path before using it
 - `/test`: Skips issue fetch, trusts orchestrator context
 - `/qa`: Skips pre-flight sync, defers GitHub updates
 - `/loop`: Uses provided worktree, defers GitHub updates
@@ -320,20 +325,20 @@ The `/spec` skill will:
 - Extract acceptance criteria (AC-1, AC-2, etc.)
 - Create implementation plan (3-7 steps)
 - Post plan comment to the issue
-- Create feature worktree
+
+`/spec` plans in the main repository and does **not** create a worktree — that
+is this skill's job, in Phase 1.5 below.
 
 ### 1.2 Capture Spec Output
 
 After `/spec` completes, extract and store:
 - **AC Checklist:** List of acceptance criteria for tracking
-- **Worktree Path:** Location for subsequent phases
 - **Recommended Phases:** Whether `/test` is needed (UI features)
 
 ```markdown
 ## Spec Output Captured
 
 **Issue:** #<N>
-**Worktree:** ../worktrees/feature/<issue-number>-*/
 **AC Count:** <N> items
 **Needs Testing:** Yes/No (based on labels)
 ```
@@ -364,7 +369,55 @@ Workflow halted. Fix the issue and re-run `/fullsolve <issue-number>`.
 **State after Phase 1:**
 - AC checklist defined
 - Implementation plan created (and posted to GitHub)
-- Feature worktree ready
+- Still in the main repository — no worktree exists yet
+
+**→ IMMEDIATELY proceed to Phase 1.5 (do not wait for user input)**
+
+## Phase 1.5: Create the Feature Worktree
+
+<!-- BEGIN: worktree-creation (#899) -->
+
+**This skill creates the worktree. Nothing upstream does it.** Every phase from
+here on runs inside it, and `SEQUANT_WORKTREE` is what tells the child skills
+where "here" is — so it must hold a **resolved absolute path**, never a glob.
+
+```bash
+# 1. Create it. Idempotent: exits 0 with "Worktree already exists" on re-entry
+#    (resumed session, retried phase), so this is safe to run unconditionally.
+./scripts/new-feature.sh <issue-number>
+
+# 2. Resolve the real path. `sequant worktree resolve` reads
+#    `git worktree list` in THIS repository and selects on the branch, so it
+#    can never return a sibling project's worktree — `../worktrees/` is one
+#    flat namespace shared by every repo under the same parent.
+SEQUANT_WORKTREE="$(npx sequant worktree resolve <issue-number>)" || {
+  echo "❌ Could not resolve a worktree for #<issue-number> after creating one."
+  npx sequant locks release <issue-number> || true
+  npx sequant locks checkout release || true
+  exit 1
+}
+export SEQUANT_WORKTREE
+echo "Worktree: $SEQUANT_WORKTREE"
+```
+
+**Never substitute a glob for this step.** `../worktrees/feature/<issue>-*/`
+is not a path: unquoted it may not expand at all, and where it does expand it
+matches on the directory slug, which is shared across repositories and can
+drift from its own branch after a rename.
+
+**If `new-feature.sh` fails** (dirty tree, branch conflict), release the lock
+and halt — do not proceed into Phase 2 in the main checkout:
+
+```bash
+npx sequant locks release <issue-number> || true
+npx sequant locks checkout release || true
+```
+
+<!-- END: worktree-creation (#899) -->
+
+**State after Phase 1.5:**
+- Feature worktree created and verified to belong to this repository
+- `SEQUANT_WORKTREE` exported as a resolved absolute path
 
 **→ IMMEDIATELY proceed to Phase 2 (do not wait for user input)**
 
@@ -394,12 +447,13 @@ Set environment variables before invoking `/exec` so it can optimize its behavio
 export SEQUANT_ORCHESTRATOR=fullsolve
 export SEQUANT_PHASE=exec
 export SEQUANT_ISSUE=<issue-number>
-export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+# Absolute path resolved in Phase 1.5 — never a glob.
+export SEQUANT_WORKTREE="$SEQUANT_WORKTREE"
 ```
 
 When `/exec` detects `SEQUANT_ORCHESTRATOR`, it:
-- Skips worktree creation (already done by `/spec`)
-- Uses the provided worktree path
+- Skips worktree creation (already done in Phase 1.5)
+- Verifies the provided path with `npx sequant worktree verify` before using it
 - Defers GitHub comment updates to orchestrator
 
 ### 2.3 Handle Exec Failures
@@ -497,7 +551,8 @@ The `/test` skill will:
 export SEQUANT_ORCHESTRATOR=fullsolve
 export SEQUANT_PHASE=test
 export SEQUANT_ISSUE=<issue-number>
-export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+# Absolute path resolved in Phase 1.5 — never a glob.
+export SEQUANT_WORKTREE="$SEQUANT_WORKTREE"
 ```
 
 When `/test` detects `SEQUANT_ORCHESTRATOR`, it:
@@ -566,7 +621,8 @@ The `/qa` skill will:
 export SEQUANT_ORCHESTRATOR=fullsolve
 export SEQUANT_PHASE=qa
 export SEQUANT_ISSUE=<issue-number>
-export SEQUANT_WORKTREE=../worktrees/feature/<issue-number>-*/
+# Absolute path resolved in Phase 1.5 — never a glob.
+export SEQUANT_WORKTREE="$SEQUANT_WORKTREE"
 ```
 
 When `/qa` detects `SEQUANT_ORCHESTRATOR`, it:
@@ -964,7 +1020,8 @@ As an orchestrator, `/fullsolve` must:
    export SEQUANT_ORCHESTRATOR=fullsolve
    export SEQUANT_PHASE=<current-phase>
    export SEQUANT_ISSUE=<issue-number>
-   export SEQUANT_WORKTREE=<worktree-path>
+   # Resolved in Phase 1.5 via `sequant worktree resolve` — absolute, never a glob.
+   export SEQUANT_WORKTREE="$SEQUANT_WORKTREE"
    ```
 
 2. **State tracking** is handled automatically by the orchestrator runtime when `SEQUANT_ORCHESTRATOR` is set. Child skills defer state management to the orchestrator to avoid duplicate updates.

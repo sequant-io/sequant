@@ -6,6 +6,7 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
+  - Bash(npx sequant worktree:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
@@ -362,15 +363,64 @@ Include in QA output when branch is stale:
 **QA Phase:** Review code in the feature worktree.
 
 **If orchestrated (SEQUANT_WORKTREE is set):**
-- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
-- Skip step 1 below (worktree location provided by orchestrator)
+
+<!-- BEGIN: worktree-existence-guard (#899) -->
+
+**Verify the path before you use it. Never `cd` into it unchecked.** The value
+can name a worktree that was never created, or one belonging to a *different
+repository* — `../worktrees/` is one flat namespace shared by every repo under
+the same parent, and issue numbers are per-repo. A bare `cd` fails silently and
+leaves you reviewing the main checkout while reporting on the feature branch.
+
+```bash
+npx sequant worktree verify "$SEQUANT_WORKTREE" --issue <issue-number> || {
+  echo "❌ HALT: SEQUANT_WORKTREE is not a usable worktree of this repository."
+  exit 1
+}
+cd "$SEQUANT_WORKTREE"
+```
+
+`verify` exits non-zero with one of these named errors. **Every one of them is
+a halt** — report it and stop; do not fall back to reviewing the current
+directory, and do not emit a verdict for a tree you did not actually read:
+
+| Error | Meaning |
+|-------|---------|
+| `SEQUANT_WORKTREE_NOT_FOUND` | Path is empty, an unexpanded glob, or not an existing directory |
+| `SEQUANT_WORKTREE_FOREIGN` | Real directory, but not a worktree of *this* repository (another project's, or stale) |
+| `SEQUANT_WORKTREE_ISSUE_MISMATCH` | A worktree of this repo, but its branch belongs to a different issue |
+
+Once verify passes, skip step 1 below (worktree location provided by orchestrator).
+
+<!-- END: worktree-existence-guard (#899) -->
 
 **If standalone:**
 
+<!-- BEGIN: worktree-standalone-lookup (#899) -->
+
 1. **Locate the worktree:**
-   - The worktree should already exist from the execution phase (`/exec`)
-   - Find the worktree: `git worktree list` or check `../worktrees/feature/` for directories matching the issue number
-   - The worktree path will be: `../worktrees/feature/<issue-number>-<issue-title-slug>/`
+
+   The worktree should already exist from the execution phase (`/exec`).
+   Resolve it through git, not the filesystem:
+
+   ```bash
+   WORKTREE="$(npx sequant worktree resolve <issue-number>)" || {
+     echo "No worktree for #<issue-number> in this repository."
+     # Fall through to the "No Worktree Found" section below.
+   }
+   cd "$WORKTREE"
+   ```
+
+   `sequant worktree resolve` reads `git worktree list` in the current
+   repository — which reports only *this* repo's worktrees — and selects on the
+   **branch** git reports, not the directory name.
+
+   **Do not glob `../worktrees/feature/<issue-number>-*` to find it.** That
+   directory is shared by every sibling repository, so a name match may belong
+   to another project; and a directory slug can drift from its own branch after
+   a rename, so it proves nothing about which branch you would review.
+
+<!-- END: worktree-standalone-lookup (#899) -->
 
 2. **Check implementation status:**
    - Navigate to worktree: `cd <worktree-path>`
@@ -425,7 +475,10 @@ If no feature worktree exists (work was done directly on main):
 
 ```bash
 # 1. Check for worktree (indicates work may have started)
-worktree_path=$(git worktree list | grep -i "<issue-number>" | awk '{print $1}' | head -1 || true)
+# Resolve by branch, not by grepping the printed path (#899/#904): the path
+# line carries the directory slug, so a bare number match is both cross-issue
+# (89 matches 899-...) and slug-based rather than branch-based.
+worktree_path=$(npx sequant worktree resolve "<issue-number>" 2>/dev/null || true)
 
 # 2. Check for commits on feature branch (vs main) — include ALL file types
 commits_exist=$(git log --oneline origin/main..HEAD 2>/dev/null | head -1)

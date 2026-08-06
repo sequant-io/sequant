@@ -90,6 +90,10 @@ import {
   locksCheckBatchCommand,
   locksCheckoutCommand,
 } from "../src/commands/locks.js";
+import {
+  worktreeResolveCommand,
+  worktreeVerifyCommand,
+} from "../src/commands/worktree.js";
 import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { abortCommand } from "../src/commands/abort.js";
@@ -809,6 +813,27 @@ locksCmd
   .option("-f, --force", "Clear even a fresh holder (clear)")
   .option("--json", "Output as JSON")
   .action(locksCheckoutCommand);
+// Repo-scoped worktree resolution for skill bodies (#899)
+const worktreeCmd = program
+  .command("worktree")
+  .description("Resolve and verify this repository's issue worktrees");
+
+worktreeCmd
+  .command("resolve <issue>")
+  .description(
+    "Print the absolute path of this repo's worktree for an issue (exit 1 if none)",
+  )
+  .option("--json", "Output as JSON")
+  .action(worktreeResolveCommand);
+
+worktreeCmd
+  .command("verify <path>")
+  .description(
+    "Confirm a path is a worktree of this repo, not a foreign or stale one (exit 1 if not)",
+  )
+  .option("--issue <issue>", "Also require the branch to belong to this issue")
+  .option("--json", "Output as JSON")
+  .action(worktreeVerifyCommand);
 
 // Auto-sync skills after npm upgrade (version mismatch detection)
 // Only triggers when skills were previously synced (has .sequant-version marker).

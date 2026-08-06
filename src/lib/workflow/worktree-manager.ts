@@ -363,14 +363,22 @@ export function removeStaleWorktree(
 
 /**
  * List all active worktrees with their branches
+ *
+ * `git worktree list` only ever reports worktrees belonging to the repository
+ * containing `cwd`, which is what makes this a repo-scoped lookup: a sibling
+ * project's worktree can never appear here, even though `../worktrees/` is a
+ * single directory shared by every repo under the same parent (#899).
+ *
+ * @param cwd - Directory to run git in. Defaults to the current process cwd.
  */
-export function listWorktrees(): Array<{
+export function listWorktrees(cwd?: string): Array<{
   path: string;
   branch: string;
   issue: number | null;
 }> {
   const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
     stdio: "pipe",
+    ...(cwd ? { cwd } : {}),
   });
   if (result.status !== 0) return [];
 
