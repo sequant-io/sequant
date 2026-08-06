@@ -115,6 +115,69 @@ describe("CheckoutLock — acquire/release basics", () => {
   });
 });
 
+describe("CheckoutLock — atomic create (O_CREAT|O_EXCL)", () => {
+  // `acquire()` reads the current holder before writing, and in practice that
+  // read serializes competing CLI processes long before the create — a
+  // multi-process race test passes even with a non-atomic `w` open, so it
+  // cannot pin this behavior (verified by mutation: 33/33 still green with
+  // `wx` -> `w`). The exclusive-create flag only matters in the window where
+  // two acquirers have BOTH passed the read and are racing to create.
+  //
+  // So drive that window directly. `writeAtomic` is private to TypeScript
+  // only; reaching it here is deliberate white-box coverage of the one
+  // invariant the read path cannot provide.
+  type WriteAtomic = (
+    lockPath: string,
+    issue: number,
+    command: string,
+    options: { sessionId?: string; skipPidCheck?: boolean },
+  ) => { acquired: boolean };
+
+  it("refuses to overwrite an existing lock, and preserves the winner", () => {
+    const a = makeLock({ pid: 1 });
+    const b = makeLock({ pid: 2 });
+
+    const writeA = (
+      a as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(a);
+    const writeB = (
+      b as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(b);
+
+    const path = a.lockPath;
+    // Both acquirers have already passed the read check — the file does not
+    // exist yet from either one's point of view.
+    expect(writeA(path, 23, "/fullsolve 23", {}).acquired).toBe(true);
+    expect(writeB(path, 10, "/fullsolve 10", {}).acquired).toBe(false);
+
+    // The loser must not have truncated or replaced the winner's payload.
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.issue).toBe(23);
+    expect(onDisk.pid).toBe(1);
+  });
+
+  it("reports the winner as the holder to the loser", () => {
+    const a = makeLock({ pid: 1 });
+    const b = makeLock({ pid: 2 });
+    const writeA = (
+      a as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(a);
+    const writeB = (
+      b as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(b);
+
+    writeA(a.lockPath, 23, "/fullsolve 23", {});
+    const loser = writeB(a.lockPath, 10, "/fullsolve 10", {}) as {
+      acquired: boolean;
+      holder?: { issue: number; pid: number };
+    };
+
+    expect(loser.acquired).toBe(false);
+    expect(loser.holder?.issue).toBe(23);
+    expect(loser.holder?.pid).toBe(1);
+  });
+});
+
 describe("CheckoutLock — AC-4: stale recovery matches per-issue semantics", () => {
   it("clears a same-host holder whose PID is dead", () => {
     makeLock({ pid: 1 }).acquire(23, "/fullsolve 23");

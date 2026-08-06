@@ -518,7 +518,15 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
   // Everything above simulates the second session by writing a lock file.
   // That exercises the guard but not the claim itself: that two real,
   // concurrently-racing processes cannot both come away holding the tree.
-  // These spawn the built CLI for real and let the kernel arbitrate.
+  // These spawn the built CLI for real.
+  //
+  // SCOPE, stated honestly: these prove end-to-end mutual exclusion through
+  // the real CLI under realistic process timing. They do NOT pin the
+  // O_CREAT|O_EXCL atomicity -- node startup dominates, so each child's read
+  // of the existing holder serializes it well before the create, and the
+  // exclusive-create window is never reached. Verified by mutation: flipping
+  // `wx` to `w` leaves all of these green. That invariant is covered
+  // deterministically in checkout-lock.test.ts instead.
   const CLI = join(REPO_ROOT, "dist/bin/cli.js");
 
   /**
