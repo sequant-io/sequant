@@ -29,6 +29,7 @@ allowed-tools:
   # Worktree management
   - Bash(./scripts/new-feature.sh:*)
   - Bash(./scripts/cleanup-worktree.sh:*)
+  - Bash(npx sequant worktree:*)
   # GitHub CLI
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
@@ -136,7 +137,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 
 1. **Skip pre-flight git checks** - The orchestrator has already verified git state
 2. **Skip worktree creation** - Orchestrator creates worktrees before invoking skills
-3. **Use provided worktree path** - Work in `SEQUANT_WORKTREE` instead of creating a new one
+3. **Verify, then use, the provided path** - `SEQUANT_WORKTREE` is authoritative *when valid*, but it is never trusted unchecked: run the existence guard in "Feature Worktree Workflow" below and halt if it fails (#899)
 4. **Reduce GitHub comment frequency** - Defer progress updates to the orchestrator
 5. **Trust issue context** - The orchestrator has already fetched and validated issue data
 
@@ -472,15 +473,68 @@ echo "Current branch: $CURRENT_BRANCH"
 **Why this matters:** Work done directly on main can be lost during sync operations (git reset, git pull --rebase, etc.). Worktrees provide isolation and safe recovery through branches.
 
 **If orchestrated (SEQUANT_WORKTREE is set):**
-- Use the provided worktree path directly: `cd $SEQUANT_WORKTREE`
-- Skip steps 1-2 below (worktree already created by orchestrator)
-- Continue with step 3 (Work in the worktree)
+
+<!-- BEGIN: worktree-existence-guard (#899) -->
+
+**Verify the path before you use it. Never `cd` into it unchecked.** An
+orchestrator can hand over a path that was never created, or one that resolves
+into a *different repository's* worktree — `../worktrees/` is one flat
+namespace shared by every repo under the same parent, and issue numbers are
+per-repo. A bare `cd` fails silently and leaves you implementing in the main
+checkout, on whatever branch it happens to be on.
+
+```bash
+npx sequant worktree verify "$SEQUANT_WORKTREE" --issue <issue-number> || {
+  echo "❌ HALT: SEQUANT_WORKTREE is not a usable worktree of this repository."
+  exit 1
+}
+cd "$SEQUANT_WORKTREE"
+```
+
+`verify` exits non-zero with one of these named errors. **Every one of them is
+a halt** — report it and stop; do not fall back to creating a worktree, and do
+not continue in the current directory:
+
+| Error | Meaning |
+|-------|---------|
+| `SEQUANT_WORKTREE_NOT_FOUND` | Path is empty, an unexpanded glob, or not an existing directory |
+| `SEQUANT_WORKTREE_FOREIGN` | Real directory, but not a worktree of *this* repository (another project's, or stale) |
+| `SEQUANT_WORKTREE_ISSUE_MISMATCH` | A worktree of this repo, but its branch belongs to a different issue |
+
+Once verify passes, skip steps 1-2 below and continue with step 3 (Work in the
+worktree).
+
+<!-- END: worktree-existence-guard (#899) -->
 
 **If standalone:**
 
-1. **Check if worktree already exists:**
-   - Check if you're already in a worktree: `git worktree list` or check if `../worktrees/` contains a directory for this issue
-   - If worktree exists, navigate to it and continue work there
+<!-- BEGIN: worktree-standalone-lookup (#899) -->
+
+1. **Check if a worktree already exists for this issue:**
+
+   Resolve through git, not the filesystem. `sequant worktree resolve` reads
+   `git worktree list` in the current repository — which reports only *this*
+   repo's worktrees — and selects on the **branch** git reports, not on the
+   directory name. That matters twice over: a directory slug is shared across
+   repositories, and it can drift from its own branch after a rename
+   (`578-seo-expand-city-coverage` holding branch `feature/578-city-expansion-clean`),
+   so a name match proves nothing about which branch you would land on.
+
+   ```bash
+   if WORKTREE="$(npx sequant worktree resolve <issue-number>)"; then
+     echo "Existing worktree: $WORKTREE"
+     cd "$WORKTREE"
+     # Continue work there — skip step 2.
+   else
+     echo "No worktree for #<issue-number> in this repository — create one (step 2)."
+   fi
+   ```
+
+   **Do not glob `../worktrees/feature/<issue-number>-*` to find it.** That
+   directory is shared by every sibling repository, so the match may belong to
+   another project entirely.
+
+<!-- END: worktree-standalone-lookup (#899) -->
 
 2. **Create worktree if needed (with parallel context gathering):**
 

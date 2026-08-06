@@ -24,6 +24,22 @@ allowed-tools:
 
 Phase 1 "Planning Agent." Understands the issue and AC, reviews or synthesizes a plan, identifies gaps and risks, and drafts a GitHub issue comment.
 
+## Worktree Contract
+
+<!-- BEGIN: spec-worktree-contract (#899) -->
+
+**No worktree needed. Planning happens in the main repository directory.** The
+worktree is created later — by the orchestrator (`/fullsolve` Phase 1.5, or
+`sequant run`) when one is driving, otherwise by `/exec` itself.
+
+This skill only ever *reads* `git worktree list`, for in-flight collision
+detection. **Do not create a worktree here, and do not describe one as
+existing after `/spec`** — downstream skills that trust such a claim end up
+implementing in the main checkout (#899, and the line this restores was
+dropped by #515).
+
+<!-- END: spec-worktree-contract (#899) -->
+
 ## Platform Detection — Run First
 
 ```bash

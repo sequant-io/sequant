@@ -6,6 +6,7 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
+  - Bash(npx sequant worktree:*)
   - Read
   - Write
   - Edit
@@ -530,16 +531,32 @@ If an AC has verification method "N/A - Trivial", skip test generation and note 
 
 ### Step 4: Locate Feature Worktree
 
-If generating file-based tests (Unit Test, Integration Test), find the worktree:
+If generating file-based tests (Unit Test, Integration Test), find the worktree.
+
+<!-- BEGIN: worktree-standalone-lookup (#899) -->
+
+Resolve it through git, not the filesystem:
 
 ```bash
-git worktree list | grep -E "feature.*<issue-number>" || true
+WORKTREE="$(npx sequant worktree resolve <issue-number>)" || {
+  echo "❌ HALT: no worktree for #<issue-number> in this repository."
+  exit 1
+}
+cd "$WORKTREE"
 ```
 
-Or check:
-```bash
-ls ../worktrees/feature/<issue-number>-*/
-```
+`sequant worktree resolve` reads `git worktree list` in the current repository
+— which reports only *this* repo's worktrees — and selects on the **branch**
+git reports, not the directory name.
+
+**Do not glob `../worktrees/feature/<issue-number>-*`, and do not grep
+`git worktree list` for the issue number.** The first matches across sibling
+repositories, which share that directory; the second matches the printed path,
+so it keys on the directory slug — and a slug can drift from its own branch
+after a rename. Because this skill **writes test files**, landing in the wrong
+tree scatters stubs into an unrelated project.
+
+<!-- END: worktree-standalone-lookup (#899) -->
 
 Create test directories if needed:
 ```bash

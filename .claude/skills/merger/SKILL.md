@@ -6,6 +6,7 @@ metadata:
   author: sequant
   version: "1.0"
 allowed-tools:
+  - Bash(npx sequant worktree:*)
   - Bash(git:*)
   - Bash(gh pr:*)
   - Bash(gh issue:*)
@@ -157,8 +158,9 @@ fi
 For each issue specified:
 
 ```bash
-# Find the worktree for the issue
-git worktree list --porcelain | grep -A2 "feature/$ISSUE" || true
+# Find the worktree for the issue. Resolve by branch (#899/#904) — grepping
+# for "feature/$ISSUE" is a prefix match, so ISSUE=89 also hits feature/899-*.
+worktree_path=$(npx sequant worktree resolve "$ISSUE") || echo "No worktree for #$ISSUE"
 
 # Check PR status
 gh pr list --head "feature/$ISSUE-*" --json number,state,title
@@ -222,10 +224,16 @@ gh pr merge <PR_NUMBER> --squash
 
 # Only clean up worktree AFTER merge succeeds
 # If merge fails, the worktree is preserved so work isn't lost
-worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}' || true)
-if [[ -n "$worktree_path" ]]; then
+#
+# Resolve by BRANCH, never by grepping the printed path (#899/#904): the path
+# line contains the directory slug, so `grep "feature/$ISSUE"` with ISSUE=89
+# also matches `feature/899-...` — and the next line force-removes whatever it
+# matched. `worktree resolve` matches the branch's issue number exactly, and
+# exits non-zero rather than guessing when nothing (or more than one) matches.
+if worktree_path=$(npx sequant worktree resolve "$ISSUE"); then
+  branch=$(git -C "$worktree_path" rev-parse --abbrev-ref HEAD)
   git worktree remove "$worktree_path" --force
-  git branch -D "feature/$ISSUE-"* 2>/dev/null || true
+  git branch -D "$branch" 2>/dev/null || true
 fi
 
 # Delete remote branch (previously handled by --delete-branch)
@@ -285,17 +293,23 @@ Read(file_path=".sequant/state.json")
 **After each successful merge, ensure the worktree is removed:**
 
 ```bash
-# Find and remove worktree for the issue
-worktree_path=$(git worktree list | grep "feature/$ISSUE" | awk '{print $1}' || true)
-if [[ -n "$worktree_path" ]]; then
+# Find and remove worktree for the issue.
+# Resolve by branch, not by grepping the printed path — see the note in the
+# clean-merge block above. This one force-removes, so a slug collision here
+# destroys an unrelated issue's worktree.
+if worktree_path=$(npx sequant worktree resolve "$ISSUE"); then
   echo "Removing worktree: $worktree_path"
   git worktree remove "$worktree_path" --force
 else
   echo "No worktree found for #$ISSUE (already cleaned up)"
 fi
 
-# Verify worktree removal
-git worktree list | grep -q "feature/$ISSUE" && echo "WARNING: Worktree still exists" || echo "✅ Worktree removed"
+# Verify worktree removal — resolve must now fail for this issue.
+if npx sequant worktree resolve "$ISSUE" >/dev/null 2>&1; then
+  echo "WARNING: Worktree still exists"
+else
+  echo "✅ Worktree removed"
+fi
 ```
 
 **Why this matters:** Leftover worktrees waste disk space and can cause confusion when re-running `sequant run` on the same issues. The state guard (#305) prevents re-execution, but the worktree should still be cleaned up.

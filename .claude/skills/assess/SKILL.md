@@ -6,6 +6,7 @@ metadata:
   author: sequant
   version: "3.0"
 allowed-tools:
+  - Bash(npx sequant worktree:*)
   - Read
   - Glob
   - Grep
@@ -99,7 +100,10 @@ gh issue view <N> --json title,body,labels,state,comments,assignees
 
 ```bash
 git branch -a | grep <N> || true
-git worktree list | grep <N> || true
+# Resolve by branch, not by grepping the printed path (#899/#904) — a bare
+# number match is cross-issue (89 matches 899-...) and keys on the directory
+# slug, which can diverge from the branch after a rename.
+npx sequant worktree resolve <N> || true
 gh pr list --search "<N> in:title" --json number,title,state,headRefName,mergeable || true
 ```
 
