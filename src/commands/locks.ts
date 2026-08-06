@@ -1,10 +1,13 @@
 /**
- * `sequant locks` — inspect and clear per-issue concurrency locks (#625).
+ * `sequant locks` — inspect and clear per-issue concurrency locks (#625) and
+ * the checkout-scoped lock (#901).
  */
 
 import chalk from "chalk";
 import {
+  CheckoutLock,
   LockManager,
+  formatCheckoutLockedMessage,
   formatLockedMessage,
   type LockFile,
   type SignalOtherResult,
@@ -90,13 +93,38 @@ export async function locksListCommand(
   }
 
   const listings = manager.list();
+  // The checkout lock lives in the same directory but is deliberately not a
+  // numeric filename, so `manager.list()` skips it (#901). Query it separately
+  // rather than widening the numeric key everywhere.
+  const checkout = new CheckoutLock().listing();
+
   if (options.json) {
-    console.log(JSON.stringify({ locks: listings }, null, 2));
+    console.log(JSON.stringify({ locks: listings, checkout }, null, 2));
     return;
   }
 
-  if (listings.length === 0) {
+  if (listings.length === 0 && !checkout) {
     console.log(chalk.gray("No active locks."));
+    return;
+  }
+
+  if (checkout) {
+    const ageMinutes = Math.floor(checkout.ageMs / 60_000);
+    const staleTag = checkout.stale
+      ? chalk.yellow(`  (stale: ${checkout.staleReason})`)
+      : "";
+    console.log(chalk.bold("Checkout lock (whole working tree):"));
+    console.log(
+      `  issue=#${checkout.holder.issue}  pid=${checkout.holder.pid}  ` +
+        `host=${checkout.holder.hostname}  age=${ageMinutes}m  ` +
+        `started=${checkout.holder.startedAt}${staleTag}`,
+    );
+    console.log(`    command: ${checkout.holder.command}`);
+    console.log("");
+  }
+
+  if (listings.length === 0) {
+    console.log(chalk.gray("No active per-issue locks."));
     return;
   }
 
@@ -110,6 +138,171 @@ export async function locksListCommand(
         `age=${ageMinutes}m  started=${l.holder.startedAt}${staleTag}`,
     );
     console.log(`    command: ${l.holder.command}`);
+  }
+}
+
+export interface LocksCheckoutOptions {
+  issue?: string;
+  command?: string;
+  sessionId?: string;
+  skipPidCheck?: boolean;
+  force?: boolean;
+  json?: boolean;
+}
+
+/**
+ * `sequant locks checkout <acquire|release|check|clear>` — the working-tree
+ * lock (#901).
+ *
+ * Exit codes mirror the per-issue commands:
+ *   0 — success (acquired / released / free / cleared)
+ *   1 — held by another session, or refused
+ *   2 — invalid arguments
+ */
+export async function locksCheckoutCommand(
+  action: string,
+  options: LocksCheckoutOptions = {},
+): Promise<void> {
+  const lock = new CheckoutLock();
+
+  if (lock.isNoop) {
+    // AC-5: orchestrator/MCP mode is a no-op across the whole surface.
+    if (options.json) {
+      console.log(JSON.stringify({ action, orchestratorMode: true, ok: true }));
+    } else {
+      console.log(
+        chalk.gray("Lock operations are disabled (SEQUANT_ORCHESTRATOR set)."),
+      );
+    }
+    return;
+  }
+
+  switch (action) {
+    case "acquire": {
+      if (options.issue === undefined) {
+        console.error(chalk.red("`locks checkout acquire` requires --issue"));
+        process.exitCode = 2;
+        return;
+      }
+      const issue = Number.parseInt(options.issue, 10);
+      if (!Number.isInteger(issue) || issue <= 0) {
+        console.error(chalk.red(`Invalid issue number: ${options.issue}`));
+        process.exitCode = 2;
+        return;
+      }
+
+      const result = lock.acquire(issue, options.command ?? "unknown", {
+        sessionId: options.sessionId,
+        skipPidCheck: options.skipPidCheck,
+      });
+
+      if (result.acquired) {
+        if (options.json) {
+          console.log(
+            JSON.stringify({
+              acquired: true,
+              reentrant: result.reentrant,
+              lockPath: result.lockPath,
+            }),
+          );
+        } else {
+          console.log(
+            chalk.green(
+              result.reentrant
+                ? `✓ Checkout already held by this session (#${issue})`
+                : `✓ Acquired checkout lock for #${issue}`,
+            ),
+          );
+        }
+        return;
+      }
+
+      process.exitCode = 1;
+      if (options.json) {
+        console.log(
+          JSON.stringify({
+            acquired: false,
+            holder: result.holder,
+            lockPath: result.lockPath,
+          }),
+        );
+      } else {
+        console.error(
+          chalk.yellow(formatCheckoutLockedMessage(result.holder, { issue })),
+        );
+      }
+      return;
+    }
+
+    case "release": {
+      const released = lock.release({
+        sessionId: options.sessionId,
+        ...lock.selfIdentity,
+      });
+      if (options.json) {
+        console.log(JSON.stringify({ released }));
+      } else {
+        console.log(
+          released
+            ? chalk.green("✓ Released checkout lock")
+            : chalk.gray("No releasable checkout lock"),
+        );
+      }
+      return;
+    }
+
+    case "check": {
+      const holder = lock.check();
+      if (!holder) {
+        if (options.json) {
+          console.log(JSON.stringify({ locked: false }));
+        } else {
+          console.log(chalk.gray("Checkout is not locked"));
+        }
+        return;
+      }
+      process.exitCode = 1;
+      if (options.json) {
+        console.log(JSON.stringify({ locked: true, holder }));
+      } else {
+        console.log(chalk.yellow(formatCheckoutLockedMessage(holder)));
+      }
+      return;
+    }
+
+    case "clear": {
+      const result = lock.clear({ safetyCheck: !options.force });
+      if (options.json) {
+        console.log(JSON.stringify(result));
+        if (!result.cleared) process.exitCode = 1;
+        return;
+      }
+      if (result.cleared) {
+        console.log(chalk.green("✓ Cleared checkout lock"));
+        return;
+      }
+      process.exitCode = 1;
+      if (result.reason === "no-lock") {
+        console.log(chalk.gray("No checkout lock to clear"));
+        process.exitCode = 0;
+        return;
+      }
+      console.log(
+        chalk.yellow(
+          "Refusing to clear a fresh checkout lock. " +
+            "Re-run with --force if you are sure the holder is gone.",
+        ),
+      );
+      return;
+    }
+
+    default:
+      console.error(
+        chalk.red(
+          `Unknown action: ${action}. Expected acquire|release|check|clear.`,
+        ),
+      );
+      process.exitCode = 2;
   }
 }
 
