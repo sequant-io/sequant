@@ -261,20 +261,20 @@ Before creating any files, check if they already exist:
 
 **Phase 0 always runs — including on a resumed run.** Smart Resumption (above) chooses only *which phase comes next after Phase 0*; it never skips Phase 0 itself. A resumed session that skipped the acquire below would hold neither lock while doing exactly the work the locks exist to protect, and would then run the release contract against a lock it never took.
 
-**Declare the issue for the guard.** `pre-tool.sh` decides whether *you* are the checkout's holder by `sessionId` when both sides have one, and otherwise by `SEQUANT_ISSUE`.
+**Declare the issue for the guard.** `pre-tool.sh` decides whether *you* are the checkout's holder by `sessionId` when both sides have one, then by `SEQUANT_ISSUE`, and finally by the session→issue binding it records for itself.
 
 ```bash
 export SEQUANT_ISSUE=<issue-number>
 ```
 
-> **Known gap — do not rely on this export to unblock yourself (#906).** The `PreToolUse` hook runs *outside and before* your command's shell, so it reads the environment Claude Code launched with, not anything a skill bash block exports. An `export` here (or in the same block as the guarded command — verified, both are invisible to the hook) therefore cannot make the guard recognize you. It is set because `sequant run`'s orchestrated path propagates it to child processes, where it is read normally.
->
-> **What actually works when you are the holder and need branch-mutating git:**
-> - Use `git -C "$SEQUANT_WORKTREE" …`, which the guard exempts by design — and which every phase after 1.5 should be doing anyway.
-> - Path-restore forms (`git checkout -- <literal-path>`) are exempt, but pass a **literal** path: the guard's exemption does not resolve shell variables, so `git checkout -- "$F"` is refused where `git checkout -- src/foo.ts` is allowed.
-> - Only as a last resort, release the checkout lock, do the work, and re-acquire.
->
-> Closing this properly needs holder identity that survives a shell boundary (a session id recorded at acquire that the hook can match). Tracked separately.
+**You do not need that export to be recognized as the holder (#906).** `PreToolUse` runs *outside and before* your command's shell, so nothing a skill bash block exports is visible to it — not even an export prepended to the same block as the guarded command. Instead the hook watches for `locks checkout acquire --issue=<N>` and records the binding itself, keyed on the session id, which is the one identity that survives the shell boundary killing the acquiring PID. The `export` above still helps a parent process that launched you with it; it is not what unblocks you.
+
+Consequences worth knowing:
+
+- After the acquire in this phase, branch-mutating git **in the main checkout is allowed for you** and still refused for every other session.
+- `git -C "$SEQUANT_WORKTREE" …` is exempt regardless, and is what every phase after 1.5 should be using anyway.
+- Path-restore (`git checkout -- <path>`) is exempt whether or not the path is quoted.
+- If the hook never observed your acquire (it was disabled, or the lock was taken by another tool), you are treated as a non-holder — release and re-acquire so the binding is recorded.
 
 **What this lock covers — and what it does not (#901).** The per-issue lock is keyed on the *issue number*. It prevents a second session from working on **the same issue** — another `/fullsolve <same-issue>`, an `npx sequant run <same-issue>`, or the same issue in a different window — and producing zero-diff exec failures.
 

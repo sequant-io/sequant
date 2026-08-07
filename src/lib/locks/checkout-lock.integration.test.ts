@@ -649,6 +649,141 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
   });
 });
 
+describe("#906: the hook recognizes the holder across the shell boundary", () => {
+  // `SEQUANT_ISSUE` cannot identify the holder interactively and never could:
+  // PreToolUse runs outside and before the command's shell, so nothing a skill
+  // bash block exports reaches it, and the one path that does export it
+  // (`sequant run`) also sets SEQUANT_ORCHESTRATOR, where the guard stands
+  // down. The holder was therefore blocked by its own lock — observed live
+  // while building this very PR. The hook now records the binding itself when
+  // it sees the acquire, keyed on the session id.
+  const ACQUIRE =
+    "npx sequant locks checkout acquire --issue=23 --skip-pid-check";
+
+  /**
+   * A lock in the shape production actually writes: NO `sessionId`.
+   *
+   * `acquire` never passes `--session-id` — no env var carries Claude Code's
+   * session id into a skill shell — so every real `/fullsolve` lock lacks one.
+   * The default `writeCheckoutLock` stamps one, which would let the sessionId
+   * rule decide every case below and leave the binding these tests exist to
+   * cover never consulted: they would pass vacuously.
+   */
+  function writeSkillLock(): void {
+    writeCheckoutLock(checkout, { sessionId: undefined });
+  }
+
+  it("blocks the holder before its acquire has been observed", () => {
+    writeSkillLock();
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("stops blocking the holder once the hook has seen it acquire", () => {
+    writeSkillLock();
+
+    expect(
+      runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION }).status,
+    ).toBe(0);
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+  });
+
+  it("still blocks a different session after the holder's acquire", () => {
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+
+    // The whole point of the lock — recognizing the holder must not open the
+    // tree to everyone.
+    expect(
+      runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("does not credit a session that acquired a DIFFERENT issue", () => {
+    writeSkillLock(); // holder is issue 23
+    runHook({
+      command: "npx sequant locks checkout acquire --issue=77 --skip-pid-check",
+      sessionId: OTHER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("drops holder status when the session releases its own claim", () => {
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+
+    runHook({
+      command: "npx sequant locks checkout release --issue=23",
+      sessionId: HOLDER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("keeps holder status through a REFUSED release naming another issue", () => {
+    // A blocked session's release contract must not strip the real holder's
+    // identity — that would leave the holder locked out of its own tree.
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+
+    runHook({
+      command: "npx sequant locks checkout release --issue=77",
+      sessionId: HOLDER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+  });
+});
+
+describe("#906: path-restore is exempt whether or not the path is quoted", () => {
+  // `emit_segments` drops double-quoted regions wholesale, so a quoted path
+  // leaves the segment as `git checkout --` with no trailing space — and the
+  // exemption required `-- `. The bug is quoting, not shell variables: an
+  // UNQUOTED `$F` was always allowed, a quoted literal never was.
+  it.each([
+    ["unquoted literal", "git checkout -- src/foo.ts"],
+    ["quoted literal", 'git checkout -- "src/foo.ts"'],
+    ["unquoted variable", "git checkout -- $F"],
+    ["quoted variable", 'git checkout -- "$F"'],
+    ["explicit ref, quoted path", 'git checkout HEAD -- "src/foo.ts"'],
+  ])("allows path-restore: %s", (_label, command) => {
+    writeCheckoutLock(checkout);
+
+    expect(runHook({ command, sessionId: OTHER_SESSION }).status).toBe(0);
+  });
+
+  it.each([
+    ["bare branch switch", "git checkout main"],
+    ["quoted branch name", 'git checkout "main"'],
+    ["detach flag, not a path-restore", "git checkout --detach"],
+  ])("still blocks branch-mutating git: %s", (_label, command) => {
+    writeCheckoutLock(checkout);
+
+    expect(runHook({ command, sessionId: OTHER_SESSION }).status).toBe(2);
+  });
+});
+
 /**
  * The motivating example from #906, replayed verbatim as a fixture.
  *
