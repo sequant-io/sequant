@@ -798,3 +798,117 @@ describe("getTautologyVerdictImpact", () => {
     expect(getTautologyVerdictImpact(results)).toBe("blocking");
   });
 });
+
+describe("analyzeTestFile — helper shapes the detector must see (#906)", () => {
+  // Measured motivation: `checkout-lock.integration.test.ts` (helpers written
+  // as `function` declarations) read 17/19 tautological on origin/main, and
+  // `checkout-lock.test.ts` (a `function makeLock` factory) 7/20 — every one a
+  // false positive. Both files drive real production code.
+
+  it("sees a helper declared with `function`, not just an arrow const", () => {
+    const content = `
+import { doWork } from './work';
+function helper() { return doWork(); }
+describe('x', () => {
+  it('uses the helper', () => { expect(helper()).toBe(1); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("sees a `function` helper whose return type is an object literal", () => {
+    // The body brace is NOT the first `{` after the parameters here — the
+    // return-type annotation opens one first.
+    const content = `
+import { doWork } from './work';
+function helper(x: number): { status: number; out: string } {
+  return doWork(x);
+}
+describe('x', () => {
+  it('uses the helper', () => { expect(helper(1).status).toBe(0); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("counts a helper that calls an imported production function", () => {
+    // Previously only spawn-based helpers were resolved, so a test that built
+    // its subject through a factory read as import-less.
+    const content = `
+import { CheckoutLock } from './locks';
+function makeLock(pid: number) { return new CheckoutLock({ pid }); }
+describe('x', () => {
+  it('acquires', () => { expect(makeLock(1).acquire(23, 'c')).toBeTruthy(); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("resolves helper indirection transitively through `function` helpers", () => {
+    const content = `
+import { doWork } from './work';
+function inner() { return doWork(); }
+function outer() { return inner(); }
+describe('x', () => {
+  it('uses the outer helper', () => { expect(outer()).toBe(1); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("counts spawning a project script, not only `dist/` build output", () => {
+    // The hook IS the production code under test in the checkout-lock suite;
+    // it just does not live under dist/.
+    const content = `
+import { spawnSync } from 'child_process';
+const HOOK = join(REPO_ROOT, '.claude/hooks/pre-tool.sh');
+function runHook(cmd: string): { status: number } {
+  return spawnSync('bash', [HOOK], { input: cmd });
+}
+describe('x', () => {
+  it('blocks', () => { expect(runHook('git checkout main').status).toBe(2); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("still flags a `function` helper that reaches no production code", () => {
+    // The widening must not turn the detector off: a helper is only a handle
+    // when it actually reaches production.
+    const content = `
+import { describe } from 'vitest';
+function helper(): { a: number } { return { a: 1 }; }
+describe('x', () => {
+  it('asserts on the helper only', () => { expect(helper().a).toBe(1); });
+  it('asserts on locals only', () => { const a = true; expect(a).toBe(true); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(2);
+  });
+
+  it("counts an inline project-script path, not only a captured handle", () => {
+    // Gates PROJECT_SCRIPT_PATTERN itself. The `runHook` case above reaches
+    // production through the collected `HOOK` variable, so it survives even
+    // with that pattern removed — this one does not.
+    const content = `
+import { spawnSync } from 'child_process';
+describe('x', () => {
+  it('runs the migration script', () => {
+    expect(spawnSync('npx', ['tsx', 'scripts/migrate.ts']).status).toBe(0);
+  });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("does not treat spawning a system binary as production code", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+function git(cwd: string) { return spawnSync('git', ['status'], { cwd }); }
+describe('x', () => {
+  it('runs git', () => { expect(git('/tmp').status).toBe(0); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+});

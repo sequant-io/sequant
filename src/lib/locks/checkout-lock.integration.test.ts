@@ -229,7 +229,7 @@ describe("AC-3: the refusal is actionable", () => {
     expect(stderr).toContain("worktrees/feature/");
     expect(stderr).toContain("new-feature.sh");
     expect(stderr).toContain("git -C <worktree>");
-    expect(stderr).toContain("sequant locks checkout clear");
+    expect(stderr).toContain("sequant locks checkout clear --force");
   });
 });
 
@@ -629,7 +629,10 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
 
     const released = spawnSync(
       process.execPath,
-      [CLI, "locks", "checkout", "release", "--json"],
+      // `--issue` is what proves ownership of a `--skip-pid-check` lock (#906);
+      // the acquiring shell's PID is gone by now. The follow-on acquire below
+      // is the part that proves the handoff actually happened.
+      [CLI, "locks", "checkout", "release", "--issue=23", "--json"],
       {
         encoding: "utf-8",
         env: {
@@ -643,6 +646,275 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
 
     const next = await acquireAsync(10, "session-B", locksDir);
     expect(next.acquired).toBe(true);
+  });
+});
+
+describe("#906: the hook recognizes the holder across the shell boundary", () => {
+  // `SEQUANT_ISSUE` cannot identify the holder interactively and never could:
+  // PreToolUse runs outside and before the command's shell, so nothing a skill
+  // bash block exports reaches it, and the one path that does export it
+  // (`sequant run`) also sets SEQUANT_ORCHESTRATOR, where the guard stands
+  // down. The holder was therefore blocked by its own lock — observed live
+  // while building this very PR. The hook now records the binding itself when
+  // it sees the acquire, keyed on the session id.
+  const ACQUIRE =
+    "npx sequant locks checkout acquire --issue=23 --skip-pid-check";
+
+  /**
+   * A lock in the shape production actually writes: NO `sessionId`.
+   *
+   * `acquire` never passes `--session-id` — no env var carries Claude Code's
+   * session id into a skill shell — so every real `/fullsolve` lock lacks one.
+   * The default `writeCheckoutLock` stamps one, which would let the sessionId
+   * rule decide every case below and leave the binding these tests exist to
+   * cover never consulted: they would pass vacuously.
+   */
+  function writeSkillLock(): void {
+    writeCheckoutLock(checkout, { sessionId: undefined });
+  }
+
+  it("blocks the holder before its acquire has been observed", () => {
+    writeSkillLock();
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("stops blocking the holder once the hook has seen it acquire", () => {
+    writeSkillLock();
+
+    expect(
+      runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION }).status,
+    ).toBe(0);
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+  });
+
+  it("still blocks a different session after the holder's acquire", () => {
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+
+    // The whole point of the lock — recognizing the holder must not open the
+    // tree to everyone.
+    expect(
+      runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("does not credit a session that acquired a DIFFERENT issue", () => {
+    writeSkillLock(); // holder is issue 23
+    runHook({
+      command: "npx sequant locks checkout acquire --issue=77 --skip-pid-check",
+      sessionId: OTHER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("drops holder status when the session releases its own claim", () => {
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+
+    runHook({
+      command: "npx sequant locks checkout release --issue=23",
+      sessionId: HOLDER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(2);
+  });
+
+  it("keeps holder status through a REFUSED release naming another issue", () => {
+    // A blocked session's release contract must not strip the real holder's
+    // identity — that would leave the holder locked out of its own tree.
+    writeSkillLock();
+    runHook({ command: ACQUIRE, sessionId: HOLDER_SESSION });
+
+    runHook({
+      command: "npx sequant locks checkout release --issue=77",
+      sessionId: HOLDER_SESSION,
+    });
+
+    expect(
+      runHook({ command: "git checkout main", sessionId: HOLDER_SESSION })
+        .status,
+    ).toBe(0);
+  });
+});
+
+describe("#906: path-restore is exempt whether or not the path is quoted", () => {
+  // `emit_segments` drops double-quoted regions wholesale, so a quoted path
+  // leaves the segment as `git checkout --` with no trailing space — and the
+  // exemption required `-- `. The bug is quoting, not shell variables: an
+  // UNQUOTED `$F` was always allowed, a quoted literal never was.
+  it.each([
+    ["unquoted literal", "git checkout -- src/foo.ts"],
+    ["quoted literal", 'git checkout -- "src/foo.ts"'],
+    ["unquoted variable", "git checkout -- $F"],
+    ["quoted variable", 'git checkout -- "$F"'],
+    ["explicit ref, quoted path", 'git checkout HEAD -- "src/foo.ts"'],
+  ])("allows path-restore: %s", (_label, command) => {
+    writeCheckoutLock(checkout);
+
+    expect(runHook({ command, sessionId: OTHER_SESSION }).status).toBe(0);
+  });
+
+  it.each([
+    ["bare branch switch", "git checkout main"],
+    ["quoted branch name", 'git checkout "main"'],
+    ["detach flag, not a path-restore", "git checkout --detach"],
+  ])("still blocks branch-mutating git: %s", (_label, command) => {
+    writeCheckoutLock(checkout);
+
+    expect(runHook({ command, sessionId: OTHER_SESSION }).status).toBe(2);
+  });
+});
+
+/**
+ * The motivating example from #906, replayed verbatim as a fixture.
+ *
+ * Two `/fullsolve` sessions share one checkout. B is correctly refused the
+ * lock, is correctly blocked by the hook — and then finishes first and runs
+ * the Phase 0.3 release contract that every halt branch runs. Before the fix
+ * that release removed A's lock, and a third session sailed through the guard
+ * while A was still mid-run.
+ */
+describe("#906: a blocked session's release contract cannot unlock the tree", () => {
+  const CLI = join(REPO_ROOT, "dist/bin/cli.js");
+
+  // Arrow const, not `function` — `test-tautology-detector` only resolves
+  // helper indirection through block-bodied arrow consts, so a `function`
+  // declaration makes every test that calls it read as import-less and
+  // therefore tautological. These tests do spawn the real CLI.
+  const checkoutCli = (args: string[], locksDir: string) => {
+    return spawnSync(process.execPath, [CLI, "locks", "checkout", ...args], {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        SEQUANT_LOCKS_DIR: locksDir,
+        SEQUANT_ORCHESTRATOR: "",
+      },
+    });
+  };
+
+  it("B's release refuses, A's lock survives, and the hook still blocks B", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+
+    // Session A (/fullsolve 23) claims the tree.
+    const a = checkoutCli(
+      [
+        "acquire",
+        "--issue=23",
+        "--command=/fullsolve 23",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+    expect(JSON.parse(a.stdout.trim()).acquired).toBe(true);
+
+    // Session B (/fullsolve 77) is refused — tolerated by `|| true` in the
+    // skill, so B continues by design.
+    const b = checkoutCli(
+      [
+        "acquire",
+        "--issue=77",
+        "--command=/fullsolve 77",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+    expect(b.status).toBe(1);
+    expect(JSON.parse(b.stdout.trim()).acquired).toBe(false);
+
+    // The hook blocks B's branch-mutating git. This is the protection that
+    // used to evaporate one command later.
+    expect(
+      runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        env: { SEQUANT_LOCKS_DIR: locksDir, SEQUANT_ISSUE: "77" },
+      }).status,
+    ).toBe(2);
+
+    // B halts and runs its release contract.
+    const bRelease = checkoutCli(["release", "--issue=77", "--json"], locksDir);
+    const parsed = JSON.parse(bRelease.stdout.trim());
+    expect(parsed.released).toBe(false);
+    expect(parsed.refused).toBe(true);
+    expect(bRelease.status).toBe(1);
+
+    // A still holds the tree.
+    const onDisk = JSON.parse(
+      readFileSync(join(locksDir, "checkout.lock"), "utf-8"),
+    );
+    expect(onDisk.issue).toBe(23);
+
+    // And the guard is still armed against B.
+    expect(
+      runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        env: { SEQUANT_LOCKS_DIR: locksDir, SEQUANT_ISSUE: "77" },
+      }).status,
+    ).toBe(2);
+  });
+
+  it("a bare release — no --issue at all — is refused, not silently ineffective", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    checkoutCli(
+      [
+        "acquire",
+        "--issue=23",
+        "--command=/fullsolve 23",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+
+    const bare = checkoutCli(["release"], locksDir);
+
+    expect(bare.status).toBe(1);
+    // A refusal must name the holder and the way out — otherwise it is
+    // indistinguishable from the "nothing was held" no-op below.
+    expect(bare.stderr).toContain("#23");
+    expect(bare.stderr).toContain("sequant locks checkout clear --force");
+  });
+
+  it("releasing when nothing is held stays a quiet, successful no-op", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    mkdirSync(locksDir, { recursive: true });
+
+    const nothing = checkoutCli(["release", "--issue=23", "--json"], locksDir);
+
+    expect(nothing.status).toBe(0);
+    const parsed = JSON.parse(nothing.stdout.trim());
+    expect(parsed.released).toBe(false);
+    expect(parsed.refused).toBe(false);
+  });
+
+  it("rejects an invalid --issue on release with exit 2 rather than refusing", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    const bad = checkoutCli(["release", "--issue=abc"], locksDir);
+
+    expect(bad.status).toBe(2);
+    expect(bad.stderr).toContain("Invalid issue number");
   });
 });
 
