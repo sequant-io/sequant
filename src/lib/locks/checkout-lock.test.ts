@@ -7,11 +7,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { CheckoutLock, isSameHolder } from "./checkout-lock.js";
+import { CheckoutLock, isCheckoutOwner } from "./checkout-lock.js";
 import { formatCheckoutLockedMessage } from "./checkout-lock.js";
 import {
   CHECKOUT_LOCK_FILENAME,
@@ -94,13 +100,72 @@ describe("CheckoutLock — acquire/release basics", () => {
     expect(again.reentrant).toBe(true);
   });
 
-  it("releases a skill-shell lock whose original PID is gone", () => {
+  it("refuses a bare release of a skill-shell lock (#906)", () => {
+    // Before #906 this returned true: any same-host caller could remove a
+    // fresh `skipPidCheck` lock. That is the reported bug — every /fullsolve
+    // halt branch runs a release, so a *blocked* session finishing first
+    // silently handed the tree away mid-run.
     makeLock({ pid: 1 }).acquire(23, "/fullsolve 23", { skipPidCheck: true });
 
     const released = makeLock({ pid: 2 }).release({ pid: 2, hostname: HOST });
 
+    expect(released).toBe(false);
+    expect(existsSync(join(locksDir, CHECKOUT_LOCK_FILENAME))).toBe(true);
+  });
+
+  it("releases a skill-shell lock when the caller names the holder's issue", () => {
+    // The rightful holder can still release: its PID is gone, but it knows
+    // which issue it is working on.
+    makeLock({ pid: 1 }).acquire(23, "/fullsolve 23", { skipPidCheck: true });
+
+    const released = makeLock({ pid: 2 }).release({
+      pid: 2,
+      hostname: HOST,
+      issue: 23,
+    });
+
     expect(released).toBe(true);
     expect(existsSync(join(locksDir, CHECKOUT_LOCK_FILENAME))).toBe(false);
+  });
+
+  it("refuses a skill-shell release naming a different issue", () => {
+    makeLock({ pid: 1 }).acquire(23, "/fullsolve 23", { skipPidCheck: true });
+
+    const released = makeLock({ pid: 2 }).release({
+      pid: 2,
+      hostname: HOST,
+      issue: 77,
+    });
+
+    expect(released).toBe(false);
+    expect(existsSync(join(locksDir, CHECKOUT_LOCK_FILENAME))).toBe(true);
+  });
+
+  it("re-acquires reentrantly by issue, matching what release accepts (#906)", () => {
+    // Identity symmetry: if issue-match is enough to release, it must be
+    // enough to re-acquire — otherwise a session blocks itself on its own
+    // lock part-way through its run.
+    makeLock({ pid: 1 }).acquire(23, "/fullsolve 23", { skipPidCheck: true });
+
+    const again = makeLock({ pid: 999 }).acquire(23, "/fullsolve 23", {
+      skipPidCheck: true,
+    });
+
+    expect(again.acquired).toBe(true);
+    if (!again.acquired) throw new Error("unreachable");
+    expect(again.reentrant).toBe(true);
+  });
+
+  it("still refuses a foreign issue's acquire while the holder is fresh", () => {
+    makeLock({ pid: 1 }).acquire(23, "/fullsolve 23", { skipPidCheck: true });
+
+    const other = makeLock({ pid: 999 }).acquire(77, "/fullsolve 77", {
+      skipPidCheck: true,
+    });
+
+    expect(other.acquired).toBe(false);
+    if (other.acquired) throw new Error("unreachable");
+    expect(other.holder.issue).toBe(23);
   });
 
   it("refuses to release a cross-host holder", () => {
@@ -293,7 +358,48 @@ describe("CheckoutLock — AC-5: orchestrator/MCP mode is a no-op", () => {
   });
 });
 
-describe("isSameHolder", () => {
+describe("CheckoutLock — clear() on a corrupt lock file (#906)", () => {
+  // Reachable in production: `writeAtomic` creates the file with openSync and
+  // writes to it as a second step, so a process killed in between leaves a
+  // zero-byte checkout.lock (#856 documents the group-SIGKILL that does it).
+  it("removes a zero-byte lock that no other command could clear", () => {
+    const lockPath = join(locksDir, CHECKOUT_LOCK_FILENAME);
+    writeFileSync(lockPath, "");
+
+    // The precondition that made it unclearable: nothing can read a holder.
+    expect(makeLock().check()).toBeNull();
+
+    expect(makeLock().clear()).toEqual({
+      cleared: true,
+      reason: "cleared-corrupt",
+    });
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("removes an unparseable lock without needing --force", () => {
+    // --force gates the *staleness* check, which needs a holder to evaluate.
+    // Corrupt bytes name no session, so there is nothing to protect.
+    const lockPath = join(locksDir, CHECKOUT_LOCK_FILENAME);
+    writeFileSync(lockPath, "{ not json at all");
+
+    expect(makeLock().clear({ safetyCheck: true }).cleared).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it("still reports no-lock when the file is genuinely absent", () => {
+    expect(makeLock().clear()).toEqual({ cleared: false, reason: "no-lock" });
+  });
+
+  it("lets acquire proceed again once the corrupt lock is cleared", () => {
+    const lockPath = join(locksDir, CHECKOUT_LOCK_FILENAME);
+    writeFileSync(lockPath, "");
+
+    makeLock().clear();
+    expect(makeLock().acquire(23, "/fullsolve 23").acquired).toBe(true);
+  });
+});
+
+describe("isCheckoutOwner — the five-rule matrix (#906)", () => {
   const base: CheckoutLockFile = {
     pid: 1,
     hostname: HOST,
@@ -301,27 +407,62 @@ describe("isSameHolder", () => {
     command: "x",
     issue: 23,
   };
+  const skill: CheckoutLockFile = { ...base, skipPidCheck: true };
 
-  it("prefers sessionId when both sides have one", () => {
+  it("rule 1: refuses a cross-host caller before any other rule runs", () => {
+    // Checked first on purpose: no weaker rule below may overturn it. A
+    // matching sessionId does not rescue a foreign host.
     expect(
-      isSameHolder(
+      isCheckoutOwner(
         { ...base, sessionId: "S1" },
-        { sessionId: "S1", pid: 999, hostname: "elsewhere" },
+        { sessionId: "S1", pid: 1, hostname: "elsewhere" },
+      ),
+    ).toBe(false);
+    expect(isCheckoutOwner(base, { pid: 1, hostname: "elsewhere" })).toBe(
+      false,
+    );
+  });
+
+  it("rule 2: when both sides carry a sessionId, equality decides with no fall-through", () => {
+    expect(
+      isCheckoutOwner(
+        { ...base, sessionId: "S1" },
+        { sessionId: "S1", pid: 999, hostname: HOST },
       ),
     ).toBe(true);
 
+    // A mismatch is positive proof of non-ownership — a matching pid and a
+    // matching issue must NOT rescue it.
     expect(
-      isSameHolder(
-        { ...base, sessionId: "S1" },
-        { sessionId: "S2", pid: 1, hostname: HOST },
+      isCheckoutOwner(
+        { ...skill, sessionId: "S1" },
+        { sessionId: "S2", pid: 1, hostname: HOST, issue: 23 },
       ),
     ).toBe(false);
   });
 
-  it("falls back to pid+hostname when a sessionId is missing", () => {
-    expect(isSameHolder(base, { pid: 1, hostname: HOST })).toBe(true);
-    expect(isSameHolder(base, { pid: 2, hostname: HOST })).toBe(false);
-    expect(isSameHolder(base, { pid: 1, hostname: "other" })).toBe(false);
+  it("rule 3: a live process releases its own lock by pid+hostname", () => {
+    expect(isCheckoutOwner(base, { pid: 1, hostname: HOST })).toBe(true);
+    expect(isCheckoutOwner(base, { pid: 2, hostname: HOST })).toBe(false);
+  });
+
+  it("rule 4: issue identity applies to skipPidCheck locks only", () => {
+    expect(
+      isCheckoutOwner(skill, { pid: 999, hostname: HOST, issue: 23 }),
+    ).toBe(true);
+    // Not a skill-shell lock: the issue proves nothing, the PID is authoritative.
+    expect(isCheckoutOwner(base, { pid: 999, hostname: HOST, issue: 23 })).toBe(
+      false,
+    );
+  });
+
+  it("rule 5: refuses a foreign issue, and a caller that names no issue at all", () => {
+    // This is the exact reported bug: session B, blocked on #77, running its
+    // release contract against A's fresh #23 lock.
+    expect(
+      isCheckoutOwner(skill, { pid: 999, hostname: HOST, issue: 77 }),
+    ).toBe(false);
+    expect(isCheckoutOwner(skill, { pid: 999, hostname: HOST })).toBe(false);
   });
 });
 
@@ -348,12 +489,12 @@ describe("formatCheckoutLockedMessage — AC-2 + AC-3", () => {
     // Names the worktree the blocked session should use instead...
     expect(msg).toContain("../worktrees/feature/10-*/");
     // ...and how to clear a stale holder.
-    expect(msg).toContain("sequant locks checkout clear");
+    expect(msg).toContain("sequant locks checkout clear --force");
   });
 
   it("degrades to a generic worktree hint when the blocked issue is unknown", () => {
     const msg = formatCheckoutLockedMessage(holder);
     expect(msg).toContain("../worktrees/feature/<issue>-*/");
-    expect(msg).toContain("sequant locks checkout clear");
+    expect(msg).toContain("sequant locks checkout clear --force");
   });
 });

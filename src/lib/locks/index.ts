@@ -6,7 +6,7 @@
 export {
   CheckoutLock,
   formatCheckoutLockedMessage,
-  isSameHolder,
+  isCheckoutOwner,
 } from "./checkout-lock.js";
 export type { CheckoutLockOptions } from "./checkout-lock.js";
 export {

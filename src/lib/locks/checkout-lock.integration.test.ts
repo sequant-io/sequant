@@ -229,7 +229,7 @@ describe("AC-3: the refusal is actionable", () => {
     expect(stderr).toContain("worktrees/feature/");
     expect(stderr).toContain("new-feature.sh");
     expect(stderr).toContain("git -C <worktree>");
-    expect(stderr).toContain("sequant locks checkout clear");
+    expect(stderr).toContain("sequant locks checkout clear --force");
   });
 });
 
@@ -629,7 +629,10 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
 
     const released = spawnSync(
       process.execPath,
-      [CLI, "locks", "checkout", "release", "--json"],
+      // `--issue` is what proves ownership of a `--skip-pid-check` lock (#906);
+      // the acquiring shell's PID is gone by now. The follow-on acquire below
+      // is the part that proves the handoff actually happened.
+      [CLI, "locks", "checkout", "release", "--issue=23", "--json"],
       {
         encoding: "utf-8",
         env: {
@@ -643,6 +646,136 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
 
     const next = await acquireAsync(10, "session-B", locksDir);
     expect(next.acquired).toBe(true);
+  });
+});
+
+/**
+ * The motivating example from #906, replayed verbatim as a fixture.
+ *
+ * Two `/fullsolve` sessions share one checkout. B is correctly refused the
+ * lock, is correctly blocked by the hook — and then finishes first and runs
+ * the Phase 0.3 release contract that every halt branch runs. Before the fix
+ * that release removed A's lock, and a third session sailed through the guard
+ * while A was still mid-run.
+ */
+describe("#906: a blocked session's release contract cannot unlock the tree", () => {
+  const CLI = join(REPO_ROOT, "dist/bin/cli.js");
+
+  function checkoutCli(args: string[], locksDir: string) {
+    return spawnSync(process.execPath, [CLI, "locks", "checkout", ...args], {
+      encoding: "utf-8",
+      env: {
+        ...process.env,
+        SEQUANT_LOCKS_DIR: locksDir,
+        SEQUANT_ORCHESTRATOR: "",
+      },
+    });
+  }
+
+  it("B's release refuses, A's lock survives, and the hook still blocks B", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+
+    // Session A (/fullsolve 23) claims the tree.
+    const a = checkoutCli(
+      [
+        "acquire",
+        "--issue=23",
+        "--command=/fullsolve 23",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+    expect(JSON.parse(a.stdout.trim()).acquired).toBe(true);
+
+    // Session B (/fullsolve 77) is refused — tolerated by `|| true` in the
+    // skill, so B continues by design.
+    const b = checkoutCli(
+      [
+        "acquire",
+        "--issue=77",
+        "--command=/fullsolve 77",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+    expect(b.status).toBe(1);
+    expect(JSON.parse(b.stdout.trim()).acquired).toBe(false);
+
+    // The hook blocks B's branch-mutating git. This is the protection that
+    // used to evaporate one command later.
+    expect(
+      runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        env: { SEQUANT_LOCKS_DIR: locksDir, SEQUANT_ISSUE: "77" },
+      }).status,
+    ).toBe(2);
+
+    // B halts and runs its release contract.
+    const bRelease = checkoutCli(["release", "--issue=77", "--json"], locksDir);
+    const parsed = JSON.parse(bRelease.stdout.trim());
+    expect(parsed.released).toBe(false);
+    expect(parsed.refused).toBe(true);
+    expect(bRelease.status).toBe(1);
+
+    // A still holds the tree.
+    const onDisk = JSON.parse(
+      readFileSync(join(locksDir, "checkout.lock"), "utf-8"),
+    );
+    expect(onDisk.issue).toBe(23);
+
+    // And the guard is still armed against B.
+    expect(
+      runHook({
+        command: "git checkout main",
+        sessionId: OTHER_SESSION,
+        env: { SEQUANT_LOCKS_DIR: locksDir, SEQUANT_ISSUE: "77" },
+      }).status,
+    ).toBe(2);
+  });
+
+  it("a bare release — no --issue at all — is refused, not silently ineffective", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    checkoutCli(
+      [
+        "acquire",
+        "--issue=23",
+        "--command=/fullsolve 23",
+        "--skip-pid-check",
+        "--json",
+      ],
+      locksDir,
+    );
+
+    const bare = checkoutCli(["release"], locksDir);
+
+    expect(bare.status).toBe(1);
+    // A refusal must name the holder and the way out — otherwise it is
+    // indistinguishable from the "nothing was held" no-op below.
+    expect(bare.stderr).toContain("#23");
+    expect(bare.stderr).toContain("sequant locks checkout clear --force");
+  });
+
+  it("releasing when nothing is held stays a quiet, successful no-op", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    mkdirSync(locksDir, { recursive: true });
+
+    const nothing = checkoutCli(["release", "--issue=23", "--json"], locksDir);
+
+    expect(nothing.status).toBe(0);
+    const parsed = JSON.parse(nothing.stdout.trim());
+    expect(parsed.released).toBe(false);
+    expect(parsed.refused).toBe(false);
+  });
+
+  it("rejects an invalid --issue on release with exit 2 rather than refusing", () => {
+    const locksDir = join(checkout, ".sequant/locks");
+    const bad = checkoutCli(["release", "--issue=abc"], locksDir);
+
+    expect(bad.status).toBe(2);
+    expect(bad.stderr).toContain("Invalid issue number");
   });
 });
 

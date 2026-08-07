@@ -624,7 +624,7 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
                     echo "    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/"
                     echo "      (create it with: ./scripts/new-feature.sh <your-issue>)"
                     echo "    • Or target it explicitly: git -C <worktree> <command>"
-                    echo "    • If that session is gone: sequant locks checkout clear"
+                    echo "    • If that session is gone: sequant locks checkout clear --force"
                 } >&2
                 exit 2
             fi

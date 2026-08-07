@@ -151,11 +151,33 @@ export interface LocksCheckoutOptions {
 }
 
 /**
+ * Validate `--issue` for the checkout commands. Shared by `acquire` (where the
+ * flag is required) and `release` (where it is optional) so the two cannot
+ * drift on what counts as a valid issue.
+ *
+ * `Number.parseInt` + `Number.isInteger`, never a bare `Number(x)`:
+ * `Number(undefined)` is `NaN`, and `NaN !== undefined`, so a `NaN` would sail
+ * through the `issue !== undefined` guard in `isCheckoutOwner` and silently
+ * refuse every release instead of erroring here (#906).
+ */
+function parseCheckoutIssue(
+  raw: string,
+): { ok: true; issue: number } | { ok: false } {
+  const issue = Number.parseInt(raw, 10);
+  if (!Number.isInteger(issue) || issue <= 0) {
+    console.error(chalk.red(`Invalid issue number: ${raw}`));
+    process.exitCode = 2;
+    return { ok: false };
+  }
+  return { ok: true, issue };
+}
+
+/**
  * `sequant locks checkout <acquire|release|check|clear>` — the working-tree
  * lock (#901).
  *
  * Exit codes mirror the per-issue commands:
- *   0 — success (acquired / released / free / cleared)
+ *   0 — success (acquired / released / free / cleared / nothing to release)
  *   1 — held by another session, or refused
  *   2 — invalid arguments
  */
@@ -184,12 +206,9 @@ export async function locksCheckoutCommand(
         process.exitCode = 2;
         return;
       }
-      const issue = Number.parseInt(options.issue, 10);
-      if (!Number.isInteger(issue) || issue <= 0) {
-        console.error(chalk.red(`Invalid issue number: ${options.issue}`));
-        process.exitCode = 2;
-        return;
-      }
+      const parsed = parseCheckoutIssue(options.issue);
+      if (!parsed.ok) return;
+      const issue = parsed.issue;
 
       const result = lock.acquire(issue, options.command ?? "unknown", {
         sessionId: options.sessionId,
@@ -235,19 +254,62 @@ export async function locksCheckoutCommand(
     }
 
     case "release": {
+      // `--issue` is optional here, unlike `acquire`: a live process releasing
+      // its own lock is identified by PID. It is required in practice for
+      // skill shells, whose PID is already gone — see `isCheckoutOwner`.
+      let issue: number | undefined;
+      if (options.issue !== undefined) {
+        const parsed = parseCheckoutIssue(options.issue);
+        if (!parsed.ok) return;
+        issue = parsed.issue;
+      }
+
+      // Read the holder *before* releasing, so a refusal can name it.
+      const holder = lock.check();
       const released = lock.release({
         sessionId: options.sessionId,
         ...lock.selfIdentity,
+        issue,
       });
+
+      // Three outcomes, not two (#906). Before ownership was enforced,
+      // "released nothing" could only mean "nothing was held". It now also
+      // means "held, but not by you" — a real refusal, which must not print
+      // the same gray no-op line or exit 0.
       if (options.json) {
-        console.log(JSON.stringify({ released }));
-      } else {
         console.log(
-          released
-            ? chalk.green("✓ Released checkout lock")
-            : chalk.gray("No releasable checkout lock"),
+          JSON.stringify({
+            released,
+            refused: !released && holder !== null,
+            ...(holder ? { holder } : {}),
+          }),
         );
+        if (!released && holder) process.exitCode = 1;
+        return;
       }
+
+      if (released) {
+        console.log(chalk.green("✓ Released checkout lock"));
+        return;
+      }
+
+      if (holder) {
+        process.exitCode = 1;
+        console.error(
+          chalk.yellow(
+            `Refusing to release the checkout lock — it belongs to the session working #${holder.issue} ` +
+              `(PID ${holder.pid} on ${holder.hostname}, started ${holder.startedAt}).\n` +
+              (issue === undefined
+                ? `You passed no --issue, so nothing identified you as the holder.\n` +
+                  `  • If you are that session: sequant locks checkout release --issue=${holder.issue}\n`
+                : `You passed --issue=${issue}.\n`) +
+              `  • If that session is gone: sequant locks checkout clear --force`,
+          ),
+        );
+        return;
+      }
+
+      console.log(chalk.gray("No releasable checkout lock"));
       return;
     }
 
@@ -290,7 +352,7 @@ export async function locksCheckoutCommand(
       console.log(
         chalk.yellow(
           "Refusing to clear a fresh checkout lock. " +
-            "Re-run with --force if you are sure the holder is gone.",
+            "Re-run with `sequant locks checkout clear --force` if you are sure the holder is gone.",
         ),
       );
       return;
