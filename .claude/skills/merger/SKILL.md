@@ -100,6 +100,54 @@ When processing multiple issues, determine the execution mode for validation che
 
 ## Workflow
 
+### Acquire the Checkout Lock (REQUIRED)
+
+`/merger` runs branch-mutating git **in the main checkout**: `git checkout main`
+for the baseline in Step 0, then `git checkout -b integrate/…` and `git merge` on
+the integration path (Step 5), plus the mid-workflow `git checkout main` in
+Steps 6–7. Those verbs are global to the working tree, so before the first one
+you must claim the checkout lock (#901), exactly as `/fullsolve` does in its
+Phase 0.3. Without it a session on another issue can interleave a `git checkout`
+and land a merge on the wrong HEAD; and because the guard refuses a *non-holder*,
+an unparticipating `/merger` is itself refused when someone else holds the tree.
+
+`/merger` operates on several issues, so identify the holder by the **first issue
+number** passed to it and use that same `<first-issue>` on the acquire and on
+*every* release below — acquire and release must name the same holder or the
+release is refused against your own lock (#906). Substitute the literal number
+(e.g. `--issue=10` for `/merger 10 12`); a shell variable is invisible to the
+`pre-tool.sh` guard, which reads the command text before the shell expands it.
+
+```bash
+# Claim the shared working tree before the first branch-mutating verb.
+npx sequant locks checkout acquire \
+    --issue=<first-issue> \
+    --command="/merger <issue-numbers>" \
+    --skip-pid-check || true
+# Belt-and-suspenders for a parent that launched us with it; the guard's real
+# binding comes from watching the acquire command above (#906).
+export SEQUANT_ISSUE=<first-issue>
+```
+
+**`--issue` is mandatory** (#906): it is what proves you are the holder on
+release, since the acquiring shell's PID is gone by the next block
+(`--skip-pid-check`). Stale recovery is therefore age-based only (the 6h
+`SEQUANT_SKILL_LOCK_TTL_MS` and the 24h `SEQUANT_MAX_LOCK_AGE_MS` ceiling), not
+same-host dead-PID recovery.
+
+**Release contract:** release the checkout lock —
+`npx sequant locks checkout release --issue=<first-issue> || true` — on **every**
+path that exits `/merger`: happy-path completion (Step 8), the regression-gate
+halt (Step 7), and any error/abort in "Error Handling". Do **NOT** release on a
+branch that *continues* to a later branch-mutating verb (the #906 distinction):
+the integration `git merge` in Step 5 and the `git checkout main` in Steps 6–7
+run under the lock and must stay protected until the run ends.
+
+**Orchestrator/MCP mode:** when `SEQUANT_ORCHESTRATOR` is set, every `locks
+checkout` action is a no-op (exit 0, no file touched) and the `pre-tool.sh`
+checkout guard stands down, so the acquire/release calls are safe to run
+unconditionally.
+
 ### Step 0: Baseline Capture (REQUIRED)
 
 **Purpose:** Capture build error count and test pass/fail counts on main **before** any merge, so post-merge results can be compared to detect regressions.
@@ -401,6 +449,9 @@ if [[ "$REGRESSION_DETECTED" == "true" ]]; then
     echo "⚠️ REGRESSION DETECTED but --force flag set. Proceeding with merge."
     echo "⚠️ Acknowledgment: Merging despite $BUILD_DELTA new build error(s) and $TEST_FAIL_DELTA new test failure(s)."
   else
+    # Terminal halt — release the checkout lock before stopping (#901/#906).
+    # This branch does NOT continue to Step 8, so the release lives here.
+    npx sequant locks checkout release --issue=<first-issue> || true
     echo "❌ REGRESSION DETECTED — merge is blocked."
     echo ""
     echo "New build errors: $BUILD_DELTA"
@@ -473,6 +524,21 @@ git diff HEAD~1 --stat
 ```
 
 **Important:** Regression detection does NOT trigger automatic rollback. It reports for human decision-making.
+
+### Step 8: Release the Checkout Lock (REQUIRED)
+
+The merge is complete. Release the working-tree lock so other sessions can run
+branch-mutating git again (#901). Run this on the happy path — a successful merge
+and smoketest, or the `--force` proceed past a regression. It is the counterpart
+to the acquire in "Acquire the Checkout Lock" above.
+
+```bash
+npx sequant locks checkout release --issue=<first-issue> || true
+```
+
+On a *failure* exit instead, the release is done at the halt site — the
+regression gate (Step 7) or "Error Handling" — never both, so exactly one release
+runs per invocation.
 
 ## Dependency Detection
 
@@ -592,6 +658,14 @@ gh pr view <PR_NUMBER> --json baseRefName,body | \
 ```
 
 ## Error Handling
+
+**Before halting on any failure below, release the checkout lock** (#901/#906) —
+the acquire in "Acquire the Checkout Lock" claimed the tree, and every failure
+here is a terminal exit that must hand it back before stopping:
+
+```bash
+npx sequant locks checkout release --issue=<first-issue> || true
+```
 
 **If validation fails:**
 - Report which issues failed validation
