@@ -258,6 +258,14 @@ seg_match() {
     [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
 }
 
+# Path of the session->issue binding the checkout guard maintains (#906).
+# $1 = repo toplevel, $2 = session id. The id is opaque, so squash everything
+# outside a filename-safe set — it must not be able to escape the directory.
+_co_binding_path() {
+    printf '%s/.sequant/locks/session-%s.issue' \
+        "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9_-' '_')"
+}
+
 # Precompute the segment list once, for Bash commands only.
 SEGMENTS=""
 if [[ "$TOOL_NAME" == "Bash" ]]; then
@@ -470,6 +478,42 @@ if seg_match 'git reset.*(--hard|origin)'; then
     fi
 fi
 
+# --- Session -> issue binding for the checkout guard (Issue #906) ---
+# `SEQUANT_ISSUE` cannot identify the holder interactively, and never could:
+# PreToolUse runs OUTSIDE and BEFORE the command's shell, so nothing a skill
+# bash block exports is visible here — not even an export prepended to the same
+# block as the guarded command. The one path that does export it (`sequant run`)
+# also sets SEQUANT_ORCHESTRATOR, where this guard stands down. So the env
+# fallback below was unreachable in every real flow, and the holder was
+# routinely blocked by its own lock.
+#
+# The hook does see both the acquire and every later command of the same
+# session, and `session_id` survives the shell boundary that kills the
+# acquiring PID. Record the binding when we observe the acquire; read it back
+# when deciding whether the caller is the holder.
+if [[ -n "${SESSION_ID:-}" ]] && seg_match 'locks +checkout +(acquire|release)'; then
+    _CO_SB_ROOT=$(git -C "${HOOK_CWD:-$PWD}" rev-parse --show-toplevel 2>/dev/null || echo "")
+    if [[ -n "$_CO_SB_ROOT" && -d "$_CO_SB_ROOT/.git" ]]; then
+        _CO_SB_FILE=$(_co_binding_path "$_CO_SB_ROOT" "$SESSION_ID")
+        _CO_SB_ISSUE=$(printf '%s' "$TOOL_INPUT" \
+            | grep -oE '\-\-issue[= ]+[0-9]+' | head -1 | grep -oE '[0-9]+$' || true)
+        if seg_match 'locks +checkout +acquire'; then
+            if [[ -n "$_CO_SB_ISSUE" ]]; then
+                mkdir -p "$(dirname "$_CO_SB_FILE")" 2>/dev/null \
+                    && printf '%s' "$_CO_SB_ISSUE" > "$_CO_SB_FILE" 2>/dev/null || true
+            fi
+        elif [[ -f "$_CO_SB_FILE" ]]; then
+            # Clear only when the session releases its OWN claim. A refused
+            # release (wrong --issue) must not strip the real holder's identity
+            # and leave it blocked by its own lock.
+            if [[ -n "$_CO_SB_ISSUE" \
+                  && "$_CO_SB_ISSUE" == "$(cat "$_CO_SB_FILE" 2>/dev/null)" ]]; then
+                rm -f "$_CO_SB_FILE" 2>/dev/null || true
+            fi
+        fi
+    fi
+fi
+
 # --- Checkout-scoped lock enforcement (Issue #901) ---
 # The per-issue lock (#625) keys on issue number, so two sessions working
 # *different* issues take different lock files and never contend. But
@@ -493,7 +537,7 @@ fi
 if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
    && seg_match 'git (checkout|switch|reset|rebase|merge|cherry-pick)( |$)' \
    && ! seg_match 'git +-C ' \
-   && ! seg_match 'git checkout ([^ ]+ )?-- '; then
+   && ! seg_match 'git checkout ([^ ]+ )?--( |$)'; then
 
     # Only the MAIN checkout is protected — a command run inside a worktree
     # touches only that worktree's HEAD and must never be blocked.
@@ -606,7 +650,17 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
             if [[ -n "$_CO_HOLDER_SESSION" && -n "$SESSION_ID" ]]; then
                 [[ "$_CO_HOLDER_SESSION" == "$SESSION_ID" ]] && _CO_IS_HOLDER=true
             elif [[ -n "${SEQUANT_ISSUE:-}" && -n "$_CO_HOLDER_ISSUE" ]]; then
+                # Reachable only from a parent process that exported it — never
+                # from a skill bash block (#906). Kept for `sequant run`-shaped
+                # callers; the binding below is what works interactively.
                 [[ "${SEQUANT_ISSUE}" == "$_CO_HOLDER_ISSUE" ]] && _CO_IS_HOLDER=true
+            elif [[ -n "${SESSION_ID:-}" && -n "$_CO_HOLDER_ISSUE" ]]; then
+                # The binding this hook recorded when it saw THIS session run
+                # `locks checkout acquire --issue=N` (#906).
+                _CO_BIND=$(_co_binding_path "$_CO_ROOT" "$SESSION_ID")
+                [[ -f "$_CO_BIND" \
+                   && "$(cat "$_CO_BIND" 2>/dev/null)" == "$_CO_HOLDER_ISSUE" ]] \
+                    && _CO_IS_HOLDER=true
             fi
 
             if [[ "$_CO_FRESH" == "true" && "$_CO_IS_HOLDER" == "false" ]]; then
@@ -624,7 +678,7 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
                     echo "    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/"
                     echo "      (create it with: ./scripts/new-feature.sh <your-issue>)"
                     echo "    • Or target it explicitly: git -C <worktree> <command>"
-                    echo "    • If that session is gone: sequant locks checkout clear"
+                    echo "    • If that session is gone: sequant locks checkout clear --force"
                 } >&2
                 exit 2
             fi

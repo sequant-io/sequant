@@ -102,6 +102,15 @@ export interface CheckoutHolderIdentity {
   /** Falls back to these when `sessionId` is absent on either side. */
   pid: number;
   hostname: string;
+  /**
+   * The issue this session is working on (#906).
+   *
+   * Last-resort ownership proxy for `skipPidCheck` locks, whose PID is dead
+   * by the time anything checks it. Optional because a live process releasing
+   * its own lock identifies itself by PID and needs none of this — but a
+   * skill shell that omits it can no longer release, which is deliberate.
+   */
+  issue?: number;
 }
 
 /** Outcome of `CheckoutLock.acquire()`. */

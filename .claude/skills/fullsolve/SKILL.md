@@ -259,6 +259,23 @@ Before creating any files, check if they already exist:
 
 **Before invoking `/spec`**, claim the per-issue concurrency lock.
 
+**Phase 0 always runs — including on a resumed run.** Smart Resumption (above) chooses only *which phase comes next after Phase 0*; it never skips Phase 0 itself. A resumed session that skipped the acquire below would hold neither lock while doing exactly the work the locks exist to protect, and would then run the release contract against a lock it never took.
+
+**Declare the issue for the guard.** `pre-tool.sh` decides whether *you* are the checkout's holder by `sessionId` when both sides have one, then by `SEQUANT_ISSUE`, and finally by the session→issue binding it records for itself.
+
+```bash
+export SEQUANT_ISSUE=<issue-number>
+```
+
+**You do not need that export to be recognized as the holder (#906).** `PreToolUse` runs *outside and before* your command's shell, so nothing a skill bash block exports is visible to it — not even an export prepended to the same block as the guarded command. Instead the hook watches for `locks checkout acquire --issue=<N>` and records the binding itself, keyed on the session id, which is the one identity that survives the shell boundary killing the acquiring PID. The `export` above still helps a parent process that launched you with it; it is not what unblocks you.
+
+Consequences worth knowing:
+
+- After the acquire in this phase, branch-mutating git **in the main checkout is allowed for you** and still refused for every other session.
+- `git -C "$SEQUANT_WORKTREE" …` is exempt regardless, and is what every phase after 1.5 should be using anyway.
+- Path-restore (`git checkout -- <path>`) is exempt whether or not the path is quoted.
+- If the hook never observed your acquire (it was disabled, or the lock was taken by another tool), you are treated as a non-holder — release and re-acquire so the binding is recorded.
+
 **What this lock covers — and what it does not (#901).** The per-issue lock is keyed on the *issue number*. It prevents a second session from working on **the same issue** — another `/fullsolve <same-issue>`, an `npx sequant run <same-issue>`, or the same issue in a different window — and producing zero-diff exec failures.
 
 It is **not** a general concurrency guarantee. Two sessions working *different* issues take different lock files and never contend, even when they share one working tree. `git checkout`, `switch`, `reset`, `rebase`, `merge` and `cherry-pick` are global to a checkout, so the per-issue lock says nothing about them. That contention is covered by the separate **checkout lock** below.
@@ -287,22 +304,11 @@ npx sequant locks checkout acquire \
     --skip-pid-check || true
 ```
 
-Release it alongside the per-issue lock: `npx sequant locks checkout release || true`. Stale recovery matches the per-issue lock (same-host dead PID, age ceiling, `SEQUANT_MAX_LOCK_AGE_MS`), so an abandoned holder cannot wedge the checkout permanently.
+Release it alongside the per-issue lock: `npx sequant locks checkout release --issue=<issue-number> || true`. **`--issue` is mandatory** (#906) — it is what proves you are the holder. `--skip-pid-check` means the acquiring shell's PID is already dead, so PID identity is unavailable and a release without `--issue` is refused, not merely ineffective. Stale recovery is therefore age-based only for this lock: the 6h `SEQUANT_SKILL_LOCK_TTL_MS` and the 24h `SEQUANT_MAX_LOCK_AGE_MS` ceiling, *not* same-host dead-PID recovery, which `--skip-pid-check` disables by definition. An abandoned holder still cannot wedge the checkout permanently.
 
-```bash
-# Acquire lock for this issue. --skip-pid-check is required: the shell that
-# runs this command exits immediately, so the lock's PID is dead by the time
-# the next check runs. Stale recovery falls back to age-only (2h).
-if ! npx sequant locks acquire <issue-number> \
-    --command="/fullsolve <issue-number>" \
-    --skip-pid-check; then
-  echo "❌ Another session is working on #<issue-number>. Run 'npx sequant locks list' for details."
-  echo "   If you're sure the holder is dead, run: npx sequant locks clear <issue-number>"
-  exit 1
-fi
-```
+**Release contract:** Phase 5.5 releases both locks on the happy path. On ANY branch that **exits the workflow without reaching Phase 5** — spec failure, exec iterations exhausted, unrecoverable error — you MUST run `npx sequant locks release <issue-number> || true` and `npx sequant locks checkout release --issue=<issue-number> || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new early-exit path, add a release call there too.
 
-**Release contract:** Phase 5.5 releases both locks on the happy path. On ANY halt/abort branch (spec failure, exec exhausted, qa loop exhausted with AC_NOT_MET, unrecoverable error, stagnation halt), you MUST run `npx sequant locks release <issue-number> || true` and `npx sequant locks checkout release || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new abort path, add a release call there too.
+**Do NOT release at a branch that continues to Phase 5.** QA-loop exhaustion and the stagnation halt both fall through to PR creation, which still runs git in this tree — releasing there would leave Phase 5 unprotected.
 
 **Backstop:** If a release is somehow missed, stale recovery clears the lock after 6h on the same host (`SEQUANT_SKILL_LOCK_TTL_MS` overrides). The user can also force-clear via `npx sequant locks clear <issue-number>`.
 
@@ -354,7 +360,7 @@ If `/spec` fails:
 ```bash
 # Release before halting — see Phase 0.3 release contract.
 npx sequant locks release <issue-number> || true
-npx sequant locks checkout release || true
+npx sequant locks checkout release --issue=<issue-number> || true
 ```
 
 ```markdown
@@ -393,7 +399,7 @@ where "here" is — so it must hold a **resolved absolute path**, never a glob.
 SEQUANT_WORKTREE="$(npx sequant worktree resolve <issue-number>)" || {
   echo "❌ Could not resolve a worktree for #<issue-number> after creating one."
   npx sequant locks release <issue-number> || true
-  npx sequant locks checkout release || true
+  npx sequant locks checkout release --issue=<issue-number> || true
   exit 1
 }
 export SEQUANT_WORKTREE
@@ -410,7 +416,7 @@ and halt — do not proceed into Phase 2 in the main checkout:
 
 ```bash
 npx sequant locks release <issue-number> || true
-npx sequant locks checkout release || true
+npx sequant locks checkout release --issue=<issue-number> || true
 ```
 
 <!-- END: worktree-creation (#899) -->
@@ -478,7 +484,7 @@ while exec_iteration < MAX_EXEC_ITERATIONS:
 ```bash
 # Release before halting — see Phase 0.3 release contract.
 npx sequant locks release <issue-number> || true
-npx sequant locks checkout release || true
+npx sequant locks checkout release --issue=<issue-number> || true
 ```
 
 ```markdown
@@ -720,6 +726,11 @@ echo "Current branch: $CURRENT_BRANCH"
 
 # HARD GATE: Must be on a feature branch, not main/master
 if [[ "$CURRENT_BRANCH" == "main" || "$CURRENT_BRANCH" == "master" ]]; then
+  # Release before halting — see Phase 0.3 release contract. This gate fires
+  # later than any other exit path, so a leak here wedges the tree for the
+  # longest (#906).
+  npx sequant locks release <issue-number> || true
+  npx sequant locks checkout release --issue=<issue-number> || true
   echo "❌ ERROR: On $CURRENT_BRANCH — commits must NOT land on main."
   echo "   Fix: git checkout feature/<issue-number>-* or create a new branch."
   exit 1
@@ -793,10 +804,12 @@ After the PR is created (or earlier if the workflow exits gracefully), release b
 
 ```bash
 npx sequant locks release <issue-number> || true
-npx sequant locks checkout release || true
+npx sequant locks checkout release --issue=<issue-number> || true
 ```
 
 `|| true` is intentional — release is idempotent; the lock may already have been cleared (orchestrator mode, age-based recovery, or manual `locks clear`). The exit code is informational only.
+
+**But read it if you are debugging (#906).** A non-zero exit from `locks checkout release` no longer means only "nothing was held". It now also means **"held, but not by you"** — a refusal, printed with the holder's issue and the `clear --force` recovery command. If you see that after your own run, the usual cause is a missing or wrong `--issue`, not a stale lock.
 
 ## Iteration Tracking
 
@@ -900,10 +913,12 @@ Ready for human review and merge.
 
 ```bash
 npx sequant locks release <issue-number> || true
-npx sequant locks checkout release || true
+npx sequant locks checkout release --issue=<issue-number> || true
 ```
 
-Run this BEFORE printing the halt/exit message in any of the branches below. The release call is idempotent (no-op when nothing is held, no-op in orchestrator mode), so calling it unconditionally on every error path is safe.
+Run this BEFORE printing the halt/exit message in any branch below that **exits the workflow**. The release call is idempotent (no-op when nothing is held, no-op in orchestrator mode), so calling it unconditionally on a genuine exit path is safe.
+
+Do **not** run it on the two branches below that continue to Phase 5 — "test loop exhausted" and "QA loop exhausted" both go on to create a PR, and releasing there hands the tree away while this session is still using it.
 
 **If spec fails:**
 - Check issue exists and is readable

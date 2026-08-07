@@ -800,7 +800,10 @@ locksCmd
   .description(
     "Working-tree lock: acquire|release|check|clear (guards branch-mutating git in the main checkout)",
   )
-  .option("--issue <issue>", "Issue this session is working on (acquire)")
+  .option(
+    "--issue <issue>",
+    "Issue this session is working on (acquire, release; proves ownership on release)",
+  )
   .option("--command <command>", "Human-readable command label", "unknown")
   .option(
     "--session-id <id>",

@@ -77,21 +77,52 @@ export interface CheckoutLockOptions {
 }
 
 /**
- * Do two identities refer to the same session?
+ * Does `identity` own the checkout `holder` claimed? (#906)
  *
- * `sessionId` wins when *both* sides have one — it is the only identity that
- * survives a skill shell exiting between acquire and the next tool call.
- * Otherwise fall back to `pid` + `hostname`, which is what `LockManager`
- * already uses. Exported for the hook-parity tests.
+ * One predicate for both `acquire`'s reentrancy check and `release`'s
+ * permission check, so the two cannot disagree about who the holder is: a
+ * session able to release by a given identity is exactly the one able to
+ * re-acquire by it. Exported for the hook-parity tests.
+ *
+ * The rules are ordered, and the order is load-bearing:
+ *
+ *  1. Cross-host callers never own the lock. Checked first — no weaker rule
+ *     below may overturn it.
+ *  2. When *both* sides carry a `sessionId`, equality decides and nothing
+ *     falls through: a mismatch is positive proof of non-ownership, so
+ *     consulting a weaker signal afterwards could only overturn a stronger
+ *     one. (Dormant in the shipped flow — no env var carries Claude Code's
+ *     session id into a skill shell, so `acquire` never passes one. Kept
+ *     because leaking a lock for its TTL is the safer failure.)
+ *  3. Same PID on the same host: a live process releasing its own lock.
+ *  4. `skipPidCheck` locks only: the holder's issue number. A skill shell's
+ *     PID is dead by the time the next block runs — that is what
+ *     `skipPidCheck` marks — so the issue is the only identity left, and the
+ *     hook's blocking side (`pre-tool.sh`) already decides holder-ness the
+ *     same way. Deliberately a *courtesy* check, not a security boundary:
+ *     the issue number is readable from the lock file and `clear --force`
+ *     exists. It defends against the accident this rule was written for — a
+ *     *blocked* session running its release contract, which by construction
+ *     carries a different issue.
+ *  5. Anything else is refused.
  */
-export function isSameHolder(
+export function isCheckoutOwner(
   holder: CheckoutLockFile,
   identity: CheckoutHolderIdentity,
 ): boolean {
+  if (holder.hostname !== identity.hostname) return false;
   if (holder.sessionId && identity.sessionId) {
     return holder.sessionId === identity.sessionId;
   }
-  return holder.pid === identity.pid && holder.hostname === identity.hostname;
+  if (holder.pid === identity.pid) return true;
+  if (
+    holder.skipPidCheck === true &&
+    identity.issue !== undefined &&
+    identity.issue === holder.issue
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -142,7 +173,11 @@ export function formatCheckoutLockedMessage(
   lines.push(
     "  • Or run the command with `git -C <worktree>` so it does not touch this tree.",
     "  • If that session is gone, clear the stale holder:",
-    "      sequant locks checkout clear",
+    // `--force` is not optional advice (#906). Plain `clear` refuses a holder
+    // that still reads fresh, and a leaked skill-shell lock reads fresh for
+    // the full 6h TTL — so the un-forced form fails in exactly the situation
+    // that sends someone here.
+    "      sequant locks checkout clear --force",
   );
 
   return lines.join("\n");
@@ -185,7 +220,14 @@ export class CheckoutLock {
     return join(this.locksDir, CHECKOUT_LOCK_FILENAME);
   }
 
-  /** This process's identity, for callers that don't have a session id. */
+  /**
+   * This process's identity, for callers that don't have a session id.
+   *
+   * Deliberately carries no `issue` (#906): a bare `release()` losing the
+   * power to remove a *skill-shell* lock is the fix working, not an omission.
+   * A caller that legitimately owns such a lock knows its issue and must say
+   * so — `release({ ...lock.selfIdentity, issue })`.
+   */
   get selfIdentity(): CheckoutHolderIdentity {
     return { pid: this.pid, hostname: this.hostname };
   }
@@ -211,12 +253,17 @@ export class CheckoutLock {
 
     const existing = this.readSafe(lockPath);
     if (existing) {
+      // `issue` belongs in the identity for the same reason `release` needs
+      // it (#906): without it a session could release its own skill-shell
+      // lock by issue but not re-acquire it, and acquire would refuse the
+      // holder against its own lock part-way through a run.
       const identity: CheckoutHolderIdentity = {
         sessionId: options.sessionId,
         pid: this.pid,
         hostname: this.hostname,
+        issue,
       };
-      if (isSameHolder(existing, identity)) {
+      if (isCheckoutOwner(existing, identity)) {
         return { acquired: true, lockPath, reentrant: true };
       }
 
@@ -238,8 +285,21 @@ export class CheckoutLock {
   }
 
   /**
-   * Release the checkout if `identity` is its holder. Returns true when a lock
-   * was removed. Safe to call when nothing is held.
+   * Release the checkout if `identity` owns it. Returns true when a lock was
+   * removed — `false` covers both "nothing held" and "held, but not yours".
+   *
+   * Ownership is `isCheckoutOwner`, the same predicate `acquire` uses. Before
+   * #906 this method took any same-host caller's word for a `skipPidCheck`
+   * lock, which made acquire and release asymmetric in the one scenario the
+   * lock exists for: a second session's *acquire* was correctly refused while
+   * the holder was fresh, but its *release* — which every `/fullsolve` halt
+   * branch runs — succeeded and handed the tree away mid-run.
+   *
+   * `LockManager.releaseExternal` keeps the looser same-host rule safely
+   * because its lock *file* is issue-keyed: naming the file already proves the
+   * caller knows the issue. `checkout.lock` has a constant filename, so that
+   * proof has to move into the identity — which is exactly what rule 4 of
+   * `isCheckoutOwner` asks for.
    */
   release(identity?: CheckoutHolderIdentity): boolean {
     if (this.orchestratorMode) return false;
@@ -248,13 +308,7 @@ export class CheckoutLock {
     const current = this.readSafe(lockPath);
     if (!current) return false;
 
-    const who = identity ?? this.selfIdentity;
-    // A skill shell's PID is dead by the time release runs, which is exactly
-    // what `skipPidCheck` marks. Same-host ownership is then the strongest
-    // claim available — mirrors `LockManager.releaseExternal`.
-    const ownerHost = current.hostname === who.hostname;
-    if (!ownerHost) return false;
-    if (!isSameHolder(current, who) && !current.skipPidCheck) return false;
+    if (!isCheckoutOwner(current, identity ?? this.selfIdentity)) return false;
 
     this.unlinkSafe(lockPath);
     return true;
@@ -286,6 +340,17 @@ export class CheckoutLock {
   /**
    * Manually clear the checkout lock. With `safetyCheck` (default), refuses to
    * clear a holder that is still fresh — mirrors `LockManager.clearLock`.
+   *
+   * A file that exists but does not parse is removed unconditionally (#906).
+   * That state is reachable: `writeAtomic` creates the file with `openSync`
+   * and writes to it as a second step, so a process killed in between leaves a
+   * zero-byte `checkout.lock` (#856 documents the group-SIGKILL that does it).
+   * Before this branch existed such a file was unclearable by any command —
+   * `clear` read it, saw `null`, and reported `no-lock` without unlinking
+   * (`--force` only ever reached the *staleness* check, never the read), while
+   * `acquire` threw raw `EEXIST` and the hook, unable to parse any field,
+   * blocked on it forever. `safetyCheck` is not consulted because there is no
+   * holder to protect: unparseable bytes name no session.
    */
   clear(options: { safetyCheck?: boolean } = {}): {
     cleared: boolean;
@@ -297,7 +362,13 @@ export class CheckoutLock {
     const safetyCheck = options.safetyCheck ?? true;
     const lockPath = this.lockPath;
     const holder = this.readSafe(lockPath);
-    if (!holder) return { cleared: false, reason: "no-lock" };
+    if (!holder) {
+      if (existsSync(lockPath)) {
+        this.unlinkSafe(lockPath);
+        return { cleared: true, reason: "cleared-corrupt" };
+      }
+      return { cleared: false, reason: "no-lock" };
+    }
 
     if (safetyCheck && !this.staleness(holder)) {
       return { cleared: false, reason: "fresh-holder" };

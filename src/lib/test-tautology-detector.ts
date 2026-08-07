@@ -492,20 +492,40 @@ const SPAWN_PATTERN =
 const BUILD_OUTPUT_PATTERN = /\bdist\//;
 
 /**
- * Collect names of variables bound to a build-output path, e.g.
+ * Non-compiled production code this project ships and executes: the hook
+ * scripts and the `scripts/` + `templates/scripts/` trees (#906).
+ *
+ * `dist/` alone was too narrow. `checkout-lock.integration.test.ts` drives the
+ * real `.claude/hooks/pre-tool.sh` as a subprocess — that hook IS the
+ * enforcement half of the feature under test — yet every block in the file
+ * read as tautological because the path is not under `dist/`.
+ */
+const PROJECT_SCRIPT_PATTERN = /\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/;
+
+/**
+ * Collect names of variables bound to a path into the project's own executable
+ * code, e.g.
  *   const cliPath = resolve(projectRoot, "dist/bin/cli.js");
- * captures `cliPath`. Tests almost always spawn via such a handle rather than
- * an inline string, so these names stand in for the literal build path.
+ *   const HOOK    = join(REPO_ROOT, ".claude/hooks/pre-tool.sh");
+ * captures `cliPath` / `HOOK`. Tests almost always spawn via such a handle
+ * rather than an inline string, so these names stand in for the literal path.
  *
  * The right-hand side is statement-bounded (`[^;]`) so a match cannot bleed
- * across declarations, and must contain the `dist/` marker.
+ * across declarations, and must reach one of the two markers. Spawning a
+ * *system* binary (`git`, `bash` with a temp fixture) matches neither, which
+ * is the intended exclusion — those are not this project's code.
  */
 function collectBuildOutputVars(content: string): string[] {
   const names = new Set<string>();
-  const pattern = /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\bdist\//g;
-  let match;
-  while ((match = pattern.exec(content)) !== null) {
-    names.add(match[1]);
+  const patterns = [
+    /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\bdist\//g,
+    /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/g,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(content)) !== null) {
+      names.add(match[1]);
+    }
   }
   return [...names];
 }
@@ -518,7 +538,7 @@ function referencesBuildOutput(
   body: string,
   buildOutputVars: string[],
 ): boolean {
-  if (BUILD_OUTPUT_PATTERN.test(body)) {
+  if (BUILD_OUTPUT_PATTERN.test(body) || PROJECT_SCRIPT_PATTERN.test(body)) {
     return true;
   }
   return buildOutputVars.some((name) => referenceMatcher(name).test(body));
@@ -537,53 +557,96 @@ function spawnsBuildOutput(body: string, buildOutputVars: string[]): boolean {
 }
 
 /**
- * Extract module/describe-scope helper definitions (named block-bodied arrow
- * consts) as { name, body } pairs.
+ * Extract module/describe-scope helper definitions as { name, body } pairs.
  *
- * Anchors on `=> {` so a return-type object annotation
- *   const run = (): { stdout: string } => { ... }
- * is not mistaken for the function body. Params are matched with `[^()]*` (no
- * nested parens) to keep the scan from running away across the file. Only
- * block-bodied arrows are collected; the subprocess integration tests this
- * targets all use them.
+ * Two shapes, because both are idiomatic and a detector that saw only one
+ * produced large-scale false positives (#906): a test calling a helper the
+ * detector cannot see reads as import-less, hence tautological. Measured on
+ * `checkout-lock.integration.test.ts` (helpers written as `function`
+ * declarations): 17 of 19 blocks flagged, every one of them real.
+ *
+ * Params are matched with `[^()]*` (no nested parens) to keep the scan from
+ * running away across the file. Expression-bodied arrows are skipped — they
+ * have no `{` body to extract.
  */
 function extractHelperDefinitions(
   content: string,
 ): Array<{ name: string; body: string }> {
   const helpers: Array<{ name: string; body: string }> = [];
-  const pattern =
+
+  // Arrow consts anchor on `=> {`, so the body brace is unambiguous.
+  const arrowPattern =
     /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^()]*\)\s*(?::[^=]*?)?=>\s*\{/g;
   let match;
-  while ((match = pattern.exec(content)) !== null) {
-    if (isInsideString(content, match.index)) {
-      continue;
-    }
-    const name = match[1];
-    // The final `{` of the match is the function body's opening brace.
+  while ((match = arrowPattern.exec(content)) !== null) {
+    if (isInsideString(content, match.index)) continue;
     const braceIndex = match.index + match[0].length - 1;
-    const body = extractBlockBody(content.substring(braceIndex));
-    helpers.push({ name, body });
+    helpers.push({
+      name: match[1],
+      body: extractBlockBody(content.substring(braceIndex)),
+    });
+  }
+
+  // Declarations have no `=>` marker, and the return-type annotation may open
+  // a brace group of its own:
+  //   function runHook(o): { status: number; stderr: string } { ... }
+  // so the body is NOT simply the first `{` after the parameters. Do not try
+  // to express that in the regex — a greedy annotation subpattern silently ran
+  // past the body and anchored on the NEXT declaration's brace, yielding a
+  // "helper" whose body was somebody else's code (caught by the object
+  // return-type test below). Match only to the closing paren, then walk: take
+  // the first brace group; if another `{` follows it, that group was the
+  // return type and the body is the next one.
+  const declPattern = /(?:async\s+)?function\s*\*?\s*(\w+)\s*\([^()]*\)/g;
+  while ((match = declPattern.exec(content)) !== null) {
+    if (isInsideString(content, match.index)) continue;
+    const rest = content.substring(match.index + match[0].length);
+    const firstBrace = rest.indexOf("{");
+    if (firstBrace === -1) continue;
+    // Anything between `)` and the first `{` must be an annotation, not code.
+    if (/[;)=]/.test(rest.substring(0, firstBrace))) continue;
+
+    let body = extractBlockBody(rest.substring(firstBrace));
+    const after = rest.substring(firstBrace + body.length);
+    if (/^\s*\{/.test(after)) {
+      body = extractBlockBody(after);
+    }
+    helpers.push({ name: match[1], body });
   }
   return helpers;
 }
 
 /**
- * Collect the names of helper functions that spawn the build output, resolving
- * indirection transitively: a helper that calls an already-known spawn helper
- * is itself a spawn helper. This lets a test that only calls
- * `expectFlagAccepted(...)` (which calls `runInUninitializedDir`, which spawns
- * the CLI) count as exercising production code.
+ * Collect the names of helper functions that reach production code, resolving
+ * indirection transitively: a helper that calls an already-known handle is
+ * itself a handle. This lets a test that only calls `expectFlagAccepted(...)`
+ * (which calls `runInUninitializedDir`, which spawns the CLI) count as
+ * exercising production code.
+ *
+ * A helper qualifies two ways:
+ *  - it spawns the project's own executable code (subprocess integration
+ *    tests), or
+ *  - it references an imported production function (#906). `makeLock()`
+ *    returning `new CheckoutLock({...})` is production code by any reading,
+ *    but seeding on spawns alone missed it, so every test that built its
+ *    subject through a factory read as tautological.
  */
-function collectSpawnHandles(
+function collectProductionHandles(
   content: string,
   buildOutputVars: string[],
+  importedFunctions: ImportedFunction[] = [],
 ): string[] {
   const helpers = extractHelperDefinitions(content);
   const handles = new Set<string>();
 
-  // Seed: helpers that directly spawn the build output.
+  // Seed: helpers that directly reach production.
   for (const helper of helpers) {
-    if (spawnsBuildOutput(helper.body, buildOutputVars)) {
+    if (
+      spawnsBuildOutput(helper.body, buildOutputVars) ||
+      importedFunctions.some((fn) =>
+        referenceMatcher(fn.name).test(helper.body),
+      )
+    ) {
       handles.add(helper.name);
     }
   }
@@ -614,15 +677,16 @@ function collectSpawnHandles(
  * when it references an imported production function, directly spawns the
  * project's build output, or calls a helper that (transitively) does so.
  *
- * @param spawnHandles Names of describe/module-scope helpers that spawn the
- *   build output (see {@link collectSpawnHandles}).
+ * @param productionHandles Names of describe/module-scope helpers that reach
+ *   production — by spawning the project's executable code or by calling an
+ *   imported production function (see {@link collectProductionHandles}).
  * @param buildOutputVars Variable names bound to a build-output path (see
  *   {@link collectBuildOutputVars}).
  */
 export function testBlockCallsProductionCode(
   body: string,
   importedFunctions: ImportedFunction[],
-  spawnHandles: string[] = [],
+  productionHandles: string[] = [],
   buildOutputVars: string[] = [],
 ): boolean {
   // 1. References an imported production function.
@@ -639,9 +703,10 @@ export function testBlockCallsProductionCode(
     return true;
   }
 
-  // 3. Calls a describe/module-scope helper that (transitively) spawns the
-  //    build output.
-  for (const handle of spawnHandles) {
+  // 3. Calls a describe/module-scope helper that (transitively) reaches
+  //    production — spawns the project's executable code, or calls an imported
+  //    production function (#906). Covers arrow-const and `function` helpers.
+  for (const handle of productionHandles) {
     if (referenceMatcher(handle).test(body)) {
       return true;
     }
@@ -685,7 +750,11 @@ export function analyzeTestFile(
   try {
     const importedFunctions = extractImports(content);
     const buildOutputVars = collectBuildOutputVars(content);
-    const spawnHandles = collectSpawnHandles(content, buildOutputVars);
+    const productionHandles = collectProductionHandles(
+      content,
+      buildOutputVars,
+      importedFunctions,
+    );
     const testBlocks = extractTestBlocks(content);
 
     const analyzedBlocks: TestBlock[] = testBlocks.map((block) => ({
@@ -695,7 +764,7 @@ export function analyzeTestFile(
       isTautological: !testBlockCallsProductionCode(
         block.body,
         importedFunctions,
-        spawnHandles,
+        productionHandles,
         buildOutputVars,
       ),
     }));
