@@ -26,6 +26,8 @@ import {
   readFileSync,
   existsSync,
   unlinkSync,
+  renameSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   statSync,
@@ -188,6 +190,131 @@ export function classifyStaleness(args: {
   return null;
 }
 
+/** The fields that uniquely identify a lock's holder (any lock class). */
+export interface StaleLockIdentity {
+  pid: number;
+  hostname: string;
+  startedAt: string;
+}
+
+/** Read just the identity fields of a lock file. Null if missing/unparseable. */
+function readLockIdentity(lockPath: string): StaleLockIdentity | null {
+  if (!existsSync(lockPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(lockPath, "utf-8"));
+    if (
+      parsed &&
+      typeof parsed.pid === "number" &&
+      typeof parsed.hostname === "string" &&
+      typeof parsed.startedAt === "string"
+    ) {
+      return {
+        pid: parsed.pid,
+        hostname: parsed.hostname,
+        startedAt: parsed.startedAt,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function unlinkIgnoreMissing(lockPath: string): void {
+  try {
+    unlinkSync(lockPath);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
+/**
+ * Atomically steal a stale lock (#908) — the compare-and-swap replacement for
+ * the old unlink-then-create, shared by both lock classes so they cannot drift
+ * (AC-1, AC-2).
+ *
+ * `unlink(lockPath)` removes whatever inode is at the path — including a fresh
+ * lock a winner created microseconds earlier — so two sessions that both
+ * classified the same lock stale could each destroy the other's fresh lock and
+ * both "win" (two holders, the exact failure the lock exists to prevent). A
+ * bare `rename(lockPath, …)` has the identical flaw: rename moves whatever is
+ * at the path, fresh or not.
+ *
+ * So take possession atomically, THEN check identity:
+ *
+ *   1. `rename(lockPath → tmp)` — atomic on POSIX. Of two racing stealers,
+ *      exactly one moves the current inode; the loser gets `ENOENT`.
+ *   2. Read what we moved. If it is the stale holder we `classified`, discard
+ *      it (`unlink tmp`) — the steal is legitimate and `lockPath` is now free
+ *      for the caller's terminal `openSync(…, "wx")` to claim.
+ *   3. If it is NOT that holder, a fresh lock appeared between our staleness
+ *      read and our rename. We must not destroy it: `link` it back into place
+ *      (never overwrites) and report the steal lost. A third session that
+ *      claimed `lockPath` in the gap is left intact and our copy becomes a
+ *      harmless `*.steal.*` orphan, which `list()` ignores (it matches only
+ *      `.lock`).
+ *
+ * Returns `true` only when this caller legitimately removed the stale lock it
+ * classified. `false` means "lost" — the caller falls through to `writeAtomic`,
+ * whose `O_CREAT|O_EXCL` arbitrates the real holder (accepting the current
+ * occupant on `EEXIST`).
+ *
+ * NOTE ON DEVIATION FROM THE #908 SPEC: the plan prescribed a *plain*
+ * rename-away ("rename, unlink tmp, ENOENT = lost", then fall through). That is
+ * behaviorally identical to the `unlink` it replaces — verified by a
+ * hand-driven interleave: in the issue's own documented ordering
+ * (`A.steal → A.create → B.steal → B.create`) B's rename succeeds on A's fresh
+ * lock and destroys it, two holders, same as today. The identity check in
+ * step 2/3 is what actually makes AC-1 ("loser cannot remove the winner's fresh
+ * lock") hold and makes AC-4's mutation test possible.
+ *
+ * RESIDUAL: the sub-millisecond window at step 3 where a third session's
+ * O_EXCL create races our `link`-back is not fully closed — plain lock files
+ * admit no atomic compare-and-swap on content. It is far narrower than the
+ * original (which failed on a *single* race, every time a stealer's removal
+ * landed on a fresh lock) and never destroys a live lock. Fully closing it is a
+ * larger protocol change (claim file / lease), flagged for follow-up.
+ */
+export function stealStaleLock(
+  lockPath: string,
+  classified: StaleLockIdentity,
+  self: { pid: number; now: number },
+): boolean {
+  const tmp = `${lockPath}.steal.${self.pid}.${self.now}`;
+
+  try {
+    renameSync(lockPath, tmp);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+
+  const moved = readLockIdentity(tmp);
+  if (
+    moved &&
+    moved.pid === classified.pid &&
+    moved.hostname === classified.hostname &&
+    moved.startedAt === classified.startedAt
+  ) {
+    unlinkIgnoreMissing(tmp);
+    return true;
+  }
+
+  // A fresh (or corrupt) holder slipped in between our read and our rename.
+  // Put back exactly what we took, without overwriting a newer claim, then
+  // lose the steal.
+  try {
+    linkSync(tmp, lockPath);
+    unlinkIgnoreMissing(tmp);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // EEXIST: `lockPath` was re-claimed in the gap → leave `tmp` as an orphan
+    // rather than clobber the new holder. ENOENT: `tmp` already gone.
+    if (code !== "EEXIST" && code !== "ENOENT") throw err;
+  }
+  return false;
+}
+
 export class LockManager {
   private readonly locksDir: string;
   private readonly staleAgeMs: number;
@@ -271,7 +398,19 @@ export class LockManager {
         isPidAlive: this.isPidAlive,
       });
       if (staleReason) {
-        this.unlinkSafe(lockPath);
+        // Compare-and-swap steal, not a blind unlink (#908): only remove the
+        // stale inode we classified, never a fresh lock a racing winner may
+        // have created at this path in the meantime. Win or lose, fall through
+        // to `writeAtomic` — its `O_CREAT|O_EXCL` arbitrates the real holder.
+        stealStaleLock(
+          lockPath,
+          {
+            pid: existing.pid,
+            hostname: existing.hostname,
+            startedAt: existing.startedAt,
+          },
+          { pid: this.pid, now: this.now() },
+        );
       } else {
         return {
           acquired: false,

@@ -42,6 +42,7 @@ import {
   resolveLocksDir,
   resolveMaxLockAgeMs,
   resolveSkillLockTtlMs,
+  stealStaleLock,
 } from "./lock-manager.js";
 import {
   CHECKOUT_LOCK_FILENAME,
@@ -269,7 +270,20 @@ export class CheckoutLock {
 
       const staleReason = this.staleness(existing);
       if (staleReason) {
-        this.unlinkSafe(lockPath);
+        // Compare-and-swap steal, not a blind unlink (#908): shared with
+        // `LockManager` via `stealStaleLock` so the two lock classes cannot
+        // drift. Only the classified stale inode is removed — never a fresh
+        // lock a racing winner created at this path. Fall through to
+        // `writeAtomic` regardless; its `O_CREAT|O_EXCL` picks the real holder.
+        stealStaleLock(
+          lockPath,
+          {
+            pid: existing.pid,
+            hostname: existing.hostname,
+            startedAt: existing.startedAt,
+          },
+          { pid: this.pid, now: this.now() },
+        );
       } else {
         return {
           acquired: false,

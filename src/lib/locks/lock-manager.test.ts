@@ -21,6 +21,7 @@ import {
   formatLockedMessage,
   defaultIsPidAlive,
   resolveLocksDir,
+  stealStaleLock,
 } from "./lock-manager.js";
 import { DEFAULT_MAX_LOCK_AGE_MS, DEFAULT_STALE_AGE_MS } from "./types.js";
 
@@ -325,6 +326,84 @@ describe("LockManager — acquire / release", () => {
     expect(existsSync(join(dir, "1.lock"))).toBe(false);
     expect(existsSync(join(dir, "2.lock"))).toBe(false);
     expect(existsSync(join(dir, "3.lock"))).toBe(false);
+  });
+});
+
+describe("LockManager — #908: stale steal is compare-and-swap", () => {
+  // Shared `stealStaleLock` with CheckoutLock (AC-2). The old steal unlinked
+  // `lockPath` unconditionally, so a session that classified L0 stale would
+  // remove whatever sat there later — including a fresh lock a winner created
+  // in the window — and both would "win". Drive that window by hand: the
+  // multi-process race test can't (acquire's read serializes CLI startup).
+
+  type WriteAtomic = (
+    issue: number,
+    lockPath: string,
+    command: string,
+    skipPidCheck?: boolean,
+  ) => { acquired: boolean; holder?: { pid: number } };
+
+  let dir: string;
+  beforeEach(() => {
+    dir = makeTmpDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const STALE = {
+    pid: 9999,
+    hostname: "host-a",
+    startedAt: new Date(0).toISOString(),
+  };
+
+  function seedStale(lockPath: string): void {
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ ...STALE, command: "/abandoned" }),
+    );
+  }
+
+  it("a loser cannot remove the winner's fresh lock (documented ordering)", () => {
+    const a = new LockManager({ locksDir: dir, hostname: "host-a", pid: 1 });
+    const b = new LockManager({ locksDir: dir, hostname: "host-a", pid: 2 });
+    const writeA = (
+      a as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(a);
+    const writeB = (
+      b as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(b);
+    const path = a.lockPathFor(42);
+
+    seedStale(path);
+
+    // A.steal → A.create.
+    expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(writeA(42, path, "first").acquired).toBe(true);
+
+    // B classified the same stale L0 earlier; its steal runs only now, when the
+    // path holds A's fresh lock. CAS refuses and restores it.
+    expect(stealStaleLock(path, STALE, { pid: 2, now: 2000 })).toBe(false);
+
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(1);
+
+    const loser = writeB(42, path, "second");
+    expect(loser.acquired).toBe(false);
+    expect(loser.holder?.pid).toBe(1);
+  });
+
+  it("the winning stealer clears the stale lock it classified", () => {
+    const dirPath = join(dir, "42.lock");
+    seedStale(dirPath);
+    expect(stealStaleLock(dirPath, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(existsSync(dirPath)).toBe(false);
+  });
+
+  it("a stealer that lost the rename (ENOENT) reports lost, touching nothing", () => {
+    const dirPath = join(dir, "42.lock");
+    expect(stealStaleLock(dirPath, STALE, { pid: 1, now: 1000 })).toBe(false);
+    expect(existsSync(dirPath)).toBe(false);
   });
 });
 
