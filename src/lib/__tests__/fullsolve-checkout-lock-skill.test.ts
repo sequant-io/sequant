@@ -158,12 +158,15 @@ describe("AC-6/#906: every checkout release proves ownership with --issue", () =
     (root) => {
       const full = skillText(root);
 
-      // Whole-file negative. Scoped by construction: it can only ever match
-      // the exact command it is about, so an unrelated mention elsewhere in
-      // the 900-line document cannot satisfy or break it.
-      const missing = [
-        ...full.matchAll(/npx sequant locks checkout release(?! --issue=)/g),
-      ];
+      // Negative over executable content only. Deliberately NOT anchored on
+      // `npx `: a site written as bare `sequant locks checkout release` is
+      // just as broken, and anchoring on the runner would wave it through.
+      // Scoping to bash fences is what makes dropping the anchor safe — it
+      // keeps prose that merely *names* the command (the debugging note in
+      // §5.5) from reading as an unflagged invocation.
+      const missing = bashBlocks(full).flatMap((block) => [
+        ...block.matchAll(/\bsequant locks checkout release(?! --issue=)/g),
+      ]);
       expect(
         missing,
         `${missing.length} release site(s) without --issue`,
