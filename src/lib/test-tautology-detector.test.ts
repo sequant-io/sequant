@@ -886,6 +886,21 @@ describe('x', () => {
     expect(result.tautologicalCount).toBe(2);
   });
 
+  it("counts an inline project-script path, not only a captured handle", () => {
+    // Gates PROJECT_SCRIPT_PATTERN itself. The `runHook` case above reaches
+    // production through the collected `HOOK` variable, so it survives even
+    // with that pattern removed — this one does not.
+    const content = `
+import { spawnSync } from 'child_process';
+describe('x', () => {
+  it('runs the migration script', () => {
+    expect(spawnSync('npx', ['tsx', 'scripts/migrate.ts']).status).toBe(0);
+  });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
   it("does not treat spawning a system binary as production code", () => {
     const content = `
 import { spawnSync } from 'child_process';
