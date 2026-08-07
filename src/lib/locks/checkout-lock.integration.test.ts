@@ -661,7 +661,11 @@ describe("AC-2/AC-7: genuinely concurrent processes, one checkout", () => {
 describe("#906: a blocked session's release contract cannot unlock the tree", () => {
   const CLI = join(REPO_ROOT, "dist/bin/cli.js");
 
-  function checkoutCli(args: string[], locksDir: string) {
+  // Arrow const, not `function` — `test-tautology-detector` only resolves
+  // helper indirection through block-bodied arrow consts, so a `function`
+  // declaration makes every test that calls it read as import-less and
+  // therefore tautological. These tests do spawn the real CLI.
+  const checkoutCli = (args: string[], locksDir: string) => {
     return spawnSync(process.execPath, [CLI, "locks", "checkout", ...args], {
       encoding: "utf-8",
       env: {
@@ -670,7 +674,7 @@ describe("#906: a blocked session's release contract cannot unlock the tree", ()
         SEQUANT_ORCHESTRATOR: "",
       },
     });
-  }
+  };
 
   it("B's release refuses, A's lock survives, and the hook still blocks B", () => {
     const locksDir = join(checkout, ".sequant/locks");
