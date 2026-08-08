@@ -19,6 +19,7 @@ import { spawn, spawnSync } from "child_process";
 import {
   mkdtempSync,
   mkdirSync,
+  existsSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -929,5 +930,59 @@ describe("AC-5: orchestrator/MCP mode stands down", () => {
         env: { SEQUANT_ORCHESTRATOR: "1" },
       }).status,
     ).toBe(0);
+  });
+});
+
+/**
+ * #909, replayed end-to-end through the real CLI and the real hook — the
+ * literal scenario from the bug report, not just the TypeScript unit that
+ * fixed it: `cd src && npx sequant locks checkout acquire ...` used to write
+ * `src/.sequant/locks/checkout.lock`, which the hook (reading from the
+ * checkout root) could never see — the acquire "succeeded" while protecting
+ * nothing. Deliberately omits `SEQUANT_LOCKS_DIR` from the acquire's env,
+ * unlike every other test in this file: this test exists specifically to
+ * prove the *default* resolution now agrees with the hook without that
+ * override doing the work.
+ */
+describe("#909: a lock acquired from a subdirectory is now visible to the hook", () => {
+  const CLI = join(REPO_ROOT, "dist/bin/cli.js");
+
+  it("acquire from a subdirectory lands at the checkout root, and the hook blocks a foreign session for it", () => {
+    const subdir = join(checkout, "src", "lib");
+    mkdirSync(subdir, { recursive: true });
+
+    const acquire = spawnSync(
+      process.execPath,
+      [
+        CLI,
+        "locks",
+        "checkout",
+        "acquire",
+        "--issue=909",
+        "--command=test",
+        "--skip-pid-check",
+        "--json",
+      ],
+      {
+        cwd: subdir,
+        encoding: "utf-8",
+        env: { ...process.env, SEQUANT_ORCHESTRATOR: "" },
+      },
+    );
+    expect(JSON.parse(acquire.stdout.trim()).acquired).toBe(true);
+
+    // The bug: without the fix, this file would not exist (it would have
+    // landed under src/lib/.sequant/locks instead).
+    expect(existsSync(join(checkout, ".sequant/locks/checkout.lock"))).toBe(
+      true,
+    );
+
+    // The fix: the real hook, run at the checkout root, now sees the lock
+    // acquired from a subdirectory and blocks a foreign session's
+    // branch-mutating git — which is the actual protection #909 restores.
+    expect(
+      runHook({ command: "git checkout main", sessionId: OTHER_SESSION })
+        .status,
+    ).toBe(2);
   });
 });
