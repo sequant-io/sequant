@@ -7,6 +7,7 @@ import chalk from "chalk";
 import {
   CheckoutLock,
   LockManager,
+  describeCheckoutHolderIssue,
   formatCheckoutLockedMessage,
   formatLockedMessage,
   type LockFile,
@@ -115,7 +116,8 @@ export async function locksListCommand(
       : "";
     console.log(chalk.bold("Checkout lock (whole working tree):"));
     console.log(
-      `  issue=#${checkout.holder.issue}  pid=${checkout.holder.pid}  ` +
+      `  issue=${describeCheckoutHolderIssue(checkout.holder.issue)}  ` +
+        `pid=${checkout.holder.pid}  ` +
         `host=${checkout.holder.hostname}  age=${ageMinutes}m  ` +
         `started=${checkout.holder.startedAt}${staleTag}`,
     );
@@ -297,7 +299,7 @@ export async function locksCheckoutCommand(
         process.exitCode = 1;
         console.error(
           chalk.yellow(
-            `Refusing to release the checkout lock — it belongs to the session working #${holder.issue} ` +
+            `Refusing to release the checkout lock — it belongs to the session working ${describeCheckoutHolderIssue(holder.issue)} ` +
               `(PID ${holder.pid} on ${holder.hostname}, started ${holder.startedAt}).\n` +
               (issue === undefined
                 ? `You passed no --issue, so nothing identified you as the holder.\n` +

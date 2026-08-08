@@ -68,11 +68,12 @@ function acquireSection(root: string): string {
 
 /**
  * Every exit path after the Step 0 acquire: happy-path completion (Post-Release
- * Verification), a mid-release error (Error Handling), and the Rollback
- * Procedure. Pinned as an exact number, not `>=`, so deleting a release site
- * fails the count (the trap #906's test was rewritten to close).
+ * Verification), a mid-release error (Error Handling), and both Rollback
+ * Procedures (before-publish, and after-push-before-publish). Pinned as an
+ * exact number, not `>=`, so deleting a release site fails the count (the trap
+ * #906's test was rewritten to close).
  */
-const EXPECTED_RELEASE_SITES = 3;
+const EXPECTED_RELEASE_SITES = 4;
 
 describe("#911/AC-4: /release acquires the checkout lock once, on the sentinel", () => {
   it.each(SKILL_ROOTS)("%s — exactly one acquire block", (root) => {
@@ -165,6 +166,23 @@ describe("#911/AC-5: every checkout release proves ownership with --issue", () =
         (b) => b.includes("git reset --soft") && b.includes("git tag -d"),
       );
       expect(rollback, "rollback procedure block not found").toBeDefined();
+      expect(rollback).toContain(
+        `npx sequant locks checkout release --issue=${SENTINEL} || true`,
+      );
+    },
+  );
+
+  it.each(SKILL_ROOTS)(
+    "%s — the after-push rollback releases before it stops",
+    (root) => {
+      // The after-push rollback is a terminal exit too: it reverts the release
+      // commit and ends the attempt. The Error Handling blanket below it also
+      // instructs a release, but the inline site keeps the handoff explicit at
+      // the point the agent actually stops.
+      const rollback = bashBlocks(skillText(root)).find(
+        (b) => b.includes("git revert HEAD") && b.includes(":refs/tags/"),
+      );
+      expect(rollback, "after-push rollback block not found").toBeDefined();
       expect(rollback).toContain(
         `npx sequant locks checkout release --issue=${SENTINEL} || true`,
       );

@@ -128,10 +128,12 @@ interactive approval pause (Step 2's release-notes review), exactly as
 **positive integer** — the `pre-tool.sh` guard and `sequant locks checkout` both
 key on `--issue=<N>`. So `/release` claims the tree under a reserved sentinel
 issue id, **`999999999`** (a number that will never be a real issue), and uses it
-on the acquire and on every release below. A symbolic holder (e.g.
-`--label=release`) would read better in `locks list`, but it would require
-changing the lock-file schema, the CLI, *and* the numeric-only `pre-tool.sh`
-guard — out of scope for this skill-only change (tracked in #911).
+on the acquire and on every release below. `locks list` and the CLI's
+release-refusal render this sentinel as `/release (sentinel)` so it does not
+read as a real issue. A symbolic holder (e.g. `--label=release`) would avoid
+the reserved-number scheme entirely, but it would require changing the
+lock-file schema, the CLI, *and* the numeric-only `pre-tool.sh` guard — out of
+scope for #911 (tracked there as a follow-up).
 
 ```bash
 # Claim the shared working tree before the first mutation / approval pause.
@@ -655,6 +657,9 @@ gh release delete v{version} --yes
 # Revert commit
 git revert HEAD
 git push origin main
+
+# Rollback aborts the release — hand the working tree back (#901/#906).
+npx sequant locks checkout release --issue=999999999 || true
 ```
 
 ### After npm publish
