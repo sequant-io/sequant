@@ -112,6 +112,62 @@ gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 
 ## Release Steps
 
+### Step 0: Acquire the Checkout Lock (REQUIRED)
+
+Everything from here on mutates the **main checkout**: the version bump and its
+commit, tag, and push (Steps 4–7), plus the rollback verbs (`git reset --soft`,
+`git checkout -- …`) if a step fails. `git commit`/`tag`/`push` are not guarded
+by `pre-tool.sh`, but the `git reset` in rollback is — and, more importantly,
+holding the checkout lock (#901) is what stops a session on another issue from
+interleaving a `git checkout` between the bump and the commit and landing the
+release commit on the wrong HEAD. So claim the tree now, before the first
+interactive approval pause (Step 2's release-notes review), exactly as
+`/fullsolve` does in its Phase 0.3.
+
+`/release` has no issue of its own, and the checkout lock proves ownership by a
+**positive integer** — the `pre-tool.sh` guard and `sequant locks checkout` both
+key on `--issue=<N>`. So `/release` claims the tree under a reserved sentinel
+issue id, **`999999999`** (a number that will never be a real issue), and uses it
+on the acquire and on every release below. `locks list` and the CLI's
+release-refusal render this sentinel as `/release (sentinel)` so it does not
+read as a real issue. A symbolic holder (e.g. `--label=release`) would avoid
+the reserved-number scheme entirely, but it would require changing the
+lock-file schema, the CLI, *and* the numeric-only `pre-tool.sh` guard — out of
+scope for #911 (tracked there as a follow-up).
+
+```bash
+# Claim the shared working tree before the first mutation / approval pause.
+# Skip for --dry-run: it previews only and mutates nothing, so it needs no lock.
+npx sequant locks checkout acquire \
+    --issue=999999999 \
+    --command="/release" \
+    --skip-pid-check || true
+export SEQUANT_ISSUE=999999999
+```
+
+Acquire **after** the read-only pre-flight checks above, not before: those checks
+(`git status`/`fetch`, `npm test`/`build`, `npm whoami`, `gh auth`) mutate
+nothing, so a pre-flight abort holds no lock and needs no release. That is why the
+pre-flight `exit 1` branches carry no release call — you cannot release a lock you
+have not taken.
+
+**`--issue=999999999` is mandatory on release** (#906): it is what proves you are
+the holder once the acquiring shell's PID is gone (`--skip-pid-check`). Stale
+recovery is age-based only (the 6h `SEQUANT_SKILL_LOCK_TTL_MS` and the 24h
+`SEQUANT_MAX_LOCK_AGE_MS` ceiling), not same-host dead-PID recovery.
+
+**Release contract:** release the checkout lock —
+`npx sequant locks checkout release --issue=999999999 || true` — on **every**
+path that exits after this acquire: happy-path completion (Post-Release
+Verification), any mid-release error (Error Handling), and the Rollback
+Procedures. Releasing an already-released lock is a harmless no-op, so a failure
+that both errors and rolls back may run two of these — that is safe.
+
+**Orchestrator/MCP mode:** when `SEQUANT_ORCHESTRATOR` is set, every `locks
+checkout` action is a no-op (exit 0, no file touched) and the `pre-tool.sh`
+checkout guard stands down, so the acquire/release calls are safe to run
+unconditionally.
+
 ### Step 1: Determine Version
 
 If version type not provided as argument, ask the user:
@@ -493,6 +549,13 @@ gh release view "v${new_version}"
 npx sequant@${new_version} --version
 ```
 
+The release is complete — hand the working tree back (#901). This is the
+counterpart to the acquire in Step 0.
+
+```bash
+npx sequant locks checkout release --issue=999999999 || true
+```
+
 ## Output Summary
 
 ```
@@ -575,6 +638,11 @@ git reset --soft HEAD~1
 
 # Delete local tag
 git tag -d v{version}
+
+# Rollback aborts the release — hand the working tree back (#901/#906).
+# The git reset above is a guarded verb; it runs unrefused only because Step 0
+# made this session the checkout holder.
+npx sequant locks checkout release --issue=999999999 || true
 ```
 
 ### After git push, before npm publish
@@ -589,6 +657,9 @@ gh release delete v{version} --yes
 # Revert commit
 git revert HEAD
 git push origin main
+
+# Rollback aborts the release — hand the working tree back (#901/#906).
+npx sequant locks checkout release --issue=999999999 || true
 ```
 
 ### After npm publish
@@ -600,6 +671,14 @@ Instead:
 2. Deprecate bad version: `npm deprecate sequant@{bad} "Use {good} instead"`
 
 ## Error Handling
+
+**If a release step fails and you halt without completing, release the checkout
+lock first** (#901/#906) — Step 0 acquired it and every abort after that must hand
+the working tree back before stopping:
+
+```bash
+npx sequant locks checkout release --issue=999999999 || true
+```
 
 | Error | Cause | Resolution |
 |-------|-------|------------|
