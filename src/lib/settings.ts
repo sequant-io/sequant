@@ -14,6 +14,7 @@
 import { readFile, writeFile, fileExists, ensureDir } from "./fs.js";
 import { dirname } from "path";
 import { z } from "zod";
+import { getPhaseNames } from "./workflow/phase-registry.js";
 
 /** Path to project-level settings file */
 export const SETTINGS_PATH = ".sequant/settings.json";
@@ -63,6 +64,17 @@ export interface AgentSettings {
    * Default: false (opt-in for v1)
    */
   isolateParallel: boolean;
+}
+
+/**
+ * A single phase's `model`/`effort` override for the claude-code driver
+ * (#914). See `RunSettings.phases`.
+ */
+export interface PhasePolicy {
+  /** Model alias/ID, passed through unvalidated to the Agent SDK. */
+  model?: string;
+  /** Reasoning effort — validated against the SDK's closed enum. */
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /**
@@ -175,6 +187,14 @@ export interface RunSettings {
    * Default: true.
    */
   relay?: boolean;
+  /**
+   * Per-phase `model`/`effort` overrides for the claude-code driver (#914),
+   * keyed by phase name. Absent by default — zero behavior change until
+   * opted in. Overridable per-invocation with `--models`/`--efforts`
+   * (CLI > settings > absent, resolved by `resolvePhasePolicies` in
+   * `config-resolver.ts`).
+   */
+  phases?: Record<string, PhasePolicy>;
 }
 
 /**
@@ -322,6 +342,20 @@ export const AgentSettingsSchema = z.object({
   isolateParallel: z.boolean().default(false),
 });
 
+/**
+ * Zod schema for a single phase's model/effort override (#914).
+ *
+ * Model aliases/IDs pass through unvalidated — they churn independently of
+ * sequant releases, and the Agent SDK's `query()` call errors clearly on a
+ * bad one. Effort validates against the SDK's closed enum at settings-parse
+ * time since that set is stable and a typo here would otherwise silently
+ * fall through to the SDK default.
+ */
+export const PhasePolicySchema = z.object({
+  model: z.string().optional(),
+  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+});
+
 /** Zod schema for RunSettings */
 export const RunSettingsSchema = z.object({
   logJson: z.boolean().default(true),
@@ -354,6 +388,14 @@ export const RunSettingsSchema = z.object({
   agent: z.string().optional(),
   aider: AiderSettingsSchema.optional(),
   relay: z.boolean().default(true),
+  /**
+   * Per-phase `model`/`effort` overrides for the claude-code driver (#914).
+   * Absent by default — zero behavior change until opted in. Keyed by phase
+   * name (validated against `getPhaseNames()` via `KNOWN_KEYS["run.phases"]`
+   * as a non-fatal warning, not a schema-level rejection — a typo'd phase
+   * name here should not crash a run the way an invalid `effort` enum does).
+   */
+  phases: z.record(z.string(), PhasePolicySchema).optional(),
 });
 
 /** Zod schema for ScopeThreshold (base — fields required, no defaults) */
@@ -511,7 +553,13 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "agent",
     "aider",
     "relay",
+    "phases",
   ]),
+  // #914: keyed by real phase name so a typo (`run.phases.exce`) warns
+  // instead of silently resolving to nothing. Computed from the registry
+  // rather than hardcoded so a new phase registration doesn't need a
+  // matching edit here.
+  "run.phases": new Set(getPhaseNames()),
   agents: new Set(["parallel", "model", "isolateParallel"]),
   scopeAssessment: new Set([
     "enabled",

@@ -216,6 +216,15 @@ export interface ExecutionConfig {
    * see {@link AutoWaitLedger}.
    */
   autoWaitMinutes?: number;
+  /**
+   * Resolved per-phase `model`/`effort` overrides (#914), keyed by phase
+   * name. Merged from `settings.run.phases` and the CLI's `--models`/
+   * `--efforts` flags via `resolvePhasePolicies` (CLI > settings > absent) —
+   * see `config-resolver.ts`. Absent/empty by default: `phase-executor.ts`
+   * only sets `AgentExecutionConfig.model`/`.effort` when a phase has an
+   * entry here, so an unconfigured run reaches the SDK unchanged.
+   */
+  phasePolicies?: Record<string, { model?: string; effort?: string }>;
 }
 
 /**
@@ -542,6 +551,21 @@ export interface RunOptions {
    * and bounds wholesale — no new settings accompany this flag.
    */
   readyGate?: boolean;
+  /**
+   * Per-phase model override (#914). Either a bare value applied to every
+   * phase (`--models sonnet`) or a comma list of `phase=model` pairs
+   * (`--models spec=fable,exec=sonnet`). Parsed and merged with
+   * `settings.run.phases` by `resolvePhasePolicies` (CLI > settings >
+   * absent) into `ExecutionConfig.phasePolicies`. Malformed specs fail fast
+   * at the Commander option boundary via `cli-flags.ts`.
+   */
+  models?: string;
+  /**
+   * Per-phase reasoning-effort override (#914). Same grammar as {@link
+   * models} (bare value or comma list of `phase=effort` pairs); each value
+   * validates against the SDK's closed `low|medium|high|xhigh|max` enum.
+   */
+  efforts?: string;
 }
 
 /**

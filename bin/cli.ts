@@ -27,7 +27,9 @@ import { configureUI, banner } from "../src/lib/cli-ui.js";
 import {
   parseWholeNumber,
   parsePositiveSeconds,
+  parsePhaseSpecFlag,
 } from "../src/lib/cli-flags.js";
+import { getPhaseNames } from "../src/lib/workflow/phase-registry.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 import {
   detectPackageManagerSync,
@@ -383,6 +385,19 @@ program
     "--ready-gate",
     "After phases succeed, run the post-QA ready gate (qa→loop→qa to the configured policy) — never merges, stops at the human merge gate",
   )
+  // #914: per-phase model/effort override for the claude-code driver. Bare
+  // value applies to every phase; comma list of phase=value pairs applies
+  // per phase. CLI > settings.run.phases > absent (resolvePhasePolicies).
+  .option(
+    "--models <spec>",
+    "Per-phase model override, e.g. 'sonnet' or 'spec=fable,exec=sonnet' (default: none — inherits the CLI default model)",
+    parsePhaseSpecFlag("--models", getPhaseNames()),
+  )
+  .option(
+    "--efforts <spec>",
+    "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none — inherits the SDK default)",
+    parsePhaseSpecFlag("--efforts", getPhaseNames()),
+  )
   .option(
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",
@@ -589,6 +604,16 @@ program
     parsePositiveSeconds("--timeout"),
   )
   .option("--no-mcp", "Disable MCP server injection in headless mode")
+  .option(
+    "--models <spec>",
+    "Per-phase model override for the qa/loop phases this gate runs, e.g. 'sonnet' or 'qa=sonnet' (default: none)",
+    parsePhaseSpecFlag("--models", getPhaseNames()),
+  )
+  .option(
+    "--efforts <spec>",
+    "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none)",
+    parsePhaseSpecFlag("--efforts", getPhaseNames()),
+  )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")
   .action((issue: string, options: ReadyCommandOptions) =>

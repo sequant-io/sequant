@@ -110,6 +110,20 @@ export const MetricRunSchema = z.object({
    * existed (additive — no `version` bump required).
    */
   failureCategory: FailureCategorySchema.optional(),
+  /**
+   * Resolved per-phase `model`/`effort` overrides (#914), keyed by phase
+   * name. Only phases with a configured override get an entry — a phase
+   * that inherited the CLI default is omitted entirely, not recorded with
+   * undefined fields. Enum/alias strings only, consistent with this
+   * schema's no-file-paths/no-content privacy contract. Optional and
+   * additive — absent on records written before this field existed.
+   */
+  phasePolicies: z
+    .record(
+      z.string(),
+      z.object({ model: z.string().optional(), effort: z.string().optional() }),
+    )
+    .optional(),
   /** Aggregate metrics */
   metrics: RunMetricsSchema,
 });
@@ -156,6 +170,14 @@ export function createMetricRun(options: {
   model?: string;
   flags?: string[];
   failureCategory?: FailureCategory;
+  /**
+   * Resolved per-phase model/effort overrides (#914), keyed by phase name.
+   * Pass only the phases that actually had a configured override — a phase
+   * that inherited the CLI default should not appear here at all. See
+   * `resolvePhasePolicies` in `config-resolver.ts`, which already produces
+   * a map shaped this way.
+   */
+  phasePolicies?: Record<string, { model?: string; effort?: string }>;
   metrics?: Partial<RunMetrics>;
 }): MetricRun {
   return {
@@ -168,6 +190,9 @@ export function createMetricRun(options: {
     model: options.model ?? "unknown",
     flags: options.flags ?? [],
     failureCategory: options.failureCategory,
+    ...(options.phasePolicies && Object.keys(options.phasePolicies).length > 0
+      ? { phasePolicies: options.phasePolicies }
+      : {}),
     metrics: {
       tokensUsed: options.metrics?.tokensUsed ?? 0,
       filesChanged: options.metrics?.filesChanged ?? 0,

@@ -1699,6 +1699,8 @@ export class RunOrchestrator {
       model: process.env.ANTHROPIC_MODEL ?? "opus",
       flags: cliFlags,
       failureCategory,
+      // #914: resolved per-phase model/effort, when any phase had one.
+      phasePolicies: config.phasePolicies,
       metrics: {
         tokensUsed: tokenUsage.tokensUsed,
         filesChanged: totalFilesChanged,
