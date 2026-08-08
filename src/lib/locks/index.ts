@@ -5,6 +5,8 @@
 
 export {
   CheckoutLock,
+  RELEASE_SENTINEL_ISSUE,
+  describeCheckoutHolderIssue,
   formatCheckoutLockedMessage,
   isCheckoutOwner,
 } from "./checkout-lock.js";
