@@ -93,15 +93,24 @@ export function isOrchestratorMode(): boolean {
  * a linked worktree lands on the main checkout's `.sequant/locks` instead of
  * growing its own — matching what `pre-tool.sh`'s checkout guard reads.
  * Returns `null` outside a git repository (or if `git` is unavailable).
+ *
+ * Deliberately omits `--path-format=absolute` (Git >=2.31, 2021): that flag
+ * failing on an older git would fall into the same `catch` as "not a repo"
+ * and silently re-open the bug this function exists to fix, with no signal
+ * that the cause was an old toolchain rather than a bare directory. Plain
+ * `--git-common-dir` (Git >=2.5, 2015) is resolved by hand instead —
+ * `resolve(cwd, out)` is a no-op when git already returned an absolute path
+ * (the common linked-worktree case) and anchors a relative one (the common
+ * main-checkout case) to `cwd`, so it is correct either way.
  */
 function resolveGitCheckoutRoot(cwd: string): string | null {
   try {
-    const commonDir = execFileSync(
-      "git",
-      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
-    return commonDir ? dirname(commonDir) : null;
+    const commonDir = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return commonDir ? dirname(resolve(cwd, commonDir)) : null;
   } catch {
     return null;
   }

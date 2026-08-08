@@ -19,7 +19,9 @@ import {
 import { hostname, tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { resolveLocksDir } from "./lock-manager.js";
+import { LockManager, resolveLocksDir } from "./lock-manager.js";
+import { CheckoutLock } from "./checkout-lock.js";
+import { CHECKOUT_LOCK_FILENAME } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -411,5 +413,27 @@ describe("resolveLocksDir — git checkout root (#909)", () => {
 
     process.env.SEQUANT_LOCKS_DIR = "/tmp/env-override";
     expect(resolveLocksDir()).toBe("/tmp/env-override");
+  });
+
+  it("AC-5: LockManager (constructed with no explicit locksDir) resolves through the fix, not just the bare function", () => {
+    const subdir = join(repoRoot, "src", "lib");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    const mgr = new LockManager();
+
+    expect(mgr.getLocksDir()).toBe(join(repoRoot, ".sequant", "locks"));
+  });
+
+  it("AC-5: CheckoutLock (constructed with no explicit locksDir) resolves through the fix, not just the bare function", () => {
+    const subdir = join(repoRoot, "src", "lib");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    const lock = new CheckoutLock();
+
+    expect(lock.lockPath).toBe(
+      join(repoRoot, ".sequant", "locks", CHECKOUT_LOCK_FILENAME),
+    );
   });
 });
