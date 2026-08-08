@@ -326,6 +326,58 @@ describe("CheckoutLock — #908: stale steal is compare-and-swap", () => {
     expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(false);
     expect(existsSync(path)).toBe(false);
   });
+
+  it("acquire() routes the steal through the CAS — a fresh lock that appears during classification survives (#908 wiring)", () => {
+    // Proves the wiring, not the helper: reverting acquire's stale branch to
+    // a blind `unlinkSafe(lockPath)` passes every other test in this suite —
+    // only this one catches it. The injected PID probe runs between acquire's
+    // staleness read and its steal — the racing window — and the winner
+    // claims the path right there.
+    const T = 1_000_000_000_000; // makeLock's default now()
+    const stalePid = 100;
+    let path = "";
+    const lock = makeLock({
+      pid: 2,
+      isPidAlive: (pid: number) => {
+        if (pid === stalePid) {
+          writeFileSync(
+            path,
+            JSON.stringify({
+              pid: 555,
+              hostname: HOST,
+              startedAt: new Date(T - 1).toISOString(),
+              command: "/fullsolve 23",
+              issue: 23,
+            }),
+          );
+          return false; // the classified holder really is dead
+        }
+        return true;
+      },
+    });
+    path = lock.lockPath;
+
+    // Young same-host stale holder (dead PID) — unlike STALE's epoch-0
+    // startedAt, this age stays under the max-age ceiling so classification
+    // reaches the PID probe.
+    writeFileSync(
+      path,
+      JSON.stringify({
+        pid: stalePid,
+        hostname: HOST,
+        startedAt: new Date(T - 1000).toISOString(),
+        command: "/abandoned 100",
+        issue: 99,
+      }),
+    );
+
+    const result = lock.acquire(10, "/fullsolve 10");
+    expect(result.acquired).toBe(false);
+    expect(result.holder?.pid).toBe(555);
+    expect(result.holder?.issue).toBe(23);
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(555);
+  });
 });
 
 describe("CheckoutLock — AC-4: stale recovery matches per-issue semantics", () => {

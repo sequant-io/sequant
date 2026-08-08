@@ -32,7 +32,7 @@ import {
   readdirSync,
   statSync,
 } from "fs";
-import { join, resolve } from "path";
+import { basename, dirname, join, resolve } from "path";
 import * as os from "os";
 
 import {
@@ -220,11 +220,47 @@ function readLockIdentity(lockPath: string): StaleLockIdentity | null {
   }
 }
 
-function unlinkIgnoreMissing(lockPath: string): void {
+/**
+ * Best-effort unlink for a steal's private `tmp` file. Failure to remove it is
+ * never worth crashing `acquire` over — the orphan sweep below reclaims it.
+ */
+function unlinkBestEffort(path: string): void {
   try {
-    unlinkSync(lockPath);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    unlinkSync(path);
+  } catch {
+    // Best-effort: swept later by sweepStealOrphans.
+  }
+}
+
+/**
+ * Age past which a `<lock>.steal.<pid>.<ts>` file cannot be an in-flight steal
+ * (the live window is microseconds) and is reclaimed as an orphan.
+ */
+const STEAL_ORPHAN_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Reap aged `*.steal.*` orphans left behind by lost restore races (the
+ * documented EEXIST branch below). Best-effort throughout: steals are the only
+ * producer and the only consumer, `list()` never sees these files, and a
+ * failure here must not affect the steal itself.
+ */
+function sweepStealOrphans(lockPath: string, now: number): void {
+  const prefix = `${basename(lockPath)}.steal.`;
+  try {
+    const dir = dirname(lockPath);
+    for (const name of readdirSync(dir)) {
+      if (!name.startsWith(prefix)) continue;
+      const orphan = join(dir, name);
+      try {
+        if (now - statSync(orphan).mtimeMs > STEAL_ORPHAN_TTL_MS) {
+          unlinkSync(orphan);
+        }
+      } catch {
+        // Raced away or unreadable — skip it.
+      }
+    }
+  } catch {
+    // Locks dir unreadable — nothing to sweep.
   }
 }
 
@@ -274,19 +310,41 @@ function unlinkIgnoreMissing(lockPath: string): void {
  * original (which failed on a *single* race, every time a stealer's removal
  * landed on a fresh lock) and never destroys a live lock. Fully closing it is a
  * larger protocol change (claim file / lease), flagged for follow-up.
+ *
+ * NEVER THROWS. A steal is an opportunistic optimization on the acquire path;
+ * no filesystem error here is worth crashing `acquire` over. Errors degrade to
+ * "lost" (`false`) and the caller's terminal create surfaces any real
+ * environment problem (EACCES etc.) with the same errno the pre-#908 path did.
+ * The one active recovery: if the `link`-back restore fails because the
+ * filesystem refuses hard links (EPERM/ENOTSUP), fall back to renaming `tmp`
+ * back into place — leaving a fresh lock renamed-away IS the two-holder bug,
+ * so restoring it outweighs `link`'s no-overwrite guarantee on such a
+ * filesystem.
+ *
+ * `ops` is a test seam for the link/rename syscalls — production callers omit
+ * it. Injecting a failing `link` is the only way to drive the fallback branch
+ * deterministically (capability errors like ENOTSUP cannot be provoked on a
+ * normal tmpdir).
  */
 export function stealStaleLock(
   lockPath: string,
   classified: StaleLockIdentity,
   self: { pid: number; now: number },
+  ops: { link?: typeof linkSync; rename?: typeof renameSync } = {},
 ): boolean {
+  const rename = ops.rename ?? renameSync;
+  const link = ops.link ?? linkSync;
   const tmp = `${lockPath}.steal.${self.pid}.${self.now}`;
 
+  sweepStealOrphans(lockPath, self.now);
+
   try {
-    renameSync(lockPath, tmp);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
-    throw err;
+    rename(lockPath, tmp);
+  } catch {
+    // ENOENT: another stealer moved it first — cleanly lost. Anything else
+    // (EACCES, EROFS, …): nothing was moved, so there is nothing to restore;
+    // report lost and let the terminal create surface the environment problem.
+    return false;
   }
 
   const moved = readLockIdentity(tmp);
@@ -296,7 +354,7 @@ export function stealStaleLock(
     moved.hostname === classified.hostname &&
     moved.startedAt === classified.startedAt
   ) {
-    unlinkIgnoreMissing(tmp);
+    unlinkBestEffort(tmp);
     return true;
   }
 
@@ -304,13 +362,24 @@ export function stealStaleLock(
   // Put back exactly what we took, without overwriting a newer claim, then
   // lose the steal.
   try {
-    linkSync(tmp, lockPath);
-    unlinkIgnoreMissing(tmp);
+    link(tmp, lockPath);
+    unlinkBestEffort(tmp);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
+    if (code !== "EEXIST" && code !== "ENOENT") {
+      // Hard links refused (EPERM/ENOTSUP/…) — restore by rename instead.
+      // The overwrite risk this reintroduces needs a third session's create
+      // to land in this same sub-ms window ON a no-hardlink filesystem;
+      // not restoring at all destroys the fresh lock every time.
+      try {
+        rename(tmp, lockPath);
+      } catch {
+        // Out of options — degrades to pre-#908 behavior on this filesystem.
+      }
+    }
     // EEXIST: `lockPath` was re-claimed in the gap → leave `tmp` as an orphan
-    // rather than clobber the new holder. ENOENT: `tmp` already gone.
-    if (code !== "EEXIST" && code !== "ENOENT") throw err;
+    // (swept by sweepStealOrphans) rather than clobber the new holder.
+    // ENOENT: `tmp` already gone.
   }
   return false;
 }
