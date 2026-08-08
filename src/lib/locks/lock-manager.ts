@@ -33,6 +33,7 @@ import {
   statSync,
 } from "fs";
 import { basename, dirname, join, resolve } from "path";
+import { execFileSync } from "child_process";
 import * as os from "os";
 
 import {
@@ -85,10 +86,48 @@ export function isOrchestratorMode(): boolean {
   return Boolean(process.env.SEQUANT_ORCHESTRATOR);
 }
 
-/** Resolve the locks directory honoring `SEQUANT_LOCKS_DIR` for test isolation. */
+/**
+ * Resolve the checkout root shared by the main worktree and every linked
+ * worktree of the same repository (#909). `--git-common-dir` (unlike
+ * `--show-toplevel`) points at the same physical `.git` for all of them, so
+ * a linked worktree lands on the main checkout's `.sequant/locks` instead of
+ * growing its own — matching what `pre-tool.sh`'s checkout guard reads.
+ * Returns `null` outside a git repository (or if `git` is unavailable).
+ *
+ * Deliberately omits `--path-format=absolute` (Git >=2.31, 2021): that flag
+ * failing on an older git would fall into the same `catch` as "not a repo"
+ * and silently re-open the bug this function exists to fix, with no signal
+ * that the cause was an old toolchain rather than a bare directory. Plain
+ * `--git-common-dir` (Git >=2.5, 2015) is resolved by hand instead —
+ * `resolve(cwd, out)` is a no-op when git already returned an absolute path
+ * (the common linked-worktree case) and anchors a relative one (the common
+ * main-checkout case) to `cwd`, so it is correct either way.
+ */
+function resolveGitCheckoutRoot(cwd: string): string | null {
+  try {
+    const commonDir = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return commonDir ? dirname(resolve(cwd, commonDir)) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the locks directory. Priority: explicit option > `SEQUANT_LOCKS_DIR`
+ * > the shared git checkout root (#909) > plain cwd-relative (non-git
+ * fallback, preserves pre-#909 behavior).
+ */
 export function resolveLocksDir(explicit?: string): string {
   const fromEnv = process.env.SEQUANT_LOCKS_DIR;
-  return resolve(explicit ?? fromEnv ?? DEFAULT_LOCKS_DIR);
+  if (explicit !== undefined || fromEnv !== undefined) {
+    return resolve(explicit ?? fromEnv ?? DEFAULT_LOCKS_DIR);
+  }
+  const gitRoot = resolveGitCheckoutRoot(process.cwd());
+  return resolve(gitRoot ?? process.cwd(), DEFAULT_LOCKS_DIR);
 }
 
 /**

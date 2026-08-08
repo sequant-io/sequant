@@ -14,10 +14,14 @@ import {
   existsSync,
   readFileSync,
   writeFileSync,
+  realpathSync,
 } from "fs";
 import { hostname, tmpdir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import { LockManager, resolveLocksDir } from "./lock-manager.js";
+import { CheckoutLock } from "./checkout-lock.js";
+import { CHECKOUT_LOCK_FILENAME } from "./types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -304,4 +308,132 @@ describe("LockManager — integration: two-process contention", () => {
       expect(exitCode === 130 || exitCode === 0).toBe(true);
     },
   );
+});
+
+/**
+ * Hermetic git: no user config, no signing, no hooks. Mirrors the
+ * checkout-lock.integration.test.ts convention (#901) so a developer's
+ * `commit.gpgsign=true` cannot break these fixtures.
+ */
+function git(cwd: string, ...args: string[]): void {
+  const result = spawnSync(
+    "git",
+    [
+      "-c",
+      "user.name=sequant-test",
+      "-c",
+      "user.email=test@example.com",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      ...args,
+    ],
+    { cwd, encoding: "utf-8" },
+  );
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(" ")} failed: ${result.stderr}`);
+  }
+}
+
+// macOS's tmpdir() is under /var, a symlink to /private/var. `process.cwd()`
+// and `git rev-parse` both resolve through the symlink, so every fixture dir
+// below is created under the pre-resolved real path — otherwise comparing
+// against the raw mkdtempSync path would spuriously fail on darwin.
+const REAL_TMPDIR = realpathSync(tmpdir());
+
+describe("resolveLocksDir — git checkout root (#909)", () => {
+  let repoRoot: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    delete process.env.SEQUANT_LOCKS_DIR;
+    originalCwd = process.cwd();
+    repoRoot = mkdtempSync(join(REAL_TMPDIR, "sequant-locks-git-"));
+    git(repoRoot, "init", "-q", "-b", "main", ".");
+    writeFileSync(join(repoRoot, "README.md"), "fixture\n");
+    git(repoRoot, "add", "-A");
+    git(repoRoot, "commit", "-qm", "init");
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    delete process.env.SEQUANT_LOCKS_DIR;
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("AC-1: resolves to the repo root from a subdirectory, not cwd", () => {
+    const subdir = join(repoRoot, "src", "lib");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    const resolved = resolveLocksDir();
+
+    expect(resolved).toBe(join(repoRoot, ".sequant", "locks"));
+    expect(resolved).not.toBe(join(subdir, ".sequant", "locks"));
+  });
+
+  it("AC-2: a linked worktree resolves to the main checkout's locks dir, not its own", () => {
+    const worktreeDir = join(REAL_TMPDIR, `sequant-locks-wt-${Date.now()}`);
+    git(repoRoot, "worktree", "add", "-q", "-b", "wt-branch", worktreeDir);
+
+    try {
+      process.chdir(worktreeDir);
+      const resolved = resolveLocksDir();
+
+      expect(resolved).toBe(join(repoRoot, ".sequant", "locks"));
+      expect(resolved).not.toBe(join(worktreeDir, ".sequant", "locks"));
+    } finally {
+      process.chdir(originalCwd);
+      git(repoRoot, "worktree", "remove", "--force", worktreeDir);
+    }
+  });
+
+  it("AC-3: falls back to cwd-relative resolution outside a git repository", () => {
+    const nonGitDir = mkdtempSync(join(REAL_TMPDIR, "sequant-locks-nogit-"));
+    try {
+      process.chdir(nonGitDir);
+      const resolved = resolveLocksDir();
+
+      expect(resolved).toBe(join(nonGitDir, ".sequant", "locks"));
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(nonGitDir, { recursive: true, force: true });
+    }
+  });
+
+  it("AC-4: explicit option and SEQUANT_LOCKS_DIR still win from a subdirectory", () => {
+    const subdir = join(repoRoot, "src");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    expect(resolveLocksDir("/tmp/explicit-override")).toBe(
+      "/tmp/explicit-override",
+    );
+
+    process.env.SEQUANT_LOCKS_DIR = "/tmp/env-override";
+    expect(resolveLocksDir()).toBe("/tmp/env-override");
+  });
+
+  it("AC-5: LockManager (constructed with no explicit locksDir) resolves through the fix, not just the bare function", () => {
+    const subdir = join(repoRoot, "src", "lib");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    const mgr = new LockManager();
+
+    expect(mgr.getLocksDir()).toBe(join(repoRoot, ".sequant", "locks"));
+  });
+
+  it("AC-5: CheckoutLock (constructed with no explicit locksDir) resolves through the fix, not just the bare function", () => {
+    const subdir = join(repoRoot, "src", "lib");
+    spawnSync("mkdir", ["-p", subdir]);
+    process.chdir(subdir);
+
+    const lock = new CheckoutLock();
+
+    expect(lock.lockPath).toBe(
+      join(repoRoot, ".sequant", "locks", CHECKOUT_LOCK_FILENAME),
+    );
+  });
 });
