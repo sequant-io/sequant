@@ -24,6 +24,7 @@ import {
   isCheckoutOwner,
 } from "./checkout-lock.js";
 import { formatCheckoutLockedMessage } from "./checkout-lock.js";
+import { stealStaleLock } from "./lock-manager.js";
 import {
   CHECKOUT_LOCK_FILENAME,
   DEFAULT_MAX_LOCK_AGE_MS,
@@ -245,6 +246,142 @@ describe("CheckoutLock — atomic create (O_CREAT|O_EXCL)", () => {
     expect(loser.acquired).toBe(false);
     expect(loser.holder?.issue).toBe(23);
     expect(loser.holder?.pid).toBe(1);
+  });
+});
+
+describe("CheckoutLock — #908: stale steal is compare-and-swap", () => {
+  // The old steal was `unlink(lockPath)` then `openSync(wx)` — two syscalls
+  // with a window between them. Two sessions that both classify the same lock
+  // stale could each unlink the OTHER's fresh lock and both create, ending
+  // with two holders. A bare `rename(lockPath, tmp)` has the identical flaw
+  // (rename moves whatever is at the path). The multi-process race test can't
+  // pin this — `acquire`'s read serializes the processes long before the
+  // window (see the atomic-create block above). So drive the window by hand,
+  // interleaving `stealStaleLock` (the shared steal primitive) and the private
+  // `writeAtomic` (the terminal create) exactly as `acquire` chains them.
+
+  type WriteAtomic = (
+    lockPath: string,
+    issue: number,
+    command: string,
+    options: { sessionId?: string; skipPidCheck?: boolean },
+  ) => { acquired: boolean; holder?: { issue: number; pid: number } };
+
+  const STALE = {
+    pid: 100,
+    hostname: HOST,
+    startedAt: new Date(0).toISOString(),
+  };
+
+  function seedStaleLock(lockPath: string): void {
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ ...STALE, command: "/abandoned 100", issue: 99 }),
+    );
+  }
+
+  it("a loser cannot remove the winner's fresh lock (documented ordering)", () => {
+    // Ordering from the issue body: A.steal → A.create → B.steal → B.create.
+    const a = makeLock({ pid: 1 });
+    const b = makeLock({ pid: 2 });
+    const writeA = (
+      a as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(a);
+    const writeB = (
+      b as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(b);
+    const path = a.lockPath;
+
+    seedStaleLock(path);
+
+    // A steals the stale lock it classified, then creates its fresh lock.
+    expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(writeA(path, 23, "/fullsolve 23", {}).acquired).toBe(true);
+
+    // B classified the SAME stale lock earlier and only now runs its steal —
+    // but the path holds A's FRESH lock. The CAS must refuse: it is not the
+    // inode B classified, so B restores it and reports the steal lost.
+    expect(stealStaleLock(path, STALE, { pid: 2, now: 2000 })).toBe(false);
+
+    // A's lock is intact on disk — the loser removed nothing.
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(1);
+    expect(onDisk.issue).toBe(23);
+
+    // B's terminal create therefore sees A as the holder — exactly one holder.
+    const loser = writeB(path, 10, "/fullsolve 10", {});
+    expect(loser.acquired).toBe(false);
+    expect(loser.holder?.issue).toBe(23);
+  });
+
+  it("the winning stealer legitimately clears the stale lock it classified", () => {
+    const a = makeLock({ pid: 1 });
+    const path = a.lockPath;
+    seedStaleLock(path);
+
+    // Sole stealer of a genuinely stale lock: CAS succeeds and frees the path.
+    expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("a stealer that lost the rename (ENOENT) reports lost without touching disk", () => {
+    const a = makeLock({ pid: 1 });
+    const path = a.lockPath;
+    // Path is empty — another session already stole and has not yet created.
+    expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(false);
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("acquire() routes the steal through the CAS — a fresh lock that appears during classification survives (#908 wiring)", () => {
+    // Proves the wiring, not the helper: reverting acquire's stale branch to
+    // a blind `unlinkSafe(lockPath)` passes every other test in this suite —
+    // only this one catches it. The injected PID probe runs between acquire's
+    // staleness read and its steal — the racing window — and the winner
+    // claims the path right there.
+    const T = 1_000_000_000_000; // makeLock's default now()
+    const stalePid = 100;
+    let path = "";
+    const lock = makeLock({
+      pid: 2,
+      isPidAlive: (pid: number) => {
+        if (pid === stalePid) {
+          writeFileSync(
+            path,
+            JSON.stringify({
+              pid: 555,
+              hostname: HOST,
+              startedAt: new Date(T - 1).toISOString(),
+              command: "/fullsolve 23",
+              issue: 23,
+            }),
+          );
+          return false; // the classified holder really is dead
+        }
+        return true;
+      },
+    });
+    path = lock.lockPath;
+
+    // Young same-host stale holder (dead PID) — unlike STALE's epoch-0
+    // startedAt, this age stays under the max-age ceiling so classification
+    // reaches the PID probe.
+    writeFileSync(
+      path,
+      JSON.stringify({
+        pid: stalePid,
+        hostname: HOST,
+        startedAt: new Date(T - 1000).toISOString(),
+        command: "/abandoned 100",
+        issue: 99,
+      }),
+    );
+
+    const result = lock.acquire(10, "/fullsolve 10");
+    expect(result.acquired).toBe(false);
+    expect(result.holder?.pid).toBe(555);
+    expect(result.holder?.issue).toBe(23);
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(555);
   });
 });
 

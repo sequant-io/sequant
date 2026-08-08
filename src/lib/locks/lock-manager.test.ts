@@ -12,6 +12,7 @@ import {
   readFileSync,
   existsSync,
   writeFileSync,
+  utimesSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -21,6 +22,7 @@ import {
   formatLockedMessage,
   defaultIsPidAlive,
   resolveLocksDir,
+  stealStaleLock,
 } from "./lock-manager.js";
 import { DEFAULT_MAX_LOCK_AGE_MS, DEFAULT_STALE_AGE_MS } from "./types.js";
 
@@ -325,6 +327,178 @@ describe("LockManager — acquire / release", () => {
     expect(existsSync(join(dir, "1.lock"))).toBe(false);
     expect(existsSync(join(dir, "2.lock"))).toBe(false);
     expect(existsSync(join(dir, "3.lock"))).toBe(false);
+  });
+});
+
+describe("LockManager — #908: stale steal is compare-and-swap", () => {
+  // Shared `stealStaleLock` with CheckoutLock (AC-2). The old steal unlinked
+  // `lockPath` unconditionally, so a session that classified L0 stale would
+  // remove whatever sat there later — including a fresh lock a winner created
+  // in the window — and both would "win". Drive that window by hand: the
+  // multi-process race test can't (acquire's read serializes CLI startup).
+
+  type WriteAtomic = (
+    issue: number,
+    lockPath: string,
+    command: string,
+    skipPidCheck?: boolean,
+  ) => { acquired: boolean; holder?: { pid: number } };
+
+  let dir: string;
+  beforeEach(() => {
+    dir = makeTmpDir();
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const STALE = {
+    pid: 9999,
+    hostname: "host-a",
+    startedAt: new Date(0).toISOString(),
+  };
+
+  function seedStale(lockPath: string): void {
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ ...STALE, command: "/abandoned" }),
+    );
+  }
+
+  it("a loser cannot remove the winner's fresh lock (documented ordering)", () => {
+    const a = new LockManager({ locksDir: dir, hostname: "host-a", pid: 1 });
+    const b = new LockManager({ locksDir: dir, hostname: "host-a", pid: 2 });
+    const writeA = (
+      a as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(a);
+    const writeB = (
+      b as unknown as { writeAtomic: WriteAtomic }
+    ).writeAtomic.bind(b);
+    const path = a.lockPathFor(42);
+
+    seedStale(path);
+
+    // A.steal → A.create.
+    expect(stealStaleLock(path, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(writeA(42, path, "first").acquired).toBe(true);
+
+    // B classified the same stale L0 earlier; its steal runs only now, when the
+    // path holds A's fresh lock. CAS refuses and restores it.
+    expect(stealStaleLock(path, STALE, { pid: 2, now: 2000 })).toBe(false);
+
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(1);
+
+    const loser = writeB(42, path, "second");
+    expect(loser.acquired).toBe(false);
+    expect(loser.holder?.pid).toBe(1);
+  });
+
+  it("the winning stealer clears the stale lock it classified", () => {
+    const dirPath = join(dir, "42.lock");
+    seedStale(dirPath);
+    expect(stealStaleLock(dirPath, STALE, { pid: 1, now: 1000 })).toBe(true);
+    expect(existsSync(dirPath)).toBe(false);
+  });
+
+  it("a stealer that lost the rename (ENOENT) reports lost, touching nothing", () => {
+    const dirPath = join(dir, "42.lock");
+    expect(stealStaleLock(dirPath, STALE, { pid: 1, now: 1000 })).toBe(false);
+    expect(existsSync(dirPath)).toBe(false);
+  });
+
+  it("acquire() routes the steal through the CAS — a fresh lock that appears during classification survives (#908 wiring)", () => {
+    // The helper tests above prove the CAS itself; this proves acquire USES
+    // it. Reverting acquire's stale branch to a blind `unlinkSafe(lockPath)`
+    // passes every helper test and every single-actor stale-recovery test —
+    // only this one catches it. The injected PID probe runs between acquire's
+    // staleness read and its steal, which is exactly the racing window: the
+    // winner claims the path there, and acquire must not destroy that claim.
+    const T = 1_000_000_000_000;
+    const path = join(dir, "42.lock");
+    const staleHolder = {
+      pid: 9999,
+      hostname: "host-a",
+      startedAt: new Date(T - 1000).toISOString(),
+      command: "/abandoned",
+    };
+    const freshHolder = {
+      pid: 555,
+      hostname: "host-a",
+      startedAt: new Date(T - 1).toISOString(),
+      command: "winner",
+    };
+    writeFileSync(path, JSON.stringify(staleHolder));
+
+    const mgr = new LockManager({
+      locksDir: dir,
+      hostname: "host-a",
+      pid: 1,
+      now: () => T,
+      isPidAlive: (pid) => {
+        if (pid === staleHolder.pid) {
+          writeFileSync(path, JSON.stringify(freshHolder));
+          return false; // the classified holder really is dead
+        }
+        return true;
+      },
+    });
+
+    const result = mgr.acquire(42, "me");
+    expect(result.acquired).toBe(false);
+    if (!result.acquired) {
+      expect(result.holder.pid).toBe(freshHolder.pid);
+    }
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(freshHolder.pid);
+  });
+
+  it("restores by rename when the filesystem refuses hard links — never leaves a fresh lock renamed-away", () => {
+    const path = join(dir, "42.lock");
+    const fresh = {
+      pid: 555,
+      hostname: "host-a",
+      startedAt: new Date(1).toISOString(),
+      command: "winner",
+    };
+    writeFileSync(path, JSON.stringify(fresh));
+
+    const denyLink = () => {
+      const err = new Error("no hard links") as NodeJS.ErrnoException;
+      err.code = "ENOTSUP";
+      throw err;
+    };
+
+    // On-disk content ≠ classified identity → restore path → link refused →
+    // rename fallback puts the fresh lock back.
+    expect(
+      stealStaleLock(path, STALE, { pid: 1, now: 1000 }, { link: denyLink }),
+    ).toBe(false);
+    const onDisk = JSON.parse(readFileSync(path, "utf-8"));
+    expect(onDisk.pid).toBe(fresh.pid);
+    expect(existsSync(`${path}.steal.1.1000`)).toBe(false);
+  });
+
+  it("sweeps aged *.steal.* orphans for this lock, leaving recent and foreign ones alone", () => {
+    const path = join(dir, "42.lock");
+    const aged = `${path}.steal.77.1`;
+    const recent = `${path}.steal.88.2`;
+    const foreign = `${join(dir, "43.lock")}.steal.9.1`;
+    writeFileSync(aged, "{}");
+    writeFileSync(recent, "{}");
+    writeFileSync(foreign, "{}");
+    const NOW = Date.now();
+    const old = new Date(NOW - 11 * 60 * 1000);
+    utimesSync(aged, old, old);
+    utimesSync(foreign, old, old);
+    // `recent` keeps its just-written mtime — it could be an in-flight steal.
+
+    seedStale(path);
+    expect(stealStaleLock(path, STALE, { pid: 1, now: NOW })).toBe(true);
+
+    expect(existsSync(aged)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(foreign)).toBe(true);
   });
 });
 
