@@ -357,26 +357,47 @@ else
     echo -e "${YELLOW}⏭️  Skipped remote-branch delete (PR not merged; pass --delete-remote or --force to override).${NC}"
 fi
 
-# Update main
+# Refresh local main WITHOUT switching the main checkout's branch (#910). The
+# old flow ran `git checkout main` here unconditionally — a branch switch of
+# the shared main checkout, exactly the mutation the #901 checkout lock exists
+# to serialize. The pre-tool guard cannot see it (the top-level command is this
+# script, which carries no guarded git verb), so a session that lost the lock
+# could still yank the holder off its branch — the same bypass #910 closed in
+# new-feature.sh. Two cases:
+#   - already on main: update in place (fetch + ff-only pull; rebase only on
+#     divergence). Same landing point as before; no branch switch involved.
+#   - on any other branch (or detached HEAD): leave the checkout alone and
+#     fast-forward the local `main` REF via `git fetch origin main:main`,
+#     which never touches the working tree. When that is not fast-forwardable
+#     (local main diverged/ahead, or main is checked out in another worktree),
+#     report and skip — resolving that is the holder's call, not this script's.
 echo -e "${BLUE}📥 Updating main branch...${NC}"
-git checkout main
 git fetch origin main
+CURRENT_BRANCH=$(git symbolic-ref --quiet --short HEAD || echo "")
 
-# Handle divergent branches gracefully
-if ! git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
-    # Local is behind or diverged - fast-forward or rebase
-    if git merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
-        # Local is ahead - nothing to do
-        echo -e "${BLUE}   Local main is ahead of origin${NC}"
-    else
-        # Diverged or behind - try fast-forward first
-        if ! git pull --ff-only origin main 2>/dev/null; then
-            echo -e "${YELLOW}   Divergent branches detected, rebasing...${NC}"
-            git rebase origin/main
+if [ "$CURRENT_BRANCH" = "main" ]; then
+    # Handle divergent branches gracefully
+    if ! git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+        # Local is behind or diverged - fast-forward or rebase
+        if git merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
+            # Local is ahead - nothing to do
+            echo -e "${BLUE}   Local main is ahead of origin${NC}"
+        else
+            # Diverged or behind - try fast-forward first
+            if ! git pull --ff-only origin main 2>/dev/null; then
+                echo -e "${YELLOW}   Divergent branches detected, rebasing...${NC}"
+                git rebase origin/main
+            fi
         fi
+    else
+        git pull --ff-only origin main 2>/dev/null || true
     fi
 else
-    git pull --ff-only origin main 2>/dev/null || true
+    if git fetch origin main:main 2>/dev/null; then
+        echo -e "${BLUE}   Updated local main ref (checkout left on ${CURRENT_BRANCH:-detached HEAD})${NC}"
+    else
+        echo -e "${YELLOW}   ⏭️  Skipped local main update (not fast-forwardable); checkout left on ${CURRENT_BRANCH:-detached HEAD}${NC}"
+    fi
 fi
 
 echo ""

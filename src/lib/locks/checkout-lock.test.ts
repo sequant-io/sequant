@@ -17,7 +17,12 @@ import {
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { CheckoutLock, isCheckoutOwner } from "./checkout-lock.js";
+import {
+  CheckoutLock,
+  RELEASE_SENTINEL_ISSUE,
+  describeCheckoutHolderIssue,
+  isCheckoutOwner,
+} from "./checkout-lock.js";
 import { formatCheckoutLockedMessage } from "./checkout-lock.js";
 import { stealStaleLock } from "./lock-manager.js";
 import {
@@ -633,5 +638,20 @@ describe("formatCheckoutLockedMessage — AC-2 + AC-3", () => {
     const msg = formatCheckoutLockedMessage(holder);
     expect(msg).toContain("../worktrees/feature/<issue>-*/");
     expect(msg).toContain("sequant locks checkout clear --force");
+  });
+});
+
+describe("describeCheckoutHolderIssue (#911)", () => {
+  it("renders a real issue as #N", () => {
+    expect(describeCheckoutHolderIssue(123)).toBe("#123");
+  });
+
+  it("renders the /release sentinel by name, not as a fake issue number", () => {
+    expect(describeCheckoutHolderIssue(RELEASE_SENTINEL_ISSUE)).toBe(
+      "/release (sentinel)",
+    );
+    // The sentinel's numeric value is part of the skill contract — the release
+    // SKILL.md hardcodes it — so a drift here must fail loudly.
+    expect(RELEASE_SENTINEL_ISSUE).toBe(999999999);
   });
 });

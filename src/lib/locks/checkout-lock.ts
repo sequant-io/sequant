@@ -56,6 +56,24 @@ import {
   type CheckoutLockListing,
 } from "./types.js";
 
+/**
+ * Reserved holder id for `/release`, which mutates the main checkout but has
+ * no issue of its own (#911). The lock file and the `pre-tool.sh` guard both
+ * key on a positive integer, so the skill claims the tree under this sentinel
+ * rather than a symbolic label (which would require schema + CLI + hook
+ * changes — tracked in #911 as a follow-up).
+ */
+export const RELEASE_SENTINEL_ISSUE = 999999999;
+
+/**
+ * Render a checkout-lock holder's issue for CLI display. The sentinel is not
+ * a real issue, and printing it as `#999999999` invites readers to go looking
+ * for one.
+ */
+export function describeCheckoutHolderIssue(issue: number): string {
+  return issue === RELEASE_SENTINEL_ISSUE ? "/release (sentinel)" : `#${issue}`;
+}
+
 export interface CheckoutLockOptions {
   /** Directory holding lock files (default: `.sequant/locks`). */
   locksDir?: string;
