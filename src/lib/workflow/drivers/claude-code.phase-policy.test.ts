@@ -73,9 +73,7 @@ describe("#914 AC-3/AC-4: ClaudeCodeDriver model/effort forwarding", () => {
     const driver = new ClaudeCodeDriver();
     const config: AgentExecutionConfig = {
       ...baseConfig(),
-      // @ts-expect-error — model/effort not yet declared on AgentExecutionConfig (#914 AC-4)
       model: "sonnet",
-      // @ts-expect-error — model/effort not yet declared on AgentExecutionConfig (#914 AC-4)
       effort: "medium",
     };
 

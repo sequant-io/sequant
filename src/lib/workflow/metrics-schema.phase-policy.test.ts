@@ -1,14 +1,10 @@
 /**
- * Test stub for #914 AC-7 — run metrics record the resolved model/effort per
+ * Test for #914 AC-7 — run metrics record the resolved model/effort per
  * phase when set, and omit the fields when inherited.
  *
- * Field-name choice: this stub assumes `MetricRun.phasePolicies:
- * Record<phase, {model?, effort?}>`, mirroring the `phasePolicies` field name
- * used on `ExecutionConfig` (AC-5) for naming consistency across the
- * feature. This is a stub proposal, not a locked contract — /exec is free to
- * rename during implementation as long as the AC-7 behavior (record when
- * set, omit when inherited, enum/alias strings only) holds; update this test
- * to match if so.
+ * `MetricRun.phasePolicies: Record<phase, {model?, effort?}>`, mirroring the
+ * `phasePolicies` field name used on `ExecutionConfig` (AC-5) for naming
+ * consistency across the feature.
  */
 
 import { describe, it, expect } from "vitest";
@@ -22,15 +18,14 @@ describe("#914 AC-7: per-phase model/effort in run metrics", () => {
       phases: ["exec", "qa"],
       outcome: "success",
       duration: 120,
-      // @ts-expect-error — phasePolicies not yet on createMetricRun's options (#914 AC-7)
       phasePolicies: { exec: { model: "sonnet", effort: "medium" } },
     });
 
     // Then: the metric record carries exec's resolved model/effort
-    expect(
-      (run as unknown as { phasePolicies?: Record<string, unknown> })
-        .phasePolicies?.exec,
-    ).toEqual({ model: "sonnet", effort: "medium" });
+    expect(run.phasePolicies?.exec).toEqual({
+      model: "sonnet",
+      effort: "medium",
+    });
   });
 
   it("omits phasePolicies fields for a phase that inherited (nothing configured)", () => {
@@ -39,16 +34,23 @@ describe("#914 AC-7: per-phase model/effort in run metrics", () => {
       phases: ["exec", "qa"],
       outcome: "success",
       duration: 120,
-      // @ts-expect-error — phasePolicies not yet on createMetricRun's options (#914 AC-7)
       phasePolicies: { exec: { model: "sonnet" } },
     });
 
-    const policies = (
-      run as unknown as { phasePolicies?: Record<string, unknown> }
-    ).phasePolicies;
     // qa inherited (nothing resolved for it) -> no entry, not an entry with
     // undefined fields — matches AC-3's key-presence discipline.
-    expect(policies && "qa" in policies).toBeFalsy();
+    expect(run.phasePolicies && "qa" in run.phasePolicies).toBeFalsy();
+  });
+
+  it("omits phasePolicies entirely when nothing was configured for any phase", () => {
+    const run = createMetricRun({
+      issues: [914],
+      phases: ["exec"],
+      outcome: "success",
+      duration: 10,
+    });
+
+    expect("phasePolicies" in run).toBe(false);
   });
 
   it("validates against MetricRunSchema with phasePolicies present", () => {
@@ -57,7 +59,6 @@ describe("#914 AC-7: per-phase model/effort in run metrics", () => {
       phases: ["exec"],
       outcome: "success",
       duration: 10,
-      // @ts-expect-error — phasePolicies not yet on createMetricRun's options (#914 AC-7)
       phasePolicies: { exec: { model: "sonnet", effort: "high" } },
     });
 

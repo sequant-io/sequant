@@ -56,9 +56,7 @@ describe("#914 AC-6: AiderDriver ignores run.phases model/effort", () => {
     // settings.model is what actually drives its --model flag.
     const withPolicy: AgentExecutionConfig = {
       ...baseConfig(),
-      // @ts-expect-error — model/effort not yet declared on AgentExecutionConfig (#914 AC-4)
       model: "sonnet",
-      // @ts-expect-error — model/effort not yet declared on AgentExecutionConfig (#914 AC-4)
       effort: "medium",
     };
 

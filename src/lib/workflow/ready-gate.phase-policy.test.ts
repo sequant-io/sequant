@@ -1,15 +1,19 @@
 /**
- * Test stub for #914 AC-5 — `ready-gate.ts:buildPhaseConfig` (producer 2)
- * must resolve per-phase model/effort with the SAME precedence as
+ * Test for #914 AC-5 — `ready-gate.ts:buildPhaseConfig` (producer 2) must
+ * resolve per-phase model/effort with the SAME precedence as
  * `config-resolver.ts:buildExecutionConfig` (producer 1, see
  * `config-resolver.phase-policy.test.ts`). This is the exact pair that
  * drifted in #833.
  *
  * `buildPhaseConfig` is not exported, so this drives it indirectly through
  * `runReadyGate`'s injectable `runPhase`, mirroring the `scriptedRunner`
- * pattern already used in `ready-gate.test.ts`. `RunReadyGateOptions` does
- * not have a `phasePolicies` field yet — the `as unknown as` cast below is
- * intentional and should be removed once AC-5 adds it to the real type.
+ * pattern already used in `ready-gate.test.ts`. Model/effort resolution
+ * happens one layer down from here: `buildPhaseConfig` only carries the
+ * resolved `phasePolicies` map onto the `ExecutionConfig`; `phase-executor.ts`
+ * is the single site that picks out the entry for the phase actually running
+ * and turns it into `AgentExecutionConfig.model`/`.effort` (see
+ * `phase-executor.ts`'s `agentConfig` build site). So this test asserts on
+ * `config.phasePolicies`, not a flat `config.model`/`config.effort`.
  */
 
 import { describe, it, expect } from "vitest";
@@ -17,13 +21,15 @@ import { runReadyGate, type RunReadyGateOptions } from "./ready-gate.js";
 import type { PhaseResult } from "./types.js";
 
 describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (producer 2)", () => {
-  it("resolves the qa phase's configured model/effort into the runPhase config", async () => {
-    // Given: RunReadyGateOptions carrying a resolved qa policy (as
-    // buildExecutionConfig's caller would pass down after CLI>settings>absent
-    // resolution)
-    const seen: Array<{ model?: string; effort?: string }> = [];
+  it("carries the resolved phasePolicies map into the runPhase config", async () => {
+    // Given: RunReadyGateOptions.phasePolicies already resolved (as
+    // commands/ready.ts does via the shared resolvePhasePolicies, CLI >
+    // settings > absent — identical to buildExecutionConfig's producer)
+    const seen: Array<
+      Record<string, { model?: string; effort?: string }> | undefined
+    > = [];
 
-    const opts = {
+    const opts: RunReadyGateOptions = {
       issueNumber: 914,
       worktreePath: "/tmp/worktree-914",
       policy: "ac",
@@ -34,11 +40,8 @@ describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (produce
       readTokensUsed: () => 0,
       snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
       phasePolicies: { qa: { model: "sonnet", effort: "medium" } },
-      runPhase: (phase: "qa" | "loop", config: Record<string, unknown>) => {
-        seen.push({
-          model: config.model as string | undefined,
-          effort: config.effort as string | undefined,
-        });
+      runPhase: (phase, config) => {
+        seen.push(config.phasePolicies);
         const result: PhaseResult = {
           phase,
           success: true,
@@ -46,14 +49,14 @@ describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (produce
         };
         return Promise.resolve(result);
       },
-    } as unknown as RunReadyGateOptions;
+    };
 
     // When: runReadyGate dispatches the qa phase
     await runReadyGate(opts);
 
-    // Then: the config handed to runPhase("qa", ...) carries the resolved
-    // model/effort — identical resolution to buildExecutionConfig's producer.
-    expect(seen[0]?.model).toBe("sonnet");
-    expect(seen[0]?.effort).toBe("medium");
+    // Then: the ExecutionConfig handed to runPhase("qa", ...) carries the
+    // resolved qa policy — identical resolution to buildExecutionConfig's
+    // producer (config-resolver.phase-policy.test.ts).
+    expect(seen[0]?.qa).toEqual({ model: "sonnet", effort: "medium" });
   });
 });

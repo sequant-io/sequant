@@ -1254,6 +1254,13 @@ async function executePhase(
       ? resumeHandle
       : undefined;
 
+  // #914: resolved per-phase model/effort, if this phase has one. Both
+  // ExecutionConfig producers (buildExecutionConfig, ready-gate.ts's
+  // buildPhaseConfig) populate `phasePolicies` the same way, so this is the
+  // single site that turns it into driver-facing fields — see the doc
+  // comment on ExecutionConfig.phasePolicies.
+  const phasePolicy = config.phasePolicies?.[phase];
+
   // Build AgentExecutionConfig for the driver
   const agentConfig: AgentExecutionConfig = {
     cwd,
@@ -1265,6 +1272,10 @@ async function executePhase(
     resumeHandle: eligibleHandle,
     sessionId: eligibleHandle?.token,
     files,
+    ...(phasePolicy?.model ? { model: phasePolicy.model } : {}),
+    ...(phasePolicy?.effort
+      ? { effort: phasePolicy.effort as AgentExecutionConfig["effort"] }
+      : {}),
     onOutput:
       config.verbose || reportActivity
         ? (text: string) => {
