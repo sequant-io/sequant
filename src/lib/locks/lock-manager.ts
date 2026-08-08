@@ -33,6 +33,7 @@ import {
   statSync,
 } from "fs";
 import { basename, dirname, join, resolve } from "path";
+import { execFileSync } from "child_process";
 import * as os from "os";
 
 import {
@@ -85,10 +86,39 @@ export function isOrchestratorMode(): boolean {
   return Boolean(process.env.SEQUANT_ORCHESTRATOR);
 }
 
-/** Resolve the locks directory honoring `SEQUANT_LOCKS_DIR` for test isolation. */
+/**
+ * Resolve the checkout root shared by the main worktree and every linked
+ * worktree of the same repository (#909). `--git-common-dir` (unlike
+ * `--show-toplevel`) points at the same physical `.git` for all of them, so
+ * a linked worktree lands on the main checkout's `.sequant/locks` instead of
+ * growing its own — matching what `pre-tool.sh`'s checkout guard reads.
+ * Returns `null` outside a git repository (or if `git` is unavailable).
+ */
+function resolveGitCheckoutRoot(cwd: string): string | null {
+  try {
+    const commonDir = execFileSync(
+      "git",
+      ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).trim();
+    return commonDir ? dirname(commonDir) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the locks directory. Priority: explicit option > `SEQUANT_LOCKS_DIR`
+ * > the shared git checkout root (#909) > plain cwd-relative (non-git
+ * fallback, preserves pre-#909 behavior).
+ */
 export function resolveLocksDir(explicit?: string): string {
   const fromEnv = process.env.SEQUANT_LOCKS_DIR;
-  return resolve(explicit ?? fromEnv ?? DEFAULT_LOCKS_DIR);
+  if (explicit !== undefined || fromEnv !== undefined) {
+    return resolve(explicit ?? fromEnv ?? DEFAULT_LOCKS_DIR);
+  }
+  const gitRoot = resolveGitCheckoutRoot(process.cwd());
+  return resolve(gitRoot ?? process.cwd(), DEFAULT_LOCKS_DIR);
 }
 
 /**
