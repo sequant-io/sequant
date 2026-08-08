@@ -201,10 +201,12 @@ The `new-feature.sh` script also supports `--base`:
 ```bash
 # Create worktree from feature branch
 ./scripts/new-feature.sh 117 --base feature/dashboard
-
-# With stash
-./scripts/new-feature.sh 117 --base feature/dashboard --stash
 ```
+
+`new-feature.sh` no longer switches or updates the main checkout — it branches
+the new worktree directly off `origin/<base>` — so uncommitted changes in the
+main checkout no longer block worktree creation. The `--stash` flag is
+therefore a deprecated no-op, kept only for backward compatibility.
 
 ## Best Practices
 

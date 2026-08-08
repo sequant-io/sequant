@@ -3,7 +3,7 @@
 # Create a new feature worktree from a GitHub issue
 # Usage: ./scripts/new-feature.sh <issue-number> [--base <branch>] [--stash]
 # Example: ./scripts/new-feature.sh 4
-# Example: ./scripts/new-feature.sh 4 --stash  # Auto-stash uncommitted changes
+# Example: ./scripts/new-feature.sh 4 --stash  # Deprecated no-op (kept for compatibility)
 # Example: ./scripts/new-feature.sh 4 --base feature/dashboard  # Branch from feature branch
 
 set -e
@@ -108,18 +108,14 @@ echo -e "${BLUE}Base: ${BASE_BRANCH}${NC}"
 echo -e "${BLUE}Worktree: ${WORKTREE_DIR}${NC}"
 echo ""
 
-# Check for uncommitted changes before switching branches
-if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-    if [ "$STASH_FLAG" = true ]; then
-        echo -e "${YELLOW}📦 Stashing uncommitted changes...${NC}"
-        git stash push --include-untracked -m "WIP before issue #${ISSUE_NUMBER}"
-        echo -e "${GREEN}   Changes stashed successfully${NC}"
-    else
-        echo -e "${RED}❌ Working tree has uncommitted changes${NC}"
-        echo -e "${YELLOW}   Use --stash to auto-stash, or manually:${NC}"
-        echo -e "   git stash push -m 'WIP before issue #${ISSUE_NUMBER}'"
-        exit 1
-    fi
+# The main checkout is no longer switched or updated by this script (#910), so
+# an uncommitted main working tree can no longer block or endanger worktree
+# creation — the worktree is branched directly off the fetched remote ref
+# below, and `git fetch` / `git worktree add` both operate happily on a dirty
+# main tree. `--stash` is therefore obsolete: still accepted for backward
+# compatibility, but a no-op, since there is nothing to move out of the way.
+if [ "$STASH_FLAG" = true ]; then
+    echo -e "${YELLOW}ℹ️  --stash is deprecated and now does nothing: new-feature.sh no longer touches the main checkout, so its uncommitted changes are left in place.${NC}"
 fi
 
 # Check if branch already exists
@@ -142,15 +138,25 @@ if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
     fi
 fi
 
-# Update base branch
-echo -e "${BLUE}📥 Updating ${BASE_BRANCH} branch...${NC}"
+# Refresh the base branch's remote-tracking ref WITHOUT touching the main
+# checkout. The old flow — `git checkout <base>` then `git pull` — switched the
+# main checkout's branch and mutated its working tree, a global operation the
+# #901 checkout lock exists to serialize. But the pre-tool guard inspects only
+# the top-level Bash command the agent runs; that command is `new-feature.sh`,
+# which carries no guarded git verb, so the inner `checkout`/`pull` sailed past
+# the guard and a losing session could switch the holder's branch out from
+# under it (#910). Reading the ref instead of checking it out closes the gap at
+# its root: the main tree is never mutated, so no lock — and no guard — is
+# needed here at all.
+echo -e "${BLUE}📥 Fetching ${BASE_BRANCH} from origin...${NC}"
 git fetch origin "$BASE_BRANCH"
-git checkout "$BASE_BRANCH"
-git pull origin "$BASE_BRANCH"
 
-# Create worktree from base branch
+# Branch the worktree directly off the freshly fetched remote ref.
+# `git worktree add -b <new> <path> <start-point>` resolves <start-point>
+# without changing the main checkout, and `origin/<base>` is exactly the
+# up-to-date commit the old `checkout`+`pull` used to land on.
 echo -e "${BLUE}🌿 Creating new worktree from ${BASE_BRANCH}...${NC}"
-git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME"
+git worktree add "$WORKTREE_DIR" -b "$BRANCH_NAME" "origin/${BASE_BRANCH}"
 
 # Record the base branch on the new branch so downstream tooling
 # (e.g. phase-executor zero-diff guard, see #537) can resolve the
