@@ -56,6 +56,41 @@ export const QaVerdictSchema = z.enum([
 export type QaVerdict = z.infer<typeof QaVerdictSchema>;
 
 /**
+ * Source that produced the resolved spec→run phase recommendation (#921).
+ *
+ * Ordered by resolution priority: a durable structured marker in the spec's
+ * GitHub comment beats the same comment's prose section, which beats the
+ * spec agent's ephemeral chat text, which beats label-based guessing.
+ */
+export const SpecRecommendationSourceSchema = z.enum([
+  "marker",
+  "comment-prose",
+  "chat",
+  "label-fallback",
+]);
+
+export type SpecRecommendationSource = z.infer<
+  typeof SpecRecommendationSourceSchema
+>;
+
+/**
+ * Resolved spec→run phase recommendation, recorded on the issue log so
+ * fallback frequency is auditable (#921 AC-4). Additive/optional — absent on
+ * runs that never reached spec resolution (e.g. spec failed) or predate this
+ * field, keeping the persisted-log schema stable at `version: 1`.
+ */
+export const SpecRecommendationSchema = z.object({
+  /** Which step in the resolution chain produced this result */
+  source: SpecRecommendationSourceSchema,
+  /** Resolved phases, spec excluded (spec already ran) */
+  phases: z.array(PhaseSchema),
+  /** Whether the quality loop should be enabled */
+  qualityLoop: z.boolean(),
+});
+
+export type SpecRecommendation = z.infer<typeof SpecRecommendationSchema>;
+
+/**
  * File diff statistics for a single file (AC-3)
  */
 export const FileDiffStatSchema = z.object({
@@ -227,6 +262,8 @@ export const IssueLogSchema = z.object({
   prNumber: z.number().int().positive().optional(),
   /** PR URL if created after successful QA */
   prUrl: z.string().optional(),
+  /** How the spec→run phase recommendation was resolved (#921 AC-4) */
+  specRecommendation: SpecRecommendationSchema.optional(),
 });
 
 export type IssueLog = z.infer<typeof IssueLogSchema>;

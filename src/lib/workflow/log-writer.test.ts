@@ -188,6 +188,65 @@ describe("LogWriter", () => {
     });
   });
 
+  describe("setSpecRecommendation (#921 AC-4)", () => {
+    it("records the resolution source and phases on the issue log", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+
+      writer.setSpecRecommendation({
+        source: "comment-prose",
+        phases: ["testgen", "exec", "qa"],
+        qualityLoop: true,
+      });
+      writer.completeIssue();
+
+      const runLog = writer.getRunLog();
+      expect(runLog!.issues[0].specRecommendation).toEqual({
+        source: "comment-prose",
+        phases: ["testgen", "exec", "qa"],
+        qualityLoop: true,
+      });
+    });
+
+    it("targets a specific issue by number in concurrent mode", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Issue A", []);
+      writer.startIssue(456, "Issue B", []);
+
+      writer.setSpecRecommendation(
+        { source: "marker", phases: ["exec", "qa"], qualityLoop: false },
+        456,
+      );
+      writer.completeIssue(123);
+      writer.completeIssue(456);
+
+      const runLog = writer.getRunLog();
+      const issueA = runLog!.issues.find((i) => i.issueNumber === 123);
+      const issueB = runLog!.issues.find((i) => i.issueNumber === 456);
+      expect(issueA!.specRecommendation).toBeUndefined();
+      expect(issueB!.specRecommendation).toEqual({
+        source: "marker",
+        phases: ["exec", "qa"],
+        qualityLoop: false,
+      });
+    });
+
+    it("is a no-op when no issue is active", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+
+      expect(() =>
+        writer.setSpecRecommendation({
+          source: "label-fallback",
+          phases: ["exec", "qa"],
+          qualityLoop: false,
+        }),
+      ).not.toThrow();
+    });
+  });
+
   describe("logPhase", () => {
     it("should add phase to current issue", async () => {
       const writer = new LogWriter();

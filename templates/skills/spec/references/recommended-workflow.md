@@ -1,6 +1,17 @@
 # Recommended Workflow Format
 
-This document shows the expected output format for the `## Recommended Workflow` section in `/spec` output. The `parseRecommendedWorkflow()` function parses this format to determine which phases to execute.
+This document shows the expected output format for the `## Recommended Workflow` section in `/spec` output.
+
+## Resolution chain (#921)
+
+`sequant run` resolves phases through an ordered chain, not `parseRecommendedWorkflow()` alone:
+
+1. **`SEQUANT_SPEC` marker** — a structured HTML comment in the posted plan comment, e.g. `<!-- SEQUANT_SPEC: {"phases":["testgen","exec","qa"],"qualityLoop":true} -->`. This is the primary, durable channel — always emit it alongside the prose section below.
+2. **Comment prose** — `parseRecommendedWorkflow()` applied to the plan comment body (same format as this doc).
+3. **Chat text** — the same parser applied to the spec agent's chat output. Nondeterministic: only present if the agent happens to restate the section in chat rather than posting via a body file (#814).
+4. **Label fallback** — `detectPhasesFromLabels()`. Can never produce `testgen` or `security-review`.
+
+The marker's `phases` array excludes `spec` (it already ran) and must name only registered phases — an unknown phase name invalidates the whole marker and falls through to step 2.
 
 ## Format
 
@@ -10,6 +21,8 @@ This document shows the expected output format for the `## Recommended Workflow`
 **Phases:** spec → exec → qa
 **Quality Loop:** disabled
 **Reasoning:** Brief explanation of why this workflow was chosen.
+
+<!-- SEQUANT_SPEC: {"phases":["exec","qa"],"qualityLoop":false} -->
 ```
 
 ## Examples
