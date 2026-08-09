@@ -95,23 +95,78 @@ describe("ground-check CLI (integration)", { timeout: 90_000 }, () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it("--ref checks against a historical commit", () => {
-    // `scripts/spec/ground-check.ts` is introduced by this branch, so at the
-    // base commit it must not resolve. This is the mechanism the corpus
-    // measurement relies on to tell planned-new apart from phantom.
-    const base = execFileSync("git", ["rev-parse", "origin/main"], {
-      encoding: "utf-8",
-      cwd: REPO_ROOT,
-    }).trim();
+  it("--ref checks against a historical commit, not the working tree", () => {
+    // Builds its own two-commit repository rather than reaching for
+    // `origin/main`. The first version of this test did the latter and passed
+    // locally but failed in CI, where `actions/checkout` leaves no
+    // `origin/main` ref to resolve — a dependency on ambient repo state, not
+    // on the behavior under test.
+    //
+    // This is the mechanism `measure-corpus.ts` relies on to tell planned-new
+    // apart from phantom, so it has to hold precisely: a file present in the
+    // working tree but absent at the ref must resolve as absent.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ground-check-hist-"));
+    try {
+      const git = (...args: string[]): string =>
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=test",
+            "-c",
+            "commit.gpgsign=false",
+            ...args,
+          ],
+          { cwd: repo, encoding: "utf-8" },
+        );
 
-    const { stdout, status } = runCli(
-      ["--ref", base],
-      "The checker lives in `scripts/spec/ground-check.ts`.",
-    );
-    expect(status).toBe(0);
-    const result = JSON.parse(stdout);
-    expect(result.ref).toBe(base);
-    expect(result.citations[0].exists).toBe(false);
+      git("init", "-q");
+      fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+      fs.writeFileSync(path.join(repo, "src", "old.ts"), "export const a = 1;");
+      git("add", "-A");
+      git("commit", "-q", "-m", "first");
+      const base = git("rev-parse", "HEAD").trim();
+
+      // Second commit introduces a file the first commit never had.
+      fs.writeFileSync(path.join(repo, "src", "new.ts"), "export const b = 2;");
+      git("add", "-A");
+      git("commit", "-q", "-m", "second");
+
+      const input = "Both `src/old.ts` and `src/new.ts` are referenced here.";
+
+      const atBase = execFileSync("npx", ["tsx", CLI_PATH, "--ref", base], {
+        encoding: "utf-8",
+        cwd: repo,
+        timeout: 60_000,
+        input,
+      });
+      const baseResult = JSON.parse(atBase);
+      expect(baseResult.ref).toBe(base);
+      const byRaw = (r: {
+        citations: Array<{ raw: string; exists: boolean }>;
+      }) => Object.fromEntries(r.citations.map((c) => [c.raw, c.exists]));
+      expect(byRaw(baseResult)).toEqual({
+        "src/old.ts": true,
+        "src/new.ts": false,
+      });
+
+      // Same input against the working tree resolves both — proving the
+      // difference came from the ref and not from extraction.
+      const atHead = execFileSync("npx", ["tsx", CLI_PATH], {
+        encoding: "utf-8",
+        cwd: repo,
+        timeout: 60_000,
+        input,
+      });
+      expect(byRaw(JSON.parse(atHead))).toEqual({
+        "src/old.ts": true,
+        "src/new.ts": true,
+      });
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 
   it("an unresolvable ref degrades to empty rather than crashing", () => {
