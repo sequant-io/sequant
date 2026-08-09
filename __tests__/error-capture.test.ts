@@ -466,8 +466,46 @@ describe("Error Category Constants", () => {
       // never produced by classifyError.
       expect(ERROR_CATEGORIES).toContain("rate_limit");
       expect(ERROR_CATEGORIES).toContain("billing");
+      // pr_creation added by #920 — assigned only at the deriveFailureCategory
+      // call site for a PR-creation failure, which has no failing phase.
+      expect(ERROR_CATEGORIES).toContain("pr_creation");
       expect(ERROR_CATEGORIES).toContain("unknown");
-      expect(ERROR_CATEGORIES).toHaveLength(8);
+      expect(ERROR_CATEGORIES).toHaveLength(9);
+    });
+  });
+
+  describe("#920: pr_creation is call-site-only, never produced by classification", () => {
+    it("errorTypeToCategory() never maps a SequantError to pr_creation", () => {
+      // Every stderr shape classifyError can produce funnels through
+      // errorTypeToCategory for legacy category storage. None of them should
+      // ever surface pr_creation — that category exists solely for the
+      // batch-executor call site where a failed PR creation has no failing
+      // phase's stderr to classify in the first place.
+      const stderrShapes = [
+        ["context window exceeded"],
+        ["rate limit exceeded, 429"],
+        ["HOOK_BLOCKED: pre-commit failed"],
+        ["TS2345: type error", "build failed"],
+        ["operation timed out after 30s"],
+        [], // no stderr at all — falls through to SubprocessError
+      ];
+      for (const lines of stderrShapes) {
+        const category = errorTypeToCategory(classifyError(lines));
+        expect(category).not.toBe("pr_creation");
+      }
+    });
+
+    it("ErrorContextSchema still accepts pr_creation directly (the one legitimate producer)", () => {
+      // The batch-executor call site constructs failureCategory: "pr_creation"
+      // by hand, not through classifyError — this is the only valid producer,
+      // and the schema must still accept it as a category value.
+      expect(() =>
+        ErrorContextSchema.parse({
+          stderrTail: [],
+          stdoutTail: [],
+          category: "pr_creation",
+        }),
+      ).not.toThrow();
     });
   });
 });

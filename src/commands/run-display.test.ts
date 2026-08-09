@@ -679,3 +679,46 @@ describe("displaySummary — run wall clock, not per-issue sum (#867)", () => {
     expect(input.totalDurationSeconds).toBe(300);
   });
 });
+
+// #920 AC-2: a phase-restricted run whose branch had zero commits ahead of
+// base succeeds without a PR — the summary must still state why no PR
+// appeared, not just stay silent about it. `toIssueSummary` isn't exported
+// (batch-executor.ts:107), so this goes through the same public
+// `captureSummaryInput` path #766's tests use.
+describe("displaySummary — PR-skip reason surfaces on a successful run (#920)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("carries prSkippedReason from IssueResult into the rendered IssueSummary", () => {
+    const input = captureSummaryInput(
+      runResult([
+        issueResult({
+          issueNumber: 920,
+          success: true,
+          prSkippedReason:
+            "no commits ahead of main (no implementing phase ran)",
+        }),
+      ]),
+    );
+
+    expect(input.issues[0].prSkippedReason).toBe(
+      "no commits ahead of main (no implementing phase ran)",
+    );
+  });
+
+  it("leaves prSkippedReason undefined on a run that actually opened a PR", () => {
+    const input = captureSummaryInput(
+      runResult([
+        issueResult({
+          issueNumber: 921,
+          success: true,
+          prNumber: 921,
+          prUrl: "https://example.test/pr/921",
+        }),
+      ]),
+    );
+
+    expect(input.issues[0].prSkippedReason).toBeUndefined();
+  });
+});
