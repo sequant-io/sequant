@@ -203,6 +203,13 @@ export interface RunSettings {
    * `config-resolver.ts`).
    */
   phases?: Record<string, PhasePolicy>;
+  /**
+   * Evidence-based effort escalation on quality-loop retries (#915). Default
+   * `false` — raising effort raises token spend, which is the user's call.
+   * Overridable per-invocation with `--escalate-effort` (CLI > settings >
+   * default). See `effort-escalation.ts` for the resolver.
+   */
+  effortEscalation: boolean;
 }
 
 /**
@@ -404,6 +411,15 @@ export const RunSettingsSchema = z.object({
    * name here should not crash a run the way an invalid `effort` enum does).
    */
   phases: z.record(z.string(), PhasePolicySchema).optional(),
+  /**
+   * Evidence-based effort escalation on quality-loop retries (#915). Default
+   * `false` — raising effort raises token spend, which is the user's call.
+   * When enabled, a retried phase execution (loop iteration ≥ 2, or a
+   * `sequant ready` QA-pass loop re-run) resolves one effort tier above its
+   * configured/inherited base for that execution only. See
+   * `effort-escalation.ts` for the resolver.
+   */
+  effortEscalation: z.boolean().default(false),
 });
 
 /** Zod schema for ScopeThreshold (base — fields required, no defaults) */
@@ -816,6 +832,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     staleBranchThreshold: 5, // Block QA/test if feature is >5 commits behind main
     resolvedIssueTTL: 7, // Auto-prune resolved issues after 7 days
     relay: true, // Enable interactive relay (#383) by default
+    effortEscalation: false, // #915: off by default — raises token spend
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,

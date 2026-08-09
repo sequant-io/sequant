@@ -22,6 +22,7 @@ import {
   type ProgressCallback,
   type PhasePauseHandle,
 } from "./types.js";
+import { withEscalatedEffort } from "./effort-escalation.js";
 import type { ShutdownManager } from "../shutdown.js";
 import {
   classifyError,
@@ -1350,17 +1351,35 @@ export async function runIssueWithLogging(
         }
       }
 
+      // #915: iteration > 1 is the outer quality-loop's retry signal — the
+      // same condition that triggers the "Quality loop iteration" log line
+      // above. `withEscalatedEffort` is a no-op (returns the input config by
+      // reference) whenever escalation is off or this is the first attempt.
+      const { config: dispatchConfig, record: escalationRecord } =
+        withEscalatedEffort(
+          withActivityHook(
+            issueConfig,
+            issueNumber,
+            phase,
+            onProgress,
+            makeWaitTransition(phase),
+          ),
+          phase,
+          iteration > 1,
+        );
+      if (escalationRecord && config.verbose) {
+        log(
+          chalk.gray(
+            `    effort: ${escalationRecord.base} → ${escalationRecord.escalated} (loop retry)`,
+          ),
+        );
+      }
+
       const phaseStartTime = new Date();
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
-        withActivityHook(
-          issueConfig,
-          issueNumber,
-          phase,
-          onProgress,
-          makeWaitTransition(phase),
-        ),
+        dispatchConfig,
         resumeHandle,
         worktreePath,
         shutdownManager,
@@ -1386,7 +1405,17 @@ export async function runIssueWithLogging(
         }
       }
 
-      phaseResults.push(result);
+      phaseResults.push(
+        escalationRecord
+          ? {
+              ...result,
+              escalatedEffort: {
+                base: escalationRecord.base,
+                escalated: escalationRecord.escalated,
+              },
+            }
+          : result,
+      );
 
       // Emit completion/failure progress event (AC-8)
       const phaseDurationSec = Math.round(

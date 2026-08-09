@@ -1691,6 +1691,35 @@ export class RunOrchestrator {
     const failureCategory = results.find(
       (r) => !r.success && r.failureCategory,
     )?.failureCategory;
+    // #915: one entry per escalated phase execution, from both retry sites —
+    // the outer quality loop (`phaseResults[].escalatedEffort`) and the
+    // `--ready-gate` QA-pass loop (`readyGate.effortEscalations`).
+    const effortEscalations = [
+      ...results.flatMap((r) =>
+        r.phaseResults
+          .filter((p) => p.escalatedEffort)
+          .map((p) => ({
+            phase: p.phase,
+            base: p.escalatedEffort!.base,
+            escalated: p.escalatedEffort!.escalated,
+          })),
+      ),
+      ...results.flatMap((r) => r.readyGate?.effortEscalations ?? []),
+    ];
+    // #915: the outer quality loop already logs its own escalations live at
+    // the batch-executor dispatch site — only the `--ready-gate` QA-pass loop
+    // has no equivalent live print, so surface those here.
+    if (config.verbose) {
+      for (const r of results) {
+        for (const e of r.readyGate?.effortEscalations ?? []) {
+          console.log(
+            chalk.gray(
+              `  effort: ${e.base} → ${e.escalated} (ready-gate retry, #${r.issueNumber})`,
+            ),
+          );
+        }
+      }
+    }
     await metricsWriter.recordRun({
       issues: issueNumbers,
       phases: Array.from(allPhases),
@@ -1701,6 +1730,8 @@ export class RunOrchestrator {
       failureCategory,
       // #914: resolved per-phase model/effort, when any phase had one.
       phasePolicies: config.phasePolicies,
+      // #915: escalated tiers, when any phase execution escalated.
+      effortEscalations,
       metrics: {
         tokensUsed: tokenUsage.tokensUsed,
         filesChanged: totalFilesChanged,
