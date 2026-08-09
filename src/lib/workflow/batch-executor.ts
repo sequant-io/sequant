@@ -52,11 +52,7 @@ import { BillingError, RateLimitError, resetsAtToMs } from "../errors.js";
 import type { StateManager } from "./state-manager.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
-import {
-  detectPhasesFromLabels,
-  determinePhasesForIssue,
-  DOCS_LABELS,
-} from "./phase-mapper.js";
+import { determinePhasesForIssue, DOCS_LABELS } from "./phase-mapper.js";
 import { resolveSpecRecommendation } from "./spec-recommendation.js";
 import {
   activateRelay,
