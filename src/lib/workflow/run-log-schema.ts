@@ -101,7 +101,7 @@ export const ErrorContextSchema = z.object({
   /**
    * Classified error category (legacy, kept for backwards compatibility).
    * Keep in sync with `ERROR_CATEGORIES` in `error-classifier.ts` —
-   * `rate_limit` / `billing` added by #761 AC-6.
+   * `rate_limit` / `billing` added by #761 AC-6, `pr_creation` by #920.
    */
   category: z.enum([
     "context_overflow",
@@ -111,6 +111,7 @@ export const ErrorContextSchema = z.object({
     "timeout",
     "rate_limit",
     "billing",
+    "pr_creation",
     "unknown",
   ]),
   /** Typed error class name (AC-8), e.g. "ApiError", "BuildError" */

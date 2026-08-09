@@ -21,6 +21,9 @@ import {
  * `rate_limit` / `billing` (#761 AC-6) only arise from the driver's structured
  * errors — `classifyError` never produces them, since stderr text cannot
  * distinguish a window-exhausted limit from a transient 429 (`api_error`).
+ * `pr_creation` (#920) is assigned only at the `deriveFailureCategory` call
+ * site, not by `classifyError` — a failed `createPR` has no failing phase to
+ * classify, so it would otherwise leave `failureCategory` `undefined`.
  * Keep in sync with the inline category enum in `run-log-schema.ts`.
  */
 export const ERROR_CATEGORIES = [
@@ -31,6 +34,7 @@ export const ERROR_CATEGORIES = [
   "timeout",
   "rate_limit",
   "billing",
+  "pr_creation",
   "unknown",
 ] as const;
 

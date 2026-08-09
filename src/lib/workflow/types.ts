@@ -334,6 +334,15 @@ export interface IssueResult {
    */
   prCreationError?: string;
   /**
+   * Set when PR creation was skipped because the branch carried zero commits
+   * ahead of its base (#920) — a phase-restricted run (e.g. `--phases spec`)
+   * that implemented nothing has no deliverable to open a PR for, and
+   * attempting one would only fail with GitHub's "No commits between main and
+   * …" error. Distinct from {@link IssueResult.prCreationError}: this is not
+   * a failure — `success` stays whatever the phases produced.
+   */
+  prSkippedReason?: string;
+  /**
    * Set when the issue was skipped because another sequant session holds
    * the per-issue lock (#625). Surfaced in the summary as
    * `locked by PID <n>`. When present, `success` is false and the issue

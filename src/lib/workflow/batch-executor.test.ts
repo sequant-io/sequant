@@ -33,6 +33,10 @@ vi.mock("./phase-executor.js", async (importOriginal) => ({
   // predicate relies on it; only executePhaseWithRetry needs to be a spy.
   ...(await importOriginal<typeof import("./phase-executor.js")>()),
   executePhaseWithRetry: vi.fn(),
+  // #920: default true (has commits) so every pre-existing PR-gate test keeps
+  // exercising the create-PR path unchanged; the #920 describe block below
+  // overrides per-test via `mockReturnValueOnce(false)`.
+  hasExecChanges: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock("./worktree-manager.js", () => ({
@@ -74,7 +78,7 @@ vi.mock("./error-classifier.js", async (importOriginal) => ({
   classifyError: vi.fn().mockReturnValue("unknown"),
 }));
 
-import { executePhaseWithRetry } from "./phase-executor.js";
+import { executePhaseWithRetry, hasExecChanges } from "./phase-executor.js";
 import { createPhaseLogFromTiming } from "./log-writer.js";
 import {
   runIssueWithLogging,
@@ -84,6 +88,7 @@ import { createPR } from "./worktree-manager.js";
 
 const mockExecutePhase = vi.mocked(executePhaseWithRetry);
 const mockCreatePR = vi.mocked(createPR);
+const mockHasExecChanges = vi.mocked(hasExecChanges);
 
 /** Build a minimal ExecutionConfig for testing */
 function makeConfig(overrides: Partial<ExecutionConfig> = {}): ExecutionConfig {
@@ -1661,6 +1666,139 @@ describe("#879: a failed createPR fails the run (AC-5)", () => {
     expect(mockCreatePR).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.prCreationError).toBeUndefined();
+  });
+});
+
+describe("#920: PR creation skipped when the branch has zero commits ahead of base", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExecutePhase.mockResolvedValue(successResult("spec"));
+  });
+
+  it("AC-1/AC-5: a spec-only run (as CI's sequant:spec-only label produces) with zero commits skips PR creation and reports success", async () => {
+    mockHasExecChanges.mockReturnValue(false);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "spec-only run",
+        labels: ["bug"],
+        config: { phases: ["spec"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-920", branch: "feature/920" },
+    });
+
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.prNumber).toBeUndefined();
+    expect(result.prCreationError).toBeUndefined();
+  });
+
+  it("AC-2: records a non-silent skip reason on the result", async () => {
+    mockHasExecChanges.mockReturnValue(false);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "spec-only run",
+        labels: ["bug"],
+        config: { phases: ["spec"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-920", branch: "feature/920" },
+    });
+
+    expect(result.prSkippedReason).toContain("no commits ahead of");
+  });
+
+  it("AC-4: a qa-only resume on a branch with commits ahead of base still creates a PR", async () => {
+    mockHasExecChanges.mockReturnValue(true);
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 921,
+      prUrl: "https://example.test/pr/921",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "qa-only resume with commits",
+        labels: ["bug"],
+        config: { phases: ["qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-920b", branch: "feature/920b" },
+    });
+
+    expect(mockCreatePR).toHaveBeenCalledTimes(1);
+    expect(result.prNumber).toBe(921);
+    expect(result.prSkippedReason).toBeUndefined();
+  });
+
+  it("AC-6: an attempted-and-failed PR still yields a concrete (non-empty) failureCategory", async () => {
+    mockHasExecChanges.mockReturnValue(true);
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: false,
+      error: "gh pr create failed: some real failure",
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "PR create fails",
+        labels: ["bug"],
+        config: { phases: ["exec", "qa"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-920c", branch: "feature/920c" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.failureCategory).toBe("pr_creation");
+  });
+
+  it("AC-7: --no-pr semantics are unchanged — the commits-ahead check is never consulted", async () => {
+    mockHasExecChanges.mockReturnValue(false);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "no-pr on zero commits",
+        labels: ["bug"],
+        config: { phases: ["spec"], qualityLoop: false },
+        options: { autoDetectPhases: false, noPr: true },
+      }),
+      worktree: { path: "/tmp/wt-920d", branch: "feature/920d" },
+    });
+
+    // `--no-pr` already rules out PR creation, so the new gate must short-
+    // circuit before ever calling hasExecChanges — proves this AC didn't
+    // grow a second, redundant reason for the skip.
+    expect(mockHasExecChanges).not.toHaveBeenCalled();
+    expect(mockCreatePR).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+    expect(result.prSkippedReason).toBeUndefined();
+  });
+
+  it("AC-8: the skip reason names the worktree's custom base branch, not a hardcoded main", async () => {
+    mockHasExecChanges.mockReturnValue(false);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 920,
+        title: "custom base",
+        labels: ["bug"],
+        config: { phases: ["spec"], qualityLoop: false },
+        options: { autoDetectPhases: false },
+      }),
+      worktree: { path: "/tmp/wt-920e", branch: "feature/920e" },
+      baseBranch: "feature/epic",
+    });
+
+    expect(result.prSkippedReason).toContain("feature/epic");
   });
 });
 

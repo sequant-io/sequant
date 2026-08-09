@@ -916,6 +916,52 @@ describe("renderRunSummary (AC-12-15)", () => {
     expect(out).not.toContain("┌");
     expect(out).toContain("#614");
   });
+
+  // #920 AC-2: a successful phase-restricted run must state why no PR
+  // appeared, not just render as an ordinary pass with a blank PR column.
+  it("#920: a successful run with prSkippedReason shows the skip note in the grid", () => {
+    const buf = buffer();
+    renderRunSummary(
+      {
+        issues: [
+          {
+            issueNumber: 920,
+            success: true,
+            durationSeconds: 12,
+            phases: [{ name: "spec", success: true }],
+            prSkippedReason:
+              "no commits ahead of main (no implementing phase ran)",
+          },
+        ],
+      },
+      { stdoutWrite: buf.write, noColor: true, columns: 120 },
+    );
+    const out = stripAnsi(buf.joined());
+    expect(out).toContain("PR skipped");
+    expect(out).toContain("no commits ahead of main");
+  });
+
+  it("#920: a successful run with a PR does not show a skip note", () => {
+    const buf = buffer();
+    renderRunSummary(
+      {
+        issues: [
+          {
+            issueNumber: 921,
+            success: true,
+            durationSeconds: 12,
+            phases: [{ name: "qa", success: true }],
+            prNumber: 921,
+            prUrl: "https://github.com/x/y/pull/921",
+          },
+        ],
+      },
+      { stdoutWrite: buf.write, noColor: true, columns: 120 },
+    );
+    const out = stripAnsi(buf.joined());
+    expect(out).not.toContain("PR skipped");
+    expect(out).toContain("PR #921");
+  });
 });
 
 // Sanity: importing the module shouldn't pull in process.exit or other

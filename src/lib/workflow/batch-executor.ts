@@ -45,6 +45,7 @@ import {
   AUTO_WAIT_BUFFER_MS,
   createAutoWaitLedger,
   executePhaseWithRetry,
+  hasExecChanges,
   isWindowExhaustedRateLimit,
 } from "./phase-executor.js";
 import { BillingError, RateLimitError, resetsAtToMs } from "../errors.js";
@@ -1774,7 +1775,23 @@ export async function runIssueWithLogging(
   // warning and leave the issue at `success`. Recorded here and folded into the
   // returned `success` below.
   let prCreationError: string | undefined;
-  const shouldCreatePR = success && worktreePath && branch && !options.noPr;
+  const wouldCreatePR = success && worktreePath && branch && !options.noPr;
+  // #920: a phase-restricted run (e.g. `--phases spec`) provisions a worktree
+  // and branch unconditionally of which phases ran, so a clean spec-only pass
+  // satisfies every conjunct above with zero commits — `gh pr create` then
+  // fails with "No commits between main and …" and the run reports failed
+  // for work that landed exactly where it was supposed to (the plan comment).
+  // Gate on the evidence (commits ahead of base) rather than the phase list:
+  // `hasExecChanges` fails open (`unknown` counts as "has changes") so a git
+  // error here falls through to today's attempt-PR behavior, and it resolves
+  // the base the same #537-aware way `classifyExecChanges` already does for
+  // the exec zero-diff guard.
+  let prSkippedReason: string | undefined;
+  if (wouldCreatePR && !hasExecChanges(worktreePath)) {
+    prSkippedReason = `no commits ahead of ${baseBranch ?? "main"} (no implementing phase ran)`;
+    log(chalk.gray(`    ℹ️  PR skipped — ${prSkippedReason}`));
+  }
+  const shouldCreatePR = wouldCreatePR && !prSkippedReason;
   if (shouldCreatePR) {
     // #605: under --stacked, target predecessor branch (only for non-first,
     // non-last issues). Last PR keeps `main` so partial progress can land.
@@ -1853,10 +1870,16 @@ export async function runIssueWithLogging(
     prNumber,
     prUrl,
     prCreationError,
+    prSkippedReason,
     checkpointFailed,
     failureCategory: overallSuccess
       ? undefined
-      : deriveFailureCategory(phaseResults),
+      : // #920: a PR-creation failure has no failed phase for
+        // `deriveFailureCategory` to classify — fall back to the dedicated
+        // category so the metrics residual from #879 (empty failureCategory
+        // on a PR-only failure) doesn't reopen for this failure path.
+        (deriveFailureCategory(phaseResults) ??
+        (prCreationError ? "pr_creation" : undefined)),
     // #817: present only when `--ready-gate` ran the gate; the summary renders
     // its terminal reason (AC-6).
     readyGate: readyGateResult,

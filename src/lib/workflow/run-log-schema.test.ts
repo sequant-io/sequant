@@ -8,6 +8,7 @@ import {
   IssueLogSchema,
   RunConfigSchema,
   RunLogSchema,
+  ErrorContextSchema,
   LOG_PATHS,
   generateLogFilename,
   createEmptyRunLog,
@@ -332,6 +333,42 @@ describe("Zod Schemas", () => {
         summary: { ...validRunLog.summary, totalIssues: 1, passed: 1 },
       };
       expect(() => RunLogSchema.parse(withIssues)).not.toThrow();
+    });
+  });
+
+  describe("ErrorContextSchema", () => {
+    const validErrorContext = {
+      stderrTail: ["error: build failed"],
+      stdoutTail: [],
+      category: "build_error",
+    };
+
+    it("accepts every category in ERROR_CATEGORIES, including pr_creation (#920)", () => {
+      const categories = [
+        "context_overflow",
+        "api_error",
+        "hook_failure",
+        "build_error",
+        "timeout",
+        "rate_limit",
+        "billing",
+        "pr_creation",
+        "unknown",
+      ];
+      for (const category of categories) {
+        expect(() =>
+          ErrorContextSchema.parse({ ...validErrorContext, category }),
+        ).not.toThrow();
+      }
+    });
+
+    it("rejects a category outside the enum", () => {
+      expect(() =>
+        ErrorContextSchema.parse({
+          ...validErrorContext,
+          category: "not_a_real_category",
+        }),
+      ).toThrow();
     });
   });
 });

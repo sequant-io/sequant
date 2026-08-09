@@ -120,6 +120,8 @@ export interface IssueSummary {
   loopTriggered?: boolean;
   prNumber?: number;
   prUrl?: string;
+  /** Set when PR creation was skipped for lack of commits ahead of base (#920). */
+  prSkippedReason?: string;
   failureReason?: string;
   qaVerdict?: string;
   unmetCount?: number;
