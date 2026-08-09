@@ -52,12 +52,8 @@ import { BillingError, RateLimitError, resetsAtToMs } from "../errors.js";
 import type { StateManager } from "./state-manager.js";
 import { parseBodyDependencyMarkers } from "./dependency-markers.js";
 import type { ResumeHandle } from "./drivers/index.js";
-import {
-  detectPhasesFromLabels,
-  parseRecommendedWorkflow,
-  determinePhasesForIssue,
-  DOCS_LABELS,
-} from "./phase-mapper.js";
+import { determinePhasesForIssue, DOCS_LABELS } from "./phase-mapper.js";
+import { resolveSpecRecommendation } from "./spec-recommendation.js";
 import {
   activateRelay,
   deactivateRelay,
@@ -1164,30 +1160,51 @@ export async function runIssueWithLogging(
       };
     }
 
-    // Parse recommended workflow from spec output
-    const parsedWorkflow = specResult.output
-      ? parseRecommendedWorkflow(specResult.output)
-      : null;
-
-    if (parsedWorkflow) {
-      // Remove spec from phases since we already ran it
-      phases = parsedWorkflow.phases.filter((p) => p !== "spec");
-      detectedQualityLoop = parsedWorkflow.qualityLoop;
+    // Resolve the spec→run phase recommendation through the ordered chain
+    // comment-marker → comment-prose → chat-text → label-fallback (#921).
+    // Chat-text parsing alone is nondeterministic: the spec agent's plan
+    // comment is the durable artifact, but the old code only ever looked at
+    // ephemeral chat output, silently dropping recommended phases (e.g.
+    // testgen) whenever the agent posted the plan via a body file (#814).
+    const resolved = resolveSpecRecommendation({
+      chatOutput: specResult.output ?? "",
+      issueNumber,
+      labels,
+    });
+    // `resolveSpecRecommendation` already excludes "spec" regardless of
+    // which step in the chain produced the result.
+    phases = resolved.phases;
+    detectedQualityLoop = resolved.qualityLoop;
+    if (logWriter) {
+      logWriter.setSpecRecommendation(
+        { source: resolved.source, phases, qualityLoop: detectedQualityLoop },
+        issueNumber,
+      );
+    }
+    if (resolved.source === "marker") {
       log(
         chalk.gray(
-          `    Spec recommends: ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
+          `    Spec recommends (marker): ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
+        ),
+      );
+    } else if (resolved.source === "comment-prose") {
+      log(
+        chalk.gray(
+          `    Spec recommends (comment): ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
+        ),
+      );
+    } else if (resolved.source === "chat") {
+      log(
+        chalk.gray(
+          `    Spec recommends (chat): ${phases.join(" → ")}${detectedQualityLoop ? " (quality loop)" : ""}`,
         ),
       );
     } else {
-      // Fall back to label-based detection
       log(
         chalk.yellow(
           `    Could not parse spec recommendation, using label-based detection`,
         ),
       );
-      const detected = detectPhasesFromLabels(labels);
-      phases = detected.phases.filter((p) => p !== "spec");
-      detectedQualityLoop = detected.qualityLoop;
       log(chalk.gray(`    Fallback: ${phases.join(" → ")}`));
     }
   } else {
