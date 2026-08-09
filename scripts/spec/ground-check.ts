@@ -125,6 +125,27 @@ const PATH_CITATION_RE = new RegExp(
 /** A backtick-quoted directory reference, e.g. `src/lib/workflow/`. */
 const DIR_CITATION_RE = /`([A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*\/)`/g;
 
+/**
+ * Trailing-slash tokens that are not directory citations. These are git and
+ * shell idioms — a remote (`origin/`), a branch namespace (`feature/`), a
+ * relative-path marker (`./`) — that the directory regex cannot tell from a
+ * real path. In the first full corpus run they were 4 of the 34 "asserted
+ * phantoms", i.e. instrument error reported as a plan defect.
+ */
+const PATH_IDIOM_STOPLIST: ReadonlySet<string> = new Set([
+  "./",
+  "../",
+  "origin/",
+  "upstream/",
+  "main/",
+  "feature/",
+  "fix/",
+  "feat/",
+  "chore/",
+  "refs/",
+  "HEAD/",
+]);
+
 /** A backtick-quoted bare identifier, optionally with a `()` call suffix. */
 const SYMBOL_CITATION_RE = /`([A-Za-z_$][A-Za-z0-9_$]*)(?:\(\))?`/g;
 
@@ -337,6 +358,7 @@ export function extractCitations(text: string): ExtractedCitation[] {
       push(m[1], "path", m.index ?? 0, m[0].length);
     }
     for (const m of lineText.matchAll(DIR_CITATION_RE)) {
+      if (PATH_IDIOM_STOPLIST.has(m[1])) continue;
       push(m[1], "path", m.index ?? 0, m[0].length);
     }
     for (const m of lineText.matchAll(SYMBOL_CITATION_RE)) {
@@ -486,10 +508,37 @@ export function candidatePaths(cited: string): string[] {
   return candidates;
 }
 
+/**
+ * Whether a path exists on disk but outside the tracked index — a build
+ * artifact, a runtime file, a gitignored working directory.
+ *
+ * `dist/`, `dist/bin/cli.js`, `.sequant/state.json` and `scripts/dev/` are all
+ * real, all routinely cited, and none are tracked. Without this check they
+ * scored as phantoms: 6 of the 34 "asserted phantoms" in the first full corpus
+ * run were this class, which is instrument error reported as a plan defect.
+ *
+ * **Only ever consulted for working-tree checks.** The filesystem has no
+ * history, so applying it to a `--ref` lookup would answer "does this exist
+ * now" to the question "did it exist then" — collapsing the planned-new
+ * discriminator that `measure-corpus.ts` depends on, and silently
+ * understating the phantom rate. Callers pass `cwd` only when that is the
+ * question they mean.
+ */
+function existsUntracked(cited: string, cwd: string): boolean {
+  // Reject anything that could escape the repo or hit an absolute path.
+  if (cited.startsWith("/") || cited.includes("\0")) return false;
+  try {
+    return fs.existsSync(nodePath.resolve(cwd, cited));
+  } catch {
+    return false;
+  }
+}
+
 /** Resolve one extracted citation against the index. */
 export function resolvePath(
   cited: string,
   index: RepoIndex,
+  cwd?: string,
 ): { exists: boolean; matchedAt?: string } {
   const p = stripLineSuffix(cited);
 
@@ -501,6 +550,9 @@ export function resolvePath(
     const bare = p.slice(0, -1);
     for (const dir of index.dirs) {
       if (dir.endsWith(`/${bare}/`)) return { exists: true, matchedAt: dir };
+    }
+    if (cwd && existsUntracked(p, cwd)) {
+      return { exists: true, matchedAt: `${p} (untracked)` };
     }
     return { exists: false };
   }
@@ -522,6 +574,11 @@ export function resolvePath(
   if (!p.includes("/")) {
     const hits = index.byBasename.get(p);
     if (hits && hits.length > 0) return { exists: true, matchedAt: hits[0] };
+  }
+
+  // Untracked-but-real: build output, runtime state, gitignored dirs.
+  if (cwd && existsUntracked(p, cwd)) {
+    return { exists: true, matchedAt: `${p} (untracked)` };
   }
 
   return { exists: false };
@@ -576,7 +633,8 @@ export function runGroundCheck(opts: GroundCheckOptions): GroundCheckResult {
   const extracted = extractCitations(opts.text);
   const citations: Citation[] = extracted.map((c) => {
     if (c.kind === "path") {
-      const r = resolvePath(c.raw, index);
+      // Filesystem fallback only in working-tree mode — see `existsUntracked`.
+      const r = resolvePath(c.raw, index, ref ? undefined : cwd);
       return { ...c, exists: r.exists, matchedAt: r.matchedAt };
     }
     const key = `${ref ?? "WT"}:${c.raw}`;

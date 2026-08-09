@@ -15,9 +15,16 @@
  * each citation twice — at the commit contemporaneous with the comment, and at
  * HEAD.
  *
- *   exists then                -> grounded
- *   missing then, exists now   -> planned-new (the plan named what it then built)
- *   missing then, missing now  -> phantom candidate
+ *   exists then                     -> grounded
+ *   missing then, exists now        -> planned-new (the plan named what it built)
+ *   missing then, on disk untracked -> untracked (build output, runtime state)
+ *   missing then, missing now       -> phantom candidate
+ *
+ * The `untracked` bucket exists because the first full corpus run scored
+ * `dist/`, `dist/bin/cli.js`, `.sequant/state.json` and `scripts/dev/` as
+ * phantoms — all real, all gitignored, 6 of 34 "asserted phantoms". They were
+ * never created by the plan, so folding them into planned-new would be wrong
+ * in the other direction.
  *
  * That discriminator is only valid once the work has merged, so the headline
  * corpus is restricted to **closed** issues. Open issues are measured too but
@@ -51,7 +58,7 @@ const SPEC_MARKER = /SEQUANT_PHASE:\s*\{"phase":"spec"/;
 // Types
 // ---------------------------------------------------------------------------
 
-export type Verdict = "grounded" | "planned-new" | "phantom";
+export type Verdict = "grounded" | "planned-new" | "untracked" | "phantom";
 
 export interface MeasuredCitation extends Citation {
   existsNow: boolean;
@@ -66,6 +73,7 @@ export interface RunMeasurement {
   citations: number;
   grounded: number;
   plannedNew: number;
+  untracked: number;
   phantom: number;
   claimLines: number;
   claimLinesWithCitation: number;
@@ -90,6 +98,7 @@ export interface AggregateRates {
   citations: number;
   grounded: number;
   plannedNew: number;
+  untracked: number;
   phantom: number;
   phantomRate: number;
   phantomAsserted: number;
@@ -212,14 +221,23 @@ export function harvest(limit: number, cwd: string): HarvestedComment[] {
 // Measurement
 // ---------------------------------------------------------------------------
 
+/**
+ * @param allowFilesystem  Permit the untracked-but-real fallback. True only
+ *   for the "does it exist now" check: the filesystem has no history, so
+ *   letting it answer the "did it exist then" check would collapse
+ *   planned-new into grounded and understate the phantom rate.
+ */
 function checkAt(
   raw: ReturnType<typeof extractCitations>[number],
   index: RepoIndex,
   cwd: string,
   ref: string | null,
   symbolCache: Map<string, { exists: boolean; matchedAt?: string }>,
+  allowFilesystem = false,
 ): { exists: boolean; matchedAt?: string } {
-  if (raw.kind === "path") return resolvePath(raw.raw, index);
+  if (raw.kind === "path") {
+    return resolvePath(raw.raw, index, allowFilesystem ? cwd : undefined);
+  }
   const key = `${ref ?? "WT"}:${raw.raw}`;
   let r = symbolCache.get(key);
   if (!r) {
@@ -243,13 +261,19 @@ export function measureOne(
   const measured: MeasuredCitation[] = extracted.map((e) => {
     const then = checkAt(e, thenIndex, cwd, ref, symbolCache);
     const now = then.exists
-      ? { exists: true }
-      : checkAt(e, headIndex, cwd, headRef, symbolCache);
+      ? { exists: true, matchedAt: then.matchedAt }
+      : checkAt(e, headIndex, cwd, headRef, symbolCache, true);
     const verdict: Verdict = then.exists
       ? "grounded"
-      : now.exists
-        ? "planned-new"
-        : "phantom";
+      : !now.exists
+        ? "phantom"
+        : // Untracked-but-real (build output, runtime state, gitignored dirs)
+          // is not something the plan created — it was already there, just not
+          // in the index. Calling it planned-new would be wrong in the other
+          // direction, so it gets its own bucket.
+          now.matchedAt?.endsWith("(untracked)")
+          ? "untracked"
+          : "planned-new";
     return {
       ...e,
       exists: then.exists,
@@ -268,6 +292,7 @@ export function measureOne(
     citations: measured.length,
     grounded: measured.filter((m) => m.verdict === "grounded").length,
     plannedNew: measured.filter((m) => m.verdict === "planned-new").length,
+    untracked: measured.filter((m) => m.verdict === "untracked").length,
     phantom: measured.filter((m) => m.verdict === "phantom").length,
     claimLines: lines.length,
     claimLinesWithCitation: lines.filter(hasCitation).length,
@@ -296,6 +321,7 @@ export function aggregate(runs: RunMeasurement[]): AggregateRates {
     citations,
     grounded: sum((r) => r.grounded),
     plannedNew: sum((r) => r.plannedNew),
+    untracked: sum((r) => r.untracked),
     phantom,
     phantomRate: citations ? phantom / citations : 0,
     phantomAsserted: asserted,
@@ -335,6 +361,9 @@ export function formatReport(report: CorpusReport): string {
   L.push(`| Citations extracted | ${closed.citations} |`);
   L.push(`| Grounded (existed at spec time) | ${closed.grounded} |`);
   L.push(`| Planned-new (created afterwards) | ${closed.plannedNew} |`);
+  L.push(
+    `| Untracked-but-real (build output, runtime state) | ${closed.untracked} |`,
+  );
   L.push(`| Missing at both refs | ${closed.phantom} |`);
   L.push(
     `| — of those, proposed (dropped/renamed) | ${closed.phantom - closed.phantomAsserted} |`,

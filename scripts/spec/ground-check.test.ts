@@ -15,6 +15,9 @@
  * under the unit project's 5 s default and parallel file execution (#842).
  */
 import { describe, it, expect } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 import {
   stripFences,
   stripLineSuffix,
@@ -117,6 +120,15 @@ describe("extractCitations", () => {
     const cites = extractCitations(text);
     const raws = cites.map((c) => c.raw);
     expect(raws).toContain("qa/SKILL.md:165");
+  });
+
+  it("does not treat git and shell path idioms as directory citations", () => {
+    // Verbatim shapes from the corpus: a remote, a branch namespace, and a
+    // relative-path marker. Four of the 34 "asserted phantoms" in the first
+    // full corpus run were this class.
+    const text =
+      "Rebase onto `origin/` and branch under `fix/`; run it from `./` or `../`.";
+    expect(extractCitations(text)).toHaveLength(0);
   });
 
   it("does not treat slash-commands or labels as citations", () => {
@@ -274,6 +286,30 @@ describe("resolvePath", () => {
     expect(resolvePath("src/lib/does-not-exist.ts", INDEX)).toEqual({
       exists: false,
     });
+  });
+
+  it("resolves an untracked-but-real path when given a cwd", () => {
+    // `dist/` and `.sequant/state.json` are gitignored build/runtime
+    // artifacts that plans cite constantly. Six of the 34 "asserted phantoms"
+    // in the first full corpus run were this class — instrument error
+    // reported as a plan defect. Uses a real temp tree rather than the repo
+    // so the assertion does not depend on whether `dist/` happens to be built.
+    const tmp = fs.mkdtempSync(
+      path.join(os.tmpdir(), "ground-check-untracked-"),
+    );
+    fs.mkdirSync(path.join(tmp, "dist"));
+    fs.writeFileSync(path.join(tmp, "dist", "cli.js"), "");
+    try {
+      expect(resolvePath("dist/", INDEX, tmp).exists).toBe(true);
+      expect(resolvePath("dist/cli.js", INDEX, tmp).exists).toBe(true);
+      expect(resolvePath("dist/nope.js", INDEX, tmp).exists).toBe(false);
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it("does not consult the filesystem when no cwd is supplied", () => {
+    expect(resolvePath("dist/", INDEX).exists).toBe(false);
   });
 });
 
