@@ -466,8 +466,11 @@ describe("Error Category Constants", () => {
       // never produced by classifyError.
       expect(ERROR_CATEGORIES).toContain("rate_limit");
       expect(ERROR_CATEGORIES).toContain("billing");
+      // pr_creation added by #920 — assigned only at the deriveFailureCategory
+      // call site for a PR-creation failure, which has no failing phase.
+      expect(ERROR_CATEGORIES).toContain("pr_creation");
       expect(ERROR_CATEGORIES).toContain("unknown");
-      expect(ERROR_CATEGORIES).toHaveLength(8);
+      expect(ERROR_CATEGORIES).toHaveLength(9);
     });
   });
 });

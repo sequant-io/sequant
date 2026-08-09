@@ -112,6 +112,7 @@ function toIssueSummary(r: IssueResult): IssueSummary {
     loopTriggered: r.loopTriggered,
     prNumber: r.prNumber,
     prUrl: r.prUrl,
+    prSkippedReason: r.prSkippedReason,
   };
   if (!r.success) {
     // #879: a PR-creation failure has no failed phase — fall back to its error

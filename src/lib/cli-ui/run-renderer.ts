@@ -1557,7 +1557,14 @@ function renderSummaryDetail(
       .map((p) => (p.success ? c.green(p.name) : c.red(p.name)))
       .join(" → ");
     const pr = r.prNumber ? ` · PR #${r.prNumber}` : "";
-    return { summary: `${phaseSeq}${pr}`, extras: [] };
+    // #920: a phase-restricted run (no PR, no failure) still needs the reason
+    // stated — otherwise a passing spec-only run looks indistinguishable from
+    // one where PR creation was simply never attempted for no stated reason.
+    const extras =
+      !r.prNumber && r.prSkippedReason
+        ? [c.dim(`PR skipped — ${r.prSkippedReason}`)]
+        : [];
+    return { summary: `${phaseSeq}${pr}`, extras };
   }
   // Failed → multi-line detail.
   const reason = r.failureReason ?? "failure";
