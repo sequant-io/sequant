@@ -67,6 +67,8 @@ npx sequant ready 712 --max-iterations 4 --budget 300000 --json
 | `--budget <tokens>` | Token budget; on exhaustion the command halts cleanly with a "needs human" message rather than looping. Whole number ≥ 1 — `10k` is rejected, not read as `10` (#833). |
 | `--timeout <seconds>` | Per-phase timeout (default: `run.timeout`). Whole seconds only — `30m` and `abc` are rejected rather than read as `30` (#833). |
 | `--no-mcp` | Disable MCP server injection in headless mode. |
+| `--models <spec>` | Per-phase model override for the qa/loop phases this gate runs (bare value or `phase=model` pairs, e.g. `qa=sonnet`). CLI > `run.phases` settings > absent — see [Per-Phase Model & Effort](run-command.md#per-phase-model--effort). |
+| `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. |
 | `--json` | Emit a structured JSON result instead of the markdown report. |
 | `-v, --verbose` | Verbose phase output. |
 

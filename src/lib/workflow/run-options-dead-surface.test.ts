@@ -235,3 +235,39 @@ describe("readyGate live-surface guard (#817)", () => {
     expect(src).toMatch(/runReadyGate/);
   });
 });
+
+/**
+ * Test stub for #914 AC-8 — `--models`/`--efforts` must be registered via
+ * `.option()` in `bin/cli.ts` and have a live consumer, mirroring the
+ * `readyGate` live-surface guard above. RED until /exec wires both flags.
+ */
+describe("#914 AC-8: --models/--efforts live-surface guard", () => {
+  const read = (rel: string): string => readFileSync(join(here, rel), "utf8");
+
+  it("declares models and efforts on RunOptions", () => {
+    const code = typesSource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(code).toMatch(/\bmodels\b["']?\s*\??\s*:/);
+    expect(code).toMatch(/\befforts\b["']?\s*\??\s*:/);
+  });
+
+  it("registers --models and --efforts as options on the `run` command in bin/cli.ts", () => {
+    const cliSource = readFileSync(join(here, "../../../bin/cli.ts"), "utf8");
+    const runSection = cliSource.match(
+      /\.command\("run"\)[\s\S]*?(?=\n\s*program\n|\nprogram\.parse)/,
+    );
+    expect(runSection).not.toBeNull();
+    const longFlags = [
+      ...runSection![0].matchAll(/\.option\(\s*"([^"]+)"/g),
+    ].flatMap((m) => m[1].match(/--([a-z][a-z-]*)/g) ?? []);
+    expect(longFlags).toContain("--models");
+    expect(longFlags).toContain("--efforts");
+  });
+
+  it("maps RunOptions.models/.efforts into ExecutionConfig.phasePolicies in the config resolver", () => {
+    // Source-shape tripwire only, same caveat as the readyGate check above —
+    // the behavioral proof lives in config-resolver.phase-policy.test.ts.
+    expect(read("config-resolver.ts")).toMatch(/phasePolicies/);
+  });
+});

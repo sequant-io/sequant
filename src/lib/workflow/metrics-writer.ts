@@ -157,6 +157,8 @@ export class MetricsWriter {
     model?: string;
     flags?: string[];
     failureCategory?: FailureCategory;
+    /** Resolved per-phase model/effort overrides (#914). See `createMetricRun`. */
+    phasePolicies?: Record<string, { model?: string; effort?: string }>;
     metrics?: Partial<RunMetrics>;
   }): Promise<MetricRun> {
     const metrics = await this.getMetrics();

@@ -16,6 +16,7 @@ import {
 } from "./types.js";
 import type { SequantSettings } from "../settings.js";
 import { getEnvConfig } from "./batch-executor.js";
+import { getPhaseNames } from "./phase-registry.js";
 
 /**
  * Layers for config resolution.
@@ -235,6 +236,127 @@ export function positiveOr(
     : fallback;
 }
 
+/** A single phase's resolved model/effort override (#914). */
+export interface PhasePolicy {
+  model?: string;
+  effort?: string;
+}
+
+/**
+ * Parse a `--models`/`--efforts` CLI spec into a phase → value map.
+ *
+ * Grammar: a bare value (`"sonnet"`) applies to every phase and resolves to
+ * `{"*": "sonnet"}`; a comma list of `phase=value` pairs (`"spec=fable,exec=sonnet"`)
+ * resolves per phase. Mixing the two forms, an empty phase/value, or an
+ * unrecognized phase name all fail fast — this is the CLI boundary, so a
+ * malformed spec must never silently resolve to "nothing configured".
+ */
+export function parsePhaseSpec(
+  spec: string,
+  phaseNames: string[],
+): Record<string, string> {
+  const trimmed = spec.trim();
+  if (!trimmed) {
+    throw new Error("Malformed spec: value is empty.");
+  }
+  if (!trimmed.includes("=")) {
+    return { "*": trimmed };
+  }
+
+  const result: Record<string, string> = {};
+  for (const segment of trimmed.split(",")) {
+    const eq = segment.indexOf("=");
+    if (eq === -1) {
+      throw new Error(
+        `Malformed spec segment '${segment}' — expected 'phase=value' (cannot mix a bare value with phase=value pairs).`,
+      );
+    }
+    const phase = segment.slice(0, eq).trim();
+    const value = segment.slice(eq + 1).trim();
+    if (!phase || !value) {
+      throw new Error(
+        `Malformed spec segment '${segment}' — both phase and value are required.`,
+      );
+    }
+    if (!phaseNames.includes(phase)) {
+      throw new Error(
+        `Unknown phase '${phase}'. Available phases: ${phaseNames.join(", ")}.`,
+      );
+    }
+    result[phase] = value;
+  }
+  return result;
+}
+
+/** Apply a parsed phase-spec map onto a policy accumulator for one field. */
+function applyPhaseSpec(
+  target: Record<string, PhasePolicy>,
+  parsed: Record<string, string>,
+  field: keyof PhasePolicy,
+  phaseNames: string[],
+): void {
+  const wildcard = parsed["*"];
+  if (wildcard !== undefined) {
+    for (const phase of phaseNames) {
+      target[phase] = { ...target[phase], [field]: wildcard };
+    }
+    return;
+  }
+  for (const [phase, value] of Object.entries(parsed)) {
+    target[phase] = { ...target[phase], [field]: value };
+  }
+}
+
+/**
+ * Resolve per-phase model/effort policies with CLI > settings > absent
+ * precedence.
+ *
+ * This is the single resolver both `buildExecutionConfig` (here) and
+ * `ready-gate.ts:buildPhaseConfig` call, so they cannot drift the way the
+ * two `phaseTimeout` producers did in #833 — see `positiveOr`'s doc comment
+ * for that history.
+ */
+export function resolvePhasePolicies(
+  cliModels: string | undefined,
+  cliEfforts: string | undefined,
+  settingsPhases: Record<string, PhasePolicy> | undefined,
+  phaseNames: string[],
+): Record<string, PhasePolicy> {
+  const result: Record<string, PhasePolicy> = {};
+
+  // Layer 1 (lowest): settings.run.phases. Skip any phase name settings
+  // validation already didn't recognize — that's surfaced as a settings
+  // warning at load time (AC-1), not a resolver-time failure.
+  if (settingsPhases) {
+    for (const [phase, policy] of Object.entries(settingsPhases)) {
+      if (!phaseNames.includes(phase)) continue;
+      result[phase] = { ...policy };
+    }
+  }
+
+  // Layer 2 (highest): CLI --models/--efforts. Malformed specs throw here —
+  // callers at the CLI boundary (cli-flags.ts) turn that into a fail-fast
+  // InvalidArgumentError.
+  if (cliModels) {
+    applyPhaseSpec(
+      result,
+      parsePhaseSpec(cliModels, phaseNames),
+      "model",
+      phaseNames,
+    );
+  }
+  if (cliEfforts) {
+    applyPhaseSpec(
+      result,
+      parsePhaseSpec(cliEfforts, phaseNames),
+      "effort",
+      phaseNames,
+    );
+  }
+
+  return result;
+}
+
 /**
  * Build an ExecutionConfig from merged RunOptions and settings.
  * Extracts the phase-timeout, MCP, retry, and mode resolution logic
@@ -307,5 +429,14 @@ export function buildExecutionConfig(
     // load-bearing wire the #795 inert-flag class guards against — the flag is
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
+    // #914: CLI > settings > absent, via the shared resolver both
+    // ExecutionConfig producers call (see `resolvePhasePolicies`'s doc
+    // comment for the #833 drift this guards against).
+    phasePolicies: resolvePhasePolicies(
+      mergedOptions.models,
+      mergedOptions.efforts,
+      settings.run.phases,
+      getPhaseNames(),
+    ),
   };
 }

@@ -152,6 +152,15 @@ export interface RunReadyGateOptions {
   classifyChangesFn?: (cwd: string) => ExecChangeState;
   /** Injectable loop-progress snapshot — defaults to {@link snapshotLoopProgress}. */
   snapshotFn?: (cwd: string) => LoopProgressSnapshot;
+  /**
+   * Resolved per-phase `model`/`effort` overrides (#914), keyed by phase
+   * name. Callers (e.g. `commands/ready.ts`) resolve this via
+   * `resolvePhasePolicies` — the same shared resolver `buildExecutionConfig`
+   * uses — so this producer cannot drift from that one (#833 class).
+   * `buildPhaseConfig` spreads it onto every `ExecutionConfig` it builds;
+   * `phase-executor.ts` applies the entry for the phase actually running.
+   */
+  phasePolicies?: Record<string, { model?: string; effort?: string }>;
 }
 
 /**
@@ -302,6 +311,9 @@ function buildPhaseConfig(
     dryRun: false,
     mcp: opts.mcp,
     retry: true,
+    // #914: producer 2 (see the doc comment on RunReadyGateOptions.phasePolicies
+    // for why this can't drift from buildExecutionConfig's own assignment).
+    phasePolicies: opts.phasePolicies,
     ...extra,
   };
 }

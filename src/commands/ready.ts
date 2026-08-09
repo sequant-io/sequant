@@ -32,7 +32,11 @@ import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import type { ProgressCallback } from "../lib/workflow/types.js";
 import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
-import { positiveOr } from "../lib/workflow/config-resolver.js";
+import {
+  positiveOr,
+  resolvePhasePolicies,
+} from "../lib/workflow/config-resolver.js";
+import { getPhaseNames } from "../lib/workflow/phase-registry.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -49,6 +53,10 @@ export interface ReadyCommandOptions {
   mcp?: boolean;
   json?: boolean;
   verbose?: boolean;
+  /** Per-phase model override (#914). See `RunOptions.models`. */
+  models?: string;
+  /** Per-phase effort override (#914). See `RunOptions.efforts`. */
+  efforts?: string;
 }
 
 /**
@@ -161,6 +169,12 @@ export async function readyCommand(
     settings,
   );
   const mcp = options.mcp !== false;
+  const phasePolicies = resolvePhasePolicies(
+    options.models,
+    options.efforts,
+    settings.run.phases,
+    getPhaseNames(),
+  );
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
   const worktreePath = resolveWorktreePath(issueNumber);
@@ -278,6 +292,7 @@ export async function readyCommand(
       verbose: options.verbose,
       runPhase,
       onProgress,
+      phasePolicies,
     });
   } catch (error) {
     // Tear down the live zone on the error path too — not just the happy path

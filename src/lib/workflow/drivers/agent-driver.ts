@@ -52,6 +52,21 @@ export interface AgentExecutionConfig {
   onStderr?: (text: string) => void;
   /** Relevant files for the phase (used by file-oriented drivers like Aider) */
   files?: string[];
+  /**
+   * Claude model to use for this phase (#914). Forwarded verbatim to the
+   * Agent SDK `query()` options by ClaudeCodeDriver; ignored by drivers
+   * without a model concept (Aider uses its own `AiderSettings.model`).
+   * Absent by default — the SDK falls back to the CLI default model.
+   */
+  model?: string;
+  /**
+   * Reasoning effort for this phase (#914). Forwarded verbatim to the Agent
+   * SDK `query()` options by ClaudeCodeDriver; ignored by drivers without an
+   * effort concept. Absent by default — the SDK defaults to `high`. Matches
+   * the SDK's own closed `EffortLevel` enum, not a bare `string`, so a value
+   * that reaches this field type-checks against `query()`'s options.
+   */
+  effort?: "low" | "medium" | "high" | "xhigh" | "max";
 }
 
 /**
