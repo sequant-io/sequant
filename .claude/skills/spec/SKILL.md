@@ -335,6 +335,8 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
 **Quality Loop:** [enabled/disabled]
 **Reasoning:** [Brief explanation]
 
+<!-- SEQUANT_SPEC: {"phases":["exec","qa"],"qualityLoop":false} -->
+
 <!-- Decision logic:
      - UI/frontend → add `test` phase
      - `no-browser-test` label → skip `test` (overrides UI labels)
@@ -342,6 +344,15 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
      - Security-sensitive → add `security-review` phase
      - New features with Unit/Integration Test verification ACs → add `testgen` phase
      - Docs-only → skip spec, just exec → qa -->
+
+**Emit the `SEQUANT_SPEC` marker with the real resolved values** — `phases`
+is the same list shown in `**Phases:**` above, minus `spec` (it already
+ran); `qualityLoop` mirrors `**Quality Loop:**`. This is the durable
+resolution channel `sequant run` reads first (#921) — `**Phases:**` prose
+and spec's own chat output are both fallbacks for when this marker is
+missing or fails validation, so an omitted or stale marker silently
+downgrades which phases actually run. It MUST be included in the comment
+actually posted via `gh issue comment`, not just shown in this response.
 
 ---
 

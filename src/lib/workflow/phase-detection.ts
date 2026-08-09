@@ -34,10 +34,14 @@ const INLINE_CODE_REGEX = /`[^`\n]+`/g;
  * Strip markdown code blocks and inline code from text.
  * This prevents phase markers inside code examples from being parsed.
  *
+ * Exported for reuse by `spec-recommendation.ts` (#921), which applies the
+ * same code-fence stripping to the `SEQUANT_SPEC` marker so documentation
+ * examples embedding that marker can't false-positive either.
+ *
  * @param text - The text to strip code from
  * @returns Text with code blocks and inline code removed
  */
-function stripMarkdownCode(text: string): string {
+export function stripMarkdownCode(text: string): string {
   // First remove fenced code blocks (multi-line)
   let result = text.replace(FENCED_CODE_BLOCK_REGEX, "");
   // Then remove inline code

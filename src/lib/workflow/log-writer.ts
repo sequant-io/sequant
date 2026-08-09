@@ -24,6 +24,7 @@ import {
   type PhaseLog,
   type Phase,
   type IssueStatus,
+  type SpecRecommendation,
   createEmptyRunLog,
   finalizeRunLog,
   deriveIssueLogStatus,
@@ -193,6 +194,27 @@ export class LogWriter {
   }
 
   /**
+   * Record how the spec→run phase recommendation was resolved (#921 AC-4).
+   *
+   * Called right after `resolveSpecRecommendation` runs, before the next
+   * phase starts — mirrors {@link setPRInfo}'s post-hoc-setter shape because
+   * the spec `PhaseLog` is already written by the time resolution (which does
+   * its own comment-fetch I/O) completes.
+   */
+  setSpecRecommendation(
+    recommendation: SpecRecommendation,
+    issueNumber?: number,
+  ): void {
+    const issue = issueNumber
+      ? (this.activeIssues.get(issueNumber) ?? this.currentIssue)
+      : this.currentIssue;
+    if (!issue) {
+      return;
+    }
+    issue.specRecommendation = recommendation;
+  }
+
+  /**
    * Force the in-flight issue's status to `failure` (#879).
    *
    * `deriveIssueLogStatus` runs at phase-log time, so an issue whose phases all
@@ -281,6 +303,9 @@ export class LogWriter {
       }),
       ...(issue.prUrl != null && {
         prUrl: issue.prUrl,
+      }),
+      ...(issue.specRecommendation != null && {
+        specRecommendation: issue.specRecommendation,
       }),
     };
 
