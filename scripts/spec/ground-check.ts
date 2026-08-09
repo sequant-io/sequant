@@ -156,7 +156,6 @@ const SYMBOL_STOPLIST: ReadonlySet<string> = new Set([
   "qa",
   "test",
   "testgen",
-  "docs",
   "merger",
   "loop",
   "assess",
@@ -239,12 +238,24 @@ const CREATION_AFTER_RE = new RegExp(
  * Remove fenced code blocks, preserving line count so citation line numbers
  * stay accurate.
  *
- * Fenced blocks in a plan are overwhelmingly *proposed* commands and snippets
- * — `npx tsx scripts/spec/ground-check.ts --in plan.md` cites a file the plan
- * is asking someone to write. Counting those as phantom citations would make
- * the measured rate a function of how many examples an author included, which
- * is not the property being measured. Inline single-backtick spans are kept:
- * that is the form real citations take.
+ * Two consumers, and they benefit very differently — worth stating precisely,
+ * because the obvious rationale turns out to be wrong:
+ *
+ *   - **Citation extraction: no measured effect.** The intuition is that
+ *     fenced blocks are proposed commands whose paths would score as phantoms.
+ *     They are, but extraction requires *backticks around the path*, and a
+ *     backticked path inside a fence occurs **0 times** across the 1.18 MB
+ *     corpus of 159 real plan comments. The stripping is retained as a
+ *     specified guard against the shape, not as a live filter — the
+ *     `ground-check.test.ts` case uses a constructed fence precisely because
+ *     the corpus supplies none.
+ *   - **Claim-line counting (`measure-corpus.ts`): load-bearing.** Fenced
+ *     lines beginning `-` or `|` are indistinguishable from list items and
+ *     table rows, so without stripping they inflate the coverage denominator
+ *     with shell snippets nobody would expect to cite a file.
+ *
+ * Line count is preserved so citation line numbers stay accurate. Inline
+ * single-backtick spans are kept: that is the form real citations take.
  */
 export function stripFences(text: string): string {
   const lines = text.split("\n");

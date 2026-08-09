@@ -135,10 +135,18 @@ describe("extractCitations", () => {
     expect(symbols).toEqual(["buildExecutionConfig"]);
   });
 
-  it("ignores paths that appear only inside fenced blocks", () => {
+  it("ignores backticked paths that appear only inside fenced blocks", () => {
+    // The fence content is deliberately *backticked*. An unbackticked path in
+    // a fence is not extractable in the first place, so asserting on one
+    // passes even with fence-stripping disabled — that version of this test
+    // was a tautology, caught by mutation-testing `stripFences`. Measured
+    // across the 159-comment corpus a backticked path inside a fence occurs 0
+    // times, so this fixture is constructed rather than captured: it gates the
+    // specified behavior, and `stripFences`'s doc comment records that the
+    // live value here is zero.
     const text = [
-      "```bash",
-      "npx tsx scripts/spec/does-not-exist.ts",
+      "```md",
+      "See `src/lib/does-not-exist.ts` for the details.",
       "```",
     ].join("\n");
     expect(extractCitations(text)).toHaveLength(0);
