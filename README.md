@@ -299,12 +299,13 @@ Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/
     "defaultBase": "feature/dashboard",  // Optional: custom default base branch
     "phases": {
       "exec": { "model": "sonnet", "effort": "medium" }  // Optional: per-phase model/effort override
-    }
+    },
+    "effortEscalation": false  // Optional: escalate effort one tier on a quality-loop retry
   }
 }
 ```
 
-See [Customization Guide](docs/guides/customization.md) for all options, and [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence.
+See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence, and [Effort Escalation on Retries](docs/reference/run-command.md#effort-escalation-on-retries) for `run.effortEscalation`/`--escalate-effort`.
 
 ---
 

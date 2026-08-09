@@ -2108,3 +2108,108 @@ describe("withActivityHook (#860): auto-wait visibility on the orchestrator chan
     }
   });
 });
+
+describe("runIssueWithLogging — #915: effort escalation on quality-loop retries", () => {
+  /** exec always passes; qa fails until `qaFailures` is exhausted. */
+  function scriptFailThenRecover(qaFailures: number) {
+    let qaSeen = 0;
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation((async (
+      _issueNumber: number,
+      phase: string,
+    ) => {
+      if (phase === "loop") return { phase: "loop", success: true };
+      if (phase === "qa") {
+        qaSeen++;
+        return qaSeen <= qaFailures
+          ? { phase: "qa", success: false, error: "AC not met" }
+          : { phase: "qa", success: true };
+      }
+      return { phase, success: true };
+    }) as never);
+  }
+
+  it("AC-2: escalation disabled — every dispatch, including the retry, carries no phasePolicies key at all", async () => {
+    scriptFailThenRecover(1);
+    await runIssueWithLogging(
+      makeCtx({
+        issueNumber: 915,
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+          effortEscalation: false,
+        },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const qaConfigs = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "qa")
+      .map((c) => c[2] as ExecutionConfig);
+    expect(qaConfigs).toHaveLength(2); // first attempt + one retry
+    for (const cfg of qaConfigs) {
+      expect(cfg.phasePolicies?.qa?.effort).toBeUndefined();
+    }
+  });
+
+  it("AC-3/AC-7: escalation enabled — iteration 1 (first attempt) is unescalated; the retried iteration 2 escalates EVERY phase it dispatches, not just the one that failed", async () => {
+    // The outer quality loop re-runs the WHOLE `phases` list on every
+    // iteration (it does not resume from the failure point), so "iteration >
+    // 1" is the only retry signal available at dispatch time — it applies per
+    // ITERATION, not per specific-phase-that-previously-failed. `exec`
+    // succeeded on iteration 1 but is still part of the retried iteration 2,
+    // so it escalates too (from the AC-5 default, since it has no configured
+    // effort). This is the correct, intended scope (AC-7 guarantees the
+    // escalation doesn't leak into a *later, separate* phase execution beyond
+    // this retried iteration — see effort-escalation.test.ts).
+    scriptFailThenRecover(1);
+    await runIssueWithLogging(
+      makeCtx({
+        issueNumber: 915,
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+          effortEscalation: true,
+          phasePolicies: { qa: { effort: "high" } },
+        },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const qaEfforts = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "qa")
+      .map((c) => (c[2] as ExecutionConfig).phasePolicies?.qa?.effort);
+    expect(qaEfforts).toEqual(["high", "xhigh"]);
+
+    const execEfforts = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "exec")
+      .map((c) => (c[2] as ExecutionConfig).phasePolicies?.exec?.effort);
+    // Unconfigured phase: iteration 1 stays key-absent (AC-2), iteration 2
+    // escalates from the AC-5 default (high → xhigh).
+    expect(execEfforts).toEqual([undefined, "xhigh"]);
+  });
+
+  it("AC-6: base already at max — the retried dispatch stays at max, never overflows the ladder", async () => {
+    scriptFailThenRecover(1);
+    await runIssueWithLogging(
+      makeCtx({
+        issueNumber: 915,
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+          effortEscalation: true,
+          phasePolicies: { qa: { effort: "max" } },
+        },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const qaEfforts = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "qa")
+      .map((c) => (c[2] as ExecutionConfig).phasePolicies?.qa?.effort);
+    expect(qaEfforts).toEqual(["max", "max"]);
+  });
+});

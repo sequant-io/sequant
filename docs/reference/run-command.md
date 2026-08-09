@@ -68,6 +68,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate-post-qa-second-look) | `false` (off) |
 | `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
+| `--escalate-effort` | On a quality-loop retry (loop iteration ≥ 2), run every phase dispatched in that iteration one reasoning-effort tier above its resolved base. See [Effort Escalation on Retries](#effort-escalation-on-retries) | `false` (off) |
 
 ### Available Phases
 
@@ -378,6 +379,37 @@ A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or 
 **Validation:** model values pass through to the Agent SDK unvalidated — model aliases/IDs churn independently of sequant releases, and the SDK errors clearly on a bad one. Effort values validate against the closed set `low | medium | high | xhigh | max` both when read from settings and at the `--efforts` CLI boundary (e.g. `--efforts exec=turbo` fails fast with a usage error instead of only surfacing once the value reaches the SDK); `--models` has no equivalent CLI-side check, matching its settings-side pass-through.
 
 **Subagent inheritance:** because of an upstream limitation ([anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869), tracked internally as #632), a subagent spawned during a phase inherits the *parent session's* model rather than its own `model:` frontmatter declaration. In practice this means setting a phase's model also governs every sub-agent that phase spawns (e.g. `sequant-implementer`, `sequant-qa-checker`) — one knob controls the whole phase tree, not just the top-level agent.
+
+### Effort Escalation on Retries
+
+**Default: off** (#915) — raising effort raises token spend, which is a cost decision the user should opt into explicitly, not one sequant makes on your behalf.
+
+The quality risk in effort tuning lives entirely in *speculative* downgrades — guessing a task is easy from weak proxies and lowering effort before any evidence exists. The inverse carries essentially no such risk: escalating effort only after the workflow has *observed* a retry can only trade cost for quality, never the reverse. That is what this flag does — nothing more. It does **not** predict difficulty from `/spec`'s scope verdict or any other signal ahead of time; that predictive form is explicitly out of scope until dogfood metrics from #914 justify it.
+
+**What counts as a retry:** the outer quality-loop re-entering a phase (`sequant run --quality-loop`/`-Q`, loop iteration ≥ 2) and a `sequant ready` QA-pass re-run (pass ≥ 2). A cold-start or MCP-fallback retry inside a single phase attempt does **not** count — those recover transient infrastructure failures, not task difficulty, and escalating there would spend tokens for no quality signal.
+
+**Settings** (`.sequant/settings.json`):
+
+```json
+{
+  "run": {
+    "effortEscalation": true
+  }
+}
+```
+
+**CLI flag** (`sequant run` and `sequant ready`), highest precedence:
+
+```bash
+npx sequant run 42 --quality-loop --escalate-effort
+npx sequant ready 42 --escalate-effort
+```
+
+**The ladder:** `low → medium → high → xhigh → max`. On a retried execution, the phase's resolved effort (its configured `run.phases.<phase>.effort`/`--efforts` value, or the SDK default if unconfigured) moves up exactly **one** tier — never more, regardless of how many retries have already happened. A phase whose base is already `high` on the 3rd loop iteration escalates to `xhigh`, not `max`: escalation is always computed from the phase's *configured* base, not from a previously escalated value. A phase already at `max` stays at `max`.
+
+**Scope:** escalation applies only to the phase executions dispatched during a retried pass — never baked into a static config, so it cannot leak into a later, unrelated phase in the chain. Because the outer quality loop re-runs its whole phase list on every iteration (it does not resume from the specific phase that failed), every phase dispatched during a retried iteration escalates, including one that already succeeded on the first pass.
+
+**Observability:** an escalated execution prints `effort: <base> → <escalated> (...)` under `--verbose`, and run metrics (`.sequant/metrics.json`) record an `effortEscalations` entry (`phase`, `base`, `escalated`) for every execution that escalated — a sibling array to the per-phase `phasePolicies` metrics field, since escalation is a per-execution value while `phasePolicies` is a flat per-run map.
 
 ### Chain Pre-flight
 

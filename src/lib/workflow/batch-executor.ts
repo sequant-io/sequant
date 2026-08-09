@@ -1353,8 +1353,14 @@ export async function runIssueWithLogging(
 
       // #915: iteration > 1 is the outer quality-loop's retry signal — the
       // same condition that triggers the "Quality loop iteration" log line
-      // above. `withEscalatedEffort` is a no-op (returns the input config by
-      // reference) whenever escalation is off or this is the first attempt.
+      // above. This loop re-runs the WHOLE `phases` list on every iteration
+      // (it does not resume from the specific phase that failed), so the
+      // escalation is per RETRIED ITERATION, not per specific-phase-that-
+      // previously-failed: every phase dispatched while iteration > 1
+      // escalates, including one that already succeeded on iteration 1 (e.g.
+      // exec re-running alongside a retried qa). `withEscalatedEffort` is a
+      // no-op (returns the input config by reference) whenever escalation is
+      // off or this is the first attempt.
       const { config: dispatchConfig, record: escalationRecord } =
         withEscalatedEffort(
           withActivityHook(
