@@ -9,6 +9,7 @@
  */
 
 import { InvalidArgumentError } from "commander";
+import { parsePhaseSpec } from "./workflow/config-resolver.js";
 
 /** Error-text shaping for a numeric flag. Affects messages only, not parsing. */
 export interface WholeNumberOptions {
@@ -63,4 +64,52 @@ export function parsePositiveSeconds(flag: string): (value: string) => number {
     unit: "seconds",
     unitSingular: "second",
   });
+}
+
+/**
+ * Build a commander coercion for a `--models`/`--efforts`-shaped flag (#914).
+ *
+ * Validates the spec via `config-resolver.ts`'s `parsePhaseSpec` — a bare
+ * value applies to every phase, a comma list of `phase=value` pairs applies
+ * per phase, and a malformed spec (empty segment, mixed bare/pair form, or
+ * an unrecognized phase name) fails fast here rather than reaching
+ * `resolvePhasePolicies` silently. On success, returns the ORIGINAL raw spec
+ * string unchanged (not the parsed map) — `RunOptions.models`/`.efforts`
+ * stay plain strings, and `resolvePhasePolicies` re-parses for real when
+ * building `ExecutionConfig.phasePolicies`, so parsing has exactly one
+ * source of truth even though it runs twice.
+ *
+ * `allowedValues`, when given, additionally rejects any resolved value not
+ * in the set — used for `--efforts` (closed enum: `settings.ts:EFFORT_LEVELS`)
+ * so a typo like `--efforts exec=mediu` fails at the CLI boundary the same
+ * way it already does when set via `settings.json`, instead of only
+ * surfacing once the value reaches the SDK. `--models` passes no
+ * `allowedValues` — model aliases/IDs are intentionally unvalidated (they
+ * churn independently of sequant releases; the SDK errors clearly on a bad
+ * one).
+ */
+export function parsePhaseSpecFlag(
+  flag: string,
+  phaseNames: string[],
+  allowedValues?: readonly string[],
+): (value: string) => string {
+  return (value: string): string => {
+    let parsed: Record<string, string>;
+    try {
+      parsed = parsePhaseSpec(value, phaseNames);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new InvalidArgumentError(`${flag}: ${message}`);
+    }
+    if (allowedValues) {
+      for (const v of Object.values(parsed)) {
+        if (!allowedValues.includes(v)) {
+          throw new InvalidArgumentError(
+            `${flag}: '${v}' is not one of ${allowedValues.join("|")}.`,
+          );
+        }
+      }
+    }
+    return value;
+  };
 }

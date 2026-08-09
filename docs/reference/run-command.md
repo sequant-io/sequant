@@ -66,6 +66,8 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
 | `--auto-wait <minutes>` | Total minutes willing to wait for an exhausted rate-limit window to reopen instead of halting. See [Auto-wait](#auto-wait-for-a-rate-limit-window) | `0` (off) |
 | `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate-post-qa-second-look) | `false` (off) |
+| `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
+| `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
 
 ### Available Phases
 
@@ -339,6 +341,43 @@ gh pr merge 3 --squash
 
 Option B: Single combined review
 - Review the final branch which contains all changes
+
+### Per-Phase Model & Effort
+
+**Default: off** — with nothing configured, every phase inherits the CLI's default model and effort exactly as before (#914). Opt in per phase when you want to run planning with a stronger model and delegate implementation to a cheaper/faster one, or dial reasoning effort up or down for a specific phase.
+
+**Settings** (`.sequant/settings.json`):
+
+```json
+{
+  "run": {
+    "phases": {
+      "spec": { "model": "fable" },
+      "exec": { "model": "sonnet", "effort": "medium" },
+      "qa": { "effort": "high" }
+    }
+  }
+}
+```
+
+Unrecognized phase names (e.g. a typo) are reported as a non-fatal settings warning, not a crash.
+
+**CLI flags** (`sequant run` and `sequant ready`), highest precedence:
+
+```bash
+npx sequant run 42 --models sonnet                      # applies to every phase
+npx sequant run 42 --models spec=fable,exec=sonnet       # per-phase, comma-separated
+npx sequant run 42 --efforts exec=medium,qa=high
+npx sequant ready 42 --models qa=sonnet
+```
+
+A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or an unrecognized phase name) fails fast with a usage error — it never silently resolves to "nothing configured".
+
+**Precedence:** CLI flag > `.sequant/settings.json` > absent (SDK/CLI default). This is resolved by one shared function (`resolvePhasePolicies`) that both the `run` and `ready` execution-config builders call, so the two paths cannot drift apart on how a value resolves.
+
+**Validation:** model values pass through to the Agent SDK unvalidated — model aliases/IDs churn independently of sequant releases, and the SDK errors clearly on a bad one. Effort values validate against the closed set `low | medium | high | xhigh | max` both when read from settings and at the `--efforts` CLI boundary (e.g. `--efforts exec=turbo` fails fast with a usage error instead of only surfacing once the value reaches the SDK); `--models` has no equivalent CLI-side check, matching its settings-side pass-through.
+
+**Subagent inheritance:** because of an upstream limitation ([anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869), tracked internally as #632), a subagent spawned during a phase inherits the *parent session's* model rather than its own `model:` frontmatter declaration. In practice this means setting a phase's model also governs every sub-agent that phase spawns (e.g. `sequant-implementer`, `sequant-qa-checker`) — one knob controls the whole phase tree, not just the top-level agent.
 
 ### Chain Pre-flight
 
@@ -669,7 +708,10 @@ You can configure defaults in `.sequant/settings.json`:
     "maxIterations": 3,
     "smartTests": true,
     "mcp": true,
-    "autoWaitMinutes": 0
+    "autoWaitMinutes": 0,
+    "phases": {
+      "exec": { "model": "sonnet", "effort": "medium" }
+    }
   }
 }
 ```

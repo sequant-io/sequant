@@ -199,6 +199,31 @@ describe("MetricsWriter", () => {
       expect(raw).toContain('"failureCategory": "rate_limit"');
       expect(raw.match(/failureCategory/g)).toHaveLength(1);
     });
+
+    it("persists phasePolicies when passed through, and omits it otherwise (#914)", async () => {
+      await writer.recordRun({
+        issues: [914],
+        phases: ["exec", "qa"],
+        outcome: "success",
+        duration: 100,
+        phasePolicies: { exec: { model: "sonnet", effort: "medium" } },
+      });
+      await writer.recordRun({
+        issues: [915],
+        phases: ["exec"],
+        outcome: "success",
+        duration: 100,
+      });
+
+      const metrics = await writer.getMetrics();
+      expect(metrics.runs[0].phasePolicies).toEqual({
+        exec: { model: "sonnet", effort: "medium" },
+      });
+      expect(metrics.runs[1].phasePolicies).toBeUndefined();
+      // The persisted JSON never contains the key for a run with nothing configured.
+      const raw = fs.readFileSync(metricsPath, "utf-8");
+      expect(raw.match(/phasePolicies/g)).toHaveLength(1);
+    });
   });
 
   describe("getAllRuns", () => {

@@ -132,6 +132,11 @@ export class ClaudeCodeDriver implements AgentDriver {
           ...(resumeToken ? { resume: resumeToken } : {}),
           env: config.env,
           ...(mcpServers ? { mcpServers } : {}),
+          // #914: per-phase model/effort override. Omitted entirely when
+          // unset (not `undefined`-valued) so the SDK's own default
+          // resolution is untouched — see the AC-3 key-presence test.
+          ...(config.model ? { model: config.model } : {}),
+          ...(config.effort ? { effort: config.effort } : {}),
           stderr: (data: string) => {
             capturedStderr += data;
             // Split on newlines and push each line to the ring buffer
