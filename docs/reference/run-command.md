@@ -375,7 +375,7 @@ A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or 
 
 **Precedence:** CLI flag > `.sequant/settings.json` > absent (SDK/CLI default). This is resolved by one shared function (`resolvePhasePolicies`) that both the `run` and `ready` execution-config builders call, so the two paths cannot drift apart on how a value resolves.
 
-**Validation:** model values pass through to the Agent SDK unvalidated — model aliases/IDs churn independently of sequant releases, and the SDK errors clearly on a bad one. Effort values validate against the closed set `low | medium | high | xhigh | max` when read from settings.
+**Validation:** model values pass through to the Agent SDK unvalidated — model aliases/IDs churn independently of sequant releases, and the SDK errors clearly on a bad one. Effort values validate against the closed set `low | medium | high | xhigh | max` both when read from settings and at the `--efforts` CLI boundary (e.g. `--efforts exec=turbo` fails fast with a usage error instead of only surfacing once the value reaches the SDK); `--models` has no equivalent CLI-side check, matching its settings-side pass-through.
 
 **Subagent inheritance:** because of an upstream limitation ([anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869), tracked internally as #632), a subagent spawned during a phase inherits the *parent session's* model rather than its own `model:` frontmatter declaration. In practice this means setting a phase's model also governs every sub-agent that phase spawns (e.g. `sequant-implementer`, `sequant-qa-checker`) — one knob controls the whole phase tree, not just the top-level agent.
 

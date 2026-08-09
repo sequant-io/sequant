@@ -30,6 +30,7 @@ import {
   parsePhaseSpecFlag,
 } from "../src/lib/cli-flags.js";
 import { getPhaseNames } from "../src/lib/workflow/phase-registry.js";
+import { EFFORT_LEVELS } from "../src/lib/settings.js";
 import { isCI, isStdoutTTY } from "../src/lib/tty.js";
 import {
   detectPackageManagerSync,
@@ -396,7 +397,7 @@ program
   .option(
     "--efforts <spec>",
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none — inherits the SDK default)",
-    parsePhaseSpecFlag("--efforts", getPhaseNames()),
+    parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
   )
   .option(
     "-f, --force",
@@ -612,7 +613,7 @@ program
   .option(
     "--efforts <spec>",
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none)",
-    parsePhaseSpecFlag("--efforts", getPhaseNames()),
+    parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
   )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")

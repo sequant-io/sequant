@@ -78,17 +78,37 @@ export function parsePositiveSeconds(flag: string): (value: string) => number {
  * stay plain strings, and `resolvePhasePolicies` re-parses for real when
  * building `ExecutionConfig.phasePolicies`, so parsing has exactly one
  * source of truth even though it runs twice.
+ *
+ * `allowedValues`, when given, additionally rejects any resolved value not
+ * in the set — used for `--efforts` (closed enum: `settings.ts:EFFORT_LEVELS`)
+ * so a typo like `--efforts exec=mediu` fails at the CLI boundary the same
+ * way it already does when set via `settings.json`, instead of only
+ * surfacing once the value reaches the SDK. `--models` passes no
+ * `allowedValues` — model aliases/IDs are intentionally unvalidated (they
+ * churn independently of sequant releases; the SDK errors clearly on a bad
+ * one).
  */
 export function parsePhaseSpecFlag(
   flag: string,
   phaseNames: string[],
+  allowedValues?: readonly string[],
 ): (value: string) => string {
   return (value: string): string => {
+    let parsed: Record<string, string>;
     try {
-      parsePhaseSpec(value, phaseNames);
+      parsed = parsePhaseSpec(value, phaseNames);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new InvalidArgumentError(`${flag}: ${message}`);
+    }
+    if (allowedValues) {
+      for (const v of Object.values(parsed)) {
+        if (!allowedValues.includes(v)) {
+          throw new InvalidArgumentError(
+            `${flag}: '${v}' is not one of ${allowedValues.join("|")}.`,
+          );
+        }
+      }
     }
     return value;
   };

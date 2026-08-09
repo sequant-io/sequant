@@ -67,6 +67,14 @@ export interface AgentSettings {
 }
 
 /**
+ * The Agent SDK's closed reasoning-effort enum (#914). Single source of
+ * truth — reused by `PhasePolicySchema`'s zod validation below and by
+ * `cli-flags.ts:parsePhaseSpecFlag` for the `--efforts` CLI boundary, so the
+ * two validation points cannot drift apart on which values are accepted.
+ */
+export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+/**
  * A single phase's `model`/`effort` override for the claude-code driver
  * (#914). See `RunSettings.phases`.
  */
@@ -74,7 +82,7 @@ export interface PhasePolicy {
   /** Model alias/ID, passed through unvalidated to the Agent SDK. */
   model?: string;
   /** Reasoning effort — validated against the SDK's closed enum. */
-  effort?: "low" | "medium" | "high" | "xhigh" | "max";
+  effort?: (typeof EFFORT_LEVELS)[number];
 }
 
 /**
@@ -353,7 +361,7 @@ export const AgentSettingsSchema = z.object({
  */
 export const PhasePolicySchema = z.object({
   model: z.string().optional(),
-  effort: z.enum(["low", "medium", "high", "xhigh", "max"]).optional(),
+  effort: z.enum(EFFORT_LEVELS).optional(),
 });
 
 /** Zod schema for RunSettings */

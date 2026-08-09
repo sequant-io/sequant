@@ -17,6 +17,7 @@
 import { describe, it, expect } from "vitest";
 import { InvalidArgumentError } from "commander";
 import { parsePhaseSpecFlag } from "./cli-flags.js";
+import { EFFORT_LEVELS } from "./settings.js";
 
 const PHASE_NAMES = ["spec", "exec", "qa", "test", "loop", "testgen"];
 
@@ -38,4 +39,34 @@ describe("#914 AC-2/AC-8: parsePhaseSpecFlag CLI boundary", () => {
       expect(() => parse(bad)).toThrow(InvalidArgumentError);
     },
   );
+
+  describe("gap-fix: allowedValues enum validation (--efforts)", () => {
+    it("accepts every value in the closed effort enum", () => {
+      const parse = parsePhaseSpecFlag("--efforts", PHASE_NAMES, EFFORT_LEVELS);
+      for (const level of EFFORT_LEVELS) {
+        expect(parse(`exec=${level}`)).toBe(`exec=${level}`);
+      }
+      // Bare-value form applies to all phases and must validate too.
+      expect(parse("high")).toBe("high");
+    });
+
+    it("rejects a value outside the enum with InvalidArgumentError, naming the flag and the bad value", () => {
+      const parse = parsePhaseSpecFlag("--efforts", PHASE_NAMES, EFFORT_LEVELS);
+      expect(() => parse("exec=turbo")).toThrow(InvalidArgumentError);
+      expect(() => parse("exec=turbo")).toThrow(/--efforts/);
+      expect(() => parse("exec=turbo")).toThrow(/turbo/);
+    });
+
+    it("rejects a bare out-of-enum value applied to all phases", () => {
+      const parse = parsePhaseSpecFlag("--efforts", PHASE_NAMES, EFFORT_LEVELS);
+      expect(() => parse("turbo")).toThrow(InvalidArgumentError);
+    });
+
+    it("--models has no allowedValues and passes model aliases through unvalidated", () => {
+      const parse = parsePhaseSpecFlag("--models", PHASE_NAMES);
+      // "turbo" is not a real model alias, but --models intentionally passes
+      // model IDs through unvalidated — only grammar is checked here.
+      expect(parse("exec=turbo")).toBe("exec=turbo");
+    });
+  });
 });
