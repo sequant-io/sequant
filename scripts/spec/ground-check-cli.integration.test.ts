@@ -60,6 +60,9 @@ describe("ground-check CLI (integration)", { timeout: 90_000 }, () => {
     expect(status).toBe(0);
     const result = JSON.parse(stdout);
     expect(result.schemaVersion).toBe(1);
+    // Working-tree mode still pins the SHA it ran against (HEAD), so a later
+    // consumer can detect that the tree moved since the check.
+    expect(result.resolvedSha).toMatch(/^[0-9a-f]{40}$/);
     const raws = result.citations.map((c: { raw: string }) => c.raw);
     expect(raws).toContain("scripts/qa/precheck.ts");
     expect(raws).toContain("bin/cli.ts");
@@ -144,6 +147,7 @@ describe("ground-check CLI (integration)", { timeout: 90_000 }, () => {
       });
       const baseResult = JSON.parse(atBase);
       expect(baseResult.ref).toBe(base);
+      expect(baseResult.resolvedSha).toBe(base);
       const byRaw = (r: {
         citations: Array<{ raw: string; exists: boolean }>;
       }) => Object.fromEntries(r.citations.map((c) => [c.raw, c.exists]));
@@ -160,10 +164,15 @@ describe("ground-check CLI (integration)", { timeout: 90_000 }, () => {
         timeout: 60_000,
         input,
       });
-      expect(byRaw(JSON.parse(atHead))).toEqual({
+      const headResult = JSON.parse(atHead);
+      expect(byRaw(headResult)).toEqual({
         "src/old.ts": true,
         "src/new.ts": true,
       });
+      // Working-tree mode pins HEAD — here the second commit, not the base.
+      const head = git("rev-parse", "HEAD").trim();
+      expect(headResult.resolvedSha).toBe(head);
+      expect(head).not.toBe(base);
     } finally {
       fs.rmSync(repo, { recursive: true, force: true });
     }
@@ -175,6 +184,10 @@ describe("ground-check CLI (integration)", { timeout: 90_000 }, () => {
       "See `bin/cli.ts`.",
     );
     expect(status).toBe(0);
-    expect(JSON.parse(stdout).citations[0].exists).toBe(false);
+    const result = JSON.parse(stdout);
+    expect(result.citations[0].exists).toBe(false);
+    // An unresolvable ref cannot be pinned; null says so rather than
+    // silently reporting HEAD as if it were the requested ref.
+    expect(result.resolvedSha).toBeNull();
   });
 });

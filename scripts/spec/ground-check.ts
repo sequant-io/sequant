@@ -77,6 +77,15 @@ export interface GroundCheckSummary {
 export interface GroundCheckResult {
   schemaVersion: 1;
   ref: string | null;
+  /**
+   * Full SHA of the commit the check actually ran against: `ref` resolved,
+   * or HEAD in working-tree mode (where `ref: null` signals the tree may
+   * carry uncommitted changes on top). Null when the ref did not resolve.
+   * Grounding has a shelf life — a consumer reading this result after the
+   * tree has moved can compare SHAs to see that the confirmation is stale
+   * instead of trusting it blind.
+   */
+  resolvedSha: string | null;
   generatedAt: string;
   summary: GroundCheckSummary;
   citations: Citation[];
@@ -644,6 +653,22 @@ export function resolveSymbol(
   }
 }
 
+/**
+ * Pin the commit the check runs against to a full SHA. Working-tree mode
+ * resolves HEAD. An unresolvable ref yields null, mirroring
+ * `buildRepoIndex`'s empty-index degrade rather than crashing.
+ */
+export function resolveSha(cwd: string, ref: string | null): string | null {
+  try {
+    return git(
+      ["rev-parse", "--verify", `${ref ?? "HEAD"}^{commit}`],
+      cwd,
+    ).trim();
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Orchestration
 // ---------------------------------------------------------------------------
@@ -684,6 +709,7 @@ export function runGroundCheck(opts: GroundCheckOptions): GroundCheckResult {
   return {
     schemaVersion: 1,
     ref,
+    resolvedSha: resolveSha(cwd, ref),
     generatedAt: opts.now ?? new Date().toISOString(),
     summary: summarize(citations),
     citations,
