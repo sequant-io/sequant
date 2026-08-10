@@ -92,6 +92,13 @@ export default tseslint.config(
       "dist/",
       "node_modules/",
       "templates/",
+      // `scripts/dev/` is gitignored developer scratch with zero tracked
+      // files (.gitignore:65). It does not exist in CI, so linting it makes
+      // local `npm run lint` fail on a file CI never sees — which is how the
+      // #922 lint-scope widening shipped green: `scripts/dev/tui-demo.tsx`
+      // has no home in `tsconfig.scripts.json`, and only developers who had
+      // the directory saw the parser error.
+      "scripts/dev/",
       "**/*.js",
       "**/*.test.ts",
       "**/*.test.tsx",
