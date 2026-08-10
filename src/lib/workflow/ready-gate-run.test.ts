@@ -162,6 +162,7 @@ const cannedGate: ReadyResult = {
   remaining: [],
   tokensUsed: 1234,
   report: "## sequant ready — Issue #817\n**✅ READY**",
+  effortEscalations: [],
 };
 
 function successResult(phase: string): PhaseResult {

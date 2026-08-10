@@ -27,6 +27,10 @@ import type {
   PhaseResult,
   ProgressCallback,
 } from "./types.js";
+import {
+  withEscalatedEffort,
+  type EscalationRecord,
+} from "./effort-escalation.js";
 import type { QaVerdict } from "./run-log-schema.js";
 import type { ReadyPolicy } from "../settings.js";
 import type { IssueStatus } from "./state-schema.js";
@@ -109,6 +113,12 @@ export interface ReadyResult {
   tokensUsed: number;
   /** Human-readable markdown gap report (AC-4). */
   report: string;
+  /**
+   * Effort escalations applied during this gate's QA-pass loop (#915),
+   * base+escalated tier per escalated `qa`/`loop` dispatch. Empty when
+   * `effortEscalation` is off or no dispatch escalated.
+   */
+  effortEscalations: EscalationRecord[];
 }
 
 /**
@@ -161,6 +171,15 @@ export interface RunReadyGateOptions {
    * `phase-executor.ts` applies the entry for the phase actually running.
    */
   phasePolicies?: Record<string, { model?: string; effort?: string }>;
+  /**
+   * Evidence-based effort escalation on quality-loop retries (#915). Callers
+   * (e.g. `commands/ready.ts`) resolve this CLI > settings > `false`, the same
+   * precedence `buildExecutionConfig` uses for the `run` path (#833 class).
+   * `buildPhaseConfig` spreads it onto every `ExecutionConfig` it builds;
+   * `withEscalatedEffort` (`effort-escalation.ts`) reads it at each QA-pass
+   * dispatch to decide whether that specific `qa`/`loop` call escalates.
+   */
+  effortEscalation?: boolean;
 }
 
 /**
@@ -314,6 +333,8 @@ function buildPhaseConfig(
     // #914: producer 2 (see the doc comment on RunReadyGateOptions.phasePolicies
     // for why this can't drift from buildExecutionConfig's own assignment).
     phasePolicies: opts.phasePolicies,
+    // #915: producer 2 (see RunReadyGateOptions.effortEscalation).
+    effortEscalation: opts.effortEscalation,
     ...extra,
   };
 }
@@ -453,6 +474,9 @@ export async function runReadyGate(
   const autoFixed: string[] = [];
   let remaining: ReadyGapItem[] = [];
   let tokensUsed = 0;
+  // #915: escalated (base, escalated) tiers, one entry per QA-pass dispatch
+  // that actually escalated. Populated at the two dispatch sites below.
+  const effortEscalations: EscalationRecord[] = [];
 
   const finish = (reason: ReadyTerminalReason): ReadyResult => {
     const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
@@ -471,6 +495,7 @@ export async function runReadyGate(
       remaining,
       tokensUsed,
       report: "",
+      effortEscalations,
     };
     result.report = formatReadyReport(result);
     return result;
@@ -490,9 +515,18 @@ export async function runReadyGate(
 
     iterations++;
 
+    // #915: iterations > 1 means this QA pass is a retry of a prior
+    // unsatisfied verdict — the ready-gate's retry signal.
+    const qaEscalation = withEscalatedEffort(
+      buildPhaseConfig(opts, { fullQa: true }),
+      "qa",
+      iterations > 1,
+    );
+    if (qaEscalation.record) effortEscalations.push(qaEscalation.record);
+
     const qaResult = await runPhaseTracked(
       "qa",
-      buildPhaseConfig(opts, { fullQa: true }),
+      qaEscalation.config,
       iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
@@ -547,13 +581,23 @@ export async function runReadyGate(
       .map((g) => g.description);
 
     const before = snapshotFn(worktreePath);
-    const loopResult = await runPhaseTracked(
-      "loop",
+    // #915: iterations > 1 means this fix pass follows a QA pass that was
+    // itself a retry — the same ready-gate retry signal as the qa dispatch
+    // above.
+    const loopEscalation = withEscalatedEffort(
       buildPhaseConfig(opts, {
         lastVerdict: verdict,
         failedAcs: fixableGaps.join("; ") || undefined,
         promptContext: buildLoopContext(policy, verdict, fixableGaps),
       }),
+      "loop",
+      iterations > 1,
+    );
+    if (loopEscalation.record) effortEscalations.push(loopEscalation.record);
+
+    const loopResult = await runPhaseTracked(
+      "loop",
+      loopEscalation.config,
       iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
