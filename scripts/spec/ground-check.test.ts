@@ -18,6 +18,7 @@ import { describe, it, expect } from "vitest";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execFileSync } from "child_process";
 import {
   stripFences,
   stripLineSuffix,
@@ -310,6 +311,46 @@ describe("resolvePath", () => {
 
   it("does not consult the filesystem when no cwd is supplied", () => {
     expect(resolvePath("dist/", INDEX).exists).toBe(false);
+  });
+
+  it("resolves a gitignored path that is absent from this checkout", () => {
+    // The stronger of the two untracked signals. `fs.existsSync` alone makes
+    // the measurement checkout-dependent: a fresh worktree has no `dist/` or
+    // `.sequant/state.json`, so the same corpus scores paths as phantoms
+    // there that a built checkout resolves. A path matched by a gitignore
+    // rule is *expected* to be absent from the index, present or not.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ground-check-ignore-"));
+    try {
+      execFileSync("git", ["init", "-q"], { cwd: repo });
+      fs.writeFileSync(path.join(repo, ".gitignore"), "dist/\n.sequant/\n");
+      // Deliberately do NOT create dist/ or .sequant/ — absent but ignored.
+      expect(fs.existsSync(path.join(repo, "dist"))).toBe(false);
+
+      expect(resolvePath("dist/", INDEX, repo).exists).toBe(true);
+      expect(resolvePath(".sequant/state.json", INDEX, repo).exists).toBe(true);
+      expect(
+        resolvePath("src/lib/genuinely-absent.ts", INDEX, repo).exists,
+      ).toBe(false);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  it("treats a repo-external path as out of scope, not as a phantom", () => {
+    // `../worktrees/` is real but outside anything a ref can describe.
+    // Comparison is on the resolved path, not a "..' substring, so a
+    // re-entrant path like `a/../src/x.ts` is still judged on where it lands.
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "ground-check-ext-"));
+    try {
+      expect(resolvePath("../worktrees/", INDEX, repo).exists).toBe(true);
+      expect(resolvePath("../elsewhere/thing.ts", INDEX, repo).exists).toBe(
+        true,
+      );
+      // Re-entrant: resolves back inside the repo, so it is judged normally.
+      expect(resolvePath("sub/../nope.ts", INDEX, repo).exists).toBe(false);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
 

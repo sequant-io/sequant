@@ -474,7 +474,7 @@ export function parseArgs(argv: string[]): Args {
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    // eslint-disable-next-line no-console
+     
     console.log(
       [
         "Phase A measurement — spec plan citation grounding (#922)",
@@ -501,13 +501,13 @@ function main(): void {
   >();
 
   const comments = harvest(args.limit, cwd);
-  // eslint-disable-next-line no-console
+   
   console.error(`Measuring ${comments.length} spec plan comments...`);
 
   const runs: RunMeasurement[] = [];
   for (const c of comments) {
     runs.push(measureOne(c, cwd, headIndex, headRef, symbolCache));
-    // eslint-disable-next-line no-console
+     
     console.error(`  #${c.issue} (${runs.length}/${comments.length})`);
   }
 
@@ -528,7 +528,7 @@ function main(): void {
     const dir = nodePath.dirname(args.out);
     if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(args.out, output);
-    // eslint-disable-next-line no-console
+     
     console.error(`Wrote ${args.out}`);
   } else {
     process.stdout.write(output);

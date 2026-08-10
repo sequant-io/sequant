@@ -523,12 +523,47 @@ export function candidatePaths(cited: string): string[] {
  * discriminator that `measure-corpus.ts` depends on, and silently
  * understating the phantom rate. Callers pass `cwd` only when that is the
  * question they mean.
+ *
+ * Two independent signals, because either alone leaves a hole:
+ *
+ *   - **On disk.** Direct and obvious, but checkout-dependent. A fresh
+ *     worktree has no `dist/` and no `.sequant/state.json`, so the same
+ *     corpus measured there reports paths as phantoms that a built main
+ *     checkout resolves. That non-reproducibility is itself a defect in a
+ *     measurement instrument.
+ *   - **Matched by a gitignore rule** (`git check-ignore`). Checkout- and
+ *     history-independent: `.sequant/state.json` is *expected* to be absent
+ *     from the index whether or not it happens to exist right now. This is
+ *     the stronger signal and the reason the check is not merely
+ *     `fs.existsSync`.
  */
 function existsUntracked(cited: string, cwd: string): boolean {
-  // Reject anything that could escape the repo or hit an absolute path.
+  // Reject absolute paths and NUL bytes outright.
   if (cited.startsWith("/") || cited.includes("\0")) return false;
+
+  // Repo-external (`../worktrees/`) is not a phantom — it is simply outside
+  // what any ref can describe. Resolve and compare against the repo root
+  // rather than pattern-matching on "..", which misses `a/../../b`.
+  const resolved = nodePath.resolve(cwd, cited);
+  const root = nodePath.resolve(cwd);
+  if (resolved !== root && !resolved.startsWith(root + nodePath.sep)) {
+    return true;
+  }
+
   try {
-    return fs.existsSync(nodePath.resolve(cwd, cited));
+    if (fs.existsSync(resolved)) return true;
+  } catch {
+    // fall through to the gitignore check
+  }
+
+  // `git check-ignore` exits 0 when the path matches an ignore rule. A path
+  // the repo deliberately does not track cannot be a phantom citation.
+  try {
+    execFileSync("git", ["check-ignore", "-q", "--no-index", cited], {
+      cwd,
+      stdio: "ignore",
+    });
+    return true;
   } catch {
     return false;
   }
@@ -694,7 +729,6 @@ export function parseArgs(argv: string[]): CliArgs {
 }
 
 function printHelp(): void {
-  // eslint-disable-next-line no-console
   console.log(
     [
       "Spec Citation Grounding Check — deterministic existence verification",
@@ -740,7 +774,7 @@ function main(): void {
     const dir = nodePath.dirname(args.out);
     if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(args.out, json);
-    // eslint-disable-next-line no-console
+
     console.log(`Wrote ${args.out}`);
   } else {
     process.stdout.write(json);
