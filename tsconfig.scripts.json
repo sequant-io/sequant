@@ -1,0 +1,20 @@
+{
+  // Typecheck-only project for `scripts/`.
+  //
+  // The main `tsconfig.json` includes `src/` and `bin/` only, because those
+  // are what `npm run build` emits to `dist/`. `scripts/` is run directly via
+  // `npx tsx` and must never be emitted — but "not emitted" had silently come
+  // to mean "not typechecked", so nothing in `scripts/` was covered by any
+  // gate. Both `scripts/qa/precheck.ts` and the #922 grounding scripts sat
+  // outside `tsc` and `eslint` entirely.
+  //
+  // `allowImportingTsExtensions` is safe here precisely because this project
+  // never emits: the scripts import each other with explicit `.ts` specifiers,
+  // which is what `tsx` resolves at runtime.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["scripts/**/*"]
+}

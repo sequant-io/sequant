@@ -585,7 +585,7 @@ function parseIntStrict(s: string | undefined): number | null {
 }
 
 function printHelp(): void {
-  // eslint-disable-next-line no-console
+   
   console.log(
     [
       "QA Precheck — deterministic gap-checks for the QA skill",
@@ -632,7 +632,7 @@ function main(): void {
     headSha: args.headSha,
   });
   writeResult(result, args.out);
-  // eslint-disable-next-line no-console
+   
   console.log(`Wrote ${args.out}`);
 }
 

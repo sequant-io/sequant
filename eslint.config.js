@@ -73,6 +73,20 @@ export default tseslint.config(
       ],
     },
   },
+  // `scripts/` is typechecked by its own project (`tsconfig.scripts.json`),
+  // not by `tsconfig.json`, which covers only the `src/`+`bin/` code that
+  // `npm run build` emits. Without this block the typed-lint parser reports
+  // "file not found in any of the provided project(s)" for every file under
+  // `scripts/`, which is how `scripts/qa/precheck.ts` and the #922 grounding
+  // scripts came to sit outside lint coverage entirely.
+  {
+    files: ["scripts/**/*.ts"],
+    languageOptions: {
+      parserOptions: {
+        project: "./tsconfig.scripts.json",
+      },
+    },
+  },
   {
     ignores: [
       "dist/",
