@@ -21,11 +21,15 @@ import type { ExecutionConfig, Phase } from "./types.js";
  * Base effort assumed for a phase with no configured `effort` override, when
  * escalation needs a starting point to step up from (AC-5). `phase-executor.ts`
  * omits the `effort` key entirely in that case (#914) so the Agent SDK's own
- * default applies — #914 deliberately never encoded what that default is, since
- * "omitted" is not the same claim as "equals X". Escalation can't inherit that
- * silence: it needs one tier *above* something. This constant is that
- * something, named so the assumption is visible and a one-line fix if the
- * SDK's actual default turns out to differ.
+ * default applies — #914 deliberately never encoded what that default is,
+ * since "omitted" is not the same claim as "equals X".
+ *
+ * Verified against `@anthropic-ai/claude-agent-sdk`'s own `query()` Options
+ * type (`sdk.d.ts`): `effort?: EffortLevel` is documented inline as
+ * `'high' — Deep reasoning (default)`. That is the SDK's default for the
+ * exact call sequant makes (raw `query()`, not the Claude Code CLI product —
+ * whose own `xhigh` default is a caller choice on top of this SDK, not the
+ * SDK's own default), so this constant is not a guess.
  */
 export const DEFAULT_ESCALATION_BASE: (typeof EFFORT_LEVELS)[number] = "high";
 
