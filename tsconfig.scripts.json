@@ -16,5 +16,23 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["scripts/**/*"]
+  "include": ["scripts/**/*"],
+  // `exclude` REPLACES the inherited list rather than extending it, so the
+  // base entries are repeated here verbatim. Dropping them silently pulled
+  // `**/*.test.ts` into the project and surfaced three pre-existing errors in
+  // `lint-skill-calls.test.ts` — test files are excluded repo-wide by
+  // `tsconfig.json` and this project keeps that convention.
+  //
+  // `scripts/dev/` is gitignored developer scratch (.gitignore:65) with zero
+  // tracked files. Absent in CI, so including it makes local and CI
+  // typechecks disagree — the same asymmetry that let a lint failure ship
+  // green.
+  "exclude": [
+    "node_modules",
+    "dist",
+    "templates",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "scripts/dev/"
+  ]
 }
