@@ -15,7 +15,7 @@ Claude Code supports exactly **4 built-in subagent types**:
 
 ## Custom Agents (Sequant)
 
-Sequant defines **4 custom agents** in `.claude/agents/`. These centralize model, permissions, effort, and tool restrictions that were previously duplicated inline.
+Sequant defines **3 custom agents** in `.claude/agents/`. These centralize model, permissions, effort, and tool restrictions that were previously duplicated inline.
 
 > **Upstream caveat:** `Model` values below are *declared* in the agent files but
 > currently ignored at runtime per anthropics/claude-code#43869 — every subagent
@@ -24,19 +24,9 @@ Sequant defines **4 custom agents** in `.claude/agents/`. These centralize model
 
 | Agent Name | Based On | Model (declared) | Permission Mode | Used By |
 |------------|----------|------------------|-----------------|---------|
-| `sequant-explorer` | Explore | haiku | (default) | `/spec` |
 | `sequant-qa-checker` | general-purpose | sonnet | bypassPermissions | `/qa` |
 | `sequant-implementer` | general-purpose | (inherits) | bypassPermissions | `/exec` |
 | `sequant-testgen` | general-purpose | haiku | (default) | `/testgen` |
-
-### sequant-explorer
-
-Read-only codebase exploration for the `/spec` phase. No Bash, Edit, or Write access.
-
-```
-Agent(subagent_type="sequant-explorer",
-     prompt="Find similar features in components/. Report patterns.")
-```
 
 ### sequant-qa-checker
 
@@ -175,12 +165,11 @@ Agent(subagent_type="sequant-qa-checker",
 ```
 
 ### Context Gathering (via /spec)
-```
-Agent(subagent_type="sequant-explorer",
-     prompt="Find similar features in components/. Report patterns.")
 
-Agent(subagent_type="sequant-explorer",
-     prompt="Explore database schema for user tables. Report structure.")
+`/spec` defaults to targeted inline `Read`/`Grep`, not an agent spawn. It escalates to a single `Explore` agent only for open-ended discovery:
+```
+Agent(subagent_type="Explore",
+     prompt="Find similar features in components/. Report patterns.")
 ```
 
 ### Background Execution (via /exec)
@@ -215,7 +204,7 @@ inline when spawning them.
 | Task | Recommended Agent | Why |
 |------|-------------------|-----|
 | Quality checks (git diff, npm test) | `sequant-qa-checker` | bypassPermissions + effort:low (declared model: sonnet, inert per #43869) |
-| Codebase exploration | `sequant-explorer` | Read-only, focused tools (declared model: haiku, inert per #43869) |
+| Codebase exploration (open-ended only) | `Explore` | Read-only, built-in; `/spec` prefers inline Read/Grep by default |
 | Implementation subtask | `sequant-implementer` | Full access, inherits model |
 | Test stub generation | `sequant-testgen` | Write access, no Bash (declared model: haiku, inert per #43869) |
 | One-off custom task | `general-purpose` | Flexible, specify model/mode inline |
@@ -239,8 +228,8 @@ inline when spawning them.
 These types do **not exist** and will cause silent failures:
 
 - ~~`quality-checker`~~ → Use `sequant-qa-checker` or `general-purpose`
-- ~~`pattern-scout`~~ → Use `sequant-explorer` or `Explore`
-- ~~`schema-inspector`~~ → Use `sequant-explorer` or `Explore`
+- ~~`pattern-scout`~~ → Use `Explore`
+- ~~`schema-inspector`~~ → Use `Explore`
 - ~~`code-reviewer`~~ → Use `sequant-qa-checker` or `general-purpose`
 - ~~`implementation`~~ → Use `sequant-implementer` or `general-purpose`
 
