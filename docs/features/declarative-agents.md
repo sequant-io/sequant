@@ -13,7 +13,7 @@ Verify agents are in place:
 ls .claude/agents/sequant-*.md
 ```
 
-Expected: `sequant-explorer.md`, `sequant-implementer.md`, `sequant-qa-checker.md`, `sequant-testgen.md`
+Expected: `sequant-implementer.md`, `sequant-qa-checker.md`, `sequant-testgen.md`
 
 ## Setup
 
@@ -29,7 +29,7 @@ diff .claude/agents/sequant-qa-checker.md templates/agents/sequant-qa-checker.md
 
 Agents are invoked automatically by sequant skills — you don't call them directly. Each skill references agents by name:
 
-- `/spec` spawns `sequant-explorer` for codebase exploration
+- `/spec` defaults to targeted inline Read/Grep, escalating to a single built-in `Explore` agent only for open-ended discovery
 - `/qa` spawns `sequant-qa-checker` for type safety, scope, and security checks
 - `/exec` spawns `sequant-implementer` for parallel implementation tasks
 - `/testgen` spawns `sequant-testgen` for test stub generation
@@ -65,18 +65,9 @@ Place a same-named file in `~/.claude/agents/` to override the project-level def
 
 | Agent | Used By | Model (declared) | Permission Mode | Tools |
 |-------|---------|------------------|-----------------|-------|
-| `sequant-explorer` | `/spec` | haiku | default | Read, Grep, Glob |
 | `sequant-qa-checker` | `/qa` | sonnet | bypassPermissions | Read, Grep, Glob, Bash |
 | `sequant-implementer` | `/exec` | inherits | bypassPermissions | all |
 | `sequant-testgen` | `/testgen` | haiku | default | Read, Grep, Glob, Write |
-
-### sequant-explorer
-
-Read-only codebase exploration for the `/spec` phase. Searches for existing patterns, components, and file structures before planning.
-
-- **No Bash access** — cannot run commands
-- **No Edit/Write** — cannot modify files
-- **maxTurns:** 15
 
 ### sequant-qa-checker
 
