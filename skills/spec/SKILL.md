@@ -13,7 +13,7 @@ allowed-tools:
   - Bash(gh label:*)
   - Bash(git worktree:*)
   - Bash(git -C:*)
-  - Agent(sequant-explorer)
+  - Agent(Explore)
   - AgentOutputTool
 ---
 
@@ -130,22 +130,11 @@ ls -d src/ app/ lib/ components/ pages/ routes/ docs/ 2>/dev/null || true
 
 Use discovered paths in all agent prompts and search commands.
 
-### Agent Spawn Rules
+### Context-Gathering Strategy
 
-Determine agent count from issue content — do NOT always spawn 3:
+Default to targeted inline `Read`/`Grep` against the paths the issue names or the ones discovered above — this is what actually resolves most issues and avoids paying subagent overhead for context you can fetch directly. Escalate to a single `Explore` agent only for genuinely open-ended discovery (e.g. "where does X live?" with no named files or an unfamiliar area of the codebase). Don't spawn more than one `Explore` agent per `/spec` run — if the issue needs more context than that, narrow the search instead of fanning out.
 
-| Issue Content | Agents | What to Spawn |
-|---------------|--------|---------------|
-| Database/SQL/migration keywords in AC or labels | 3 | Similar features + Codebase area + Database schema |
-| UI/frontend (`.tsx`/`.jsx`/`components/` references) | 2 | Similar features + Codebase area |
-| CLI/script changes | 2 | Similar features + Codebase area |
-| Docs/config/`simple-fix` label | 1 | General context only |
-
-**Execution mode:** Read `.sequant/settings.json` → `agents.parallel` (default: false).
-- **Parallel:** Spawn all agents in a SINGLE message
-- **Sequential:** Spawn one at a time, waiting for each to complete
-
-Agent prompts MUST reference discovered paths from the step above, not hardcoded ones like `components/admin/` or `lib/queries/`.
+Whichever path you take, reference discovered paths from the step above in searches, not hardcoded ones like `components/admin/` or `lib/queries/`.
 
 ### In-Flight Work Analysis
 
