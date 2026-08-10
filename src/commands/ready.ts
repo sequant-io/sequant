@@ -57,6 +57,8 @@ export interface ReadyCommandOptions {
   models?: string;
   /** Per-phase effort override (#914). See `RunOptions.efforts`. */
   efforts?: string;
+  /** Evidence-based effort escalation on QA-pass retries (#915). See `RunOptions.escalateEffort`. */
+  escalateEffort?: boolean;
 }
 
 /**
@@ -175,6 +177,10 @@ export async function readyCommand(
     settings.run.phases,
     getPhaseNames(),
   );
+  // #915: CLI > settings > default `false`, same precedence as the `run`
+  // path's `buildExecutionConfig` (config-resolver.ts).
+  const effortEscalation =
+    options.escalateEffort ?? settings.run.effortEscalation ?? false;
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
   const worktreePath = resolveWorktreePath(issueNumber);
@@ -293,6 +299,7 @@ export async function readyCommand(
       runPhase,
       onProgress,
       phasePolicies,
+      effortEscalation,
     });
   } catch (error) {
     // Tear down the live zone on the error path too — not just the happy path
@@ -311,6 +318,16 @@ export async function readyCommand(
     }
     process.exitCode = 2;
     return;
+  }
+
+  // #915: surface any escalated qa/loop dispatches — the gate has no live
+  // print of its own (see `withEscalatedEffort` in `ready-gate.ts`).
+  if (options.verbose) {
+    for (const e of result.effortEscalations) {
+      console.log(
+        colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
+      );
+    }
   }
 
   // Persist the terminal state so `sequant status` reflects it (Derived AC).

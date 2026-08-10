@@ -60,3 +60,79 @@ describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (produce
     expect(seen[0]?.qa).toEqual({ model: "sonnet", effort: "medium" });
   });
 });
+
+describe("#915 AC-1/AC-3/AC-7: ready-gate resolves + applies effortEscalation (producer 2)", () => {
+  it("carries opts.effortEscalation onto every dispatched ExecutionConfig", async () => {
+    const seen: Array<boolean | undefined> = [];
+    const opts: RunReadyGateOptions = {
+      issueNumber: 915,
+      worktreePath: "/tmp/worktree-915",
+      policy: "ac",
+      maxIterations: 1,
+      phaseTimeout: 1800,
+      mcp: false,
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
+      effortEscalation: true,
+      runPhase: (phase, config) => {
+        seen.push(config.effortEscalation);
+        const result: PhaseResult = {
+          phase,
+          success: true,
+          verdict: phase === "qa" ? "READY_FOR_MERGE" : undefined,
+        };
+        return Promise.resolve(result);
+      },
+    };
+    await runReadyGate(opts);
+    expect(seen[0]).toBe(true);
+  });
+
+  it("escalates the qa dispatch on the SECOND QA pass, not the first (AC-7: no retry, no escalation)", async () => {
+    const seenEfforts: Array<string | undefined> = [];
+    let qaCalls = 0;
+    // Each snapshot call returns a fresh sha, so the before/after pair taken
+    // around every `loop` dispatch always shows a diff — simulating a loop
+    // that commits a real fix each time.
+    let snapshotCalls = 0;
+    const opts: RunReadyGateOptions = {
+      issueNumber: 915,
+      worktreePath: "/tmp/worktree-915",
+      policy: "ac",
+      maxIterations: 3,
+      phaseTimeout: 1800,
+      mcp: false,
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: `sha-${snapshotCalls++}`, dirty: [] }),
+      effortEscalation: true,
+      phasePolicies: { qa: { effort: "high" } },
+      runPhase: (phase, config) => {
+        if (phase === "qa") {
+          qaCalls++;
+          seenEfforts.push(config.phasePolicies?.qa?.effort);
+          const result: PhaseResult = {
+            phase,
+            success: true,
+            // First pass: not ready, so the loop retries. Second pass: ready.
+            verdict: qaCalls === 1 ? "AC_NOT_MET" : "READY_FOR_MERGE",
+            summary: { gaps: qaCalls === 1 ? ["fix the thing"] : [] },
+          };
+          return Promise.resolve(result);
+        }
+        // loop phase — succeed and let compareLoopProgress report progress
+        // via the differing snapshot sha above.
+        return Promise.resolve({ phase, success: true });
+      },
+    };
+
+    const result = await runReadyGate(opts);
+
+    expect(seenEfforts).toEqual(["high", "xhigh"]);
+    expect(result.effortEscalations).toEqual([
+      { phase: "qa", base: "high", escalated: "xhigh" },
+    ]);
+    expect(result.reason).toBe("READY_FOR_MERGE");
+  });
+});

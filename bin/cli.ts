@@ -399,6 +399,12 @@ program
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none — inherits the SDK default)",
     parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
   )
+  // #915: opt-in escalation on quality-loop retries. Raises token cost, so
+  // off by default — matches --ready-gate's opt-in shape above.
+  .option(
+    "--escalate-effort",
+    "On a quality-loop retry (loop iteration ≥ 2), run that retried phase one reasoning-effort tier above its resolved base (default: off — see --efforts)",
+  )
   .option(
     "-f, --force",
     "Force re-execution of completed issues (bypass pre-flight state guard) and take over per-issue locks",
@@ -614,6 +620,12 @@ program
     "--efforts <spec>",
     "Per-phase reasoning-effort override (low|medium|high|xhigh|max), same grammar as --models (default: none)",
     parsePhaseSpecFlag("--efforts", getPhaseNames(), EFFORT_LEVELS),
+  )
+  // #915: same opt-in escalation as `sequant run --escalate-effort`, applied
+  // to this gate's qa/loop retry passes.
+  .option(
+    "--escalate-effort",
+    "On a QA-pass retry (pass ≥ 2), run that retried phase one reasoning-effort tier above its resolved base (default: off)",
   )
   .option("--json", "Output as JSON")
   .option("-v, --verbose", "Enable verbose output")

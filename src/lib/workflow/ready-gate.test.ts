@@ -496,6 +496,7 @@ describe("formatReadyReport (AC-4)", () => {
       remaining: [],
       tokensUsed: 0,
       report: "",
+      effortEscalations: [],
     };
     const report = formatReadyReport(result);
     expect(report).toContain("NOT READY — no implementation");

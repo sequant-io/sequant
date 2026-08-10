@@ -124,6 +124,24 @@ export const MetricRunSchema = z.object({
       z.object({ model: z.string().optional(), effort: z.string().optional() }),
     )
     .optional(),
+  /**
+   * Effort escalations applied during this run (#915), one entry per
+   * escalated phase execution — distinct from `phasePolicies`, which is a
+   * flat phase→policy map recorded once per run and can't express a value
+   * that changes per retry. Only populated when at least one execution
+   * escalated; omitted entirely (not an empty array) otherwise, matching
+   * `phasePolicies`'s omit-when-empty convention. Phase names and enum
+   * effort strings only, consistent with this schema's privacy contract.
+   */
+  effortEscalations: z
+    .array(
+      z.object({
+        phase: z.string(),
+        base: z.string(),
+        escalated: z.string(),
+      }),
+    )
+    .optional(),
   /** Aggregate metrics */
   metrics: RunMetricsSchema,
 });
@@ -178,6 +196,13 @@ export function createMetricRun(options: {
    * a map shaped this way.
    */
   phasePolicies?: Record<string, { model?: string; effort?: string }>;
+  /**
+   * Effort escalations applied during this run (#915), one entry per
+   * escalated phase execution. Pass only executions that actually escalated
+   * — see `MetricRunSchema.effortEscalations`'s doc comment for why this is
+   * a sibling array rather than an extension of `phasePolicies`.
+   */
+  effortEscalations?: Array<{ phase: string; base: string; escalated: string }>;
   metrics?: Partial<RunMetrics>;
 }): MetricRun {
   return {
@@ -192,6 +217,9 @@ export function createMetricRun(options: {
     failureCategory: options.failureCategory,
     ...(options.phasePolicies && Object.keys(options.phasePolicies).length > 0
       ? { phasePolicies: options.phasePolicies }
+      : {}),
+    ...(options.effortEscalations && options.effortEscalations.length > 0
+      ? { effortEscalations: options.effortEscalations }
       : {}),
     metrics: {
       tokensUsed: options.metrics?.tokensUsed ?? 0,

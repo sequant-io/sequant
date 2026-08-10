@@ -84,3 +84,21 @@ describe("#914 AC-1: run.phases settings", () => {
     ).toBe(true);
   });
 });
+
+describe("#915 AC-1: run.effortEscalation settings", () => {
+  it("defaults to false when absent", () => {
+    const result = RunSettingsSchema.parse({});
+    expect(result.effortEscalation).toBe(false);
+  });
+
+  it("round-trips an explicit true", () => {
+    const result = RunSettingsSchema.parse({ effortEscalation: true });
+    expect(result.effortEscalation).toBe(true);
+  });
+
+  it("rejects a non-boolean value at parse time", () => {
+    expect(() =>
+      RunSettingsSchema.parse({ effortEscalation: "yes" }),
+    ).toThrow();
+  });
+});

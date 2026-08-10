@@ -225,6 +225,16 @@ export interface ExecutionConfig {
    * entry here, so an unconfigured run reaches the SDK unchanged.
    */
   phasePolicies?: Record<string, { model?: string; effort?: string }>;
+  /**
+   * Evidence-based effort escalation on quality-loop retries (#915). CLI >
+   * settings > absent (`false`), resolved by `buildExecutionConfig`
+   * (`config-resolver.ts`) and `ready-gate.ts`'s `buildPhaseConfig` — the same
+   * two producers `phasePolicies` uses, so this cannot drift from that one
+   * (#833 class). Consumed only at dispatch time by
+   * `effort-escalation.ts`'s `withEscalatedEffort`, never baked statically
+   * into `phasePolicies` here — escalation is per-execution, not per-run.
+   */
+  effortEscalation?: boolean;
 }
 
 /**
@@ -309,6 +319,13 @@ export interface PhaseResult {
   stdoutTail?: string[];
   /** Process exit code from the agent driver (#447) */
   exitCode?: number;
+  /**
+   * Set when this execution's effort was escalated one tier above its
+   * resolved base (#915) — a quality-loop retry with `effortEscalation`
+   * enabled. Additive/optional, same shape as `capped?`/`structuredError?`;
+   * absent on every non-escalated execution.
+   */
+  escalatedEffort?: { base: string; escalated: string };
 }
 
 /**
@@ -575,6 +592,14 @@ export interface RunOptions {
    * validates against the SDK's closed `low|medium|high|xhigh|max` enum.
    */
   efforts?: string;
+  /**
+   * Evidence-based effort escalation on quality-loop retries (#915). Set via
+   * `--escalate-effort`. When true, a retried phase execution resolves one
+   * effort tier above its configured/inherited base for that execution only
+   * — see `effort-escalation.ts`. Default `false`: escalation raises token
+   * spend, so an unset flag leaves every run byte-identical to pre-#915.
+   */
+  escalateEffort?: boolean;
 }
 
 /**

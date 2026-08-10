@@ -438,5 +438,10 @@ export function buildExecutionConfig(
       settings.run.phases,
       getPhaseNames(),
     ),
+    // #915: CLI > settings > default `false` — mirrors the `readyGate`
+    // precedent above. Both `ExecutionConfig` producers (here and
+    // `ready-gate.ts:buildPhaseConfig`) resolve this the same way (#833).
+    effortEscalation:
+      mergedOptions.escalateEffort ?? settings.run.effortEscalation ?? false,
   };
 }

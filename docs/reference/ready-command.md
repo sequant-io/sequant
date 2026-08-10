@@ -69,6 +69,7 @@ npx sequant ready 712 --max-iterations 4 --budget 300000 --json
 | `--no-mcp` | Disable MCP server injection in headless mode. |
 | `--models <spec>` | Per-phase model override for the qa/loop phases this gate runs (bare value or `phase=model` pairs, e.g. `qa=sonnet`). CLI > `run.phases` settings > absent — see [Per-Phase Model & Effort](run-command.md#per-phase-model--effort). |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. |
+| `--escalate-effort` | On a QA-pass retry (pass ≥ 2), run that pass's `qa`/`loop` dispatch one reasoning-effort tier above its resolved base. CLI > `run.effortEscalation` settings > `false` — see [Effort Escalation on Retries](run-command.md#effort-escalation-on-retries). |
 | `--json` | Emit a structured JSON result instead of the markdown report. |
 | `-v, --verbose` | Verbose phase output. |
 

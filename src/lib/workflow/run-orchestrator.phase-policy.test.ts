@@ -120,3 +120,98 @@ describe("#914 gap-fix: RunOrchestrator.recordMetrics forwards config.phasePolic
     );
   });
 });
+
+describe("#915: RunOrchestrator.recordMetrics aggregates effortEscalations from both retry sites", () => {
+  it("collects escalated phaseResults across issues into a single flat array", async () => {
+    await recordMetrics(
+      baseConfig(),
+      {} as RunOptions,
+      [
+        issueResult({
+          issueNumber: 915,
+          phaseResults: [
+            {
+              phase: "exec",
+              success: true,
+              escalatedEffort: { base: "high", escalated: "xhigh" },
+            },
+            { phase: "qa", success: true }, // not escalated — excluded
+          ],
+        }),
+        issueResult({
+          issueNumber: 916,
+          phaseResults: [
+            {
+              phase: "qa",
+              success: true,
+              escalatedEffort: { base: "medium", escalated: "high" },
+            },
+          ],
+        }),
+      ],
+      new Map(),
+      [915, 916],
+      42,
+    );
+
+    const writerMock = vi.mocked(MetricsWriter);
+    const lastInstance =
+      writerMock.mock.results[writerMock.mock.results.length - 1].value;
+    expect(lastInstance.recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effortEscalations: [
+          { phase: "exec", base: "high", escalated: "xhigh" },
+          { phase: "qa", base: "medium", escalated: "high" },
+        ],
+      }),
+    );
+  });
+
+  it("also collects escalations recorded on the --ready-gate path (IssueResult.readyGate.effortEscalations)", async () => {
+    await recordMetrics(
+      baseConfig(),
+      {} as RunOptions,
+      [
+        issueResult({
+          issueNumber: 915,
+          phaseResults: [],
+          readyGate: {
+            effortEscalations: [
+              { phase: "qa", base: "high", escalated: "xhigh" },
+            ],
+          } as never,
+        }),
+      ],
+      new Map(),
+      [915],
+      42,
+    );
+
+    const writerMock = vi.mocked(MetricsWriter);
+    const lastInstance =
+      writerMock.mock.results[writerMock.mock.results.length - 1].value;
+    expect(lastInstance.recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effortEscalations: [{ phase: "qa", base: "high", escalated: "xhigh" }],
+      }),
+    );
+  });
+
+  it("passes an empty array when nothing escalated (no phase, no ready-gate)", async () => {
+    await recordMetrics(
+      baseConfig(),
+      {} as RunOptions,
+      [issueResult()],
+      new Map(),
+      [914],
+      42,
+    );
+
+    const writerMock = vi.mocked(MetricsWriter);
+    const lastInstance =
+      writerMock.mock.results[writerMock.mock.results.length - 1].value;
+    expect(lastInstance.recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({ effortEscalations: [] }),
+    );
+  });
+});
