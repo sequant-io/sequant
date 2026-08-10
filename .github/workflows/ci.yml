@@ -148,6 +148,13 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # `tsconfig.json` covers only the src/+bin/ code that `npm run build`
+      # emits, so nothing under `scripts/` was typechecked by any gate — the
+      # CLIs that /qa and /spec shell out to were unguarded. Separate project
+      # because these must never be emitted to dist/.
+      - name: Type check scripts
+        run: npm run typecheck:scripts
+
   validate-plugin:
     runs-on: ubuntu-latest
 

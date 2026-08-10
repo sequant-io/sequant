@@ -177,7 +177,7 @@ async function handleSet(type: string | undefined): Promise<void> {
   let result: CachedCheckResult["result"];
   try {
     result = JSON.parse(input);
-  } catch (error) {
+  } catch {
     console.error("Error: invalid JSON input");
     process.exit(2);
   }

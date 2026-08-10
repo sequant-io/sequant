@@ -182,7 +182,7 @@ export function classifyShaConfidence(
     ? multiple
       ? `${matches.length} matches — verify the first is the fix`
       : "scoped conventional commit"
-    : `subject not scoped to #${issue} (\"${subject.slice(0, 50)}…\") — verify/override`;
+    : `subject not scoped to #${issue} ("${subject.slice(0, 50)}…") — verify/override`;
   return { confidence, reason, fixSha: sha };
 }
 

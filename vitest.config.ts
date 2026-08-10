@@ -5,10 +5,18 @@ export default defineConfig({
     // Build once before all tests (used by cli/doctor integration tests)
     globalSetup: "./vitest.global-setup.ts",
 
+    // Each project's `name` must sit INSIDE its `test` block. Vitest 4 does
+    // not read a `name` declared as a sibling of `test`, and the symptom is
+    // not an error at config load — it is `--project unit` failing with
+    // "No projects matched the filter", which reads like a typo in the
+    // command rather than a config defect. Both projects still ran, so the
+    // only thing lost was the ability to target one of them: the #842
+    // separation between the 5 s unit project and the serialized 30 s
+    // integration project could not be verified from the command line.
     projects: [
       {
-        name: "unit",
         test: {
+          name: "unit",
           include: [
             "**/*.test.ts",
             "**/*.test.tsx",
@@ -23,8 +31,8 @@ export default defineConfig({
         },
       },
       {
-        name: "integration",
         test: {
+          name: "integration",
           include: [
             "**/*.integration.test.ts",
             "scripts/qa/tautology-detector-cli.test.ts",
