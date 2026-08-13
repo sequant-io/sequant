@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Mutation-verification becomes a parseable `/qa` §7 gate instead of honor-system prose (#939)** — CLAUDE.md's testing rule ("gate tests ship with a recorded mutation result") had nothing that parsed or checked the recorded result, so compliance was invisible. A gate-test AC now records its mutation check as a `<!-- SEQUANT_MUTATION: {"ac":"AC-N","mutation":"...","failedTest":"..."} -->` PR-body marker (flat-JSON idiom, mirroring `SEQUANT_SPEC`/`SEQUANT_PHASE`), parsed by `parseMutationMarkers`/`classifyMutationMarker` in `src/lib/workflow/mutation-marker.ts`. `/qa` gained §6i (Mutation Verification): for any AC that `isGateTestEvidence` classifies as a gate test, a missing marker caps the verdict at `AC_MET_BUT_NOT_A_PLUS` and a marker naming a test absent from the diff — a fabricated record — floors it at `AC_NOT_MET`. Wired into the §7 verdict algorithm and required in both Simple Fix and Standard QA modes; `scripts/lint-skill-gates.ts` passes clean, and its own wiring was mutation-verified (deleting the §7 token/branches makes both the lint and the dedicated skill-content test fail, confirmed and restored). A backtest against the last 20 merged PRs' `Pre-PR AC Verification` tables (`scripts/qa/backtest-mutation-gate.ts`) found 7 in-scope gate-test ACs across 3 PRs with that table format — all `Missing`, as expected for PRs predating this feature — sizing the authoring burden before scope widens beyond gate-test ACs.
+
 ## [2.11.0] - 2026-08-13
 
 ### Added
