@@ -2402,7 +2402,7 @@ Two classes are explicitly **not** findings. Legitimate imperative *requirements
 
 ---
 
-### 6g. Declared-Evidence Execution (REQUIRED for evidence-bearing ACs)
+### 6h. Declared-Evidence Execution (REQUIRED for evidence-bearing ACs)
 
 **Purpose:** For any AC with a declared `Evidence:` clause naming a runnable command, verify that exact command was executed against this diff (or a captured run of it verified) before marking the AC `MET`. Closes the #853 "marked MET by construction" path (#938) — a declared, checkable claim that goes unexecuted is a bug, not a checkbox.
 
@@ -2438,7 +2438,7 @@ For each AC returned, **execute the exact backtick-quoted command** — or verif
 **AC marking and verdict gating:**
 
 - A declared-evidence AC whose command was NOT executed or verified this pass → AC status = `PENDING` (increments `pending_count`, same mechanism as the Manual Test AC Enforcement in step 3a) — it cannot be marked `MET` on reasoning alone.
-- `declared_evidence_status == "Incomplete"` also floors the verdict directly — see step 4's `Section 6g` branch.
+- `declared_evidence_status == "Incomplete"` also floors the verdict directly — see step 4's `Section 6h` branch.
 
 **Output Format:**
 
@@ -2486,7 +2486,7 @@ Provide an overall verdict:
    - adversarial_reread_status = status from Section 6d (Clean/Gaps Found/Severe Gap) — REQUIRED for Standard QA, omitted for Simple Fix
    - behavior_rule_survival_status = status from Section 6e (Clean/Survivors Found/N/A) — REQUIRED when any AC triggers the behavior-rule heuristic, omitted otherwise
    - trust_boundary_status = status from Section 6f (Clean/Injection Acted On) — REQUIRED in **both** Standard QA and Simple Fix mode (unlike 6d, it is never omitted: an injected command is a small diff by definition)
-   - declared_evidence_status = status from Section 6g (Complete/Incomplete/N/A) — REQUIRED when any AC declares evidence naming a runnable command, `N/A` otherwise
+   - declared_evidence_status = status from Section 6h (Complete/Incomplete/N/A) — REQUIRED when any AC declares evidence naming a runnable command, `N/A` otherwise
    - cli_registration_status = status from Section 2h (Passed/Failed/N/A) — REQUIRED when option interfaces are modified, `N/A` otherwise; omitted in Simple Fix mode along with the rest of §2h
    - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
@@ -2528,7 +2528,7 @@ Provide an overall verdict:
    - ELSE IF execution_evidence == "Incomplete":
        → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
    - ELSE IF declared_evidence_status == "Incomplete":
-       → AC_MET_BUT_NOT_A_PLUS (a declared `Evidence:` command was not executed/verified for one or more ACs - see Section 6g; the #853 "marked MET by construction" path)
+       → AC_MET_BUT_NOT_A_PLUS (a declared `Evidence:` command was not executed/verified for one or more ACs - see Section 6h; the #853 "marked MET by construction" path)
    - ELSE IF script_verification_status == "Not Verified":
        → AC_MET_BUT_NOT_A_PLUS (`scripts/` changed with no `/verify` evidence and no approved §11a override — code review and unit tests miss integration failures; see Section 11)
    - ELSE IF changelog_required AND changelog_missing:
@@ -2988,7 +2988,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - Skill Change Review
 - Adversarial Re-Read
 
-**Not omitted:** the Trust-Boundary Check (§6f), the Behavior-Rule Survival Check (§6e), the Declared-Evidence Execution check (§6g), and the CHANGELOG Quality Gate (§10a) are all required in simple fix mode too — each is cheap (a short-circuit to N/A when no AC qualifies), and each guards a defect class that a small diff is a *likely* carrier of rather than an unlikely one. Every `(REQUIRED` section must appear in either the required list below or the omitted list above; `scripts/lint-skill-gates.ts` (I3) fails the build on silence, because silence is how #819 F2 shipped a security check that Simple Fix mode switched off.
+**Not omitted:** the Trust-Boundary Check (§6f), the Behavior-Rule Survival Check (§6e), the Declared-Evidence Execution check (§6h), and the CHANGELOG Quality Gate (§10a) are all required in simple fix mode too — each is cheap (a short-circuit to N/A when no AC qualifies), and each guards a defect class that a small diff is a *likely* carrier of rather than an unlikely one. Every `(REQUIRED` section must appear in either the required list below or the omitted list above; `scripts/lint-skill-gates.ts` (I3) fails the build on silence, because silence is how #819 F2 shipped a security check that Simple Fix mode switched off.
 
 **Required sections for simple fix mode:**
 
@@ -3000,7 +3000,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Anti-Pattern Detection** - Code patterns check (lightweight)
 - [ ] **Trust-Boundary Check** - Required in simple fix mode too (see Section 6f); "Finding:" and "Status:" lines populated
 - [ ] **Behavior-Rule Survival Check** - Required in simple fix mode too (see Section 6e): a #533-class stale-rule survival is very plausibly a sub-threshold diff. Cheap short-circuit — mark "N/A" when no AC triggers the behavior-rule heuristic
-- [ ] **Declared-Evidence Execution** - Required in simple fix mode too (see Section 6g): a declared-evidence AC marked MET without running its command is exactly the #853 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC declares evidence naming a runnable command
+- [ ] **Declared-Evidence Execution** - Required in simple fix mode too (see Section 6h): a declared-evidence AC marked MET without running its command is exactly the #853 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC declares evidence naming a runnable command
 - [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs an `[Unreleased]` entry (or marked N/A)
 - [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
@@ -3030,7 +3030,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Detection Pattern Verification** - Included if skill markdown adds new `grep`/`awk`/`jq`/`sed`/regex (or marked N/A)
 - [ ] **CLI Registration Verification** - Included if option interfaces modified (or marked N/A — see Section 2h); `Failed` floors the verdict at `AC_NOT_MET` via §7
 - [ ] **Behavior-Rule Survival Check** - Included if any AC triggers the behavior-rule heuristic (or marked N/A — see Section 6e); `Survivors Found` floors the verdict at `AC_NOT_MET` via §7
-- [ ] **Declared-Evidence Execution** - Included if any AC declares evidence naming a runnable command (or marked N/A — see Section 6g); `Incomplete` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7, and an unexecuted AC is marked PENDING rather than MET
+- [ ] **Declared-Evidence Execution** - Included if any AC declares evidence naming a runnable command (or marked N/A — see Section 6h); `Incomplete` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7, and an unexecuted AC is marked PENDING rather than MET
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)

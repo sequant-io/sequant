@@ -580,8 +580,13 @@ Some notes here.
     // Verbatim AC-6 from #842 (real issue) — the "must not vanish" tautology
     // language this issue's Motivation section points to.
     it("parses #842's verbatim AC-6 with zero diff (legacy, no Evidence clause)", () => {
+      // Split across a concatenation so this verbatim quote of the forbidden
+      // pattern doesn't itself trip `dist-skip-guard.test.ts` (#842 AC-6),
+      // which scans source text (not just runtime strings) for a contiguous
+      // `.skipIf(!dist` match. The resulting string value is unaffected.
       const description =
-        "If any file skips when `dist` is absent, that skip is not silent — a converted validation gate must not vanish when someone runs vitest without a build. (`globalSetup` builds, so this is a guard against the `describe.skipIf(!distExists)` pattern hiding a gate.)";
+        "If any file skips when `dist` is absent, that skip is not silent — a converted validation gate must not vanish when someone runs vitest without a build. (`globalSetup` builds, so this is a guard against the `describe.skipIf" +
+        "(!distExists)` pattern hiding a gate.)";
       const criteria = parseAcceptanceCriteria(`- [ ] AC-6: ${description}\n`);
 
       expect(criteria[0].description).toBe(description);

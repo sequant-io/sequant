@@ -8,7 +8,7 @@
  *
  * - AC-3: `/spec`'s testgen recommendation counts declared-evidence ACs
  *   before inferred ones.
- * - AC-4: `/qa` §6g requires a declared evidence command to be executed (or
+ * - AC-4: `/qa` §6h requires a declared evidence command to be executed (or
  *   a captured run verified) before an evidence-bearing AC is MET, and that
  *   check is wired into §7's verdict algorithm and required in both QA
  *   modes.
@@ -65,12 +65,12 @@ describe("/spec testgen recommendation counts declared evidence first (AC-3)", (
   });
 });
 
-describe("/qa §6g Declared-Evidence Execution is wired (AC-4)", () => {
+describe("/qa §6h Declared-Evidence Execution is wired (AC-4)", () => {
   const qa = () => read(".claude/skills/qa/SKILL.md");
 
-  it("qa SKILL.md carries the §6g section with its required-command instruction", () => {
+  it("qa SKILL.md carries the §6h section with its required-command instruction", () => {
     const content = qa();
-    expect(content).toContain("### 6g. Declared-Evidence Execution");
+    expect(content).toContain("### 6h. Declared-Evidence Execution");
     // The core AC-4 requirement: execute (or verify a captured run of) the
     // declared command before marking the AC MET.
     expect(content).toMatch(/execute the exact backtick-quoted command/i);
@@ -81,7 +81,7 @@ describe("/qa §6g Declared-Evidence Execution is wired (AC-4)", () => {
 
   it("§7 step 2 declares declared_evidence_status as a verification gate", () => {
     expect(qa()).toMatch(
-      /^\s*-\s*declared_evidence_status = status from Section 6g/m,
+      /^\s*-\s*declared_evidence_status = status from Section 6h/m,
     );
   });
 
@@ -93,7 +93,7 @@ describe("/qa §6g Declared-Evidence Execution is wired (AC-4)", () => {
     );
   });
 
-  it("§6g is required in Simple Fix mode, not omitted with the other conditional sections", () => {
+  it("§6h is required in Simple Fix mode, not omitted with the other conditional sections", () => {
     const content = qa();
     const simpleFix = content.slice(
       content.indexOf("### Simple Fix Mode (`SMALL_DIFF=true`)"),
@@ -110,7 +110,7 @@ describe("/qa §6g Declared-Evidence Execution is wired (AC-4)", () => {
     expect(omitted).not.toMatch(/^- Declared-Evidence Execution$/m);
   });
 
-  it("§6g is included in the Standard QA required-sections checklist", () => {
+  it("§6h is included in the Standard QA required-sections checklist", () => {
     const content = qa();
     const standard = content.slice(
       content.indexOf("### Standard QA (Implementation Exists"),
