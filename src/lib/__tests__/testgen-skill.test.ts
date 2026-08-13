@@ -109,9 +109,10 @@ describe("spec skill testgen auto-detection rules", () => {
   it("should recommend testgen for Integration Test verification method", () => {
     // The spec skill should specify that Integration Test ACs trigger testgen
     expect(specSkillContent).toMatch(/Integration Test.*testgen/is);
-    // Should have explicit condition in auto-detection algorithm
+    // Should have explicit condition in auto-detection algorithm (#938: counts
+    // remaining inferred Integration Test ACs after declared evidence)
     expect(specSkillContent).toContain(
-      'Count ACs with "Integration Test" → If >0, recommend testgen',
+      'Count remaining inferred "Integration Test" ACs → if >0, recommend testgen.',
     );
   });
 
@@ -122,9 +123,10 @@ describe("spec skill testgen auto-detection rules", () => {
   });
 
   it("should document auto-detection algorithm for testgen", () => {
-    // The spec skill should have step-by-step detection logic
+    // The spec skill should have step-by-step detection logic (#938: counts
+    // declared-evidence ACs first, then remaining inferred Unit Test ACs)
     expect(specSkillContent).toContain(
-      'Count ACs with "Unit Test" → If >0, recommend testgen',
+      'Count remaining ACs — no declared evidence, method came from **inference** — that are "Unit Test" → if >0, recommend testgen.',
     );
   });
 

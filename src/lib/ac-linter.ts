@@ -22,11 +22,7 @@ import type { AcceptanceCriterion } from "./workflow/state-schema.js";
  * Types of issues that can be flagged in AC
  */
 export type ACLintIssueType =
-  | "vague"
-  | "unmeasurable"
-  | "incomplete"
-  | "open_ended"
-  | "title-body-tension";
+  "vague" | "unmeasurable" | "incomplete" | "open_ended" | "title-body-tension";
 
 /**
  * A lint issue found in an acceptance criterion
@@ -357,6 +353,30 @@ function detectTitleBodyTension(ac: AcceptanceCriterion): ACLintIssue | null {
 }
 
 /**
+ * Detect a test-type AC (unit/integration/browser) whose verification
+ * method came from keyword inference rather than a declared `Evidence:`
+ * clause (#938). `manual` ACs are exempt — docs/decision ACs legitimately
+ * have no runnable evidence.
+ *
+ * Warning-only, same convention as the regex-based DEFAULT_LINT_PATTERNS.
+ *
+ * @param ac - The acceptance criterion to check
+ * @returns A lint issue if evidence is missing, otherwise null
+ */
+function detectMissingEvidence(ac: AcceptanceCriterion): ACLintIssue | null {
+  if (ac.evidence) return null;
+  if (ac.verificationMethod === "manual") return null;
+
+  return {
+    type: "incomplete",
+    matchedPattern: ac.verificationMethod,
+    problem: `Incomplete: verification not named — method "${ac.verificationMethod}" was inferred from keywords, not declared`,
+    suggestion:
+      "Add a trailing `Evidence:` clause naming the command or check that verifies this AC (e.g., `Evidence: \\`npm test -- foo\\``).",
+  };
+}
+
+/**
  * Lint a single acceptance criterion against all patterns
  *
  * @param ac - The acceptance criterion to lint
@@ -384,6 +404,9 @@ export function lintAcceptanceCriterion(
 
   const tension = detectTitleBodyTension(ac);
   if (tension) issues.push(tension);
+
+  const missingEvidence = detectMissingEvidence(ac);
+  if (missingEvidence) issues.push(missingEvidence);
 
   return {
     ac,

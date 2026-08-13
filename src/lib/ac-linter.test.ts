@@ -476,6 +476,71 @@ describe("AC Linter", () => {
     });
   });
 
+  // #938: a test-type AC (unit/integration/browser) whose verification
+  // method was inferred rather than declared is flagged "incomplete" —
+  // warning-only, mirroring the other DEFAULT_LINT_PATTERNS.
+  describe("missing-evidence patterns (#938)", () => {
+    it("flags a unit_test AC with no evidence", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Unit test validates the parser",
+        "unit_test",
+      );
+      const result = lintAcceptanceCriterion(ac);
+
+      expect(result.passed).toBe(false);
+      expect(result.issues.some((i) => i.type === "incomplete")).toBe(true);
+      expect(
+        result.issues.some((i) => i.problem.includes("verification not named")),
+      ).toBe(true);
+    });
+
+    it("flags an integration_test AC with no evidence", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "API endpoint returns 200",
+        "integration_test",
+      );
+      const result = lintAcceptanceCriterion(ac);
+
+      expect(result.passed).toBe(false);
+    });
+
+    it("flags a browser_test AC with no evidence", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Dashboard shows metrics",
+        "browser_test",
+      );
+      const result = lintAcceptanceCriterion(ac);
+
+      expect(result.passed).toBe(false);
+    });
+
+    it("does not flag a test-type AC that declares evidence", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Reset link expires after 24h.",
+        "unit_test",
+        "`npm test -- reset-expiry`",
+      );
+      const result = lintAcceptanceCriterion(ac);
+
+      expect(result.passed).toBe(true);
+    });
+
+    it("does not flag a manual AC even with no evidence", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Layout looks correct on mobile",
+        "manual",
+      );
+      const result = lintAcceptanceCriterion(ac);
+
+      expect(result.passed).toBe(true);
+    });
+  });
+
   describe("formatACLintResults", () => {
     it("should format results with issues", () => {
       const criteria = [
