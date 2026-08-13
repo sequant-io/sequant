@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { createAcceptanceCriterion } from "./workflow/state-schema.js";
 import {
   parseAcceptanceCriteria,
   extractAcceptanceCriteria,
@@ -662,6 +663,31 @@ Some notes here.
       expect(criteria[0].evidence).toBe("`npm test -- reset-expiry`");
       expect(criteria[0].verificationMethod).toBe("unit_test");
     });
+
+    // Gap found in QA review of #938 itself: prose can legitimately contain
+    // the word "Evidence:" before the real trailing clause. Splitting on the
+    // FIRST occurrence would swallow the real clause into the description
+    // (or worse, treat prose as the declaration). Must split on the LAST.
+    it("splits on the LAST Evidence: occurrence when prose also contains the word", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** The report cites strong Evidence: peer review and reproducibility. Evidence: `npm test -- foo`\n",
+      );
+
+      expect(criteria[0].description).toBe(
+        "The report cites strong Evidence: peer review and reproducibility.",
+      );
+      expect(criteria[0].evidence).toBe("`npm test -- foo`");
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    it("still parses correctly with exactly one Evidence: occurrence (no regression)", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** Single occurrence only. Evidence: `npm test -- foo`\n",
+      );
+
+      expect(criteria[0].description).toBe("Single occurrence only.");
+      expect(criteria[0].evidence).toBe("`npm test -- foo`");
+    });
   });
 
   describe("resolveVerificationMethod", () => {
@@ -693,6 +719,38 @@ Some notes here.
       expect(resolveVerificationMethod("Dashboard shows metrics")).toBe(
         inferVerificationMethod("Dashboard shows metrics"),
       );
+    });
+  });
+
+  // #938 QA gap: state-schema.ts's `createAcceptanceCriterion` evidence
+  // parameter was previously exercised only transitively through the parser
+  // tests above. Direct coverage of the factory itself.
+  describe("createAcceptanceCriterion evidence parameter (state-schema.ts)", () => {
+    it("sets the evidence field when provided", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Reset link expires after 24h.",
+        "unit_test",
+        "`npm test -- reset-expiry`",
+      );
+
+      expect(ac.evidence).toBe("`npm test -- reset-expiry`");
+      expect(ac.verificationMethod).toBe("unit_test");
+      expect(ac.status).toBe("pending");
+    });
+
+    it("omits the evidence field entirely when not provided (no evidence: undefined key)", () => {
+      const ac = createAcceptanceCriterion("AC-1", "User can login", "manual");
+
+      expect(ac.evidence).toBeUndefined();
+      expect("evidence" in ac).toBe(false);
+    });
+
+    it("defaults verificationMethod to manual when omitted, same as before #938", () => {
+      const ac = createAcceptanceCriterion("AC-1", "User can login");
+
+      expect(ac.verificationMethod).toBe("manual");
+      expect(ac.evidence).toBeUndefined();
     });
   });
 

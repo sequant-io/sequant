@@ -158,11 +158,13 @@ export function inferVerificationMethod(
 
 /**
  * Matches a trailing `Evidence:` clause on an AC line (#938). Only the
- * FIRST occurrence is honored — the parser is line-anchored, so the clause
- * must live on the same line as the AC it documents, and everything from
- * `Evidence:` to end-of-line becomes the declaration.
+ * LAST occurrence is honored — the clause is defined as trailing, and AC
+ * prose can legitimately contain the word "Evidence:" earlier in the
+ * sentence (e.g. "the report cites strong Evidence: peer review ..."
+ * before the real declaration). Splitting on the first match would corrupt
+ * extraction by swallowing the real trailing clause into the description.
  */
-const EVIDENCE_CLAUSE_RE = /\bEvidence:\s*(.+)$/i;
+const EVIDENCE_CLAUSE_RE = /\bEvidence:\s*/gi;
 
 /**
  * Split a trailing `Evidence:` clause out of an AC description (#938).
@@ -175,11 +177,12 @@ function splitEvidenceClause(description: string): {
   description: string;
   evidence?: string;
 } {
-  const match = EVIDENCE_CLAUSE_RE.exec(description);
-  if (!match || match.index === undefined) return { description };
+  const matches = [...description.matchAll(EVIDENCE_CLAUSE_RE)];
+  if (matches.length === 0) return { description };
 
-  const before = description.slice(0, match.index).trim();
-  const evidence = match[1].trim();
+  const last = matches[matches.length - 1];
+  const before = description.slice(0, last.index).trim();
+  const evidence = description.slice(last.index + last[0].length).trim();
   if (!before || !evidence) return { description };
 
   return { description: before, evidence };
