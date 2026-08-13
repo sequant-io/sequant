@@ -2455,6 +2455,84 @@ For each AC returned, **execute the exact backtick-quoted command** — or verif
 
 ---
 
+### 6i. Mutation Verification (REQUIRED for gate-test ACs)
+
+**Purpose:** CLAUDE.md's testing rule — "Gate tests ship with a recorded mutation result: delete the thing it asserts, confirm exactly that test fails, restore, and record the result" — was honor-system prose until now: nothing parsed or checked the recorded result, so compliance was invisible (#830, and the same "prose only, and therefore unenforceable" defect class #834 fixed for `/qa`'s own §7 gates). This section promotes that record to a parseable `SEQUANT_MUTATION` PR-body marker and gates on it.
+
+**When to apply:** Any AC whose declared `evidence` text matches the CLAUDE.md gate-test definition — a fixture-exists / section-present / flag-wired assertion (see `isGateTestEvidence` in `ac-parser.ts`). Skip entirely when no AC in the diff is a gate-test AC (cheap short-circuit — mark N/A).
+
+> **Scope note (v1):** gate-test ACs only, not every AC with a declared runnable-command `Evidence:` clause. The population widens after a backtest measures the real authoring burden (#939 AC-5) — see that issue for the human-decision record if this scope is revisited.
+
+**How to perform:**
+
+```bash
+# 1. Identify in-scope (gate-test) ACs for this issue.
+npx tsx -e '
+(async () => {
+  const sm = await import("./src/lib/workflow/state-manager.ts");
+  const acp = await import("./src/lib/ac-parser.ts");
+  const mgr = new sm.StateManager(process.cwd());
+  const ac = await mgr.getAcceptanceCriteria(<issue-number>);
+  const gateTests = (ac?.items ?? []).filter(
+    (i) => i.evidence && acp.isGateTestEvidence(i.evidence),
+  );
+  console.log(JSON.stringify(gateTests.map((i) => ({ id: i.id, evidence: i.evidence })), null, 2));
+})();
+'
+
+# 2. Parse SEQUANT_MUTATION markers from the PR body, and check each named
+#    failedTest is actually present in this diff's test files.
+npx tsx -e '
+(async () => {
+  const mm = await import("./src/lib/workflow/mutation-marker.ts");
+  const prBody = process.argv[1];
+  const diffTestFiles = process.argv.slice(2);
+  const markers = mm.parseMutationMarkers(prBody);
+  const byAc = mm.latestMutationMarkerPerAc(markers);
+  for (const [ac, marker] of byAc) {
+    const status = mm.classifyMutationMarker(marker, diffTestFiles);
+    console.log(ac, status, marker.failedTest);
+  }
+})();
+' -- "$PR_BODY" $(git diff origin/main...HEAD --diff-filter=AM --name-only | grep -E '\.(test|spec)\.')
+```
+
+**Safety rules (carry into any manual mutation performed during this check, per #883 and the commit-before-mutating discipline):**
+- **Commit before mutating.** `git checkout <file>` to revert a mutation wipes any uncommitted edits in that file, not just the mutation.
+- **Never mutate a variable a `finally` block passes to `rmSync`.** A mutation that touches cleanup-path state can delete a worktree (#883's motivating incident).
+
+**Per-AC status outcomes:**
+
+| Status | Criteria |
+|--------|----------|
+| **Verified** | The in-scope AC has a `SEQUANT_MUTATION` marker whose `failedTest` names a test file present in the diff |
+| **Missing** | The in-scope AC has no `SEQUANT_MUTATION` marker |
+| **Failed** | The in-scope AC has a marker naming a test file NOT present in the diff — a fabricated marker is worse than a missing one |
+
+**Aggregate `mutation_verification_status`** (the single §7 step-2 token — worst case across in-scope ACs wins, mirroring §6e's per-AC-table-to-single-status rollup): `Failed` if any in-scope AC is `Failed`; else `Missing` if any in-scope AC is `Missing`; else `Verified` if every in-scope AC is `Verified`; `Not-Applicable` when no AC in the diff is a gate-test AC.
+
+**AC marking and verdict gating:**
+
+- Aggregate `Missing` → the mutation-verification gate caps the verdict at `AC_MET_BUT_NOT_A_PLUS` regardless of individual ACs' own MET status — see step 4's `mutation_verification_status == "Missing"` branch.
+- Aggregate `Failed` → floors the verdict at `AC_NOT_MET` — see step 4's `mutation_verification_status == "Failed"` branch. This is a hard floor, not a soft cap: a marker naming a test absent from the diff is affirmatively false evidence, not merely absent evidence.
+
+**Output Format:**
+
+```markdown
+### Mutation Verification
+
+| AC | Gate Test? | Marker | Status |
+|----|-----------|--------|--------|
+| AC-N | Yes | `injection.test.ts > rejects payload` | Verified |
+| AC-M | Yes | — | Missing |
+| AC-P | Yes | `nonexistent.test.ts > some test` | Failed — test not in diff |
+| AC-Q | No | — | N/A |
+
+**Status:** Verified / Missing / Failed / Not-Applicable
+```
+
+---
+
 
 ### 7. A+ Status Verdict
 
@@ -2487,6 +2565,7 @@ Provide an overall verdict:
    - behavior_rule_survival_status = status from Section 6e (Clean/Survivors Found/N/A) — REQUIRED when any AC triggers the behavior-rule heuristic, omitted otherwise
    - trust_boundary_status = status from Section 6f (Clean/Injection Acted On) — REQUIRED in **both** Standard QA and Simple Fix mode (unlike 6d, it is never omitted: an injected command is a small diff by definition)
    - declared_evidence_status = status from Section 6h (Complete/Incomplete/N/A) — REQUIRED when any AC declares evidence naming a runnable command, `N/A` otherwise
+   - mutation_verification_status = status from Section 6i (Verified/Missing/Failed/Not-Applicable) — REQUIRED when any AC is a gate-test AC per `isGateTestEvidence`, `Not-Applicable` otherwise
    - cli_registration_status = status from Section 2h (Passed/Failed/N/A) — REQUIRED when option interfaces are modified, `N/A` otherwise; omitted in Simple Fix mode along with the rest of §2h
    - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
@@ -2521,6 +2600,8 @@ Provide an overall verdict:
        → AC_NOT_MET (the diff acted on an agent-directed instruction embedded in untrusted external text — see Section 6f and _shared/references/trust-model.md; name the instruction verbatim with its path:line)
    - ELSE IF cli_registration_status == "Failed":
        → AC_NOT_MET (an option-interface field has runtime `mergedOptions.X` usage but no `.option()` registration in `bin/cli.ts`, so users cannot reach the feature from the command line — invisible to TypeScript, build, and unit tests; see Section 2h and #305. Name each unregistered field.)
+   - ELSE IF mutation_verification_status == "Failed":
+       → AC_NOT_MET (a `SEQUANT_MUTATION` marker names a test file absent from this diff — a fabricated mutation-verification record; see Section 6i and #939. A fabricated marker is worse than a missing one.)
    - ELSE IF adversarial_reread_status == "Severe Gap":
        → AC_NOT_MET (verbatim motivating-example fixture not run / evidence claim is bug reproduction not validation / AC marked MET without runtime or corpus check the AC text required)
    - ELSE IF skill_verification == "Failed":
@@ -2529,6 +2610,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (scripts not verified - cannot be READY_FOR_MERGE)
    - ELSE IF declared_evidence_status == "Incomplete":
        → AC_MET_BUT_NOT_A_PLUS (a declared `Evidence:` command was not executed/verified for one or more ACs - see Section 6h; the #853 "marked MET by construction" path)
+   - ELSE IF mutation_verification_status == "Missing":
+       → AC_MET_BUT_NOT_A_PLUS (a gate-test AC has no recorded `SEQUANT_MUTATION` marker - see Section 6i; the honor-system-prose gap #939 closes)
    - ELSE IF script_verification_status == "Not Verified":
        → AC_MET_BUT_NOT_A_PLUS (`scripts/` changed with no `/verify` evidence and no approved §11a override — code review and unit tests miss integration failures; see Section 11)
    - ELSE IF changelog_required AND changelog_missing:
@@ -2988,7 +3071,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - Skill Change Review
 - Adversarial Re-Read
 
-**Not omitted:** the Trust-Boundary Check (§6f), the Behavior-Rule Survival Check (§6e), the Declared-Evidence Execution check (§6h), and the CHANGELOG Quality Gate (§10a) are all required in simple fix mode too — each is cheap (a short-circuit to N/A when no AC qualifies), and each guards a defect class that a small diff is a *likely* carrier of rather than an unlikely one. Every `(REQUIRED` section must appear in either the required list below or the omitted list above; `scripts/lint-skill-gates.ts` (I3) fails the build on silence, because silence is how #819 F2 shipped a security check that Simple Fix mode switched off.
+**Not omitted:** the Trust-Boundary Check (§6f), the Behavior-Rule Survival Check (§6e), the Declared-Evidence Execution check (§6h), the Mutation Verification check (§6i), and the CHANGELOG Quality Gate (§10a) are all required in simple fix mode too — each is cheap (a short-circuit to N/A when no AC qualifies), and each guards a defect class that a small diff is a *likely* carrier of rather than an unlikely one — a gate test (fixture/section/flag assertion) is very often itself a small, localized diff. Every `(REQUIRED` section must appear in either the required list below or the omitted list above; `scripts/lint-skill-gates.ts` (I3) fails the build on silence, because silence is how #819 F2 shipped a security check that Simple Fix mode switched off.
 
 **Required sections for simple fix mode:**
 
@@ -3001,6 +3084,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Trust-Boundary Check** - Required in simple fix mode too (see Section 6f); "Finding:" and "Status:" lines populated
 - [ ] **Behavior-Rule Survival Check** - Required in simple fix mode too (see Section 6e): a #533-class stale-rule survival is very plausibly a sub-threshold diff. Cheap short-circuit — mark "N/A" when no AC triggers the behavior-rule heuristic
 - [ ] **Declared-Evidence Execution** - Required in simple fix mode too (see Section 6h): a declared-evidence AC marked MET without running its command is exactly the #853 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC declares evidence naming a runnable command
+- [ ] **Mutation Verification** - Required in simple fix mode too (see Section 6i): a gate-test AC merged without a recorded mutation result is exactly the #830 gap, regardless of diff size. Cheap short-circuit — mark "N/A" when no AC is a gate-test AC
 - [ ] **CHANGELOG Verification** - Required in simple fix mode too (see Section 10a): a one-line user-facing fix still needs an `[Unreleased]` entry (or marked N/A)
 - [ ] **Risk Assessment** - Likely failure mode and coverage gaps stated
 - [ ] **Verdict** - One of: READY_FOR_MERGE, AC_MET_BUT_NOT_A_PLUS, NEEDS_VERIFICATION, AC_NOT_MET
@@ -3031,6 +3115,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **CLI Registration Verification** - Included if option interfaces modified (or marked N/A — see Section 2h); `Failed` floors the verdict at `AC_NOT_MET` via §7
 - [ ] **Behavior-Rule Survival Check** - Included if any AC triggers the behavior-rule heuristic (or marked N/A — see Section 6e); `Survivors Found` floors the verdict at `AC_NOT_MET` via §7
 - [ ] **Declared-Evidence Execution** - Included if any AC declares evidence naming a runnable command (or marked N/A — see Section 6h); `Incomplete` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7, and an unexecuted AC is marked PENDING rather than MET
+- [ ] **Mutation Verification** - Included if any AC is a gate-test AC per `isGateTestEvidence` (or marked Not-Applicable — see Section 6i); `Missing` floors the verdict at `AC_MET_BUT_NOT_A_PLUS` via §7, `Failed` floors it at `AC_NOT_MET`
 - [ ] **Skill Change Review** - Skill-specific verification prompts included if skills changed
 - [ ] **Smoke Test** - Included if workflow-affecting changes (skills, scripts, CLI), or marked "Not Required"
 - [ ] **Manual Test AC Enforcement** - Included if spec plan has Manual Test ACs (or marked N/A if no manual-test ACs detected)
@@ -3148,6 +3233,16 @@ When the size gate triggers simple fix mode, use this shorter template:
 | AC-N | `<command>` or — | Yes/No/— | [pass-fail result, or "Not run — AC marked PENDING"] |
 
 **Status:** Complete / Incomplete / N/A
+
+---
+
+### Mutation Verification
+
+| AC | Gate Test? | Marker | Status |
+|----|-----------|--------|--------|
+| AC-N | Yes/No | `<file.test.ts > test name>` or — | Verified / Missing / Failed / N/A |
+
+**Status:** Verified / Missing / Failed / Not-Applicable
 
 ---
 
@@ -3530,6 +3625,19 @@ You MUST include these sections:
 | AC-P | — | — | N/A (no declared evidence) |
 
 **Status:** Complete / Incomplete / N/A
+
+---
+
+### Mutation Verification
+
+| AC | Gate Test? | Marker | Status |
+|----|-----------|--------|--------|
+| AC-N | Yes | `injection.test.ts > rejects payload` | Verified |
+| AC-M | Yes | — | Missing |
+| AC-P | Yes | `nonexistent.test.ts > some test` | Failed — test not in diff |
+| AC-Q | No | — | N/A |
+
+**Status:** Verified / Missing / Failed / Not-Applicable
 
 ---
 

@@ -234,6 +234,51 @@ export function resolveVerificationMethod(
 }
 
 /**
+ * Keywords matching the CLAUDE.md "gate test" definition — a test whose job
+ * is to gate a claim that "a fixture exists, a skill section is present, a
+ * flag is wired" (#830, #939). Distinct from {@link VERIFICATION_KEYWORDS}:
+ * those classify *how* an AC is checked (unit/integration/browser/manual),
+ * this classifies *what kind of claim* the test makes, independent of
+ * verification method.
+ *
+ * A heuristic, not a hard classifier — same caveat {@link inferVerificationMethod}
+ * already carries. Over-firing sweeps ordinary tests into the gate-test
+ * population (inflating the mutation-verification gate's authoring burden);
+ * under-firing lets a real gate test slip through ungated, the exact defect
+ * class #830 exists to prevent.
+ */
+const GATE_TEST_KEYWORDS = [
+  "fixture",
+  "section",
+  "flag",
+  "wired",
+  "exists",
+  "present",
+  "registered",
+  "skill gate",
+  // The mutation-verification rule (CLAUDE.md, #830) IS the gate-test
+  // definition — an AC that already names its own mutation-verified record
+  // is self-identifying, even when it doesn't separately name a
+  // fixture/section/flag (e.g. "lint test fails when the §7 entry is
+  // deleted (mutation-verified)").
+  "mutation-verified",
+  "mutation test",
+];
+
+/**
+ * Whether a declared `Evidence:` clause describes a CLAUDE.md-style gate
+ * test — a fixture-exists / section-present / flag-wired assertion — rather
+ * than an ordinary behavioral unit/integration test.
+ *
+ * @param evidence - The declared evidence clause text (from {@link splitEvidenceClause})
+ * @returns True when the evidence text matches the gate-test keyword set
+ */
+export function isGateTestEvidence(evidence: string): boolean {
+  const lower = evidence.toLowerCase();
+  return GATE_TEST_KEYWORDS.some((keyword) => lower.includes(keyword));
+}
+
+/**
  * Parse a single line and extract AC if present
  *
  * @param line - A single line from the issue body
