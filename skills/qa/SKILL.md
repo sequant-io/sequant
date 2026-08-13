@@ -2514,7 +2514,7 @@ npx tsx -e '
 **AC marking and verdict gating:**
 
 - Aggregate `Missing` → the mutation-verification gate caps the verdict at `AC_MET_BUT_NOT_A_PLUS` regardless of individual ACs' own MET status — see step 4's `mutation_verification_status == "Missing"` branch.
-- Aggregate `Failed` → floors the verdict at `AC_NOT_MET` — see step 4's `mutation_verification_status == "Failed"` branch. This is a hard floor, not a soft cap: a marker naming a test absent from the diff is affirmatively false evidence, not merely absent evidence.
+- Aggregate `Failed` → floor the verdict at `AC_NOT_MET` — see step 4's `mutation_verification_status == "Failed"` branch. This is a hard floor, not a soft cap: a marker naming a test absent from the diff is affirmatively false evidence, not merely absent evidence.
 
 **Output Format:**
 
