@@ -374,15 +374,19 @@ actually posted via `gh issue comment`, not just shown in this response.
 | Docs-only (`docs` label) | No | Skip testgen — no unit tests needed |
 | All ACs have "Manual Test" or "Browser Test" | No | Skip testgen — no code stubs to generate |
 
-**Detection logic:**
-1. Count ACs with "Unit Test" → If >0, recommend testgen
-2. Count ACs with "Integration Test" → If >0, recommend testgen
-3. Check labels: `bug`/`fix` only → Skip testgen. `docs` → Skip testgen.
+**Detection logic — declared evidence counts before inferred (#938):**
+
+`extractAcceptanceCriteria` resolves each AC's `verificationMethod` from a declared `Evidence:` clause when the AC line has one (`AC.evidence` is set), falling back to keyword inference only when it doesn't. Ground the recommendation in the stronger signal first:
+
+1. Count ACs with **declared** evidence (`AC.evidence` set) resolving to "Unit Test" or "Integration Test" → these are the reasoning's primary citation; if >0, recommend testgen and name them.
+2. Count remaining ACs — no declared evidence, method came from **inference** — that are "Unit Test" → if >0, recommend testgen.
+3. Count remaining inferred "Integration Test" ACs → if >0, recommend testgen.
+4. Check labels: `bug`/`fix` only → Skip testgen. `docs` → Skip testgen.
 
 **Example when testgen recommended:**
 ```markdown
 **Phases:** spec → testgen → exec → qa
-**Reasoning:** ACs include Unit Test verification methods; testgen will create stubs before implementation
+**Reasoning:** AC-1 declares evidence (`npm test -- reset-expiry`, unit_test); testgen will create stubs before implementation
 ```
 
 ### Browser Testing Label Suggestion

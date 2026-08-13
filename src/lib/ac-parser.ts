@@ -157,12 +157,88 @@ export function inferVerificationMethod(
 }
 
 /**
+ * Matches a trailing `Evidence:` clause on an AC line (#938). Only the
+ * FIRST occurrence is honored — the parser is line-anchored, so the clause
+ * must live on the same line as the AC it documents, and everything from
+ * `Evidence:` to end-of-line becomes the declaration.
+ */
+const EVIDENCE_CLAUSE_RE = /\bEvidence:\s*(.+)$/i;
+
+/**
+ * Split a trailing `Evidence:` clause out of an AC description (#938).
+ *
+ * @param description - The AC description text (post ID-stripping)
+ * @returns The description with the clause removed, plus the declared
+ *   evidence text if present
+ */
+function splitEvidenceClause(description: string): {
+  description: string;
+  evidence?: string;
+} {
+  const match = EVIDENCE_CLAUSE_RE.exec(description);
+  if (!match || match.index === undefined) return { description };
+
+  const before = description.slice(0, match.index).trim();
+  const evidence = match[1].trim();
+  if (!before || !evidence) return { description };
+
+  return { description: before, evidence };
+}
+
+/**
+ * Matches a backtick-quoted command inside a declared evidence clause.
+ * A command (vs. prose like "human review") is what makes evidence
+ * runnable/checkable rather than a manual attestation.
+ */
+const EVIDENCE_COMMAND_RE = /`([^`]+)`/;
+
+/**
+ * Command tokens that indicate a unit-test invocation. Anything else
+ * backtick-quoted (CLI commands, curl, scripts) is treated as an
+ * integration-level check.
+ */
+const UNIT_TEST_COMMAND_RE = /\b(test|vitest|jest)\b/i;
+
+/**
+ * Resolve the verification method for an AC, preferring a declared
+ * `Evidence:` clause over keyword inference (#938).
+ *
+ * - Evidence names a backtick-quoted command containing a unit-test
+ *   token (`test`, `vitest`, `jest`) → `unit_test`.
+ * - Evidence names any other backtick-quoted command → `integration_test`.
+ * - Evidence is prose with no backtick command (e.g. "human review") →
+ *   `manual`.
+ * - No evidence declared → falls back to {@link inferVerificationMethod}.
+ *
+ * @param description - The AC description text (evidence clause stripped)
+ * @param evidence - The declared evidence clause, if any
+ * @returns The resolved verification method
+ */
+export function resolveVerificationMethod(
+  description: string,
+  evidence?: string,
+): ACVerificationMethod {
+  if (evidence) {
+    const commandMatch = EVIDENCE_COMMAND_RE.exec(evidence);
+    if (commandMatch) {
+      return UNIT_TEST_COMMAND_RE.test(commandMatch[1])
+        ? "unit_test"
+        : "integration_test";
+    }
+    return "manual";
+  }
+  return inferVerificationMethod(description);
+}
+
+/**
  * Parse a single line and extract AC if present
  *
  * @param line - A single line from the issue body
  * @returns Parsed AC or null if line doesn't match
  */
-function parseACLine(line: string): { id: string; description: string } | null {
+function parseACLine(
+  line: string,
+): { id: string; description: string; evidence?: string } | null {
   for (const pattern of AC_PATTERNS) {
     // Reset regex lastIndex for global patterns
     pattern.lastIndex = 0;
@@ -170,12 +246,14 @@ function parseACLine(line: string): { id: string; description: string } | null {
     if (match) {
       // Combine groups 2 and 3 for bold-wrapped format (Pattern 3)
       // where group 3 captures optional text after closing **
-      const description = match[3]
+      const rawDescription = match[3]
         ? `${match[2].trim()} ${match[3].trim()}`.trim()
         : match[2].trim();
+      const { description, evidence } = splitEvidenceClause(rawDescription);
       return {
         id: match[1].toUpperCase(),
         description,
+        ...(evidence !== undefined ? { evidence } : {}),
       };
     }
   }
@@ -209,14 +287,15 @@ export function parseAcceptanceCriteria(
   const criteria: AcceptanceCriterion[] = [];
   const seenIds = new Set<string>();
 
-  const push = (id: string, description: string): void => {
+  const push = (id: string, description: string, evidence?: string): void => {
     if (seenIds.has(id)) return;
     seenIds.add(id);
     criteria.push(
       createAcceptanceCriterion(
         id,
         description,
-        inferVerificationMethod(description),
+        resolveVerificationMethod(description, evidence),
+        evidence,
       ),
     );
   };
@@ -251,15 +330,16 @@ export function parseAcceptanceCriteria(
     // so previously-parsable issues are unaffected (AC-4).
     const parsed = parseACLine(line);
     if (parsed) {
-      push(parsed.id, parsed.description);
+      push(parsed.id, parsed.description, parsed.evidence);
       continue;
     }
 
     // Bare-checkbox fallback: only inside the AC section (AC-1/AC-2).
     if (inAcSection) {
       const bare = line.match(BARE_CHECKBOX_RE);
-      const description = bare?.[1].trim();
-      if (description) {
+      const bareText = bare?.[1].trim();
+      if (bareText) {
+        const { description, evidence } = splitEvidenceClause(bareText);
         // Synthesize `AC-<n>`, skipping any ID already taken by an explicit
         // marker — before OR after this line — so a synthesized ID can never
         // collide with (and be silently dropped against) a hand-written one.
@@ -267,7 +347,7 @@ export function parseAcceptanceCriteria(
         do {
           id = `AC-${++bareCount}`;
         } while (seenIds.has(id) || explicitIds.has(id));
-        push(id, description);
+        push(id, description, evidence);
       }
     }
   }

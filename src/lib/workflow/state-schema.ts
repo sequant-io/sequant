@@ -178,6 +178,12 @@ export const AcceptanceCriterionSchema = z.object({
   verifiedAt: z.string().datetime().optional(),
   /** Additional notes about verification */
   notes: z.string().optional(),
+  /**
+   * Explicit `Evidence:` clause declared on the AC line (#938). When present,
+   * this is what verificationMethod was resolved from instead of keyword
+   * inference — see `resolveVerificationMethod` in ac-parser.ts.
+   */
+  evidence: z.string().optional(),
 });
 
 export type AcceptanceCriterion = z.infer<typeof AcceptanceCriterionSchema>;
@@ -435,12 +441,14 @@ export function createAcceptanceCriterion(
   id: string,
   description: string,
   verificationMethod: ACVerificationMethod = "manual",
+  evidence?: string,
 ): AcceptanceCriterion {
   return {
     id,
     description,
     verificationMethod,
     status: "pending",
+    ...(evidence !== undefined ? { evidence } : {}),
   };
 }
 
