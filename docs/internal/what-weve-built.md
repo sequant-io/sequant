@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.10.0
+# What We've Built: Sequant v2.11.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,13 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.11.0)
+
+- **Per-Phase Model & Effort** - `--models`/`--efforts` flags (and matching `.sequant/settings.json` config) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default (#914)
+- **Effort Escalation on Retries** - `--escalate-effort` raises a retried phase execution's reasoning effort one tier above its resolved base, only on observed quality-loop/QA-pass retries, never speculatively (#915)
+- **Checkout-Scoped Lock** - `sequant locks checkout <acquire|release|check|clear>` gives mutual exclusion on the shared working tree itself, enforced by the `pre-tool.sh` hook against branch-mutating git in the main checkout (#901)
+- **`sequant worktree resolve/verify`** - Resolves and verifies this repository's issue worktrees by branch rather than directory slug, closing a shared-namespace collision across `/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger` and `/assess` (#899/#904)
+
 ### Recent Additions (v2.10.0)
 
 - **Durable halt-and-resume + `sequant resume`** - A run failing on an exhausted rate-limit window writes a durable halt record and exits, releasing the per-issue lock; `sequant resume` re-enters after the window reopens — cron/launchd-safe, survives reboots (#892)
@@ -1158,7 +1165,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.10.0
+**Current Version:** 2.11.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 

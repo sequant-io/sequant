@@ -16,6 +16,13 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.11
+
+- **Per-phase `model`/`effort` configuration** — the new `sequant run`/`sequant ready` flags `--models`/`--efforts` (bare value applies to every phase, or a comma list of `phase=model` pairs) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default — e.g. planning with a stronger model and delegating implementation to a cheaper one. Absent by default: nothing changes unless configured. See [run-command.md](docs/reference/run-command.md#per-phase-model--effort).
+- **Evidence-based effort escalation on retries** — `--escalate-effort` raises a retried phase execution's reasoning effort one tier above its resolved base, built on the per-phase effort resolver above. Escalates only on *observed* retry (an outer quality-loop iteration ≥ 2, or a `sequant ready` QA-pass ≥ 2) — never speculatively — so it can only trade cost for quality, never the reverse. See [run-command.md](docs/reference/run-command.md#effort-escalation-on-retries).
+- **Checkout-scoped lock for the shared working tree** — the per-issue lock never protected the *checkout itself*: two sessions on different issues could still interleave `git checkout`/`reset`/`rebase`/`merge` in the same main working tree. `sequant locks checkout <acquire|release|check|clear>` and a `pre-tool.sh` hook now guard branch-mutating git in the main checkout directly, refusing a foreign session with the holder's identity and how to proceed (#901).
+- **`sequant worktree resolve/verify`** — resolves and verifies an issue's worktree by the branch git reports rather than a directory-name glob, closing a shared-namespace collision that could point `/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger` or `/assess` at the wrong worktree (#899, #904).
+
 ### What's new in 2.10
 
 - **`--auto-wait <minutes>` rides out a rate-limit window** — opt in and a run whose limit window is hours out sleeps until it reopens and continues, instead of halting for a manual restart (#804). **Off by default**; the value is a *total* budget per issue, capped at 2 waits. Never waits on out-of-credits failures (credits are purchased, not waited out). The wait is in-process — for waits that must survive closing the terminal or a reboot, see halt-and-resume below; an exhausted `--auto-wait` budget still writes the halt record so `sequant resume` can pick up where it gave up. See [run-command.md](docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
