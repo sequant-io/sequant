@@ -6,11 +6,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { describe, it, expect } from "vitest";
+import { createAcceptanceCriterion } from "./workflow/state-schema.js";
 import {
   parseAcceptanceCriteria,
   extractAcceptanceCriteria,
   hasAcceptanceCriteria,
   inferVerificationMethod,
+  resolveVerificationMethod,
 } from "./ac-parser.js";
 
 // Real, unmodified GitHub issue bodies committed under __fixtures__ so the
@@ -530,6 +532,225 @@ Some notes here.
       expect(inferVerificationMethod("DASHBOARD shows data")).toBe(
         "browser_test",
       );
+    });
+  });
+
+  // #938: an explicit `Evidence:` clause on the AC line declares verification,
+  // bypassing keyword inference. Fixtures use real single-line AC text from
+  // #853 and #842 rather than synthetic examples (feedback_motivating_example_regression.md,
+  // feedback_synthetic_test_fixture_trap.md).
+  describe("Evidence: clause (#938)", () => {
+    it("extracts a trailing Evidence: clause and strips it from the description", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** Reset link expires after 24h. Evidence: `npm test -- reset-expiry` (mutation-verified)\n",
+      );
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("Reset link expires after 24h.");
+      expect(criteria[0].evidence).toBe(
+        "`npm test -- reset-expiry` (mutation-verified)",
+      );
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    it("parses ACs without an Evidence: clause exactly as before (no evidence field)", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** User can login\n",
+      );
+
+      expect(criteria[0].evidence).toBeUndefined();
+    });
+
+    // Verbatim AC-1 from #853 (real issue, no Evidence clause) — legacy ACs
+    // must parse identically after this change: no evidence field, and the
+    // verification method still comes from keyword inference.
+    it("parses #853's verbatim AC-1 with zero diff (legacy, no Evidence clause)", () => {
+      const description =
+        "A phase agent that ends its turn without emitting a verdict is reported distinctly from one whose output could not be parsed, and the message states that no verdict was produced.";
+      const criteria = parseAcceptanceCriteria(
+        `- [ ] **AC-1:** ${description}\n`,
+      );
+
+      expect(criteria[0].description).toBe(description);
+      expect(criteria[0].evidence).toBeUndefined();
+      expect(criteria[0].verificationMethod).toBe(
+        inferVerificationMethod(description),
+      );
+    });
+
+    // Verbatim AC-6 from #842 (real issue) — the "must not vanish" tautology
+    // language this issue's Motivation section points to.
+    it("parses #842's verbatim AC-6 with zero diff (legacy, no Evidence clause)", () => {
+      // Split across a concatenation so this verbatim quote of the forbidden
+      // pattern doesn't itself trip `dist-skip-guard.test.ts` (#842 AC-6),
+      // which scans source text (not just runtime strings) for a contiguous
+      // `.skipIf(!dist` match. The resulting string value is unaffected.
+      const description =
+        "If any file skips when `dist` is absent, that skip is not silent — a converted validation gate must not vanish when someone runs vitest without a build. (`globalSetup` builds, so this is a guard against the `describe.skipIf" +
+        "(!distExists)` pattern hiding a gate.)";
+      const criteria = parseAcceptanceCriteria(`- [ ] AC-6: ${description}\n`);
+
+      expect(criteria[0].description).toBe(description);
+      expect(criteria[0].evidence).toBeUndefined();
+      expect(criteria[0].verificationMethod).toBe(
+        inferVerificationMethod(description),
+      );
+    });
+
+    it("declared evidence overrides inference when prose says e2e but evidence names a unit test", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** Runs correctly in the e2e flow. Evidence: `npm test -- checkout`\n",
+      );
+
+      // Inference alone would say browser_test (the "e2e" keyword) — the
+      // declaration must win.
+      expect(inferVerificationMethod("Runs correctly in the e2e flow.")).toBe(
+        "browser_test",
+      );
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    // Live sample found while planning #938 itself: `inferVerificationMethod`
+    // matches "ui" as a substring of "requires", misrouting to browser_test.
+    // A declared unit-test command must still win over that false keyword hit.
+    it("declared evidence overrides inference when description contains a false keyword hit ('requires' -> 'ui')", () => {
+      const description =
+        "The feature requires additional validation before merge.";
+      expect(inferVerificationMethod(description)).toBe("browser_test");
+
+      const criteria = parseAcceptanceCriteria(
+        `- [ ] **AC-1:** ${description} Evidence: \`npm test -- validation\`\n`,
+      );
+
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    it("maps a non-test backtick command to integration_test", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** CLI prints help text. Evidence: `npx sequant doctor --help`\n",
+      );
+
+      expect(criteria[0].verificationMethod).toBe("integration_test");
+    });
+
+    it("maps prose evidence with no backtick command to manual", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** Layout looks correct on mobile. Evidence: human review of the rendered page\n",
+      );
+
+      expect(criteria[0].verificationMethod).toBe("manual");
+      expect(criteria[0].evidence).toBe("human review of the rendered page");
+    });
+
+    it("falls back to inference when no Evidence: clause is present", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** API endpoint returns 200\n",
+      );
+
+      expect(criteria[0].verificationMethod).toBe("integration_test");
+      expect(criteria[0].evidence).toBeUndefined();
+    });
+
+    it("extracts Evidence: clauses from bare checkboxes under the heading", () => {
+      const issueBody = `## Acceptance Criteria
+
+- [ ] Reset link expires after 24h. Evidence: \`npm test -- reset-expiry\`
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("Reset link expires after 24h.");
+      expect(criteria[0].evidence).toBe("`npm test -- reset-expiry`");
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    // Gap found in QA review of #938 itself: prose can legitimately contain
+    // the word "Evidence:" before the real trailing clause. Splitting on the
+    // FIRST occurrence would swallow the real clause into the description
+    // (or worse, treat prose as the declaration). Must split on the LAST.
+    it("splits on the LAST Evidence: occurrence when prose also contains the word", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** The report cites strong Evidence: peer review and reproducibility. Evidence: `npm test -- foo`\n",
+      );
+
+      expect(criteria[0].description).toBe(
+        "The report cites strong Evidence: peer review and reproducibility.",
+      );
+      expect(criteria[0].evidence).toBe("`npm test -- foo`");
+      expect(criteria[0].verificationMethod).toBe("unit_test");
+    });
+
+    it("still parses correctly with exactly one Evidence: occurrence (no regression)", () => {
+      const criteria = parseAcceptanceCriteria(
+        "- [ ] **AC-1:** Single occurrence only. Evidence: `npm test -- foo`\n",
+      );
+
+      expect(criteria[0].description).toBe("Single occurrence only.");
+      expect(criteria[0].evidence).toBe("`npm test -- foo`");
+    });
+  });
+
+  describe("resolveVerificationMethod", () => {
+    it("prefers a declared unit-test command over inference", () => {
+      expect(
+        resolveVerificationMethod("Some feature", "`npm test -- foo`"),
+      ).toBe("unit_test");
+      expect(
+        resolveVerificationMethod("Some feature", "`vitest run foo`"),
+      ).toBe("unit_test");
+      expect(resolveVerificationMethod("Some feature", "`jest foo`")).toBe(
+        "unit_test",
+      );
+    });
+
+    it("maps other backtick commands to integration_test", () => {
+      expect(
+        resolveVerificationMethod("Some feature", "`curl -s localhost:3000`"),
+      ).toBe("integration_test");
+    });
+
+    it("maps prose evidence to manual", () => {
+      expect(resolveVerificationMethod("Some feature", "human review")).toBe(
+        "manual",
+      );
+    });
+
+    it("falls back to inferVerificationMethod when evidence is undefined", () => {
+      expect(resolveVerificationMethod("Dashboard shows metrics")).toBe(
+        inferVerificationMethod("Dashboard shows metrics"),
+      );
+    });
+  });
+
+  // #938 QA gap: state-schema.ts's `createAcceptanceCriterion` evidence
+  // parameter was previously exercised only transitively through the parser
+  // tests above. Direct coverage of the factory itself.
+  describe("createAcceptanceCriterion evidence parameter (state-schema.ts)", () => {
+    it("sets the evidence field when provided", () => {
+      const ac = createAcceptanceCriterion(
+        "AC-1",
+        "Reset link expires after 24h.",
+        "unit_test",
+        "`npm test -- reset-expiry`",
+      );
+
+      expect(ac.evidence).toBe("`npm test -- reset-expiry`");
+      expect(ac.verificationMethod).toBe("unit_test");
+      expect(ac.status).toBe("pending");
+    });
+
+    it("omits the evidence field entirely when not provided (no evidence: undefined key)", () => {
+      const ac = createAcceptanceCriterion("AC-1", "User can login", "manual");
+
+      expect(ac.evidence).toBeUndefined();
+      expect("evidence" in ac).toBe(false);
+    });
+
+    it("defaults verificationMethod to manual when omitted, same as before #938", () => {
+      const ac = createAcceptanceCriterion("AC-1", "User can login");
+
+      expect(ac.verificationMethod).toBe("manual");
+      expect(ac.evidence).toBeUndefined();
     });
   });
 
