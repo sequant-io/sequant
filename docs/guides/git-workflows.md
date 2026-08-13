@@ -32,6 +32,26 @@ By convention, worktrees live in a sibling directory:
 
 This keeps worktrees separate from the main repo while allowing easy access.
 
+### Resolving a Worktree by Issue
+
+Skills (`/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger`) resolve
+an issue's worktree through the CLI rather than globbing
+`../worktrees/feature/<issue>-*` themselves:
+
+```bash
+npx sequant worktree resolve 123          # prints the absolute path, exit 1 if none
+npx sequant worktree verify <path>        # confirm a path is a real worktree of this repo
+npx sequant worktree verify <path> --issue 123   # also require it belongs to issue 123
+```
+
+Both commands select by the **branch** `git worktree list` reports, not by
+directory name — `../worktrees/` sits outside any one repo, so a directory-name
+glob or prefix match can collide across sibling projects, or match the wrong
+issue when a worktree's folder name has drifted from its branch. `resolve`
+fails closed (`WORKTREE_NOT_FOUND` / `WORKTREE_AMBIGUOUS`) rather than
+guessing, and `verify` refuses a worktree that's missing, foreign to this
+repo, or on the wrong issue's branch.
+
 ## Merging PRs with Active Worktrees
 
 Worktrees lock their branches - you can't delete a branch that's checked out in a worktree.

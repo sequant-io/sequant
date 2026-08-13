@@ -1,10 +1,14 @@
-# Concurrency & Per-Issue Locks
+# Concurrency & Locks
 
 Sequant prevents two sessions from working on the same GitHub issue at the
 same time. When `sequant run` starts, each issue claims a per-issue lock at
 `.sequant/locks/<issue>.lock` containing the holder's PID, hostname, start
 time, and command. A second session attempting the same issue is skipped
 with a clear error and the rest of the batch continues.
+
+A separate [checkout lock](#checkout-lock) further protects the shared main
+working tree itself, since some git operations are global to the tree rather
+than scoped to one issue.
 
 ## Stale recovery
 
@@ -87,6 +91,73 @@ block.
 When the `SEQUANT_ORCHESTRATOR` env var is set (in-process or remote
 MCP-driven runs), all lock operations are no-ops — the orchestrator caller is
 responsible for any coordination.
+
+## Checkout Lock
+
+A second, separate lock protects the **shared working tree itself** —
+`.sequant/locks/checkout.lock` — because branch-mutating git (`checkout`,
+`switch`, `reset`, `rebase`, `merge`, `cherry-pick`) is global to the tree,
+while the per-issue lock above is scoped to an issue number. Two sessions
+working *different* issues never contend on their per-issue locks, but
+interleaving their `git checkout`s in the same main checkout can still race
+and corrupt each other's work.
+
+### Enforcement
+
+Unlike the per-issue lock (advisory — only the CLI checks it), the checkout
+lock is enforced by the `pre-tool.sh` hook itself: it inspects every Bash
+command an agent runs and refuses a branch-mutating git verb in the **main**
+checkout when another session holds the lock:
+
+```
+HOOK_BLOCKED: Checkout held by another session
+
+  The working tree is held by the session working #123
+  (PID 4821 on host, started 2026-08-10T14:02:00Z).
+  Command: /fullsolve 123
+
+  Branch-mutating git here would race with that session.
+
+  To proceed:
+    • Work in your own worktree: ../worktrees/feature/<your-issue>-*/
+      (create it with: ./scripts/new-feature.sh <your-issue>)
+    • Or target it explicitly: git -C <worktree> <command>
+    • If that session is gone: sequant locks checkout clear --force
+```
+
+The guard only fires in the **main** checkout — a linked worktree (its `.git`
+is a file, not a directory) is unaffected, and so is `git -C <path> ...`,
+non-mutating git, and path-restore (`git checkout [<ref>] -- <path>`).
+
+### CLI
+
+```bash
+npx sequant locks checkout acquire --issue=123 --command="my task"
+npx sequant locks checkout release --issue=123   # must name the issue you acquired under
+npx sequant locks checkout check                 # read-only probe
+npx sequant locks checkout clear --force          # clear regardless of freshness
+```
+
+`--skip-pid-check` and `--session-id` exist for skill shells, same as the
+per-issue lock — the acquiring process exits before the skill's later
+commands run, so PID-based liveness can't identify the holder; `/fullsolve`,
+`/merger`, and `/release` bind by Claude Code session id instead. `/release`
+has no issue of its own, so it claims the tree under a reserved sentinel id
+(`999999999`), rendered in `locks list` as `/release (sentinel)`.
+
+### Staleness & takeover
+
+Reuses the exact same rules as the per-issue lock above (the same
+`classifyStaleness` logic, not a reimplementation): the 24h absolute ceiling,
+same-host dead-PID recovery, the 2h cross-host TTL, and the 6h skill-lock
+TTL. `sequant locks list` shows the checkout lock as its own row, separate
+from per-issue locks (it is keyed non-numerically, so it can't collide with
+an issue number).
+
+### MCP / orchestrator mode
+
+Same as the per-issue lock — a no-op (both the CLI and the hook stand down)
+whenever `SEQUANT_ORCHESTRATOR` is set.
 
 ## Caveats
 

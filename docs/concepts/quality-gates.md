@@ -45,6 +45,17 @@ The most important gate: does the code do what the issue asked for?
 - Each AC should map to a specific code change
 - Use verifiable language ("Button shows X" not "Button looks good")
 
+### Declaring Evidence
+
+An AC can declare its own verification instead of leaving Sequant to infer one from keywords in the AC text. Add a trailing `Evidence:` clause naming the command (or describing the manual check):
+
+```markdown
+- [ ] **AC-1:** Reset link expires after 24h. Evidence: `npm test -- reset-expiry`
+- [ ] **AC-2:** Admin dashboard renders the new widget. Evidence: manual screenshot review
+```
+
+A backtick-quoted `test`/`vitest`/`jest` command resolves to a unit test; any other backtick command resolves to an integration test; prose with no command resolves to manual. `/qa` must execute the declared command (or verify a captured run) before marking that AC `MET` — an AC with an `Evidence:` clause can't be marked `MET` by inference alone. ACs without a clause fall back to the existing keyword-based inference, so existing issues are unaffected.
+
 ## Type Safety
 
 Catches type-related issues that can cause runtime errors.
