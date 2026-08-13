@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-08-13
+
 ### Added
 
 - **Per-phase `model`/`effort` configuration for the claude-code driver (#914)** — `.sequant/settings.json`'s `run.phases.<phase>.{model,effort}` and the new `sequant run`/`sequant ready` flags `--models`/`--efforts` (bare value applies to every phase, or a comma list of `phase=model` pairs) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default — e.g. planning with a stronger model and delegating implementation to a cheaper one. Absent by default: with nothing configured, the `query()` options object omits both fields entirely and every phase behaves exactly as before. Resolution is CLI > settings > absent, via one shared `resolvePhasePolicies` resolver that both `buildExecutionConfig` (the `run` path) and `ready-gate.ts`'s `buildPhaseConfig` (the `ready` path) call, so the two producers cannot drift the way the #833 `phaseTimeout` producers once did. Because of an upstream limitation (anthropics/claude-code#43869, tracked internally as #632), a spawned subagent inherits its parent session's model rather than its own frontmatter — so setting a phase's model governs every subagent that phase spawns, not just the top-level agent. The Aider driver is unaffected (it only ever reads its own `AiderSettings.model`). See [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort).
