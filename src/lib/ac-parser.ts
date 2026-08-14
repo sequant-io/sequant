@@ -266,15 +266,35 @@ const GATE_TEST_KEYWORDS = [
 ];
 
 /**
+ * Phrases that mark evidence as a human-review attestation rather than an
+ * automated gate test, even when a {@link GATE_TEST_KEYWORDS} term also
+ * appears (#939 QA finding: "reviewed manually, fixture exists in the demo
+ * env" false-positived on `fixture` alone). Checked first and short-circuits
+ * to `false` — a human sign-off is not the mutation-verifiable claim §6i
+ * gates on, regardless of which nouns it happens to mention.
+ */
+const MANUAL_REVIEW_NEGATIVE_SIGNALS = [
+  "reviewed manually",
+  "manual review",
+  "human review",
+  "manually verified",
+  "manually confirmed",
+];
+
+/**
  * Whether a declared `Evidence:` clause describes a CLAUDE.md-style gate
  * test — a fixture-exists / section-present / flag-wired assertion — rather
- * than an ordinary behavioral unit/integration test.
+ * than an ordinary behavioral unit/integration test or a human sign-off.
  *
  * @param evidence - The declared evidence clause text (from {@link splitEvidenceClause})
- * @returns True when the evidence text matches the gate-test keyword set
+ * @returns True when the evidence text matches the gate-test keyword set and
+ *   does not read as a manual-review attestation
  */
 export function isGateTestEvidence(evidence: string): boolean {
   const lower = evidence.toLowerCase();
+  if (MANUAL_REVIEW_NEGATIVE_SIGNALS.some((signal) => lower.includes(signal))) {
+    return false;
+  }
   return GATE_TEST_KEYWORDS.some((keyword) => lower.includes(keyword));
 }
 

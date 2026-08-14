@@ -2480,18 +2480,20 @@ npx tsx -e '
 })();
 '
 
-# 2. Parse SEQUANT_MUTATION markers from the PR body, and check each named
-#    failedTest is actually present in this diff's test files.
+# 2. Parse SEQUANT_MUTATION markers from the PR body — this single call
+#    both parses AND rejects: given the diff's test-file paths, each
+#    returned marker carries a "classification" ("valid" or
+#    "test_not_in_diff"), so a marker naming a test absent from the diff
+#    is surfaced, not silently dropped.
 npx tsx -e '
 (async () => {
   const mm = await import("./src/lib/workflow/mutation-marker.ts");
   const prBody = process.argv[1];
   const diffTestFiles = process.argv.slice(2);
-  const markers = mm.parseMutationMarkers(prBody);
-  const byAc = mm.latestMutationMarkerPerAc(markers);
+  const markers = mm.parseMutationMarkers(prBody, diffTestFiles);
+  const byAc = new Map(markers.map((m) => [m.ac, m]));
   for (const [ac, marker] of byAc) {
-    const status = mm.classifyMutationMarker(marker, diffTestFiles);
-    console.log(ac, status, marker.failedTest);
+    console.log(ac, marker.classification, marker.failedTest);
   }
 })();
 ' -- "$PR_BODY" $(git diff origin/main...HEAD --diff-filter=AM --name-only | grep -E '\.(test|spec)\.')

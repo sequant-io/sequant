@@ -35,19 +35,13 @@ const MutationMarkerSchema = z.object({
 
 export type MutationMarker = z.infer<typeof MutationMarkerSchema>;
 
-/**
- * Parse every `SEQUANT_MUTATION` marker from a PR body.
- *
- * Markers inside fenced code blocks or inline code (e.g. a doc example
- * showing the marker format) are ignored, matching `parsePhaseMarkers`.
- * Malformed JSON or schema-invalid entries are skipped silently rather than
- * thrown — one bad marker must not take down the rest of the PR body's
- * markers.
- *
- * @param prBody - The full PR body text
- * @returns Every valid marker found, in document order
- */
-export function parseMutationMarkers(prBody: string): MutationMarker[] {
+export type MutationMarkerClassification = "valid" | "test_not_in_diff";
+
+export interface ClassifiedMutationMarker extends MutationMarker {
+  classification: MutationMarkerClassification;
+}
+
+function parseMarkersRaw(prBody: string): MutationMarker[] {
   const markers: MutationMarker[] = [];
   const stripped = stripMarkdownCode(prBody);
   MUTATION_MARKER_REGEX.lastIndex = 0;
@@ -70,6 +64,49 @@ export function parseMutationMarkers(prBody: string): MutationMarker[] {
 }
 
 /**
+ * Parse every `SEQUANT_MUTATION` marker from a PR body.
+ *
+ * Markers inside fenced code blocks or inline code (e.g. a doc example
+ * showing the marker format) are ignored, matching `parsePhaseMarkers`.
+ * Malformed JSON or schema-invalid entries are skipped silently rather than
+ * thrown — one bad marker must not take down the rest of the PR body's
+ * markers.
+ *
+ * Called with just `prBody`, this only parses. Given a second argument —
+ * the diff's test-file paths — it also **rejects** markers naming a test
+ * absent from the diff, attaching a `classification` to each result rather
+ * than silently dropping the rejected ones (a fabricated marker is worse
+ * than a missing one; it must be visible, not discarded). The two-argument
+ * form is what makes this function itself the rejecting entry point AC-3
+ * names, while the one-argument form stays free of a git-diff dependency
+ * for parser-only tests.
+ *
+ * @param prBody - The full PR body text
+ * @param diffTestFiles - When provided, test file paths present in the PR's
+ *   diff; each returned marker is classified against them
+ * @returns Every valid marker found, in document order — classified when
+ *   `diffTestFiles` is provided
+ */
+export function parseMutationMarkers(prBody: string): MutationMarker[];
+export function parseMutationMarkers(
+  prBody: string,
+  diffTestFiles: string[],
+): ClassifiedMutationMarker[];
+export function parseMutationMarkers(
+  prBody: string,
+  diffTestFiles?: string[],
+): MutationMarker[] | ClassifiedMutationMarker[] {
+  const markers = parseMarkersRaw(prBody);
+  if (diffTestFiles === undefined) {
+    return markers;
+  }
+  return markers.map((marker) => ({
+    ...marker,
+    classification: classifyMutationMarker(marker, diffTestFiles),
+  }));
+}
+
+/**
  * Reduce a marker list to one-per-AC, the later marker winning.
  *
  * A re-run's marker (e.g. after amending the PR body) supersedes the
@@ -88,8 +125,6 @@ export function latestMutationMarkerPerAc(
   }
   return byAc;
 }
-
-export type MutationMarkerClassification = "valid" | "test_not_in_diff";
 
 /**
  * Classify a marker's `failedTest` against the diff's actual test files.

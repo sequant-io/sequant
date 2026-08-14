@@ -847,5 +847,23 @@ Some notes here.
         false,
       );
     });
+
+    // Regression: manual-review attestations must not false-positive on a
+    // gate-test keyword they happen to mention (#939 QA finding).
+    it("should return false for a manual-review attestation that mentions a gate-test keyword", () => {
+      expect(
+        isGateTestEvidence("reviewed manually, fixture exists in the demo env"),
+      ).toBe(false);
+    });
+
+    it("should return false for 'human review' evidence mentioning 'section'", () => {
+      expect(
+        isGateTestEvidence("human review confirmed the section is present"),
+      ).toBe(false);
+    });
+
+    it("should still return true for a genuine gate-test claim with no manual-review language", () => {
+      expect(isGateTestEvidence("the flag is wired in bin/cli.ts")).toBe(true);
+    });
   });
 });

@@ -114,4 +114,48 @@ describe("mutation-marker", () => {
       expect(classifyMutationMarker(marker, [])).toBe("test_not_in_diff");
     });
   });
+
+  describe("parseMutationMarkers(prBody, diffTestFiles) — AC-3's rejecting entry point", () => {
+    it("attaches a valid classification when the failedTest file is in the diff", () => {
+      const body = `<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"removed payload fixture","failedTest":"src/lib/__tests__/injection.test.ts > rejects payload"} -->`;
+      const markers = parseMutationMarkers(body, [
+        "src/lib/__tests__/injection.test.ts",
+      ]);
+      expect(markers).toEqual([
+        {
+          ac: "AC-3",
+          mutation: "removed payload fixture",
+          failedTest: "src/lib/__tests__/injection.test.ts > rejects payload",
+          classification: "valid",
+        },
+      ]);
+    });
+
+    it("rejects (classifies test_not_in_diff) a marker naming a test absent from the diff, without dropping it", () => {
+      const body = `<!-- SEQUANT_MUTATION: {"ac":"AC-9","mutation":"deleted fixture","failedTest":"nonexistent.test.ts > some test"} -->`;
+      const markers = parseMutationMarkers(body, [
+        "src/lib/__tests__/injection.test.ts",
+      ]);
+      expect(markers).toHaveLength(1);
+      expect(markers[0].classification).toBe("test_not_in_diff");
+    });
+
+    it("classifies multiple markers independently in one call", () => {
+      const body = `
+<!-- SEQUANT_MUTATION: {"ac":"AC-1","mutation":"m1","failedTest":"real.test.ts > t"} -->
+<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"m2","failedTest":"fake.test.ts > t"} -->
+`;
+      const markers = parseMutationMarkers(body, ["real.test.ts"]);
+      expect(markers.map((m) => m.classification)).toEqual([
+        "valid",
+        "test_not_in_diff",
+      ]);
+    });
+
+    it("with no second argument, returns plain markers with no classification field", () => {
+      const body = `<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"m","failedTest":"f.test.ts > t"} -->`;
+      const markers = parseMutationMarkers(body);
+      expect(markers[0]).not.toHaveProperty("classification");
+    });
+  });
 });
