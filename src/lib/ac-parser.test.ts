@@ -13,6 +13,7 @@ import {
   hasAcceptanceCriteria,
   inferVerificationMethod,
   resolveVerificationMethod,
+  isGateTestEvidence,
 } from "./ac-parser.js";
 
 // Real, unmodified GitHub issue bodies committed under __fixtures__ so the
@@ -790,6 +791,79 @@ Some notes here.
 
     it("should return false when no AC exists", () => {
       expect(hasAcceptanceCriteria("No criteria")).toBe(false);
+    });
+  });
+
+  describe("isGateTestEvidence", () => {
+    // True positives, pulled from real merged-PR evidence text (#938, #834)
+    // rather than synthetic-only phrasing.
+    it("should return true for 'skill gate test scoped to the §7 collection list, mutation-verified per this issue's own rule.'", () => {
+      expect(
+        isGateTestEvidence(
+          "skill gate test scoped to the §7 collection list, mutation-verified per this issue's own rule.",
+        ),
+      ).toBe(true);
+    });
+
+    it("should return true for 'lint test fails when the §7 entry is deleted (mutation-verified).'", () => {
+      expect(
+        isGateTestEvidence(
+          "lint test fails when the §7 entry is deleted (mutation-verified).",
+        ),
+      ).toBe(true);
+    });
+
+    it("should return true for evidence naming a fixture", () => {
+      expect(
+        isGateTestEvidence(
+          "delete the injection fixture's payload and confirm the test fails",
+        ),
+      ).toBe(true);
+    });
+
+    it("should return true for evidence naming a wired flag", () => {
+      expect(
+        isGateTestEvidence(
+          "confirm --force is registered and wired in bin/cli.ts",
+        ),
+      ).toBe(true);
+    });
+
+    // True negatives — ordinary behavioral evidence, not a gate-test claim.
+    it("should return false for an ordinary unit-test command", () => {
+      expect(isGateTestEvidence("`npm test -- reset-expiry`")).toBe(false);
+    });
+
+    it("should return false for prose describing a runtime scenario", () => {
+      expect(
+        isGateTestEvidence(
+          "unit tests with valid, absent-test, and malformed-JSON markers.",
+        ),
+      ).toBe(false);
+    });
+
+    it("should return false for a corpus/backtest evidence clause", () => {
+      expect(isGateTestEvidence("counts and method in the PR body.")).toBe(
+        false,
+      );
+    });
+
+    // Regression: manual-review attestations must not false-positive on a
+    // gate-test keyword they happen to mention (#939 QA finding).
+    it("should return false for a manual-review attestation that mentions a gate-test keyword", () => {
+      expect(
+        isGateTestEvidence("reviewed manually, fixture exists in the demo env"),
+      ).toBe(false);
+    });
+
+    it("should return false for 'human review' evidence mentioning 'section'", () => {
+      expect(
+        isGateTestEvidence("human review confirmed the section is present"),
+      ).toBe(false);
+    });
+
+    it("should still return true for a genuine gate-test claim with no manual-review language", () => {
+      expect(isGateTestEvidence("the flag is wired in bin/cli.ts")).toBe(true);
     });
   });
 });
