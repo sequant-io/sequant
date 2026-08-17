@@ -149,8 +149,10 @@ function escapeRegExp(literal: string): string {
  * @param allowPlural - Also match a trailing "s" (e.g. `flag` -> `flags`).
  *   Only meaningful for single nouns/verbs that commonly appear inflected
  *   in prose; multi-word phrases never need it.
+ *
+ * @internal Exported for testing only — not part of the module's public API.
  */
-function keywordMatcher(keyword: string, allowPlural = false): RegExp {
+export function keywordMatcher(keyword: string, allowPlural = false): RegExp {
   const escaped = escapeRegExp(keyword);
   const pattern = allowPlural ? `\\b${escaped}s?\\b` : `\\b${escaped}\\b`;
   return new RegExp(pattern, "i");

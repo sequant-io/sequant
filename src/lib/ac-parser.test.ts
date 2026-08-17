@@ -14,6 +14,7 @@ import {
   inferVerificationMethod,
   resolveVerificationMethod,
   isGateTestEvidence,
+  keywordMatcher,
 } from "./ac-parser.js";
 
 // Real, unmodified GitHub issue bodies committed under __fixtures__ so the
@@ -923,6 +924,71 @@ Some notes here.
       expect(
         isGateTestEvidence("both sections are present in the SKILL.md"),
       ).toBe(true);
+    });
+  });
+
+  // #946 gap-fix: keywordMatcher itself had no direct test, so its
+  // metacharacter-escaping path was only ever exercised through keyword
+  // lists that happen to contain no regex-special characters — a change
+  // introducing a keyword with one (e.g. "c++") would have gone untested.
+  describe("keywordMatcher", () => {
+    it("escapes regex metacharacters in the keyword literal", () => {
+      // "a+b" contains a literal `+` bounded by word characters on both
+      // sides (required for \b to anchor meaningfully). Unescaped, `\ba+b\b`
+      // would interpret `+` as "one or more of the preceding char" and
+      // wrongly match plain "ab". Escaped, only the literal "a+b" matches.
+      const re = keywordMatcher("a+b");
+      expect(re.test("the a+b operator")).toBe(true);
+      expect(re.test("the ab operator")).toBe(false);
+    });
+
+    it("does not let an unescaped metacharacter match unrelated text", () => {
+      // "a.b" — an unescaped `.` would match any character, so "aXb" would
+      // wrongly match. Escaped, only the literal "a.b" matches.
+      const re = keywordMatcher("a.b");
+      expect(re.test("the a.b config key")).toBe(true);
+      expect(re.test("the aXb config key")).toBe(false);
+    });
+
+    it("with allowPlural=false matches only the exact word, not its plural", () => {
+      const re = keywordMatcher("flag");
+      expect(re.test("the flag is set")).toBe(true);
+      expect(re.test("the flags are set")).toBe(false);
+    });
+
+    it("with allowPlural=true matches both the exact word and its plural", () => {
+      const re = keywordMatcher("flag", true);
+      expect(re.test("the flag is set")).toBe(true);
+      expect(re.test("the flags are set")).toBe(true);
+    });
+  });
+
+  // #946 gap-fix: pins down which GATE_TEST_* keywords are plural-tolerant.
+  // A future edit that adds a keyword to the wrong list (e.g. moving
+  // "registered" into the plural-tolerant set, or vice versa) fails this
+  // test instead of silently changing match behavior unnoticed.
+  describe("GATE_TEST keyword plural-tolerance boundaries (#946)", () => {
+    it("plural-tolerant keywords (fixture, section, flag, present) match their plural form", () => {
+      expect(isGateTestEvidence("the fixtures are in place")).toBe(true);
+      expect(isGateTestEvidence("both sections match")).toBe(true);
+      expect(isGateTestEvidence("the flags are set")).toBe(true);
+      expect(isGateTestEvidence("the report presents two cases")).toBe(true);
+    });
+
+    it("non-plural-tolerant keywords (wired, exists, registered) do NOT match an appended-s form", () => {
+      // "wireds"/"existss"/"registereds" aren't real words, but if someone
+      // mistakenly added plural tolerance to these keywords, these forms
+      // would start matching — this test would catch that regression.
+      expect(isGateTestEvidence("the cable wireds through the wall")).toBe(
+        false,
+      );
+      expect(isGateTestEvidence("the file existss on disk")).toBe(false);
+      // Uses "setting" rather than "flag" as filler — "flag" is itself a
+      // plural-tolerant keyword and would match on its own, defeating the
+      // point of isolating "registereds".
+      expect(isGateTestEvidence("the setting registereds correctly")).toBe(
+        false,
+      );
     });
   });
 });
