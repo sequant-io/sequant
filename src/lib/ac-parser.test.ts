@@ -14,6 +14,7 @@ import {
   inferVerificationMethod,
   resolveVerificationMethod,
   isGateTestEvidence,
+  keywordMatcher,
 } from "./ac-parser.js";
 
 // Real, unmodified GitHub issue bodies committed under __fixtures__ so the
@@ -534,6 +535,35 @@ Some notes here.
         "browser_test",
       );
     });
+
+    // #946 AC-1: word-boundary anchoring — single-word keywords must not
+    // match as substrings of unrelated words ("ui" inside "requires").
+    it("does not match single-word keywords as substrings of unrelated words (#946 AC-1)", () => {
+      expect(
+        inferVerificationMethod(
+          "The feature requires additional validation before merge.",
+        ),
+      ).toBe("manual");
+      // "ui" also hides inside "quick", "guidance", "building".
+      expect(inferVerificationMethod("A quick guidance note.")).toBe("manual");
+      expect(inferVerificationMethod("Building the release artifact.")).toBe(
+        "manual",
+      );
+    });
+
+    // #946 AC-2: standalone real-word keyword matches keep working under
+    // word-boundary anchoring (regression guard for the AC-1 fix above).
+    it("still matches single-word keywords as standalone real words (#946 AC-2)", () => {
+      expect(inferVerificationMethod("UI shows error message")).toBe(
+        "browser_test",
+      );
+      expect(inferVerificationMethod("Click button to submit")).toBe(
+        "browser_test",
+      );
+      expect(inferVerificationMethod("Dashboard shows metrics")).toBe(
+        "browser_test",
+      );
+    });
   });
 
   // #938: an explicit `Evidence:` clause on the AC line declares verification,
@@ -612,12 +642,15 @@ Some notes here.
     });
 
     // Live sample found while planning #938 itself: `inferVerificationMethod`
-    // matches "ui" as a substring of "requires", misrouting to browser_test.
-    // A declared unit-test command must still win over that false keyword hit.
-    it("declared evidence overrides inference when description contains a false keyword hit ('requires' -> 'ui')", () => {
+    // used to match "ui" as a substring of "requires", misrouting to
+    // browser_test. #946 fixed the inference (see the AC-1 test above), so
+    // this now checks the other half of the original scenario: a declared
+    // unit-test command still wins over inference even where inference is
+    // no longer wrong — the declaration takes priority regardless.
+    it("declared evidence overrides inference for a description that no longer false-hits ('requires' -> 'ui', #946)", () => {
       const description =
         "The feature requires additional validation before merge.";
-      expect(inferVerificationMethod(description)).toBe("browser_test");
+      expect(inferVerificationMethod(description)).toBe("manual");
 
       const criteria = parseAcceptanceCriteria(
         `- [ ] **AC-1:** ${description} Evidence: \`npm test -- validation\`\n`,
@@ -864,6 +897,98 @@ Some notes here.
 
     it("should still return true for a genuine gate-test claim with no manual-review language", () => {
       expect(isGateTestEvidence("the flag is wired in bin/cli.ts")).toBe(true);
+    });
+
+    // #946 AC-4: same substring-match bug as inferVerificationMethod, on
+    // the sibling GATE_TEST_KEYWORDS list — "present" inside "represents",
+    // "section" inside "intersection", "flag" inside "camouflage".
+    it("should not match single-word gate-test keywords as substrings of unrelated words (#946 AC-4)", () => {
+      expect(
+        isGateTestEvidence("the report represents each hit as a row"),
+      ).toBe(false);
+      expect(
+        isGateTestEvidence("counted at the intersection of both corpora"),
+      ).toBe(false);
+      expect(
+        isGateTestEvidence("the uniform is a shade of camouflage green"),
+      ).toBe(false);
+    });
+
+    it("should match plural/inflected forms of gate-test keywords (#946 AC-4)", () => {
+      expect(isGateTestEvidence("the flags are wired in bin/cli.ts")).toBe(
+        true,
+      );
+      expect(isGateTestEvidence("the fixtures exist in __fixtures__/")).toBe(
+        true,
+      );
+      expect(
+        isGateTestEvidence("both sections are present in the SKILL.md"),
+      ).toBe(true);
+    });
+  });
+
+  // #946 gap-fix: keywordMatcher itself had no direct test, so its
+  // metacharacter-escaping path was only ever exercised through keyword
+  // lists that happen to contain no regex-special characters — a change
+  // introducing a keyword with one (e.g. "c++") would have gone untested.
+  describe("keywordMatcher", () => {
+    it("escapes regex metacharacters in the keyword literal", () => {
+      // "a+b" contains a literal `+` bounded by word characters on both
+      // sides (required for \b to anchor meaningfully). Unescaped, `\ba+b\b`
+      // would interpret `+` as "one or more of the preceding char" and
+      // wrongly match plain "ab". Escaped, only the literal "a+b" matches.
+      const re = keywordMatcher("a+b");
+      expect(re.test("the a+b operator")).toBe(true);
+      expect(re.test("the ab operator")).toBe(false);
+    });
+
+    it("does not let an unescaped metacharacter match unrelated text", () => {
+      // "a.b" — an unescaped `.` would match any character, so "aXb" would
+      // wrongly match. Escaped, only the literal "a.b" matches.
+      const re = keywordMatcher("a.b");
+      expect(re.test("the a.b config key")).toBe(true);
+      expect(re.test("the aXb config key")).toBe(false);
+    });
+
+    it("with allowPlural=false matches only the exact word, not its plural", () => {
+      const re = keywordMatcher("flag");
+      expect(re.test("the flag is set")).toBe(true);
+      expect(re.test("the flags are set")).toBe(false);
+    });
+
+    it("with allowPlural=true matches both the exact word and its plural", () => {
+      const re = keywordMatcher("flag", true);
+      expect(re.test("the flag is set")).toBe(true);
+      expect(re.test("the flags are set")).toBe(true);
+    });
+  });
+
+  // #946 gap-fix: pins down which GATE_TEST_* keywords are plural-tolerant.
+  // A future edit that adds a keyword to the wrong list (e.g. moving
+  // "registered" into the plural-tolerant set, or vice versa) fails this
+  // test instead of silently changing match behavior unnoticed.
+  describe("GATE_TEST keyword plural-tolerance boundaries (#946)", () => {
+    it("plural-tolerant keywords (fixture, section, flag, present) match their plural form", () => {
+      expect(isGateTestEvidence("the fixtures are in place")).toBe(true);
+      expect(isGateTestEvidence("both sections match")).toBe(true);
+      expect(isGateTestEvidence("the flags are set")).toBe(true);
+      expect(isGateTestEvidence("the report presents two cases")).toBe(true);
+    });
+
+    it("non-plural-tolerant keywords (wired, exists, registered) do NOT match an appended-s form", () => {
+      // "wireds"/"existss"/"registereds" aren't real words, but if someone
+      // mistakenly added plural tolerance to these keywords, these forms
+      // would start matching — this test would catch that regression.
+      expect(isGateTestEvidence("the cable wireds through the wall")).toBe(
+        false,
+      );
+      expect(isGateTestEvidence("the file existss on disk")).toBe(false);
+      // Uses "setting" rather than "flag" as filler — "flag" is itself a
+      // plural-tolerant keyword and would match on its own, defeating the
+      // point of isolating "registereds".
+      expect(isGateTestEvidence("the setting registereds correctly")).toBe(
+        false,
+      );
     });
   });
 });
