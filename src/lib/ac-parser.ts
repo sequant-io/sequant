@@ -100,6 +100,52 @@ const HEADING_RE = /^#{1,6}\s+/;
 const BARE_CHECKBOX_RE = /^-\s*\[[x\s]\]\s*(.+)$/i;
 
 /**
+ * Matches a fenced-code-block delimiter line (` ``` ` or `~~~`, 3+ repeats).
+ * Used to compute {@link computeFenceMask} so AC-authoring examples inside a
+ * fence — e.g. an issue body that quotes `- [ ] **AC-1:** ...` syntax as
+ * documentation — are excluded from the real-AC scan (#947).
+ */
+const FENCE_DELIMITER_RE = /^\s*(`{3,}|~{3,})/;
+
+/**
+ * Compute, for every line of a split issue body, whether that line falls
+ * inside a fenced code block (CommonMark rules: matching delimiter character,
+ * closing fence length >= opening fence length; an unclosed fence runs to
+ * EOF). The delimiter lines themselves are marked `true` — they're fence
+ * syntax, not real content, so patterns should skip them too.
+ *
+ * A shared mask (rather than inline state in each loop) keeps the main scan
+ * and the `explicitIds` pre-scan in {@link parseAcceptanceCriteria} from
+ * disagreeing about fence boundaries.
+ */
+function computeFenceMask(lines: string[]): boolean[] {
+  const mask = new Array<boolean>(lines.length).fill(false);
+  let fenceChar: string | null = null;
+  let fenceLen = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(FENCE_DELIMITER_RE);
+
+    if (fenceChar === null) {
+      if (match) {
+        fenceChar = match[1][0];
+        fenceLen = match[1].length;
+        mask[i] = true;
+      }
+      continue;
+    }
+
+    mask[i] = true;
+    if (match && match[1][0] === fenceChar && match[1].length >= fenceLen) {
+      fenceChar = null;
+      fenceLen = 0;
+    }
+  }
+
+  return mask;
+}
+
+/**
  * Keywords that suggest verification method
  */
 const VERIFICATION_KEYWORDS: Record<string, ACVerificationMethod> = {
@@ -424,6 +470,10 @@ export function parseAcceptanceCriteria(
   // rule as `parseNonGoals` in ready-gate.ts). `bareCount` numbers synthesized
   // IDs for bare checkboxes in appearance order.
   const lines = issueBody.split("\n");
+  // Lines inside a fenced code block (#947) — an AC-authoring example shown
+  // in a fence must not be scanned as a real AC, or toggle the AC-section
+  // heading state, in either pass below.
+  const fenceMask = computeFenceMask(lines);
   let inAcSection = false;
   let bareCount = 0;
 
@@ -433,12 +483,16 @@ export function parseAcceptanceCriteria(
   // synthesizes AC-1 first and the author's explicit AC-1 is silently dropped
   // by the first-occurrence dedupe.
   const explicitIds = new Set<string>();
-  for (const line of lines) {
-    const parsed = parseACLine(line);
+  for (let i = 0; i < lines.length; i++) {
+    if (fenceMask[i]) continue;
+    const parsed = parseACLine(lines[i]);
     if (parsed) explicitIds.add(parsed.id);
   }
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (fenceMask[i]) continue;
+
     if (HEADING_RE.test(line)) {
       inAcSection = AC_HEADING_RE.test(line);
       continue;
