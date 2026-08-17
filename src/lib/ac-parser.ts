@@ -132,6 +132,45 @@ const VERIFICATION_KEYWORDS: Record<string, ACVerificationMethod> = {
 };
 
 /**
+ * Escape regex metacharacters in a literal keyword before embedding it in a
+ * constructed RegExp.
+ */
+function escapeRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Build a word-boundary-anchored, case-insensitive matcher for a keyword.
+ * `\b` sits correctly around spaces and hyphens too, so this is safe for
+ * both single words ("ui") and phrases ("end-to-end", "unit test") — a
+ * phrase already reads as self-anchoring under plain substring matching,
+ * and anchoring it doesn't change that (#946).
+ *
+ * @param allowPlural - Also match a trailing "s" (e.g. `flag` -> `flags`).
+ *   Only meaningful for single nouns/verbs that commonly appear inflected
+ *   in prose; multi-word phrases never need it.
+ *
+ * @internal Exported for testing only — not part of the module's public API.
+ */
+export function keywordMatcher(keyword: string, allowPlural = false): RegExp {
+  const escaped = escapeRegExp(keyword);
+  const pattern = allowPlural ? `\\b${escaped}s?\\b` : `\\b${escaped}\\b`;
+  return new RegExp(pattern, "i");
+}
+
+/**
+ * Precompiled, longest-keyword-first matchers for {@link VERIFICATION_KEYWORDS}.
+ * Longest-first preserves the original precedence (e.g. "unit test" wins
+ * over a lone "unit").
+ */
+const VERIFICATION_KEYWORD_MATCHERS: Array<{
+  regex: RegExp;
+  method: ACVerificationMethod;
+}> = Object.entries(VERIFICATION_KEYWORDS)
+  .sort((a, b) => b[0].length - a[0].length)
+  .map(([keyword, method]) => ({ regex: keywordMatcher(keyword), method }));
+
+/**
  * Infer verification method from description text
  *
  * @param description - The AC description text
@@ -140,16 +179,9 @@ const VERIFICATION_KEYWORDS: Record<string, ACVerificationMethod> = {
 export function inferVerificationMethod(
   description: string,
 ): ACVerificationMethod {
-  const lowerDesc = description.toLowerCase();
-
-  // Check for explicit keywords (longer phrases first)
-  const sortedKeywords = Object.keys(VERIFICATION_KEYWORDS).sort(
-    (a, b) => b.length - a.length,
-  );
-
-  for (const keyword of sortedKeywords) {
-    if (lowerDesc.includes(keyword)) {
-      return VERIFICATION_KEYWORDS[keyword];
+  for (const { regex, method } of VERIFICATION_KEYWORD_MATCHERS) {
+    if (regex.test(description)) {
+      return method;
     }
   }
 
@@ -247,27 +279,45 @@ export function resolveVerificationMethod(
  * under-firing lets a real gate test slip through ungated, the exact defect
  * class #830 exists to prevent.
  */
-const GATE_TEST_KEYWORDS = [
-  "fixture",
-  "section",
-  "flag",
-  "wired",
-  "exists",
-  "present",
-  "registered",
+/**
+ * Single-word gate-test keywords that commonly appear inflected/pluralized
+ * in evidence prose ("flags are wired", "fixtures exist", "the section
+ * presents..."). Matched with an optional trailing "s" (#946 AC-4) so
+ * anchoring to word boundaries doesn't lose those forms.
+ */
+const GATE_TEST_PLURAL_KEYWORDS = ["fixture", "section", "flag", "present"];
+
+/**
+ * Single-word gate-test keywords with no natural plural/inflection needed
+ * for this AC's evidence phrasing — matched as exact words only.
+ */
+const GATE_TEST_SINGULAR_KEYWORDS = ["wired", "exists", "registered"];
+
+/**
+ * Multi-word gate-test phrases, matched as substrings (already
+ * self-anchoring, same rationale as {@link VERIFICATION_KEYWORDS} phrases).
+ *
+ * The mutation-verification rule (CLAUDE.md, #830) IS the gate-test
+ * definition — an AC that already names its own mutation-verified record
+ * is self-identifying, even when it doesn't separately name a
+ * fixture/section/flag (e.g. "lint test fails when the §7 entry is
+ * deleted (mutation-verified)").
+ */
+const GATE_TEST_PHRASE_KEYWORDS = [
   "skill gate",
-  // The mutation-verification rule (CLAUDE.md, #830) IS the gate-test
-  // definition — an AC that already names its own mutation-verified record
-  // is self-identifying, even when it doesn't separately name a
-  // fixture/section/flag (e.g. "lint test fails when the §7 entry is
-  // deleted (mutation-verified)").
   "mutation-verified",
   "mutation test",
 ];
 
+const GATE_TEST_KEYWORD_MATCHERS: RegExp[] = [
+  ...GATE_TEST_PLURAL_KEYWORDS.map((k) => keywordMatcher(k, true)),
+  ...GATE_TEST_SINGULAR_KEYWORDS.map((k) => keywordMatcher(k)),
+  ...GATE_TEST_PHRASE_KEYWORDS.map((k) => keywordMatcher(k)),
+];
+
 /**
  * Phrases that mark evidence as a human-review attestation rather than an
- * automated gate test, even when a {@link GATE_TEST_KEYWORDS} term also
+ * automated gate test, even when a {@link GATE_TEST_KEYWORD_MATCHERS} term also
  * appears (#939 QA finding: "reviewed manually, fixture exists in the demo
  * env" false-positived on `fixture` alone). Checked first and short-circuits
  * to `false` — a human sign-off is not the mutation-verifiable claim §6i
@@ -295,7 +345,7 @@ export function isGateTestEvidence(evidence: string): boolean {
   if (MANUAL_REVIEW_NEGATIVE_SIGNALS.some((signal) => lower.includes(signal))) {
     return false;
   }
-  return GATE_TEST_KEYWORDS.some((keyword) => lower.includes(keyword));
+  return GATE_TEST_KEYWORD_MATCHERS.some((regex) => regex.test(evidence));
 }
 
 /**
