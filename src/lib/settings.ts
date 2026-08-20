@@ -129,7 +129,10 @@ export interface RunSettings {
   defaultBase?: string;
   /**
    * Enable MCP servers in headless mode.
-   * When true, reads MCP config from Claude Desktop and passes to SDK.
+   * When true, injects the sequant MCP server plus any servers declared in
+   * the project's own `.mcp.json` — never a passthrough of the user's Claude
+   * Desktop config, which is a different trust domain and may carry literal
+   * secrets (#936).
    * When false or --no-mcp flag is used, MCPs are disabled.
    * Default: true
    */
