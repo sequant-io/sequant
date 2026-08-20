@@ -285,6 +285,22 @@ describe("readyCommand — #697 renderer wiring", () => {
     expect(opts.onProgress).toBe(wiringOnProgress);
   });
 
+  it("#936: forwards settings.run.mcpAllowlist to runReadyGate", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: {
+        maxIterations: 3,
+        timeout: 1800,
+        mcpAllowlist: ["stripe", "notion"],
+      },
+    } as Awaited<ReturnType<typeof getSettings>>);
+
+    await readyCommand(String(ISSUE), {});
+
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.mcpAllowlist).toEqual(["stripe", "notion"]);
+  });
+
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
     await readyCommand(String(ISSUE), { verbose: true });
 

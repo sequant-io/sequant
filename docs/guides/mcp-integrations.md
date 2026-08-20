@@ -31,15 +31,18 @@ Example output:
 ⚠ MCP: context7: Not configured (optional, enhances /exec, /fullsolve)
 ```
 
+**Note:** These lines detect MCPs from your Claude Desktop config — a different source than the `.mcp.json` phase agents actually use for `sequant run` (#936), so a server present here may still be unavailable headlessly, and vice versa. Doctor's separate "MCP Servers (headless)" line reports what a phase actually gets (sequant + `.mcp.json` + any `mcpAllowlist` names) — check that line for headless availability.
+
 ## Installation
+
+Add these to the project's `.mcp.json` (the same file `sequant init` already writes a `sequant` entry into) — not your Claude Desktop config. `sequant run` phase agents read only `.mcp.json` and never pass through your Claude Desktop config (#936), so a server configured only in Claude Desktop is invisible to `/test`, `/exec`, and `/fullsolve` when they run headlessly.
 
 ### Chrome DevTools MCP
 
 Enables automated browser testing with snapshots, screenshots, and interaction recording.
 
-1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools#setup)
-2. Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS)
-3. Restart Claude Desktop
+1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-chrome-devtools#setup) for the exact `command`/`args`
+2. Add the resulting entry to `.mcp.json`'s `mcpServers` object at the project root
 
 **Without this MCP:** The `/test` skill falls back to generating manual test checklists instead of automated browser tests.
 
@@ -47,8 +50,17 @@ Enables automated browser testing with snapshots, screenshots, and interaction r
 
 Provides up-to-date library documentation during implementation.
 
-```bash
-npx -y @anthropic/mcp-cli add upstash/context7
+Add an entry to `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}
 ```
 
 **Without this MCP:** The `/exec` skill uses codebase search and general knowledge instead of fetching current library docs.
@@ -57,11 +69,14 @@ npx -y @anthropic/mcp-cli add upstash/context7
 
 Enables extended reasoning for complex multi-step problems.
 
-1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking#setup)
-2. Add to your Claude Desktop config
-3. Restart Claude Desktop
+1. Follow the [setup guide](https://github.com/anthropics/anthropic-quickstarts/tree/main/mcp-sequential-thinking#setup) for the exact `command`/`args`
+2. Add the resulting entry to `.mcp.json`'s `mcpServers` object at the project root
 
 **Without this MCP:** The `/fullsolve` skill uses standard reasoning without extended thinking chains.
+
+**`.mcp.json` is committed to git** — don't put literal secrets in an entry's `env`. An MCP that needs a credential isn't a good fit for phase-agent use; keep it in your interactive Claude Code / Claude Desktop config instead.
+
+**If a server genuinely only exists in your Claude Desktop config** — e.g. one you're not ready to commit yet — `settings.run.mcpAllowlist` (`.sequant/settings.json`) is a deliberate, per-server opt-in to pass it through anyway. It's a security-relevant decision, not a convenience default: see [Allowlisting a Desktop-Only Server](../reference/run-command.md#allowlisting-a-desktop-only-server) before using it.
 
 ## Behavior Without MCPs
 

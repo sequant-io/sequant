@@ -145,6 +145,13 @@ export interface RunReadyGateOptions {
   phaseTimeout: number;
   /** Whether MCP servers are enabled for phase execution. */
   mcp: boolean;
+  /**
+   * Claude Desktop MCP server names explicitly opted in (#936). Callers
+   * (`commands/ready.ts`) resolve this from `settings.run.mcpAllowlist` —
+   * see the doc comment on `ExecutionConfig.mcpAllowlist` for why this
+   * producer cannot drift from `buildExecutionConfig`'s own assignment.
+   */
+  mcpAllowlist?: string[];
   verbose?: boolean;
   /** Injectable phase runner — defaults to the real executePhaseWithRetry wrapper. */
   runPhase: ReadyPhaseRunner;
@@ -329,6 +336,7 @@ function buildPhaseConfig(
     noSmartTests: false,
     dryRun: false,
     mcp: opts.mcp,
+    mcpAllowlist: opts.mcpAllowlist,
     retry: true,
     // #914: producer 2 (see the doc comment on RunReadyGateOptions.phasePolicies
     // for why this can't drift from buildExecutionConfig's own assignment).

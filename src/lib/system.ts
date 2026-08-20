@@ -170,15 +170,18 @@ export interface McpServerConfig {
 /**
  * Get full MCP server configurations from Claude Desktop config
  *
- * Returns the complete mcpServers object suitable for passing to the
- * Claude Agent SDK query() options. Returns undefined if config doesn't
- * exist or is invalid (graceful degradation for AC-3).
+ * For interactive `doctor` diagnostics only — reports what's configured for
+ * the human user. Never pass this to phase execution (#936): Claude Desktop
+ * is a different trust domain (interactive, human-supervised) than an
+ * autonomous phase agent, and desktop configs carry literal secrets since
+ * they cannot use `${VAR}` references. Phase agents use
+ * `getPhaseMcpServersConfig` from `mcp-config.ts` instead, which allowlists
+ * from the project's own `.mcp.json`.
  *
  * @returns MCP server configurations or undefined
  */
 export function getMcpServersConfig():
-  | Record<string, McpServerConfig>
-  | undefined {
+  Record<string, McpServerConfig> | undefined {
   const configPath = getClaudeConfigPath();
 
   try {

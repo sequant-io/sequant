@@ -118,6 +118,15 @@ export interface ExecutionConfig {
   /** Enable MCP servers in headless mode (true by default, false if --no-mcp flag used) */
   mcp: boolean;
   /**
+   * Claude Desktop MCP server names explicitly opted in via
+   * `settings.run.mcpAllowlist` (#936). Both `ExecutionConfig` producers
+   * (`buildExecutionConfig`, `ready-gate.ts`'s `buildPhaseConfig`) read
+   * this from settings the same way, so it cannot drift between them the
+   * way #833's `phaseTimeout` once did. `phase-executor.ts` forwards it
+   * verbatim onto `AgentExecutionConfig.mcpAllowlist`.
+   */
+  mcpAllowlist?: string[];
+  /**
    * Enable automatic retry with MCP fallback.
    * When true (default), failed phases are retried with MCP disabled.
    * When false (--no-retry flag), no retry attempts are made.

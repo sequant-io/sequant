@@ -11,7 +11,7 @@ import type {
   SDKRateLimitInfo,
   SDKAssistantMessageError,
 } from "@anthropic-ai/claude-agent-sdk";
-import { getMcpServersConfig } from "../../system.js";
+import { getPhaseMcpServersConfig } from "../../mcp-config.js";
 import {
   type SequantError,
   RateLimitError,
@@ -115,8 +115,14 @@ export class ClaudeCodeDriver implements AgentDriver {
     }
 
     try {
-      // Get MCP servers config if enabled
-      const mcpServers = config.mcp ? getMcpServersConfig() : undefined;
+      // Get MCP servers config if enabled — allowlisted, not passed through
+      // from Claude Desktop config (#936), except for servers explicitly
+      // named in config.mcpAllowlist (settings.run.mcpAllowlist).
+      const mcpServers = config.mcp
+        ? getPhaseMcpServersConfig(config.cwd, {
+            desktopAllowlist: config.mcpAllowlist,
+          })
+        : undefined;
 
       const queryInstance = query({
         prompt,
