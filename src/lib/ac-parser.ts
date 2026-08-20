@@ -37,6 +37,7 @@ import {
   createAcceptanceCriterion,
   createAcceptanceCriteria,
 } from "./workflow/state-schema.js";
+import { computeFenceMask } from "./markdown-fence.js";
 
 /**
  * Regex patterns for AC extraction
@@ -424,6 +425,10 @@ export function parseAcceptanceCriteria(
   // rule as `parseNonGoals` in ready-gate.ts). `bareCount` numbers synthesized
   // IDs for bare checkboxes in appearance order.
   const lines = issueBody.split("\n");
+  // Lines inside a fenced code block (#947) — an AC-authoring example shown
+  // in a fence must not be scanned as a real AC, or toggle the AC-section
+  // heading state, in either pass below.
+  const fenceMask = computeFenceMask(lines);
   let inAcSection = false;
   let bareCount = 0;
 
@@ -433,12 +438,16 @@ export function parseAcceptanceCriteria(
   // synthesizes AC-1 first and the author's explicit AC-1 is silently dropped
   // by the first-occurrence dedupe.
   const explicitIds = new Set<string>();
-  for (const line of lines) {
-    const parsed = parseACLine(line);
+  for (let i = 0; i < lines.length; i++) {
+    if (fenceMask[i]) continue;
+    const parsed = parseACLine(lines[i]);
     if (parsed) explicitIds.add(parsed.id);
   }
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (fenceMask[i]) continue;
+
     if (HEADING_RE.test(line)) {
       inAcSection = AC_HEADING_RE.test(line);
       continue;

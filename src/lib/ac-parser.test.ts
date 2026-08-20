@@ -484,6 +484,124 @@ Some notes here.
     });
   });
 
+  // #947: fenced AC-authoring examples must not be scanned as real ACs.
+  describe("fenced code blocks (#947)", () => {
+    it("ignores a fenced AC example that appears BEFORE the real AC section", () => {
+      const issueBody = `
+## Motivation
+
+\`\`\`markdown
+- [ ] **AC-1:** This is just an example, not a real AC
+\`\`\`
+
+## Acceptance Criteria
+
+- [ ] **AC-1:** The real criterion
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("The real criterion");
+    });
+
+    it("ignores a fenced AC example that appears AFTER the real AC section", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] **AC-1:** The real criterion
+
+## Appendix
+
+\`\`\`markdown
+- [ ] **AC-1:** This is just an example, not a real AC
+\`\`\`
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("The real criterion");
+    });
+
+    it("ignores a fenced bare checkbox INSIDE the AC section and does not shift synthesized IDs", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] Real requirement one
+
+\`\`\`markdown
+- [ ] This looks like a bare AC but is fenced example text
+\`\`\`
+
+- [ ] Real requirement two
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(2);
+      expect(criteria.map((c) => c.description)).toEqual([
+        "Real requirement one",
+        "Real requirement two",
+      ]);
+      expect(criteria.map((c) => c.id)).toEqual(["AC-1", "AC-2"]);
+    });
+
+    it("does not toggle the AC section closed on a heading-like line inside a fence", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] Real requirement one
+
+\`\`\`bash
+# this looks like a markdown heading but is a bash comment
+echo hi
+\`\`\`
+
+- [ ] Real requirement two
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(2);
+      expect(criteria.map((c) => c.description)).toEqual([
+        "Real requirement one",
+        "Real requirement two",
+      ]);
+    });
+
+    it("treats an unclosed fence as running to EOF", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+- [ ] Real requirement one
+
+\`\`\`markdown
+- [ ] **AC-1:** Unclosed fence example
+- [ ] Real requirement two — but inside the unclosed fence, so ignored
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("Real requirement one");
+    });
+
+    it("supports tilde fences (~~~) the same as backtick fences", () => {
+      const issueBody = `
+## Acceptance Criteria
+
+~~~markdown
+- [ ] **AC-1:** This is just an example, not a real AC
+~~~
+
+- [ ] **AC-1:** The real criterion
+`;
+      const criteria = parseAcceptanceCriteria(issueBody);
+      expect(criteria.length).toBe(1);
+      expect(criteria[0].description).toBe("The real criterion");
+    });
+
+    // AC-3: re-parsing #938's own verbatim body must extract the REAL AC-1 —
+    // not the fenced Evidence-clause example quoted in its Proposal section,
+    // which is what the parser returned before this fix (#947's own body
+    // reproduces the same bug live, see the /spec comment for #947).
+    it("parses real issue #938 to its real AC-1, not the fenced example", () => {
+      const criteria = parseAcceptanceCriteria(readFixture(938));
+      expect(criteria[0].description.startsWith("`parseACLine`")).toBe(true);
+    });
+  });
+
   describe("inferVerificationMethod", () => {
     it("should infer unit_test from keywords", () => {
       expect(inferVerificationMethod("Unit test for login")).toBe("unit_test");

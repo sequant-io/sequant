@@ -24,6 +24,7 @@ import type {
   ScopeAssessmentConfig,
 } from "./types.js";
 import { DEFAULT_SCOPE_CONFIG } from "./types.js";
+import { stripFencedLines } from "../markdown-fence.js";
 
 /**
  * Keywords for clustering AC items by functional area
@@ -291,16 +292,21 @@ export function detectFeatures(
  *
  * Looks for a "Non-Goals" or "Out of Scope" section with checkbox items.
  *
+ * Fenced code blocks are excluded before matching (#947 sibling) — a
+ * Non-Goals example shown inside a fence (e.g. illustrating checkbox
+ * syntax) must not itself be read as a real non-goal item.
+ *
  * @param issueBody - Full issue body markdown
  * @returns Non-goals extraction result
  */
 export function parseNonGoals(issueBody: string): NonGoals {
   const items: string[] = [];
+  const strippedBody = stripFencedLines(issueBody);
 
   // Find Non-Goals section (case-insensitive)
   const sectionPattern =
     /##\s*(?:Non[- ]?Goals|Out\s+of\s+Scope|Scope\s+Boundaries)\s*\n([\s\S]*?)(?=\n##|\n---|$)/i;
-  const sectionMatch = issueBody.match(sectionPattern);
+  const sectionMatch = strippedBody.match(sectionPattern);
 
   if (!sectionMatch) {
     return {
