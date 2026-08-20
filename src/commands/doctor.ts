@@ -15,9 +15,9 @@ import {
   isNativeWindows,
   isWSL,
   checkOptionalMcpServers,
-  getMcpServersConfig,
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
+import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
 import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
@@ -509,23 +509,25 @@ export async function doctorCommand(
     });
   }
 
-  // Check: MCP availability for headless mode (sequant run)
-  const mcpServersConfig = getMcpServersConfig();
-  if (mcpServersConfig) {
-    const serverCount = Object.keys(mcpServersConfig).length;
-    checks.push({
-      name: "MCP Servers (headless)",
-      status: "pass",
-      message: `Available for sequant run (${serverCount} server${serverCount !== 1 ? "s" : ""} configured)`,
-    });
-  } else {
-    checks.push({
-      name: "MCP Servers (headless)",
-      status: "warn",
-      message:
-        "Not available for sequant run (no Claude Desktop config found or empty mcpServers)",
-    });
-  }
+  // Check: MCP availability for headless mode (sequant run) (#936)
+  //
+  // Phase agents read the project's .mcp.json + settings.run.mcpAllowlist,
+  // never Claude Desktop config wholesale — see getPhaseMcpServersConfig.
+  // The sequant server is always guaranteed, so this check reports what a
+  // phase will actually receive rather than pass/warn on presence.
+  const phaseServersConfig = getPhaseMcpServersConfig(process.cwd(), {
+    desktopAllowlist: settings.run.mcpAllowlist,
+  });
+  const phaseServerCount = Object.keys(phaseServersConfig).length;
+  const extraServerCount = phaseServerCount - 1; // minus the guaranteed sequant entry
+  checks.push({
+    name: "MCP Servers (headless)",
+    status: "pass",
+    message:
+      extraServerCount > 0
+        ? `Available for sequant run (${phaseServerCount} servers: sequant + ${extraServerCount} from .mcp.json${settings.run.mcpAllowlist?.length ? "/mcpAllowlist" : ""})`
+        : "Available for sequant run (sequant only — add servers to .mcp.json, or settings.run.mcpAllowlist for desktop servers, for more)",
+  });
 
   // Check: Sequant MCP server health
   try {

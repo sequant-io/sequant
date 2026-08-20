@@ -1269,6 +1269,7 @@ async function executePhase(
     phaseTimeout: config.phaseTimeout,
     verbose: config.verbose,
     mcp: config.mcp,
+    mcpAllowlist: config.mcpAllowlist,
     resumeHandle: eligibleHandle,
     sessionId: eligibleHandle?.token,
     files,

@@ -116,9 +116,12 @@ export class ClaudeCodeDriver implements AgentDriver {
 
     try {
       // Get MCP servers config if enabled — allowlisted, not passed through
-      // from Claude Desktop config (#936).
+      // from Claude Desktop config (#936), except for servers explicitly
+      // named in config.mcpAllowlist (settings.run.mcpAllowlist).
       const mcpServers = config.mcp
-        ? getPhaseMcpServersConfig(config.cwd)
+        ? getPhaseMcpServersConfig(config.cwd, {
+            desktopAllowlist: config.mcpAllowlist,
+          })
         : undefined;
 
       const queryInstance = query({

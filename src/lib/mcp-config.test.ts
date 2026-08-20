@@ -495,6 +495,89 @@ describe("mcp-config", () => {
 
       expect(Object.keys(result)).toEqual(["sequant"]);
     });
+
+    describe("desktopAllowlist opt-in (#936)", () => {
+      it("passes through only the explicitly named desktop server", () => {
+        writeFakeDesktopConfig();
+
+        const result = getPhaseMcpServersConfig(projectDir, {
+          desktopAllowlist: ["stripe"],
+        });
+
+        expect(result.stripe).toEqual({
+          command: "npx",
+          args: ["-y", "stripe-mcp"],
+          env: { STRIPE_SECRET_KEY: "sk_live_leak_should_not_appear" },
+        });
+        expect(result.gmail).toBeUndefined();
+      });
+
+      it("silently ignores an allowlisted name absent from the desktop config", () => {
+        writeFakeDesktopConfig();
+
+        const result = getPhaseMcpServersConfig(projectDir, {
+          desktopAllowlist: ["notion"],
+        });
+
+        expect(result.notion).toBeUndefined();
+        expect(Object.keys(result)).toEqual(["sequant"]);
+      });
+
+      it("does not pass through any desktop server when desktopAllowlist is empty or unset", () => {
+        writeFakeDesktopConfig();
+
+        const resultUnset = getPhaseMcpServersConfig(projectDir);
+        const resultEmpty = getPhaseMcpServersConfig(projectDir, {
+          desktopAllowlist: [],
+        });
+
+        expect(resultUnset.stripe).toBeUndefined();
+        expect(resultEmpty.stripe).toBeUndefined();
+      });
+
+      it("lets a project .mcp.json entry win over an allowlisted desktop entry of the same name", () => {
+        writeFakeDesktopConfig();
+        fs.writeFileSync(
+          path.join(projectDir, ".mcp.json"),
+          JSON.stringify({
+            mcpServers: {
+              stripe: { command: "node", args: ["project-stripe-fork.js"] },
+            },
+          }),
+        );
+
+        const result = getPhaseMcpServersConfig(projectDir, {
+          desktopAllowlist: ["stripe"],
+        });
+
+        expect(result.stripe).toEqual({
+          command: "node",
+          args: ["project-stripe-fork.js"],
+        });
+      });
+
+      it("never lets an allowlisted desktop entry override the guaranteed sequant entry", () => {
+        const desktopConfigDir =
+          process.platform === "darwin"
+            ? path.join(fakeHome, "Library", "Application Support", "Claude")
+            : path.join(fakeHome, ".config", "claude");
+        fs.mkdirSync(desktopConfigDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(desktopConfigDir, "claude_desktop_config.json"),
+          JSON.stringify({
+            mcpServers: {
+              sequant: { command: "node", args: ["desktop-fork.js"] },
+            },
+          }),
+        );
+
+        const result = getPhaseMcpServersConfig(projectDir, {
+          desktopAllowlist: ["sequant"],
+        });
+
+        expect(result.sequant.command).toBe("npx");
+      });
+    });
   });
 
   describe("syncSequantMcpPin (#793)", () => {

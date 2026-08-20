@@ -9,7 +9,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 import { getVersion } from "./version.js";
-import type { McpServerConfig } from "./system.js";
+import { getMcpServersConfig, type McpServerConfig } from "./system.js";
 
 /** Path to the project-level MCP config file used by Claude Code */
 export const PROJECT_MCP_JSON = ".mcp.json";
@@ -91,13 +91,19 @@ export function getSequantMcpConfig(options?: {
  * argv. This builder allowlists instead of passing through — it unions the
  * project's own `.mcp.json` (secret-free by convention, committed to git)
  * with a guaranteed sequant server entry, and never reads
- * `claude_desktop_config.json`.
+ * `claude_desktop_config.json` **unless** a server name is explicitly
+ * listed in `opts.desktopAllowlist` (from `settings.run.mcpAllowlist`) —
+ * the deliberate per-server opt-in for a desktop-only server. A name not
+ * present in the desktop config is silently ignored.
  *
  * @param cwd - Directory to resolve `.mcp.json` from (the phase worktree)
+ * @param opts.desktopAllowlist - Exact `mcpServers` keys to pass through
+ *   from Claude Desktop config, despite the default exclusion
  * @returns MCP server configurations for the phase agent
  */
 export function getPhaseMcpServersConfig(
   cwd?: string,
+  opts?: { desktopAllowlist?: string[] },
 ): Record<string, McpServerConfig> {
   const mcpJsonPath = path.resolve(cwd ?? ".", PROJECT_MCP_JSON);
 
@@ -116,7 +122,18 @@ export function getPhaseMcpServersConfig(
     // .mcp.json doesn't exist or is invalid — sequant entry still applies
   }
 
+  const allowedDesktopServers: Record<string, McpServerConfig> = {};
+  if (opts?.desktopAllowlist && opts.desktopAllowlist.length > 0) {
+    const desktopServers = getMcpServersConfig() ?? {};
+    for (const name of opts.desktopAllowlist) {
+      if (desktopServers[name]) {
+        allowedDesktopServers[name] = desktopServers[name];
+      }
+    }
+  }
+
   return {
+    ...allowedDesktopServers,
     ...servers,
     sequant: getSequantMcpConfig() as unknown as McpServerConfig,
   };

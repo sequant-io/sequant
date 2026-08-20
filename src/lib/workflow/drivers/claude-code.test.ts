@@ -98,7 +98,9 @@ describe("ClaudeCodeDriver", () => {
       const driver = new ClaudeCodeDriver();
       await driver.executePhase("prompt", { ...baseConfig(), mcp: true });
 
-      expect(getPhaseMcpServersConfigMock).toHaveBeenCalledWith("/tmp/wt");
+      expect(getPhaseMcpServersConfigMock).toHaveBeenCalledWith("/tmp/wt", {
+        desktopAllowlist: undefined,
+      });
       const callOptions = queryMock.mock.calls[0][0].options;
       expect(callOptions.mcpServers).toEqual(allowlist);
     });
@@ -112,6 +114,21 @@ describe("ClaudeCodeDriver", () => {
       expect(getPhaseMcpServersConfigMock).not.toHaveBeenCalled();
       const callOptions = queryMock.mock.calls[0][0].options;
       expect(callOptions.mcpServers).toBeUndefined();
+    });
+
+    it("forwards config.mcpAllowlist as the desktopAllowlist option (settings.run.mcpAllowlist)", async () => {
+      queryMock.mockReturnValue(mockStream([INIT, RESULT_ERROR]));
+
+      const driver = new ClaudeCodeDriver();
+      await driver.executePhase("prompt", {
+        ...baseConfig(),
+        mcp: true,
+        mcpAllowlist: ["stripe", "notion"],
+      });
+
+      expect(getPhaseMcpServersConfigMock).toHaveBeenCalledWith("/tmp/wt", {
+        desktopAllowlist: ["stripe", "notion"],
+      });
     });
   });
 
