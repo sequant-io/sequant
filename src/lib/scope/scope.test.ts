@@ -219,6 +219,50 @@ Some content
       expect(nonGoals.found).toBe(true);
       expect(nonGoals.items.length).toBe(2);
     });
+
+    // #947 sibling: a fenced example inside (or overlapping) the Non-Goals
+    // section must not be read as a real non-goal item.
+    it("ignores a fenced example inside the Non-Goals section", () => {
+      const issueBody = `
+## Non-Goals
+
+- [ ] Backend API changes
+
+\`\`\`markdown
+- [ ] This is just an example of non-goal syntax, not a real item
+\`\`\`
+
+- [ ] Database migrations
+`;
+
+      const nonGoals = parseNonGoals(issueBody);
+
+      expect(nonGoals.found).toBe(true);
+      expect(nonGoals.items).toEqual([
+        "Backend API changes",
+        "Database migrations",
+      ]);
+    });
+
+    it("ignores a fenced Non-Goals heading elsewhere in the body", () => {
+      const issueBody = `
+## Motivation
+
+\`\`\`markdown
+## Non-Goals
+- [ ] Fenced example heading, should not be detected
+\`\`\`
+
+## Non-Goals
+
+- [ ] Real non-goal item
+`;
+
+      const nonGoals = parseNonGoals(issueBody);
+
+      expect(nonGoals.found).toBe(true);
+      expect(nonGoals.items).toEqual(["Real non-goal item"]);
+    });
   });
 
   describe("shouldSkipAssessment", () => {
