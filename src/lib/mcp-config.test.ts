@@ -14,6 +14,7 @@ import {
   isSequantInProjectMcpJson,
   createProjectMcpJson,
   syncSequantMcpPin,
+  getPhaseMcpServersConfig,
 } from "./mcp-config.js";
 
 describe("mcp-config", () => {
@@ -377,6 +378,122 @@ describe("mcp-config", () => {
       // Array replaced with proper object
       expect(Array.isArray(content.mcpServers)).toBe(false);
       expect(content.mcpServers.sequant.command).toBe("npx");
+    });
+  });
+
+  describe("getPhaseMcpServersConfig (#936)", () => {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      "sequant-phase-mcp-test-" + Date.now(),
+    );
+    const projectDir = path.join(tmpDir, "project");
+    const fakeHome = path.join(tmpDir, "home");
+    const originalHome = process.env.HOME;
+
+    beforeEach(() => {
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.mkdirSync(fakeHome, { recursive: true });
+      process.env.HOME = fakeHome;
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (originalHome !== undefined) {
+        process.env.HOME = originalHome;
+      } else {
+        delete process.env.HOME;
+      }
+    });
+
+    /** Populate a Claude Desktop config with a secret-bearing server, matching #936's report. */
+    function writeFakeDesktopConfig(): void {
+      const desktopConfigDir =
+        process.platform === "darwin"
+          ? path.join(fakeHome, "Library", "Application Support", "Claude")
+          : path.join(fakeHome, ".config", "claude");
+      fs.mkdirSync(desktopConfigDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(desktopConfigDir, "claude_desktop_config.json"),
+        JSON.stringify({
+          mcpServers: {
+            stripe: {
+              command: "npx",
+              args: ["-y", "stripe-mcp"],
+              env: { STRIPE_SECRET_KEY: "sk_live_leak_should_not_appear" },
+            },
+            gmail: { command: "npx", args: ["-y", "gmail-mcp"] },
+          },
+        }),
+      );
+    }
+
+    it("excludes desktop servers even when a populated desktop config is present (AC-1)", () => {
+      writeFakeDesktopConfig();
+
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(result.stripe).toBeUndefined();
+      expect(result.gmail).toBeUndefined();
+    });
+
+    it("never leaks secret-bearing desktop env values into the result (AC-2)", () => {
+      writeFakeDesktopConfig();
+
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(JSON.stringify(result)).not.toContain(
+        "sk_live_leak_should_not_appear",
+      );
+    });
+
+    it("includes project .mcp.json entries plus a guaranteed sequant entry", () => {
+      writeFakeDesktopConfig();
+      fs.writeFileSync(
+        path.join(projectDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            context7: { command: "npx", args: ["-y", "context7-mcp"] },
+          },
+        }),
+      );
+
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(result["context7"]).toEqual({
+        command: "npx",
+        args: ["-y", "context7-mcp"],
+      });
+      expect(result.sequant).toBeDefined();
+      expect(result.sequant.command).toBe("npx");
+    });
+
+    it("returns only the sequant entry when .mcp.json does not exist", () => {
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(Object.keys(result)).toEqual(["sequant"]);
+    });
+
+    it("guarantees the sequant entry even if .mcp.json declares its own", () => {
+      fs.writeFileSync(
+        path.join(projectDir, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            sequant: { command: "node", args: ["stale-fork.js"] },
+          },
+        }),
+      );
+
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(result.sequant.command).toBe("npx");
+    });
+
+    it("handles corrupt .mcp.json gracefully", () => {
+      fs.writeFileSync(path.join(projectDir, ".mcp.json"), "not valid json{{{");
+
+      const result = getPhaseMcpServersConfig(projectDir);
+
+      expect(Object.keys(result)).toEqual(["sequant"]);
     });
   });
 

@@ -7,6 +7,7 @@ import {
   type SequantError,
 } from "../../errors.js";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { getPhaseMcpServersConfig } from "../../mcp-config.js";
 import type { AgentExecutionConfig } from "./agent-driver.js";
 
 // Mock the SDK so we can drive arbitrary message streams through the driver
@@ -15,7 +16,17 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(),
 }));
 
+// Mock the phase MCP allowlist builder (#936) so driver tests can assert
+// the wiring — that its result reaches query()'s options — without touching
+// the filesystem. Desktop-exclusion itself is covered by the builder's own
+// unit tests in mcp-config.test.ts.
+vi.mock("../../mcp-config.js", () => ({
+  getPhaseMcpServersConfig: vi.fn(),
+}));
+
 const queryMock = query as unknown as Mock;
+const getPhaseMcpServersConfigMock =
+  getPhaseMcpServersConfig as unknown as Mock;
 
 /** Build an async iterable that yields the given messages, like the SDK does. */
 function mockStream(messages: unknown[]): AsyncIterable<unknown> {
@@ -48,6 +59,10 @@ const RESULT_ERROR = {
 describe("ClaudeCodeDriver", () => {
   beforeEach(() => {
     queryMock.mockReset();
+    getPhaseMcpServersConfigMock.mockReset();
+    getPhaseMcpServersConfigMock.mockReturnValue({
+      sequant: { command: "npx", args: ["-y", "sequant@2.11.0", "serve"] },
+    });
   });
 
   it("has name 'claude-code'", () => {
@@ -69,6 +84,35 @@ describe("ClaudeCodeDriver", () => {
     // #813: claude-code resolves phases via .claude/skills/, so the run
     // skills pre-flight must be active for this driver.
     expect(driver.resolvesSkills).toBe(true);
+  });
+
+  describe("MCP allowlist wiring (#936)", () => {
+    it("passes the phase allowlist to query() when mcp is enabled (AC-1)", async () => {
+      const allowlist = {
+        sequant: { command: "npx", args: ["-y", "sequant@2.11.0", "serve"] },
+        context7: { command: "npx", args: ["-y", "context7-mcp"] },
+      };
+      getPhaseMcpServersConfigMock.mockReturnValue(allowlist);
+      queryMock.mockReturnValue(mockStream([INIT, RESULT_ERROR]));
+
+      const driver = new ClaudeCodeDriver();
+      await driver.executePhase("prompt", { ...baseConfig(), mcp: true });
+
+      expect(getPhaseMcpServersConfigMock).toHaveBeenCalledWith("/tmp/wt");
+      const callOptions = queryMock.mock.calls[0][0].options;
+      expect(callOptions.mcpServers).toEqual(allowlist);
+    });
+
+    it("omits mcpServers from query() options when mcp is disabled", async () => {
+      queryMock.mockReturnValue(mockStream([INIT, RESULT_ERROR]));
+
+      const driver = new ClaudeCodeDriver();
+      await driver.executePhase("prompt", { ...baseConfig(), mcp: false });
+
+      expect(getPhaseMcpServersConfigMock).not.toHaveBeenCalled();
+      const callOptions = queryMock.mock.calls[0][0].options;
+      expect(callOptions.mcpServers).toBeUndefined();
+    });
   });
 
   describe("error_max_turns handling (#733, AC-1)", () => {
