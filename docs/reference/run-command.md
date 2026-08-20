@@ -597,18 +597,19 @@ SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 
 ## MCP Server Support
 
-`sequant run` supports MCP (Model Context Protocol) servers for enhanced functionality in headless mode. When enabled, MCP servers configured in Claude Desktop are automatically passed to the Claude Agent SDK.
+`sequant run` supports MCP (Model Context Protocol) servers for enhanced functionality in headless mode. When enabled, each phase agent gets the sequant MCP server plus any servers declared in the project's own `.mcp.json` — **not** a passthrough of your Claude Desktop config.
+
+Phase agents are unattended and run with `bypassPermissions`, so they get an allowlist rather than everything the interactive Claude Desktop app happens to have configured. This also matters for secrets: Claude Desktop configs can't use `${VAR}` references, so any credential-bearing server there holds a literal value — one the Agent SDK would otherwise serialize into the phase process's argv. `.mcp.json` is committed to git and expected to be secret-free by convention (#936).
 
 ### How It Works
 
-1. **Reads Claude Desktop config** from the platform-specific path:
-   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-   - Linux: `~/.config/claude/claude_desktop_config.json`
+1. **Reads the project's `.mcp.json`** (the same file Claude Code itself uses) from the phase's working directory
 
-2. **Passes `mcpServers`** to the SDK `query()` call for each phase
+2. **Always includes the sequant MCP server**, regardless of what `.mcp.json` declares
 
-3. **Graceful degradation**: If the config doesn't exist or is invalid, runs without MCPs
+3. **Passes the merged `mcpServers`** to the SDK `query()` call for each phase
+
+4. **Graceful degradation**: If `.mcp.json` doesn't exist or is invalid, runs with just the sequant server
 
 ### Configuration
 
@@ -616,13 +617,14 @@ SEQUANT_QUALITY_LOOP=true npx sequant run 42  # Enable quality loop
 |--------|---------|---------|-------------|
 | `--no-mcp` | - | - | Disable MCPs for faster/cheaper runs |
 | - | `run.mcp` | `true` | Enable MCP servers by default |
+| - | `run.mcpAllowlist` | — | Explicit per-server opt-in to pass specific Claude Desktop servers through anyway (#936) — see [Allowlisting a Desktop-Only Server](#allowlisting-a-desktop-only-server) |
 
 **Priority:** CLI flag (`--no-mcp`) → Settings (`run.mcp`) → Default (`true`)
 
 ### Usage Examples
 
 ```bash
-# Default: MCPs enabled (reads from Claude Desktop config)
+# Default: MCPs enabled (sequant server + project .mcp.json)
 npx sequant run 42
 
 # Disable MCPs for faster execution
@@ -634,15 +636,13 @@ npx sequant run 42 --no-mcp
 
 ### Checking MCP Availability
 
-Run `sequant doctor` to verify MCP availability for headless mode:
+Run `sequant doctor` to see what's configured:
 
 ```bash
 sequant doctor
 ```
 
-Look for the "MCP Servers (headless)" check:
-- ✓ **Pass**: MCPs available for `sequant run`
-- ⚠ **Warn**: No Claude Desktop config found or empty `mcpServers`
+Look for the "MCP Servers (headless)" check — it reports the same set a phase will actually receive (sequant + `.mcp.json` entries + any `mcpAllowlist` names), not your Claude Desktop config.
 
 ### Supported MCPs
 
@@ -656,21 +656,19 @@ MCPs that enhance Sequant skills in headless mode:
 
 ### Adding MCPs for Headless Mode
 
-To add MCP servers for use with `sequant run`, edit the Claude Desktop config file directly.
+To add MCP servers for use with `sequant run`, add them to the project's `.mcp.json` — **not** your Claude Desktop config, which phase agents no longer read (#936).
 
-**1. Locate your config file:**
-
-| Platform | Path |
-|----------|------|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-| Linux | `~/.config/claude/claude_desktop_config.json` |
+**1. Locate (or create) `.mcp.json` at the project root** — `sequant init` already creates it with a `sequant` entry.
 
 **2. Add MCPs to the `mcpServers` object:**
 
 ```json
 {
   "mcpServers": {
+    "sequant": {
+      "command": "npx",
+      "args": ["-y", "sequant@<version>", "serve"]
+    },
     "context7": {
       "command": "npx",
       "args": ["-y", "@upstash/context7-mcp"]
@@ -703,17 +701,25 @@ To add MCP servers for use with `sequant run`, edit the Claude Desktop config fi
 }
 ```
 
-**4. Verify configuration:**
+**`.mcp.json` is committed to git** — do not put literal secrets in `env`. If an MCP needs a credential, it's not a good fit for this file; keep it in Claude Desktop for interactive use only.
 
-```bash
-sequant doctor
+**4. Changes take effect immediately** for the next `sequant run` — no restart needed, since each phase reads `.mcp.json` fresh from the worktree.
+
+### Allowlisting a Desktop-Only Server
+
+`.mcp.json` is the right home for most MCPs, but sometimes a server genuinely only exists in your Claude Desktop config — e.g. one you're still evaluating, or one you deliberately keep out of a committed file. `settings.run.mcpAllowlist` is the explicit, per-server escape hatch (#936):
+
+```json
+{
+  "run": {
+    "mcpAllowlist": ["stripe"]
+  }
+}
 ```
 
-Look for:
-- ✓ `MCP Servers: All optional MCPs configured`
-- ✓ `MCP Servers (headless): Available for sequant run (N servers configured)`
+A name listed here that's present in your Claude Desktop config's `mcpServers` is passed through to phase execution; a name not present there is silently ignored. Project `.mcp.json` entries and the sequant server always win over an allowlisted desktop entry of the same name.
 
-**Note:** Changes to Claude Desktop config require restarting Claude Desktop (for interactive use) but take effect immediately for `sequant run` (headless mode).
+**⚠️ This is a deliberate secret-exposure decision, not a convenience toggle.** Claude Desktop configs can't use `${VAR}` references, so a server's config there may carry a literal credential — one the Agent SDK serializes into the phase process's `--mcp-config` argv, visible to any local process via `ps` and captured into agent transcripts. Only allowlist a server whose config has no credential, or whose credential you accept exposing to autonomous phase agents. When in doubt, add the server to `.mcp.json` instead (never with a literal secret in `env`), or don't allowlist it at all.
 
 ### When to Disable MCPs
 

@@ -83,6 +83,12 @@ vi.mock("../lib/version.js", () => ({
   getVersion: vi.fn(() => "1.0.0"),
 }));
 
+// Mock the phase MCP allowlist builder (#936) — doctor's headless check now
+// reports on this instead of the desktop-config passthrough.
+vi.mock("../lib/mcp-config.js", () => ({
+  getPhaseMcpServersConfig: vi.fn(),
+}));
+
 // Mock system functions
 vi.mock("../lib/system.js", () => ({
   commandExists: vi.fn(),
@@ -90,7 +96,6 @@ vi.mock("../lib/system.js", () => ({
   isNativeWindows: vi.fn(),
   isWSL: vi.fn(),
   checkOptionalMcpServers: vi.fn(),
-  getMcpServersConfig: vi.fn(),
   OPTIONAL_MCP_SERVERS: [
     {
       name: "chrome-devtools",
@@ -126,8 +131,8 @@ import {
   isNativeWindows,
   isWSL,
   checkOptionalMcpServers,
-  getMcpServersConfig,
 } from "../lib/system.js";
+import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
 import { readAgentsMd, checkAgentsMdConsistency } from "../lib/agents-md.js";
 import { getSettings } from "../lib/settings.js";
 
@@ -142,7 +147,7 @@ const mockIsGhAuthenticated = vi.mocked(isGhAuthenticated);
 const mockIsNativeWindows = vi.mocked(isNativeWindows);
 const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
-const mockGetMcpServersConfig = vi.mocked(getMcpServersConfig);
+const mockGetPhaseMcpServersConfig = vi.mocked(getPhaseMcpServersConfig);
 const mockExecSync = vi.mocked(childProcess.execSync);
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
@@ -183,9 +188,11 @@ describe("doctor command", () => {
       context7: true,
       "sequential-thinking": true,
     });
-    // Default: MCP servers config available for headless mode
-    mockGetMcpServersConfig.mockReturnValue({
-      "chrome-devtools": { command: "npx", args: ["mcp-chrome-devtools"] },
+    // Default: phase MCP allowlist available for headless mode (#936) —
+    // sequant + one project .mcp.json entry, matching real
+    // getPhaseMcpServersConfig behavior (sequant always present).
+    mockGetPhaseMcpServersConfig.mockReturnValue({
+      sequant: { command: "npx", args: ["-y", "sequant@1.0.0", "serve"] },
       context7: { command: "npx", args: ["@context7/mcp"] },
     });
     // Default: AGENTS.md exists and is consistent
@@ -468,6 +475,37 @@ describe("doctor command", () => {
       expect(processExitSpy).not.toHaveBeenCalled();
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("should work");
+    });
+  });
+
+  describe("MCP Servers (headless) check (#936)", () => {
+    it("reports the project .mcp.json count, not the desktop config", async () => {
+      mockGetPhaseMcpServersConfig.mockReturnValue({
+        sequant: { command: "npx", args: ["-y", "sequant@1.0.0", "serve"] },
+        context7: { command: "npx", args: ["@context7/mcp"] },
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("MCP Servers (headless)");
+      expect(output).toContain("2 servers: sequant + 1 from .mcp.json");
+    });
+
+    it("passes with a sequant-only message when no project .mcp.json entries exist", async () => {
+      // getPhaseMcpServersConfig always guarantees sequant — never returns
+      // undefined/empty the way the old desktop-config check could.
+      mockGetPhaseMcpServersConfig.mockReturnValue({
+        sequant: { command: "npx", args: ["-y", "sequant@1.0.0", "serve"] },
+      });
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("MCP Servers (headless)");
+      expect(output).toContain("sequant only");
+      // Never warns — sequant is always available for phase execution.
+      expect(processExitSpy).not.toHaveBeenCalled();
     });
   });
 

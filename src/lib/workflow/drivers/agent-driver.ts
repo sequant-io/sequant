@@ -36,6 +36,13 @@ export interface AgentExecutionConfig {
   verbose: boolean;
   mcp: boolean;
   /**
+   * Claude Desktop MCP server names explicitly opted in to pass through to
+   * this phase, despite `mcp`'s default exclusion (#936). Forwarded
+   * verbatim to `getPhaseMcpServersConfig`'s `desktopAllowlist` by
+   * ClaudeCodeDriver; ignored by drivers without an MCP concept.
+   */
+  mcpAllowlist?: string[];
+  /**
    * Resume a previous session (driver-specific; ignored if unsupported).
    *
    * @deprecated Use {@link resumeHandle}. The opaque `sessionId` field is

@@ -295,6 +295,7 @@ export async function readyCommand(
       nonGoals,
       phaseTimeout,
       mcp,
+      mcpAllowlist: settings.run.mcpAllowlist,
       verbose: options.verbose,
       runPhase,
       onProgress,

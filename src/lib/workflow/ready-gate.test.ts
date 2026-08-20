@@ -503,3 +503,42 @@ describe("formatReadyReport (AC-4)", () => {
     expect(report).toContain("#534");
   });
 });
+
+// ─── mcpAllowlist threading (#936) ───────────────────────────────────────────
+
+describe("runReadyGate — mcpAllowlist threading (#936)", () => {
+  it("forwards opts.mcpAllowlist onto every ExecutionConfig handed to runPhase", async () => {
+    const seen: Array<string[] | undefined> = [];
+    const runPhase: ReadyPhaseRunner = (_phase, config) => {
+      seen.push(config.mcpAllowlist);
+      return Promise.resolve(qaResult("READY_FOR_MERGE"));
+    };
+
+    await runReadyGate(
+      baseOpts({
+        runPhase,
+        mcpAllowlist: ["stripe", "notion"],
+      }),
+    );
+
+    expect(seen.length).toBeGreaterThan(0);
+    for (const mcpAllowlist of seen) {
+      expect(mcpAllowlist).toEqual(["stripe", "notion"]);
+    }
+  });
+
+  it("leaves mcpAllowlist undefined when not configured", async () => {
+    const seen: Array<string[] | undefined> = [];
+    const runPhase: ReadyPhaseRunner = (_phase, config) => {
+      seen.push(config.mcpAllowlist);
+      return Promise.resolve(qaResult("READY_FOR_MERGE"));
+    };
+
+    await runReadyGate(baseOpts({ runPhase }));
+
+    expect(seen.length).toBeGreaterThan(0);
+    for (const mcpAllowlist of seen) {
+      expect(mcpAllowlist).toBeUndefined();
+    }
+  });
+});

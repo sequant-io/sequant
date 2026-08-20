@@ -413,6 +413,7 @@ export function buildExecutionConfig(
     ),
     noSmartTests: mergedOptions.noSmartTests ?? false,
     mcp: mcpEnabled,
+    mcpAllowlist: settings.run.mcpAllowlist,
     retry: retryEnabled,
     // #804: default 0 (off) — the whole regression contract for auto-wait is
     // that an unset flag leaves the #761/#799 halt path untouched.
