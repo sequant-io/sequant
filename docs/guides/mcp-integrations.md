@@ -31,7 +31,7 @@ Example output:
 ⚠ MCP: context7: Not configured (optional, enhances /exec, /fullsolve)
 ```
 
-**Note:** This check currently detects MCPs from your Claude Desktop config, which is a different source than the `.mcp.json` phase agents actually use for `sequant run` (#936) — a server present here may still be unavailable headlessly, and vice versa. To see what a phase will actually get, check the project's `.mcp.json` directly.
+**Note:** These lines detect MCPs from your Claude Desktop config — a different source than the `.mcp.json` phase agents actually use for `sequant run` (#936), so a server present here may still be unavailable headlessly, and vice versa. Doctor's separate "MCP Servers (headless)" line reports what a phase actually gets (sequant + `.mcp.json` + any `mcpAllowlist` names) — check that line for headless availability.
 
 ## Installation
 
@@ -75,6 +75,8 @@ Enables extended reasoning for complex multi-step problems.
 **Without this MCP:** The `/fullsolve` skill uses standard reasoning without extended thinking chains.
 
 **`.mcp.json` is committed to git** — don't put literal secrets in an entry's `env`. An MCP that needs a credential isn't a good fit for phase-agent use; keep it in your interactive Claude Code / Claude Desktop config instead.
+
+**If a server genuinely only exists in your Claude Desktop config** — e.g. one you're not ready to commit yet — `settings.run.mcpAllowlist` (`.sequant/settings.json`) is a deliberate, per-server opt-in to pass it through anyway. It's a security-relevant decision, not a convenience default: see [Allowlisting a Desktop-Only Server](../reference/run-command.md#allowlisting-a-desktop-only-server) before using it.
 
 ## Behavior Without MCPs
 

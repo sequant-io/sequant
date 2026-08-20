@@ -617,6 +617,7 @@ Phase agents are unattended and run with `bypassPermissions`, so they get an all
 |--------|---------|---------|-------------|
 | `--no-mcp` | - | - | Disable MCPs for faster/cheaper runs |
 | - | `run.mcp` | `true` | Enable MCP servers by default |
+| - | `run.mcpAllowlist` | — | Explicit per-server opt-in to pass specific Claude Desktop servers through anyway (#936) — see [Allowlisting a Desktop-Only Server](#allowlisting-a-desktop-only-server) |
 
 **Priority:** CLI flag (`--no-mcp`) → Settings (`run.mcp`) → Default (`true`)
 
@@ -641,7 +642,7 @@ Run `sequant doctor` to see what's configured:
 sequant doctor
 ```
 
-**Note:** The "MCP Servers (headless)" check currently reports on your Claude Desktop config, not the project `.mcp.json` phase agents actually use — that check hasn't caught up with #936 yet. To see what a phase will actually get, read the project's `.mcp.json` directly.
+Look for the "MCP Servers (headless)" check — it reports the same set a phase will actually receive (sequant + `.mcp.json` entries + any `mcpAllowlist` names), not your Claude Desktop config.
 
 ### Supported MCPs
 
@@ -703,6 +704,22 @@ To add MCP servers for use with `sequant run`, add them to the project's `.mcp.j
 **`.mcp.json` is committed to git** — do not put literal secrets in `env`. If an MCP needs a credential, it's not a good fit for this file; keep it in Claude Desktop for interactive use only.
 
 **4. Changes take effect immediately** for the next `sequant run` — no restart needed, since each phase reads `.mcp.json` fresh from the worktree.
+
+### Allowlisting a Desktop-Only Server
+
+`.mcp.json` is the right home for most MCPs, but sometimes a server genuinely only exists in your Claude Desktop config — e.g. one you're still evaluating, or one you deliberately keep out of a committed file. `settings.run.mcpAllowlist` is the explicit, per-server escape hatch (#936):
+
+```json
+{
+  "run": {
+    "mcpAllowlist": ["stripe"]
+  }
+}
+```
+
+A name listed here that's present in your Claude Desktop config's `mcpServers` is passed through to phase execution; a name not present there is silently ignored. Project `.mcp.json` entries and the sequant server always win over an allowlisted desktop entry of the same name.
+
+**⚠️ This is a deliberate secret-exposure decision, not a convenience toggle.** Claude Desktop configs can't use `${VAR}` references, so a server's config there may carry a literal credential — one the Agent SDK serializes into the phase process's `--mcp-config` argv, visible to any local process via `ps` and captured into agent transcripts. Only allowlist a server whose config has no credential, or whose credential you accept exposing to autonomous phase agents. When in doubt, add the server to `.mcp.json` instead (never with a literal secret in `env`), or don't allowlist it at all.
 
 ### When to Disable MCPs
 
