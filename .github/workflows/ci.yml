@@ -282,3 +282,38 @@ jobs:
           # Restore original plugin.json
           mv .claude-plugin/plugin.json.bak .claude-plugin/plugin.json
           echo "✓ Negative test passed - version sync check works correctly"
+
+  # Phase A (advisory, measured) rollout of the test-tautology detector in CI
+  # (#940). Always exits 0 — findings are annotations + a job-summary line,
+  # not a merge gate. A dated follow-up on #940 decides whether Phase B
+  # (enforcement) ships, based on the FP rate accumulated from
+  # TAUTOLOGY_SUMMARY lines across real PRs.
+  tautology-advisory:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Default checkout is fetch-depth: 1 — the base ref does not exist
+      # locally until fetched explicitly.
+      - name: Fetch base branch
+        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tautology detector (advisory)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          npx tsx scripts/qa/tautology-detector-cli.ts \
+            --base "origin/${{ github.base_ref }}" \
+            --advisory \
+            --github

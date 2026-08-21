@@ -4,67 +4,106 @@
  *
  * Reads test files from git diff and outputs tautology detection results.
  *
- * Scope: this is a LOCAL / AGENT-SIDE ADVISORY, run by `/qa` via
- * `.claude/skills/qa/scripts/quality-checks.sh`. It is inert in GitHub CI by
- * design: `getChangedTestFiles()` diffs against `main`, but CI checks out with
- * `fetch-depth: 1`, so no local `main` ref exists, the diff throws, and the
- * detector reports zero changed files (exit 0). It therefore protects the
- * pre-merge review loop, not CI. See issue #885 (AC-4) and #810.
+ * Scope: run both LOCAL / AGENT-SIDE by `/qa` (via
+ * `.claude/skills/qa/scripts/quality-checks.sh`, default flags — unaffected
+ * by anything below) and in GitHub CI as a Phase A advisory job (#940). CI
+ * uses `--base`, `--advisory`, and `--github`: the default checkout is
+ * shallow (`fetch-depth: 1`), so the job fetches the base ref explicitly
+ * before invoking this script, then passes it via `--base` rather than
+ * relying on `resolveDiffBase`'s local-ref fallback. See issue #885 (AC-4),
+ * #810, and #940.
  *
  * Usage:
  *   npx tsx scripts/qa/tautology-detector-cli.ts [options]
  *
  * Options:
- *   --json     Output results as JSON
- *   --verbose  Include file details in output
+ *   --json       Output results as JSON
+ *   --verbose    Include file details in output
+ *   --base REF   Diff base ref (default: resolveDiffBase against "main")
+ *   --advisory   Force exit 0 even when findings exceed the blocking threshold
+ *   --github     Emit ::warning annotations and a $GITHUB_STEP_SUMMARY table
  *
  * Exit codes:
- *   0 - Success (no blocking issues)
- *   1 - Blocking: >50% tautological tests
+ *   0 - Success (no blocking issues, or --advisory)
+ *   1 - Blocking: >50% tautological tests (suppressed by --advisory)
  *   2 - Error running detector
  */
 
 import * as fs from "fs";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 import {
   detectTautologicalTests,
   formatTautologyResults,
   getTautologyVerdictImpact,
+  type TautologyFileResult,
 } from "../../src/lib/test-tautology-detector.js";
 import { resolveDiffBase } from "../../src/lib/workflow/git-diff-utils.js";
 
 interface CliArgs {
   json: boolean;
   verbose: boolean;
+  advisory: boolean;
+  github: boolean;
+  base?: string;
 }
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
+  const baseIdx = args.indexOf("--base");
   return {
     json: args.includes("--json"),
     verbose: args.includes("--verbose"),
+    advisory: args.includes("--advisory"),
+    github: args.includes("--github"),
+    base: baseIdx !== -1 ? args[baseIdx + 1] : undefined,
   };
 }
 
-function getChangedTestFiles(): string[] {
+function refExists(cwd: string, ref: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", cwd, "rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+    { stdio: "pipe" },
+  );
+  return result.status === 0;
+}
+
+export interface ChangedTestFilesResult {
+  files: string[];
+  base: string;
+  baseResolved: boolean;
+}
+
+/**
+ * Select test files changed vs `base` (or the resolved default against
+ * "main" when `base` is omitted). Exported so the "unresolvable base" and
+ * "no test files" short-circuits (#940 AC-4) can be unit-tested directly
+ * instead of only through a subprocess spawn.
+ */
+export function selectChangedTestFiles(
+  cwd: string,
+  base?: string,
+): ChangedTestFilesResult {
+  const resolvedBase = base ?? resolveDiffBase(cwd, "main");
+
+  if (!refExists(cwd, resolvedBase)) {
+    return { files: [], base: resolvedBase, baseResolved: false };
+  }
+
   try {
-    // #878: compare against the ref the worktree was created from
-    // (origin/main when it exists) — a stale local main would attribute
-    // already-merged test files to this branch and scan the wrong code.
-    // Array-form execFileSync: the ref is never shell-interpreted.
-    const base = resolveDiffBase(process.cwd(), "main");
     const output = execFileSync(
       "git",
-      ["diff", `${base}...HEAD`, "--name-only"],
+      ["-C", cwd, "diff", `${resolvedBase}...HEAD`, "--name-only"],
       { encoding: "utf-8" },
     );
-    return output
+    const files = output
       .trim()
       .split("\n")
       .filter((f) => f && /\.(test|spec)\.[jt]sx?$/.test(f));
+    return { files, base: resolvedBase, baseResolved: true };
   } catch {
-    console.error("Error: Failed to get changed files from git");
-    return [];
+    return { files: [], base: resolvedBase, baseResolved: false };
   }
 }
 
@@ -76,28 +115,118 @@ function readFileContent(filePath: string): string | null {
   }
 }
 
+interface TautologySummary {
+  pr?: number;
+  filesScanned: number;
+  totalTests: number;
+  findings: number;
+  skipped: number;
+  score: number;
+  reason?: "base-not-found" | "no-test-files";
+}
+
+function summaryMarker(summary: TautologySummary): string {
+  return `<!-- TAUTOLOGY_SUMMARY ${JSON.stringify(summary)} -->`;
+}
+
+function emitGithubAnnotations(fileResults: TautologyFileResult[]): void {
+  for (const fileResult of fileResults) {
+    for (const block of fileResult.testBlocks) {
+      if (!block.isTautological) continue;
+      const title = "Tautological test";
+      const message = `${block.style}("${block.description}") — no production function calls`;
+      console.log(
+        `::warning file=${fileResult.filePath},line=${block.lineNumber},title=${title}::${message}`,
+      );
+    }
+  }
+}
+
+function emitGithubStepSummary(markdown: string, marker: string): void {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  const body = `${markdown}\n\n${marker}\n`;
+  if (summaryPath) {
+    fs.appendFileSync(summaryPath, body);
+  } else {
+    // Local/manual --github run with no GITHUB_STEP_SUMMARY — print instead
+    // of silently dropping the summary.
+    console.log(body);
+  }
+}
+
 function main(): void {
   const args = parseArgs();
-  const testFiles = getChangedTestFiles();
+  const cwd = process.cwd();
+  const prNumber = process.env.PR_NUMBER
+    ? Number(process.env.PR_NUMBER)
+    : undefined;
+  const selection = selectChangedTestFiles(cwd, args.base);
 
-  if (testFiles.length === 0) {
+  if (!selection.baseResolved) {
+    const message = `Base ref '${selection.base}' not found — skipping tautology scan`;
+    if (args.github) {
+      emitGithubStepSummary(
+        `### Test Tautology (Phase A, advisory)\n\n${message}`,
+        summaryMarker({
+          pr: prNumber,
+          filesScanned: 0,
+          totalTests: 0,
+          findings: 0,
+          skipped: 0,
+          score: 0,
+          reason: "base-not-found",
+        }),
+      );
+    }
     if (args.json) {
       console.log(
         JSON.stringify({
           status: "skip",
-          message: "No test files in diff",
+          message,
+          reason: "base-not-found",
           summary: { totalFiles: 0, totalTests: 0, totalTautological: 0 },
         }),
       );
     } else {
-      console.log("No test files changed in diff");
+      console.log(message);
+    }
+    process.exit(0);
+  }
+
+  if (selection.files.length === 0) {
+    const message = "No test files changed in diff";
+    if (args.github) {
+      emitGithubStepSummary(
+        `### Test Tautology (Phase A, advisory)\n\n${message}`,
+        summaryMarker({
+          pr: prNumber,
+          filesScanned: 0,
+          totalTests: 0,
+          findings: 0,
+          skipped: 0,
+          score: 0,
+          reason: "no-test-files",
+        }),
+      );
+    }
+    if (args.json) {
+      console.log(
+        JSON.stringify({
+          status: "skip",
+          message,
+          reason: "no-test-files",
+          summary: { totalFiles: 0, totalTests: 0, totalTautological: 0 },
+        }),
+      );
+    } else {
+      console.log(message);
     }
     process.exit(0);
   }
 
   // Read file contents
   const files: Array<{ path: string; content: string }> = [];
-  for (const filePath of testFiles) {
+  for (const filePath of selection.files) {
     const content = readFileContent(filePath);
     if (content !== null) {
       files.push({ path: filePath, content });
@@ -109,12 +238,36 @@ function main(): void {
   // Run detection
   const results = detectTautologicalTests(files);
   const verdictImpact = getTautologyVerdictImpact(results);
+  const skippedCount = results.fileResults.filter((f) => f.skipped).length;
+
+  if (args.github) {
+    emitGithubAnnotations(results.fileResults);
+    emitGithubStepSummary(
+      formatTautologyResults(results),
+      summaryMarker({
+        pr: prNumber,
+        filesScanned: selection.files.length,
+        totalTests: results.summary.totalTests,
+        findings: results.summary.totalTautological,
+        skipped: skippedCount,
+        score:
+          results.summary.totalTests > 0
+            ? Number(
+                (
+                  results.summary.totalTautological / results.summary.totalTests
+                ).toFixed(2),
+              )
+            : 0,
+      }),
+    );
+  }
 
   if (args.json) {
     console.log(
       JSON.stringify({
         status: verdictImpact,
         summary: results.summary,
+        skipped: skippedCount,
         files: results.fileResults.map((f) => ({
           path: f.filePath,
           totalTests: f.totalTests,
@@ -134,10 +287,16 @@ function main(): void {
   }
 
   // Exit with appropriate code
-  if (verdictImpact === "blocking") {
+  if (verdictImpact === "blocking" && !args.advisory) {
     process.exit(1);
   }
   process.exit(0);
 }
 
-main();
+// CLI entry — only execute when run directly, not when imported by tests.
+const isDirectRun =
+  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (isDirectRun) {
+  main();
+}

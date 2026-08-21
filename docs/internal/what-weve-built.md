@@ -954,10 +954,11 @@ Shell scripts in `templates/scripts/`:
   - Flags `it()`/`test()` blocks that never call imported production functions
   - String-aware parser: nested template literals, `//` and `/* */` comments filtered
   - JS-identifier boundaries (`[\w$]` lookahead/lookbehind) prevent substring false positives
-  - CLI: `scripts/qa/tautology-detector-cli.ts` (`--json`, `--verbose`)
+  - CLI: `scripts/qa/tautology-detector-cli.ts` (`--json`, `--verbose`, `--base`, `--advisory`, `--github`)
   - QA integration: `quality-checks.sh` section 10, >50% tautological blocks merge
   - QA cache: `test-quality` check type in `qa-cache.ts`
-  - 52 unit tests + 5 CLI integration tests
+  - CI integration (#940): advisory-only `tautology-advisory` job on every PR — always exits 0, findings surface as annotations + a job-summary `TAUTOLOGY_SUMMARY` line for measuring the FP rate ahead of a Phase B enforcement decision
+  - 52 unit tests + 5 CLI integration tests + 3 `selectChangedTestFiles` unit tests (#940)
   - Documentation: `docs/features/test-tautology-detector.md`
 - **Call-site review check for QA** (#299)
   - Detects new exported functions (declaration + arrow) in the diff
