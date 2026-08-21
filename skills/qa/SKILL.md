@@ -2535,6 +2535,48 @@ npx tsx -e '
 
 ---
 
+### 6j. Structured Gap Findings (REQUIRED)
+
+**Purpose:** `parseQaSummary`'s gap channel (`src/lib/workflow/phase-executor.ts`) used to scrape only the `**Issues:**` bullet list under Code Review — one specific spot in this template. It missed AC-table `NOT_MET`/`PARTIALLY_MET` rows, §6d Adversarial Re-Read findings, and §5/Risk Assessment gaps entirely, so a QA pass that failed on a §6d "Severe Gap" could hand `/loop` an empty findings list (#937). This section closes that gap: every finding this review surfaces — anywhere in the output, not just Code Review — gets classified into the taxonomy below and emitted as one machine-readable marker.
+
+**Taxonomy** (finite — six categories, pick the closest fit):
+
+| Category | Use for |
+|----------|---------|
+| `requirement_gap` | An AC (or a table row) is `NOT_MET`/`PARTIALLY_MET` |
+| `dependency_gap` | Missing/incompatible dependency, unregistered CLI flag, wiring gap (§2h, §3g-class) |
+| `test_gap` | Missing/tautological/insufficient test coverage (§2b, §2d, §6i Missing/Failed) |
+| `repository_gap` | Code quality, duplication, anti-pattern, dead code (§2, §2e) |
+| `risk_gap` | §5 Risk Assessment item, §6d Adversarial Re-Read finding, §6f Trust-Boundary finding |
+| `execution_gap` | Build/lint/CI failure, script/CLI execution failure (§2a, §Phase 1 CI Status) |
+
+**Per-finding fields:**
+
+| Field | Required? | Content |
+|-------|-----------|---------|
+| `category` | Yes | One of the six above |
+| `evidence` | Yes | A concrete observation — file:line, failing check name, or table row — never speculation |
+| `description` | Yes | One-sentence statement of the gap (same text you'd put in a prose bullet) |
+| `recommendedAction` | Yes | `fix_now` (blocks `READY_FOR_MERGE`, actionable by a code change), `document` (real but non-blocking — quality/polish, or explicitly deferred), or `pause_for_human` (needs a decision `/loop` cannot make, e.g. `SCOPE_SPLIT_RECOMMENDED`-class ambiguity) |
+| `affectedAcs` | If applicable | e.g. `["AC-3"]` |
+| `nonGoal` | If applicable | `true` when the finding overlaps one of the issue's Non-Goals — report-only under `ac` policy, same semantics as `ReadyGapItem.nonGoal` |
+
+**Fallback rule (no dropped findings):** if a real finding does not fit any of the six categories, **do not force it into the marker** — leave it as prose only (in Code Review's `**Issues:**`, Risk Assessment, or wherever it naturally belongs). The marker narrows the *structured* channel; every consumer that reads it also unions it with the prose scrape, so an unclassifiable finding is never silently lost — it just doesn't get machine-readable category/action metadata.
+
+**How to build the marker:** after finishing every other section, walk back through this review's own output — the AC Coverage table's non-MET rows, §5 Risk Assessment, §6d Adversarial Re-Read (Standard only), §6f Trust-Boundary, and Code Review's `**Issues:**` — and classify each real finding. Append exactly one marker as the LAST line of the comment (after `### Next Steps`), single-line flat-ish JSON (no line breaks inside the `{...}`, and no literal `-->` inside any string value — both would break the parser's `[\s\S]*?-->` match):
+
+```markdown
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"requirement_gap","evidence":"AC-3 table row: NOT_MET — no rate limit found in src/retry.ts","description":"AC-3 (rate limiting) is not implemented","recommendedAction":"fix_now","affectedAcs":["AC-3"]}]} -->
+```
+
+When there are no findings to report (clean pass), still emit the marker with an empty array — this positively confirms the structured channel ran, rather than leaving `/loop` to distinguish "clean" from "QA output predates this marker":
+
+```markdown
+<!-- SEQUANT_QA_GAPS: {"findings":[]} -->
+```
+
+---
+
 
 ### 7. A+ Status Verdict
 
@@ -3093,6 +3135,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
 - [ ] Adversarial re-read of core logic — list anything the structured pipeline didn't surface
+- [ ] **Structured Gap Findings** - `SEQUANT_QA_GAPS` marker present as the last line, findings classified per Section 6j (or `{"findings":[]}` on a clean pass)
 
 ### Standard QA (Implementation Exists, `SMALL_DIFF=false`)
 
@@ -3126,6 +3169,7 @@ When the size gate determined `SMALL_DIFF=true`, use the **simplified output tem
 - [ ] **Adversarial Re-Read** - Required structured section: all 5 sub-prompts answered with concrete content; "Findings:" and "Status:" lines populated; bare "No gaps" without specific reasoning fails verification (see Section 6d)
 - [ ] **Documentation Check** - README/docs updated if feature adds new functionality
 - [ ] **Next Steps** - Clear, actionable recommendations
+- [ ] **Structured Gap Findings** - `SEQUANT_QA_GAPS` marker present as the last line, findings classified per Section 6j (or `{"findings":[]}` on a clean pass)
 
 ### Early Exit (No Implementation)
 
@@ -3275,6 +3319,10 @@ When the size gate triggers simple fix mode, use this shorter template:
 ### Next Steps
 
 1. [Action item]
+
+### Structured Gap Findings
+
+<!-- SEQUANT_QA_GAPS: {"findings":[...]} -->
 ```
 
 ---
@@ -3679,4 +3727,8 @@ You MUST include these sections:
 
 1. [Action item 1]
 2. [Action item 2]
+
+### Structured Gap Findings
+
+<!-- SEQUANT_QA_GAPS: {"findings":[...]} -->
 ```

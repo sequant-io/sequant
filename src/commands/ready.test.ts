@@ -171,9 +171,11 @@ describe("readyCommand — #697 renderer wiring", () => {
   let errSpy: ReturnType<typeof vi.spyOn>;
   let savedExitCode: typeof process.exitCode;
   let savedIsTty: typeof process.stdout.isTTY;
+  let postCommentMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    postCommentMock = vi.fn().mockResolvedValue(undefined);
     savedExitCode = process.exitCode;
     // #699: this block covers the non-TTY fallback (plain renderer). Pin isTTY
     // off so the TUI path is never taken regardless of the test runner's stdout.
@@ -198,6 +200,7 @@ describe("readyCommand — #697 renderer wiring", () => {
       return {
         fetchIssueBodySync: () => "## Non-goals\n- nothing",
         fetchIssueTitleSync: () => "Title",
+        postComment: postCommentMock,
       } as unknown as GitHubProvider;
     });
 
@@ -266,6 +269,15 @@ describe("readyCommand — #697 renderer wiring", () => {
     expect(vi.mocked(executePhaseWithRetry).mock.calls[0][6]).toBeUndefined();
     // Output is the JSON object, not the markdown report.
     expect(logSpy.mock.calls.flat().join("\n")).not.toContain(REPORT_MARKER);
+  });
+
+  it("#937 AC-4: wires postReport to GitHubProvider.postComment for this issue", async () => {
+    await readyCommand(String(ISSUE), { json: true });
+
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.postReport).toBeInstanceOf(Function);
+    await opts.postReport!("report body");
+    expect(postCommentMock).toHaveBeenCalledWith(String(ISSUE), "report body");
   });
 
   it("AC-2: non-json reuses buildProgressWiring for the single issue + threads onProgress", async () => {

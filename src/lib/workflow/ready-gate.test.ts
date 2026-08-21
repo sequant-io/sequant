@@ -22,17 +22,27 @@ import {
   type ReadyResult,
 } from "./ready-gate.js";
 import type { PhaseResult, ProgressCallback } from "./types.js";
-import type { QaVerdict } from "./run-log-schema.js";
+import type { QaVerdict, GapFinding } from "./run-log-schema.js";
 import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
 
-function qaResult(verdict: QaVerdict | null, gaps: string[] = []): PhaseResult {
+function qaResult(
+  verdict: QaVerdict | null,
+  gaps: string[] = [],
+  findings?: GapFinding[],
+): PhaseResult {
   return {
     phase: "qa",
     success: true,
     verdict: verdict ?? undefined,
-    summary: { acMet: 0, acTotal: gaps.length, gaps, suggestions: [] },
+    summary: {
+      acMet: 0,
+      acTotal: gaps.length,
+      gaps,
+      suggestions: [],
+      ...(findings && { findings }),
+    },
   };
 }
 
@@ -480,6 +490,164 @@ describe("runReadyGate — AC-3a Non-Goal report-only under ac", () => {
   });
 });
 
+// ─── runReadyGate: structured gap filtering (#937 AC-3) ─────────────────────
+
+describe("runReadyGate — #937 AC-3 structured gap filtering", () => {
+  it("excludes a `document` finding from the fix loop but keeps `fix_now`", async () => {
+    const findings: GapFinding[] = [
+      {
+        category: "requirement_gap",
+        evidence: "AC-2 table row: NOT_MET",
+        description: "AC-2 rate limiting is missing",
+        recommendedAction: "fix_now",
+      },
+      {
+        category: "repository_gap",
+        evidence: "src/foo.ts:40 — cosmetic duplication",
+        description: "Minor duplication in src/foo.ts",
+        recommendedAction: "document",
+      },
+    ];
+    const { runPhase, calls } = scriptedRunner([
+      qaResult(
+        "AC_NOT_MET",
+        ["AC-2 rate limiting is missing", "Minor duplication in src/foo.ts"],
+        findings,
+      ),
+      loopResult(),
+      qaResult("READY_FOR_MERGE"),
+    ]);
+    const result = await runReadyGate(baseOpts({ runPhase }));
+
+    const loopCall = calls.find((c) => c.phase === "loop");
+    expect(loopCall?.failedAcs).toContain("AC-2 rate limiting is missing");
+    expect(loopCall?.failedAcs).not.toContain("Minor duplication");
+    expect(result.ready).toBe(true);
+  });
+
+  it("excludes a `pause_for_human` finding from the fix loop", async () => {
+    const findings: GapFinding[] = [
+      {
+        category: "risk_gap",
+        evidence: "Two valid designs, needs a human call",
+        description: "Ambiguous scope needs a decision",
+        recommendedAction: "pause_for_human",
+      },
+    ];
+    const { runPhase, calls } = scriptedRunner([
+      qaResult("AC_NOT_MET", ["Ambiguous scope needs a decision"], findings),
+      loopResult(),
+      qaResult("READY_FOR_MERGE"),
+    ]);
+    await runReadyGate(baseOpts({ runPhase }));
+
+    const loopCall = calls.find((c) => c.phase === "loop");
+    expect(loopCall?.failedAcs ?? "").not.toContain("Ambiguous scope");
+  });
+
+  it("treats a prose-only gap (no matching finding) as fixable, unchanged from pre-#937 behavior", async () => {
+    const { runPhase, calls } = scriptedRunner([
+      qaResult("AC_NOT_MET", ["Legacy prose gap, no marker"]),
+      loopResult(),
+      qaResult("READY_FOR_MERGE"),
+    ]);
+    await runReadyGate(baseOpts({ runPhase }));
+
+    const loopCall = calls.find((c) => c.phase === "loop");
+    expect(loopCall?.failedAcs).toContain("Legacy prose gap, no marker");
+  });
+});
+
+// ─── runReadyGate: persisted gap report (#937 AC-4) ──────────────────────────
+
+describe("runReadyGate — #937 AC-4 postReport", () => {
+  it("posts the report once a terminal state carries a QA verdict", async () => {
+    const { runPhase } = scriptedRunner([qaResult("READY_FOR_MERGE")]);
+    const posted: string[] = [];
+    const result = await runReadyGate(
+      baseOpts({
+        runPhase,
+        postReport: async (body) => {
+          posted.push(body);
+        },
+      }),
+    );
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toBe(result.report);
+    expect(posted[0]).toContain("SEQUANT_QA_GAPS");
+  });
+
+  it("does NOT post when the gate halts before any QA verdict (NO_IMPLEMENTATION)", async () => {
+    const { runPhase } = scriptedRunner([qaResult("READY_FOR_MERGE")]);
+    let posted = 0;
+    await runReadyGate(
+      baseOpts({
+        runPhase,
+        classifyChangesFn: () => ({ kind: "none" }),
+        postReport: async () => {
+          posted++;
+        },
+      }),
+    );
+
+    expect(posted).toBe(0);
+  });
+
+  it("never fails the gate when postReport itself throws", async () => {
+    const { runPhase } = scriptedRunner([qaResult("READY_FOR_MERGE")]);
+    const result = await runReadyGate(
+      baseOpts({
+        runPhase,
+        postReport: async () => {
+          throw new Error("network error");
+        },
+      }),
+    );
+
+    expect(result.ready).toBe(true);
+  });
+
+  it("the persisted marker's findings match `remaining`", async () => {
+    const findings: GapFinding[] = [
+      {
+        category: "test_gap",
+        evidence: "src/bar.ts has no test for the empty branch",
+        description: "Missing test for empty branch",
+        recommendedAction: "document",
+      },
+    ];
+    const { runPhase } = scriptedRunner([
+      qaResult(
+        "AC_MET_BUT_NOT_A_PLUS",
+        ["Missing test for empty branch"],
+        findings,
+      ),
+    ]);
+    let posted = "";
+    await runReadyGate(
+      baseOpts({
+        runPhase,
+        postReport: async (body) => {
+          posted = body;
+        },
+      }),
+    );
+
+    const match = posted.match(/<!-- SEQUANT_QA_GAPS: (\{[\s\S]*?\}) -->/);
+    expect(match).not.toBeNull();
+    const parsed = JSON.parse(match![1]);
+    expect(parsed.findings).toEqual([
+      {
+        category: "test_gap",
+        evidence: "src/bar.ts has no test for the empty branch",
+        description: "Missing test for empty branch",
+        recommendedAction: "document",
+      },
+    ]);
+  });
+});
+
 // ─── formatReadyReport (AC-4) ────────────────────────────────────────────────
 
 describe("formatReadyReport (AC-4)", () => {
@@ -501,6 +669,41 @@ describe("formatReadyReport (AC-4)", () => {
     const report = formatReadyReport(result);
     expect(report).toContain("NOT READY — no implementation");
     expect(report).toContain("#534");
+  });
+
+  it("#937: renders category · action tags for structured findings and appends the marker", () => {
+    const result: ReadyResult = {
+      issueNumber: 999,
+      policy: "ac",
+      ready: true,
+      reason: "AC_MET",
+      issueStatus: "waiting_for_human_merge",
+      iterations: 1,
+      finalVerdict: "AC_MET_BUT_NOT_A_PLUS",
+      autoFixed: [],
+      remaining: [
+        {
+          description: "Missing test for empty branch",
+          nonGoal: false,
+          category: "test_gap",
+          evidence: "src/bar.ts has no test",
+          recommendedAction: "document",
+        },
+        {
+          description: "Legacy prose-only gap",
+          nonGoal: false,
+        },
+      ],
+      tokensUsed: 0,
+      report: "",
+      effortEscalations: [],
+    };
+    const report = formatReadyReport(result);
+    expect(report).toContain("`test_gap · document`");
+    expect(report).toContain("Legacy prose-only gap");
+    // The prose-only item carries no taxonomy tag.
+    expect(report).not.toMatch(/Legacy prose-only gap`[^`]*`/);
+    expect(report).toMatch(/<!-- SEQUANT_QA_GAPS: \{[\s\S]*?\} -->/);
   });
 });
 
