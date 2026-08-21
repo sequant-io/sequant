@@ -143,7 +143,7 @@ function readFileContent(filePath: string): string | null {
   }
 }
 
-interface TautologySummary {
+export interface TautologySummary {
   pr?: number;
   filesScanned: number;
   totalTests: number;
@@ -153,11 +153,15 @@ interface TautologySummary {
   reason?: "base-not-found" | "no-test-files";
 }
 
-function summaryMarker(summary: TautologySummary): string {
+/** @internal Exported for testing — pins the TAUTOLOGY_SUMMARY marker shape (#940 AC-3). */
+export function summaryMarker(summary: TautologySummary): string {
   return `<!-- TAUTOLOGY_SUMMARY ${JSON.stringify(summary)} -->`;
 }
 
-function emitGithubAnnotations(fileResults: TautologyFileResult[]): void {
+/** @internal Exported for testing — pins the ::warning annotation format (#940 AC-2). */
+export function emitGithubAnnotations(
+  fileResults: TautologyFileResult[],
+): void {
   for (const fileResult of fileResults) {
     for (const block of fileResult.testBlocks) {
       if (!block.isTautological) continue;
@@ -170,7 +174,8 @@ function emitGithubAnnotations(fileResults: TautologyFileResult[]): void {
   }
 }
 
-function emitGithubStepSummary(markdown: string, marker: string): void {
+/** @internal Exported for testing (#940 AC-3). */
+export function emitGithubStepSummary(markdown: string, marker: string): void {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   const body = `${markdown}\n\n${marker}\n`;
   if (summaryPath) {
