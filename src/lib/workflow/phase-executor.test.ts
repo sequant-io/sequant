@@ -25,6 +25,7 @@ import {
   RATE_LIMIT_RETRY_BACKOFF_MS,
   RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS,
   isWindowExhaustedRateLimit,
+  selectFixableGaps,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
@@ -436,6 +437,160 @@ describe("parseQaSummary", () => {
       gaps: [],
       suggestions: [],
     });
+  });
+
+  it("#937 AC-2: prefers the SEQUANT_QA_GAPS marker, surfacing a §6d finding absent from **Issues:**", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- Minor: consider adding jsdoc
+
+### Adversarial Re-Read
+
+**Findings:** Non-Goal boundary not checked against the fixture at src/foo.ts:12
+**Status:** Gaps Found
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"risk_gap","evidence":"src/foo.ts:12 fixture never asserts the Non-Goal boundary","description":"Non-Goal boundary not checked against the fixture at src/foo.ts:12","recommendedAction":"fix_now"}]} -->`;
+
+    const result = parseQaSummary(output);
+    expect(result).not.toBeNull();
+    expect(result!.findings).toEqual([
+      {
+        category: "risk_gap",
+        evidence: "src/foo.ts:12 fixture never asserts the Non-Goal boundary",
+        description:
+          "Non-Goal boundary not checked against the fixture at src/foo.ts:12",
+        recommendedAction: "fix_now",
+      },
+    ]);
+    // Union, not replace: the §6d finding AND the prose Issues bullet both
+    // survive (AC-5's no-drop rule).
+    expect(result!.gaps).toEqual([
+      "Non-Goal boundary not checked against the fixture at src/foo.ts:12",
+      "Minor: consider adding jsdoc",
+    ]);
+  });
+
+  it("#937 AC-5: a marker-less QA output is unaffected — no `findings` key, gaps unchanged", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- Missing error handling for edge case`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 1,
+      gaps: ["Missing error handling for edge case"],
+      suggestions: [],
+    });
+    expect(result).not.toHaveProperty("findings");
+  });
+
+  it("#937: an invalid SEQUANT_QA_GAPS marker (malformed JSON) falls back to prose-only gaps", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- Missing error handling
+
+<!-- SEQUANT_QA_GAPS: {not valid json} -->`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 1,
+      gaps: ["Missing error handling"],
+      suggestions: [],
+    });
+  });
+
+  it("#937: deduplicates a finding description that also appears in the prose Issues list", () => {
+    const output = `| AC-1 | Original | Feature | MET | Done |
+
+**Issues:**
+- Missing rate limit on the retry path
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"requirement_gap","evidence":"src/retry.ts:40 has no cap","description":"Missing rate limit on the retry path","recommendedAction":"fix_now"}]} -->`;
+
+    const result = parseQaSummary(output);
+    expect(result!.gaps).toEqual(["Missing rate limit on the retry path"]);
+  });
+});
+
+describe("selectFixableGaps (#937 AC-3)", () => {
+  it("returns [] for a null/undefined summary", () => {
+    expect(selectFixableGaps(null)).toEqual([]);
+    expect(selectFixableGaps(undefined)).toEqual([]);
+  });
+
+  it("returns every gap when there are no findings", () => {
+    const summary = {
+      acMet: 0,
+      acTotal: 1,
+      gaps: ["a", "b"],
+      suggestions: [],
+    };
+    expect(selectFixableGaps(summary)).toEqual(["a", "b"]);
+  });
+
+  it("excludes a `document`-tagged finding, keeps `fix_now`", () => {
+    const summary = {
+      acMet: 0,
+      acTotal: 2,
+      gaps: ["fix now item", "document item"],
+      suggestions: [],
+      findings: [
+        {
+          category: "requirement_gap" as const,
+          evidence: "e1",
+          description: "fix now item",
+          recommendedAction: "fix_now" as const,
+        },
+        {
+          category: "repository_gap" as const,
+          evidence: "e2",
+          description: "document item",
+          recommendedAction: "document" as const,
+        },
+      ],
+    };
+    expect(selectFixableGaps(summary)).toEqual(["fix now item"]);
+  });
+
+  it("excludes a `pause_for_human`-tagged finding", () => {
+    const summary = {
+      acMet: 0,
+      acTotal: 1,
+      gaps: ["needs a decision"],
+      suggestions: [],
+      findings: [
+        {
+          category: "risk_gap" as const,
+          evidence: "e",
+          description: "needs a decision",
+          recommendedAction: "pause_for_human" as const,
+        },
+      ],
+    };
+    expect(selectFixableGaps(summary)).toEqual([]);
+  });
+
+  it("keeps a prose-only gap with no matching finding", () => {
+    const summary = {
+      acMet: 0,
+      acTotal: 1,
+      gaps: ["legacy prose gap"],
+      suggestions: [],
+      findings: [
+        {
+          category: "test_gap" as const,
+          evidence: "e",
+          description: "an unrelated finding",
+          recommendedAction: "document" as const,
+        },
+      ],
+    };
+    expect(selectFixableGaps(summary)).toEqual(["legacy prose gap"]);
   });
 });
 

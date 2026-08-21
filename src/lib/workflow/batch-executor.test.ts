@@ -1356,6 +1356,57 @@ describe("buildLoopContext", () => {
     expect(result).toContain("Error: QA verdict: AC_NOT_MET");
   });
 
+  it("#937 AC-3: excludes a `document`-tagged finding from QA Gaps, keeps `fix_now`", () => {
+    const result = buildLoopContext(
+      makeResult({
+        summary: {
+          acMet: 1,
+          acTotal: 3,
+          gaps: ["fix the retry cap", "cosmetic duplication in foo.ts"],
+          suggestions: [],
+          findings: [
+            {
+              category: "requirement_gap",
+              evidence: "AC-2 row: NOT_MET",
+              description: "fix the retry cap",
+              recommendedAction: "fix_now",
+            },
+            {
+              category: "repository_gap",
+              evidence: "foo.ts:20",
+              description: "cosmetic duplication in foo.ts",
+              recommendedAction: "document",
+            },
+          ],
+        },
+      }),
+    );
+    expect(result).toContain("- fix the retry cap");
+    expect(result).not.toContain("cosmetic duplication in foo.ts");
+  });
+
+  it("#937 AC-3: omits the QA Gaps section entirely when every gap is filtered out", () => {
+    const result = buildLoopContext(
+      makeResult({
+        summary: {
+          acMet: 1,
+          acTotal: 1,
+          gaps: ["polish only"],
+          suggestions: [],
+          findings: [
+            {
+              category: "repository_gap",
+              evidence: "e",
+              description: "polish only",
+              recommendedAction: "document",
+            },
+          ],
+        },
+      }),
+    );
+    expect(result).not.toContain("QA Gaps:");
+  });
+
   it("truncates long output to 2000 chars", () => {
     const longOutput = "x".repeat(5000);
     const result = buildLoopContext(makeResult({ output: longOutput }));
