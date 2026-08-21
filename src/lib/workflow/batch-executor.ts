@@ -48,6 +48,7 @@ import {
   executePhaseWithRetry,
   hasExecChanges,
   isWindowExhaustedRateLimit,
+  selectFixableGaps,
 } from "./phase-executor.js";
 import { BillingError, RateLimitError, resetsAtToMs } from "../errors.js";
 import type { StateManager } from "./state-manager.js";
@@ -197,10 +198,11 @@ export function buildLoopContext(failedResult: PhaseResult): string {
     parts.push(`QA Verdict: ${failedResult.verdict}`);
   }
 
-  if (failedResult.summary?.gaps?.length) {
-    parts.push(
-      `QA Gaps:\n${failedResult.summary.gaps.map((gap) => `- ${gap}`).join("\n")}`,
-    );
+  // #937 AC-3: exclude findings marked `document`/`pause_for_human` — those
+  // are QA-real but not something a fix loop should chase.
+  const fixableGaps = selectFixableGaps(failedResult.summary);
+  if (fixableGaps.length) {
+    parts.push(`QA Gaps:\n${fixableGaps.map((gap) => `- ${gap}`).join("\n")}`);
   }
 
   if (failedResult.summary?.suggestions?.length) {
@@ -740,6 +742,8 @@ interface ReadyGateForIssueArgs {
   getSettingsFn?: typeof getSettings;
   /** @internal Injected for testing — defaults to a real GitHubProvider. */
   fetchBody?: (issueNumber: number) => string | null;
+  /** @internal Injected for testing — defaults to a real GitHubProvider. */
+  postComment?: (issueNumber: number, body: string) => Promise<void>;
 }
 
 /**
@@ -783,6 +787,10 @@ async function runReadyGateForIssue(
   const fetchBody =
     args.fetchBody ??
     ((n: number) => new GitHubProvider().fetchIssueBodySync(String(n)));
+  const postComment =
+    args.postComment ??
+    ((n: number, body: string) =>
+      new GitHubProvider().postComment(String(n), body));
 
   try {
     const settings = await getSettingsFn();
@@ -827,6 +835,8 @@ async function runReadyGateForIssue(
       verbose: config.verbose,
       runPhase,
       onProgress,
+      // #937 AC-4: persist the final gap report as an issue comment.
+      postReport: (body) => postComment(issueNumber, body),
     });
 
     log(
@@ -1604,10 +1614,14 @@ export async function runIssueWithLogging(
           // Build enriched config for loop phase with QA context (#488).
           // Pass verdict, failed ACs, and error directly so the /loop skill
           // doesn't need to reconstruct context from GitHub comments.
+          // #937 AC-3: exclude `document`/`pause_for_human`-tagged findings
+          // from what the loop is told to fix (same filter as ready-gate's
+          // fixableGaps).
+          const fixableGaps = selectFixableGaps(result.summary);
           const loopConfig: ExecutionConfig = {
             ...issueConfig,
             lastVerdict: result.verdict ?? undefined,
-            failedAcs: result.summary?.gaps?.join("; ") ?? undefined,
+            failedAcs: fixableGaps.length ? fixableGaps.join("; ") : undefined,
             promptContext: buildLoopContext(result),
           };
 

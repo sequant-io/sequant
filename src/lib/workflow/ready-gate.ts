@@ -31,7 +31,12 @@ import {
   withEscalatedEffort,
   type EscalationRecord,
 } from "./effort-escalation.js";
-import type { QaVerdict } from "./run-log-schema.js";
+import type {
+  QaVerdict,
+  GapFinding,
+  GapCategory,
+  GapAction,
+} from "./run-log-schema.js";
 import type { ReadyPolicy } from "../settings.js";
 import type { IssueStatus } from "./state-schema.js";
 import {
@@ -90,6 +95,15 @@ export interface ReadyGapItem {
    * mode these are explicitly report-only (never fed to the fix loop).
    */
   nonGoal: boolean;
+  /**
+   * Structured taxonomy fields from the `SEQUANT_QA_GAPS` marker (#937),
+   * present only when this gap's description matched a marker finding.
+   * A gap surfaced only via the legacy prose scrape carries none of these.
+   */
+  category?: GapCategory;
+  evidence?: string;
+  recommendedAction?: GapAction;
+  affectedAcs?: string[];
 }
 
 /** Structured outcome of a ready-gate run. */
@@ -187,6 +201,14 @@ export interface RunReadyGateOptions {
    * dispatch to decide whether that specific `qa`/`loop` call escalates.
    */
   effortEscalation?: boolean;
+  /**
+   * Persist the final gap report as an issue comment when the gate reaches
+   * a terminal state with a QA verdict (#937 AC-4) — callers wire this to
+   * `GitHubProvider.postComment`. Best-effort: a failure here is caught and
+   * swallowed, never failing the gate itself — `result.report` (returned to
+   * the caller either way) is the primary channel.
+   */
+  postReport?: (body: string) => Promise<void>;
 }
 
 /**
@@ -302,11 +324,34 @@ export function parseNonGoals(issueBody: string): string[] {
   return items;
 }
 
-function classifyGaps(gaps: string[], nonGoals: string[]): ReadyGapItem[] {
-  return gaps.map((g) => ({
-    description: g,
-    nonGoal: gapTouchesNonGoals(g, nonGoals),
-  }));
+/**
+ * Classify each gap description for the report, enriching with structured
+ * taxonomy fields (#937) when the gap matches a `SEQUANT_QA_GAPS` marker
+ * finding. `findings` are matched to `gaps` by description (trimmed,
+ * case-folded) since `parseQaSummary` already unions marker findings into
+ * `gaps` in document order — every marker finding's description is present.
+ */
+function classifyGaps(
+  gaps: string[],
+  nonGoals: string[],
+  findings?: GapFinding[],
+): ReadyGapItem[] {
+  const byDescription = new Map(
+    (findings ?? []).map((f) => [f.description.trim().toLowerCase(), f]),
+  );
+  return gaps.map((g) => {
+    const finding = byDescription.get(g.trim().toLowerCase());
+    return {
+      description: g,
+      nonGoal: finding?.nonGoal ?? gapTouchesNonGoals(g, nonGoals),
+      ...(finding && {
+        category: finding.category,
+        evidence: finding.evidence,
+        recommendedAction: finding.recommendedAction,
+        ...(finding.affectedAcs && { affectedAcs: finding.affectedAcs }),
+      }),
+    };
+  });
 }
 
 function defaultReadTokensUsed(worktreePath: string): number {
@@ -413,8 +458,14 @@ export function formatReadyReport(result: ReadyResult): string {
     lines.push("- None");
   } else {
     for (const item of result.remaining) {
-      const tag = item.nonGoal ? " _(Non-Goal — report-only)_" : "";
-      lines.push(`- ${item.description}${tag}`);
+      const tags = [
+        item.category && item.recommendedAction
+          ? `\`${item.category} · ${item.recommendedAction}\``
+          : undefined,
+        item.nonGoal ? "_(Non-Goal — report-only)_" : undefined,
+      ].filter(Boolean);
+      const suffix = tags.length > 0 ? ` ${tags.join(" ")}` : "";
+      lines.push(`- ${item.description}${suffix}`);
     }
   }
   lines.push("");
@@ -422,8 +473,42 @@ export function formatReadyReport(result: ReadyResult): string {
   lines.push(
     "> The human merge gate is intentional: `sequant ready` never merges. Review the gaps above, then merge manually when satisfied.",
   );
+  lines.push("");
+  lines.push(formatReadyGapsMarker(result.remaining));
 
   return lines.join("\n");
+}
+
+/**
+ * Render `remaining` as a `SEQUANT_QA_GAPS` marker so the persisted ready
+ * report (#937 AC-4) carries the same machine-readable channel `/qa` itself
+ * emits — only items that came from a structured finding (have a
+ * `category`) round-trip; legacy prose-only gaps are already in the prose
+ * list above and are not re-encoded here.
+ */
+function formatReadyGapsMarker(remaining: ReadyGapItem[]): string {
+  const findings: GapFinding[] = remaining
+    .filter(
+      (
+        g,
+      ): g is ReadyGapItem & {
+        category: GapCategory;
+        evidence: string;
+        recommendedAction: GapAction;
+      } =>
+        g.category !== undefined &&
+        g.evidence !== undefined &&
+        g.recommendedAction !== undefined,
+    )
+    .map((g) => ({
+      category: g.category,
+      evidence: g.evidence,
+      description: g.description,
+      recommendedAction: g.recommendedAction,
+      ...(g.affectedAcs && { affectedAcs: g.affectedAcs }),
+      ...(g.nonGoal && { nonGoal: g.nonGoal }),
+    }));
+  return `<!-- SEQUANT_QA_GAPS: ${JSON.stringify({ findings })} -->`;
 }
 
 /**
@@ -486,7 +571,7 @@ export async function runReadyGate(
   // that actually escalated. Populated at the two dispatch sites below.
   const effortEscalations: EscalationRecord[] = [];
 
-  const finish = (reason: ReadyTerminalReason): ReadyResult => {
+  const finish = async (reason: ReadyTerminalReason): Promise<ReadyResult> => {
     const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
     const issueStatus: IssueStatus = ready
       ? "waiting_for_human_merge"
@@ -506,6 +591,23 @@ export async function runReadyGate(
       effortEscalations,
     };
     result.report = formatReadyReport(result);
+
+    // #937 AC-4: persist the gap report as an issue comment once the gate
+    // reaches a terminal state carrying a QA verdict. `finalVerdict === null`
+    // covers NO_IMPLEMENTATION/UNCOMMITTED_ONLY/NO_VERDICT and the guard
+    // TOKEN_BUDGET check before the first QA pass — none of those have a gap
+    // report worth persisting. Best-effort: a post failure must never fail
+    // the gate — `result.report` (returned either way) is the primary
+    // channel, same rationale as `sequant ready`'s existing state-persistence
+    // try/catch.
+    if (result.finalVerdict !== null && opts.postReport) {
+      try {
+        await opts.postReport(result.report);
+      } catch {
+        // Non-fatal — see comment above.
+      }
+    }
+
     return result;
   };
 
@@ -563,7 +665,7 @@ export async function runReadyGate(
 
     finalVerdict = verdict;
     const gaps = qaResult.summary?.gaps ?? [];
-    remaining = classifyGaps(gaps, nonGoals);
+    remaining = classifyGaps(gaps, nonGoals, qaResult.summary?.findings);
 
     // Policy threshold reached → stop at the human merge gate.
     if (isAtThreshold(policy, verdict)) {
@@ -583,9 +685,18 @@ export async function runReadyGate(
     // Run one fix loop. In `ac` mode we only reach here on AC_NOT_MET, so the
     // gaps are AC gaps — feeding them via failedAcs keeps the loop scoped to
     // the AC boundary (quality gaps are never fixed under `ac`). Non-Goal-
-    // touching findings are excluded from what we ask the loop to fix.
+    // touching findings are excluded from what we ask the loop to fix, as are
+    // `SEQUANT_QA_GAPS` findings explicitly marked `document` or
+    // `pause_for_human` (#937 AC-3) — a gap with no `recommendedAction` (the
+    // legacy prose-only path) is still treated as fixable, unchanged from
+    // pre-#937 behavior.
     const fixableGaps = remaining
-      .filter((g) => !g.nonGoal)
+      .filter(
+        (g) =>
+          !g.nonGoal &&
+          g.recommendedAction !== "document" &&
+          g.recommendedAction !== "pause_for_human",
+      )
       .map((g) => g.description);
 
     const before = snapshotFn(worktreePath);

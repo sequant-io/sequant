@@ -160,6 +160,48 @@ export const ErrorContextSchema = z.object({
 export type ErrorContext = z.infer<typeof ErrorContextSchema>;
 
 /**
+ * Finite taxonomy for a single gap finding surfaced by `/qa` (#937).
+ *
+ * Replaces the lossy prose-scrape gap channel (`parseListSection` against
+ * `**Issues:**`/`**Gaps**` headers, which misses AC-table NOT_MET rows, §6d
+ * Adversarial Re-Read findings, and §5 Risk Assessment). `evidence` is
+ * required so a finding can't be speculative — see #608's 0%-action-rate
+ * result for open-ended "what might we be missing" findings.
+ */
+export const GapCategorySchema = z.enum([
+  "requirement_gap",
+  "dependency_gap",
+  "test_gap",
+  "repository_gap",
+  "risk_gap",
+  "execution_gap",
+]);
+
+export type GapCategory = z.infer<typeof GapCategorySchema>;
+
+export const GapActionSchema = z.enum([
+  "fix_now",
+  "document",
+  "pause_for_human",
+]);
+
+export type GapAction = z.infer<typeof GapActionSchema>;
+
+export const GapFindingSchema = z.object({
+  category: GapCategorySchema,
+  /** Concrete observation grounding the finding — never speculation. */
+  evidence: z.string().min(1),
+  description: z.string().min(1),
+  recommendedAction: GapActionSchema,
+  /** ACs this finding relates to, e.g. ["AC-3"]. */
+  affectedAcs: z.array(z.string()).optional(),
+  /** True when the finding overlaps one of the issue's Non-Goals. */
+  nonGoal: z.boolean().optional(),
+});
+
+export type GapFinding = z.infer<typeof GapFindingSchema>;
+
+/**
  * Condensed QA verdict summary for structured log output (#434).
  *
  * Provides AC coverage counts, gaps, and suggestions so that
@@ -175,6 +217,13 @@ export const QaSummarySchema = z.object({
   gaps: z.array(z.string()),
   /** List of improvement suggestions from QA */
   suggestions: z.array(z.string()),
+  /**
+   * Structured gap findings parsed from the `SEQUANT_QA_GAPS` marker (#937).
+   * Present only when the marker was found and validated; `gaps` above
+   * always carries the union of marker + prose descriptions (dedupe'd) so
+   * marker-unaware consumers never regress.
+   */
+  findings: z.array(GapFindingSchema).optional(),
 });
 
 export type QaSummary = z.infer<typeof QaSummarySchema>;

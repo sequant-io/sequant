@@ -5,6 +5,7 @@ import {
   IssueStatusSchema,
   PhaseLogSchema,
   QaSummarySchema,
+  GapFindingSchema,
   IssueLogSchema,
   RunConfigSchema,
   RunLogSchema,
@@ -175,6 +176,70 @@ describe("Zod Schemas", () => {
 
     it("rejects missing fields", () => {
       expect(() => QaSummarySchema.parse({ acMet: 3 })).toThrow();
+    });
+  });
+
+  describe("GapFindingSchema (#937)", () => {
+    const base = {
+      evidence: "src/foo.ts:12 has no test for the empty-input branch",
+      description: "Empty input is not covered by a test",
+      recommendedAction: "fix_now" as const,
+    };
+
+    it("accepts a finding in each of the six categories", () => {
+      const categories = [
+        "requirement_gap",
+        "dependency_gap",
+        "test_gap",
+        "repository_gap",
+        "risk_gap",
+        "execution_gap",
+      ] as const;
+      for (const category of categories) {
+        expect(() =>
+          GapFindingSchema.parse({ ...base, category }),
+        ).not.toThrow();
+      }
+    });
+
+    it("accepts optional affectedAcs and nonGoal", () => {
+      expect(() =>
+        GapFindingSchema.parse({
+          ...base,
+          category: "test_gap",
+          affectedAcs: ["AC-3"],
+          nonGoal: true,
+        }),
+      ).not.toThrow();
+    });
+
+    it("rejects a finding missing evidence", () => {
+      const { evidence: _evidence, ...withoutEvidence } = base;
+      expect(() =>
+        GapFindingSchema.parse({ ...withoutEvidence, category: "test_gap" }),
+      ).toThrow();
+    });
+
+    it("rejects an empty-string evidence", () => {
+      expect(() =>
+        GapFindingSchema.parse({ ...base, category: "test_gap", evidence: "" }),
+      ).toThrow();
+    });
+
+    it("rejects an invalid category", () => {
+      expect(() =>
+        GapFindingSchema.parse({ ...base, category: "not_a_real_category" }),
+      ).toThrow();
+    });
+
+    it("rejects an invalid recommendedAction", () => {
+      expect(() =>
+        GapFindingSchema.parse({
+          ...base,
+          category: "test_gap",
+          recommendedAction: "maybe_later",
+        }),
+      ).toThrow();
     });
   });
 

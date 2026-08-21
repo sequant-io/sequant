@@ -103,7 +103,7 @@ fi
 | `## QA Review for Issue #N` | QA phase comment header |
 | `### Verdict:` | Contains AC_NOT_MET, AC_MET_BUT_NOT_A_PLUS, etc. |
 | `### AC Coverage` | Table with MET/NOT_MET/PARTIALLY_MET statuses |
-| `### Required Fixes` or `### Recommendations` | Actionable items to fix |
+| `<!-- SEQUANT_QA_GAPS: {...} -->` | Structured findings — the primary source for `recommendations` (#937; see below) |
 
 **Parsing QA comment:**
 
@@ -116,8 +116,52 @@ verdict=$(echo "$qa_comment" | grep -oE "Verdict:\s*\w+" | head -1 | awk '{print
 # Extract NOT_MET AC items
 not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET" || true)
 
-# Extract recommendations section
-recommendations=$(echo "$qa_comment" | sed -n '/### Required Fixes/,/###/p' | head -n -1)
+# #937: prefer the structured SEQUANT_QA_GAPS marker over prose scraping.
+# `### Required Fixes` was removed — no QA output template ever emitted that
+# heading, so the old `sed -n '/### Required Fixes/,/###/p'` extraction was
+# dead code that always produced an empty `recommendations`. The marker's
+# payload is an array of objects, so a single node -e does the stripping,
+# matching, AND JSON.parse/filter in one script — instead of hand-rolled
+# jq/awk — mirroring the "do real parsing in TS/JS, keep shell to presence
+# checks" split from the #871 drift-guard lesson (the same taxonomy filter
+# also lives in `selectFixableGaps`, `src/lib/workflow/phase-executor.ts` —
+# this is the shell-side mirror for standalone/orchestrated-comment-scrape
+# mode, not a duplicate contract).
+#
+# Stripping fenced/inline code before matching mirrors `stripMarkdownCode`
+# (src/lib/workflow/phase-detection.ts) — a bare grep/sed would mistake a
+# marker quoted inside a code fence (e.g. this skill's own "QA Log Example"
+# below) for a real one. Latest-wins if more than one marker is present,
+# matching `parseQaGapsMarker`'s semantics.
+recommendations=$(printf '%s' "$qa_comment" | node -e '
+  let input = "";
+  process.stdin.on("data", (d) => (input += d));
+  process.stdin.on("end", () => {
+    const stripped = input
+      .replace(/`{3,}[\s\S]*?`{3,}|~{3,}[\s\S]*?~{3,}/g, "")
+      .replace(/`[^`\n]+`/g, "");
+    const matches = [...stripped.matchAll(/<!-- SEQUANT_QA_GAPS: (\{[\s\S]*?\}) -->/g)];
+    if (matches.length === 0) return;
+    try {
+      const payload = JSON.parse(matches[matches.length - 1][1]);
+      const findings = Array.isArray(payload.findings) ? payload.findings : [];
+      for (const f of findings) {
+        if (f.recommendedAction === "document" || f.recommendedAction === "pause_for_human") continue;
+        console.log(`- ${f.description}`);
+      }
+    } catch {
+      // Malformed marker JSON — leave recommendations empty, not a crash.
+    }
+  });
+' || true)
+
+# No marker (QA output predates #937, or emitted an empty findings array
+# with everything filtered) — fall back to the AC-table NOT_MET/PARTIALLY_MET
+# rows already captured above; there is no prose "Required Fixes" section to
+# scrape.
+if [[ -z "$recommendations" ]]; then
+  recommendations="$not_met_acs"
+fi
 ```
 
 **If no QA comment found in orchestrated mode:**
@@ -178,13 +222,14 @@ Some QA findings are real but **not fixable by a code change**. Feeding them to 
 | Class | Marker in the QA comment | Why it is not actionable |
 |-------|--------------------------|--------------------------|
 | Infra-blocked CI | `<!-- qa:ci-infra-blocked -->` | Every check failed without a runner ever starting (e.g. an Actions spending-limit lockout). The cause is account/infrastructure state; no diff can turn the checks green. See `qa/SKILL.md` § "Infra-Blocked CI Detection". |
+| `document`/`pause_for_human` findings | `<!-- SEQUANT_QA_GAPS: {...} -->`, per-finding `recommendedAction` | Quality/polish gaps deliberately deferred (`document`), or findings needing a human decision the loop can't make on its own (`pause_for_human`) — see #937. Filtered directly out of the `recommendations` extraction above (Step 1A), not by rebinding `qa_comment` — the marker's structure makes a per-finding filter more precise than a text-range delete. |
 
 ```bash
 # Drop the marked findings when QA flagged CI as infra-blocked, so its
 # NEEDS_VERIFICATION AC items are never mistaken for actionable findings.
 # Range is EXCLUSIVE of the next `### ` header — a `sed '/marker/,/^### /d'`
 # range would delete that header too and orphan the following section's
-# content (verified: it silently swallows `### Required Fixes`).
+# content (verified against this file's own `### AC Coverage` header).
 qa_comment_raw="$qa_comment"   # keep the original so the cause can be reported verbatim
 
 if echo "$qa_comment" | grep -q '<!-- qa:ci-infra-blocked -->'; then
@@ -513,13 +558,15 @@ For each iteration, output:
 
 ### Verdict: AC_NOT_MET
 
-### Required Fixes
+### Next Steps
 
 1. Complete URL validation in ExternalUrlTab
 2. Add focal point persistence in updateArticleImage action
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"requirement_gap","evidence":"AC-3 row: PARTIALLY_MET — External URL validation incomplete","description":"Complete URL validation in ExternalUrlTab","recommendedAction":"fix_now","affectedAcs":["AC-3"]},{"category":"requirement_gap","evidence":"AC-4 row: NOT_MET — Focal point not persisted to database","description":"Add focal point persistence in updateArticleImage action","recommendedAction":"fix_now","affectedAcs":["AC-4"]}]} -->
 ```
 
-**Parsed Output:**
+**Parsed Output** (marker-derived — this is the real emission shape, see §"How to build the marker" in `qa/SKILL.md`):
 - Last phase: `/qa`
 - Verdict: `AC_NOT_MET`
 - Issues to fix:

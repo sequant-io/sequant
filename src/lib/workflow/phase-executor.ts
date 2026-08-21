@@ -20,6 +20,7 @@ import {
   PhasePauseHandle,
 } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
+import { parseQaGapsMarker } from "./qa-gaps-marker.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type {
@@ -618,10 +619,51 @@ export function parseQaSummary(output: string): QaSummary | null {
 
   if (acTotal === 0) return null;
 
-  const gaps = parseListSection(output, /\*\*(?:Issues|Gaps)/);
+  const proseGaps = parseListSection(output, /\*\*(?:Issues|Gaps)/);
   const suggestions = parseListSection(output, /\*\*Suggestions/);
 
-  return { acMet, acTotal, gaps, suggestions };
+  // #937: prefer the structured marker, but UNION with the prose scrape
+  // rather than replace it — a marker-carrying comment can still contain a
+  // gap the model couldn't fit into the six categories (the fallback rule),
+  // and that prose-only finding must not be silently dropped (AC-5).
+  const findings = parseQaGapsMarker(output) ?? undefined;
+  const seen = new Set<string>();
+  const gaps: string[] = [];
+  for (const gap of [
+    ...(findings?.map((f) => f.description) ?? []),
+    ...proseGaps,
+  ]) {
+    const key = gap.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    gaps.push(gap);
+  }
+
+  return { acMet, acTotal, gaps, suggestions, ...(findings && { findings }) };
+}
+
+/**
+ * Select the gap descriptions from a QA summary appropriate to feed a fix
+ * loop (#937 AC-3): every gap, except one whose `SEQUANT_QA_GAPS` finding is
+ * explicitly marked `document` or `pause_for_human` — those are QA-real but
+ * not code-fixable (quality/polish, or a decision the loop can't make on its
+ * own). A gap with no matching finding (the legacy prose-scrape path) is
+ * always included, unchanged from pre-#937 behavior.
+ */
+export function selectFixableGaps(
+  summary: QaSummary | null | undefined,
+): string[] {
+  if (!summary) return [];
+  const excluded = new Set(
+    (summary.findings ?? [])
+      .filter(
+        (f) =>
+          f.recommendedAction === "document" ||
+          f.recommendedAction === "pause_for_human",
+      )
+      .map((f) => f.description.trim().toLowerCase()),
+  );
+  return summary.gaps.filter((g) => !excluded.has(g.trim().toLowerCase()));
 }
 
 /**

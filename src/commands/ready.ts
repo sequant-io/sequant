@@ -301,6 +301,9 @@ export async function readyCommand(
       onProgress,
       phasePolicies,
       effortEscalation,
+      // #937 AC-4: persist the final gap report so it survives the terminal
+      // closing (previously terminal-scrollback only under `ac` policy).
+      postReport: (body) => gh.postComment(String(issueNumber), body),
     });
   } catch (error) {
     // Tear down the live zone on the error path too — not just the happy path
