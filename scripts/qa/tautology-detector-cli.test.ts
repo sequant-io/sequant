@@ -44,10 +44,15 @@ describe("tautology-detector-cli", { timeout: 60_000 }, () => {
   it("runs with default (markdown) output", () => {
     const { stdout, exitCode } = runCli();
     expect(exitCode).toBe(0);
-    // Should produce either markdown table or "No test files changed" message
+    // Should produce a markdown table, "No test files changed", or (#940) a
+    // "Cannot diff against base ref" skip message — CI's own shallow
+    // (fetch-depth: 1) checkout of this build job leaves origin/main...HEAD
+    // with no discoverable merge-base, which selectChangedTestFiles now
+    // reports explicitly instead of collapsing into "no test files".
     expect(
       stdout.includes("Test Quality Review") ||
-        stdout.includes("No test files changed"),
+        stdout.includes("No test files changed") ||
+        stdout.includes("Cannot diff against base ref"),
     ).toBe(true);
   });
 

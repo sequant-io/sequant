@@ -63,6 +63,49 @@ The tautology detector runs automatically during `/qa` as part of the quality ch
 - `src/lib/foo.test.ts:62` - `test("validates input")` - No production function calls
 ```
 
+## CI (Phase A, advisory)
+
+**#940.** A `tautology-advisory` CI job runs the same detector on every PR,
+diffing test files changed vs the base branch. This is deliberately
+**advisory-only** — the job always exits 0, regardless of findings. It exists
+to accumulate a false-positive rate across real PRs before deciding whether
+to enforce (Phase B).
+
+Findings render as:
+- `::warning` annotations on the changed lines (visible in the PR's Files tab)
+- A markdown table in the job summary (`$GITHUB_STEP_SUMMARY`)
+- A machine-readable summary line for FP-rate accounting:
+  ```
+  <!-- TAUTOLOGY_SUMMARY {"pr":940,"filesScanned":2,"totalTests":4,"findings":1,"skipped":0,"score":0.25} -->
+  ```
+
+The job invokes the CLI with:
+
+```bash
+npx tsx scripts/qa/tautology-detector-cli.ts \
+  --base "origin/$BASE_REF" \
+  --advisory \
+  --github
+```
+
+`--base` is required in CI because it's passed explicitly rather than
+relying on `resolveDiffBase`'s local-ref fallback. The checkout step uses
+`fetch-depth: 0` (full history) — the default `fetch-depth: 1` checks out
+only the PR's merge commit with no parent links, so `origin/<base>...HEAD`
+has no discoverable merge-base and the diff throws `fatal: ...: no merge
+base` even though `origin/<base>` itself resolves fine (confirmed on this
+job's first live CI run). Full history also removes the need for a separate
+fetch step — `origin/<base>` is already populated by the full clone.
+
+**Aggregating the FP rate:** pull `TAUTOLOGY_SUMMARY` lines from recent job
+summaries to compute the measured rate ahead of the Phase B decision:
+
+```bash
+gh run list --workflow=ci.yml --json databaseId -q '.[].databaseId' | \
+  xargs -I{} gh api "/repos/{owner}/{repo}/actions/jobs/{}" 2>/dev/null | \
+  grep -o '<!-- TAUTOLOGY_SUMMARY .* -->'
+```
+
 ## CLI Usage
 
 Run the detector standalone via the CLI wrapper:
@@ -76,7 +119,18 @@ npx tsx scripts/qa/tautology-detector-cli.ts --json
 
 # Verbose (shows warnings for unreadable files)
 npx tsx scripts/qa/tautology-detector-cli.ts --verbose
+
+# CI mode: explicit base ref, force exit 0, GitHub annotations + step summary (#940)
+npx tsx scripts/qa/tautology-detector-cli.ts --base origin/main --advisory --github
 ```
+
+| Flag | Description |
+|------|--------------|
+| `--json` | Output results as JSON |
+| `--verbose` | Include warnings for unreadable files |
+| `--base <ref>` | Diff base ref (default: `resolveDiffBase` against `main`) |
+| `--advisory` | Force exit 0 even when findings exceed the blocking threshold |
+| `--github` | Emit `::warning` annotations and a `$GITHUB_STEP_SUMMARY` table with a `TAUTOLOGY_SUMMARY` marker |
 
 ### Exit Codes
 
