@@ -43,7 +43,23 @@ describe("selectChangedTestFiles (#940 AC-4)", () => {
     expect(result.baseResolved).toBe(false);
     expect(result.files).toEqual([]);
     expect(result.base).toBe("origin/nonexistent");
+    expect(result.error).toMatch(/does not exist/);
     expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it("reports a diff failure explicitly when the ref exists but shares no history with HEAD (shallow-clone regression, #940)", () => {
+    mockedSpawnSync.mockReturnValue(spawnResult(0)); // rev-parse --verify succeeds
+    mockedExecFileSync.mockImplementation(() => {
+      throw new Error(
+        "Command failed: git -C /repo diff origin/main...HEAD --name-only\nfatal: origin/main...HEAD: no merge base\n",
+      );
+    });
+
+    const result = selectChangedTestFiles("/repo", "origin/main");
+
+    expect(result.baseResolved).toBe(false);
+    expect(result.files).toEqual([]);
+    expect(result.error).toContain("no merge base");
   });
 
   it("short-circuits cleanly when no test files changed", () => {

@@ -293,12 +293,15 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
+      # fetch-depth: 0 (full history) — the default fetch-depth: 1 checks out
+      # only the PR merge commit with no parent links, so `origin/<base>...HEAD`
+      # has no discoverable merge-base and the diff fails with "no merge base"
+      # (confirmed live on this PR's own first CI run). Full history also
+      # populates refs/remotes/origin/* for every branch, so `origin/<base>`
+      # resolves without a separate fetch step.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Default checkout is fetch-depth: 1 — the base ref does not exist
-      # locally until fetched explicitly.
-      - name: Fetch base branch
-        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+        with:
+          fetch-depth: 0
 
       - name: Use Node.js 22.x
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -312,8 +315,9 @@ jobs:
       - name: Run tautology detector (advisory)
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           npx tsx scripts/qa/tautology-detector-cli.ts \
-            --base "origin/${{ github.base_ref }}" \
+            --base "origin/$BASE_REF" \
             --advisory \
             --github

@@ -83,15 +83,19 @@ The job invokes the CLI with:
 
 ```bash
 npx tsx scripts/qa/tautology-detector-cli.ts \
-  --base "origin/${{ github.base_ref }}" \
+  --base "origin/$BASE_REF" \
   --advisory \
   --github
 ```
 
-`--base` is required in CI because the default checkout is shallow
-(`fetch-depth: 1`) — the job fetches the base ref explicitly first
-(`git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"`), then passes
-it directly rather than relying on `resolveDiffBase`'s local-ref fallback.
+`--base` is required in CI because it's passed explicitly rather than
+relying on `resolveDiffBase`'s local-ref fallback. The checkout step uses
+`fetch-depth: 0` (full history) — the default `fetch-depth: 1` checks out
+only the PR's merge commit with no parent links, so `origin/<base>...HEAD`
+has no discoverable merge-base and the diff throws `fatal: ...: no merge
+base` even though `origin/<base>` itself resolves fine (confirmed on this
+job's first live CI run). Full history also removes the need for a separate
+fetch step — `origin/<base>` is already populated by the full clone.
 
 **Aggregating the FP rate:** pull `TAUTOLOGY_SUMMARY` lines from recent job
 summaries to compute the measured rate ahead of the Phase B decision:

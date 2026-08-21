@@ -7,11 +7,12 @@
  * Scope: run both LOCAL / AGENT-SIDE by `/qa` (via
  * `.claude/skills/qa/scripts/quality-checks.sh`, default flags — unaffected
  * by anything below) and in GitHub CI as a Phase A advisory job (#940). CI
- * uses `--base`, `--advisory`, and `--github`: the default checkout is
- * shallow (`fetch-depth: 1`), so the job fetches the base ref explicitly
- * before invoking this script, then passes it via `--base` rather than
- * relying on `resolveDiffBase`'s local-ref fallback. See issue #885 (AC-4),
- * #810, and #940.
+ * uses `--base`, `--advisory`, and `--github`, passing `--base` explicitly
+ * rather than relying on `resolveDiffBase`'s local-ref fallback. The CI
+ * checkout uses `fetch-depth: 0` (full history) — a shallow checkout leaves
+ * `origin/<base>...HEAD` with no discoverable merge-base, so the three-dot
+ * diff throws "no merge base" even when `origin/<base>` itself resolves.
+ * See issue #885 (AC-4), #810, and #940.
  *
  * Usage:
  *   npx tsx scripts/qa/tautology-detector-cli.ts [options]
@@ -73,6 +74,10 @@ export interface ChangedTestFilesResult {
   files: string[];
   base: string;
   baseResolved: boolean;
+  /** Present when baseResolved is false — why the diff couldn't run: the
+   *  ref doesn't exist, or (a shallow-clone footgun) it exists but shares no
+   *  merge-base with HEAD, so a three-dot diff throws. */
+  error?: string;
 }
 
 /**
@@ -88,7 +93,12 @@ export function selectChangedTestFiles(
   const resolvedBase = base ?? resolveDiffBase(cwd, "main");
 
   if (!refExists(cwd, resolvedBase)) {
-    return { files: [], base: resolvedBase, baseResolved: false };
+    return {
+      files: [],
+      base: resolvedBase,
+      baseResolved: false,
+      error: `ref '${resolvedBase}' does not exist`,
+    };
   }
 
   try {
@@ -102,8 +112,26 @@ export function selectChangedTestFiles(
       .split("\n")
       .filter((f) => f && /\.(test|spec)\.[jt]sx?$/.test(f));
     return { files, base: resolvedBase, baseResolved: true };
-  } catch {
-    return { files: [], base: resolvedBase, baseResolved: false };
+  } catch (err) {
+    // Ref exists but the diff itself failed — most commonly a shallow
+    // checkout with no shared history, where `git diff base...HEAD` throws
+    // "no merge base" even though `base` resolves fine on its own. Prefer
+    // stderr (the actual git fatal message) over the generic "Command
+    // failed: ..." wrapper execFileSync puts in `.message`.
+    const errWithStderr = err as { stderr?: string | Buffer; message?: string };
+    const stderrText = Buffer.isBuffer(errWithStderr?.stderr)
+      ? errWithStderr.stderr.toString("utf-8").trim()
+      : typeof errWithStderr?.stderr === "string"
+        ? errWithStderr.stderr.trim()
+        : undefined;
+    const message =
+      stderrText || (err instanceof Error ? err.message : String(err));
+    return {
+      files: [],
+      base: resolvedBase,
+      baseResolved: false,
+      error: message,
+    };
   }
 }
 
@@ -163,7 +191,7 @@ function main(): void {
   const selection = selectChangedTestFiles(cwd, args.base);
 
   if (!selection.baseResolved) {
-    const message = `Base ref '${selection.base}' not found — skipping tautology scan`;
+    const message = `Cannot diff against base ref '${selection.base}' — skipping tautology scan (${selection.error ?? "unknown error"})`;
     if (args.github) {
       emitGithubStepSummary(
         `### Test Tautology (Phase A, advisory)\n\n${message}`,
