@@ -120,33 +120,40 @@ not_met_acs=$(echo "$qa_comment" | grep -E "NOT_MET|PARTIALLY_MET" || true)
 # `### Required Fixes` was removed — no QA output template ever emitted that
 # heading, so the old `sed -n '/### Required Fixes/,/###/p'` extraction was
 # dead code that always produced an empty `recommendations`. The marker's
-# payload is an array of objects, so a single node -e JSON.parse is used
-# instead of hand-rolled jq/awk — mirroring the "do real parsing in TS/JS,
-# keep shell to presence checks" split from the #871 drift-guard lesson (the
-# same taxonomy filter also lives in `selectFixableGaps`,
-# `src/lib/workflow/phase-executor.ts` — this is the shell-side mirror for
-# standalone/orchestrated-comment-scrape mode, not a duplicate contract).
-qa_gaps_json=$(echo "$qa_comment" | grep -oE '<!-- SEQUANT_QA_GAPS: \{.*\} -->' | tail -1 | sed -E 's/^<!-- SEQUANT_QA_GAPS: (.*) -->$/\1/')
-
-recommendations=""
-if [[ -n "$qa_gaps_json" ]]; then
-  recommendations=$(echo "$qa_gaps_json" | node -e '
-    let input = "";
-    process.stdin.on("data", (d) => (input += d));
-    process.stdin.on("end", () => {
-      try {
-        const payload = JSON.parse(input);
-        const findings = Array.isArray(payload.findings) ? payload.findings : [];
-        for (const f of findings) {
-          if (f.recommendedAction === "document" || f.recommendedAction === "pause_for_human") continue;
-          console.log(`- ${f.description}`);
-        }
-      } catch {
-        // Malformed marker JSON — leave recommendations empty, not a crash.
+# payload is an array of objects, so a single node -e does the stripping,
+# matching, AND JSON.parse/filter in one script — instead of hand-rolled
+# jq/awk — mirroring the "do real parsing in TS/JS, keep shell to presence
+# checks" split from the #871 drift-guard lesson (the same taxonomy filter
+# also lives in `selectFixableGaps`, `src/lib/workflow/phase-executor.ts` —
+# this is the shell-side mirror for standalone/orchestrated-comment-scrape
+# mode, not a duplicate contract).
+#
+# Stripping fenced/inline code before matching mirrors `stripMarkdownCode`
+# (src/lib/workflow/phase-detection.ts) — a bare grep/sed would mistake a
+# marker quoted inside a code fence (e.g. this skill's own "QA Log Example"
+# below) for a real one. Latest-wins if more than one marker is present,
+# matching `parseQaGapsMarker`'s semantics.
+recommendations=$(printf '%s' "$qa_comment" | node -e '
+  let input = "";
+  process.stdin.on("data", (d) => (input += d));
+  process.stdin.on("end", () => {
+    const stripped = input
+      .replace(/`{3,}[\s\S]*?`{3,}|~{3,}[\s\S]*?~{3,}/g, "")
+      .replace(/`[^`\n]+`/g, "");
+    const matches = [...stripped.matchAll(/<!-- SEQUANT_QA_GAPS: (\{[\s\S]*?\}) -->/g)];
+    if (matches.length === 0) return;
+    try {
+      const payload = JSON.parse(matches[matches.length - 1][1]);
+      const findings = Array.isArray(payload.findings) ? payload.findings : [];
+      for (const f of findings) {
+        if (f.recommendedAction === "document" || f.recommendedAction === "pause_for_human") continue;
+        console.log(`- ${f.description}`);
       }
-    });
-  ' || true)
-fi
+    } catch {
+      // Malformed marker JSON — leave recommendations empty, not a crash.
+    }
+  });
+' || true)
 
 # No marker (QA output predates #937, or emitted an empty findings array
 # with everything filtered) — fall back to the AC-table NOT_MET/PARTIALLY_MET
