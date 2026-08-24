@@ -26,6 +26,7 @@ import {
   RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS,
   isWindowExhaustedRateLimit,
   selectFixableGaps,
+  PROMPT_CONTEXT_SENTINEL,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
@@ -689,6 +690,29 @@ describe("getPhasePrompt", () => {
     expect(result).toContain("/loop 42");
     expect(result).toContain("QA Verdict: AC_NOT_MET");
     expect(result).toContain("Failed: AC-1, AC-3");
+  });
+
+  it("wraps promptContext in the sentinel so consumers can detect embedded context (#960)", async () => {
+    mockReadAgentsMd.mockResolvedValue(null);
+    const result = await getPhasePrompt(
+      "loop",
+      42,
+      undefined,
+      "QA Verdict: AC_NOT_MET\n\nFailed: AC-1, AC-3",
+    );
+    expect(result).toContain(`<!-- ${PROMPT_CONTEXT_SENTINEL} -->`);
+    expect(result).toContain(`<!-- /${PROMPT_CONTEXT_SENTINEL} -->`);
+    // The context body must sit between the open and close markers.
+    const open = result.indexOf(`<!-- ${PROMPT_CONTEXT_SENTINEL} -->`);
+    const close = result.indexOf(`<!-- /${PROMPT_CONTEXT_SENTINEL} -->`);
+    const between = result.slice(open, close);
+    expect(between).toContain("QA Verdict: AC_NOT_MET");
+  });
+
+  it("omits the sentinel entirely when no promptContext is given", async () => {
+    mockReadAgentsMd.mockResolvedValue(null);
+    const result = await getPhasePrompt("loop", 42);
+    expect(result).not.toContain(PROMPT_CONTEXT_SENTINEL);
   });
 });
 

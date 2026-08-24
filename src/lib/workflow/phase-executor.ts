@@ -1066,6 +1066,15 @@ export function mapAgentFailureToPhaseResult(
 }
 
 /**
+ * Marks the embedded `promptContext` block appended below so a phase's own
+ * skill (e.g. `/loop`) can detect it deterministically instead of pattern-
+ * matching prose that varies per producer (`ready-gate.ts` and
+ * `batch-executor.ts` build differently-worded context for the same slot).
+ * See #960.
+ */
+export const PROMPT_CONTEXT_SENTINEL = "SEQUANT_PROMPT_CONTEXT";
+
+/**
  * Get the prompt for a phase with the issue number substituted.
  * Selects self-contained prompts for non-Claude agents.
  * Includes AGENTS.md content as context so non-Claude agents
@@ -1073,6 +1082,7 @@ export function mapAgentFailureToPhaseResult(
  *
  * @internal Exported for testing only
  */
+
 export async function getPhasePrompt(
   phase: Phase,
   issueNumber: number,
@@ -1089,9 +1099,11 @@ export async function getPhasePrompt(
   const template = driverPrompt ?? definition.promptTemplate;
   let basePrompt = template.replace(/\{issue\}/g, String(issueNumber));
 
-  // Append phase-specific context (e.g., QA findings for loop phase)
+  // Append phase-specific context (e.g., QA findings for loop phase),
+  // wrapped in a sentinel so the phase's own skill (e.g. /loop) can detect
+  // embedded orchestrator context without re-fetching it from GitHub (#960).
   if (promptContext) {
-    basePrompt += `\n\n---\n\n${promptContext}`;
+    basePrompt += `\n\n---\n\n<!-- ${PROMPT_CONTEXT_SENTINEL} -->\n${promptContext}\n<!-- /${PROMPT_CONTEXT_SENTINEL} -->`;
   }
 
   // Include AGENTS.md content in the prompt context for non-Claude agent compatibility.
