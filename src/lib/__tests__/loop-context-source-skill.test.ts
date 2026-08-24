@@ -35,8 +35,20 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
+import { PROMPT_CONTEXT_SENTINEL } from "../workflow/phase-executor.js";
 
 const SKILL_ROOTS = [".claude/skills", "skills", "templates/skills"] as const;
+
+/**
+ * Sentinel markers as the runtime actually emits them (`getPhasePrompt`).
+ * Built from the imported constant, NOT hardcoded literals: if the TS
+ * constant's value is ever renamed, these assertions then demand the skill
+ * text carry the NEW value — closing the drift hole where a rename passes
+ * both suites (unit test uses the constant, skill text still says the old
+ * string) while runtime and skill silently diverge (#871-class).
+ */
+const SENTINEL_OPEN = `<!-- ${PROMPT_CONTEXT_SENTINEL} -->`;
+const SENTINEL_CLOSE = `<!-- /${PROMPT_CONTEXT_SENTINEL} -->`;
 
 /**
  * Anchor to this file's own location, not `process.cwd()`. Under CI the two
@@ -119,12 +131,12 @@ function orchestratedBehaviorList(root: string): string {
 
 describe("AC-1: Step 1A checks embedded promptContext before fetching GitHub", () => {
   it.each(SKILL_ROOTS)(
-    "%s — instructs checking the invocation for the SEQUANT_PROMPT_CONTEXT sentinel first",
+    "%s — instructs checking the invocation for the runtime's sentinel first",
     (root) => {
       const span = step1ASpan(root);
       expect(span).toMatch(/Check your own invocation first/i);
-      expect(span).toMatch(/<!-- SEQUANT_PROMPT_CONTEXT -->/);
-      expect(span).toMatch(/<!-- \/SEQUANT_PROMPT_CONTEXT -->/);
+      expect(span).toContain(SENTINEL_OPEN);
+      expect(span).toContain(SENTINEL_CLOSE);
     },
   );
 
@@ -133,6 +145,21 @@ describe("AC-1: Step 1A checks embedded promptContext before fetching GitHub", (
     (root) => {
       const span = step1ASpan(root);
       expect(span).toMatch(/\*\*Do not\*\* fetch `gh issue view`/);
+    },
+  );
+
+  it.each(SKILL_ROOTS)(
+    "%s — maps the embedded gap list to recommendations and scopes the pre-filter claim",
+    (root) => {
+      // The embedded block is not QA-comment-shaped, so the section must
+      // tell the agent the gap list IS the recommendations (the parsing
+      // greps below it extract nothing from the block), and must scope the
+      // "already filtered" claim to the gap list only — batch-executor's
+      // `Suggestions:`/`Last output:` sections are raw, unfiltered context.
+      const span = step1ASpan(root);
+      expect(span).toMatch(/gap list IS your `recommendations`/);
+      expect(span).toContain("Gaps to address:");
+      expect(span).toMatch(/never as additional findings to fix/);
     },
   );
 
@@ -165,7 +192,7 @@ describe("Orchestration Context point 4 states the operational rule", () => {
     (root) => {
       const list = orchestratedBehaviorList(root);
       expect(list).toMatch(/Trust embedded context/i);
-      expect(list).toMatch(/SEQUANT_PROMPT_CONTEXT/);
+      expect(list).toContain(PROMPT_CONTEXT_SENTINEL);
       expect(list).toMatch(/do not re-fetch from GitHub/i);
     },
   );
@@ -177,7 +204,7 @@ describe("Three-way miss (no sentinel, no GH comment, no log file) hard-errors",
     (root) => {
       const full = skillText(root);
       const idx = full.indexOf(
-        "**If neither an embedded `SEQUANT_PROMPT_CONTEXT` block nor a matching GitHub QA comment is found in orchestrated mode:**",
+        `**If neither an embedded \`${PROMPT_CONTEXT_SENTINEL}\` block nor a matching GitHub QA comment is found in orchestrated mode:**`,
       );
       expect(idx, "three-way-miss note not found").toBeGreaterThanOrEqual(0);
       const note = full.slice(idx, idx + 500);
@@ -194,7 +221,7 @@ describe("AC-3: standalone Step 1B is unaffected by the #960 fix", () => {
       const section = step1BSpan(root);
       expect(section).toMatch(/read from the log file/i);
       expect(section).toMatch(/claude-issue-<issue-number>\.log/);
-      expect(section).not.toMatch(/SEQUANT_PROMPT_CONTEXT/);
+      expect(section).not.toContain(PROMPT_CONTEXT_SENTINEL);
       expect(section).not.toMatch(/gh issue view/);
     },
   );

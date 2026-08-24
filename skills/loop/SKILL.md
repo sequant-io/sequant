@@ -87,7 +87,8 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 
 - Treat the text between the markers as the authoritative QA findings (`qa_comment` below).
 - **Do not** fetch `gh issue view` for QA comments — skip straight to "Parsing QA comment" below, using the embedded text in place of the fetched comment.
-- The embedded block is already `fixableGaps`-filtered by the orchestrator (`selectFixableGaps` in `batch-executor.ts`, or ready-gate's own filter), so the `document`/`pause_for_human` exclusion in "Excluded Finding Classes" below is redundant for this path — it exists for the fetched-comment fallback.
+- **The embedded block's gap list IS your `recommendations`.** The block is not QA-comment-shaped — the parsing snippets below (verdict grep aside) won't extract anything from it. Read the list under `Gaps to address:` (ready-gate) or `QA Gaps:` (batch-executor) directly as the findings to fix; the `QA Verdict:` line is the verdict.
+- That gap list is already `fixableGaps`-filtered by the orchestrator (`selectFixableGaps` in `batch-executor.ts`, or ready-gate's own filter), so the `document`/`pause_for_human` exclusion in "Excluded Finding Classes" below is redundant for it — it exists for the fetched-comment fallback. But this applies **only to the gap list**: any `Suggestions:` or `Last output:` sections in the block (batch-executor only) are raw, unfiltered context — use them for understanding, never as additional findings to fix.
 
 **Only when the sentinel is absent** from your invocation — a standalone-style dispatch, or an orchestrator that doesn't inject `promptContext` — fall back to reading QA findings from the GitHub issue comments instead of a log file:
 
