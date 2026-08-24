@@ -1147,3 +1147,201 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// === Issue #963: No-Changes Guard `cd` target resolution ===
+//
+// The guard's `TARGET_DIR` extraction silently mis-resolved several common
+// multi-line commit shapes and fell through to checking the wrong
+// directory. Root-caused (not the "only matches line 1" theory the issue
+// filed with — a line-anchored `grep '^cd '` already matches any line, not
+// just the first) to: (1) a `cd "$WT"`/`cd "/quoted"` target keeps its
+// quotes/variable text through extraction and fails the `-d` test, and (2)
+// the fallback checked *this hook process's own cwd* instead of the
+// command's actual cwd (`.cwd` in the PreToolUse payload), which #901's
+// checkout-lock guard already reads correctly a few hundred lines below.
+// See resolve_cd_target() in pre-tool.sh.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh No-Changes Guard cd-target resolution (#963) [%s]",
+  (_label, hookPath) => {
+    function makeRepo(prefix: string, dirty: boolean): string {
+      const repo = mkdtempSync(join(tmpdir(), prefix));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
+      if (dirty) {
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        spawnSync("git", ["add", "f.txt"], { cwd: repo });
+      }
+      return repo;
+    }
+
+    // Spawns the hook with the *process* cwd and the *payload*'s `.cwd`
+    // field set independently — the #901 lesson: "a hook test that sets
+    // them together cannot catch this class of bug."
+    function runHookVaried(
+      toolInput: string,
+      processCwd: string,
+      payloadCwd?: string,
+    ): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: toolInput },
+        ...(payloadCwd !== undefined ? { cwd: payloadCwd } : {}),
+      });
+      const result = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd: processCwd,
+        env: cleanEnv(),
+        encoding: "utf8",
+      });
+      return { code: result.status ?? -1, stderr: result.stderr ?? "" };
+    }
+
+    // === AC-1: resolvable `cd` targets (multi-line, quoted, last-wins) ===
+
+    it("AC-1: honors a multi-line unquoted `cd` target with staged changes there", () => {
+      const target = makeRepo("pre-tool-963-target-", true);
+      const elsewhere = makeRepo("pre-tool-963-elsewhere-", false);
+      try {
+        const cmd = `cd ${target}\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-1: honors a multi-line QUOTED `cd` target with staged changes there", () => {
+      const target = makeRepo("pre-tool-963-qtarget-", true);
+      const elsewhere = makeRepo("pre-tool-963-qelsewhere-", false);
+      try {
+        const cmd = `cd "${target}"\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-1: two `cd` lines — uses the LAST one, not the first", () => {
+      // First cd points at a dirty repo, second (real target) at a clean
+      // one. A first-cd-wins bug would see staged changes and allow the
+      // commit; the fix must check the second cd's directory and block.
+      const first = makeRepo("pre-tool-963-first-", true);
+      const second = makeRepo("pre-tool-963-second-", false);
+      try {
+        const cmd = `cd ${first}\ncd ${second}\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, first);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+      } finally {
+        rmSync(first, { recursive: true, force: true });
+        rmSync(second, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-4 regression: single-line `cd <dir> && git commit` still resolves the target", () => {
+      const target = makeRepo("pre-tool-963-singleline-", true);
+      const elsewhere = makeRepo("pre-tool-963-singleline-else-", false);
+      try {
+        const cmd = `cd ${target} && git commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    // === AC-2: unresolvable `cd` targets fail OPEN, never check the wrong dir ===
+
+    it('AC-2: verbatim incident shape (`WT=...`/`cd "$WT"`/`git commit`) fails open', () => {
+      // The hook process's own cwd has ZERO changes — under the pre-fix
+      // fallback (checked this cwd instead of failing open), this would
+      // have blocked. This is the exact multi-line shape from #963's
+      // Impact section that stranded a real, tested implementation.
+      const clean = makeRepo("pre-tool-963-incident-clean-", false);
+      const wt = makeRepo("pre-tool-963-incident-wt-", true);
+      try {
+        const cmd = `WT="${wt}"\ncd "$WT"\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, clean);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+        rmSync(wt, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-2: `cd` to a nonexistent directory fails open rather than checking cwd", () => {
+      const clean = makeRepo("pre-tool-963-nonexistent-", false);
+      try {
+        const cmd = `cd /nonexistent/path/for-963-xyz\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, clean);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    // === AC-3: no `cd` present — use the PAYLOAD's cwd, not the hook
+    // process's own cwd. Process cwd and payload cwd are varied
+    // independently so a test that (accidentally) sets them together
+    // cannot mask this class of bug (#901).
+
+    it("AC-3: no `cd` — uses payload cwd (dirty) over a clean process cwd", () => {
+      const processDir = makeRepo("pre-tool-963-proc-clean-", false);
+      const payloadDir = makeRepo("pre-tool-963-payload-dirty-", true);
+      try {
+        const { code, stderr } = runHookVaried(
+          "git commit -m 'test: 963'",
+          processDir,
+          payloadDir,
+        );
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(processDir, { recursive: true, force: true });
+        rmSync(payloadDir, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-3: no `cd` — uses payload cwd (clean) over a dirty process cwd", () => {
+      const processDir = makeRepo("pre-tool-963-proc-dirty-", true);
+      const payloadDir = makeRepo("pre-tool-963-payload-clean-", false);
+      try {
+        const { code, stderr } = runHookVaried(
+          "git commit -m 'test: 963'",
+          processDir,
+          payloadDir,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+      } finally {
+        rmSync(processDir, { recursive: true, force: true });
+        rmSync(payloadDir, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-4 regression: `--allow-empty` still bypasses the guard on a multi-line cd", () => {
+      const target = makeRepo("pre-tool-963-allowempty-", false);
+      try {
+        const cmd = `cd ${target}\ngit commit --allow-empty -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, target);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+      }
+    });
+  },
+);

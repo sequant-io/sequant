@@ -258,6 +258,38 @@ seg_match() {
     [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
 }
 
+# resolve_cd_target <tool_input> — print the target directory of the LAST
+# `cd <path>` line in a (possibly multi-line) Bash command, if and only if
+# the path is a static literal (quoted or unquoted) that resolves to an
+# existing directory. Scans the raw command, not $SEGMENTS — emit_segments
+# drops double-quoted regions, so `cd "$WT"` would vanish there before this
+# ever saw it. Prints nothing when there is no `cd` line, the target is
+# dynamic (contains `$` or a backtick), or the path doesn't exist — callers
+# must treat empty output as "fail open", never as license to guess a
+# directory (#963).
+resolve_cd_target() {
+    local input="$1" line target
+    line=$(printf '%s\n' "$input" | grep -E '^[[:space:]]*cd[[:space:]]+' | tail -1)
+    [[ -z "$line" ]] && return 0
+
+    target=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*[;&|].*$//; s/[[:space:]]+$//')
+
+    # Strip one layer of surrounding matching quotes.
+    case "$target" in
+        \"*\") target="${target#\"}"; target="${target%\"}" ;;
+        \'*\') target="${target#\'}"; target="${target%\'}" ;;
+    esac
+
+    # Fail open on anything dynamic — resolving shell expansions means
+    # reimplementing the shell, which is disproportionate; `git commit`
+    # itself already rejects a genuinely empty commit.
+    case "$target" in
+        *'$'*|*'`'*) return 0 ;;
+    esac
+
+    [[ -n "$target" && -d "$target" ]] && printf '%s' "$target"
+}
+
 # Path of the session->issue binding the checkout guard maintains (#906).
 # $1 = repo toplevel, $2 = session id. The id is opaque, so squash everything
 # outside a filename-safe set — it must not be able to escape the directory.
@@ -552,11 +584,10 @@ if [[ -z "${SEQUANT_ORCHESTRATOR:-}" ]] \
     # `.cwd` is part of Claude Code's PreToolUse envelope (verified against a
     # live payload alongside `session_id`), with $PWD as the fallback.
     _CO_CWD="${HOOK_CWD:-$PWD}"
-    # Honor a leading `cd <dir>` the same way the commit guard below does.
-    if echo "$TOOL_INPUT" | grep -qE '^cd [^;&|]+'; then
-        _CO_CD=$(echo "$TOOL_INPUT" | grep -oE '^cd [^;&|]+' | head -1 | sed 's/^cd //' | sed 's/[[:space:]]*$//')
-        [[ -n "$_CO_CD" && -d "$_CO_CD" ]] && _CO_CWD="$_CO_CD"
-    fi
+    # Honor a `cd <dir>` the same way the commit guard below does — including
+    # multi-line commands and quoted/dynamic targets (#963).
+    _CO_CD=$(resolve_cd_target "$TOOL_INPUT")
+    [[ -n "$_CO_CD" ]] && _CO_CWD="$_CO_CD"
 
     # A linked worktree's toplevel has `.git` as a FILE; the main checkout has
     # it as a directory.
@@ -782,18 +813,25 @@ fi
 # Skips for --amend since amending doesn't require new changes
 if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     if ! echo "$TOOL_INPUT" | grep -qE -- '--amend|--allow-empty'; then
-        # Extract target directory from cd command if present (for worktree commits)
-        # Handles: "cd /path && git commit" or "cd /path; git commit"
-        TARGET_DIR=""
-        if echo "$TOOL_INPUT" | grep -qE '^cd [^;&|]+'; then
-            TARGET_DIR=$(echo "$TOOL_INPUT" | grep -oE '^cd [^;&|]+' | head -1 | sed 's/^cd //' | tr -d ' ')
-        fi
+        # Resolve where to check for changes: the last resolvable `cd`
+        # target if the command has one (multi-line commands included —
+        # #963), else the command's own cwd from the hook payload (never
+        # this hook process's own cwd, which need not match).
+        TARGET_DIR=$(resolve_cd_target "$TOOL_INPUT")
+        HAS_CD_LINE=false
+        echo "$TOOL_INPUT" | grep -qE '^[[:space:]]*cd[[:space:]]+' && HAS_CD_LINE=true
 
-        # Check for changes in the target directory (or current if no cd)
-        if [[ -n "$TARGET_DIR" && -d "$TARGET_DIR" ]]; then
-            CHANGES=$(cd "$TARGET_DIR" && git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        if [[ -n "$TARGET_DIR" ]]; then
+            CHANGES=$(git -C "$TARGET_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+        elif [[ "$HAS_CD_LINE" == true ]]; then
+            # A `cd` line is present but its target is dynamic (a shell
+            # variable/command substitution) or doesn't exist as a
+            # directory — fail open rather than check the wrong
+            # directory. `git commit` itself already rejects a genuinely
+            # empty commit, so this costs one harmless git error (#963).
+            CHANGES=1
         else
-            CHANGES=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+            CHANGES=$(git -C "${HOOK_CWD:-$PWD}" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
         fi
 
         if [[ "$CHANGES" -eq 0 ]]; then
