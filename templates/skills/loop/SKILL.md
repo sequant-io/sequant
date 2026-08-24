@@ -59,7 +59,7 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 1. **Use provided worktree** - Work in `SEQUANT_WORKTREE` path directly
 2. **Use `SEQUANT_ISSUE`** - Skip issue number parsing from invocation
 3. **Reduce GitHub comment frequency** - Defer updates to orchestrator
-4. **Trust issue context** - Orchestrator has already validated issue
+4. **Trust embedded context** - when the orchestrator injected a `<!-- SEQUANT_PROMPT_CONTEXT -->` block into this invocation, it is the authoritative QA-findings source; do not re-fetch from GitHub (see Step 1A below)
 
 **Behavior when standalone (SEQUANT_ORCHESTRATOR is NOT set):**
 
@@ -81,10 +81,19 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 
 #### Step 1A: Orchestrated Mode (SEQUANT_ORCHESTRATOR is set)
 
-When `SEQUANT_ORCHESTRATOR` is set, read QA findings from the GitHub issue comments instead of a log file:
+<!-- BEGIN: step-1a-context-source (#960) -->
+
+**Check your own invocation first — before fetching anything.** The orchestrator (`ready-gate.ts` or `batch-executor.ts`, via `buildLoopContext`) may already have embedded the QA findings directly into the prompt that invoked this `/loop` run, wrapped in a `<!-- SEQUANT_PROMPT_CONTEXT -->` / `<!-- /SEQUANT_PROMPT_CONTEXT -->` sentinel pair (`getPhasePrompt`, `src/lib/workflow/phase-executor.ts`). When that sentinel is present in your own invocation text:
+
+- Treat the text between the markers as the authoritative QA findings (`qa_comment` below).
+- **Do not** fetch `gh issue view` for QA comments — skip straight to "Parsing QA comment" below, using the embedded text in place of the fetched comment.
+- The embedded block is already `fixableGaps`-filtered by the orchestrator (`selectFixableGaps` in `batch-executor.ts`, or ready-gate's own filter), so the `document`/`pause_for_human` exclusion in "Excluded Finding Classes" below is redundant for this path — it exists for the fetched-comment fallback.
+
+**Only when the sentinel is absent** from your invocation — a standalone-style dispatch, or an orchestrator that doesn't inject `promptContext` — fall back to reading QA findings from the GitHub issue comments instead of a log file:
 
 ```bash
-# Check if we're in orchestrated mode
+# Fallback: no embedded SEQUANT_PROMPT_CONTEXT sentinel in the invocation.
+# Fetch QA findings from GitHub comments instead.
 if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
   echo "Orchestrated mode detected (orchestrator: $SEQUANT_ORCHESTRATOR)"
 
@@ -95,6 +104,8 @@ if [[ -n "$SEQUANT_ORCHESTRATOR" ]]; then
   gh issue view "$ISSUE_NUMBER" --json comments -q '.comments[] | select(.body | startswith("## QA Review for Issue")) | .body' | tail -1
 fi
 ```
+
+<!-- END: step-1a-context-source (#960) -->
 
 **How to identify QA comments:**
 
@@ -164,10 +175,10 @@ if [[ -z "$recommendations" ]]; then
 fi
 ```
 
-**If no QA comment found in orchestrated mode:**
-1. Log a clear error: `"Warning: No QA comment found in issue #N"`
+**If neither an embedded `SEQUANT_PROMPT_CONTEXT` block nor a matching GitHub QA comment is found in orchestrated mode:**
+1. Log a clear error: `"Warning: No embedded context or QA comment found for issue #N"`
 2. Fall back to Step 1B (log file) as a recovery mechanism
-3. If log file also doesn't exist, exit with error
+3. If log file also doesn't exist, exit with error — do not silently report "no actionable issues"; a silent miss here is the exact failure mode this section exists to prevent (#960)
 
 #### Step 1B: Standalone Mode (no SEQUANT_ORCHESTRATOR)
 
