@@ -102,3 +102,19 @@ describe("#915 AC-1: run.effortEscalation settings", () => {
     ).toThrow();
   });
 });
+
+describe("#958 AC-4: run.autoMerge settings", () => {
+  it("defaults to false when absent", () => {
+    const result = RunSettingsSchema.parse({});
+    expect(result.autoMerge).toBe(false);
+  });
+
+  it("round-trips an explicit true", () => {
+    const result = RunSettingsSchema.parse({ autoMerge: true });
+    expect(result.autoMerge).toBe(true);
+  });
+
+  it("rejects a non-boolean value at parse time", () => {
+    expect(() => RunSettingsSchema.parse({ autoMerge: "yes" })).toThrow();
+  });
+});
