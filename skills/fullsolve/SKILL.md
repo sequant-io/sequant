@@ -23,7 +23,6 @@ allowed-tools:
   - Bash(gh issue edit:*)
   - Bash(gh pr create:*)
   - Bash(gh pr list:*)
-  - Bash(gh pr merge:*)
   - Bash(npm test:*)
   - Bash(npm run build:*)
   - Bash(git diff:*)
@@ -52,22 +51,28 @@ When invoked as `/fullsolve <issue-number>`, execute the complete issue resoluti
 
 ## CRITICAL: Auto-Progression Between Phases
 
-**DO NOT wait for user confirmation between phases.** This is an autonomous workflow.
+**DO NOT wait for user confirmation between phases.** This is an autonomous workflow — through PR creation.
 
 After each phase completes successfully, **immediately proceed** to the next phase:
 1. `/spec` completes → **immediately** invoke `/exec`
 2. `/exec` completes → **immediately** invoke `/test` (if UI) or `/qa`
 3. `/test` completes → **immediately** invoke `/qa`
-4. `/qa` completes → **immediately** create PR
+4. `/qa` completes → **immediately** create the PR and post the final summary
 
-**The user invoked `/fullsolve` expecting end-to-end automation.** Only stop for:
+<!-- BEGIN: merge-gate (#958) -->
+**The workflow's terminal state is PR created + final summary posted — not merged.** Merging (§5.3), post-merge verification (§5.4), and the auto-merge-path lock release (§5.5) run **only** when `--auto-merge` is passed, `run.autoMerge` is `true` in `.sequant/settings.json`, or the user has explicitly instructed a merge in this conversation (invoking `/fullsolve` alone does not count). Without one of those, `/fullsolve` stops after the final summary — the PR is left open for human review. See "Merge Gate" below for how this is resolved, and §5.3 for the gate itself.
+
+**The user invoked `/fullsolve` expecting end-to-end automation up to a mergeable PR.** Only stop for:
 - Unrecoverable errors (after retry attempts exhausted)
-- Final summary after PR creation
+- Final summary after PR creation — **this is the workflow's terminal state**, not a pause
 - Explicit user interruption
+<!-- END: merge-gate (#958) -->
 
 ```
 WRONG: "Spec complete. Ready for exec phase." [waits]
 RIGHT: "Spec complete. Proceeding to exec..." [invokes /exec immediately]
+WRONG (no --auto-merge): [creates PR, immediately runs `gh pr merge`]
+RIGHT (no --auto-merge): [creates PR, posts final summary, stops]
 ```
 
 ## Workflow Overview
@@ -125,6 +130,7 @@ RIGHT: "Spec complete. Proceeding to exec..." [invokes /exec immediately]
 /fullsolve 218 --max-iterations 5 # Override max fix iterations
 /fullsolve 218 --parallel         # Force parallel agent execution (faster, higher token usage)
 /fullsolve 218 --sequential       # Force sequential agent execution (slower, lower token usage)
+/fullsolve 218 --auto-merge       # Merge the PR automatically once QA passes (default: off)
 ```
 
 ## Agent Execution Mode
@@ -150,6 +156,30 @@ When spawning sub-agents for quality checks, determine the execution mode:
 | Parallel | ~2-3x | ~50% faster | Unlimited plans, batch operations |
 
 **Pass execution mode to child skills:** When invoking `/qa` or other skills that spawn agents, pass the `--parallel` or `--sequential` flag to maintain consistency.
+
+## Merge Gate (#958)
+
+Determine whether Phase 5.3–5.5's merge workflow runs at all. This mirrors the Agent Execution Mode resolution above — flag first, then settings, defaulting closed.
+
+1. **Check for CLI flag override:**
+   - `--auto-merge` → run the merge workflow (§5.3) after the final summary
+   - No flag → do not merge automatically; fall through to step 2
+
+2. **If no flag, read project settings:**
+   Use the Read tool to check project settings:
+   ```
+   Read(file_path=".sequant/settings.json")
+   # Parse JSON and extract run.autoMerge (default: false)
+   ```
+
+3. **Default:** off. `/fullsolve` ends at PR creation + final summary — this
+   preserves the human merge gate recorded in #817–#819 (`sequant ready`
+   drives an issue to merge-*readiness*; a human runs `sequant merge` to
+   actually merge it).
+
+**Explicit user instruction overrides the gate independent of the flag or setting.** If the user has told you in this conversation to merge once ready (not merely "run `/fullsolve`"), treat that as satisfying the gate for this run.
+
+**If the gate does not fire:** skip §5.3 and §5.4 entirely. Release the concurrency locks immediately after §5.2 (see §5.5) and stop — do not attempt `gh pr merge` under any circumstance without one of the three conditions above.
 
 ## Orchestration Context
 
@@ -306,7 +336,7 @@ npx sequant locks checkout acquire \
 
 Release it alongside the per-issue lock: `npx sequant locks checkout release --issue=<issue-number> || true`. **`--issue` is mandatory** (#906) — it is what proves you are the holder. `--skip-pid-check` means the acquiring shell's PID is already dead, so PID identity is unavailable and a release without `--issue` is refused, not merely ineffective. Stale recovery is therefore age-based only for this lock: the 6h `SEQUANT_SKILL_LOCK_TTL_MS` and the 24h `SEQUANT_MAX_LOCK_AGE_MS` ceiling, *not* same-host dead-PID recovery, which `--skip-pid-check` disables by definition. An abandoned holder still cannot wedge the checkout permanently.
 
-**Release contract:** Phase 5.5 releases both locks on the happy path. On ANY branch that **exits the workflow without reaching Phase 5** — spec failure, exec iterations exhausted, unrecoverable error — you MUST run `npx sequant locks release <issue-number> || true` and `npx sequant locks checkout release --issue=<issue-number> || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new early-exit path, add a release call there too.
+**Release contract (#958):** the happy path releases both locks **right after §5.2's final summary** — that is the workflow's default terminal state, since §5.3–5.4 do not run without the Merge Gate firing. Only when the Merge Gate *does* fire does release move to §5.5, after merge (§5.3) and post-merge verification (§5.4) complete. On ANY branch that **exits the workflow without reaching Phase 5** — spec failure, exec iterations exhausted, unrecoverable error — you MUST run `npx sequant locks release <issue-number> || true` and `npx sequant locks checkout release --issue=<issue-number> || true` **before** printing the halt message. The explicit release calls below cover the known branches; if you add a new early-exit path, add a release call there too.
 
 **Do NOT release at a branch that continues to Phase 5.** QA-loop exhaustion and the stagnation halt both fall through to PR creation, which still runs git in this tree — releasing there would leave Phase 5 unprotected.
 
@@ -763,9 +793,17 @@ Post completion comment to issue with:
 - PR link
 - Quality metrics
 
-### 5.3 Merge Workflow (Correct Order)
+### 5.3 Merge Workflow (Opt-In Only) (#958)
 
-**IMPORTANT:** Merge the PR first, then clean up the worktree.
+**STOP — do not run this section unless the Merge Gate above fired.** That
+means one of: `--auto-merge` was passed on this `/fullsolve` invocation,
+`run.autoMerge` is `true` in `.sequant/settings.json`, or the user
+explicitly instructed a merge in this conversation. If none of those hold,
+**do not run `gh pr merge`.** Stop after §5.2's final summary instead — the
+PR stays open, awaiting human review. That is the default terminal state,
+not a fallback.
+
+**IMPORTANT (once the gate above has fired):** Merge the PR first, then clean up the worktree.
 
 ```bash
 # 1. Merge PR (without --delete-branch; cleanup happens after success)
@@ -782,6 +820,8 @@ gh pr merge <N> --squash
 **Why this order matters:** The cleanup script checks if the PR is merged before proceeding. Merging without `--delete-branch` avoids worktree lock conflicts. The post-tool hook and cleanup script handle branch removal after merge succeeds. If the merge fails, the worktree is preserved so work isn't lost.
 
 ### 5.4 Post-Merge Verification
+
+**Skip this section if §5.3 did not run.** Nothing to verify post-merge when there was no merge.
 
 **Recommended:** After merge, verify the build and CLI still work:
 
@@ -800,7 +840,14 @@ If any command fails, fix immediately on main before continuing. This catches is
 
 ### 5.5 Release Concurrency Locks (#625, #901)
 
-After the PR is created (or earlier if the workflow exits gracefully), release both locks so other sessions can claim them:
+**Default path (Merge Gate did not fire):** release runs immediately after
+§5.2's final summary — that is the happy path, since §5.3–5.4 never execute.
+Run the release calls below there, not here.
+
+**Auto-merge path (Merge Gate fired):** release runs here, after §5.3
+(merge) and §5.4 (post-merge verification) complete.
+
+Either way, release both locks so other sessions can claim them:
 
 ```bash
 npx sequant locks release <issue-number> || true
@@ -949,6 +996,7 @@ Do **not** run it on the two branches below that continue to Phase 5 — "test l
 | MAX_QA_ITERATIONS | 2 | Max fix loops for QA phase |
 | SKIP_TEST | false | Skip testing phase |
 | AUTO_PR | true | Create PR automatically |
+| AUTO_MERGE | false | Merge the PR automatically once QA passes (#958) |
 
 ## Smart Tests Integration
 
@@ -991,6 +1039,11 @@ npx tsx scripts/dev/analyze-hook-logs.ts --tests
 **With more iteration tolerance:**
 ```
 /fullsolve 218 --max-iterations 5
+```
+
+**End-to-end including merge:**
+```
+/fullsolve 218 --auto-merge
 ```
 
 ## Batch Processing
