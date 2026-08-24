@@ -1066,14 +1066,6 @@ export function mapAgentFailureToPhaseResult(
 }
 
 /**
- * Get the prompt for a phase with the issue number substituted.
- * Selects self-contained prompts for non-Claude agents.
- * Includes AGENTS.md content as context so non-Claude agents
- * receive project conventions and workflow instructions.
- *
- * @internal Exported for testing only
- */
-/**
  * Marks the embedded `promptContext` block appended below so a phase's own
  * skill (e.g. `/loop`) can detect it deterministically instead of pattern-
  * matching prose that varies per producer (`ready-gate.ts` and
@@ -1081,6 +1073,15 @@ export function mapAgentFailureToPhaseResult(
  * See #960.
  */
 export const PROMPT_CONTEXT_SENTINEL = "SEQUANT_PROMPT_CONTEXT";
+
+/**
+ * Get the prompt for a phase with the issue number substituted.
+ * Selects self-contained prompts for non-Claude agents.
+ * Includes AGENTS.md content as context so non-Claude agents
+ * receive project conventions and workflow instructions.
+ *
+ * @internal Exported for testing only
+ */
 
 export async function getPhasePrompt(
   phase: Phase,
