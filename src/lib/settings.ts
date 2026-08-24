@@ -234,6 +234,15 @@ export interface RunSettings {
    * default). See `effort-escalation.ts` for the resolver.
    */
   effortEscalation: boolean;
+  /**
+   * Whether `/fullsolve`'s Phase 5.3 merges the PR automatically once QA
+   * passes (#958). Default `false` — the workflow stops at PR creation +
+   * final summary, preserving the human merge gate kept by #817–#819.
+   * Overridable per-invocation with `--auto-merge`. Read directly by the
+   * `/fullsolve` skill prose (not by any runtime code path — `sequant run`
+   * never merges regardless of this setting).
+   */
+  autoMerge: boolean;
 }
 
 /**
@@ -445,6 +454,12 @@ export const RunSettingsSchema = z.object({
    * `effort-escalation.ts` for the resolver.
    */
   effortEscalation: z.boolean().default(false),
+  /**
+   * Whether `/fullsolve`'s Phase 5.3 merges the PR automatically once QA
+   * passes (#958). Default `false` — preserves the human merge gate kept by
+   * #817–#819. Overridable per-invocation with `--auto-merge`.
+   */
+  autoMerge: z.boolean().default(false),
 });
 
 /** Zod schema for ScopeThreshold (base — fields required, no defaults) */
@@ -859,6 +874,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     resolvedIssueTTL: 7, // Auto-prune resolved issues after 7 days
     relay: true, // Enable interactive relay (#383) by default
     effortEscalation: false, // #915: off by default — raises token spend
+    autoMerge: false, // #958: off by default — preserves the human merge gate
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
