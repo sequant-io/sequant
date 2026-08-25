@@ -39,7 +39,55 @@ else
     HOOK_CWD=$(echo "$INPUT_JSON" | grep -oE '"cwd"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     # For Bash tool, extract command from tool_input; for others, extract the whole object
     if [[ "$TOOL_NAME" == "Bash" ]]; then
-        TOOL_INPUT=$(echo "$INPUT_JSON" | grep -oE '"command"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+        # Escape-aware extraction (#963 gap B): the naive `grep -oE '"[^"]+"'`
+        # form (still used for the simpler fields above, where an embedded
+        # `\"` is implausible) stops at the FIRST escaped quote inside the
+        # JSON string, truncating any command containing one — e.g.
+        # `git commit -m "msg with \"quotes\""` would be cut down to just
+        # `git commit -m ` before it ever reaches the guards below.
+        #
+        # sed's `(([^"\\]|\\.)*)` captures the full escaped run — any run of
+        # non-quote/non-backslash chars, or a backslash paired with whatever
+        # follows it — up to the closing unescaped `"`. `JSON.stringify`
+        # guarantees the whole payload is one physical line, so a single
+        # sed pass is enough (no multi-line `-z` needed, which BSD sed lacks
+        # anyway).
+        #
+        # The captured text still carries JSON string escapes literally
+        # (`\"`, `\\`, `\n`, `\t`, ...); the awk pass resolves them in ONE
+        # left-to-right scan, consuming two characters per recognized
+        # escape. That ordering is what a chain of separate sed/tr
+        # substitutions cannot get right without a placeholder: a literal
+        # `\\n` in the original command is an escaped backslash (`\\`)
+        # immediately followed by a literal `n`, and must stay a backslash
+        # plus 'n' — not become an escaped-newline (`\n`) if the two escapes
+        # were resolved out of order. Scanning once and advancing past both
+        # characters of whichever escape is recognized sidesteps that
+        # ambiguity entirely.
+        TOOL_INPUT=$(printf '%s' "$INPUT_JSON" \
+            | sed -E -n 's/.*"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)".*/\1/p' \
+            | head -1 \
+            | awk '
+                {
+                    s = $0; out = ""; n = length(s)
+                    for (i = 1; i <= n; i++) {
+                        c = substr(s, i, 1)
+                        if (c == "\\" && i < n) {
+                            nc = substr(s, i + 1, 1)
+                            if (nc == "\"") { out = out "\""; i++ }
+                            else if (nc == "\\") { out = out "\\"; i++ }
+                            else if (nc == "n") { out = out "\n"; i++ }
+                            else if (nc == "t") { out = out "\t"; i++ }
+                            else if (nc == "r") { out = out "\r"; i++ }
+                            else if (nc == "/") { out = out "/"; i++ }
+                            else { out = out c }
+                        } else {
+                            out = out c
+                        }
+                    }
+                    print out
+                }
+            ')
     else
         TOOL_INPUT=$(echo "$INPUT_JSON" | grep -oE '"tool_input"\s*:\s*\{[^}]+\}' | head -1)
     fi
@@ -282,9 +330,14 @@ resolve_cd_target() {
 
     # Fail open on anything dynamic — resolving shell expansions means
     # reimplementing the shell, which is disproportionate; `git commit`
-    # itself already rejects a genuinely empty commit.
+    # itself already rejects a genuinely empty commit. A backslash is
+    # rejected too: it can escape a following `$`/`` ` `` into a form this
+    # literal-string check would otherwise miss, and a backslash also carries
+    # its own shell meaning (line continuation, escaped chars) that this
+    # function does not attempt to resolve — failing open is the safe
+    # direction either way (#963).
     case "$target" in
-        *'$'*|*'`'*) return 0 ;;
+        *'$'*|*'`'*|*'\'*) return 0 ;;
     esac
 
     [[ -n "$target" && -d "$target" ]] && printf '%s' "$target"
