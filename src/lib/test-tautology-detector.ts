@@ -514,17 +514,70 @@ const PROJECT_SCRIPT_PATTERN = /\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/;
  * across declarations, and must reach one of the two markers. Spawning a
  * *system* binary (`git`, `bash` with a temp fixture) matches neither, which
  * is the intended exclusion — those are not this project's code.
+ *
+ * An optional type annotation is allowed between the name and `=`, e.g.
+ *   const HOOK_COPIES: Array<[label: string, path: string]> = [...];
+ * The annotation submatch (`[^=;]*`) stops at the first `=`, so an arrow-
+ * function-typed annotation (`const f: (x: string) => void = ...`) breaks
+ * the match at its `=>` instead of reaching the real assignment — accepted
+ * as a narrow miss; typed function-value declarations are not the shape this
+ * collector targets (path-bearing table/tuple declarations are).
  */
 function collectBuildOutputVars(content: string): string[] {
   const names = new Set<string>();
   const patterns = [
-    /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\bdist\//g,
-    /(?:const|let|var)\s+(\w+)\s*=\s*[^;]*?\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/g,
+    /(?:const|let|var)\s+(\w+)\s*(?::[^=;]*)?=\s*[^;]*?\bdist\//g,
+    /(?:const|let|var)\s+(\w+)\s*(?::[^=;]*)?=\s*[^;]*?\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/g,
   ];
   for (const pattern of patterns) {
     let match;
     while ((match = pattern.exec(content)) !== null) {
       names.add(match[1]);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Collect callback parameter names bound to a build-output table's rows via
+ * `describe.each(X)("...", (a, b) => {...})`, when `X` is itself a
+ * build-output source: a var already collected by collectBuildOutputVars, or
+ * an inline array literal containing a build-output token directly.
+ *
+ * `describe.each` destructures each table row into positional callback
+ * params. A helper spawning `hookPath` — the param, not the table var — is
+ * exercising production code just as much as one spawning `HOOK_COPIES`
+ * directly; static analysis of the table alone misses it entirely. The
+ * string-title argument is matched by quote char (not `[^()]*`) because test
+ * titles routinely contain literal parens (e.g. `"... (#564) [%s]"`), which
+ * a paren-excluding class would truncate on.
+ *
+ * Bounded like the rest of this file's helper matchers: no nested parens in
+ * the table-var/params captures, so a callback with a destructured or
+ * default-valued param is skipped rather than mis-parsed.
+ */
+function collectDescribeEachParams(
+  content: string,
+  buildOutputVars: string[],
+): string[] {
+  const names = new Set<string>();
+  const pattern =
+    /describe\.each\(\s*([^()]*?)\s*\)\s*\(\s*(['"`])(?:(?!\2)[\s\S])*?\2\s*,\s*(?:async\s+)?\(([^()]*)\)\s*=>/g;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    const tableArg = match[1].trim();
+    const isKnownVar =
+      /^\w+$/.test(tableArg) && buildOutputVars.includes(tableArg);
+    const isInlineSource =
+      BUILD_OUTPUT_PATTERN.test(tableArg) ||
+      PROJECT_SCRIPT_PATTERN.test(tableArg);
+    if (!isKnownVar && !isInlineSource) continue;
+
+    for (const param of match[3].split(",")) {
+      const name = param.trim().split(":")[0].trim();
+      if (/^\w+$/.test(name)) {
+        names.add(name);
+      }
     }
   }
   return [...names];
@@ -749,7 +802,10 @@ export function analyzeTestFile(
 
   try {
     const importedFunctions = extractImports(content);
-    const buildOutputVars = collectBuildOutputVars(content);
+    const declaredBuildOutputVars = collectBuildOutputVars(content);
+    const buildOutputVars = declaredBuildOutputVars.concat(
+      collectDescribeEachParams(content, declaredBuildOutputVars),
+    );
     const productionHandles = collectProductionHandles(
       content,
       buildOutputVars,

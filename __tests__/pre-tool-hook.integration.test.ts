@@ -1147,3 +1147,455 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// === Issue #963: No-Changes Guard `cd` target resolution ===
+//
+// The guard's `TARGET_DIR` extraction silently mis-resolved several common
+// multi-line commit shapes and fell through to checking the wrong
+// directory. Root-caused (not the "only matches line 1" theory the issue
+// filed with — a line-anchored `grep '^cd '` already matches any line, not
+// just the first) to: (1) a `cd "$WT"`/`cd "/quoted"` target keeps its
+// quotes/variable text through extraction and fails the `-d` test, and (2)
+// the fallback checked *this hook process's own cwd* instead of the
+// command's actual cwd (`.cwd` in the PreToolUse payload), which #901's
+// checkout-lock guard already reads correctly a few hundred lines below.
+// See resolve_cd_target() in pre-tool.sh.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh No-Changes Guard cd-target resolution (#963) [%s]",
+  (_label, hookPath) => {
+    function makeRepo(prefix: string, dirty: boolean): string {
+      const repo = mkdtempSync(join(tmpdir(), prefix));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
+      if (dirty) {
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        spawnSync("git", ["add", "f.txt"], { cwd: repo });
+      }
+      return repo;
+    }
+
+    // Spawns the hook with the *process* cwd and the *payload*'s `.cwd`
+    // field set independently — the #901 lesson: "a hook test that sets
+    // them together cannot catch this class of bug."
+    function runHookVaried(
+      toolInput: string,
+      processCwd: string,
+      payloadCwd?: string,
+    ): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: toolInput },
+        ...(payloadCwd !== undefined ? { cwd: payloadCwd } : {}),
+      });
+      const result = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd: processCwd,
+        env: cleanEnv(),
+        encoding: "utf8",
+      });
+      return { code: result.status ?? -1, stderr: result.stderr ?? "" };
+    }
+
+    // === AC-1: resolvable `cd` targets (multi-line, quoted, last-wins) ===
+
+    it("AC-1: honors a multi-line unquoted `cd` target with staged changes there", () => {
+      const target = makeRepo("pre-tool-963-target-", true);
+      const elsewhere = makeRepo("pre-tool-963-elsewhere-", false);
+      try {
+        const cmd = `cd ${target}\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-1: honors a multi-line QUOTED `cd` target with staged changes there", () => {
+      const target = makeRepo("pre-tool-963-qtarget-", true);
+      const elsewhere = makeRepo("pre-tool-963-qelsewhere-", false);
+      try {
+        const cmd = `cd "${target}"\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-1: two `cd` lines — uses the LAST one, not the first", () => {
+      // First cd points at a dirty repo, second (real target) at a clean
+      // one. A first-cd-wins bug would see staged changes and allow the
+      // commit; the fix must check the second cd's directory and block.
+      const first = makeRepo("pre-tool-963-first-", true);
+      const second = makeRepo("pre-tool-963-second-", false);
+      try {
+        const cmd = `cd ${first}\ncd ${second}\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, first);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+      } finally {
+        rmSync(first, { recursive: true, force: true });
+        rmSync(second, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-4 regression: single-line `cd <dir> && git commit` still resolves the target", () => {
+      const target = makeRepo("pre-tool-963-singleline-", true);
+      const elsewhere = makeRepo("pre-tool-963-singleline-else-", false);
+      try {
+        const cmd = `cd ${target} && git commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    // === AC-2: unresolvable `cd` targets fail OPEN, never check the wrong dir ===
+
+    it('AC-2: verbatim incident shape (`WT=...`/`cd "$WT"`/`git commit`) fails open', () => {
+      // The hook process's own cwd has ZERO changes — under the pre-fix
+      // fallback (checked this cwd instead of failing open), this would
+      // have blocked. This is the exact multi-line shape from #963's
+      // Impact section that stranded a real, tested implementation.
+      const clean = makeRepo("pre-tool-963-incident-clean-", false);
+      const wt = makeRepo("pre-tool-963-incident-wt-", true);
+      try {
+        const cmd = `WT="${wt}"\ncd "$WT"\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, clean);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+        rmSync(wt, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-2: `cd` to a nonexistent directory fails open rather than checking cwd", () => {
+      const clean = makeRepo("pre-tool-963-nonexistent-", false);
+      try {
+        const cmd = `cd /nonexistent/path/for-963-xyz\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, clean);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+      }
+    });
+
+    // === AC-3: no `cd` present — use the PAYLOAD's cwd, not the hook
+    // process's own cwd. Process cwd and payload cwd are varied
+    // independently so a test that (accidentally) sets them together
+    // cannot mask this class of bug (#901).
+
+    it("AC-3: no `cd` — uses payload cwd (dirty) over a clean process cwd", () => {
+      const processDir = makeRepo("pre-tool-963-proc-clean-", false);
+      const payloadDir = makeRepo("pre-tool-963-payload-dirty-", true);
+      try {
+        const { code, stderr } = runHookVaried(
+          "git commit -m 'test: 963'",
+          processDir,
+          payloadDir,
+        );
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(processDir, { recursive: true, force: true });
+        rmSync(payloadDir, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-3: no `cd` — uses payload cwd (clean) over a dirty process cwd", () => {
+      const processDir = makeRepo("pre-tool-963-proc-dirty-", true);
+      const payloadDir = makeRepo("pre-tool-963-payload-clean-", false);
+      try {
+        const { code, stderr } = runHookVaried(
+          "git commit -m 'test: 963'",
+          processDir,
+          payloadDir,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+      } finally {
+        rmSync(processDir, { recursive: true, force: true });
+        rmSync(payloadDir, { recursive: true, force: true });
+      }
+    });
+
+    it("AC-4 regression: `--allow-empty` still bypasses the guard on a multi-line cd", () => {
+      const target = makeRepo("pre-tool-963-allowempty-", false);
+      try {
+        const cmd = `cd ${target}\ngit commit --allow-empty -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, target);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
+// === Issue #963 gap A: resolve_cd_target() backslash hardening ===
+//
+// The dynamic-target check — `case "$target" in *'$'*|*'`'*) return 0 ;;
+// esac` — rejected `$` and a backtick, but a target containing a backslash
+// was still trusted as a "literal" static path as long as it happened to
+// resolve on disk. A backslash carries its own shell meaning (escapes,
+// line continuation) that resolve_cd_target does not attempt to parse, so
+// trusting it as inert text risks checking the WRONG directory's git
+// status. Backslash was added to the same rejection set.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh resolve_cd_target backslash hardening (#963 gap A) [%s]",
+  (_label, hookPath) => {
+    function runHookVaried(
+      toolInput: string,
+      processCwd: string,
+      payloadCwd?: string,
+    ): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: toolInput },
+        ...(payloadCwd !== undefined ? { cwd: payloadCwd } : {}),
+      });
+      const result = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd: processCwd,
+        env: cleanEnv(),
+        encoding: "utf8",
+      });
+      return { code: result.status ?? -1, stderr: result.stderr ?? "" };
+    }
+
+    it("a `cd` target containing a backslash fails open rather than resolving to a real, clean directory", () => {
+      // Deliberately create a REAL directory whose name contains a literal
+      // backslash (a valid filename byte on macOS/Linux), and leave it
+      // with ZERO staged changes. Pre-fix, resolve_cd_target's `-d` check
+      // happily resolved this path and the No-Changes Guard then checked
+      // THIS clean directory and blocked — proof the old code trusted the
+      // backslash-bearing target as a literal. Post-fix the target is
+      // rejected before the `-d` check ever runs, so the guard falls open
+      // regardless of what that directory actually contains.
+      const parent = mkdtempSync(join(tmpdir(), "pre-tool-963-bs-"));
+      const target = join(parent, "foo\\bar");
+      mkdirSync(target);
+      spawnSync("git", ["init", "-q"], { cwd: target });
+      spawnSync("git", ["config", "user.email", "test@test"], {
+        cwd: target,
+      });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: target });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: target,
+      });
+      try {
+        const cmd = `cd ${target}\ngit commit -m 'test: 963'`;
+        const { code, stderr } = runHookVaried(cmd, parent);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(parent, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
+// === Issue #963 gap B: jq-less TOOL_INPUT extraction must not truncate ===
+//
+// The fallback path used when `jq` is unavailable extracted the Bash
+// command with `grep -oE '"command"\s*:\s*"[^"]+"'`. Its `[^"]+` class
+// stops at the FIRST escaped quote inside the JSON string, so any command
+// containing `\"` (e.g. a commit message with escaped quotes) reached the
+// guards below silently truncated. Fixed with an escape-aware sed capture
+// (`(([^"\\]|\\.)*)`) plus a single left-to-right awk unescape pass.
+//
+// jq is made unavailable here by building a PATH containing every external
+// binary the hook needs EXCEPT jq (a symlink farm), rather than shadowing
+// `jq` with a fake stub — `command -v jq` skips non-executables and would
+// just find the real jq later in PATH, defeating the test.
+const HOOK_EXTERNAL_BINARIES = [
+  "bash",
+  "git",
+  "grep",
+  "sed",
+  "cut",
+  "head",
+  "tail",
+  "tr",
+  "wc",
+  "date",
+  "mkdir",
+  "dirname",
+  "basename",
+  "find",
+  "cat",
+  "mv",
+  "rm",
+  "awk",
+  "sh",
+  "hostname",
+  "realpath",
+  "md5",
+  "md5sum",
+  "lockf",
+  "flock",
+];
+
+function buildJqLessPath(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pre-tool-963-nojq-"));
+  for (const bin of HOOK_EXTERNAL_BINARIES) {
+    const resolved = spawnSync("bash", ["-c", `command -v ${bin}`], {
+      encoding: "utf8",
+    }).stdout.trim();
+    // Skip anything that isn't an absolute path — e.g. `printf`/`kill`
+    // frequently resolve to a bash builtin name rather than a binary, and
+    // builtins need no PATH entry at all. Skip anything unresolved too
+    // (flock on macOS, lockf on Linux — each OS ships only one).
+    if (resolved.startsWith("/")) {
+      try {
+        symlinkSync(resolved, join(dir, bin));
+      } catch {
+        // Already present or unlinkable — non-fatal, best effort.
+      }
+    }
+  }
+  return dir;
+}
+
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh jq-less TOOL_INPUT extraction (#963 gap B) [%s]",
+  (_label, hookPath) => {
+    let noJqPath: string;
+
+    beforeAll(() => {
+      noJqPath = buildJqLessPath();
+    });
+
+    afterAll(() => {
+      rmSync(noJqPath, { recursive: true, force: true });
+    });
+
+    function makeRepo(prefix: string, dirty: boolean): string {
+      const repo = mkdtempSync(join(tmpdir(), prefix));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
+      if (dirty) {
+        writeFileSync(join(repo, "f.txt"), "hello\n");
+        spawnSync("git", ["add", "f.txt"], { cwd: repo });
+      }
+      return repo;
+    }
+
+    function runHookJqLess(
+      toolInput: string,
+      cwd: string,
+      pluginData: string,
+    ): { code: number; stderr: string } {
+      const payload = JSON.stringify({
+        tool_name: "Bash",
+        tool_input: { command: toolInput },
+        cwd,
+      });
+      const result = spawnSync("bash", [hookPath], {
+        input: payload,
+        cwd,
+        env: {
+          PATH: noJqPath,
+          HOME: process.env.HOME ?? "",
+          CLAUDE_PLUGIN_DATA: pluginData,
+        },
+        encoding: "utf8",
+      });
+      return { code: result.status ?? -1, stderr: result.stderr ?? "" };
+    }
+
+    // The real bash command text (as it would appear once JSON.stringify
+    // decodes the PreToolUse payload back to a string): a conventional
+    // commit message containing escaped double quotes.
+    const ESCAPED_QUOTE_COMMIT =
+      'git commit -m "feat: has \\"escaped\\" quotes"';
+
+    it("confirms jq is actually unavailable on the filtered PATH (sanity)", () => {
+      const check = spawnSync("bash", ["-c", "command -v jq"], {
+        env: { PATH: noJqPath },
+        encoding: "utf8",
+      });
+      expect(check.status).not.toBe(0);
+    });
+
+    it("extracts the FULL command rather than truncating at the first escaped quote (proven via the block log)", () => {
+      // Zero staged changes: the No-Changes Guard fires, and its
+      // log_block() call records the (redacted) TOOL_INPUT it extracted.
+      // A still-truncating extraction would log exactly `git commit -m \`
+      // — none of the message text below would ever reach the log.
+      const clean = makeRepo("pre-tool-963-nojq-clean-", false);
+      const pluginData = mkdtempSync(join(tmpdir(), "pre-tool-963-nojq-log-"));
+      try {
+        const { code, stderr } = runHookJqLess(
+          ESCAPED_QUOTE_COMMIT,
+          clean,
+          pluginData,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+
+        const hookLog = readFileSync(
+          join(pluginData, "logs", "claude-hook.log"),
+          "utf8",
+        );
+        expect(hookLog).toContain('has \\"escaped\\" quotes');
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+        rmSync(pluginData, { recursive: true, force: true });
+      }
+    });
+
+    it("guard still allows a commit with staged changes despite escaped quotes in the message (no false block)", () => {
+      const dirty = makeRepo("pre-tool-963-nojq-dirty-", true);
+      const pluginData = mkdtempSync(join(tmpdir(), "pre-tool-963-nojq-log2-"));
+      try {
+        const { code, stderr } = runHookJqLess(
+          ESCAPED_QUOTE_COMMIT,
+          dirty,
+          pluginData,
+        );
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(stderr).not.toMatch(
+          /HOOK_BLOCKED: Commit must follow conventional commits format/,
+        );
+        expect(code).toBe(0);
+      } finally {
+        rmSync(dirty, { recursive: true, force: true });
+        rmSync(pluginData, { recursive: true, force: true });
+      }
+    });
+
+    it("guard still blocks under jq-less PATH when there truly are no staged changes", () => {
+      const clean = makeRepo("pre-tool-963-nojq-clean2-", false);
+      const pluginData = mkdtempSync(join(tmpdir(), "pre-tool-963-nojq-log3-"));
+      try {
+        const { code, stderr } = runHookJqLess(
+          "git commit -m 'test: 963 plain'",
+          clean,
+          pluginData,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: No changes to commit/);
+      } finally {
+        rmSync(clean, { recursive: true, force: true });
+        rmSync(pluginData, { recursive: true, force: true });
+      }
+    });
+  },
+);

@@ -912,3 +912,48 @@ describe('x', () => {
     expect(result.tautologicalCount).toBe(1);
   });
 });
+
+describe("analyzeTestFile — type-annotated table + describe.each param (#963)", () => {
+  // Measured motivation: pre-tool-hook.integration.test.ts read 74/74
+  // tautological on origin/main. Two compounding misses: a type annotation
+  // between the table var's name and `=` hid its build-output tokens from
+  // collectBuildOutputVars, and the runHook() helper spawns via a
+  // describe.each callback parameter — never the table var itself — so
+  // nothing tied that parameter back to production code.
+
+  it("sees a type-annotated table var's project-script path, and the describe.each param bound to a row's path", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+const HOOK_COPIES: Array<[label: string, path: string]> = [
+  ['a', 'hooks/pre-tool.sh'],
+];
+function runHook(hookPath: string): { status: number } {
+  return spawnSync('bash', [hookPath], { input: 'x' });
+}
+describe.each(HOOK_COPIES)('x [%s]', (_label, hookPath) => {
+  it('blocks', () => { expect(runHook(hookPath).status).toBe(2); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("still flags the same shape when the spawned binary is a system command, not a project script", () => {
+    // Negative control: same type-annotated table + describe.each param
+    // structure, but no project-script token appears anywhere in the file —
+    // the widening must not turn the detector off for genuinely unrelated
+    // spawns.
+    const content = `
+import { spawnSync } from 'child_process';
+const LABELS: Array<[label: string, bin: string]> = [
+  ['a', 'git'],
+];
+function runBin(bin: string): { status: number } {
+  return spawnSync(bin, ['status'], {});
+}
+describe.each(LABELS)('x [%s]', (_label, bin) => {
+  it('runs it', () => { expect(runBin(bin).status).toBe(0); });
+});`;
+    const result = analyzeTestFile(content, "a.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+});
