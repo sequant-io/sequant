@@ -2896,7 +2896,10 @@ Produce a Markdown snippet for the PR/issue:
 ### 9. Update GitHub Issue
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
-- Skip posting GitHub comment (orchestrator handles aggregated summary)
+- Skip posting this skill's own GitHub comment — under `sequant run`,
+  `batch-executor.ts` posts a compact verdict comment (AC coverage + a
+  `SEQUANT_QA_VERDICT` marker) itself right after this phase completes with a
+  parseable verdict (#964); don't post a second, redundant one here
 - Include verdict and AC coverage in output for orchestrator to capture
 - Let orchestrator update labels based on final workflow status
 

@@ -1955,7 +1955,7 @@ The goal is to satisfy AC with the smallest, safest change possible.
 ### 6. Progress Summary and Draft Issue Update
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
-- Skip posting progress comments to GitHub (orchestrator handles summary)
+- Skip posting progress comments to GitHub — no per-phase comment is posted under `sequant run`; progress surfaces through the run summary and the PR body (#964)
 - Still provide AC coverage summary in output for orchestrator to capture
 - Let orchestrator handle final GitHub update
 

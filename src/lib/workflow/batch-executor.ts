@@ -21,6 +21,8 @@ import {
   type BatchExecutionContext,
   type ProgressCallback,
   type PhasePauseHandle,
+  type QaVerdict,
+  type QaSummary,
 } from "./types.js";
 import { withEscalatedEffort } from "./effort-escalation.js";
 import type { ShutdownManager } from "../shutdown.js";
@@ -724,6 +726,74 @@ async function recordWindowHaltState(
 }
 
 /**
+ * Build the comment body for a standard-qa-phase verdict post (#964).
+ * Includes AC coverage and any gaps/suggestions from the parsed `QaSummary`,
+ * plus a machine marker so a future dedup pass has an anchor.
+ * @internal Exported for testing.
+ */
+export function buildQaVerdictComment(
+  verdict: QaVerdict,
+  summary: QaSummary | undefined,
+  commitHash: string | undefined,
+  iteration: number,
+): string {
+  const lines: string[] = [`## QA Verdict: ${verdict}`];
+  if (summary) {
+    lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
+    if (summary.gaps.length > 0) {
+      lines.push("", "**Gaps:**", ...summary.gaps.map((g) => `- ${g}`));
+    }
+    if (summary.suggestions.length > 0) {
+      lines.push(
+        "",
+        "**Suggestions:**",
+        ...summary.suggestions.map((s) => `- ${s}`),
+      );
+    }
+  }
+  lines.push(
+    "",
+    `<!-- SEQUANT_QA_VERDICT: ${JSON.stringify({
+      verdict,
+      commit: commitHash ?? null,
+      iteration,
+    })} -->`,
+  );
+  return lines.join("\n");
+}
+
+/**
+ * Post the qa-verdict comment for a standard (non-ready-gate) qa phase under
+ * orchestrated `sequant run` (#964). This is the channel `qa/SKILL.md` §9
+ * promises ("orchestrator handles aggregated summary") but batch-executor
+ * never backed — a re-run producing a fresh, different verdict left a stale,
+ * contradicted comment as the only externally-visible one.
+ *
+ * Best-effort: a post failure is caught and logged, never fails the run —
+ * mirrors {@link runReadyGateForIssue}'s `postReport` contract (#937 AC-4).
+ * @internal Exported for testing.
+ */
+export async function postQaVerdictComment(
+  issueNumber: number,
+  verdict: QaVerdict,
+  summary: QaSummary | undefined,
+  commitHash: string | undefined,
+  iteration: number,
+  log: (msg: string) => void,
+  postComment: (issueNumber: number, body: string) => Promise<void> = (
+    n,
+    body,
+  ) => new GitHubProvider().postComment(String(n), body),
+): Promise<void> {
+  try {
+    const body = buildQaVerdictComment(verdict, summary, commitHash, iteration);
+    await postComment(issueNumber, body);
+  } catch (err) {
+    log(chalk.yellow(`    !  Failed to post QA verdict comment: ${err}`));
+  }
+}
+
+/**
  * Arguments for {@link runReadyGateForIssue}. Deliberately a flat primitive
  * bag rather than the full `IssueExecutionContext` so the helper stays cheap to
  * unit-test in isolation.
@@ -881,6 +951,7 @@ export async function runIssueWithLogging(
     onProgress,
     onPhasePlan,
     phasePauseHandle,
+    postComment: injectedPostComment,
   } = ctx;
   const worktreePath = worktree?.path;
   const branch = worktree?.branch;
@@ -1469,6 +1540,33 @@ export async function runIssueWithLogging(
         } catch {
           /* progress errors must not halt */
         }
+      }
+
+      // #964: post the verdict from a standard (non-ready-gate) qa phase.
+      // qa/SKILL.md §9 promises "the orchestrator handles aggregated summary"
+      // under SEQUANT_ORCHESTRATOR, but nothing backed that promise — a
+      // re-run producing a fresh, different verdict left the stale prior
+      // comment as the only externally-visible one. Gating on
+      // `result.success && result.verdict` also excludes turn-capped and
+      // unparseable-verdict phases (AC-4) without extra bookkeeping, since
+      // both already flow through the `else` branch above.
+      if (phase === "qa" && result.success && result.verdict) {
+        const verdictDiffBase = worktreePath
+          ? resolveDiffBase(worktreePath, baseBranch ?? "main")
+          : undefined;
+        const verdictCommitHash =
+          worktreePath && verdictDiffBase
+            ? getCommitHash(worktreePath, verdictDiffBase)
+            : undefined;
+        await postQaVerdictComment(
+          issueNumber,
+          result.verdict,
+          result.summary,
+          verdictCommitHash,
+          iteration,
+          log,
+          injectedPostComment,
+        );
       }
 
       // Log phase result with observability data (AC-1, AC-2, AC-3, AC-7)

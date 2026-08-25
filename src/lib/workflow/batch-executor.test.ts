@@ -68,7 +68,18 @@ vi.mock("../shutdown.js", () => {
 vi.mock("./git-diff-utils.js", () => ({
   getGitDiffStats: vi.fn(),
   getCommitHash: vi.fn(),
+  // #964: postQaVerdictComment's commit-hash resolution calls this
+  // unconditionally (not gated on logWriter, unlike the pre-existing
+  // observability-log call site) — the mock previously omitted it because
+  // nothing reached it under `logWriter: null` in these tests.
+  resolveDiffBase: vi.fn(),
 }));
+
+// #964: postQaVerdictComment's postComment is injected via ctx.postComment
+// (see makeCtx below) rather than mocking ./platforms/github.js — that module
+// is also used unmocked by resolveSpecRecommendation elsewhere in this file,
+// and a blanket mock there breaks those call sites.
+const mockPostComment = vi.fn().mockResolvedValue(undefined);
 
 // Keep the real errorTypeToCategory/ERROR_CATEGORIES — deriveFailureCategory
 // (#761 AC-7) routes through them on every failure return — but stub
@@ -126,6 +137,7 @@ function makeCtx(
     title?: string;
     labels?: string[];
     options?: Partial<RunOptions>;
+    postComment?: (issueNumber: number, body: string) => Promise<void>;
   } = {},
 ): IssueExecutionContext {
   return {
@@ -138,6 +150,7 @@ function makeCtx(
       logWriter: null,
       stateManager: null,
     },
+    ...(overrides.postComment ? { postComment: overrides.postComment } : {}),
   };
 }
 
@@ -1640,6 +1653,184 @@ describe("#749: AC_MET_BUT_NOT_A_PLUS breaks to PR (run-path integration)", () =
     // The verdict is forwarded as the 8th arg so the PR body surfaces the
     // "not A+" note.
     expect(mockCreatePR.mock.calls[0][7]).toBe("AC_MET_BUT_NOT_A_PLUS");
+  });
+});
+
+describe("#964: qa-verdict comment on the standard (non-ready-gate) run path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPostComment.mockResolvedValue(undefined);
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 964,
+      prUrl: "https://example.test/pr/964",
+    });
+  });
+
+  it("AC-1: posts a comment with the parsed verdict, AC coverage, and the SEQUANT_QA_VERDICT marker after a successful qa phase", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "AC_MET_BUT_NOT_A_PLUS",
+          summary: {
+            acMet: 3,
+            acTotal: 5,
+            gaps: ["AC-4 not addressed"],
+            suggestions: ["Add a regression test"],
+          },
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 964,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-964", branch: "feature/964" },
+    });
+
+    expect(mockPostComment).toHaveBeenCalledTimes(1);
+    const [issueArg, body] = mockPostComment.mock.calls[0];
+    expect(issueArg).toBe(964);
+    expect(body).toContain("AC_MET_BUT_NOT_A_PLUS");
+    expect(body).toContain("3/5 met");
+    expect(body).toContain("AC-4 not addressed");
+    expect(body).toMatch(
+      /<!-- SEQUANT_QA_VERDICT: \{"verdict":"AC_MET_BUT_NOT_A_PLUS","commit":.*,"iteration":1\} -->/,
+    );
+  });
+
+  it("AC-2 (regression, verbatim repro): a re-run computing a fresh, different verdict posts again — the fresh verdict is not left silently stale", async () => {
+    // Mirrors the issue's repro: run 1 posts NEEDS_VERIFICATION (gated on
+    // pending CI); a later re-run of the same command, with no new commits,
+    // computes AC_MET_BUT_NOT_A_PLUS once CI resolves. Both must reach GitHub.
+    const ctxFor = () => ({
+      ...makeCtx({
+        issueNumber: 226,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-226", branch: "feature/226" },
+    });
+
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "NEEDS_VERIFICATION",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+    await runIssueWithLogging(ctxFor());
+
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "AC_MET_BUT_NOT_A_PLUS",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+    await runIssueWithLogging(ctxFor());
+
+    expect(mockPostComment).toHaveBeenCalledTimes(2);
+    expect(mockPostComment.mock.calls[0][1]).toContain("NEEDS_VERIFICATION");
+    expect(mockPostComment.mock.calls[1][1]).toContain("AC_MET_BUT_NOT_A_PLUS");
+  });
+
+  it("AC-3: a comment-post failure is non-fatal — the run still reports success", async () => {
+    mockPostComment.mockRejectedValueOnce(new Error("gh: rate limited"));
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "AC_MET_BUT_NOT_A_PLUS",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 965,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-965", branch: "feature/965" },
+    });
+
+    expect(mockPostComment).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+  });
+
+  it("AC-4: does not post when the qa phase fails, is turn-capped, or yields no parseable verdict", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: false,
+          durationSeconds: 5,
+          error: "QA completed without a parseable verdict",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 966,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-966", branch: "feature/966" },
+    });
+
+    expect(mockPostComment).not.toHaveBeenCalled();
+
+    // Turn-capped: also success:false (capped phases never reach the
+    // success branch — see the #739 comment in batch-executor.ts).
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: false,
+          durationSeconds: 5,
+          capped: true,
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 967,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-967", branch: "feature/967" },
+    });
+
+    expect(mockPostComment).not.toHaveBeenCalled();
   });
 });
 
