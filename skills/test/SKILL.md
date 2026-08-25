@@ -582,7 +582,7 @@ Create structured test results:
 ### 3.2 GitHub Comment
 
 **If orchestrated (SEQUANT_ORCHESTRATOR is set):**
-- Skip posting GitHub comment (orchestrator handles summary)
+- Skip posting this skill's own GitHub comment — no per-phase comment is posted under `sequant run`; test results surface through the run summary and the PR body (#964)
 - Include test summary in output for orchestrator to capture
 - Let orchestrator aggregate results across phases
 

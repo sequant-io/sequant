@@ -773,4 +773,9 @@ export interface IssueExecutionContext {
    * around verbose Claude streaming.
    */
   phasePauseHandle?: PhasePauseHandle;
+  /**
+   * @internal Test seam for the #964 qa-verdict comment post. Defaults to a
+   * real `GitHubProvider().postComment` when unset.
+   */
+  postComment?: (issueNumber: number, body: string) => Promise<void>;
 }
