@@ -540,6 +540,32 @@ On a *failure* exit instead, the release is done at the halt site — the
 regression gate (Step 7) or "Error Handling" — never both, so exactly one release
 runs per invocation.
 
+<!-- BEGIN: named-set-boundary (#961) -->
+## Named-Set Boundary (REQUIRED)
+
+`/merger <issue-numbers>` is the user's consent to merge **exactly those
+issues** — invoking it is the explicit authorization, the same way `sequant
+merge`/`sequant merge --watch` are explicit and human-triggered (#958's
+Non-Goals). That consent does not extend past the named set: never let
+Dependency Detection or Stacked PR Detection below pull an**other** issue's PR
+into `gh pr merge` just because it happens to unblock or precede a named one.
+
+**Rule:** if merge ordering requires a PR whose issue number is **not** in the
+invocation's arg list, halt before merging anything and report it — do not
+widen the merge silently, and do not treat the stacked-PR "Continue anyway?
+(y/N)" confirmation as license to include an unnamed predecessor. Offer the
+widened command for the user to re-run:
+
+```text
+❌ Out-of-named-set dependency
+   #101 depends on #100, but #100 was not in your /merger invocation.
+   Halting before any merge.
+   To include it: /merger 100 101
+```
+
+This rule governs both sections below.
+<!-- END: named-set-boundary (#961) -->
+
 ## Dependency Detection
 
 Parse dependencies from issue body or comments:
@@ -557,7 +583,9 @@ Labels: depends-on/10
 gh issue view <issue> --json body,labels | jq '.body, .labels[].name'
 ```
 
-If dependencies found, enforce merge order.
+If dependencies found, enforce merge order **among the named set**. If a
+dependency's issue number falls outside the named set, apply the Named-Set
+Boundary rule above: halt and report instead of merging it.
 
 ### Stacked PR Detection (#605)
 
@@ -578,8 +606,9 @@ gh pr view <PR_NUMBER> --json baseRefName,body | \
 
 1. Extract the stack manifest from each PR's body (`Part of stack: #100 → #101 (this) → #102`).
 2. Treat the order in the manifest as the merge order — earlier entries land first.
-3. If the user requests an out-of-order merge (e.g. `/merger 102 100 101` for the stack above), **warn before proceeding** and recommend the manifest order.
-4. GitHub auto-updates the dependent PR's base when its predecessor merges, so once the order is correct no manual rebasing is needed.
+3. If **every** predecessor is in the named set but requested out of order (e.g. `/merger 102 100 101` for the stack above), **warn before proceeding** and recommend the manifest order.
+4. If a predecessor is **not** in the named set at all (e.g. `/merger 102` alone for that stack), the Named-Set Boundary rule applies: halt and report — do not fall through to the "Continue anyway? (y/N)" prompt, since that prompt is for reordering named issues, not for merging an unnamed one.
+5. GitHub auto-updates the dependent PR's base when its predecessor merges, so once the order is correct no manual rebasing is needed.
 
 **Warning template:**
 
