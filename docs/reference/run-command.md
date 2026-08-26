@@ -744,6 +744,7 @@ You can configure defaults in `.sequant/settings.json`:
     "sequential": false,
     "qualityLoop": false,
     "maxIterations": 3,
+    "autoMerge": false,
     "smartTests": true,
     "mcp": true,
     "autoWaitMinutes": 0,
@@ -759,6 +760,8 @@ Settings hierarchy (highest priority wins):
 2. Environment variables (`SEQUANT_QUALITY_LOOP`)
 3. Project settings (`.sequant/settings.json`)
 4. Package defaults
+
+`run.autoMerge` (default `false`, #958) governs whether `/fullsolve` merges the PR it creates. With the default, `/fullsolve` stops at PR creation and leaves the merge to you — the same human merge gate `sequant run` and `sequant ready` always enforce. Set it to `true` (or pass `/fullsolve <issue> --auto-merge`) to opt back into end-to-end merging.
 
 ## Output
 
@@ -787,6 +790,8 @@ Settings hierarchy (highest priority wins):
   Results: 1 passed, 0 failed
   ✓ #42: spec → exec → qa (19m 35s)
 ```
+
+When a run's qa phase completes with a parseable verdict, the orchestrator also posts a compact QA comment on the issue — verdict, AC coverage, and gaps — so a re-run's fresh verdict is externally visible instead of leaving an earlier, contradicted comment as the only signal (#964). Posting is best-effort and never fails the phase.
 
 ### Failure Output
 

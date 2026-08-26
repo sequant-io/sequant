@@ -88,7 +88,7 @@ For simpler issues, use `/fullsolve` to run all phases:
 /fullsolve 123
 ```
 
-This runs spec → exec → qa with automatic fix iterations.
+This runs spec → exec → qa with automatic fix iterations, stopping at PR creation so you review and merge the PR yourself. Pass `--auto-merge` to opt into merging automatically.
 
 ## Tips
 

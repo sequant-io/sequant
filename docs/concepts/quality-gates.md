@@ -56,6 +56,21 @@ An AC can declare its own verification instead of leaving Sequant to infer one f
 
 A backtick-quoted `test`/`vitest`/`jest` command resolves to a unit test; any other backtick command resolves to an integration test; prose with no command resolves to manual. `/qa` must execute the declared command (or verify a captured run) before marking that AC `MET` — an AC with an `Evidence:` clause can't be marked `MET` by inference alone. ACs without a clause fall back to the existing keyword-based inference, so existing issues are unaffected.
 
+### Mutation-Verified Gate Tests
+
+A **gate test** is one whose job is to gate a claim — a fixture exists, a skill section is present, a flag is wired. Such a test only counts as coverage once it's been *mutation-verified*: delete the thing it asserts, confirm exactly that test fails, restore. The result is recorded in the PR body as a marker `/qa` parses and enforces (#939):
+
+```markdown
+Mutation-verified: AC-2 — deleted the Named-Set Boundary section; merger-named-set-boundary-skill.test.ts > section tests failed; restored.
+<!-- SEQUANT_MUTATION: {"ac":"AC-2","mutation":"deleted the Named-Set Boundary section","failedTest":"src/lib/__tests__/merger-named-set-boundary-skill.test.ts > section tests"} -->
+```
+
+For any AC whose evidence is a gate test, a missing marker caps the QA verdict at `AC_MET_BUT_NOT_A_PLUS`, and a marker naming a test that isn't in the diff — a fabricated record — floors it at `AC_NOT_MET`. The `failedTest` field must use the `<file> > <test name>` shape so the classifier can match it against the diff.
+
+### Structured Gap Findings
+
+`/qa` closes every review with a machine-readable gap marker (`<!-- SEQUANT_QA_GAPS: {"findings":[...]} -->`, #937) classifying each finding into a finite taxonomy — `requirement_gap`, `dependency_gap`, `test_gap`, `repository_gap`, `risk_gap`, `execution_gap` — each with required evidence and a recommended action (`fix_now`, `document`, or `pause_for_human`). `/loop` and `sequant ready`'s fix loop only chase `fix_now` findings, so a risk QA itself framed as non-blocking is never burned iterations on.
+
 ## Type Safety
 
 Catches type-related issues that can cause runtime errors.
