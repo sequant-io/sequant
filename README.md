@@ -1,8 +1,8 @@
 # Sequant
 
-**Spec-driven AI coding agents — every acceptance criterion verified, stops at the human merge gate.**
+**AI coding agents that prove their work — every acceptance criterion verified, and you hold the merge button.**
 
-For teams that can't ship un-reviewed AI code. Solve GitHub issues with structured phases and quality gates — from issue to merge-ready PR.
+For developers who won't merge what they can't trust — solo or on a team. Solve GitHub issues with structured phases and quality gates, from issue to merge-ready PR.
 
 **[sequant.io](https://sequant.io)** — docs, guides, and getting started.
 
@@ -12,7 +12,7 @@ For teams that can't ship un-reviewed AI code. Solve GitHub issues with structur
 [![CI](https://github.com/sequant-io/sequant/actions/workflows/ci.yml/badge.svg)](https://github.com/sequant-io/sequant/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step.
+AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step. The PR arrives with evidence — each acceptance criterion checked against the code — and the merge is always yours.
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
@@ -189,6 +189,19 @@ Every `/qa` runs automated checks:
 - **Anti-Pattern Detection** — Catches N+1 queries, empty catch blocks, stale dependencies
 
 When checks fail, `/loop` automatically fixes and re-runs (up to 3x).
+
+### Thinking of building this on a graph framework?
+
+You could assemble this workflow yourself on LangGraph, CrewAI, Mastra, or the Claude Agent SDK — they sell the primitives and leave the workflow as an exercise. Sequant is the finished, hardened version of what you'd end up building, in the frameworks' own vocabulary:
+
+- **Isolated execution** — one git worktree per issue, resolved by the branch git reports rather than directory globs
+- **Human-in-the-loop approval gate** — the pipeline stops at the PR and never merges; this is an invariant, not optional wiring
+- **Guardrails** — QA verdicts with an enforced floor, mutation-verified gate tests, scope and security checks
+- **Durable execution** — a rate-limit halt writes a resumable record; `sequant resume` picks up where it left off, skipping completed phases
+- **State management** — per-issue and checkout-scoped locks, so concurrent sessions can't interleave git operations in the same tree
+- **Deterministic control flow** — dependency-ordered batch scheduling over `blocked by #N` relationships
+
+On a general framework, every one of these is something you wire up — and can wire wrong or skip. Here they hold for every run. The boring 80% (retries, resume, locking, exit codes your scripts can trust) has already been run in anger; the [CHANGELOG](CHANGELOG.md) is the receipts.
 
 ---
 
