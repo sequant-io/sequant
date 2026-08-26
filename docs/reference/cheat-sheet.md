@@ -70,7 +70,7 @@ sequant doctor              # Verify installation health
 
 | Command | Purpose |
 |---------|---------|
-| `/fullsolve <issue>` | Full pipeline: spec → exec → test → qa with auto-fix |
+| `/fullsolve <issue>` | Full pipeline: spec → exec → test → qa with auto-fix; stops at PR creation (`--auto-merge` to also merge) |
 | `/assess <issues...>` | Triage issue, recommend workflow (6-action vocabulary) |
 | `/loop` | Re-run quality checks, fix failures, iterate |
 
@@ -90,7 +90,7 @@ sequant doctor              # Verify installation health
 | `/reflect` | Analyze workflow effectiveness |
 | `/security-review` | Deep security analysis for sensitive features |
 | `/clean` | Repository cleanup (stale worktrees, branches) |
-| `/merger` | Multi-issue post-QA merge coordination |
+| `/merger` | Multi-issue post-QA merge coordination (merges only the issues you name — an out-of-set dependency halts with a report instead of widening) |
 | `/upstream` | Monitor Claude Code releases for compatibility |
 | `/release` | Version bump, tag, GitHub release, npm publish |
 
@@ -170,7 +170,7 @@ sequant doctor              # Verify installation health
 ```bash
 /fullsolve 123
 ```
-Runs spec → exec → test → qa with automatic fix loops.
+Runs spec → exec → test → qa with automatic fix loops, stopping at PR creation. Add `--auto-merge` to also merge the PR.
 
 #### Step-by-step with control
 ```bash

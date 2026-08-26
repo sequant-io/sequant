@@ -23,7 +23,7 @@ npx sequant doctor  # Verify setup
 /fullsolve 123
 ```
 
-This runs the complete pipeline: plan → implement → test → review → fix iterations.
+This runs the complete pipeline: plan → implement → test → review → fix iterations. It stops at PR creation — the PR is left open for your review. Pass `--auto-merge` (or set `run.autoMerge: true` in `.sequant/settings.json`) if you want it to also merge the PR once checks pass.
 
 ### The Step-by-Step Way
 

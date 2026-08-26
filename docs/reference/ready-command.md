@@ -114,8 +114,10 @@ A structured gap report (markdown, or `--json`) containing:
 - **Headline + stop reason** — ready vs. needs-human vs. no-implementation.
 - **Final verdict** and **QA pass count**.
 - **Auto-fixed** — gaps the fix loop addressed across iterations.
-- **Remaining / accepted gaps** — quality gaps (under `ac`) and **Non-Goal** items, tagged report-only.
+- **Remaining / accepted gaps** — quality gaps (under `ac`) and **Non-Goal** items, tagged report-only. Each gap carries the structured taxonomy from `/qa`'s findings marker (#937): a category (`requirement_gap`, `dependency_gap`, `test_gap`, `repository_gap`, `risk_gap`, `execution_gap`), evidence, and a recommended action — the fix loop only attempts `fix_now` findings, never ones QA marked `document` or `pause_for_human`.
 - **Final state** — `waiting_for_human_merge` or `blocked`. Reflected by `sequant status`.
+
+Under the `ac` policy, once the gate reaches a terminal state carrying a QA verdict, the final gap report (including the findings marker) is also posted as a comment on the issue — so the outcome survives terminal scrollback. Posting is best-effort: a failed comment never fails the gate.
 
 > The human merge gate is intentional and permanent: `sequant ready` never merges. Review the gaps, then merge manually when satisfied.
 
