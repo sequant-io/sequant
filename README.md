@@ -16,6 +16,12 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.12
+
+- **QA gates you can parse, not just read** — `/qa` now closes every review with a structured findings marker (six-category taxonomy, evidence, recommended action) that `/loop` and `sequant ready` consume directly, so a finding QA itself called non-blocking is never burned as a fix iteration (#937). Gate-test ACs must ship a machine-checkable `SEQUANT_MUTATION` record in the PR body, enforced by `/qa` (#939), and an AC can declare its own verification command via a trailing `Evidence:` clause that QA must actually execute (#938). A new advisory CI job annotates PRs with likely-vacuous tests (#940).
+- **`/fullsolve` stops at the PR** — it no longer merges the PR it creates; pass `--auto-merge` (or set `run.autoMerge: true`) for the previous end-to-end behavior (#958). `/merger` gains a Named-Set Boundary: it merges only the issues you name, halting with a report if a dependency outside that set turns up (#961).
+- **Phase agents get an MCP allowlist, not your desktop config** — headless phase agents now receive the sequant MCP server plus the project's own `.mcp.json`, never a passthrough of Claude Desktop config (which can carry literal secrets into process argv). `run.mcpAllowlist` opts specific desktop-only servers back in deliberately (#936). See [run-command.md](docs/reference/run-command.md#allowlisting-a-desktop-only-server).
+
 ### What's new in 2.11
 
 - **Per-phase `model`/`effort` configuration** — the new `sequant run`/`sequant ready` flags `--models`/`--efforts` (bare value applies to every phase, or a comma list of `phase=model` pairs) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default — e.g. planning with a stronger model and delegating implementation to a cheaper one. Absent by default: nothing changes unless configured. See [run-command.md](docs/reference/run-command.md#per-phase-model--effort).
