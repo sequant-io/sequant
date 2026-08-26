@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.11.0
+# What We've Built: Sequant v2.12.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,16 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.12.0)
+
+- **Structured Gap Findings** - `/qa` closes every review with a six-category findings taxonomy marker that `/loop` and `sequant ready` parse; non-blocking findings are never burned as fix iterations (#937)
+- **Mutation-Verification Gate** - Gate-test ACs must record a parseable `SEQUANT_MUTATION` marker in the PR body, enforced by `/qa` §6i (#939)
+- **Tautology Detector in CI** - Advisory `tautology-advisory` job annotates PRs with likely-vacuous tests while a false-positive rate is measured (#940)
+- **`Evidence:` Clause on ACs** - An AC can declare its own verification command, which `/qa` must execute before marking it MET (#938)
+- **MCP Allowlist for Phase Agents** - Phase agents get the sequant server + project `.mcp.json` instead of the full Claude Desktop config; `run.mcpAllowlist` opts specific desktop servers back in (#936)
+- **Human Merge Gate for `/fullsolve`** - Stops at PR creation by default; `--auto-merge`/`run.autoMerge` opts into end-to-end merging (#958)
+- **`/merger` Named-Set Boundary** - Never merges a PR whose issue wasn't named in the invocation; out-of-set dependencies halt with a report (#961)
+
 ### Recent Additions (v2.11.0)
 
 - **Per-Phase Model & Effort** - `--models`/`--efforts` flags (and matching `.sequant/settings.json` config) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default (#914)
@@ -1166,7 +1176,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.11.0
+**Current Version:** 2.12.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1176,7 +1186,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.10.0                               │
+│                              SEQUANT v2.12.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
