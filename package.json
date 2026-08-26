@@ -1,7 +1,7 @@
 {
   "name": "sequant",
   "version": "2.12.0",
-  "description": "AI coding agent orchestrator — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Works with Claude Code or Aider.",
+  "description": "AI coding agent orchestrator that proves its work — GitHub issues to merge-ready PRs with every acceptance criterion verified, isolated git worktrees, quality gates, an MCP server, and a human merge gate. Works with Claude Code or Aider.",
   "type": "module",
   "bin": {
     "sequant": "dist/bin/cli.js"
