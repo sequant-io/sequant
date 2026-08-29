@@ -35,7 +35,7 @@ Sequant uses a two-layer system:
 
 1. **Definition of Done** — generated from `/qa`'s §7 gate list (`lint:constitution-dod` fails CI on drift). These are project-wide gates; do not restate them as issue-level ACs.
 2. **AC Authoring Standard** — the house format for writing ACs (single-line constraint, `Evidence:`/`Risk:`/`Human decision` fields, Non-Goals section). Referenced by `/spec`'s AC Quality Check step.
-3. **Boundaries** — every listed rule names its enforcing mechanism: the force-push/amend hook, the protected-paths settings key, the mutation-verification gate.
+3. **Boundaries** — every listed rule names its enforcing mechanism: the force-push/amend hook, the worktree-only editing guard, the mutation-verification gate.
 4. **Budgets & Stop Conditions** — iteration caps, the human merge gate, the hold states (`waiting_for_human_merge`, `awaiting_verification`), and gap-prompt discipline.
 
 The **Project-Specific Notes** section at the bottom is yours to extend. Everything above it is managed by sequant and updated when the template changes.
