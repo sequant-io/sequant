@@ -159,6 +159,8 @@ export function getNextActionHint(issue: IssueState): string {
     }
     case "waiting_for_qa_gate":
       return `sequant run ${issue.number} --phase qa`;
+    case "awaiting_verification":
+      return `sequant run ${issue.number} --phases qa`;
     case "waiting_for_human_merge":
       // `sequant ready` certified the work; a human reviews + merges manually.
       if (issue.pr?.number) {

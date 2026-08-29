@@ -514,6 +514,13 @@ const runToolInputSchema = {
     .boolean()
     .optional()
     .describe("Enable auto-retry on QA failure"),
+  force: z
+    .boolean()
+    .optional()
+    .describe(
+      "Re-run even if the issue is already in a completed state (mirrors CLI --force). " +
+        "Required to re-run a qa phase after a NEEDS_VERIFICATION verdict.",
+    ),
   agent: z
     .string()
     .optional()
@@ -544,11 +551,13 @@ export function registerRunTool(server: McpServer): void {
         issues,
         phases,
         qualityLoop,
+        force,
         agent,
       }: {
         issues: number[];
         phases?: string;
         qualityLoop?: boolean;
+        force?: boolean;
         agent?: string;
       },
       extra: ToolHandlerExtra,
@@ -578,6 +587,9 @@ export function registerRunTool(server: McpServer): void {
       }
       if (qualityLoop) {
         args.push("--quality-loop");
+      }
+      if (force) {
+        args.push("--force");
       }
       if (agent) {
         args.push("--agent", agent);
