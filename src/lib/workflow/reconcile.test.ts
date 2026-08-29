@@ -337,12 +337,20 @@ describe("Reconciliation Engine", () => {
       expect(getNextActionHint(issue)).toContain("sequant run 403");
     });
 
+    it("should suggest qa re-run for awaiting_verification status", () => {
+      const issue = makeIssue({ number: 405, status: "awaiting_verification" });
+      const hint = getNextActionHint(issue);
+      expect(hint).toContain("sequant run 405");
+      expect(hint).toContain("--phases qa");
+    });
+
     describe("edge cases", () => {
       it("should handle all statuses gracefully", () => {
         const statuses: IssueState["status"][] = [
           "not_started",
           "in_progress",
           "waiting_for_qa_gate",
+          "awaiting_verification",
           "ready_for_merge",
           "merged",
           "blocked",

@@ -421,6 +421,7 @@ function renderIssuesList(issues: IssueState[]): string {
     in_progress: [],
     waiting_for_qa_gate: [],
     waiting_for_human_merge: [],
+    awaiting_verification: [],
     ready_for_merge: [],
     blocked: [],
     not_started: [],

@@ -53,6 +53,7 @@ export const IssueStatusSchema = z.enum([
   "in_progress", // Actively being worked on
   "waiting_for_qa_gate", // QA completed, waiting for gate approval in chain mode
   "waiting_for_human_merge", // `sequant ready` (#683) finished its A+ gate; awaiting human merge decision (never auto-merges)
+  "awaiting_verification", // QA returned NEEDS_VERIFICATION; human must execute ACs before QA re-run (#972)
   "ready_for_merge", // All phases passed, PR ready for review
   "merged", // PR merged, work complete
   "blocked", // Waiting on external input or dependency
