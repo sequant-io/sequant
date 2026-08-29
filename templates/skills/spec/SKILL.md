@@ -107,6 +107,8 @@ Mark tier in HTML comment for downstream parsing: `<!-- SEQUANT_SPEC_TIER: [tier
    | Open-ended | "etc.", "and more" | Scope undefined |
    | Title/body tension | doc-noun title ("note", "comment", "snippet") + runtime-imperative body ("execute", "trigger", "capture", incl. inflections like `triggered`/`captured`, `run /<cmd>`); separators `.`/`\n`/`:`/`—` | Two different verification bars |
 
+   > For the house AC format rules (single-line constraint, `Evidence:`/`Risk:`/`Human decision` fields, Non-Goals section), see the constitution's §2 AC Authoring Standard (`.claude/memory/constitution.md`).
+
 3. **Scope Assessment** (unless `--skip-scope-check`): Use `performScopeAssessment` from `./src/lib/scope/index.ts` with settings from `getSettings()`. Verdicts: SCOPE_OK (green), SCOPE_WARNING (yellow, auto-enables quality loop), SCOPE_SPLIT_RECOMMENDED (red). Store results in state.
 
 ### If guard fails (consumer projects):
