@@ -127,6 +127,10 @@ jobs:
       - name: Lint skill gates
         run: npm run lint:skill-gates
 
+      # Asserts the constitution DoD table matches §7 step-4 gates (#943).
+      - name: Check constitution DoD drift
+        run: npm run lint:constitution-dod
+
       - name: Check skill sync
         run: npm run lint:skill-sync
 

@@ -31,6 +31,7 @@
     "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
     "lint:skill-calls": "npx tsx scripts/lint-skill-calls.ts",
     "lint:skill-gates": "npx tsx scripts/lint-skill-gates.ts",
+    "lint:constitution-dod": "npx tsx scripts/check-constitution-dod.ts",
     "lint:skill-sync": "npx tsx scripts/check-skill-sync.ts",
     "prepare:marketplace": "npx tsx scripts/prepare-marketplace.ts",
     "validate:marketplace": "npx tsx scripts/prepare-marketplace.ts --validate-only",
