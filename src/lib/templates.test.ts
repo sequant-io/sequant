@@ -725,6 +725,24 @@ describe("templates", () => {
       expect(result.preservedCustomizable).toHaveLength(0);
     });
 
+    // #943 AC-4: the rewritten multi-section constitution (DoD + boundaries +
+    // budgets) is preserved unchanged when a project has customized it — the
+    // CUSTOMIZABLE_FILES guard must work regardless of template content shape.
+    it("preserves a multi-section constitution customized for the project (#943 AC-4)", async () => {
+      const custom =
+        "# my-project Agent Contract\n\n" +
+        "## 1. Definition of Done\n\n<!-- BEGIN:DOD-GATES -->\n| Gate | Trigger | Verdict impact |\n|------|---------|----------------|\n<!-- END:DOD-GATES -->\n\n" +
+        "## Project-Specific Notes\n\nOur team rule: always pair-review auth changes.\n";
+      await seedConstitution(custom);
+
+      const result = await copyTemplates("generic");
+
+      expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
+        custom,
+      ); // untouched despite new template shape
+      expect(result.preservedCustomizable).toContain(CONSTITUTION_LOCAL);
+    });
+
     it("pins the round trip: plain copy preserves, opt-in replaces (AC-6)", async () => {
       const custom =
         "# my-project Constitution\n\n## Team Rule\nAlways review.\n";
