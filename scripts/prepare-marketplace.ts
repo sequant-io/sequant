@@ -361,6 +361,15 @@ sequant init
 - **Pre-tool guardrails** — blocks dangerous commands, enforces worktree safety
 - **Post-tool tracking** — timing, quality metrics, smart test runner
 
+### Agent Contract
+
+Every project gets \`.claude/memory/constitution.md\` — the machine-enforceable agent contract that answers "what must every PR satisfy, and where does the agent stop?":
+
+- **Definition of Done** — generated from \`/qa\`'s §7 gate list; a CI check fails on drift
+- **AC Authoring Standard** — the house format for ACs; referenced by \`/spec\`'s lint warnings
+- **Boundaries** — every rule names its enforcer (hook, gate, or settings key)
+- **Budgets & Stop Conditions** — iteration caps, the human merge gate, and hold states
+
 ## Quick Start
 
 \`\`\`

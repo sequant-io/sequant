@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Constitution template rewritten as the enforceable agent contract (#943):
+  generated Definition of Done table (drift-gated in CI via
+  `lint:constitution-dod`), AC authoring standard referenced by `/spec` lint
+  output, and Boundaries/Budgets sections where every rule names its real
+  enforcing mechanism. Existing customized constitutions are preserved by
+  `update`/`sync`; the new template reaches fresh `init` projects only.
+
 ## [2.12.0] - 2026-08-26
 
 ### Added
