@@ -14,6 +14,7 @@ import type {
 import { getPhaseMcpServersConfig } from "../../mcp-config.js";
 import {
   type SequantError,
+  ApiError,
   RateLimitError,
   BillingError,
   createRateLimitError,
@@ -228,6 +229,32 @@ export class ClaudeCodeDriver implements AgentDriver {
 
       if (resultMessage) {
         if (resultMessage.subtype === "success") {
+          // The SDK emits subtype "success" with is_error:true when the turn
+          // ends on an API error (e.g. unrecognized model). Treat it as a
+          // phase failure so the caller gets a real error, not a zero-work
+          // success. See #973 / SDK docs §SDKResultMessage.
+          if (resultMessage.is_error) {
+            const metadata: Record<string, unknown> = {};
+            if (resultMessage.api_error_status != null) {
+              metadata.statusCode = resultMessage.api_error_status;
+              metadata.api_error_status = resultMessage.api_error_status;
+            }
+            if (resultMessage.terminal_reason != null) {
+              metadata.terminal_reason = resultMessage.terminal_reason;
+            }
+            const apiError = new ApiError(resultMessage.result, metadata);
+            return {
+              success: false,
+              output: capturedOutput,
+              sessionId: resultSessionId,
+              resumeHandle,
+              error: resultMessage.result,
+              structuredError: apiError,
+              stderrTail: stderrBuffer.getLines(),
+              stdoutTail: stdoutBuffer.getLines(),
+            };
+          }
+
           return {
             success: true,
             output: capturedOutput,

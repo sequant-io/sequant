@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { Mock } from "vitest";
 import { ClaudeCodeDriver } from "./claude-code.js";
 import {
+  ApiError,
   RateLimitError,
   BillingError,
   type SequantError,
@@ -614,6 +615,56 @@ describe("ClaudeCodeDriver", () => {
       expect(err.metadata.assistantError).toBe("rate_limit");
       // No resetsAt → downstream treats it as transient (AC-2 fallback rule).
       expect(err.metadata.resetsAt).toBeUndefined();
+    });
+
+    it("treats subtype:success + is_error:true as a phase failure (AC-1)", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "result",
+            subtype: "success",
+            is_error: true,
+            api_error_status: 404,
+            terminal_reason: "api_error",
+            result:
+              "There's an issue with the selected model (nonexistent-model-xyz). It may not exist or you may not have access to it.",
+            modelUsage: {},
+          },
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("nonexistent-model-xyz");
+    });
+
+    it("carries terminal_reason and api_error_status in structuredError metadata (AC-3)", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "result",
+            subtype: "success",
+            is_error: true,
+            api_error_status: 404,
+            terminal_reason: "api_error",
+            result:
+              "There's an issue with the selected model (nonexistent-model-xyz). It may not exist or you may not have access to it.",
+            modelUsage: {},
+          },
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.structuredError).toBeInstanceOf(ApiError);
+      const err = result.structuredError as ApiError;
+      expect(err.metadata.terminal_reason).toBe("api_error");
+      expect(err.metadata.api_error_status).toBe(404);
     });
 
     it("leaves structuredError undefined on success", async () => {
