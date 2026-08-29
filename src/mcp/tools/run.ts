@@ -518,8 +518,9 @@ const runToolInputSchema = {
     .boolean()
     .optional()
     .describe(
-      "Re-run even if the issue is already in a completed state (mirrors CLI --force). " +
-        "Required to re-run a qa phase after a NEEDS_VERIFICATION verdict.",
+      "Re-run even if the issue is already in a completed state such as " +
+        "ready_for_merge (mirrors CLI --force). Not needed after a " +
+        "NEEDS_VERIFICATION verdict: awaiting_verification re-runs freely.",
     ),
   agent: z
     .string()
