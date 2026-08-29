@@ -70,6 +70,8 @@ function getStatusClass(status: IssueStatus): string {
       return "primary";
     case "waiting_for_qa_gate":
       return "warning";
+    case "awaiting_verification":
+      return "warning";
     case "ready_for_merge":
       return "success";
     case "blocked":
@@ -445,6 +447,7 @@ function renderIssuesList(issues: IssueState[]): string {
   const statusOrder: IssueStatus[] = [
     "in_progress",
     "waiting_for_qa_gate",
+    "awaiting_verification",
     "ready_for_merge",
     "blocked",
     "not_started",

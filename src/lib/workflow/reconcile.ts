@@ -152,13 +152,13 @@ export function getNextActionHint(issue: IssueState): string {
           ([, ps]) => ps.status === "failed",
         );
         if (failedPhase) {
-          return `sequant run ${issue.number} --phase ${failedPhase[0]}`;
+          return `sequant run ${issue.number} --phases ${failedPhase[0]}`;
         }
       }
       return `sequant run ${issue.number}`;
     }
     case "waiting_for_qa_gate":
-      return `sequant run ${issue.number} --phase qa`;
+      return `sequant run ${issue.number} --phases qa`;
     case "awaiting_verification":
       return `sequant run ${issue.number} --phases qa`;
     case "waiting_for_human_merge":

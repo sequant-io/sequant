@@ -303,7 +303,7 @@ describe("Reconciliation Engine", () => {
   // AC-3: Next-action hints per issue row
   // =========================================================================
   describe("AC-3: Next-action hints", () => {
-    it("should return 'sequant run <N> --phase <phase>' for failed phase", () => {
+    it("should return 'sequant run <N> --phases <phase>' for failed phase", () => {
       const issue = makeIssue({
         number: 400,
         status: "in_progress",
@@ -313,7 +313,9 @@ describe("Reconciliation Engine", () => {
 
       const hint = getNextActionHint(issue);
       expect(hint).toContain("sequant run 400");
-      expect(hint).toContain("--phase qa");
+      // #972 drive-by: the real CLI flag is `--phases <list>` (bin/cli.ts);
+      // the hint previously named a nonexistent `--phase` flag.
+      expect(hint).toContain("--phases qa");
     });
 
     it("should return 'gh pr merge <PR>' for ready_to_merge status", () => {

@@ -251,7 +251,7 @@ export interface ReconcileOptions {
 export interface ReconcileResult {
   /** Whether reconciliation was successful */
   success: boolean;
-  /** Issues advanced to `merged` (from `ready_for_merge`, `in_progress`, or `waiting_for_qa_gate`) */
+  /** Issues advanced to `merged` (from `ready_for_merge`, `in_progress`, `waiting_for_qa_gate`, `waiting_for_human_merge`, or `awaiting_verification`) */
   advanced: number[];
   /** Issues checked but not yet merged (status unchanged) */
   stillPending: number[];
@@ -262,9 +262,9 @@ export interface ReconcileResult {
 /**
  * Lightweight state reconciliation at run start
  *
- * Checks issues in `ready_for_merge`, `in_progress`, or `waiting_for_qa_gate`
- * state and advances them to `merged` if their PRs are merged or their branches
- * are in main.
+ * Checks issues in `ready_for_merge`, `in_progress`, `waiting_for_qa_gate`,
+ * `waiting_for_human_merge`, or `awaiting_verification` state and advances
+ * them to `merged` if their PRs are merged or their branches are in main.
  *
  * Including `in_progress` covers the case where a PR was merged outside
  * this sequant session (separate process, `gh pr merge`, web UI) — without
@@ -306,7 +306,10 @@ export async function reconcileStateAtStartup(
     // waiting_for_human_merge covers #817's `--ready-gate` terminal: a gated
     // issue never reaches ready_for_merge, so without it a gated issue whose PR
     // a human then merged stayed here forever and never advanced to merged
-    // (#837). Note this list is deliberately WIDER than `isCompletedIssueStatus`
+    // (#837). awaiting_verification covers the same shape for #972: the issue
+    // has an open PR pending human verification, and the human may verify and
+    // merge it directly instead of re-running qa first.
+    // Note this list is deliberately WIDER than `isCompletedIssueStatus`
     // — it asks "might this have a merged PR?", not "is this done?", which is
     // why in_progress belongs here but not there.
     for (const [issueNumStr, issueState] of Object.entries(state.issues)) {
@@ -314,7 +317,8 @@ export async function reconcileStateAtStartup(
         issueState.status !== "ready_for_merge" &&
         issueState.status !== "in_progress" &&
         issueState.status !== "waiting_for_qa_gate" &&
-        issueState.status !== "waiting_for_human_merge"
+        issueState.status !== "waiting_for_human_merge" &&
+        issueState.status !== "awaiting_verification"
       ) {
         continue;
       }
