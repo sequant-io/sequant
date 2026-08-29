@@ -9,7 +9,7 @@
  * Related: #943
  */
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -19,6 +19,7 @@ import {
   PROJECT_ROOT,
   resolveQaSkillPath,
 } from "./generate-constitution-dod.js";
+import { DEFAULT_SETTINGS } from "../src/lib/settings.js";
 import {
   extractDodSection,
   BEGIN_MARKER,
@@ -227,4 +228,62 @@ describe("AC-6: docs describe the constitution as the agent contract", () => {
     );
     expect(content).toContain("constitution");
   });
+});
+
+describe("AC-3: cited enforcers in §3–§4 resolve to real mechanisms", () => {
+  // The QA finding behind this gate: the template shipped citing
+  // `settings.riskPaths` (no such key) and `ready.maxIterations` (real key is
+  // `run.maxIterations`). A contract that cites nonexistent enforcers is
+  // exactly the "unenforced aspirational statement" AC-3 forbids, so every
+  // backticked settings key and hook path in the Boundaries/Budgets region
+  // must resolve. Scoped to §3–§4 per the gate-test scoping rule.
+  const CONSTITUTION_FILES = [
+    "templates/memory/constitution.md",
+    "memory/constitution.md",
+  ];
+
+  function boundariesAndBudgetsRegion(relPath: string): string {
+    const content = readFileSync(join(PROJECT_ROOT, relPath), "utf-8");
+    const start = content.indexOf("## 3. Boundaries");
+    const end = content.indexOf("## 5.");
+    expect(start, `${relPath}: §3 header missing`).toBeGreaterThan(-1);
+    expect(end, `${relPath}: §5 header missing`).toBeGreaterThan(start);
+    return content.slice(start, end);
+  }
+
+  for (const relPath of CONSTITUTION_FILES) {
+    it(`${relPath}: every cited settings key resolves in DEFAULT_SETTINGS`, () => {
+      const region = boundariesAndBudgetsRegion(relPath);
+      const keys = [
+        ...region.matchAll(
+          /`((?:run|ready|agents|scopeAssessment)\.[A-Za-z0-9.]+)`/g,
+        ),
+      ].map((m) => m[1]);
+      expect(keys.length, "no settings keys cited — region regressed").toBeGreaterThan(0);
+      for (const key of keys) {
+        let node: unknown = DEFAULT_SETTINGS;
+        for (const part of key.split(".")) {
+          expect(
+            typeof node === "object" && node !== null && part in node,
+            `cited settings key \`${key}\` does not resolve (stopped at \`${part}\`)`,
+          ).toBe(true);
+          node = (node as Record<string, unknown>)[part];
+        }
+      }
+    });
+
+    it(`${relPath}: every cited hook/script path exists`, () => {
+      const region = boundariesAndBudgetsRegion(relPath);
+      const paths = [
+        ...region.matchAll(/`((?:templates|scripts)\/[\w/.-]+\.(?:sh|ts))`/g),
+      ].map((m) => m[1]);
+      expect(paths.length, "no hook/script paths cited — region regressed").toBeGreaterThan(0);
+      for (const p of paths) {
+        expect(
+          existsSync(join(PROJECT_ROOT, p)),
+          `cited enforcer path \`${p}\` does not exist`,
+        ).toBe(true);
+      }
+    });
+  }
 });

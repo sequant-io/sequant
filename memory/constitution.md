@@ -81,7 +81,6 @@ Every rule below names its enforcing mechanism. Rules without a named enforcer a
 |------|---------------------|
 | No force-push or amend on pushed branches | `templates/hooks/pre-tool.sh` (pre-tool hook, `HOOK_BLOCKED: Force push`) |
 | No edits outside the issue worktree | `templates/hooks/pre-tool.sh` (worktree-only editing guard) |
-| Protected paths require explicit override | `settings.riskPaths` (settings key; override prompt required) |
 | Gate tests must be mutation-verified | `/qa` §6i + `SEQUANT_MUTATION` marker in PR body (#939); `Missing` caps at `AC_MET_BUT_NOT_A_PLUS`, `Failed` floors at `AC_NOT_MET` |
 | All §1 Definition of Done gates | `/qa` §7 verdict algorithm (see §1 above) |
 
@@ -93,7 +92,7 @@ Every rule below names its enforcing mechanism. Rules without a named enforcer a
 
 | Cap | Setting key | Default |
 |-----|-------------|---------|
-| Quality-loop max iterations | `ready.maxIterations` | 3 |
+| Quality-loop max iterations | `run.maxIterations` | 3 |
 | Auto-wait budget (rate-limit windows) | `run.autoWaitMinutes` | 0 (off) |
 
 When a cap is reached, the run stops at the human merge gate rather than continuing indefinitely.
