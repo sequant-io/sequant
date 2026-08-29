@@ -116,6 +116,8 @@ function colorStatus(status: IssueStatus, resolvedAt?: string): string {
       return chalk.yellow(status);
     case "waiting_for_human_merge":
       return chalk.green(status);
+    case "awaiting_verification":
+      return chalk.magenta(status);
     case "ready_for_merge":
       return chalk.green(status);
     case "merged":
@@ -245,6 +247,7 @@ function displayIssueSummary(issues: IssueState[]): void {
     in_progress: [],
     waiting_for_qa_gate: [],
     waiting_for_human_merge: [],
+    awaiting_verification: [],
     ready_for_merge: [],
     blocked: [],
     not_started: [],
@@ -260,6 +263,7 @@ function displayIssueSummary(issues: IssueState[]): void {
   const statusOrder: IssueStatus[] = [
     "in_progress",
     "waiting_for_qa_gate",
+    "awaiting_verification",
     "waiting_for_human_merge",
     "ready_for_merge",
     "blocked",

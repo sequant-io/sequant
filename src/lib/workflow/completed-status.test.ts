@@ -36,6 +36,13 @@ describe("isCompletedIssueStatus (#837)", () => {
     expect(isCompletedIssueStatus("blocked")).toBe(false);
   });
 
+  it("does NOT treat awaiting_verification as completed — qa re-runs proceed without --force (#972)", () => {
+    // NEEDS_VERIFICATION verdicts demand a real-execution pass followed by a
+    // QA re-run; putting this status in COMPLETED_ISSUE_STATUSES would make
+    // the guard block exactly the re-run the verdict requires.
+    expect(isCompletedIssueStatus("awaiting_verification")).toBe(false);
+  });
+
   it("does not treat any other schema status as completed", () => {
     for (const status of [
       "not_started",

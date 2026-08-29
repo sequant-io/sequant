@@ -288,6 +288,34 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server — Extended", () => {
       expect(cmd).toBe("npx");
       expect(args![0]).toBe("sequant");
     });
+
+    it("#972: force:true forwards --force to the CLI args", async () => {
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({ exitCode: 0, stdout: "{}" }),
+      );
+
+      await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [972], phases: "qa", force: true },
+      });
+
+      const [, args] = mockedSpawn.mock.calls[0];
+      expect(args).toContain("--force");
+    });
+
+    it("#972: force:false does not add --force to the CLI args", async () => {
+      mockedSpawn.mockImplementation(() =>
+        createMockProcess({ exitCode: 0, stdout: "{}" }),
+      );
+
+      await client.callTool({
+        name: "sequant_run",
+        arguments: { issues: [972], phases: "qa", force: false },
+      });
+
+      const [, args] = mockedSpawn.mock.calls[0];
+      expect(args).not.toContain("--force");
+    });
   });
 
   // AC-3: sequant_status — failure paths

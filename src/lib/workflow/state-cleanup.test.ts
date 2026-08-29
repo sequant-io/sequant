@@ -136,6 +136,33 @@ describe("reconcileStateAtStartup escalation", () => {
     expect(persisted.issues["592"].resolvedAt).toBeDefined();
   });
 
+  it("#972: advances awaiting_verification to merged when PR is MERGED on GitHub", async () => {
+    // A NEEDS_VERIFICATION issue has an open PR; a human may verify and merge
+    // it directly instead of re-running qa first. Without this status in the
+    // sweep, such an issue stays awaiting_verification forever (#837 shape).
+    mockPRStatus = "MERGED";
+
+    const state = createEmptyState();
+    state.issues["972"] = makeIssue({
+      number: 972,
+      status: "awaiting_verification",
+      currentPhase: "qa",
+      pr: { number: 977, url: "https://github.com/test/test/pull/977" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([972]);
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["972"].status).toBe("merged");
+    expect(persisted.issues["972"].resolvedAt).toBeDefined();
+  });
+
   it("AC-6: leaves in_progress untouched when GitHub is unreachable (PR status null) and no merge commit found", async () => {
     mockPRStatus = null; // gh unavailable / PR not found
 
