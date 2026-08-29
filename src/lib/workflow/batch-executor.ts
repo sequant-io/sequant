@@ -1863,10 +1863,13 @@ export async function runIssueWithLogging(
   // Hoisted out of the `if (stateManager)` block below because the checkpoint
   // warning also has to name this status, and naming the wrong one is exactly
   // the #837 inaccuracy being fixed here.
+  const qaVerdict = phaseResults.find((p) => p.phase === "qa")?.verdict;
   const finalStatus = readyGateResult
     ? readyGateResult.issueStatus
     : success
-      ? "ready_for_merge"
+      ? qaVerdict === "NEEDS_VERIFICATION"
+        ? "awaiting_verification"
+        : "ready_for_merge"
       : "in_progress";
   if (stateManager) {
     try {

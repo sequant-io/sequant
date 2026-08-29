@@ -2455,3 +2455,74 @@ describe("runIssueWithLogging — #915: effort escalation on quality-loop retrie
     expect(qaEfforts).toEqual(["max", "max"]);
   });
 });
+
+describe("#972: NEEDS_VERIFICATION maps to awaiting_verification state", () => {
+  const updateIssueStatus = vi.fn();
+  const stateManager = {
+    getIssueState: vi.fn(),
+    initializeIssue: vi.fn(),
+    updateIssueStatus,
+    updatePRInfo: vi.fn(),
+    updatePhaseStatus: vi.fn(),
+    updateResumeHandle: vi.fn(),
+    updateWorktreeInfo: vi.fn(),
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets status to awaiting_verification when qa verdict is NEEDS_VERIFICATION", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "NEEDS_VERIFICATION",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 972,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("awaiting_verification");
+    expect(finalStatuses).not.toContain("ready_for_merge");
+  });
+
+  it("sets status to ready_for_merge when qa verdict is READY_FOR_MERGE", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: true,
+          durationSeconds: 5,
+          verdict: "READY_FOR_MERGE",
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 972,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+      }),
+      services: { logWriter: null, stateManager: stateManager as never },
+    });
+
+    const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
+    expect(finalStatuses).toContain("ready_for_merge");
+    expect(finalStatuses).not.toContain("awaiting_verification");
+  });
+});
