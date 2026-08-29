@@ -181,7 +181,7 @@ Every project gets `.claude/memory/constitution.md` — the machine-enforceable 
 
 - **Definition of Done** — generated from `/qa`'s §7 gate list; a CI check (`lint:constitution-dod`) fails when the table drifts from the live gates. These are project-wide — issue ACs don't restate them.
 - **AC Authoring Standard** — the house format for writing ACs (single-line, `Evidence:`/`Risk:`/`Human decision` fields, Non-Goals); referenced by `/spec`'s lint warnings.
-- **Boundaries** — every rule names its enforcer: the force-push hook, the protected-paths settings key, the mutation-verification gate.
+- **Boundaries** — every rule names its enforcer: the force-push hook, the worktree-only editing guard, the mutation-verification gate.
 - **Budgets & Stop Conditions** — iteration caps, the human merge gate, hold states, and gap-prompt discipline.
 
 The file is a `CUSTOMIZABLE_FILES` entry: plain `sequant update` and `sync` preserve your edits. Only `--force` replaces it.

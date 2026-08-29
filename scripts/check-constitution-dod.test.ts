@@ -202,10 +202,30 @@ describe("AC-6: docs describe the constitution as the agent contract", () => {
     }
   }
 
+  /** Slice a markdown section so an unrelated header can't satisfy the gate. */
+  function sectionOf(
+    content: string,
+    header: string,
+    location: string,
+  ): string {
+    const start = content.indexOf(header);
+    expect(start, `${location}: section "${header}" not found`).toBeGreaterThan(
+      -1,
+    );
+    const level = header.match(/^#+/)![0];
+    const next = content.indexOf(`\n${level} `, start + header.length);
+    return next === -1 ? content.slice(start) : content.slice(start, next);
+  }
+
   it("README.md describes the constitution as the agent contract", () => {
     const content = readFileSync(README_PATH, "utf-8");
-    assertContainsAll(content, AGENT_CONTRACT_PHRASES, "README.md");
-    expect(content).toContain("constitution");
+    const region = sectionOf(content, "### Agent Contract", "README.md");
+    assertContainsAll(
+      region,
+      AGENT_CONTRACT_PHRASES,
+      "README.md Agent Contract section",
+    );
+    expect(region).toContain("constitution");
   });
 
   it("marketplace prepare-marketplace.ts README_CONTENT describes the constitution", () => {
@@ -221,12 +241,34 @@ describe("AC-6: docs describe the constitution as the agent contract", () => {
 
   it("docs/guides/customization.md describes the constitution as the agent contract", () => {
     const content = readFileSync(CUSTOMIZATION_GUIDE_PATH, "utf-8");
-    assertContainsAll(
+    const region = sectionOf(
       content,
-      AGENT_CONTRACT_PHRASES,
+      "## Customizing the Constitution",
       "docs/guides/customization.md",
     );
-    expect(content).toContain("constitution");
+    assertContainsAll(
+      region,
+      AGENT_CONTRACT_PHRASES,
+      "docs/guides/customization.md Constitution section",
+    );
+    expect(region).toContain("constitution");
+  });
+
+  it("docs never cite the removed protected-paths enforcer (QA iteration-2 regression)", () => {
+    // Iteration 2 found README/customization still citing "the protected-paths
+    // settings key" after AC-3 removed the rule for having no real mechanism.
+    // Pin the exact phrase out of every doc surface this PR touches.
+    for (const [path, label] of [
+      [README_PATH, "README.md"],
+      [CUSTOMIZATION_GUIDE_PATH, "docs/guides/customization.md"],
+      [MARKETPLACE_SCRIPT_PATH, "prepare-marketplace.ts"],
+    ] as const) {
+      const content = readFileSync(path, "utf-8");
+      expect(
+        content.includes("protected-paths settings key"),
+        `${label}: cites the nonexistent protected-paths settings key`,
+      ).toBe(false);
+    }
   });
 });
 
@@ -259,7 +301,10 @@ describe("AC-3: cited enforcers in §3–§4 resolve to real mechanisms", () => 
           /`((?:run|ready|agents|scopeAssessment)\.[A-Za-z0-9.]+)`/g,
         ),
       ].map((m) => m[1]);
-      expect(keys.length, "no settings keys cited — region regressed").toBeGreaterThan(0);
+      expect(
+        keys.length,
+        "no settings keys cited — region regressed",
+      ).toBeGreaterThan(0);
       for (const key of keys) {
         let node: unknown = DEFAULT_SETTINGS;
         for (const part of key.split(".")) {
@@ -277,7 +322,10 @@ describe("AC-3: cited enforcers in §3–§4 resolve to real mechanisms", () => 
       const paths = [
         ...region.matchAll(/`((?:templates|scripts)\/[\w/.-]+\.(?:sh|ts))`/g),
       ].map((m) => m[1]);
-      expect(paths.length, "no hook/script paths cited — region regressed").toBeGreaterThan(0);
+      expect(
+        paths.length,
+        "no hook/script paths cited — region regressed",
+      ).toBeGreaterThan(0);
       for (const p of paths) {
         expect(
           existsSync(join(PROJECT_ROOT, p)),
