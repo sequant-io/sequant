@@ -257,3 +257,52 @@ describe("#975 AC-5: commands/ready.ts (producer 2) passes modelRoles to resolve
     expect(readySrc).toMatch(/settings\.run\.agent/);
   });
 });
+
+describe("#975 AC-4: resolvePhasePolicies captures requestedModel for role: references", () => {
+  it("sets requestedModel to pre-resolution role string when role: prefix used", () => {
+    const roles: ModelRoles = { fast: "sonnet", strong: "opus" };
+    const result = resolvePhasePolicies(
+      undefined,
+      undefined,
+      { exec: { model: "role:fast" } },
+      ["spec", "exec", "qa"],
+      roles,
+      "claude-code",
+    );
+    expect(result.exec?.model).toBe("sonnet"); // resolved
+    expect(result.exec?.requestedModel).toBe("role:fast"); // pre-resolution
+  });
+
+  it("does not set requestedModel for raw model strings", () => {
+    const roles: ModelRoles = { fast: "sonnet" };
+    const result = resolvePhasePolicies(
+      undefined,
+      undefined,
+      { exec: { model: "sonnet" } },
+      ["spec", "exec", "qa"],
+      roles,
+      "claude-code",
+    );
+    expect(result.exec?.model).toBe("sonnet");
+    expect(result.exec?.requestedModel).toBeUndefined();
+  });
+
+  it("sets requestedModel independently per phase", () => {
+    const roles: ModelRoles = { fast: "sonnet", strong: "opus" };
+    const result = resolvePhasePolicies(
+      undefined,
+      undefined,
+      {
+        spec: { model: "role:fast" },
+        exec: { model: "role:strong" },
+        qa: { model: "haiku" }, // raw string
+      },
+      ["spec", "exec", "qa"],
+      roles,
+      "claude-code",
+    );
+    expect(result.spec?.requestedModel).toBe("role:fast");
+    expect(result.exec?.requestedModel).toBe("role:strong");
+    expect(result.qa?.requestedModel).toBeUndefined(); // raw string: no requestedModel
+  });
+});

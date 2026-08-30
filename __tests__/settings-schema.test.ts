@@ -58,11 +58,13 @@ describe("AC-1: SettingsSchema - Zod schema matching SettingsDefaults", () => {
       expect(result.success).toBe(false);
     });
 
-    it("should reject invalid agents.model (not in enum)", () => {
+    it("accepts any string for agents.model (free string since #975 AC-6)", () => {
+      // agents.model changed from z.enum to z.string — any model string is valid,
+      // including third-party IDs, dated concrete IDs, and aliases.
       const result = SettingsSchema.safeParse({
         agents: { model: "gpt-4" },
       });
-      expect(result.success).toBe(false);
+      expect(result.success).toBe(true);
     });
 
     it("should reject invalid nested structure (run is not an object)", () => {
@@ -180,11 +182,12 @@ describe("AC-2: validateSettings() validation and error messages", () => {
     expect(settings.version).toBe("1.0");
   });
 
-  it("should warn for invalid enum values", () => {
+  it("does not warn for agents.model free strings (enum removed by #975 AC-6)", () => {
+    // agents.model is now z.string() — any value is valid, no enum warning expected.
     const { warnings } = validateSettings({
       agents: { model: "gpt-4o" },
     });
-    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.length).toBe(0);
   });
 
   it("should handle boolean type mismatches", () => {

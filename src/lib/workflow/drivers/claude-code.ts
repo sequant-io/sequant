@@ -262,6 +262,7 @@ export class ClaudeCodeDriver implements AgentDriver {
             resumeHandle,
             stderrTail: stderrBuffer.getLines(),
             stdoutTail: stdoutBuffer.getLines(),
+            modelUsage: resultMessage.modelUsage,
           };
         }
 
