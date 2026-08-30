@@ -14,7 +14,8 @@ import {
   DEFAULT_PHASES,
   type Phase,
 } from "./types.js";
-import type { SequantSettings } from "../settings.js";
+import type { SequantSettings, ModelRoles } from "../settings.js";
+import { DEFAULT_MODEL_ROLES } from "../settings.js";
 import { getEnvConfig } from "./batch-executor.js";
 import { getPhaseNames } from "./phase-registry.js";
 
@@ -240,6 +241,19 @@ export function positiveOr(
 export interface PhasePolicy {
   model?: string;
   effort?: string;
+  /**
+   * The original `role:<name>` string before resolution (#975). Set only when
+   * a `role:` prefix was used; absent for raw model strings. Allows metrics to
+   * record both what the user configured and what was actually dispatched.
+   */
+  requestedModel?: string;
+  /**
+   * Concrete model ID from `modelUsage` after phase execution (#975). Not
+   * present on the static config — populated by `enrichPhasePoliciesFromResults`
+   * just before the run is written to metrics. Absent for phases that did not
+   * execute or drivers that do not report `modelUsage`.
+   */
+  resolvedModel?: string;
 }
 
 /**
@@ -308,6 +322,63 @@ function applyPhaseSpec(
 }
 
 /**
+ * Resolve a model-or-role reference to a concrete model string (#975).
+ *
+ * - No `role:` prefix → returns verbatim (backward compat, AC-3).
+ * - `role:<name>` → looks up `<name>` in `modelRoles`.
+ *   - Missing entry → throws, naming the role and available keys (AC-2).
+ *   - String value → desugars to `{ "claude-code": value }`, picks by `activeDriver`.
+ *   - Object value → picks by `activeDriver`; missing driver key → throws.
+ * - A role that resolves to a string for a different driver throws (AC-2).
+ *
+ * @param roleOrString - The model string from config/CLI (may have `role:` prefix).
+ * @param modelRoles   - The resolved `run.modelRoles` map.
+ * @param activeDriver - Driver registry name (default: `"claude-code"`).
+ */
+export function resolveRoleToModel(
+  roleOrString: string,
+  modelRoles: ModelRoles = DEFAULT_MODEL_ROLES,
+  activeDriver: string = "claude-code",
+): string {
+  if (!roleOrString.startsWith("role:")) {
+    return roleOrString;
+  }
+
+  const roleName = roleOrString.slice("role:".length);
+  if (!roleName) {
+    throw new Error(
+      `Invalid role reference "role:" — role name is empty. Available roles: ${Object.keys(modelRoles).join(", ")}.`,
+    );
+  }
+
+  const entry = modelRoles[roleName];
+  if (entry === undefined) {
+    throw new Error(
+      `Role "${roleName}" is not defined in run.modelRoles. Available roles: ${Object.keys(modelRoles).join(", ")}.`,
+    );
+  }
+
+  if (typeof entry === "string") {
+    // String shorthand desugars to { "claude-code": value } — only for claude-code.
+    if (activeDriver !== "claude-code") {
+      throw new Error(
+        `Role "${roleName}" uses a string shorthand (claude-code only) but the active driver is "${activeDriver}". Use an object map to define per-driver models.`,
+      );
+    }
+    return entry;
+  }
+
+  // Object map: pick by driver.
+  const resolved = entry[activeDriver];
+  if (resolved === undefined) {
+    throw new Error(
+      `Role "${roleName}" has no entry for driver "${activeDriver}". Available drivers in this role: ${Object.keys(entry).join(", ")}.`,
+    );
+  }
+  return resolved;
+}
+
+/**
  * Resolve per-phase model/effort policies with CLI > settings > absent
  * precedence.
  *
@@ -321,6 +392,8 @@ export function resolvePhasePolicies(
   cliEfforts: string | undefined,
   settingsPhases: Record<string, PhasePolicy> | undefined,
   phaseNames: string[],
+  modelRoles?: ModelRoles,
+  activeDriver?: string,
 ): Record<string, PhasePolicy> {
   const result: Record<string, PhasePolicy> = {};
 
@@ -352,6 +425,21 @@ export function resolvePhasePolicies(
       "effort",
       phaseNames,
     );
+  }
+
+  // Role resolution (#975): resolve any `role:<name>` model references to
+  // concrete model strings. Raw strings (no `role:` prefix) pass through
+  // verbatim — this is AC-3 backward compat.
+  if (modelRoles) {
+    for (const [phase, policy] of Object.entries(result)) {
+      if (policy.model && policy.model.startsWith("role:")) {
+        result[phase] = {
+          ...policy,
+          requestedModel: policy.model, // capture pre-resolution value (AC-4)
+          model: resolveRoleToModel(policy.model, modelRoles, activeDriver),
+        };
+      }
+    }
   }
 
   return result;
@@ -433,11 +521,14 @@ export function buildExecutionConfig(
     // #914: CLI > settings > absent, via the shared resolver both
     // ExecutionConfig producers call (see `resolvePhasePolicies`'s doc
     // comment for the #833 drift this guards against).
+    // #975: pass modelRoles + active driver so `role:` prefixes resolve.
     phasePolicies: resolvePhasePolicies(
       mergedOptions.models,
       mergedOptions.efforts,
       settings.run.phases,
       getPhaseNames(),
+      settings.run.modelRoles,
+      settings.run.agent ?? "claude-code",
     ),
     // #915: CLI > settings > default `false` — mirrors the `readyGate`
     // precedent above. Both `ExecutionConfig` producers (here and

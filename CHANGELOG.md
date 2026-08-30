@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `run.modelRoles`: semantic role → model string map (#975). Phase policy,
+  `--models`, and ladder entries can now reference roles with a `role:<name>`
+  prefix (e.g. `"model": "role:fast"`); bare strings pass through verbatim
+  for full backward compatibility. Shipped defaults: `fast=sonnet`,
+  `strong=opus`, `frontier=fable`. A missing role fails loudly at
+  config-resolution time before any agent session spawns.
+- `requestedModel` / `resolvedModel` fields on per-phase metrics and phase
+  markers — records the role/raw string as configured and the concrete model
+  ID from `modelUsage` post-execution (#975).
+
+### Changed
+
+- `agents.model` now accepts any free string (dated IDs, new family aliases)
+  instead of the closed `"haiku"|"sonnet"|"opus"` enum (#975 AC-6). Existing
+  settings files are unaffected; the field remains inert per
+  anthropics/claude-code#43869.
+
 ### Changed
 
 - Constitution template rewritten as the enforceable agent contract (#943):

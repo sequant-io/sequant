@@ -171,11 +171,15 @@ export async function readyCommand(
     settings,
   );
   const mcp = options.mcp !== false;
+  // #975: pass modelRoles + active driver so `role:` prefixes resolve,
+  // matching the same call in buildExecutionConfig (AC-5 drift guard).
   const phasePolicies = resolvePhasePolicies(
     options.models,
     options.efforts,
     settings.run.phases,
     getPhaseNames(),
+    settings.run.modelRoles,
+    settings.run.agent ?? "claude-code",
   );
   // #915: CLI > settings > default `false`, same precedence as the `run`
   // path's `buildExecutionConfig` (config-resolver.ts).

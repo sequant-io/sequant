@@ -84,6 +84,10 @@ export const PhaseMarkerSchema = z.object({
   error: z.string().optional(),
   /** Git HEAD SHA at time of phase completion (used for incremental QA) */
   commitSHA: z.string().optional(),
+  /** Role string or raw model string as configured for this phase (#975). */
+  requestedModel: z.string().optional(),
+  /** Concrete model ID from `modelUsage` after phase execution (#975). */
+  resolvedModel: z.string().optional(),
 });
 
 export type PhaseMarker = z.infer<typeof PhaseMarkerSchema>;
