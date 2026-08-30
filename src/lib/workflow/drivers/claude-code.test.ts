@@ -687,4 +687,47 @@ describe("ClaudeCodeDriver", () => {
       expect(result.output).toBe("done");
     });
   });
+
+  describe("#975 AC-4: modelUsage passthrough to AgentPhaseResult", () => {
+    it("passes modelUsage from the SDK result message to AgentPhaseResult.modelUsage", async () => {
+      const fakeUsage = {
+        "claude-sonnet-5": { input_tokens: 100, output_tokens: 50 },
+      };
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "done" }] },
+          },
+          { type: "result", subtype: "success", modelUsage: fakeUsage },
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(true);
+      expect(result.modelUsage).toEqual(fakeUsage);
+    });
+
+    it("leaves modelUsage undefined when the SDK result carries none", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "done" }] },
+          },
+          { type: "result", subtype: "success" },
+        ]),
+      );
+
+      const driver = new ClaudeCodeDriver();
+      const result = await driver.executePhase("prompt", baseConfig());
+
+      expect(result.success).toBe(true);
+      expect(result.modelUsage).toBeUndefined();
+    });
+  });
 });
