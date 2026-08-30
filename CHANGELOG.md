@@ -15,9 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for full backward compatibility. Shipped defaults: `fast=sonnet`,
   `strong=opus`, `frontier=fable`. A missing role fails loudly at
   config-resolution time before any agent session spawns.
-- `requestedModel` / `resolvedModel` fields on per-phase metrics and phase
-  markers — records the role/raw string as configured and the concrete model
-  ID from `modelUsage` post-execution (#975).
+- `requestedModel` / `resolvedModel` fields on per-phase run metrics —
+  records the role/raw string as configured and the concrete model ID from
+  `modelUsage` after execution (#975). The matching phase-marker schema
+  fields ship unpopulated; marker emission is deferred to the escalation
+  ladder work (#971).
+- `awaiting_verification` workflow state (#972): a `NEEDS_VERIFICATION` QA
+  verdict no longer maps to `ready_for_merge`, so the follow-up qa re-run
+  proceeds without `--force`. Surfaced in `sequant status` and the dashboard
+  with a qa re-run hint, and swept to `merged` when its PR is merged
+  directly. Verdict→state reference: `docs/features/qa-verdict-workflow-states.md`.
+- MCP `sequant_run` accepts a `force` parameter mirroring the CLI `--force`
+  (#972); previously it was silently ignored.
+
+### Fixed
+
+- The claude-code driver reported an API-errored turn (SDK result
+  `subtype: "success"` with `is_error: true` — e.g. an unrecognized model
+  name) as a successful phase with zero work done. It now fails the phase
+  loudly with the API error text and structured `terminal_reason` /
+  `api_error_status` context (#973).
+- `sequant status` next-action hints named a nonexistent `--phase` flag;
+  corrected to `--phases` (#972).
 
 ### Changed
 
@@ -25,9 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of the closed `"haiku"|"sonnet"|"opus"` enum (#975 AC-6). Existing
   settings files are unaffected; the field remains inert per
   anthropics/claude-code#43869.
-
-### Changed
-
 - Constitution template rewritten as the enforceable agent contract (#943):
   generated Definition of Done table (drift-gated in CI via
   `lint:constitution-dod`), AC authoring standard referenced by `/spec` lint
