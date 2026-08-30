@@ -157,8 +157,16 @@ export class MetricsWriter {
     model?: string;
     flags?: string[];
     failureCategory?: FailureCategory;
-    /** Resolved per-phase model/effort overrides (#914). See `createMetricRun`. */
-    phasePolicies?: Record<string, { model?: string; effort?: string }>;
+    /** Resolved per-phase model/effort overrides (#914/#975). See `createMetricRun`. */
+    phasePolicies?: Record<
+      string,
+      {
+        model?: string;
+        effort?: string;
+        requestedModel?: string;
+        resolvedModel?: string;
+      }
+    >;
     /** Effort escalations applied during this run (#915). See `createMetricRun`. */
     effortEscalations?: Array<{
       phase: string;

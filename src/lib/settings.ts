@@ -48,14 +48,14 @@ export interface AgentSettings {
    */
   parallel: boolean;
   /**
-   * Default model for sub-agents.
-   * Options: "haiku" (cheapest), "sonnet" (balanced), "opus" (most capable)
+   * Default model for sub-agents (free string — any alias or dated ID accepted).
    * Default: "haiku" — currently inert per anthropics/claude-code#43869.
+   * See `run.modelRoles` for semantic role indirection (#975).
    * @deprecated currently inert; see anthropics/claude-code#43869. Subagents
    * inherit the parent session's model regardless of this value. Kept so
    * existing user settings.json files continue to parse without error.
    */
-  model: "haiku" | "sonnet" | "opus";
+  model: string;
   /**
    * Isolate parallel agent groups in separate worktrees.
    * When true, each agent in a parallel group gets its own sub-worktree,
@@ -73,6 +73,32 @@ export interface AgentSettings {
  * two validation points cannot drift apart on which values are accepted.
  */
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+/**
+ * Map of semantic role names to model strings, used by `run.modelRoles` (#975).
+ *
+ * A value is either:
+ * - a plain string shorthand — desugars to `{ "claude-code": value }` (claude-code driver only)
+ * - an object keyed by driver registry name, for cross-driver mappings
+ *
+ * Role references use a `role:` prefix in phase policy / ladder entries;
+ * bare strings pass through verbatim (AC-3 backward compat).
+ */
+export const ModelRolesSchema = z.record(
+  z.string(),
+  z.union([z.string(), z.record(z.string(), z.string())]),
+);
+export type ModelRoles = z.infer<typeof ModelRolesSchema>;
+
+/**
+ * Shipped default role map (#975). Family aliases only — no dated model IDs.
+ * Claude-code shorthand form; no opencode/aider entries shipped by default.
+ */
+export const DEFAULT_MODEL_ROLES: ModelRoles = {
+  fast: "sonnet",
+  strong: "opus",
+  frontier: "fable",
+};
 
 /**
  * A single phase's `model`/`effort` override for the claude-code driver
@@ -243,6 +269,17 @@ export interface RunSettings {
    * never merges regardless of this setting).
    */
   autoMerge: boolean;
+  /**
+   * Map of semantic role names to model strings (#975).
+   *
+   * Config expresses **roles**; this map resolves roles to concrete model
+   * strings. Phase policy, ladder, and other model-referencing surfaces use
+   * `role:<name>` to reference an entry; bare strings pass through verbatim.
+   *
+   * Default: `{ fast: "sonnet", strong: "opus", frontier: "fable" }`.
+   * `sequant setup` writes nothing here — absent key → defaults apply.
+   */
+  modelRoles: ModelRoles;
 }
 
 /**
@@ -386,7 +423,7 @@ export const AiderSettingsSchema = z.object({
 /** Zod schema for AgentSettings */
 export const AgentSettingsSchema = z.object({
   parallel: z.boolean().default(false),
-  model: z.enum(["haiku", "sonnet", "opus"]).default("haiku"),
+  model: z.string().default("haiku"),
   isolateParallel: z.boolean().default(false),
 });
 
@@ -460,6 +497,12 @@ export const RunSettingsSchema = z.object({
    * #817–#819. Overridable per-invocation with `--auto-merge`.
    */
   autoMerge: z.boolean().default(false),
+  /**
+   * Semantic role → model string map (#975). See `ModelRolesSchema` and
+   * `DEFAULT_MODEL_ROLES` for the shipped defaults. Absent from generated
+   * settings — absent key → defaults apply. Do not emit in `generateSettingsJsonc`.
+   */
+  modelRoles: ModelRolesSchema.default(() => ({ ...DEFAULT_MODEL_ROLES })),
 });
 
 /** Zod schema for ScopeThreshold (base — fields required, no defaults) */
@@ -619,6 +662,7 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "aider",
     "relay",
     "phases",
+    "modelRoles",
   ]),
   // #914: keyed by real phase name so a typo (`run.phases.exce`) warns
   // instead of silently resolving to nothing. Computed from the registry
@@ -875,6 +919,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     relay: true, // Enable interactive relay (#383) by default
     effortEscalation: false, // #915: off by default — raises token spend
     autoMerge: false, // #958: off by default — preserves the human merge gate
+    modelRoles: DEFAULT_MODEL_ROLES, // #975: shipped defaults; absent key → these
   },
   agents: DEFAULT_AGENT_SETTINGS,
   scopeAssessment: DEFAULT_SCOPE_ASSESSMENT_SETTINGS,
@@ -1066,7 +1111,7 @@ export function generateSettingsJsonc(settings: SequantSettings): string {
   lines.push(`    // Run agents in parallel (faster, higher token usage)`);
   lines.push(`    "parallel": ${JSON.stringify(settings.agents.parallel)},`);
   lines.push(
-    `    // Default model for sub-agents ("haiku", "sonnet", "opus") — currently inert per anthropics/claude-code#43869`,
+    `    // Default model for sub-agents (any alias/ID) — currently inert per anthropics/claude-code#43869`,
   );
   lines.push(`    "model": ${JSON.stringify(settings.agents.model)},`);
   lines.push(`    // Isolate parallel agent groups in separate worktrees`);
@@ -1198,7 +1243,7 @@ Generated by \`sequant init\`. See defaults below.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | \`parallel\` | boolean | \`false\` | Run agents in parallel (faster, higher token usage) |
-| \`model\` | enum | \`"haiku"\` | Default model: \`"haiku"\`, \`"sonnet"\`, or \`"opus"\`. **Currently inert** per [anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869) — subagents inherit the parent session's model. Kept for forward compatibility. |
+| \`model\` | string | \`"haiku"\` | Default model (any alias or dated ID). **Currently inert** per [anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869) — subagents inherit the parent session's model. See \`run.modelRoles\` for semantic roles (#975). |
 | \`isolateParallel\` | boolean | \`false\` | Isolate parallel agents in separate worktrees |
 
 ## \`scopeAssessment\` — Scope Assessment Settings

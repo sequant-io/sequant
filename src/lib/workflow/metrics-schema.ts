@@ -117,11 +117,23 @@ export const MetricRunSchema = z.object({
    * undefined fields. Enum/alias strings only, consistent with this
    * schema's no-file-paths/no-content privacy contract. Optional and
    * additive — absent on records written before this field existed.
+   *
+   * `requestedModel` and `resolvedModel` are added in #975 to record the
+   * role string (pre-resolution) and the concrete model ID from `modelUsage`
+   * (post-execution) respectively — enabling cross-time benchmark comparisons
+   * as the model roster moves under aliases.
    */
   phasePolicies: z
     .record(
       z.string(),
-      z.object({ model: z.string().optional(), effort: z.string().optional() }),
+      z.object({
+        model: z.string().optional(),
+        effort: z.string().optional(),
+        /** The role string or raw model string as configured (pre-resolution, #975). */
+        requestedModel: z.string().optional(),
+        /** The concrete model ID from `modelUsage` after execution (#975). */
+        resolvedModel: z.string().optional(),
+      }),
     )
     .optional(),
   /**
@@ -189,13 +201,24 @@ export function createMetricRun(options: {
   flags?: string[];
   failureCategory?: FailureCategory;
   /**
-   * Resolved per-phase model/effort overrides (#914), keyed by phase name.
+   * Resolved per-phase model/effort overrides (#914/#975), keyed by phase name.
    * Pass only the phases that actually had a configured override — a phase
    * that inherited the CLI default should not appear here at all. See
    * `resolvePhasePolicies` in `config-resolver.ts`, which already produces
    * a map shaped this way.
+   *
+   * `requestedModel` and `resolvedModel` are #975 additions — pass when available
+   * to enable cross-time benchmark comparisons as the model roster evolves.
    */
-  phasePolicies?: Record<string, { model?: string; effort?: string }>;
+  phasePolicies?: Record<
+    string,
+    {
+      model?: string;
+      effort?: string;
+      requestedModel?: string;
+      resolvedModel?: string;
+    }
+  >;
   /**
    * Effort escalations applied during this run (#915), one entry per
    * escalated phase execution. Pass only executions that actually escalated
