@@ -1378,16 +1378,29 @@ async function executePhase(
 
   const durationSeconds = (Date.now() - startTime) / 1000;
 
+  // #975: extract the concrete model ID from the driver's modelUsage map.
+  // First key is the primary model dispatched; undefined for drivers that
+  // don't populate modelUsage (aider, subprocess paths).
+  const resolvedModel = agentResult.modelUsage
+    ? Object.keys(agentResult.modelUsage)[0]
+    : undefined;
+
   if (agentResult.success) {
-    return mapAgentSuccessToPhaseResult(
+    const result = mapAgentSuccessToPhaseResult(
       phase,
       agentResult,
       durationSeconds,
       cwd,
     );
+    return resolvedModel ? { ...result, resolvedModel } : result;
   }
 
-  return mapAgentFailureToPhaseResult(phase, agentResult, durationSeconds);
+  const result = mapAgentFailureToPhaseResult(
+    phase,
+    agentResult,
+    durationSeconds,
+  );
+  return resolvedModel ? { ...result, resolvedModel } : result;
 }
 
 /**

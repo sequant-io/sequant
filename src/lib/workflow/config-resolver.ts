@@ -241,6 +241,19 @@ export function positiveOr(
 export interface PhasePolicy {
   model?: string;
   effort?: string;
+  /**
+   * The original `role:<name>` string before resolution (#975). Set only when
+   * a `role:` prefix was used; absent for raw model strings. Allows metrics to
+   * record both what the user configured and what was actually dispatched.
+   */
+  requestedModel?: string;
+  /**
+   * Concrete model ID from `modelUsage` after phase execution (#975). Not
+   * present on the static config — populated by `enrichPhasePoliciesFromResults`
+   * just before the run is written to metrics. Absent for phases that did not
+   * execute or drivers that do not report `modelUsage`.
+   */
+  resolvedModel?: string;
 }
 
 /**
@@ -422,6 +435,7 @@ export function resolvePhasePolicies(
       if (policy.model && policy.model.startsWith("role:")) {
         result[phase] = {
           ...policy,
+          requestedModel: policy.model, // capture pre-resolution value (AC-4)
           model: resolveRoleToModel(policy.model, modelRoles, activeDriver),
         };
       }

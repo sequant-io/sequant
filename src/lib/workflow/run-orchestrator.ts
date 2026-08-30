@@ -132,7 +132,11 @@ import type { IssueEventStatus } from "./event-emitter.js";
 import { type MetricPhase, determineOutcome } from "./metrics-schema.js";
 import { getTokenUsageForRun } from "./token-utils.js";
 import type { SequantSettings } from "../settings.js";
-import { resolveRunOptions, buildExecutionConfig } from "./config-resolver.js";
+import {
+  resolveRunOptions,
+  buildExecutionConfig,
+  type PhasePolicy,
+} from "./config-resolver.js";
 import { pipelineHasFailed } from "./status-derivation.js";
 
 /**
@@ -296,6 +300,46 @@ export interface RunResult {
    * double-counts overlapping issues and over-reports by ~the concurrency factor.
    */
   wallClockDurationSeconds: number;
+}
+
+// ── Metrics helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Merge per-phase `resolvedModel` from execution results into the static
+ * phasePolicies map before it is written to metrics (#975 AC-4).
+ *
+ * `config.phasePolicies` carries the model alias resolved at config time (e.g.
+ * `"sonnet"`). The concrete model ID only becomes known after execution, from
+ * the driver's `modelUsage` map. This function enriches each phase entry with
+ * that runtime-observed value so benchmark comparisons across roster changes
+ * (#916/#944) see the actual model dispatched, not just the alias.
+ *
+ * `requestedModel` (the pre-resolution role string, e.g. `"role:fast"`) flows
+ * through from `config.phasePolicies` unchanged — it is already set by
+ * `resolvePhasePolicies` for role references and absent for raw strings.
+ *
+ * @internal Exported for testing only.
+ */
+export function enrichPhasePoliciesFromResults(
+  phasePolicies: Record<string, PhasePolicy> | undefined,
+  results: IssueResult[],
+): Record<string, PhasePolicy> | undefined {
+  const resolvedByPhase = new Map<string, string>();
+  for (const result of results) {
+    for (const pr of result.phaseResults) {
+      if (pr.resolvedModel) {
+        resolvedByPhase.set(pr.phase, pr.resolvedModel);
+      }
+    }
+  }
+
+  if (resolvedByPhase.size === 0) return phasePolicies;
+
+  const enriched: Record<string, PhasePolicy> = { ...(phasePolicies ?? {}) };
+  for (const [phase, resolvedModel] of resolvedByPhase.entries()) {
+    enriched[phase] = { ...enriched[phase], resolvedModel };
+  }
+  return enriched;
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────
@@ -1729,7 +1773,12 @@ export class RunOrchestrator {
       flags: cliFlags,
       failureCategory,
       // #914: resolved per-phase model/effort, when any phase had one.
-      phasePolicies: config.phasePolicies,
+      // #975: enriched with resolvedModel from execution (modelUsage) and
+      // requestedModel already flows through from resolvePhasePolicies.
+      phasePolicies: enrichPhasePoliciesFromResults(
+        config.phasePolicies,
+        results,
+      ),
       // #915: escalated tiers, when any phase execution escalated.
       effortEscalations,
       metrics: {
