@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.12.0
+# What We've Built: Sequant v2.13.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,13 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.13.0)
+
+- **Awaiting-Verification State** - NEEDS_VERIFICATION verdicts map to `awaiting_verification`; qa re-runs proceed without `--force`, MCP `sequant_run` gains a `force` param (#972)
+- **Loud Driver Failures** - API-errored turns (e.g. bad model names) fail the phase with structured error context instead of zero-work success (#973)
+- **Constitution With Teeth** - generated Definition of Done table drift-gated in CI, AC authoring standard, enforcer-cited Boundaries/Budgets (#943)
+- **Model Roles** - `run.modelRoles` semantic role→model map with `role:` references, loud missing-role failures, resolved-model recording in metrics (#975)
+
 ### Recent Additions (v2.12.0)
 
 - **Structured Gap Findings** - `/qa` closes every review with a six-category findings taxonomy marker that `/loop` and `sequant ready` parse; non-blocking findings are never burned as fix iterations (#937)
@@ -1176,7 +1183,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.12.0
+**Current Version:** 2.13.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1186,7 +1193,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.12.0                               │
+│                              SEQUANT v2.13.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

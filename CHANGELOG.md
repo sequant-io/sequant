@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-08-30
+
 ### Added
 
 - `run.modelRoles`: semantic role → model string map (#975). Phase policy,
