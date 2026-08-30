@@ -8,6 +8,8 @@
  */
 
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { enrichPhasePoliciesFromResults } from "./run-orchestrator.js";
 import type { IssueResult } from "./types.js";
 
@@ -128,5 +130,22 @@ describe("#975 AC-4: enrichPhasePoliciesFromResults", () => {
     const enriched = enrichPhasePoliciesFromResults(phasePolicies, results);
 
     expect(enriched?.exec?.resolvedModel).toBe("claude-sonnet-5");
+  });
+});
+
+describe("#975 AC-4: metrics call-site wiring (source inspection)", () => {
+  // The first QA pass on this issue found the schema fields declared with no
+  // population; the helper above closes that — but only if the metrics record
+  // actually routes phasePolicies through it. Unit tests on the helper cannot
+  // catch the call being removed, so pin the call site the same way the AC-5
+  // producer-2 drift guard does.
+  it("run-orchestrator's metrics record passes phasePolicies through enrichPhasePoliciesFromResults", () => {
+    const src = readFileSync(
+      resolvePath(__dirname, "run-orchestrator.ts"),
+      "utf-8",
+    );
+    expect(src).toMatch(
+      /phasePolicies:\s*enrichPhasePoliciesFromResults\(/,
+    );
   });
 });
