@@ -113,6 +113,13 @@ export interface AgentPhaseResult {
   stdoutTail?: string[];
   /** Process exit code (undefined for SDK-based drivers) (#447) */
   exitCode?: number;
+  /**
+   * Per-model usage totals from the SDK result (#975). Keys are concrete model
+   * IDs (e.g. `"claude-sonnet-5"`); first key is the resolved model string used
+   * for this phase. Only set by SDK-based drivers (claude-code); undefined for
+   * subprocess drivers (aider).
+   */
+  modelUsage?: Record<string, unknown>;
 }
 
 /**

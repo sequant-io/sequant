@@ -335,6 +335,12 @@ export interface PhaseResult {
    * absent on every non-escalated execution.
    */
   escalatedEffort?: { base: string; escalated: string };
+  /**
+   * Concrete model ID from the SDK `modelUsage` map for this phase execution
+   * (#975). First key of `modelUsage` — records the actual model dispatched,
+   * distinct from the configured alias. Used to populate metrics `phasePolicies`.
+   */
+  resolvedModel?: string;
 }
 
 /**
