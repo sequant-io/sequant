@@ -1,5 +1,6 @@
 {
   "name": "sequant",
+  "description": "Sequant's own marketplace \u2014 the AI coding agent orchestrator that turns GitHub issues into reviewed, merge-ready pull requests through isolated spec/exec/qa phases.",
   "owner": {
     "name": "sequant-io",
     "email": "hello@sequant.io"
@@ -7,7 +8,7 @@
   "plugins": [
     {
       "name": "sequant",
-      "description": "AI coding agent orchestrator for Claude Code — resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Includes workflow skills (spec, exec, qa, testgen, and more), workflow MCP tools, and pre/post-tool hooks.",
+      "description": "AI coding agent orchestrator for Claude Code \u2014 resolve GitHub issues end-to-end with isolated git worktrees, quality gates, and an MCP server. Includes workflow skills (spec, exec, qa, testgen, and more), workflow MCP tools, and pre/post-tool hooks.",
       "version": "2.13.0",
       "author": {
         "name": "sequant-io",
