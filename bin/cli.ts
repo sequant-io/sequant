@@ -73,11 +73,8 @@ import {
   stateRebuildCommand,
   stateCleanCommand,
 } from "../src/commands/state.js";
-import {
-  syncCommand,
-  areSkillsOutdated,
-  checkAndWarnSkillsOutdated,
-} from "../src/commands/sync.js";
+import { syncCommand } from "../src/commands/sync.js";
+import { runVersionPreflight } from "../src/commands/version-preflight.js";
 import { mergeCommand } from "../src/commands/merge.js";
 import {
   readyCommand,
@@ -101,7 +98,6 @@ import { promptCommand } from "../src/commands/prompt.js";
 import { watchCommand } from "../src/commands/watch.js";
 import { abortCommand } from "../src/commands/abort.js";
 import { assessRenderCommand } from "../src/commands/assess-render.js";
-import { getManifest } from "../src/lib/manifest.js";
 import { phaseRegistry } from "../src/lib/workflow/phase-registry.js";
 
 /**
@@ -876,44 +872,16 @@ worktreeCmd
   .option("--json", "Output as JSON")
   .action(worktreeVerifyCommand);
 
-// Auto-sync skills after npm upgrade (version mismatch detection)
-// Only triggers when skills were previously synced (has .sequant-version marker).
-// Projects that manage skills manually (no marker) are not affected.
+// Skills-install pre-flight (#713, #988): warn-only. A stale install
+// (version-marker mismatch) or in-place content drift prints a warning that
+// names the fix; nothing under the project is ever written from here. Until
+// #988 a version mismatch triggered a silent `syncCommand({ quiet: true })` —
+// and because the plugin's MCP server runs `npx sequant@latest serve` with
+// cwd = the open project, every post-release session rewrote hooks, skills and
+// AGENTS.md in the working tree. Exempt commands (init/sync/update/serve) and
+// the "no marker → manual management → silent" rule live with the helper.
 program.hook("preAction", async (thisCommand) => {
-  const cmd = thisCommand.name();
-  // `update` is excluded alongside `init`/`sync`: it is itself the command that
-  // resolves drift, so the warn-only "run sync/update" pre-flight would be a
-  // circular nag right before it does exactly that.
-  if (cmd === "init" || cmd === "sync" || cmd === "update") return;
-
-  const manifest = await getManifest();
-  if (!manifest) return;
-
-  // `cache: true` opts the per-command pre-flight into the stat-only drift
-  // fingerprint cache: the full template scan runs only when something that
-  // affects drift changed, keeping latency off the hot path (AC-5).
-  const status = await areSkillsOutdated({ cache: true });
-  const { outdated, currentVersion, contentDrift } = status;
-
-  // No version marker → the project manages skills manually; stay silent and
-  // do nothing (unchanged behavior — see the header comment above the hook).
-  if (currentVersion === null) return;
-
-  if (outdated) {
-    // Version-marker mismatch → stale install: auto-sync (copy) as before.
-    await syncCommand({ quiet: true });
-    return;
-  }
-
-  // Version-current but bundled content drifted in place (#708/#713). AC-3
-  // decision: auto-sync (copy) stays gated on version bumps ONLY — we do NOT
-  // copy here, because that would clobber in-place customizations (#711).
-  // Content-only drift is surfaced as a non-destructive, warn-only signal,
-  // leaving the fix to the user (`sequant sync`/`update`). The helper never
-  // touches process.exitCode, so the command still exits normally.
-  if (contentDrift > 0) {
-    await checkAndWarnSkillsOutdated(status);
-  }
+  await runVersionPreflight(thisCommand.name());
 });
 
 // Parse and execute

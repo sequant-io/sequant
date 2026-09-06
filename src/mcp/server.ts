@@ -11,12 +11,15 @@ import type { ServerOptions } from "@modelcontextprotocol/sdk/server/index.js";
 import { registerRunTool } from "./tools/run.js";
 import { registerStatusTool } from "./tools/status.js";
 import { registerLogsTool } from "./tools/logs.js";
-import { registerResources } from "./resources.js";
+import { registerResources, type ResourceContext } from "./resources.js";
 
 /**
  * Create and configure the Sequant MCP server instance.
  */
-export function createServer(version: string): McpServer {
+export function createServer(
+  version: string,
+  context: ResourceContext = {},
+): McpServer {
   const options: ServerOptions = {
     instructions: [
       "Sequant orchestrates AI-driven development workflows for GitHub issues.",
@@ -29,7 +32,8 @@ export function createServer(version: string): McpServer {
       "",
       "Resources:",
       "- sequant://state: Dashboard view of all tracked issues and their phases.",
-      "- sequant://config: Current workflow settings (timeout, phases, quality loop).",
+      "- sequant://config: Current workflow settings (timeout, phases, quality loop), plus `skillsInstall` (is the installed skill tree stale vs this server's version — reported only, never auto-applied).",
+      "- sequant://install: Skills-install status alone (same data as `skillsInstall`).",
       "",
       "Workflow: Check sequant_status first → sequant_run if needed → poll sequant_status → review sequant_logs on failure.",
       "Do NOT call sequant_run for issues that are already merged or completed.",
@@ -54,7 +58,7 @@ export function createServer(version: string): McpServer {
   registerLogsTool(server);
 
   // Register resources
-  registerResources(server);
+  registerResources(server, context);
 
   return server;
 }

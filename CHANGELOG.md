@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **sequant no longer rewrites project files on startup.** The per-command
+  skills pre-flight (commander `preAction`) is warn-only for a version-marker
+  mismatch, as it already was for content drift (#713): it prints "Skills are
+  outdated (x → y)" and names `sequant update` / `sequant sync`. Run
+  `sequant update` to apply a new version. Until now a mismatch ran a silent
+  `syncCommand({ quiet: true })` copy over `.claude/skills/`, `.claude/hooks/`,
+  `.claude/agents/`, `AGENTS.md`, `scripts/dev/*` and the manifest — and
+  because the plugin's MCP server (`npx sequant@latest serve`) starts with
+  cwd = the open project, every post-release Claude Code session rewrote
+  those files in the working tree with no output (#988).
+- `sequant serve` is exempt from the pre-flight (stdout is the MCP channel)
+  and instead reports install status on stderr at startup — "… No files were
+  modified. Run: sequant update" — and through the resources below (#988).
+
+### Added
+
+- `sequant://install` MCP resource and a `skillsInstall` field merged into
+  `sequant://config` (when the settings file is plain JSON): whether the
+  installed skill tree is stale relative to the running server, and the
+  command that resolves it. Report-only (#988).
+
+### Fixed
+
+- The plugin's shipped `.mcp.json` is now pinned to the release version.
+  `marketplace.json` declares `source: "./"`, so plugin users received the
+  repo-root `.mcp.json` (`sequant@latest`) while #793's pin landed only in a
+  `dist/` copy the marketplace never installs. `prepare-marketplace` now stamps
+  and validates the file `source` resolves to, and the release commit
+  force-adds it (#988, regression of #793).
+
 ## [2.13.0] - 2026-08-30
 
 ### Added
