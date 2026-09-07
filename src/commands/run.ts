@@ -99,7 +99,7 @@ export async function runCommand(
     settings,
     manifest: {
       stack: manifest.stack,
-      packageManager: manifest.packageManager ?? "npm",
+      packageManager: manifest.packageManager,
     },
   };
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
