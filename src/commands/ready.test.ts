@@ -382,6 +382,7 @@ describe("readyCommand — #697 renderer wiring", () => {
         timeout: 1800,
         smartTests: false,
         autoWaitMinutes: 7,
+        mcp: false,
       },
       agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
@@ -389,6 +390,9 @@ describe("readyCommand — #697 renderer wiring", () => {
     const opts = vi.mocked(runReadyGate).mock.calls[0][0];
     expect(opts.config.noSmartTests).toBe(true);
     expect(opts.config.autoWaitMinutes).toBe(7);
+    // Third witness of the same class: `run.mcp` used to be ignored by
+    // `ready` (MCP was on unless `--no-mcp` was passed).
+    expect(opts.config.mcp).toBe(false);
   });
 
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
