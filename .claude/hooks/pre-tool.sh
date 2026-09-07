@@ -1228,11 +1228,6 @@ commit_message_from() {
                 if (d == q) break
                 msg = msg d; k++
             }
-            # A message that is one bare variable reference (`-m "$MSG"`,
-            # `-m "${MSG}"`) cannot be validated statically; treat it like an
-            # unquoted word and validate nothing, rather than blocking on the
-            # literal `$MSG` (a false positive `main` did not have).
-            if (msg ~ /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/) exit
             print msg; exit
         }
     }
@@ -1277,6 +1272,32 @@ commit_message_from() {
     }'
 }
 
+# literal_assignment_value <name> <command> — print the value of the first
+# `<name>="…"` / `<name>='…'` / `<name>=word` assignment in <command> (first
+# line only), or nothing when the command never assigns it. Lets
+# `MSG="fix: ok"; git commit -m "$MSG"` be validated on the text the commit
+# will actually carry — which is what `main`'s whole-command extractor did by
+# accident (it read the assignment's quoted string) — instead of blocking on
+# the literal `$MSG` or skipping validation. A variable the command never
+# assigns is unknowable here and validates nothing, like an unquoted word.
+literal_assignment_value() {
+    local name="$1" input="$2"
+    local re="(^|[[:space:];&|(])${name}=(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|)]+))"
+    if [[ "$input" =~ $re ]]; then
+        printf '%s\n' "${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}" | head -n 1
+    fi
+}
+# resolve_message_ref <subject> <command> — a subject that is one bare
+# variable reference resolves through literal_assignment_value; anything
+# else passes through unchanged.
+resolve_message_ref() {
+    local subject="$1" input="$2"
+    if [[ "$subject" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
+        literal_assignment_value "${BASH_REMATCH[1]}" "$input"
+    else
+        printf '%s\n' "$subject"
+    fi
+}
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
@@ -1324,10 +1345,10 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
         [[ -z "$_seg" ]] && continue
         _validated=1
-        validate_commit_subject "$(commit_message_from "$_seg" | head -n 1)"
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$TOOL_INPUT")"
     done < <(raw_commit_segment "$TOOL_INPUT")
     if [[ "$_validated" -eq 0 ]]; then
-        validate_commit_subject "$(commit_message_from "$TOOL_INPUT" | head -n 1)"
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT")"
     fi
 fi
 

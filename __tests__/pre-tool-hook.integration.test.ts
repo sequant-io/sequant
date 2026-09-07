@@ -1412,29 +1412,36 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
-    it("981: a message that is one bare variable reference is not validated (statically unknowable), a mixed one is", () => {
+    it("981: a variable-reference message is validated on its same-command literal assignment; an unknowable one validates nothing", () => {
       const repo = makeStagedRepo("pre-tool-981-var-msg-");
       try {
-        // `main` let `MSG="fix: ok"; git commit -m "$MSG"` through only by
-        // accident (its extractor took the first quoted string, the
-        // assignment); the segment-scoped extractor read the literal `$MSG`
-        // and blocked it. A bare `$NAME` / `${NAME}` argument is now treated
-        // like an unquoted word: nothing to validate.
+        // `main` validated `MSG="…"; git commit -m "$MSG"` on the assignment's
+        // quoted string by accident (whole-command first-quoted-string
+        // extraction). The segment-scoped extractor does it on purpose: a bare
+        // `$NAME` / `${NAME}` resolves through the first `NAME=` assignment in
+        // the command; with no assignment the value is unknowable and nothing
+        // is validated (like an unquoted word). Literal text alongside a
+        // variable is validated as written.
         for (const cmd of [
           'MSG="fix: ok"; git commit -m "$MSG"',
-          'MSG="updated stuff"; git commit -m "$MSG"',
-          'git commit -m "${MSG}"',
+          "export MSG='fix: ok'; git commit -m \"${MSG}\"",
+          'git commit -m "$UNSET_VAR"',
         ]) {
           expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
         }
-        // Literal text alongside a variable is validated as written.
-        const { code, stderr } = runHook(
-          hookPath,
-          'git commit -m "$MSG updated stuff"',
-          repo,
-        );
-        expect(code).toBe(2);
-        expect(stderr).toMatch(/Got: \$MSG updated stuff/);
+        for (const [cmd, got] of [
+          ['MSG="updated stuff"; git commit -m "$MSG"', /Got: updated stuff/],
+          [
+            "MSG='updated stuff' && git commit -m \"$MSG\"",
+            /Got: updated stuff/,
+          ],
+          ['MSG=wip; git commit -m "$MSG"', /Got: wip/],
+          ['git commit -m "$MSG updated stuff"', /Got: \$MSG updated stuff/],
+        ] as const) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(got);
+        }
       } finally {
         rmSync(repo, { recursive: true, force: true });
       }
