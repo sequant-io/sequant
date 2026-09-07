@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `sequant run`'s skills pre-flight now checks each provisioned worktree
+  instead of the main checkout. `git worktree add` only materializes tracked
+  files, so an untracked `.claude/skills/` (the default after `sequant sync`
+  until it's committed) previously passed the pre-flight while every worktree
+  phase agents actually run in had none — the phase agent then hunted for a
+  slash command that could never resolve (#933).
+
 ## [2.13.1] - 2026-09-06
 
 ### Changed
