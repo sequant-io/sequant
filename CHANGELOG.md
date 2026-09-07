@@ -27,8 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`it("...", { timeout: 20_000 }, ...)`); a helper's body was mis-read as its
   own return type when that type closed a generic (`Promise<{ pid: number }>`);
   expression-bodied arrow helpers and destructured dynamic imports
-  (`const { fn } = await import("./mod.js")`) were invisible. Repo-wide flags
-  fall from 600 to 449 across 287 test files, with no test block newly flagged.
+  (`const { fn } = await import("./mod.js")`) were invisible. A suite handle
+  instantiated in a `beforeEach`/`beforeAll` hook and driven in the blocks —
+  the most common unit-test shape in the repo — was invisible too, because the
+  handle is declared bare (`let manager;`) and only assigned inside the hook.
+  Such a handle now counts as production when the hook itself reaches
+  production *and* the handle is used in call position, so a block that merely
+  reads a value the hook computed stays flagged. Repo-wide flags fall from 600
+  to 201 across 288 test files, with no test block newly flagged.
 
 ## [2.13.1] - 2026-09-06
 
