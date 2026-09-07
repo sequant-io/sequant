@@ -349,8 +349,8 @@ describe("readyCommand — #697 renderer wiring", () => {
     const expected = buildExecutionConfig(
       resolveRunOptions(
         {
-          maxIterations: 3,
-          timeout: 1800,
+          maxIterations: undefined,
+          timeout: undefined,
           mcp: undefined,
           verbose: true,
           models: undefined,
@@ -393,6 +393,26 @@ describe("readyCommand — #697 renderer wiring", () => {
     // Third witness of the same class: `run.mcp` used to be ignored by
     // `ready` (MCP was on unless `--no-mcp` was passed).
     expect(opts.config.mcp).toBe(false);
+  });
+
+  it("#863: the env layer (SEQUANT_MAX_ITERATIONS) applies on the ready path between CLI and settings", async () => {
+    // QA measured: with resolveReadyLimits pre-resolving maxIterations, the
+    // env layer was shadowed on ready (3) while run honoured it (9).
+    const prev = process.env.SEQUANT_MAX_ITERATIONS;
+    process.env.SEQUANT_MAX_ITERATIONS = "9";
+    try {
+      vi.mocked(getSettings).mockResolvedValue({
+        ready: { policy: "ac" },
+        run: { maxIterations: 3, timeout: 1800 },
+        agents: {},
+      } as Awaited<ReturnType<typeof getSettings>>);
+      await readyCommand(String(ISSUE), {});
+      const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+      expect(opts.config.maxIterations).toBe(9);
+    } finally {
+      if (prev === undefined) delete process.env.SEQUANT_MAX_ITERATIONS;
+      else process.env.SEQUANT_MAX_ITERATIONS = prev;
+    }
   });
 
   it("#863: --no-mcp on the ready command reaches the gate config through resolveRunOptions", async () => {

@@ -20,7 +20,9 @@
  * them is caught, not skipped — and permits a difference only for keys in
  * {@link GATE_OVERRIDES}, each carrying a reason.
  *
- * Per #863 OQ-12, `skipVerification`, `noSmartTests` and `retry` are plumbed
+ * Per #863 OQ-12, `noSmartTests` and `retry` are plumbed (`skipVerification`
+ * is declared on `ExecutionConfig` but no producer sets it and nothing reads
+ * it, so there is no behaviour to assert — see the PR)
  * (inherited from the parent config) and therefore deliberately NOT allowlisted.
  */
 
@@ -110,7 +112,7 @@ const SCENARIOS: Array<{
   },
   {
     name: "retry disabled + verification skipped (OQ-12 siblings)",
-    options: { noRetry: true, skipVerification: true, noSmartTests: true },
+    options: { noRetry: true, noSmartTests: true },
     run: {},
   },
   {
@@ -163,7 +165,6 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
       resolveRunOptions(
         {
           noRetry: true,
-          skipVerification: true,
           noSmartTests: true,
         } as RunOptions,
         settings,
@@ -176,7 +177,6 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
     // Each of these was a hardcoded literal in buildPhaseConfig before #863.
     expect(gate.retry).toBe(resolved.retry);
     expect(gate.retry).toBe(false);
-    expect(gate.skipVerification).toBe(resolved.skipVerification);
     expect(gate.noSmartTests).toBe(resolved.noSmartTests);
   });
 

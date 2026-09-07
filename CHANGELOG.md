@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate phases honour the settings the rest of the run already did (#863):
   `--no-retry` is respected; a rate-limited gate phase can auto-wait (#804)
   instead of failing (the wait budget is per gate phase — each gets a fresh
-  ledger — not per issue); `relayEnabled`, `skipVerification`, `noSmartTests`,
+  ledger — not per issue); `relayEnabled`, `noSmartTests`,
   `isolateParallel` and `issueType` all reach the gate. Under
   `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
   the same `issueType` its earlier phases had.

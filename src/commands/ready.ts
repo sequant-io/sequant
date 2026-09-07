@@ -168,10 +168,7 @@ export async function readyCommand(
 
   const settings = await getSettings();
   const policy = resolvePolicy(options.policy, settings.ready.policy);
-  const { maxIterations, tokenBudget, phaseTimeout } = resolveReadyLimits(
-    options,
-    settings,
-  );
+  const { tokenBudget } = resolveReadyLimits(options, settings);
   // #863: one resolved ExecutionConfig, from the same producer the `run` path
   // uses. Replaces the inline `resolvePhasePolicies` + `effortEscalation`
   // blocks this command used to keep in lockstep with `buildExecutionConfig`
@@ -179,10 +176,11 @@ export async function readyCommand(
   // the gate's phases need — `agent`, `aiderSettings`, `retry`, `mcpAllowlist`,
   // `autoWaitMinutes`, ... — now arrives through this single object.
   //
-  // `maxIterations`/`phaseTimeout` come from the already-resolved
-  // `resolveReadyLimits` values rather than the raw options, so the two
-  // `positiveOr` chains cannot diverge. `--budget`/`--policy` stay ready-only:
-  // neither is an `ExecutionConfig` field.
+  // `--max-iterations`/`--timeout` go in raw so `resolveRunOptions` applies
+  // the env layer (`SEQUANT_MAX_ITERATIONS`, `SEQUANT_TIMEOUT`) between CLI
+  // and settings exactly as on the `run` path; `buildExecutionConfig`'s
+  // `positiveOr` chain then guards the result (#833). `--budget`/`--policy`
+  // stay ready-only: neither is an `ExecutionConfig` field.
   //
   // The CLI subset goes through `resolveRunOptions` first — the same
   // CLI > env > settings merge the `run` path applies — so settings-level
@@ -192,8 +190,8 @@ export async function readyCommand(
   const config = buildExecutionConfig(
     resolveRunOptions(
       {
-        maxIterations,
-        timeout: phaseTimeout,
+        maxIterations: options.maxIterations,
+        timeout: options.timeout,
         mcp: options.mcp,
         verbose: options.verbose,
         models: options.models,
@@ -205,6 +203,10 @@ export async function readyCommand(
     settings,
     1,
   );
+  // The gate's own loop limit and per-phase timeout read from the resolved
+  // config so they cannot diverge from what the phases run with.
+  const maxIterations = config.maxIterations;
+  const phaseTimeout = config.phaseTimeout;
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
   const worktreePath = resolveWorktreePath(issueNumber);
