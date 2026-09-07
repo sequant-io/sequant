@@ -1118,3 +1118,78 @@ describe('x', () => {
     expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
   });
 });
+
+describe("lifecycle-hook assigned handles (#956)", () => {
+  it("recognizes a suite handle instantiated in beforeEach and driven in blocks", () => {
+    const content = `
+import { describe, it, expect, beforeEach } from "vitest";
+import { StateManager } from "./state-manager.js";
+
+describe("suite", () => {
+  let manager: StateManager;
+
+  beforeEach(() => {
+    manager = new StateManager({ statePath: "/tmp/x.json" });
+  });
+
+  it("reads state", async () => {
+    const state = await manager.getIssueState(1);
+    expect(state).toBeDefined();
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("still flags a block that only reads a value the hook computed", () => {
+    // The gate is that the handle is *driven* (`name(...)` / `name.m(...)`),
+    // not merely read. `noJqPath` below is a plain string the hook happened to
+    // build; the block spawns only a system binary with it. Mirrors
+    // pre-tool-hook.integration.test.ts:1529, which must stay flagged.
+    const content = `
+import { describe, it, expect, beforeAll } from "vitest";
+import { spawnSync } from "child_process";
+import { buildPath } from "./path-builder.js";
+
+describe("suite", () => {
+  let noJqPath: string;
+
+  beforeAll(() => {
+    noJqPath = buildPath();
+  });
+
+  it("confirms jq is unavailable (sanity)", () => {
+    const check = spawnSync("bash", ["-c", "command -v jq"], {
+      env: { PATH: noJqPath },
+    });
+    expect(check.status).not.toBe(0);
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/b.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+
+  it("does not promote handles from a hook that never reaches production", () => {
+    const content = `
+import { describe, it, expect, beforeEach } from "vitest";
+import { mkdtempSync } from "fs";
+
+describe("suite", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync("/tmp/x-");
+  });
+
+  it("asserts on a local value only", () => {
+    const enabled = true;
+    expect(enabled).toBe(true);
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/c.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+});

@@ -1235,6 +1235,16 @@ const LIFECYCLE_HOOK_PATTERN = /\b(?:beforeEach|beforeAll)\s*\(/g;
 const HOOK_ASSIGNMENT_PATTERN = /(?:^|[;{)\n])\s*([\w$]+)\s*=\s*[^=]/g;
 
 /**
+ * Whether `name` is ever used in call position — `name(...)` or
+ * `name.method(...)` — as opposed to being read as a plain value.
+ */
+function calledAsHandle(content: string, name: string): boolean {
+  return new RegExp(
+    `(?<![\\w$.])${escapeRegex(name)}\\s*(?:\\.\\s*[\\w$]+\\s*)*\\(`,
+  ).test(content);
+}
+
+/**
  * Names assigned inside a lifecycle hook whose body reaches production (#956).
  *
  * A suite-scope handle is routinely *declared* bare (`let client;`) and only
@@ -1277,7 +1287,16 @@ function collectHookAssignedHandles(
     HOOK_ASSIGNMENT_PATTERN.lastIndex = 0;
     let assign;
     while ((assign = HOOK_ASSIGNMENT_PATTERN.exec(body)) !== null) {
-      names.add(assign[1]);
+      // Only a handle that is *driven* counts. `client.callTool(...)` invokes
+      // the connected server; `env: { PATH: noJqPath }` merely reads a string
+      // the hook happened to compute. Without this shape gate the rule
+      // promotes every value a production-reaching hook assigns, which
+      // silences legitimately-flagged blocks — measured on
+      // `pre-tool-hook.integration.test.ts:1529`, a harness sanity check that
+      // spawns only system binaries but reads a hook-assigned PATH (#956).
+      if (calledAsHandle(content, assign[1])) {
+        names.add(assign[1]);
+      }
     }
   }
   return [...names];
