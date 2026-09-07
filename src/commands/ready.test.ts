@@ -56,6 +56,7 @@ import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
+import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
 import {
   buildExecutionConfig,
   resolveRunOptions,
@@ -413,6 +414,21 @@ describe("readyCommand — #697 renderer wiring", () => {
       if (prev === undefined) delete process.env.SEQUANT_MAX_ITERATIONS;
       else process.env.SEQUANT_MAX_ITERATIONS = prev;
     }
+  });
+
+  it("#863: a malformed settings timeout/maxIterations never reaches the gate (the #833 guard now lives in buildExecutionConfig)", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 0, timeout: 0 },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), {});
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.phaseTimeout).toBe(DEFAULT_CONFIG.phaseTimeout);
+    expect(opts.config.maxIterations).toBe(DEFAULT_CONFIG.maxIterations);
+    // And the gate's own loop bound follows the resolved config, not a
+    // second chain.
+    expect(opts.maxIterations).toBe(DEFAULT_CONFIG.maxIterations);
   });
 
   it("#863: --no-mcp on the ready command reaches the gate config through resolveRunOptions", async () => {

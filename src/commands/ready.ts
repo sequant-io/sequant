@@ -16,11 +16,7 @@
  */
 
 import { ui, colors } from "../lib/cli-ui.js";
-import {
-  getSettings,
-  type ReadyPolicy,
-  type SequantSettings,
-} from "../lib/settings.js";
+import { getSettings, type ReadyPolicy } from "../lib/settings.js";
 import { listWorktrees } from "../lib/workflow/worktree-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
@@ -31,9 +27,7 @@ import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
 import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
-import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
 import {
-  positiveOr,
   buildExecutionConfig,
   resolveRunOptions,
 } from "../lib/workflow/config-resolver.js";
@@ -96,34 +90,25 @@ export function resolvePolicy(
 }
 
 /**
- * Resolve the numeric limits for a ready-gate run: CLI → settings → default.
+ * Resolve the ready-only limit: the optional token budget.
  *
- * #833: these previously guarded only the CLI value (`typeof x === "number" &&
- * x > 0`) and fell straight through to `settings.run.*` unchecked. But
- * `settings.run.timeout` is user-authored JSON, and at the time `ready`'s value
- * did NOT pass through `buildExecutionConfig` — `ready-gate.ts`'s
- * `buildPhaseConfig` assembled its own `ExecutionConfig` (collapsed in #863; the
- * chain here is now the CLI-layer guard and the only one for the ready-only
- * `--budget`). So a `"timeout": 0` in settings.json
- * reached `setTimeout` as a 0 ms delay and aborted every ready-gate phase on
- * its first tick, with no warning: the #833 defect, on the path the original
- * fix did not cover. Chaining `positiveOr` leaves no layer unchecked.
+ * History: #833 added this function to guard `--timeout`/`--max-iterations`
+ * on the ready path (CLI → settings → default via `positiveOr`), because at the
+ * time `ready-gate.ts`'s `buildPhaseConfig` assembled its own `ExecutionConfig`
+ * and a `"timeout": 0` in settings.json reached `setTimeout` as a 0 ms delay.
+ * Since #863 `ready` feeds `buildExecutionConfig` — the single producer, whose
+ * own `positiveOr` chain guards both values and whose `resolveRunOptions` hop
+ * applies the env layer — so those two limits are read back from the resolved
+ * config and this function keeps only what never enters an `ExecutionConfig`.
  *
  * @internal Exported for testing only.
  */
 export function resolveReadyLimits(
-  options: Pick<ReadyCommandOptions, "maxIterations" | "budget" | "timeout">,
-  settings: Pick<SequantSettings, "run">,
+  options: Pick<ReadyCommandOptions, "budget">,
 ): {
-  maxIterations: number;
   tokenBudget: number | undefined;
-  phaseTimeout: number;
 } {
   return {
-    maxIterations: positiveOr(
-      options.maxIterations,
-      positiveOr(settings.run.maxIterations, DEFAULT_CONFIG.maxIterations),
-    ),
     // Budget is genuinely optional — `undefined` means "no budget", not "use a
     // default" — so it keeps the two-state form rather than chaining.
     tokenBudget:
@@ -132,10 +117,6 @@ export function resolveReadyLimits(
       options.budget > 0
         ? options.budget
         : undefined,
-    phaseTimeout: positiveOr(
-      options.timeout,
-      positiveOr(settings.run.timeout, DEFAULT_CONFIG.phaseTimeout),
-    ),
   };
 }
 
@@ -168,7 +149,7 @@ export async function readyCommand(
 
   const settings = await getSettings();
   const policy = resolvePolicy(options.policy, settings.ready.policy);
-  const { tokenBudget } = resolveReadyLimits(options, settings);
+  const { tokenBudget } = resolveReadyLimits(options);
   // #863: one resolved ExecutionConfig, from the same producer the `run` path
   // uses. Replaces the inline `resolvePhasePolicies` + `effortEscalation`
   // blocks this command used to keep in lockstep with `buildExecutionConfig`
@@ -177,8 +158,8 @@ export async function readyCommand(
   // `autoWaitMinutes`, ... — now arrives through this single object.
   //
   // `--max-iterations`/`--timeout` go in raw so `resolveRunOptions` applies
-  // the env layer (`SEQUANT_MAX_ITERATIONS`, `SEQUANT_TIMEOUT`) between CLI
-  // and settings exactly as on the `run` path; `buildExecutionConfig`'s
+  // the env layer (`SEQUANT_MAX_ITERATIONS`; there is no timeout env var)
+  // between CLI and settings exactly as on the `run` path; `buildExecutionConfig`'s
   // `positiveOr` chain then guards the result (#833). `--budget`/`--policy`
   // stay ready-only: neither is an `ExecutionConfig` field.
   //

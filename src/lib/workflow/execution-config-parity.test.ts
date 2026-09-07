@@ -20,10 +20,10 @@
  * them is caught, not skipped — and permits a difference only for keys in
  * {@link GATE_OVERRIDES}, each carrying a reason.
  *
- * Per #863 OQ-12, `noSmartTests` and `retry` are plumbed (`skipVerification`
+ * Per #863 OQ-12, `noSmartTests` and `retry` are plumbed (inherited from the
+ * parent config) and therefore deliberately NOT allowlisted. `skipVerification`
  * is declared on `ExecutionConfig` but no producer sets it and nothing reads
- * it, so there is no behaviour to assert — see the PR)
- * (inherited from the parent config) and therefore deliberately NOT allowlisted.
+ * it, so there is no behaviour to assert for it here — see the PR.
  */
 
 import { describe, it, expect } from "vitest";

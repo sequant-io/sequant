@@ -218,12 +218,12 @@ export function resolveRunOptions(
  * flag — that is the user-facing fix. This is the structural backstop for
  * programmatic callers, `settings.json`, and whatever calls this next.
  *
- * Exported because `commands/ready.ts` guards its own numeric limits with it
- * (`resolveReadyLimits`): `--budget` is ready-only and never enters this module,
- * and `--max-iterations`/`--timeout` are guarded at the CLI layer before they
- * reach `buildExecutionConfig` (since #863 they do reach it — `ready` feeds the
- * same producer `run` does — so the chain below is belt-and-braces, not the
- * only guard on that path as it was in #833).
+ * Kept exported for programmatic callers; no module in `src/` calls it any
+ * more (`config-resolver.numeric-guards.test.ts` covers it through
+ * `buildExecutionConfig`). Until #863 `commands/ready.ts` also called it to
+ * guard `--timeout` and `--max-iterations` on the ready path, which then
+ * bypassed this module; since #863 `ready` feeds `buildExecutionConfig` like
+ * `run` does, so the chain below is the only guard on both paths.
  * Chain it to express the layering — CLI, then settings, then the default:
  *
  * ```ts
