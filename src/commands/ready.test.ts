@@ -347,6 +347,11 @@ describe("readyCommand — #697 renderer wiring", () => {
     const opts = vi.mocked(runReadyGate).mock.calls[0][0];
     // Through `resolveRunOptions` first, exactly as `ready.ts` does — the
     // same CLI > env > settings merge the `run` path applies.
+    // Known constraint: this hand-copies the seven CLI keys `ready.ts` forwards.
+    // A forked resolver fails this deep-equal; a forgotten CLI-flag forward in
+    // `ready.ts` does not (both sides would omit it) — keep the two lists in
+    // step, and gate each flag that matters with its own case (see `--no-mcp`,
+    // `SEQUANT_MAX_ITERATIONS` below).
     const expected = buildExecutionConfig(
       resolveRunOptions(
         {

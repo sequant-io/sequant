@@ -133,12 +133,13 @@ function makeCtx(
     config?: Partial<ExecutionConfig>;
     options?: Partial<RunOptions>;
     stateManager?: ReturnType<typeof makeStateManager>;
+    labels?: string[];
   } = {},
 ): IssueExecutionContext {
   return {
     issueNumber: 817,
     title: "ready-gate wiring",
-    labels: [],
+    labels: overrides.labels ?? [],
     config: makeConfig(overrides.config),
     options: makeOptions(overrides.options),
     services: {
@@ -230,6 +231,39 @@ describe("run --ready-gate wiring (#817)", () => {
     expect(arg.nonGoals).toEqual(["do not auto-merge"]); // parsed from body
     expect(arg.issueNumber).toBe(817);
     expect(arg.worktreePath).toBe("/tmp/wt/817");
+  });
+
+  it("#863 AC-2: hands the gate the resolved config itself — driver fields included — not a hand-rolled subset", async () => {
+    // The other half of AC-2's "both callers": `sequant run --ready-gate`.
+    // Before #863 this call site passed primitives and the gate rebuilt its
+    // own ExecutionConfig, so `agent`/`aiderSettings` never arrived.
+    await runIssueWithLogging(
+      makeCtx({
+        config: {
+          readyGate: true,
+          agent: "aider",
+          aiderSettings: { model: "gpt-4o" },
+          maxIterations: 7,
+        },
+      }),
+    );
+
+    const arg = mockRunReadyGate.mock.calls[0][0];
+    expect(arg.config.agent).toBe("aider");
+    expect(arg.config.aiderSettings).toEqual({ model: "gpt-4o" });
+    expect(arg.config.maxIterations).toBe(7);
+    expect(arg.config.readyGate).toBe(true);
+  });
+
+  it('#863: a docs-labelled issue\'s gate phases carry issueType "docs" (config: issueConfig at the call site)', async () => {
+    // Gates the `config: issueConfig` choice in batch-executor: reverting it
+    // to `config` would drop `issueType` from the gate's phases silently.
+    await runIssueWithLogging(
+      makeCtx({ config: { readyGate: true }, labels: ["docs"] }),
+    );
+
+    const arg = mockRunReadyGate.mock.calls[0][0];
+    expect(arg.config.issueType).toBe("docs");
   });
 
   it("AC-6: surfaces the gate report in the PR body", async () => {
