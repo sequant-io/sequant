@@ -212,6 +212,7 @@ Summary of the structural roles:
 | OQ-17 | #933 orphaned-worktree remedy: node 05 or node 09? | owner, at the PR #1001 merge decision (D19) | route to node 09 — it owns the cleanup block |
 | OQ-18 | Should `ready.ts` route through `resolveRunOptions`? | owner, at the PR #1004 merge decision (D20) | yes, in PR #1004, so the parity test's premise holds for nodes 08/11/12 |
 | OQ-19 | Node 06 AC-3 says each trap row carries "the command that reproduced it", but the spike **refuted** the `/tmp permission kill` on 1.18.27 and could not provoke the 32K clamp in three controls; QA ended AC_NOT_MET on that wording alone (PR #1005, 3 rounds). Amend AC-3 to "reproduced or refuted, with the controlling command recorded"? | owner, at the PR #1005 merge decision | amend and accept; node 12 AC-8 then treats the deny rule as non-load-bearing and the clamp budget as a precaution |
+| OQ-20 | Should the setup skill record `packageManager` at all for the node stack? Node 02 AC-4 mandates it, but a declared value outranks live lockfile detection (`stacks.ts:288`), so a project that migrates package managers after setup keeps installing with the stale one until the manifest key is edited — a milder instance of the class #932 fixed. | after wave 1 merges; owner | keep the write (AC-4) but have `run` warn when the declared manager disagrees with the lockfile, or drop the write and let detection decide — decide before node 12 adds another manifest consumer |
 
 ## §10 Parked
 
