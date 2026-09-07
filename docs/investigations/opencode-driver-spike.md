@@ -191,9 +191,35 @@ Tool call distribution across the 28 `tool_use` events: `bash` 22, `read` 5,
 
 | Trap | Mitigation (exact) | Reproduction command | Status |
 |------|-------------------|---------------------|--------|
-| **32K step clamp** | Per-model `options.reasoning.max_tokens` in the config payload, e.g. `{"provider":{"openrouter":{"models":{"z-ai/glm-5.3-flash":{"options":{"reasoning":{"max_tokens":20000}}}}}}}`, plus `limit.context`/`limit.output` overrides. **Must be supplied hermetically** (see Finding 1) or it silently comes from the user's global config. | `run-prompt.sh trap1-noclamp 300 <scratch> openrouter/z-ai/glm-5.3-flash opencode-config-trap1-noclamp.json '<long-reasoning prompt>'` — a config with `limit` but **no** `options.reasoning.max_tokens`, run under a redirected `XDG_CONFIG_HOME` so the global clamp cannot leak in. | Mitigation **verified in effect** (present in the resolved config of the clamped model; Run A itself used a different model and was unaffected). Clamp **not re-triggered**: the no-clamp run hit the wall-clock bound (`TIMEOUT_KILL`, 1 event) before producing a clamped step. |
+| **32K step clamp** | Per-model `options.reasoning.max_tokens` in the config payload, e.g. `{"provider":{"openrouter":{"models":{"z-ai/glm-5.3-flash":{"options":{"reasoning":{"max_tokens":20000}}}}}}}`, plus `limit.context`/`limit.output` overrides. **Must be supplied hermetically** (see Finding 1) or it silently comes from the user's global config. | Three controls, all with `limit` set but **no** `options.reasoning.max_tokens`, under a redirected `XDG_CONFIG_HOME` so the global clamp cannot leak in: `run-prompt.sh trap1-noclamp 300 …`; `run-prompt.sh trap1-repro 540 <scratch> openrouter/z-ai/glm-5.3-flash opencode-config-trap1-repro.json '<write 400 numbered lines in one write>'`; `run-prompt.sh trap1-repro2 420 … '<write 2000 numbered lines in a SINGLE write call>'`. | **NOT REPRODUCED in three attempts** — see below. |
 | **/tmp permission kill** | Keep the scratch worktree **outside `/tmp`**, and grant it explicitly via `permission.external_directory`: `{"*":"deny","<scratch>/**":"allow","<repo>/**":"allow"}`. Relocation is the primary fix; the allow rule is what makes a non-default location usable. | Two control runs against a git repo at `/tmp/oc992-trap2` (`/tmp` → `private/tmp` symlink; realpath `/private/tmp/oc992-trap2`), model `openrouter/z-ai/glm-5.3-flash`: (a) `external_directory: {"*":"deny","/tmp/oc992-trap2/**":"allow"}`; (b) `external_directory: {"*":"deny"}` with **no** allow rule. Command: `run-prompt.sh trap2-<label> 200 /tmp/oc992-trap2 <model> <config> 'Read the file file.txt …'` | **DID NOT REPRODUCE on 1.18.27** — see below. |
 | **process-group kill** | Spawn opencode in **its own process group** and kill the group, not the pid: `perl -e 'setpgrp(0,0); exec @ARGV' env … opencode run …` then `kill -TERM -$PGID; sleep 3; kill -KILL -$PGID`. `setpgrp` is what stops the group kill reaching back into the calling shell. | `run-opencode.sh runA 900 <scratch> openrouter/anthropic/claude-sonnet-5 <config>` — the watchdog fired on the `trap1-noclamp` run, wrote `TIMEOUT_KILL` to stderr, and group-killed the tree; the parent shell survived. | **Reproduced and verified** — the kill path executed for real and reaped the tree without killing the harness. |
+
+### Trap 1 did not reproduce either — three controls, none conclusive
+
+| Control | Bound | Outcome |
+|---------|-------|---------|
+| `trap1-noclamp` | 300 s | `TIMEOUT_KILL`, 1 event — killed before any step closed |
+| `trap1-repro` (400 lines) | 540 s | **Succeeded.** `RC=0`, 364 s, all 400 lines written (27.6 KB). Max step output **7,321 tokens** — the payload never approached a ~32K cap |
+| `trap1-repro2` (2000 lines, single write) | 420 s | 3 × `step_start`, **0 × `step_finish`**, no tool call, no file, killed at the bound |
+
+The 400-line control proves the payload was simply too small to reach the clamp.
+The 2000-line control is *consistent with* the reported symptom — steps opened and
+never closed, nothing written, and opencode would have exited without producing the
+file — but because the watchdog killed it at the bound, it cannot distinguish "step
+clamped and stalled" from "still working, would have finished." **No `step_finish`
+was emitted, so there is no token count to confirm a cap at ~32K.**
+
+The mitigation is therefore **attested but not demonstrated**: the per-model
+`options.reasoning.max_tokens` key is verified present in the resolved config, and
+the original field observation stands, but this spike did not re-trigger the
+failure. #862 should not treat the ~32K figure as measured here.
+
+**Cost-accounting corollary (matters for #862):** `trap1-repro2` consumed real
+tokens over 420 s yet sums to **$0.00** by the `step_finish` method, because no
+`step_finish` was ever emitted. A driver that bills or budgets purely from
+`step_finish.cost` under-reports exactly the runs that hang — the ones where a
+budget guard matters most. Pair it with a wall-clock or provider-side check.
 
 ### Trap 2 did not reproduce — `/tmp` is not blocked on 1.18.27
 
@@ -376,7 +402,14 @@ is cumulative — $0.71 was already banked from 9 prior unrelated sessions and i
 | `trap1-noclamp` | `openrouter/z-ai/glm-5.3-flash` | 300 s (bounded) | **$0.0000** | `TIMEOUT_KILL`, 1 event, no billable completion |
 | `trap2-tmpallow` | `openrouter/z-ai/glm-5.3-flash` | **19 s** | **$0.0007** | `/tmp` read succeeded with allow rule |
 | `trap2-strictdeny` | `openrouter/z-ai/glm-5.3-flash` | **52 s** | **$0.0011** | `/tmp` read succeeded with `"*":"deny"` — trap refuted |
-| **Total** | | **479 s** | **$1.1216** | **under the $5 cap** ✅ |
+| `trap1-repro` (400 lines) | `openrouter/z-ai/glm-5.3-flash` | **364 s** | **$0.0065** | Completed; max step output 7,321 tok — below the clamp |
+| `trap1-repro2` (2000 lines) | `openrouter/z-ai/glm-5.3-flash` | 420 s (bounded) | **$0.0000\*** | 3 `step_start`, 0 `step_finish`, no file — inconclusive |
+| **Total** | | **1,263 s** | **$1.1281** | **under the $5 cap** ✅ |
+
+\* `trap1-repro2` sums to $0.00 by the `step_finish` method despite 420 s of real
+token spend, because no `step_finish` was emitted — see the cost-accounting
+corollary under [AC-3](#ac-3--the-three-field-run-traps). Real spend is slightly
+above the $1.1281 shown.
 
 Run A token profile: input 58, output 7,298, reasoning 13,110, cache read
 2,875,327, cache write 136,216. Cache read dominates — the 43K-token skill body is
@@ -426,10 +459,18 @@ went unspent.
 
 ## Gaps and what #862 must not assume
 
-- **Trap row 1 is mitigation-attested, not failure-reproduced.** The 32K clamp was
-  not re-triggered — the no-clamp run hit its wall-clock bound first. The
-  mitigation is recorded and verified present in the resolved config, but the
-  failure mode itself was not re-observed here; it comes from the prior field run.
+- **Trap row 1 is mitigation-attested, not failure-reproduced.** Three controls
+  failed to re-trigger the 32K clamp: one killed at its bound, one that completed
+  normally at 7,321 output tokens (too small to reach the cap), and one that
+  opened 3 steps, closed none, and was killed at 420 s — consistent with the
+  symptom but not conclusive, since no `step_finish` carried a token count. The
+  mitigation key is verified present in the resolved config; the ~32K figure is
+  **not measured here** and comes from the prior field run.
+- **Neither trap-1 nor trap-2 has a command that reproduces the failure**, so
+  AC-3's "the command that reproduced it" is satisfied only for
+  `process-group kill`. The other two rows record the mitigation and the control
+  that tested it. This is a real divergence from AC-3 as written, not an
+  omission — stated here rather than papered over.
 - **Trap row 2 was actively refuted, and its true cause is unknown.** `/tmp` is
   not blocked by opencode's permission system on 1.18.27. Treat the original
   observation as real-but-unexplained rather than as a permission requirement.
