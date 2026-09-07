@@ -174,7 +174,7 @@ describe("#975 AC-1: resolvePhasePolicies resolves role: model references", () =
   });
 });
 
-describe("#975 AC-5: buildExecutionConfig uses resolveRoleToModel (producer 1 drift test)", () => {
+describe("#975 AC-5: buildExecutionConfig uses resolveRoleToModel (drift test)", () => {
   function resolve(cli: Partial<RunOptions>, settings: SequantSettings) {
     return buildExecutionConfig(
       resolveRunOptions(cli as RunOptions, settings),

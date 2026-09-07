@@ -521,9 +521,9 @@ export function buildExecutionConfig(
     // load-bearing wire the #795 inert-flag class guards against — the flag is
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
-    // #914: CLI > settings > absent, via the shared resolver both
-    // ExecutionConfig producers call (see `resolvePhasePolicies`'s doc
-    // comment for the #833 drift this guards against).
+    // #914: CLI > settings > absent, via the shared resolver (see
+    // `resolvePhasePolicies`'s doc comment for the #833 drift this guards
+    // against; since #863 this is its only call site).
     // #975: pass modelRoles + active driver so `role:` prefixes resolve.
     phasePolicies: resolvePhasePolicies(
       mergedOptions.models,

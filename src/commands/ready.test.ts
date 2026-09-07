@@ -395,6 +395,21 @@ describe("readyCommand — #697 renderer wiring", () => {
     expect(opts.config.mcp).toBe(false);
   });
 
+  it("#863: --no-mcp on the ready command reaches the gate config through resolveRunOptions", async () => {
+    // Commander hands `--no-mcp` over as `mcp: false`; `resolveRunOptions`'s
+    // normalizer turns that into `noMcp: true`, which `buildExecutionConfig`
+    // reads. Without the resolver hop the flag would silently become a no-op,
+    // so gate it directly rather than only through the settings knob above.
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 3, timeout: 1800, mcp: true },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), { mcp: false });
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.mcp).toBe(false);
+  });
+
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
     await readyCommand(String(ISSUE), { verbose: true });
 
