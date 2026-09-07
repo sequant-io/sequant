@@ -1240,52 +1240,54 @@ commit_message_from() {
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
+#
+# validate_commit_subject <subject> — block (exit 2) unless <subject> is a
+# conventional-commit line. An empty subject validates nothing (editor
+# commits, unquoted -m words), as before.
+validate_commit_subject() {
+    local subject="$1"
+    [[ -z "$subject" ]] && return 0
+    # Conventional commits pattern: type(optional-scope): description
+    # Also accepts ! for breaking changes: feat!: or feat(scope)!:
+    local pattern='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf)(\([^)]+\))?(!)?\s*:'
+    if ! echo "$subject" | grep -qE "$pattern"; then
+        log_block "commit-format"
+        {
+            echo "HOOK_BLOCKED: Commit must follow conventional commits format"
+            echo "  Expected: type(scope): description"
+            # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
+            if [[ "$subject" == Merge\ * ]]; then
+                echo ""
+                echo "  💡 For merge commits, use: chore: merge main into feature branch"
+                echo ""
+            fi
+            echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
+            echo "  Got: $subject"
+        } >&2
+        exit 2
+    fi
+    return 0
+}
 if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
-    # Scope extraction to the git-commit segment itself (#981) — falls back
-    # to the whole command only if the raw scan somehow finds no segment
-    # that seg_match's own (sanitized) scan already said contains one; that
-    # keeps this guard fail-safe (still validates something) rather than
-    # fail-open (skip validation) on a mismatch between the two scanners.
-    # Walk every qualifying segment in order and validate the first one that
-    # yields a message (#981): a -m-less segment that merely mentions
-    # "git commit" must not shadow the real commit behind it. Extraction is
-    # anchored on the segment's own "git commit ... -m" (the
-    # -m "$(cat <<'EOF' ... EOF)" idiom's first body line, -m "..." / -m '...',
-    # or a heredoc feeding -F-), and only the subject line is validated.
-    COMMIT_SEG=""
-    MSG=""
+    # Scope extraction to each git-commit segment itself (#981), never the
+    # whole command, so an earlier quoted string or a heredoc elsewhere can
+    # neither supply nor shadow a message. EVERY qualifying segment that
+    # yields a message is validated (spec Open Question 2): a decoy
+    # conventional commit earlier in a compound command must not let a later
+    # non-conventional one through, and a -m-less segment that merely
+    # mentions "git commit" cannot hide the real commit behind it. Extraction
+    # is anchored on the segment's own message flag (-m / -am / --message,
+    # the -m "$(cat <<'EOF' ... EOF)" idiom, or a heredoc feeding -F-), and
+    # only the subject line is validated. Falls back to the whole command only
+    # if the raw scan finds no segment at all (fail-safe, not fail-open).
+    _validated=0
     while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
         [[ -z "$_seg" ]] && continue
-        COMMIT_SEG="$_seg"
-        MSG=$(commit_message_from "$_seg" | head -n 1)
-        [[ -n "$MSG" ]] && break
+        _validated=1
+        validate_commit_subject "$(commit_message_from "$_seg" | head -n 1)"
     done < <(raw_commit_segment "$TOOL_INPUT")
-    if [[ -z "$COMMIT_SEG" ]]; then
-        COMMIT_SEG="$TOOL_INPUT"
-        MSG=$(commit_message_from "$COMMIT_SEG" | head -n 1)
-    fi
-
-    # Validate if we found a message
-    if [[ -n "$MSG" ]]; then
-        # Conventional commits pattern: type(optional-scope): description
-        # Also accepts ! for breaking changes: feat!: or feat(scope)!:
-        PATTERN='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf)(\([^)]+\))?(!)?\s*:'
-        if ! echo "$MSG" | grep -qE "$PATTERN"; then
-            log_block "commit-format"
-            {
-                echo "HOOK_BLOCKED: Commit must follow conventional commits format"
-                echo "  Expected: type(scope): description"
-                # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
-                if [[ "$MSG" == Merge\ * ]]; then
-                    echo ""
-                    echo "  💡 For merge commits, use: chore: merge main into feature branch"
-                    echo ""
-                fi
-                echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
-                echo "  Got: $MSG"
-            } >&2
-            exit 2
-        fi
+    if [[ "$_validated" -eq 0 ]]; then
+        validate_commit_subject "$(commit_message_from "$TOOL_INPUT" | head -n 1)"
     fi
 fi
 

@@ -1290,6 +1290,32 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: every git commit in a compound command is validated (a decoy conventional commit cannot shield a later one)", () => {
+      const repo = makeStagedRepo("pre-tool-981-chained-");
+      try {
+        // Spec Open Question 2 recommended validating every matching segment;
+        // first-message-wins let `fix: ok ; updated stuff` through unvalidated.
+        for (const cmd of [
+          'git commit -m "fix: ok" ; git commit -m "updated stuff"',
+          'git commit -m "updated stuff" && git commit -m "fix: ok"',
+          'echo "$(git commit -m "fix: decoy")"; git commit -m "updated stuff"',
+        ]) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        expect(
+          runHook(
+            hookPath,
+            'git commit -m "fix: a" && git commit -m "fix: b"',
+            repo,
+          ).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
