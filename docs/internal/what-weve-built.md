@@ -935,8 +935,8 @@ Shell scripts in `templates/scripts/`:
   - Graceful conflict handling (abort, warn, continue with original state)
   - `--no-rebase` flag for manual rebase workflows
   - 10 unit tests covering rebase, lockfile detection, and conflict handling
-- **Auto-sync skills on upgrade**
-  - Skills automatically sync when upgrading sequant
+- **Skills-install pre-flight (warn-only since #988)**
+  - A stale or drifted `.claude/` tree is reported before most commands, naming `sequant update`; nothing is rewritten automatically
   - `sequant status` auto-detects merged PRs
 - **Fix: `--verbose` spinner garbling** (#282)
   - Propagate verbose flag to cli-ui so spinners use text-only mode

@@ -85,7 +85,7 @@ two distinct signals, handled differently:
 
 | Signal | Detection | Action |
 |--------|-----------|--------|
-| **Version mismatch** | `.claude/skills/.sequant-version` ≠ package version | **Auto-sync (copy)** — `syncCommand({ quiet: true })` overwrites templates and bumps the marker. |
+| **Version mismatch** | `.claude/skills/.sequant-version` ≠ package version | **Warn only (#988)** — prints "Skills are outdated (x → y)" naming `sequant sync` / `sequant update`; no files are touched. Until #988 this branch silently copied the whole managed tree. |
 | **Content drift at a matching version** | Version marker matches, but `computeTemplateChanges` reports `new`/`modified` files | **Warn only** — a non-destructive message; no files are touched and `process.exitCode` is left unchanged. |
 
 ### Why content drift is warn-only (#713 / AC-3)
@@ -98,8 +98,8 @@ sync` uses (the single source of truth from #708/#710) and counts `new`+`modifie
 files, **excluding** `local-override`/`unchanged` so customized files (e.g. an
 in-place-customized `constitution.md`, #711) don't warn on every command.
 
-**Auto-sync (copy) stays gated on version bumps only.** Content-only drift is
-surfaced as a warning rather than auto-copied, for two reasons:
+**Nothing in the pre-flight copies templates (#988).** Both signals are
+surfaced as warnings rather than auto-applied, for two reasons:
 
 1. **Don't clobber in-place customizations (#711).** A blind copy on content drift
    would overwrite files a user has intentionally edited in place. The fix is left
@@ -111,15 +111,46 @@ surfaced as a warning rather than auto-copied, for two reasons:
    warning never changes the exit code — the user's actual command still runs and
    exits normally.
 
-The `preAction` hook is **skipped entirely** for `init`, `sync`, and `update` —
-those commands manage skills themselves, so the warn-only "run sync/update"
-pre-flight would be a circular nag right before they do exactly that.
+The `preAction` hook is **skipped entirely** for `init`, `sync`, `update`, and
+`serve`. The first three manage skills themselves, so the warn-only "run
+sync/update" pre-flight would be a circular nag right before they do exactly
+that. `serve` is exempt because stdout is the MCP protocol channel — the
+pre-flight's console output would corrupt the stream — so it reports install
+status its own way: one stderr line at startup ("… No files were modified. Run:
+sequant update") plus the `sequant://install` resource. `sequant://config` stays
+the user's settings file returned verbatim — server-computed status never rides
+on a user-authored document. The logic lives in
+`src/commands/version-preflight.ts` (`runVersionPreflight`,
+`getSkillsInstallStatus`), which the hook calls with the command name.
+
+### Why version bumps stopped auto-syncing (#988)
+
+Until #988 a version-marker mismatch ran `syncCommand({ quiet: true })` — a
+forced, silent copy of the whole managed tree (`.claude/skills/`,
+`.claude/agents/`, `.claude/hooks/`, `AGENTS.md`, `scripts/dev/*`, the manifest,
+the `.mcp.json` pin). The intent was "npm upgrade → skills follow". In practice
+the trigger was the plugin's MCP server: `marketplace.json` declares
+`source: "./"`, so the shipped `.mcp.json` was the repo-root one — `npx -y
+sequant@latest serve` — and Claude Code starts it with cwd = the open project.
+Every new session after a release therefore rewrote tracked files in the working
+tree of every project with a `.sequant-version` behind `@latest`, with no
+output, and repeated on every session start until the marker bump was
+committed. Three downstream repos lost in-place hook customizations this way on
+2026-09-06.
+
+Two fixes, same issue: the pre-flight is warn-only for both signals (this
+section), and the shipped `.mcp.json` is pinned to the release version by
+`prepare-marketplace` — which now stamps and validates the file `marketplace.json`
+`source` resolves to, not only the dist copy #793 pinned. In-place hook
+customizations still belong in `.claude/.local/hooks/` wired via settings
+(`docs/guides/customization.md`); `sequant update`/`sync` continue to overwrite the
+managed trees when run explicitly.
 
 ### Performance (#713 / AC-5)
 
 The content diff is gated two ways. First by a **version match**: a version
-mismatch already means stale (the copy path handles it), so the diff is skipped
-entirely. Second, on a match, by a **stat-only fingerprint cache**: the full
+mismatch already means stale (the warning points at `update`), so the diff is
+skipped entirely. Second, on a match, by a **stat-only fingerprint cache**: the full
 read+render+diff scan (~15ms across the bundled templates) runs only when
 something that can change drift actually changed.
 

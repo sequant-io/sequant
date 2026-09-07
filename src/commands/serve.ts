@@ -16,6 +16,11 @@ import {
 } from "http";
 import { createServer } from "../mcp/server.js";
 import { getVersion } from "../lib/version.js";
+import {
+  formatSkillsInstallWarning,
+  getSkillsInstallStatus,
+  type SkillsInstallStatus,
+} from "./version-preflight.js";
 
 export interface ServeOptions {
   transport?: "stdio" | "sse";
@@ -24,18 +29,27 @@ export interface ServeOptions {
 
 export async function serveCommand(options: ServeOptions): Promise<void> {
   const version = getVersion();
-  const server = createServer(version);
+
+  // Install status is read-only and reported, never acted on (#988): a
+  // server start used to trigger the CLI's auto-sync and rewrite the project.
+  // The check must never prevent the server from starting.
+  const install: SkillsInstallStatus | null =
+    await getSkillsInstallStatus().catch(() => null);
+
+  const server = createServer(version, { install });
   const transportType = options.transport || "stdio";
+  const warning = formatSkillsInstallWarning(install);
 
   if (transportType === "sse") {
-    await startSSE(server, options.port || 3100);
+    await startSSE(server, options.port || 3100, warning);
   } else {
-    await startStdio(server);
+    await startStdio(server, warning);
   }
 }
 
 async function startStdio(
   server: ReturnType<typeof createServer>,
+  installWarning: string | null,
 ): Promise<void> {
   const transport = new StdioServerTransport();
 
@@ -59,11 +73,15 @@ async function startStdio(
 
   // Write startup info to stderr (stdout is for MCP protocol)
   process.stderr.write(`Sequant MCP server started (stdio)\n`);
+  if (installWarning) {
+    process.stderr.write(`${installWarning}\n`);
+  }
 }
 
 async function startSSE(
   server: ReturnType<typeof createServer>,
   port: number,
+  installWarning: string | null,
 ): Promise<void> {
   let sseTransport: SSEServerTransport | null = null;
   let clientConnected = false;
@@ -158,5 +176,8 @@ async function startSSE(
     console.log(`Sequant MCP server started (SSE) on 127.0.0.1:${port}`);
     console.log(`  SSE endpoint: http://127.0.0.1:${port}/sse`);
     console.log(`  Health check: http://127.0.0.1:${port}/health`);
+    if (installWarning) {
+      console.error(installWarning);
+    }
   });
 }

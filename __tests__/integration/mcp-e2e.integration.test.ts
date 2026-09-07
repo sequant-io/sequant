@@ -228,7 +228,12 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — E2E (#414)", () => {
 
       const { resources } = await client.listResources();
       const uris = resources.map((r: { uri: string }) => r.uri).sort();
-      expect(uris).toEqual(["sequant://config", "sequant://state"]);
+      // #988 added sequant://install (skills-install status, report-only).
+      expect(uris).toEqual([
+        "sequant://config",
+        "sequant://install",
+        "sequant://state",
+      ]);
     }, 20000);
 
     // AC-3: Tool call round-trip via real stdio protocol
