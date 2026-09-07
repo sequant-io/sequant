@@ -957,3 +957,164 @@ describe.each(LABELS)('x [%s]', (_label, bin) => {
     expect(result.tautologicalCount).toBe(1);
   });
 });
+
+describe("resolved-path recognition (#956)", () => {
+  // filePath is relative here, as the CLI passes it; `__dirname` therefore
+  // denotes `<repo>/src/lib` and the repo root is discovered by walking up
+  // from that directory rather than from process.cwd().
+  const FILE = "src/lib/sample.test.ts";
+
+  it("recognizes a spawn whose path is built with path.resolve(__dirname, ...)", () => {
+    const content = `
+import { execSync } from 'child_process';
+import * as path from 'path';
+const CLI_PATH = path.resolve(__dirname, 'sample-cli.ts');
+function runCli(args) {
+  return execSync(\`npx tsx \${CLI_PATH} \${args}\`, { encoding: 'utf-8' });
+}
+describe('x', () => {
+  it('runs', () => { expect(runCli('--json')).toContain('{'); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("resolves a chain of declared path variables to a fixpoint", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../..');
+const HOOK = join(REPO_ROOT, 'hooks', 'pre-tool.sh');
+describe('x', () => {
+  it('runs the hook', () => { expect(spawnSync('bash', [HOOK]).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("binds a build-output value into a helper parameter across a call site", () => {
+    // `describe.each` yields `preHook`; the spawning helper's own parameter is
+    // named `hook`, so nothing but the argument position connects them.
+    const content = `
+import { spawnSync } from 'child_process';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../..');
+const PAIRS = [['label', join(REPO_ROOT, 'hooks', 'pre-tool.sh')]];
+describe.each(PAIRS)('sink [%s]', (_label, preHook) => {
+  function run(hook, command) {
+    return spawnSync('bash', [hook], { input: command });
+  }
+  it('writes a log', () => { expect(run(preHook, 'git status').status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("does not treat a repo-internal path that names no executable as production", () => {
+    // Negative control for the widened exemption: spawning `git` with a
+    // repo-internal cwd is not running this project's code.
+    const content = `
+import { spawnSync } from 'child_process';
+import { resolve } from 'path';
+const DOCS_DIR = resolve(__dirname, 'docs');
+describe('x', () => {
+  it('shells out', () => {
+    const out = spawnSync('git', ['status'], { cwd: DOCS_DIR });
+    expect(out.status).toBe(0);
+  });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("does not treat a node_modules binary as production", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { resolve } from 'path';
+const TSX_BIN = resolve(__dirname, '../../node_modules/.bin/tsx');
+describe('x', () => {
+  it('runs tsx', () => { expect(spawnSync(TSX_BIN, ['--version']).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("does not resolve a path rooted in a temp sandbox", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+const SANDBOX = mkdtempSync(join(tmpdir(), 'x-'));
+const SCRIPT = join(SANDBOX, 'run.sh');
+describe('x', () => {
+  it('runs the sandbox script', () => { expect(spawnSync('bash', [SCRIPT]).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("recognizes an expression-bodied arrow helper", () => {
+    const content = `
+import { execSync } from 'child_process';
+import * as path from 'path';
+const CLI_PATH = path.resolve(__dirname, 'sample-cli.ts');
+const runCli = (args) => execSync(\`npx tsx \${CLI_PATH} \${args}\`);
+const runInTemp = (
+  args: string[],
+): ReturnType<typeof runCli> => runCli(args);
+describe('x', () => {
+  it('runs', () => { expect(runInTemp(['init'])).toBeDefined(); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("recognizes a destructured dynamic import as a production import", () => {
+    const content = `
+const { resolveCliBinary } = await import('./tools/run.js');
+describe('x', () => {
+  it('resolves', () => { expect(resolveCliBinary()).toBeDefined(); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("reads the callback body past a title containing braces", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it("returns { kind: 'commits' } when ahead", () => { expect(doWork()).toBe(1); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("reads the callback body past an options object argument", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it('slow one', { timeout: 20_000 }, async () => { expect(doWork()).toBe(1); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("still flags a braced-title block that calls nothing", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it("returns { kind: 'commits' }", () => { expect(1 + 1).toBe(2); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("reads a helper body past a generic return-type annotation", () => {
+    const content = `
+import { spawn } from 'child_process';
+import { resolve } from 'path';
+const MODULE_PATH = resolve(__dirname, 'log-writer.ts');
+async function spawnRunLike(): Promise<{ pid: number }> {
+  const child = spawn('node', ['--eval', \`import x from "\${MODULE_PATH}"\`]);
+  return { pid: child.pid };
+}
+describe('x', () => {
+  it('aborts cleanly', async () => { expect((await spawnRunLike()).pid).toBeGreaterThan(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+});
