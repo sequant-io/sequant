@@ -14,7 +14,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { resolvePackageManager, PM_CONFIG } from "./stacks.js";
+import {
+  resolvePackageManager,
+  resolvePackageManagerConfig,
+  PM_CONFIG,
+} from "./stacks.js";
 
 let dir: string;
 
@@ -103,16 +107,23 @@ describe("#932: run path resolves through the lockfile, not a literal fallback",
       lockfile: "pnpm-lock.yaml",
       contents: "lockfileVersion: '9.0'\n",
       pm: "pnpm" as const,
+      ciInstall: "pnpm install --frozen-lockfile",
     },
     {
       lockfile: "yarn.lock",
       contents: "# yarn lockfile v1\n",
       pm: "yarn" as const,
+      ciInstall: "yarn install --frozen-lockfile",
     },
-    { lockfile: "bun.lockb", contents: "", pm: "bun" as const },
+    {
+      lockfile: "bun.lockb",
+      contents: "",
+      pm: "bun" as const,
+      ciInstall: "bun install --frozen-lockfile",
+    },
   ])(
     "932: manifest without packageManager + $lockfile resolves to $pm's ciInstall",
-    ({ lockfile, contents, pm }) => {
+    ({ lockfile, contents, pm, ciInstall }) => {
       writeFileSync(join(dir, lockfile), contents);
 
       // Mirrors `run.ts`'s init: `manifest.packageManager` (undeclared) flows
@@ -122,7 +133,9 @@ describe("#932: run path resolves through the lockfile, not a literal fallback",
       const resolved = resolvePackageManager(init.manifest.packageManager, dir);
 
       expect(resolved).toBe(pm);
-      expect(PM_CONFIG[resolved].ciInstall).toBe(PM_CONFIG[pm].ciInstall);
+      expect(resolvePackageManagerConfig(resolved, dir).ciInstall).toBe(
+        ciInstall,
+      );
     },
   );
 });
