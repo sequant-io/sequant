@@ -1053,6 +1053,98 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: a heredoc body before the commit in the same subshell cannot mask a non-conventional message (fail-open)", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hd-bad-");
+      try {
+        // Before the -m-anchored extractor, the heredoc guard blanked the
+        // rest of the subshell, no segment qualified, and the whole-command
+        // fallback took the heredoc's first line as the message — so
+        // "updated stuff" was never examined and the commit sailed through.
+        const cmd = [
+          `echo "not a message"; (cat <<'EOF'`,
+          `fix: heredoc data`,
+          `EOF`,
+          `git commit -m "updated stuff")`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc body before the commit in the same subshell does not hijack a valid message", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hd-ok-");
+      try {
+        // The body's first line looks like a bad message; the real message is
+        // conventional. Only the commit's own -m argument may be validated.
+        const cmd = [
+          `(cat <<'EOF'`,
+          `updated stuff`,
+          `EOF`,
+          `git commit -m "fix: ok")`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a <<- heredoc before the commit in the same subshell is skipped to its terminator", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hddash-");
+      try {
+        const cmd = [
+          `(cat <<-EOF`,
+          `\tdata`,
+          `\tEOF`,
+          `git commit -m "fix: ok")`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a herestring inside the subshell is not treated as a heredoc introducer", () => {
+      const repo = makeStagedRepo("pre-tool-981-herestring-");
+      try {
+        // `<<<` is an inline word, not a body; treating it as `<<` blanked the
+        // commit that followed and the earlier quoted string won the fallback.
+        const cmd =
+          'echo "not a message"; (grep -q x <<< "$y"; git commit -m "fix: ok")';
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: extraction is anchored on the commit's own -m, not the first quoted string in the segment", () => {
+      const repo = makeStagedRepo("pre-tool-981-author-");
+      try {
+        // `--author="A B <a@b>"` precedes -m inside the SAME segment; the old
+        // extractor took the first double-quoted string of the segment.
+        const ok = runHook(
+          hookPath,
+          'git commit --author="A B <a@b>" -m "fix: with author"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+        const bad = runHook(
+          hookPath,
+          'git commit --author="A B <a@b>" -m "updated stuff"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

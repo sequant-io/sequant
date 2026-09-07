@@ -354,7 +354,7 @@ raw_commit_segment() {
     BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34); found = 0 }
     { full = (NR == 1) ? $0 : full "\n" $0 }
     END {
-        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0; hdseen = 0
+        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0; hdseen = 0; nshd = 0
         for (i = 1; i <= n && !found; i++) {
             c = substr(full, i, 1)
             nc = (i < n) ? substr(full, i + 1, 1) : ""
@@ -433,7 +433,55 @@ raw_commit_segment() {
             # never examined — a fail-open, verified before this guard was
             # added.
             if (depth > 0) {
-                if (c == "<" && nc == "<") hdseen = 1
+                # Heredoc introducer (<< or <<-, never the <<< herestring, which
+                # is an inline word, not a body). Record the delimiter so the
+                # body can be skipped at the newline below; blank CODE from here
+                # until the terminator line so body text never wins selection,
+                # but let a commit AFTER the body in the same subshell count
+                # again — otherwise `( cat <<EOF ... EOF; git commit -m "updated
+                # stuff" )` had no qualifying segment, fell back to the whole
+                # command, and sailed through (a fail-open, verified).
+                if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                    j = i + 2
+                    if (substr(full, j, 1) == "-") j++
+                    while (j <= n && substr(full, j, 1) ~ /[ \t]/) j++
+                    q = substr(full, j, 1); delim = ""
+                    if (q == sq || q == dq) {
+                        j++
+                        while (j <= n && substr(full, j, 1) != q) { delim = delim substr(full, j, 1); j++ }
+                        j++
+                    } else {
+                        while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
+                    }
+                    if (length(delim) > 0) shd[++nshd] = delim
+                    hdseen = 1
+                    seg = seg substr(full, i, j - i); code = code " "
+                    i = j - 1
+                    continue
+                }
+                if (c == "\n" && nshd > 0) {
+                    # Consume the pending heredoc bodies verbatim into the
+                    # segment (blank in CODE); the guard lifts after the last
+                    # terminator line.
+                    seg = seg c; code = code " "
+                    while (nshd > 0) {
+                        d = shd[1]
+                        for (k = 1; k < nshd; k++) shd[k] = shd[k + 1]
+                        nshd--
+                        while (i < n) {
+                            ls = i + 1
+                            le = index(substr(full, ls), "\n")
+                            if (le == 0) { line = substr(full, ls); i = n }
+                            else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                            seg = seg line "\n"; code = code " "
+                            t = line
+                            sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                            if (t == d) break
+                        }
+                    }
+                    hdseen = 0
+                    continue
+                }
                 seg = seg c
                 code = code (hdseen ? " " : c)
                 continue
@@ -461,13 +509,13 @@ raw_commit_segment() {
             }
 
             if (c == ";" || c == "&" || c == "|") {
-                emit(seg, code); seg = ""; code = ""; hdseen = 0
+                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
                 if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
                 continue
             }
 
             if (c == "\n") {
-                emit(seg, code); seg = ""; code = ""; hdseen = 0
+                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
                 while (nhd > 0) {
                     d = hd[1]
                     for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
@@ -1092,6 +1140,61 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     fi
 fi
 
+# commit_message_from <segment> — print the message argument of the git
+# commit in <segment>: the first body line for the
+# `-m "$(cat <<'EOF' ... EOF)"` idiom, else the quoted string after `-m`.
+# Anchored on the `git commit` token and then on its own `-m`, so text
+# elsewhere in the segment (an earlier quoted string, a heredoc body that
+# precedes the commit inside the same subshell) can neither supply nor
+# shadow the message (#981 root cause). Prints nothing when there is no
+# quoted `-m` argument (editor commit, -F/--file, unquoted word) — the
+# guard then validates nothing, exactly as before.
+commit_message_from() {
+    printf '%s' "$1" | awk '
+    BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    {
+        s = $0; n = length(s)
+        i = index(s, "git commit"); if (i == 0) exit
+        i += 10
+        while (i <= n) {
+            p = index(substr(s, i), "-m"); if (p == 0) exit
+            i = i + p - 1
+            prev = (i > 1) ? substr(s, i - 1, 1) : " "
+            after = substr(s, i + 2, 1)
+            if (prev ~ /[ \t]/ && (after ~ /[ \t]/ || after == dq || after == sq)) {
+                j = i + 2
+                while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
+                q = substr(s, j, 1)
+                if (q == dq && substr(s, j + 1, 6) == "$(cat ") {
+                    # heredoc idiom: skip to the introducer, then past the
+                    # delimiter word and the rest of that line
+                    h = index(substr(s, j), "<<"); if (h == 0) exit
+                    k = j + h - 1 + 2
+                    if (substr(s, k, 1) == "-") k++
+                    nl = index(substr(s, k), "\n"); if (nl == 0) exit
+                    rest = substr(s, k + nl)
+                    e = index(rest, "\n")
+                    line = (e == 0) ? rest : substr(rest, 1, e - 1)
+                    sub(/^[ \t]+/, "", line)
+                    print line; exit
+                }
+                if (q == dq || q == sq) {
+                    msg = ""; k = j + 1
+                    while (k <= n) {
+                        c = substr(s, k, 1)
+                        if (q == dq && c == "\\" && k < n) { msg = msg substr(s, k + 1, 1); k += 2; continue }
+                        if (c == q) break
+                        msg = msg c; k++
+                    }
+                    print msg; exit
+                }
+                exit
+            }
+            i += 2
+        }
+    }'
+}
+
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
@@ -1104,25 +1207,10 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     COMMIT_SEG=$(raw_commit_segment "$TOOL_INPUT")
     [[ -z "$COMMIT_SEG" ]] && COMMIT_SEG="$TOOL_INPUT"
 
-    # Extract message from -m flag
-    MSG=""
-
-    # Try heredoc format first: -m "$(cat <<'EOF' ... EOF)"
-    # This is the most common format in Claude Code git commits
-    if echo "$COMMIT_SEG" | grep -qE "<<.*EOF"; then
-        # Extract first line after heredoc marker
-        MSG=$(echo "$COMMIT_SEG" | sed -n '/<<.*EOF/,/EOF/p' | sed '1d;$d' | head -1 | sed 's/^[[:space:]]*//')
-    fi
-
-    # Try -m "message" format (double quotes)
-    if [[ -z "$MSG" ]] && echo "$COMMIT_SEG" | grep -qE '\-m\s+"'; then
-        MSG=$(echo "$COMMIT_SEG" | awk -F'"' '{print $2}')
-    fi
-
-    # Try -m 'message' format (single quotes)
-    if [[ -z "$MSG" ]] && echo "$COMMIT_SEG" | grep -qE "\-m\s+'"; then
-        MSG=$(echo "$COMMIT_SEG" | awk -F"'" '{print $2}')
-    fi
+    # Extract the message: anchored on this segment's own `git commit … -m`
+    # (#981). Handles the `-m "$(cat <<'EOF' … EOF)"` idiom (first body
+    # line) and `-m "…"` / `-m '…'`.
+    MSG=$(commit_message_from "$COMMIT_SEG")
 
     # Validate if we found a message
     if [[ -n "$MSG" ]]; then
