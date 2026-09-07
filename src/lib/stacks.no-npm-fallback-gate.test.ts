@@ -13,13 +13,15 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 
-// Extended-regex, assembled from parts: `packageManager` followed by either
-// coalescing operator (`??` or `||`) and either the literal `"npm"` / `'npm'` or
-// a `DEFAULT_PM`-style constant — every spelling of "assume npm" the original
-// one-form grep would have missed (QA on PR #1000).
+// Extended-regex, assembled from parts: `packageManager` followed by a
+// coalescing operator (`??` or `||`) OR a direct `:` assignment, and then the
+// literal `"npm"` / `'npm'` or a `DEFAULT_PM`-style constant — every
+// spelling of "assume npm" the original one-form grep would have missed (QA
+// on PR #1000). Test files are excluded from the scan: fixtures legitimately
+// declare `packageManager: "npm"` as data.
 const BANNED_PATTERN = [
   "packageManager",
-  "\\s*(\\?\\?|\\|\\|)\\s*",
+  "\\s*(\\?\\?|\\|\\||:)\\s*",
   "(\"npm\"|'npm'|DEFAULT_PM[A-Za-z_]*)",
 ].join("");
 
@@ -33,9 +35,20 @@ describe("#932: packageManager literal npm fallback gate", () => {
   it('932: no source file falls back to a literal "npm" for an undeclared packageManager', () => {
     let output = "";
     try {
-      output = execFileSync("grep", ["-rnE", BANNED_PATTERN, "src", "bin"], {
-        encoding: "utf-8",
-      });
+      output = execFileSync(
+        "grep",
+        [
+          "-rnE",
+          "--exclude=*.test.ts",
+          "--exclude-dir=__tests__",
+          BANNED_PATTERN,
+          "src",
+          "bin",
+        ],
+        {
+          encoding: "utf-8",
+        },
+      );
     } catch (err) {
       // grep exits 1 when there are no matches — that's the passing case.
       const execErr = err as { status?: number; stdout?: string };
@@ -62,11 +75,11 @@ describe("#932: packageManager literal npm fallback gate", () => {
       )?.[1];
       expect(
         template,
-        ` should have a .sequant-manifest.json template block`,
+        `${SETUP_SKILL_MIRRORS[i]} should have a .sequant-manifest.json template block`,
       ).toBeDefined();
       expect(
         template,
-        ` manifest template should write packageManager next to pmRun`,
+        `${SETUP_SKILL_MIRRORS[i]} manifest template should write packageManager next to pmRun`,
       ).toMatch(/"pmRun":[\s\S]*"packageManager":/);
     }
 
