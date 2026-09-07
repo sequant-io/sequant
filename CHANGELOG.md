@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **pnpm/yarn/bun worktrees no longer install with `npm ci`.** `sequant run`'s
+- **Fix pnpm/yarn/bun worktrees installing with `npm ci`.** `sequant run`'s
   manifest init substituted a literal `"npm"` for an undeclared
   `packageManager`, which is a valid `PM_CONFIG` key and so short-circuited
   `resolvePackageManager`'s lockfile detection before it ran. The value now
