@@ -3,7 +3,7 @@
 **Status:** complete — see [Phase 0 verdict](#phase-0-verdict).
 **Measured:** 2026-09-06 / 2026-09-07, Claude Code **2.1.263**, macOS 25.5.0.
 **Plugin under test:** `sequant` 2.13.1, path target `.` from the `#987` worktree at base `20e2a867` (v2.13.1).
-**Total spend:** **$9.69** (ceiling $25, AC-8). Ledger in [§8](#8-cost-ledger-p05--ac-8).
+**Total spend:** **$9.78** (ceiling $25, AC-8). Ledger in [§8](#8-cost-ledger-p05--ac-8).
 **Recorded runs:** the `--json` artifacts backing every row are listed in [§9](#9-recorded-artifacts).
 
 Phase 0 answers six questions (P0.1–P0.6), each with a pass and a kill condition
@@ -19,7 +19,7 @@ throwaway `evals-phase0/` (via `--eval-dir evals-phase0`), deleted before the PR
 | P0.1 Enablement | ✅ **PASS** | `CLAUDE_CODE_WALNUT_SPIRE=1` in the process env reaches case discovery; without it the command prints `` `plugin eval` is currently in early access `` and does nothing. |
 | P0.2 Target resolution + ablation | ✅ **PASS** | Path target `.` resolves to **the worktree**, not the marketplace cache (#784 answered). Both arms run; `tool_used: Skill` fires on the with arm only. |
 | P0.3 Grader vocabulary | ✅ **PASS** | Four deterministic grader types work (`regex` over `trace` / `last_message` / a file, `file_exists`, `tool_used`). A deterministic grader asserts on `SEQUANT_QA_VERDICT` marker fields. |
-| P0.4 Scaffold + hooks | ⚠️ **SPLIT — scaffold PASS, hooks KILL** | `--scaffold` stands the repo up and `/qa` reaches a verdict marker. **sequant's `pre-tool.sh` never fired.** The sandbox confines writes itself and reports success for a write that lands nowhere real. |
+| P0.4 Scaffold + hooks | ⚠️ **SPLIT — scaffold PASS, hooks KILL** | `--scaffold` stands the repo up and `/qa` reaches a verdict marker. **A sequant `PreToolUse` guard does not take effect in the sandbox**: an operation the host hook blocks unconditionally completed inside it. Whether the hook is uninstalled or merely env-starved is not separated — the consequence is identical. |
 | P0.5 Cost and wall | ✅ **PASS** | **$0.71 per case-run**, 8 m 15 s for 3 runs × 2 arms of one case. Both under the `> $2` / `> 10 min` manual-dispatch trigger — but see the scaling note. |
 | P0.6 Null-run detection | ✅ **PASS** | Do-nothing run scores **0.00** on both arms. Broken-skill canary is red. Grader set is not vacuous. |
 
@@ -144,9 +144,17 @@ weight: 1
 TODO: describe what a successful response looks like
 ```
 
-The template is therefore *not* the vocabulary — it is the default. The
-deterministic types below were each exercised and observed scoring in a real
-report; the LLM/baseline types are named by `--help`.
+The template is therefore *not* the vocabulary — it is the default.
+
+**Scope of this table — read before reusing it.** Neither source the AC names
+enumerates the accepted set. `init --bare` emits only `llm`; `--help` names only
+`llm`, `baseline`, and `tool_used`; and no machine-readable report schema is
+exposed by the CLI (`--json` emits results, not a grader schema). The table below
+is therefore **the set observed to work, not a proven-complete enumeration**:
+`regex` and `file_exists` appear in no CLI surface at all and are known solely
+because this Phase-0 case set used them and the runner scored them. Treat
+unlisted types as *unknown*, not *unsupported* — #993 should re-derive the list
+from whatever schema the CLI exposes once it leaves early access.
 
 | Grader type | Targets exercised | Deterministic? | Evidence |
 |---|---|---|---|
@@ -234,34 +242,79 @@ it substantively; from one trace:
 
 ### 4b. Hook half — KILL
 
-`hook-blocked-outside-worktree` (`type: regex`, `target: trace`,
-`pattern: 'HOOK_BLOCKED: …'`) **failed on every arm of every run** —
-*"pattern not found in trace"*. `grep -ci HOOK_BLOCKED` across all six preserved
-traces returns 0. The hook did not fire.
+**The first attempt at this question was confounded, and its replacement is
+recorded here rather than quietly corrected.** The `phase0-qa` case planted an
+instruction to `Write` one line to the absolute out-of-workspace path
+`/tmp/sequant-phase0-outside-probe.md`. In all four runs that issued it
+(traces `e-42fTS3`, `e-BOEsDS`, `e-BqUOUn`, `e-SnF3Df`) the tool result was
+`is_error: true`:
 
-What happened instead is the important part. The agent issued the Write to the
-absolute out-of-workspace path and was told it succeeded:
+> Permission to use Write has been denied because Claude Code is running in
+> don't ask mode.
+
+That is the **permission layer**, which sits upstream of hooks: the operation
+never reached a point where `pre-tool.sh` could have judged it. The absent
+`HOOK_BLOCKED` in those runs therefore proves nothing about hooks. (The host
+file's absence has the same mundane cause — the write was refused, not
+redirected.)
+
+**The probe that does answer it** removes the confound by choosing an operation
+the permission layer *grants*. `pre-tool.sh:1029` blocks **any** `Write` or
+`Edit` when `SEQUANT_WORKTREE` names a directory that does not exist —
+independent of the target path. So an ordinary in-workspace write, under a
+non-existent `SEQUANT_WORKTREE`, is granted by the sandbox and must be blocked
+by the hook:
+
+```bash
+SEQUANT_WORKTREE=/nonexistent-987-hookfire-probe \
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . \
+  --eval-dir evals-phase0 --case phase0-hookfire --runs 1 --ablation none \
+  --max-cost-usd 2 --no-publish --keep-temp \
+  --output-dir /tmp/p0-987/hookfire --json hookfire.json --allow-tools Write
+```
+
+Observed ($0.0886, 8 s, trace `e-AzRpDa`) — the write was **granted and
+succeeded**, and no hook ran:
 
 ```
-Write  file_path: /tmp/sequant-phase0-outside-probe.md
-→ "File created successfully at: /private/tmp/e-hwrDyk/home/cwd/probe.md"
+Write  file_path: /private/tmp/e-AzRpDa/home/cwd/probe.md
+→ is_error: false
+→ "File created successfully at: /private/tmp/e-AzRpDa/home/cwd/probe.md"
 ```
 
-The sandbox **silently rewrote the absolute path into its own confined
-workspace**, and `/tmp/sequant-phase0-outside-probe.md` does not exist on the host
-(`ls` → `No such file or directory`). So:
+`grep -c HOOK_BLOCKED` over that trace returns **0**, and the `hook-fired`
+grader (`regex` / `trace` / `HOOK_BLOCKED: Worktree does not exist`) scored
+`passed=false`.
 
-1. The sandbox's own confinement is real and does contain out-of-workspace writes.
-2. It preempts the hook — the guard never sees the operation, and no
-   `HOOK_BLOCKED` ever appears.
-3. The agent is told the write **succeeded**, at a path it did not request.
+**Positive control — the same input on the host, same shell, same hook:**
 
-**Consequence, and this is the operative Phase-0 restriction:** an eval can never
-demonstrate that a sequant hook guard works, and — worse — a case *designed* to
-prove a guard fires will pass its happy path for the wrong reason. **Any
-hook-dependent assertion is invalid under `plugin eval`.** #993's cases must
-grade only skill-emitted output. The hook layer keeps its own coverage
-(`__tests__/` over `pre-tool.sh`), which is where it belongs.
+```bash
+echo '{"tool_name":"Write","tool_input":{"file_path":"/tmp/hostctl-probe.md",
+  "content":"probe"},"cwd":"/tmp"}' \
+  | SEQUANT_WORKTREE=/nonexistent-987-hookfire-probe bash hooks/pre-tool.sh
+# HOOK_BLOCKED: Worktree does not exist: /nonexistent-987-hookfire-probe
+# exit 2
+```
+
+The guard is live and fires unconditionally outside the sandbox. Inside it, the
+identical operation completed.
+
+**Conclusion, stated to the limit of what was measured:** a sequant `PreToolUse`
+guard does not take effect inside the eval sandbox. This run does not separate
+the two mechanisms that would produce that — either the plugin's
+`hooks/hooks.json` `PreToolUse` entry is not installed in the sandbox, or the
+sandbox does not propagate the environment the hook reads (leaving
+`EXPECTED_WORKTREE` empty, so the guard short-circuits). Distinguishing them
+needs a hook trigger that depends on neither the environment nor a marker file,
+and every such guard in `pre-tool.sh` is `Bash`-gated — which §4c shows cannot
+run on this machine.
+
+**Both mechanisms carry the same operational consequence, which is the operative
+Phase-0 restriction:** no eval case can observe a sequant hook guard firing, so
+**no eval case may assert on hook behavior** — and a case written to prove a
+guard works will go green on its happy path while the guard is inert. #993's
+cases must grade only skill-emitted output. The hook layer keeps its own
+coverage (`__tests__/` over `pre-tool.sh`), which is where it belongs.
 
 ### 4c. `--allow-tools Bash` cannot run on this machine
 
@@ -293,8 +346,9 @@ be a Write probe.
   after 30s)"*. Harmless here — `qa` is a skill, not an MCP tool — but any future
   case that depends on sequant MCP tools will need `--mocks`.
 
-**Verdict: scaffold PASS, hooks KILL** (documented restriction: evals are
-restricted to hook-independent assertions).
+**Verdict: scaffold PASS, hooks KILL** — measured, with the uninstalled-vs-
+env-starved mechanism left open (§4b). Documented restriction: evals are
+restricted to hook-independent assertions.
 
 ---
 
@@ -418,7 +472,7 @@ no-work and an intact skill from a broken one.
 | P0.1 | Early access not obtainable → build a minimal custom harness | **No** |
 | P0.2 | Only installed plugins resolve → every eval runs last release | **No** — path target resolves the worktree |
 | P0.3 | LLM graders only → grading moves to a post-processing script | **No** — 4 deterministic types work |
-| P0.4 | Hooks bypassed silently → restrict evals to hook-independent skills | **Yes** — and the bypass is silent in the strongest sense: the write reports success |
+| P0.4 | Hooks bypassed silently → restrict evals to hook-independent skills | **Yes** — an operation the host hook blocks unconditionally (positive control, exit 2) completed inside the sandbox with no `HOOK_BLOCKED` |
 | P0.5 | > $2/case-run or > 10 min → manual-dispatch only | Not triggered per case; **triggered at suite scale** → manual-dispatch stands |
 | P0.6 | Empty run scores ≥ threshold → grader set vacuous | **No** |
 
@@ -442,8 +496,10 @@ Every command carried `--max-cost-usd`. Every command carried `--no-publish`
 | 8 | `phase0-envprobe` | $1 | $0.0000 | 3 s | no-op |
 | 9 | `phase0-qa` intact baseline (P0.6b) | $4 | $1.1492 | 100 s | score 1.000, all 6 graders green |
 | 10 | `phase0-qa` broken-skill canary (P0.6b) | $4 | $0.2079 | 70 s | score 0.667, case fails at threshold 1.0 |
+| 11 | `phase0-hookfire` (P0.4 re-probe, loop iter 1) | $2 | $0.0886 | 8 s | granted write succeeded; no `HOOK_BLOCKED` |
+| — | host positive control (`bash hooks/pre-tool.sh`) | — | $0.0000 | <1 s | `HOOK_BLOCKED`, exit 2 |
 | — | `--help`, `init --bare`, P0.1 probes | — | $0.0000 | — | free |
-| | **Total** | | **$9.69** | | **ceiling $25** |
+| | **Total** | | **$9.78** | | **ceiling $25** |
 
 Run 7 is billed but yielded no usable score: the previous session was cut off by
 the harness at its 30-minute wall ceiling mid-run, and the report records
@@ -457,7 +513,7 @@ paid for, not because it is evidence.
 `--json` reports for the runs above, preserved outside the repository at
 `/Users/tony/Projects/worktrees/.987-phase0-evidence/`
 (`null.json`, `ac2.json`, `ac4.json`, `hook.json`, `hook2.json`, `ac5.json`,
-`ac6intact.json`, `ac6intact-interrupted.json`, `ac6broken.json`, plus each run's `output-dir`). Traces from the
+`ac6intact.json`, `ac6intact-interrupted.json`, `ac6broken.json`, `hookfire.json`, plus each run's `output-dir`). Traces from the
 preserved runs are under `/private/tmp/e-*/out/trace.jsonl` (`--keep-temp`).
 
 Nothing under `evals/` was created, and `evals-phase0/` was deleted before the PR
@@ -477,9 +533,11 @@ minutes. None of the six kill conditions closes the door.
 
 **The three constraints are not optional:**
 
-1. **No hook-dependent assertions.** `pre-tool.sh` does not fire in the sandbox,
-   and the sandbox's own confinement reports a redirected write as a *success*.
-   A case written to prove a guard fires will go green for the wrong reason (§4b).
+1. **No hook-dependent assertions.** A sequant `PreToolUse` guard does not take
+   effect in the sandbox: an in-workspace write that the host hook blocks
+   unconditionally (positive control — `HOOK_BLOCKED`, exit 2) was granted and
+   completed inside it, with `HOOK_BLOCKED` absent from the trace. A case written
+   to prove a guard fires will go green while the guard is inert (§4b).
 2. **Grade only skill-emitted surfaces.** `SEQUANT_QA_VERDICT` is
    orchestrator-only. A grader on a prompt-dictated marker grades the prompt (§3a).
 3. **Manual-dispatch CI only, `--max-cost-usd 10`, `--no-publish`, narrow
