@@ -11,6 +11,7 @@ import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  driverResolvesSkills,
   resolveRequiredSkills,
   runSkillsPreflight,
 } from "./skills-preflight.js";
@@ -455,6 +456,32 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(reason).not.toContain("git worktree remove");
     expect(reason).not.toMatch(/re-run with --force/);
   });
+  it("933: a multi-issue abort removes every worktree this run created and names them all", async () => {
+    installSkillUntracked("spec");
+    installSkillUntracked("exec");
+    installSkillUntracked("qa");
+    const result = await RunOrchestrator.run(
+      initRun({ phases: "spec,exec,qa", noLog: true }),
+      ["933", "934"],
+    );
+    expect(result.exitCode).toBe(1);
+    expect(spies933.runIssue).not.toHaveBeenCalled();
+    for (const n of ["933", "934"]) {
+      expect(existsSync(join(base, `wt-${n}`)), `wt-${n}`).toBe(false);
+    }
+    const registered = execSync("git worktree list --porcelain", {
+      cwd: worktreeFixture.repo,
+      encoding: "utf-8",
+    });
+    expect(registered).not.toContain(join(base, "wt-933"));
+    expect(registered).not.toContain(join(base, "wt-934"));
+    // Every result carries the abort reason; the failing cwd is named first
+    // and the other created worktree is listed as removed too.
+    const reason = result.results[0]?.abortReason ?? "";
+    expect(reason).toContain("was removed");
+    expect(reason).toContain("Also removed (created for this run):");
+    expect(reason).toContain(join(base, "wt-934"));
+  });
   it("933 AC-3: --dry-run makes zero pre-flight calls", async () => {
     // No skills anywhere — if the pre-flight ran at all it would fail.
     const result = await RunOrchestrator.run(
@@ -477,5 +504,15 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(spies933.preflightCwds).toHaveLength(0);
     expect(spies933.runIssue).toHaveBeenCalledWith(933);
     expect(result.exitCode).toBe(0);
+  });
+});
+
+describe("driverResolvesSkills (#933 fallback)", () => {
+  it("is false for aider, true for claude-code, and fails safe (true) for a driver the registry does not know", () => {
+    expect(driverResolvesSkills("aider", undefined)).toBe(false);
+    expect(driverResolvesSkills("claude-code", undefined)).toBe(true);
+    expect(driverResolvesSkills(undefined, undefined)).toBe(true);
+    // Unknown driver: getDriver throws; the guard must run rather than skip.
+    expect(driverResolvesSkills("no-such-driver", undefined)).toBe(true);
   });
 });

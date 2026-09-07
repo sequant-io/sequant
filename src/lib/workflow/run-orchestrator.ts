@@ -1202,12 +1202,30 @@ export class RunOrchestrator {
             const worktreeState = removedWorktrees.includes(cwd)
               ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
               : unremovedWorktrees.includes(cwd)
-                ? `The worktree created for this run could not be removed (git worktree remove --force failed): remove it (\`git worktree remove --force ${cwd}\`) before re-running.`
+                ? `The worktree created for this run could not be removed (git worktree remove --force failed): remove it by hand (\`git worktree remove --force ${cwd}\`, then \`git worktree prune\`) before re-running.`
                 : `The pre-existing worktree was kept: remove it first (\`git worktree remove ${cwd}\`) so the re-run provisions it from the new commit.`;
+            // A multi-issue run provisions several worktrees; say what happened
+            // to the ones that are not the failing cwd too.
+            const others = [...worktreeMap.values()]
+              .map((w) => w.path)
+              .filter((p) => p !== cwd);
+            const otherRemoved = others.filter((p) =>
+              removedWorktrees.includes(p),
+            );
+            const otherKept = others.filter(
+              (p) => !removedWorktrees.includes(p),
+            );
+            const othersNote =
+              (otherRemoved.length > 0
+                ? ` Also removed (created for this run): ${otherRemoved.join(", ")}.`
+                : "") +
+              (otherKept.length > 0
+                ? ` Left in place: ${otherKept.join(", ")}.`
+                : "");
             worktreeRemedy =
               `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
               `commit .claude/skills (worktrees only materialize tracked files), ` +
-              `then re-run. ${worktreeState}`;
+              `then re-run. ${worktreeState}${othersNote}`;
           }
           bracketedConsoleLog(
             phasePauseHandle,
