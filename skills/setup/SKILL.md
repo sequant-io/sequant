@@ -205,17 +205,22 @@ Use the Write tool to create `.sequant/settings.json` with the above content.
 
 ```bash
 # Detect package manager
+PM="npm"
 PM_RUN="npm run"
 if [ -f "pnpm-lock.yaml" ]; then
+  PM="pnpm"
   PM_RUN="pnpm run"
   echo "✅ Detected package manager: pnpm"
 elif [ -f "yarn.lock" ]; then
+  PM="yarn"
   PM_RUN="yarn"
   echo "✅ Detected package manager: yarn"
 elif [ -f "bun.lockb" ]; then
+  PM="bun"
   PM_RUN="bun run"
   echo "✅ Detected package manager: bun"
 elif [ -f "package-lock.json" ]; then
+  PM="npm"
   PM_RUN="npm run"
   echo "✅ Detected package manager: npm"
 else
@@ -308,6 +313,7 @@ Use the Write tool to create `.sequant-manifest.json`:
   "installedVia": "plugin",
   "stack": "<detected stack>",
   "pmRun": "<detected PM_RUN>",
+  "packageManager": "<detected PM>",
   "createdAt": "<ISO-8601 timestamp>"
 }
 ```
