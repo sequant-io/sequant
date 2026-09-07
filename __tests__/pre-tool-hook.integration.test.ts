@@ -837,6 +837,115 @@ describe.each(HOOK_COPIES)(
   },
 );
 
+// === Issue #981: commit-message extraction scoped to its own segment ===
+//
+// The extractor used to scan the WHOLE command instead of the matched
+// `git commit` segment, so an earlier quoted string (Finding paragraph 1) or
+// an unrelated later heredoc (Finding paragraph 2) was mistaken for the
+// commit message, blocking a perfectly valid conventional commit. Each case
+// stages a real change first so the no-changes guard (which runs before the
+// commit-format check) never masks the assertion under test.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh commit-message extraction scoped to its own segment (#981) [%s]",
+  (_label, hookPath) => {
+    function makeStagedRepo(prefix: string): string {
+      const repo = mkdtempSync(join(tmpdir(), prefix));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
+      writeFileSync(join(repo, "f.txt"), "hello\n");
+      spawnSync("git", ["add", "f.txt"], { cwd: repo });
+      return repo;
+    }
+
+    it("981 AC-1: an earlier quoted string does not hijack a valid conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac1-");
+      try {
+        // Verbatim shape from Finding paragraph 1: an earlier double-quoted
+        // span, then a valid conventional `git commit -m`.
+        const cmd =
+          'diff /dev/null /dev/null; echo "mirrors byte-identical"; git add -A && git commit -m "fix(#943): cite only real enforcers"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-2: an unrelated later heredoc does not hijack a valid conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac2-");
+      try {
+        // Verbatim shape from Finding paragraph 2: a valid conventional
+        // commit followed by `&&` and an unrelated heredoc-bearing command.
+        const cmd = [
+          `git add -A && git commit -m "test(#975): pin metrics call-site wiring" && python3 - <<'PYEOF'`,
+          `p = "src/lib/workflow/run-orchestrator.ts"`,
+          `PYEOF`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-3: a genuinely non-conventional message in a compound command is still blocked with the real message", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac3-");
+      try {
+        const cmd = 'git add -A && git commit -m "updated stuff"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: Commit must follow conventional commits format/,
+        );
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-4: the heredoc commit-message idiom still allows a conventional first line", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac4-ok-");
+      try {
+        const cmd = [
+          `git commit -m "$(cat <<'EOF'`,
+          `fix: conventional first line`,
+          `non-conventional trailing stuff`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-4: the heredoc commit-message idiom still blocks a non-conventional first line", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac4-bad-");
+      try {
+        const cmd = [
+          `git commit -m "$(cat <<'EOF'`,
+          `updated stuff`,
+          `more detail`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
 // === Log sink (#763 AC-5c) ===
 // Every test above forces CLAUDE_PLUGIN_DATA, so the *fallback* branch — the
 // one real npm/CI users hit — went entirely unexercised. That blind spot is

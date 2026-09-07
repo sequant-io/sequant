@@ -306,6 +306,138 @@ seg_match() {
     [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
 }
 
+# raw_commit_segment <command> — print the raw (unsanitized) text of the
+# first top-level segment of <command> that contains the literal substring
+# "git commit", or nothing if none is found.
+#
+# Unlike emit_segments/$SEGMENTS above — which intentionally blank quoted and
+# heredoc content so guards match only code, never data (#763) — this keeps
+# quotes and heredoc bodies verbatim, because the commit-message validator
+# needs the LITERAL message text, not a sanitized stand-in. It still respects
+# the same top-level boundaries (; && || | and newline, outside quotes and
+# subshells) so an earlier quoted string or a later unrelated heredoc can
+# never be mistaken for this segment's own text — that was #981: the old
+# extraction scanned the whole command, so `echo "decoy"; git commit -m
+# "fix: y"` picked up "decoy", and a heredoc anywhere (even in a later,
+# unrelated command) short-circuited extraction before the real -m arg was
+# ever read.
+#
+# A heredoc that IS part of this segment (the standard
+# `-m "$(cat <<'EOF' ... EOF)"` idiom) stays inside it: `$( ... )` content is
+# tracked as nested depth, not split on, so its body — including embedded
+# newlines — is carried through untouched for the caller's own heredoc
+# parsing.
+#
+# Deliberately not a full shell parser (see emit_segments' header for the
+# same caveat) and deliberately returns only the FIRST matching segment: a
+# compound command with two `git commit` invocations validates only the
+# first one found. That's an accepted limitation (issue #981 Open Question
+# 2), not a gap any AC requires closing.
+raw_commit_segment() {
+    printf '%s' "$1" | awk '
+    function emit(s,   t) {
+        if (found) return
+        t = s
+        sub(/^[ \t\n]+/, "", t); sub(/[ \t\n]+$/, "", t)
+        if (length(t) > 0 && index(t, "git commit") > 0) {
+            printf "%s", t
+            found = 1
+        }
+    }
+    BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34); found = 0 }
+    { full = (NR == 1) ? $0 : full "\n" $0 }
+    END {
+        n = length(full); seg = ""; cur = ""; depth = 0; nhd = 0
+        for (i = 1; i <= n && !found; i++) {
+            c = substr(full, i, 1)
+            nc = (i < n) ? substr(full, i + 1, 1) : ""
+
+            if (cur == sq) { seg = seg c; if (c == sq) cur = ""; continue }
+
+            if (cur == dq) {
+                if (c == "$" && nc == "(") {
+                    seg = seg "$("
+                    stack[++depth] = dq; cur = ""; i++
+                    continue
+                }
+                seg = seg c
+                if (c == dq) cur = ""
+                continue
+            }
+
+            # --- live (unquoted) ---
+            if (c == sq) { cur = sq; seg = seg c; continue }
+            if (c == dq) { cur = dq; seg = seg c; continue }
+
+            if (c == "$" && nc == "(") {
+                seg = seg "$("
+                stack[++depth] = cur; i++
+                continue
+            }
+            if (c == "(") { seg = seg c; stack[++depth] = cur; continue }
+            if (c == ")") {
+                seg = seg c
+                if (depth > 0) { cur = stack[depth]; depth-- }
+                continue
+            }
+
+            # Inside a subshell/command-substitution: keep everything raw,
+            # including embedded newlines (a heredoc body that belongs to
+            # THIS segment) — do not split on operators or heredocs in here.
+            if (depth > 0) { seg = seg c; continue }
+
+            # depth == 0, unquoted: a heredoc introducer here belongs to a
+            # separate, later command — its body is data, not this segments
+            # text, so skip it entirely (#981 Finding paragraph 2).
+            if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                j = i + 2
+                if (substr(full, j, 1) == "-") j++
+                while (j <= n && substr(full, j, 1) ~ /[ \t]/) j++
+                q = substr(full, j, 1); delim = ""
+                if (q == sq || q == dq) {
+                    j++
+                    while (j <= n && substr(full, j, 1) != q) { delim = delim substr(full, j, 1); j++ }
+                    j++
+                } else {
+                    while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
+                }
+                seg = seg substr(full, i, j - i)
+                if (length(delim) > 0) hd[++nhd] = delim
+                i = j - 1
+                continue
+            }
+
+            if (c == ";" || c == "&" || c == "|") {
+                emit(seg); seg = ""
+                if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
+                continue
+            }
+
+            if (c == "\n") {
+                emit(seg); seg = ""
+                while (nhd > 0) {
+                    d = hd[1]
+                    for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
+                    nhd--
+                    while (i < n) {
+                        ls = i + 1
+                        le = index(substr(full, ls), "\n")
+                        if (le == 0) { line = substr(full, ls); i = n }
+                        else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                        t = line
+                        sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                        if (t == d) break
+                    }
+                }
+                continue
+            }
+            seg = seg c
+        }
+        if (!found) emit(seg)
+    }
+    '
+}
+
 # resolve_cd_target <tool_input> — print the target directory of the LAST
 # `cd <path>` line in a (possibly multi-line) Bash command, if and only if
 # the path is a static literal (quoted or unquoted) that resolves to an
@@ -911,24 +1043,32 @@ fi
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
 if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
+    # Scope extraction to the git-commit segment itself (#981) — falls back
+    # to the whole command only if the raw scan somehow finds no segment
+    # that seg_match's own (sanitized) scan already said contains one; that
+    # keeps this guard fail-safe (still validates something) rather than
+    # fail-open (skip validation) on a mismatch between the two scanners.
+    COMMIT_SEG=$(raw_commit_segment "$TOOL_INPUT")
+    [[ -z "$COMMIT_SEG" ]] && COMMIT_SEG="$TOOL_INPUT"
+
     # Extract message from -m flag
     MSG=""
 
     # Try heredoc format first: -m "$(cat <<'EOF' ... EOF)"
     # This is the most common format in Claude Code git commits
-    if echo "$TOOL_INPUT" | grep -qE "<<.*EOF"; then
+    if echo "$COMMIT_SEG" | grep -qE "<<.*EOF"; then
         # Extract first line after heredoc marker
-        MSG=$(echo "$TOOL_INPUT" | sed -n '/<<.*EOF/,/EOF/p' | sed '1d;$d' | head -1 | sed 's/^[[:space:]]*//')
+        MSG=$(echo "$COMMIT_SEG" | sed -n '/<<.*EOF/,/EOF/p' | sed '1d;$d' | head -1 | sed 's/^[[:space:]]*//')
     fi
 
     # Try -m "message" format (double quotes)
-    if [[ -z "$MSG" ]] && echo "$TOOL_INPUT" | grep -qE '\-m\s+"'; then
-        MSG=$(echo "$TOOL_INPUT" | awk -F'"' '{print $2}')
+    if [[ -z "$MSG" ]] && echo "$COMMIT_SEG" | grep -qE '\-m\s+"'; then
+        MSG=$(echo "$COMMIT_SEG" | awk -F'"' '{print $2}')
     fi
 
     # Try -m 'message' format (single quotes)
-    if [[ -z "$MSG" ]] && echo "$TOOL_INPUT" | grep -qE "\-m\s+'"; then
-        MSG=$(echo "$TOOL_INPUT" | awk -F"'" '{print $2}')
+    if [[ -z "$MSG" ]] && echo "$COMMIT_SEG" | grep -qE "\-m\s+'"; then
+        MSG=$(echo "$COMMIT_SEG" | awk -F"'" '{print $2}')
     fi
 
     # Validate if we found a message
