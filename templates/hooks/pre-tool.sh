@@ -1275,16 +1275,17 @@ commit_message_from() {
 # literal_assignment_value <name> <command> [<limit>] — print the value of
 # the LAST `<name>=` assignment (`"…"`, `'…'`, or a bare word; first line of
 # the value) that appears in CODE context in the first <limit> characters of
-# <command> (whole command when <limit> is 0 or absent). Quoted strings, `#`
+# <command> (whole command when <limit> is -1 or absent; a limit of 0 is a
+# zero-width window — a commit that is the FIRST segment has nothing before it). Quoted strings, `#`
 # comments and heredoc bodies are skipped as data, so `echo 'usage:
 # MSG=updated ./s.sh'` or `# set MSG=updated` cannot supply a value — the
 # same segment-scoping discipline the extractor itself follows (#981).
 # Prints nothing when the command never assigns the name in code context.
 literal_assignment_value() {
-    printf '%s' "$2" | awk -v name="$1" -v limit="${3:-0}" '
+    printf '%s' "$2" | awk -v name="$1" -v limit="${3:--1}" '
     BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
     {
-        s = $0; n = length(s); if (limit > 0 && limit < n) n = limit
+        s = $0; n = length(s); if (limit >= 0 && limit < n) n = limit
         i = 1; found = ""; have = 0; L = length(name)
         while (i <= n) {
             c = substr(s, i, 1)
@@ -1336,7 +1337,7 @@ literal_assignment_value() {
 # assignment before the commit is the one it carries); anything else passes
 # through unchanged.
 resolve_message_ref() {
-    local subject="$1" input="$2" limit="${3:-0}"
+    local subject="$1" input="$2" limit="${3:--1}"
     if [[ "$subject" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
         literal_assignment_value "${BASH_REMATCH[1]}" "$input" "$limit"
     else
@@ -1394,7 +1395,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
         validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$TOOL_INPUT" "${#_before}")"
     done < <(raw_commit_segment "$TOOL_INPUT")
     if [[ "$_validated" -eq 0 ]]; then
-        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT")"
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT" -1)"
     fi
 fi
 

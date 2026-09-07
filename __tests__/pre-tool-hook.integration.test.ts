@@ -1483,6 +1483,23 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: a commit that is the first segment sees no earlier assignment (zero-width window, not the whole command)", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-first-seg-");
+      try {
+        // QA round 14: `0` doubled as the "whole command" sentinel, so a
+        // leading commit segment resolved `$MSG` against an assignment AFTER
+        // it and blocked a valid commit. Unlimited is -1 now; 0 is a real
+        // zero-width window.
+        for (const cmd of [
+          'git commit -m "$MSG" && MSG="wip notes for later"',
+          'true && git commit -m "$MSG" && MSG="wip notes for later"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
