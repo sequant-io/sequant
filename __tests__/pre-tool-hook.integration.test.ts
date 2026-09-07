@@ -1219,6 +1219,48 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: a -m-less segment that mentions git commit cannot shadow the real commit (fail-open)", () => {
+      const repo = makeStagedRepo("pre-tool-981-shadow-");
+      try {
+        // A comment line, `git commit-tree`, `--amend --no-edit`, or an
+        // unquoted echo all contain "git commit" in code form but carry no
+        // -m. Selecting only the first such segment left MSG empty and skipped
+        // validation entirely; the guard now walks every qualifying segment
+        // and validates the first that yields a message.
+        const shapes = [
+          [
+            "# stage and git commit the fix",
+            "git add -A",
+            'git commit -m "updated stuff"',
+          ].join("\n"),
+          'git commit --amend --no-edit && git commit -m "updated stuff"',
+          'git commit-tree -h; git commit -m "updated stuff"',
+          'echo about to git commit now; git commit -m "updated stuff"',
+        ];
+        for (const cmd of shapes) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        const ok = runHook(
+          hookPath,
+          [
+            "# stage and git commit the fix",
+            "git add -A",
+            'git commit -m "fix: ok"',
+          ].join("\n"),
+          repo,
+        );
+        expect(ok.code).toBe(0);
+        // A -m-less commit on its own still validates nothing (editor / amend).
+        expect(
+          runHook(hookPath, "git commit --amend --no-edit", repo).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

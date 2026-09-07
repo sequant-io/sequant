@@ -306,9 +306,9 @@ seg_match() {
     [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
 }
 
-# raw_commit_segment <command> — print the raw (unsanitized) text of the
-# first top-level segment of <command> that contains the literal substring
-# "git commit", or nothing if none is found.
+# raw_commit_segment <command> — print the raw (unsanitized) text of every
+# top-level segment of <command> whose code form contains the literal
+# substring "git commit", in order, \001-separated; nothing if none is found.
 #
 # Unlike emit_segments/$SEGMENTS above — which intentionally blank quoted and
 # heredoc content so guards match only code, never data (#763) — this keeps
@@ -329,10 +329,13 @@ seg_match() {
 # parsing.
 #
 # Deliberately not a full shell parser (see emit_segments' header for the
-# same caveat) and deliberately returns only the FIRST matching segment: a
-# compound command with two `git commit` invocations validates only the
-# first one found. That's an accepted limitation (issue #981 Open Question
-# 2), not a gap any AC requires closing.
+# same caveat). Prints EVERY qualifying segment, in order, separated by \001
+# (segments carry embedded newlines, so a newline cannot be the delimiter):
+# the caller takes the first one that yields a message, so a `-m`-less shadow
+# segment that merely mentions `git commit` (a comment line, `git commit-tree`,
+# `git commit --amend --no-edit`, an unquoted echo) can no longer hide the real
+# commit behind it and skip validation (#981 Open Question 2 — a fail-open
+# `main` did not have, so it is closed rather than accepted).
 raw_commit_segment() {
     printf '%s' "$1" | awk '
     # emit(raw, code) — accept the segment only when its CODE form (quoted and
@@ -343,19 +346,17 @@ raw_commit_segment() {
     # skips validation entirely. Blanking mirrors what emit_segments/seg_match
     # already do, so this scan agrees with the guard that invoked it.
     function emit(s, sc,   t, tc) {
-        if (found) return
         t = s; tc = sc
         sub(/^[ \t\n]+/, "", t); sub(/[ \t\n]+$/, "", t)
         if (length(t) > 0 && index(tc, "git commit") > 0) {
-            printf "%s", t
-            found = 1
+            printf "%s%c", t, 1
         }
     }
-    BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34); found = 0 }
+    BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
     { full = (NR == 1) ? $0 : full "\n" $0 }
     END {
         n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0; hdseen = 0; nshd = 0
-        for (i = 1; i <= n && !found; i++) {
+        for (i = 1; i <= n; i++) {
             c = substr(full, i, 1)
             nc = (i < n) ? substr(full, i + 1, 1) : ""
 
@@ -539,7 +540,7 @@ raw_commit_segment() {
             }
             seg = seg c; code = code c
         }
-        if (!found) emit(seg, code)
+        emit(seg, code)
     }
     '
 }
@@ -1230,13 +1231,24 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     # that seg_match's own (sanitized) scan already said contains one; that
     # keeps this guard fail-safe (still validates something) rather than
     # fail-open (skip validation) on a mismatch between the two scanners.
-    COMMIT_SEG=$(raw_commit_segment "$TOOL_INPUT")
-    [[ -z "$COMMIT_SEG" ]] && COMMIT_SEG="$TOOL_INPUT"
-
-    # Extract the message: anchored on this segment's own `git commit … -m`
-    # (#981). Handles the `-m "$(cat <<'EOF' … EOF)"` idiom (first body
-    # line) and `-m "…"` / `-m '…'`.
-    MSG=$(commit_message_from "$COMMIT_SEG" | head -n 1)
+    # Walk every qualifying segment in order and validate the first one that
+    # yields a message (#981): a -m-less segment that merely mentions
+    # "git commit" must not shadow the real commit behind it. Extraction is
+    # anchored on the segment's own "git commit ... -m" (the
+    # -m "$(cat <<'EOF' ... EOF)" idiom's first body line, -m "..." / -m '...',
+    # or a heredoc feeding -F-), and only the subject line is validated.
+    COMMIT_SEG=""
+    MSG=""
+    while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
+        [[ -z "$_seg" ]] && continue
+        COMMIT_SEG="$_seg"
+        MSG=$(commit_message_from "$_seg" | head -n 1)
+        [[ -n "$MSG" ]] && break
+    done < <(raw_commit_segment "$TOOL_INPUT")
+    if [[ -z "$COMMIT_SEG" ]]; then
+        COMMIT_SEG="$TOOL_INPUT"
+        MSG=$(commit_message_from "$COMMIT_SEG" | head -n 1)
+    fi
 
     # Validate if we found a message
     if [[ -n "$MSG" ]]; then
