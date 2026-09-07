@@ -1202,7 +1202,7 @@ export class RunOrchestrator {
             const worktreeState = removedWorktrees.includes(cwd)
               ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
               : unremovedWorktrees.includes(cwd)
-                ? `The worktree created for this run could not be removed (git worktree remove failed): remove it (\`git worktree remove ${cwd}\`) before re-running.`
+                ? `The worktree created for this run could not be removed (git worktree remove --force failed): remove it (\`git worktree remove --force ${cwd}\`) before re-running.`
                 : `The pre-existing worktree was kept: remove it first (\`git worktree remove ${cwd}\`) so the re-run provisions it from the new commit.`;
             worktreeRemedy =
               `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +

@@ -104,7 +104,9 @@ vi.mock("./skills-preflight.js", async (importOriginal) => {
     runSkillsPreflight: async (
       input: Parameters<typeof actual.runSkillsPreflight>[0],
     ) => {
-      if (input.cwd) spies933.preflightCwds.push(input.cwd);
+      // Record EVERY invocation (a cwd-less call is the pre-provisioning
+      // shape #933 removed), so a zero-length assertion means zero calls.
+      spies933.preflightCwds.push(input.cwd ?? "<no-cwd>");
       return actual.runSkillsPreflight(input);
     },
   };
@@ -396,7 +398,9 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(spies933.runIssue).toHaveBeenCalledWith(933);
     const worktreePath = join(base, "wt-933");
     expect(spies933.preflightCwds).toContain(worktreePath);
-    expect(spies933.preflightCwds).not.toContain(worktreeFixture.repo);
+    expect(spies933.preflightCwds).not.toContain(
+      realpathSync(worktreeFixture.repo),
+    );
   });
 
   it("933: a pre-existing (reused) worktree is kept on pre-flight failure and the remedy names git worktree remove, never --force", async () => {
@@ -421,7 +425,10 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
       result.results.find((r) => r.issueNumber === 933)?.abortReason ?? "";
     expect(reason).toContain("pre-existing worktree was kept");
     expect(reason).toContain(`git worktree remove ${worktreePath}`);
-    expect(reason).not.toContain("--force");
+    // `sequant run --force` bypasses the state guard; it never re-provisions,
+    // so it must not be offered. (`git worktree remove --force` is a
+    // different thing and is fine on the failed-removal branch.)
+    expect(reason).not.toMatch(/re-run with --force/);
   });
 
   it("933: with worktree isolation disabled the remedy talks about the checkout, not a worktree", async () => {
@@ -446,7 +453,7 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
       `the checkout at ${realpathSync(worktreeFixture.repo)}`,
     );
     expect(reason).not.toContain("git worktree remove");
-    expect(reason).not.toContain("--force");
+    expect(reason).not.toMatch(/re-run with --force/);
   });
   it("933 AC-3: --dry-run makes zero pre-flight calls", async () => {
     // No skills anywhere — if the pre-flight ran at all it would fail.
