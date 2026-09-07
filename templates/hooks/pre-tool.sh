@@ -354,7 +354,7 @@ raw_commit_segment() {
     BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34); found = 0 }
     { full = (NR == 1) ? $0 : full "\n" $0 }
     END {
-        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0
+        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0; hdseen = 0
         for (i = 1; i <= n && !found; i++) {
             c = substr(full, i, 1)
             nc = (i < n) ? substr(full, i + 1, 1) : ""
@@ -415,9 +415,29 @@ raw_commit_segment() {
 
             # Inside a subshell/command-substitution: keep everything raw in
             # the segment text (a heredoc body that belongs to THIS segment
-            # must survive verbatim for the caller to parse), but treat it as
-            # data in the code form — do not split on operators or heredocs.
-            if (depth > 0) { seg = seg c; code = code " "; continue }
+            # must survive verbatim for the caller to parse), and never split
+            # on operators or heredocs in here.
+            #
+            # For the CODE form, subshell code COUNTS: `( git commit -m "x" )`
+            # and `(cd sub && git commit -m "x")` really do run git commit, so
+            # blanking the whole subshell left no segment qualifying, emit()
+            # returned nothing, and the caller fell back to the whole command
+            # — which is exactly the #981 false positive this function exists
+            # to remove.
+            #
+            # A heredoc BODY inside the subshell is data, not code, so once an
+            # introducer is seen the rest of the subshell is blanked. Without
+            # that guard a body line like `fix: this is heredoc data` wins
+            # segment selection, gets validated as if it were the message, and
+            # the real `git commit -m "updated stuff"` two segments later is
+            # never examined — a fail-open, verified before this guard was
+            # added.
+            if (depth > 0) {
+                if (c == "<" && nc == "<") hdseen = 1
+                seg = seg c
+                code = code (hdseen ? " " : c)
+                continue
+            }
 
             # depth == 0, unquoted: a heredoc introducer here belongs to a
             # separate, later command — its body is data, not this segments
@@ -441,13 +461,13 @@ raw_commit_segment() {
             }
 
             if (c == ";" || c == "&" || c == "|") {
-                emit(seg, code); seg = ""; code = ""
+                emit(seg, code); seg = ""; code = ""; hdseen = 0
                 if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
                 continue
             }
 
             if (c == "\n") {
-                emit(seg, code); seg = ""; code = ""
+                emit(seg, code); seg = ""; code = ""; hdseen = 0
                 while (nhd > 0) {
                     d = hd[1]
                     for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]

@@ -984,6 +984,75 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    // A `git commit` inside `( ... )` or `$( ... )` is still a real
+    // invocation, so segment selection has to see it. Blanking all subshell
+    // content made it invisible, no segment qualified, and extraction fell
+    // back to the whole command — reinstating the original #981 false
+    // positive. Wrapping a commit in a subshell to scope a `cd` is a common
+    // idiom, and the issue's own repro opens with a `cd`.
+
+    it("981: a subshell-wrapped commit is not blocked by an earlier quoted string", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-ok-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; (cd . && git commit -m "fix(#943): cite only real enforcers")';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a command-substitution-wrapped commit is not blocked by an earlier quoted string", () => {
+      const repo = makeStagedRepo("pre-tool-981-cmdsubst-ok-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; $( git commit -m "fix: real message" )';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a subshell-wrapped non-conventional commit is still blocked", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-bad-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; ( git commit -m "updated stuff" )';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc body inside $( ) does not mask the real non-conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-hdmask-");
+      try {
+        // Counterpart to the subshell fix: subshell CODE counts for segment
+        // selection, but a heredoc BODY inside the subshell is data. Its
+        // first line looks conventional here, so if the body were allowed to
+        // win selection the guard would validate it instead of the real
+        // `-m "updated stuff"` two segments later and let the commit through.
+        const cmd = [
+          `python3 -c "$(cat <<'EOF'`,
+          `fix: this is heredoc data not a commit`,
+          `run git commit now`,
+          `EOF`,
+          `)"; git commit -m "updated stuff"`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
