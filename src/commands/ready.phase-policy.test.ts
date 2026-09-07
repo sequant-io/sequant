@@ -1,6 +1,6 @@
 /**
  * Test for #914 AC-5 — `sequant ready --models`/`--efforts` resolve into
- * `RunReadyGateOptions.phasePolicies` via the shared `resolvePhasePolicies`
+ * `RunReadyGateOptions.config.phasePolicies` via the shared resolver
  * (the same resolver `buildExecutionConfig` calls for the `run` path).
  *
  * Mirrors the mocking harness already used in `ready.test.ts` (mock
@@ -96,8 +96,12 @@ describe("#914 AC-5: readyCommand --models/--efforts wiring", () => {
       json: true,
     });
 
+    // #863: `ready` now hands the gate one resolved ExecutionConfig, so the
+    // resolved policies arrive on `opts.config` rather than as a top-level
+    // option. Intent is unchanged — `ready` still resolves via the shared
+    // resolver and still hands the result to the gate.
     const opts: RunReadyGateOptions = vi.mocked(runReadyGate).mock.calls[0][0];
-    expect(opts.phasePolicies?.qa).toEqual({
+    expect(opts.config.phasePolicies?.qa).toEqual({
       model: "sonnet",
       effort: "medium",
     });
@@ -108,8 +112,8 @@ describe("#914 AC-5: readyCommand --models/--efforts wiring", () => {
 
     const opts: RunReadyGateOptions = vi.mocked(runReadyGate).mock.calls[0][0];
     expect(
-      opts.phasePolicies == null ||
-        Object.keys(opts.phasePolicies).length === 0,
+      opts.config.phasePolicies == null ||
+        Object.keys(opts.config.phasePolicies).length === 0,
     ).toBe(true);
   });
 });

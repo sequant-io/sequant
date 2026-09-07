@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The ready gate now runs on the configured agent driver.** With
+  `run.agent: "aider"` set, `sequant ready` and `sequant run --ready-gate` ran
+  their main phases on aider but silently ran the gate's QA pass on
+  claude-code — a mid-run backend switch with different cost, auth, and
+  behaviour that the user never asked for (#863). `ready-gate.ts` built each
+  gate phase's `ExecutionConfig` from its own literal, so `agent` and
+  `aiderSettings` never reached driver selection.
+
+### Changed
+
+- **`ExecutionConfig` has a single producer again.** The ready gate now
+  inherits the caller's fully-resolved config and overrides only six
+  gate-semantic keys (`phases`, `qualityLoop`, `sequential`, `concurrency`,
+  `parallel`, `dryRun`); a new `execution-config-parity.test.ts` fails if the
+  two ever drift apart. Fields the gate previously hardcoded now inherit, so
+  gate phases honour the settings the rest of the run already did (#863):
+  `--no-retry` is respected; a rate-limited gate phase can auto-wait (#804)
+  instead of failing; `relayEnabled`, `skipVerification`, `noSmartTests`,
+  `isolateParallel` and `issueType` all reach the gate. Under
+  `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
+  the same `issueType` its earlier phases had.
+
 ## [2.13.1] - 2026-09-06
 
 ### Changed

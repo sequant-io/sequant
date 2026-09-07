@@ -55,7 +55,8 @@ import { getStateManager } from "../lib/workflow/state-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
+import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
+import { buildExecutionConfig } from "../lib/workflow/config-resolver.js";
 
 function result(overrides: Partial<ReadyResult>): ReadyResult {
   return {
@@ -309,8 +310,53 @@ describe("readyCommand — #697 renderer wiring", () => {
 
     await readyCommand(String(ISSUE), {});
 
+    // #863: re-anchored — mcpAllowlist now reaches the gate inside the single
+    // resolved `config`, not as a top-level option. Intent unchanged.
     const opts = vi.mocked(runReadyGate).mock.calls[0][0];
-    expect(opts.mcpAllowlist).toEqual(["stripe", "notion"]);
+    expect(opts.config.mcpAllowlist).toEqual(["stripe", "notion"]);
+  });
+
+  it("#863: hands the gate one config produced by buildExecutionConfig (not a hand-rolled subset)", async () => {
+    // The AC-2 assertion. `ready` used to resolve `phasePolicies` and
+    // `effortEscalation` inline and hand the gate a flat bag of primitives,
+    // which is why `agent`/`aiderSettings` never arrived. Recomputing the
+    // expected config from the resolver here — rather than snapshotting a
+    // literal — is what makes this test fail if the command ever forks its own
+    // resolution again.
+    const settings = {
+      ready: { policy: "ac" },
+      run: {
+        maxIterations: 3,
+        timeout: 1800,
+        agent: "aider",
+        aider: { model: "gpt-4o" },
+        mcpAllowlist: ["stripe"],
+      },
+    } as Awaited<ReturnType<typeof getSettings>>;
+    vi.mocked(getSettings).mockResolvedValue(settings);
+
+    await readyCommand(String(ISSUE), { verbose: true });
+
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    const expected = buildExecutionConfig(
+      {
+        maxIterations: 3,
+        timeout: 1800,
+        noMcp: false,
+        verbose: true,
+        models: undefined,
+        efforts: undefined,
+        escalateEffort: undefined,
+      } as RunOptions,
+      settings,
+      1,
+    );
+
+    expect(opts.config).toEqual(expected);
+    // Spot-check the fields this issue exists for — a deep-equal against a
+    // wrong-but-consistent producer would otherwise read as a pass.
+    expect(opts.config.agent).toBe("aider");
+    expect(opts.config.aiderSettings).toEqual({ model: "gpt-4o" });
   });
 
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {

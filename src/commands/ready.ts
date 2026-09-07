@@ -34,9 +34,8 @@ import type { ProgressCallback } from "../lib/workflow/types.js";
 import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
 import {
   positiveOr,
-  resolvePhasePolicies,
+  buildExecutionConfig,
 } from "../lib/workflow/config-resolver.js";
-import { getPhaseNames } from "../lib/workflow/phase-registry.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -170,21 +169,30 @@ export async function readyCommand(
     options,
     settings,
   );
-  const mcp = options.mcp !== false;
-  // #975: pass modelRoles + active driver so `role:` prefixes resolve,
-  // matching the same call in buildExecutionConfig (AC-5 drift guard).
-  const phasePolicies = resolvePhasePolicies(
-    options.models,
-    options.efforts,
-    settings.run.phases,
-    getPhaseNames(),
-    settings.run.modelRoles,
-    settings.run.agent ?? "claude-code",
+  // #863: one resolved ExecutionConfig, from the same producer the `run` path
+  // uses. Replaces the inline `resolvePhasePolicies` + `effortEscalation`
+  // blocks this command used to keep in lockstep with `buildExecutionConfig`
+  // by hand (#914/#915/#936 each patched one field of that drift). Everything
+  // the gate's phases need — `agent`, `aiderSettings`, `retry`, `mcpAllowlist`,
+  // `autoWaitMinutes`, ... — now arrives through this single object.
+  //
+  // `maxIterations`/`phaseTimeout` come from the already-resolved
+  // `resolveReadyLimits` values rather than the raw options, so the two
+  // `positiveOr` chains cannot diverge. `--budget`/`--policy` stay ready-only:
+  // neither is an `ExecutionConfig` field.
+  const config = buildExecutionConfig(
+    {
+      maxIterations,
+      timeout: phaseTimeout,
+      noMcp: options.mcp === false,
+      verbose: options.verbose,
+      models: options.models,
+      efforts: options.efforts,
+      escalateEffort: options.escalateEffort,
+    },
+    settings,
+    1,
   );
-  // #915: CLI > settings > default `false`, same precedence as the `run`
-  // path's `buildExecutionConfig` (config-resolver.ts).
-  const effortEscalation =
-    options.escalateEffort ?? settings.run.effortEscalation ?? false;
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
   const worktreePath = resolveWorktreePath(issueNumber);
@@ -297,14 +305,9 @@ export async function readyCommand(
       maxIterations,
       tokenBudget,
       nonGoals,
-      phaseTimeout,
-      mcp,
-      mcpAllowlist: settings.run.mcpAllowlist,
-      verbose: options.verbose,
+      config,
       runPhase,
       onProgress,
-      phasePolicies,
-      effortEscalation,
       // #937 AC-4: persist the final gap report so it survives the terminal
       // closing (previously terminal-scrollback only under `ac` policy).
       postReport: (body) => gh.postComment(String(issueNumber), body),

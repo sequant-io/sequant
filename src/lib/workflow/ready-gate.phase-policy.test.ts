@@ -19,6 +19,7 @@
 import { describe, it, expect } from "vitest";
 import { runReadyGate, type RunReadyGateOptions } from "./ready-gate.js";
 import type { PhaseResult } from "./types.js";
+import { DEFAULT_CONFIG } from "./types.js";
 
 describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (producer 2)", () => {
   it("carries the resolved phasePolicies map into the runPhase config", async () => {
@@ -34,12 +35,15 @@ describe("#914 AC-5: ready-gate buildPhaseConfig resolves phasePolicies (produce
       worktreePath: "/tmp/worktree-914",
       policy: "ac",
       maxIterations: 1,
-      phaseTimeout: 1800,
-      mcp: false,
+      // #863: phasePolicies now reaches the gate inside the resolved config.
+      config: {
+        ...DEFAULT_CONFIG,
+        mcp: false,
+        phasePolicies: { qa: { model: "sonnet", effort: "medium" } },
+      },
       classifyChangesFn: () => ({ kind: "commits" }),
       readTokensUsed: () => 0,
       snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
-      phasePolicies: { qa: { model: "sonnet", effort: "medium" } },
       runPhase: (phase, config) => {
         seen.push(config.phasePolicies);
         const result: PhaseResult = {
@@ -69,12 +73,11 @@ describe("#915 AC-1/AC-3/AC-7: ready-gate resolves + applies effortEscalation (p
       worktreePath: "/tmp/worktree-915",
       policy: "ac",
       maxIterations: 1,
-      phaseTimeout: 1800,
-      mcp: false,
+      // #863: effortEscalation now reaches the gate inside the resolved config.
+      config: { ...DEFAULT_CONFIG, mcp: false, effortEscalation: true },
       classifyChangesFn: () => ({ kind: "commits" }),
       readTokensUsed: () => 0,
       snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
-      effortEscalation: true,
       runPhase: (phase, config) => {
         seen.push(config.effortEscalation);
         const result: PhaseResult = {
@@ -101,13 +104,16 @@ describe("#915 AC-1/AC-3/AC-7: ready-gate resolves + applies effortEscalation (p
       worktreePath: "/tmp/worktree-915",
       policy: "ac",
       maxIterations: 3,
-      phaseTimeout: 1800,
-      mcp: false,
+      // #863: both fields now reach the gate inside the resolved config.
+      config: {
+        ...DEFAULT_CONFIG,
+        mcp: false,
+        effortEscalation: true,
+        phasePolicies: { qa: { effort: "high" } },
+      },
       classifyChangesFn: () => ({ kind: "commits" }),
       readTokensUsed: () => 0,
       snapshotFn: () => ({ sha: `sha-${snapshotCalls++}`, dirty: [] }),
-      effortEscalation: true,
-      phasePolicies: { qa: { effort: "high" } },
       runPhase: (phase, config) => {
         if (phase === "qa") {
           qaCalls++;
