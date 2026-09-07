@@ -1357,6 +1357,61 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: spacing and path variants of the heredoc commit-message idiom are read like the canonical form", () => {
+      const repo = makeStagedRepo("pre-tool-981-idiom-variants-");
+      try {
+        // QA round 10: the heredoc branch keyed on the literal `$(cat ` and
+        // blocked every other spelling of the same idiom with a Got: line
+        // naming the substitution text. Any `$( … << … )` now takes the branch.
+        const variants = [
+          "$( cat",
+          "$(  cat",
+          "$(\tcat",
+          "$(cat",
+          "$(/bin/cat",
+          "$(\ncat",
+        ];
+        for (const open of variants) {
+          const ok = [
+            `git commit -m "${open}${open.endsWith("cat") && open !== "$(cat" ? " " : ""}<<'EOF'`,
+            `fix: ok`,
+            `EOF`,
+            `)"`,
+          ].join("\n");
+          expect(runHook(hookPath, ok, repo).code, ok).toBe(0);
+          const bad = [
+            `git commit -m "${open}${open.endsWith("cat") && open !== "$(cat" ? " " : ""}<<'EOF'`,
+            `updated stuff`,
+            `EOF`,
+            `)"`,
+          ].join("\n");
+          const { code, stderr } = runHook(hookPath, bad, repo);
+          expect(code, bad).toBe(2);
+          expect(stderr, bad).toMatch(/Got: updated stuff/);
+        }
+        // A substitution with no heredoc falls through to the generic reader.
+        expect(
+          runHook(hookPath, 'git commit -m "fix: ok $(date)"', repo).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981 AC-1 (verbatim, with the cd prefix): the issue's exact repro is allowed", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac1-cd-");
+      try {
+        // The issue body's repro starts with `cd <worktree> && diff a.md b.md`;
+        // resolve_cd_target reads that `cd`, so the prefix form is pinned too.
+        writeFileSync(join(repo, "a.md"), "same\n");
+        writeFileSync(join(repo, "b.md"), "same\n");
+        const cmd = `cd ${repo} && diff a.md b.md && echo "mirrors byte-identical"; git add -A && git commit -m "fix(#943): cite only real enforcers"`;
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

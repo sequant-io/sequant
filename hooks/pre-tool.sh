@@ -1212,10 +1212,13 @@ commit_message_from() {
     function message_at(s, j, n,    q, msg, k, d, line) {
         while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
         q = substr(s, j, 1)
-        if (q == dq && substr(s, j + 1, 6) == "$(cat ") {
+        # `-m "$( … <<DELIM … )"` — any spacing, any command path: the
+        # message is the first body line of that heredoc. No heredoc inside the
+        # substitution (or a `<<<` herestring): fall through to the generic
+        # quoted reader below.
+        if (q == dq && substr(s, j + 1, 2) == "$(") {
             line = heredoc_first_line(s, j)
             if (line != "") { print line; exit }
-            return
         }
         if (q == dq || q == sq) {
             msg = ""; k = j + 1
