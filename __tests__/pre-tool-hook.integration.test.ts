@@ -1524,6 +1524,38 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: a dynamic assignment value is unknowable (validates nothing); identical duplicate commit segments get their own windows", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-dynamic-dup-");
+      try {
+        // QA round 16. (1) `MSG=$(echo "fix: generated")` was read as the
+        // bare word `$(echo` and blocked a valid commit; a value carrying `$`,
+        // a backtick or a backslash is now treated as not knowable here.
+        for (const cmd of [
+          'MSG=$(echo "fix: generated"); git commit -m "$MSG"',
+          'MSG=`date`; git commit -m "$MSG"',
+          'MSG="fix: $X"; git commit -m "$MSG"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        // (2) Two textually identical commit segments shared the FIRST one's
+        // window, so the second, with a bad message assigned in between, was
+        // never validated. The walk now advances a running offset.
+        const dup =
+          'git commit -m "$MSG"; MSG="updated stuff"; git commit -m "$MSG"';
+        const { code, stderr } = runHook(hookPath, dup, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+        expect(
+          runHook(
+            hookPath,
+            'MSG="fix: ok"; git commit -m "$MSG"; git commit -m "$MSG"',
+            repo,
+          ).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

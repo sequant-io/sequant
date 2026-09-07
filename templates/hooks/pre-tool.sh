@@ -1324,7 +1324,11 @@ literal_assignment_value() {
                 } else {
                     while (k <= n && substr(s, k, 1) !~ /[ \t\n;&|)]/) { val = val substr(s, k, 1); k++ }
                 }
-                found = val; have = 1; i = k; continue
+                # A dynamic value — command substitution, backtick, escape or
+                # another expansion — is not knowable here: it neither supplies
+                # nor overrides a value (the same rule resolve_cd_target applies).
+                if (val ~ /[$`\\]/) { have = 0; found = "" } else { found = val; have = 1 }
+                i = k; continue
             }
             i++
         }
@@ -1395,11 +1399,15 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     # than silently widening to the whole command.
     _validated=0
     _norm="${TOOL_INPUT//\\$'\n'/}"
+    _cursor=0
     while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
         [[ -z "$_seg" ]] && continue
         _validated=1
-        _before="${_norm%%"$_seg"*}"
-        if [[ "$_before" == "$_norm" ]]; then _limit=0; else _limit=${#_before}; fi
+        # Locate THIS occurrence: search from the end of the previous segment
+        # so two textually identical commits get distinct windows.
+        _rest="${_norm:$_cursor}"
+        _rel="${_rest%%"$_seg"*}"
+        if [[ "$_rel" == "$_rest" ]]; then _limit=0; else _limit=$(( _cursor + ${#_rel} )); _cursor=$(( _limit + ${#_seg} )); fi
         validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$_norm" "$_limit")"
     done < <(raw_commit_segment "$TOOL_INPUT")
     if [[ "$_validated" -eq 0 ]]; then
