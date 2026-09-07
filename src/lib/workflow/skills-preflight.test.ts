@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -354,6 +354,16 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     const failure = result.results.find((r) => r.issueNumber === 933);
     expect(failure?.abortReason).toContain(worktreePath);
     expect(failure?.abortReason).toContain("commit .claude/skills");
+    // A+ (QA on PR #1001): the abort happens after provisioning, so the
+    // worktree this run created must not be orphaned — otherwise the printed
+    // remedy cannot recover (a re-run reuses the stale worktree unrebased).
+    expect(existsSync(worktreePath)).toBe(false);
+    const registered = execSync("git worktree list --porcelain", {
+      cwd: worktreeFixture.repo,
+      encoding: "utf-8",
+    });
+    expect(registered).not.toContain(worktreePath);
+    expect(failure?.abortReason).toContain("was removed");
   });
 
   it("933 AC-2: committed skills pass, and the pre-flight was invoked with cwd = the worktree path", async () => {

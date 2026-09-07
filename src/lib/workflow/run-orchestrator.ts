@@ -1168,10 +1168,32 @@ export class RunOrchestrator {
       for (const cwd of cwdsToCheck) {
         const preflight = await runSkillsPreflight({ ...preflightBase, cwd });
         if (!preflight.ok) {
+          // This abort lands AFTER provisioning, so the worktrees this run just
+          // created would otherwise be orphaned — and the remedy below would
+          // not recover: a re-run reuses a non-stale worktree unrebased, so it
+          // still lacks the skills and fails the same way. `dispose()` clears
+          // the registered cleanups without running them, so remove the
+          // created worktrees explicitly here. Pre-existing (reused) worktrees
+          // are the user's and are kept; the remedy names the manual step.
+          const removedWorktrees: string[] = [];
+          for (const [issueNum, worktree] of worktreeMap.entries()) {
+            if (!worktree.existed) {
+              spawnSync(
+                "git",
+                ["worktree", "remove", "--force", worktree.path],
+                { stdio: "pipe" },
+              );
+              shutdown.unregisterCleanup(`Cleanup worktree for #${issueNum}`);
+              removedWorktrees.push(worktree.path);
+            }
+          }
+          const worktreeState = removedWorktrees.includes(cwd)
+            ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
+            : `The pre-existing worktree was kept and will be reused as-is: remove it first (\`git worktree remove ${cwd}\`) or re-run with --force so it is re-provisioned from the new commit.`;
           const worktreeRemedy =
             `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
             `commit .claude/skills (worktrees only materialize tracked files), ` +
-            `then re-run.`;
+            `then re-run. ${worktreeState}`;
           bracketedConsoleLog(
             phasePauseHandle,
             chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),
