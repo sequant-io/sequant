@@ -33,7 +33,8 @@ throwaway `evals-phase0/` (via `--eval-dir evals-phase0`), deleted before the PR
 
 ```bash
 # A — gated: no env var
-claude plugin eval . --case __nonexistent__ --eval-dir evals-phase0
+claude plugin eval . --case __nonexistent__ \
+  --eval-dir evals-phase0 --max-cost-usd 1 --no-publish
 # B — enabled
 CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --case __nonexistent__ \
   --eval-dir evals-phase0 --max-cost-usd 1 --no-publish
