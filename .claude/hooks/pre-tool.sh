@@ -335,11 +335,18 @@ seg_match() {
 # 2), not a gap any AC requires closing.
 raw_commit_segment() {
     printf '%s' "$1" | awk '
-    function emit(s,   t) {
+    # emit(raw, code) — accept the segment only when its CODE form (quoted and
+    # subshell content blanked) contains "git commit". Testing the raw form
+    # instead would let a quoted mention pick the wrong segment: in
+    # `echo "run git commit later"; git commit -m "updated stuff"` the echo
+    # wins, and because it holds no -m the caller extracts no message and
+    # skips validation entirely. Blanking mirrors what emit_segments/seg_match
+    # already do, so this scan agrees with the guard that invoked it.
+    function emit(s, sc,   t, tc) {
         if (found) return
-        t = s
+        t = s; tc = sc
         sub(/^[ \t\n]+/, "", t); sub(/[ \t\n]+$/, "", t)
-        if (length(t) > 0 && index(t, "git commit") > 0) {
+        if (length(t) > 0 && index(tc, "git commit") > 0) {
             printf "%s", t
             found = 1
         }
@@ -347,44 +354,70 @@ raw_commit_segment() {
     BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34); found = 0 }
     { full = (NR == 1) ? $0 : full "\n" $0 }
     END {
-        n = length(full); seg = ""; cur = ""; depth = 0; nhd = 0
+        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0
         for (i = 1; i <= n && !found; i++) {
             c = substr(full, i, 1)
             nc = (i < n) ? substr(full, i + 1, 1) : ""
 
-            if (cur == sq) { seg = seg c; if (c == sq) cur = ""; continue }
+            # --- inside single quotes: everything is data ---
+            if (cur == sq) { seg = seg c; code = code " "; if (c == sq) cur = ""; continue }
 
+            # --- inside double quotes ---
             if (cur == dq) {
                 if (c == "$" && nc == "(") {
-                    seg = seg "$("
+                    seg = seg "$("; code = code "  "
                     stack[++depth] = dq; cur = ""; i++
                     continue
                 }
-                seg = seg c
+                # A backslash inside double quotes escapes the next character:
+                # \<newline> is a line continuation (drop both), and \" is a
+                # literal quote that must not be read as the closing one.
+                if (c == "\\" && i < n) {
+                    if (nc == "\n") { i++; continue }
+                    seg = seg c nc; code = code "  "; i++
+                    continue
+                }
+                seg = seg c; code = code " "
                 if (c == dq) cur = ""
                 continue
             }
 
             # --- live (unquoted) ---
-            if (c == sq) { cur = sq; seg = seg c; continue }
-            if (c == dq) { cur = dq; seg = seg c; continue }
+            # A backslash escapes the next character. `\<newline>` is a shell
+            # line continuation: the command keeps going, so drop both and do
+            # NOT let the newline branch below end the segment here. Without
+            # this, `git commit \` + newline + `-m "..."` was cut at the
+            # backslash, leaving a segment that holds no -m — MSG came back
+            # empty and the conventional-commit guard skipped validation
+            # entirely, waving through a non-conventional message that the
+            # pre-#981 code had blocked. Any other escaped character is kept
+            # verbatim in the raw text but blanked in the code form so it can
+            # never toggle quote state or forge a "git commit" match.
+            if (c == "\\" && i < n) {
+                if (nc == "\n") { i++; continue }
+                seg = seg c nc; code = code "  "; i++
+                continue
+            }
+            if (c == sq) { cur = sq; seg = seg c; code = code " "; continue }
+            if (c == dq) { cur = dq; seg = seg c; code = code " "; continue }
 
             if (c == "$" && nc == "(") {
-                seg = seg "$("
+                seg = seg "$("; code = code "  "
                 stack[++depth] = cur; i++
                 continue
             }
-            if (c == "(") { seg = seg c; stack[++depth] = cur; continue }
+            if (c == "(") { seg = seg c; code = code " "; stack[++depth] = cur; continue }
             if (c == ")") {
-                seg = seg c
+                seg = seg c; code = code " "
                 if (depth > 0) { cur = stack[depth]; depth-- }
                 continue
             }
 
-            # Inside a subshell/command-substitution: keep everything raw,
-            # including embedded newlines (a heredoc body that belongs to
-            # THIS segment) — do not split on operators or heredocs in here.
-            if (depth > 0) { seg = seg c; continue }
+            # Inside a subshell/command-substitution: keep everything raw in
+            # the segment text (a heredoc body that belongs to THIS segment
+            # must survive verbatim for the caller to parse), but treat it as
+            # data in the code form — do not split on operators or heredocs.
+            if (depth > 0) { seg = seg c; code = code " "; continue }
 
             # depth == 0, unquoted: a heredoc introducer here belongs to a
             # separate, later command — its body is data, not this segments
@@ -401,20 +434,20 @@ raw_commit_segment() {
                 } else {
                     while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
                 }
-                seg = seg substr(full, i, j - i)
+                seg = seg substr(full, i, j - i); code = code " "
                 if (length(delim) > 0) hd[++nhd] = delim
                 i = j - 1
                 continue
             }
 
             if (c == ";" || c == "&" || c == "|") {
-                emit(seg); seg = ""
+                emit(seg, code); seg = ""; code = ""
                 if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
                 continue
             }
 
             if (c == "\n") {
-                emit(seg); seg = ""
+                emit(seg, code); seg = ""; code = ""
                 while (nhd > 0) {
                     d = hd[1]
                     for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
@@ -431,9 +464,9 @@ raw_commit_segment() {
                 }
                 continue
             }
-            seg = seg c
+            seg = seg c; code = code c
         }
-        if (!found) emit(seg)
+        if (!found) emit(seg, code)
     }
     '
 }

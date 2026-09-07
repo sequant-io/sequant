@@ -943,6 +943,62 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+
+    // Scoping extraction to a segment must not create the inverse defect —
+    // a segment that holds no `-m` yields an empty MSG, and an empty MSG
+    // skips validation entirely (fail-open). Both shapes below were blocked
+    // before #981 and must stay blocked: the issue's Done-when clause reads
+    // "a valid conventional commit is never blocked ... AND A NON-CONVENTIONAL
+    // ONE STILL IS", and its Finding notes the guard "is correct to be
+    // conservative — the fix is not to weaken validation".
+
+    it("981: a backslash line-continuation does not let a non-conventional message escape validation", () => {
+      const repo = makeStagedRepo("pre-tool-981-cont-bad-");
+      try {
+        // `\` + newline is a shell line continuation, so this is ONE command.
+        // Splitting the segment at the newline stranded `-m` outside it.
+        const cmd = ["git commit \\", '  -m "updated stuff"'].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: Commit must follow conventional commits format/,
+        );
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a backslash line-continuation still allows a valid conventional message", () => {
+      const repo = makeStagedRepo("pre-tool-981-cont-ok-");
+      try {
+        const cmd = [
+          "git add -A && git commit \\",
+          '  -m "fix(#981): scope extraction"',
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
+      try {
+        // The decoy segment matches "git commit" only inside a quoted string,
+        // so it must not be selected — otherwise it supplies no `-m`, MSG is
+        // empty, and "updated stuff" sails through unchecked.
+        const cmd =
+          'echo "run git commit later"; git commit -m "updated stuff"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
   },
 );
 
