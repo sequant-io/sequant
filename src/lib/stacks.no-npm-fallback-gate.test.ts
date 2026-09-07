@@ -40,6 +40,7 @@ describe("#932: packageManager literal npm fallback gate", () => {
         [
           "-rnE",
           "--exclude=*.test.ts",
+          "--exclude=*.spec.ts",
           "--exclude-dir=__tests__",
           BANNED_PATTERN,
           "src",
