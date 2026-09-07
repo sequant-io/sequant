@@ -404,7 +404,7 @@ is cumulative — $0.71 was already banked from 9 prior unrelated sessions and i
 | `trap2-strictdeny` | `openrouter/z-ai/glm-5.3-flash` | **52 s** | **$0.0011** | `/tmp` read succeeded with `"*":"deny"` — trap refuted |
 | `trap1-repro` (400 lines) | `openrouter/z-ai/glm-5.3-flash` | **364 s** | **$0.0065** | Completed; max step output 7,321 tok — below the clamp |
 | `trap1-repro2` (2000 lines) | `openrouter/z-ai/glm-5.3-flash` | 420 s (bounded) | **$0.0000\*** | 3 `step_start`, 0 `step_finish`, no file — inconclusive |
-| **Total** | | **1,263 s** | **$1.1281** | **under the $5 cap** ✅ |
+| **Total** | | **1,563 s** | **$1.1281** | **under the $5 cap** ✅ |
 
 \* `trap1-repro2` sums to $0.00 by the `step_finish` method despite 420 s of real
 token spend, because no `step_finish` was emitted — see the cost-accounting
