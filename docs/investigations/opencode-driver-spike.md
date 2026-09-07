@@ -191,10 +191,40 @@ Tool call distribution across the 28 `tool_use` events: `bash` 22, `read` 5,
 | Trap | Mitigation (exact) | Reproduction command | Status |
 |------|-------------------|---------------------|--------|
 | **32K step clamp** | Per-model `options.reasoning.max_tokens` in the config payload, e.g. `{"provider":{"openrouter":{"models":{"z-ai/glm-5.3-flash":{"options":{"reasoning":{"max_tokens":20000}}}}}}}`, plus `limit.context`/`limit.output` overrides. **Must be supplied hermetically** (see Finding 1) or it silently comes from the user's global config. | `run-prompt.sh trap1-noclamp 300 <scratch> openrouter/z-ai/glm-5.3-flash opencode-config-trap1-noclamp.json '<long-reasoning prompt>'` — a config with `limit` but **no** `options.reasoning.max_tokens`, run under a redirected `XDG_CONFIG_HOME` so the global clamp cannot leak in. | Mitigation **verified in effect** (present in the resolved config of the clamped model; Run A itself used a different model and was unaffected). Clamp **not re-triggered**: the no-clamp run hit the wall-clock bound (`TIMEOUT_KILL`, 1 event) before producing a clamped step. |
-| **/tmp permission kill** | Keep the scratch worktree **outside `/tmp`**, and grant it explicitly via `permission.external_directory`: `{"*":"deny","<scratch>/**":"allow","<repo>/**":"allow"}`. Relocation is the primary fix; the allow rule is what makes a non-default location usable. | Run A ran from `/Users/…/Projects/worktrees/scratch-992-opencode-spike` (not `/tmp`) with the allow rule above and completed with `RC=0`. | **Mitigated by construction.** Not adversarially re-triggered — no `/tmp`-hosted control run was executed, so the failure mode itself is attested only by the prior field run, not re-observed here. |
+| **/tmp permission kill** | Keep the scratch worktree **outside `/tmp`**, and grant it explicitly via `permission.external_directory`: `{"*":"deny","<scratch>/**":"allow","<repo>/**":"allow"}`. Relocation is the primary fix; the allow rule is what makes a non-default location usable. | Two control runs against a git repo at `/tmp/oc992-trap2` (`/tmp` → `private/tmp` symlink; realpath `/private/tmp/oc992-trap2`), model `openrouter/z-ai/glm-5.3-flash`: (a) `external_directory: {"*":"deny","/tmp/oc992-trap2/**":"allow"}`; (b) `external_directory: {"*":"deny"}` with **no** allow rule. Command: `run-prompt.sh trap2-<label> 200 /tmp/oc992-trap2 <model> <config> 'Read the file file.txt …'` | **DID NOT REPRODUCE on 1.18.27** — see below. |
 | **process-group kill** | Spawn opencode in **its own process group** and kill the group, not the pid: `perl -e 'setpgrp(0,0); exec @ARGV' env … opencode run …` then `kill -TERM -$PGID; sleep 3; kill -KILL -$PGID`. `setpgrp` is what stops the group kill reaching back into the calling shell. | `run-opencode.sh runA 900 <scratch> openrouter/anthropic/claude-sonnet-5 <config>` — the watchdog fired on the `trap1-noclamp` run, wrote `TIMEOUT_KILL` to stderr, and group-killed the tree; the parent shell survived. | **Reproduced and verified** — the kill path executed for real and reaped the tree without killing the harness. |
 
-Two of three rows are honest about being weaker than a full adversarial repro; see
+### Trap 2 did not reproduce — `/tmp` is not blocked on 1.18.27
+
+Both control runs **succeeded**, `RC=0`, the `read` tool returning
+`status: completed`:
+
+| Control run | `external_directory` | Result | Cost |
+|-------------|---------------------|--------|------|
+| `trap2-tmpallow` | `{"*":"deny","/tmp/oc992-trap2/**":"allow"}` | ✅ read succeeded (19 s) | $0.00070 |
+| `trap2-strictdeny` | `{"*":"deny"}` — no allow rule at all | ✅ read succeeded (52 s) | $0.00113 |
+
+Two conclusions, both useful to #862:
+
+1. **`permission.external_directory` does not govern the `--dir` tree.** Even with
+   a blanket `"*": "deny"` and no allow rule, opencode read a file inside the run
+   directory. "External" means *outside `--dir`*; the run root is internal by
+   definition and cannot be denied this way. A driver relying on
+   `external_directory` to sandbox the run root is relying on nothing.
+2. **The `/tmp` symlink is not the mechanism.** The tool output reports the
+   resolved path (`<path>/private/tmp/oc992-trap2/file.txt</path>`) while the
+   allow rule was written against the unresolved `/tmp/...` form — and it made no
+   difference, because neither rule was consulted.
+
+So the "relocate outside `/tmp`" mitigation is **not required on 1.18.27** for this
+mechanism. The prior field observation stands as a real event but its cause is
+**unidentified** — plausibly a different opencode version, an OS-level `/tmp`
+reaper, or a sandbox layer rather than opencode's permission system. #862 should
+**not** encode "keep the worktree out of `/tmp`" as a permission-derived
+requirement on the strength of this spike; if the constraint is wanted, it needs
+its own root-cause.
+
+Row 1 remains mitigation-attested rather than failure-reproduced; see
 [Gaps](#gaps-and-what-862-must-not-assume).
 
 ### Trap-adjacent requirement: deny rules are mandatory under `--auto`
@@ -293,8 +323,10 @@ is cumulative — $0.71 was already banked from 9 prior unrelated sessions and i
 |-----|-------|------|------|---------|
 | Phase-1 probes (`debug skill`, `debug config`, nonexistent-command, XDG probes) | — | — | **$0.0000** | No model call |
 | **Run A** (decisive) | `openrouter/anthropic/claude-sonnet-5` | **408 s** | **$1.1198** | GO — all 3 signals positive |
-| `trap1-noclamp` | `openrouter/z-ai/glm-5.3-flash` | 300 s (bounded) | **~$0.00** | `TIMEOUT_KILL`, 1 event, no billable completion |
-| **Total** | | | **$1.12** | **under the $5 cap** ✅ |
+| `trap1-noclamp` | `openrouter/z-ai/glm-5.3-flash` | 300 s (bounded) | **$0.0000** | `TIMEOUT_KILL`, 1 event, no billable completion |
+| `trap2-tmpallow` | `openrouter/z-ai/glm-5.3-flash` | **19 s** | **$0.0007** | `/tmp` read succeeded with allow rule |
+| `trap2-strictdeny` | `openrouter/z-ai/glm-5.3-flash` | **52 s** | **$0.0011** | `/tmp` read succeeded with `"*":"deny"` — trap refuted |
+| **Total** | | **479 s** | **$1.1216** | **under the $5 cap** ✅ |
 
 Run A token profile: input 58, output 7,298, reasoning 13,110, cache read
 2,875,327, cache write 136,216. Cache read dominates — the 43K-token skill body is
@@ -318,7 +350,12 @@ went unspent.
    redirect `XDG_CONFIG_HOME`; otherwise its AC must be written as "these keys are
    set", never "only these keys are set".
 4. **Deny rules are P0, not hardening.** `--auto` + the qa skill's `gh` calls will
-   mutate live issues. The deny list above is the minimum.
+   mutate live issues. The `permission.bash` deny list above is the minimum — and
+   it is the *only* layer that works. **`permission.external_directory` does not
+   govern the `--dir` tree at all** (proven: a blanket `"*":"deny"` still permitted
+   a read inside the run root), so it must not be used as the sandbox boundary.
+   Drop the "keep the worktree out of `/tmp`" requirement unless it is
+   re-justified — this spike refuted the permission-based rationale for it.
 5. **Spawn contract:** own process group (`setpgrp`) + group kill; NDJSON to a
    **file**, never a pipe.
 6. **Parser is fixture-driven.** Test against
@@ -331,11 +368,13 @@ went unspent.
 
 ## Gaps and what #862 must not assume
 
-- **Trap rows 1 and 2 are mitigation-attested, not failure-reproduced.** The 32K
-  clamp was not re-triggered (the no-clamp run timed out first) and no `/tmp`
-  control run was executed. Both mitigations are recorded and one (relocation) was
-  in force during a successful run, but neither failure mode was re-observed in
-  this spike. The original observations come from the prior field run.
+- **Trap row 1 is mitigation-attested, not failure-reproduced.** The 32K clamp was
+  not re-triggered — the no-clamp run hit its wall-clock bound first. The
+  mitigation is recorded and verified present in the resolved config, but the
+  failure mode itself was not re-observed here; it comes from the prior field run.
+- **Trap row 2 was actively refuted, and its true cause is unknown.** `/tmp` is
+  not blocked by opencode's permission system on 1.18.27. Treat the original
+  observation as real-but-unexplained rather than as a permission requirement.
 - **One model, one phrasing, one issue.** Run A is `claude-sonnet-5` reviewing a
   +1/−1 dependency-bump diff (PR #983). Degradation on cheaper models is
   **unmeasured** — and given Finding 3, cheap-model behaviour on a truncated skill
