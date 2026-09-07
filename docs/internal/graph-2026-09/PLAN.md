@@ -211,6 +211,7 @@ Summary of the structural roles:
 | OQ-16 | What replaces the hook-firing assertion in #993's `qa-trust-boundary` case, and how does a case detect a stub skill when prompt-dictated graders pass against an 8-line stub? | #993 body must be rewritten before launch (D18) | grade the trust-boundary section's *content* and the exfil-URL absence in the diff; add a grader that fails when the skill body read is under N bytes |
 | OQ-17 | #933 orphaned-worktree remedy: node 05 or node 09? | owner, at the PR #1001 merge decision (D19) | route to node 09 — it owns the cleanup block |
 | OQ-18 | Should `ready.ts` route through `resolveRunOptions`? | owner, at the PR #1004 merge decision (D20) | yes, in PR #1004, so the parity test's premise holds for nodes 08/11/12 |
+| OQ-19 | Node 06 AC-3 says each trap row carries "the command that reproduced it", but the spike **refuted** the `/tmp permission kill` on 1.18.27 and could not provoke the 32K clamp in three controls; QA ended AC_NOT_MET on that wording alone (PR #1005, 3 rounds). Amend AC-3 to "reproduced or refuted, with the controlling command recorded"? | owner, at the PR #1005 merge decision | amend and accept; node 12 AC-8 then treats the deny rule as non-load-bearing and the clamp budget as a precaution |
 
 ## §10 Parked
 
