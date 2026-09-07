@@ -1261,6 +1261,35 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: --message= / --message / -am-style flag clusters are validated like -m", () => {
+      const repo = makeStagedRepo("pre-tool-981-message-forms-");
+      try {
+        // Pre-existing fail-open adjacent to #981 (QA round 6): the old
+        // extractor only knew `-m`, so these forms skipped validation.
+        const blocked = [
+          'git commit --message="updated stuff"',
+          'git commit --message "updated stuff"',
+          'git commit -am "updated stuff"',
+          "git commit -sm 'updated stuff'",
+          'git commit -a -m "updated stuff"',
+        ];
+        for (const cmd of blocked) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        for (const cmd of [
+          'git commit --message="fix: ok"',
+          'git commit -am "fix: ok"',
+          'git commit -a -m "fix: ok"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
