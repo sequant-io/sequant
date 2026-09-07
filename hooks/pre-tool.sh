@@ -1387,12 +1387,20 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     # the -m "$(cat <<'EOF' ... EOF)" idiom, or a heredoc feeding -F-), and
     # only the subject line is validated. Falls back to the whole command only
     # if the raw scan finds no segment at all (fail-safe, not fail-open).
+    # The assignment window is the command text BEFORE this segment. The
+    # segment text is the raw input minus backslash-newline continuations
+    # (raw_commit_segment drops them), so match against a copy with the same
+    # continuations removed; a segment that still cannot be located gets a
+    # zero-width window (validates a bare `$VAR` against nothing) rather
+    # than silently widening to the whole command.
     _validated=0
+    _norm="${TOOL_INPUT//\\$'\n'/}"
     while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
         [[ -z "$_seg" ]] && continue
         _validated=1
-        _before="${TOOL_INPUT%%"$_seg"*}"
-        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$TOOL_INPUT" "${#_before}")"
+        _before="${_norm%%"$_seg"*}"
+        if [[ "$_before" == "$_norm" ]]; then _limit=0; else _limit=${#_before}; fi
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$_norm" "$_limit")"
     done < <(raw_commit_segment "$TOOL_INPUT")
     if [[ "$_validated" -eq 0 ]]; then
         validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT" -1)"

@@ -1500,6 +1500,30 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: a line-continuation inside the commit segment does not widen the variable window to the whole command", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-continuation-");
+      try {
+        // QA round 15: raw_commit_segment drops backslash-newline, so the
+        // segment text no longer matched the raw input and the window fell
+        // back to everything — letting an assignment AFTER the commit block
+        // a valid one. The window is now located on a continuation-normalized
+        // copy, and a segment that still cannot be located gets a zero-width
+        // window rather than the whole command.
+        const ok = [
+          'MSG="fix: ok"; git commit \\',
+          '  -m "$MSG"; MSG="updated stuff"',
+        ].join("\n");
+        expect(runHook(hookPath, ok, repo).code).toBe(0);
+        const bad = ['MSG="updated stuff"; git commit \\', '  -m "$MSG"'].join(
+          "\n",
+        );
+        const { code, stderr } = runHook(hookPath, bad, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
