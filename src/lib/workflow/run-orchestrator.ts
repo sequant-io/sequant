@@ -1176,24 +1176,39 @@ export class RunOrchestrator {
           // created worktrees explicitly here. Pre-existing (reused) worktrees
           // are the user's and are kept; the remedy names the manual step.
           const removedWorktrees: string[] = [];
+          const unremovedWorktrees: string[] = [];
           for (const [issueNum, worktree] of worktreeMap.entries()) {
             if (!worktree.existed) {
-              spawnSync(
+              const removal = spawnSync(
                 "git",
                 ["worktree", "remove", "--force", worktree.path],
                 { stdio: "pipe" },
               );
               shutdown.unregisterCleanup(`Cleanup worktree for #${issueNum}`);
-              removedWorktrees.push(worktree.path);
+              if (removal.status === 0) removedWorktrees.push(worktree.path);
+              else unremovedWorktrees.push(worktree.path);
             }
           }
-          const worktreeState = removedWorktrees.includes(cwd)
-            ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
-            : `The pre-existing worktree was kept and will be reused as-is: remove it first (\`git worktree remove ${cwd}\`) or re-run with --force so it is re-provisioned from the new commit.`;
-          const worktreeRemedy =
-            `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
-            `commit .claude/skills (worktrees only materialize tracked files), ` +
-            `then re-run. ${worktreeState}`;
+          // Three situations, three remedies — each says only what actually
+          // happened. (`run --force` bypasses the state guard and takes over
+          // locks; it does not re-provision a worktree, so it is never offered.)
+          let worktreeRemedy: string;
+          if (worktreeMap.size === 0) {
+            // Isolation disabled: `cwd` is the main checkout, not a worktree.
+            worktreeRemedy =
+              `the checkout at ${cwd} is missing required skills (${preflight.cause}) — ` +
+              `commit .claude/skills, then re-run.`;
+          } else {
+            const worktreeState = removedWorktrees.includes(cwd)
+              ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
+              : unremovedWorktrees.includes(cwd)
+                ? `The worktree created for this run could not be removed (git worktree remove failed): remove it (\`git worktree remove ${cwd}\`) before re-running.`
+                : `The pre-existing worktree was kept: remove it first (\`git worktree remove ${cwd}\`) so the re-run provisions it from the new commit.`;
+            worktreeRemedy =
+              `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
+              `commit .claude/skills (worktrees only materialize tracked files), ` +
+              `then re-run. ${worktreeState}`;
+          }
           bracketedConsoleLog(
             phasePauseHandle,
             chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),

@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  realpathSync,
+} from "fs";
 import { execSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -51,6 +58,7 @@ vi.mock("./batch-executor.js", async (importOriginal) => {
 vi.mock("./worktree-manager.js", async (importOriginal) => {
   const { execSync: sync } = await import("child_process");
   const { join: pathJoin } = await import("path");
+  const { existsSync: exists } = await import("fs");
   const actual = await importOriginal<typeof import("./worktree-manager.js")>();
   return {
     ...actual,
@@ -64,15 +72,23 @@ vi.mock("./worktree-manager.js", async (importOriginal) => {
           worktreeFixture.base,
           `wt-${issue.number}`,
         );
-        sync(`git worktree add ${JSON.stringify(worktreePath)} -b ${branch}`, {
-          cwd: worktreeFixture.repo,
-          stdio: "pipe",
-        });
+        // A worktree the test pre-created is reported as reused (`existed`),
+        // mirroring the real ensureWorktrees; otherwise add it for real.
+        const existed = exists(worktreePath);
+        if (!existed) {
+          sync(
+            `git worktree add ${JSON.stringify(worktreePath)} -b ${branch}`,
+            {
+              cwd: worktreeFixture.repo,
+              stdio: "pipe",
+            },
+          );
+        }
         map.set(issue.number, {
           issue: issue.number,
           path: worktreePath,
           branch,
-          existed: false,
+          existed,
           rebased: false,
         });
       }
@@ -383,6 +399,55 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(spies933.preflightCwds).not.toContain(worktreeFixture.repo);
   });
 
+  it("933: a pre-existing (reused) worktree is kept on pre-flight failure and the remedy names git worktree remove, never --force", async () => {
+    installSkillUntracked("spec");
+    installSkillUntracked("exec");
+    installSkillUntracked("qa");
+    const worktreePath = join(base, "wt-933");
+    // Pre-create the worktree so the (mocked) ensureWorktrees reports it as
+    // reused — the user's, not this run's.
+    execSync(
+      `git worktree add ${JSON.stringify(worktreePath)} -b feature/933-test`,
+      { cwd: worktreeFixture.repo, stdio: "pipe" },
+    );
+    const result = await RunOrchestrator.run(
+      initRun({ phases: "spec,exec,qa", noLog: true }),
+      ["933"],
+    );
+    expect(result.exitCode).toBe(1);
+    expect(spies933.runIssue).not.toHaveBeenCalled();
+    expect(existsSync(worktreePath)).toBe(true);
+    const reason =
+      result.results.find((r) => r.issueNumber === 933)?.abortReason ?? "";
+    expect(reason).toContain("pre-existing worktree was kept");
+    expect(reason).toContain(`git worktree remove ${worktreePath}`);
+    expect(reason).not.toContain("--force");
+  });
+
+  it("933: with worktree isolation disabled the remedy talks about the checkout, not a worktree", async () => {
+    // No skills anywhere, no worktree provisioned: the pre-flight checks the
+    // main checkout (pre-#933 behaviour) and must not call it a worktree or
+    // tell the user to remove one.
+    const result = await RunOrchestrator.run(
+      initRun({
+        phases: "spec,exec,qa",
+        noLog: true,
+        worktreeIsolation: false,
+      }),
+      ["933"],
+    );
+    expect(result.exitCode).toBe(1);
+    expect(spies933.runIssue).not.toHaveBeenCalled();
+    expect(existsSync(join(base, "wt-933"))).toBe(false);
+    const reason =
+      result.results.find((r) => r.issueNumber === 933)?.abortReason ?? "";
+    // process.cwd() is canonical (/private/var on macOS); the fixture path may not be.
+    expect(reason).toContain(
+      `the checkout at ${realpathSync(worktreeFixture.repo)}`,
+    );
+    expect(reason).not.toContain("git worktree remove");
+    expect(reason).not.toContain("--force");
+  });
   it("933 AC-3: --dry-run makes zero pre-flight calls", async () => {
     // No skills anywhere — if the pre-flight ran at all it would fail.
     const result = await RunOrchestrator.run(
