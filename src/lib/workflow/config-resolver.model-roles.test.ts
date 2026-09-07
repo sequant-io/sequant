@@ -232,29 +232,46 @@ describe("#975 AC-5: buildExecutionConfig uses resolveRoleToModel (producer 1 dr
   });
 });
 
-describe("#975 AC-5: commands/ready.ts (producer 2) passes modelRoles to resolvePhasePolicies", () => {
-  // Source-inspection drift guard: assert that commands/ready.ts imports
-  // resolvePhasePolicies and passes modelRoles + activeDriver arguments.
-  // If a second implementation appears, this test fails.
+describe("#975 AC-5 (as re-anchored by #863): commands/ready.ts has no second phase-policy implementation", () => {
+  // Source-inspection drift guard, originally #975 AC-5.
+  //
+  // #975 wrote this against a world where `commands/ready.ts` was *producer 2*:
+  // it called `resolvePhasePolicies` itself, and the guard asserted that call
+  // carried `modelRoles` + `activeDriver` so `role:` references would resolve
+  // on the ready path too.
+  //
+  // #863 deleted producer 2. `ready.ts` now builds one `ExecutionConfig` via
+  // `buildExecutionConfig`, which performs that same resolution once — so the
+  // drift #975 guarded against is no longer merely detected, it is structurally
+  // impossible. The guard is re-anchored onto the invariant that replaced it:
+  // ready delegates, and does not re-implement.
+  //
+  // The *behaviour* #975 cared about (a `role:` model resolves, an unknown role
+  // throws) is covered against the single producer by the `#975 AC-1/AC-2`
+  // cases above, which the ready path now inherits by construction.
   const readySrc = readFileSync(
     resolvePath(__dirname, "../../commands/ready.ts"),
     "utf-8",
   );
 
-  it("imports resolvePhasePolicies from config-resolver", () => {
-    expect(readySrc).toMatch(/resolvePhasePolicies/);
-    expect(readySrc).toMatch(/config-resolver/);
+  // Match against code only. Matching the whole file lets a doc comment that
+  // merely *names* a symbol satisfy a "the code calls this" assertion — which
+  // is exactly what happened here during #863: the comment explaining the
+  // removal kept the old `/resolvePhasePolicies/` assertion green.
+  const readyCode = readySrc
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+
+  it("builds its ExecutionConfig through the shared resolver", () => {
+    expect(readyCode).toMatch(/buildExecutionConfig\(/);
+    expect(readyCode).toMatch(/config-resolver/);
   });
 
-  it("passes modelRoles to resolvePhasePolicies (drift guard against second implementation)", () => {
-    // The call must include modelRoles from settings so role: references resolve.
-    // #975: if someone removes modelRoles from this call, the roles go unresolved
-    // silently — this test catches that class of regression.
-    expect(readySrc).toMatch(/settings\.run\.modelRoles/);
-  });
-
-  it("passes activeDriver to resolvePhasePolicies (claude-code default preserved)", () => {
-    expect(readySrc).toMatch(/settings\.run\.agent/);
+  it("does not call resolvePhasePolicies itself (drift guard against a second implementation)", () => {
+    // #975's original concern, inverted by #863: a reappearing call here means
+    // someone rebuilt the second producer, and `role:` resolution can once
+    // again diverge between `sequant ready` and `sequant run`.
+    expect(readyCode).not.toMatch(/resolvePhasePolicies\(/);
   });
 });
 
