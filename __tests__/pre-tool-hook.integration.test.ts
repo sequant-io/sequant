@@ -1412,6 +1412,33 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: a message that is one bare variable reference is not validated (statically unknowable), a mixed one is", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-msg-");
+      try {
+        // `main` let `MSG="fix: ok"; git commit -m "$MSG"` through only by
+        // accident (its extractor took the first quoted string, the
+        // assignment); the segment-scoped extractor read the literal `$MSG`
+        // and blocked it. A bare `$NAME` / `${NAME}` argument is now treated
+        // like an unquoted word: nothing to validate.
+        for (const cmd of [
+          'MSG="fix: ok"; git commit -m "$MSG"',
+          'MSG="updated stuff"; git commit -m "$MSG"',
+          'git commit -m "${MSG}"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        // Literal text alongside a variable is validated as written.
+        const { code, stderr } = runHook(
+          hookPath,
+          'git commit -m "$MSG updated stuff"',
+          repo,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: \$MSG updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

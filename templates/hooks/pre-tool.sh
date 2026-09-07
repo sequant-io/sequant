@@ -1228,6 +1228,11 @@ commit_message_from() {
                 if (d == q) break
                 msg = msg d; k++
             }
+            # A message that is one bare variable reference (`-m "$MSG"`,
+            # `-m "${MSG}"`) cannot be validated statically; treat it like an
+            # unquoted word and validate nothing, rather than blocking on the
+            # literal `$MSG` (a false positive `main` did not have).
+            if (msg ~ /^\$\{?[A-Za-z_][A-Za-z0-9_]*\}?$/) exit
             print msg; exit
         }
     }
