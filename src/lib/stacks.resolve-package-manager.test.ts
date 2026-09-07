@@ -17,7 +17,6 @@ import { join } from "path";
 import {
   resolvePackageManager,
   resolvePackageManagerConfig,
-  PM_CONFIG,
 } from "./stacks.js";
 
 let dir: string;

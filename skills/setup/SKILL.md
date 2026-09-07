@@ -209,18 +209,20 @@ Use the Write tool to create `.sequant/settings.json` with the above content.
 # (#932); recording a guessed "npm" would short-circuit that detection.
 PM=""
 PM_RUN="npm run"
-if [ -f "pnpm-lock.yaml" ]; then
-  PM="pnpm"
-  PM_RUN="pnpm run"
-  echo "✅ Detected package manager: pnpm"
+# Precedence mirrors LOCKFILE_PRIORITY in src/lib/stacks.ts (bun > yarn >
+# pnpm > npm) so a declared value never outranks what live detection would pick.
+if [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+  PM="bun"
+  PM_RUN="bun run"
+  echo "✅ Detected package manager: bun"
 elif [ -f "yarn.lock" ]; then
   PM="yarn"
   PM_RUN="yarn"
   echo "✅ Detected package manager: yarn"
-elif [ -f "bun.lockb" ]; then
-  PM="bun"
-  PM_RUN="bun run"
-  echo "✅ Detected package manager: bun"
+elif [ -f "pnpm-lock.yaml" ]; then
+  PM="pnpm"
+  PM_RUN="pnpm run"
+  echo "✅ Detected package manager: pnpm"
 elif [ -f "package-lock.json" ]; then
   PM="npm"
   PM_RUN="npm run"
@@ -318,7 +320,7 @@ decides at run time (#932):
   "installedVia": "plugin",
   "stack": "<detected stack>",
   "pmRun": "<detected PM_RUN>",
-  "packageManager": "<detected PM — omit this key when PM is empty>",
+  "packageManager": "<detected PM>",
   "createdAt": "<ISO-8601 timestamp>"
 }
 ```
