@@ -55,10 +55,19 @@ describe("#932: packageManager literal npm fallback gate", () => {
     );
 
     for (const [i, text] of contents.entries()) {
+      // Scoped to the manifest template itself (CLAUDE.md: match the region
+      // the assertion means to check, not the whole file — #830 class).
+      const template = text.match(
+        /create `\.sequant-manifest\.json`[\s\S]*?```json\n([\s\S]*?)```/,
+      )?.[1];
       expect(
-        text,
-        `${SETUP_SKILL_MIRRORS[i]} should mention packageManager`,
-      ).toContain("packageManager");
+        template,
+        ` should have a .sequant-manifest.json template block`,
+      ).toBeDefined();
+      expect(
+        template,
+        ` manifest template should write packageManager next to pmRun`,
+      ).toMatch(/"pmRun":[\s\S]*"packageManager":/);
     }
 
     // I-4: the three mirrors must stay byte-identical.

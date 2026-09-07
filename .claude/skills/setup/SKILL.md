@@ -204,8 +204,10 @@ Use the Write tool to create `.sequant/settings.json` with the above content.
 ### 5. Detect Package Manager
 
 ```bash
-# Detect package manager
-PM="npm"
+# Detect package manager. PM stays EMPTY when no lockfile identifies one:
+# an undeclared manager lets `resolvePackageManager` decide live at run time
+# (#932); recording a guessed "npm" would short-circuit that detection.
+PM=""
 PM_RUN="npm run"
 if [ -f "pnpm-lock.yaml" ]; then
   PM="pnpm"
@@ -224,7 +226,7 @@ elif [ -f "package-lock.json" ]; then
   PM_RUN="npm run"
   echo "✅ Detected package manager: npm"
 else
-  echo "ℹ️  No lock file found — defaulting to npm"
+  echo "ℹ️  No lock file found — leaving packageManager undeclared (pmRun defaults to npm run)"
 fi
 ```
 
@@ -306,14 +308,17 @@ elif [ -f "package.json" ]; then
 fi
 ```
 
-Use the Write tool to create `.sequant-manifest.json`:
+Use the Write tool to create `.sequant-manifest.json`. Include the
+`packageManager` key **only when `PM` is non-empty** (a lockfile identified it);
+when no lockfile was found, omit the key entirely so `resolvePackageManager`
+decides at run time (#932):
 ```json
 {
   "version": "latest",
   "installedVia": "plugin",
   "stack": "<detected stack>",
   "pmRun": "<detected PM_RUN>",
-  "packageManager": "<detected PM>",
+  "packageManager": "<detected PM — omit this key when PM is empty>",
   "createdAt": "<ISO-8601 timestamp>"
 }
 ```
