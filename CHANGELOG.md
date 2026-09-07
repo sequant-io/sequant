@@ -34,9 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command now passes its CLI subset through `resolveRunOptions` before
   `buildExecutionConfig`, so settings-level knobs that never had a `ready`
   flag — `run.smartTests` (and `SEQUANT_SMART_TESTS`), `run.autoWaitMinutes`
-  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel` — resolve
-  identically on both entry points instead of silently taking the resolver's
-  defaults on the `ready` path (#863).
+  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel`, and `run.mcp`
+  (which `sequant ready` previously ignored: MCP was always on unless
+  `--no-mcp` was passed) — resolve identically on both entry points instead
+  of silently taking the resolver's defaults on the `ready` path (#863).
 
 ## [2.13.1] - 2026-09-06
 
