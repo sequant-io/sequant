@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Commit-message validation no longer reads text outside the `git commit` segment.** `pre-tool.sh` extracted the commit message by scanning the whole compound command, so an earlier quoted string or an unrelated later heredoc could be mistaken for the message and block a valid conventional commit. Extraction is now scoped to the matched `git commit` segment (#981).
+
 ## [2.13.1] - 2026-09-06
 
 ### Changed
