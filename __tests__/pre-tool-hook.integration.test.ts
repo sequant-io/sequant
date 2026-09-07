@@ -1145,6 +1145,80 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: a heredoc feeding -F- / --file= is still validated (first body line is the subject)", () => {
+      const repo = makeStagedRepo("pre-tool-981-file-stdin-");
+      try {
+        // main validated this via its `<<.*EOF` branch; the -m-anchored
+        // extractor must keep it: with no quoted -m, the segment's own heredoc
+        // is the message.
+        const bad = runHook(
+          hookPath,
+          [`git commit -F- <<'EOF'`, `updated stuff`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+        const badLong = runHook(
+          hookPath,
+          [`git commit --file=- <<'EOF'`, `updated stuff`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(badLong.code).toBe(2);
+        const ok = runHook(
+          hookPath,
+          [`git commit -F- <<'EOF'`, `fix: ok`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a -m token inside an earlier quoted argument does not abort extraction", () => {
+      const repo = makeStagedRepo("pre-tool-981-quoted-m-");
+      try {
+        // `--author="uses -m flag"` carries a `-m` in quoted data before the
+        // real flag; the scan must skip the quoted region and keep going.
+        const bad = runHook(
+          hookPath,
+          'git commit --author="uses -m flag" -m "updated stuff"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+        const ok = runHook(
+          hookPath,
+          'git commit --author="uses -m flag" -m "fix: ok"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: only the subject line of a multi-line -m is validated (a conventional body line cannot launder it)", () => {
+      const repo = makeStagedRepo("pre-tool-981-multiline-m-");
+      try {
+        const bad = runHook(
+          hookPath,
+          'git commit -m "wip\n\nfix: sneaky"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: wip/);
+        const ok = runHook(
+          hookPath,
+          'git commit -m "fix: ok\n\nupdated stuff in the body"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

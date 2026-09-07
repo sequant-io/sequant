@@ -515,7 +515,10 @@ raw_commit_segment() {
             }
 
             if (c == "\n") {
-                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
+                # A heredoc body that feeds THIS segment (`git commit -F- <<EOF`)
+                # is data the caller must see: keep it raw in the segment text
+                # (blank in CODE so it never wins selection), then emit.
+                if (nhd > 0) { seg = seg c; code = code " " }
                 while (nhd > 0) {
                     d = hd[1]
                     for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
@@ -525,11 +528,13 @@ raw_commit_segment() {
                         le = index(substr(full, ls), "\n")
                         if (le == 0) { line = substr(full, ls); i = n }
                         else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                        seg = seg line "\n"; code = code " "
                         t = line
                         sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
                         if (t == d) break
                     }
                 }
+                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
                 continue
             }
             seg = seg c; code = code c
@@ -1142,56 +1147,77 @@ fi
 
 # commit_message_from <segment> — print the message argument of the git
 # commit in <segment>: the first body line for the
-# `-m "$(cat <<'EOF' ... EOF)"` idiom, else the quoted string after `-m`.
-# Anchored on the `git commit` token and then on its own `-m`, so text
-# elsewhere in the segment (an earlier quoted string, a heredoc body that
-# precedes the commit inside the same subshell) can neither supply nor
-# shadow the message (#981 root cause). Prints nothing when there is no
-# quoted `-m` argument (editor commit, -F/--file, unquoted word) — the
-# guard then validates nothing, exactly as before.
+# `-m "$(cat <<'EOF' ... EOF)"` idiom, else the quoted string after `-m`,
+# else — when there is no quoted `-m` at all — the first line of a heredoc
+# feeding the commit (`-F-` / `--file=-`), which is what the guard validated
+# before #981. Anchored on the `git commit` token and then on its own `-m`,
+# scanning past quoted regions, so text elsewhere in the segment (an earlier
+# quoted string — even one containing `-m` — or a heredoc body that precedes
+# the commit inside the same subshell) can neither supply nor shadow the
+# message (#981 root cause). Prints nothing for an editor commit or an
+# unquoted `-m` word; the guard then validates nothing, as before. The caller
+# keeps only the first line (the subject) — a body line must never launder
+# a non-conventional subject.
 commit_message_from() {
     printf '%s' "$1" | awk '
     BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    function heredoc_first_line(s, from,    h, k, nl, rest, e, line) {
+        h = index(substr(s, from), "<<"); if (h == 0) return ""
+        k = from + h - 1 + 2
+        if (substr(s, k, 1) == "<") return ""
+        if (substr(s, k, 1) == "-") k++
+        nl = index(substr(s, k), "\n"); if (nl == 0) return ""
+        rest = substr(s, k + nl)
+        e = index(rest, "\n")
+        line = (e == 0) ? rest : substr(rest, 1, e - 1)
+        sub(/^[ \t]+/, "", line)
+        return line
+    }
     {
         s = $0; n = length(s)
-        i = index(s, "git commit"); if (i == 0) exit
-        i += 10
+        start = index(s, "git commit"); if (start == 0) exit
+        i = start + 10
         while (i <= n) {
-            p = index(substr(s, i), "-m"); if (p == 0) exit
-            i = i + p - 1
-            prev = (i > 1) ? substr(s, i - 1, 1) : " "
-            after = substr(s, i + 2, 1)
-            if (prev ~ /[ \t]/ && (after ~ /[ \t]/ || after == dq || after == sq)) {
-                j = i + 2
-                while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
-                q = substr(s, j, 1)
-                if (q == dq && substr(s, j + 1, 6) == "$(cat ") {
-                    # heredoc idiom: skip to the introducer, then past the
-                    # delimiter word and the rest of that line
-                    h = index(substr(s, j), "<<"); if (h == 0) exit
-                    k = j + h - 1 + 2
-                    if (substr(s, k, 1) == "-") k++
-                    nl = index(substr(s, k), "\n"); if (nl == 0) exit
-                    rest = substr(s, k + nl)
-                    e = index(rest, "\n")
-                    line = (e == 0) ? rest : substr(rest, 1, e - 1)
-                    sub(/^[ \t]+/, "", line)
-                    print line; exit
+            c = substr(s, i, 1)
+            if (c == dq || c == sq) {
+                k = i + 1
+                while (k <= n) {
+                    d = substr(s, k, 1)
+                    if (c == dq && d == "\\") { k += 2; continue }
+                    if (d == c) break
+                    k++
                 }
-                if (q == dq || q == sq) {
-                    msg = ""; k = j + 1
-                    while (k <= n) {
-                        c = substr(s, k, 1)
-                        if (q == dq && c == "\\" && k < n) { msg = msg substr(s, k + 1, 1); k += 2; continue }
-                        if (c == q) break
-                        msg = msg c; k++
-                    }
-                    print msg; exit
-                }
-                exit
+                i = k + 1; continue
             }
-            i += 2
+            if (c == "-" && substr(s, i + 1, 1) == "m") {
+                prev = (i > 1) ? substr(s, i - 1, 1) : " "
+                after = substr(s, i + 2, 1)
+                if (prev ~ /[ \t]/ && (after ~ /[ \t]/ || after == dq || after == sq)) {
+                    j = i + 2
+                    while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
+                    q = substr(s, j, 1)
+                    if (q == dq && substr(s, j + 1, 6) == "$(cat ") {
+                        line = heredoc_first_line(s, j)
+                        if (line != "") { print line; exit }
+                        i = j + 1; continue
+                    }
+                    if (q == dq || q == sq) {
+                        msg = ""; k = j + 1
+                        while (k <= n) {
+                            d = substr(s, k, 1)
+                            if (q == dq && d == "\\" && k < n) { msg = msg substr(s, k + 1, 1); k += 2; continue }
+                            if (d == q) break
+                            msg = msg d; k++
+                        }
+                        print msg; exit
+                    }
+                }
+                i += 2; continue
+            }
+            i++
         }
+        line = heredoc_first_line(s, start)
+        if (line != "") print line
     }'
 }
 
@@ -1210,7 +1236,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     # Extract the message: anchored on this segment's own `git commit … -m`
     # (#981). Handles the `-m "$(cat <<'EOF' … EOF)"` idiom (first body
     # line) and `-m "…"` / `-m '…'`.
-    MSG=$(commit_message_from "$COMMIT_SEG")
+    MSG=$(commit_message_from "$COMMIT_SEG" | head -n 1)
 
     # Validate if we found a message
     if [[ -n "$MSG" ]]; then
