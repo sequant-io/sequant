@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { manifestForRun } from "./run-manifest.js";
@@ -39,5 +39,16 @@ describe("#932 run init: packageManager reaches the resolver undeclared", () => 
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("#932 run init: the call site still goes through manifestForRun (source inspection)", () => {
+  it("run.ts builds init.manifest via manifestForRun(manifest), not an inline literal", () => {
+    // The helper is tested above; this pins its ONE call site so a future
+    // edit cannot bypass it with an inline `{ stack, packageManager: pm ?? … }`
+    // that the grep gate (same-line spellings only) would not see either.
+    const src = readFileSync(new URL("./run.ts", import.meta.url), "utf-8");
+    expect(src).toMatch(/manifest:\s*manifestForRun\(manifest\)/);
+    expect(src).not.toMatch(/manifest:\s*\{\s*stack:/);
   });
 });

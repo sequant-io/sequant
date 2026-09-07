@@ -18,7 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `?? DEFAULT_PM`) out of `src/` and `bin/`. The setup skill's manifest
   template writes `packageManager` next to `pmRun` only when a lockfile
   identified the manager — an undetected one stays undeclared rather than being
-  recorded as a guessed `"npm"` (#932).
+  recorded as a guessed `"npm"`. Note that, like `pmRun`, a recorded
+  `packageManager` is a setup-time snapshot and a declared value outranks live
+  lockfile detection: a project that later migrates package managers should
+  update (or remove) the key in `.sequant-manifest.json` (#932).
 
 ## [2.13.1] - 2026-09-06
 
