@@ -331,11 +331,12 @@ seg_match() {
 # Deliberately not a full shell parser (see emit_segments' header for the
 # same caveat). Prints EVERY qualifying segment, in order, separated by \001
 # (segments carry embedded newlines, so a newline cannot be the delimiter):
-# the caller takes the first one that yields a message, so a `-m`-less shadow
-# segment that merely mentions `git commit` (a comment line, `git commit-tree`,
-# `git commit --amend --no-edit`, an unquoted echo) can no longer hide the real
-# commit behind it and skip validation (#981 Open Question 2 — a fail-open
-# `main` did not have, so it is closed rather than accepted).
+# the caller validates EVERY one that yields a message (spec Open Question 2),
+# so a `-m`-less shadow segment that merely mentions `git commit` (a comment
+# line, `git commit-tree`, `git commit --amend --no-edit`, an unquoted echo)
+# cannot hide the real commit behind it, and a decoy conventional commit
+# earlier in a compound command cannot shield a later non-conventional one —
+# both fail-opens `main` did not have, so they are closed rather than accepted.
 raw_commit_segment() {
     printf '%s' "$1" | awk '
     # heredoc_delim(full, i, n) — parse the delimiter word after the `<<` /
