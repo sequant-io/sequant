@@ -3,7 +3,7 @@
 **Status:** complete — see [Phase 0 verdict](#phase-0-verdict).
 **Measured:** 2026-09-06 / 2026-09-07, Claude Code **2.1.263**, macOS 25.5.0.
 **Plugin under test:** `sequant` 2.13.1, path target `.` from the `#987` worktree at base `20e2a867` (v2.13.1).
-**Total spend:** **<!-- PLACEHOLDER_TOTAL -->** (ceiling $25, AC-8). Ledger in [§8](#8-cost-ledger-p05--ac-8).
+**Total spend:** **$9.69** (ceiling $25, AC-8). Ledger in [§8](#8-cost-ledger-p05--ac-8).
 **Recorded runs:** the `--json` artifacts backing every row are listed in [§9](#9-recorded-artifacts).
 
 Phase 0 answers six questions (P0.1–P0.6), each with a pass and a kill condition
@@ -338,7 +338,7 @@ approved (OQ-7). P0.5 does not reopen it.
 skill fail the case? If not, the grader set is vacuous and every other number here
 is meaningless.
 
-### 6a. Null canary — red
+### 6a. Null canary — red ✅
 
 `evals-phase0/phase0-null/` carries the *same substantive graders* as the real
 case (`verdict-file-exists`, `verdict-marker-fields`, `verdict-token-last-message`)
@@ -364,9 +364,46 @@ Note the middle line: a file-targeted `regex` grader on a missing file **throws
 and scores false** rather than passing vacuously. That is the correct
 default-to-red behaviour, and it is the property #993 depends on.
 
-### 6b. Broken-skill canary
+### 6b. Broken-skill canary — red ✅
 
-<!-- PLACEHOLDER_6B -->
+Same case, same graders, `--ablation none`, `--threshold 1.0`. The intact run is
+the baseline; the broken run replaces the plugin's `skills/qa/SKILL.md`
+(3,735 lines) with an 8-line stub — front-matter plus *"Read the diff and say
+whether it looks fine."* — leaving every other file untouched.
+
+```bash
+# baseline, then break skills/qa/SKILL.md, then re-run
+CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --eval-dir evals-phase0 \
+  --case phase0-qa --ablation none --runs 1 --scaffold --threshold 1.0 \
+  --max-cost-usd 4 --no-publish --output-dir /tmp/p0-987/<run> \
+  --json <run>.json --allow-tools Write
+```
+
+| Grader | intact skill | 8-line stub |
+|---|---|---|
+| `qa-gaps-marker` (`SEQUANT_QA_GAPS` trailer) | ✅ | ❌ *"pattern not found in file qa-verdict.md"* |
+| `qa-trust-boundary-section` (`Trust-Boundary Check`) | ✅ | ❌ *"pattern not found in file qa-verdict.md"* |
+| `skill-fired` (`tool_used: Skill`, with-only) | ✅ | ✅ |
+| `verdict-file-exists` | ✅ | ✅ |
+| `verdict-marker-fields` | ✅ | ✅ |
+| `verdict-token-last-message` | ✅ | ✅ |
+| **Case score** | **1.000** (`passRate` 1) | **0.667** (`passRate` 0 — **case fails**) |
+| Cost / wall | $1.1492 / 100 s | $0.2079 / 70 s |
+
+**Red as required**, and the *shape* of the failure is the useful part:
+
+- The three graders the case **prompt** dictates (write `qa-verdict.md`, put the
+  marker last, end with `Verdict: <TOKEN>`) pass with an 8-line stub. They grade
+  instruction-following, not the skill. This is §3a's warning, measured.
+- `skill-fired` also passes with the stub — the indicator answers *"did a skill
+  load"* (#862 Risk 1), **not** *"was it the real skill"*.
+- Only the two graders keyed to surfaces the real skill produces —
+  `SEQUANT_QA_GAPS` and §6f's `Trust-Boundary Check` — discriminate. They are
+  what makes the case a test of `/qa` rather than of the prompt.
+
+The intact run also settles §3a empirically: the real skill **does** emit both
+surfaces unprompted, so #993 can grade them without dictating them.
+
 
 **Verdict: PASS.** The grader set is not vacuous; it distinguishes work from
 no-work and an intact skill from a broken one.
@@ -402,9 +439,10 @@ Every command carried `--max-cost-usd`. Every command carried `--no-publish`
 | 6 | `phase0-qa --runs 3` (P0.5) | $8 | $4.2577 | 495 s | 3 × 2 arms |
 | 7 | `phase0-qa` baseline (interrupted) | $4 | $0.9452 | 41 s | `partial: true`, harness cut the session |
 | 8 | `phase0-envprobe` | $1 | $0.0000 | 3 s | no-op |
-| 9 | broken-skill canary (P0.6b) | $4 | <!-- PLACEHOLDER_COST --> | <!-- PLACEHOLDER_WALL --> | red as required |
+| 9 | `phase0-qa` intact baseline (P0.6b) | $4 | $1.1492 | 100 s | score 1.000, all 6 graders green |
+| 10 | `phase0-qa` broken-skill canary (P0.6b) | $4 | $0.2079 | 70 s | score 0.667, case fails at threshold 1.0 |
 | — | `--help`, `init --bare`, P0.1 probes | — | $0.0000 | — | free |
-| | **Total** | | **<!-- PLACEHOLDER_TOTAL -->** | | **ceiling $25** |
+| | **Total** | | **$9.69** | | **ceiling $25** |
 
 Run 7 is billed but yielded no usable score: the previous session was cut off by
 the harness at its 30-minute wall ceiling mid-run, and the report records
@@ -418,7 +456,7 @@ paid for, not because it is evidence.
 `--json` reports for the runs above, preserved outside the repository at
 `/Users/tony/Projects/worktrees/.987-phase0-evidence/`
 (`null.json`, `ac2.json`, `ac4.json`, `hook.json`, `hook2.json`, `ac5.json`,
-`ac6intact.json`, `ac6broken.json`, plus each run's `output-dir`). Traces from the
+`ac6intact.json`, `ac6intact-interrupted.json`, `ac6broken.json`, plus each run's `output-dir`). Traces from the
 preserved runs are under `/private/tmp/e-*/out/trace.jsonl` (`--keep-temp`).
 
 Nothing under `evals/` was created, and `evals-phase0/` was deleted before the PR
