@@ -47,6 +47,44 @@ function countSkills(dir: string): number {
   return count;
 }
 
+/**
+ * The `.mcp.json` that plugin users actually receive (#988). `marketplace.json`
+ * declares each plugin's `source`; for sequant that is `"./"`, so the shipped
+ * MCP config is the repo-root `.mcp.json` — NOT the pinned copy written under
+ * `dist/`. #793's pin only ever landed in the dist copy, which the GitHub
+ * marketplace never installs; users kept getting `sequant@latest`.
+ */
+function shippedMcpJsonPath(): string {
+  const marketplacePath = join(
+    PROJECT_ROOT,
+    ".claude-plugin",
+    "marketplace.json",
+  );
+  const marketplace = JSON.parse(readFileSync(marketplacePath, "utf8")) as {
+    plugins?: Array<{ name?: string; source?: string }>;
+  };
+  const entry = marketplace.plugins?.find((p) => p.name === "sequant");
+  const source = entry?.source ?? "./";
+  return join(PROJECT_ROOT, source, ".mcp.json");
+}
+
+/** Find the `sequant@…` pin in either the wrapped (`mcpServers.sequant`) or flat (`sequant`) shape. */
+function readSequantPin(mcpJsonPath: string): string | undefined {
+  const config = JSON.parse(readFileSync(mcpJsonPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const servers =
+    (config.mcpServers as Record<string, unknown> | undefined) ?? config;
+  const sequant = servers?.sequant as { args?: unknown } | undefined;
+  const args = sequant?.args;
+  return Array.isArray(args)
+    ? (args.find(
+        (a) => typeof a === "string" && a.startsWith("sequant@"),
+      ) as string | undefined)
+    : undefined;
+}
+
 function main(): void {
   console.log("📦 Preparing marketplace package...\n");
 
@@ -156,6 +194,26 @@ function main(): void {
     //    that surfaced as `-32000`. Plugin users pick up the new pin when they
     //    update the plugin. `npm run prepare:marketplace` already runs on every
     //    release path, so the stamp stays in sync automatically.
+    // 4a. Stamp the SHIPPED `.mcp.json` (resolved from marketplace.json
+    //     `source`) to this release's version (#988). This is the file plugin
+    //     users install; the dist copy below is stamped too, for the official
+    //     marketplace submission path. The file is gitignored but tracked via
+    //     `git add -f` (see .gitignore), so the release commit must re-add it.
+    const shippedMcp = shippedMcpJsonPath();
+    if (existsSync(shippedMcp)) {
+      const packageVersion = JSON.parse(
+        readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+      ).version as string;
+      const stamped = readFileSync(shippedMcp, "utf8").replace(
+        /sequant@[^"\s]+/g,
+        `sequant@${packageVersion}`,
+      );
+      writeFileSync(shippedMcp, stamped);
+      console.log(
+        `📌 Pinned shipped .mcp.json (${shippedMcp.replace(PROJECT_ROOT + "/", "")}) to sequant@${packageVersion}`,
+      );
+    }
+
     console.log("📋 Copying MCP server config...");
     const mcpJsonPath = join(PROJECT_ROOT, "templates", "mcp.json");
     if (existsSync(mcpJsonPath)) {
@@ -244,6 +302,28 @@ function validate(): void {
     console.error(
       "  ❌ .mcp.json (MISSING — plugin users won't get MCP tools)",
     );
+    errors++;
+  }
+
+  // Validate the SHIPPED .mcp.json — what `marketplace.json` `source` actually
+  // resolves to (#988). A pinned dist copy is worthless if this one says @latest.
+  const shippedMcp = shippedMcpJsonPath();
+  if (existsSync(shippedMcp)) {
+    const expected = `sequant@${
+      JSON.parse(readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"))
+        .version as string
+    }`;
+    const shippedPin = readSequantPin(shippedMcp);
+    if (shippedPin !== expected) {
+      console.error(
+        `  ❌ shipped .mcp.json (${shippedMcp.replace(PROJECT_ROOT + "/", "")}) must pin ${expected} (got ${shippedPin ?? "no sequant@ arg"}) — this is the file plugin users install (marketplace.json source)`,
+      );
+      errors++;
+    } else {
+      console.log(`  ✅ shipped .mcp.json pinned ${shippedPin}`);
+    }
+  } else {
+    console.error(`  ❌ shipped .mcp.json (MISSING at ${shippedMcp})`);
     errors++;
   }
 

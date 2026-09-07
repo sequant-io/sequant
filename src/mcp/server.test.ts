@@ -282,7 +282,12 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
       const result = await client.listResources();
       const uris = result.resources.map((r: { uri: string }) => r.uri).sort();
 
-      expect(uris).toEqual(["sequant://config", "sequant://state"]);
+      // #988 added sequant://install (skills-install status, report-only).
+      expect(uris).toEqual([
+        "sequant://config",
+        "sequant://install",
+        "sequant://state",
+      ]);
     });
 
     it("sequant://state resource should return JSON", async () => {

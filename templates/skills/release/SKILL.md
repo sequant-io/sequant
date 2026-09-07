@@ -479,6 +479,8 @@ echo "Package size: ${size}"
 ```bash
 new_version=$(node -p "require('./package.json').version")
 git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md
+# The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
+git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
 git push origin main
 ```
