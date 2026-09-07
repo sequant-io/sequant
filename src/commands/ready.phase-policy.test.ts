@@ -57,6 +57,7 @@ describe("#914 AC-5: readyCommand --models/--efforts wiring", () => {
     vi.mocked(getSettings).mockResolvedValue({
       ready: { policy: "ac" },
       run: { maxIterations: 3, timeout: 1800 },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     vi.mocked(listWorktrees).mockReturnValue([

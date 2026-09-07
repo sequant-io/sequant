@@ -30,6 +30,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `isolateParallel` and `issueType` all reach the gate. Under
   `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
   the same `issueType` its earlier phases had.
+- **`sequant ready` resolves options the way `sequant run` does.** The
+  command now passes its CLI subset through `resolveRunOptions` before
+  `buildExecutionConfig`, so settings-level knobs that never had a `ready`
+  flag — `run.smartTests` (and `SEQUANT_SMART_TESTS`), `run.autoWaitMinutes`
+  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel` — resolve
+  identically on both entry points instead of silently taking the resolver's
+  defaults on the `ready` path (#863).
 
 ## [2.13.1] - 2026-09-06
 

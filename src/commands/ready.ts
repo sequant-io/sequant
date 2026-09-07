@@ -30,11 +30,12 @@ import { ReadySnapshotAdapter } from "./ready-tui-adapter.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
+import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
 import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
 import {
   positiveOr,
   buildExecutionConfig,
+  resolveRunOptions,
 } from "../lib/workflow/config-resolver.js";
 import {
   runReadyGate,
@@ -99,9 +100,11 @@ export function resolvePolicy(
  *
  * #833: these previously guarded only the CLI value (`typeof x === "number" &&
  * x > 0`) and fell straight through to `settings.run.*` unchecked. But
- * `settings.run.timeout` is user-authored JSON, and `ready`'s value does NOT
- * pass through `buildExecutionConfig` — `ready-gate.ts`'s `buildPhaseConfig`
- * assembles its own `ExecutionConfig`. So a `"timeout": 0` in settings.json
+ * `settings.run.timeout` is user-authored JSON, and at the time `ready`'s value
+ * did NOT pass through `buildExecutionConfig` — `ready-gate.ts`'s
+ * `buildPhaseConfig` assembled its own `ExecutionConfig` (collapsed in #863; the
+ * chain here is now the CLI-layer guard and the only one for the ready-only
+ * `--budget`). So a `"timeout": 0` in settings.json
  * reached `setTimeout` as a 0 ms delay and aborted every ready-gate phase on
  * its first tick, with no warning: the #833 defect, on the path the original
  * fix did not cover. Chaining `positiveOr` leaves no layer unchecked.
@@ -180,16 +183,25 @@ export async function readyCommand(
   // `resolveReadyLimits` values rather than the raw options, so the two
   // `positiveOr` chains cannot diverge. `--budget`/`--policy` stay ready-only:
   // neither is an `ExecutionConfig` field.
+  //
+  // The CLI subset goes through `resolveRunOptions` first — the same
+  // CLI > env > settings merge the `run` path applies — so settings-level
+  // knobs that never had a `ready` flag (`run.smartTests`, `SEQUANT_SMART_TESTS`,
+  // `run.autoWaitMinutes`, ...) resolve identically on both entry points
+  // instead of silently taking `buildExecutionConfig`'s defaults here.
   const config = buildExecutionConfig(
-    {
-      maxIterations,
-      timeout: phaseTimeout,
-      noMcp: options.mcp === false,
-      verbose: options.verbose,
-      models: options.models,
-      efforts: options.efforts,
-      escalateEffort: options.escalateEffort,
-    },
+    resolveRunOptions(
+      {
+        maxIterations,
+        timeout: phaseTimeout,
+        mcp: options.mcp,
+        verbose: options.verbose,
+        models: options.models,
+        efforts: options.efforts,
+        escalateEffort: options.escalateEffort,
+      } as RunOptions,
+      settings,
+    ),
     settings,
     1,
   );

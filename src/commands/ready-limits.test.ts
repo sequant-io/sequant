@@ -2,10 +2,12 @@
  * #833 — `ready`'s numeric limits, the path the first fix did not cover.
  *
  * `sequant run` resolves its phase timeout through `buildExecutionConfig`,
- * which now guards it. `sequant ready` does NOT: `ready-gate.ts`'s
- * `buildPhaseConfig` assembles its own `ExecutionConfig` and hands it straight
- * to the phase executor. So the guard added to `config-resolver` protected one
- * of the two producers.
+ * which now guards it. At the time of #833 `sequant ready` did NOT:
+ * `ready-gate.ts`'s `buildPhaseConfig` assembled its own `ExecutionConfig` and
+ * handed it straight to the phase executor, so the guard added to
+ * `config-resolver` protected one of the two producers. Since #863 `ready`
+ * feeds the same producer, and `resolveReadyLimits` stays as the CLI-layer
+ * guard (and the only guard for the ready-only `--budget`).
  *
  * `ready.ts`'s original `typeof x === "number" && x > 0` checks stopped a bad
  * *CLI* value, but fell through unchecked to `settings.run.*` — user-authored

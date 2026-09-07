@@ -5,8 +5,9 @@
  * `config-resolver.phase-policy.test.ts`). This is the exact pair that
  * drifted in #833.
  *
- * `buildPhaseConfig` is not exported, so this drives it indirectly through
- * `runReadyGate`'s injectable `runPhase`, mirroring the `scriptedRunner`
+ * `buildPhaseConfig` is exported (`@internal`) since #863, but this still
+ * drives it indirectly through `runReadyGate`'s injectable `runPhase` so the
+ * real call path is what is asserted, mirroring the `scriptedRunner`
  * pattern already used in `ready-gate.test.ts`. Model/effort resolution
  * happens one layer down from here: `buildPhaseConfig` only carries the
  * resolved `phasePolicies` map onto the `ExecutionConfig`; `phase-executor.ts`

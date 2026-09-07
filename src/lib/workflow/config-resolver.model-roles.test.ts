@@ -4,7 +4,9 @@
  * AC-1: `run.modelRoles` parses; phase policy `role:<name>` dispatches with the mapped string.
  * AC-2: Role with no map entry fails at config-resolution time, naming role + available roles.
  * AC-3: Raw model string (no `role:` prefix) passes through verbatim.
- * AC-5: Both ExecutionConfig producers resolve roles through the same function (drift test).
+ * AC-5: roles resolve through one function from the single ExecutionConfig
+ *       producer; the drift test guards against `ready.ts` growing a second
+ *       `resolvePhasePolicies` call again (the producer #863 collapsed).
  */
 
 import { describe, it, expect } from "vitest";

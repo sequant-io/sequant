@@ -218,10 +218,12 @@ export function resolveRunOptions(
  * flag — that is the user-facing fix. This is the structural backstop for
  * programmatic callers, `settings.json`, and whatever calls this next.
  *
- * Exported because `phaseTimeout` has two producers, not one: this module and
- * `commands/ready.ts`, whose value reaches the driver through
- * `ready-gate.ts`'s own `buildPhaseConfig` and never passes through
- * `buildExecutionConfig`. Guarding only here would have left that path open.
+ * Exported because `commands/ready.ts` guards its own numeric limits with it
+ * (`resolveReadyLimits`): `--budget` is ready-only and never enters this module,
+ * and `--max-iterations`/`--timeout` are guarded at the CLI layer before they
+ * reach `buildExecutionConfig` (since #863 they do reach it — `ready` feeds the
+ * same producer `run` does — so the chain below is belt-and-braces, not the
+ * only guard on that path as it was in #833).
  * Chain it to express the layering — CLI, then settings, then the default:
  *
  * ```ts
@@ -382,10 +384,11 @@ export function resolveRoleToModel(
  * Resolve per-phase model/effort policies with CLI > settings > absent
  * precedence.
  *
- * This is the single resolver both `buildExecutionConfig` (here) and
- * `ready-gate.ts:buildPhaseConfig` call, so they cannot drift the way the
- * two `phaseTimeout` producers did in #833 — see `positiveOr`'s doc comment
- * for that history.
+ * This is the single resolver, called only from `buildExecutionConfig` (here).
+ * Since #863 `ready-gate.ts` receives the resolved `ExecutionConfig` instead of
+ * producing one, so there is no second caller left to drift the way the two
+ * `phaseTimeout` producers did in #833 — see `positiveOr`'s doc comment for
+ * that history.
  */
 export function resolvePhasePolicies(
   cliModels: string | undefined,
@@ -531,8 +534,8 @@ export function buildExecutionConfig(
       settings.run.agent ?? "claude-code",
     ),
     // #915: CLI > settings > default `false` — mirrors the `readyGate`
-    // precedent above. Both `ExecutionConfig` producers (here and
-    // `ready-gate.ts:buildPhaseConfig`) resolve this the same way (#833).
+    // precedent above. Resolved here only; since #863 `ready-gate.ts` receives
+    // this config instead of producing its own (#833 class).
     effortEscalation:
       mergedOptions.escalateEffort ?? settings.run.effortEscalation ?? false,
   };

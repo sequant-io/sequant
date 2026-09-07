@@ -56,7 +56,10 @@ import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
-import { buildExecutionConfig } from "../lib/workflow/config-resolver.js";
+import {
+  buildExecutionConfig,
+  resolveRunOptions,
+} from "../lib/workflow/config-resolver.js";
 
 function result(overrides: Partial<ReadyResult>): ReadyResult {
   return {
@@ -189,6 +192,7 @@ describe("readyCommand — #697 renderer wiring", () => {
     vi.mocked(getSettings).mockResolvedValue({
       ready: { policy: "ac" },
       run: { maxIterations: 3, timeout: 1800 },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     vi.mocked(listWorktrees).mockReturnValue([
@@ -306,6 +310,7 @@ describe("readyCommand — #697 renderer wiring", () => {
         timeout: 1800,
         mcpAllowlist: ["stripe", "notion"],
       },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     await readyCommand(String(ISSUE), {});
@@ -332,22 +337,28 @@ describe("readyCommand — #697 renderer wiring", () => {
         aider: { model: "gpt-4o" },
         mcpAllowlist: ["stripe"],
       },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>;
     vi.mocked(getSettings).mockResolvedValue(settings);
 
     await readyCommand(String(ISSUE), { verbose: true });
 
     const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    // Through `resolveRunOptions` first, exactly as `ready.ts` does — the
+    // same CLI > env > settings merge the `run` path applies.
     const expected = buildExecutionConfig(
-      {
-        maxIterations: 3,
-        timeout: 1800,
-        noMcp: false,
-        verbose: true,
-        models: undefined,
-        efforts: undefined,
-        escalateEffort: undefined,
-      } as RunOptions,
+      resolveRunOptions(
+        {
+          maxIterations: 3,
+          timeout: 1800,
+          mcp: undefined,
+          verbose: true,
+          models: undefined,
+          efforts: undefined,
+          escalateEffort: undefined,
+        } as RunOptions,
+        settings,
+      ),
       settings,
       1,
     );
@@ -357,6 +368,27 @@ describe("readyCommand — #697 renderer wiring", () => {
     // wrong-but-consistent producer would otherwise read as a pass.
     expect(opts.config.agent).toBe("aider");
     expect(opts.config.aiderSettings).toEqual({ model: "gpt-4o" });
+  });
+
+  it("#863: settings-level knobs with no ready flag resolve the same as on the run path (resolveRunOptions is not bypassed)", async () => {
+    // QA on PR #1004 measured the divergence this guards: with
+    // `run.smartTests: false`, `run --ready-gate` produced `noSmartTests: true`
+    // while `sequant ready` produced `false`, because `ready` handed
+    // `buildExecutionConfig` a raw CLI subset instead of the merged options.
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: {
+        maxIterations: 3,
+        timeout: 1800,
+        smartTests: false,
+        autoWaitMinutes: 7,
+      },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), {});
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.noSmartTests).toBe(true);
+    expect(opts.config.autoWaitMinutes).toBe(7);
   });
 
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
@@ -421,6 +453,7 @@ describe("readyCommand — #699 Ink TUI wiring", () => {
     vi.mocked(getSettings).mockResolvedValue({
       ready: { policy: "ac" },
       run: { maxIterations: 3, timeout: 1800 },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     vi.mocked(listWorktrees).mockReturnValue([
