@@ -71,7 +71,7 @@ describe("#932: packageManager literal npm fallback gate", () => {
       // Scoped to the manifest template itself (CLAUDE.md: match the region
       // the assertion means to check, not the whole file — #830 class).
       const template = text.match(
-        /create `\.sequant-manifest\.json`[\s\S]*?```json\n([\s\S]*?)```/,
+        /create `\.sequant-manifest\.json`[\s\S]*?```jsonc?\n([\s\S]*?)```/,
       )?.[1];
       expect(
         template,
@@ -87,4 +87,34 @@ describe("#932: packageManager literal npm fallback gate", () => {
     expect(contents[1]).toBe(contents[0]);
     expect(contents[2]).toBe(contents[0]);
   });
+});
+
+describe("#932: setup skill lockfile precedence mirrors LOCKFILE_PRIORITY (drift guard)", () => {
+  // Source-inspection guard (the #871 TS→markdown mirror class): the skill now
+  // records a declared `packageManager` that outranks live detection, so its
+  // detection order must be the resolver's own. Neither side is imported —
+  // both are read as text so a reorder on either side fails here.
+  function lockfileOrderFromResolver(): string[] {
+    const src = readFileSync("src/lib/stacks.ts", "utf-8");
+    const block = src.match(
+      /const LOCKFILE_PRIORITY[\s\S]*?=\s*\[([\s\S]*?)\];/,
+    )?.[1];
+    expect(block, "LOCKFILE_PRIORITY block in src/lib/stacks.ts").toBeDefined();
+    return [...(block ?? "").matchAll(/file:\s*"([^"]+)"/g)].map((m) => m[1]);
+  }
+  function lockfileOrderFromSkill(path: string): string[] {
+    const text = readFileSync(path, "utf-8");
+    const block = text.match(
+      /### 5\. Detect Package Manager[\s\S]*?```bash\n([\s\S]*?)```/,
+    )?.[1];
+    expect(block, `${path} package-manager detection block`).toBeDefined();
+    return [...(block ?? "").matchAll(/-f\s+"([^"]+)"/g)].map((m) => m[1]);
+  }
+
+  it.each(SETUP_SKILL_MIRRORS)(
+    "%s checks lockfiles in exactly the resolver's order",
+    (path) => {
+      expect(lockfileOrderFromSkill(path)).toEqual(lockfileOrderFromResolver());
+    },
+  );
 });

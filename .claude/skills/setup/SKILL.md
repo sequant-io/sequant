@@ -314,12 +314,14 @@ Use the Write tool to create `.sequant-manifest.json`. Include the
 `packageManager` key **only when `PM` is non-empty** (a lockfile identified it);
 when no lockfile was found, omit the key entirely so `resolvePackageManager`
 decides at run time (#932):
-```json
+```jsonc
 {
   "version": "latest",
   "installedVia": "plugin",
   "stack": "<detected stack>",
   "pmRun": "<detected PM_RUN>",
+  // Only when PM is non-empty — omit this key entirely when no lockfile
+  // identified a manager (the file you write must be plain JSON: no comments).
   "packageManager": "<detected PM>",
   "createdAt": "<ISO-8601 timestamp>"
 }
