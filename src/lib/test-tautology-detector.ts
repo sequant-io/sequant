@@ -1226,6 +1226,63 @@ function collectHelperParamBindings(
  *    but seeding on spawns alone missed it, so every test that built its
  *    subject through a factory read as tautological.
  */
+/**
+ * Lifecycle hooks that run before a test block's own body does.
+ */
+const LIFECYCLE_HOOK_PATTERN = /\b(?:beforeEach|beforeAll)\s*\(/g;
+
+/** `name = ...` / `name: Type = ...` assignments, statement-bounded. */
+const HOOK_ASSIGNMENT_PATTERN = /(?:^|[;{)\n])\s*([\w$]+)\s*=\s*[^=]/g;
+
+/**
+ * Names assigned inside a lifecycle hook whose body reaches production (#956).
+ *
+ * A suite-scope handle is routinely *declared* bare (`let client;`) and only
+ * *assigned* in `beforeEach`. Neither {@link collectBuildOutputVars} (which
+ * needs a path-bearing right-hand side) nor {@link extractHelperDefinitions}
+ * (which needs a function body) can see that shape, so every block driving the
+ * handle reads as tautological. This was the last residual class in the #956
+ * corpus: `src/mcp/server-extended.test.ts` imports `createServer` from
+ * `./server.js` inside `beforeEach`, connects the real server over an
+ * in-memory transport, assigns the connected client to an outer `client`, and
+ * then exercises production in all 21 blocks via `client.callTool(...)`.
+ *
+ * The hook body itself is the gate: assignments become handles only when the
+ * hook reaches production. A hook that merely does
+ * `tempDir = mkdtempSync(...)` registers nothing, which is what keeps
+ * file-content gate tests — the ones that stage a fixture and then assert on
+ * text — correctly flagged.
+ */
+function collectHookAssignedHandles(
+  content: string,
+  buildOutputVars: string[],
+  importedFunctions: ImportedFunction[],
+  knownHandles: string[],
+  pathContext: PathContext | null,
+): string[] {
+  const names = new Set<string>();
+  LIFECYCLE_HOOK_PATTERN.lastIndex = 0;
+  let hook;
+  while ((hook = LIFECYCLE_HOOK_PATTERN.exec(content)) !== null) {
+    if (isInsideString(content, hook.index)) continue;
+    const body = extractTestCallbackBody(content.substring(hook.index));
+    if (!body) continue;
+
+    const reachesProduction =
+      spawnsBuildOutput(body, buildOutputVars, pathContext) ||
+      importedFunctions.some((fn) => referenceMatcher(fn.name).test(body)) ||
+      knownHandles.some((handle) => referenceMatcher(handle).test(body));
+    if (!reachesProduction) continue;
+
+    HOOK_ASSIGNMENT_PATTERN.lastIndex = 0;
+    let assign;
+    while ((assign = HOOK_ASSIGNMENT_PATTERN.exec(body)) !== null) {
+      names.add(assign[1]);
+    }
+  }
+  return [...names];
+}
+
 function collectProductionHandles(
   content: string,
   buildOutputVars: string[],
@@ -1249,6 +1306,19 @@ function collectProductionHandles(
     ) {
       handles.add(helper.name);
     }
+  }
+
+  // Suite-scope handles assigned by a production-reaching lifecycle hook
+  // (#956). Seeded before the closure so a helper wrapping such a handle is
+  // promoted by it in the same pass.
+  for (const name of collectHookAssignedHandles(
+    content,
+    buildOutputVars,
+    importedFunctions,
+    [...handles],
+    pathContext,
+  )) {
+    handles.add(name);
   }
 
   // Transitive closure: a helper referencing a known spawn helper is one too.
