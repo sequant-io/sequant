@@ -1396,6 +1396,15 @@ export function testBlockCallsProductionCode(
   // 3. Calls a describe/module-scope helper that (transitively) reaches
   //    production — spawns the project's executable code, or calls an imported
   //    production function (#906). Covers arrow-const and `function` helpers.
+  //
+  //    Known asymmetry (measured on #956, PR #1002, not fixed): the match is
+  //    by plain *reference*, not call shape, so a block that merely reads a
+  //    registered handle (`expect(manager).toBeDefined()`) is excused. This is
+  //    pre-existing (base `main` behaves identically). Tightening the use
+  //    site to call shape moved the repo-wide flagged count 201 → 204 (3
+  //    blocks) and newly flagged a legitimate block
+  //    (`config-resolver.model-roles.test.ts:249`), so the reference match is
+  //    kept deliberately; revisit only with a corpus measurement in hand.
   for (const handle of productionHandles) {
     if (referenceMatcher(handle).test(body)) {
       return true;

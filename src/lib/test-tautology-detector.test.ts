@@ -2,11 +2,15 @@
  * Tests for Test Tautology Detector
  */
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
 import {
   isSourceModule,
   extractImports,
   extractTestBlocks,
   testBlockCallsProductionCode,
+  buildPathContext,
   analyzeTestFile,
   detectTautologicalTests,
   formatTautologyResults,
@@ -1191,5 +1195,38 @@ describe("suite", () => {
 `;
     const result = analyzeTestFile(content, "src/lib/c.test.ts");
     expect(result.tautologicalCount).toBe(1);
+  });
+});
+
+describe("buildPathContext (#956)", () => {
+  it("anchors thisDir on the analyzed file and finds the repo root by walking up to .git", () => {
+    const here = nodePath.resolve("src/lib/test-tautology-detector.test.ts");
+    const ctx = buildPathContext(here);
+    expect(ctx.thisDir).toBe(nodePath.dirname(here));
+    // Repo root is derived from the file's own path, not process.cwd():
+    // vitest runs at the repo root, so the two coincide here, but the
+    // assertion is on the walk-up result.
+    expect(ctx.repoRoot).toBe(nodePath.resolve("."));
+    expect(ctx.vars.size).toBe(0);
+  });
+
+  it("falls back to the nearest package.json when no .git is found, and to null when neither exists", () => {
+    const base = mkdtempSync(nodePath.join(tmpdir(), "tautology-pathctx-"));
+    try {
+      const pkgRoot = nodePath.join(base, "pkg");
+      const nested = nodePath.join(pkgRoot, "src", "deep");
+      mkdirSync(nested, { recursive: true });
+      writeFileSync(nodePath.join(pkgRoot, "package.json"), "{}\n");
+      const inPkg = buildPathContext(nodePath.join(nested, "a.test.ts"));
+      expect(inPkg.repoRoot).toBe(pkgRoot);
+
+      const bare = nodePath.join(base, "bare", "x");
+      mkdirSync(bare, { recursive: true });
+      const noRoot = buildPathContext(nodePath.join(bare, "b.test.ts"));
+      expect(noRoot.thisDir).toBe(bare);
+      expect(noRoot.repoRoot).toBeNull();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });
