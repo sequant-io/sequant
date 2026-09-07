@@ -33,8 +33,8 @@ import {
  *   they act would be a circular nag.
  * - `serve`: stdout is the MCP protocol channel, so the pre-flight's
  *   console output would corrupt the stream. `serve` reports install status
- *   on stderr and through the `sequant://config` / `sequant://install`
- *   resources instead (see serve.ts).
+ *   on stderr and through the `sequant://install` resource instead (see
+ *   serve.ts).
  */
 export const PREFLIGHT_EXEMPT_COMMANDS: ReadonlySet<string> = new Set([
   "init",
@@ -90,7 +90,7 @@ export async function runVersionPreflight(
 }
 
 /**
- * Install status as exposed by `sequant serve` (stderr line + MCP resources).
+ * Install status as exposed by `sequant serve` (stderr line + sequant://install).
  * `null` when the project has no manifest — sequant is not installed here, so
  * there is nothing to be stale.
  */

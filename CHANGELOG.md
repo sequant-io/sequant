@@ -25,10 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `sequant://install` MCP resource and a `skillsInstall` field merged into
-  `sequant://config` (when the settings file is plain JSON): whether the
-  installed skill tree is stale relative to the running server, and the
-  command that resolves it. Report-only (#988).
+- `sequant://install` MCP resource: whether the installed skill tree is stale
+  relative to the running server, and the command that resolves it — always
+  an object (`{ installed: false }` when the project has no manifest), with
+  `filesModified: false` as the report-only contract. `sequant://config`
+  is unchanged: the settings file, verbatim (#988).
 
 ### Fixed
 

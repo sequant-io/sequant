@@ -95,9 +95,8 @@ export function registerResources(
         "Current Sequant workflow settings including default phases, timeout limits, " +
         "quality loop configuration, and agent preferences. " +
         "Read this to understand how sequant_run will behave before invoking it. " +
-        "Also carries `skillsInstall` — whether the installed skill tree is stale " +
-        "relative to this server's version. Reported only: the server never " +
-        "rewrites project files; run `sequant update` to apply.",
+        "Returned verbatim as written (JSON or JSONC). For whether the installed " +
+        "skill tree is stale relative to this server, read sequant://install.",
       mimeType: "application/json",
     },
     async () => {
@@ -111,7 +110,6 @@ export function registerResources(
                 text: JSON.stringify({
                   message:
                     "No settings file found. Run `sequant init` to create one.",
-                  ...installField(context),
                 }),
               },
             ],
@@ -124,7 +122,7 @@ export function registerResources(
             {
               uri: "sequant://config",
               mimeType: "application/json",
-              text: withInstallField(content, context),
+              text: content,
             },
           ],
         };
@@ -145,10 +143,12 @@ export function registerResources(
     },
   );
 
-  // sequant://install — skills-install status on its own (#988). The same
-  // data rides on sequant://config, but settings files are allowed to be JSONC
-  // and cannot always be re-serialized with an extra field; this resource is
-  // the always-parseable channel.
+  // sequant://install — skills-install status (#988). Server-computed data
+  // lives here, deliberately apart from sequant://config, which is the user's
+  // own settings file returned verbatim. Always an object: `{ installed:
+  // false }` when the project has no sequant manifest, otherwise the status
+  // computed once at startup. `filesModified: false` is the contract — the
+  // server reports staleness and never applies it.
   server.registerResource(
     "install",
     "sequant://install",
@@ -156,7 +156,7 @@ export function registerResources(
       description:
         "Whether the installed sequant skill tree (.claude/skills, hooks, agents) is " +
         "stale relative to this server's version, and the command that resolves it. " +
-        "Read-only: the server never modifies project files.",
+        "Report-only: the server never modifies project files.",
       mimeType: "application/json",
     },
     async () => ({
@@ -164,35 +164,19 @@ export function registerResources(
         {
           uri: "sequant://install",
           mimeType: "application/json",
-          text: JSON.stringify(installField(context).skillsInstall ?? null),
+          text: JSON.stringify(installResourceBody(context)),
         },
       ],
     }),
   );
 }
 
-/** `{ skillsInstall }` when the caller computed it; `{}` otherwise. */
-function installField(
-  context: ResourceContext,
-): { skillsInstall?: SkillsInstallStatus | null } {
-  return context.install === undefined ? {} : { skillsInstall: context.install };
-}
+export type InstallResourceBody =
+  | { installed: false }
+  | ({ installed: true } & SkillsInstallStatus);
 
-/**
- * Merge `skillsInstall` into the settings document when it is plain JSON. A
- * settings file with comments (JSONC) is returned verbatim — never rewritten
- * by hand — and the status stays available on sequant://install.
- */
-function withInstallField(content: string, context: ResourceContext): string {
-  const field = installField(context);
-  if (!("skillsInstall" in field)) return content;
-  try {
-    const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return JSON.stringify({ ...parsed, ...field }, null, 2);
-    }
-    return content;
-  } catch {
-    return content;
-  }
+function installResourceBody(context: ResourceContext): InstallResourceBody {
+  return context.install
+    ? { installed: true, ...context.install }
+    : { installed: false };
 }

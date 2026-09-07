@@ -117,8 +117,9 @@ sync/update" pre-flight would be a circular nag right before they do exactly
 that. `serve` is exempt because stdout is the MCP protocol channel — the
 pre-flight's console output would corrupt the stream — so it reports install
 status its own way: one stderr line at startup ("… No files were modified. Run:
-sequant update") plus a `skillsInstall` field on the `sequant://config` resource
-and a standalone `sequant://install` resource. The logic lives in
+sequant update") plus the `sequant://install` resource. `sequant://config` stays
+the user's settings file returned verbatim — server-computed status never rides
+on a user-authored document. The logic lives in
 `src/commands/version-preflight.ts` (`runVersionPreflight`,
 `getSkillsInstallStatus`), which the hook calls with the command name.
 
