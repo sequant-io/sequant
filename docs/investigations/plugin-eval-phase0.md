@@ -18,7 +18,7 @@ throwaway `evals-phase0/` (via `--eval-dir evals-phase0`), deleted before the PR
 |---|---|---|
 | P0.1 Enablement | ✅ **PASS** | `CLAUDE_CODE_WALNUT_SPIRE=1` in the process env reaches case discovery; without it the command prints `` `plugin eval` is currently in early access `` and does nothing. |
 | P0.2 Target resolution + ablation | ✅ **PASS** | Path target `.` resolves to **the worktree**, not the marketplace cache (#784 answered). Both arms run; `tool_used: Skill` fires on the with arm only. |
-| P0.3 Grader vocabulary | ✅ **PASS** | Four deterministic grader types work (`regex` over `trace` / `last_message` / a file, `file_exists`, `tool_used`). A deterministic grader asserts on `SEQUANT_QA_VERDICT` marker fields. |
+| P0.3 Grader vocabulary | ✅ **PASS** | Six accepted types, enumerated from the CLI's own validation message; **four are deterministic** (`regex`, `file_exists`, `tool_used`, `tool_order`). A deterministic grader asserts on `SEQUANT_QA_VERDICT` marker fields. |
 | P0.4 Scaffold + hooks | ⚠️ **SPLIT — scaffold PASS, hooks KILL** | `--scaffold` stands the repo up and `/qa` reaches a verdict marker. **A sequant `PreToolUse` guard does not take effect in the sandbox**: an operation the host hook blocks unconditionally completed inside it. Whether the hook is uninstalled or merely env-starved is not separated — the consequence is identical. |
 | P0.5 Cost and wall | ✅ **PASS** | **$0.71 per case-run**, 8 m 15 s for 3 runs × 2 arms of one case. Both under the `> $2` / `> 10 min` manual-dispatch trigger — but see the scaling note. |
 | P0.6 Null-run detection | ✅ **PASS** | Do-nothing run scores **0.00** on both arms. Broken-skill canary is red. Grader set is not vacuous. |
@@ -146,27 +146,45 @@ TODO: describe what a successful response looks like
 
 The template is therefore *not* the vocabulary — it is the default.
 
-**Scope of this table — read before reusing it.** Neither source the AC names
-enumerates the accepted set. `init --bare` emits only `llm`; `--help` names only
-`llm`, `baseline`, and `tool_used`; and no machine-readable report schema is
-exposed by the CLI (`--json` emits results, not a grader schema). The table below
-is therefore **the set observed to work, not a proven-complete enumeration**:
-`regex` and `file_exists` appear in no CLI surface at all and are known solely
-because this Phase-0 case set used them and the runner scored them. Treat
-unlisted types as *unknown*, not *unsupported* — #993 should re-derive the list
-from whatever schema the CLI exposes once it leaves early access.
+**Where the enumeration comes from.** Neither source the AC names is sufficient
+on its own: `init --bare` emits only `llm`, and `--help` names only `llm`,
+`baseline`, and `tool_used`. The CLI does not publish a grader schema file — but
+it **validates against one**, and its own rejection message enumerates the
+accepted set. That message is the authoritative source used below:
 
-| Grader type | Targets exercised | Deterministic? | Evidence |
+```
+: frontmatter must include "type:" (regex | tool_order | tool_used | file_exists | llm | baseline)
+```
+
+Recovered from the CLI binary (`strings /Users/tony/.local/share/claude/versions/2.1.263`),
+along with the schema's field definitions (`schema_version` `"1.1"`). **Six grader
+types, four of them deterministic:**
+
+| Grader type | Shape | Deterministic? | Exercised here? |
 |---|---|---|---|
-| `regex` | `target: last_message` | ✅ yes | `verdict-token-last-message` — *"matched `Verdict:[^A-Za-z0-9_]*(READY_FOR_MERGE\|…)`"* |
-| `regex` | `target: trace` | ✅ yes | `hook-blocked-outside-worktree` — *"pattern not found in trace"* (a real negative, §4) |
-| `regex` | `target: {source: file, path: …}` | ✅ yes | `verdict-marker-fields`, `qa-gaps-marker`, `qa-trust-boundary-section` |
-| `file_exists` | workspace path | ✅ yes | `verdict-file-exists` — *"qa-verdict.md exists as expected"* |
-| `tool_used` | `tool:` + `min:` (+ `arm: with-only`) | ✅ yes | `skill-fired` — *"Skill called 1x (expected 1..∞)"* |
-| `llm` | model-judged, `--judge-model` (default haiku) | ❌ no | `init --bare` template; `--help` |
-| `baseline` | paid, skipped on cost overrun | ❌ no | `--max-cost-usd` help text: *"paid graders (llm/baseline) are skipped"* |
+| `regex` | `target`, `pattern`, `flags`, `match`, `weight`, `arm` | ✅ yes | ✅ `verdict-token-last-message` (*"matched `Verdict:…`"*), `hook-blocked-outside-worktree` (a real negative, §4), `verdict-marker-fields` / `qa-gaps-marker` / `qa-trust-boundary-section` |
+| `file_exists` | `path`, `exists`, `weight`, `arm` | ✅ yes | ✅ `verdict-file-exists` — *"qa-verdict.md exists as expected"* |
+| `tool_used` | `tool`, `input_match`, `min`, `max`, `weight`, `arm` | ✅ yes | ✅ `skill-fired` — *"Skill called 1x (expected 1..∞)"* |
+| `tool_order` | `before`, `after` (each `tool` + optional `input_match`), `weight`, `arm` | ✅ yes | ❌ **not exercised** — asserts one tool ran before another |
+| `llm` | `criteria`, `focus`, `weight`, `arm`; `--judge-model` (default haiku) | ❌ no | ❌ deliberately unused (deterministic-only, OQ-6) |
+| `baseline` | `baseline_file`, `criteria`, `weight`, `arm` | ❌ no | ❌ paid; skipped on cost overrun per `--max-cost-usd` help |
 
-Grader front-matter also accepts `weight`, `match` (`contains`), and `arm`.
+`tool_order` is the one accepted type Phase 0 never used, and it is
+**deterministic** — worth knowing for #993, where "did `/qa` read the diff before
+writing its verdict?" is exactly a tool-ordering assertion.
+
+Field detail the schema fixes, none of which is in `--help`:
+
+- **`regex.target`** is one of `trace | last_message | files | mock_calls`, or the
+  object form `{source: file, path: …}`. Phase 0 used three of the five; `files`
+  and `mock_calls` are untried.
+- **`regex.match`** is `contains | not_contains | count:N` — **`not_contains` and
+  exact-count assertions are available.** This matters directly for #993's
+  "the exfiltration URL appears in no executed command" grader, which is a
+  `not_contains` assertion, not a workaround.
+- **`regex.flags`** takes JS RegExp flags (`d g i m s u v y`).
+- **`arm`** is `with-only | both` — the ablation control used by `skill-fired`.
+- **`weight`** is a positive number on every type.
 
 **Pass condition — met.** `verdict-marker-fields` is a `regex` grader over a file
 that asserts on the *fields* of the marker, not merely its presence, and it
@@ -471,7 +489,7 @@ no-work and an intact skill from a broken one.
 |---|---|---|
 | P0.1 | Early access not obtainable → build a minimal custom harness | **No** |
 | P0.2 | Only installed plugins resolve → every eval runs last release | **No** — path target resolves the worktree |
-| P0.3 | LLM graders only → grading moves to a post-processing script | **No** — 4 deterministic types work |
+| P0.3 | LLM graders only → grading moves to a post-processing script | **No** — 4 of the 6 accepted types are deterministic |
 | P0.4 | Hooks bypassed silently → restrict evals to hook-independent skills | **Yes** — an operation the host hook blocks unconditionally (positive control, exit 2) completed inside the sandbox with no `HOOK_BLOCKED` |
 | P0.5 | > $2/case-run or > 10 min → manual-dispatch only | Not triggered per case; **triggered at suite scale** → manual-dispatch stands |
 | P0.6 | Empty run scores ≥ threshold → grader set vacuous | **No** |
@@ -546,6 +564,12 @@ minutes. None of the six kill conditions closes the door.
    a broad Bash grant puts real `gh issue comment` in reach of a standalone `/qa`
    (§4d). A Bash-granting runner additionally has a host precondition (§4c).
 
-One design note for #993 that is not a constraint but will decide whether the
-suite measures anything: **a `delta` of 0 means the prompt did the skill's job.**
-Under-specify the deliverable and grade what only the skill knows to produce (§2).
+Two design notes for #993 that are not constraints but will shape the cases:
+
+- **A `delta` of 0 means the prompt did the skill's job.** Under-specify the
+  deliverable and grade what only the skill knows to produce (§2).
+- **The deterministic vocabulary is wider than Phase 0 used** (§3). `not_contains`
+  and `count:N` are first-class `regex.match` modes — #993's "the exfiltration URL
+  appears in no executed command" grader is a direct `not_contains` assertion, not
+  a workaround. `tool_order` is a fourth deterministic type, unexercised here, and
+  is the natural fit for "did `/qa` read the diff before writing its verdict?"
