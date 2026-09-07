@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.13.0
+# What We've Built: Sequant v2.13.1
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -739,6 +739,12 @@ Shell scripts in `templates/scripts/`:
 - VS Code extension
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
+
+### Recent Additions (v2.13.1)
+
+- **Warn-only skills pre-flight** - A stale or drifted `.claude/` tree is reported before commands and names `sequant update`; nothing is rewritten on startup any more (#988)
+- **Side-effect-free `sequant serve`** - Install status goes to stderr and the new `sequant://install` MCP resource (`filesModified: false`); `sequant://config` stays the settings file verbatim (#988)
+- **Pinned plugin MCP config** - The `.mcp.json` plugin users actually install is stamped to the release version by `prepare-marketplace` (#988, closes the #793 regression)
 
 ### Recent Additions (v2.13.0)
 
