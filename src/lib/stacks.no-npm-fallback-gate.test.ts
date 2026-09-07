@@ -2,7 +2,8 @@
  * Gate test (#932 AC-3): no producer reintroduces the literal fallback that
  * used to short-circuit `resolvePackageManager`'s lockfile detection on every
  * pnpm/yarn/bun worktree provisioned by `run.ts` (a declared-manager default
- * of a valid PM_CONFIG key, spelled with the nullish-coalescing operator).
+ * of a valid PM_CONFIG key, in any of its spellings: `?? "npm"`, `|| 'npm'`,
+ * `?? DEFAULT_PM`, ...).
  *
  * The banned pattern is assembled at runtime (not written as a source
  * literal here) so this gate file doesn't trip its own grep.
@@ -12,7 +13,15 @@ import { describe, it, expect } from "vitest";
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 
-const BANNED_PATTERN = ["packageManager", "??", '"npm"'].join(" ");
+// Extended-regex, assembled from parts: `packageManager` followed by either
+// coalescing operator (`??` or `||`) and either the literal `"npm"` / `'npm'` or
+// a `DEFAULT_PM`-style constant — every spelling of "assume npm" the original
+// one-form grep would have missed (QA on PR #1000).
+const BANNED_PATTERN = [
+  "packageManager",
+  "\\s*(\\?\\?|\\|\\|)\\s*",
+  "(\"npm\"|'npm'|DEFAULT_PM[A-Za-z_]*)",
+].join("");
 
 const SETUP_SKILL_MIRRORS = [
   "templates/skills/setup/SKILL.md",
@@ -24,7 +33,7 @@ describe("#932: packageManager literal npm fallback gate", () => {
   it('932: no source file falls back to a literal "npm" for an undeclared packageManager', () => {
     let output = "";
     try {
-      output = execFileSync("grep", ["-rn", BANNED_PATTERN, "src", "bin"], {
+      output = execFileSync("grep", ["-rnE", BANNED_PATTERN, "src", "bin"], {
         encoding: "utf-8",
       });
     } catch (err) {
