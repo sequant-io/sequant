@@ -1446,6 +1446,43 @@ describe.each(HOOK_COPIES)(
         rmSync(repo, { recursive: true, force: true });
       }
     });
+    it("981: a NAME= outside code context (comment, quoted string, heredoc body) cannot supply a variable message; last assignment before the commit wins", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-scope-");
+      try {
+        // QA round 13: the first resolver scanned the raw whole command, so
+        // `# set MSG=updated …` above a real `MSG="fix: real"` blocked a valid
+        // commit — the exact whole-command bug this issue exists to close.
+        // Assignments are now read only in code context, and only before the
+        // commit segment, last one wins.
+        for (const cmd of [
+          [
+            "# set MSG=updated to override",
+            'MSG="fix: real"; git add -A && git commit -m "$MSG"',
+          ].join("\n"),
+          'echo \'usage: MSG=updated ./s.sh\'; MSG="fix: real"; git add -A && git commit -m "$MSG"',
+          'echo "usage: MSG=updated ./s.sh"; MSG="fix: real"; git commit -m "$MSG"',
+          [
+            "cat <<'EOF'",
+            "MSG=updated",
+            "EOF",
+            'MSG="fix: real"; git commit -m "$MSG"',
+          ].join("\n"),
+          'MSG="updated stuff"; MSG="fix: ok"; git commit -m "$MSG"',
+          'MSG="fix: ok"; git commit -m "$MSG"; MSG="updated"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        const { code, stderr } = runHook(
+          hookPath,
+          'MSG="fix: a"; MSG="updated stuff"; git commit -m "$MSG"',
+          repo,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {

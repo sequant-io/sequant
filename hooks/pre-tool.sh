@@ -1272,28 +1272,73 @@ commit_message_from() {
     }'
 }
 
-# literal_assignment_value <name> <command> — print the value of the first
-# `<name>="…"` / `<name>='…'` / `<name>=word` assignment in <command> (first
-# line only), or nothing when the command never assigns it. Lets
-# `MSG="fix: ok"; git commit -m "$MSG"` be validated on the text the commit
-# will actually carry — which is what `main`'s whole-command extractor did by
-# accident (it read the assignment's quoted string) — instead of blocking on
-# the literal `$MSG` or skipping validation. A variable the command never
-# assigns is unknowable here and validates nothing, like an unquoted word.
+# literal_assignment_value <name> <command> [<limit>] — print the value of
+# the LAST `<name>=` assignment (`"…"`, `'…'`, or a bare word; first line of
+# the value) that appears in CODE context in the first <limit> characters of
+# <command> (whole command when <limit> is 0 or absent). Quoted strings, `#`
+# comments and heredoc bodies are skipped as data, so `echo 'usage:
+# MSG=updated ./s.sh'` or `# set MSG=updated` cannot supply a value — the
+# same segment-scoping discipline the extractor itself follows (#981).
+# Prints nothing when the command never assigns the name in code context.
 literal_assignment_value() {
-    local name="$1" input="$2"
-    local re="(^|[[:space:];&|(])${name}=(\"([^\"]*)\"|'([^']*)'|([^[:space:];&|)]+))"
-    if [[ "$input" =~ $re ]]; then
-        printf '%s\n' "${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}" | head -n 1
-    fi
+    printf '%s' "$2" | awk -v name="$1" -v limit="${3:-0}" '
+    BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    {
+        s = $0; n = length(s); if (limit > 0 && limit < n) n = limit
+        i = 1; found = ""; have = 0; L = length(name)
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == dq || c == sq) {
+                k = i + 1
+                while (k <= n) { d = substr(s, k, 1); if (c == dq && d == "\\") { k += 2; continue }; if (d == c) break; k++ }
+                i = k + 1; continue
+            }
+            if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(s, i, 1) != "\n") i++
+                continue
+            }
+            if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<") {
+                j = i + 2; if (substr(s, j, 1) == "-") j++
+                while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
+                q = substr(s, j, 1); delim = ""
+                if (q == sq || q == dq) { j++; while (j <= n && substr(s, j, 1) != q) { delim = delim substr(s, j, 1); j++ }; j++ }
+                else { while (j <= n && substr(s, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(s, j, 1); j++ } }
+                nl = index(substr(s, j), "\n"); if (nl == 0) break
+                i = j + nl
+                while (i <= n) {
+                    e = index(substr(s, i), "\n")
+                    line = (e == 0) ? substr(s, i) : substr(s, i, e - 1)
+                    t = line; sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                    i = (e == 0) ? n + 1 : i + e
+                    if (t == delim) break
+                }
+                continue
+            }
+            if ((i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/) && substr(s, i, L + 1) == name "=") {
+                k = i + L + 1; q = substr(s, k, 1); val = ""
+                if (q == dq || q == sq) {
+                    k++
+                    while (k <= n) { d = substr(s, k, 1); if (q == dq && d == "\\" && k < n) { val = val substr(s, k + 1, 1); k += 2; continue }; if (d == q) break; val = val d; k++ }
+                    k++
+                } else {
+                    while (k <= n && substr(s, k, 1) !~ /[ \t\n;&|)]/) { val = val substr(s, k, 1); k++ }
+                }
+                found = val; have = 1; i = k; continue
+            }
+            i++
+        }
+        if (have) { sub(/\n.*/, "", found); print found }
+    }'
 }
-# resolve_message_ref <subject> <command> — a subject that is one bare
-# variable reference resolves through literal_assignment_value; anything
-# else passes through unchanged.
+# resolve_message_ref <subject> <command> [<limit>] — a subject that is one
+# bare variable reference resolves through literal_assignment_value over the
+# command text BEFORE the commit segment (shell semantics: the last
+# assignment before the commit is the one it carries); anything else passes
+# through unchanged.
 resolve_message_ref() {
-    local subject="$1" input="$2"
+    local subject="$1" input="$2" limit="${3:-0}"
     if [[ "$subject" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
-        literal_assignment_value "${BASH_REMATCH[1]}" "$input"
+        literal_assignment_value "${BASH_REMATCH[1]}" "$input" "$limit"
     else
         printf '%s\n' "$subject"
     fi
@@ -1345,7 +1390,8 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
         [[ -z "$_seg" ]] && continue
         _validated=1
-        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$TOOL_INPUT")"
+        _before="${TOOL_INPUT%%"$_seg"*}"
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$TOOL_INPUT" "${#_before}")"
     done < <(raw_commit_segment "$TOOL_INPUT")
     if [[ "$_validated" -eq 0 ]]; then
         validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT")"
