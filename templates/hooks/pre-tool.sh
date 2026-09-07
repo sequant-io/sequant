@@ -419,6 +419,16 @@ raw_commit_segment() {
                 seg = seg c nc; code = code "  "; i++
                 continue
             }
+            # `#` comment (unquoted, at a word boundary): keep the raw text but
+            # blank it in CODE to end-of-line, so a commit mentioned inside a
+            # comment — `# git commit -m "wip"` — never qualifies a segment and
+            # is never validated (a false positive the per-segment walk would
+            # otherwise introduce). Applies at any depth.
+            if (c == "#" && (i == 1 || substr(full, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(full, i, 1) != "\n") { seg = seg substr(full, i, 1); code = code " "; i++ }
+                i--
+                continue
+            }
             if (c == sq) { cur = sq; seg = seg c; code = code " "; continue }
             if (c == dq) { cur = dq; seg = seg c; code = code " "; continue }
 
@@ -1163,6 +1173,27 @@ fi
 commit_message_from() {
     printf '%s' "$1" | awk '
     BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    # strip_comments(s) — same-length copy of s with every unquoted `#`
+    # comment (at a word boundary) blanked to end-of-line, so neither the
+    # `git commit` anchor nor the flag scan can land inside a comment.
+    function strip_comments(s,    n, i, c, q, out) {
+        n = length(s); out = ""; q = ""; i = 1
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (q != "") {
+                if (q == dq && c == "\\" && i < n) { out = out c substr(s, i + 1, 1); i += 2; continue }
+                if (c == q) q = ""
+                out = out c; i++; continue
+            }
+            if (c == dq || c == sq) { q = c; out = out c; i++; continue }
+            if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(s, i, 1) != "\n") { out = out " "; i++ }
+                continue
+            }
+            out = out c; i++
+        }
+        return out
+    }
     function heredoc_first_line(s, from,    h, k, nl, rest, e, line) {
         h = index(substr(s, from), "<<"); if (h == 0) return ""
         k = from + h - 1 + 2
@@ -1198,7 +1229,7 @@ commit_message_from() {
         }
     }
     {
-        s = $0; n = length(s)
+        s = strip_comments($0); n = length(s)
         start = index(s, "git commit"); if (start == 0) exit
         i = start + 10
         while (i <= n) {

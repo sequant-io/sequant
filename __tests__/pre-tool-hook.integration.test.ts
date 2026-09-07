@@ -1316,6 +1316,47 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("981: a # comment carrying a commit message can neither block a valid commit nor shield a bad one", () => {
+      const repo = makeStagedRepo("pre-tool-981-comment-m-");
+      try {
+        // QA round 9: with every segment validated, a comment line such as
+        // `# git commit -m "wip stuff"` qualified as a segment and blocked the
+        // real conventional commit below it (Got: wip stuff). Comments are now
+        // blanked in the code form and skipped by the extractor's scan.
+        for (const cmd of [
+          [
+            '# git commit -m "wip stuff"',
+            'git add -A && git commit -m "fix: real conventional commit"',
+          ].join("\n"),
+          [
+            'git add -A # git commit -m "wip stuff"',
+            'git commit -m "fix: ok"',
+          ].join("\n"),
+          ['( # git commit -m "wip"', 'git commit -m "fix: ok" )'].join("\n"),
+          'git commit -m "fix: ok # not a comment"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        // …and the fix cannot reopen the shadow fail-open it sits next to.
+        for (const cmd of [
+          [
+            '# git commit -m "fix: example"',
+            'git commit -m "updated stuff"',
+          ].join("\n"),
+          [
+            '( # git commit -m "fix: decoy"',
+            'git commit -m "updated stuff" )',
+          ].join("\n"),
+          'git commit -m "updated stuff" # trailing comment',
+        ]) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
     it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
       const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
       try {
