@@ -157,7 +157,9 @@ accepted set. That message is the authoritative source used below:
 ```
 
 Recovered from the CLI binary (`strings /Users/tony/.local/share/claude/versions/2.1.263`),
-along with the schema's field definitions (`schema_version` `"1.1"`). **Six grader
+along with the schema's field definitions (`schema_version` `"1.1"`). The
+schema also requires a `name` on every grader; the CLI injects it from the
+grader's filename, so it is omitted from the Shape column below. **Six grader
 types, four of them deterministic:**
 
 | Grader type | Shape | Deterministic? | Exercised here? |
@@ -322,10 +324,12 @@ guard does not take effect inside the eval sandbox. This run does not separate
 the two mechanisms that would produce that — either the plugin's
 `hooks/hooks.json` `PreToolUse` entry is not installed in the sandbox, or the
 sandbox does not propagate the environment the hook reads (leaving
-`EXPECTED_WORKTREE` empty, so the guard short-circuits). Distinguishing them
-needs a hook trigger that depends on neither the environment nor a marker file,
-and every such guard in `pre-tool.sh` is `Bash`-gated — which §4c shows cannot
-run on this machine.
+`EXPECTED_WORKTREE` empty, so the guard short-circuits) — or, a third
+mechanism with the same signature, the sandbox exports `CLAUDE_HOOKS_DISABLED`
+and `pre-tool.sh` takes its early exit before any guard runs. Distinguishing the
+three needs a hook trigger that depends on neither the environment nor a marker
+file, and every such guard in `pre-tool.sh` is `Bash`-gated — which §4c shows
+cannot run on this machine.
 
 **Both mechanisms carry the same operational consequence, which is the operative
 Phase-0 restriction:** no eval case can observe a sequant hook guard firing, so
@@ -535,7 +539,11 @@ paid for, not because it is evidence.
 preserved runs are under `/private/tmp/e-*/out/trace.jsonl` (`--keep-temp`).
 
 Nothing under `evals/` was created, and `evals-phase0/` was deleted before the PR
-(AC-7).
+(AC-7). Consequently these artifacts are **host-local and not reproducible by
+another reviewer from this PR alone**; what a reviewer *can* re-derive anywhere
+is the grader enumeration (`strings` over the CLI binary, §3) and the host-side
+hook control (§4b's guard firing outside the sandbox) — the paid runs would have
+to be repeated with the commands shown, at the costs in §8.
 
 ---
 
