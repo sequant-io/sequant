@@ -128,7 +128,7 @@ guard — a third piece of deep-content application.
 ### Caveat on signal (iii)'s route
 
 The canary text does **not** appear in the skill tool's own output
-(`canary in skill tool output? False`) — that output is truncated at 51,145 chars.
+(`canary in skill tool output? False`) — that output is truncated at 51,144 chars.
 The model reached char 150,308 by *following up with explicit `read` calls* on
 `SKILL.md`:
 
@@ -166,7 +166,7 @@ Every event shares the envelope `{type, timestamp, sessionID, part}`.
 | Event | `part` keys | Payload description |
 |-------|-------------|---------------------|
 | `step_start` | `id`, `messageID`, `sessionID`, `snapshot`, `type` | Opens an assistant step. `snapshot` is a git-like SHA of the workspace state at step entry. Carries no cost or text. |
-| `tool_use` | `callID`, `id`, `messageID`, `metadata`, `sessionID`, `state`, `tool`, `type` | One tool invocation. `tool` names it (`skill`, `bash`, `read`); `state` holds `input`/`output`/`status`; `metadata` is tool-specific (for `skill`: `name`, `dir`, `truncated`, `outputPath`). |
+| `tool_use` | `callID`, `id`, `messageID`, `metadata`, `sessionID`, `state`, `tool`, `type` | One tool invocation. `tool` names it (`skill`, `bash`, `read`). `state` holds `input`/`output`/`status`/`title`/`time` **and `state.metadata`, which is the tool-specific payload** (for `skill`: `name`, `dir`, `truncated`, `outputPath`). ⚠️ The sibling `part.metadata` is **provider** metadata, not tool metadata — on this run it is `{"openrouter":{"reasoning_details":[…]}}`. |
 | `step_finish` | `cost`, `id`, `messageID`, `reason`, `sessionID`, `snapshot`, `tokens`, `type` | Closes a step. **`cost` is the per-step USD float** and `tokens` is `{input, output, reasoning, cache:{read,write}}` — this is the per-run cost source (AC-5). `reason` ∈ `tool-calls` (28) \| `stop` (1). |
 | `text` | `id`, `messageID`, `sessionID`, `text`, `time`, `type` | Assistant prose. The final `text` event (line 92, 6,842 chars) carries the QA verdict and the `SEQUANT_PHASE` marker. |
 
@@ -175,7 +175,8 @@ Tool call distribution across the 28 `tool_use` events: `bash` 22, `read` 5,
 
 ### Parser gotchas for #862 (I-3)
 
-1. **Lines are enormous.** Longest three: 100,151 / 96,676 / 69,872 bytes. A
+1. **Lines are enormous.** Longest three: 100,031 / 96,556 / 69,752 bytes (measured on the committed,
+   path-scrubbed fixture). A
    line-oriented reader with a fixed buffer will split them. Shell `read` *does*
    split them — an early check in this spike reported "30 bad lines" purely as a
    `read` artifact; a proper JSON parse of the same file yields **93 parsed, 0 bad**.
@@ -248,8 +249,52 @@ paid spike run mutates a live issue. The Run A payload denied:
 }
 ```
 
-It worked: the model wanted to post its phase marker, was denied, and handed the
-marker back as text (*"for you to post, since `gh` isn't authenticated here"*).
+**The deny rules were never actually exercised, and this run does not prove they
+work.** The fixture is unambiguous: all **28 tool calls completed** (`jq -r
+'.part.state.status'` → 28 × `completed`, zero errors, zero permission
+rejections), and **no** `gh issue comment` / `gh issue edit` / `gh pr` /
+`git push` / `git commit` was ever *attempted*. The model probed its environment
+early —
+
+```
+gh auth status  →  "You are not logged into any GitHub hosts."
+echo $GH_TOKEN  →  (empty)
+```
+
+— and from then on treated GitHub as read-only, handing its phase marker back as
+text (*"for you to post, since `gh` isn't authenticated here"*). It stopped
+because it had **no credentials**, not because the permission layer denied it.
+
+Keep the deny list — under `--auto` with an authenticated `gh` it is the only
+thing standing between a spike run and a live issue — but record its status
+honestly: **unverified**. Verifying it needs a deliberate control run with `gh`
+authenticated and a mutating command attempted.
+
+### `webfetch: "deny"` does not stop network egress
+
+The Run A payload set `"webfetch": "deny"`, yet the model made **6 successful
+outbound `curl` calls to `api.github.com`** through the `bash` tool — it simply
+routed around the missing `gh` credentials:
+
+```
+curl -s https://api.github.com/repos/<owner>/<repo>/issues/983 --max-time 10
+curl -s https://api.github.com/repos/<owner>/<repo>/pulls/983  --max-time 10
+…4 more
+```
+
+`webfetch` governs opencode's own fetch tool, **not** arbitrary network access
+from `bash`. Combined with the `external_directory` result above, the sandboxing
+picture for #862 is:
+
+| Control | Status on 1.18.27 |
+|---------|-------------------|
+| `permission.external_directory` | **Proven not to govern the `--dir` tree** |
+| `permission.webfetch: "deny"` | **Proven not to stop `curl` from `bash`** |
+| `permission.bash` deny rules | **Untested** — never exercised in this run |
+
+A `--auto` run can therefore reach the network regardless of `webfetch`, and the
+only control with any chance of holding is the one this spike did not test. #862
+must not treat any of these as a sandbox without its own verification.
 
 ---
 
@@ -290,7 +335,7 @@ This is the spike's most consequential result for #862, and it replaces Risk 1.
 | `qa/SKILL.md` on disk | 174,981 chars |
 | Held by opencode's skill registry | 173,010 chars (frontmatter stripped) |
 | Full tool-output file on disk | 176,049 bytes |
-| **Delivered to the model in-band** | **51,145 chars** |
+| **Delivered to the model in-band** | **51,144 chars** |
 | `metadata.truncated` | **`true`** |
 
 The skill tool returns roughly the **first 51 KB** and sets `truncated: true`,
@@ -307,7 +352,12 @@ Consequences #862 must design for:
 - **`truncated: true` is the signal to assert on**, not the presence of the `skill`
   tool call. #862 AC-4's `skill-not-loaded` error should become a
   **`skill-truncated` / `skill-partially-loaded`** condition, detectable from
-  `tool_use.part.metadata.truncated` in the stream.
+  **`tool_use.part.state.metadata.truncated`** in the stream.
+  ⚠️ **Not `part.metadata.truncated`** — that path is `undefined` (it resolves to
+  provider `reasoning_details`), and because `undefined` is falsy a guard written
+  against it would **silently never fire**, which is precisely the failure class
+  this spike exists to prevent. Verify against the fixture:
+  `jq -r 'select(.part.tool=="skill")|.part.state.metadata.truncated' …` → `true`.
 - Sequant's large SKILL.md files are the aggravating factor. ~43K tokens per skill
   load against a 51 KB in-band cap means **every** sequant skill trips this.
 
@@ -340,8 +390,11 @@ went unspent.
 ## What changes in #862 (P0 ACs)
 
 1. **Risk 1 is refuted; replace it with truncation.** The driver must treat
-   `metadata.truncated === true` on the `skill` tool call as a first-class
-   condition. #862 AC-4's `skill-not-loaded` error becomes `skill-truncated`.
+   **`part.state.metadata.truncated === true`** on the `skill` tool call as a
+   first-class condition. #862 AC-4's `skill-not-loaded` error becomes
+   `skill-truncated`. ⚠️ Read the path exactly: `part.metadata` is *provider*
+   metadata and yields `undefined`, which is falsy — a guard written against it
+   never fires.
 2. **Add a reasoning-budget field to `run.opencode`** — per-model
    `options.reasoning.max_tokens` (plus `limit.context` / `limit.output`) is the
    32K-clamp mitigation and has to be expressible in sequant config.
@@ -349,13 +402,18 @@ went unspent.
    isolate from the user's global config. If #862 needs determinism it must
    redirect `XDG_CONFIG_HOME`; otherwise its AC must be written as "these keys are
    set", never "only these keys are set".
-4. **Deny rules are P0, not hardening.** `--auto` + the qa skill's `gh` calls will
-   mutate live issues. The `permission.bash` deny list above is the minimum — and
-   it is the *only* layer that works. **`permission.external_directory` does not
-   govern the `--dir` tree at all** (proven: a blanket `"*":"deny"` still permitted
-   a read inside the run root), so it must not be used as the sandbox boundary.
-   Drop the "keep the worktree out of `/tmp`" requirement unless it is
-   re-justified — this spike refuted the permission-based rationale for it.
+4. **Treat opencode's permission layer as unproven, and verify it before relying
+   on it.** `--auto` + the qa skill's `gh` calls will mutate live issues, so the
+   `permission.bash` deny list is still the minimum — but this spike **did not
+   verify that it works**: `gh` was unauthenticated, no mutating command was ever
+   attempted, and all 28 tool calls completed with zero denials. Two sibling
+   controls were affirmatively **refuted**: `permission.external_directory` does
+   not govern the `--dir` tree (a blanket `"*":"deny"` still permitted a read
+   inside the run root), and `permission.webfetch: "deny"` does not stop `curl`
+   from `bash` (6 successful calls to `api.github.com`). #862 needs its own
+   control run — authenticated `gh`, mutating command attempted — before any AC
+   claims a sandbox. Drop the "keep the worktree out of `/tmp`" requirement
+   unless re-justified; this spike refuted the permission-based rationale for it.
 5. **Spawn contract:** own process group (`setpgrp`) + group kill; NDJSON to a
    **file**, never a pipe.
 6. **Parser is fixture-driven.** Test against
