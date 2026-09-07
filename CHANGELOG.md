@@ -21,7 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded as a guessed `"npm"`. Note that, like `pmRun`, a recorded
   `packageManager` is a setup-time snapshot and a declared value outranks live
   lockfile detection: a project that later migrates package managers should
-  update (or remove) the key in `.sequant-manifest.json` (#932).
+  update (or remove) the key in `.sequant-manifest.json`. The setup skill's
+  lockfile precedence now mirrors the resolver's `LOCKFILE_PRIORITY`
+  (bun > yarn > pnpm > npm; it was pnpm > yarn > bun), which changes the
+  recorded `pmRun`/`packageManager` for a project carrying more than one
+  lockfile (#932).
 
 ## [2.13.1] - 2026-09-06
 
