@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `SEQUANT_PHASE` marker and stops, rather than guessing at what was meant.
     Terminal for the retry path as well as the ladder: no cold-start retry, no
     MCP fallback, no rung spent. The `/exec` and `/loop` skills document when to
-    emit it — and when not to. Reachable without a configured ladder.
+    emit it — and when not to — and that it must go in the agent's **final
+    response message**, unfenced: the run reads the marker from the agent's own
+    output, so one routed only to a `gh issue comment` is invisible under
+    `sequant run`. Reachable without a configured ladder.
   - `DIVERGENCE_SUSPECT` — two **consecutive** iterations that each produced a
     diff at a still-failing verdict. Two, not one: a single such iteration is
     the ordinary `AC_NOT_MET → /loop → re-QA` cycle, and halting on it would
