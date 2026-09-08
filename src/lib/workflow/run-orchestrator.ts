@@ -1212,15 +1212,25 @@ export class RunOrchestrator {
             const otherRemoved = others.filter((p) =>
               removedWorktrees.includes(p),
             );
-            const otherKept = others.filter(
-              (p) => !removedWorktrees.includes(p),
+            // A worktree whose forced removal FAILED is an orphan that needs a
+            // cleanup step — never label it as intentionally kept.
+            const otherUnremoved = others.filter((p) =>
+              unremovedWorktrees.includes(p),
+            );
+            const otherPreexisting = others.filter(
+              (p) =>
+                !removedWorktrees.includes(p) &&
+                !unremovedWorktrees.includes(p),
             );
             const othersNote =
               (otherRemoved.length > 0
                 ? ` Also removed (created for this run): ${otherRemoved.join(", ")}.`
                 : "") +
-              (otherKept.length > 0
-                ? ` Left in place: ${otherKept.join(", ")}.`
+              (otherUnremoved.length > 0
+                ? ` Could not be removed (remove by hand with \`git worktree remove --force <path>\`, then \`git worktree prune\`): ${otherUnremoved.join(", ")}.`
+                : "") +
+              (otherPreexisting.length > 0
+                ? ` Left in place (pre-existing): ${otherPreexisting.join(", ")}.`
                 : "");
             worktreeRemedy =
               `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
