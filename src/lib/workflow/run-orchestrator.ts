@@ -219,7 +219,7 @@ export interface RunInit {
   /** Resolved settings */
   settings: SequantSettings;
   /** Manifest metadata */
-  manifest: { stack: string; packageManager: string };
+  manifest: { stack: string; packageManager?: string };
   /** Explicit base branch override */
   baseBranch?: string;
   /** Per-phase progress callback */

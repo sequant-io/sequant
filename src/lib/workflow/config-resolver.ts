@@ -218,10 +218,12 @@ export function resolveRunOptions(
  * flag — that is the user-facing fix. This is the structural backstop for
  * programmatic callers, `settings.json`, and whatever calls this next.
  *
- * Exported because `phaseTimeout` has two producers, not one: this module and
- * `commands/ready.ts`, whose value reaches the driver through
- * `ready-gate.ts`'s own `buildPhaseConfig` and never passes through
- * `buildExecutionConfig`. Guarding only here would have left that path open.
+ * Kept exported for programmatic callers; no module in `src/` calls it any
+ * more (`config-resolver.numeric-guards.test.ts` covers it through
+ * `buildExecutionConfig`). Until #863 `commands/ready.ts` also called it to
+ * guard `--timeout` and `--max-iterations` on the ready path, which then
+ * bypassed this module; since #863 `ready` feeds `buildExecutionConfig` like
+ * `run` does, so the chain below is the only guard on both paths.
  * Chain it to express the layering — CLI, then settings, then the default:
  *
  * ```ts
@@ -382,10 +384,11 @@ export function resolveRoleToModel(
  * Resolve per-phase model/effort policies with CLI > settings > absent
  * precedence.
  *
- * This is the single resolver both `buildExecutionConfig` (here) and
- * `ready-gate.ts:buildPhaseConfig` call, so they cannot drift the way the
- * two `phaseTimeout` producers did in #833 — see `positiveOr`'s doc comment
- * for that history.
+ * This is the single resolver, called only from `buildExecutionConfig` (here).
+ * Since #863 `ready-gate.ts` receives the resolved `ExecutionConfig` instead of
+ * producing one, so there is no second caller left to drift the way the two
+ * `phaseTimeout` producers did in #833 — see `positiveOr`'s doc comment for
+ * that history.
  */
 export function resolvePhasePolicies(
   cliModels: string | undefined,
@@ -518,9 +521,9 @@ export function buildExecutionConfig(
     // load-bearing wire the #795 inert-flag class guards against — the flag is
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
-    // #914: CLI > settings > absent, via the shared resolver both
-    // ExecutionConfig producers call (see `resolvePhasePolicies`'s doc
-    // comment for the #833 drift this guards against).
+    // #914: CLI > settings > absent, via the shared resolver (see
+    // `resolvePhasePolicies`'s doc comment for the #833 drift this guards
+    // against; since #863 this is its only call site).
     // #975: pass modelRoles + active driver so `role:` prefixes resolve.
     phasePolicies: resolvePhasePolicies(
       mergedOptions.models,
@@ -531,8 +534,8 @@ export function buildExecutionConfig(
       settings.run.agent ?? "claude-code",
     ),
     // #915: CLI > settings > default `false` — mirrors the `readyGate`
-    // precedent above. Both `ExecutionConfig` producers (here and
-    // `ready-gate.ts:buildPhaseConfig`) resolve this the same way (#833).
+    // precedent above. Resolved here only; since #863 `ready-gate.ts` receives
+    // this config instead of producing its own (#833 class).
     effortEscalation:
       mergedOptions.escalateEffort ?? settings.run.effortEscalation ?? false,
   };

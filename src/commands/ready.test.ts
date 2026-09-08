@@ -55,7 +55,12 @@ import { getStateManager } from "../lib/workflow/state-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
+import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
+import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
+import {
+  buildExecutionConfig,
+  resolveRunOptions,
+} from "../lib/workflow/config-resolver.js";
 
 function result(overrides: Partial<ReadyResult>): ReadyResult {
   return {
@@ -188,6 +193,7 @@ describe("readyCommand — #697 renderer wiring", () => {
     vi.mocked(getSettings).mockResolvedValue({
       ready: { policy: "ac" },
       run: { maxIterations: 3, timeout: 1800 },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     vi.mocked(listWorktrees).mockReturnValue([
@@ -305,12 +311,144 @@ describe("readyCommand — #697 renderer wiring", () => {
         timeout: 1800,
         mcpAllowlist: ["stripe", "notion"],
       },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     await readyCommand(String(ISSUE), {});
 
+    // #863: re-anchored — mcpAllowlist now reaches the gate inside the single
+    // resolved `config`, not as a top-level option. Intent unchanged.
     const opts = vi.mocked(runReadyGate).mock.calls[0][0];
-    expect(opts.mcpAllowlist).toEqual(["stripe", "notion"]);
+    expect(opts.config.mcpAllowlist).toEqual(["stripe", "notion"]);
+  });
+
+  it("#863: hands the gate one config produced by buildExecutionConfig (not a hand-rolled subset)", async () => {
+    // The AC-2 assertion. `ready` used to resolve `phasePolicies` and
+    // `effortEscalation` inline and hand the gate a flat bag of primitives,
+    // which is why `agent`/`aiderSettings` never arrived. Recomputing the
+    // expected config from the resolver here — rather than snapshotting a
+    // literal — is what makes this test fail if the command ever forks its own
+    // resolution again.
+    const settings = {
+      ready: { policy: "ac" },
+      run: {
+        maxIterations: 3,
+        timeout: 1800,
+        agent: "aider",
+        aider: { model: "gpt-4o" },
+        mcpAllowlist: ["stripe"],
+      },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>;
+    vi.mocked(getSettings).mockResolvedValue(settings);
+
+    await readyCommand(String(ISSUE), { verbose: true });
+
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    // Through `resolveRunOptions` first, exactly as `ready.ts` does — the
+    // same CLI > env > settings merge the `run` path applies.
+    // Known constraint: this hand-copies the seven CLI keys `ready.ts` forwards.
+    // A forked resolver fails this deep-equal; a forgotten CLI-flag forward in
+    // `ready.ts` does not (both sides would omit it) — keep the two lists in
+    // step, and gate each flag that matters with its own case (see `--no-mcp`,
+    // `SEQUANT_MAX_ITERATIONS` below).
+    const expected = buildExecutionConfig(
+      resolveRunOptions(
+        {
+          maxIterations: undefined,
+          timeout: undefined,
+          mcp: undefined,
+          verbose: true,
+          models: undefined,
+          efforts: undefined,
+          escalateEffort: undefined,
+        } as RunOptions,
+        settings,
+      ),
+      settings,
+      1,
+    );
+
+    expect(opts.config).toEqual(expected);
+    // Spot-check the fields this issue exists for — a deep-equal against a
+    // wrong-but-consistent producer would otherwise read as a pass.
+    expect(opts.config.agent).toBe("aider");
+    expect(opts.config.aiderSettings).toEqual({ model: "gpt-4o" });
+  });
+
+  it("#863: settings-level knobs with no ready flag resolve the same as on the run path (resolveRunOptions is not bypassed)", async () => {
+    // QA on PR #1004 measured the divergence this guards: with
+    // `run.smartTests: false`, `run --ready-gate` produced `noSmartTests: true`
+    // while `sequant ready` produced `false`, because `ready` handed
+    // `buildExecutionConfig` a raw CLI subset instead of the merged options.
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: {
+        maxIterations: 3,
+        timeout: 1800,
+        smartTests: false,
+        autoWaitMinutes: 7,
+        mcp: false,
+      },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), {});
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.noSmartTests).toBe(true);
+    expect(opts.config.autoWaitMinutes).toBe(7);
+    // Third witness of the same class: `run.mcp` used to be ignored by
+    // `ready` (MCP was on unless `--no-mcp` was passed).
+    expect(opts.config.mcp).toBe(false);
+  });
+
+  it("#863: the env layer (SEQUANT_MAX_ITERATIONS) applies on the ready path between CLI and settings", async () => {
+    // QA measured: with resolveReadyLimits pre-resolving maxIterations, the
+    // env layer was shadowed on ready (3) while run honoured it (9).
+    const prev = process.env.SEQUANT_MAX_ITERATIONS;
+    process.env.SEQUANT_MAX_ITERATIONS = "9";
+    try {
+      vi.mocked(getSettings).mockResolvedValue({
+        ready: { policy: "ac" },
+        run: { maxIterations: 3, timeout: 1800 },
+        agents: {},
+      } as Awaited<ReturnType<typeof getSettings>>);
+      await readyCommand(String(ISSUE), {});
+      const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+      expect(opts.config.maxIterations).toBe(9);
+    } finally {
+      if (prev === undefined) delete process.env.SEQUANT_MAX_ITERATIONS;
+      else process.env.SEQUANT_MAX_ITERATIONS = prev;
+    }
+  });
+
+  it("#863: a malformed settings timeout/maxIterations never reaches the gate (the #833 guard now lives in buildExecutionConfig)", async () => {
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 0, timeout: 0 },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), {});
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.phaseTimeout).toBe(DEFAULT_CONFIG.phaseTimeout);
+    expect(opts.config.maxIterations).toBe(DEFAULT_CONFIG.maxIterations);
+    // And the gate's own loop bound follows the resolved config, not a
+    // second chain.
+    expect(opts.maxIterations).toBe(DEFAULT_CONFIG.maxIterations);
+  });
+
+  it("#863: --no-mcp on the ready command reaches the gate config through resolveRunOptions", async () => {
+    // Commander hands `--no-mcp` over as `mcp: false`; `resolveRunOptions`'s
+    // normalizer turns that into `noMcp: true`, which `buildExecutionConfig`
+    // reads. Without the resolver hop the flag would silently become a no-op,
+    // so gate it directly rather than only through the settings knob above.
+    vi.mocked(getSettings).mockResolvedValue({
+      ready: { policy: "ac" },
+      run: { maxIterations: 3, timeout: 1800, mcp: true },
+      agents: {},
+    } as Awaited<ReturnType<typeof getSettings>>);
+    await readyCommand(String(ISSUE), { mcp: false });
+    const opts = vi.mocked(runReadyGate).mock.calls[0][0];
+    expect(opts.config.mcp).toBe(false);
   });
 
   it("AC-5: passes the renderer as the executePhaseWithRetry pause handle", async () => {
@@ -375,6 +513,7 @@ describe("readyCommand — #699 Ink TUI wiring", () => {
     vi.mocked(getSettings).mockResolvedValue({
       ready: { policy: "ac" },
       run: { maxIterations: 3, timeout: 1800 },
+      agents: {},
     } as Awaited<ReturnType<typeof getSettings>>);
 
     vi.mocked(listWorktrees).mockReturnValue([

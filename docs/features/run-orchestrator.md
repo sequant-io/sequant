@@ -42,7 +42,7 @@ const result = await RunOrchestrator.run(
   {
     options: { phases: 'spec,exec,qa' },
     settings,
-    manifest: { stack: manifest.stack, packageManager: manifest.packageManager ?? 'npm' },
+    manifest: { stack: manifest.stack, packageManager: manifest.packageManager },
   },
   ['123', '456'],  // issue numbers as strings
 );

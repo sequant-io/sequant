@@ -14,7 +14,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { resolvePackageManager } from "./stacks.js";
+import {
+  resolvePackageManager,
+  resolvePackageManagerConfig,
+} from "./stacks.js";
 
 let dir: string;
 
@@ -89,4 +92,49 @@ describe("resolvePackageManager", () => {
     expect(resolvePackageManager(undefined, dir)).toBe("pnpm");
     expect(resolvePackageManager(undefined, process.cwd())).toBe("npm");
   });
+});
+
+describe("#932: run path resolves through the lockfile, not a literal fallback", () => {
+  // `run.ts` used to substitute a literal "npm" default for an undeclared
+  // manifest value — a valid PM_CONFIG key that short-circuited
+  // `resolvePackageManager`'s lockfile detection before it ever ran. The
+  // fixed init lets an absent declared value flow through as `undefined`,
+  // matching `update.ts`'s call. These tests build that init shape (no
+  // literal fallback) and assert the resolved install command.
+  it.each([
+    {
+      lockfile: "pnpm-lock.yaml",
+      contents: "lockfileVersion: '9.0'\n",
+      pm: "pnpm" as const,
+      ciInstall: "pnpm install --frozen-lockfile",
+    },
+    {
+      lockfile: "yarn.lock",
+      contents: "# yarn lockfile v1\n",
+      pm: "yarn" as const,
+      ciInstall: "yarn install --frozen-lockfile",
+    },
+    {
+      lockfile: "bun.lockb",
+      contents: "",
+      pm: "bun" as const,
+      ciInstall: "bun install --frozen-lockfile",
+    },
+  ])(
+    "932: manifest without packageManager + $lockfile resolves to $pm's ciInstall",
+    ({ lockfile, contents, pm, ciInstall }) => {
+      writeFileSync(join(dir, lockfile), contents);
+
+      // Mirrors `run.ts`'s init: `manifest.packageManager` (undeclared) flows
+      // through untouched, no `?? "npm"`.
+      const init = { manifest: { stack: "node", packageManager: undefined } };
+
+      const resolved = resolvePackageManager(init.manifest.packageManager, dir);
+
+      expect(resolved).toBe(pm);
+      expect(resolvePackageManagerConfig(resolved, dir).ciInstall).toBe(
+        ciInstall,
+      );
+    },
+  );
 });
