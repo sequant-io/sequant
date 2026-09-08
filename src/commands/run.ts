@@ -2,6 +2,7 @@
 
 import chalk from "chalk";
 import { getManifest } from "../lib/manifest.js";
+import { manifestForRun } from "./run-manifest.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
@@ -97,10 +98,7 @@ export async function runCommand(
   const init = {
     options,
     settings,
-    manifest: {
-      stack: manifest.stack,
-      packageManager: manifest.packageManager ?? "npm",
-    },
+    manifest: manifestForRun(manifest),
   };
   const resolved = RunOrchestrator.resolveConfig(init, issues, batches);
   displayConfig(resolved);
