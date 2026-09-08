@@ -21,18 +21,31 @@ import { PhaseMarkerSchema, type PhaseMarker } from "./state-schema.js";
 import { PhaseUsageSchema, MetricRunSchema } from "./metrics-schema.js";
 import { buildEscalationMarkerFields } from "./model-ladder.js";
 
-const ESCALATED_MARKER: PhaseMarker = {
+/**
+ * Built from `buildEscalationMarkerFields` rather than hand-written, and
+ * deliberately NOT round-tripped through `PhaseMarkerSchema` first.
+ *
+ * That matters: `PhaseMarkerSchema.parse` STRIPS unknown keys, so a fixture
+ * laundered through it can never carry a nested payload into
+ * `formatPhaseMarker` — the round-trip below would stay green even if the
+ * builder started emitting `{ escalation: { … } }`, which is the exact defect
+ * AC-D1 exists to catch. Feeding the builder's raw output in is what makes
+ * these assertions load-bearing.
+ */
+const ESCALATED_MARKER = {
   phase: "exec",
   status: "completed",
   timestamp: "2026-09-08T00:00:00.000Z",
   commitSHA: "abc123",
-  requestedModel: "role:strong",
-  ladderRung: 1,
-  baseModel: "sonnet",
-  escalatedModel: "opus",
-  escalationTrigger: "LOOP_NO_DIFF",
-  topOfLadder: true,
-};
+  ...buildEscalationMarkerFields({
+    rung: 1,
+    base: "sonnet",
+    escalated: "opus",
+    trigger: "LOOP_NO_DIFF",
+    requestedModel: "role:strong",
+    topOfLadder: true,
+  }),
+} as unknown as PhaseMarker;
 
 describe("971 AC-10: escalation facts land in the phase marker", () => {
   it("the schema accepts every escalation field", () => {
@@ -83,7 +96,7 @@ describe("971 AC-10: escalation facts land in the phase marker", () => {
     expect(parsed.map((m) => m.phase)).toEqual(["exec", "qa"]);
   });
 
-  it("buildEscalationMarkerFields produces exactly the schema's field names", () => {
+  it("buildEscalationMarkerFields produces exactly the schema's field names, and nothing else", () => {
     const fields = buildEscalationMarkerFields({
       rung: 2,
       base: "opus",
@@ -91,8 +104,13 @@ describe("971 AC-10: escalation facts land in the phase marker", () => {
       trigger: "SAME_SHA_NO_PROGRESS",
     });
 
-    // Round-tripping the builder's output through the schema proves the two
-    // sides cannot drift on a field name — a rename on either side fails here.
+    // Every emitted key must be one the schema declares. Asserted as an exact
+    // key-set rather than via `PhaseMarkerSchema.parse`, which SILENTLY STRIPS
+    // unknown keys and would therefore accept an extra (possibly nested) field
+    // without complaint.
+    const declared = new Set(Object.keys(PhaseMarkerSchema.shape));
+    expect(Object.keys(fields).filter((k) => !declared.has(k))).toEqual([]);
+
     const parsed = PhaseMarkerSchema.parse({
       phase: "qa",
       status: "failed",
