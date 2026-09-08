@@ -35,6 +35,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   production *and* the handle is used in call position, so a block that merely
   reads a value the hook computed stays flagged. Repo-wide flags fall from 600
   to 201 across 288 test files, with no test block newly flagged.
+- **Commit-message validation no longer reads text outside the `git commit` segment (#981).** `pre-tool.sh` extracted the commit message by scanning the whole compound command, so an earlier quoted string or an unrelated later heredoc could be mistaken for the message and block a valid conventional commit. Now:
+  - Extraction is scoped to each `git commit` segment; the segment scan honours backslash line-continuation and selects on a code form that blanks quoted text, heredoc bodies and unquoted `#` comments but keeps subshell code — so scoping neither strands the message flag nor hides a commit wrapped in `( … )` or `$( … )`.
+  - The message is read from the commit's own flag — `-m "…"` / `-m '…'`, `--message=…` / `--message …`, short-flag clusters such as `-am` (none of which were validated before), or the `-m "$( … <<'EOF' … EOF)"` idiom in any spacing — never from the first quoted string or heredoc in the segment. A heredoc feeding `-F-` / `--file=-` is still validated by its first line. A message that is one bare variable reference (`-m "$MSG"`) is validated on the value of the last `MSG=` assignment before the commit, read in code context only (never from a quoted string, a `#` comment or a heredoc body; a dynamic value such as `MSG=$(…)` is unknowable and validates nothing) — what the old whole-command extractor did by accident, done deliberately — and validates nothing when the command never assigns it; literal text alongside a variable is validated as written.
+  - Only the subject line is validated, so a conventional-looking body line cannot launder a non-conventional subject.
+  - Every `git commit` in a compound command is validated: a decoy conventional commit cannot shield a later non-conventional one, and a `-m`-less segment that merely mentions `git commit` (a comment line, `git commit-tree`, `--amend --no-edit`) cannot hide the real commit.
+  - Closed fail-opens `main` had: heredoc-then-commit inside one subshell, `-m` inside an earlier quoted argument, multi-line `-m` laundering, shadow segments, and the unvalidated `--message`/`-am` forms. Closed false positives: a `<<<` herestring mistaken for a heredoc, and a comment line carrying a commit message.
+- `sequant run`'s skills pre-flight now checks each provisioned worktree
+  instead of the main checkout. `git worktree add` only materializes tracked
+  files, so an untracked `.claude/skills/` (the default after `sequant sync`
+  until it's committed) previously passed the pre-flight while every worktree
+  phase agents actually run in had none — the phase agent then hunted for a
+  slash command that could never resolve. Because the check now runs after
+  provisioning, a failing pre-flight removes the worktrees the run just
+  created (so the printed "commit `.claude/skills`, then re-run" remedy
+  re-provisions from the new commit instead of reusing a stale worktree that
+  still lacks them) and, for a pre-existing worktree it reused, names the
+  `git worktree remove` step (#933).
+- **Fix pnpm/yarn/bun worktrees installing with `npm ci`.** `sequant run`'s
+  manifest init substituted a literal `"npm"` for an undeclared
+  `packageManager`, which is a valid `PM_CONFIG` key and so short-circuited
+  `resolvePackageManager`'s lockfile detection before it ran. The value now
+  flows through as `undefined` and the lockfile decides; a gate test keeps
+  every spelling of the literal fallback (`?? "npm"`, `|| 'npm'`,
+  `?? DEFAULT_PM`) out of `src/` and `bin/`. The setup skill's manifest
+  template writes `packageManager` next to `pmRun` only when a lockfile
+  identified the manager — an undetected one stays undeclared rather than being
+  recorded as a guessed `"npm"`. Note that, like `pmRun`, a recorded
+  `packageManager` is a setup-time snapshot and a declared value outranks live
+  lockfile detection: a project that later migrates package managers should
+  update (or remove) the key in `.sequant-manifest.json`. The setup skill's
+  lockfile precedence now mirrors the resolver's `LOCKFILE_PRIORITY`
+  (bun > yarn > pnpm > npm; it was pnpm > yarn > bun), which changes the
+  recorded `pmRun`/`packageManager` for a project carrying more than one
+  lockfile (#932).
+- **The ready gate now runs on the configured agent driver.** With
+  `run.agent: "aider"` set, `sequant ready` and `sequant run --ready-gate` ran
+  their main phases on aider but silently ran the gate's QA pass on
+  claude-code — a mid-run backend switch with different cost, auth, and
+  behaviour that the user never asked for (#863). `ready-gate.ts` built each
+  gate phase's `ExecutionConfig` from its own literal, so `agent` and
+  `aiderSettings` never reached driver selection.
+
+### Changed
+
+- **`ExecutionConfig` has a single producer again.** The ready gate now
+  inherits the caller's fully-resolved config and overrides only six
+  gate-semantic keys (`phases`, `qualityLoop`, `sequential`, `concurrency`,
+  `parallel`, `dryRun`); a new `execution-config-parity.test.ts` fails if the
+  two ever drift apart. Fields the gate previously hardcoded now inherit, so
+  gate phases honour the settings the rest of the run already did (#863):
+  `--no-retry` is respected; a rate-limited gate phase can auto-wait (#804)
+  instead of failing (the wait budget is per gate phase — each gets a fresh
+  ledger — not per issue); `relayEnabled`, `noSmartTests`,
+  `isolateParallel` and `issueType` all reach the gate. Under
+  `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
+  the same `issueType` its earlier phases had.
+- **`sequant ready` resolves options the way `sequant run` does.** The
+  command now passes its CLI subset through `resolveRunOptions` before
+  `buildExecutionConfig`, so settings-level knobs that never had a `ready`
+  flag — `run.smartTests` (and `SEQUANT_SMART_TESTS`), `run.autoWaitMinutes`
+  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel`, and `run.mcp`
+  (which `sequant ready` previously ignored: MCP was always on unless
+  `--no-mcp` was passed) — resolve identically on both entry points instead
+  of silently taking the resolver's defaults on the `ready` path (#863).
 
 ## [2.13.1] - 2026-09-06
 

@@ -204,22 +204,31 @@ Use the Write tool to create `.sequant/settings.json` with the above content.
 ### 5. Detect Package Manager
 
 ```bash
-# Detect package manager
+# Detect package manager. PM stays EMPTY when no lockfile identifies one:
+# an undeclared manager lets `resolvePackageManager` decide live at run time
+# (#932); recording a guessed "npm" would short-circuit that detection.
+PM=""
 PM_RUN="npm run"
-if [ -f "pnpm-lock.yaml" ]; then
-  PM_RUN="pnpm run"
-  echo "✅ Detected package manager: pnpm"
-elif [ -f "yarn.lock" ]; then
-  PM_RUN="yarn"
-  echo "✅ Detected package manager: yarn"
-elif [ -f "bun.lockb" ]; then
+# Precedence mirrors LOCKFILE_PRIORITY in src/lib/stacks.ts (bun > yarn >
+# pnpm > npm) so a declared value never outranks what live detection would pick.
+if [ -f "bun.lockb" ] || [ -f "bun.lock" ]; then
+  PM="bun"
   PM_RUN="bun run"
   echo "✅ Detected package manager: bun"
+elif [ -f "yarn.lock" ]; then
+  PM="yarn"
+  PM_RUN="yarn"
+  echo "✅ Detected package manager: yarn"
+elif [ -f "pnpm-lock.yaml" ]; then
+  PM="pnpm"
+  PM_RUN="pnpm run"
+  echo "✅ Detected package manager: pnpm"
 elif [ -f "package-lock.json" ]; then
+  PM="npm"
   PM_RUN="npm run"
   echo "✅ Detected package manager: npm"
 else
-  echo "ℹ️  No lock file found — defaulting to npm"
+  echo "ℹ️  No lock file found — leaving packageManager undeclared (pmRun defaults to npm run)"
 fi
 ```
 
@@ -301,13 +310,17 @@ elif [ -f "package.json" ]; then
 fi
 ```
 
-Use the Write tool to create `.sequant-manifest.json`:
+Use the Write tool to create `.sequant-manifest.json` — plain JSON, exactly the
+shape below. Include the `packageManager` line **only when `PM` is non-empty**
+(a lockfile identified it); when no lockfile was found, omit that line entirely
+so `resolvePackageManager` decides at run time (#932):
 ```json
 {
   "version": "latest",
   "installedVia": "plugin",
   "stack": "<detected stack>",
   "pmRun": "<detected PM_RUN>",
+  "packageManager": "<detected PM>",
   "createdAt": "<ISO-8601 timestamp>"
 }
 ```
