@@ -31,6 +31,10 @@ describe("driver registry", () => {
 
   it("862 AC-3 opencode resolves skills, so the #813 preflight stays active", () => {
     expect(getDriver("opencode").resolvesSkills).toBe(true);
+    // #996 AC-5: only claude-code consumes the SDK's MCP plumbing.
+    expect(getDriver("opencode").usesSdkMcp).toBe(false);
+    expect(getDriver("claude-code").usesSdkMcp).toBe(true);
+    expect(getDriver("aider").usesSdkMcp).toBe(false);
   });
 
   it("862 AC-3 accepts opencodeSettings without falling back to a default driver", () => {

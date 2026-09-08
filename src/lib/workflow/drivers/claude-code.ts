@@ -34,6 +34,7 @@ export class ClaudeCodeDriver implements AgentDriver {
 
   /** Phases run slash-command skills from `.claude/skills/` (#813). */
   resolvesSkills = true;
+  usesSdkMcp = true;
 
   /**
    * Track session ID across calls so callers can implement resume.

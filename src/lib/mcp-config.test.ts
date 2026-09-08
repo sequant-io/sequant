@@ -15,6 +15,7 @@ import {
   createProjectMcpJson,
   syncSequantMcpPin,
   getPhaseMcpServersConfig,
+  buildOpencodeMcpConfig,
 } from "./mcp-config.js";
 
 describe("mcp-config", () => {
@@ -676,5 +677,46 @@ describe("mcp-config", () => {
       // File must be untouched on a dry run.
       expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(before);
     });
+  });
+});
+
+describe("996 AC-4: opencode mcp translation", () => {
+  it("uses opencode's flat mcp key with type local and an array command", () => {
+    const config = buildOpencodeMcpConfig();
+
+    expect(Object.keys(config)).toEqual(["sequant"]);
+    expect(config.sequant.type).toBe("local");
+    // opencode's McpLocalConfig takes command as string[], not the single
+    // string Claude Code's mcpServers uses. The two are not interchangeable.
+    expect(Array.isArray(config.sequant.command)).toBe(true);
+    expect(config.sequant.command[0]).toBe("npx");
+    expect(config.sequant.command).toContain("-y");
+    expect(config.sequant.command[config.sequant.command.length - 1]).toBe(
+      "serve",
+    );
+  });
+
+  it("carries the pinned sequant package spec through (#793/#988)", () => {
+    const config = buildOpencodeMcpConfig();
+    const spec = config.sequant.command.find((a) => a.startsWith("sequant@"));
+    expect(spec).toBeDefined();
+  });
+
+  it("never emits an env key, so no provider secret can reach a committed file", () => {
+    // getSequantMcpConfig injects a literal ANTHROPIC_API_KEY when given a
+    // clientType. This config is written to .opencode/opencode.json, which
+    // init tells the user to commit so worktrees inherit the hook plugin — so
+    // the clientType-free overload is the only correct call here.
+    const prev = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "sk-ant-should-never-be-serialized";
+    try {
+      const config = buildOpencodeMcpConfig();
+      expect(JSON.stringify(config)).not.toContain("sk-ant-");
+      expect(config.sequant).not.toHaveProperty("env");
+      expect(config.sequant).not.toHaveProperty("environment");
+    } finally {
+      if (prev === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = prev;
+    }
   });
 });

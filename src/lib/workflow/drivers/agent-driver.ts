@@ -170,6 +170,19 @@ export interface AgentDriver {
    */
   resolvesSkills: boolean;
 
+  /**
+   * True when this driver runs phases through the Claude Agent SDK's own MCP
+   * plumbing, so a cold-start MCP failure is a real possibility and the
+   * "retry without MCP" fallback is meaningful.
+   *
+   * Drivers that shell out to their own CLI (opencode, aider) never consume
+   * `config.mcp`, so retrying without it re-runs an identical command — a
+   * wasted phase timeout and a misleading "Phase failed with MCP enabled"
+   * message (#592). The MCP fallback in `executePhaseWithRetry` is gated on
+   * this rather than on a driver-name string check.
+   */
+  usesSdkMcp: boolean;
+
   /** Execute a phase prompt and return structured result */
   executePhase(
     prompt: string,

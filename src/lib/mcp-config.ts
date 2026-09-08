@@ -265,6 +265,44 @@ export interface ProjectMcpJsonResult {
 }
 
 /**
+ * opencode's local MCP server entry shape (`Config.mcp[name]`).
+ *
+ * Verified against the 1.18.27 SDK schema: `McpLocalConfig = {type: "local",
+ * command: string[], environment?, enabled?, timeout?}`. Note `command` is an
+ * **array**, not the string Claude Code's `mcpServers` uses — the two configs
+ * are not interchangeable.
+ */
+export interface OpencodeMcpLocalConfig {
+  type: "local";
+  command: string[];
+  enabled?: boolean;
+}
+
+/**
+ * Build opencode's flat `mcp` entry for the sequant server (#996 AC-4).
+ *
+ * Deliberately built from `getSequantMcpConfig()` with **no `clientType`**.
+ * That overload injects a literal `ANTHROPIC_API_KEY` into `env` for global
+ * desktop clients, and this config is written to `.opencode/opencode.json`,
+ * which `sequant init` tells the user to commit so worktree phases inherit
+ * the hook plugin. Passing a clientType here would put a provider key in a
+ * committed file. The version pin (#793/#988) carries over via
+ * `getSequantPackageSpec()` inside `getSequantMcpConfig`.
+ */
+export function buildOpencodeMcpConfig(): Record<
+  string,
+  OpencodeMcpLocalConfig
+> {
+  const base = getSequantMcpConfig(); // No clientType → no cwd/env, no secrets
+  const command = [
+    base.command as string,
+    ...(base.args as string[]),
+  ];
+
+  return { sequant: { type: "local", command, enabled: true } };
+}
+
+/**
  * Create or update .mcp.json in the project root for Claude Code.
  *
  * - If .mcp.json doesn't exist → create it with the sequant server entry

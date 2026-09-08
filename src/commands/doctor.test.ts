@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as childProcess from "child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 // Mock child_process for checkClosedIssues
 vi.mock("child_process", () => ({
@@ -123,6 +126,7 @@ import {
   checkClosedIssues,
   isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
+  findOpencodeShim,
 } from "./doctor.js";
 import { fileExists, isExecutable, readFile } from "../lib/fs.js";
 import { getManifest } from "../lib/manifest.js";
@@ -153,6 +157,29 @@ const mockExecSync = vi.mocked(childProcess.execSync);
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockCheckAgentsMdConsistency = vi.mocked(checkAgentsMdConsistency);
+
+/** Settings shaped like the default mock but with an agent override. */
+function settingsWithAgentForPlugin(agent: string) {
+  return {
+    version: "1.0",
+    run: {
+      logJson: true,
+      logPath: ".sequant/logs",
+      autoDetectPhases: true,
+      timeout: 1800,
+      sequential: false,
+      qualityLoop: false,
+      maxIterations: 3,
+      smartTests: true,
+      rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+      mcp: true,
+      retry: true,
+      staleBranchThreshold: 5,
+      agent,
+    },
+    agents: { parallel: false, model: "haiku", isolateParallel: false },
+  };
+}
 
 describe("doctor command", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -394,6 +421,101 @@ describe("doctor command", () => {
       expect(isVersionBelow("1.18.28", "1.18.27")).toBe(false);
       expect(isVersionBelow("1.18.26", "1.18.27")).toBe(true);
       expect(isVersionBelow("2.0.0", "1.18.27")).toBe(false);
+    });
+  });
+
+  describe("996 AC-2: opencode plugin checks", () => {
+    /** Settings with the opencode agent plus optional extraArgs. */
+    function opencodeSettings(extraArgs?: string[]) {
+      return {
+        version: "1.0",
+        run: {
+          logJson: true,
+          logPath: ".sequant/logs",
+          autoDetectPhases: true,
+          timeout: 1800,
+          sequential: false,
+          qualityLoop: false,
+          maxIterations: 3,
+          smartTests: true,
+          rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+          mcp: true,
+          retry: true,
+          staleBranchThreshold: 5,
+          agent: "opencode",
+          ...(extraArgs ? { opencode: { extraArgs } } : {}),
+        },
+        agents: { parallel: false, model: "haiku", isolateParallel: false },
+      };
+    }
+
+    it("996 AC-2 fails with guidance when the opencode plugin is absent", async () => {
+      // This repo has no .opencode/, so the shim is genuinely missing here.
+      mockGetSettings.mockResolvedValue(opencodeSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "opencode --version" ? "1.18.27\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("opencode hook shim");
+      expect(output).toContain(".opencode/plugin/sequant-hooks.ts");
+      expect(output).toContain("sequant init --agent opencode");
+    });
+
+    it("996 AC-2 fails when --pure is configured, which disables plugins", async () => {
+      mockGetSettings.mockResolvedValue(opencodeSettings(["--pure"]) as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "opencode --version" ? "1.18.27\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("opencode --pure");
+      expect(output).toContain("without external");
+    });
+
+    it("996 AC-2 does not flag --pure when it is not configured", async () => {
+      mockGetSettings.mockResolvedValue(
+        opencodeSettings(["--variant", "fast"]) as never,
+      );
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "opencode --version" ? "1.18.27\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("opencode --pure");
+    });
+
+    it("996 AC-2 runs no opencode plugin check for another agent", async () => {
+      mockGetSettings.mockResolvedValue(
+        settingsWithAgentForPlugin("claude-code") as never,
+      );
+      mockCommandExists.mockReturnValue(true);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("opencode hook shim");
+    });
+
+    it("996 AC-2 accepts the shim in either plugin directory", () => {
+      const dir = mkdtempSync(join(tmpdir(), "sequant-doctor-shim-"));
+      try {
+        expect(findOpencodeShim(dir)).toBeUndefined();
+
+        mkdirSync(join(dir, ".opencode/plugins"), { recursive: true });
+        writeFileSync(join(dir, ".opencode/plugins/sequant-hooks.ts"), "// x\n");
+        // The plural dir also loads on 1.18.27, so a hand-placed copy there is
+        // accepted rather than reported missing.
+        expect(findOpencodeShim(dir)).toBe(".opencode/plugins/sequant-hooks.ts");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 
