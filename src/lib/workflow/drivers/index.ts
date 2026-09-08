@@ -14,6 +14,7 @@ export type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ModelUsageEntry,
   ResumeHandle,
 } from "./agent-driver.js";
 

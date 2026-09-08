@@ -132,8 +132,12 @@ import { isCompletedIssueStatus } from "./completed-status.js";
 import { MetricsWriter } from "./metrics-writer.js";
 import { WorkflowEventEmitter } from "./event-emitter.js";
 import type { IssueEventStatus } from "./event-emitter.js";
-import { type MetricPhase, determineOutcome } from "./metrics-schema.js";
-import { getTokenUsageForRun } from "./token-utils.js";
+import {
+  type MetricPhase,
+  type PhaseUsage as MetricPhaseUsage,
+  determineOutcome,
+} from "./metrics-schema.js";
+import { readWorktreeTokenUsage } from "./token-utils.js";
 import type { SequantSettings } from "../settings.js";
 import {
   resolveRunOptions,
@@ -1793,6 +1797,19 @@ export class RunOrchestrator {
     let totalFilesChanged = 0;
     let totalLinesAdded = 0;
     let totalQaIterations = 0;
+    // #986: driver-sourced usage. `phaseUsage` rows are appended in
+    // `phaseResults` order and never keyed by phase name — grouping is exactly
+    // what would silently merge a quality-loop retry into its first attempt.
+    const phaseUsage: MetricPhaseUsage[] = [];
+    // The hook-written files are only consulted for issues whose driver
+    // reported nothing (aider/subprocess), so a mixed run does not
+    // double-count the SDK numbers.
+    const fallback = {
+      tokensUsed: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheTokens: 0,
+    };
     for (const result of results) {
       const wt = worktreeMap.get(result.issueNumber);
       if (wt?.path) {
@@ -1805,14 +1822,49 @@ export class RunOrchestrator {
           (p) => p.phase === "loop",
         ).length;
       }
+      const issueRows = result.phaseResults.flatMap((pr) =>
+        (pr.usage ?? []).map((u) => ({ phase: pr.phase, ...u })),
+      );
+      phaseUsage.push(...issueRows);
+      // #986 (AC-4): read the fallback through the one worktree-anchored
+      // helper. `cleanup: true` is `run`'s side of the seam — and it moved
+      // here with the read: while this cleared the *main* checkout, every
+      // run deleted the token files written by the user's own interactive
+      // sessions there.
+      if (issueRows.length === 0 && wt?.path) {
+        const hookUsage = readWorktreeTokenUsage(wt.path, { cleanup: true });
+        fallback.tokensUsed += hookUsage.tokensUsed;
+        fallback.inputTokens += hookUsage.inputTokens;
+        fallback.outputTokens += hookUsage.outputTokens;
+        fallback.cacheTokens += hookUsage.cacheTokens;
+      }
     }
+    // Driver usage wins whenever any row exists.
+    const driverTotals = phaseUsage.reduce(
+      (acc, row) => ({
+        inputTokens: acc.inputTokens + row.inputTokens,
+        outputTokens: acc.outputTokens + row.outputTokens,
+        cacheTokens:
+          acc.cacheTokens + row.cacheReadTokens + row.cacheCreationTokens,
+        costUSD: acc.costUSD + row.costUSD,
+      }),
+      { inputTokens: 0, outputTokens: 0, cacheTokens: 0, costUSD: 0 },
+    );
+    const tokenUsage = {
+      inputTokens: driverTotals.inputTokens + fallback.inputTokens,
+      outputTokens: driverTotals.outputTokens + fallback.outputTokens,
+      cacheTokens: driverTotals.cacheTokens + fallback.cacheTokens,
+      tokensUsed:
+        driverTotals.inputTokens +
+        driverTotals.outputTokens +
+        fallback.tokensUsed,
+    };
     const cliFlags: string[] = [];
     if (mergedOptions.sequential) cliFlags.push("--sequential");
     if (mergedOptions.chain) cliFlags.push("--chain");
     if (mergedOptions.qaGate) cliFlags.push("--qa-gate");
     if (mergedOptions.qualityLoop) cliFlags.push("--quality-loop");
     if (mergedOptions.testgen) cliFlags.push("--testgen");
-    const tokenUsage = getTokenUsageForRun(undefined, true);
     const passed = results.filter((r) => r.success).length;
     // #761 AC-7: record why the run failed, as a bounded enum. Sequential and
     // chain runs halt at the first failure, so the first categorized failed
@@ -1876,6 +1928,11 @@ export class RunOrchestrator {
         inputTokens: tokenUsage.inputTokens || undefined,
         outputTokens: tokenUsage.outputTokens || undefined,
         cacheTokens: tokenUsage.cacheTokens || undefined,
+        // #986: SDK estimate, not a billing statement. Omitted rather than
+        // recorded as 0 when no driver reported a cost — "absent" and "free"
+        // are different claims.
+        costUSD: driverTotals.costUSD || undefined,
+        ...(phaseUsage.length > 0 ? { phaseUsage } : {}),
       },
     });
     if (config.verbose) {
