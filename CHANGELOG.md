@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **opencode phases are now guarded by the same hooks as Claude Code phases,
+  and fail closed (#996).** `sequant init --agent opencode` installs a
+  `tool.execute.before` plugin that translates opencode's `{tool, args}` into
+  the stdin envelope `.claude/hooks/pre-tool.sh` expects, spawns the real hook,
+  and throws when it blocks. Every path that cannot prove a call is safe
+  blocks: a malformed args object, an unrecognised tool, a missing hook script
+  or `jq`, a spawn failure, a timeout, and any exit code outside the hook's
+  documented 0/1/2 contract.
+  - The shim **translates** rather than forwards. opencode's tool args are
+    camelCase (`filePath`) and the hook reads snake_case (`file_path`), so
+    passing `args` through verbatim would leave the worktree-boundary and
+    file-lock guards unentered and fall through to `exit 0` — a fail-open that
+    is indistinguishable from a real allow.
+  - `bash`'s optional `workdir` is routed into the envelope's `cwd`, and a
+    relative `filePath` is resolved against opencode's own base directory, so
+    the guards rule on the directory the tool will actually use.
+  - `CLAUDE_HOOKS_DISABLED` and `CLAUDE_HOOKS_FILE_LOCKING` are stripped from
+    the hook's environment. Both ride an unbroken inheritance chain from the
+    launching shell into the plugin, where one ambient export would otherwise
+    disable every guard for a whole run.
+  - **A load handshake, not a file check.** opencode silently ignores a plugin
+    that fails to load — ERROR to its debug log, but exit 0, empty stderr, and
+    a fully resolved tool map. The shim announces itself on stderr and the
+    driver fails the phase when that line is absent, so an unguarded run can no
+    longer be reported as a clean success.
+  - `doctor` reports a missing shim and flags `--pure` (which disables plugins
+    while leaving the file on disk); the driver additionally fails closed with
+    `hooks-not-installed` when the shim is absent from the phase worktree —
+    `.opencode/` is untracked, so an uncommitted shim is present for doctor and
+    absent for every worktree phase.
+- **opencode subagent definitions and MCP config (#996).**
+  `sequant init --agent opencode` translates the three sequant agent
+  definitions into `.opencode/agents/*.md` (`mode: subagent`, `steps` from
+  `maxTurns`, a `tools` map opencode derives `permission` from) and writes the
+  sequant MCP server under opencode's flat `mcp` key with `type: local` and an
+  array `command`. The MCP entry is built from the secret-free overload, so no
+  provider key can reach the committed `.opencode/` tree.
+- **CI smoke against the pinned opencode (#996).** A $0 structural job gates
+  every PR by asserting — through `opencode debug config|agent|skill` — that
+  the commands, the three subagent defs, the plugin load handshake, and the MCP
+  entry all resolve on 1.18.27. A secret-gated model-backed job proves that a
+  throw in `tool.execute.before` actually cancels the tool call.
+
+### Fixed
+
+- **`retrying without MCP` no longer fires for drivers that never used MCP
+  (#996).** The fallback in `executePhaseWithRetry` is now gated on a new
+  `AgentDriver.usesSdkMcp` capability flag rather than on `config.mcp` alone.
+  opencode and aider shell out to their own CLIs and never read `config.mcp`,
+  so the retry re-ran an identical command under a second full phase timeout
+  and mislabelled the cause.
+
 - **opencode agent driver — the first backend that inherits sequant's full skill
   methodology (#862).** `sequant run <n> --agent opencode` dispatches every
   phase through `opencode run --command <phase> … --format json --auto`, where a

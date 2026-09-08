@@ -1,0 +1,195 @@
+# #996 AC-6 — smoke the opencode integration against the pinned version.
+#
+# Two jobs, deliberately split by cost:
+#
+#   structural  $0, runs on every PR, gates the merge. Everything here is a
+#               `opencode debug ...` call, which resolves config/agents/plugins
+#               without ever reaching a model. This is the job that notices an
+#               upstream break.
+#   model-backed  Costs money, so it is gated on a repo secret and skipped
+#               cleanly on forks. Bounded by `timeout-minutes`, since
+#               `opencode run` has no --max-cost flag on 1.18.27.
+name: opencode smoke
+
+on:
+  pull_request:
+    paths:
+      - "templates/opencode/**"
+      - "templates/agents/**"
+      - "src/lib/workflow/drivers/opencode.ts"
+      - "src/commands/init.ts"
+      - "src/commands/doctor.ts"
+      - "src/lib/mcp-config.ts"
+      - ".github/workflows/opencode-smoke.yml"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # The version this integration is verified against. Kept as a literal so
+  # `grep -c '1.18.27' .github/workflows/*.yml` gates it (AC-6).
+  OPENCODE_VERSION: "1.18.27"
+
+jobs:
+  structural:
+    name: structural ($0, gates the PR)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Install pinned opencode
+        run: npm i -g opencode-ai@1.18.27
+
+      - name: Verify the pin took
+        run: |
+          set -euo pipefail
+          actual="$(opencode --version)"
+          echo "opencode $actual"
+          test "$actual" = "1.18.27"
+
+      - name: Provision a fixture project
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/fixture
+          cp -r .claude /tmp/fixture/
+          cd /tmp/fixture
+          git init -q -b main
+          SEQUANT_TEMPLATES_DIR="$GITHUB_WORKSPACE/templates" \
+            node "$GITHUB_WORKSPACE/dist/bin/cli.js" init --agent opencode --yes \
+            || npx --prefix "$GITHUB_WORKSPACE" tsx "$GITHUB_WORKSPACE/bin/cli.ts" init --agent opencode --yes
+
+      - name: Commands, agents, and plugin are on disk
+        working-directory: /tmp/fixture
+        run: |
+          set -euo pipefail
+          test -f .opencode/plugin/sequant-hooks.ts
+          test -f .opencode/plugin/lib/sequant-hooks-core.ts
+          # Three defs, not four: #927 deleted sequant-explorer.
+          test "$(grep -c 'mode: subagent' .opencode/agents/*.md | wc -l)" -eq 3
+
+      - name: opencode resolves each subagent definition
+        working-directory: /tmp/fixture
+        run: |
+          set -euo pipefail
+          for a in sequant-implementer sequant-qa-checker sequant-testgen; do
+            echo "::group::$a"
+            opencode debug agent "$a" | tee /tmp/$a.json
+            # An unknown frontmatter key is silently accepted and inert, so a
+            # grep for 'mode: subagent' cannot tell a working def from a dead
+            # one. Assert on opencode's *resolved* view instead.
+            node -e '
+              const d = require("/tmp/'"$a"'.json");
+              if (d.mode !== "subagent") throw new Error("mode is " + d.mode);
+              if (!d.steps) throw new Error("steps missing");
+            '
+            echo "::endgroup::"
+          done
+
+      - name: The hook shim actually loads
+        working-directory: /tmp/fixture
+        run: |
+          set -euo pipefail
+          # The load handshake, not a file-existence check. opencode swallows a
+          # plugin that fails to load — ERROR to its debug log, but exit 0 and
+          # empty stderr — so presence proves nothing about whether guards ran.
+          opencode debug agent sequant-testgen >/dev/null 2>stderr.txt || true
+          if ! grep -q 'SEQUANT_HOOK_SHIM_ACTIVE' stderr.txt; then
+            echo "::error::hook shim did not load — opencode phases would be unguarded"
+            opencode debug agent sequant-testgen --print-logs --log-level DEBUG 2>&1 \
+              | grep -i 'plugin' || true
+            exit 1
+          fi
+
+      - name: MCP entry uses opencode's flat mcp key
+        working-directory: /tmp/fixture
+        run: |
+          set -euo pipefail
+          opencode debug config > config.json
+          node -e '
+            const d = require("/tmp/fixture/config.json");
+            const s = (d.mcp || {}).sequant;
+            if (!s) throw new Error("no mcp.sequant entry");
+            if (s.type !== "local") throw new Error("type is " + s.type);
+            if (!Array.isArray(s.command)) throw new Error("command is not an array");
+          '
+
+      - name: Skills are discoverable
+        working-directory: /tmp/fixture
+        run: opencode debug skill | head -40
+
+      - name: No provider secret in any committed file
+        run: |
+          set -euo pipefail
+          # AC-6: the .opencode/ tree is meant to be committed, and
+          # getSequantMcpConfig injects a literal ANTHROPIC_API_KEY when handed
+          # a clientType — so this asserts the secret-free overload was used.
+          if git grep -nE '(sk-ant-|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,})' -- . ; then
+            echo "::error::possible secret in a committed file"
+            exit 1
+          fi
+          if grep -rqE '"(env|environment)"' /tmp/fixture/.opencode/opencode.json; then
+            echo "::error::opencode MCP entry carries an env block"
+            exit 1
+          fi
+
+  model-backed:
+    name: model-backed (secret-gated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skips cleanly on forks, which have no access to the secret.
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+
+      - name: Skip when unconfigured
+        id: gate
+        env:
+          KEY: ${{ secrets.OPENCODE_SMOKE_API_KEY }}
+        run: |
+          if [ -z "${KEY:-}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No OPENCODE_SMOKE_API_KEY configured — skipping the paid smoke."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install pinned opencode
+        if: steps.gate.outputs.run == 'true'
+        run: npm i -g opencode-ai@1.18.27
+
+      - name: Prove a shim throw actually cancels the tool call
+        if: steps.gate.outputs.run == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.OPENCODE_SMOKE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Open question 4 on the issue: opencode documents that a throw in
+          # tool.execute.before cancels the call, but the spike never exercised
+          # it — and every guard in #996 rests on it. Prompt a force push and
+          # assert the push did not happen.
+          mkdir -p /tmp/live && cp -r .claude /tmp/live/
+          cd /tmp/live
+          git init -q -b main && git commit -q --allow-empty -m "chore: base"
+          SEQUANT_TEMPLATES_DIR="$GITHUB_WORKSPACE/templates" \
+            npx --prefix "$GITHUB_WORKSPACE" tsx "$GITHUB_WORKSPACE/bin/cli.ts" \
+            init --agent opencode --yes
+          set +e
+          opencode run --format json 'Run exactly this command and nothing else: git push --force origin main' > out.json 2> err.txt
+          set -e
+          grep -q 'SEQUANT_HOOK_SHIM_ACTIVE' err.txt || { echo "::error::shim never loaded"; exit 1; }
+          if ! grep -qi 'HOOK_BLOCKED' out.json err.txt; then
+            echo "::error::the shim did not block a force push — the guard may be decorative"
+            exit 1
+          fi
