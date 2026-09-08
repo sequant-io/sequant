@@ -786,6 +786,19 @@ export async function runReadyGate(
     // A QA turn that declared the criteria impossible has said something more
     // useful than "no parseable verdict", and reporting it as NO_VERDICT would
     // send the reader to debug a verdict regex.
+    //
+    // Reachability, stated plainly so the next reader does not have to
+    // rediscover it: **no skill currently instructs a `qa` agent to emit the
+    // marker** — AC-4 scoped the skill guidance to `exec` and `loop`, and this
+    // branch fires only if a QA agent emits it unprompted. It is kept rather
+    // than dropped because `batch-executor.ts`'s run-path check is
+    // phase-agnostic (it reads `result.specDivergence` for every phase in the
+    // chain, `qa` included); deleting this would make the two paths disagree
+    // about the same input. Documenting the escape hatch in the `qa` skill is
+    // the change that would make both reachable, and it is deliberately out of
+    // #995's scope — the `qa` skill's one-shot contract requires a
+    // `### Verdict:` line from a closed four-value set, so adding a fifth exit
+    // is a design decision, not a gap fill.
     if (qaResult.specDivergence) {
       haltBundle = buildBundle(
         "SPEC_DIVERGENCE",
