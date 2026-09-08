@@ -7,8 +7,16 @@ import type { IssueResult } from "./types.js";
 
 /**
  * #813 AC-5 — a run against a tree with no `.claude/skills/` must exit
- * non-zero without provisioning a worktree or writing a state entry, and an
+ * non-zero without writing a state entry or running any phase, and an
  * aider-driver run on the same tree must still execute (AC-3).
+ *
+ * #933 moved the pre-flight to run AFTER worktree provisioning, checked
+ * against each worktree instead of the main checkout — so unlike the
+ * original #813 version of this test, `ensureWorktrees` IS now expected to
+ * be called even on the failing path (worktree provisioning happens first;
+ * the pre-flight is what stops the *phase* from running). See
+ * `skills-preflight.test.ts`'s "#933" tests for the worktree-targeting
+ * behavior itself.
  */
 
 const spies = vi.hoisted(() => ({
@@ -97,7 +105,7 @@ describe("run skills pre-flight (#813 AC-5 integration)", () => {
     };
   }
 
-  it("exits non-zero without a worktree or state entry when .claude/skills/ is missing", async () => {
+  it("exits non-zero without a state entry when .claude/skills/ is missing, without running any phase", async () => {
     const result = await RunOrchestrator.run(
       init({ phases: "spec,exec,qa", noLog: true }),
       ["999"],
@@ -108,9 +116,9 @@ describe("run skills pre-flight (#813 AC-5 integration)", () => {
     expect(result.results[0].success).toBe(false);
     expect(result.results[0].abortReason).toContain("skills pre-flight failed");
 
-    // No worktree was provisioned — neither via the manager nor on disk.
-    expect(spies.ensureWorktrees).not.toHaveBeenCalled();
-    expect(existsSync(join(base, "worktrees"))).toBe(false);
+    // #933: worktree provisioning now happens BEFORE the pre-flight, so
+    // ensureWorktrees is expected to run — the pre-flight stops the phase.
+    expect(spies.ensureWorktrees).toHaveBeenCalledTimes(1);
     // No phase executed.
     expect(spies.runIssue).not.toHaveBeenCalled();
     // No state entry was written for the issue.

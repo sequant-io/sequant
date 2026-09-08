@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sequant run`'s skills pre-flight now checks each provisioned worktree
+  instead of the main checkout. `git worktree add` only materializes tracked
+  files, so an untracked `.claude/skills/` (the default after `sequant sync`
+  until it's committed) previously passed the pre-flight while every worktree
+  phase agents actually run in had none — the phase agent then hunted for a
+  slash command that could never resolve. Because the check now runs after
+  provisioning, a failing pre-flight removes the worktrees the run just
+  created (so the printed "commit `.claude/skills`, then re-run" remedy
+  re-provisions from the new commit instead of reusing a stale worktree that
+  still lacks them) and, for a pre-existing worktree it reused, names the
+  `git worktree remove` step (#933).
 - **Fix pnpm/yarn/bun worktrees installing with `npm ci`.** `sequant run`'s
   manifest init substituted a literal `"npm"` for an undeclared
   `packageManager`, which is a valid `PM_CONFIG` key and so short-circuited
