@@ -1,5 +1,5 @@
 /**
- * Skills pre-flight for `sequant run` (#813).
+ * Skills pre-flight for `sequant run` (#813, worktree-targeted per #933).
  *
  * The claude-code driver executes phases as slash-command skills loaded from
  * project scope only (`settingSources: ["project"]`, #19/#711). Without
@@ -13,6 +13,14 @@
  * Drivers whose phase prompts do the work inline (aider's `driverOverrides`
  * templates in phase-registry.ts) never resolve skills, so the pre-flight is
  * skipped for them via `AgentDriver.resolvesSkills`.
+ *
+ * `run-orchestrator.ts` calls `runSkillsPreflight` once per provisioned
+ * worktree (not once against the main checkout) — worktrees only materialize
+ * *tracked* files, so an untracked `.claude/skills/` in the main checkout
+ * passes here while every worktree phase agents actually run in has none.
+ * It calls `driverResolvesSkills` first to skip the per-worktree loop
+ * entirely for drivers that never resolve skills, rather than looping and
+ * relying on each call's internal `{ok: true}` short-circuit.
  */
 
 import type { AiderSettings } from "../settings.js";
@@ -126,6 +134,24 @@ export function resolveRequiredSkills(
   if (qualityLoop) requiredPhases.add("loop");
 
   return [...requiredPhases].map((phase) => phaseRegistry.get(phase).skill);
+}
+
+/**
+ * True when the selected driver resolves phases from `.claude/skills/` at
+ * all. Callers use this to skip the pre-flight loop entirely for drivers
+ * like aider (#933 AC-3: zero pre-flight calls, not a per-call short-circuit).
+ * An unknown driver name defaults to `true` so it still reaches
+ * `runSkillsPreflight`, which owns the safe fallback for that case.
+ */
+export function driverResolvesSkills(
+  agent: string | undefined,
+  aiderSettings: AiderSettings | undefined,
+): boolean {
+  try {
+    return getDriver(agent, { aiderSettings }).resolvesSkills;
+  } catch {
+    return true;
+  }
 }
 
 /**
