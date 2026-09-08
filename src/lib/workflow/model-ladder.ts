@@ -181,9 +181,7 @@ export function canEscalateFurther(
  *   and counting it as one would halt runs on a bookkeeping fault.
  */
 export type ChurnClassification =
-  | "capability-bound"
-  | "divergence-suspect"
-  | "none";
+  "capability-bound" | "divergence-suspect" | "none";
 
 /** Why {@link detectCapabilityBoundTrigger} decided as it did. */
 export interface CapabilityTriggerDecision {
