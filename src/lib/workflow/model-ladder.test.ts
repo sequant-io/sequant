@@ -62,6 +62,7 @@ import {
   type LadderState,
 } from "./model-ladder.js";
 import { parsePhaseMarkers } from "./phase-detection.js";
+import { parseSpecDivergence } from "./phase-executor.js";
 import { withEscalatedEffort } from "./effort-escalation.js";
 import {
   buildExecutionConfig,
@@ -1209,8 +1210,39 @@ describe("971 AC-4: a SPEC_DIVERGENCE marker halts without escalating", () => {
           body.indexOf("When the spec is impossible as written"),
         );
         expect(section).not.toBe("");
-        expect(section).toContain("SPEC_DIVERGENCE");
-        expect(section).toContain('"outcome":"SPEC_DIVERGENCE"');
+
+        // Feed the skill's own example marker to the REAL parser rather than
+        // grepping it for a substring. The substring form shipped a defect
+        // straight past this gate: an over-eager find-and-replace rewrote the
+        // marker name to `SEQUANT_exec`/`SEQUANT_loop`, which `parsePhaseMarkers`
+        // does not match at all, so every agent following the skill verbatim
+        // emitted an inert marker and the run climbed the ladder anyway — the
+        // exact thing #971 AC-4 forbids. `"outcome":"SPEC_DIVERGENCE"` was
+        // still present, so the old assertions stayed green.
+        //
+        // Caught by the #995 AC-14 rigged run, which is what that run is for.
+        const example = section
+          .split("\n")
+          .find(
+            (line) => line.includes("SPEC_DIVERGENCE") && line.includes("<!--"),
+          );
+        expect(example).toBeDefined();
+        const parsed = parsePhaseMarkers(
+          // The skill's template carries `<ISO-8601>` as a placeholder; swap in
+          // a real timestamp so the schema's `datetime()` check can pass. Every
+          // other field is the skill's own text, unmodified.
+          example!.replace("<ISO-8601>", "2026-09-08T00:00:00.000Z"),
+        );
+        expect(parsed).toHaveLength(1);
+        expect(parsed[0].outcome).toBe("SPEC_DIVERGENCE");
+        expect(parsed[0].divergenceAcs).toBeTruthy();
+
+        // And the halt actually fires on what the skill documents.
+        expect(
+          parseSpecDivergence(
+            example!.replace("<ISO-8601>", "2026-09-08T00:00:00.000Z"),
+          ),
+        ).toMatchObject({ acs: expect.any(String) });
       }
       // All three mirrors byte-identical (I-4).
       expect(new Set(copies).size).toBe(1);

@@ -120,7 +120,7 @@ guess at what was meant, and do not implement the half you can.** Declare it
 and stop:
 
 ```markdown
-<!-- SEQUANT_exec: {"phase":"exec","status":"failed","timestamp":"<ISO-8601>","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"<ISO-8601>","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->
 ```
 
 - `divergenceAcs` — the AC IDs you found impossible, comma-separated
