@@ -111,6 +111,44 @@ If exec fails, emit a failure marker:
 
 Include this marker in every `gh issue comment` that represents phase completion or failure.
 
+### When the spec is impossible as written
+
+Sometimes an acceptance criterion cannot be satisfied by any implementation:
+it contradicts itself (a file must both exist and not exist), it contradicts
+another AC, or it contradicts the repository as it actually exists. **Do not
+guess at what was meant, and do not implement the half you can.** Declare it
+and stop:
+
+```markdown
+<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"<ISO-8601>","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->
+```
+
+- **Where it goes.** Emit the marker as plain text in your **final response
+  message** — not inside a code fence, and not only in a `gh issue comment`.
+  Under `sequant run` the phase posts no issue comment at all, and the run
+  reads the marker from your own response text; a marker that lives only in a
+  tool call, or inside a fence, is stripped before the parser sees it and the
+  run retries and climbs the ladder anyway. The fenced example above is
+  documentation — the line you emit must be bare.
+- `divergenceAcs` — the AC IDs you found impossible, comma-separated
+  (`"AC-2, AC-5"`). Name them; the halt output quotes this field, and an
+  unnamed AC leaves the human with nothing to reconcile.
+- `error` — one sentence on why it cannot be satisfied.
+- Keep the marker **flat**: no nested objects. The parser reads
+  `{...}` up to the first `}`, so a nested brace silently voids every marker
+  in the comment.
+
+Emitting `SPEC_DIVERGENCE` halts the run immediately. No retry is dispatched
+and no model escalation is spent — a stronger model cannot resolve a
+contradiction in the criteria, it only rediscovers it more expensively. This
+is the intended, cheap outcome for a diverging spec, not a failure on your
+part.
+
+**Do not** use it for work that is merely hard, underspecified, or blocked on
+a dependency. Underspecified is a judgment call you should make and record;
+blocked is a note in the progress update. `SPEC_DIVERGENCE` means *no
+implementation can satisfy this as written*.
+
 ## Behavior
 
 Invocation:

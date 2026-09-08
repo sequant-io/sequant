@@ -31,6 +31,21 @@ import {
   withEscalatedEffort,
   type EscalationRecord,
 } from "./effort-escalation.js";
+import {
+  withEscalatedModel,
+  createLadderState,
+  canEscalateFurther,
+  isLadderConfigured,
+  detectCapabilityBoundTrigger,
+  effectiveModelTrigger,
+  type EscalationTrigger,
+  type ModelEscalationRecord,
+} from "./model-ladder.js";
+import {
+  formatEvidenceBundle,
+  type EvidenceBundle,
+  type DivergenceIterationRecord,
+} from "./divergence-halt.js";
 import type {
   QaVerdict,
   GapFinding,
@@ -79,7 +94,26 @@ export type ReadyTerminalReason =
    * output was unparseable). Distinct from NO_IMPLEMENTATION — the
    * implementation may be complete; it is the *review* that is missing.
    */
-  | "NO_VERDICT";
+  | "NO_VERDICT"
+  /**
+   * #995 (#971 AC-4): an agent declared the spec impossible as written. The
+   * gate halts without escalating and without another fix pass — a retry
+   * cannot un-contradict a spec.
+   */
+  | "SPEC_DIVERGENCE"
+  /**
+   * #995 (#971 AC-3): consecutive fix passes produced diffs at a still-failing
+   * verdict. Model escalation is withheld by design here, so continuing would
+   * only re-spend the same rung on the same non-convergence.
+   */
+  | "DIVERGENCE_SUSPECT"
+  /**
+   * #995 (#971 AC-9): a further capability-bound trigger arrived on the
+   * ladder's last rung. Distinct from `MAX_ITERATIONS`, which would send the
+   * human to raise the iteration cap — the wrong remedy when the problem is
+   * that the strongest configured model already failed.
+   */
+  | "TOP_OF_LADDER";
 
 /** A single gap surfaced by QA, classified for the report. */
 export interface ReadyGapItem {
@@ -128,6 +162,21 @@ export interface ReadyResult {
    * `effortEscalation` is off or no dispatch escalated.
    */
   effortEscalations: EscalationRecord[];
+  /**
+   * Model-rung escalations applied during this gate's QA-pass loop (#971),
+   * one entry per dispatch that actually advanced a rung. Empty when no
+   * ladder is configured (the default) or when no dispatch escalated — a
+   * sticky re-application at an already-reached rung is not a new escalation.
+   */
+  modelEscalations: ModelEscalationRecord[];
+  /**
+   * #995: the formatted evidence bundle, present only on a ladder halt
+   * (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`). Carried as
+   * rendered text rather than as the structured bundle because the gate's one
+   * output channel is `report`, and every other field here is already
+   * report-shaped.
+   */
+  haltBundle?: string;
 }
 
 /**
@@ -434,6 +483,12 @@ export function formatReadyReport(result: ReadyResult): string {
       "The worktree has uncommitted changes but no commits (#879 guard). Uncommitted work cannot rebase, push, or become a PR — commit it, then re-run the gate.",
     NO_VERDICT:
       "QA ran but produced no verdict (deferred one-shot turn or unparseable output) — there is nothing to certify (#534/#853 guard). The implementation may exist; re-run the gate once QA emits a verdict.",
+    SPEC_DIVERGENCE:
+      "An agent declared the spec impossible as written (#995 escape hatch). The gate halted without escalating the model — a stronger model cannot resolve a contradiction in the criteria. Reconcile the acceptance criteria with the repository, then re-run.",
+    DIVERGENCE_SUSPECT:
+      "Consecutive fix passes produced diffs that QA kept rejecting (#971 AC-3 divergence-suspect). The model was deliberately never escalated. Re-specify before re-running — the loop is building plausible work the criteria keep refusing.",
+    TOP_OF_LADDER:
+      "A further capability-bound trigger arrived on the model ladder's last rung (#971 AC-9). The strongest configured model still could not converge; there is nowhere left to climb.",
   };
 
   const lines: string[] = [];
@@ -477,6 +532,18 @@ export function formatReadyReport(result: ReadyResult): string {
     }
   }
   lines.push("");
+
+  // #995: a ladder halt's evidence belongs in the report, not only in the
+  // stop-reason sentence — the SHAs tried and the (usually empty) escalation
+  // history are what let a human adjudicate the halt without replaying the run.
+  if (result.haltBundle) {
+    lines.push("### Ladder halt evidence");
+    lines.push("");
+    lines.push("```");
+    lines.push(result.haltBundle);
+    lines.push("```");
+    lines.push("");
+  }
 
   lines.push(
     "> The human merge gate is intentional: `sequant ready` never merges. Review the gaps above, then merge manually when satisfied.",
@@ -578,6 +645,49 @@ export async function runReadyGate(
   // #915: escalated (base, escalated) tiers, one entry per QA-pass dispatch
   // that actually escalated. Populated at the two dispatch sites below.
   const effortEscalations: EscalationRecord[] = [];
+  // #971: per-gate rung state. Stickiness lives here, not in the config —
+  // `buildPhaseConfig` runs once per dispatch and a rung baked into it would
+  // leak across phases (#915 AC-7's rationale).
+  const ladderState = createLadderState();
+  const modelEscalations: ModelEscalationRecord[] = [];
+  /**
+   * #971: the capability-bound trigger observed by the PREVIOUS iteration's
+   * fix loop, consumed by this iteration's dispatches. `null` on the first
+   * iteration and after any iteration whose loop produced a diff — progress
+   * at a failing verdict is divergence-suspect, never a rung (AC-3).
+   */
+  let lastTrigger: EscalationTrigger | null = null;
+  /** #995: per-iteration replay material for a ladder halt's evidence bundle. */
+  const iterationRecords: DivergenceIterationRecord[] = [];
+  /** #995 (#971 AC-3): consecutive divergence-suspect fix passes. See the run
+   * path's `DIVERGENCE_SUSPECT_HALT_THRESHOLD` for why the bar is two. */
+  let consecutiveDivergenceSuspect = 0;
+  /** #995: set alongside a ladder-halt `finish(...)`, rendered into the report. */
+  let haltBundle: EvidenceBundle | null = null;
+
+  /** #995: assemble the bundle for a gate-side ladder halt. */
+  const buildBundle = (
+    reason: "SPEC_DIVERGENCE" | "DIVERGENCE_SUSPECT" | "TOP_OF_LADDER",
+    phase: string,
+    declared?: { acs?: string; message?: string },
+  ): EvidenceBundle => ({
+    issueNumber,
+    phase,
+    reason,
+    shasTried: [
+      ...new Set(
+        iterationRecords
+          .map((r) => r.sha)
+          .filter((sha): sha is string => Boolean(sha)),
+      ),
+    ],
+    iterations: [...iterationRecords],
+    escalationHistory: [...modelEscalations],
+    ...(reason === "SPEC_DIVERGENCE"
+      ? { declaredAcs: declared?.acs ?? "" }
+      : {}),
+    ...(declared?.message ? { message: declared.message } : {}),
+  });
 
   const finish = async (reason: ReadyTerminalReason): Promise<ReadyResult> => {
     const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
@@ -597,6 +707,8 @@ export async function runReadyGate(
       tokensUsed,
       report: "",
       effortEscalations,
+      modelEscalations,
+      ...(haltBundle ? { haltBundle: formatEvidenceBundle(haltBundle) } : {}),
     };
     result.report = formatReadyReport(result);
 
@@ -635,19 +747,66 @@ export async function runReadyGate(
 
     // #915: iterations > 1 means this QA pass is a retry of a prior
     // unsatisfied verdict — the ready-gate's retry signal.
+    //
+    // #971 AC-5, enforced structurally rather than by convention. One value
+    // drives both escalators, so the AC's two halves cannot drift apart:
+    // `effectiveModelTrigger` withholds the trigger until retry 2, so retry 1
+    // leaves the effort bump enabled (effort is the first rung), and from
+    // retry 2 on an active trigger disables it and spends a model rung
+    // instead (never both on one iteration). Shared with the run path so the
+    // two dispatch paths cannot diverge on the rule (AC-11).
+    const modelTrigger = effectiveModelTrigger(lastTrigger, iterations - 1);
     const qaEscalation = withEscalatedEffort(
       buildPhaseConfig(opts, { fullQa: true }),
       "qa",
-      iterations > 1,
+      iterations > 1 && modelTrigger === null,
     );
     if (qaEscalation.record) effortEscalations.push(qaEscalation.record);
-
-    const qaResult = await runPhaseTracked(
-      "qa",
+    const qaLadder = withEscalatedModel(
       qaEscalation.config,
-      iterations,
+      "qa",
+      modelTrigger,
+      ladderState,
     );
+    if (qaLadder.record) modelEscalations.push(qaLadder.record);
+
+    // #995 (#971 AC-9): a capability-bound trigger arrived with no rung left.
+    // Halt with the bundle instead of re-running QA on a model that already
+    // failed — and name the halt `TOP_OF_LADDER`, not `MAX_ITERATIONS`, so the
+    // human is not sent to raise a cap that was never the constraint.
+    if (qaLadder.topOfLadder) {
+      haltBundle = buildBundle("TOP_OF_LADDER", "qa");
+      return finish("TOP_OF_LADDER");
+    }
+
+    const qaResult = await runPhaseTracked("qa", qaLadder.config, iterations);
     tokensUsed = readTokensUsed(worktreePath);
+
+    // #995 (#971 AC-4): the escape hatch, checked before the verdict guards.
+    // A QA turn that declared the criteria impossible has said something more
+    // useful than "no parseable verdict", and reporting it as NO_VERDICT would
+    // send the reader to debug a verdict regex.
+    //
+    // Reachability, stated plainly so the next reader does not have to
+    // rediscover it: **no skill currently instructs a `qa` agent to emit the
+    // marker** — AC-4 scoped the skill guidance to `exec` and `loop`, and this
+    // branch fires only if a QA agent emits it unprompted. It is kept rather
+    // than dropped because `batch-executor.ts`'s run-path check is
+    // phase-agnostic (it reads `result.specDivergence` for every phase in the
+    // chain, `qa` included); deleting this would make the two paths disagree
+    // about the same input. Documenting the escape hatch in the `qa` skill is
+    // the change that would make both reachable, and it is deliberately out of
+    // #995's scope — the `qa` skill's one-shot contract requires a
+    // `### Verdict:` line from a closed four-value set, so adding a fifth exit
+    // is a design decision, not a gap fill.
+    if (qaResult.specDivergence) {
+      haltBundle = buildBundle(
+        "SPEC_DIVERGENCE",
+        "qa",
+        qaResult.specDivergence,
+      );
+      return finish("SPEC_DIVERGENCE");
+    }
 
     const verdict = qaResult.verdict ?? null;
 
@@ -718,16 +877,44 @@ export async function runReadyGate(
         promptContext: buildLoopContext(policy, verdict, fixableGaps),
       }),
       "loop",
-      iterations > 1,
+      iterations > 1 && modelTrigger === null,
     );
     if (loopEscalation.record) effortEscalations.push(loopEscalation.record);
+    // #971: the same trigger drives this iteration's fix pass. Rungs are
+    // tracked per phase, so `qa` and `loop` each advance at most one rung
+    // for one observed trigger.
+    const loopLadder = withEscalatedModel(
+      loopEscalation.config,
+      "loop",
+      modelTrigger,
+      ladderState,
+    );
+    if (loopLadder.record) modelEscalations.push(loopLadder.record);
+
+    // #995 (#971 AC-9): same halt as the qa dispatch above, for the fix pass.
+    if (loopLadder.topOfLadder) {
+      haltBundle = buildBundle("TOP_OF_LADDER", "loop");
+      return finish("TOP_OF_LADDER");
+    }
 
     const loopResult = await runPhaseTracked(
       "loop",
-      loopEscalation.config,
+      loopLadder.config,
       iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
+
+    // #995 (#971 AC-4): checked before the LOOP_FAILED guard — a fix pass that
+    // declared the criteria impossible did not "fail", it reported. Reporting
+    // it as LOOP_FAILED would point the human at the loop skill.
+    if (loopResult.specDivergence) {
+      haltBundle = buildBundle(
+        "SPEC_DIVERGENCE",
+        "loop",
+        loopResult.specDivergence,
+      );
+      return finish("SPEC_DIVERGENCE");
+    }
 
     if (!loopResult.success) {
       return finish("LOOP_FAILED");
@@ -736,10 +923,54 @@ export async function runReadyGate(
     const after = snapshotFn(worktreePath);
     const progress = compareLoopProgress(before, after);
     if (!progress.progressed) {
-      return finish("LOOP_NO_DIFF");
+      // #971 OQ-1: `LOOP_NO_DIFF` is the ladder's whole point — a fix pass
+      // that produced nothing is the capability-bound fingerprint. Before
+      // #971 it was unconditionally terminal here, which left AC-2's gate
+      // half unreachable: there was no "next retry" left to escalate.
+      //
+      // It becomes continuable ONLY when all three hold: a ladder is
+      // configured, a rung remains for the phase being retried, and the
+      // iteration cap has room. With no ladder configured (the default) every
+      // one of those is false on the first check, so the terminal below is
+      // byte-identical to pre-#971 — no extra `git` call, no behaviour change.
+      const decision = detectCapabilityBoundTrigger({
+        isRetry: true,
+        loopProgress: progress,
+      });
+      const canContinue =
+        decision.trigger !== null &&
+        iterations < maxIterations &&
+        canEscalateFurther(opts.config, "qa", ladderState);
+      if (!canContinue) {
+        return finish("LOOP_NO_DIFF");
+      }
+      lastTrigger = decision.trigger;
+      // A no-progress pass is capability-bound, not divergence-suspect — it
+      // breaks the streak the AC-3 halt counts.
+      consecutiveDivergenceSuspect = 0;
+      iterationRecords.push({ iteration: iterations, sha: after.sha, verdict });
+      continue;
     }
 
-    // The loop produced a diff — record what it was asked to fix and re-QA.
+    // The loop produced a diff — progress at a still-failing verdict is
+    // divergence-suspect, never capability-bound (#971 AC-3): clear any
+    // pending trigger so the next iteration's model option stays constant.
+    lastTrigger = null;
+    iterationRecords.push({ iteration: iterations, sha: after.sha, verdict });
+
+    // #995 (#971 AC-3): two consecutive fix passes that each produced a diff
+    // the next QA pass still rejected. One is the gate doing its job; two is
+    // the non-convergence the ladder deliberately refuses to spend a rung on,
+    // so there is nothing left for the gate to try. Gated on a configured
+    // ladder for the same reason as the run path: without one the gate must
+    // stay byte-identical to pre-#971 and terminate at MAX_ITERATIONS.
+    consecutiveDivergenceSuspect++;
+    if (isLadderConfigured(opts.config) && consecutiveDivergenceSuspect >= 2) {
+      haltBundle = buildBundle("DIVERGENCE_SUSPECT", "loop");
+      return finish("DIVERGENCE_SUSPECT");
+    }
+
+    // Record what the loop was asked to fix and re-QA.
     for (const g of fixableGaps) {
       if (!autoFixed.includes(g)) autoFixed.push(g);
     }

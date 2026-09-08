@@ -1,0 +1,141 @@
+name: Plugin Eval
+
+on:
+  workflow_dispatch:
+
+jobs:
+  eval:
+    name: Run plugin eval suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify API key secret is set
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set — add it under Settings > Secrets and variables > Actions, then re-run this workflow"
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is set"
+
+      - name: Run eval suite
+        id: eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_WALNUT_SPIRE: 1
+        run: |
+          mkdir -p evals/ci-report
+
+          # --scaffold is load-bearing, not a convenience: assess-dashboard's
+          # case.yaml declares a scaffold_script that lays down the two issue
+          # fixtures its prompt reads by name. Scaffolding is off by default,
+          # so without this flag that case runs against an empty sandbox and
+          # fails for a reason that has nothing to do with the skill. The
+          # scripts under evals/*/ are committed to this repository and
+          # reviewed like any other source.
+          #
+          # The exit status is captured rather than acted on here: the suite
+          # contains a canary that is red by construction, so a healthy run
+          # always exits non-zero. The next step maps the status explicitly.
+          eval_exit=0
+          claude plugin eval . \
+            --no-publish \
+            --scaffold \
+            --allow-tools Write \
+            --runs 2 \
+            --max-cost-usd 10 \
+            --threshold 0.8 \
+            --output-dir evals/ci-report \
+            --json evals/ci-report/results.json || eval_exit=$?
+          echo "exit_code=$eval_exit" >> "$GITHUB_OUTPUT"
+          echo "eval CLI exited $eval_exit"
+
+      - name: Evaluate results
+        env:
+          EVAL_EXIT: ${{ steps.eval.outputs.exit_code }}
+        run: |
+          RESULTS=evals/ci-report/results.json
+
+          # Exit 2 is the CLI's documented budget abort. Results are partial by
+          # definition and must never be read as a pass.
+          if [ "$EVAL_EXIT" = "2" ]; then
+            echo "::error::the eval run aborted at the max-cost-usd 10 budget ceiling (exit 2) — results are partial and cannot gate this suite"
+            exit 1
+          fi
+
+          if [ ! -f "$RESULTS" ]; then
+            echo "::error::$RESULTS was not produced by the eval run (CLI exit $EVAL_EXIT)"
+            exit 1
+          fi
+
+          # A truncated run must fail loudly rather than green on the subset it
+          # managed to evaluate. Two independent signals, because either can
+          # appear alone: the CLI's own partial flag, and a short case list.
+          if [ "$(jq -r '.partial' "$RESULTS")" = "true" ]; then
+            echo "::error::the eval run reported partial results — it did not finish within the max-cost-usd 10 budget ceiling"
+            exit 1
+          fi
+
+          expected_cases=4
+          actual_cases=$(jq -r '.cases | length' "$RESULTS")
+          if [ "$actual_cases" != "$expected_cases" ]; then
+            echo "::error::expected $expected_cases cases, got $actual_cases — the run did not evaluate the whole suite, most likely the max-cost-usd 10 budget ceiling. Cases present:"
+            jq -r '.cases[].name' "$RESULTS"
+            exit 1
+          fi
+
+          # Map the CLI's exit status. null-run-canary scores 0 by design, so a
+          # healthy suite always leaves exactly one case below the bar and the
+          # CLI always exits 1. Exit 0 therefore means the canary cleared the
+          # bar — the graders are vacuous, which is the loudest failure here.
+          if [ "$EVAL_EXIT" = "0" ]; then
+            echo "::error::the eval run exited 0, so null-run-canary cleared the score bar — the canary is designed to fail; a green canary means the graders are vacuous"
+            exit 1
+          fi
+          if [ "$EVAL_EXIT" != "1" ]; then
+            echo "::error::unexpected exit status $EVAL_EXIT from the eval run"
+            exit 1
+          fi
+
+          # Confirm from the JSON that the one case below the bar is the canary
+          # and nothing else. The bar below is the same 0.8 the CLI was given,
+          # so the flag and this gate agree by construction.
+          canary_score=$(jq -r '.cases[] | select(.name == "null-run-canary") | .aggregates.score' "$RESULTS")
+          if [ "$canary_score" != "0" ]; then
+            echo "::error::null-run-canary scored $canary_score, expected 0 — the canary must stay red or the graders are vacuous"
+            exit 1
+          fi
+          echo "null-run-canary is red as expected (score=0) — graders are not vacuous"
+
+          below_bar=$(jq -r '.cases[] | select(.name != "null-run-canary") | select(.aggregates.score < 0.8) | "  \(.name) scored \(.aggregates.score)"' "$RESULTS")
+          if [ -n "$below_bar" ]; then
+            echo "::error::the following case(s) scored below the 0.8 bar:"
+            echo "$below_bar"
+            exit 1
+          fi
+          echo "All non-canary cases cleared the 0.8 bar"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugin-eval-report
+          path: evals/ci-report

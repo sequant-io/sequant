@@ -18,6 +18,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 
 ### What's new in 2.13
 
+- **Model escalation ladder, and the halts that keep it honest** — `run.modelLadder` / `--model-ladder sonnet,opus` escalates a churning phase one model rung at a time, but only on *capability-bound* churn: iterations that produced nothing. The opposite fingerprint — a new diff every iteration that QA keeps rejecting — is spec-bound, and a stronger model there only rediscovers the contradiction more expensively, so the ladder refuses to climb and halts instead. Three halts (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) each print an evidence bundle whose escalation history proves what the halt cost. Agents that find an AC impossible as written declare `SPEC_DIVERGENCE` and stop rather than guessing (#971, #995). Off unless configured. See [model-ladder.md](docs/reference/model-ladder.md).
 - **NEEDS_VERIFICATION verdicts stop blocking their own follow-up** — a QA verdict of NEEDS_VERIFICATION now maps to a dedicated `awaiting_verification` state instead of `ready_for_merge`, so after you execute the ACs the qa re-run just runs — no `--force`, no editing `state.json` by hand. The state shows up in `sequant status` and the dashboard with a re-run hint, and an issue whose PR you merge directly still sweeps to `merged`. MCP `sequant_run` also gains a real `force` parameter (previously silently ignored). The full verdict→state contract is documented in [qa-verdict-workflow-states.md](docs/features/qa-verdict-workflow-states.md) (#972).
 - **A bad model name is now a loud failure, not a silent no-op** — when a phase's session ends on an API error (e.g. a typo'd or roster-stale model string), the driver now fails the phase with the API error text and structured `terminal_reason`/`api_error_status` context, instead of reporting a zero-work "success" that only surfaced downstream as an empty diff entering QA (#973).
 - **Model roles: name the tier, not the model** — `run.modelRoles` maps semantic roles (defaults: `fast`, `strong`, `frontier`) to model strings, and phase policy or `--models` can reference them as `role:fast`. Raw model strings still pass through verbatim, a missing role fails loudly at config-resolution before any session spawns, and run metrics record both the requested value and the concrete model ID actually dispatched — so a roster change means editing one map, not every settings file (#975). `agents.model` now accepts any model string instead of a stale three-model enum.
@@ -349,7 +350,7 @@ Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/
 }
 ```
 
-See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence, and [Effort Escalation on Retries](docs/reference/run-command.md#effort-escalation-on-retries) for `run.effortEscalation`/`--escalate-effort`.
+See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence, [Effort Escalation on Retries](docs/reference/run-command.md#effort-escalation-on-retries) for `run.effortEscalation`/`--escalate-effort`, and [Model Escalation Ladder](docs/reference/model-ladder.md) for `run.modelLadder`/`--model-ladder` and the three ladder halts.
 
 ---
 
@@ -374,6 +375,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
 - [Concurrency & Per-Issue Locks](docs/reference/concurrency.md)
+- [Plugin Eval CI](docs/reference/plugin-eval.md) — manual-dispatch `claude plugin eval` workflow, budget cap, and canary design
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
