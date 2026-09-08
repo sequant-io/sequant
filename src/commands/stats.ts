@@ -1127,6 +1127,10 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
           avgOutputTokens: analytics.avgOutputTokens,
           avgCacheTokens: analytics.avgCacheTokens,
         },
+        // Phase x model cost/usage (#986). `costUSD` is the SDK's own
+        // estimate, not a billing statement.
+        phaseModelUsage: analytics.phaseModelUsage,
+        totalCostUSD: analytics.hasCostData ? analytics.totalCostUSD : null,
         runs: metrics.runs,
       };
       console.log(JSON.stringify(output, null, 2));

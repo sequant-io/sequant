@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "id": "5e5be290-f3ad-45d5-b159-5840a28b9ffc",
+      "date": "2026-09-08T00:19:31.478Z",
+      "issues": [
+        933
+      ],
+      "phases": [
+        "qa"
+      ],
+      "outcome": "success",
+      "duration": 554.087,
+      "model": "opus",
+      "flags": [],
+      "phasePolicies": {
+        "spec": {
+          "model": "sonnet"
+        },
+        "exec": {
+          "model": "sonnet",
+          "effort": "medium"
+        },
+        "qa": {
+          "model": "opus",
+          "resolvedModel": "claude-opus-5"
+        },
+        "testgen": {
+          "model": "sonnet"
+        }
+      },
+      "metrics": {
+        "tokensUsed": 0,
+        "filesChanged": 5,
+        "linesAdded": 511,
+        "acceptanceCriteria": 0,
+        "qaIterations": 0
+      }
+    }
+  ]
+}
