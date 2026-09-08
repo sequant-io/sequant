@@ -218,3 +218,105 @@ describe("971 AC-13: the #973 result shape is retry-eligible, never convergence"
     expect(result.escalatedModel?.escalated).toBe("not-a-real-model");
   });
 });
+
+// ---------------------------------------------------------------------------
+// #995 AC-D3 — the retry-path leak the quality plan flagged as most likely.
+//
+// AC-4's "halts without escalating" has to hold against the RETRY path, not
+// only against the ladder: a cold-start re-spawn or the MCP fallback would
+// re-dispatch the phase and hand the ladder a second observation to escalate
+// on. Asserted on the DISPATCH COUNT — the real `query()` call — rather than
+// on the final status, which a leak would not change.
+// ---------------------------------------------------------------------------
+
+/** A `qa` turn that declared the spec impossible and emitted no verdict. */
+const SPEC_DIVERGENCE_STREAM = () =>
+  mockStream([
+    { type: "system", subtype: "init", session_id: "sess-995" },
+    {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "text",
+            text: 'AC-2 cannot be satisfied.\n<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2026-09-08T00:00:00.000Z","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->',
+          },
+        ],
+      },
+    },
+    { type: "result", subtype: "success" },
+  ]);
+
+describe("995 AC-D3: a SPEC_DIVERGENCE result is dispatched exactly once", () => {
+  it("skips every cold-start retry and the MCP fallback", async () => {
+    queryMock.mockReturnValue(SPEC_DIVERGENCE_STREAM());
+
+    // `retry: true` + `mcp: true` is the maximally retry-happy configuration:
+    // the mocked stream returns instantly, so the sub-second duration reads as
+    // a cold-start failure and would normally buy 2 re-spawns plus an MCP
+    // fallback. This is the configuration a leak would show up in.
+    const result = await executePhaseWithRetry(
+      995,
+      "qa",
+      baseConfig({ retry: true, mcp: true }),
+    );
+
+    expect(result.specDivergence).toEqual({
+      acs: "AC-2",
+      message: "AC-2 requires the file to both exist and not exist",
+    });
+    // The whole assertion: ONE dispatch. Not "it failed" — a leak fails too.
+    expect(queryMock.mock.calls).toHaveLength(1);
+  });
+
+  it("a failing qa turn WITHOUT the marker still retries — the guard is the marker, not the failure", async () => {
+    // The control arm. Without it, an early return that fired on every failing
+    // qa phase would pass the test above while breaking cold-start recovery
+    // for everyone.
+    queryMock.mockReturnValue(
+      mockStream([
+        { type: "system", subtype: "init", session_id: "sess-995" },
+        {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "no verdict here" }] },
+        },
+        { type: "result", subtype: "success" },
+      ]),
+    );
+
+    const result = await executePhaseWithRetry(
+      995,
+      "qa",
+      baseConfig({ retry: true, mcp: true }),
+    );
+
+    expect(result.specDivergence).toBeUndefined();
+    expect(queryMock.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("a marker shown inside a fenced code block does not halt the run", async () => {
+    // `parsePhaseMarkers` strips code blocks before matching, and this test is
+    // what keeps that dependency honest: an agent that DOCUMENTS the escape
+    // hatch (as the skills' own instructions do) must not thereby declare one.
+    queryMock.mockReturnValue(
+      mockStream([
+        { type: "system", subtype: "init", session_id: "sess-995" },
+        {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "text",
+                text: 'To declare divergence, emit:\n```markdown\n<!-- SEQUANT_PHASE: {"phase":"qa","status":"failed","timestamp":"2026-09-08T00:00:00.000Z","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2"} -->\n```\nVerdict: AC_NOT_MET',
+              },
+            ],
+          },
+        },
+        { type: "result", subtype: "success" },
+      ]),
+    );
+
+    const result = await executePhaseWithRetry(995, "qa", baseConfig({}));
+    expect(result.specDivergence).toBeUndefined();
+  });
+});

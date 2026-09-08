@@ -124,6 +124,7 @@ import {
   runSkillsPreflight,
 } from "./skills-preflight.js";
 import { getCommitHash } from "./git-diff-utils.js";
+import { formatEscalationTriggerLabel } from "./model-ladder.js";
 import {
   planChainResumeFromState,
   type ChainResumePlan,
@@ -1946,7 +1947,7 @@ export class RunOrchestrator {
         for (const e of r.readyGate?.modelEscalations ?? []) {
           console.log(
             chalk.gray(
-              `  model: ${e.base} → ${e.escalated} (ready-gate ${e.trigger} retry, #${r.issueNumber})`,
+              `  model: ${e.base} → ${e.escalated} (ready-gate ${formatEscalationTriggerLabel(e.trigger)} retry, #${r.issueNumber})`,
             ),
           );
         }

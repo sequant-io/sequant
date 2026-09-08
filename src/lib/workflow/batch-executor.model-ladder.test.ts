@@ -148,7 +148,13 @@ describe("971 AC-3: run path — advancing SHAs never change the model", () => {
     );
 
     const models = dispatchedExecModels();
-    expect(models).toHaveLength(3);
+    // #995 supersedes #971's count here, by design. Under #971 all three
+    // iterations ran and stopped at the cap; #995 AC-3 adds the halt, so the
+    // SECOND consecutive divergence-suspect iteration ends the run with an
+    // evidence bundle rather than spending a third iteration on a pattern the
+    // ladder has already decided it will never escalate.
+    expect(models).toHaveLength(2);
+    // What THIS AC asserts is unchanged: advancing SHAs never buy a rung.
     expect(models.every((m) => m === undefined)).toBe(true);
   });
 });
@@ -246,7 +252,12 @@ describe("971 AC-5: run path — effort and model never escalate on the same ite
       .filter((c) => c[1] === "exec")
       .map((c) => (c[2] as ExecutionConfig).phasePolicies?.exec?.effort);
 
-    expect(efforts).toEqual(["high", "xhigh", "xhigh"]);
+    // Two dispatches, not three: the advancing-SHA snapshot is the
+    // divergence-suspect pattern, which #995 AC-3 now halts on at the second
+    // consecutive occurrence. #915's behaviour — the thing this test guards —
+    // is intact over the dispatches that do happen: retry 1 still spends the
+    // effort rung even though no capability-bound trigger was ever present.
+    expect(efforts).toEqual(["high", "xhigh"]);
   });
 });
 

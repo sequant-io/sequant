@@ -163,12 +163,38 @@ export function canEscalateFurther(
   return current < ladder.length - 1;
 }
 
+/**
+ * How {@link detectCapabilityBoundTrigger} classified the churn it was shown.
+ *
+ * Split out from `reason` in #995 because the halt sites need to distinguish
+ * "made a diff and still failed" from "did nothing" *structurally*. Before
+ * this the two cases were told apart only by the prose in `reason`, and no
+ * halt site may branch on a human-readable string — the divergence-suspect
+ * halt (#971 AC-3) is exactly a site that has to.
+ *
+ * - `capability-bound`: a deterministic no-progress signal → a rung is warranted.
+ * - `divergence-suspect`: progress was observed at a still-failing verdict →
+ *   never a rung; two of these in a row is the AC-3 halt.
+ * - `none`: nothing was observed to classify (first attempt, or the AC-8
+ *   marker-integrity guard suppressed the read). Deliberately NOT folded into
+ *   `divergence-suspect`: a broken record is not evidence of a diverging spec,
+ *   and counting it as one would halt runs on a bookkeeping fault.
+ */
+export type ChurnClassification =
+  "capability-bound" | "divergence-suspect" | "none";
+
 /** Why {@link detectCapabilityBoundTrigger} decided as it did. */
 export interface CapabilityTriggerDecision {
   /** The signal to escalate on, or `null` for "do not escalate". */
   trigger: EscalationTrigger | null;
   /** Human-readable explanation, for verbose output and records. */
   reason: string;
+  /**
+   * Machine-readable form of the same decision (#995). `trigger !== null`
+   * implies `capability-bound`; the converse does not hold — a `null` trigger
+   * is `divergence-suspect` or `none` depending on *why* it is null.
+   */
+  classification: ChurnClassification;
 }
 
 export interface CapabilityTriggerInput {
@@ -277,6 +303,7 @@ export function detectCapabilityBoundTrigger(
     return {
       trigger: null,
       reason: "not a retry — nothing observed to act on",
+      classification: "none",
     };
   }
 
@@ -287,7 +314,11 @@ export function detectCapabilityBoundTrigger(
   if (markerPathRequested) {
     const integrity = checkMarkerIntegrity(lastMarker ?? null, markerPhase);
     if (!integrity.ok) {
-      return { trigger: null, reason: `no escalation — ${integrity.reason}` };
+      return {
+        trigger: null,
+        reason: `no escalation — ${integrity.reason}`,
+        classification: "none",
+      };
     }
   }
 
@@ -295,6 +326,7 @@ export function detectCapabilityBoundTrigger(
     return {
       trigger: "LOOP_NO_DIFF",
       reason: loopProgress.message,
+      classification: "capability-bound",
     };
   }
 
@@ -305,9 +337,19 @@ export function detectCapabilityBoundTrigger(
       lastMarker,
     });
     if (stagnation.stagnant && stagnation.reason === "SAME_SHA_NO_PROGRESS") {
-      return { trigger: "SAME_SHA_NO_PROGRESS", reason: stagnation.message };
+      return {
+        trigger: "SAME_SHA_NO_PROGRESS",
+        reason: stagnation.message,
+        classification: "capability-bound",
+      };
     }
-    return { trigger: null, reason: stagnation.message };
+    // A new SHA at a still-failing verdict: work landed, the verdict did not
+    // move. Same divergence-suspect class as the snapshot path below.
+    return {
+      trigger: null,
+      reason: stagnation.message,
+      classification: "divergence-suspect",
+    };
   }
 
   // Progress was observed (new SHA, new diff) but the work still failed. That
@@ -318,6 +360,7 @@ export function detectCapabilityBoundTrigger(
     trigger: null,
     reason:
       "progress observed since the last attempt — divergence-suspect, not capability-bound",
+    classification: "divergence-suspect",
   };
 }
 
@@ -506,4 +549,38 @@ export function buildEscalationMarkerFields(
       : {}),
     ...(facts.topOfLadder ? { topOfLadder: true } : {}),
   };
+}
+
+/**
+ * Human-facing label for the trigger that bought (or is holding) a rung
+ * (#971 AC-10).
+ *
+ * Verbose output printed the raw reason code — `(LOOP_NO_DIFF retry)` — which
+ * names an internal enum rather than the thing that happened. AC-10 pins the
+ * line to `model: sonnet → opus (no-progress retry)`, so the two no-progress
+ * codes collapse to one phrase and the sticky re-application says why it is
+ * still up here.
+ *
+ * Lives here, beside {@link withEscalatedModel}, because **four** dispatch
+ * sites print this line (`batch-executor.ts` ×2, `commands/ready.ts`,
+ * `run-orchestrator.ts`). AC-10 names only the run-path one; a per-site string
+ * would leave three printing the raw code, which is precisely the drift this
+ * repo keeps paying for.
+ *
+ * Takes `string` rather than `EscalationTrigger` because
+ * `ModelEscalationFacts.trigger` is widened to `string` for the phase marker,
+ * and carries `"STICKY"` — a value that is not an `EscalationTrigger` at all.
+ * An unrecognized code falls through to itself so a trigger added later prints
+ * something honest instead of `undefined`.
+ */
+export function formatEscalationTriggerLabel(trigger: string): string {
+  switch (trigger) {
+    case "LOOP_NO_DIFF":
+    case "SAME_SHA_NO_PROGRESS":
+      return "no-progress";
+    case "STICKY":
+      return "sticky";
+    default:
+      return trigger;
+  }
 }

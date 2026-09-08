@@ -22,6 +22,7 @@ import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
 import { executePhaseWithRetry } from "../lib/workflow/phase-executor.js";
 import { buildProgressWiring } from "./run-progress.js";
+import { formatEscalationTriggerLabel } from "../lib/workflow/model-ladder.js";
 import { ReadySnapshotAdapter } from "./ready-tui-adapter.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
@@ -344,7 +345,7 @@ export async function readyCommand(
     for (const e of result.modelEscalations) {
       console.log(
         colors.muted(
-          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${e.trigger} retry)`,
+          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${formatEscalationTriggerLabel(e.trigger)} retry)`,
         ),
       );
     }
