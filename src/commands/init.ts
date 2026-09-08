@@ -132,7 +132,6 @@ function logDefault(label: string, value: string): void {
   console.log(chalk.blue(`${label}: ${value} (default)`));
 }
 
-
 /**
  * Write opencode's per-phase command wrappers (#862 AC-5).
  *
