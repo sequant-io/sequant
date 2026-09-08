@@ -62,7 +62,10 @@ import {
   type LadderState,
 } from "./model-ladder.js";
 import { parsePhaseMarkers } from "./phase-detection.js";
-import { parseSpecDivergence } from "./phase-executor.js";
+import {
+  parseSpecDivergence,
+  mapAgentSuccessToPhaseResult,
+} from "./phase-executor.js";
 import { withEscalatedEffort } from "./effort-escalation.js";
 import {
   buildExecutionConfig,
@@ -1194,6 +1197,65 @@ describe("971 AC-4: a SPEC_DIVERGENCE marker halts without escalating", () => {
     expect(result.report).toContain("SPEC_DIVERGENCE");
   });
 
+  it("971 AC-4: the declaration survives the driver's assistant-text-only capture", () => {
+    // The #995 AC-14 rigged run halted on this gap, and nothing in the suite
+    // covered it: every other divergence test hands a literal string straight
+    // to the parser, so the channel that actually carries the marker in a real
+    // run -- driver -> `AgentPhaseResult.output` -> `parseSpecDivergence` --
+    // was never exercised.
+    //
+    // `ClaudeCodeDriver` builds `capturedOutput` from assistant `text` blocks
+    // ONLY (drivers/claude-code.ts:194-199). A marker the agent routes into a
+    // `gh issue comment` lives in a `tool_use` input and never reaches it --
+    // and under `sequant run` the exec skill posts no issue comment at all, so
+    // that was the only channel the skills named. Result: `specDivergence` was
+    // always undefined under orchestration and the run climbed the ladder.
+    type Block = { type: string; text?: string; input?: unknown };
+    const captureLikeDriver = (blocks: Block[]): string =>
+      blocks
+        .filter((c) => c.type === "text" && c.text)
+        .map((c) => c.text)
+        .join("");
+
+    const marker =
+      '<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed",' +
+      '"timestamp":"2026-09-08T00:00:00.000Z","outcome":"SPEC_DIVERGENCE",' +
+      '"divergenceAcs":"AC-1","error":"AC-1 requires the file to both exist and not exist"} -->';
+
+    // `qa` rather than `exec` purely to keep the test hermetic: the exec guard
+    // shells out to git for a commit count. The divergence scrape is attached
+    // in the phase-agnostic wrapper, so the channel is identical either way.
+    const mapped = (blocks: Block[]) =>
+      mapAgentSuccessToPhaseResult(
+        "qa",
+        { success: true, output: captureLikeDriver(blocks) },
+        60,
+        "/tmp/wt",
+      ).specDivergence;
+
+    // The shipped defect: marker only in a tool call -> invisible to the run.
+    expect(
+      mapped([
+        { type: "text", text: "Declaring the spec impossible and stopping." },
+        { type: "tool_use", input: { body: `## /exec halted\n\n${marker}` } },
+      ]),
+    ).toBeUndefined();
+
+    // Fenced in the agent's own text is also inert -- `parsePhaseMarkers`
+    // strips code blocks by design, so the skills' example cannot double as
+    // the declaration.
+    expect(
+      mapped([{ type: "text", text: "```markdown\n" + marker + "\n```" }]),
+    ).toBeUndefined();
+
+    // What the skills now instruct: bare, in the agent's final message.
+    expect(
+      mapped([
+        { type: "text", text: `AC-1 cannot be satisfied.\n\n${marker}` },
+      ]),
+    ).toMatchObject({ acs: "AC-1" });
+  });
+
   it("the exec and loop skills tell agents when to emit the marker, in all three mirrored copies", async () => {
     const { readFileSync } = await import("fs");
     for (const skill of ["exec", "loop"]) {
@@ -1244,6 +1306,17 @@ describe("971 AC-4: a SPEC_DIVERGENCE marker halts without escalating", () => {
           ),
         ).toMatchObject({ acs: expect.any(String) });
       }
+      // The section must also name the CHANNEL, not just the marker. A skill
+      // that documents the marker but routes it to a `gh issue comment` ships
+      // an escape hatch the run can never read -- the #995 AC-14 defect.
+      for (const body of copies) {
+        const section = body.slice(
+          body.indexOf("When the spec is impossible as written"),
+        );
+        expect(section).toMatch(/final response\s+message/);
+        expect(section).toMatch(/not inside a code fence/);
+      }
+
       // All three mirrors byte-identical (I-4).
       expect(new Set(copies).size).toBe(1);
     }
