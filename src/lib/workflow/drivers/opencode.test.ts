@@ -8,7 +8,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import * as childProcess from "child_process";
 import {
@@ -159,9 +160,20 @@ function createMockProcess(options: MockProcOptions = {}) {
   return proc;
 }
 
+/**
+ * A real directory containing the hook shim.
+ *
+ * #996 AC-7 makes `executePhase` fail closed when the shim is absent from the
+ * phase cwd, so a fixture pointing at a non-existent path would now exercise
+ * the preflight instead of the behaviour under test.
+ */
+const SHIM_CWD = mkdtempSync(join(tmpdir(), "sequant-opencode-cwd-"));
+mkdirSync(join(SHIM_CWD, ".opencode/plugin"), { recursive: true });
+writeFileSync(join(SHIM_CWD, ".opencode/plugin/sequant-hooks.ts"), "// shim\n");
+
 function baseConfig(over: Partial<AgentExecutionConfig> = {}) {
   return {
-    cwd: "/scratch/worktree",
+    cwd: SHIM_CWD,
     phase: "qa",
     env: {},
     phaseTimeout: 1800,
@@ -249,7 +261,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
       string[],
       { cwd: string; env: Record<string, string> },
     ];
-    expect(opts.cwd).toBe("/scratch/worktree");
+    expect(opts.cwd).toBe(SHIM_CWD);
     expect(opts.env.SEQUANT_ISSUE).toBe("862");
   });
 
@@ -283,7 +295,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
     expect(result.resumeHandle).toEqual({
       driver: "opencode",
       token: "ses_f85b1aea3ffenqNLD1eXrjMF34",
-      originCwd: "/scratch/worktree",
+      originCwd: SHIM_CWD,
     });
   });
 });
