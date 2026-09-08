@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`claude plugin eval` cases for `/qa` and `/spec` output contracts, plus a null-run canary and a `fixture_commit` provenance gate (#993).** `evals/qa-trust-boundary` and `evals/spec-ac-parse` grade only surfaces each skill emits unprompted (the Trust-Boundary Check section, the `SEQUANT_QA_GAPS` trailer, the plan's own AC-1 restatement) against real regression fixtures (#819's injection fixture, #938's fenced-AC-decoy body). `evals/null-run-canary` proves the grader set isn't vacuous — a do-nothing prompt and an 8-line skill stub both score red. `__tests__/evals-fixture-commit.test.ts` rejects any recorded result whose `fixture_commit` isn't an ancestor of HEAD.
+
 ### Fixed
 
 - **Tautology detector no longer flags subprocess-driven tests whose spawn path
