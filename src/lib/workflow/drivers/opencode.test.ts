@@ -815,3 +815,37 @@ describe("862 P1 hooks preflight — load handshake", () => {
     expect(shim).toContain(`"${SHIM_LOADED_SENTINEL}"`);
   });
 });
+
+describe("996 AC-3 — fan-out disposition is documented on the driver", () => {
+  /**
+   * AC-3 offers two ways to settle sub-agent fan-out: a verified dogfood table
+   * on #997, or documenting the fallback in this driver's doc comment. #997 has
+   * no such table, so the doc comment is the live satisfier — and an
+   * undocumented assumption here is exactly what the AC exists to prevent.
+   *
+   * Scoped to the driver's leading block comment (everything before the first
+   * import), per CLAUDE.md: matching the whole file would let an unrelated
+   * inline comment elsewhere satisfy the assertion.
+   */
+  const headerDoc = (): string => {
+    const src = readFileSync(join(__dirname, "opencode.ts"), "utf-8");
+    const firstImport = src.indexOf("\nimport ");
+    expect(firstImport).toBeGreaterThan(0);
+    return src.slice(0, firstImport);
+  };
+
+  it("996 AC-3 states that fan-out is unverified and degrades to sequential", () => {
+    const doc = headerDoc();
+    expect(doc).toMatch(/fan-?out/i);
+    expect(doc).toMatch(/sequential/i);
+    expect(doc).toMatch(/unverified/i);
+  });
+
+  it("996 AC-3 does not claim an implemented driver-conditional fallback", () => {
+    // The honest disposition is "no branch exists"; asserting it keeps a later
+    // edit from upgrading the prose to a guarantee the code does not make.
+    const doc = headerDoc();
+    expect(doc).toMatch(/no implemented "sequential fallback"|arrived\s*\n?\s*\*?\s*at by absence/i);
+    expect(/\bbranches on the active driver\b/.test(doc)).toBe(true);
+  });
+});

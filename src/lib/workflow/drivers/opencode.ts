@@ -20,6 +20,35 @@
  * 3. `step_finish.part.cost` is per step, and a hung run emits no `step_finish`
  *    at all — so a run that exits 0 without a terminal `reason: "stop"` is a
  *    failure, not a success.
+ *
+ * ## Sub-agent fan-out: unverified, degrades to sequential (#996 AC-3)
+ *
+ * `init --agent opencode` writes three `mode: subagent` definitions to
+ * `.opencode/agents/`, and opencode does resolve them — a hermetic
+ * `opencode debug agent <name>` returns the expected `mode`, `steps` (from the
+ * Claude-side `maxTurns`), and `permission` deny rules derived from the `tools`
+ * map. Provisioning works.
+ *
+ * What is **not** verified is fan-out actually running. `/exec`'s parallel
+ * groups are written against Claude Code's `Agent` tool; nothing in this
+ * driver or in the skill branches on the active driver, so there is no
+ * implemented "sequential fallback" to switch to. Under opencode a phase
+ * either routes that work through opencode's own `task` tool — which no run in
+ * #862/#992/#996 has exercised — or the model simply does the work inline.
+ * The de facto behaviour is therefore **sequential inline execution**, arrived
+ * at by absence rather than by design.
+ *
+ * Treat parallel-group timings and per-agent turn caps as Claude-Code-only
+ * guarantees until a dogfood run (#997) measures fan-out on opencode. Do not
+ * add driver-conditional fan-out logic on the assumption that `task` works;
+ * measure it first.
+ *
+ * One boundary worth knowing: `opencode debug agent <name> --tool <id>`
+ * executes a tool **without** invoking `tool.execute.before`, so the sequant
+ * hook shim never runs on that path (verified on 1.18.27 — the plugin's load
+ * sentinel appears, an instrumented hook-entry probe does not). It is a debug
+ * harness, not the phase path this driver uses, but anything run through it is
+ * unguarded.
  */
 
 import { spawn } from "child_process";
@@ -322,7 +351,7 @@ export function evaluateOpencodeRun(
     return fail(
       "The sequant hook shim never loaded, so this opencode phase ran with no " +
         "force-push, commit, or worktree guards. Check `opencode ... --print-logs " +
-        "--log-level DEBUG` for a \"failed to load plugin\" line.",
+        '--log-level DEBUG` for a "failed to load plugin" line.',
       new SequantError("opencode hook shim did not load", {
         metadata: { code: OPENCODE_ERROR_CODES.hooksNotActive },
       }),
