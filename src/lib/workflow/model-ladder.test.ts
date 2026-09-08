@@ -16,7 +16,38 @@
  * `phase-executor.model-ladder.test.ts`.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// #995: the three ladder halts live in the RUN path's quality loop, so the
+// AC-named tests below drive `runIssueWithLogging` for real with only the
+// driver boundary mocked — the same seam `batch-executor.model-ladder.test.ts`
+// uses. `importOriginal` is spread so every other export of `phase-executor.js`
+// stays real; the collaborator mocks below are the modules the loop reaches
+// for that need a filesystem/network. None of this affects the ready-gate
+// tests in this file, which inject `runPhase` and never reach these modules.
+vi.mock("./phase-executor.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./phase-executor.js")>()),
+  executePhaseWithRetry: vi.fn(),
+  hasExecChanges: vi.fn().mockReturnValue(true),
+}));
+vi.mock("./worktree-manager.js", () => ({
+  createCheckpointCommit: vi.fn(),
+  rebaseBeforePR: vi.fn(),
+  createPR: vi.fn(),
+  readCacheMetrics: vi.fn(),
+  filterResumedPhases: vi.fn(),
+}));
+vi.mock("./log-writer.js", () => ({
+  LogWriter: vi.fn(),
+  createPhaseLogFromTiming: vi.fn(),
+}));
+vi.mock("./state-manager.js", () => ({ StateManager: vi.fn() }));
+vi.mock("./git-diff-utils.js", () => ({
+  getGitDiffStats: vi.fn(),
+  getCommitHash: vi.fn(),
+  resolveDiffBase: vi.fn(),
+}));
+
 import {
   withEscalatedModel,
   createLadderState,
@@ -27,8 +58,10 @@ import {
   startingRungFor,
   isLadderConfigured,
   buildEscalationMarkerFields,
+  formatEscalationTriggerLabel,
   type LadderState,
 } from "./model-ladder.js";
+import { parsePhaseMarkers } from "./phase-detection.js";
 import { withEscalatedEffort } from "./effort-escalation.js";
 import {
   buildExecutionConfig,
@@ -36,6 +69,10 @@ import {
   resolveModelLadder,
 } from "./config-resolver.js";
 import { runReadyGate, type RunReadyGateOptions } from "./ready-gate.js";
+import { executePhaseWithRetry } from "./phase-executor.js";
+import { runIssueWithLogging } from "./batch-executor.js";
+import type { IssueExecutionContext } from "./types.js";
+import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import type { ExecutionConfig, PhaseResult, RunOptions } from "./types.js";
 import type { PhaseMarker } from "./state-schema.js";
@@ -873,5 +910,388 @@ describe("971 AC-10: the ready-gate path surfaces its escalations to the caller"
       createLadderState(),
     );
     expect(out.record).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #995 — the halts (#971 part B).
+//
+// The three cases where the ladder must STOP and hand off to a human rather
+// than climb. Driven through the real quality loop in `runIssueWithLogging`
+// with only the driver boundary mocked, so the assertions are on what the loop
+// actually did — how many dispatches it issued, which models it sent, and the
+// evidence bundle it printed — rather than on a hand-fed halt.
+// ---------------------------------------------------------------------------
+
+const mockExecutePhase = vi.mocked(executePhaseWithRetry);
+
+/** A run-path context whose progress snapshot the test controls. */
+function haltCtx(
+  config: Partial<ExecutionConfig>,
+  snapshotProgressFn: (cwd: string) => LoopProgressSnapshot,
+  maxIterations = 5,
+): IssueExecutionContext {
+  return {
+    issueNumber: 995,
+    title: "ladder halts",
+    labels: [],
+    config: {
+      phases: ["exec"],
+      phaseTimeout: 1800,
+      qualityLoop: true,
+      maxIterations,
+      sequential: false,
+      concurrency: 3,
+      parallel: false,
+      verbose: false,
+      noSmartTests: false,
+      dryRun: false,
+      mcp: false,
+      retry: false,
+      ...config,
+    } as ExecutionConfig,
+    options: { autoDetectPhases: false } as RunOptions,
+    services: { logWriter: null, stateManager: null },
+    worktree: { path: "/tmp/worktree-995", branch: "feature/995" },
+    snapshotProgressFn,
+  } as IssueExecutionContext;
+}
+
+/** Models the loop dispatched `exec` with, in order. */
+function haltDispatchedModels(): Array<string | undefined> {
+  return mockExecutePhase.mock.calls
+    .filter((c) => c[1] === "exec")
+    .map((c) => (c[2] as ExecutionConfig).phasePolicies?.exec?.model);
+}
+
+let consoleSpy: ReturnType<typeof vi.spyOn>;
+/** Everything the loop printed, joined — the halt's human-facing surface. */
+function printed(): string {
+  return consoleSpy.mock.calls.map((c) => c.join(" ")).join("\n");
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  // The real quality loop calls `emitProgressLine`, which writes the
+  // launcher's `SEQUANT_PROGRESS:` wire protocol to stderr whenever
+  // `SEQUANT_ORCHESTRATOR` is set — true when this suite runs inside an
+  // orchestrated `sequant run`. Leaking synthetic lines for issue 995 would
+  // spoof progress for whatever run is actually in flight.
+  vi.stubEnv("SEQUANT_ORCHESTRATOR", "");
+  consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  mockExecutePhase.mockResolvedValue({
+    phase: "exec",
+    success: false,
+    durationSeconds: 1,
+    error: "not converged",
+    verdict: "AC_NOT_MET",
+  } as PhaseResult);
+});
+
+afterEach(() => {
+  consoleSpy.mockRestore();
+  vi.unstubAllEnvs();
+});
+
+describe("971 AC-3 halt: divergence-suspect stops the loop with an evidence bundle", () => {
+  it("halts after two consecutive iterations that each produced a new SHA at a failing verdict", async () => {
+    // An ADVANCING snapshot is the divergence-suspect fingerprint: work landed
+    // every iteration and the verdict never moved. Two in a row is the pattern
+    // #971 AC-3 names.
+    let n = 0;
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: LADDER }, () => ({
+        sha: `sha-${n++}`,
+        dirty: [],
+      })),
+    );
+
+    // The budget was 5 iterations; the halt cut it to 2. Asserting the
+    // DISPATCH COUNT (not just the final status) is what proves the loop
+    // stopped rather than merely reported.
+    expect(haltDispatchedModels()).toHaveLength(2);
+    // AC-3's load-bearing half: the model option never changed.
+    expect(haltDispatchedModels().every((m) => m === undefined)).toBe(true);
+
+    const out = printed();
+    expect(out).toContain("Ladder halt: DIVERGENCE_SUSPECT");
+    // The bundle's three required contents: SHAs tried, verdicts, and an
+    // EMPTY escalation history. Matched by shape rather than by literal SHA:
+    // the loop snapshots twice per iteration (open and close), so the exact
+    // counter values are an artifact of the harness, whereas "two distinct
+    // SHAs were recorded" is the fact AC-3 asks for.
+    expect(out).toMatch(/SHAs tried: sha-\d+, sha-\d+/);
+    expect(out.match(/verdict=AC_NOT_MET/g)).toHaveLength(2);
+    expect(out).toContain("(empty — no model rung was spent)");
+  });
+
+  it("does NOT halt on a single divergence-suspect iteration — that is the ordinary quality loop", async () => {
+    // The regression guard for the halt's own threshold. Iteration 1 diverges
+    // (HEAD advances), every later iteration produces nothing — which is
+    // capability-bound and breaks the streak. If the halt fired on the first
+    // divergence-suspect iteration, every ordinary `AC_NOT_MET → /loop → re-QA`
+    // cycle in the product would become a dead run.
+    const shas = ["sha-a", "sha-b"];
+    let i = 0;
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: LADDER }, () => ({
+        sha: shas[Math.min(i++, shas.length - 1)],
+        dirty: [],
+      })),
+    );
+
+    expect(printed()).not.toContain("Ladder halt: DIVERGENCE_SUSPECT");
+    // 4 dispatches, not 2: the divergence halt never fired. The run still
+    // stops one short of its 5-iteration budget, but on the OTHER halt — five
+    // consecutive no-diff iterations exhaust this 3-rung ladder, so iteration
+    // 5 presents a trigger at the top rung (AC-9). Asserting the reason, not
+    // just the count, keeps the two halts from covering for each other.
+    expect(haltDispatchedModels()).toEqual([
+      undefined,
+      undefined,
+      "opus",
+      "fable",
+    ]);
+    expect(printed()).toContain("Ladder halt: TOP_OF_LADDER");
+  });
+
+  it("AC-D1: with NO ladder configured the divergence halt is unreachable", async () => {
+    let n = 0;
+    await runIssueWithLogging(
+      haltCtx({}, () => ({ sha: `sha-${n++}`, dirty: [] })),
+    );
+    expect(printed()).not.toContain("Ladder halt");
+    expect(haltDispatchedModels()).toHaveLength(5);
+  });
+});
+
+describe("971 AC-4: a SPEC_DIVERGENCE marker halts without escalating", () => {
+  it("halts on the first dispatch, spends no rung, and names the AC the agent declared impossible", async () => {
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: false,
+      durationSeconds: 1,
+      error: "spec is self-contradictory",
+      specDivergence: {
+        acs: "AC-2",
+        message: "AC-2 requires the file to both exist and not exist",
+      },
+    } as PhaseResult);
+
+    let n = 0;
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: LADDER }, () => ({
+        sha: `sha-${n++}`,
+        dirty: [],
+      })),
+    );
+
+    // "No retry is dispatched, no rung is spent, the run halts": one dispatch
+    // out of a 5-iteration budget, at the base (unset) model.
+    expect(haltDispatchedModels()).toEqual([undefined]);
+
+    const out = printed();
+    expect(out).toContain("Ladder halt: SPEC_DIVERGENCE");
+    expect(out).toContain("Declared impossible: AC-2");
+    expect(out).toContain("AC-2 requires the file to both exist and not exist");
+    expect(out).toContain("(empty — no model rung was spent)");
+  });
+
+  it("halts even when the phase itself reported success — the declaration is the signal, not the exit status", async () => {
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: true,
+      durationSeconds: 1,
+      specDivergence: { acs: "AC-7" },
+    } as PhaseResult);
+
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: LADDER }, () => ({ sha: "sha-x", dirty: [] })),
+    );
+
+    expect(haltDispatchedModels()).toEqual([undefined]);
+    expect(printed()).toContain("Ladder halt: SPEC_DIVERGENCE");
+  });
+
+  it("reports the missing AC explicitly when the agent declared divergence without naming one", async () => {
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: false,
+      durationSeconds: 1,
+      specDivergence: {},
+    } as PhaseResult);
+
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: LADDER }, () => ({ sha: "sha-x", dirty: [] })),
+    );
+
+    // AC-14 requires the halt output to NAME the AC, so a divergence with no
+    // AC is a reportable fact rather than a silently omitted line.
+    expect(printed()).toContain("Declared impossible: (the agent named no AC)");
+  });
+
+  it("halts with NO ladder configured too — the escape hatch is not a ladder feature", async () => {
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: false,
+      durationSeconds: 1,
+      specDivergence: { acs: "AC-1" },
+    } as PhaseResult);
+
+    await runIssueWithLogging(haltCtx({}, () => ({ sha: "sha-x", dirty: [] })));
+
+    // Unlike the two ladder halts, this one is reachable without a ladder: a
+    // contradictory spec is not a model-capability question at all.
+    expect(haltDispatchedModels()).toEqual([undefined]);
+    expect(printed()).toContain("Ladder halt: SPEC_DIVERGENCE");
+  });
+
+  it("ready-gate path: a QA pass that declares divergence terminates the gate as SPEC_DIVERGENCE", async () => {
+    let qaCalls = 0;
+    const opts: RunReadyGateOptions = {
+      issueNumber: 995,
+      worktreePath: "/tmp/worktree-995",
+      policy: "ac",
+      maxIterations: 4,
+      config: configWith({ modelLadder: LADDER }),
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: "sha-frozen", dirty: [] }),
+      runPhase: (phase) => {
+        if (phase === "qa") qaCalls++;
+        return Promise.resolve({
+          phase,
+          success: true,
+          verdict: phase === "qa" ? "AC_NOT_MET" : undefined,
+          ...(phase === "qa" ? { specDivergence: { acs: "AC-4" } } : {}),
+        } as PhaseResult);
+      },
+    };
+
+    const result = await runReadyGate(opts);
+
+    expect(result.reason).toBe("SPEC_DIVERGENCE");
+    expect(result.ready).toBe(false);
+    expect(result.issueStatus).toBe("blocked");
+    // One QA pass out of a 4-iteration budget: the gate stopped, it did not
+    // merely relabel its terminal reason.
+    expect(qaCalls).toBe(1);
+    expect(result.modelEscalations).toEqual([]);
+    expect(result.haltBundle).toContain("Declared impossible: AC-4");
+    // The bundle reaches the human-facing report, not just the struct.
+    expect(result.report).toContain("Ladder halt evidence");
+    expect(result.report).toContain("SPEC_DIVERGENCE");
+  });
+
+  it("the exec and loop skills tell agents when to emit the marker, in all three mirrored copies", async () => {
+    const { readFileSync } = await import("fs");
+    for (const skill of ["exec", "loop"]) {
+      const copies = [
+        `templates/skills/${skill}/SKILL.md`,
+        `.claude/skills/${skill}/SKILL.md`,
+        `skills/${skill}/SKILL.md`,
+      ].map((f) => readFileSync(f, "utf8"));
+
+      // Scoped to the section the AC is about, not the whole file: matching
+      // anywhere would let an unrelated mention of the marker satisfy the gate.
+      for (const body of copies) {
+        const section = body.slice(
+          body.indexOf("When the spec is impossible as written"),
+        );
+        expect(section).not.toBe("");
+        expect(section).toContain("SPEC_DIVERGENCE");
+        expect(section).toContain('"outcome":"SPEC_DIVERGENCE"');
+      }
+      // All three mirrors byte-identical (I-4).
+      expect(new Set(copies).size).toBe(1);
+    }
+  });
+});
+
+describe("971 AC-9: a further trigger at the top rung halts instead of looping", () => {
+  it("halts with a NON-empty escalation history ending at the last rung", async () => {
+    // A two-rung ladder reaches the top in one escalation, so the FOURTH
+    // iteration is the first that can present a trigger with nowhere to go.
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: ["sonnet", "opus"] }, () => ({
+        sha: "frozen",
+        dirty: [],
+      })),
+    );
+
+    // Iterations 1-2 at the base rung (retry 1 belongs to #915's effort rung),
+    // iteration 3 one rung up, then the halt — instead of a fourth dispatch
+    // that would re-run the model that already failed.
+    expect(haltDispatchedModels()).toEqual([undefined, undefined, "opus"]);
+
+    const out = printed();
+    expect(out).toContain("Ladder halt: TOP_OF_LADDER");
+    expect(out).not.toContain("(empty — no model rung was spent)");
+    expect(out).toContain("exec: sonnet → opus");
+  });
+
+  it("AC-D1: with NO ladder configured the top-of-ladder halt is unreachable", async () => {
+    await runIssueWithLogging(
+      haltCtx({}, () => ({ sha: "frozen", dirty: [] })),
+    );
+    expect(printed()).not.toContain("Ladder halt");
+    expect(haltDispatchedModels()).toHaveLength(5);
+  });
+});
+
+describe("971 AC-10 verbose: the escalated dispatch names the trigger in words", () => {
+  it("prints `model: sonnet → opus (no-progress retry)` on a LOOP_NO_DIFF escalation", async () => {
+    await runIssueWithLogging(
+      haltCtx({ modelLadder: ["sonnet", "opus"], verbose: true }, () => ({
+        sha: "frozen",
+        dirty: [],
+      })),
+    );
+
+    // The AC pins this line verbatim. Asserted against what the loop actually
+    // printed — not against a string the test rebuilt from the same helper.
+    expect(printed()).toContain("model: sonnet → opus (no-progress retry)");
+    // The raw reason code must not survive anywhere in the output.
+    expect(printed()).not.toContain("(LOOP_NO_DIFF retry)");
+  });
+
+  it("maps every trigger code to a phrase, and passes an unknown code through unchanged", () => {
+    expect(formatEscalationTriggerLabel("LOOP_NO_DIFF")).toBe("no-progress");
+    expect(formatEscalationTriggerLabel("SAME_SHA_NO_PROGRESS")).toBe(
+      "no-progress",
+    );
+    expect(formatEscalationTriggerLabel("STICKY")).toBe("sticky");
+    // An honest passthrough beats `undefined` when a trigger is added later.
+    expect(formatEscalationTriggerLabel("FUTURE_CODE")).toBe("FUTURE_CODE");
+  });
+});
+
+describe("971 AC-D2: the marker schema append is backward-compatible", () => {
+  it("a pre-#995 phase marker still parses", () => {
+    const parsed = parsePhaseMarkers(
+      '<!-- SEQUANT_PHASE: {"phase":"exec","status":"completed","timestamp":"2026-01-01T00:00:00.000Z"} -->',
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].outcome).toBeUndefined();
+    expect(parsed[0].divergenceAcs).toBeUndefined();
+  });
+
+  it("round-trips a SPEC_DIVERGENCE marker through the flat-scalar parser", () => {
+    const parsed = parsePhaseMarkers(
+      '<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"2026-01-01T00:00:00.000Z","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2, AC-5"} -->',
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].outcome).toBe("SPEC_DIVERGENCE");
+    expect(parsed[0].divergenceAcs).toBe("AC-2, AC-5");
+  });
+
+  it("rejects an unrecognized outcome rather than halting a run on a typo", () => {
+    // A closed enum, deliberately: `SPEC_DIVERGANCE` must not silently parse
+    // into a field the halt sites read.
+    expect(
+      parsePhaseMarkers(
+        '<!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"2026-01-01T00:00:00.000Z","outcome":"SPEC_DIVERGANCE"} -->',
+      ),
+    ).toHaveLength(0);
   });
 });
