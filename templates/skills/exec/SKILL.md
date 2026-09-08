@@ -123,6 +123,13 @@ and stop:
 <!-- SEQUANT_PHASE: {"phase":"exec","status":"failed","timestamp":"<ISO-8601>","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->
 ```
 
+- **Where it goes.** Emit the marker as plain text in your **final response
+  message** — not inside a code fence, and not only in a `gh issue comment`.
+  Under `sequant run` the phase posts no issue comment at all, and the run
+  reads the marker from your own response text; a marker that lives only in a
+  tool call, or inside a fence, is stripped before the parser sees it and the
+  run retries and climbs the ladder anyway. The fenced example above is
+  documentation — the line you emit must be bare.
 - `divergenceAcs` — the AC IDs you found impossible, comma-separated
   (`"AC-2, AC-5"`). Name them; the halt output quotes this field, and an
   unnamed AC leaves the human with nothing to reconcile.
