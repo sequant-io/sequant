@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`SPEC_DIVERGENCE` escape hatch and ladder halts with evidence bundles (#995).**
+  The other half of #971's bargain: the ladder now knows when to stop instead of
+  climbing. Three halts, each printing an evidence bundle (SHAs tried,
+  per-iteration verdicts, escalation history, next step) and ending the run
+  without merging.
+  - `SPEC_DIVERGENCE` — an agent that finds an acceptance criterion impossible
+    as written declares it via `"outcome":"SPEC_DIVERGENCE"` in its own
+    `SEQUANT_PHASE` marker and stops, rather than guessing at what was meant.
+    Terminal for the retry path as well as the ladder: no cold-start retry, no
+    MCP fallback, no rung spent. The `/exec` and `/loop` skills document when to
+    emit it — and when not to — and that it must go in the agent's **final
+    response message**, unfenced: the run reads the marker from the agent's own
+    output, so one routed only to a `gh issue comment` is invisible under
+    `sequant run`. Reachable without a configured ladder.
+  - `DIVERGENCE_SUSPECT` — two **consecutive** iterations that each produced a
+    diff at a still-failing verdict. Two, not one: a single such iteration is
+    the ordinary `AC_NOT_MET → /loop → re-QA` cycle, and halting on it would
+    break every quality loop.
+  - `TOP_OF_LADDER` — a further capability-bound trigger arrived on the last
+    rung. Reported distinctly from `MAX_ITERATIONS`, which would send the user
+    to raise a cap that was never the constraint.
+  - `sequant ready` gains the three matching terminal reasons and embeds the
+    bundle in its gap report.
+  - Verbose output now names the trigger in words —
+    `model: sonnet → opus (no-progress retry)` — at all four dispatch print
+    sites, replacing the raw reason code.
+  - New reference doc: [Model Escalation Ladder](docs/reference/model-ladder.md),
+    covering the capability-vs-spec-bound distinction, the escape hatch, and the
+    cost model.
+
 - **Model escalation ladder on capability-bound non-convergence (#971).**
   `run.modelLadder` (or `--model-ladder sonnet,opus,fable` on `sequant run` and
   `sequant ready`) defines ordered rungs, cheapest first. When a retried phase's
