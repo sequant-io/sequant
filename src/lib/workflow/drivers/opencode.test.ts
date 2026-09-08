@@ -8,7 +8,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { readFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import * as childProcess from "child_process";
 import {
@@ -19,8 +26,11 @@ import {
   buildOpencodeArgs,
   buildOpencodeConfigContent,
   evaluateOpencodeRun,
+  findShimIn,
+  SHIM_LOADED_SENTINEL,
   type OpencodeParsedStream,
 } from "./opencode.js";
+import { RateLimitError, SequantError } from "../../errors.js";
 import type { AgentExecutionConfig } from "./agent-driver.js";
 
 vi.mock("child_process", () => ({
@@ -109,6 +119,11 @@ interface MockProcOptions {
   error?: NodeJS.ErrnoException;
   /** Withhold `close` so the test can drive abort/timeout itself. */
   hang?: boolean;
+  /**
+   * Emit the shim's load sentinel on stderr (#996 AC-7). Defaults to true —
+   * a real run with the guards live always emits it.
+   */
+  shimActive?: boolean;
 }
 
 function createMockProcess(options: MockProcOptions = {}) {
@@ -146,6 +161,14 @@ function createMockProcess(options: MockProcOptions = {}) {
     for (const chunk of options.stdout ?? []) {
       stdoutListeners.forEach((cb) => cb(Buffer.from(chunk)));
     }
+    // A real opencode run with the shim installed always announces it on
+    // stderr (#996 AC-7). Default it on so every fixture models a *guarded*
+    // run; `shimActive: false` opts into the unguarded case.
+    if (options.shimActive !== false) {
+      stderrListeners.forEach((cb) =>
+        cb(Buffer.from(`${SHIM_LOADED_SENTINEL}\n`)),
+      );
+    }
     for (const chunk of options.stderr ?? []) {
       stderrListeners.forEach((cb) => cb(Buffer.from(chunk)));
     }
@@ -159,9 +182,20 @@ function createMockProcess(options: MockProcOptions = {}) {
   return proc;
 }
 
+/**
+ * A real directory containing the hook shim.
+ *
+ * #996 AC-7 makes `executePhase` fail closed when the shim is absent from the
+ * phase cwd, so a fixture pointing at a non-existent path would now exercise
+ * the preflight instead of the behaviour under test.
+ */
+const SHIM_CWD = mkdtempSync(join(tmpdir(), "sequant-opencode-cwd-"));
+mkdirSync(join(SHIM_CWD, ".opencode/plugin"), { recursive: true });
+writeFileSync(join(SHIM_CWD, ".opencode/plugin/sequant-hooks.ts"), "// shim\n");
+
 function baseConfig(over: Partial<AgentExecutionConfig> = {}) {
   return {
-    cwd: "/scratch/worktree",
+    cwd: SHIM_CWD,
     phase: "qa",
     env: {},
     phaseTimeout: 1800,
@@ -249,7 +283,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
       string[],
       { cwd: string; env: Record<string, string> },
     ];
-    expect(opts.cwd).toBe("/scratch/worktree");
+    expect(opts.cwd).toBe(SHIM_CWD);
     expect(opts.env.SEQUANT_ISSUE).toBe("862");
   });
 
@@ -264,7 +298,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
     const result = await driver.executePhase("/qa 862", baseConfig());
 
     expect(result.stdoutTail?.length).toBeGreaterThan(0);
-    expect(result.stderrTail).toEqual(["a warning line"]);
+    expect(result.stderrTail).toContain("a warning line");
     // 100 KB fixture lines must not land in the tail verbatim.
     for (const line of result.stdoutTail ?? []) {
       expect(line.length).toBeLessThan(2100);
@@ -283,7 +317,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
     expect(result.resumeHandle).toEqual({
       driver: "opencode",
       token: "ses_f85b1aea3ffenqNLD1eXrjMF34",
-      originCwd: "/scratch/worktree",
+      originCwd: SHIM_CWD,
     });
   });
 });
@@ -548,7 +582,11 @@ describe("862 AC-8 — #992 mitigations applied to the spawn", () => {
     expect(payload).not.toContain("permission");
     expect(payload).not.toContain("/tmp");
     expect(payload).not.toContain("TMPDIR");
-    expect(args.join(" ")).not.toContain("/tmp");
+    // `--dir <cwd>` legitimately carries the phase worktree, and this suite's
+    // fixture worktree is an mkdtemp under $TMPDIR (`/tmp` on Linux CI). Drop
+    // that one value rather than the whole argv, so a /tmp rule injected
+    // anywhere else in the arguments still fails this assertion.
+    expect(args.filter((a) => a !== SHIM_CWD).join(" ")).not.toContain("/tmp");
   });
 });
 
@@ -614,5 +652,200 @@ describe("862 OpencodeDriver — missing binary", () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain("opencode CLI not found");
+  });
+});
+
+describe("862 P1 errors", () => {
+  it("maps an NDJSON error event to the stream-error class", () => {
+    const parsed = parse(
+      JSON.stringify({
+        type: "error",
+        error: { message: "upstream exploded" },
+      }) + "\n",
+      "qa",
+    );
+    const result = evaluateOpencodeRun(parsed, {
+      exitCode: 0,
+      stderrTail: [],
+      stdoutTail: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.streamError);
+  });
+
+  it("never produces a RateLimitError for the opencode driver", () => {
+    const parsed = parse(
+      JSON.stringify({
+        type: "error",
+        error: { message: "429 rate limit exceeded, retry after 60s" },
+      }) + "\n",
+      "qa",
+    );
+    const result = evaluateOpencodeRun(parsed, {
+      exitCode: 0,
+      stderrTail: [],
+      stdoutTail: [],
+    });
+
+    // The Claude-specific SDK retry paths key off RateLimitError; producing one
+    // here would route an opencode failure into machinery it never uses.
+    expect(result.structuredError).not.toBeInstanceOf(RateLimitError);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.streamError);
+  });
+
+  it("declares that it does not use the SDK's MCP plumbing", () => {
+    // This flag is what gates the "retrying without MCP" fallback in
+    // executePhaseWithRetry. opencode shells out to its own CLI and never
+    // reads config.mcp, so the retry would re-run an identical command.
+    expect(new OpencodeDriver().usesSdkMcp).toBe(false);
+  });
+});
+
+describe("862 P1 hooks preflight", () => {
+  it("fails closed with hooks-not-installed when the shim is absent", async () => {
+    const bare = mkdtempSync(join(tmpdir(), "sequant-opencode-noshim-"));
+    try {
+      const result = await new OpencodeDriver().executePhase(
+        "hello",
+        baseConfig({ cwd: bare }),
+      );
+
+      expect(result.success).toBe(false);
+      expect(
+        (result.structuredError as SequantError | undefined)?.metadata?.code,
+      ).toBe(OPENCODE_ERROR_CODES.hooksNotInstalled);
+      expect(result.error).toContain("hook shim is not installed");
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it("does not spawn opencode at all when the shim is missing", async () => {
+    const bare = mkdtempSync(join(tmpdir(), "sequant-opencode-noshim2-"));
+    const spawnSpy = vi.spyOn(childProcess, "spawn");
+    try {
+      await new OpencodeDriver().executePhase(
+        "hello",
+        baseConfig({ cwd: bare }),
+      );
+      // Fail closed means fail *before* spending the phase.
+      expect(spawnSpy).not.toHaveBeenCalled();
+    } finally {
+      spawnSpy.mockRestore();
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ".opencode/plugin/sequant-hooks.ts",
+    ".opencode/plugins/sequant-hooks.ts",
+  ])("accepts the shim at %s", (rel) => {
+    const dir = mkdtempSync(join(tmpdir(), "sequant-opencode-shimdir-"));
+    try {
+      mkdirSync(join(dir, rel, ".."), { recursive: true });
+      writeFileSync(join(dir, rel), "// shim\n");
+      expect(findShimIn(dir)).toBe(rel);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finds no shim in an empty directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sequant-opencode-empty-"));
+    try {
+      expect(findShimIn(dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("862 P1 hooks preflight — load handshake", () => {
+  it("fails a run whose shim never announced itself, even on a clean exit", async () => {
+    // The dangerous case: opencode exits 0 with a full transcript, but the
+    // plugin silently failed to load, so nothing was guarded. Verified real
+    // on 1.18.27 — a scanned plugin exporting a constant is rejected with
+    // "Plugin export is not a function", logged at ERROR and swallowed.
+    const proc = createMockProcess({
+      stdout: [readFixture()],
+      shimActive: false,
+    });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver().executePhase(
+      "/qa 862",
+      baseConfig(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.hooksNotActive);
+    expect(result.error).toContain("never loaded");
+  });
+
+  it("succeeds when the shim announced itself", async () => {
+    const proc = createMockProcess({ stdout: [readFixture()] });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver().executePhase(
+      "/qa 862",
+      baseConfig(),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps the sentinel byte-identical to the shipped shim template", () => {
+    // A drifting sentinel would silently disable the handshake: every run
+    // would look unguarded, or (worse, if the driver's copy were the loose
+    // one) every run would look guarded.
+    const shim = readFileSync(
+      join(
+        __dirname,
+        "../../../../templates/opencode/plugins/lib/sequant-hooks-core.ts",
+      ),
+      "utf-8",
+    );
+    expect(shim).toContain(`"${SHIM_LOADED_SENTINEL}"`);
+  });
+});
+
+describe("996 AC-3 — fan-out disposition is documented on the driver", () => {
+  /**
+   * AC-3 offers two ways to settle sub-agent fan-out: a verified dogfood table
+   * on #997, or documenting the fallback in this driver's doc comment. #997 has
+   * no such table, so the doc comment is the live satisfier — and an
+   * undocumented assumption here is exactly what the AC exists to prevent.
+   *
+   * Scoped to the driver's leading block comment (everything before the first
+   * import), per CLAUDE.md: matching the whole file would let an unrelated
+   * inline comment elsewhere satisfy the assertion.
+   */
+  const headerDoc = (): string => {
+    const src = readFileSync(join(__dirname, "opencode.ts"), "utf-8");
+    const firstImport = src.indexOf("\nimport ");
+    expect(firstImport).toBeGreaterThan(0);
+    return src.slice(0, firstImport);
+  };
+
+  it("996 AC-3 states that fan-out is unverified and degrades to sequential", () => {
+    const doc = headerDoc();
+    expect(doc).toMatch(/fan-?out/i);
+    expect(doc).toMatch(/sequential/i);
+    expect(doc).toMatch(/unverified/i);
+  });
+
+  it("996 AC-3 does not claim an implemented driver-conditional fallback", () => {
+    // The honest disposition is "no branch exists"; asserting it keeps a later
+    // edit from upgrading the prose to a guarantee the code does not make.
+    const doc = headerDoc();
+    expect(doc).toMatch(/no implemented "sequential fallback"|arrived\s*\n?\s*\*?\s*at by absence/i);
+    expect(/\bbranches on the active driver\b/.test(doc)).toBe(true);
   });
 });

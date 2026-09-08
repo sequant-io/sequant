@@ -4,6 +4,8 @@
 
 import chalk from "chalk";
 import { execSync } from "child_process";
+import { existsSync } from "fs";
+import { join as pathJoin } from "path";
 import { ui, colors } from "../lib/cli-ui.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { fileExists, isExecutable } from "../lib/fs.js";
@@ -153,6 +155,25 @@ export function checkClosedIssues(): ClosedIssue[] {
   }
 
   return missingCommitIssues;
+}
+
+/**
+ * Candidate locations for the opencode hook shim (#996 AC-2).
+ *
+ * `init` writes the singular `plugin/` (opencode's own convention); the plural
+ * also loads on 1.18.27, so a hand-placed copy there is accepted rather than
+ * reported missing.
+ */
+export const OPENCODE_SHIM_PATHS = [
+  ".opencode/plugin/sequant-hooks.ts",
+  ".opencode/plugins/sequant-hooks.ts",
+] as const;
+
+/** First shim path that exists under `projectDir`, or undefined. */
+export function findOpencodeShim(projectDir: string): string | undefined {
+  return OPENCODE_SHIM_PATHS.find((rel) =>
+    existsSync(pathJoin(projectDir, rel)),
+  );
 }
 
 /**
@@ -510,6 +531,41 @@ export async function doctorCommand(
           message: `opencode ${version} is installed (configured as default agent, minimum ${OPENCODE_MIN_VERSION})`,
         });
       }
+    }
+
+    // #996 AC-2: the hook shim is the only thing giving an opencode phase the
+    // same force-push/commit/worktree guards a Claude Code phase gets. Without
+    // it the phase runs unguarded and silently, so its absence is a fail.
+    const pluginPath = findOpencodeShim(".");
+    if (!pluginPath) {
+      checks.push({
+        name: "opencode hook shim",
+        status: "fail",
+        message:
+          `${OPENCODE_SHIM_PATHS[0]} not found - opencode phases would run with no ` +
+          `force-push, commit, or worktree guards. Install: sequant init --agent opencode`,
+      });
+    } else {
+      checks.push({
+        name: "opencode hook shim",
+        status: "pass",
+        message: `hook shim present at ${pluginPath}`,
+      });
+    }
+
+    // `--pure` runs opencode without external plugins, which disables the shim
+    // above along with it — the guards would be off while the file is still on
+    // disk, so the check above alone cannot catch this.
+    const extraArgs = settings.run.opencode?.extraArgs ?? [];
+    if (extraArgs.includes("--pure")) {
+      checks.push({
+        name: "opencode --pure",
+        status: "fail",
+        message:
+          "run.opencode.extraArgs contains --pure, which runs opencode without external " +
+          "plugins. The sequant hook shim would not load and every guard would be off. " +
+          "Remove --pure from extraArgs.",
+      });
     }
   }
 

@@ -1852,8 +1852,16 @@ export async function executePhaseWithRetry(
   // against the same limit while mislabeling the failure as MCP-related.
   const failureIsRateLimited =
     lastResult!.structuredError instanceof RateLimitError;
+  // #996 AC-5: only drivers that actually consume `config.mcp` can fail
+  // *because* of it. For opencode/aider the retry would re-run an identical
+  // command under a second full phaseTimeout and mislabel the cause.
+  const driverUsesSdkMcp = getDriver(config.agent, {
+    aiderSettings: config.aiderSettings,
+    opencodeSettings: config.opencodeSettings,
+  }).usesSdkMcp;
   if (
     config.mcp &&
+    driverUsesSdkMcp &&
     !lastResult!.success &&
     !skipColdStartRetry &&
     !failureIsBilling &&

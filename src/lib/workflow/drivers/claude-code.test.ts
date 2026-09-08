@@ -85,6 +85,9 @@ describe("ClaudeCodeDriver", () => {
     // #813: claude-code resolves phases via .claude/skills/, so the run
     // skills pre-flight must be active for this driver.
     expect(driver.resolvesSkills).toBe(true);
+    // #996 AC-5: this driver runs phases through the SDK's own MCP plumbing,
+    // so the "retry without MCP" fallback is meaningful for it.
+    expect(driver.usesSdkMcp).toBe(true);
   });
 
   describe("MCP allowlist wiring (#936)", () => {

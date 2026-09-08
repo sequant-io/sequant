@@ -20,11 +20,40 @@
  * 3. `step_finish.part.cost` is per step, and a hung run emits no `step_finish`
  *    at all — so a run that exits 0 without a terminal `reason: "stop"` is a
  *    failure, not a success.
+ *
+ * ## Sub-agent fan-out: unverified, degrades to sequential (#996 AC-3)
+ *
+ * `init --agent opencode` writes three `mode: subagent` definitions to
+ * `.opencode/agents/`, and opencode does resolve them — a hermetic
+ * `opencode debug agent <name>` returns the expected `mode`, `steps` (from the
+ * Claude-side `maxTurns`), and `permission` deny rules derived from the `tools`
+ * map. Provisioning works.
+ *
+ * What is **not** verified is fan-out actually running. `/exec`'s parallel
+ * groups are written against Claude Code's `Agent` tool; nothing in this
+ * driver or in the skill branches on the active driver, so there is no
+ * implemented "sequential fallback" to switch to. Under opencode a phase
+ * either routes that work through opencode's own `task` tool — which no run in
+ * #862/#992/#996 has exercised — or the model simply does the work inline.
+ * The de facto behaviour is therefore **sequential inline execution**, arrived
+ * at by absence rather than by design.
+ *
+ * Treat parallel-group timings and per-agent turn caps as Claude-Code-only
+ * guarantees until a dogfood run (#997) measures fan-out on opencode. Do not
+ * add driver-conditional fan-out logic on the assumption that `task` works;
+ * measure it first.
+ *
+ * One boundary worth knowing: `opencode debug agent <name> --tool <id>`
+ * executes a tool **without** invoking `tool.execute.before`, so the sequant
+ * hook shim never runs on that path (verified on 1.18.27 — the plugin's load
+ * sentinel appears, an instrumented hook-entry probe does not). It is a debug
+ * harness, not the phase path this driver uses, but anything run through it is
+ * unguarded.
  */
 
 import { spawn } from "child_process";
 import { execFileSync } from "child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { RingBuffer } from "../ring-buffer.js";
@@ -65,7 +94,25 @@ export const OPENCODE_ERROR_CODES = {
   noTerminalStep: "no-terminal-step",
   /** opencode emitted an `error` event on the stream. */
   streamError: "stream-error",
+  /**
+   * The hook shim is not installed in the phase's working directory, so the
+   * phase would run with none of sequant's guards (#996 AC-7).
+   */
+  hooksNotInstalled: "hooks-not-installed",
+  /**
+   * The shim is installed but never announced itself, so opencode did not
+   * load it and the phase ran unguarded (#996 AC-7).
+   */
+  hooksNotActive: "hooks-not-active",
 } as const;
+
+/**
+ * Sentinel the hook shim writes to stderr when opencode loads it.
+ *
+ * Must stay byte-identical to `SHIM_LOADED_SENTINEL` in
+ * `templates/opencode/plugins/lib/sequant-hooks-core.ts`.
+ */
+export const SHIM_LOADED_SENTINEL = "SEQUANT_HOOK_SHIM_ACTIVE";
 
 /** One NDJSON envelope. Only the fields this driver reads are typed. */
 interface OpencodeEvent {
@@ -245,6 +292,11 @@ export interface OpencodeRunOutcome {
   phaseTimeout: number;
   stderrTail: string[];
   stdoutTail: string[];
+  /**
+   * Require the shim's load sentinel on stderr (#996 AC-7). Off by default so
+   * existing fixtures and non-guarded callers are unaffected.
+   */
+  requireShimHandshake?: boolean;
 }
 
 /**
@@ -282,6 +334,27 @@ export function evaluateOpencodeRun(
       isTimeout
         ? `Timeout after ${outcome.phaseTimeout}s`
         : `Process killed by signal: ${outcome.signal}`,
+    );
+  }
+
+  // #996 AC-7: a plugin that fails to load is *silently* ignored by opencode —
+  // ERROR to its debug log, but exit 0, empty stderr, and a fully resolved
+  // tool map. Verified on 1.18.27, including the real failure this shim hit:
+  // a scanned plugin file that exports a constant is rejected wholesale.
+  // File presence therefore proves nothing; the load handshake is the only
+  // evidence the guards were live. Reporting an unguarded phase as a clean
+  // success is exactly the outcome #996 exists to prevent.
+  if (
+    outcome.requireShimHandshake === true &&
+    !outcome.stderrTail.some((line) => line.includes(SHIM_LOADED_SENTINEL))
+  ) {
+    return fail(
+      "The sequant hook shim never loaded, so this opencode phase ran with no " +
+        "force-push, commit, or worktree guards. Check `opencode ... --print-logs " +
+        '--log-level DEBUG` for a "failed to load plugin" line.',
+      new SequantError("opencode hook shim did not load", {
+        metadata: { code: OPENCODE_ERROR_CODES.hooksNotActive },
+      }),
     );
   }
 
@@ -426,6 +499,7 @@ export class OpencodeDriver implements AgentDriver {
    * preflight validates — so the preflight stays active for this driver.
    */
   resolvesSkills = true;
+  usesSdkMcp = false;
 
   private settings?: OpencodeSettings;
 
@@ -447,6 +521,23 @@ export class OpencodeDriver implements AgentDriver {
     prompt: string,
     config: AgentExecutionConfig,
   ): Promise<AgentPhaseResult> {
+    // #996 AC-7: fail closed before spending a phase. The shim must be in the
+    // *worktree*, not just the main checkout — see findShimIn.
+    if (!findShimIn(config.cwd)) {
+      return {
+        success: false,
+        output: "",
+        error:
+          `The sequant hook shim is not installed in ${config.cwd}. An opencode phase ` +
+          `there would run with no force-push, commit, or worktree guards. ` +
+          `Run \`sequant init --agent opencode\` and commit .opencode/ so worktrees inherit it.`,
+        structuredError: new SequantError(
+          "opencode hook shim missing from the phase working directory",
+          { metadata: { code: OPENCODE_ERROR_CODES.hooksNotInstalled } },
+        ),
+      };
+    }
+
     const resumeToken =
       config.resumeHandle && this.canResume(config.resumeHandle, config.cwd)
         ? config.resumeHandle.token
@@ -543,6 +634,7 @@ export class OpencodeDriver implements AgentDriver {
           phaseTimeout: config.phaseTimeout,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
+          requireShimHandshake: true,
         });
         finish(
           parsed.sessionId
@@ -594,6 +686,30 @@ function describeError(event: OpencodeEvent): string {
     if (typeof obj.name === "string") return obj.name;
   }
   return JSON.stringify(candidate);
+}
+
+/**
+ * Shim locations checked before a phase runs (#996 AC-7). Mirrors
+ * `OPENCODE_SHIM_PATHS` in doctor; both load on 1.18.27.
+ */
+const SHIM_RELATIVE_PATHS = [
+  ".opencode/plugin/sequant-hooks.ts",
+  ".opencode/plugins/sequant-hooks.ts",
+] as const;
+
+/**
+ * Fail closed when the hook shim is absent from the phase's working directory.
+ *
+ * This is not redundant with doctor's AC-2 check. Doctor runs in the **main
+ * checkout**; a phase runs in a **git worktree**, which carries tracked files
+ * only. `.opencode/` is untracked by default, so an uncommitted shim is
+ * present for doctor and absent for every phase — unguarded, and invisible to
+ * the check that was supposed to catch exactly this.
+ *
+ * @internal Exported for testing.
+ */
+export function findShimIn(cwd: string): string | undefined {
+  return SHIM_RELATIVE_PATHS.find((rel) => existsSync(join(cwd, rel)));
 }
 
 /**
