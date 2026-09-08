@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`metrics.tokensUsed` is no longer 0 on every recorded run (#986).** Two
+  independent defects each produced zeros on their own. The `SessionEnd` hook
+  extracted `.usage` from the transcript JSONL, but Claude Code transcripts
+  carry usage at `.message.usage` — the old path matched zero lines on every
+  real transcript. And `run` read the resulting files from the main checkout's
+  `.sequant/` while the hook writes into the phase agent's worktree, so the
+  only files it ever saw were the user's own interactive sessions (which were
+  zeros too). Tokens and cost now come primarily from the SDK's `modelUsage`
+  map, which the driver already returned and the pipeline discarded; the hook
+  path remains as a fallback for drivers that report no usage (aider,
+  subprocess), read through one worktree-anchored helper shared by `run` and
+  the `--ready-gate` budget check.
+- **`capture-tokens.sh` no longer over-counts by re-emitted messages (#986).**
+  Streaming and compaction repeat the same assistant message across transcript
+  lines (55 usage-bearing lines, 29 unique `message.id` on a live transcript);
+  usage is now deduped by `message.id` before summing. The hook also moved from
+  `.claude/hooks/` into `templates/hooks/` and the plugin `hooks/` dir with a
+  `SessionEnd` registration, so consumer projects and plugin users get the
+  fallback instead of a path that only ever worked in this repo.
+
+### Added
+
+- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
+  default beside the token panel and labeled "SDK estimate, not a billing
+  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
+  rows rather than merged, and records written before this existed render with
+  `—` for the fields they lack rather than a fabricated `$0.00`.
+
 - **Tautology detector no longer flags subprocess-driven tests whose spawn path
   is constructed rather than spelled out (#956).** The build-output heuristic
   was purely textual: a spawn counted as production code only when the source
