@@ -24,7 +24,7 @@
 
 import { spawn } from "child_process";
 import { execFileSync } from "child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { RingBuffer } from "../ring-buffer.js";
@@ -65,6 +65,11 @@ export const OPENCODE_ERROR_CODES = {
   noTerminalStep: "no-terminal-step",
   /** opencode emitted an `error` event on the stream. */
   streamError: "stream-error",
+  /**
+   * The hook shim is not installed in the phase's working directory, so the
+   * phase would run with none of sequant's guards (#996 AC-7).
+   */
+  hooksNotInstalled: "hooks-not-installed",
 } as const;
 
 /** One NDJSON envelope. Only the fields this driver reads are typed. */
@@ -426,6 +431,7 @@ export class OpencodeDriver implements AgentDriver {
    * preflight validates — so the preflight stays active for this driver.
    */
   resolvesSkills = true;
+  usesSdkMcp = false;
 
   private settings?: OpencodeSettings;
 
@@ -447,6 +453,23 @@ export class OpencodeDriver implements AgentDriver {
     prompt: string,
     config: AgentExecutionConfig,
   ): Promise<AgentPhaseResult> {
+    // #996 AC-7: fail closed before spending a phase. The shim must be in the
+    // *worktree*, not just the main checkout — see findShimIn.
+    if (!findShimIn(config.cwd)) {
+      return {
+        success: false,
+        output: "",
+        error:
+          `The sequant hook shim is not installed in ${config.cwd}. An opencode phase ` +
+          `there would run with no force-push, commit, or worktree guards. ` +
+          `Run \`sequant init --agent opencode\` and commit .opencode/ so worktrees inherit it.`,
+        structuredError: new SequantError(
+          "opencode hook shim missing from the phase working directory",
+          { metadata: { code: OPENCODE_ERROR_CODES.hooksNotInstalled } },
+        ),
+      };
+    }
+
     const resumeToken =
       config.resumeHandle && this.canResume(config.resumeHandle, config.cwd)
         ? config.resumeHandle.token
@@ -594,6 +617,30 @@ function describeError(event: OpencodeEvent): string {
     if (typeof obj.name === "string") return obj.name;
   }
   return JSON.stringify(candidate);
+}
+
+/**
+ * Shim locations checked before a phase runs (#996 AC-7). Mirrors
+ * `OPENCODE_SHIM_PATHS` in doctor; both load on 1.18.27.
+ */
+const SHIM_RELATIVE_PATHS = [
+  ".opencode/plugin/sequant-hooks.ts",
+  ".opencode/plugins/sequant-hooks.ts",
+] as const;
+
+/**
+ * Fail closed when the hook shim is absent from the phase's working directory.
+ *
+ * This is not redundant with doctor's AC-2 check. Doctor runs in the **main
+ * checkout**; a phase runs in a **git worktree**, which carries tracked files
+ * only. `.opencode/` is untracked by default, so an uncommitted shim is
+ * present for doctor and absent for every phase — unguarded, and invisible to
+ * the check that was supposed to catch exactly this.
+ *
+ * @internal Exported for testing.
+ */
+export function findShimIn(cwd: string): string | undefined {
+  return SHIM_RELATIVE_PATHS.find((rel) => existsSync(join(cwd, rel)));
 }
 
 /**

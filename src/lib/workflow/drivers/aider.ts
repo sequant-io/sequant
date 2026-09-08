@@ -22,6 +22,7 @@ export class AiderDriver implements AgentDriver {
 
   /** Aider phases use inline `driverOverrides` prompts — no skills (#813). */
   resolvesSkills = false;
+  usesSdkMcp = false;
 
   private settings?: AiderSettings;
 
