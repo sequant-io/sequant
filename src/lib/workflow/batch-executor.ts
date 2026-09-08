@@ -29,13 +29,11 @@ import {
   withEscalatedModel,
   createLadderState,
   isLadderConfigured,
+  effectiveModelTrigger,
   detectCapabilityBoundTrigger,
   type EscalationTrigger,
 } from "./model-ladder.js";
-import {
-  snapshotLoopProgress,
-  compareLoopProgress,
-} from "./qa-stagnation.js";
+import { snapshotLoopProgress, compareLoopProgress } from "./qa-stagnation.js";
 import type { ShutdownManager } from "../shutdown.js";
 import {
   classifyError,
@@ -1487,11 +1485,19 @@ export async function runIssueWithLogging(
       // no-op (returns the input config by reference) whenever escalation is
       // off or this is the first attempt.
       //
-      // #971 AC-5, enforced structurally rather than by convention: a
-      // capability-bound trigger from the previous iteration SUPPRESSES the
-      // effort bump for this dispatch and spends a model rung instead, so
-      // "effort and model both changed on one iteration" is unrepresentable,
-      // not merely untested. Effort stays the first rung (a plain retry).
+      // #971 AC-5, enforced structurally rather than by convention. Both
+      // halves come from ONE value, `modelTrigger`:
+      //
+      // - "retry 1 escalates effort only": `effectiveModelTrigger` withholds
+      //   the trigger until retry 2, so the first retry leaves the effort
+      //   bump enabled and spends the cheap rung — the ladder's own cost
+      //   argument, applied to #915's rung.
+      // - "never both on one iteration": from retry 2 on, an active trigger
+      //   disables the effort bump and spends a model rung instead.
+      //
+      // Written this way, "effort and model both changed on one iteration" is
+      // unrepresentable rather than merely untested.
+      const modelTrigger = effectiveModelTrigger(lastTrigger, iteration - 1);
       const { config: effortConfig, record: escalationRecord } =
         withEscalatedEffort(
           withActivityHook(
@@ -1502,7 +1508,7 @@ export async function runIssueWithLogging(
             makeWaitTransition(phase),
           ),
           phase,
-          iteration > 1 && lastTrigger === null,
+          iteration > 1 && modelTrigger === null,
         );
       if (escalationRecord && config.verbose) {
         log(
@@ -1516,7 +1522,7 @@ export async function runIssueWithLogging(
       // arrived and no sticky rung has been reached, or the phase's `--models`
       // pin is off-ladder (AC-7).
       const { config: dispatchConfig, record: modelRecord } =
-        withEscalatedModel(effortConfig, phase, lastTrigger, ladderState);
+        withEscalatedModel(effortConfig, phase, modelTrigger, ladderState);
       if (modelRecord && config.verbose) {
         log(
           chalk.gray(
@@ -1796,7 +1802,7 @@ export async function runIssueWithLogging(
           const loopLadder = withEscalatedModel(
             loopConfig,
             "loop",
-            lastTrigger,
+            modelTrigger,
             ladderState,
           );
           if (loopLadder.record && config.verbose) {

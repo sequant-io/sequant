@@ -36,6 +36,7 @@ import {
   createLadderState,
   canEscalateFurther,
   detectCapabilityBoundTrigger,
+  effectiveModelTrigger,
   type EscalationTrigger,
   type ModelEscalationRecord,
 } from "./model-ladder.js";
@@ -664,21 +665,24 @@ export async function runReadyGate(
     // #915: iterations > 1 means this QA pass is a retry of a prior
     // unsatisfied verdict — the ready-gate's retry signal.
     //
-    // #971 AC-5, enforced structurally rather than by convention: a
-    // capability-bound trigger SUPPRESSES the effort bump for this dispatch,
-    // so "effort and model both changed on one iteration" is unrepresentable,
-    // not merely untested. Effort remains the first rung (a plain retry);
-    // the model rung fires only on a subsequent no-progress trigger.
+    // #971 AC-5, enforced structurally rather than by convention. One value
+    // drives both escalators, so the AC's two halves cannot drift apart:
+    // `effectiveModelTrigger` withholds the trigger until retry 2, so retry 1
+    // leaves the effort bump enabled (effort is the first rung), and from
+    // retry 2 on an active trigger disables it and spends a model rung
+    // instead (never both on one iteration). Shared with the run path so the
+    // two dispatch paths cannot diverge on the rule (AC-11).
+    const modelTrigger = effectiveModelTrigger(lastTrigger, iterations - 1);
     const qaEscalation = withEscalatedEffort(
       buildPhaseConfig(opts, { fullQa: true }),
       "qa",
-      iterations > 1 && lastTrigger === null,
+      iterations > 1 && modelTrigger === null,
     );
     if (qaEscalation.record) effortEscalations.push(qaEscalation.record);
     const qaLadder = withEscalatedModel(
       qaEscalation.config,
       "qa",
-      lastTrigger,
+      modelTrigger,
       ladderState,
     );
     if (qaLadder.record) modelEscalations.push(qaLadder.record);
@@ -755,7 +759,7 @@ export async function runReadyGate(
         promptContext: buildLoopContext(policy, verdict, fixableGaps),
       }),
       "loop",
-      iterations > 1 && lastTrigger === null,
+      iterations > 1 && modelTrigger === null,
     );
     if (loopEscalation.record) effortEscalations.push(loopEscalation.record);
     // #971: the same trigger drives this iteration's fix pass. Rungs are
@@ -764,7 +768,7 @@ export async function runReadyGate(
     const loopLadder = withEscalatedModel(
       loopEscalation.config,
       "loop",
-      lastTrigger,
+      modelTrigger,
       ladderState,
     );
     if (loopLadder.record) modelEscalations.push(loopLadder.record);

@@ -113,8 +113,11 @@ describe("971 AC-2: run path — a no-progress iteration dispatches the next run
       makeCtx({ modelLadder: LADDER }, () => ({ sha: "frozen", dirty: [] })),
     );
 
-    // Iteration 1 at the unescalated base; 2 and 3 one rung up each.
-    expect(dispatchedExecModels()).toEqual([undefined, "opus", "fable"]);
+    // Iteration 1 is the first attempt (nothing observed yet). Iteration 2 is
+    // retry 1, which belongs to #915's effort rung — the model is untouched
+    // (AC-5). Iteration 3 is retry 2, the first retry eligible to spend a
+    // model rung, so it dispatches one rung up.
+    expect(dispatchedExecModels()).toEqual([undefined, undefined, "opus"]);
   });
 
   it("with NO ladder configured, every iteration dispatches the same (unset) model", async () => {
@@ -161,16 +164,60 @@ describe("971 AC-5: run path — effort and model never escalate on the same ite
         return { effort: policy?.effort, model: policy?.model };
       });
 
-    // Iteration 1: neither (first attempt). Iterations 2-3: model only, at
-    // the unbumped base effort.
+    // The AC-5 ordering, derived from the loop rather than hand-fed:
+    //   iteration 1 — first attempt: neither escalator fires.
+    //   iteration 2 — retry 1: EFFORT only, at the base model. The cheap rung
+    //     is spent first even though the trigger is already present.
+    //   iteration 3 — retry 2: MODEL only, at the base (unbumped) effort.
     expect(dispatches).toEqual([
       { effort: "high", model: undefined },
+      { effort: "xhigh", model: undefined },
       { effort: "high", model: "opus" },
-      { effort: "high", model: "fable" },
     ]);
     expect(
       dispatches.filter((d) => d.effort === "xhigh" && d.model !== undefined),
     ).toEqual([]);
+  });
+
+  it("spends the effort rung BEFORE any model rung when iteration 1 produces nothing", async () => {
+    // The regression this test exists for (#971 QA): the trigger is DERIVED
+    // from a no-diff iteration 1 rather than hand-fed, which is the only way
+    // to observe the ordering the loop actually produces. The previous
+    // implementation suppressed effort on the first capability-bound retry
+    // and jumped straight to a model rung, so the effort rung was never spent
+    // on the ladder's own primary path — AC-5's "retry 1 escalates effort
+    // only" was violated while a hand-fed unit test stayed green.
+    await runIssueWithLogging(
+      makeCtx(
+        {
+          modelLadder: LADDER,
+          effortEscalation: true,
+          phasePolicies: { exec: { effort: "high" } },
+        },
+        // Constant snapshot ⇒ iteration 1 produces nothing ⇒ the trigger is
+        // already LOOP_NO_DIFF by the time retry 1 dispatches.
+        () => ({ sha: "frozen", dirty: [] }),
+      ),
+    );
+
+    const dispatches = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "exec")
+      .map((c) => {
+        const policy = (c[2] as ExecutionConfig).phasePolicies?.exec;
+        return { effort: policy?.effort, model: policy?.model };
+      });
+
+    const firstEffortBump = dispatches.findIndex((d) => d.effort === "xhigh");
+    const firstModelRung = dispatches.findIndex((d) => d.model !== undefined);
+
+    expect(firstEffortBump).toBeGreaterThanOrEqual(0);
+    expect(firstModelRung).toBeGreaterThanOrEqual(0);
+    // The load-bearing assertion: effort is spent at a STRICTLY earlier
+    // dispatch than the first model rung.
+    expect(firstEffortBump).toBeLessThan(firstModelRung);
+    // And specifically: retry 1 is the effort rung, retry 2 is the model rung.
+    expect(firstEffortBump).toBe(1);
+    expect(firstModelRung).toBe(2);
   });
 
   it("a NON-capability-bound retry still escalates effort — #915's behaviour is preserved", async () => {

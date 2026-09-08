@@ -321,6 +321,46 @@ export function detectCapabilityBoundTrigger(
   };
 }
 
+/**
+ * The retry index at which a capability-bound trigger may first spend a model
+ * rung (#971 AC-5).
+ *
+ * Retry 1 belongs to #915: "effort escalation remains the first rung (retry 1
+ * → effort +1 tier, same model). Model escalation fires only on a subsequent
+ * capability-bound trigger (retry ≥ 2 with no-progress stagnation)." The cheap
+ * rung is tried first — that is the ladder's whole cost argument, and it
+ * applies to the effort rung exactly as it applies to skipping a model rung.
+ */
+export const FIRST_MODEL_RUNG_RETRY = 2;
+
+/**
+ * Gate a capability-bound trigger on the retry it arrived at (#971 AC-5).
+ *
+ * Returns the trigger only from {@link FIRST_MODEL_RUNG_RETRY} onward, and
+ * `null` before it — so retry 1 falls through to `withEscalatedEffort` and
+ * spends the effort rung, while the model rung waits for a *subsequent*
+ * capability-bound retry.
+ *
+ * Both dispatch paths call this and feed its result to BOTH escalators —
+ * `withEscalatedEffort(cfg, phase, isRetry && modelTrigger === null)` then
+ * `withEscalatedModel(cfg, phase, modelTrigger, state)`. That keeps AC-5's
+ * two halves structural rather than conventional: "effort first" because a
+ * suppressed trigger leaves the effort bump enabled, and "never both" because
+ * an active one disables it. Kept here, next to `withEscalatedModel`, so the
+ * run path and the ready gate cannot drift on the rule (AC-11's
+ * single-choke-point discipline).
+ *
+ * @param trigger The capability-bound signal observed by the previous
+ *   iteration, or `null` when it made progress.
+ * @param retryIndex 0 on a first attempt, 1 on the first retry, and so on.
+ */
+export function effectiveModelTrigger(
+  trigger: EscalationTrigger | null,
+  retryIndex: number,
+): EscalationTrigger | null {
+  return retryIndex >= FIRST_MODEL_RUNG_RETRY ? trigger : null;
+}
+
 /** One escalated dispatch, for observability (run metrics + verbose output). */
 export interface ModelEscalationRecord extends ModelEscalationFacts {
   phase: string;

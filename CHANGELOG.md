@@ -20,9 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     escalate. Repeated QA failure at *advancing* SHAs is divergence-suspect and
     never escalates — a stronger model would only rediscover the contradiction
     more expensively.
-  - Composes with #915 rather than stacking on it: a capability-bound trigger
-    suppresses that dispatch's effort bump, so effort and model never escalate
-    on the same iteration.
+  - Composes with #915 rather than stacking on it, in that order: retry 1
+    spends the cheap effort rung at the same model, and a model rung is only
+    spent from retry 2 on. A capability-bound trigger then suppresses that
+    dispatch's effort bump, so effort and model never escalate on the same
+    iteration.
   - Escalation is **sticky** (a phase stays at its rung for the rest of the
     run), never skips a rung, and never escalates past the last entry.
   - An explicit `--models` pin sets the starting rung; a pin that is not a

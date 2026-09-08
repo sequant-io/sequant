@@ -240,12 +240,17 @@ describe("971 AC-2: a capability-bound trigger dispatches the next rung", () => 
     // produces no diff, and (because a ladder is configured and a rung
     // remains) the gate continues instead of halting — the OQ-1 change that
     // makes this AC reachable at all.
+    //
+    // 4 iterations, not 3: retry 1 belongs to #915's effort rung (AC-5), so
+    // the first model rung lands on retry 2 and a SECOND rung needs one more
+    // pass. Budgeting for it keeps this test covering both the `loop` phase's
+    // record and a second rung, rather than stopping after the first.
     const dispatched: Array<{ phase: string; model?: string }> = [];
     const opts: RunReadyGateOptions = {
       issueNumber: 971,
       worktreePath: "/tmp/worktree-971",
       policy: "ac",
-      maxIterations: 3,
+      maxIterations: 4,
       config: configWith({ modelLadder: LADDER }),
       classifyChangesFn: () => ({ kind: "commits" }),
       readTokensUsed: () => 0,
@@ -266,10 +271,11 @@ describe("971 AC-2: a capability-bound trigger dispatches the next rung", () => 
     const qaModels = dispatched
       .filter((d) => d.phase === "qa")
       .map((d) => d.model);
-    // Pass 1 runs at the unescalated base (no key set); passes 2 and 3 run one
-    // rung up each, after each no-diff fix loop.
-    expect(qaModels).toEqual([undefined, "opus", "fable"]);
-    // qa→opus, loop→opus (iteration 2), qa→fable (iteration 3). Iteration 3's
+    // Passes 1 and 2 run at the unescalated base — pass 2 is retry 1, which
+    // spends #915's effort rung rather than a model rung (AC-5). Passes 3 and
+    // 4 are retries 2 and 3, one model rung up each.
+    expect(qaModels).toEqual([undefined, undefined, "opus", "fable"]);
+    // qa→opus, loop→opus (iteration 3), qa→fable (iteration 4). Iteration 4's
     // fix loop never runs — the gate returns MAX_ITERATIONS after its QA pass —
     // so `loop` never reaches the top rung.
     expect(
@@ -825,7 +831,9 @@ describe("971 AC-10: the ready-gate path surfaces its escalations to the caller"
       issueNumber: 971,
       worktreePath: "/tmp/worktree-971",
       policy: "ac",
-      maxIterations: 3,
+      // 4 iterations for the same reason as the AC-2 gate test above: retry 1
+      // is #915's effort rung (AC-5), so two model rungs need four passes.
+      maxIterations: 4,
       config: configWith({ modelLadder: LADDER }),
       classifyChangesFn: () => ({ kind: "commits" }),
       readTokensUsed: () => 0,
