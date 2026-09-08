@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   map, which the driver already returned and the pipeline discarded; the hook
   path remains as a fallback for drivers that report no usage (aider,
   subprocess), read through one worktree-anchored helper shared by `run` and
-  the `--ready-gate` budget check.
+  the `--ready-gate` budget check. Failed phases count too: the driver
+  previously returned `modelUsage` only on the success path, so an agent that
+  errored, hit its turn cap, or blew its budget reported zero tokens and zero
+  cost — the three shapes most worth seeing, since a capped agent ran to its
+  full turn ceiling and a budget failure is by definition the most expensive
+  outcome.
 - **`capture-tokens.sh` no longer over-counts by re-emitted messages (#986).**
   Streaming and compaction repeat the same assistant message across transcript
   lines (55 usage-bearing lines, 29 unique `message.id` on a live transcript);

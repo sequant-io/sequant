@@ -730,4 +730,80 @@ describe("ClaudeCodeDriver", () => {
       expect(result.modelUsage).toBeUndefined();
     });
   });
+
+  /**
+   * #986 — the failure paths dropped `modelUsage` while `PhaseResult.usage`'s
+   * own docs claimed it was captured "on both the success and failure paths".
+   * These are the expensive shapes: a capped agent ran to its full turn
+   * ceiling, and `error_max_budget_usd` is by definition the costliest
+   * outcome. `modelUsage` is required on every SDK result variant, error ones
+   * included, so there was never a reason to drop it.
+   */
+  describe("#986: modelUsage survives every failure path", () => {
+    const usage = {
+      "claude-sonnet-5": { inputTokens: 900, outputTokens: 120, costUSD: 0.42 },
+    };
+
+    it("986 keeps modelUsage when a success-subtype result carries is_error", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "result",
+            subtype: "success",
+            is_error: true,
+            result: "API Error: unrecognized model",
+            modelUsage: usage,
+          },
+        ]),
+      );
+
+      const result = await new ClaudeCodeDriver().executePhase(
+        "prompt",
+        baseConfig(),
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.modelUsage).toEqual(usage);
+    });
+
+    it("986 keeps modelUsage when the agent hits its turn cap", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          { type: "result", subtype: "error_max_turns", modelUsage: usage },
+        ]),
+      );
+
+      const result = await new ClaudeCodeDriver().executePhase(
+        "prompt",
+        baseConfig(),
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.capped).toBe(true);
+      expect(result.modelUsage).toEqual(usage);
+    });
+
+    it("986 keeps modelUsage when the run exceeds its budget", async () => {
+      queryMock.mockReturnValue(
+        mockStream([
+          INIT,
+          {
+            type: "result",
+            subtype: "error_max_budget_usd",
+            modelUsage: usage,
+          },
+        ]),
+      );
+
+      const result = await new ClaudeCodeDriver().executePhase(
+        "prompt",
+        baseConfig(),
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.modelUsage).toEqual(usage);
+    });
+  });
 });
