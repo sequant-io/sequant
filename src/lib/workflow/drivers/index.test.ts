@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getDriver } from "./index.js";
+import { OpencodeDriver } from "./opencode.js";
 
 describe("driver registry", () => {
   it("returns ClaudeCodeDriver for 'claude-code'", () => {
@@ -20,5 +21,22 @@ describe("driver registry", () => {
 
   it("error message lists available drivers", () => {
     expect(() => getDriver("nonexistent")).toThrow(/claude-code/);
+  });
+
+  it("862 AC-3 returns OpencodeDriver for 'opencode'", () => {
+    const driver = getDriver("opencode");
+    expect(driver).toBeInstanceOf(OpencodeDriver);
+    expect(driver.name).toBe("opencode");
+  });
+
+  it("862 AC-3 opencode resolves skills, so the #813 preflight stays active", () => {
+    expect(getDriver("opencode").resolvesSkills).toBe(true);
+  });
+
+  it("862 AC-3 accepts opencodeSettings without falling back to a default driver", () => {
+    const driver = getDriver("opencode", {
+      opencodeSettings: { model: "openrouter/anthropic/claude-sonnet-5" },
+    });
+    expect(driver).toBeInstanceOf(OpencodeDriver);
   });
 });

@@ -514,6 +514,7 @@ export function buildExecutionConfig(
       DEFAULT_CONFIG.autoWaitMinutes,
     agent: mergedOptions.agent ?? settings.run.agent,
     aiderSettings: settings.run.aider,
+    opencodeSettings: settings.run.opencode,
     isolateParallel: mergedOptions.isolateParallel,
     relayEnabled,
     // #817: opt-in only, no settings backing (AC-4). A missing `--ready-gate`
