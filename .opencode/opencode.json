@@ -1,0 +1,14 @@
+{
+  "mcp": {
+    "sequant": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "sequant@2.13.1",
+        "serve"
+      ],
+      "enabled": true
+    }
+  }
+}
