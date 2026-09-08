@@ -794,9 +794,14 @@ export async function postQaVerdictComment(
 }
 
 /**
- * Arguments for {@link runReadyGateForIssue}. Deliberately a flat primitive
- * bag rather than the full `IssueExecutionContext` so the helper stays cheap to
- * unit-test in isolation.
+ * Arguments for {@link runReadyGateForIssue}. Narrower than the full
+ * `IssueExecutionContext` so the helper stays cheap to unit-test in isolation
+ * — but `config` is the whole resolved `ExecutionConfig`, deliberately.
+ *
+ * It used to be unpacked into a flat primitive bag on the way to the gate, and
+ * that is precisely how #863 happened: `agent`/`aiderSettings` were never in
+ * the bag, so an aider-configured run put its main phases on aider and its
+ * gate silently on claude-code. The config travels whole now.
  */
 interface ReadyGateForIssueArgs {
   issueNumber: number;
@@ -900,9 +905,9 @@ async function runReadyGateForIssue(
       // `--budget`); maxIterations bounds cost.
       tokenBudget: undefined,
       nonGoals,
-      phaseTimeout: config.phaseTimeout,
-      mcp: config.mcp,
-      verbose: config.verbose,
+      // #863: hand the gate the parent run's own resolved config, whole. The
+      // gate applies only its six gate-semantic overrides on top.
+      config,
       runPhase,
       onProgress,
       // #937 AC-4: persist the final gap report as an issue comment.
@@ -1844,7 +1849,9 @@ export async function runIssueWithLogging(
       ? await runReadyGateForIssue({
           issueNumber,
           worktreePath,
-          config,
+          // #863: `issueConfig`, not `config` — so a docs-labelled issue's gate
+          // phases carry the same `issueType` the phases that just ran had.
+          config: issueConfig,
           shutdownManager,
           phasePauseHandle,
           onProgress,
