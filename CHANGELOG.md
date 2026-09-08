@@ -10,6 +10,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`claude plugin eval` cases for `/qa`, `/spec` and `/assess` output contracts, plus a null-run canary and fixture gates (#993).** `evals/qa-trust-boundary`, `evals/spec-ac-parse` and `evals/assess-dashboard` grade only surfaces each skill emits unprompted (the Trust-Boundary Check section, the `SEQUANT_QA_GAPS` trailer, the plan's own AC-1 restatement, the batch `assess:action` markers) against real regression fixtures (#819's injection fixture, #938's fenced-AC-decoy body, two verbatim issue bodies). `evals/null-run-canary` proves the grader set isn't vacuous — a do-nothing prompt and an 8-line skill stub both score red. `__tests__/evals-fixture-commit.test.ts` rejects any recorded result whose `fixture_commit` isn't an ancestor of HEAD, and `__tests__/evals-fixture-payload.test.ts` fails if a case's fixture payload is deleted.
+- **`SPEC_DIVERGENCE` escape hatch and ladder halts with evidence bundles (#995).**
+  The other half of #971's bargain: the ladder now knows when to stop instead of
+  climbing. Three halts, each printing an evidence bundle (SHAs tried,
+  per-iteration verdicts, escalation history, next step) and ending the run
+  without merging.
+  - `SPEC_DIVERGENCE` — an agent that finds an acceptance criterion impossible
+    as written declares it via `"outcome":"SPEC_DIVERGENCE"` in its own
+    `SEQUANT_PHASE` marker and stops, rather than guessing at what was meant.
+    Terminal for the retry path as well as the ladder: no cold-start retry, no
+    MCP fallback, no rung spent. The `/exec` and `/loop` skills document when to
+    emit it — and when not to — and that it must go in the agent's **final
+    response message**, unfenced: the run reads the marker from the agent's own
+    output, so one routed only to a `gh issue comment` is invisible under
+    `sequant run`. Reachable without a configured ladder.
+  - `DIVERGENCE_SUSPECT` — two **consecutive** iterations that each produced a
+    diff at a still-failing verdict. Two, not one: a single such iteration is
+    the ordinary `AC_NOT_MET → /loop → re-QA` cycle, and halting on it would
+    break every quality loop.
+  - `TOP_OF_LADDER` — a further capability-bound trigger arrived on the last
+    rung. Reported distinctly from `MAX_ITERATIONS`, which would send the user
+    to raise a cap that was never the constraint.
+  - `sequant ready` gains the three matching terminal reasons and embeds the
+    bundle in its gap report.
+  - Verbose output now names the trigger in words —
+    `model: sonnet → opus (no-progress retry)` — at all four dispatch print
+    sites, replacing the raw reason code.
+  - New reference doc: [Model Escalation Ladder](docs/reference/model-ladder.md),
+    covering the capability-vs-spec-bound distinction, the escape hatch, and the
+    cost model.
+
+- **Model escalation ladder on capability-bound non-convergence (#971).**
+  `run.modelLadder` (or `--model-ladder sonnet,opus,fable` on `sequant run` and
+  `sequant ready`) defines ordered rungs, cheapest first. When a retried phase's
+  prior attempt made **no progress**, that phase is re-dispatched one rung up.
+  Absent by default — with no ladder configured, retried phases behave exactly
+  as #914/#915 ship them and the run issues no extra `git` calls.
+  - Routes on *why* the loop is churning, not on iteration count. Only the
+    deterministic no-progress signals (`LOOP_NO_DIFF`, `SAME_SHA_NO_PROGRESS`)
+    escalate. Repeated QA failure at *advancing* SHAs is divergence-suspect and
+    never escalates — a stronger model would only rediscover the contradiction
+    more expensively.
+  - Composes with #915 rather than stacking on it, in that order: retry 1
+    spends the cheap effort rung at the same model, and a model rung is only
+    spent from retry 2 on. A capability-bound trigger then suppresses that
+    dispatch's effort bump, so effort and model never escalate on the same
+    iteration.
+  - Escalation is **sticky** (a phase stays at its rung for the rest of the
+    run), never skips a rung, and never escalates past the last entry.
+  - An explicit `--models` pin sets the starting rung; a pin that is not a
+    ladder entry never escalates, so a pin is never silently downgraded.
+  - Ladder entries accept `role:` references (#975), resolved through
+    `run.modelRoles`; raw model strings stay legal.
+  - Escalations are recorded as columns on the `phaseUsage` row (#986) and in a
+    run-level `modelEscalations` log, and threaded into the phase environment so
+    phase markers can carry them.
+
 - **opencode agent driver — the first backend that inherits sequant's full skill
   methodology (#862).** `sequant run <n> --agent opencode` dispatches every
   phase through `opencode run --command <phase> … --format json --auto`, where a

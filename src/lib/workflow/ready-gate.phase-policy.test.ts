@@ -144,3 +144,67 @@ describe("#915 AC-1/AC-3/AC-7: ready-gate carries + applies the resolved effortE
     expect(result.reason).toBe("READY_FOR_MERGE");
   });
 });
+
+describe("971 AC-11: the ready gate inherits the model ladder, it never resolves one", () => {
+  it("carries the resolved modelLadder onto every dispatched ExecutionConfig", async () => {
+    const seen: Array<string[] | undefined> = [];
+    const opts: RunReadyGateOptions = {
+      issueNumber: 971,
+      worktreePath: "/tmp/worktree-971",
+      policy: "ac",
+      maxIterations: 1,
+      // The ladder reaches the gate ONLY through the shared resolved config
+      // (`config-resolver.ts:resolveModelLadder`) — `ready-gate.ts` reads no
+      // settings of its own. The static half of this AC is the per-file grep:
+      // `grep -c 'modelLadder' src/lib/workflow/ready-gate.ts` must be 0.
+      config: {
+        ...DEFAULT_CONFIG,
+        mcp: false,
+        modelLadder: ["sonnet", "opus", "fable"],
+      },
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
+      runPhase: (phase, config) => {
+        seen.push(config.modelLadder);
+        const result: PhaseResult = {
+          phase,
+          success: true,
+          verdict: phase === "qa" ? "READY_FOR_MERGE" : undefined,
+        };
+        return Promise.resolve(result);
+      },
+    };
+
+    await runReadyGate(opts);
+
+    expect(seen[0]).toEqual(["sonnet", "opus", "fable"]);
+  });
+
+  it("dispatches with no ladder key when the shared config carries none", async () => {
+    const seen: Array<boolean> = [];
+    const opts: RunReadyGateOptions = {
+      issueNumber: 971,
+      worktreePath: "/tmp/worktree-971",
+      policy: "ac",
+      maxIterations: 1,
+      config: { ...DEFAULT_CONFIG, mcp: false },
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: "sha-1", dirty: [] }),
+      runPhase: (phase, config) => {
+        seen.push("modelLadder" in config);
+        const result: PhaseResult = {
+          phase,
+          success: true,
+          verdict: phase === "qa" ? "READY_FOR_MERGE" : undefined,
+        };
+        return Promise.resolve(result);
+      },
+    };
+
+    await runReadyGate(opts);
+
+    expect(seen[0]).toBe(false);
+  });
+});

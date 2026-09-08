@@ -22,6 +22,7 @@ import {
 } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { parseQaGapsMarker } from "./qa-gaps-marker.js";
+import { parsePhaseMarkers } from "./phase-detection.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type {
@@ -898,6 +899,41 @@ function formatUncommittedExecError(paths: string[], cwd: string): string {
 }
 
 /**
+ * Scrape the `SPEC_DIVERGENCE` escape hatch out of a phase's own output
+ * (#995 / #971 AC-4).
+ *
+ * The declaration channel is the existing `SEQUANT_PHASE` marker rather than a
+ * new marker family: `state-schema.ts` already carries the `outcome` /
+ * `divergenceAcs` fields, and a second family would mean a second parser to
+ * keep in sync with the first. `parsePhaseMarkers` is reused verbatim, so the
+ * code-block stripping and schema validation that protect every other marker
+ * read protect this one too — an agent that *documents* the marker in a fenced
+ * block does not thereby halt its own run.
+ *
+ * The LAST such marker wins, matching `detectPhaseFromComments`' "most recent
+ * marker" rule: an agent that explores, emits a divergence, then retracts it in
+ * a later marker should not be held to the retracted one.
+ *
+ * @internal Exported for testing only.
+ */
+export function parseSpecDivergence(
+  output: string | undefined,
+): { acs?: string; message?: string } | undefined {
+  if (!output) return undefined;
+  let found: { acs?: string; message?: string } | undefined;
+  for (const marker of parsePhaseMarkers(output)) {
+    if (marker.outcome !== "SPEC_DIVERGENCE") continue;
+    found = {
+      ...(marker.divergenceAcs !== undefined
+        ? { acs: marker.divergenceAcs }
+        : {}),
+      ...(marker.error !== undefined ? { message: marker.error } : {}),
+    };
+  }
+  return found;
+}
+
+/**
  * Map a successful AgentPhaseResult to a PhaseResult, applying phase-specific
  * guards that catch agent sessions which returned success without producing
  * usable work (#534):
@@ -908,6 +944,25 @@ function formatUncommittedExecError(paths: string[], cwd: string): string {
  * @internal Exported for testing only.
  */
 export function mapAgentSuccessToPhaseResult(
+  phase: Phase,
+  agentResult: AgentPhaseResult,
+  durationSeconds: number,
+  cwd: string,
+): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
+  const base = mapAgentSuccessCore(phase, agentResult, durationSeconds, cwd);
+  // #995: attached here rather than at each of the guards' seven returns, so a
+  // future guard cannot be added that silently drops the escape hatch. The
+  // scrape is independent of every one of those verdicts — an agent that
+  // declares the spec impossible has done so whether its phase was then
+  // graded success (a clean stop) or failure (the #534/#879 no-deliverable
+  // guards, which is what a halted exec usually trips).
+  const specDivergence = parseSpecDivergence(agentResult.output);
+  return specDivergence ? { ...base, specDivergence } : base;
+}
+
+/** The guard chain itself. Split from the wrapper above purely so the #995
+ * divergence scrape has exactly one attachment point. */
+function mapAgentSuccessCore(
   phase: Phase,
   agentResult: AgentPhaseResult,
   durationSeconds: number,
@@ -1059,6 +1114,16 @@ export function mapAgentFailureToPhaseResult(
     // byte-for-byte identical to pre-#739 behaviour.
     capped: agentResult.capped,
     output: agentResult.capped ? agentResult.output : undefined,
+    // #995: scraped from the DRIVER's output, not from the `output` field
+    // above — a non-capped failure deliberately drops `output` (#739), and a
+    // phase that declared the spec impossible and then failed a deliverable
+    // guard is exactly the case the escape hatch exists for. Reading the
+    // dropped field instead would make the hatch unreachable on the path that
+    // needs it most.
+    ...(() => {
+      const specDivergence = parseSpecDivergence(agentResult.output);
+      return specDivergence ? { specDivergence } : {};
+    })(),
     sessionId: agentResult.sessionId,
     resumeHandle: agentResult.resumeHandle,
     stderrTail: agentResult.stderrTail,
@@ -1276,6 +1341,24 @@ async function executePhase(
     env.SEQUANT_FAILED_ACS = config.failedAcs;
   }
 
+  // #971 AC-10: thread the dispatch-time escalation facts into the phase env
+  // so the skill prose that emits `SEQUANT_PHASE` markers can print them
+  // (node 14 / #995 wires that prose; the machinery is built once, here).
+  // Dispatch-time facts only — the resolved concrete model ID comes from
+  // `modelUsage` after execution and lives in run metrics (#975).
+  if (config.modelEscalation) {
+    env.SEQUANT_MODEL_RUNG = String(config.modelEscalation.rung);
+    env.SEQUANT_MODEL_BASE = config.modelEscalation.base;
+    env.SEQUANT_MODEL_ESCALATED = config.modelEscalation.escalated;
+    env.SEQUANT_ESCALATION_TRIGGER = config.modelEscalation.trigger;
+    if (config.modelEscalation.requestedModel) {
+      env.SEQUANT_MODEL_REQUESTED = config.modelEscalation.requestedModel;
+    }
+    if (config.modelEscalation.topOfLadder) {
+      env.SEQUANT_MODEL_TOP_OF_LADDER = "1";
+    }
+  }
+
   // Propagate parallel isolation mode to exec skill (#485)
   if (config.isolateParallel) {
     env.SEQUANT_ISOLATE_PARALLEL = "true";
@@ -1425,6 +1508,14 @@ async function executePhase(
     ...(resolvedModel ? { resolvedModel } : {}),
     // Attached on both paths: a failed phase still spent its tokens.
     ...(usage.length > 0 ? { usage } : {}),
+    // #971 AC-10: carry the dispatch-time rung facts back out on the result,
+    // so the metrics writer can append them to this execution's `phaseUsage`
+    // rows. Attached here rather than at each dispatch site so all four sites
+    // record identically — `withEscalatedModel` is the only thing that ever
+    // sets `config.modelEscalation`, and only on a per-dispatch config copy.
+    ...(config.modelEscalation
+      ? { escalatedModel: config.modelEscalation }
+      : {}),
   });
 
   if (agentResult.success) {
@@ -1556,6 +1647,17 @@ export async function executePhaseWithRetry(
         return lastResult;
       }
 
+      // #995 (#971 AC-4): the agent declared the spec impossible as written.
+      // Modelled on the `capped` early return directly above and terminal for
+      // the same reason — a retry cannot un-contradict a spec. AC-4's "halts
+      // without escalating" has to hold against the RETRY path too, not only
+      // against the ladder: a cold-start re-spawn or the MCP fallback would
+      // re-dispatch the phase and hand the ladder a second observation to
+      // escalate on.
+      if (lastResult.specDivergence) {
+        return lastResult;
+      }
+
       // #804: without this, `--auto-wait` would silently not cover the `loop`
       // phase — the one phase registered with `maxRetries: 0` — and a window
       // limit hitting /loop would still hard-halt with the flag set.
@@ -1603,6 +1705,13 @@ export async function executePhaseWithRetry(
       // is what skips the cold-start re-spawns, unlike the billing case which
       // still cold-start-retries in the <60s window.
       if (lastResult.capped) {
+        return lastResult;
+      }
+
+      // #995 (#971 AC-4): spec divergence short-circuits every remaining
+      // cold-start retry, the MCP fallback, and the spec-extra retry — same
+      // early-return placement and same rationale as the capped guard above.
+      if (lastResult.specDivergence) {
         return lastResult;
       }
 
