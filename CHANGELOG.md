@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fix pnpm/yarn/bun worktrees installing with `npm ci`.** `sequant run`'s
+  manifest init substituted a literal `"npm"` for an undeclared
+  `packageManager`, which is a valid `PM_CONFIG` key and so short-circuited
+  `resolvePackageManager`'s lockfile detection before it ran. The value now
+  flows through as `undefined` and the lockfile decides; a gate test keeps
+  every spelling of the literal fallback (`?? "npm"`, `|| 'npm'`,
+  `?? DEFAULT_PM`) out of `src/` and `bin/`. The setup skill's manifest
+  template writes `packageManager` next to `pmRun` only when a lockfile
+  identified the manager — an undetected one stays undeclared rather than being
+  recorded as a guessed `"npm"`. Note that, like `pmRun`, a recorded
+  `packageManager` is a setup-time snapshot and a declared value outranks live
+  lockfile detection: a project that later migrates package managers should
+  update (or remove) the key in `.sequant-manifest.json`. The setup skill's
+  lockfile precedence now mirrors the resolver's `LOCKFILE_PRIORITY`
+  (bun > yarn > pnpm > npm; it was pnpm > yarn > bun), which changes the
+  recorded `pmRun`/`packageManager` for a project carrying more than one
+  lockfile (#932).
 - **The ready gate now runs on the configured agent driver.** With
   `run.agent: "aider"` set, `sequant ready` and `sequant run --ready-gate` ran
   their main phases on aider but silently ran the gate's QA pass on
