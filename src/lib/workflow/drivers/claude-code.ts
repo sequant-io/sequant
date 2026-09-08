@@ -252,6 +252,11 @@ export class ClaudeCodeDriver implements AgentDriver {
               structuredError: apiError,
               stderrTail: stderrBuffer.getLines(),
               stdoutTail: stdoutBuffer.getLines(),
+              // #986: a failed turn still spent its tokens. `modelUsage` is a
+              // required field on every result message, error variants
+              // included, so dropping it here silently zeroed the cost of the
+              // failures — the runs most worth seeing in the cost table.
+              modelUsage: resultMessage.modelUsage,
             };
           }
 
@@ -285,6 +290,10 @@ export class ClaudeCodeDriver implements AgentDriver {
             resumeHandle,
             stderrTail: stderrBuffer.getLines(),
             stdoutTail: stdoutBuffer.getLines(),
+            // #986: a capped agent ran to its FULL turn ceiling, so this is
+            // the most expensive shape a phase can take. Reporting it as zero
+            // was the worst case of the bug.
+            modelUsage: resultMessage.modelUsage,
           };
         }
 
@@ -310,6 +319,10 @@ export class ClaudeCodeDriver implements AgentDriver {
           structuredError,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
+          // #986: the remaining error subtypes, `error_max_budget_usd` among
+          // them. A budget-limit failure reporting zero cost is a
+          // contradiction in terms.
+          modelUsage: resultMessage.modelUsage,
         };
       }
 

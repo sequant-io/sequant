@@ -45,12 +45,7 @@ import {
   type LoopProgressSnapshot,
 } from "./qa-stagnation.js";
 import { classifyExecChanges, type ExecChangeState } from "./phase-executor.js";
-import {
-  readTokenUsageFiles,
-  aggregateTokenUsage,
-  TOKEN_USAGE_DIR,
-} from "./token-utils.js";
-import * as path from "path";
+import { readWorktreeTokenUsage } from "./token-utils.js";
 
 export type { ReadyPolicy } from "../settings.js";
 
@@ -348,10 +343,11 @@ function classifyGaps(
 }
 
 function defaultReadTokensUsed(worktreePath: string): number {
-  const dir = path.join(worktreePath, TOKEN_USAGE_DIR);
-  // Read without cleanup — the engine polls cumulatively across phases.
-  const files = readTokenUsageFiles(dir);
-  return aggregateTokenUsage(files).tokensUsed;
+  // #986: the one worktree-anchored helper both `run` and the gate read
+  // through. `cleanup: false` is the gate's side of that seam — the engine
+  // polls cumulatively across QA passes, so deleting the files mid-loop
+  // would zero its own budget accounting.
+  return readWorktreeTokenUsage(worktreePath, { cleanup: false }).tokensUsed;
 }
 
 /**

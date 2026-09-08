@@ -26,6 +26,7 @@ import {
   RATE_LIMIT_WINDOW_SKIP_THRESHOLD_MS,
   isWindowExhaustedRateLimit,
   selectFixableGaps,
+  normalizeModelUsage,
   PROMPT_CONTEXT_SENTINEL,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
@@ -2588,5 +2589,70 @@ describe("createThrottledReporter (#543)", () => {
     // Only the leading call survives.
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenLastCalledWith("a");
+  });
+});
+
+/**
+ * #986 AC-1 — normalization of the SDK `modelUsage` map into `PhaseUsage` rows.
+ *
+ * #975 already reached into this map, but took only `Object.keys(...)[0]` for
+ * `resolvedModel` and threw the tokens and cost away — which is why
+ * `metrics.tokensUsed` read 0 on 365/365 recorded runs. The fixture is a
+ * recorded real map with two model entries; the field names are the SDK's,
+ * not ours.
+ */
+describe("#986 normalizeModelUsage", () => {
+  const fixture = JSON.parse(
+    readFileSync(
+      "src/lib/workflow/__fixtures__/sdk-result-modelusage-986.json",
+      "utf-8",
+    ),
+  ) as { modelUsage: Record<string, Record<string, number>> };
+
+  it("986 maps every model key to a row, preserving map order", () => {
+    const rows = normalizeModelUsage(fixture.modelUsage);
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.model)).toEqual([
+      "claude-haiku-4-5-20251001",
+      "claude-fable-5",
+    ]);
+    // First key is the one #975 records as `resolvedModel` — the two views of
+    // the map must not disagree about which model came first.
+    expect(rows[0].model).toBe(Object.keys(fixture.modelUsage)[0]);
+  });
+
+  it("986 renames the SDK cache fields without losing a counter", () => {
+    const rows = normalizeModelUsage(fixture.modelUsage);
+
+    expect(rows[1]).toEqual({
+      model: "claude-fable-5",
+      inputTokens: 326,
+      outputTokens: 38515,
+      cacheReadTokens: 2000172,
+      cacheCreationTokens: 316727,
+      costUSD: 10.263722000000001,
+    });
+  });
+
+  it("986 returns no rows when the driver reports no modelUsage", () => {
+    // aider / subprocess drivers — this empty result is precisely what makes
+    // the hook-written token files a fallback rather than a rival source.
+    expect(normalizeModelUsage(undefined)).toEqual([]);
+  });
+
+  it("986 defaults absent counters to 0 rather than undefined", () => {
+    const rows = normalizeModelUsage({ "some-model": {} });
+
+    expect(rows).toEqual([
+      {
+        model: "some-model",
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUSD: 0,
+      },
+    ]);
   });
 });

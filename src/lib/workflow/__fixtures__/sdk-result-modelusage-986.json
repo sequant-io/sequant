@@ -1,0 +1,26 @@
+{
+  "_provenance": "The `modelUsage` map below is copied verbatim from a real Claude Code session record (~/.claude/projects/-Users-tony-Projects-ad-motion/52af1e4a-….jsonl, `type: \"cost-state\"`, 2026-09), which carries the same map the SDK `result` message hands the driver. Wrapped here in the `result`-message envelope `drivers/claude-code.ts` reads. Do not hand-edit the numbers — the point of a recorded fixture is that the field names and magnitudes are real.",
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "session_id": "52af1e4a-ba48-451d-8683-aa8901185d0d",
+  "total_cost_usd": 10.339517,
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 40445,
+      "outputTokens": 3070,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 2,
+      "costUSD": 0.075795
+    },
+    "claude-fable-5": {
+      "inputTokens": 326,
+      "outputTokens": 38515,
+      "cacheReadInputTokens": 2000172,
+      "cacheCreationInputTokens": 316727,
+      "webSearchRequests": 0,
+      "costUSD": 10.263722000000001
+    }
+  }
+}
