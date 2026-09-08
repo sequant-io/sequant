@@ -11,6 +11,15 @@
  * Run it deliberately:
  *   OPENCODE_LIVE=1 npx vitest run \
  *     src/lib/workflow/drivers/opencode.live.integration.test.ts
+ *
+ * Pin the model with `OPENCODE_LIVE_MODEL` when the machine's default is not
+ * tool-capable. opencode always advertises its tools, so a default routed to a
+ * model without tool support fails the whole run at the provider ("No endpoints
+ * found that support tool use", HTTP 404) before a single token is generated —
+ * a red tick that says nothing about this driver. Pinning keeps the smoke a
+ * test of sequant's parsing rather than of whoever ran it last configured
+ * `opencode` well:
+ *   OPENCODE_LIVE=1 OPENCODE_LIVE_MODEL='openrouter/~anthropic/claude-haiku-latest' ...
  */
 
 import { describe, it, expect } from "vitest";
@@ -87,7 +96,10 @@ describe("862 AC-2: opencode live smoke", () => {
     async () => {
       const workDir = mkdtempSync(join(tmpdir(), "sequant-opencode-live-"));
       try {
-        const driver = new OpencodeDriver();
+        // Honour an explicit pin; otherwise fall through to opencode's own
+        // default so the test stays runnable with no extra configuration.
+        const model = process.env.OPENCODE_LIVE_MODEL;
+        const driver = new OpencodeDriver(model ? { model } : undefined);
         const result = await driver.executePhase(
           "Reply with exactly the word: pong. Do not use any tools.",
           {
@@ -101,7 +113,13 @@ describe("862 AC-2: opencode live smoke", () => {
           },
         );
 
-        expect(result.output.length).toBeGreaterThan(0);
+        // Report the driver's own error on failure. Asserting the length alone
+        // yields "expected 0 to be greater than 0", which hides whether the run
+        // failed in sequant's parsing or upstream at the provider.
+        expect(
+          result.output.length,
+          `no text events; driver error: ${result.error ?? "(none)"}`,
+        ).toBeGreaterThan(0);
         expect(result.resumeHandle?.driver).toBe("opencode");
         expect(result.resumeHandle?.originCwd).toBe(workDir);
       } finally {
