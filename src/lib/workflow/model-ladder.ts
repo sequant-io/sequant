@@ -392,11 +392,12 @@ export function withEscalatedModel(
     } else {
       rung = next;
       advanced = true;
-      if (rung === ladder.length - 1) {
-        // Reached the last rung. Not `topOfLadder` yet: this dispatch DID
-        // escalate. The flag is for "a trigger arrived and could not be
-        // honored", which is the next trigger, above.
-      }
+      // Landing ON the last rung does not set the OUTCOME's `topOfLadder`:
+      // that flag means "a trigger arrived and could not be honored", which is
+      // the `hitTop` branch above, and this dispatch did escalate. The
+      // recorded FACTS below do carry `topOfLadder` here — they describe the
+      // rung the phase now sits on, so #995 can see there is no headroom left
+      // without replaying the run.
     }
   }
 
