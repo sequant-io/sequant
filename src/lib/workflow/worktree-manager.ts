@@ -18,6 +18,7 @@ import { getResumablePhasesForIssue } from "./phase-detection.js";
 import { GitHubProvider } from "./platforms/github.js";
 import type { Phase } from "./types.js";
 import type { CacheMetrics } from "./run-log-schema.js";
+import type { AbortContext, ShutdownManager } from "../shutdown.js";
 
 /**
  * Worktree information for an issue
@@ -359,6 +360,85 @@ export function removeStaleWorktree(
   }
 
   return true;
+}
+
+/**
+ * Whether a worktree has uncommitted changes (tracked edits or untracked
+ * files) — the state a #879 exec-failure message may promise is "preserved"
+ * there. A `git status` failure is treated as dirty: fail toward keeping the
+ * worktree rather than deleting an unknown state (#935).
+ */
+export function isWorktreeDirty(worktreePath: string): boolean {
+  const result = spawnSync(
+    "git",
+    ["-C", worktreePath, "status", "--porcelain"],
+    { stdio: "pipe" },
+  );
+  if (result.status !== 0) return true;
+  return result.stdout.toString().trim().length > 0;
+}
+
+/**
+ * Whether a signal-driven shutdown cleanup should leave a worktree in place
+ * rather than force-removing it (#935 D13).
+ *
+ * `abort` is non-null only for a signal-triggered shutdown (SIGINT/SIGTERM);
+ * a `null` abort means a programmatic teardown, which always removes. A
+ * dirty worktree holds uncommitted work that exists only on disk — the
+ * branch survives removal, the untracked/unstaged changes do not — so it is
+ * preserved. A clean worktree has nothing to lose and is still removed, so a
+ * killed run doesn't leak worktrees.
+ */
+export function shouldPreserveWorktree(
+  abort: AbortContext | null,
+  worktreePath: string,
+): boolean {
+  return abort !== null && isWorktreeDirty(worktreePath);
+}
+
+/**
+ * The cleanup task a run registers for each worktree it creates: preserve a
+ * dirty worktree on signal-driven shutdown, otherwise force-remove it. Named
+ * so `formatUncommittedExecError` (#879)'s "preserved in <path>" claim
+ * stays true after an externally-terminated run — the exact bug in #935.
+ *
+ * @param log - Optional sink for a one-line outcome message: names the path
+ *   when preserved (it still exists), the branch when removed (only the
+ *   branch survives).
+ */
+export async function cleanupWorktreeOnShutdown(
+  issueNum: number,
+  worktree: WorktreeInfo,
+  abort: AbortContext | null,
+  log?: (message: string) => void,
+): Promise<void> {
+  if (shouldPreserveWorktree(abort, worktree.path)) {
+    log?.(
+      `Worktree for #${issueNum} preserved (uncommitted changes): ${worktree.path}`,
+    );
+    return;
+  }
+  spawnSync("git", ["worktree", "remove", "--force", worktree.path], {
+    stdio: "pipe",
+  });
+  log?.(
+    `Worktree for #${issueNum} removed (clean); recoverable from branch ${worktree.branch}`,
+  );
+}
+
+/**
+ * Register the {@link cleanupWorktreeOnShutdown} task with a run's
+ * `ShutdownManager` for a worktree it created this run.
+ */
+export function registerWorktreeRemovalCleanup(
+  shutdown: ShutdownManager,
+  issueNum: number,
+  worktree: WorktreeInfo,
+  log?: (message: string) => void,
+): void {
+  shutdown.registerCleanup(`Cleanup worktree for #${issueNum}`, (abort) =>
+    cleanupWorktreeOnShutdown(issueNum, worktree, abort, log),
+  );
 }
 
 /**
