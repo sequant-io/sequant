@@ -5,7 +5,11 @@
 # two directories diverge for any file that exists in templates/. Run this
 # script after editing a template hook to regenerate the installed copy.
 #
-# Local-only files (e.g. capture-tokens.sh) are left untouched.
+# Every hook now lives in templates/hooks/ and is regenerated here; there are
+# no local-only hooks left. capture-tokens.sh was the last one — #986 promoted
+# it into templates/ (and into hooks/ + hooks.json for plugin users) because
+# the token-usage fallback it feeds is worthless if it only exists in this
+# repo.
 
 set -euo pipefail
 
