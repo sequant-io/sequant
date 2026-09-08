@@ -80,6 +80,18 @@ export interface LadderState {
   topOfLadder: Set<string>;
 }
 
+/**
+ * Is a ladder configured at all?
+ *
+ * The one predicate dispatch sites use to gate the ladder's *side costs* — the
+ * per-iteration `git` snapshot in `batch-executor.ts` (AC-D2) — so an
+ * unconfigured run issues no extra work and stays byte-identical to pre-#971
+ * (AC-1). Kept here so no call site reads `config.modelLadder` directly.
+ */
+export function isLadderConfigured(config: ExecutionConfig): boolean {
+  return (config.modelLadder?.length ?? 0) > 0;
+}
+
 /** Fresh per-run ladder state. One per issue/gate invocation. */
 export function createLadderState(): LadderState {
   return { rungByPhase: new Map(), topOfLadder: new Set() };

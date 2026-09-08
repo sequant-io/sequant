@@ -13,6 +13,7 @@ import type { ErrorCategory } from "./error-classifier.js";
 // Type-only import — erased at compile, so the ready-gate ⇄ types cycle is
 // purely nominal (ready-gate.ts imports these types back, also type-only).
 import type { ReadyResult } from "./ready-gate.js";
+import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 
 // Importing the registry triggers its side-effect registrations (built-ins
 // live at the bottom of phase-registry.ts), guaranteeing the registry is
@@ -889,4 +890,11 @@ export interface IssueExecutionContext {
    * real `GitHubProvider().postComment` when unset.
    */
   postComment?: (issueNumber: number, body: string) => Promise<void>;
+  /**
+   * @internal Test seam for #971's per-iteration loop-progress snapshot.
+   * Defaults to `qa-stagnation.ts`'s `snapshotLoopProgress` when unset, and is
+   * only ever called when a `modelLadder` is configured — an unconfigured run
+   * issues no additional `git` calls (AC-D2).
+   */
+  snapshotProgressFn?: (cwd: string) => LoopProgressSnapshot;
 }
