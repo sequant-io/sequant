@@ -306,6 +306,255 @@ seg_match() {
     [[ -n "$SEGMENTS" ]] && grep -qE "$1" <<< "$SEGMENTS"
 }
 
+# raw_commit_segment <command> — print the raw (unsanitized) text of every
+# top-level segment of <command> whose code form contains the literal
+# substring "git commit", in order, \001-separated; nothing if none is found.
+#
+# Unlike emit_segments/$SEGMENTS above — which intentionally blank quoted and
+# heredoc content so guards match only code, never data (#763) — this keeps
+# quotes and heredoc bodies verbatim, because the commit-message validator
+# needs the LITERAL message text, not a sanitized stand-in. It still respects
+# the same top-level boundaries (; && || | and newline, outside quotes and
+# subshells) so an earlier quoted string or a later unrelated heredoc can
+# never be mistaken for this segment's own text — that was #981: the old
+# extraction scanned the whole command, so `echo "decoy"; git commit -m
+# "fix: y"` picked up "decoy", and a heredoc anywhere (even in a later,
+# unrelated command) short-circuited extraction before the real -m arg was
+# ever read.
+#
+# A heredoc that IS part of this segment (the standard
+# `-m "$(cat <<'EOF' ... EOF)"` idiom) stays inside it: `$( ... )` content is
+# tracked as nested depth, not split on, so its body — including embedded
+# newlines — is carried through untouched for the caller's own heredoc
+# parsing.
+#
+# Deliberately not a full shell parser (see emit_segments' header for the
+# same caveat). Prints EVERY qualifying segment, in order, separated by \001
+# (segments carry embedded newlines, so a newline cannot be the delimiter):
+# the caller validates EVERY one that yields a message (spec Open Question 2),
+# so a `-m`-less shadow segment that merely mentions `git commit` (a comment
+# line, `git commit-tree`, `git commit --amend --no-edit`, an unquoted echo)
+# cannot hide the real commit behind it, and a decoy conventional commit
+# earlier in a compound command cannot shield a later non-conventional one —
+# both fail-opens `main` did not have, so they are closed rather than accepted.
+raw_commit_segment() {
+    printf '%s' "$1" | awk '
+    # heredoc_delim(full, i, n) — parse the delimiter word after the `<<` /
+    # `<<-` introducer at position i (quoted or bare); returns it and leaves
+    # hd_end at the first position after the word. Shared by the depth-0 and
+    # subshell branches below so the two scans cannot drift apart.
+    function heredoc_delim(full, i, n,   j, q, delim) {
+        j = i + 2
+        if (substr(full, j, 1) == "-") j++
+        while (j <= n && substr(full, j, 1) ~ /[ \t]/) j++
+        q = substr(full, j, 1); delim = ""
+        if (q == sq || q == dq) {
+            j++
+            while (j <= n && substr(full, j, 1) != q) { delim = delim substr(full, j, 1); j++ }
+            j++
+        } else {
+            while (j <= n && substr(full, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(full, j, 1); j++ }
+        }
+        hd_end = j
+        return delim
+    }
+    # emit(raw, code) — accept the segment only when its CODE form (quoted and
+    # subshell content blanked) contains "git commit". Testing the raw form
+    # instead would let a quoted mention pick the wrong segment: in
+    # `echo "run git commit later"; git commit -m "updated stuff"` the echo
+    # wins, and because it holds no -m the caller extracts no message and
+    # skips validation entirely. Blanking mirrors what emit_segments/seg_match
+    # already do, so this scan agrees with the guard that invoked it.
+    function emit(s, sc,   t, tc) {
+        t = s; tc = sc
+        sub(/^[ \t\n]+/, "", t); sub(/[ \t\n]+$/, "", t)
+        if (length(t) > 0 && index(tc, "git commit") > 0) {
+            printf "%s%c", t, 1
+        }
+    }
+    BEGIN { sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    { full = (NR == 1) ? $0 : full "\n" $0 }
+    END {
+        n = length(full); seg = ""; code = ""; cur = ""; depth = 0; nhd = 0; hdseen = 0; nshd = 0
+        for (i = 1; i <= n; i++) {
+            c = substr(full, i, 1)
+            nc = (i < n) ? substr(full, i + 1, 1) : ""
+
+            # --- inside single quotes: everything is data ---
+            if (cur == sq) { seg = seg c; code = code " "; if (c == sq) cur = ""; continue }
+
+            # --- inside double quotes ---
+            if (cur == dq) {
+                if (c == "$" && nc == "(") {
+                    seg = seg "$("; code = code "  "
+                    stack[++depth] = dq; cur = ""; i++
+                    continue
+                }
+                # A backslash inside double quotes escapes the next character:
+                # \<newline> is a line continuation (drop both), and \" is a
+                # literal quote that must not be read as the closing one.
+                if (c == "\\" && i < n) {
+                    if (nc == "\n") { i++; continue }
+                    seg = seg c nc; code = code "  "; i++
+                    continue
+                }
+                seg = seg c; code = code " "
+                if (c == dq) cur = ""
+                continue
+            }
+
+            # --- live (unquoted) ---
+            # A backslash escapes the next character. `\<newline>` is a shell
+            # line continuation: the command keeps going, so drop both and do
+            # NOT let the newline branch below end the segment here. Without
+            # this, `git commit \` + newline + `-m "..."` was cut at the
+            # backslash, leaving a segment that holds no -m — MSG came back
+            # empty and the conventional-commit guard skipped validation
+            # entirely, waving through a non-conventional message that the
+            # pre-#981 code had blocked. Any other escaped character is kept
+            # verbatim in the raw text but blanked in the code form so it can
+            # never toggle quote state or forge a "git commit" match.
+            if (c == "\\" && i < n) {
+                if (nc == "\n") { i++; continue }
+                seg = seg c nc; code = code "  "; i++
+                continue
+            }
+            # `#` comment (unquoted, at a word boundary): keep the raw text but
+            # blank it in CODE to end-of-line, so a commit mentioned inside a
+            # comment — `# git commit -m "wip"` — never qualifies a segment and
+            # is never validated (a false positive the per-segment walk would
+            # otherwise introduce). Applies at any depth.
+            if (c == "#" && (i == 1 || substr(full, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(full, i, 1) != "\n") { seg = seg substr(full, i, 1); code = code " "; i++ }
+                i--
+                continue
+            }
+            if (c == sq) { cur = sq; seg = seg c; code = code " "; continue }
+            if (c == dq) { cur = dq; seg = seg c; code = code " "; continue }
+
+            if (c == "$" && nc == "(") {
+                seg = seg "$("; code = code "  "
+                stack[++depth] = cur; i++
+                continue
+            }
+            if (c == "(") { seg = seg c; code = code " "; stack[++depth] = cur; continue }
+            if (c == ")") {
+                seg = seg c; code = code " "
+                if (depth > 0) { cur = stack[depth]; depth-- }
+                continue
+            }
+
+            # Inside a subshell/command-substitution: keep everything raw in
+            # the segment text (a heredoc body that belongs to THIS segment
+            # must survive verbatim for the caller to parse), and never split
+            # on operators or heredocs in here.
+            #
+            # For the CODE form, subshell code COUNTS: `( git commit -m "x" )`
+            # and `(cd sub && git commit -m "x")` really do run git commit, so
+            # blanking the whole subshell left no segment qualifying, emit()
+            # returned nothing, and the caller fell back to the whole command
+            # — which is exactly the #981 false positive this function exists
+            # to remove.
+            #
+            # A heredoc BODY inside the subshell is data, not code, so once an
+            # introducer is seen the rest of the subshell is blanked. Without
+            # that guard a body line like `fix: this is heredoc data` wins
+            # segment selection, gets validated as if it were the message, and
+            # the real `git commit -m "updated stuff"` two segments later is
+            # never examined — a fail-open, verified before this guard was
+            # added.
+            if (depth > 0) {
+                # Heredoc introducer (<< or <<-, never the <<< herestring, which
+                # is an inline word, not a body). Record the delimiter so the
+                # body can be skipped at the newline below; blank CODE from here
+                # until the terminator line so body text never wins selection,
+                # but let a commit AFTER the body in the same subshell count
+                # again — otherwise `( cat <<EOF ... EOF; git commit -m "updated
+                # stuff" )` had no qualifying segment, fell back to the whole
+                # command, and sailed through (a fail-open, verified).
+                if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                    delim = heredoc_delim(full, i, n); j = hd_end
+                    if (length(delim) > 0) shd[++nshd] = delim
+                    hdseen = 1
+                    seg = seg substr(full, i, j - i); code = code " "
+                    i = j - 1
+                    continue
+                }
+                if (c == "\n" && nshd > 0) {
+                    # Consume the pending heredoc bodies verbatim into the
+                    # segment (blank in CODE); the guard lifts after the last
+                    # terminator line.
+                    seg = seg c; code = code " "
+                    while (nshd > 0) {
+                        d = shd[1]
+                        for (k = 1; k < nshd; k++) shd[k] = shd[k + 1]
+                        nshd--
+                        while (i < n) {
+                            ls = i + 1
+                            le = index(substr(full, ls), "\n")
+                            if (le == 0) { line = substr(full, ls); i = n }
+                            else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                            seg = seg line "\n"; code = code " "
+                            t = line
+                            sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                            if (t == d) break
+                        }
+                    }
+                    hdseen = 0
+                    continue
+                }
+                seg = seg c
+                code = code (hdseen ? " " : c)
+                continue
+            }
+
+            # depth == 0, unquoted: a heredoc introducer here belongs to a
+            # separate, later command — its body is data, not this segments
+            # text, so skip it entirely (#981 Finding paragraph 2).
+            if (c == "<" && nc == "<" && substr(full, i + 2, 1) != "<") {
+                delim = heredoc_delim(full, i, n); j = hd_end
+                seg = seg substr(full, i, j - i); code = code " "
+                if (length(delim) > 0) hd[++nhd] = delim
+                i = j - 1
+                continue
+            }
+
+            if (c == ";" || c == "&" || c == "|") {
+                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
+                if ((c == "&" && nc == "&") || (c == "|" && nc == "|")) i++
+                continue
+            }
+
+            if (c == "\n") {
+                # A heredoc body that feeds THIS segment (`git commit -F- <<EOF`)
+                # is data the caller must see: keep it raw in the segment text
+                # (blank in CODE so it never wins selection), then emit.
+                if (nhd > 0) { seg = seg c; code = code " " }
+                while (nhd > 0) {
+                    d = hd[1]
+                    for (k = 1; k < nhd; k++) hd[k] = hd[k + 1]
+                    nhd--
+                    while (i < n) {
+                        ls = i + 1
+                        le = index(substr(full, ls), "\n")
+                        if (le == 0) { line = substr(full, ls); i = n }
+                        else         { line = substr(full, ls, le - 1); i = ls + le - 1 }
+                        seg = seg line "\n"; code = code " "
+                        t = line
+                        sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                        if (t == d) break
+                    }
+                }
+                emit(seg, code); seg = ""; code = ""; hdseen = 0; nshd = 0
+                continue
+            }
+            seg = seg c; code = code c
+        }
+        emit(seg, code)
+    }
+    '
+}
+
 # resolve_cd_target <tool_input> — print the target directory of the LAST
 # `cd <path>` line in a (possibly multi-line) Bash command, if and only if
 # the path is a static literal (quoted or unquoted) that resolves to an
@@ -907,51 +1156,262 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
     fi
 fi
 
+# commit_message_from <segment> — print the message argument of the git
+# commit in <segment>: the first body line for the
+# `-m "$(cat <<'EOF' ... EOF)"` idiom, else the quoted string after the
+# message flag (`-m`, a short-flag cluster ending in m such as `-am`,
+# `--message=…` or `--message …`), else — when there is no quoted message
+# flag at all — the first line of a heredoc feeding the commit (`-F-` /
+# `--file=-`), which is what the guard validated before #981. Anchored on
+# the `git commit` token and then on its own flag, scanning past quoted
+# regions, so text elsewhere in the segment (an earlier quoted string — even
+# one containing `-m` — or a heredoc body that precedes the commit inside the
+# same subshell) can neither supply nor shadow the message (#981 root cause).
+# Prints nothing for an editor commit or an unquoted message word; the guard
+# then validates nothing, as before. The caller keeps only the first line
+# (the subject) — a body line must never launder a non-conventional subject.
+commit_message_from() {
+    printf '%s' "$1" | awk '
+    BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    # strip_comments(s) — same-length copy of s with every unquoted `#`
+    # comment (at a word boundary) blanked to end-of-line, so neither the
+    # `git commit` anchor nor the flag scan can land inside a comment.
+    function strip_comments(s,    n, i, c, q, out) {
+        n = length(s); out = ""; q = ""; i = 1
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (q != "") {
+                if (q == dq && c == "\\" && i < n) { out = out c substr(s, i + 1, 1); i += 2; continue }
+                if (c == q) q = ""
+                out = out c; i++; continue
+            }
+            if (c == dq || c == sq) { q = c; out = out c; i++; continue }
+            if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(s, i, 1) != "\n") { out = out " "; i++ }
+                continue
+            }
+            out = out c; i++
+        }
+        return out
+    }
+    function heredoc_first_line(s, from,    h, k, nl, rest, e, line) {
+        h = index(substr(s, from), "<<"); if (h == 0) return ""
+        k = from + h - 1 + 2
+        if (substr(s, k, 1) == "<") return ""
+        if (substr(s, k, 1) == "-") k++
+        nl = index(substr(s, k), "\n"); if (nl == 0) return ""
+        rest = substr(s, k + nl)
+        e = index(rest, "\n")
+        line = (e == 0) ? rest : substr(rest, 1, e - 1)
+        sub(/^[ \t]+/, "", line)
+        return line
+    }
+    # message_at(s, j, n) — the quoted argument starting at or after j (after
+    # optional blanks): prints it and exits; returns silently when the
+    # argument is unquoted (not validated, as before).
+    function message_at(s, j, n,    q, msg, k, d, line) {
+        while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
+        q = substr(s, j, 1)
+        # `-m "$( … <<DELIM … )"` — any spacing, any command path: the
+        # message is the first body line of that heredoc. No heredoc inside the
+        # substitution (or a `<<<` herestring): fall through to the generic
+        # quoted reader below.
+        if (q == dq && substr(s, j + 1, 2) == "$(") {
+            line = heredoc_first_line(s, j)
+            if (line != "") { print line; exit }
+        }
+        if (q == dq || q == sq) {
+            msg = ""; k = j + 1
+            while (k <= n) {
+                d = substr(s, k, 1)
+                if (q == dq && d == "\\" && k < n) { msg = msg substr(s, k + 1, 1); k += 2; continue }
+                if (d == q) break
+                msg = msg d; k++
+            }
+            print msg; exit
+        }
+    }
+    {
+        s = strip_comments($0); n = length(s)
+        start = index(s, "git commit"); if (start == 0) exit
+        i = start + 10
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == dq || c == sq) {
+                k = i + 1
+                while (k <= n) {
+                    d = substr(s, k, 1)
+                    if (c == dq && d == "\\") { k += 2; continue }
+                    if (d == c) break
+                    k++
+                }
+                i = k + 1; continue
+            }
+            prev = (i > 1) ? substr(s, i - 1, 1) : " "
+            if (c == "-" && prev ~ /[ \t]/) {
+                if (substr(s, i, 9) == "--message") {
+                    e = i + 9; a = substr(s, e, 1)
+                    if (a == "=") { message_at(s, e + 1, n); i = e + 1; continue }
+                    if (a == "" || a ~ /[ \t]/ || a == dq || a == sq) { message_at(s, e, n); i = e; continue }
+                    i = e; continue
+                }
+                if (substr(s, i + 1, 1) ~ /[A-Za-z]/) {
+                    e = i + 1
+                    while (e <= n && substr(s, e, 1) ~ /[A-Za-z]/) e++
+                    a = substr(s, e, 1)
+                    if (substr(s, e - 1, 1) == "m" && (a == "" || a ~ /[ \t]/ || a == dq || a == sq)) {
+                        message_at(s, e, n); i = e; continue
+                    }
+                    i = e; continue
+                }
+            }
+            i++
+        }
+        line = heredoc_first_line(s, start)
+        if (line != "") print line
+    }'
+}
+
+# literal_assignment_value <name> <command> [<limit>] — print the value of
+# the LAST `<name>=` assignment (`"…"`, `'…'`, or a bare word; first line of
+# the value) that appears in CODE context in the first <limit> characters of
+# <command> (whole command when <limit> is -1 or absent; a limit of 0 is a
+# zero-width window — a commit that is the FIRST segment has nothing before it). Quoted strings, `#`
+# comments and heredoc bodies are skipped as data, so `echo 'usage:
+# MSG=updated ./s.sh'` or `# set MSG=updated` cannot supply a value — the
+# same segment-scoping discipline the extractor itself follows (#981).
+# Prints nothing when the command never assigns the name in code context.
+literal_assignment_value() {
+    printf '%s' "$2" | awk -v name="$1" -v limit="${3:--1}" '
+    BEGIN { RS = "\001"; sq = sprintf("%c", 39); dq = sprintf("%c", 34) }
+    {
+        s = $0; n = length(s); if (limit >= 0 && limit < n) n = limit
+        i = 1; found = ""; have = 0; L = length(name)
+        while (i <= n) {
+            c = substr(s, i, 1)
+            if (c == dq || c == sq) {
+                k = i + 1
+                while (k <= n) { d = substr(s, k, 1); if (c == dq && d == "\\") { k += 2; continue }; if (d == c) break; k++ }
+                i = k + 1; continue
+            }
+            if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/)) {
+                while (i <= n && substr(s, i, 1) != "\n") i++
+                continue
+            }
+            if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<") {
+                j = i + 2; if (substr(s, j, 1) == "-") j++
+                while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
+                q = substr(s, j, 1); delim = ""
+                if (q == sq || q == dq) { j++; while (j <= n && substr(s, j, 1) != q) { delim = delim substr(s, j, 1); j++ }; j++ }
+                else { while (j <= n && substr(s, j, 1) ~ /[A-Za-z0-9_.-]/) { delim = delim substr(s, j, 1); j++ } }
+                nl = index(substr(s, j), "\n"); if (nl == 0) break
+                i = j + nl
+                while (i <= n) {
+                    e = index(substr(s, i), "\n")
+                    line = (e == 0) ? substr(s, i) : substr(s, i, e - 1)
+                    t = line; sub(/^[ \t]+/, "", t); sub(/[ \t]+$/, "", t)
+                    i = (e == 0) ? n + 1 : i + e
+                    if (t == delim) break
+                }
+                continue
+            }
+            if ((i == 1 || substr(s, i - 1, 1) ~ /[ \t\n;&|(]/) && substr(s, i, L + 1) == name "=") {
+                k = i + L + 1; q = substr(s, k, 1); val = ""
+                if (q == dq || q == sq) {
+                    k++
+                    while (k <= n) { d = substr(s, k, 1); if (q == dq && d == "\\" && k < n) { val = val substr(s, k + 1, 1); k += 2; continue }; if (d == q) break; val = val d; k++ }
+                    k++
+                } else {
+                    while (k <= n && substr(s, k, 1) !~ /[ \t\n;&|)]/) { val = val substr(s, k, 1); k++ }
+                }
+                # A dynamic value — command substitution, backtick, escape or
+                # another expansion — is not knowable here: it neither supplies
+                # nor overrides a value (the same rule resolve_cd_target applies).
+                if (val ~ /[$`\\]/) { have = 0; found = "" } else { found = val; have = 1 }
+                i = k; continue
+            }
+            i++
+        }
+        if (have) { sub(/\n.*/, "", found); print found }
+    }'
+}
+# resolve_message_ref <subject> <command> [<limit>] — a subject that is one
+# bare variable reference resolves through literal_assignment_value over the
+# command text BEFORE the commit segment (shell semantics: the last
+# assignment before the commit is the one it carries); anything else passes
+# through unchanged.
+resolve_message_ref() {
+    local subject="$1" input="$2" limit="${3:--1}"
+    if [[ "$subject" =~ ^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$ ]]; then
+        literal_assignment_value "${BASH_REMATCH[1]}" "$input" "$limit"
+    else
+        printf '%s\n' "$subject"
+    fi
+}
 # --- Commit Message Validation (AC-3) ---
 # Enforce conventional commits format: type(scope): description
 # Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf
+#
+# validate_commit_subject <subject> — block (exit 2) unless <subject> is a
+# conventional-commit line. An empty subject validates nothing (editor
+# commits, unquoted -m words), as before.
+validate_commit_subject() {
+    local subject="$1"
+    [[ -z "$subject" ]] && return 0
+    # Conventional commits pattern: type(optional-scope): description
+    # Also accepts ! for breaking changes: feat!: or feat(scope)!:
+    local pattern='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf)(\([^)]+\))?(!)?\s*:'
+    if ! echo "$subject" | grep -qE "$pattern"; then
+        log_block "commit-format"
+        {
+            echo "HOOK_BLOCKED: Commit must follow conventional commits format"
+            echo "  Expected: type(scope): description"
+            # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
+            if [[ "$subject" == Merge\ * ]]; then
+                echo ""
+                echo "  💡 For merge commits, use: chore: merge main into feature branch"
+                echo ""
+            fi
+            echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
+            echo "  Got: $subject"
+        } >&2
+        exit 2
+    fi
+    return 0
+}
 if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
-    # Extract message from -m flag
-    MSG=""
-
-    # Try heredoc format first: -m "$(cat <<'EOF' ... EOF)"
-    # This is the most common format in Claude Code git commits
-    if echo "$TOOL_INPUT" | grep -qE "<<.*EOF"; then
-        # Extract first line after heredoc marker
-        MSG=$(echo "$TOOL_INPUT" | sed -n '/<<.*EOF/,/EOF/p' | sed '1d;$d' | head -1 | sed 's/^[[:space:]]*//')
-    fi
-
-    # Try -m "message" format (double quotes)
-    if [[ -z "$MSG" ]] && echo "$TOOL_INPUT" | grep -qE '\-m\s+"'; then
-        MSG=$(echo "$TOOL_INPUT" | awk -F'"' '{print $2}')
-    fi
-
-    # Try -m 'message' format (single quotes)
-    if [[ -z "$MSG" ]] && echo "$TOOL_INPUT" | grep -qE "\-m\s+'"; then
-        MSG=$(echo "$TOOL_INPUT" | awk -F"'" '{print $2}')
-    fi
-
-    # Validate if we found a message
-    if [[ -n "$MSG" ]]; then
-        # Conventional commits pattern: type(optional-scope): description
-        # Also accepts ! for breaking changes: feat!: or feat(scope)!:
-        PATTERN='^(feat|fix|docs|style|refactor|test|chore|ci|build|perf)(\([^)]+\))?(!)?\s*:'
-        if ! echo "$MSG" | grep -qE "$PATTERN"; then
-            log_block "commit-format"
-            {
-                echo "HOOK_BLOCKED: Commit must follow conventional commits format"
-                echo "  Expected: type(scope): description"
-                # AC-1 & AC-2 (Issue #198): Detect merge commits and provide helpful suggestion
-                if [[ "$MSG" == Merge\ * ]]; then
-                    echo ""
-                    echo "  💡 For merge commits, use: chore: merge main into feature branch"
-                    echo ""
-                fi
-                echo "  Types: feat|fix|docs|style|refactor|test|chore|ci|build|perf"
-                echo "  Got: $MSG"
-            } >&2
-            exit 2
-        fi
+    # Scope extraction to each git-commit segment itself (#981), never the
+    # whole command, so an earlier quoted string or a heredoc elsewhere can
+    # neither supply nor shadow a message. EVERY qualifying segment that
+    # yields a message is validated (spec Open Question 2): a decoy
+    # conventional commit earlier in a compound command must not let a later
+    # non-conventional one through, and a -m-less segment that merely
+    # mentions "git commit" cannot hide the real commit behind it. Extraction
+    # is anchored on the segment's own message flag (-m / -am / --message,
+    # the -m "$(cat <<'EOF' ... EOF)" idiom, or a heredoc feeding -F-), and
+    # only the subject line is validated. Falls back to the whole command only
+    # if the raw scan finds no segment at all (fail-safe, not fail-open).
+    # The assignment window is the command text BEFORE this segment. The
+    # segment text is the raw input minus backslash-newline continuations
+    # (raw_commit_segment drops them), so match against a copy with the same
+    # continuations removed; a segment that still cannot be located gets a
+    # zero-width window (validates a bare `$VAR` against nothing) rather
+    # than silently widening to the whole command.
+    _validated=0
+    _norm="${TOOL_INPUT//\\$'\n'/}"
+    _cursor=0
+    while IFS= read -r -d $'\001' _seg || [[ -n "$_seg" ]]; do
+        [[ -z "$_seg" ]] && continue
+        _validated=1
+        # Locate THIS occurrence: search from the end of the previous segment
+        # so two textually identical commits get distinct windows.
+        _rest="${_norm:$_cursor}"
+        _rel="${_rest%%"$_seg"*}"
+        if [[ "$_rel" == "$_rest" ]]; then _limit=0; else _limit=$(( _cursor + ${#_rel} )); _cursor=$(( _limit + ${#_seg} )); fi
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$_seg" | head -n 1)" "$_norm" "$_limit")"
+    done < <(raw_commit_segment "$TOOL_INPUT")
+    if [[ "$_validated" -eq 0 ]]; then
+        validate_commit_subject "$(resolve_message_ref "$(commit_message_from "$TOOL_INPUT" | head -n 1)" "$TOOL_INPUT" -1)"
     fi
 fi
 

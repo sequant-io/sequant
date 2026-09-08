@@ -837,6 +837,743 @@ describe.each(HOOK_COPIES)(
   },
 );
 
+// === Issue #981: commit-message extraction scoped to its own segment ===
+//
+// The extractor used to scan the WHOLE command instead of the matched
+// `git commit` segment, so an earlier quoted string (Finding paragraph 1) or
+// an unrelated later heredoc (Finding paragraph 2) was mistaken for the
+// commit message, blocking a perfectly valid conventional commit. Each case
+// stages a real change first so the no-changes guard (which runs before the
+// commit-format check) never masks the assertion under test.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh commit-message extraction scoped to its own segment (#981) [%s]",
+  (_label, hookPath) => {
+    function makeStagedRepo(prefix: string): string {
+      const repo = mkdtempSync(join(tmpdir(), prefix));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+      spawnSync("git", ["config", "user.email", "test@test"], { cwd: repo });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: repo });
+      // No pinentry in a test run when the contributor has global commit
+      // signing on; CI has no signing key and never noticed.
+      spawnSync("git", ["config", "commit.gpgsign", "false"], { cwd: repo });
+      writeFileSync(join(repo, "f.txt"), "hello\n");
+      spawnSync("git", ["add", "f.txt"], { cwd: repo });
+      return repo;
+    }
+
+    it("981 AC-1: an earlier quoted string does not hijack a valid conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac1-");
+      try {
+        // Verbatim shape from Finding paragraph 1: an earlier double-quoted
+        // span, then a valid conventional `git commit -m`.
+        const cmd =
+          'diff /dev/null /dev/null; echo "mirrors byte-identical"; git add -A && git commit -m "fix(#943): cite only real enforcers"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-2: an unrelated later heredoc does not hijack a valid conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac2-");
+      try {
+        // Verbatim shape from Finding paragraph 2: a valid conventional
+        // commit followed by `&&` and an unrelated heredoc-bearing command.
+        const cmd = [
+          `git add -A && git commit -m "test(#975): pin metrics call-site wiring" && python3 - <<'PYEOF'`,
+          `p = "src/lib/workflow/run-orchestrator.ts"`,
+          `PYEOF`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-3: a genuinely non-conventional message in a compound command is still blocked with the real message", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac3-");
+      try {
+        const cmd = 'git add -A && git commit -m "updated stuff"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: Commit must follow conventional commits format/,
+        );
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-4: the heredoc commit-message idiom still allows a conventional first line", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac4-ok-");
+      try {
+        const cmd = [
+          `git commit -m "$(cat <<'EOF'`,
+          `fix: conventional first line`,
+          `non-conventional trailing stuff`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981 AC-4: the heredoc commit-message idiom still blocks a non-conventional first line", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac4-bad-");
+      try {
+        const cmd = [
+          `git commit -m "$(cat <<'EOF'`,
+          `updated stuff`,
+          `more detail`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    // Scoping extraction to a segment must not create the inverse defect —
+    // a segment that holds no `-m` yields an empty MSG, and an empty MSG
+    // skips validation entirely (fail-open). Both shapes below were blocked
+    // before #981 and must stay blocked: the issue's Done-when clause reads
+    // "a valid conventional commit is never blocked ... AND A NON-CONVENTIONAL
+    // ONE STILL IS", and its Finding notes the guard "is correct to be
+    // conservative — the fix is not to weaken validation".
+
+    it("981: a backslash line-continuation does not let a non-conventional message escape validation", () => {
+      const repo = makeStagedRepo("pre-tool-981-cont-bad-");
+      try {
+        // `\` + newline is a shell line continuation, so this is ONE command.
+        // Splitting the segment at the newline stranded `-m` outside it.
+        const cmd = ["git commit \\", '  -m "updated stuff"'].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(
+          /HOOK_BLOCKED: Commit must follow conventional commits format/,
+        );
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a backslash line-continuation still allows a valid conventional message", () => {
+      const repo = makeStagedRepo("pre-tool-981-cont-ok-");
+      try {
+        const cmd = [
+          "git add -A && git commit \\",
+          '  -m "fix(#981): scope extraction"',
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    // A `git commit` inside `( ... )` or `$( ... )` is still a real
+    // invocation, so segment selection has to see it. Blanking all subshell
+    // content made it invisible, no segment qualified, and extraction fell
+    // back to the whole command — reinstating the original #981 false
+    // positive. Wrapping a commit in a subshell to scope a `cd` is a common
+    // idiom, and the issue's own repro opens with a `cd`.
+
+    it("981: a subshell-wrapped commit is not blocked by an earlier quoted string", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-ok-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; (cd . && git commit -m "fix(#943): cite only real enforcers")';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a command-substitution-wrapped commit is not blocked by an earlier quoted string", () => {
+      const repo = makeStagedRepo("pre-tool-981-cmdsubst-ok-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; $( git commit -m "fix: real message" )';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a subshell-wrapped non-conventional commit is still blocked", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-bad-");
+      try {
+        const cmd =
+          'echo "mirrors byte-identical"; ( git commit -m "updated stuff" )';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc body inside $( ) does not mask the real non-conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-hdmask-");
+      try {
+        // Counterpart to the subshell fix: subshell CODE counts for segment
+        // selection, but a heredoc BODY inside the subshell is data. Its
+        // first line looks conventional here, so if the body were allowed to
+        // win selection the guard would validate it instead of the real
+        // `-m "updated stuff"` two segments later and let the commit through.
+        const cmd = [
+          `python3 -c "$(cat <<'EOF'`,
+          `fix: this is heredoc data not a commit`,
+          `run git commit now`,
+          `EOF`,
+          `)"; git commit -m "updated stuff"`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc body before the commit in the same subshell cannot mask a non-conventional message (fail-open)", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hd-bad-");
+      try {
+        // Before the -m-anchored extractor, the heredoc guard blanked the
+        // rest of the subshell, no segment qualified, and the whole-command
+        // fallback took the heredoc's first line as the message — so
+        // "updated stuff" was never examined and the commit sailed through.
+        const cmd = [
+          `echo "not a message"; (cat <<'EOF'`,
+          `fix: heredoc data`,
+          `EOF`,
+          `git commit -m "updated stuff")`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc body before the commit in the same subshell does not hijack a valid message", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hd-ok-");
+      try {
+        // The body's first line looks like a bad message; the real message is
+        // conventional. Only the commit's own -m argument may be validated.
+        const cmd = [
+          `(cat <<'EOF'`,
+          `updated stuff`,
+          `EOF`,
+          `git commit -m "fix: ok")`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a <<- heredoc before the commit in the same subshell is skipped to its terminator", () => {
+      const repo = makeStagedRepo("pre-tool-981-subshell-hddash-");
+      try {
+        const cmd = [
+          `(cat <<-EOF`,
+          `\tdata`,
+          `\tEOF`,
+          `git commit -m "fix: ok")`,
+        ].join("\n");
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a herestring inside the subshell is not treated as a heredoc introducer", () => {
+      const repo = makeStagedRepo("pre-tool-981-herestring-");
+      try {
+        // `<<<` is an inline word, not a body; treating it as `<<` blanked the
+        // commit that followed and the earlier quoted string won the fallback.
+        const cmd =
+          'echo "not a message"; (grep -q x <<< "$y"; git commit -m "fix: ok")';
+        const { code } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: extraction is anchored on the commit's own -m, not the first quoted string in the segment", () => {
+      const repo = makeStagedRepo("pre-tool-981-author-");
+      try {
+        // `--author="A B <a@b>"` precedes -m inside the SAME segment; the old
+        // extractor took the first double-quoted string of the segment.
+        const ok = runHook(
+          hookPath,
+          'git commit --author="A B <a@b>" -m "fix: with author"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+        const bad = runHook(
+          hookPath,
+          'git commit --author="A B <a@b>" -m "updated stuff"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a heredoc feeding -F- / --file= is still validated (first body line is the subject)", () => {
+      const repo = makeStagedRepo("pre-tool-981-file-stdin-");
+      try {
+        // main validated this via its `<<.*EOF` branch; the -m-anchored
+        // extractor must keep it: with no quoted -m, the segment's own heredoc
+        // is the message.
+        const bad = runHook(
+          hookPath,
+          [`git commit -F- <<'EOF'`, `updated stuff`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+        const badLong = runHook(
+          hookPath,
+          [`git commit --file=- <<'EOF'`, `updated stuff`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(badLong.code).toBe(2);
+        const ok = runHook(
+          hookPath,
+          [`git commit -F- <<'EOF'`, `fix: ok`, `EOF`].join("\n"),
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a -m token inside an earlier quoted argument does not abort extraction", () => {
+      const repo = makeStagedRepo("pre-tool-981-quoted-m-");
+      try {
+        // `--author="uses -m flag"` carries a `-m` in quoted data before the
+        // real flag; the scan must skip the quoted region and keep going.
+        const bad = runHook(
+          hookPath,
+          'git commit --author="uses -m flag" -m "updated stuff"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: updated stuff/);
+        const ok = runHook(
+          hookPath,
+          'git commit --author="uses -m flag" -m "fix: ok"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: only the subject line of a multi-line -m is validated (a conventional body line cannot launder it)", () => {
+      const repo = makeStagedRepo("pre-tool-981-multiline-m-");
+      try {
+        const bad = runHook(
+          hookPath,
+          'git commit -m "wip\n\nfix: sneaky"',
+          repo,
+        );
+        expect(bad.code).toBe(2);
+        expect(bad.stderr).toMatch(/Got: wip/);
+        const ok = runHook(
+          hookPath,
+          'git commit -m "fix: ok\n\nupdated stuff in the body"',
+          repo,
+        );
+        expect(ok.code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a -m-less segment that mentions git commit cannot shadow the real commit (fail-open)", () => {
+      const repo = makeStagedRepo("pre-tool-981-shadow-");
+      try {
+        // A comment line, `git commit-tree`, `--amend --no-edit`, or an
+        // unquoted echo all contain "git commit" in code form but carry no
+        // -m. Selecting only the first such segment left MSG empty and skipped
+        // validation entirely; the guard now walks every qualifying segment
+        // and validates the first that yields a message.
+        const shapes = [
+          [
+            "# stage and git commit the fix",
+            "git add -A",
+            'git commit -m "updated stuff"',
+          ].join("\n"),
+          'git commit --amend --no-edit && git commit -m "updated stuff"',
+          'git commit-tree -h; git commit -m "updated stuff"',
+          'echo about to git commit now; git commit -m "updated stuff"',
+        ];
+        for (const cmd of shapes) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        const ok = runHook(
+          hookPath,
+          [
+            "# stage and git commit the fix",
+            "git add -A",
+            'git commit -m "fix: ok"',
+          ].join("\n"),
+          repo,
+        );
+        expect(ok.code).toBe(0);
+        // A -m-less commit on its own still validates nothing (editor / amend).
+        expect(
+          runHook(hookPath, "git commit --amend --no-edit", repo).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: --message= / --message / -am-style flag clusters are validated like -m", () => {
+      const repo = makeStagedRepo("pre-tool-981-message-forms-");
+      try {
+        // Pre-existing fail-open adjacent to #981 (QA round 6): the old
+        // extractor only knew `-m`, so these forms skipped validation.
+        const blocked = [
+          'git commit --message="updated stuff"',
+          'git commit --message "updated stuff"',
+          'git commit -am "updated stuff"',
+          "git commit -sm 'updated stuff'",
+          'git commit -a -m "updated stuff"',
+        ];
+        for (const cmd of blocked) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        for (const cmd of [
+          'git commit --message="fix: ok"',
+          'git commit -am "fix: ok"',
+          'git commit -a -m "fix: ok"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: every git commit in a compound command is validated (a decoy conventional commit cannot shield a later one)", () => {
+      const repo = makeStagedRepo("pre-tool-981-chained-");
+      try {
+        // Spec Open Question 2 recommended validating every matching segment;
+        // first-message-wins let `fix: ok ; updated stuff` through unvalidated.
+        for (const cmd of [
+          'git commit -m "fix: ok" ; git commit -m "updated stuff"',
+          'git commit -m "updated stuff" && git commit -m "fix: ok"',
+          'echo "$(git commit -m "fix: decoy")"; git commit -m "updated stuff"',
+        ]) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+        expect(
+          runHook(
+            hookPath,
+            'git commit -m "fix: a" && git commit -m "fix: b"',
+            repo,
+          ).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("981: a # comment carrying a commit message can neither block a valid commit nor shield a bad one", () => {
+      const repo = makeStagedRepo("pre-tool-981-comment-m-");
+      try {
+        // QA round 9: with every segment validated, a comment line such as
+        // `# git commit -m "wip stuff"` qualified as a segment and blocked the
+        // real conventional commit below it (Got: wip stuff). Comments are now
+        // blanked in the code form and skipped by the extractor's scan.
+        for (const cmd of [
+          [
+            '# git commit -m "wip stuff"',
+            'git add -A && git commit -m "fix: real conventional commit"',
+          ].join("\n"),
+          [
+            'git add -A # git commit -m "wip stuff"',
+            'git commit -m "fix: ok"',
+          ].join("\n"),
+          ['( # git commit -m "wip"', 'git commit -m "fix: ok" )'].join("\n"),
+          'git commit -m "fix: ok # not a comment"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        // …and the fix cannot reopen the shadow fail-open it sits next to.
+        for (const cmd of [
+          [
+            '# git commit -m "fix: example"',
+            'git commit -m "updated stuff"',
+          ].join("\n"),
+          [
+            '( # git commit -m "fix: decoy"',
+            'git commit -m "updated stuff" )',
+          ].join("\n"),
+          'git commit -m "updated stuff" # trailing comment',
+        ]) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(/Got: updated stuff/);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: spacing and path variants of the heredoc commit-message idiom are read like the canonical form", () => {
+      const repo = makeStagedRepo("pre-tool-981-idiom-variants-");
+      try {
+        // QA round 10: the heredoc branch keyed on the literal `$(cat ` and
+        // blocked every other spelling of the same idiom with a Got: line
+        // naming the substitution text. Any `$( … << … )` now takes the branch.
+        const variants = [
+          "$( cat",
+          "$(  cat",
+          "$(\tcat",
+          "$(cat",
+          "$(/bin/cat",
+          "$(\ncat",
+        ];
+        for (const open of variants) {
+          const ok = [
+            `git commit -m "${open}${open.endsWith("cat") && open !== "$(cat" ? " " : ""}<<'EOF'`,
+            `fix: ok`,
+            `EOF`,
+            `)"`,
+          ].join("\n");
+          expect(runHook(hookPath, ok, repo).code, ok).toBe(0);
+          const bad = [
+            `git commit -m "${open}${open.endsWith("cat") && open !== "$(cat" ? " " : ""}<<'EOF'`,
+            `updated stuff`,
+            `EOF`,
+            `)"`,
+          ].join("\n");
+          const { code, stderr } = runHook(hookPath, bad, repo);
+          expect(code, bad).toBe(2);
+          expect(stderr, bad).toMatch(/Got: updated stuff/);
+        }
+        // A substitution with no heredoc falls through to the generic reader.
+        expect(
+          runHook(hookPath, 'git commit -m "fix: ok $(date)"', repo).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981 AC-1 (verbatim, with the cd prefix): the issue's exact repro is allowed", () => {
+      const repo = makeStagedRepo("pre-tool-981-ac1-cd-");
+      try {
+        // The issue body's repro starts with `cd <worktree> && diff a.md b.md`;
+        // resolve_cd_target reads that `cd`, so the prefix form is pinned too.
+        writeFileSync(join(repo, "a.md"), "same\n");
+        writeFileSync(join(repo, "b.md"), "same\n");
+        const cmd = `cd ${repo} && diff a.md b.md && echo "mirrors byte-identical"; git add -A && git commit -m "fix(#943): cite only real enforcers"`;
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(0);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: Commit must follow/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a variable-reference message is validated on its same-command literal assignment; an unknowable one validates nothing", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-msg-");
+      try {
+        // `main` validated `MSG="…"; git commit -m "$MSG"` on the assignment's
+        // quoted string by accident (whole-command first-quoted-string
+        // extraction). The segment-scoped extractor does it on purpose: a bare
+        // `$NAME` / `${NAME}` resolves through the first `NAME=` assignment in
+        // the command; with no assignment the value is unknowable and nothing
+        // is validated (like an unquoted word). Literal text alongside a
+        // variable is validated as written.
+        for (const cmd of [
+          'MSG="fix: ok"; git commit -m "$MSG"',
+          "export MSG='fix: ok'; git commit -m \"${MSG}\"",
+          'git commit -m "$UNSET_VAR"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        for (const [cmd, got] of [
+          ['MSG="updated stuff"; git commit -m "$MSG"', /Got: updated stuff/],
+          [
+            "MSG='updated stuff' && git commit -m \"$MSG\"",
+            /Got: updated stuff/,
+          ],
+          ['MSG=wip; git commit -m "$MSG"', /Got: wip/],
+          ['git commit -m "$MSG updated stuff"', /Got: \$MSG updated stuff/],
+        ] as const) {
+          const { code, stderr } = runHook(hookPath, cmd, repo);
+          expect(code, cmd).toBe(2);
+          expect(stderr, cmd).toMatch(got);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a NAME= outside code context (comment, quoted string, heredoc body) cannot supply a variable message; last assignment before the commit wins", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-scope-");
+      try {
+        // QA round 13: the first resolver scanned the raw whole command, so
+        // `# set MSG=updated …` above a real `MSG="fix: real"` blocked a valid
+        // commit — the exact whole-command bug this issue exists to close.
+        // Assignments are now read only in code context, and only before the
+        // commit segment, last one wins.
+        for (const cmd of [
+          [
+            "# set MSG=updated to override",
+            'MSG="fix: real"; git add -A && git commit -m "$MSG"',
+          ].join("\n"),
+          'echo \'usage: MSG=updated ./s.sh\'; MSG="fix: real"; git add -A && git commit -m "$MSG"',
+          'echo "usage: MSG=updated ./s.sh"; MSG="fix: real"; git commit -m "$MSG"',
+          [
+            "cat <<'EOF'",
+            "MSG=updated",
+            "EOF",
+            'MSG="fix: real"; git commit -m "$MSG"',
+          ].join("\n"),
+          'MSG="updated stuff"; MSG="fix: ok"; git commit -m "$MSG"',
+          'MSG="fix: ok"; git commit -m "$MSG"; MSG="updated"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        const { code, stderr } = runHook(
+          hookPath,
+          'MSG="fix: a"; MSG="updated stuff"; git commit -m "$MSG"',
+          repo,
+        );
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a commit that is the first segment sees no earlier assignment (zero-width window, not the whole command)", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-first-seg-");
+      try {
+        // QA round 14: `0` doubled as the "whole command" sentinel, so a
+        // leading commit segment resolved `$MSG` against an assignment AFTER
+        // it and blocked a valid commit. Unlimited is -1 now; 0 is a real
+        // zero-width window.
+        for (const cmd of [
+          'git commit -m "$MSG" && MSG="wip notes for later"',
+          'true && git commit -m "$MSG" && MSG="wip notes for later"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a line-continuation inside the commit segment does not widen the variable window to the whole command", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-continuation-");
+      try {
+        // QA round 15: raw_commit_segment drops backslash-newline, so the
+        // segment text no longer matched the raw input and the window fell
+        // back to everything — letting an assignment AFTER the commit block
+        // a valid one. The window is now located on a continuation-normalized
+        // copy, and a segment that still cannot be located gets a zero-width
+        // window rather than the whole command.
+        const ok = [
+          'MSG="fix: ok"; git commit \\',
+          '  -m "$MSG"; MSG="updated stuff"',
+        ].join("\n");
+        expect(runHook(hookPath, ok, repo).code).toBe(0);
+        const bad = ['MSG="updated stuff"; git commit \\', '  -m "$MSG"'].join(
+          "\n",
+        );
+        const { code, stderr } = runHook(hookPath, bad, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a dynamic assignment value is unknowable (validates nothing); identical duplicate commit segments get their own windows", () => {
+      const repo = makeStagedRepo("pre-tool-981-var-dynamic-dup-");
+      try {
+        // QA round 16. (1) `MSG=$(echo "fix: generated")` was read as the
+        // bare word `$(echo` and blocked a valid commit; a value carrying `$`,
+        // a backtick or a backslash is now treated as not knowable here.
+        for (const cmd of [
+          'MSG=$(echo "fix: generated"); git commit -m "$MSG"',
+          'MSG=`date`; git commit -m "$MSG"',
+          'MSG="fix: $X"; git commit -m "$MSG"',
+        ]) {
+          expect(runHook(hookPath, cmd, repo).code, cmd).toBe(0);
+        }
+        // (2) Two textually identical commit segments shared the FIRST one's
+        // window, so the second, with a bad message assigned in between, was
+        // never validated. The walk now advances a running offset.
+        const dup =
+          'git commit -m "$MSG"; MSG="updated stuff"; git commit -m "$MSG"';
+        const { code, stderr } = runHook(hookPath, dup, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+        expect(
+          runHook(
+            hookPath,
+            'MSG="fix: ok"; git commit -m "$MSG"; git commit -m "$MSG"',
+            repo,
+          ).code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+    it("981: a quoted mention of git commit does not shadow the real non-conventional commit", () => {
+      const repo = makeStagedRepo("pre-tool-981-decoy-bad-");
+      try {
+        // The decoy segment matches "git commit" only inside a quoted string,
+        // so it must not be selected — otherwise it supplies no `-m`, MSG is
+        // empty, and "updated stuff" sails through unchecked.
+        const cmd =
+          'echo "run git commit later"; git commit -m "updated stuff"';
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
 // === Log sink (#763 AC-5c) ===
 // Every test above forces CLAUDE_PLUGIN_DATA, so the *fallback* branch — the
 // one real npm/CI users hit — went entirely unexercised. That blind spot is
