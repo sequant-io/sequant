@@ -96,6 +96,9 @@ describe("AiderDriver", () => {
       // #813: aider phases use inline driverOverrides prompts, so the run
       // skills pre-flight is skipped for this driver.
       expect(driver.resolvesSkills).toBe(false);
+      // #996 AC-5: aider shells out to its own CLI and never reads config.mcp,
+      // so retrying without MCP would re-run an identical command.
+      expect(driver.usesSdkMcp).toBe(false);
     });
   });
 
