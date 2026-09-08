@@ -30,6 +30,16 @@ export interface ResumeHandle {
  */
 export interface AgentExecutionConfig {
   cwd: string;
+  /**
+   * Phase name this prompt belongs to (e.g. "qa"), when the caller knows it.
+   *
+   * Drivers that dispatch phases by name rather than by prompt need this:
+   * opencode invokes `run --command <phase>`, where the command wrapper is the
+   * thing that loads the skill. Absent for ad-hoc prompts; ignored by drivers
+   * that only ever see the prompt text (claude-code, aider). Additive and
+   * optional by design — see #862.
+   */
+  phase?: string;
   env: Record<string, string>;
   abortSignal?: AbortSignal;
   phaseTimeout: number;

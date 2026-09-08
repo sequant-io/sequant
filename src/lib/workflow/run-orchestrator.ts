@@ -34,6 +34,7 @@ import {
   ensureWorktreesChain,
   getWorktreeDiffStats,
   rebaseOntoLocalBranch,
+  registerWorktreeRemovalCleanup,
 } from "./worktree-manager.js";
 import { LogWriter } from "./log-writer.js";
 import type { RunConfig } from "./run-log-schema.js";
@@ -1123,17 +1124,13 @@ export class RunOrchestrator {
       }
       for (const [issueNum, worktree] of worktreeMap.entries()) {
         if (!worktree.existed) {
-          shutdown.registerCleanup(
-            `Cleanup worktree for #${issueNum}`,
-            async () => {
-              spawnSync(
-                "git",
-                ["worktree", "remove", "--force", worktree.path],
-                {
-                  stdio: "pipe",
-                },
-              );
-            },
+          // #935 D13: preserve a dirty worktree on signal-driven shutdown —
+          // force-removing it here would delete exactly the directory the
+          // #879 exec-failure message told the user their uncommitted work
+          // was preserved in. A clean worktree has nothing to lose and is
+          // still removed.
+          registerWorktreeRemovalCleanup(shutdown, issueNum, worktree, (msg) =>
+            bracketedConsoleLog(phasePauseHandle, chalk.gray(`    ${msg}`)),
           );
         }
       }

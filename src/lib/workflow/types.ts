@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { AiderSettings } from "../settings.js";
+import type { AiderSettings, OpencodeSettings } from "../settings.js";
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
@@ -147,6 +147,11 @@ export interface ExecutionConfig {
    * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
    */
   aiderSettings?: AiderSettings;
+  /**
+   * opencode-specific configuration. Passed to OpencodeDriver when agent is
+   * "opencode" (#862).
+   */
+  opencodeSettings?: OpencodeSettings;
   /**
    * Issue type detected from labels (e.g., "docs").
    * Propagated as SEQUANT_ISSUE_TYPE env var to skills.

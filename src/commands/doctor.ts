@@ -18,6 +18,7 @@ import {
   OPTIONAL_MCP_SERVERS,
 } from "../lib/system.js";
 import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
+import { OPENCODE_MIN_VERSION } from "../lib/workflow/drivers/opencode.js";
 import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
@@ -152,6 +153,39 @@ export function checkClosedIssues(): ClosedIssue[] {
   }
 
   return missingCommitIssues;
+}
+
+/**
+ * Read `opencode --version`, returning the bare semver or undefined (#862 AC-7).
+ *
+ * opencode prints just the version on stdout; anything else (an error, a
+ * banner-only build) is reported as unknown rather than guessed at, so a
+ * parse failure warns instead of blocking a working install.
+ */
+export function getOpencodeVersion(): string | undefined {
+  try {
+    const raw = execSync("opencode --version", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const match = /(\d+)\.(\d+)\.(\d+)/.exec(raw);
+    return match?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
+/** Numeric semver comparison — `1.9.0 < 1.18.27`, which a string compare gets wrong. */
+export function isVersionBelow(version: string, floor: string): boolean {
+  const parse = (v: string) => v.split(".").map((n) => Number.parseInt(n, 10));
+  const a = parse(version);
+  const b = parse(floor);
+  for (let i = 0; i < 3; i++) {
+    const left = a[i] ?? 0;
+    const right = b[i] ?? 0;
+    if (left !== right) return left < right;
+  }
+  return false;
 }
 
 export async function doctorCommand(
@@ -439,6 +473,43 @@ export async function doctorCommand(
         message:
           "aider CLI not installed but configured as default agent - install: pip install aider-chat",
       });
+    }
+  }
+
+  // Check: opencode CLI + pinned minimum version (when configured as agent).
+  // The floor is not cosmetic — opencode ships 800+ releases and several
+  // load-bearing surfaces this driver depends on (`run --command`, the skill
+  // tool's `state.metadata`) were undocumented at the version it was verified
+  // against (#862, #992).
+  if (settings.run.agent === "opencode") {
+    if (!commandExists("opencode")) {
+      checks.push({
+        name: "opencode CLI",
+        status: "fail",
+        message:
+          "opencode CLI not installed but configured as default agent - install: npm i -g opencode-ai",
+      });
+    } else {
+      const version = getOpencodeVersion();
+      if (!version) {
+        checks.push({
+          name: "opencode CLI",
+          status: "warn",
+          message: `opencode is installed but its version could not be read (sequant verified against ${OPENCODE_MIN_VERSION})`,
+        });
+      } else if (isVersionBelow(version, OPENCODE_MIN_VERSION)) {
+        checks.push({
+          name: "opencode CLI",
+          status: "fail",
+          message: `opencode ${version} is below the minimum supported ${OPENCODE_MIN_VERSION} - upgrade: npm i -g opencode-ai@latest`,
+        });
+      } else {
+        checks.push({
+          name: "opencode CLI",
+          status: "pass",
+          message: `opencode ${version} is installed (configured as default agent, minimum ${OPENCODE_MIN_VERSION})`,
+        });
+      }
     }
   }
 

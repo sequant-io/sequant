@@ -1120,6 +1120,24 @@ export async function getPhasePrompt(
 }
 
 /**
+ * Resolve the driver name for display, without spawning anything (#862 AC-3).
+ *
+ * Falls back to the configured string when the name is unknown so a dry run
+ * still prints a plan rather than throwing — the real `getDriver` call on the
+ * execution path reports the unknown-driver error.
+ */
+function resolveDriverName(config: ExecutionConfig): string {
+  try {
+    return getDriver(config.agent, {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+    }).name;
+  } catch {
+    return `${config.agent} (unknown driver)`;
+  }
+}
+
+/**
  * Execute a single phase for an issue using the configured AgentDriver.
  */
 async function executePhase(
@@ -1141,6 +1159,14 @@ async function executePhase(
   );
 
   if (config.dryRun) {
+    // #862 AC-3: name the resolved driver unconditionally. A dry run is the
+    // plan preview, and which backend would execute the phase is part of the
+    // plan — gating it on --verbose made `--agent opencode --dry-run` print a
+    // plan indistinguishable from a claude-code one.
+    bracketedConsoleLog(
+      spinner,
+      chalk.gray(`    Driver: ${resolveDriverName(config)}`),
+    );
     // Dry run - show the prompt that would be sent, then return
     if (config.verbose) {
       bracketedConsoleLog(
@@ -1303,6 +1329,7 @@ async function executePhase(
   // across phases.
   const driver: AgentDriver = getDriver(config.agent, {
     aiderSettings: config.aiderSettings,
+    opencodeSettings: config.opencodeSettings,
   });
 
   const eligibleHandle =
@@ -1320,6 +1347,7 @@ async function executePhase(
   // Build AgentExecutionConfig for the driver
   const agentConfig: AgentExecutionConfig = {
     cwd,
+    phase,
     env,
     abortSignal: abortController.signal,
     phaseTimeout: config.phaseTimeout,

@@ -1,10 +1,10 @@
 /**
  * `sequant abort <issue>` — out-of-band escape hatch for a running headless
- * session (#645, Gap 7).
+ * session (#858).
  *
  * `sequant prompt --type abort` queues an abort message into the inbox, which
  * the agent must read via the PostToolUse hook chain. When that chain is
- * broken (the bug originally reported in #645), no in-band abort can land.
+ * broken, no in-band abort can land.
  *
  * This command bypasses the inbox entirely: it locates the orchestrator PID
  * via `state.json.relay.pid` (with the per-issue pidfile as fallback) and
