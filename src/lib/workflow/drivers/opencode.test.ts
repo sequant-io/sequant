@@ -21,6 +21,7 @@ import {
   buildOpencodeConfigContent,
   evaluateOpencodeRun,
   findShimIn,
+  SHIM_LOADED_SENTINEL,
   type OpencodeParsedStream,
 } from "./opencode.js";
 import { RateLimitError, SequantError } from "../../errors.js";
@@ -112,6 +113,11 @@ interface MockProcOptions {
   error?: NodeJS.ErrnoException;
   /** Withhold `close` so the test can drive abort/timeout itself. */
   hang?: boolean;
+  /**
+   * Emit the shim's load sentinel on stderr (#996 AC-7). Defaults to true —
+   * a real run with the guards live always emits it.
+   */
+  shimActive?: boolean;
 }
 
 function createMockProcess(options: MockProcOptions = {}) {
@@ -148,6 +154,14 @@ function createMockProcess(options: MockProcOptions = {}) {
   setTimeout(() => {
     for (const chunk of options.stdout ?? []) {
       stdoutListeners.forEach((cb) => cb(Buffer.from(chunk)));
+    }
+    // A real opencode run with the shim installed always announces it on
+    // stderr (#996 AC-7). Default it on so every fixture models a *guarded*
+    // run; `shimActive: false` opts into the unguarded case.
+    if (options.shimActive !== false) {
+      stderrListeners.forEach((cb) =>
+        cb(Buffer.from(`${SHIM_LOADED_SENTINEL}\n`)),
+      );
     }
     for (const chunk of options.stderr ?? []) {
       stderrListeners.forEach((cb) => cb(Buffer.from(chunk)));
@@ -278,7 +292,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
     const result = await driver.executePhase("/qa 862", baseConfig());
 
     expect(result.stdoutTail?.length).toBeGreaterThan(0);
-    expect(result.stderrTail).toEqual(["a warning line"]);
+    expect(result.stderrTail).toContain("a warning line");
     // 100 KB fixture lines must not land in the tail verbatim.
     for (const line of result.stdoutTail ?? []) {
       expect(line.length).toBeLessThan(2100);
@@ -733,5 +747,53 @@ describe("862 P1 hooks preflight", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("862 P1 hooks preflight — load handshake", () => {
+  it("fails a run whose shim never announced itself, even on a clean exit", async () => {
+    // The dangerous case: opencode exits 0 with a full transcript, but the
+    // plugin silently failed to load, so nothing was guarded. Verified real
+    // on 1.18.27 — a scanned plugin exporting a constant is rejected with
+    // "Plugin export is not a function", logged at ERROR and swallowed.
+    const proc = createMockProcess({
+      stdout: [readFixture()],
+      shimActive: false,
+    });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver().executePhase(
+      "/qa 862",
+      baseConfig(),
+    );
+
+    expect(result.success).toBe(false);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.hooksNotActive);
+    expect(result.error).toContain("never loaded");
+  });
+
+  it("succeeds when the shim announced itself", async () => {
+    const proc = createMockProcess({ stdout: [readFixture()] });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver().executePhase(
+      "/qa 862",
+      baseConfig(),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  it("keeps the sentinel byte-identical to the shipped shim template", () => {
+    // A drifting sentinel would silently disable the handshake: every run
+    // would look unguarded, or (worse, if the driver's copy were the loose
+    // one) every run would look guarded.
+    const shim = readFileSync(
+      join(__dirname, "../../../../templates/opencode/plugins/lib/sequant-hooks-core.ts"),
+      "utf-8",
+    );
+    expect(shim).toContain(`"${SHIM_LOADED_SENTINEL}"`);
   });
 });

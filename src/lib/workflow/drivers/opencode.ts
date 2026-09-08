@@ -70,7 +70,20 @@ export const OPENCODE_ERROR_CODES = {
    * phase would run with none of sequant's guards (#996 AC-7).
    */
   hooksNotInstalled: "hooks-not-installed",
+  /**
+   * The shim is installed but never announced itself, so opencode did not
+   * load it and the phase ran unguarded (#996 AC-7).
+   */
+  hooksNotActive: "hooks-not-active",
 } as const;
+
+/**
+ * Sentinel the hook shim writes to stderr when opencode loads it.
+ *
+ * Must stay byte-identical to `SHIM_LOADED_SENTINEL` in
+ * `templates/opencode/plugins/lib/sequant-hooks-core.ts`.
+ */
+export const SHIM_LOADED_SENTINEL = "SEQUANT_HOOK_SHIM_ACTIVE";
 
 /** One NDJSON envelope. Only the fields this driver reads are typed. */
 interface OpencodeEvent {
@@ -250,6 +263,11 @@ export interface OpencodeRunOutcome {
   phaseTimeout: number;
   stderrTail: string[];
   stdoutTail: string[];
+  /**
+   * Require the shim's load sentinel on stderr (#996 AC-7). Off by default so
+   * existing fixtures and non-guarded callers are unaffected.
+   */
+  requireShimHandshake?: boolean;
 }
 
 /**
@@ -287,6 +305,27 @@ export function evaluateOpencodeRun(
       isTimeout
         ? `Timeout after ${outcome.phaseTimeout}s`
         : `Process killed by signal: ${outcome.signal}`,
+    );
+  }
+
+  // #996 AC-7: a plugin that fails to load is *silently* ignored by opencode —
+  // ERROR to its debug log, but exit 0, empty stderr, and a fully resolved
+  // tool map. Verified on 1.18.27, including the real failure this shim hit:
+  // a scanned plugin file that exports a constant is rejected wholesale.
+  // File presence therefore proves nothing; the load handshake is the only
+  // evidence the guards were live. Reporting an unguarded phase as a clean
+  // success is exactly the outcome #996 exists to prevent.
+  if (
+    outcome.requireShimHandshake === true &&
+    !outcome.stderrTail.some((line) => line.includes(SHIM_LOADED_SENTINEL))
+  ) {
+    return fail(
+      "The sequant hook shim never loaded, so this opencode phase ran with no " +
+        "force-push, commit, or worktree guards. Check `opencode ... --print-logs " +
+        "--log-level DEBUG` for a \"failed to load plugin\" line.",
+      new SequantError("opencode hook shim did not load", {
+        metadata: { code: OPENCODE_ERROR_CODES.hooksNotActive },
+      }),
     );
   }
 
@@ -566,6 +605,7 @@ export class OpencodeDriver implements AgentDriver {
           phaseTimeout: config.phaseTimeout,
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
+          requireShimHandshake: true,
         });
         finish(
           parsed.sessionId
