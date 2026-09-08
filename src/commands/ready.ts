@@ -53,6 +53,8 @@ export interface ReadyCommandOptions {
   efforts?: string;
   /** Evidence-based effort escalation on QA-pass retries (#915). See `RunOptions.escalateEffort`. */
   escalateEffort?: boolean;
+  /** Model escalation ladder for capability-bound retries (#971). See `RunOptions.modelLadder`. */
+  modelLadder?: string;
 }
 
 /**
@@ -178,6 +180,7 @@ export async function readyCommand(
         models: options.models,
         efforts: options.efforts,
         escalateEffort: options.escalateEffort,
+        modelLadder: options.modelLadder,
       } as RunOptions,
       settings,
     ),
@@ -332,6 +335,17 @@ export async function readyCommand(
     for (const e of result.effortEscalations) {
       console.log(
         colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
+      );
+    }
+    // #971: the model rungs the gate spent, for the same reason — the gate
+    // has no live print of its own, and on this standalone path there is no
+    // run-metrics record either, so this is the ONLY place a `sequant ready
+    // --model-ladder` user sees what the ladder cost them.
+    for (const e of result.modelEscalations) {
+      console.log(
+        colors.muted(
+          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${e.trigger} retry)`,
+        ),
       );
     }
   }

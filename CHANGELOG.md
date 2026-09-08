@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Model escalation ladder on capability-bound non-convergence (#971).**
+  `run.modelLadder` (or `--model-ladder sonnet,opus,fable` on `sequant run` and
+  `sequant ready`) defines ordered rungs, cheapest first. When a retried phase's
+  prior attempt made **no progress**, that phase is re-dispatched one rung up.
+  Absent by default — with no ladder configured, retried phases behave exactly
+  as #914/#915 ship them and the run issues no extra `git` calls.
+  - Routes on *why* the loop is churning, not on iteration count. Only the
+    deterministic no-progress signals (`LOOP_NO_DIFF`, `SAME_SHA_NO_PROGRESS`)
+    escalate. Repeated QA failure at *advancing* SHAs is divergence-suspect and
+    never escalates — a stronger model would only rediscover the contradiction
+    more expensively.
+  - Composes with #915 rather than stacking on it, in that order: retry 1
+    spends the cheap effort rung at the same model, and a model rung is only
+    spent from retry 2 on. A capability-bound trigger then suppresses that
+    dispatch's effort bump, so effort and model never escalate on the same
+    iteration.
+  - Escalation is **sticky** (a phase stays at its rung for the rest of the
+    run), never skips a rung, and never escalates past the last entry.
+  - An explicit `--models` pin sets the starting rung; a pin that is not a
+    ladder entry never escalates, so a pin is never silently downgraded.
+  - Ladder entries accept `role:` references (#975), resolved through
+    `run.modelRoles`; raw model strings stay legal.
+  - Escalations are recorded as columns on the `phaseUsage` row (#986) and in a
+    run-level `modelEscalations` log, and threaded into the phase environment so
+    phase markers can carry them.
+
 - **opencode agent driver — the first backend that inherits sequant's full skill
   methodology (#862).** `sequant run <n> --agent opencode` dispatches every
   phase through `opencode run --command <phase> … --format json --auto`, where a

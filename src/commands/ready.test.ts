@@ -76,6 +76,7 @@ function result(overrides: Partial<ReadyResult>): ReadyResult {
     tokensUsed: 0,
     report: "",
     effortEscalations: [],
+    modelEscalations: [],
     ...overrides,
   };
 }
@@ -250,6 +251,7 @@ describe("readyCommand — #697 renderer wiring", () => {
           tokensUsed: 0,
           report: REPORT_MARKER,
           effortEscalations: [],
+          modelEscalations: [],
         };
       },
     );

@@ -136,6 +136,15 @@ const SCENARIOS: Array<{
     options: { autoWaitMinutes: 45, relay: false, isolateParallel: true },
     run: {},
   },
+  {
+    // #971 AC-11: the model ladder is resolved by `config-resolver.ts` alone.
+    // The gate must INHERIT it through `RunReadyGateOptions.config` — it is
+    // not on the allowlist, so any divergence (including the gate resolving
+    // its own) fails the parity check above.
+    name: "model ladder configured (#971 AC-11)",
+    options: { modelLadder: "role:fast,role:strong" },
+    run: { modelLadder: ["sonnet", "opus", "fable"] },
+  },
 ];
 
 describe("#863 AC-4: ExecutionConfig producer parity", () => {
@@ -221,6 +230,38 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
     expect(Object.keys(GATE_CONFIG_OVERRIDES).sort()).toEqual(
       Object.keys(GATE_OVERRIDES).sort(),
     );
+  });
+
+  it("971 AC-11: the gate inherits the resolved model ladder rather than resolving one", () => {
+    const settings = settingsWith({ modelLadder: ["sonnet", "opus", "fable"] });
+    const resolved = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+    const gate = buildPhaseConfig(gateOpts(resolved), {});
+
+    expect(resolved.modelLadder).toEqual(["sonnet", "opus", "fable"]);
+    expect(gate.modelLadder).toEqual(resolved.modelLadder);
+    expect(unallowedDiffs(resolved, gate)).toEqual([]);
+  });
+
+  it("971 AC-1: with no ladder configured, NEITHER producer grows a ladder key", () => {
+    // The off-by-default half. `unallowedDiffs` compares over the UNION of
+    // keys, so a key present-but-undefined on one side would be caught there;
+    // this asserts the stronger property directly — the key is absent on both.
+    const settings = settingsWith({});
+    const resolved = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+    const gate = buildPhaseConfig(gateOpts(resolved), {});
+
+    expect("modelLadder" in resolved).toBe(false);
+    expect("modelLadder" in gate).toBe(false);
+    expect("modelLadderRequested" in resolved).toBe(false);
+    expect("modelEscalation" in resolved).toBe(false);
   });
 
   it("allowlist entries are permitted to differ, not required to differ", () => {
