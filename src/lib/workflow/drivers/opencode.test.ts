@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import * as childProcess from "child_process";
@@ -20,8 +20,10 @@ import {
   buildOpencodeArgs,
   buildOpencodeConfigContent,
   evaluateOpencodeRun,
+  findShimIn,
   type OpencodeParsedStream,
 } from "./opencode.js";
+import { RateLimitError, SequantError } from "../../errors.js";
 import type { AgentExecutionConfig } from "./agent-driver.js";
 
 vi.mock("child_process", () => ({
@@ -626,5 +628,110 @@ describe("862 OpencodeDriver — missing binary", () => {
     );
     expect(result.success).toBe(false);
     expect(result.error).toContain("opencode CLI not found");
+  });
+});
+
+describe("862 P1 errors", () => {
+  it("maps an NDJSON error event to the stream-error class", () => {
+    const parsed = parse(
+      JSON.stringify({ type: "error", error: { message: "upstream exploded" } }) +
+        "\n",
+      "qa",
+    );
+    const result = evaluateOpencodeRun(parsed, {
+      exitCode: 0,
+      stderrTail: [],
+      stdoutTail: [],
+    });
+
+    expect(result.success).toBe(false);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.streamError);
+  });
+
+  it("never produces a RateLimitError for the opencode driver", () => {
+    const parsed = parse(
+      JSON.stringify({
+        type: "error",
+        error: { message: "429 rate limit exceeded, retry after 60s" },
+      }) + "\n",
+      "qa",
+    );
+    const result = evaluateOpencodeRun(parsed, {
+      exitCode: 0,
+      stderrTail: [],
+      stdoutTail: [],
+    });
+
+    // The Claude-specific SDK retry paths key off RateLimitError; producing one
+    // here would route an opencode failure into machinery it never uses.
+    expect(result.structuredError).not.toBeInstanceOf(RateLimitError);
+    expect(
+      (result.structuredError as SequantError | undefined)?.metadata?.code,
+    ).toBe(OPENCODE_ERROR_CODES.streamError);
+  });
+
+  it("declares that it does not use the SDK's MCP plumbing", () => {
+    // This flag is what gates the "retrying without MCP" fallback in
+    // executePhaseWithRetry. opencode shells out to its own CLI and never
+    // reads config.mcp, so the retry would re-run an identical command.
+    expect(new OpencodeDriver().usesSdkMcp).toBe(false);
+  });
+});
+
+describe("862 P1 hooks preflight", () => {
+  it("fails closed with hooks-not-installed when the shim is absent", async () => {
+    const bare = mkdtempSync(join(tmpdir(), "sequant-opencode-noshim-"));
+    try {
+      const result = await new OpencodeDriver().executePhase(
+        "hello",
+        baseConfig({ cwd: bare }),
+      );
+
+      expect(result.success).toBe(false);
+      expect(
+        (result.structuredError as SequantError | undefined)?.metadata?.code,
+      ).toBe(OPENCODE_ERROR_CODES.hooksNotInstalled);
+      expect(result.error).toContain("hook shim is not installed");
+    } finally {
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it("does not spawn opencode at all when the shim is missing", async () => {
+    const bare = mkdtempSync(join(tmpdir(), "sequant-opencode-noshim2-"));
+    const spawnSpy = vi.spyOn(childProcess, "spawn");
+    try {
+      await new OpencodeDriver().executePhase("hello", baseConfig({ cwd: bare }));
+      // Fail closed means fail *before* spending the phase.
+      expect(spawnSpy).not.toHaveBeenCalled();
+    } finally {
+      spawnSpy.mockRestore();
+      rmSync(bare, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ".opencode/plugin/sequant-hooks.ts",
+    ".opencode/plugins/sequant-hooks.ts",
+  ])("accepts the shim at %s", (rel) => {
+    const dir = mkdtempSync(join(tmpdir(), "sequant-opencode-shimdir-"));
+    try {
+      mkdirSync(join(dir, rel, ".."), { recursive: true });
+      writeFileSync(join(dir, rel), "// shim\n");
+      expect(findShimIn(dir)).toBe(rel);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("finds no shim in an empty directory", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sequant-opencode-empty-"));
+    try {
+      expect(findShimIn(dir)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
