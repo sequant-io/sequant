@@ -88,6 +88,30 @@ export const PhaseMarkerSchema = z.object({
   requestedModel: z.string().optional(),
   /** Concrete model ID from `modelUsage` after phase execution (#975). */
   resolvedModel: z.string().optional(),
+  /**
+   * Model escalation facts for this phase execution (#971 AC-10).
+   *
+   * FLAT SCALARS ONLY, and that is a hard constraint rather than a style
+   * choice: `phase-detection.ts` parses these markers with
+   * `/<!-- SEQUANT_PHASE: (\{[^}]+\}) -->/g`, whose `[^}]+` body cannot span a
+   * nested object — a `{ escalation: { … } }` marker would stop parsing at the
+   * inner brace and take every marker in the comment with it. See
+   * `model-ladder.ts`'s `buildEscalationMarkerFields`, and the round-trip test
+   * that is the standing proof (AC-D1).
+   *
+   * All optional and append-only (I-2): markers written before #971 keep
+   * loading unchanged.
+   */
+  /** 0-based rung index the phase was dispatched at. */
+  ladderRung: z.number().int().nonnegative().optional(),
+  /** Model the phase would have run on without escalation. */
+  baseModel: z.string().optional(),
+  /** Model actually dispatched after escalation. */
+  escalatedModel: z.string().optional(),
+  /** Deterministic no-progress signal that bought the rung. */
+  escalationTrigger: z.string().optional(),
+  /** Set when the phase is on the last rung with nowhere left to go. */
+  topOfLadder: z.boolean().optional(),
 });
 
 export type PhaseMarker = z.infer<typeof PhaseMarkerSchema>;

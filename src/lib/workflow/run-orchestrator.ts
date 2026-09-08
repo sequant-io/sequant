@@ -1820,7 +1820,26 @@ export class RunOrchestrator {
         ).length;
       }
       const issueRows = result.phaseResults.flatMap((pr) =>
-        (pr.usage ?? []).map((u) => ({ phase: pr.phase, ...u })),
+        // #971 AC-10: append the escalation columns to #986's row shape.
+        // Spread conditionally so a non-escalated execution's row is
+        // byte-identical to the pre-#971 record — "absent" and "rung 0" are
+        // different claims, and every existing row must keep validating.
+        (pr.usage ?? []).map((u) => ({
+          phase: pr.phase,
+          ...u,
+          ...(pr.escalatedModel
+            ? {
+                ladderRung: pr.escalatedModel.rung,
+                baseModel: pr.escalatedModel.base,
+                escalatedModel: pr.escalatedModel.escalated,
+                escalationTrigger: pr.escalatedModel.trigger,
+                ...(pr.escalatedModel.requestedModel !== undefined
+                  ? { requestedModel: pr.escalatedModel.requestedModel }
+                  : {}),
+                ...(pr.escalatedModel.topOfLadder ? { topOfLadder: true } : {}),
+              }
+            : {}),
+        })),
       );
       phaseUsage.push(...issueRows);
       // #986 (AC-4): read the fallback through the one worktree-anchored

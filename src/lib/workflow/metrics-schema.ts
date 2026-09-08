@@ -74,6 +74,30 @@ export const PhaseUsageSchema = z.object({
   cacheCreationTokens: z.number().int().nonnegative(),
   /** SDK cost estimate in USD. Not `.int()` — see `RunMetricsSchema.costUSD`. */
   costUSD: z.number().nonnegative(),
+  /**
+   * Model-ladder escalation facts for the phase execution this row belongs to
+   * (#971 AC-10). Appended as optional COLUMNS on #986's existing row rather
+   * than as a second array: a parallel structure would have to be re-joined to
+   * these rows by phase name, and grouping by phase name is exactly what
+   * silently merges a quality-loop retry into its first attempt (the reason
+   * #986 keeps rows in `phaseResults` order).
+   *
+   * Absent on every non-escalated execution — which is every execution when no
+   * ladder is configured. Optional and additive: records written before #971
+   * still load (`stats.test.ts`'s pre-fix-record tests are the standing proof).
+   */
+  /** 0-based rung index the phase was dispatched at. */
+  ladderRung: z.number().int().nonnegative().optional(),
+  /** Model the phase would have run on without escalation. */
+  baseModel: z.string().optional(),
+  /** Model actually dispatched after escalation. */
+  escalatedModel: z.string().optional(),
+  /** Deterministic no-progress signal that bought the rung. */
+  escalationTrigger: z.string().optional(),
+  /** Pre-resolution ladder entry (`role:strong`), when a role was used (#975). */
+  requestedModel: z.string().optional(),
+  /** Set when the phase is on the last rung with nowhere left to go. */
+  topOfLadder: z.boolean().optional(),
 });
 
 export type PhaseUsage = z.infer<typeof PhaseUsageSchema>;
