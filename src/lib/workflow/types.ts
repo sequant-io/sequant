@@ -119,10 +119,11 @@ export interface ExecutionConfig {
   mcp: boolean;
   /**
    * Claude Desktop MCP server names explicitly opted in via
-   * `settings.run.mcpAllowlist` (#936). Both `ExecutionConfig` producers
-   * (`buildExecutionConfig`, `ready-gate.ts`'s `buildPhaseConfig`) read
-   * this from settings the same way, so it cannot drift between them the
-   * way #833's `phaseTimeout` once did. `phase-executor.ts` forwards it
+   * `settings.run.mcpAllowlist` (#936). Read from settings by the single
+   * `ExecutionConfig` producer, `buildExecutionConfig`; since #863
+   * `ready-gate.ts` consumes that config rather than assembling its own, so
+   * this cannot drift between entry points the way #833's `phaseTimeout`
+   * once did. `phase-executor.ts` forwards it
    * verbatim onto `AgentExecutionConfig.mcpAllowlist`.
    */
   mcpAllowlist?: string[];
@@ -237,9 +238,9 @@ export interface ExecutionConfig {
   /**
    * Evidence-based effort escalation on quality-loop retries (#915). CLI >
    * settings > absent (`false`), resolved by `buildExecutionConfig`
-   * (`config-resolver.ts`) and `ready-gate.ts`'s `buildPhaseConfig` — the same
-   * two producers `phasePolicies` uses, so this cannot drift from that one
-   * (#833 class). Consumed only at dispatch time by
+   * (`config-resolver.ts`) — the single producer since #863; `ready-gate.ts`
+   * receives it through `RunReadyGateOptions.config` — so this cannot drift
+   * from `phasePolicies` (#833 class). Consumed only at dispatch time by
    * `effort-escalation.ts`'s `withEscalatedEffort`, never baked statically
    * into `phasePolicies` here — escalation is per-execution, not per-run.
    */

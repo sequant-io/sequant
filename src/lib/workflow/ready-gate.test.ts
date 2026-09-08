@@ -10,7 +10,19 @@
  * - AC-6: iteration + token-budget caps halt cleanly.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// #863 AC-3 drives the REAL `executePhaseWithRetry` so driver selection is
+// exercised end-to-end. These two mocks keep that from touching a live agent
+// or the filesystem. Every other test in this file injects its own `runPhase`
+// and never reaches the driver layer, so the mocks are inert for them.
+vi.mock("../agents-md.js", () => ({
+  readAgentsMd: vi.fn().mockResolvedValue(null),
+}));
+vi.mock("./drivers/index.js", () => ({
+  getDriver: vi.fn(),
+}));
+
 import {
   runReadyGate,
   isAtThreshold,
@@ -21,7 +33,21 @@ import {
   type RunReadyGateOptions,
   type ReadyResult,
 } from "./ready-gate.js";
-import type { PhaseResult, ProgressCallback } from "./types.js";
+import type {
+  PhaseResult,
+  ProgressCallback,
+  RunOptions,
+} from "./types.js";
+import { DEFAULT_CONFIG } from "./types.js";
+import { executePhaseWithRetry } from "./phase-executor.js";
+import { getDriver } from "./drivers/index.js";
+import type { AgentDriver } from "./drivers/agent-driver.js";
+import {
+  buildExecutionConfig,
+  resolveRunOptions,
+} from "./config-resolver.js";
+import { DEFAULT_SETTINGS } from "../settings.js";
+import type { SequantSettings } from "../settings.js";
 import type { QaVerdict, GapFinding } from "./run-log-schema.js";
 import type { LoopProgressSnapshot } from "./qa-stagnation.js";
 
@@ -105,8 +131,8 @@ function baseOpts(
     worktreePath: "/tmp/worktree-683",
     policy: "ac",
     maxIterations: 3,
-    phaseTimeout: 1800,
-    mcp: false,
+    // #863: execution settings reach the gate only through this one field.
+    config: { ...DEFAULT_CONFIG, maxIterations: 3, mcp: false },
     classifyChangesFn: () => ({ kind: "commits" }),
     readTokensUsed: () => 0,
     snapshotFn: progressingSnapshots(),
@@ -710,7 +736,7 @@ describe("formatReadyReport (AC-4)", () => {
 // ─── mcpAllowlist threading (#936) ───────────────────────────────────────────
 
 describe("runReadyGate — mcpAllowlist threading (#936)", () => {
-  it("forwards opts.mcpAllowlist onto every ExecutionConfig handed to runPhase", async () => {
+  it("forwards opts.config.mcpAllowlist onto every ExecutionConfig handed to runPhase", async () => {
     const seen: Array<string[] | undefined> = [];
     const runPhase: ReadyPhaseRunner = (_phase, config) => {
       seen.push(config.mcpAllowlist);
@@ -720,7 +746,11 @@ describe("runReadyGate — mcpAllowlist threading (#936)", () => {
     await runReadyGate(
       baseOpts({
         runPhase,
-        mcpAllowlist: ["stripe", "notion"],
+        // #863: re-anchored from the removed top-level option onto `config`.
+        config: {
+          ...DEFAULT_CONFIG,
+          mcpAllowlist: ["stripe", "notion"],
+        },
       }),
     );
 
@@ -742,6 +772,99 @@ describe("runReadyGate — mcpAllowlist threading (#936)", () => {
     expect(seen.length).toBeGreaterThan(0);
     for (const mcpAllowlist of seen) {
       expect(mcpAllowlist).toBeUndefined();
+    }
+  });
+});
+
+// ─── #863 AC-3: driver selection reaches the gate ────────────────────────────
+
+describe("#863: ready-gate phases run on the configured driver", () => {
+  /**
+   * The load-bearing assertion for #863. Before the producer collapse,
+   * `buildPhaseConfig` built each gate phase's `ExecutionConfig` from scratch
+   * and never set `agent`, so `executePhaseWithRetry` resolved the default
+   * claude-code driver no matter what the project had configured — an
+   * aider-configured run silently switched backends for its gate pass.
+   *
+   * Asserting on `getDriver`'s argument (not on a config field) is deliberate:
+   * a config-field assertion would still pass if the field stopped reaching
+   * the selection site.
+   */
+  function settingsWith(run: Partial<SequantSettings["run"]>): SequantSettings {
+    return {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, ...run },
+    } as SequantSettings;
+  }
+
+  function mockDriver(): AgentDriver {
+    return {
+      name: "aider",
+      resolvesSkills: false,
+      // No verdict in the output → the gate exits NO_VERDICT after one
+      // dispatch, so exactly one driver selection is asserted.
+      executePhase: vi.fn().mockResolvedValue({ success: true, output: "ok" }),
+      isAvailable: vi.fn().mockResolvedValue(true),
+      canResume: vi.fn().mockReturnValue(false),
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(getDriver).mockReset();
+    vi.mocked(getDriver).mockReturnValue(mockDriver());
+  });
+
+  it("selects the aider driver when run.agent is aider, passing aiderSettings", async () => {
+    const settings = settingsWith({
+      agent: "aider",
+      aider: { model: "gpt-4o" },
+    });
+    const config = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+
+    const result = await runReadyGate(
+      baseOpts({
+        maxIterations: 1,
+        config,
+        // The REAL executor — this is what makes the test cover selection.
+        runPhase: (phase, phaseConfig) =>
+          executePhaseWithRetry(863, phase, phaseConfig),
+      }),
+    );
+
+    expect(result.reason).toBe("NO_VERDICT");
+    expect(getDriver).toHaveBeenCalled();
+    for (const call of vi.mocked(getDriver).mock.calls) {
+      expect(call[0]).toBe("aider");
+      expect(call[1]).toEqual({ aiderSettings: { model: "gpt-4o" } });
+    }
+  });
+
+  it("still selects claude-code when no agent is configured", async () => {
+    const settings = settingsWith({});
+    const config = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+
+    await runReadyGate(
+      baseOpts({
+        maxIterations: 1,
+        config,
+        runPhase: (phase, phaseConfig) =>
+          executePhaseWithRetry(863, phase, phaseConfig),
+      }),
+    );
+
+    expect(getDriver).toHaveBeenCalled();
+    for (const call of vi.mocked(getDriver).mock.calls) {
+      // `undefined` is how the run path expresses "default" — getDriver's own
+      // parameter default resolves it to claude-code.
+      expect(call[0] ?? "claude-code").toBe("claude-code");
     }
   });
 });
