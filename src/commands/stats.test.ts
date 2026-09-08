@@ -617,3 +617,122 @@ describe("statsCommand", () => {
     });
   });
 });
+
+/**
+ * #986 AC-5 / AC-6 — the `sequant stats` cost surface.
+ *
+ * `metrics.tokensUsed` read 0 on 365/365 recorded runs, so the token panel was
+ * dead and there was no per-phase or per-model spend view at all. These tests
+ * drive `statsCommand` against two on-disk fixtures: one post-fix record with
+ * `phaseUsage`/`costUSD`, and one copied verbatim from a real pre-fix
+ * `.sequant/metrics.json` (no such fields) to prove old records still render.
+ */
+describe("#986 stats cost & usage by phase x model", () => {
+  let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+  /** Read a fixture with the REAL fs — `fs` is module-mocked in this file. */
+  async function fixture(name: string): Promise<string> {
+    const realFs = await vi.importActual<typeof import("fs")>("fs");
+    return realFs.readFileSync(`src/commands/__fixtures__/${name}`, "utf-8");
+  }
+
+  /** Point `loadMetrics()` at a fixture and starve the run-log fallback. */
+  function serveMetrics(json: string): void {
+    (fs.existsSync as ReturnType<typeof vi.fn>).mockImplementation(
+      (p: string) => String(p).endsWith("metrics.json"),
+    );
+    (fs.readFileSync as ReturnType<typeof vi.fn>).mockImplementation(
+      () => json,
+    );
+    (fs.readdirSync as ReturnType<typeof vi.fn>).mockReturnValue([]);
+  }
+
+  function output(): string {
+    return consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    consoleSpy.mockRestore();
+  });
+
+  it("986 renders a phase x model table with cost, by default", async () => {
+    serveMetrics(await fixture("metrics-phase-usage-986.json"));
+
+    await statsCommand({});
+    const out = output();
+
+    expect(out).toContain("Cost & Usage by Phase \u00D7 Model");
+    // The SDK's own wording for costUSD — this is an estimate, and the panel
+    // must say so rather than reading as an invoice.
+    expect(out).toContain("SDK estimate, not a billing statement");
+    expect(out).toContain("claude-fable-5");
+    expect(out).toContain("claude-haiku-4-5-20251001");
+    expect(out).toContain("claude-opus-5");
+    // exec/claude-fable-5: 326 + 38515 input+output tokens, $10.2637.
+    expect(out).toMatch(/exec\s+claude-fable-5\s+38,841\s+\$10\.2637/);
+    expect(out).toContain("$12.3395");
+  });
+
+  it("986 folds the two qa executions into one row and reports the execution count", async () => {
+    serveMetrics(await fixture("metrics-phase-usage-986.json"));
+
+    await statsCommand({});
+
+    // 1000+2000 and 3000+4000 across two qa executions on the same model.
+    expect(output()).toMatch(/qa\s+claude-opus-5\s+10,000\s+\$2\.0000\s+2/);
+  });
+
+  it("986 exposes the same rollup under --json", async () => {
+    serveMetrics(await fixture("metrics-phase-usage-986.json"));
+
+    await statsCommand({ json: true });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+
+    expect(parsed.totalCostUSD).toBeCloseTo(12.339517, 6);
+    expect(parsed.phaseModelUsage).toHaveLength(3);
+    expect(parsed.phaseModelUsage[0]).toEqual({
+      phase: "exec",
+      model: "claude-fable-5",
+      inputTokens: 326,
+      outputTokens: 38515,
+      cacheTokens: 2316899,
+      costUSD: 10.263722,
+      executions: 1,
+    });
+  });
+
+  it("986 renders a pre-fix record without throwing, showing 0 / \u2014 for the missing fields (AC-6)", async () => {
+    // Verbatim copy of a real record from .sequant/metrics.json, written
+    // before costUSD/phaseUsage existed.
+    const pre = await fixture("metrics-pre-986.json");
+    expect(JSON.parse(pre).runs[0].metrics.phaseUsage).toBeUndefined();
+    expect(JSON.parse(pre).runs[0].metrics.costUSD).toBeUndefined();
+    serveMetrics(pre);
+
+    await expect(statsCommand({})).resolves.toBeUndefined();
+    const out = output();
+
+    // Section still shown by default, with a placeholder rather than a
+    // fabricated $0.00 — "not recorded" and "free" are different claims.
+    expect(out).toContain("Cost & Usage by Phase \u00D7 Model");
+    expect(out).toContain("SDK estimate, not a billing statement");
+    expect(out).toContain("\u2014");
+    expect(out).toContain("No per-phase usage recorded in these runs.");
+    expect(out).not.toContain("$");
+  });
+
+  it("986 reports null cost under --json for a pre-fix record", async () => {
+    serveMetrics(await fixture("metrics-pre-986.json"));
+
+    await statsCommand({ json: true });
+    const parsed = JSON.parse(consoleSpy.mock.calls[0][0] as string);
+
+    expect(parsed.phaseModelUsage).toEqual([]);
+    expect(parsed.totalCostUSD).toBeNull();
+  });
+});

@@ -404,6 +404,29 @@ interface MetricsAnalytics {
   avgInputTokens: number;
   avgOutputTokens: number;
   avgCacheTokens: number;
+  // Phase x model cost/usage rollup (#986)
+  phaseModelUsage: PhaseModelUsageBucket[];
+  totalCostUSD: number;
+  /** True when at least one run carried a `metrics.costUSD` field (#986).
+   * Distinguishes "no cost recorded" (pre-fix records) from "cost was zero". */
+  hasCostData: boolean;
+}
+
+/**
+ * One phase x model row of the `sequant stats` cost table (#986).
+ *
+ * Rolled up across runs for display. The per-execution rows that make it up
+ * stay unmerged in `metrics.phaseUsage` — `executions` reports how many were
+ * folded in, which is what makes a quality-loop retry visible here.
+ */
+interface PhaseModelUsageBucket {
+  phase: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheTokens: number;
+  costUSD: number;
+  executions: number;
 }
 
 /**
@@ -482,6 +505,9 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
       avgInputTokens: 0,
       avgOutputTokens: 0,
       avgCacheTokens: 0,
+      phaseModelUsage: [],
+      totalCostUSD: 0,
+      hasCostData: false,
     };
   }
 
@@ -544,6 +570,41 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
     0,
   );
 
+  // Phase x model rollup (#986). Records written before this field existed
+  // simply contribute no rows — `phaseUsage` is optional, never assumed.
+  const buckets = new Map<string, PhaseModelUsageBucket>();
+  for (const run of runs) {
+    for (const row of run.metrics.phaseUsage ?? []) {
+      const key = `${row.phase}\u0000${row.model}`;
+      const bucket = buckets.get(key) ?? {
+        phase: row.phase,
+        model: row.model,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheTokens: 0,
+        costUSD: 0,
+        executions: 0,
+      };
+      bucket.inputTokens += row.inputTokens;
+      bucket.outputTokens += row.outputTokens;
+      bucket.cacheTokens += row.cacheReadTokens + row.cacheCreationTokens;
+      bucket.costUSD += row.costUSD;
+      bucket.executions += 1;
+      buckets.set(key, bucket);
+    }
+  }
+  const phaseModelUsage = [...buckets.values()].sort(
+    (a, b) =>
+      b.costUSD - a.costUSD ||
+      a.phase.localeCompare(b.phase) ||
+      a.model.localeCompare(b.model),
+  );
+  const hasCostData = runs.some((r) => r.metrics.costUSD !== undefined);
+  const totalCostUSD = runs.reduce(
+    (sum, r) => sum + (r.metrics.costUSD ?? 0),
+    0,
+  );
+
   return {
     totalRuns: runs.length,
     successCount,
@@ -558,6 +619,9 @@ function calculateMetricsAnalytics(metrics: Metrics): MetricsAnalytics {
     chainModeSuccessRate,
     singleIssueSuccessRate,
     insights,
+    phaseModelUsage,
+    totalCostUSD,
+    hasCostData,
     // Token breakdown
     totalInputTokens,
     totalOutputTokens,
@@ -751,6 +815,40 @@ function displayMetricsAnalytics(analytics: MetricsAnalytics): void {
     }
 
     console.log(ui.keyValueTable(tokenData));
+  }
+
+  // Cost & usage by phase x model (#986). Shown by default (OQ-1), and shown
+  // even when empty: a pre-#986 record has no `phaseUsage` at all, and
+  // rendering `\u2014` for it says "not recorded" where a hidden section would
+  // say nothing and a `0` would falsely claim the phases were free.
+  console.log(ui.sectionHeader("Cost & Usage by Phase \u00D7 Model"));
+  console.log(colors.muted("  SDK estimate, not a billing statement\n"));
+
+  if (analytics.phaseModelUsage.length === 0) {
+    console.log(
+      `  ${"Phase".padEnd(16)}${"Model".padEnd(28)}${"Tokens".padStart(12)}${"Cost".padStart(12)}`,
+    );
+    console.log(
+      `  ${"\u2014".padEnd(16)}${"\u2014".padEnd(28)}${"0".padStart(12)}${"\u2014".padStart(12)}`,
+    );
+    console.log(colors.muted("  No per-phase usage recorded in these runs.\n"));
+  } else {
+    console.log(
+      `  ${"Phase".padEnd(16)}${"Model".padEnd(28)}${"Tokens".padStart(12)}${"Cost".padStart(12)}${"  Runs"}`,
+    );
+    for (const row of analytics.phaseModelUsage) {
+      const tokens = (row.inputTokens + row.outputTokens).toLocaleString();
+      const cost = `$${row.costUSD.toFixed(4)}`;
+      console.log(
+        `  ${row.phase.padEnd(16)}${row.model.padEnd(28)}${tokens.padStart(12)}${cost.padStart(12)}${String(row.executions).padStart(6)}`,
+      );
+    }
+    // "absent" and "free" are different claims: a run recorded before
+    // `costUSD` existed contributes usage rows but no cost.
+    const total = analytics.hasCostData
+      ? `$${analytics.totalCostUSD.toFixed(4)}`
+      : "\u2014";
+    console.log(`  ${"TOTAL".padEnd(16)}${"".padEnd(28)}${total.padStart(24)}`);
   }
 
   // Insights
@@ -1029,6 +1127,10 @@ export async function statsCommand(options: StatsOptions): Promise<void> {
           avgOutputTokens: analytics.avgOutputTokens,
           avgCacheTokens: analytics.avgCacheTokens,
         },
+        // Phase x model cost/usage (#986). `costUSD` is the SDK's own
+        // estimate, not a billing statement.
+        phaseModelUsage: analytics.phaseModelUsage,
+        totalCostUSD: analytics.hasCostData ? analytics.totalCostUSD : null,
         runs: metrics.runs,
       };
       console.log(JSON.stringify(output, null, 2));

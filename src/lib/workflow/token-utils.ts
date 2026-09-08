@@ -207,6 +207,40 @@ export function getTokenUsageForRun(
 }
 
 /**
+ * Read (and optionally clear) the hook-written token files for one worktree (#986).
+ *
+ * The single choke point for the hook fallback path — the #833
+ * single-producer pattern. Before this existed, `run` read a bare-relative
+ * `.sequant` (resolving to whatever `process.cwd()` happened to be — the main
+ * checkout) while the ready gate joined its `worktreePath`. The producer is
+ * the `SessionEnd` hook, which writes relative to the *session's* cwd, i.e.
+ * the worktree; anchoring every reader here is what makes producer and
+ * consumer agree on a directory.
+ *
+ * @param worktreePath - Absolute path to the worktree whose `.sequant/` holds
+ *   the token files.
+ * @param options.cleanup - Delete the files after reading. The two callers
+ *   genuinely differ and the flag is the seam between them: `run` reads once
+ *   at the end of a run and must clear (`true`), while the ready gate polls
+ *   the same directory repeatedly inside its QA loop and must not (`false`) —
+ *   deleting mid-loop would zero its own budget accounting.
+ */
+export function readWorktreeTokenUsage(
+  worktreePath: string,
+  options: { cleanup: boolean },
+): AggregatedTokenUsage {
+  const directory = path.join(worktreePath, TOKEN_USAGE_DIR);
+  const tokenData = readTokenUsageFiles(directory);
+  const aggregated = aggregateTokenUsage(tokenData);
+
+  if (options.cleanup && tokenData.length > 0) {
+    cleanupTokenFiles(directory);
+  }
+
+  return aggregated;
+}
+
+/**
  * Delete all token usage files from a directory
  *
  * @param directory - Path to directory containing token files
