@@ -2,8 +2,8 @@
  * Gap-fix test for #914 — the connective wiring inside `executePhase`
  * (unexported) that reads `config.phasePolicies?.[phase]` and turns it into
  * `AgentExecutionConfig.model`/`.effort`. Every other hop of this feature is
- * independently tested (both `ExecutionConfig` producers build
- * `phasePolicies` correctly; `ClaudeCodeDriver` forwards
+ * independently tested (`buildExecutionConfig`, the single producer since
+ * #863, builds `phasePolicies` correctly and `ready-gate.ts` spreads it; `ClaudeCodeDriver` forwards
  * `AgentExecutionConfig.model`/`.effort` into `query()` options correctly),
  * but nothing previously drove the real `executePhase` body end-to-end, so a
  * regression in this specific line would have gone uncaught.

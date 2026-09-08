@@ -138,14 +138,12 @@ describe("#975 AC-4: metrics call-site wiring (source inspection)", () => {
   // population; the helper above closes that — but only if the metrics record
   // actually routes phasePolicies through it. Unit tests on the helper cannot
   // catch the call being removed, so pin the call site the same way the AC-5
-  // producer-2 drift guard does.
+  // drift guard does.
   it("run-orchestrator's metrics record passes phasePolicies through enrichPhasePoliciesFromResults", () => {
     const src = readFileSync(
       resolvePath(__dirname, "run-orchestrator.ts"),
       "utf-8",
     );
-    expect(src).toMatch(
-      /phasePolicies:\s*enrichPhasePoliciesFromResults\(/,
-    );
+    expect(src).toMatch(/phasePolicies:\s*enrichPhasePoliciesFromResults\(/);
   });
 });

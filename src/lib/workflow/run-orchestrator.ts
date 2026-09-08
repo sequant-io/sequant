@@ -118,7 +118,10 @@ import {
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { runChainPreflight } from "./chain-preflight.js";
-import { runSkillsPreflight } from "./skills-preflight.js";
+import {
+  driverResolvesSkills,
+  runSkillsPreflight,
+} from "./skills-preflight.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import {
   planChainResumeFromState,
@@ -216,7 +219,7 @@ export interface RunInit {
   /** Resolved settings */
   settings: SequantSettings;
   /** Manifest metadata */
-  manifest: { stack: string; packageManager: string };
+  manifest: { stack: string; packageManager?: string };
   /** Explicit base branch override */
   baseBranch?: string;
   /** Per-phase progress callback */
@@ -1086,56 +1089,6 @@ export class RunOrchestrator {
       issueInfoMap.set(issueNumber, await getIssueInfo(issueNumber));
     }
 
-    // ── Skills pre-flight (#813) ───────────────────────────────────────
-    // Fail fast when the driver resolves phases via `.claude/skills/` and a
-    // required skill is missing — BEFORE any worktree is provisioned or
-    // per-issue state entry written. Without this, the phase agent hunts for
-    // a slash command that can never resolve and the run surfaces as a bogus
-    // "spec retry" failure. Skipped for non-skill drivers (aider) and for
-    // --dry-run (no agent executes).
-    if (!config.dryRun) {
-      const preflight = await runSkillsPreflight({
-        agent: config.agent,
-        aiderSettings: config.aiderSettings,
-        phases: config.phases,
-        autoDetectPhases: resolved.autoDetectPhases,
-        qualityLoop: config.qualityLoop,
-        testgen: mergedOptions.testgen,
-        securityReview: mergedOptions.securityReview,
-        issueNumbers,
-        issueInfoMap,
-      });
-      if (!preflight.ok) {
-        bracketedConsoleLog(
-          phasePauseHandle,
-          chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),
-        );
-        bracketedConsoleLog(
-          phasePauseHandle,
-          chalk.red(`    ${preflight.remedy}`),
-        );
-        shutdown.dispose();
-        return {
-          results: issueNumbers.map((issueNumber) => ({
-            issueNumber,
-            success: false,
-            phaseResults: [],
-            durationSeconds: 0,
-            loopTriggered: false,
-            abortReason: `skills pre-flight failed: ${preflight.cause}`,
-          })),
-          logPath: null,
-          exitCode: 1,
-          worktreeMap: new Map(),
-          issueInfoMap,
-          config,
-          mergedOptions,
-          logWriter: null,
-          wallClockDurationSeconds: wallClock(),
-        };
-      }
-    }
-
     const useWorktreeIsolation =
       mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
 
@@ -1178,6 +1131,139 @@ export class RunOrchestrator {
               );
             },
           );
+        }
+      }
+    }
+
+    // ── Skills pre-flight (#933, was #813) ──────────────────────────────
+    // Fail fast when the driver resolves phases via `.claude/skills/` and a
+    // required skill is missing — AFTER worktree provisioning, checked
+    // against each worktree the phase agents actually run in, not the main
+    // checkout. `git worktree add` only materializes tracked files, so an
+    // untracked `.claude/skills/` (the default post-`sequant sync` state)
+    // passes a check against the main checkout while every worktree has
+    // none. Skipped entirely (zero calls) for non-skill drivers (aider) and
+    // for --dry-run, where no worktree was provisioned.
+    if (
+      !config.dryRun &&
+      driverResolvesSkills(config.agent, config.aiderSettings)
+    ) {
+      const preflightBase = {
+        agent: config.agent,
+        aiderSettings: config.aiderSettings,
+        phases: config.phases,
+        autoDetectPhases: resolved.autoDetectPhases,
+        qualityLoop: config.qualityLoop,
+        testgen: mergedOptions.testgen,
+        securityReview: mergedOptions.securityReview,
+        issueNumbers,
+        issueInfoMap,
+      };
+      // Worktree isolation disabled: phases execute in the main checkout,
+      // same as pre-#933 behavior, so that's what gets checked.
+      const cwdsToCheck =
+        worktreeMap.size > 0
+          ? [...worktreeMap.values()].map((w) => w.path)
+          : [process.cwd()];
+      for (const cwd of cwdsToCheck) {
+        const preflight = await runSkillsPreflight({ ...preflightBase, cwd });
+        if (!preflight.ok) {
+          // This abort lands AFTER provisioning, so the worktrees this run just
+          // created would otherwise be orphaned — and the remedy below would
+          // not recover: a re-run reuses a non-stale worktree unrebased, so it
+          // still lacks the skills and fails the same way. `dispose()` clears
+          // the registered cleanups without running them, so remove the
+          // created worktrees explicitly here. Pre-existing (reused) worktrees
+          // are the user's and are kept; the remedy names the manual step.
+          const removedWorktrees: string[] = [];
+          const unremovedWorktrees: string[] = [];
+          for (const [issueNum, worktree] of worktreeMap.entries()) {
+            if (!worktree.existed) {
+              const removal = spawnSync(
+                "git",
+                ["worktree", "remove", "--force", worktree.path],
+                { stdio: "pipe" },
+              );
+              shutdown.unregisterCleanup(`Cleanup worktree for #${issueNum}`);
+              if (removal.status === 0) removedWorktrees.push(worktree.path);
+              else unremovedWorktrees.push(worktree.path);
+            }
+          }
+          // Three situations, three remedies — each says only what actually
+          // happened. (`run --force` bypasses the state guard and takes over
+          // locks; it does not re-provision a worktree, so it is never offered.)
+          let worktreeRemedy: string;
+          if (worktreeMap.size === 0) {
+            // Isolation disabled: `cwd` is the main checkout, not a worktree.
+            worktreeRemedy =
+              `the checkout at ${cwd} is missing required skills (${preflight.cause}) — ` +
+              `commit .claude/skills, then re-run.`;
+          } else {
+            const worktreeState = removedWorktrees.includes(cwd)
+              ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
+              : unremovedWorktrees.includes(cwd)
+                ? `The worktree created for this run could not be removed (git worktree remove --force failed): remove it by hand (\`git worktree remove --force ${cwd}\`, then \`git worktree prune\`) before re-running.`
+                : `The pre-existing worktree was kept: remove it first (\`git worktree remove ${cwd}\`) so the re-run provisions it from the new commit.`;
+            // A multi-issue run provisions several worktrees; say what happened
+            // to the ones that are not the failing cwd too.
+            const others = [...worktreeMap.values()]
+              .map((w) => w.path)
+              .filter((p) => p !== cwd);
+            const otherRemoved = others.filter((p) =>
+              removedWorktrees.includes(p),
+            );
+            // A worktree whose forced removal FAILED is an orphan that needs a
+            // cleanup step — never label it as intentionally kept.
+            const otherUnremoved = others.filter((p) =>
+              unremovedWorktrees.includes(p),
+            );
+            const otherPreexisting = others.filter(
+              (p) =>
+                !removedWorktrees.includes(p) &&
+                !unremovedWorktrees.includes(p),
+            );
+            const othersNote =
+              (otherRemoved.length > 0
+                ? ` Also removed (created for this run): ${otherRemoved.join(", ")}.`
+                : "") +
+              (otherUnremoved.length > 0
+                ? ` Could not be removed (remove by hand with \`git worktree remove --force <path>\`, then \`git worktree prune\`): ${otherUnremoved.join(", ")}.`
+                : "") +
+              (otherPreexisting.length > 0
+                ? ` Left in place (pre-existing): ${otherPreexisting.join(", ")}.`
+                : "");
+            worktreeRemedy =
+              `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
+              `commit .claude/skills (worktrees only materialize tracked files), ` +
+              `then re-run. ${worktreeState}${othersNote}`;
+          }
+          bracketedConsoleLog(
+            phasePauseHandle,
+            chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),
+          );
+          bracketedConsoleLog(
+            phasePauseHandle,
+            chalk.red(`    ${worktreeRemedy}`),
+          );
+          shutdown.dispose();
+          return {
+            results: issueNumbers.map((issueNumber) => ({
+              issueNumber,
+              success: false,
+              phaseResults: [],
+              durationSeconds: 0,
+              loopTriggered: false,
+              abortReason: `skills pre-flight failed: ${worktreeRemedy}`,
+            })),
+            logPath: null,
+            exitCode: 1,
+            worktreeMap,
+            issueInfoMap,
+            config,
+            mergedOptions,
+            logWriter: null,
+            wallClockDurationSeconds: wallClock(),
+          };
         }
       }
     }
