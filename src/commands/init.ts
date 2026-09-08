@@ -21,7 +21,9 @@ import {
   assertTemplatesDirExists,
   getTemplateContent,
 } from "../lib/templates.js";
+import { parse as parseYaml } from "yaml";
 import { createManifest } from "../lib/manifest.js";
+import { buildOpencodeMcpConfig } from "../lib/mcp-config.js";
 import { saveConfig } from "../lib/config.js";
 import {
   createDefaultSettings,
@@ -167,6 +169,184 @@ export async function writeOpencodeCommands(
   }
 
   return written;
+}
+
+/**
+ * Claude Code tool name → opencode tool id.
+ *
+ * Only the tools the sequant agent definitions actually list. A Claude tool
+ * with no opencode counterpart is dropped rather than guessed at.
+ */
+const CLAUDE_TO_OPENCODE_TOOL: Readonly<Record<string, string>> = {
+  Read: "read",
+  Grep: "grep",
+  Glob: "glob",
+  Bash: "bash",
+  Write: "write",
+  Edit: "edit",
+  Task: "task",
+  WebFetch: "webfetch",
+  TodoWrite: "todowrite",
+};
+
+/**
+ * opencode tools that mutate the workspace.
+ *
+ * When a Claude def carries a `tools` allowlist, every mutating tool absent
+ * from it is written as an explicit `false` rather than left unset. opencode
+ * derives `permission` from this map, so an omission is an allow.
+ */
+const OPENCODE_MUTATING_TOOLS = ["bash", "edit", "write", "patch"] as const;
+
+/** Subset of a Claude agent definition's frontmatter that translates. */
+interface ClaudeAgentFrontmatter {
+  name?: string;
+  description?: string;
+  maxTurns?: number;
+  tools?: string[];
+}
+
+/**
+ * Translate one Claude agent definition into an opencode agent definition.
+ *
+ * Translate, never mirror — the same rationale as `command.md`. A fourth
+ * hand-maintained tree is how the three skill dirs drifted.
+ *
+ * Frontmatter mapping, verified at $0 against opencode 1.18.27 with
+ * `opencode debug agent <name>`:
+ * - `mode: subagent` marks it non-primary.
+ * - `steps` ← `maxTurns`. (`steps` and `maxSteps` both resolve to `steps`;
+ *   do not "correct" one to the other.)
+ * - `tools` ← the Claude allowlist. opencode auto-derives `permission` from
+ *   this map, so writing `tools` satisfies "permission from tools" without
+ *   hand-authoring both.
+ *
+ * `AgentConfig` has an open index signature, so opencode silently accepts a
+ * misspelled key as inert. `grep -c 'mode: subagent'` therefore cannot tell a
+ * working def from a dead one — `opencode debug agent` is the real gate.
+ *
+ * @internal Exported for testing.
+ */
+export function translateAgentDefinition(source: string): string {
+  const match = source.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!match) {
+    throw new Error("agent definition has no YAML frontmatter");
+  }
+
+  const fm = (parseYaml(match[1]) ?? {}) as ClaudeAgentFrontmatter;
+  const body = match[2];
+
+  const lines: string[] = ["---"];
+  if (fm.description) {
+    lines.push(`description: ${JSON.stringify(fm.description)}`);
+  }
+  lines.push("mode: subagent");
+  if (typeof fm.maxTurns === "number") {
+    lines.push(`steps: ${fm.maxTurns}`);
+  }
+
+  // A def with no `tools` key allows everything in Claude Code; preserve that
+  // rather than inventing a narrower allowlist than the original.
+  if (Array.isArray(fm.tools) && fm.tools.length > 0) {
+    const allowed = new Set(
+      fm.tools
+        .map((t) => CLAUDE_TO_OPENCODE_TOOL[t])
+        .filter((t): t is string => t !== undefined),
+    );
+    const denied = OPENCODE_MUTATING_TOOLS.filter((t) => !allowed.has(t));
+
+    lines.push("tools:");
+    for (const tool of [...allowed].sort()) lines.push(`  ${tool}: true`);
+    for (const tool of denied) lines.push(`  ${tool}: false`);
+  }
+  lines.push("---");
+
+  return `${lines.join("\n")}\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+}
+
+/**
+ * Write opencode subagent definitions translated from `templates/agents/`
+ * (#996 AC-3).
+ *
+ * Three defs, not four: `sequant-explorer` was deleted in #927 (0 spawns
+ * measured across 169 `/spec` runs; the role is covered by the built-in
+ * explore agent), so writing a fourth would invent a def with no Claude-side
+ * counterpart — precisely the drift this translation avoids.
+ */
+export async function writeOpencodeAgents(targetDir = "."): Promise<string[]> {
+  const agentsDir = join(targetDir, ".opencode/agents");
+  await ensureDir(agentsDir);
+
+  const written: string[] = [];
+  for (const name of OPENCODE_AGENT_NAMES) {
+    const source = await getTemplateContent(`templates/agents/${name}.md`);
+    await writeFile(join(agentsDir, `${name}.md`), translateAgentDefinition(source));
+    written.push(name);
+  }
+
+  return written;
+}
+
+/** The sequant agent definitions translated for opencode (#996 AC-3). */
+export const OPENCODE_AGENT_NAMES = [
+  "sequant-implementer",
+  "sequant-qa-checker",
+  "sequant-testgen",
+] as const;
+
+/**
+ * Install the hook shim plugin (#996 AC-1).
+ *
+ * Uses opencode's singular `plugin/` directory. Both `plugin/` and `plugins/`
+ * load (verified on 1.18.27); singular is opencode's own convention, and
+ * doctor accepts either so a hand-placed plural copy is not reported missing.
+ *
+ * The plugin must be **committed**. `.opencode/` is untracked, and a git
+ * worktree only carries tracked files — so an uncommitted plugin means every
+ * worktree phase runs unguarded, which doctor (running in the main checkout)
+ * cannot see. The driver preflight is what catches that at run time.
+ */
+export async function writeOpencodePlugin(targetDir = "."): Promise<string> {
+  const pluginDir = join(targetDir, ".opencode/plugin");
+  await ensureDir(pluginDir);
+
+  const body = await getTemplateContent(
+    "templates/opencode/plugins/sequant-hooks.ts",
+  );
+  const target = join(pluginDir, "sequant-hooks.ts");
+  await writeFile(target, body);
+
+  return target;
+}
+
+/**
+ * Merge sequant's MCP entry into `.opencode/opencode.json` (#996 AC-4).
+ *
+ * opencode uses a flat `mcp` key, not Claude Code's `mcpServers`. An existing
+ * config is preserved — only the `sequant` entry is written.
+ */
+export async function writeOpencodeMcpConfig(targetDir = "."): Promise<string> {
+  const configPath = join(targetDir, ".opencode/opencode.json");
+  await ensureDir(join(targetDir, ".opencode"));
+
+  let config: Record<string, unknown> = {};
+  if (await fileExists(configPath)) {
+    try {
+      config = JSON.parse(await readFile(configPath));
+    } catch {
+      // Corrupt or empty — start fresh rather than fail provisioning.
+      config = {};
+    }
+  }
+
+  const existing =
+    config.mcp && typeof config.mcp === "object" && !Array.isArray(config.mcp)
+      ? (config.mcp as Record<string, unknown>)
+      : {};
+  config.mcp = { ...existing, ...buildOpencodeMcpConfig() };
+
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  return configPath;
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -561,14 +741,26 @@ export async function initCommand(options: InitOptions): Promise<void> {
     opencodeSpinner.start();
     try {
       const phases = await writeOpencodeCommands();
+      const agents = await writeOpencodeAgents();
+      await writeOpencodePlugin();
+      await writeOpencodeMcpConfig();
       opencodeSpinner.succeed(
-        `Wrote ${phases.length} opencode command wrappers`,
+        `Wrote ${phases.length} opencode command wrappers, ${agents.length} subagent definitions, the hook shim plugin, and the MCP entry`,
       );
     } catch (err) {
       opencodeSpinner.fail(
-        `Could not write opencode command wrappers: ${(err as Error).message}`,
+        `Could not write opencode provisioning: ${(err as Error).message}`,
       );
     }
+
+    // The guards only reach a phase worktree if `.opencode/` is committed —
+    // git worktrees carry tracked files only.
+    console.log(
+      chalk.yellow(
+        "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
+          "    git add .opencode && git commit -m \"chore: add opencode provisioning\"",
+      ),
+    );
   }
 
   // Report symlink status
