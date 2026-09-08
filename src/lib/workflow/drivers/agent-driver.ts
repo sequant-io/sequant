@@ -30,6 +30,16 @@ export interface ResumeHandle {
  */
 export interface AgentExecutionConfig {
   cwd: string;
+  /**
+   * Phase name this prompt belongs to (e.g. "qa"), when the caller knows it.
+   *
+   * Drivers that dispatch phases by name rather than by prompt need this:
+   * opencode invokes `run --command <phase>`, where the command wrapper is the
+   * thing that loads the skill. Absent for ad-hoc prompts; ignored by drivers
+   * that only ever see the prompt text (claude-code, aider). Additive and
+   * optional by design — see #862.
+   */
+  phase?: string;
   env: Record<string, string>;
   abortSignal?: AbortSignal;
   phaseTimeout: number;
@@ -119,7 +129,26 @@ export interface AgentPhaseResult {
    * for this phase. Only set by SDK-based drivers (claude-code); undefined for
    * subprocess drivers (aider).
    */
-  modelUsage?: Record<string, unknown>;
+  modelUsage?: Record<string, ModelUsageEntry>;
+}
+
+/**
+ * One model's usage totals inside the SDK result's `modelUsage` map (#986).
+ *
+ * Mirrors the SDK's own field names verbatim so the map can be consumed
+ * without a translation layer at the driver boundary. Every field is optional:
+ * the SDK omits counters it has no value for, and a driver that synthesizes
+ * the map (tests, future backends) should not be forced to fabricate zeros.
+ *
+ * `costUSD` is the SDK's own estimate — see the "SDK estimate, not a billing
+ * statement" label `sequant stats` renders beside it.
+ */
+export interface ModelUsageEntry {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  costUSD?: number;
 }
 
 /**

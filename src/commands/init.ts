@@ -16,7 +16,11 @@ import {
   getPackageManagerCommands,
   STACKS,
 } from "../lib/stacks.js";
-import { copyTemplates, assertTemplatesDirExists } from "../lib/templates.js";
+import {
+  copyTemplates,
+  assertTemplatesDirExists,
+  getTemplateContent,
+} from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import {
@@ -24,6 +28,7 @@ import {
   generateSettingsReference,
 } from "../lib/settings.js";
 import { detectAndSaveConventions } from "../lib/conventions-detector.js";
+import { getPhaseNames } from "../lib/workflow/phase-registry.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
 import {
@@ -81,6 +86,11 @@ interface InitOptions {
   agentsMd?: boolean;
   mcp?: boolean;
   upgradeSkills?: boolean;
+  /**
+   * Agent driver to provision for (#862). `opencode` additionally writes the
+   * per-phase command wrappers opencode needs to reach sequant's skills.
+   */
+  agent?: string;
 }
 
 /**
@@ -120,6 +130,43 @@ async function updateGitignore(): Promise<boolean> {
  */
 function logDefault(label: string, value: string): void {
   console.log(chalk.blue(`${label}: ${value} (default)`));
+}
+
+/**
+ * Write opencode's per-phase command wrappers (#862 AC-5).
+ *
+ * opencode exposes skills as a model-invoked *tool*, not as slash commands, so
+ * `/qa 123` does not resolve there the way it does in Claude Code. Each phase
+ * therefore needs a thin command whose body tells the model to load the
+ * matching sequant skill and run it against `$ARGUMENTS`.
+ *
+ * All of them render from one template — `templates/opencode/command.md` — so
+ * this does not become a fourth hand-mirrored tree alongside the three skill
+ * dirs that have already drifted. The phase list comes from the registry, so a
+ * newly registered phase gets a wrapper without an edit here.
+ *
+ * This function is the single site that knows the output directory's name; the
+ * template deliberately contains no such literal.
+ */
+export async function writeOpencodeCommands(
+  targetDir = ".",
+): Promise<string[]> {
+  // The one place this path literal appears (AC-5). Forward slashes are
+  // normalised by Node on every platform, so this stays a single source rather
+  // than a `join` that would hide the string from a drift grep.
+  const commandsDir = join(targetDir, ".opencode/commands");
+  await ensureDir(commandsDir);
+
+  const template = await getTemplateContent("templates/opencode/command.md");
+  const written: string[] = [];
+
+  for (const phase of getPhaseNames()) {
+    const body = template.replaceAll("{{PHASE}}", phase);
+    await writeFile(join(commandsDir, `${phase}.md`), body);
+    written.push(phase);
+  }
+
+  return written;
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -506,6 +553,23 @@ export async function initCommand(options: InitOptions): Promise<void> {
   );
 
   templatesSpinner.succeed("Copied templates");
+
+  // #862: opencode reaches sequant's skills through per-phase command
+  // wrappers, so provision them when the user initialises for that driver.
+  if (options.agent === "opencode") {
+    const opencodeSpinner = ui.spinner("Writing opencode command wrappers...");
+    opencodeSpinner.start();
+    try {
+      const phases = await writeOpencodeCommands();
+      opencodeSpinner.succeed(
+        `Wrote ${phases.length} opencode command wrappers`,
+      );
+    } catch (err) {
+      opencodeSpinner.fail(
+        `Could not write opencode command wrappers: ${(err as Error).message}`,
+      );
+    }
+  }
 
   // Report symlink status
   if (scriptsSymlinked) {

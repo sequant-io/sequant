@@ -18,6 +18,7 @@ import {
   PhaseResult,
   QaVerdict,
   PhasePauseHandle,
+  PhaseUsage,
 } from "./types.js";
 import type { QaSummary } from "./run-log-schema.js";
 import { parseQaGapsMarker } from "./qa-gaps-marker.js";
@@ -27,6 +28,7 @@ import type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ModelUsageEntry,
   ResumeHandle,
 } from "./drivers/index.js";
 import { classifyError } from "./error-classifier.js";
@@ -1118,6 +1120,24 @@ export async function getPhasePrompt(
 }
 
 /**
+ * Resolve the driver name for display, without spawning anything (#862 AC-3).
+ *
+ * Falls back to the configured string when the name is unknown so a dry run
+ * still prints a plan rather than throwing — the real `getDriver` call on the
+ * execution path reports the unknown-driver error.
+ */
+function resolveDriverName(config: ExecutionConfig): string {
+  try {
+    return getDriver(config.agent, {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+    }).name;
+  } catch {
+    return `${config.agent} (unknown driver)`;
+  }
+}
+
+/**
  * Execute a single phase for an issue using the configured AgentDriver.
  */
 async function executePhase(
@@ -1139,6 +1159,14 @@ async function executePhase(
   );
 
   if (config.dryRun) {
+    // #862 AC-3: name the resolved driver unconditionally. A dry run is the
+    // plan preview, and which backend would execute the phase is part of the
+    // plan — gating it on --verbose made `--agent opencode --dry-run` print a
+    // plan indistinguishable from a claude-code one.
+    bracketedConsoleLog(
+      spinner,
+      chalk.gray(`    Driver: ${resolveDriverName(config)}`),
+    );
     // Dry run - show the prompt that would be sent, then return
     if (config.verbose) {
       bracketedConsoleLog(
@@ -1301,6 +1329,7 @@ async function executePhase(
   // across phases.
   const driver: AgentDriver = getDriver(config.agent, {
     aiderSettings: config.aiderSettings,
+    opencodeSettings: config.opencodeSettings,
   });
 
   const eligibleHandle =
@@ -1318,6 +1347,7 @@ async function executePhase(
   // Build AgentExecutionConfig for the driver
   const agentConfig: AgentExecutionConfig = {
     cwd,
+    phase,
     env,
     abortSignal: abortController.signal,
     phaseTimeout: config.phaseTimeout,
@@ -1385,22 +1415,50 @@ async function executePhase(
     ? Object.keys(agentResult.modelUsage)[0]
     : undefined;
 
+  // #986: the same map also carries the tokens and the SDK's cost estimate.
+  // Normalize the whole map — not just its first key — so a phase that
+  // dispatched more than one model reports every one of them.
+  const usage = normalizeModelUsage(agentResult.modelUsage);
+
+  const enrich = <T extends PhaseResult>(result: T): T => ({
+    ...result,
+    ...(resolvedModel ? { resolvedModel } : {}),
+    // Attached on both paths: a failed phase still spent its tokens.
+    ...(usage.length > 0 ? { usage } : {}),
+  });
+
   if (agentResult.success) {
-    const result = mapAgentSuccessToPhaseResult(
-      phase,
-      agentResult,
-      durationSeconds,
-      cwd,
+    return enrich(
+      mapAgentSuccessToPhaseResult(phase, agentResult, durationSeconds, cwd),
     );
-    return resolvedModel ? { ...result, resolvedModel } : result;
   }
 
-  const result = mapAgentFailureToPhaseResult(
-    phase,
-    agentResult,
-    durationSeconds,
+  return enrich(
+    mapAgentFailureToPhaseResult(phase, agentResult, durationSeconds),
   );
-  return resolvedModel ? { ...result, resolvedModel } : result;
+}
+
+/**
+ * Normalize the driver's `modelUsage` map into flat {@link PhaseUsage} rows (#986).
+ *
+ * One row per model key, in map order (the first key is the primary model —
+ * the same one #975's `resolvedModel` records). Missing counters become `0`
+ * rather than `undefined` so the orchestrator can sum without guards.
+ *
+ * @internal Exported for testing only.
+ */
+export function normalizeModelUsage(
+  modelUsage: Record<string, ModelUsageEntry> | undefined,
+): PhaseUsage[] {
+  if (!modelUsage) return [];
+  return Object.entries(modelUsage).map(([model, entry]) => ({
+    model,
+    inputTokens: entry?.inputTokens ?? 0,
+    outputTokens: entry?.outputTokens ?? 0,
+    cacheReadTokens: entry?.cacheReadInputTokens ?? 0,
+    cacheCreationTokens: entry?.cacheCreationInputTokens ?? 0,
+    costUSD: entry?.costUSD ?? 0,
+  }));
 }
 
 /**

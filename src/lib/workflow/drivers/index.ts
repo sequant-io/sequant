@@ -6,24 +6,28 @@
  */
 
 import type { AgentDriver } from "./agent-driver.js";
-import type { AiderSettings } from "../../settings.js";
+import type { AiderSettings, OpencodeSettings } from "../../settings.js";
 import { ClaudeCodeDriver } from "./claude-code.js";
 import { AiderDriver } from "./aider.js";
+import { OpencodeDriver } from "./opencode.js";
 
 export type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ModelUsageEntry,
   ResumeHandle,
 } from "./agent-driver.js";
 
 const DRIVERS: Record<string, (opts?: DriverOptions) => AgentDriver> = {
   "claude-code": () => new ClaudeCodeDriver(),
   aider: (opts) => new AiderDriver(opts?.aiderSettings),
+  opencode: (opts) => new OpencodeDriver(opts?.opencodeSettings),
 };
 
 export interface DriverOptions {
   aiderSettings?: AiderSettings;
+  opencodeSettings?: OpencodeSettings;
 }
 
 /**

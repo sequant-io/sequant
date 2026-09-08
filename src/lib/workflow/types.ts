@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import type { AiderSettings } from "../settings.js";
+import type { AiderSettings, OpencodeSettings } from "../settings.js";
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
@@ -147,6 +147,11 @@ export interface ExecutionConfig {
    * Aider-specific configuration. Passed to AiderDriver when agent is "aider".
    */
   aiderSettings?: AiderSettings;
+  /**
+   * opencode-specific configuration. Passed to OpencodeDriver when agent is
+   * "opencode" (#862).
+   */
+  opencodeSettings?: OpencodeSettings;
   /**
    * Issue type detected from labels (e.g., "docs").
    * Propagated as SEQUANT_ISSUE_TYPE env var to skills.
@@ -342,6 +347,37 @@ export interface PhaseResult {
    * distinct from the configured alias. Used to populate metrics `phasePolicies`.
    */
   resolvedModel?: string;
+  /**
+   * Per-model token and cost totals for this phase execution (#986),
+   * normalized from the SDK `modelUsage` map the driver returns. One row per
+   * model key — a phase that dispatched a subagent on a second model produces
+   * two rows. Absent for drivers that report no `modelUsage` (aider,
+   * subprocess), which is what makes the hook-written token files a fallback
+   * rather than a competing source.
+   *
+   * Set on both the success and failure paths: a phase that failed still
+   * burned the tokens it burned.
+   */
+  usage?: PhaseUsage[];
+}
+
+/**
+ * Normalized per-model usage for one phase execution (#986).
+ *
+ * Deliberately flat and free of phase identity: the phase name is added by
+ * `run-orchestrator.recordMetrics`, which is the layer that knows the
+ * execution order and can therefore keep quality-loop retries as separate
+ * rows rather than merging them by phase name.
+ */
+export interface PhaseUsage {
+  /** Concrete model ID, e.g. `"claude-sonnet-5"` — the `modelUsage` key. */
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
+  /** SDK cost estimate in USD. Not a billing statement. */
+  costUSD: number;
 }
 
 /**

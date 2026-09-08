@@ -13,6 +13,7 @@ import {
   DEFAULT_SETTINGS,
   generateSettingsJsonc,
   stripJsoncComments,
+  validateOpencodeSettings,
   type SequantSettings,
 } from "../src/lib/settings.js";
 
@@ -227,6 +228,70 @@ describe("AC-2: getSettingsWithWarnings()", () => {
       process.chdir(originalCwd);
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+});
+
+// #862: run.opencode settings surface (AC-3a derived)
+
+describe("862 AC-3a: run.opencode settings surface", () => {
+  it("862 AC-3a accepts a fully-populated run.opencode with no warnings", () => {
+    const { settings, warnings } = validateSettings({
+      run: {
+        agent: "opencode",
+        opencode: {
+          model: "openrouter/anthropic/claude-sonnet-5",
+          variant: "thorough",
+          extraArgs: ["--log-level", "debug"],
+          reasoningMaxTokens: 20000,
+        },
+      },
+    });
+
+    // A field added to the interface and schema but missing from KNOWN_KEYS
+    // surfaces as an unknown-key warning on every load.
+    expect(warnings).toEqual([]);
+    expect(settings.run.opencode?.reasoningMaxTokens).toBe(20000);
+  });
+
+  it("862 AC-3a warns on an unknown nested run.opencode key", () => {
+    const { warnings } = validateSettings({
+      run: { opencode: { modle: "x" } },
+    });
+    const unknown = warnings.find((w) => w.message.includes("modle"));
+    expect(unknown).toBeDefined();
+    expect(unknown!.message).toContain("Unknown key");
+  });
+
+  it("862 AC-3a validateOpencodeSettings rejects bad types at load time", () => {
+    expect(validateOpencodeSettings(undefined)).toBeUndefined();
+    expect(validateOpencodeSettings({ model: "x" })).toEqual({ model: "x" });
+    expect(() => validateOpencodeSettings([])).toThrow(/must be an object/);
+    expect(() => validateOpencodeSettings({ model: 1 })).toThrow(
+      /model must be a string/,
+    );
+    expect(() => validateOpencodeSettings({ variant: 1 })).toThrow(
+      /variant must be a string/,
+    );
+    expect(() => validateOpencodeSettings({ extraArgs: "x" })).toThrow(
+      /array of strings/,
+    );
+    expect(() => validateOpencodeSettings({ reasoningMaxTokens: 0 })).toThrow(
+      /positive number/,
+    );
+    expect(() =>
+      validateOpencodeSettings({ reasoningMaxTokens: "20000" }),
+    ).toThrow(/positive number/);
+  });
+
+  it("862 AC-3a documents run.opencode in the generated settings reference", async () => {
+    const { generateSettingsReference } =
+      await import("../src/lib/settings.js");
+    const reference = generateSettingsReference();
+    expect(reference).toContain("`run.opencode`");
+    expect(reference).toContain("reasoningMaxTokens");
+    // The agent row must list the new driver, or the docs claim it is
+    // unsupported while the registry accepts it.
+    expect(reference).toContain('`"opencode"`');
   });
 });
 

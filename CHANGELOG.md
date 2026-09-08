@@ -10,8 +10,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`claude plugin eval` cases for `/qa`, `/spec` and `/assess` output contracts, plus a null-run canary and fixture gates (#993).** `evals/qa-trust-boundary`, `evals/spec-ac-parse` and `evals/assess-dashboard` grade only surfaces each skill emits unprompted (the Trust-Boundary Check section, the `SEQUANT_QA_GAPS` trailer, the plan's own AC-1 restatement, the batch `assess:action` markers) against real regression fixtures (#819's injection fixture, #938's fenced-AC-decoy body, two verbatim issue bodies). `evals/null-run-canary` proves the grader set isn't vacuous — a do-nothing prompt and an 8-line skill stub both score red. `__tests__/evals-fixture-commit.test.ts` rejects any recorded result whose `fixture_commit` isn't an ancestor of HEAD, and `__tests__/evals-fixture-payload.test.ts` fails if a case's fixture payload is deleted.
+- **opencode agent driver — the first backend that inherits sequant's full skill
+  methodology (#862).** `sequant run <n> --agent opencode` dispatches every
+  phase through `opencode run --command <phase> … --format json --auto`, where a
+  per-phase `.opencode/commands/<phase>.md` wrapper (written by
+  `sequant init --agent opencode` from one template) tells the model to load the
+  matching `.claude/skills/<phase>/SKILL.md`. Unlike the aider driver, which
+  runs degraded inline prompts, opencode reads the same skill tree — so
+  `resolvesSkills` stays true and the #813 preflight applies unchanged.
+  - The NDJSON parser was built against a recorded real run (#992), not the
+    docs: chunk-safe line assembly (single lines reach 100 KB), tool names at
+    `part.tool`, and per-step `step_finish.cost` summed rather than read last.
+  - A phase fails distinctly when its skill demonstrably never loaded
+    (`skill-not-loaded`), or when opencode's skill tool truncated the SKILL.md
+    body and the model never paged through the remainder (`skill-truncated`).
+    Truncation alone is not fatal — every sequant skill exceeds opencode's
+    in-band cap.
+  - Exit 0 with no terminal `step_finish reason: "stop"` is reported as a
+    failure, not a success: that is how a clamped or hung step presents, and it
+    sums to $0.00 under per-step cost accounting.
+  - Spawn hardening from the same investigation: own process group with
+    group-kill on timeout/abort, a per-run `XDG_CONFIG_HOME` (the only hermetic
+    isolation from a global `opencode.jsonc`), and an optional per-model
+    reasoning budget via `OPENCODE_CONFIG_CONTENT`.
+  - New settings: `run.opencode.{model, variant, extraArgs, reasoningMaxTokens}`.
+    `sequant doctor` checks the binary and a pinned `1.18.27` floor when
+    `run.agent` is `opencode`.
+- `sequant init --agent <name>` selects the agent driver to provision for
+  (#862). `opencode` additionally writes the `.opencode/` command wrappers.
+
+### Changed
+
+- `sequant run --dry-run` now names the resolved agent driver in its plan
+  unconditionally (#862). It was previously printed only under `--verbose`, so a
+  dry run with `--agent opencode` was indistinguishable from a claude-code one.
 
 ### Fixed
+
+- **`metrics.tokensUsed` is no longer 0 on every recorded run (#986).** Two
+  independent defects each produced zeros on their own. The `SessionEnd` hook
+  extracted `.usage` from the transcript JSONL, but Claude Code transcripts
+  carry usage at `.message.usage` — the old path matched zero lines on every
+  real transcript. And `run` read the resulting files from the main checkout's
+  `.sequant/` while the hook writes into the phase agent's worktree, so the
+  only files it ever saw were the user's own interactive sessions (which were
+  zeros too). Tokens and cost now come primarily from the SDK's `modelUsage`
+  map, which the driver already returned and the pipeline discarded; the hook
+  path remains as a fallback for drivers that report no usage (aider,
+  subprocess), read through one worktree-anchored helper shared by `run` and
+  the `--ready-gate` budget check. Failed phases count too: the driver
+  previously returned `modelUsage` only on the success path, so an agent that
+  errored, hit its turn cap, or blew its budget reported zero tokens and zero
+  cost — the three shapes most worth seeing, since a capped agent ran to its
+  full turn ceiling and a budget failure is by definition the most expensive
+  outcome.
+- **`capture-tokens.sh` no longer over-counts by re-emitted messages (#986).**
+  Streaming and compaction repeat the same assistant message across transcript
+  lines (55 usage-bearing lines, 29 unique `message.id` on a live transcript);
+  usage is now deduped by `message.id` before summing. The hook also moved from
+  `.claude/hooks/` into `templates/hooks/` and the plugin `hooks/` dir with a
+  `SessionEnd` registration, so consumer projects and plugin users get the
+  fallback instead of a path that only ever worked in this repo.
 
 - **Tautology detector no longer flags subprocess-driven tests whose spawn path
   is constructed rather than spelled out (#956).** The build-output heuristic
@@ -80,6 +139,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behaviour that the user never asked for (#863). `ready-gate.ts` built each
   gate phase's `ExecutionConfig` from its own literal, so `agent` and
   `aiderSettings` never reached driver selection.
+
+### Added
+
+- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
+  default beside the token panel and labeled "SDK estimate, not a billing
+  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
+  rows rather than merged, and records written before this existed render with
+  `—` for the fields they lack rather than a fabricated `$0.00`.
 
 ### Changed
 

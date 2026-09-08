@@ -8,8 +8,10 @@
  * in PR #649, every file present in `templates/hooks/` MUST be byte-identical
  * to its `.claude/hooks/` counterpart — there is no allowed divergence.
  *
- * `.claude/hooks/` MAY contain extra files that templates don't have (e.g.
- * `capture-tokens.sh`, which is sequant-specific and intentionally local).
+ * `.claude/hooks/` MAY contain extra files that templates don't have. As of
+ * #986 there are none: `capture-tokens.sh`, previously the one intentionally
+ * local hook, was promoted into `templates/hooks/` so consumer projects and
+ * plugin users get the token-usage fallback too.
  *
  * Run `npm run sync-hooks` to regenerate `.claude/hooks/` from the
  * templates after editing any template hook.

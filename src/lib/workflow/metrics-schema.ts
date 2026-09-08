@@ -54,6 +54,31 @@ export const MetricPhaseSchema = z.enum([
 export type MetricPhase = z.infer<typeof MetricPhaseSchema>;
 
 /**
+ * One phase execution's usage on one model (#986).
+ *
+ * Rows are emitted in `phaseResults` order and are deliberately NOT keyed by
+ * phase name: a quality-loop retry is a second execution of the same phase and
+ * must stay a second row. Phase names, model IDs and numbers only — consistent
+ * with this schema's no-file-paths/no-content privacy contract.
+ */
+export const PhaseUsageSchema = z.object({
+  /** Phase name, e.g. `"exec"`. Free-form rather than `MetricPhaseSchema` so a
+   * phase added to the runtime before this enum cannot fail schema validation
+   * at write time. */
+  phase: z.string(),
+  /** Concrete model ID from the SDK `modelUsage` map, e.g. `"claude-sonnet-5"`. */
+  model: z.string(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  cacheReadTokens: z.number().int().nonnegative(),
+  cacheCreationTokens: z.number().int().nonnegative(),
+  /** SDK cost estimate in USD. Not `.int()` — see `RunMetricsSchema.costUSD`. */
+  costUSD: z.number().nonnegative(),
+});
+
+export type PhaseUsage = z.infer<typeof PhaseUsageSchema>;
+
+/**
  * Aggregate metrics for a run
  * Note: No file paths or code content - only aggregate counts
  */
@@ -74,6 +99,20 @@ export const RunMetricsSchema = z.object({
   outputTokens: z.number().int().nonnegative().optional(),
   /** Cache tokens (creation + read) (AC-4 token breakdown) */
   cacheTokens: z.number().int().nonnegative().optional(),
+  /**
+   * SDK cost estimate in USD for the whole run (#986), summed from the
+   * driver's `modelUsage`. Deliberately NOT `.int()` — real costs are
+   * fractions of a dollar, and an int constraint would reject every real
+   * record at write time. Optional and additive: absent on records written
+   * before this field existed, and on runs whose driver reports no cost.
+   */
+  costUSD: z.number().nonnegative().optional(),
+  /**
+   * Per-phase-execution × model usage breakdown (#986). Omitted entirely
+   * (not an empty array) when no phase reported usage, matching the
+   * `phasePolicies`/`effortEscalations` omit-when-empty convention.
+   */
+  phaseUsage: z.array(PhaseUsageSchema).optional(),
 });
 
 export type RunMetrics = z.infer<typeof RunMetricsSchema>;
@@ -253,6 +292,13 @@ export function createMetricRun(options: {
       inputTokens: options.metrics?.inputTokens,
       outputTokens: options.metrics?.outputTokens,
       cacheTokens: options.metrics?.cacheTokens,
+      // #986: this block copies fields one at a time, so a field added to
+      // `RunMetricsSchema` but not here is silently dropped and lands as
+      // `undefined` — the same shape as the zeros bug this issue fixes.
+      costUSD: options.metrics?.costUSD,
+      ...(options.metrics?.phaseUsage && options.metrics.phaseUsage.length > 0
+        ? { phaseUsage: options.metrics.phaseUsage }
+        : {}),
     },
   };
 }

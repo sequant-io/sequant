@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "id": "9f6a1e40-2b4d-4a1e-9d7c-1f2e3a4b5c6d",
+      "date": "2026-09-08T04:00:00.000Z",
+      "issues": [
+        986
+      ],
+      "phases": [
+        "exec",
+        "qa",
+        "loop"
+      ],
+      "outcome": "success",
+      "duration": 600,
+      "model": "opus",
+      "flags": [
+        "--quality-loop"
+      ],
+      "metrics": {
+        "tokensUsed": 92356,
+        "filesChanged": 9,
+        "linesAdded": 512,
+        "acceptanceCriteria": 7,
+        "qaIterations": 1,
+        "inputTokens": 44771,
+        "outputTokens": 47585,
+        "cacheTokens": 2316899,
+        "costUSD": 12.339517,
+        "phaseUsage": [
+          {
+            "phase": "exec",
+            "model": "claude-fable-5",
+            "inputTokens": 326,
+            "outputTokens": 38515,
+            "cacheReadTokens": 2000172,
+            "cacheCreationTokens": 316727,
+            "costUSD": 10.263722
+          },
+          {
+            "phase": "exec",
+            "model": "claude-haiku-4-5-20251001",
+            "inputTokens": 40445,
+            "outputTokens": 3070,
+            "cacheReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "costUSD": 0.075795
+          },
+          {
+            "phase": "qa",
+            "model": "claude-opus-5",
+            "inputTokens": 1000,
+            "outputTokens": 2000,
+            "cacheReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "costUSD": 0.5
+          },
+          {
+            "phase": "qa",
+            "model": "claude-opus-5",
+            "inputTokens": 3000,
+            "outputTokens": 4000,
+            "cacheReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "costUSD": 1.5
+          }
+        ]
+      }
+    }
+  ]
+}
