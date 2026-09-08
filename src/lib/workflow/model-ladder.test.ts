@@ -378,11 +378,21 @@ describe("971 AC-3: advancing SHAs with repeated QA failure never change the mod
 
     const result = await runReadyGate(opts);
 
-    expect(result.iterations).toBe(3);
+    // #995 supersedes #971's expectation here, by design rather than by
+    // accident. Under #971 this ran its full 3-iteration budget and stopped at
+    // MAX_ITERATIONS; #995 AC-3 adds the halt, so the SECOND consecutive
+    // divergence-suspect pass now terminates the gate with an evidence bundle.
+    // MAX_ITERATIONS would have sent the human to raise a cap that was never
+    // the constraint.
+    //
+    // What this AC actually asserts — that advancing SHAs never buy a rung —
+    // is unchanged and still checked below.
+    expect(result.iterations).toBe(2);
+    expect(result.reason).toBe("DIVERGENCE_SUSPECT");
     // Every dispatch, qa and loop alike, ran on the unescalated model.
     expect(dispatched.every((d) => d.model === undefined)).toBe(true);
     expect(result.modelEscalations).toEqual([]);
-    expect(result.reason).toBe("MAX_ITERATIONS");
+    expect(result.haltBundle).toContain("(empty — no model rung was spent)");
   });
 
   it("the trigger detector calls advancing-SHA failure divergence-suspect, not capability-bound", () => {

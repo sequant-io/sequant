@@ -272,6 +272,37 @@ When the marker is absent this is a byte-identical pass-through, so unmarked QA 
 - AC not met
 - Specific issues identified
 
+### When the spec is impossible as written
+
+Sometimes an acceptance criterion cannot be satisfied by any implementation:
+it contradicts itself (a file must both exist and not exist), it contradicts
+another AC, or it contradicts the repository as it actually exists. **Do not
+guess at what was meant, and do not implement the half you can.** Declare it
+and stop:
+
+```markdown
+<!-- SEQUANT_loop: {"phase":"loop","status":"failed","timestamp":"<ISO-8601>","outcome":"SPEC_DIVERGENCE","divergenceAcs":"AC-2","error":"AC-2 requires the file to both exist and not exist"} -->
+```
+
+- `divergenceAcs` — the AC IDs you found impossible, comma-separated
+  (`"AC-2, AC-5"`). Name them; the halt output quotes this field, and an
+  unnamed AC leaves the human with nothing to reconcile.
+- `error` — one sentence on why it cannot be satisfied.
+- Keep the marker **flat**: no nested objects. The parser reads
+  `{...}` up to the first `}`, so a nested brace silently voids every marker
+  in the comment.
+
+Emitting `SPEC_DIVERGENCE` halts the run immediately. No retry is dispatched
+and no model escalation is spent — a stronger model cannot resolve a
+contradiction in the criteria, it only rediscovers it more expensively. This
+is the intended, cheap outcome for a diverging spec, not a failure on your
+part.
+
+**Do not** use it for work that is merely hard, underspecified, or blocked on
+a dependency. Underspecified is a judgment call you should make and record;
+blocked is a note in the progress update. `SPEC_DIVERGENCE` means *no
+implementation can satisfy this as written*.
+
 ### Step 4: Locate Feature Worktree
 
 **If orchestrated (SEQUANT_WORKTREE is set):**
