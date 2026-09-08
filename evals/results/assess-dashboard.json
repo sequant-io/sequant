@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.263",
+  "startedAt": "2026-09-08T05:56:32.434Z",
+  "durationSeconds": 144,
+  "costUsd": 0.7986985,
+  "partial": false,
+  "suite": {
+    "root": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu",
+    "ablation": "with-without",
+    "caseFilter": "assess-dashboard",
+    "threshold": 1,
+    "plugins": [
+      {
+        "name": "sequant",
+        "version": "2.13.1",
+        "path": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "assess-dashboard",
+      "dir": "evals/assess-dashboard",
+      "source": "case_yaml",
+      "promptMarkdown": "Use the assess skill to triage the two issues in this repository,\nwhose bodies are in ISSUE-686.md (issue #686) and ISSUE-750.md\n(issue #750).",
+      "runsPerCase": 1,
+      "timeoutSeconds": 600,
+      "maxTurns": 20,
+      "graders": [
+        {
+          "name": "batch-action-markers",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": "last_message",
+            "pattern": "<!-- #(686|750) assess:action=(PROCEED|CLOSE|MERGE|REWRITE|CLARIFY|PARK)",
+            "flags": "",
+            "match": "count:2"
+          }
+        },
+        {
+          "name": "skill-fired",
+          "type": "tool_used",
+          "weight": 1,
+          "config": {
+            "tool": "Skill",
+            "min": 1,
+            "arm": "with-only"
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 1,
+            "passed": true,
+            "turns": 11,
+            "costUsd": 0.5766225,
+            "judgeCostUsd": 0,
+            "durationSeconds": 97,
+            "startedAt": "2026-09-08T05:56:32.471Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-oLmc24/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "batch-action-markers",
+                "passed": true,
+                "weight": 1,
+                "explanation": "found 2 matches (expected 2)",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "skill-fired",
+                "passed": true,
+                "weight": 1,
+                "explanation": "Skill called 1x (expected 1..\u221e)",
+                "withOnly": true,
+                "scored": false
+              }
+            ]
+          }
+        ],
+        "without": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 10,
+            "costUsd": 0.222076,
+            "judgeCostUsd": 0,
+            "durationSeconds": 47,
+            "startedAt": "2026-09-08T05:58:09.438Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-xoh8yz/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "batch-action-markers",
+                "passed": false,
+                "weight": 1,
+                "explanation": "found 0 matches (expected 2)",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 1,
+        "passRate": 1,
+        "scoreWithout": 0,
+        "passRateWithout": 0,
+        "delta": 1
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 1,
+    "overallScore": 1,
+    "overallPassRate": 1,
+    "meanDelta": 1
+  },
+  "fixture_commit": "8b984fd04ecce15c42f26cd54da92c90e45edde8"
+}
