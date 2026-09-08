@@ -8,7 +8,13 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import * as childProcess from "child_process";
@@ -576,7 +582,11 @@ describe("862 AC-8 — #992 mitigations applied to the spawn", () => {
     expect(payload).not.toContain("permission");
     expect(payload).not.toContain("/tmp");
     expect(payload).not.toContain("TMPDIR");
-    expect(args.join(" ")).not.toContain("/tmp");
+    // `--dir <cwd>` legitimately carries the phase worktree, and this suite's
+    // fixture worktree is an mkdtemp under $TMPDIR (`/tmp` on Linux CI). Drop
+    // that one value rather than the whole argv, so a /tmp rule injected
+    // anywhere else in the arguments still fails this assertion.
+    expect(args.filter((a) => a !== SHIM_CWD).join(" ")).not.toContain("/tmp");
   });
 });
 
@@ -648,8 +658,10 @@ describe("862 OpencodeDriver — missing binary", () => {
 describe("862 P1 errors", () => {
   it("maps an NDJSON error event to the stream-error class", () => {
     const parsed = parse(
-      JSON.stringify({ type: "error", error: { message: "upstream exploded" } }) +
-        "\n",
+      JSON.stringify({
+        type: "error",
+        error: { message: "upstream exploded" },
+      }) + "\n",
       "qa",
     );
     const result = evaluateOpencodeRun(parsed, {
@@ -717,7 +729,10 @@ describe("862 P1 hooks preflight", () => {
     const bare = mkdtempSync(join(tmpdir(), "sequant-opencode-noshim2-"));
     const spawnSpy = vi.spyOn(childProcess, "spawn");
     try {
-      await new OpencodeDriver().executePhase("hello", baseConfig({ cwd: bare }));
+      await new OpencodeDriver().executePhase(
+        "hello",
+        baseConfig({ cwd: bare }),
+      );
       // Fail closed means fail *before* spending the phase.
       expect(spawnSpy).not.toHaveBeenCalled();
     } finally {
@@ -791,7 +806,10 @@ describe("862 P1 hooks preflight — load handshake", () => {
     // would look unguarded, or (worse, if the driver's copy were the loose
     // one) every run would look guarded.
     const shim = readFileSync(
-      join(__dirname, "../../../../templates/opencode/plugins/lib/sequant-hooks-core.ts"),
+      join(
+        __dirname,
+        "../../../../templates/opencode/plugins/lib/sequant-hooks-core.ts",
+      ),
       "utf-8",
     );
     expect(shim).toContain(`"${SHIM_LOADED_SENTINEL}"`);

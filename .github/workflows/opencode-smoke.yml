@@ -124,16 +124,24 @@ jobs:
         working-directory: /tmp/fixture
         run: opencode debug skill | head -40
 
-      - name: No provider secret in any committed file
+      - name: No provider secret in the generated .opencode tree
         run: |
           set -euo pipefail
-          # AC-6: the .opencode/ tree is meant to be committed, and
-          # getSequantMcpConfig injects a literal ANTHROPIC_API_KEY when handed
-          # a clientType — so this asserts the secret-free overload was used.
-          if git grep -nE '(sk-ant-|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{20,})' -- . ; then
-            echo "::error::possible secret in a committed file"
+          # AC-6. Scoped to what this PR actually generates and to the workflow
+          # files themselves. A repo-wide scan is the wrong gate: it matches
+          # placeholder keys in docs/features/ and, self-defeatingly, the very
+          # tests that assert a key is NOT serialized — so it fails loudest
+          # when the protection is working.
+          # The bracket classes are load-bearing: they match a real key while
+          # keeping this very line from matching itself, since the scan
+          # includes the workflow directory it lives in.
+          if grep -rnE '(sk[-]ant-|sk[-]or-v1-|ghp[_][A-Za-z0-9]{20,})' \
+              /tmp/fixture/.opencode .github/workflows; then
+            echo "::error::possible provider key in generated output or a workflow"
             exit 1
           fi
+          # getSequantMcpConfig injects a literal ANTHROPIC_API_KEY when handed
+          # a clientType, so this asserts the secret-free overload was used.
           if grep -rqE '"(env|environment)"' /tmp/fixture/.opencode/opencode.json; then
             echo "::error::opencode MCP entry carries an env block"
             exit 1
