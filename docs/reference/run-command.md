@@ -411,6 +411,14 @@ npx sequant ready 42 --escalate-effort
 
 **Observability:** an escalated execution prints `effort: <base> → <escalated> (...)` under `--verbose`, and run metrics (`.sequant/metrics.json`) record an `effortEscalations` entry (`phase`, `base`, `escalated`) for every execution that escalated — a sibling array to the per-phase `phasePolicies` metrics field, since escalation is a per-execution value while `phasePolicies` is a flat per-run map.
 
+### Model Escalation Ladder
+
+**Default: off** (#971/#995). `run.modelLadder` / `--model-ladder sonnet,opus` escalates a churning phase one *model* rung at a time — the next tier up from [effort escalation](#effort-escalation-on-retries), which remains the cheaper rung and is always spent first.
+
+The ladder climbs only on **capability-bound** churn (iterations that produced no diff at all). The opposite fingerprint — a new diff every iteration that QA keeps rejecting — is **spec-bound**, where a stronger model only rediscovers the contradiction more expensively; there the ladder halts instead of climbing. Three halts (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) each print an evidence bundle and end the run without merging.
+
+Full reference — configuration, the capability-vs-spec-bound distinction, the `SPEC_DIVERGENCE` escape hatch, cost model, and observability: **[Model Escalation Ladder](model-ladder.md)**.
+
 ### Chain Pre-flight
 
 Every `--chain` run of 2+ issues starts with a content pre-flight. It reads each
