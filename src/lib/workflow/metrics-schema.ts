@@ -74,6 +74,30 @@ export const PhaseUsageSchema = z.object({
   cacheCreationTokens: z.number().int().nonnegative(),
   /** SDK cost estimate in USD. Not `.int()` — see `RunMetricsSchema.costUSD`. */
   costUSD: z.number().nonnegative(),
+  /**
+   * Model-ladder escalation facts for the phase execution this row belongs to
+   * (#971 AC-10). Appended as optional COLUMNS on #986's existing row rather
+   * than as a second array: a parallel structure would have to be re-joined to
+   * these rows by phase name, and grouping by phase name is exactly what
+   * silently merges a quality-loop retry into its first attempt (the reason
+   * #986 keeps rows in `phaseResults` order).
+   *
+   * Absent on every non-escalated execution — which is every execution when no
+   * ladder is configured. Optional and additive: records written before #971
+   * still load (`stats.test.ts`'s pre-fix-record tests are the standing proof).
+   */
+  /** 0-based rung index the phase was dispatched at. */
+  ladderRung: z.number().int().nonnegative().optional(),
+  /** Model the phase would have run on without escalation. */
+  baseModel: z.string().optional(),
+  /** Model actually dispatched after escalation. */
+  escalatedModel: z.string().optional(),
+  /** Deterministic no-progress signal that bought the rung. */
+  escalationTrigger: z.string().optional(),
+  /** Pre-resolution ladder entry (`role:strong`), when a role was used (#975). */
+  requestedModel: z.string().optional(),
+  /** Set when the phase is on the last rung with nowhere left to go. */
+  topOfLadder: z.boolean().optional(),
 });
 
 export type PhaseUsage = z.infer<typeof PhaseUsageSchema>;
@@ -193,6 +217,40 @@ export const MetricRunSchema = z.object({
       }),
     )
     .optional(),
+  /**
+   * Model-rung escalations applied during this run (#971), one entry per
+   * dispatch that advanced a rung, from BOTH retry paths.
+   *
+   * This is not the "second array" #971's scope note rules out. That note
+   * governs the per-execution *facts* — rung/base/escalated/trigger — which
+   * are columns on the `phaseUsage` row (`PhaseUsageSchema`), joined to the
+   * tokens and cost that execution actually spent. This array is the
+   * run-level escalation LOG, and it exists because the ready-gate path
+   * produces no `phaseUsage` row at all: `runReadyGate`'s phase results are
+   * consumed inside the gate and never reach `IssueResult.phaseResults`,
+   * which is the only source those rows are built from. Without it, an
+   * escalation on `sequant ready --model-ladder` (or `run --ready-gate`)
+   * changes which model runs, spends the money, and records nothing.
+   *
+   * Deliberately the exact shape and lifecycle of `effortEscalations` above,
+   * which solved this same gate-path problem for #915 — mirroring a shipped
+   * precedent rather than inventing a second convention.
+   *
+   * Omitted entirely (not an empty array) when nothing escalated.
+   */
+  modelEscalations: z
+    .array(
+      z.object({
+        phase: z.string(),
+        rung: z.number().int().nonnegative(),
+        base: z.string(),
+        escalated: z.string(),
+        trigger: z.string(),
+        requestedModel: z.string().optional(),
+        topOfLadder: z.boolean().optional(),
+      }),
+    )
+    .optional(),
   /** Aggregate metrics */
   metrics: RunMetricsSchema,
 });
@@ -265,6 +323,21 @@ export function createMetricRun(options: {
    * a sibling array rather than an extension of `phasePolicies`.
    */
   effortEscalations?: Array<{ phase: string; base: string; escalated: string }>;
+  /**
+   * Model-rung escalations applied during this run (#971). Pass only
+   * dispatches that actually advanced a rung — see
+   * `MetricRunSchema.modelEscalations` for why the gate path needs this
+   * run-level log in addition to the `phaseUsage` row columns.
+   */
+  modelEscalations?: Array<{
+    phase: string;
+    rung: number;
+    base: string;
+    escalated: string;
+    trigger: string;
+    requestedModel?: string;
+    topOfLadder?: boolean;
+  }>;
   metrics?: Partial<RunMetrics>;
 }): MetricRun {
   return {
@@ -282,6 +355,9 @@ export function createMetricRun(options: {
       : {}),
     ...(options.effortEscalations && options.effortEscalations.length > 0
       ? { effortEscalations: options.effortEscalations }
+      : {}),
+    ...(options.modelEscalations && options.modelEscalations.length > 0
+      ? { modelEscalations: options.modelEscalations }
       : {}),
     metrics: {
       tokensUsed: options.metrics?.tokensUsed ?? 0,

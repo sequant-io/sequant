@@ -31,6 +31,15 @@ import {
   withEscalatedEffort,
   type EscalationRecord,
 } from "./effort-escalation.js";
+import {
+  withEscalatedModel,
+  createLadderState,
+  canEscalateFurther,
+  detectCapabilityBoundTrigger,
+  effectiveModelTrigger,
+  type EscalationTrigger,
+  type ModelEscalationRecord,
+} from "./model-ladder.js";
 import type {
   QaVerdict,
   GapFinding,
@@ -128,6 +137,13 @@ export interface ReadyResult {
    * `effortEscalation` is off or no dispatch escalated.
    */
   effortEscalations: EscalationRecord[];
+  /**
+   * Model-rung escalations applied during this gate's QA-pass loop (#971),
+   * one entry per dispatch that actually advanced a rung. Empty when no
+   * ladder is configured (the default) or when no dispatch escalated — a
+   * sticky re-application at an already-reached rung is not a new escalation.
+   */
+  modelEscalations: ModelEscalationRecord[];
 }
 
 /**
@@ -578,6 +594,18 @@ export async function runReadyGate(
   // #915: escalated (base, escalated) tiers, one entry per QA-pass dispatch
   // that actually escalated. Populated at the two dispatch sites below.
   const effortEscalations: EscalationRecord[] = [];
+  // #971: per-gate rung state. Stickiness lives here, not in the config —
+  // `buildPhaseConfig` runs once per dispatch and a rung baked into it would
+  // leak across phases (#915 AC-7's rationale).
+  const ladderState = createLadderState();
+  const modelEscalations: ModelEscalationRecord[] = [];
+  /**
+   * #971: the capability-bound trigger observed by the PREVIOUS iteration's
+   * fix loop, consumed by this iteration's dispatches. `null` on the first
+   * iteration and after any iteration whose loop produced a diff — progress
+   * at a failing verdict is divergence-suspect, never a rung (AC-3).
+   */
+  let lastTrigger: EscalationTrigger | null = null;
 
   const finish = async (reason: ReadyTerminalReason): Promise<ReadyResult> => {
     const ready = reason === "AC_MET" || reason === "READY_FOR_MERGE";
@@ -597,6 +625,7 @@ export async function runReadyGate(
       tokensUsed,
       report: "",
       effortEscalations,
+      modelEscalations,
     };
     result.report = formatReadyReport(result);
 
@@ -635,18 +664,30 @@ export async function runReadyGate(
 
     // #915: iterations > 1 means this QA pass is a retry of a prior
     // unsatisfied verdict — the ready-gate's retry signal.
+    //
+    // #971 AC-5, enforced structurally rather than by convention. One value
+    // drives both escalators, so the AC's two halves cannot drift apart:
+    // `effectiveModelTrigger` withholds the trigger until retry 2, so retry 1
+    // leaves the effort bump enabled (effort is the first rung), and from
+    // retry 2 on an active trigger disables it and spends a model rung
+    // instead (never both on one iteration). Shared with the run path so the
+    // two dispatch paths cannot diverge on the rule (AC-11).
+    const modelTrigger = effectiveModelTrigger(lastTrigger, iterations - 1);
     const qaEscalation = withEscalatedEffort(
       buildPhaseConfig(opts, { fullQa: true }),
       "qa",
-      iterations > 1,
+      iterations > 1 && modelTrigger === null,
     );
     if (qaEscalation.record) effortEscalations.push(qaEscalation.record);
-
-    const qaResult = await runPhaseTracked(
-      "qa",
+    const qaLadder = withEscalatedModel(
       qaEscalation.config,
-      iterations,
+      "qa",
+      modelTrigger,
+      ladderState,
     );
+    if (qaLadder.record) modelEscalations.push(qaLadder.record);
+
+    const qaResult = await runPhaseTracked("qa", qaLadder.config, iterations);
     tokensUsed = readTokensUsed(worktreePath);
 
     const verdict = qaResult.verdict ?? null;
@@ -718,13 +759,23 @@ export async function runReadyGate(
         promptContext: buildLoopContext(policy, verdict, fixableGaps),
       }),
       "loop",
-      iterations > 1,
+      iterations > 1 && modelTrigger === null,
     );
     if (loopEscalation.record) effortEscalations.push(loopEscalation.record);
+    // #971: the same trigger drives this iteration's fix pass. Rungs are
+    // tracked per phase, so `qa` and `loop` each advance at most one rung
+    // for one observed trigger.
+    const loopLadder = withEscalatedModel(
+      loopEscalation.config,
+      "loop",
+      modelTrigger,
+      ladderState,
+    );
+    if (loopLadder.record) modelEscalations.push(loopLadder.record);
 
     const loopResult = await runPhaseTracked(
       "loop",
-      loopEscalation.config,
+      loopLadder.config,
       iterations,
     );
     tokensUsed = readTokensUsed(worktreePath);
@@ -736,10 +787,37 @@ export async function runReadyGate(
     const after = snapshotFn(worktreePath);
     const progress = compareLoopProgress(before, after);
     if (!progress.progressed) {
-      return finish("LOOP_NO_DIFF");
+      // #971 OQ-1: `LOOP_NO_DIFF` is the ladder's whole point — a fix pass
+      // that produced nothing is the capability-bound fingerprint. Before
+      // #971 it was unconditionally terminal here, which left AC-2's gate
+      // half unreachable: there was no "next retry" left to escalate.
+      //
+      // It becomes continuable ONLY when all three hold: a ladder is
+      // configured, a rung remains for the phase being retried, and the
+      // iteration cap has room. With no ladder configured (the default) every
+      // one of those is false on the first check, so the terminal below is
+      // byte-identical to pre-#971 — no extra `git` call, no behaviour change.
+      const decision = detectCapabilityBoundTrigger({
+        isRetry: true,
+        loopProgress: progress,
+      });
+      const canContinue =
+        decision.trigger !== null &&
+        iterations < maxIterations &&
+        canEscalateFurther(opts.config, "qa", ladderState);
+      if (!canContinue) {
+        return finish("LOOP_NO_DIFF");
+      }
+      lastTrigger = decision.trigger;
+      continue;
     }
 
-    // The loop produced a diff — record what it was asked to fix and re-QA.
+    // The loop produced a diff — progress at a still-failing verdict is
+    // divergence-suspect, never capability-bound (#971 AC-3): clear any
+    // pending trigger so the next iteration's model option stays constant.
+    lastTrigger = null;
+
+    // Record what the loop was asked to fix and re-QA.
     for (const g of fixableGaps) {
       if (!autoFixed.includes(g)) autoFixed.push(g);
     }

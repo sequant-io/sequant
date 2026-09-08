@@ -25,6 +25,15 @@ import {
   type QaSummary,
 } from "./types.js";
 import { withEscalatedEffort } from "./effort-escalation.js";
+import {
+  withEscalatedModel,
+  createLadderState,
+  isLadderConfigured,
+  effectiveModelTrigger,
+  detectCapabilityBoundTrigger,
+  type EscalationTrigger,
+} from "./model-ladder.js";
+import { snapshotLoopProgress, compareLoopProgress } from "./qa-stagnation.js";
 import type { ShutdownManager } from "../shutdown.js";
 import {
   classifyError,
@@ -957,6 +966,7 @@ export async function runIssueWithLogging(
     onPhasePlan,
     phasePauseHandle,
     postComment: injectedPostComment,
+    snapshotProgressFn,
   } = ctx;
   const worktreePath = worktree?.path;
   const branch = worktree?.branch;
@@ -1393,9 +1403,36 @@ export async function runIssueWithLogging(
   // (or spawning /loop) cannot succeed while the window is closed, so halt the
   // outer quality loop and let the user resume once credits/window are restored.
   let haltedByBilling = false;
+  // #971: per-issue rung state for the model escalation ladder. Stickiness
+  // lives here rather than in `ExecutionConfig` — the config is built once per
+  // run and shared across every phase, so a rung baked into it would leak
+  // (#915 AC-7's rationale). `createLadderState` is cheap and unconditional;
+  // the ladder itself is off unless `config.modelLadder` is configured.
+  const ladderState = createLadderState();
+  /**
+   * #971: the capability-bound trigger observed at the END of the previous
+   * quality-loop iteration, consumed by this iteration's dispatches. `null`
+   * on the first iteration and whenever the previous iteration produced a
+   * diff — progress at a failing verdict is divergence-suspect, never a rung
+   * (AC-3).
+   */
+  let lastTrigger: EscalationTrigger | null = null;
+  /**
+   * #971 AC-D2: the ladder needs a per-iteration progress snapshot, which
+   * costs two `git` invocations. Gate it on a configured ladder so an
+   * unconfigured run issues ZERO additional `git` calls per iteration and
+   * stays byte-identical to pre-#971.
+   */
+  const ladderConfigured = isLadderConfigured(issueConfig);
+  const takeSnapshot = snapshotProgressFn ?? snapshotLoopProgress;
 
   while (iteration < maxIterations) {
     iteration++;
+    // #971: snapshot before this iteration's phases so the end-of-iteration
+    // comparison can tell "produced nothing" (capability-bound) from
+    // "produced a diff that still failed" (divergence-suspect).
+    const iterationStartSnapshot =
+      ladderConfigured && worktreePath ? takeSnapshot(worktreePath) : null;
 
     if (useQualityLoop && iteration > 1) {
       log(
@@ -1447,7 +1484,21 @@ export async function runIssueWithLogging(
       // exec re-running alongside a retried qa). `withEscalatedEffort` is a
       // no-op (returns the input config by reference) whenever escalation is
       // off or this is the first attempt.
-      const { config: dispatchConfig, record: escalationRecord } =
+      //
+      // #971 AC-5, enforced structurally rather than by convention. Both
+      // halves come from ONE value, `modelTrigger`:
+      //
+      // - "retry 1 escalates effort only": `effectiveModelTrigger` withholds
+      //   the trigger until retry 2, so the first retry leaves the effort
+      //   bump enabled and spends the cheap rung — the ladder's own cost
+      //   argument, applied to #915's rung.
+      // - "never both on one iteration": from retry 2 on, an active trigger
+      //   disables the effort bump and spends a model rung instead.
+      //
+      // Written this way, "effort and model both changed on one iteration" is
+      // unrepresentable rather than merely untested.
+      const modelTrigger = effectiveModelTrigger(lastTrigger, iteration - 1);
+      const { config: effortConfig, record: escalationRecord } =
         withEscalatedEffort(
           withActivityHook(
             issueConfig,
@@ -1457,12 +1508,25 @@ export async function runIssueWithLogging(
             makeWaitTransition(phase),
           ),
           phase,
-          iteration > 1,
+          iteration > 1 && modelTrigger === null,
         );
       if (escalationRecord && config.verbose) {
         log(
           chalk.gray(
             `    effort: ${escalationRecord.base} → ${escalationRecord.escalated} (loop retry)`,
+          ),
+        );
+      }
+      // #971: apply the ladder for THIS dispatch. A no-op returning the input
+      // config by reference whenever no ladder is configured, no trigger
+      // arrived and no sticky rung has been reached, or the phase's `--models`
+      // pin is off-ladder (AC-7).
+      const { config: dispatchConfig, record: modelRecord } =
+        withEscalatedModel(effortConfig, phase, modelTrigger, ladderState);
+      if (modelRecord && config.verbose) {
+        log(
+          chalk.gray(
+            `    model: ${modelRecord.base} → ${modelRecord.escalated} (${modelRecord.trigger} retry)`,
           ),
         );
       }
@@ -1728,12 +1792,33 @@ export async function runIssueWithLogging(
             promptContext: buildLoopContext(result),
           };
 
+          // #971 (spec sibling-site scan / OQ-6): this is the FOURTH
+          // retry-dispatch site, and the one #915 never reached — it calls
+          // `executePhaseWithRetry` without `withEscalatedEffort`. The ladder
+          // is applied here too so the new mechanism is not born with the same
+          // hole. (Backfilling #915's effort escalation here would change
+          // #915's behaviour under a #971 PR, so it is deliberately left to a
+          // follow-up.)
+          const loopLadder = withEscalatedModel(
+            loopConfig,
+            "loop",
+            modelTrigger,
+            ladderState,
+          );
+          if (loopLadder.record && config.verbose) {
+            log(
+              chalk.gray(
+                `    model: ${loopLadder.record.base} → ${loopLadder.record.escalated} (${loopLadder.record.trigger} retry)`,
+              ),
+            );
+          }
+
           const loopStartTime = new Date();
           const loopResult = await executePhaseWithRetry(
             issueNumber,
             "loop",
             withActivityHook(
-              loopConfig,
+              loopLadder.config,
               issueNumber,
               "loop",
               onProgress,
@@ -1810,6 +1895,30 @@ export async function runIssueWithLogging(
         // Stop on first failure (if not in quality loop or loop failed)
         break;
       }
+    }
+
+    // #971: close out this iteration's capability-bound assessment. Compare
+    // the worktree against the snapshot taken before the iteration's phases
+    // ran, and hand the verdict to the NEXT iteration's dispatches:
+    //
+    // - nothing produced → `LOOP_NO_DIFF`: the agent could not make a working
+    //   change, which is the capability-bound fingerprint → escalate a rung.
+    // - a diff was produced but the iteration still failed → divergence-
+    //   suspect: a stronger model would rediscover the contradiction more
+    //   expensively, so the trigger is cleared and the model stays constant
+    //   (AC-3).
+    //
+    // Gated on a configured ladder, so an unconfigured run performs no
+    // snapshot and issues no extra `git` calls (AC-D2).
+    if (iterationStartSnapshot && worktreePath) {
+      const decision = detectCapabilityBoundTrigger({
+        isRetry: true,
+        loopProgress: compareLoopProgress(
+          iterationStartSnapshot,
+          takeSnapshot(worktreePath),
+        ),
+      });
+      lastTrigger = decision.trigger;
     }
 
     // If all phases passed, exit the loop
