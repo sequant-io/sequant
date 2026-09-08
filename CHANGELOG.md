@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Commit-message validation no longer reads text outside the `git commit` segment (#981).** `pre-tool.sh` extracted the commit message by scanning the whole compound command, so an earlier quoted string or an unrelated later heredoc could be mistaken for the message and block a valid conventional commit. Now:
+  - Extraction is scoped to each `git commit` segment; the segment scan honours backslash line-continuation and selects on a code form that blanks quoted text, heredoc bodies and unquoted `#` comments but keeps subshell code — so scoping neither strands the message flag nor hides a commit wrapped in `( … )` or `$( … )`.
+  - The message is read from the commit's own flag — `-m "…"` / `-m '…'`, `--message=…` / `--message …`, short-flag clusters such as `-am` (none of which were validated before), or the `-m "$( … <<'EOF' … EOF)"` idiom in any spacing — never from the first quoted string or heredoc in the segment. A heredoc feeding `-F-` / `--file=-` is still validated by its first line. A message that is one bare variable reference (`-m "$MSG"`) is validated on the value of the last `MSG=` assignment before the commit, read in code context only (never from a quoted string, a `#` comment or a heredoc body; a dynamic value such as `MSG=$(…)` is unknowable and validates nothing) — what the old whole-command extractor did by accident, done deliberately — and validates nothing when the command never assigns it; literal text alongside a variable is validated as written.
+  - Only the subject line is validated, so a conventional-looking body line cannot launder a non-conventional subject.
+  - Every `git commit` in a compound command is validated: a decoy conventional commit cannot shield a later non-conventional one, and a `-m`-less segment that merely mentions `git commit` (a comment line, `git commit-tree`, `--amend --no-edit`) cannot hide the real commit.
+  - Closed fail-opens `main` had: heredoc-then-commit inside one subshell, `-m` inside an earlier quoted argument, multi-line `-m` laundering, shadow segments, and the unvalidated `--message`/`-am` forms. Closed false positives: a `<<<` herestring mistaken for a heredoc, and a comment line carrying a commit message.
 - `sequant run`'s skills pre-flight now checks each provisioned worktree
   instead of the main checkout. `git worktree add` only materializes tracked
   files, so an untracked `.claude/skills/` (the default after `sequant sync`
