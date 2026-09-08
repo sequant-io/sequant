@@ -504,7 +504,7 @@ program
 program
   .command("abort")
   .description(
-    "Out-of-band abort: signal a running sequant session directly (#645)",
+    "Out-of-band abort: signal a running sequant session directly (#858)",
   )
   .argument(
     "[issue]",
