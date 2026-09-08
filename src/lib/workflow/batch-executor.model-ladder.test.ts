@@ -97,6 +97,15 @@ function dispatchedExecModels(): Array<string | undefined> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // These tests drive the REAL quality loop, which calls `emitProgressLine`.
+  // That writes `SEQUANT_PROGRESS:` lines to stderr whenever
+  // `SEQUANT_ORCHESTRATOR` is set — true when the suite runs inside an
+  // orchestrated `sequant run` phase. Those lines are the launcher's wire
+  // protocol: it prefix-matches them to drive the progress display and to
+  // reset the no-progress watchdog, so leaking synthetic ones for issue 971
+  // would spoof progress for whatever run is actually in flight. Scrub the
+  // var so the loop stays silent regardless of the ambient environment.
+  vi.stubEnv("SEQUANT_ORCHESTRATOR", "");
   // Every phase fails, so the quality loop runs its full iteration budget.
   mockExecutePhase.mockResolvedValue({
     phase: "exec",
