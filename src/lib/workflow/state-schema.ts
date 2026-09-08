@@ -112,6 +112,32 @@ export const PhaseMarkerSchema = z.object({
   escalationTrigger: z.string().optional(),
   /** Set when the phase is on the last rung with nowhere left to go. */
   topOfLadder: z.boolean().optional(),
+  /**
+   * The `SPEC_DIVERGENCE` escape hatch (#995 / #971 AC-4).
+   *
+   * An agent that finds an acceptance criterion impossible as written emits
+   * `"outcome":"SPEC_DIVERGENCE"` here and stops. The run halts without
+   * dispatching a retry and without spending a model rung — a stronger model
+   * cannot un-contradict a spec, it only rediscovers the contradiction more
+   * expensively.
+   *
+   * A `z.enum` of one rather than a free `z.string()`: this is a closed
+   * declaration channel, and an unrecognized outcome string should fail the
+   * marker parse rather than silently halting a run on a typo. Widen the enum
+   * when a second outcome is defined.
+   *
+   * Same FLAT-SCALARS-ONLY constraint as the ladder fields above, and the same
+   * append-only guarantee (I-2): markers written before #995 keep loading.
+   */
+  outcome: z.enum(["SPEC_DIVERGENCE"]).optional(),
+  /**
+   * AC IDs the agent declared impossible, as a comma-separated string
+   * (e.g. `"AC-2, AC-5"`). A string rather than an array for the flat-scalar
+   * reason above — an array literal's brackets survive the marker regex, but
+   * the field would then be the only non-scalar in the schema and the next
+   * person to add one would reasonably reach for an object.
+   */
+  divergenceAcs: z.string().optional(),
 });
 
 export type PhaseMarker = z.infer<typeof PhaseMarkerSchema>;
