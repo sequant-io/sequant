@@ -121,6 +121,7 @@ vi.mock("../lib/system.js", () => ({
 import {
   doctorCommand,
   checkClosedIssues,
+  isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
 } from "./doctor.js";
 import { fileExists, isExecutable, readFile } from "../lib/fs.js";
@@ -310,6 +311,89 @@ describe("doctor command", () => {
       expect(output).toContain(
         "https://docs.anthropic.com/en/docs/claude-code",
       );
+    });
+  });
+
+  describe("862 AC-7: opencode CLI checks", () => {
+    /** Settings shaped like the default mock but with an agent override. */
+    function settingsWithAgent(agent: string) {
+      return {
+        version: "1.0",
+        run: {
+          logJson: true,
+          logPath: ".sequant/logs",
+          autoDetectPhases: true,
+          timeout: 1800,
+          sequential: false,
+          qualityLoop: false,
+          maxIterations: 3,
+          smartTests: true,
+          rotation: { enabled: true, maxSizeMB: 10, maxFiles: 100 },
+          mcp: true,
+          retry: true,
+          staleBranchThreshold: 5,
+          agent,
+        },
+        agents: { parallel: false, model: "haiku", isolateParallel: false },
+      };
+    }
+
+    it("862 AC-7 fails with an install hint when opencode is configured but absent", async () => {
+      mockGetSettings.mockResolvedValue(settingsWithAgent("opencode") as never);
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "opencode");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("opencode CLI");
+      expect(output).toContain("npm i -g opencode-ai");
+    });
+
+    it("862 AC-7 fails when the installed opencode is below the pinned floor", async () => {
+      mockGetSettings.mockResolvedValue(settingsWithAgent("opencode") as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "opencode --version" ? "1.17.9\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("1.17.9");
+      expect(output).toContain("below the minimum supported 1.18.27");
+    });
+
+    it("862 AC-7 passes on the verified version", async () => {
+      mockGetSettings.mockResolvedValue(settingsWithAgent("opencode") as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "opencode --version" ? "1.18.27\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("opencode 1.18.27 is installed");
+    });
+
+    it("862 AC-7 runs no opencode check when another agent is configured", async () => {
+      mockGetSettings.mockResolvedValue(
+        settingsWithAgent("claude-code") as never,
+      );
+      mockCommandExists.mockReturnValue(true);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("opencode CLI");
+    });
+
+    it("862 AC-7 compares versions numerically, not as strings", () => {
+      // A string compare puts "1.18.27" below "1.9.0" and would pass a build
+      // two years older than the floor.
+      expect(isVersionBelow("1.9.0", "1.18.27")).toBe(true);
+      expect(isVersionBelow("1.18.27", "1.18.27")).toBe(false);
+      expect(isVersionBelow("1.18.28", "1.18.27")).toBe(false);
+      expect(isVersionBelow("1.18.26", "1.18.27")).toBe(true);
+      expect(isVersionBelow("2.0.0", "1.18.27")).toBe(false);
     });
   });
 

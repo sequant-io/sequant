@@ -13,6 +13,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { ClaudeCodeDriver } from "./claude-code.js";
 import { AiderDriver } from "./aider.js";
+import { OpencodeDriver, buildOpencodeArgs } from "./opencode.js";
 import type { ResumeHandle } from "./agent-driver.js";
 
 // Mock the SDK so we can inspect the options passed to query() without
@@ -172,6 +173,58 @@ describe("Resume semantics fixture (#674, AC-8)", () => {
       const driver = new AiderDriver();
       const handle = makeHandle("claude-code", WORKTREE_A);
       expect(driver.canResume(handle, WORKTREE_A)).toBe(false);
+    });
+  });
+
+  describe("opencode resume semantics (#862 AC-6)", () => {
+    // PRESERVED — opencode sessions replay against a working directory, so a
+    // handle from another cwd would run recorded state against the wrong tree.
+    it("opencode accepts its own handle from the originating cwd", () => {
+      const driver = new OpencodeDriver();
+      expect(
+        driver.canResume(makeHandle("opencode", WORKTREE_A), WORKTREE_A),
+      ).toBe(true);
+    });
+
+    // PRESERVED — the #674 originCwd binding.
+    it("opencode rejects its own handle from a different cwd", () => {
+      const driver = new OpencodeDriver();
+      expect(
+        driver.canResume(makeHandle("opencode", WORKTREE_A), WORKTREE_B),
+      ).toBe(false);
+    });
+
+    // PRESERVED — the #674 driver tag.
+    it("opencode rejects a foreign-driver handle even from the same cwd", () => {
+      const driver = new OpencodeDriver();
+      expect(
+        driver.canResume(makeHandle("claude-code", WORKTREE_A), WORKTREE_A),
+      ).toBe(false);
+      expect(
+        driver.canResume(makeHandle("aider", WORKTREE_A), WORKTREE_A),
+      ).toBe(false);
+    });
+
+    // PRESERVED — an eligible handle becomes `--session <token>` on the spawn.
+    it("opencode turns an eligible handle into --session <token>", () => {
+      const args = buildOpencodeArgs(
+        "/qa 862",
+        { cwd: WORKTREE_A, phase: "qa" },
+        undefined,
+        makeHandle("opencode", WORKTREE_A).token,
+      );
+      expect(args).toEqual(
+        expect.arrayContaining(["--session", "session-token-xyz"]),
+      );
+    });
+
+    // PRESERVED — an ineligible handle contributes no resume flag.
+    it("opencode omits --session when no token is eligible", () => {
+      const args = buildOpencodeArgs("/qa 862", {
+        cwd: WORKTREE_A,
+        phase: "qa",
+      });
+      expect(args).not.toContain("--session");
     });
   });
 

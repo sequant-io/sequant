@@ -111,6 +111,17 @@ const SCENARIOS: Array<{
     run: { agent: "aider", aider: { model: "gpt-4o" } },
   },
   {
+    name: "opencode configured (#862 AC-9)",
+    options: {},
+    run: {
+      agent: "opencode",
+      opencode: {
+        model: "openrouter/anthropic/claude-sonnet-5",
+        reasoningMaxTokens: 20000,
+      },
+    },
+  },
+  {
     name: "retry disabled + verification skipped (OQ-12 siblings)",
     options: { noRetry: true, noSmartTests: true },
     run: {},
@@ -157,6 +168,29 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
 
     expect(gate.agent).toBe("aider");
     expect(gate.aiderSettings).toEqual({ model: "gpt-4o" });
+  });
+
+  it("862 AC-9 inherits opencodeSettings, the third instance of the #863 class", () => {
+    const settings = settingsWith({
+      agent: "opencode",
+      opencode: {
+        model: "openrouter/anthropic/claude-sonnet-5",
+        reasoningMaxTokens: 20000,
+      },
+    });
+    const resolved = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+    const gate = buildPhaseConfig(gateOpts(resolved), {});
+
+    expect(resolved.opencodeSettings).toEqual({
+      model: "openrouter/anthropic/claude-sonnet-5",
+      reasoningMaxTokens: 20000,
+    });
+    expect(gate.agent).toBe("opencode");
+    expect(gate.opencodeSettings).toEqual(resolved.opencodeSettings);
   });
 
   it("inherits the OQ-12 sibling fields rather than hardcoding them", () => {

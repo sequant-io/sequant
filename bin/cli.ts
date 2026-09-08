@@ -195,6 +195,10 @@ program
     "--upgrade-skills",
     "Upgrade skill files from installed package templates (with diff preview)",
   )
+  .option(
+    "--agent <name>",
+    "Agent driver to provision for (claude-code, aider, opencode). opencode also writes .opencode/ command wrappers",
+  )
   .action(initCommand);
 
 program
