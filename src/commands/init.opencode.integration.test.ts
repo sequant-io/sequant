@@ -1,112 +1,187 @@
 /**
- * `sequant init --agent opencode` command wrappers (#862 AC-5).
+ * #996 AC-3 — opencode subagent definitions written by `init --agent opencode`.
  *
- * Real filesystem, real templates directory — the point of the AC is that the
- * wrappers are *rendered from one source*, which a mocked-fs test cannot show.
+ * The `grep -c 'mode: subagent'` gate the AC names is a sanity check, not a
+ * real gate: opencode's `AgentConfig` has an open index signature, so a
+ * misspelled key is silently accepted and inert. These assertions therefore
+ * check the translated *values*, and the CI smoke job runs
+ * `opencode debug agent <name>` for the resolution proof.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readdirSync, readFileSync } from "fs";
-import { tmpdir } from "os";
-import { join, resolve } from "path";
-import { writeOpencodeCommands } from "./init.js";
-import { getPhaseNames } from "../lib/workflow/phase-registry.js";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
-const REPO_TEMPLATES = resolve(__dirname, "..", "..", "templates");
+import {
+  OPENCODE_AGENT_NAMES,
+  translateAgentDefinition,
+  writeOpencodeAgents,
+  writeOpencodeMcpConfig,
+  writeOpencodePlugin,
+} from "./init.js";
 
-let workDir: string;
-let previousTemplatesDir: string | undefined;
+const REPO_ROOT = resolve(__dirname, "../..");
 
-beforeEach(() => {
-  workDir = mkdtempSync(join(tmpdir(), "sequant-init-opencode-"));
-  previousTemplatesDir = process.env.SEQUANT_TEMPLATES_DIR;
-  process.env.SEQUANT_TEMPLATES_DIR = REPO_TEMPLATES;
-});
+function frontmatterOf(text: string): Record<string, unknown> {
+  const m = text.match(/^---\n([\s\S]*?)\n---/);
+  expect(m).not.toBeNull();
+  return parseYaml(m![1]) as Record<string, unknown>;
+}
 
-afterEach(() => {
-  if (previousTemplatesDir === undefined) {
-    delete process.env.SEQUANT_TEMPLATES_DIR;
-  } else {
-    process.env.SEQUANT_TEMPLATES_DIR = previousTemplatesDir;
-  }
-  // `workDir` is a mkdtemp result and is never reassigned between here and its
-  // creation — do not make it a mutable target of this rmSync (#883).
-  rmSync(workDir, { recursive: true, force: true });
-});
+describe("996 AC-3: opencode subagent definitions", () => {
+  let target: string;
+  let prevTemplates: string | undefined;
 
-describe("862 AC-5: opencode command wrappers", () => {
-  it("862 AC-5 writes one wrapper per registered phase", async () => {
-    await writeOpencodeCommands(workDir);
-
-    const written = readdirSync(join(workDir, ".opencode", "commands")).sort();
-    const expected = getPhaseNames()
-      .map((p) => `${p}.md`)
-      .sort();
-
-    expect(written).toEqual(expected);
-    expect(written.length).toBeGreaterThan(0);
+  beforeAll(async () => {
+    prevTemplates = process.env.SEQUANT_TEMPLATES_DIR;
+    process.env.SEQUANT_TEMPLATES_DIR = join(REPO_ROOT, "templates");
+    target = mkdtempSync(join(tmpdir(), "sequant-init-opencode-"));
+    await writeOpencodeAgents(target);
+    await writeOpencodePlugin(target);
+    await writeOpencodeMcpConfig(target);
   });
 
-  it("862 AC-5 renders every wrapper from the single template source", async () => {
-    await writeOpencodeCommands(workDir);
+  afterAll(() => {
+    if (prevTemplates === undefined) delete process.env.SEQUANT_TEMPLATES_DIR;
+    else process.env.SEQUANT_TEMPLATES_DIR = prevTemplates;
+    rmSync(target, { recursive: true, force: true });
+  });
 
-    const template = readFileSync(
-      join(REPO_TEMPLATES, "opencode", "command.md"),
-      "utf-8",
-    );
-
-    for (const phase of getPhaseNames()) {
-      const rendered = readFileSync(
-        join(workDir, ".opencode", "commands", `${phase}.md`),
-        "utf-8",
-      );
-      // Byte-equal to the template with the one placeholder substituted — a
-      // hand-mirrored fourth tree could not satisfy this.
-      expect(rendered).toBe(template.replaceAll("{{PHASE}}", phase));
-      expect(rendered).not.toContain("{{PHASE}}");
+  it("writes exactly the three sequant agent definitions", () => {
+    // Three, not four: #927 deleted sequant-explorer (0 spawns across 169
+    // /spec runs), so a fourth def would have no Claude-side counterpart.
+    expect([...OPENCODE_AGENT_NAMES]).toEqual([
+      "sequant-implementer",
+      "sequant-qa-checker",
+      "sequant-testgen",
+    ]);
+    for (const name of OPENCODE_AGENT_NAMES) {
+      expect(existsSync(join(target, ".opencode/agents", `${name}.md`))).toBe(true);
     }
   });
 
-  it("862 AC-5 each wrapper instructs the model to load its own skill", async () => {
-    await writeOpencodeCommands(workDir);
+  it("marks every definition mode: subagent", () => {
+    const count = execFileSync(
+      "sh",
+      ["-c", `grep -c 'mode: subagent' ${join(target, ".opencode/agents")}/*.md | wc -l`],
+      { encoding: "utf-8" },
+    ).trim();
+    expect(Number(count)).toBe(3);
 
-    const qa = readFileSync(
-      join(workDir, ".opencode", "commands", "qa.md"),
-      "utf-8",
-    );
-    expect(qa).toContain('{"name": "qa"}');
-    expect(qa).toContain("$ARGUMENTS");
-    // The skill tool truncates a long SKILL.md body (#992); the wrapper is the
-    // only place that can tell the model to page through the rest.
-    expect(qa).toContain("truncated");
+    for (const name of OPENCODE_AGENT_NAMES) {
+      const fm = frontmatterOf(
+        readFileSync(join(target, ".opencode/agents", `${name}.md`), "utf-8"),
+      );
+      expect(fm.mode).toBe("subagent");
+    }
   });
 
-  it("862 AC-5 keeps the commands-directory literal in exactly one source", () => {
-    // OQ-5: the AC's `grep -rl … | wc -l` is layout-brittle, so the layout is
-    // pinned here rather than left to luck — init.ts owns the path, and the
-    // template carries no copy of it.
-    const initSource = readFileSync(join(__dirname, "init.ts"), "utf-8");
-    const templateSource = readFileSync(
-      join(REPO_TEMPLATES, "opencode", "command.md"),
-      "utf-8",
-    );
-
-    expect(initSource).toContain(".opencode/commands");
-    expect(templateSource).not.toContain("opencode/commands");
+  it("translates maxTurns into steps", () => {
+    // `steps` and `maxSteps` both resolve to `steps` on 1.18.27 — the AC's
+    // literal `steps` key is correct and must not be "corrected".
+    const cases: Array<[string, number]> = [
+      ["sequant-implementer", 25],
+      ["sequant-qa-checker", 15],
+      ["sequant-testgen", 25],
+    ];
+    for (const [name, steps] of cases) {
+      const fm = frontmatterOf(
+        readFileSync(join(target, ".opencode/agents", `${name}.md`), "utf-8"),
+      );
+      expect(fm.steps).toBe(steps);
+    }
   });
 
-  it("862 AC-5 registers --agent on the init command so the flag is not inert", () => {
-    // The classic silent-no-op trap: an InitOptions field with no `.option()`
-    // in bin/cli.ts never receives a value (#305).
-    const cli = readFileSync(
-      resolve(__dirname, "..", "..", "bin", "cli.ts"),
+  it("translates the Claude tools allowlist into an opencode tools map", () => {
+    const fm = frontmatterOf(
+      readFileSync(join(target, ".opencode/agents/sequant-qa-checker.md"), "utf-8"),
+    );
+    // Read/Grep/Glob/Bash → lowercase opencode ids.
+    expect(fm.tools).toMatchObject({
+      bash: true,
+      glob: true,
+      grep: true,
+      read: true,
+    });
+  });
+
+  it("denies unlisted mutating tools rather than leaving them unset", () => {
+    // opencode derives `permission` from this map, so an omission is an allow.
+    const fm = frontmatterOf(
+      readFileSync(join(target, ".opencode/agents/sequant-qa-checker.md"), "utf-8"),
+    );
+    const tools = fm.tools as Record<string, boolean>;
+    expect(tools.write).toBe(false);
+    expect(tools.edit).toBe(false);
+    // patch/apply_patch writes files but carries no path field, so the
+    // Edit/Write guard cannot see its targets — it must be denied, never
+    // passed through.
+    expect(tools.patch).toBe(false);
+  });
+
+  it("preserves the definition body verbatim", () => {
+    const written = readFileSync(
+      join(target, ".opencode/agents/sequant-testgen.md"),
       "utf-8",
     );
-    const initBlock = cli.slice(
-      cli.indexOf('.command("init")'),
-      cli.indexOf(".action(initCommand)"),
+    expect(written).toContain(
+      "You are a test stub generation agent for the sequant development workflow.",
     );
-    expect(initBlock).toContain('"--agent <name>"');
-    expect(initBlock).toContain("opencode");
+  });
+
+  it("keeps a def with no tools allowlist unrestricted", () => {
+    // sequant-implementer has no `tools` key in Claude Code, meaning "all
+    // tools". Emitting a narrower map would silently shrink its capability.
+    const written = readFileSync(
+      join(target, ".opencode/agents/sequant-implementer.md"),
+      "utf-8",
+    );
+    expect(frontmatterOf(written).tools).toBeUndefined();
+  });
+
+  it("throws on a definition with no frontmatter rather than emitting a dead def", () => {
+    expect(() => translateAgentDefinition("no frontmatter here")).toThrow(
+      /no YAML frontmatter/,
+    );
+  });
+
+  it("installs the hook shim into the singular plugin dir", () => {
+    const shim = join(target, ".opencode/plugin/sequant-hooks.ts");
+    expect(existsSync(shim)).toBe(true);
+    expect(readFileSync(shim, "utf-8")).toContain("SEQUANT_HOOK_SHIM_ACTIVE");
+  });
+
+  it("writes the MCP entry under opencode's flat mcp key", () => {
+    const config = JSON.parse(
+      readFileSync(join(target, ".opencode/opencode.json"), "utf-8"),
+    );
+    expect(config.mcp.sequant.type).toBe("local");
+    expect(Array.isArray(config.mcp.sequant.command)).toBe(true);
+    expect(config).not.toHaveProperty("mcpServers");
+  });
+
+  it("preserves an existing opencode.json when merging the MCP entry", async () => {
+    const config = JSON.parse(
+      readFileSync(join(target, ".opencode/opencode.json"), "utf-8"),
+    );
+    config.theme = "sequant-custom";
+    config.mcp.other = { type: "local", command: ["echo"] };
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(
+      join(target, ".opencode/opencode.json"),
+      JSON.stringify(config, null, 2),
+    );
+
+    await writeOpencodeMcpConfig(target);
+
+    const merged = JSON.parse(
+      readFileSync(join(target, ".opencode/opencode.json"), "utf-8"),
+    );
+    expect(merged.theme).toBe("sequant-custom");
+    expect(merged.mcp.other).toBeDefined();
+    expect(merged.mcp.sequant).toBeDefined();
   });
 });

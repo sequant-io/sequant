@@ -308,15 +308,25 @@ export const OPENCODE_AGENT_NAMES = [
  */
 export async function writeOpencodePlugin(targetDir = "."): Promise<string> {
   const pluginDir = join(targetDir, ".opencode/plugin");
-  await ensureDir(pluginDir);
+  await ensureDir(join(pluginDir, "lib"));
 
-  const body = await getTemplateContent(
-    "templates/opencode/plugins/sequant-hooks.ts",
-  );
-  const target = join(pluginDir, "sequant-hooks.ts");
-  await writeFile(target, body);
+  // Two files, and the split is load-bearing. opencode scans
+  // `.opencode/plugin/*.ts` non-recursively and rejects any scanned module
+  // that exports a non-function ("Plugin export is not a function") — then
+  // swallows the rejection: ERROR to the debug log, but exit 0 and empty
+  // stderr. So the entry exports only `server`, and everything it needs sits
+  // in `lib/`, which the scan does not reach.
+  for (const rel of [
+    "sequant-hooks.ts",
+    "lib/sequant-hooks-core.ts",
+  ] as const) {
+    const body = await getTemplateContent(
+      `templates/opencode/plugins/${rel}`,
+    );
+    await writeFile(join(pluginDir, rel), body);
+  }
 
-  return target;
+  return join(pluginDir, "sequant-hooks.ts");
 }
 
 /**

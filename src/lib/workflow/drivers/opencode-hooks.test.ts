@@ -23,8 +23,10 @@ import {
   mapToolCall,
   resolveToolPath,
   runHook,
-  server,
-} from "../../../../templates/opencode/plugins/sequant-hooks.js";
+} from "../../../../templates/opencode/plugins/lib/sequant-hooks-core.js";
+// The plugin entry is a separate module: opencode rejects a scanned plugin
+// file that exports anything but functions, so it can hold no constants.
+import { server } from "../../../../templates/opencode/plugins/sequant-hooks.js";
 
 /** Repo root — the worktree this suite runs in, which owns `.claude/hooks/`. */
 const PROJECT_DIR = process.cwd();
