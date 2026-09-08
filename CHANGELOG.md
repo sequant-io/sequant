@@ -29,14 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SessionEnd` registration, so consumer projects and plugin users get the
   fallback instead of a path that only ever worked in this repo.
 
-### Added
-
-- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
-  default beside the token panel and labeled "SDK estimate, not a billing
-  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
-  rows rather than merged, and records written before this existed render with
-  `—` for the fields they lack rather than a fabricated `$0.00`.
-
 - **Tautology detector no longer flags subprocess-driven tests whose spawn path
   is constructed rather than spelled out (#956).** The build-output heuristic
   was purely textual: a spawn counted as production code only when the source
@@ -104,6 +96,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behaviour that the user never asked for (#863). `ready-gate.ts` built each
   gate phase's `ExecutionConfig` from its own literal, so `agent` and
   `aiderSettings` never reached driver selection.
+
+### Added
+
+- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
+  default beside the token panel and labeled "SDK estimate, not a billing
+  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
+  rows rather than merged, and records written before this existed render with
+  `—` for the fields they lack rather than a fabricated `$0.00`.
 
 ### Changed
 
