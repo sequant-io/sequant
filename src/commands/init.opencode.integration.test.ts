@@ -148,10 +148,27 @@ describe("996 AC-3: opencode subagent definitions", () => {
     );
   });
 
-  it("installs the hook shim into the singular plugin dir", () => {
-    const shim = join(target, ".opencode/plugin/sequant-hooks.ts");
-    expect(existsSync(shim)).toBe(true);
-    expect(readFileSync(shim, "utf-8")).toContain("SEQUANT_HOOK_SHIM_ACTIVE");
+  it("installs the hook shim as an entry plus a core module", () => {
+    const entry = join(target, ".opencode/plugin/sequant-hooks.ts");
+    const core = join(target, ".opencode/plugin/lib/sequant-hooks-core.ts");
+    expect(existsSync(entry)).toBe(true);
+    expect(existsSync(core)).toBe(true);
+
+    // The split is load-bearing: opencode scans plugin/*.ts non-recursively
+    // and rejects a scanned module that exports a non-function, so the entry
+    // may export nothing but the plugin function.
+    const entryText = readFileSync(entry, "utf-8");
+    // The entry writes the sentinel via the imported constant; the literal
+    // itself lives in the core module.
+    expect(entryText).toContain("SHIM_LOADED_SENTINEL");
+    const exported = [...entryText.matchAll(/^export\s+(?:const|function)\s+(\w+)/gm)].map(
+      (m) => m[1],
+    );
+    expect(exported).toEqual(["server"]);
+
+    expect(readFileSync(core, "utf-8")).toContain(
+      'SHIM_LOADED_SENTINEL = "SEQUANT_HOOK_SHIM_ACTIVE"',
+    );
   });
 
   it("writes the MCP entry under opencode's flat mcp key", () => {
