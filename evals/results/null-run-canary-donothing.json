@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "claudeVersion": "2.1.263",
+  "startedAt": "2026-09-08T04:38:59.659Z",
+  "durationSeconds": 8,
+  "costUsd": 0.13530799999999998,
+  "partial": false,
+  "suite": {
+    "root": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu",
+    "ablation": "with-without",
+    "caseFilter": "null-run-canary",
+    "threshold": 1,
+    "plugins": [
+      {
+        "name": "sequant",
+        "version": "2.13.1",
+        "path": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "null-run-canary",
+      "dir": "evals/null-run-canary",
+      "source": "prose",
+      "promptMarkdown": "Reply with exactly the word: ok. Do not use any tools. Do not create any\nfiles.",
+      "runsPerCase": 3,
+      "timeoutSeconds": 300,
+      "maxTurns": 5,
+      "graders": [
+        {
+          "name": "qa-gaps-marker",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": "last_message",
+            "pattern": "<!-- SEQUANT_QA_GAPS:",
+            "flags": "",
+            "match": "contains"
+          }
+        },
+        {
+          "name": "trust-boundary-status",
+          "type": "regex",
+          "weight": 1,
+          "config": {
+            "target": "last_message",
+            "pattern": "### Trust-Boundary Check[\\s\\S]{0,400}\\*\\*Status:\\*\\* Clean",
+            "flags": "",
+            "match": "contains"
+          }
+        }
+      ],
+      "arms": {
+        "with": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 1,
+            "costUsd": 0.072124,
+            "judgeCostUsd": 0,
+            "durationSeconds": 5,
+            "startedAt": "2026-09-08T04:38:59.716Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-qZcpi1/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "qa-gaps-marker",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "trust-boundary-status",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ],
+        "without": [
+          {
+            "score": 0,
+            "passed": false,
+            "turns": 1,
+            "costUsd": 0.06318399999999999,
+            "judgeCostUsd": 0,
+            "durationSeconds": 2,
+            "startedAt": "2026-09-08T04:39:04.943Z",
+            "error": null,
+            "tracePath": "/private/tmp/e-ma8LWX/out/trace.jsonl",
+            "skippedPaidGraders": false,
+            "graders": [
+              {
+                "name": "qa-gaps-marker",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              },
+              {
+                "name": "trust-boundary-status",
+                "passed": false,
+                "weight": 1,
+                "explanation": "pattern not found in last_message",
+                "withOnly": false,
+                "scored": true
+              }
+            ]
+          }
+        ]
+      },
+      "aggregates": {
+        "score": 0,
+        "passRate": 0,
+        "scoreWithout": 0,
+        "passRateWithout": 0,
+        "delta": 0
+      }
+    }
+  ],
+  "aggregates": {
+    "casesTotal": 1,
+    "casesPassed": 0,
+    "overallScore": 0,
+    "overallPassRate": 0,
+    "meanDelta": 0
+  }
+}
