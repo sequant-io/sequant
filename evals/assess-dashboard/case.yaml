@@ -1,0 +1,50 @@
+schema_version: "1.0"
+name: assess-dashboard
+description: >-
+  /assess batch mode must emit its per-issue `assess:action` markers, not the
+  prose paragraph the #823 regression produced. Uses the case.yaml format
+  because only it supports `context.scaffold_script` — the prose format
+  (prompt.md + graders/) does not, and the runner's answer to Open Question 1
+  requires the issues to arrive as scaffold-written files rather than via a
+  `gh` call that would force a Bash grant.
+tags: [skills, assess]
+
+context:
+  scaffold_script: scaffold.sh
+
+execution:
+  # The prompt names no output file, no marker, and no closing token — a
+  # dictated surface would grade instruction-following rather than the skill
+  # (#987 Phase 0 §3a). It asks for the skill on the fixtures and nothing more.
+  prompt: |-
+    Use the assess skill to triage the two issues in this repository,
+    whose bodies are in ISSUE-686.md (issue #686) and ISSUE-750.md
+    (issue #750).
+  max_turns: 20
+  timeout_seconds: 600
+  allowed_tools: [Read, Glob, Grep, Skill]
+
+runs: 1
+
+graders:
+  # The batch-mode per-issue marker, with the action drawn from the skill's
+  # own fixed six-verb vocabulary. `count:2` requires BOTH issues to be
+  # marked: a prose-only dashboard (the #823 regression this case exists to
+  # catch) yields 0, and a partial run yields 1.
+  - type: regex
+    name: batch-action-markers
+    target: last_message
+    pattern: '<!-- #(686|750) assess:action=(PROCEED|CLOSE|MERGE|REWRITE|CLARIFY|PARK)'
+    match: "count:2"
+    weight: 1
+
+  # Sanity check only — proves a skill loaded, NOT that the real assess skill
+  # produced the output. Excluded from the without-arm score. The stub-skill
+  # canary arm (AC-5b) demonstrates this grader stays green against an 8-line
+  # stub, which is exactly why it is not evidence on its own.
+  - type: tool_used
+    name: skill-fired
+    tool: Skill
+    arm: with-only
+    min: 1
+    weight: 1
