@@ -53,6 +53,8 @@ export interface ReadyCommandOptions {
   efforts?: string;
   /** Evidence-based effort escalation on QA-pass retries (#915). See `RunOptions.escalateEffort`. */
   escalateEffort?: boolean;
+  /** Model escalation ladder for capability-bound retries (#971). See `RunOptions.modelLadder`. */
+  modelLadder?: string;
 }
 
 /**
@@ -178,6 +180,7 @@ export async function readyCommand(
         models: options.models,
         efforts: options.efforts,
         escalateEffort: options.escalateEffort,
+        modelLadder: options.modelLadder,
       } as RunOptions,
       settings,
     ),
