@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **opencode agent driver — the first backend that inherits sequant's full skill
+  methodology (#862).** `sequant run <n> --agent opencode` dispatches every
+  phase through `opencode run --command <phase> … --format json --auto`, where a
+  per-phase `.opencode/commands/<phase>.md` wrapper (written by
+  `sequant init --agent opencode` from one template) tells the model to load the
+  matching `.claude/skills/<phase>/SKILL.md`. Unlike the aider driver, which
+  runs degraded inline prompts, opencode reads the same skill tree — so
+  `resolvesSkills` stays true and the #813 preflight applies unchanged.
+  - The NDJSON parser was built against a recorded real run (#992), not the
+    docs: chunk-safe line assembly (single lines reach 100 KB), tool names at
+    `part.tool`, and per-step `step_finish.cost` summed rather than read last.
+  - A phase fails distinctly when its skill demonstrably never loaded
+    (`skill-not-loaded`), or when opencode's skill tool truncated the SKILL.md
+    body and the model never paged through the remainder (`skill-truncated`).
+    Truncation alone is not fatal — every sequant skill exceeds opencode's
+    in-band cap.
+  - Exit 0 with no terminal `step_finish reason: "stop"` is reported as a
+    failure, not a success: that is how a clamped or hung step presents, and it
+    sums to $0.00 under per-step cost accounting.
+  - Spawn hardening from the same investigation: own process group with
+    group-kill on timeout/abort, a per-run `XDG_CONFIG_HOME` (the only hermetic
+    isolation from a global `opencode.jsonc`), and an optional per-model
+    reasoning budget via `OPENCODE_CONFIG_CONTENT`.
+  - New settings: `run.opencode.{model, variant, extraArgs, reasoningMaxTokens}`.
+    `sequant doctor` checks the binary and a pinned `1.18.27` floor when
+    `run.agent` is `opencode`.
+- `sequant init --agent <name>` selects the agent driver to provision for
+  (#862). `opencode` additionally writes the `.opencode/` command wrappers.
+
+### Changed
+
+- `sequant run --dry-run` now names the resolved agent driver in its plan
+  unconditionally (#862). It was previously printed only under `--verbose`, so a
+  dry run with `--agent opencode` was indistinguishable from a claude-code one.
+
 ### Fixed
 
 - **Tautology detector no longer flags subprocess-driven tests whose spawn path
