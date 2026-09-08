@@ -8,5 +8,8 @@ weight: 1
 
 Sanity check only — confirms a Skill tool call happened on the with-arm. This
 proves a skill loaded, not that the real qa skill produced the output; it is
-excluded from the without-arm score and is not evidence on its own (see the
-stub-skill canary in evals/null-run-canary, which also fires this grader).
+excluded from the without-arm score and is not evidence on its own: the
+stub-skill canary arm (AC-5b) fires this grader green against an 8-line stub
+of the skill. That arm is a recorded procedure — swap the plugin's SKILL.md
+for the stub and re-run this case — kept in evals/results/, not a case
+directory of its own.
