@@ -50,3 +50,51 @@ Ranked fit for sequant: **1) opencode** (all four requirements, only tool with z
 3. No further aider investment beyond keeping the existing driver working.
 4. Fix #863 before or with #862 — otherwise `--ready-gate` silently switches backends mid-run.
 5. `.agents/skills/` mirroring is deferred until #862 proves out, but should be re-evaluated then.
+
+## Dogfood 2026-09
+
+Produced by the runner for graph-2026-09 node 16 (#997). Three real issues were
+launched spec→exec→qa with `--agent opencode` (model
+`openrouter/anthropic/claude-sonnet-5`, base branch `dogfood/opencode-2026-09`
+= `main` + the `init --agent opencode` output, opencode 1.18.27). The claude-code
+arm was **not run**: the owner stopped the dogfood after the opencode arm hit the
+provider's credit wall, so the comparison rows are recorded as not run rather
+than fabricated. Sample PRs: none were created (no exec finished). Sample
+worktrees and branches were removed; the base branch is kept as evidence.
+
+| Issue | Driver | Verdict | Skill marker | Fan-out observed | $ | Wall | Defects found (owner's read / runner's record) |
+|---|---|---|---|---|---|---|---|
+| #991 | opencode | none — spec completed (4m53s), exec killed by runner at 11 min (credit wall imminent) | spec: yes (driver `success` requires it) | not verified | see arm total | 16 min | D-1, D-3 |
+| #990 | opencode | none — spec completed (13m04s), exec **failed** at 1m38s: `opencode reported an error: APIError` = OpenRouter "This request would exceed your available credits" | spec: yes | not verified | see arm total | 15 min | D-1, D-3, D-4 |
+| #929 | opencode | none — spec still running at 16 min when the runner stopped the arm | — | not verified | see arm total | 16 min | D-1 |
+| #991 | claude-code | not run (arm skipped, owner decision 2026-09-08) | — | — | — | — | — |
+| #990 | claude-code | not run | — | — | — | — | — |
+| #929 | claude-code | not run | — | — | — | — | — |
+
+Arm totals: **$5.16** OpenRouter spend across both attempts (attempt 1 ≈ $0.75
+wasted on the shim-check failure + loop; attempt 2 ≈ $4.41 in 13 minutes ≈
+$0.34/min for three concurrent issues), against an account ceiling of $10.
+Extrapolated cost of a full three-issue arm: $30–45.
+
+Defects (each is a candidate AC for a reopened node 12 or node 15 — reject route):
+
+- **D-1 (driver + init docs, node 12/15).** The spec phase runs in the **main
+  checkout**, not the worktree, so the shim check (`findShimIn(cwd)`) fails there
+  unless `.opencode/` is present in the main checkout too. The error text
+  ("commit .opencode/ so worktrees inherit it") describes a fix that is
+  insufficient for spec. All three first attempts failed in ~12 s.
+- **D-2 (orchestrator).** A **failed spec** dispatched the quality loop
+  (`opencode run --command loop …`) for all three issues — the loop should only
+  follow a QA failure. Attempt 1 burned its spend on loop sessions with nothing
+  to parse.
+- **D-3 (fidelity).** Neither completed opencode spec phase posted the `/spec`
+  plan-review comment on its issue, which every claude-code spec does. Whether
+  `gh` is unreachable under `--auto` permissions or the skill diverged is not
+  yet determined.
+- **D-4 (cost model).** OpenRouter reserves the request's full completion
+  budget (the driver's reasoning budget from #992) before serving it, so a
+  low-credit account refuses large-context calls well before the balance is
+  exhausted; the driver surfaces this only as `APIError`.
+
+Runner verify for node 16: `grep -c 'Dogfood 2026-09'` → 1; table rows = 6
+(3 issues × 2 drivers, three of them recorded as not run).
