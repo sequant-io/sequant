@@ -16,11 +16,7 @@
  */
 
 import { ui, colors } from "../lib/cli-ui.js";
-import {
-  getSettings,
-  type ReadyPolicy,
-  type SequantSettings,
-} from "../lib/settings.js";
+import { getSettings, type ReadyPolicy } from "../lib/settings.js";
 import { listWorktrees } from "../lib/workflow/worktree-manager.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 import { getStateManager } from "../lib/workflow/state-manager.js";
@@ -30,13 +26,11 @@ import { ReadySnapshotAdapter } from "./ready-tui-adapter.js";
 import type { RunRenderer } from "../lib/cli-ui/run-renderer-types.js";
 import type { TuiHandle } from "../ui/tui/index.js";
 import type { LivenessHeartbeat } from "../lib/workflow/heartbeat.js";
-import type { ProgressCallback } from "../lib/workflow/types.js";
-import { DEFAULT_CONFIG } from "../lib/workflow/types.js";
+import type { ProgressCallback, RunOptions } from "../lib/workflow/types.js";
 import {
-  positiveOr,
-  resolvePhasePolicies,
+  buildExecutionConfig,
+  resolveRunOptions,
 } from "../lib/workflow/config-resolver.js";
-import { getPhaseNames } from "../lib/workflow/phase-registry.js";
 import {
   runReadyGate,
   parseNonGoals,
@@ -96,32 +90,25 @@ export function resolvePolicy(
 }
 
 /**
- * Resolve the numeric limits for a ready-gate run: CLI → settings → default.
+ * Resolve the ready-only limit: the optional token budget.
  *
- * #833: these previously guarded only the CLI value (`typeof x === "number" &&
- * x > 0`) and fell straight through to `settings.run.*` unchecked. But
- * `settings.run.timeout` is user-authored JSON, and `ready`'s value does NOT
- * pass through `buildExecutionConfig` — `ready-gate.ts`'s `buildPhaseConfig`
- * assembles its own `ExecutionConfig`. So a `"timeout": 0` in settings.json
- * reached `setTimeout` as a 0 ms delay and aborted every ready-gate phase on
- * its first tick, with no warning: the #833 defect, on the path the original
- * fix did not cover. Chaining `positiveOr` leaves no layer unchecked.
+ * History: #833 added this function to guard `--timeout`/`--max-iterations`
+ * on the ready path (CLI → settings → default via `positiveOr`), because at the
+ * time `ready-gate.ts`'s `buildPhaseConfig` assembled its own `ExecutionConfig`
+ * and a `"timeout": 0` in settings.json reached `setTimeout` as a 0 ms delay.
+ * Since #863 `ready` feeds `buildExecutionConfig` — the single producer, whose
+ * own `positiveOr` chain guards both values and whose `resolveRunOptions` hop
+ * applies the env layer — so those two limits are read back from the resolved
+ * config and this function keeps only what never enters an `ExecutionConfig`.
  *
  * @internal Exported for testing only.
  */
 export function resolveReadyLimits(
-  options: Pick<ReadyCommandOptions, "maxIterations" | "budget" | "timeout">,
-  settings: Pick<SequantSettings, "run">,
+  options: Pick<ReadyCommandOptions, "budget">,
 ): {
-  maxIterations: number;
   tokenBudget: number | undefined;
-  phaseTimeout: number;
 } {
   return {
-    maxIterations: positiveOr(
-      options.maxIterations,
-      positiveOr(settings.run.maxIterations, DEFAULT_CONFIG.maxIterations),
-    ),
     // Budget is genuinely optional — `undefined` means "no budget", not "use a
     // default" — so it keeps the two-state form rather than chaining.
     tokenBudget:
@@ -130,10 +117,6 @@ export function resolveReadyLimits(
       options.budget > 0
         ? options.budget
         : undefined,
-    phaseTimeout: positiveOr(
-      options.timeout,
-      positiveOr(settings.run.timeout, DEFAULT_CONFIG.phaseTimeout),
-    ),
   };
 }
 
@@ -166,25 +149,45 @@ export async function readyCommand(
 
   const settings = await getSettings();
   const policy = resolvePolicy(options.policy, settings.ready.policy);
-  const { maxIterations, tokenBudget, phaseTimeout } = resolveReadyLimits(
-    options,
+  const { tokenBudget } = resolveReadyLimits(options);
+  // #863: one resolved ExecutionConfig, from the same producer the `run` path
+  // uses. Replaces the inline `resolvePhasePolicies` + `effortEscalation`
+  // blocks this command used to keep in lockstep with `buildExecutionConfig`
+  // by hand (#914/#915/#936 each patched one field of that drift). Everything
+  // the gate's phases need — `agent`, `aiderSettings`, `retry`, `mcpAllowlist`,
+  // `autoWaitMinutes`, ... — now arrives through this single object.
+  //
+  // `--max-iterations`/`--timeout` go in raw so `resolveRunOptions` applies
+  // the env layer (`SEQUANT_MAX_ITERATIONS`; there is no timeout env var)
+  // between CLI and settings exactly as on the `run` path; `buildExecutionConfig`'s
+  // `positiveOr` chain then guards the result (#833). `--budget`/`--policy`
+  // stay ready-only: neither is an `ExecutionConfig` field.
+  //
+  // The CLI subset goes through `resolveRunOptions` first — the same
+  // CLI > env > settings merge the `run` path applies — so settings-level
+  // knobs that never had a `ready` flag (`run.smartTests`, `SEQUANT_SMART_TESTS`,
+  // `run.autoWaitMinutes`, ...) resolve identically on both entry points
+  // instead of silently taking `buildExecutionConfig`'s defaults here.
+  const config = buildExecutionConfig(
+    resolveRunOptions(
+      {
+        maxIterations: options.maxIterations,
+        timeout: options.timeout,
+        mcp: options.mcp,
+        verbose: options.verbose,
+        models: options.models,
+        efforts: options.efforts,
+        escalateEffort: options.escalateEffort,
+      } as RunOptions,
+      settings,
+    ),
     settings,
+    1,
   );
-  const mcp = options.mcp !== false;
-  // #975: pass modelRoles + active driver so `role:` prefixes resolve,
-  // matching the same call in buildExecutionConfig (AC-5 drift guard).
-  const phasePolicies = resolvePhasePolicies(
-    options.models,
-    options.efforts,
-    settings.run.phases,
-    getPhaseNames(),
-    settings.run.modelRoles,
-    settings.run.agent ?? "claude-code",
-  );
-  // #915: CLI > settings > default `false`, same precedence as the `run`
-  // path's `buildExecutionConfig` (config-resolver.ts).
-  const effortEscalation =
-    options.escalateEffort ?? settings.run.effortEscalation ?? false;
+  // The gate's own loop limit and per-phase timeout read from the resolved
+  // config so they cannot diverge from what the phases run with.
+  const maxIterations = config.maxIterations;
+  const phaseTimeout = config.phaseTimeout;
 
   // Resolve the issue's existing worktree (reuses run/state worktree infra).
   const worktreePath = resolveWorktreePath(issueNumber);
@@ -297,14 +300,9 @@ export async function readyCommand(
       maxIterations,
       tokenBudget,
       nonGoals,
-      phaseTimeout,
-      mcp,
-      mcpAllowlist: settings.run.mcpAllowlist,
-      verbose: options.verbose,
+      config,
       runPhase,
       onProgress,
-      phasePolicies,
-      effortEscalation,
       // #937 AC-4: persist the final gap report so it survives the terminal
       // closing (previously terminal-scrollback only under `ac` policy).
       postReport: (body) => gh.postComment(String(issueNumber), body),

@@ -1308,10 +1308,10 @@ async function executePhase(
       ? resumeHandle
       : undefined;
 
-  // #914: resolved per-phase model/effort, if this phase has one. Both
-  // ExecutionConfig producers (buildExecutionConfig, ready-gate.ts's
-  // buildPhaseConfig) populate `phasePolicies` the same way, so this is the
-  // single site that turns it into driver-facing fields — see the doc
+  // #914: resolved per-phase model/effort, if this phase has one.
+  // `buildExecutionConfig` is the single producer of `phasePolicies` (since
+  // #863 `ready-gate.ts` spreads the caller's config instead of building its
+  // own), so this is the single site that turns it into driver-facing fields — see the doc
   // comment on ExecutionConfig.phasePolicies.
   const phasePolicy = config.phasePolicies?.[phase];
 

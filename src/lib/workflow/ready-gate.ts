@@ -155,18 +155,29 @@ export interface RunReadyGateOptions {
   tokenBudget?: number;
   /** Non-Goals parsed from the issue body, for report-only classification. */
   nonGoals?: string[];
-  /** Per-phase timeout in seconds. */
-  phaseTimeout: number;
-  /** Whether MCP servers are enabled for phase execution. */
-  mcp: boolean;
   /**
-   * Claude Desktop MCP server names explicitly opted in (#936). Callers
-   * (`commands/ready.ts`) resolve this from `settings.run.mcpAllowlist` —
-   * see the doc comment on `ExecutionConfig.mcpAllowlist` for why this
-   * producer cannot drift from `buildExecutionConfig`'s own assignment.
+   * The caller's fully-resolved `ExecutionConfig` — the single channel through
+   * which every execution-shaped setting reaches the gate's phases (#863).
+   *
+   * Required, deliberately: an optional field with a hardcoded fallback would
+   * rebuild the exact silent-default this field exists to delete. Before #863
+   * the gate took a flat bag of one-off primitives (`phaseTimeout`, `mcp`,
+   * `mcpAllowlist`, `verbose`, `phasePolicies`, `effortEscalation`), and
+   * `buildPhaseConfig` hardcoded everything the bag did not carry. That made
+   * `ready-gate.ts` a *second* `ExecutionConfig` producer that silently
+   * defaulted every field `config-resolver.ts` later grew — `agent` and
+   * `aiderSettings` most damagingly, so an aider-configured project ran its
+   * main phases on aider and its gate on claude-code (#833's drift class,
+   * previously patched per-field at #914 / #915 / #936).
+   *
+   * Both callers now resolve this through `buildExecutionConfig`
+   * (`commands/ready.ts`) or pass the parent run's own resolved config
+   * (`batch-executor.ts`), so there is exactly one producer. The gate keeps
+   * only the six gate-semantic overrides in {@link buildPhaseConfig}; every
+   * other key is inherited. `execution-config-parity.test.ts` fails if that
+   * ever drifts again.
    */
-  mcpAllowlist?: string[];
-  verbose?: boolean;
+  config: ExecutionConfig;
   /** Injectable phase runner — defaults to the real executePhaseWithRetry wrapper. */
   runPhase: ReadyPhaseRunner;
   /**
@@ -183,24 +194,6 @@ export interface RunReadyGateOptions {
   classifyChangesFn?: (cwd: string) => ExecChangeState;
   /** Injectable loop-progress snapshot — defaults to {@link snapshotLoopProgress}. */
   snapshotFn?: (cwd: string) => LoopProgressSnapshot;
-  /**
-   * Resolved per-phase `model`/`effort` overrides (#914), keyed by phase
-   * name. Callers (e.g. `commands/ready.ts`) resolve this via
-   * `resolvePhasePolicies` — the same shared resolver `buildExecutionConfig`
-   * uses — so this producer cannot drift from that one (#833 class).
-   * `buildPhaseConfig` spreads it onto every `ExecutionConfig` it builds;
-   * `phase-executor.ts` applies the entry for the phase actually running.
-   */
-  phasePolicies?: Record<string, { model?: string; effort?: string }>;
-  /**
-   * Evidence-based effort escalation on quality-loop retries (#915). Callers
-   * (e.g. `commands/ready.ts`) resolve this CLI > settings > `false`, the same
-   * precedence `buildExecutionConfig` uses for the `run` path (#833 class).
-   * `buildPhaseConfig` spreads it onto every `ExecutionConfig` it builds;
-   * `withEscalatedEffort` (`effort-escalation.ts`) reads it at each QA-pass
-   * dispatch to decide whether that specific `qa`/`loop` call escalates.
-   */
-  effortEscalation?: boolean;
   /**
    * Persist the final gap report as an issue comment when the gate reaches
    * a terminal state with a QA verdict (#937 AC-4) — callers wire this to
@@ -362,32 +355,51 @@ function defaultReadTokensUsed(worktreePath: string): number {
 }
 
 /**
- * Build a minimal ExecutionConfig for a single ready-gate phase.
+ * Gate-semantic overrides applied on top of the caller's resolved config
+ * (#863). These six keys — and only these — are the gate's own judgement;
+ * every other `ExecutionConfig` field is inherited from `opts.config`.
+ *
+ * The gate dispatches one phase at a time against a worktree it already owns,
+ * so it does not run a phase *list*, does not drive its own quality loop (it
+ * IS the loop), and is never the concurrency layer.
+ *
+ * `execution-config-parity.test.ts` mirrors this set as its allowlist and
+ * fails if a seventh key quietly joins it.
+ *
+ * @internal Exported for testing only.
  */
-function buildPhaseConfig(
+export const GATE_CONFIG_OVERRIDES = {
+  phases: [],
+  qualityLoop: false,
+  sequential: true,
+  concurrency: 1,
+  parallel: false,
+  dryRun: false,
+} satisfies Partial<ExecutionConfig>;
+
+/**
+ * Build the `ExecutionConfig` for a single ready-gate phase.
+ *
+ * Inherits the caller's fully-resolved config wholesale and overrides only
+ * {@link GATE_CONFIG_OVERRIDES}. Before #863 this function hardcoded a value
+ * for every field it knew about, which made it a *second* `ExecutionConfig`
+ * producer that silently defaulted everything `config-resolver.ts` grew
+ * afterwards — `agent`, `aiderSettings`, `retry`, `skipVerification`,
+ * `noSmartTests`, `autoWaitMinutes`, `relayEnabled`, `isolateParallel` and
+ * `issueType`. See {@link RunReadyGateOptions.config}.
+ *
+ * `extra` carries per-dispatch state only (`fullQa`, `lastVerdict`,
+ * `failedAcs`, `promptContext`) — never resolved settings.
+ *
+ * @internal Exported for testing only (`execution-config-parity.test.ts`).
+ */
+export function buildPhaseConfig(
   opts: RunReadyGateOptions,
   extra: Partial<ExecutionConfig>,
 ): ExecutionConfig {
   return {
-    phases: [],
-    phaseTimeout: opts.phaseTimeout,
-    qualityLoop: false,
-    maxIterations: opts.maxIterations,
-    skipVerification: false,
-    sequential: true,
-    concurrency: 1,
-    parallel: false,
-    verbose: opts.verbose ?? false,
-    noSmartTests: false,
-    dryRun: false,
-    mcp: opts.mcp,
-    mcpAllowlist: opts.mcpAllowlist,
-    retry: true,
-    // #914: producer 2 (see the doc comment on RunReadyGateOptions.phasePolicies
-    // for why this can't drift from buildExecutionConfig's own assignment).
-    phasePolicies: opts.phasePolicies,
-    // #915: producer 2 (see RunReadyGateOptions.effortEscalation).
-    effortEscalation: opts.effortEscalation,
+    ...opts.config,
+    ...GATE_CONFIG_OVERRIDES,
     ...extra,
   };
 }
