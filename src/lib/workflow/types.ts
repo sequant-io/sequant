@@ -405,6 +405,18 @@ export interface PhaseResult {
    */
   escalatedModel?: ModelEscalationFacts;
   /**
+   * Set when this phase declared the spec impossible as written (#995 /
+   * #971 AC-4) by emitting `"outcome":"SPEC_DIVERGENCE"` in its own
+   * `SEQUANT_PHASE` marker. Additive/optional, same shape contract as
+   * `capped?`/`escalatedModel?`.
+   *
+   * Its presence is terminal for the retry path *and* for the ladder: a retry
+   * cannot un-contradict a spec, and a stronger model would only rediscover
+   * the contradiction more expensively. Consumers treat it like `capped` —
+   * surface and halt, preserving whatever partial work exists.
+   */
+  specDivergence?: { acs?: string; message?: string };
+  /**
    * Concrete model ID from the SDK `modelUsage` map for this phase execution
    * (#975). First key of `modelUsage` — records the actual model dispatched,
    * distinct from the configured alias. Used to populate metrics `phasePolicies`.
