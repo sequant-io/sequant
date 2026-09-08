@@ -1,0 +1,82 @@
+name: Plugin Eval
+
+on:
+  workflow_dispatch:
+
+jobs:
+  eval:
+    name: Run plugin eval suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Verify API key secret is set
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set — add it under Settings > Secrets and variables > Actions, then re-run this workflow"
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is set"
+
+      - name: Run eval suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_WALNUT_SPIRE: 1
+        run: |
+          mkdir -p evals/ci-report
+          claude plugin eval . \
+            --no-publish \
+            --allow-tools Write \
+            --max-cost-usd 10 \
+            --threshold 0.9 \
+            --output-dir evals/ci-report \
+            --json evals/ci-report/results.json \
+            || true
+
+      - name: Evaluate results
+        run: |
+          RESULTS=evals/ci-report/results.json
+          if [ ! -f "$RESULTS" ]; then
+            echo "::error::$RESULTS was not produced by the eval run"
+            exit 1
+          fi
+
+          canary_pass_rate=$(jq -r '.cases[] | select(.name == "null-run-canary") | .aggregates.passRate' "$RESULTS")
+          if [ "$canary_pass_rate" != "0" ]; then
+            echo "::error::null-run-canary passRate is $canary_pass_rate, expected 0 — the canary is designed to fail; a passing canary means the graders are vacuous"
+            exit 1
+          fi
+          echo "null-run-canary is red as expected (passRate=0) — graders are not vacuous"
+
+          failures=$(jq -r '.cases[] | select(.name != "null-run-canary") | select(.aggregates.passRate < 1) | .name' "$RESULTS")
+          if [ -n "$failures" ]; then
+            echo "::error::the following case(s) failed to meet the pass-rate threshold:"
+            echo "$failures"
+            exit 1
+          fi
+          echo "All non-canary cases passed"
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: plugin-eval-report
+          path: evals/ci-report
