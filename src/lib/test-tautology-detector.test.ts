@@ -2,11 +2,15 @@
  * Tests for Test Tautology Detector
  */
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
 import {
   isSourceModule,
   extractImports,
   extractTestBlocks,
   testBlockCallsProductionCode,
+  buildPathContext,
   analyzeTestFile,
   detectTautologicalTests,
   formatTautologyResults,
@@ -955,5 +959,274 @@ describe.each(LABELS)('x [%s]', (_label, bin) => {
 });`;
     const result = analyzeTestFile(content, "a.test.ts");
     expect(result.tautologicalCount).toBe(1);
+  });
+});
+
+describe("resolved-path recognition (#956)", () => {
+  // filePath is relative here, as the CLI passes it; `__dirname` therefore
+  // denotes `<repo>/src/lib` and the repo root is discovered by walking up
+  // from that directory rather than from process.cwd().
+  const FILE = "src/lib/sample.test.ts";
+
+  it("recognizes a spawn whose path is built with path.resolve(__dirname, ...)", () => {
+    const content = `
+import { execSync } from 'child_process';
+import * as path from 'path';
+const CLI_PATH = path.resolve(__dirname, 'sample-cli.ts');
+function runCli(args) {
+  return execSync(\`npx tsx \${CLI_PATH} \${args}\`, { encoding: 'utf-8' });
+}
+describe('x', () => {
+  it('runs', () => { expect(runCli('--json')).toContain('{'); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("resolves a chain of declared path variables to a fixpoint", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../..');
+const HOOK = join(REPO_ROOT, 'hooks', 'pre-tool.sh');
+describe('x', () => {
+  it('runs the hook', () => { expect(spawnSync('bash', [HOOK]).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("binds a build-output value into a helper parameter across a call site", () => {
+    // `describe.each` yields `preHook`; the spawning helper's own parameter is
+    // named `hook`, so nothing but the argument position connects them.
+    const content = `
+import { spawnSync } from 'child_process';
+import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = resolve(HERE, '../..');
+const PAIRS = [['label', join(REPO_ROOT, 'hooks', 'pre-tool.sh')]];
+describe.each(PAIRS)('sink [%s]', (_label, preHook) => {
+  function run(hook, command) {
+    return spawnSync('bash', [hook], { input: command });
+  }
+  it('writes a log', () => { expect(run(preHook, 'git status').status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("does not treat a repo-internal path that names no executable as production", () => {
+    // Negative control for the widened exemption: spawning `git` with a
+    // repo-internal cwd is not running this project's code.
+    const content = `
+import { spawnSync } from 'child_process';
+import { resolve } from 'path';
+const DOCS_DIR = resolve(__dirname, 'docs');
+describe('x', () => {
+  it('shells out', () => {
+    const out = spawnSync('git', ['status'], { cwd: DOCS_DIR });
+    expect(out.status).toBe(0);
+  });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("does not treat a node_modules binary as production", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { resolve } from 'path';
+const TSX_BIN = resolve(__dirname, '../../node_modules/.bin/tsx');
+describe('x', () => {
+  it('runs tsx', () => { expect(spawnSync(TSX_BIN, ['--version']).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("does not resolve a path rooted in a temp sandbox", () => {
+    const content = `
+import { spawnSync } from 'child_process';
+import { mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+const SANDBOX = mkdtempSync(join(tmpdir(), 'x-'));
+const SCRIPT = join(SANDBOX, 'run.sh');
+describe('x', () => {
+  it('runs the sandbox script', () => { expect(spawnSync('bash', [SCRIPT]).status).toBe(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("recognizes an expression-bodied arrow helper", () => {
+    const content = `
+import { execSync } from 'child_process';
+import * as path from 'path';
+const CLI_PATH = path.resolve(__dirname, 'sample-cli.ts');
+const runCli = (args) => execSync(\`npx tsx \${CLI_PATH} \${args}\`);
+const runInTemp = (
+  args: string[],
+): ReturnType<typeof runCli> => runCli(args);
+describe('x', () => {
+  it('runs', () => { expect(runInTemp(['init'])).toBeDefined(); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("recognizes a destructured dynamic import as a production import", () => {
+    const content = `
+const { resolveCliBinary } = await import('./tools/run.js');
+describe('x', () => {
+  it('resolves', () => { expect(resolveCliBinary()).toBeDefined(); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("reads the callback body past a title containing braces", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it("returns { kind: 'commits' } when ahead", () => { expect(doWork()).toBe(1); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("reads the callback body past an options object argument", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it('slow one', { timeout: 20_000 }, async () => { expect(doWork()).toBe(1); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+
+  it("still flags a braced-title block that calls nothing", () => {
+    const content = `
+import { doWork } from './work';
+describe('x', () => {
+  it("returns { kind: 'commits' }", () => { expect(1 + 1).toBe(2); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(1);
+  });
+
+  it("reads a helper body past a generic return-type annotation", () => {
+    const content = `
+import { spawn } from 'child_process';
+import { resolve } from 'path';
+const MODULE_PATH = resolve(__dirname, 'log-writer.ts');
+async function spawnRunLike(): Promise<{ pid: number }> {
+  const child = spawn('node', ['--eval', \`import x from "\${MODULE_PATH}"\`]);
+  return { pid: child.pid };
+}
+describe('x', () => {
+  it('aborts cleanly', async () => { expect((await spawnRunLike()).pid).toBeGreaterThan(0); });
+});`;
+    expect(analyzeTestFile(content, FILE).tautologicalCount).toBe(0);
+  });
+});
+
+describe("lifecycle-hook assigned handles (#956)", () => {
+  it("recognizes a suite handle instantiated in beforeEach and driven in blocks", () => {
+    const content = `
+import { describe, it, expect, beforeEach } from "vitest";
+import { StateManager } from "./state-manager.js";
+
+describe("suite", () => {
+  let manager: StateManager;
+
+  beforeEach(() => {
+    manager = new StateManager({ statePath: "/tmp/x.json" });
+  });
+
+  it("reads state", async () => {
+    const state = await manager.getIssueState(1);
+    expect(state).toBeDefined();
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/a.test.ts");
+    expect(result.tautologicalCount).toBe(0);
+  });
+
+  it("still flags a block that only reads a value the hook computed", () => {
+    // The gate is that the handle is *driven* (`name(...)` / `name.m(...)`),
+    // not merely read. `noJqPath` below is a plain string the hook happened to
+    // build; the block spawns only a system binary with it. Mirrors
+    // pre-tool-hook.integration.test.ts:1529, which must stay flagged.
+    const content = `
+import { describe, it, expect, beforeAll } from "vitest";
+import { spawnSync } from "child_process";
+import { buildPath } from "./path-builder.js";
+
+describe("suite", () => {
+  let noJqPath: string;
+
+  beforeAll(() => {
+    noJqPath = buildPath();
+  });
+
+  it("confirms jq is unavailable (sanity)", () => {
+    const check = spawnSync("bash", ["-c", "command -v jq"], {
+      env: { PATH: noJqPath },
+    });
+    expect(check.status).not.toBe(0);
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/b.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+
+  it("does not promote handles from a hook that never reaches production", () => {
+    const content = `
+import { describe, it, expect, beforeEach } from "vitest";
+import { mkdtempSync } from "fs";
+
+describe("suite", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync("/tmp/x-");
+  });
+
+  it("asserts on a local value only", () => {
+    const enabled = true;
+    expect(enabled).toBe(true);
+  });
+});
+`;
+    const result = analyzeTestFile(content, "src/lib/c.test.ts");
+    expect(result.tautologicalCount).toBe(1);
+  });
+});
+
+describe("buildPathContext (#956)", () => {
+  it("anchors thisDir on the analyzed file and finds the repo root by walking up to .git", () => {
+    const here = nodePath.resolve("src/lib/test-tautology-detector.test.ts");
+    const ctx = buildPathContext(here);
+    expect(ctx.thisDir).toBe(nodePath.dirname(here));
+    // Repo root is derived from the file's own path, not process.cwd():
+    // vitest runs at the repo root, so the two coincide here, but the
+    // assertion is on the walk-up result.
+    expect(ctx.repoRoot).toBe(nodePath.resolve("."));
+    expect(ctx.vars.size).toBe(0);
+  });
+
+  it("falls back to the nearest package.json when no .git is found, and to null when neither exists", () => {
+    const base = mkdtempSync(nodePath.join(tmpdir(), "tautology-pathctx-"));
+    try {
+      const pkgRoot = nodePath.join(base, "pkg");
+      const nested = nodePath.join(pkgRoot, "src", "deep");
+      mkdirSync(nested, { recursive: true });
+      writeFileSync(nodePath.join(pkgRoot, "package.json"), "{}\n");
+      const inPkg = buildPathContext(nodePath.join(nested, "a.test.ts"));
+      expect(inPkg.repoRoot).toBe(pkgRoot);
+
+      const bare = nodePath.join(base, "bare", "x");
+      mkdirSync(bare, { recursive: true });
+      const noRoot = buildPathContext(nodePath.join(bare, "b.test.ts"));
+      expect(noRoot.thisDir).toBe(bare);
+      expect(noRoot.repoRoot).toBeNull();
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
   });
 });

@@ -15,6 +15,9 @@
  * ```
  */
 
+import { existsSync } from "fs";
+import * as nodePath from "path";
+
 /**
  * Represents an imported function from a source module
  */
@@ -154,6 +157,7 @@ export function isSourceModule(modulePath: string): boolean {
  * - Named imports: `import { foo, bar } from './module'`
  * - Default imports: `import foo from './module'`
  * - Namespace imports: `import * as foo from './module'` (extracts the namespace name)
+ * - Dynamic imports: `const { foo } = await import('./module')` (#956)
  */
 export function extractImports(content: string): ImportedFunction[] {
   const imports: ImportedFunction[] = [];
@@ -199,6 +203,37 @@ export function extractImports(content: string): ImportedFunction[] {
 
     if (isSourceModule(modulePath)) {
       imports.push({ name, modulePath });
+    }
+  }
+
+  // Dynamic destructured imports: const { foo } = await import('./module')
+  // Vitest suites that must control module state import at runtime rather
+  // than at the top of the file; 27 blocks in one file read as import-less
+  // for exactly this reason (#956).
+  const dynamicNamedPattern =
+    /(?:const|let|var)\s*\{([^}]+)\}\s*=\s*(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = dynamicNamedPattern.exec(content)) !== null) {
+    const modulePath = match[2];
+    if (!isSourceModule(modulePath)) {
+      continue;
+    }
+    for (const name of match[1].split(",")) {
+      const aliasMatch = name.match(/(\w+)\s*:\s*(\w+)/);
+      const cleanName = aliasMatch ? aliasMatch[2] : name.trim();
+      if (/^\w+$/.test(cleanName)) {
+        imports.push({ name: cleanName, modulePath });
+      }
+    }
+  }
+
+  // Dynamic default/namespace imports: const foo = await import('./module')
+  const dynamicDefaultPattern =
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = dynamicDefaultPattern.exec(content)) !== null) {
+    if (isSourceModule(match[2])) {
+      imports.push({ name: match[1], modulePath: match[2] });
     }
   }
 
@@ -257,10 +292,15 @@ export function extractTestBlocks(content: string): Array<{
     const contentBeforeMatch = content.substring(0, startIndex);
     const lineNumber = contentBeforeMatch.split("\n").length;
 
-    // Find the matching closing brace for the test block
-    // This is a simplified approach that works for most cases
-    const afterMatch = content.substring(startIndex);
-    const body = extractBlockBody(afterMatch);
+    // Find the callback body. Start the search *after* the title, and skip
+    // any brace group that is not a function body (#956): both
+    //   it("... feature/838-fix{,-more} ...", () => {...})
+    //   it("...", { timeout: 20_000 }, async () => {...})
+    // put a `{` ahead of the callback, and anchoring on the first one made the
+    // "body" a title fragment or an options object — so the block read as
+    // tautological no matter what it actually called.
+    const afterTitle = content.substring(startIndex + match[0].length);
+    const body = extractTestCallbackBody(afterTitle);
 
     blocks.push({
       description,
@@ -281,6 +321,31 @@ export function extractTestBlocks(content: string): Array<{
  * Handles nested template literals: `` `outer ${`inner`} still outer` ``
  * by tracking template expression depth via a stack.
  */
+/**
+ * Body of a test block's callback argument, given the source *after* the
+ * title literal.
+ *
+ * A brace group counts as the callback body only when the text immediately
+ * before it ends an arrow (`=>`) or a `function` head. Any earlier group is an
+ * options object (`{ timeout: 20_000 }`) and is skipped. Keying on what
+ * precedes the brace — rather than on what follows it — also keeps the legacy
+ * `it("x", () => {...}, 5000)` timeout-as-last-argument form working.
+ */
+function extractTestCallbackBody(text: string): string {
+  let rest = text;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const braceIndex = rest.indexOf("{");
+    if (braceIndex === -1) return "";
+    const preceding = rest.substring(0, braceIndex);
+    const body = extractBlockBody(rest.substring(braceIndex));
+    if (/=>\s*$/.test(preceding) || /\bfunction\b[^{]*$/.test(preceding)) {
+      return body;
+    }
+    rest = rest.substring(braceIndex + Math.max(body.length, 1));
+  }
+  return "";
+}
+
 function isInsideString(content: string, position: number): boolean {
   let inString = false;
   let stringChar = "";
@@ -502,6 +567,345 @@ const BUILD_OUTPUT_PATTERN = /\bdist\//;
  */
 const PROJECT_SCRIPT_PATTERN = /\b(?:hooks\/[\w.-]+\.sh|scripts\/[\w./-]+)/;
 
+/* ------------------------------------------------------------------ *
+ * Resolved-path recognition (#956)
+ *
+ * The two collectors above are purely textual: they recognize a spawn as
+ * production only when the source contains a contiguous `dist/`, `hooks/*.sh`
+ * or `scripts/**` substring. Two idiomatic path constructions defeat that and
+ * produced 62 of the 132 advisory flags measured across the repo:
+ *
+ *   const CLI  = path.resolve(__dirname, "tautology-detector-cli.ts");
+ *   const HOOK = join(REPO_ROOT, "hooks", "pre-tool.sh");
+ *
+ * The first hides the location in `__dirname` (a runtime global); the second
+ * splits the token across separate string literals. Neither leaves a
+ * contiguous marker to match. Rather than pattern-matching ever more literal
+ * tokens, this section *resolves* such expressions to an absolute path and
+ * asks whether that path names executable code inside the repository.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Extensions denoting *executable* code rather than data. A resolved
+ * repo-internal path counts as production only when it names something the
+ * project can actually run.
+ *
+ * This gate is load-bearing, not cosmetic. Without it "any repo-internal
+ * path" would excuse a test that merely spawns `git` with
+ * `{ cwd: SOME_REPO_DIR }` — a genuine tautology the widened heuristic would
+ * otherwise swallow. Widening the exemption is the main risk this change
+ * carries, so it is bounded twice: by this pattern and by
+ * {@link VENDOR_PATH_PATTERN}.
+ */
+const EXECUTABLE_PATH_PATTERN = /\.(?:[cm]?[jt]sx?|sh|bash)$/;
+
+/** Dependency trees: inside the repo on disk, but not this project's code. */
+const VENDOR_PATH_PATTERN = /(?:^|[\\/])node_modules[\\/]/;
+
+/**
+ * `__dirname` and its two idiomatic ESM equivalents. All three denote the
+ * directory of the file being analyzed, which `analyzeTestFile` already knows
+ * from `filePath` — so a path built from one is statically resolvable even
+ * though the token itself is a runtime value.
+ */
+const THIS_DIR_EXPRESSIONS = [
+  /^__dirname$/,
+  /^(?:[\w$]+\s*\.\s*)?fileURLToPath\s*\(\s*new\s+URL\s*\(\s*(['"`])\.\/?\1\s*,\s*import\s*\.\s*meta\s*\.\s*url\s*\)\s*\)$/,
+  /^(?:[\w$]+\s*\.\s*)?dirname\s*\(\s*(?:[\w$]+\s*\.\s*)?fileURLToPath\s*\(\s*import\s*\.\s*meta\s*\.\s*url\s*\)\s*\)$/,
+];
+
+/** A `resolve(...)` / `join(...)` call, optionally namespaced (`path.join`). */
+const PATH_CALL_PATTERN = /(?:[\w$]+\s*\.\s*)?\b(?:resolve|join)\s*\(/g;
+
+/** Guard against pathological nesting while resolving an expression. */
+const MAX_PATH_RESOLUTION_DEPTH = 8;
+
+/**
+ * Everything needed to resolve a path expression found in a test file.
+ *
+ * Exported because {@link testBlockCallsProductionCode} accepts one; build it
+ * with {@link buildPathContext} rather than by hand.
+ */
+export interface PathContext {
+  /** Directory of the analyzed file — what `__dirname` denotes there. */
+  thisDir: string;
+  /** Repo root, or null when undeterminable (path resolution then off). */
+  repoRoot: string | null;
+  /** Declared variable name → the absolute path it resolves to. */
+  vars: Map<string, string>;
+}
+
+/**
+ * Nearest ancestor of `startDir` holding `.git` (a directory in a normal
+ * clone, a *file* in a worktree — hence `existsSync`, not `isDirectory`),
+ * falling back to the nearest `package.json`.
+ *
+ * Deliberately derived from the analyzed file's own path rather than
+ * `process.cwd()`, so a caller's working directory cannot change the verdict.
+ */
+function findRepoRoot(startDir: string): string | null {
+  let dir = startDir;
+  let packageRoot: string | null = null;
+  for (let i = 0; i < 64; i++) {
+    if (existsSync(nodePath.join(dir, ".git"))) {
+      return dir;
+    }
+    if (!packageRoot && existsSync(nodePath.join(dir, "package.json"))) {
+      packageRoot = dir;
+    }
+    const parent = nodePath.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return packageRoot;
+}
+
+/**
+ * Inner text of the parenthesized group opening at `openIndex`, or null if
+ * unbalanced. String contents are skipped so a paren inside a literal (test
+ * titles routinely contain them) does not throw off the depth count.
+ */
+function readBalancedParens(text: string, openIndex: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let stringChar = "";
+  let escaped = false;
+  for (let i = openIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (char === stringChar) inString = false;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+    if (char === "(") {
+      depth++;
+    } else if (char === ")") {
+      depth--;
+      if (depth === 0) return text.substring(openIndex + 1, i);
+    }
+  }
+  return null;
+}
+
+/**
+ * Split an argument list on its top-level commas, ignoring commas nested in
+ * brackets or string literals. Returns null if the text is unbalanced.
+ */
+function splitTopLevelArgs(text: string): string[] | null {
+  const args: string[] = [];
+  let depth = 0;
+  let start = 0;
+  let inString = false;
+  let stringChar = "";
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (char === stringChar) inString = false;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") {
+      depth++;
+    } else if (char === ")" || char === "]" || char === "}") {
+      depth--;
+      if (depth < 0) return null;
+    } else if (char === "," && depth === 0) {
+      args.push(text.substring(start, i));
+      start = i + 1;
+    }
+  }
+  if (depth !== 0 || inString) return null;
+  const tail = text.substring(start);
+  if (tail.trim() || args.length > 0) args.push(tail);
+  return args;
+}
+
+/**
+ * Resolve a path expression to an absolute path, or null when any part of it
+ * is not statically knowable.
+ *
+ * Handles string literals, `__dirname` (and ESM equivalents), already-resolved
+ * variable names, and nested `resolve`/`join` calls. Anything else — a
+ * `mkdtempSync(...)` sandbox, `process.env.X`, a template literal with an
+ * interpolation — resolves to null, which is what keeps temp-directory paths
+ * from being mistaken for repo code.
+ */
+function resolvePathExpression(
+  expr: string,
+  ctx: PathContext,
+  depth = 0,
+): string | null {
+  if (depth > MAX_PATH_RESOLUTION_DEPTH) return null;
+  const trimmed = expr.trim();
+  if (!trimmed) return null;
+
+  if (THIS_DIR_EXPRESSIONS.some((pattern) => pattern.test(trimmed))) {
+    return ctx.thisDir;
+  }
+
+  // A plain string literal — no escapes, and no `${}` interpolation.
+  const literal = trimmed.match(/^(['"`])((?:(?!\1)[^\\])*)\1$/);
+  if (literal) {
+    return literal[1] === "`" && literal[2].includes("${") ? null : literal[2];
+  }
+
+  if (/^[\w$]+$/.test(trimmed)) {
+    return ctx.vars.get(trimmed) ?? null;
+  }
+
+  const head = trimmed.match(/^(?:[\w$]+\s*\.\s*)?\b(resolve|join)\s*\(/);
+  if (!head) return null;
+  const openIndex = head[0].length - 1;
+  const inner = readBalancedParens(trimmed, openIndex);
+  // The call must span the whole expression; a trailing `.replace(...)` or
+  // similar means the value is not the path we resolved.
+  if (inner === null || openIndex + inner.length + 2 !== trimmed.length) {
+    return null;
+  }
+  const args = splitTopLevelArgs(inner);
+  if (!args || args.length === 0) return null;
+
+  const parts: string[] = [];
+  for (const arg of args) {
+    const resolved = resolvePathExpression(arg, ctx, depth + 1);
+    if (resolved === null) return null;
+    parts.push(resolved);
+  }
+  // Require an absolute anchor: otherwise `path.resolve` would silently fall
+  // back to `process.cwd()`, making the verdict depend on the caller's shell.
+  if (!nodePath.isAbsolute(parts[0])) return null;
+
+  return head[1] === "join"
+    ? nodePath.join(...parts)
+    : nodePath.resolve(...parts);
+}
+
+/**
+ * Whether an absolute path names executable code this repository ships.
+ */
+function isProductionPath(absolutePath: string, ctx: PathContext): boolean {
+  if (!ctx.repoRoot) return false;
+  const rel = nodePath.relative(ctx.repoRoot, absolutePath);
+  if (!rel || rel.startsWith("..") || nodePath.isAbsolute(rel)) return false;
+  if (VENDOR_PATH_PATTERN.test(rel)) return false;
+  return EXECUTABLE_PATH_PATTERN.test(rel);
+}
+
+/**
+ * Whether `text` contains a path-construction call resolving to production
+ * code — the inline counterpart of {@link collectResolvedPathVars}, for
+ * spawns that build their path in place rather than via a named handle.
+ */
+function containsProductionPath(
+  text: string,
+  ctx: PathContext | null,
+): boolean {
+  if (!ctx || !ctx.repoRoot) return false;
+  PATH_CALL_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = PATH_CALL_PATTERN.exec(text)) !== null) {
+    const openIndex = match.index + match[0].length - 1;
+    const inner = readBalancedParens(text, openIndex);
+    if (inner === null) continue;
+    const call = text.substring(match.index, openIndex + inner.length + 2);
+    const resolved = resolvePathExpression(call, ctx);
+    if (resolved !== null && isProductionPath(resolved, ctx)) {
+      PATH_CALL_PATTERN.lastIndex = 0;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Build the resolution context for a file: locate the repo root, then resolve
+ * every `const NAME = <path expression>` declaration to a fixpoint so that
+ * chains chase through (`HERE → REPO_ROOT → HOOK`).
+ *
+ * Returns a context with `repoRoot: null` when the root cannot be located, in
+ * which case every path-resolution check below is inert and the detector
+ * behaves exactly as it did before this change.
+ */
+export function buildPathContext(filePath: string): PathContext {
+  const thisDir = nodePath.dirname(nodePath.resolve(filePath));
+  return { thisDir, repoRoot: findRepoRoot(thisDir), vars: new Map() };
+}
+
+/**
+ * Statement-bounded variable declaration. The optional type annotation stops
+ * at the first `=`, matching {@link collectBuildOutputVars}'s convention.
+ */
+const PATH_DECL_PATTERN =
+  /(?:const|let|var)\s+([\w$]+)\s*(?::[^=;]*)?=\s*([^;]+)/g;
+
+/** Resolve declared path variables into `ctx.vars`, iterating to a fixpoint. */
+function populatePathVars(content: string, ctx: PathContext): void {
+  if (!ctx.repoRoot) return;
+  for (let round = 0; round < MAX_PATH_RESOLUTION_DEPTH; round++) {
+    let changed = false;
+    PATH_DECL_PATTERN.lastIndex = 0;
+    let match;
+    while ((match = PATH_DECL_PATTERN.exec(content)) !== null) {
+      const name = match[1];
+      if (ctx.vars.has(name)) continue;
+      const resolved = resolvePathExpression(match[2], ctx);
+      if (resolved !== null) {
+        ctx.vars.set(name, resolved);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+}
+
+/**
+ * Names of variables whose declaration builds a path to this project's own
+ * executable code — the resolved-path counterpart of
+ * {@link collectBuildOutputVars}.
+ *
+ * The whole statement-bounded right-hand side is scanned, not just a
+ * single-expression RHS, so a *table* of paths is collected too:
+ *   const HOOK_PAIRS = [["label", join(REPO_ROOT, "hooks", "pre-tool.sh"), …]];
+ * captures `HOOK_PAIRS`, which then feeds {@link collectDescribeEachParams}.
+ */
+function collectResolvedPathVars(content: string, ctx: PathContext): string[] {
+  if (!ctx.repoRoot) return [];
+  const names = new Set<string>();
+  PATH_DECL_PATTERN.lastIndex = 0;
+  let match;
+  while ((match = PATH_DECL_PATTERN.exec(content)) !== null) {
+    if (containsProductionPath(match[2], ctx)) {
+      names.add(match[1]);
+    }
+  }
+  return [...names];
+}
+
 /**
  * Collect names of variables bound to a path into the project's own executable
  * code, e.g.
@@ -590,11 +994,17 @@ function collectDescribeEachParams(
 function referencesBuildOutput(
   body: string,
   buildOutputVars: string[],
+  pathContext: PathContext | null = null,
 ): boolean {
   if (BUILD_OUTPUT_PATTERN.test(body) || PROJECT_SCRIPT_PATTERN.test(body)) {
     return true;
   }
-  return buildOutputVars.some((name) => referenceMatcher(name).test(body));
+  if (buildOutputVars.some((name) => referenceMatcher(name).test(body))) {
+    return true;
+  }
+  // Inline construction: `spawnSync("bash", [join(REPO_ROOT, "hooks", "x.sh")])`
+  // never binds a name for the clause above to match (#956).
+  return containsProductionPath(body, pathContext);
 }
 
 /**
@@ -603,9 +1013,14 @@ function referencesBuildOutput(
  * keeps a helper that merely mentions `dist/` in a string (but never spawns)
  * from counting as production (#885 AC-5).
  */
-function spawnsBuildOutput(body: string, buildOutputVars: string[]): boolean {
+function spawnsBuildOutput(
+  body: string,
+  buildOutputVars: string[],
+  pathContext: PathContext | null = null,
+): boolean {
   return (
-    SPAWN_PATTERN.test(body) && referencesBuildOutput(body, buildOutputVars)
+    SPAWN_PATTERN.test(body) &&
+    referencesBuildOutput(body, buildOutputVars, pathContext)
   );
 }
 
@@ -619,24 +1034,46 @@ function spawnsBuildOutput(body: string, buildOutputVars: string[]): boolean {
  * declarations): 17 of 19 blocks flagged, every one of them real.
  *
  * Params are matched with `[^()]*` (no nested parens) to keep the scan from
- * running away across the file. Expression-bodied arrows are skipped — they
- * have no `{` body to extract.
+ * running away across the file. The captured parameter list feeds
+ * {@link collectHelperParamBindings}.
+ *
+ * Expression-bodied arrows are handled separately (#956): `const runInTemp =
+ * (args) => runCli(args, {...});` has no brace body, so the brace-anchored
+ * pass below cannot see it, and 9 blocks across two files read as tautological
+ * purely because their only handle was written without braces.
  */
 function extractHelperDefinitions(
   content: string,
-): Array<{ name: string; body: string }> {
-  const helpers: Array<{ name: string; body: string }> = [];
+): Array<{ name: string; params: string[]; body: string }> {
+  const helpers: Array<{ name: string; params: string[]; body: string }> = [];
 
   // Arrow consts anchor on `=> {`, so the body brace is unambiguous.
   const arrowPattern =
-    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\([^()]*\)\s*(?::[^=]*?)?=>\s*\{/g;
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(([^()]*)\)\s*(?::[^=]*?)?=>\s*\{/g;
   let match;
   while ((match = arrowPattern.exec(content)) !== null) {
     if (isInsideString(content, match.index)) continue;
     const braceIndex = match.index + match[0].length - 1;
     helpers.push({
       name: match[1],
+      params: parseParamNames(match[2]),
       body: extractBlockBody(content.substring(braceIndex)),
+    });
+  }
+
+  // Expression-bodied arrows: no brace to anchor on, so the "body" is the rest
+  // of the statement. Bounded to the next top-level `;` (or end of file) by
+  // extractExpressionBody, mirroring the statement-bounded scans elsewhere.
+  const exprArrowPattern =
+    /(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?\(([^()]*)\)\s*(?::[^=]*?)?=>\s*(?!\{)/g;
+  while ((match = exprArrowPattern.exec(content)) !== null) {
+    if (isInsideString(content, match.index)) continue;
+    helpers.push({
+      name: match[1],
+      params: parseParamNames(match[2]),
+      body: extractExpressionBody(
+        content.substring(match.index + match[0].length),
+      ),
     });
   }
 
@@ -661,12 +1098,117 @@ function extractHelperDefinitions(
 
     let body = extractBlockBody(rest.substring(firstBrace));
     const after = rest.substring(firstBrace + body.length);
-    if (/^\s*\{/.test(after)) {
+    // The return-type group may close a generic before the body opens:
+    //   async function spawnRunLike(): Promise<{ pid: number }> { ... }
+    // so `>` and `[]` are skipped alongside whitespace (#956). Without this
+    // the "body" stayed the return type and the helper never registered as
+    // reaching production.
+    if (/^[\s>[\]]*\{/.test(after)) {
       body = extractBlockBody(after);
     }
-    helpers.push({ name: match[1], body });
+    helpers.push({ name: match[1], params: parseParamNames(match[0]), body });
   }
   return helpers;
+}
+
+/**
+ * Parameter names from a parameter-list source fragment, stripped of type
+ * annotations, default values and destructuring. A parameter that is not a
+ * plain identifier yields "" so positional indexes stay aligned with the
+ * call-site arguments {@link collectHelperParamBindings} matches against.
+ */
+function parseParamNames(paramSource: string): string[] {
+  const open = paramSource.indexOf("(");
+  const inner =
+    open === -1
+      ? paramSource
+      : (readBalancedParens(paramSource, open) ?? paramSource);
+  if (!inner.trim()) return [];
+  return inner.split(",").map((param) => {
+    const name = param.trim().split(/[:=]/)[0].trim();
+    return /^[\w$]+$/.test(name) ? name : "";
+  });
+}
+
+/**
+ * Text of an expression-bodied arrow function: everything up to the next
+ * top-level `;`, ignoring brackets and string literals.
+ */
+function extractExpressionBody(text: string): string {
+  let depth = 0;
+  let inString = false;
+  let stringChar = "";
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (inString) {
+      if (char === stringChar) inString = false;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+    if (char === "(" || char === "[" || char === "{") depth++;
+    else if (char === ")" || char === "]" || char === "}") {
+      depth--;
+      if (depth < 0) return text.substring(0, i);
+    } else if (char === ";" && depth === 0) {
+      return text.substring(0, i);
+    }
+  }
+  return text;
+}
+
+/**
+ * Bind build-output values into helper *parameters* across a call site.
+ *
+ * `describe.each(HOOK_PAIRS)` yields callback params `preHook`/`postHook`,
+ * but the helper that actually spawns them declares its own parameter as
+ * `hook` — so the name-text match that {@link collectDescribeEachParams}
+ * relies on has no bridge, and `run(preHook, "git status")` was invisible
+ * (#956 / the #966 remainder). Given a call `H(a, b)` where argument *N* is a
+ * known build-output name, this adds `H`'s parameter *N* to the set.
+ */
+function collectHelperParamBindings(
+  content: string,
+  helpers: Array<{ name: string; params: string[]; body: string }>,
+  buildOutputVars: string[],
+): string[] {
+  const names = new Set<string>();
+  const known = new Set(buildOutputVars);
+  for (const helper of helpers) {
+    if (helper.params.length === 0) continue;
+    const callPattern = new RegExp(
+      `(?<![\\w$.])${escapeRegex(helper.name)}\\s*\\(`,
+      "g",
+    );
+    let call;
+    while ((call = callPattern.exec(content)) !== null) {
+      const openIndex = call.index + call[0].length - 1;
+      const inner = readBalancedParens(content, openIndex);
+      if (inner === null) continue;
+      const args = splitTopLevelArgs(inner);
+      if (!args) continue;
+      args.forEach((arg, index) => {
+        const trimmed = arg.trim();
+        const paramName = helper.params[index];
+        if (paramName && /^[\w$]+$/.test(trimmed) && known.has(trimmed)) {
+          names.add(paramName);
+        }
+      });
+    }
+  }
+  return [...names];
 }
 
 /**
@@ -684,24 +1226,118 @@ function extractHelperDefinitions(
  *    but seeding on spawns alone missed it, so every test that built its
  *    subject through a factory read as tautological.
  */
+/**
+ * Lifecycle hooks that run before a test block's own body does.
+ */
+const LIFECYCLE_HOOK_PATTERN = /\b(?:beforeEach|beforeAll)\s*\(/g;
+
+/** `name = ...` / `name: Type = ...` assignments, statement-bounded. */
+const HOOK_ASSIGNMENT_PATTERN = /(?:^|[;{)\n])\s*([\w$]+)\s*=\s*[^=]/g;
+
+/**
+ * Whether `name` is ever used in call position — `name(...)` or
+ * `name.method(...)` — as opposed to being read as a plain value.
+ */
+function calledAsHandle(content: string, name: string): boolean {
+  return new RegExp(
+    `(?<![\\w$.])${escapeRegex(name)}\\s*(?:\\.\\s*[\\w$]+\\s*)*\\(`,
+  ).test(content);
+}
+
+/**
+ * Names assigned inside a lifecycle hook whose body reaches production (#956).
+ *
+ * A suite-scope handle is routinely *declared* bare (`let client;`) and only
+ * *assigned* in `beforeEach`. Neither {@link collectBuildOutputVars} (which
+ * needs a path-bearing right-hand side) nor {@link extractHelperDefinitions}
+ * (which needs a function body) can see that shape, so every block driving the
+ * handle reads as tautological. This was the last residual class in the #956
+ * corpus: `src/mcp/server-extended.test.ts` imports `createServer` from
+ * `./server.js` inside `beforeEach`, connects the real server over an
+ * in-memory transport, assigns the connected client to an outer `client`, and
+ * then exercises production in all 21 blocks via `client.callTool(...)`.
+ *
+ * The hook body itself is the gate: assignments become handles only when the
+ * hook reaches production. A hook that merely does
+ * `tempDir = mkdtempSync(...)` registers nothing, which is what keeps
+ * file-content gate tests — the ones that stage a fixture and then assert on
+ * text — correctly flagged.
+ */
+function collectHookAssignedHandles(
+  content: string,
+  buildOutputVars: string[],
+  importedFunctions: ImportedFunction[],
+  knownHandles: string[],
+  pathContext: PathContext | null,
+): string[] {
+  const names = new Set<string>();
+  LIFECYCLE_HOOK_PATTERN.lastIndex = 0;
+  let hook;
+  while ((hook = LIFECYCLE_HOOK_PATTERN.exec(content)) !== null) {
+    if (isInsideString(content, hook.index)) continue;
+    const body = extractTestCallbackBody(content.substring(hook.index));
+    if (!body) continue;
+
+    const reachesProduction =
+      spawnsBuildOutput(body, buildOutputVars, pathContext) ||
+      importedFunctions.some((fn) => referenceMatcher(fn.name).test(body)) ||
+      knownHandles.some((handle) => referenceMatcher(handle).test(body));
+    if (!reachesProduction) continue;
+
+    HOOK_ASSIGNMENT_PATTERN.lastIndex = 0;
+    let assign;
+    while ((assign = HOOK_ASSIGNMENT_PATTERN.exec(body)) !== null) {
+      // Only a handle that is *driven* counts. `client.callTool(...)` invokes
+      // the connected server; `env: { PATH: noJqPath }` merely reads a string
+      // the hook happened to compute. Without this shape gate the rule
+      // promotes every value a production-reaching hook assigns, which
+      // silences legitimately-flagged blocks — measured on
+      // `pre-tool-hook.integration.test.ts:1529`, a harness sanity check that
+      // spawns only system binaries but reads a hook-assigned PATH (#956).
+      if (calledAsHandle(content, assign[1])) {
+        names.add(assign[1]);
+      }
+    }
+  }
+  return [...names];
+}
+
 function collectProductionHandles(
   content: string,
   buildOutputVars: string[],
   importedFunctions: ImportedFunction[] = [],
+  helpers: Array<{
+    name: string;
+    params: string[];
+    body: string;
+  }> = extractHelperDefinitions(content),
+  pathContext: PathContext | null = null,
 ): string[] {
-  const helpers = extractHelperDefinitions(content);
   const handles = new Set<string>();
 
   // Seed: helpers that directly reach production.
   for (const helper of helpers) {
     if (
-      spawnsBuildOutput(helper.body, buildOutputVars) ||
+      spawnsBuildOutput(helper.body, buildOutputVars, pathContext) ||
       importedFunctions.some((fn) =>
         referenceMatcher(fn.name).test(helper.body),
       )
     ) {
       handles.add(helper.name);
     }
+  }
+
+  // Suite-scope handles assigned by a production-reaching lifecycle hook
+  // (#956). Seeded before the closure so a helper wrapping such a handle is
+  // promoted by it in the same pass.
+  for (const name of collectHookAssignedHandles(
+    content,
+    buildOutputVars,
+    importedFunctions,
+    [...handles],
+    pathContext,
+  )) {
+    handles.add(name);
   }
 
   // Transitive closure: a helper referencing a known spawn helper is one too.
@@ -741,6 +1377,7 @@ export function testBlockCallsProductionCode(
   importedFunctions: ImportedFunction[],
   productionHandles: string[] = [],
   buildOutputVars: string[] = [],
+  pathContext: PathContext | null = null,
 ): boolean {
   // 1. References an imported production function.
   for (const fn of importedFunctions) {
@@ -752,13 +1389,22 @@ export function testBlockCallsProductionCode(
   // 2. Directly spawns the project's build output (#885). Static import
   //    analysis can't see through a subprocess boundary, so a test that runs
   //    `dist/bin/cli.js` looks import-less but exercises production code.
-  if (spawnsBuildOutput(body, buildOutputVars)) {
+  if (spawnsBuildOutput(body, buildOutputVars, pathContext)) {
     return true;
   }
 
   // 3. Calls a describe/module-scope helper that (transitively) reaches
   //    production — spawns the project's executable code, or calls an imported
   //    production function (#906). Covers arrow-const and `function` helpers.
+  //
+  //    Known asymmetry (measured on #956, PR #1002, not fixed): the match is
+  //    by plain *reference*, not call shape, so a block that merely reads a
+  //    registered handle (`expect(manager).toBeDefined()`) is excused. This is
+  //    pre-existing (base `main` behaves identically). Tightening the use
+  //    site to call shape moved the repo-wide flagged count 201 → 204 (3
+  //    blocks) and newly flagged a legitimate block
+  //    (`config-resolver.model-roles.test.ts:249`), so the reference match is
+  //    kept deliberately; revisit only with a corpus measurement in hand.
   for (const handle of productionHandles) {
     if (referenceMatcher(handle).test(body)) {
       return true;
@@ -802,14 +1448,41 @@ export function analyzeTestFile(
 
   try {
     const importedFunctions = extractImports(content);
-    const declaredBuildOutputVars = collectBuildOutputVars(content);
-    const buildOutputVars = declaredBuildOutputVars.concat(
-      collectDescribeEachParams(content, declaredBuildOutputVars),
-    );
+    const pathContext = buildPathContext(filePath);
+    populatePathVars(content, pathContext);
+    const helpers = extractHelperDefinitions(content);
+
+    // Widen the build-output set to a fixpoint: a describe.each table row can
+    // bind a callback param, which a call site can then bind into a helper
+    // parameter, which may itself feed another table — one pass is not enough.
+    let buildOutputVars = [
+      ...new Set([
+        ...collectBuildOutputVars(content),
+        ...collectResolvedPathVars(content, pathContext),
+      ]),
+    ];
+    for (let round = 0; round < MAX_PATH_RESOLUTION_DEPTH; round++) {
+      const widened = new Set(buildOutputVars);
+      for (const name of collectDescribeEachParams(content, buildOutputVars)) {
+        widened.add(name);
+      }
+      for (const name of collectHelperParamBindings(
+        content,
+        helpers,
+        buildOutputVars,
+      )) {
+        widened.add(name);
+      }
+      if (widened.size === buildOutputVars.length) break;
+      buildOutputVars = [...widened];
+    }
+
     const productionHandles = collectProductionHandles(
       content,
       buildOutputVars,
       importedFunctions,
+      helpers,
+      pathContext,
     );
     const testBlocks = extractTestBlocks(content);
 
@@ -822,6 +1495,7 @@ export function analyzeTestFile(
         importedFunctions,
         productionHandles,
         buildOutputVars,
+        pathContext,
       ),
     }));
 
