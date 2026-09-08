@@ -375,6 +375,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
 - [Concurrency & Per-Issue Locks](docs/reference/concurrency.md)
+- [Plugin Eval CI](docs/reference/plugin-eval.md) — manual-dispatch `claude plugin eval` workflow, budget cap, and canary design
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
