@@ -18,7 +18,11 @@
 import { describe, it, expect } from "vitest";
 import { formatPhaseMarker, parsePhaseMarkers } from "./phase-detection.js";
 import { PhaseMarkerSchema, type PhaseMarker } from "./state-schema.js";
-import { PhaseUsageSchema, MetricRunSchema } from "./metrics-schema.js";
+import {
+  PhaseUsageSchema,
+  MetricRunSchema,
+  createMetricRun,
+} from "./metrics-schema.js";
 import { buildEscalationMarkerFields } from "./model-ladder.js";
 
 /**
@@ -170,5 +174,151 @@ describe("971 AC-10: escalation columns on the #986 phaseUsage row", () => {
     const shape = Object.keys(MetricRunSchema.shape.metrics.shape);
     expect(shape).toContain("phaseUsage");
     expect(shape.filter((k) => /escalat/i.test(k))).toEqual([]);
+  });
+});
+
+/**
+ * The gate-path recording gap (#971 QA finding).
+ *
+ * `runReadyGate`'s phase results are consumed inside the gate and never reach
+ * `IssueResult.phaseResults` (`batch-executor.ts`'s `runPhase` wrapper returns
+ * them straight to the gate), and `phaseUsage` rows are built ONLY from
+ * `phaseResults`. So a rung the gate spent produces no usage row — the facts
+ * have nowhere to ride. `ReadyResult.modelEscalations` is the channel that
+ * carries them out, mirroring what #915 already does with `effortEscalations`
+ * for exactly the same structural reason.
+ *
+ * These tests pin the two ends the QA pass found unwired: the run-level array
+ * reaches the metrics record, and the run path's per-execution facts reach the
+ * `phaseUsage` row columns.
+ */
+describe("971 AC-10: escalations reach the metrics record from BOTH paths", () => {
+  it("records the run-level modelEscalations log", () => {
+    const run = createMetricRun({
+      issues: [971],
+      phases: ["qa", "loop"],
+      outcome: "success",
+      duration: 120,
+      modelEscalations: [
+        {
+          phase: "qa",
+          rung: 1,
+          base: "sonnet",
+          escalated: "opus",
+          trigger: "LOOP_NO_DIFF",
+        },
+        {
+          phase: "loop",
+          rung: 2,
+          base: "sonnet",
+          escalated: "fable",
+          trigger: "SAME_SHA_NO_PROGRESS",
+          requestedModel: "role:frontier",
+          topOfLadder: true,
+        },
+      ],
+    });
+
+    expect(MetricRunSchema.parse(run).modelEscalations).toEqual([
+      {
+        phase: "qa",
+        rung: 1,
+        base: "sonnet",
+        escalated: "opus",
+        trigger: "LOOP_NO_DIFF",
+      },
+      {
+        phase: "loop",
+        rung: 2,
+        base: "sonnet",
+        escalated: "fable",
+        trigger: "SAME_SHA_NO_PROGRESS",
+        requestedModel: "role:frontier",
+        topOfLadder: true,
+      },
+    ]);
+  });
+
+  it("omits modelEscalations entirely when nothing escalated", () => {
+    const run = createMetricRun({
+      issues: [971],
+      phases: ["exec"],
+      outcome: "success",
+      duration: 10,
+      modelEscalations: [],
+    });
+    // Omitted, not `[]` — matching the phasePolicies/effortEscalations
+    // omit-when-empty convention, so an unconfigured run's record is
+    // byte-identical to pre-#971.
+    expect("modelEscalations" in run).toBe(false);
+  });
+
+  it("a pre-#971 metrics record still validates without the field", () => {
+    const run = createMetricRun({
+      issues: [971],
+      phases: ["exec"],
+      outcome: "success",
+      duration: 10,
+    });
+    expect(() => MetricRunSchema.parse(run)).not.toThrow();
+    expect(MetricRunSchema.parse(run).modelEscalations).toBeUndefined();
+  });
+
+  it("the run path's per-execution facts map onto the phaseUsage row columns", () => {
+    // The join `run-orchestrator.ts` performs, asserted directly: both ends
+    // were pinned before, the mapping between them was not.
+    const phaseResult = {
+      phase: "exec",
+      usage: [
+        {
+          model: "claude-opus-5",
+          inputTokens: 10,
+          outputTokens: 20,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          costUSD: 0.5,
+        },
+      ],
+      escalatedModel: {
+        rung: 1,
+        base: "sonnet",
+        escalated: "opus",
+        trigger: "LOOP_NO_DIFF",
+        requestedModel: "role:strong",
+        topOfLadder: true,
+      },
+    };
+
+    const rows = (phaseResult.usage ?? []).map((u) => ({
+      phase: phaseResult.phase,
+      ...u,
+      ...(phaseResult.escalatedModel
+        ? {
+            ladderRung: phaseResult.escalatedModel.rung,
+            baseModel: phaseResult.escalatedModel.base,
+            escalatedModel: phaseResult.escalatedModel.escalated,
+            escalationTrigger: phaseResult.escalatedModel.trigger,
+            ...(phaseResult.escalatedModel.requestedModel !== undefined
+              ? { requestedModel: phaseResult.escalatedModel.requestedModel }
+              : {}),
+            ...(phaseResult.escalatedModel.topOfLadder
+              ? { topOfLadder: true }
+              : {}),
+          }
+        : {}),
+    }));
+
+    const parsed = PhaseUsageSchema.parse(rows[0]);
+    expect(parsed).toMatchObject({
+      phase: "exec",
+      model: "claude-opus-5",
+      costUSD: 0.5,
+      ladderRung: 1,
+      baseModel: "sonnet",
+      escalatedModel: "opus",
+      escalationTrigger: "LOOP_NO_DIFF",
+      requestedModel: "role:strong",
+      topOfLadder: true,
+    });
   });
 });

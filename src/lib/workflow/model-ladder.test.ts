@@ -401,7 +401,12 @@ describe("971 AC-5: composes with #915 — effort first, model later, never both
   });
 
   it("no iteration of the real ready-gate loop shows effort and model both changing", async () => {
-    const seen: Array<{ effort?: string; model?: string }> = [];
+    const seen: Array<{
+      effort?: string;
+      model?: string;
+      modelChanged: boolean;
+      effortChanged: boolean;
+    }> = [];
     const opts: RunReadyGateOptions = {
       issueNumber: 971,
       worktreePath: "/tmp/worktree-971",
@@ -419,6 +424,14 @@ describe("971 AC-5: composes with #915 — effort first, model later, never both
         seen.push({
           effort: config.phasePolicies?.[phase]?.effort,
           model: dispatchedModel(config, phase),
+          // `modelEscalation` is set by `withEscalatedModel` only on a
+          // dispatch that sits above its starting rung, and `trigger` is
+          // `"STICKY"` when the rung was merely re-applied — so a genuine
+          // rung ADVANCE is the non-sticky case.
+          modelChanged:
+            config.modelEscalation !== undefined &&
+            config.modelEscalation.trigger !== "STICKY",
+          effortChanged: config.phasePolicies?.[phase]?.effort === "xhigh",
         });
         return Promise.resolve({
           phase,
@@ -430,9 +443,12 @@ describe("971 AC-5: composes with #915 — effort first, model later, never both
 
     await runReadyGate(opts);
 
-    const bothChanged = seen.filter(
-      (s) => s.effort === "xhigh" && s.model !== undefined,
-    );
+    // Asserted on what CHANGED this dispatch, not on what is merely present.
+    // A sticky rung means a later iteration can legitimately run at an
+    // already-reached model WHILE its effort bumps — that is AC-6's
+    // stickiness, not an AC-5 violation, and a presence-based filter would
+    // flag it. `record`-presence is exactly "this dispatch changed it".
+    const bothChanged = seen.filter((s) => s.effortChanged && s.modelChanged);
     expect(bothChanged).toEqual([]);
   });
 });
@@ -795,5 +811,59 @@ describe("971 AC-10: the recording half", () => {
     const config = configWith({ modelLadder: LADDER });
     const out = withEscalatedModel(config, "qa", null, createLadderState());
     expect("modelEscalation" in out.config).toBe(false);
+  });
+});
+
+describe("971 AC-10: the ready-gate path surfaces its escalations to the caller", () => {
+  it("ReadyResult.modelEscalations carries every rung the gate spent", async () => {
+    // The gate's phase results are consumed inside the gate and never reach
+    // `IssueResult.phaseResults`, so no `phaseUsage` row is ever built for
+    // them. This array is therefore the ONLY channel by which a gate-path
+    // escalation becomes auditable — `run-orchestrator.ts` merges it into
+    // `MetricRun.modelEscalations` and `commands/ready.ts` prints it.
+    const opts: RunReadyGateOptions = {
+      issueNumber: 971,
+      worktreePath: "/tmp/worktree-971",
+      policy: "ac",
+      maxIterations: 3,
+      config: configWith({ modelLadder: LADDER }),
+      classifyChangesFn: () => ({ kind: "commits" }),
+      readTokensUsed: () => 0,
+      snapshotFn: () => ({ sha: "sha-frozen", dirty: [] }),
+      runPhase: (phase) =>
+        Promise.resolve({
+          phase,
+          success: true,
+          verdict: phase === "qa" ? "AC_NOT_MET" : undefined,
+        } as PhaseResult),
+    };
+
+    const result = await runReadyGate(opts);
+
+    // Every entry carries the full fact set the metrics record needs — not
+    // just a model name, which would not say which rung or why.
+    for (const e of result.modelEscalations) {
+      expect(e).toMatchObject({
+        phase: expect.any(String),
+        rung: expect.any(Number),
+        base: expect.any(String),
+        escalated: expect.any(String),
+        trigger: expect.any(String),
+      });
+    }
+    expect(
+      result.modelEscalations.map((e) => `${e.phase}:${e.rung}:${e.escalated}`),
+    ).toEqual(["qa:1:opus", "loop:1:opus", "qa:2:fable"]);
+  });
+
+  it("stays empty when no ladder is configured, so the metrics field is omitted", () => {
+    const config = configWith({});
+    const out = withEscalatedModel(
+      config,
+      "qa",
+      "LOOP_NO_DIFF",
+      createLadderState(),
+    );
+    expect(out.record).toBeUndefined();
   });
 });

@@ -1904,6 +1904,31 @@ export class RunOrchestrator {
       ),
       ...results.flatMap((r) => r.readyGate?.effortEscalations ?? []),
     ];
+    // #971: one entry per rung-advancing dispatch, from both retry paths —
+    // the outer quality loop (`phaseResults[].escalatedModel`) and the
+    // `--ready-gate` QA-pass loop (`readyGate.modelEscalations`). The run
+    // path's facts ALSO ride on its `phaseUsage` rows (joined to the tokens
+    // that execution spent); this log is what makes the gate path auditable
+    // at all, since gate phase results never reach `phaseResults` and so
+    // produce no usage row. Same merge shape as `effortEscalations` above.
+    const modelEscalations = [
+      ...results.flatMap((r) =>
+        r.phaseResults
+          .filter((p) => p.escalatedModel)
+          .map((p) => ({
+            phase: p.phase,
+            rung: p.escalatedModel!.rung,
+            base: p.escalatedModel!.base,
+            escalated: p.escalatedModel!.escalated,
+            trigger: p.escalatedModel!.trigger,
+            ...(p.escalatedModel!.requestedModel !== undefined
+              ? { requestedModel: p.escalatedModel!.requestedModel }
+              : {}),
+            ...(p.escalatedModel!.topOfLadder ? { topOfLadder: true } : {}),
+          })),
+      ),
+      ...results.flatMap((r) => r.readyGate?.modelEscalations ?? []),
+    ];
     // #915: the outer quality loop already logs its own escalations live at
     // the batch-executor dispatch site — only the `--ready-gate` QA-pass loop
     // has no equivalent live print, so surface those here.
@@ -1913,6 +1938,15 @@ export class RunOrchestrator {
           console.log(
             chalk.gray(
               `  effort: ${e.base} → ${e.escalated} (ready-gate retry, #${r.issueNumber})`,
+            ),
+          );
+        }
+        // #971: same reasoning for the model rungs — the batch dispatch sites
+        // print their own, the gate's had no print at all.
+        for (const e of r.readyGate?.modelEscalations ?? []) {
+          console.log(
+            chalk.gray(
+              `  model: ${e.base} → ${e.escalated} (ready-gate ${e.trigger} retry, #${r.issueNumber})`,
             ),
           );
         }
@@ -1935,6 +1969,8 @@ export class RunOrchestrator {
       ),
       // #915: escalated tiers, when any phase execution escalated.
       effortEscalations,
+      // #971: escalated model rungs, from both retry paths.
+      modelEscalations,
       metrics: {
         tokensUsed: tokenUsage.tokensUsed,
         filesChanged: totalFilesChanged,

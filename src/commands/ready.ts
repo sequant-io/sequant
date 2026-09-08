@@ -337,6 +337,17 @@ export async function readyCommand(
         colors.muted(`  effort: ${e.base} → ${e.escalated} (${e.phase} retry)`),
       );
     }
+    // #971: the model rungs the gate spent, for the same reason — the gate
+    // has no live print of its own, and on this standalone path there is no
+    // run-metrics record either, so this is the ONLY place a `sequant ready
+    // --model-ladder` user sees what the ladder cost them.
+    for (const e of result.modelEscalations) {
+      console.log(
+        colors.muted(
+          `  model: ${e.base} → ${e.escalated} (rung ${e.rung}, ${e.phase} ${e.trigger} retry)`,
+        ),
+      );
+    }
   }
 
   // Persist the terminal state so `sequant status` reflects it (Derived AC).
