@@ -47,7 +47,7 @@ CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --case __nonexistent__ \
 `plugin eval` is currently in early access
 ### PROBE B (enabled)
 No eval cases found matching --case "__nonexistent__" under
-/Users/tony/Projects/worktrees/feature/987-feat-evals-adopt-claude-plugin-eval-as-the-skill-l.
+~/Projects/worktrees/feature/987-feat-evals-adopt-claude-plugin-eval-as-the-skill-l.
 Run without --case to see all cases.
 ```
 
@@ -156,7 +156,7 @@ accepted set. That message is the authoritative source used below:
 : frontmatter must include "type:" (regex | tool_order | tool_used | file_exists | llm | baseline)
 ```
 
-Recovered from the CLI binary (`strings /Users/tony/.local/share/claude/versions/2.1.263`),
+Recovered from the shipped CLI's own grader validator (extraction method omitted),
 along with the schema's field definitions (`schema_version` `"1.1"`). The
 schema also requires a `name` on every grader; the CLI injects it from the
 grader's filename, so it is omitted from the Shape column below. **Six grader
@@ -533,7 +533,7 @@ paid for, not because it is evidence.
 ## 9. Recorded artifacts
 
 `--json` reports for the runs above, preserved outside the repository at
-`/Users/tony/Projects/worktrees/.987-phase0-evidence/`
+`~/Projects/worktrees/.987-phase0-evidence/`
 (`null.json`, `ac2.json`, `ac4.json`, `hook.json`, `hook2.json`, `ac5.json`,
 `ac6intact.json`, `ac6intact-interrupted.json`, `ac6broken.json`, `hookfire.json`, plus each run's `output-dir`). Traces from the
 preserved runs are under `/private/tmp/e-*/out/trace.jsonl` (`--keep-temp`).
@@ -541,7 +541,7 @@ preserved runs are under `/private/tmp/e-*/out/trace.jsonl` (`--keep-temp`).
 Nothing under `evals/` was created, and `evals-phase0/` was deleted before the PR
 (AC-7). Consequently these artifacts are **host-local and not reproducible by
 another reviewer from this PR alone**; what a reviewer *can* re-derive anywhere
-is the grader enumeration (`strings` over the CLI binary, §3) and the host-side
+is the grader enumeration (§3, from the CLI's own validator output) and the host-side
 hook control (§4b's guard firing outside the sandbox) — the paid runs would have
 to be repeated with the commands shown, at the costs in §8.
 

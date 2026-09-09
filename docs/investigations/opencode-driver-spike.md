@@ -489,6 +489,6 @@ Anonymised throughout: the three traps originate in a third-party project the
 owner asked to keep unnamed. Behaviour is recorded; attribution is not.
 
 - Fixture: `src/lib/workflow/drivers/__fixtures__/opencode-run-qa.ndjson`
-  (93 events; `/Users/tony/...` paths rewritten to `/scratch/...`, `/repo/...`,
+  (93 events; `~/...` paths rewritten to `/scratch/...`, `/repo/...`,
   `/home/user/...`; no credentials present — `grep -cE 'sk-or-v1-|sk-ant-|ghp_'` → 0)
 - Scratch worktrees used for the run were deleted before the PR.

@@ -5,7 +5,7 @@
 ## Why
 `run-orchestrator.ts:1097` calls `runSkillsPreflight` without `cwd`; the check
 runs against the main checkout, the one place skills are guaranteed. Worktrees
-materialize only tracked files. The ad-motion incident is the motivating example.
+materialize only tracked files. A downstream project's incident is the motivating example.
 
 ## Scope
 - may touch: `src/lib/workflow/run-orchestrator.ts` (move the preflight call to after worktree provisioning, i.e. after the block ending ~:1181; pass each worktree path as `cwd`), `src/lib/workflow/skills-preflight.ts`, `src/lib/workflow/skills-preflight.test.ts`, one run-orchestrator test file
