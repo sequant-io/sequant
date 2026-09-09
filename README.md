@@ -79,6 +79,9 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 **An AI coding agent — one of:**
 - [Claude Code](https://claude.ai/code) — default agent. **Recommended: Claude Code ≥ 2.1.208.** The pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer (which fires even under `bypassPermissions`) instead of re-implementing catastrophic-delete detection; that analyzer's command-substitution coverage landed in 2.1.208. This is a recommendation, not an enforced floor — plugins cannot declare a minimum Claude Code version, so nothing gates install, and the pre-2.1.208 command-substitution gap (e.g. `echo "$(rm -rf ~)"`) is accepted rather than guarded.
 - [Aider](https://aider.chat/) — alternative, via `--agent aider`
+- [opencode](https://opencode.ai/) — **experimental**, via `--agent opencode`. Ships in this release but is not a supported backend yet; read the note below before using it.
+
+> **opencode is experimental.** The driver works and reads the same skill tree Claude Code does, but its promotion gate ([#997](https://github.com/sequant-io/sequant/issues/997)) is deferred, so it has no reference page and no support commitment. Three limitations measured in the 2026-09 dogfood: `sequant init --agent opencode` must also be run in the **main checkout**, because the spec phase executes there and the hook-shim check aborts the run without it; a failed spec currently dispatches the quality loop instead of stopping; and no `/spec` plan comment is posted to the issue. Claude Code remains the supported default.
 
 **Always required (both):**
 - [GitHub CLI](https://cli.github.com/) — run `gh auth login`
@@ -375,6 +378,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Workflow Concepts](docs/concepts/workflow-phases.md)
 - [Run Command](docs/reference/run-command.md)
 - [Concurrency & Per-Issue Locks](docs/reference/concurrency.md)
+- [Model Escalation Ladder](docs/reference/model-ladder.md) — capability-bound escalation, `SPEC_DIVERGENCE`, and the halts that stop a runaway loop
 - [Plugin Eval CI](docs/reference/plugin-eval.md) — manual-dispatch `claude plugin eval` workflow, budget cap, and canary design
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)

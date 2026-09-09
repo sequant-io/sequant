@@ -69,6 +69,8 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
 | `--escalate-effort` | On a quality-loop retry (loop iteration ≥ 2), run every phase dispatched in that iteration one reasoning-effort tier above its resolved base. See [Effort Escalation on Retries](#effort-escalation-on-retries) | `false` (off) |
+| `--agent <name>` | Agent driver for every phase: `claude-code` (default), `aider`, or `opencode` (**experimental** — see the note under Prerequisites in the README; its promotion gate #997 is deferred). Also settable as `run.agent`. | `claude-code` |
+| `--model-ladder <rungs>` | Comma list of model rungs, cheapest first (e.g. `sonnet,opus`), applied only when a retried phase made no progress. Off unless set. See [Model Escalation Ladder](model-ladder.md). | - |
 
 ### Available Phases
 
