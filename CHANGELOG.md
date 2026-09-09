@@ -138,11 +138,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sequant init --agent <name>` selects the agent driver to provision for
   (#862). `opencode` additionally writes the `.opencode/` command wrappers.
 
+
+- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
+  default beside the token panel and labeled "SDK estimate, not a billing
+  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
+  rows rather than merged, and records written before this existed render with
+  `—` for the fields they lack rather than a fabricated `$0.00`.
+
 ### Changed
 
 - `sequant run --dry-run` now names the resolved agent driver in its plan
   unconditionally (#862). It was previously printed only under `--verbose`, so a
   dry run with `--agent opencode` was indistinguishable from a claude-code one.
+
+
+- **`ExecutionConfig` has a single producer again.** The ready gate now
+  inherits the caller's fully-resolved config and overrides only six
+  gate-semantic keys (`phases`, `qualityLoop`, `sequential`, `concurrency`,
+  `parallel`, `dryRun`); a new `execution-config-parity.test.ts` fails if the
+  two ever drift apart. Fields the gate previously hardcoded now inherit, so
+  gate phases honour the settings the rest of the run already did (#863):
+  `--no-retry` is respected; a rate-limited gate phase can auto-wait (#804)
+  instead of failing (the wait budget is per gate phase — each gets a fresh
+  ledger — not per issue); `relayEnabled`, `noSmartTests`,
+  `isolateParallel` and `issueType` all reach the gate. Under
+  `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
+  the same `issueType` its earlier phases had.
+- **`sequant ready` resolves options the way `sequant run` does.** The
+  command now passes its CLI subset through `resolveRunOptions` before
+  `buildExecutionConfig`, so settings-level knobs that never had a `ready`
+  flag — `run.smartTests` (and `SEQUANT_SMART_TESTS`), `run.autoWaitMinutes`
+  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel`, and `run.mcp`
+  (which `sequant ready` previously ignored: MCP was always on unless
+  `--no-mcp` was passed) — resolve identically on both entry points instead
+  of silently taking the resolver's defaults on the `ready` path (#863).
 
 ### Fixed
 
@@ -245,37 +274,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behaviour that the user never asked for (#863). `ready-gate.ts` built each
   gate phase's `ExecutionConfig` from its own literal, so `agent` and
   `aiderSettings` never reached driver selection.
-
-### Added
-
-- **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
-  default beside the token panel and labeled "SDK estimate, not a billing
-  statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
-  rows rather than merged, and records written before this existed render with
-  `—` for the fields they lack rather than a fabricated `$0.00`.
-
-### Changed
-
-- **`ExecutionConfig` has a single producer again.** The ready gate now
-  inherits the caller's fully-resolved config and overrides only six
-  gate-semantic keys (`phases`, `qualityLoop`, `sequential`, `concurrency`,
-  `parallel`, `dryRun`); a new `execution-config-parity.test.ts` fails if the
-  two ever drift apart. Fields the gate previously hardcoded now inherit, so
-  gate phases honour the settings the rest of the run already did (#863):
-  `--no-retry` is respected; a rate-limited gate phase can auto-wait (#804)
-  instead of failing (the wait budget is per gate phase — each gets a fresh
-  ledger — not per issue); `relayEnabled`, `noSmartTests`,
-  `isolateParallel` and `issueType` all reach the gate. Under
-  `sequant run --ready-gate`, a docs-labelled issue's gate phases now carry
-  the same `issueType` its earlier phases had.
-- **`sequant ready` resolves options the way `sequant run` does.** The
-  command now passes its CLI subset through `resolveRunOptions` before
-  `buildExecutionConfig`, so settings-level knobs that never had a `ready`
-  flag — `run.smartTests` (and `SEQUANT_SMART_TESTS`), `run.autoWaitMinutes`
-  (and `SEQUANT_AUTO_WAIT_MINUTES`), `agents.isolateParallel`, and `run.mcp`
-  (which `sequant ready` previously ignored: MCP was always on unless
-  `--no-mcp` was passed) — resolve identically on both entry points instead
-  of silently taking the resolver's defaults on the `ready` path (#863).
 
 ## [2.13.1] - 2026-09-06
 
