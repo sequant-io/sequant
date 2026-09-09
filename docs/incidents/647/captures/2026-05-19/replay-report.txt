@@ -1,7 +1,7 @@
 # Event-replay forensic — #647 AC-3 probe via #504/#505 timeline
 
 ## Source
-  Run log: /Users/tony/Projects/sequant/.sequant/logs/run-2026-05-14T03-16-47-1c43f889-6e0f-46fa-a892-3041227b8704.json
+  Run log: ~/Projects/sequant/.sequant/logs/run-2026-05-14T03-16-47-1c43f889-6e0f-46fa-a892-3041227b8704.json
   Run start: 2026-05-14T03:16:47.538Z
   Run end: 2026-05-14T03:50:37.849Z
   Issues: #504, #505

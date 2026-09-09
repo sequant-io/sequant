@@ -21,7 +21,7 @@ SEQUANT_DEBUG_RENDERER {"t":11,"op":"impl","frame":1,"rendererCols":213,"rendere
 [90m  Worktrees: 1 created, 0 reused[39m
 [34m[39m
 [34m  Issue #658[39m
-[90m    Worktree: /Users/tony/Projects/worktrees/feature/658-fix-cli-q-is-short-for-quality-loop-not-quiet-sile[39m
+[90m    Worktree: ~/Projects/worktrees/feature/658-fix-cli-q-is-short-for-quality-loop-not-quiet-sile[39m
 SEQUANT_DEBUG_RENDERER {"t":4363,"op":"impl","frame":2,"rendererCols":213,"rendererRows":31,"stdoutCols":213,"stdoutRows":31,"logicalLines":8,"wrappedLineCount":8}
 [?25l[?2026h[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[1mSEQUANT WORKFLOW · #658 · 4s elapsed[22m
 

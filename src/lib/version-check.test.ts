@@ -401,7 +401,7 @@ describe("version-check utilities", () => {
       // cache, which can hold an older *published* copy than the running build
       // and rewrites the very files whose staleness raised the warning.
       expect(
-        resolveCliInvocation("/Users/tony/Projects/sequant/dist/src/lib"),
+        resolveCliInvocation("/home/user/Projects/sequant/dist/src/lib"),
       ).toBe("sequant");
     });
   });

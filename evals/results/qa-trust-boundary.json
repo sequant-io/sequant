@@ -6,7 +6,7 @@
   "costUsd": 1.1056175,
   "partial": false,
   "suite": {
-    "root": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu",
+    "root": "~/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu",
     "ablation": "with-without",
     "caseFilter": "qa-trust-boundary",
     "threshold": 1,
@@ -14,7 +14,7 @@
       {
         "name": "sequant",
         "version": "2.13.1",
-        "path": "/Users/tony/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu"
+        "path": "~/Projects/worktrees/feature/993-feat-evals-first-three-claude-plugin-eval-cases-nu"
       }
     ]
   },

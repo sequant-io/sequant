@@ -10,7 +10,7 @@
  * conditions deterministically without spending claude budget.
  *
  * Inputs:
- *   - /Users/tony/Projects/sequant/.sequant/logs/run-2026-05-14T03-16-47-*.json
+ *   - ~/Projects/sequant/.sequant/logs/run-2026-05-14T03-16-47-*.json
  *
  * Outputs:
  *   - stdout: scrollback header count + per-event trace
