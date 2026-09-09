@@ -8,7 +8,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync } from "fs";
 import { execSync } from "child_process";
 
-const LOG = "~/Projects/sequant/.entire/logs/entire.log";
+const REPO = process.env.SEQUANT_REPO ?? process.cwd();
+const LOG = `${REPO}/.entire/logs/entire.log`;
 const REPS = Number(process.env.REPS ?? 3);
 
 // Must match sequant's own resolver (system.ts getClaudeConfigPath →
@@ -35,7 +36,7 @@ async function runOnce(withMcp, servers) {
   const q = query({
     prompt: "Reply with exactly: ok",
     options: {
-      cwd: "~/Projects/sequant",
+      cwd: REPO,
       settingSources: ["project"],
       systemPrompt: { type: "preset", preset: "claude_code" },
       tools: { type: "preset", preset: "claude_code" },
