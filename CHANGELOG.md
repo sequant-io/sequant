@@ -109,8 +109,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     run-level `modelEscalations` log, and threaded into the phase environment so
     phase markers can carry them.
 
-- **opencode agent driver — the first backend that inherits sequant's full skill
-  methodology (#862).** `sequant run <n> --agent opencode` dispatches every
+- **opencode agent driver — experimental; the first backend that inherits
+  sequant's full skill methodology (#862).** Experimental in this release: the
+  promotion gate (#997) is deferred, so opencode carries no reference page and
+  no support commitment, and the README lists its known limitations.
+  `sequant run <n> --agent opencode` dispatches every
   phase through `opencode run --command <phase> … --format json --auto`, where a
   per-phase `.opencode/commands/<phase>.md` wrapper (written by
   `sequant init --agent opencode` from one template) tells the model to load the
