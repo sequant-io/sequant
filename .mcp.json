@@ -2,7 +2,7 @@
   "mcpServers": {
     "sequant": {
       "command": "npx",
-      "args": ["-y", "sequant@2.13.1", "serve"]
+      "args": ["-y", "sequant@2.14.0", "serve"]
     }
   }
 }

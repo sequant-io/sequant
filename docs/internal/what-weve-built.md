@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.13.1
+# What We've Built: Sequant v2.14.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,14 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.14.0)
+
+- **Model Escalation Ladder** - `run.modelLadder` escalates a churning phase one model rung at a time, but only on capability-bound churn; spec-bound churn halts with an evidence bundle instead (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`)
+- **Working Token & Cost Metrics** - per-phase usage sourced from the SDK `modelUsage` map, `metrics.phaseUsage[]` rows, and a `sequant stats` phase x model cost table (SDK estimate)
+- **opencode Agent Driver (experimental)** - `--agent opencode` runs every phase through the same skill tree via generated `.opencode/` wrappers and a fail-closed hook shim; promotion gate deferred
+- **Skill Regression Evals** - four `claude plugin eval` cases graded on skill-emitted surfaces only, two canaries that must fail, a `fixture_commit` provenance gate, and a manual-dispatch CI workflow under a budget cap
+- **Single ExecutionConfig Producer** - the ready gate inherits the caller's resolved config, so gate phases run on the configured driver; a parity test fails if the two producers drift
+
 ### Recent Additions (v2.13.1)
 
 - **Warn-only skills pre-flight** - A stale or drifted `.claude/` tree is reported before commands and names `sequant update`; nothing is rewritten on startup any more (#988)
@@ -1189,7 +1197,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.13.0
+**Current Version:** 2.14.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1199,7 +1207,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.13.0                               │
+│                              SEQUANT v2.14.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

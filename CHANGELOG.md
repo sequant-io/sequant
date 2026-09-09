@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-09-09
+
+### Security
+
+- **`fast-uri` advisory resolved (high).** The MCP SDK's schema validator pulled
+  `fast-uri` 3.1.5 transitively, which is vulnerable to host confusion via
+  skipped IDN canonicalization on scheme. Resolved in range to 3.1.7; no
+  declared dependency changed. The lockfile was regenerated with npm 11 so the
+  `libc` constraints on the Claude Agent SDK's Linux glibc/musl binaries survive
+  — regenerating with npm 10 silently drops them and breaks platform selection.
+
 ### Added
 
 - **opencode phases are now guarded by the same hooks as Claude Code phases,
