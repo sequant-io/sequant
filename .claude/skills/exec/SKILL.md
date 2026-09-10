@@ -1205,6 +1205,22 @@ If any check fails, fix the issues before creating the PR.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
+**Foreground only (#1032).** Run every check — the full `npm test` above all — in the
+foreground with a `timeout`, after committing a WIP:
+
+```bash
+git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full suite"
+timeout 600 npm test 2>&1 | tail -80
+```
+
+Never start the suite (or any long command) as a background task or a `Monitor` and
+then wait for its notification. Under `sequant run` the phase ends the moment your
+turn ends, the notification never arrives, and the run fails with
+`exec left N file(s) uncommitted and made no commits` — your work is stranded in
+the worktree until a human rescues it. The pre-tool hook blocks `Monitor` and
+`run_in_background` under the orchestrator for exactly this reason; the foreground
+form above is the only supported way to run the suite in a phase.
+
 ### 3a. Test Coverage Transparency (REQUIRED)
 
 **Purpose:** Report which changed files have corresponding tests, not just "N tests passed."
