@@ -10,9 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`sequant sync` no longer rewrites a user-owned `AGENTS.md` or writes a machine-specific `scripts/dev` symlink (#990).** Every generated `AGENTS.md` now starts with a `<!-- sequant:agents-md v=<version> h=<sha1> -->` marker; `sync` only regenerates the file when the marker is present and its hash still matches the body, otherwise the file is preserved and reported (only `sync --force` replaces it). A new `sync --no-agents-md` flag skips it entirely, matching `init`. `scripts/dev/*.sh` links now prefer a local `node_modules/sequant/templates/scripts` target over whichever binary ran the command, and fall back to copies (not symlinks) when the resolved templates dir is under an npx cache or outside the project tree — both previously produced dead or machine-specific links. `sync --dry-run` previews both decisions before writing, and `doctor` warns on a dead or outside-tree `scripts/dev` link and reports a user-owned `AGENTS.md` without recommending `sync --force`. (`update` has no `AGENTS.md`/`scripts/dev` awareness — out of scope here, unchanged.)
+- **Phase agents can no longer park on a background task** — `pre-tool.sh` now blocks `Monitor` and Bash `run_in_background` calls whenever `SEQUANT_ORCHESTRATOR` is set, and `/exec` states the foreground-with-`timeout` rule for the test suite. Every stranded-exec transcript found (ad-motion #226/#233, sequant #933/#990) ended with the agent "waiting for the notification" that never arrives inside a phase. When an exec phase still ends with uncommitted work, sequant now commits it as `chore(#N): wip checkpoint …` before reporting the #879 failure, so the work is on the branch instead of loose in the worktree (#1032).
+
 ### Added
 
 - **`sequant run` no longer resumes the implementer's session into `qa`** — the qa phase dispatch (first pass and any post-loop re-QA) now always starts fresh instead of resuming exec's session; exec/loop resume is unaffected. New opt-in `--full-qa` flag / `run.fullQa` setting / MCP `sequant_run` `fullQa` param force full-weight (standalone) QA on every dispatch, the same pre-flight `sequant ready` already runs unconditionally. Consequence worth knowing: because qa's fresh-session handle is never captured, a quality-loop `loop` phase (and through it the retried exec) now resumes the exec session rather than the former exec+qa session; loop still receives the verdict via `SEQUANT_LAST_VERDICT`/`SEQUANT_FAILED_ACS` (#982).
+
 ### Security
 
 - **Public trust contract: `SECURITY.md` and `docs/THREAT-MODEL.md` (#980).**
@@ -24,9 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`src/lib/__tests__/security-docs.test.ts`): cited paths, skill anchors and
   settings keys must resolve on disk, and the stated guard count is recomputed
   from `templates/hooks/pre-tool.sh` rather than typed.
-### Fixed
 
-- **Phase agents can no longer park on a background task** — `pre-tool.sh` now blocks `Monitor` and Bash `run_in_background` calls whenever `SEQUANT_ORCHESTRATOR` is set, and `/exec` states the foreground-with-`timeout` rule for the test suite. Every stranded-exec transcript found (ad-motion #226/#233, sequant #933/#990) ended with the agent "waiting for the notification" that never arrives inside a phase. When an exec phase still ends with uncommitted work, sequant now commits it as `chore(#N): wip checkpoint …` before reporting the #879 failure, so the work is on the branch instead of loose in the worktree (#1032).
 
 ## [2.14.0] - 2026-09-09
 
