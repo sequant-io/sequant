@@ -19,6 +19,13 @@ vi.mock("../lib/fs.js", () => ({
   getSymlinkTarget: vi.fn().mockResolvedValue(null),
 }));
 
+// Mock fs/promises' readdir — checkScriptsDevLinks (#990) reads scripts/dev,
+// which doesn't exist in this repo's cwd during tests; default to empty so
+// existing tests are unaffected, individual tests override per case.
+vi.mock("fs/promises", () => ({
+  readdir: vi.fn().mockResolvedValue([]),
+}));
+
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
@@ -130,7 +137,14 @@ import {
   UPSTREAM_SUBAGENT_WARNING,
   findOpencodeShim,
 } from "./doctor.js";
-import { fileExists, isExecutable, readFile } from "../lib/fs.js";
+import {
+  fileExists,
+  isExecutable,
+  readFile,
+  isSymlink,
+  getSymlinkTarget,
+} from "../lib/fs.js";
+import { readdir } from "fs/promises";
 import { getManifest } from "../lib/manifest.js";
 import {
   commandExists,
@@ -159,6 +173,9 @@ const mockExecSync = vi.mocked(childProcess.execSync);
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
 const mockIsAgentsMdSequantOwned = vi.mocked(isAgentsMdSequantOwned);
+const mockIsSymlink = vi.mocked(isSymlink);
+const mockGetSymlinkTarget = vi.mocked(getSymlinkTarget);
+const mockReaddir = vi.mocked(readdir);
 
 /** Settings shaped like the default mock but with an agent override. */
 function settingsWithAgentForPlugin(agent: string) {
@@ -228,6 +245,10 @@ describe("doctor command", () => {
     // Default: AGENTS.md exists and is sequant-owned (unmodified generated output)
     mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n\nSome content");
     mockIsAgentsMdSequantOwned.mockReturnValue(true);
+    // Default: no scripts/dev entries (checkScriptsDevLinks short-circuits)
+    mockReaddir.mockResolvedValue([] as never);
+    mockIsSymlink.mockResolvedValue(false);
+    mockGetSymlinkTarget.mockResolvedValue(null);
     // Default: no closed issues (empty array from gh issue list via spawnSync)
     mockSpawnSync.mockReturnValue({
       status: 0,
@@ -994,6 +1015,51 @@ describe("doctor command", () => {
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain(UPSTREAM_SUBAGENT_WARNING.inertFieldNote);
       expect(output).toContain("#43869");
+    });
+  });
+
+  describe("990 AC-7: scripts/dev links and AGENTS.md ownership", () => {
+    it("warns on a dead scripts/dev symlink and names the fix command", async () => {
+      mockReaddir.mockResolvedValue(["new-feature.sh"] as never);
+      mockIsSymlink.mockResolvedValue(true);
+      mockGetSymlinkTarget.mockResolvedValue(
+        "../../does/not/exist/new-feature.sh",
+      );
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("dead symlink");
+      expect(output).toContain("sequant sync --force");
+    });
+
+    it("warns on a scripts/dev symlink pointing outside the project tree", async () => {
+      mockReaddir.mockResolvedValue(["new-feature.sh"] as never);
+      mockIsSymlink.mockResolvedValue(true);
+      // A real, existing directory outside both the project tree and
+      // node_modules/sequant — resolves, so it hits the "foreign target"
+      // branch rather than the "dead symlink" branch.
+      mockGetSymlinkTarget.mockResolvedValue(tmpdir());
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("machine-specific target");
+      expect(output).toContain("sequant sync --force");
+    });
+
+    it("reports an unmarked/hash-mismatched AGENTS.md as user-owned, with no --force hint", async () => {
+      mockIsAgentsMdSequantOwned.mockReturnValue(false);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("user-owned (preserved by sync)");
+      const userOwnedLine = consoleLogSpy.mock.calls
+        .map((c) => String(c[0]))
+        .find((line) => line.includes("user-owned (preserved by sync)"));
+      expect(userOwnedLine).toBeDefined();
+      expect(userOwnedLine).not.toContain("--force");
     });
   });
 });
