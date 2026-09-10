@@ -1655,10 +1655,16 @@ export async function runIssueWithLogging(
       const phaseEndTime = new Date();
 
       // Capture resume handle for subsequent phases (#674). qa's own handle
-      // is never captured (#982): the driver builds a handle for fresh
-      // sessions too, so without this guard the qa session would overwrite
-      // exec's handle and sever exec continuity across quality-loop
-      // iterations — a second behavior change AC-4 does not license.
+      // is never captured (#982): the driver builds a handle for the fresh
+      // qa session too, and whatever phase runs next resumes the LAST
+      // captured handle. Without this guard that next phase — `loop` on a
+      // quality-loop retry, or the retried exec when no loop runs — would
+      // resume qa's fresh session, which holds the reviewer's transcript
+      // and none of the implementer's. With it, loop (and through loop, the
+      // retried exec) resume exec's session as before #982; loop still gets
+      // the verdict via SEQUANT_LAST_VERDICT/SEQUANT_FAILED_ACS (#488).
+      // Disclosed in the CHANGELOG: pre-#982 loop resumed the exec+qa
+      // session; now it resumes the exec session only.
       if (result.resumeHandle && phase !== "qa") {
         resumeHandle = result.resumeHandle;
         if (stateManager) {

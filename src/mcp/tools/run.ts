@@ -500,7 +500,8 @@ export function createLineBuffer(
 /** Type alias for the tool handler's extra parameter */
 type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
-const runToolInputSchema = {
+/** @internal Exported for the live-surface tripwire in run.test.ts (#982). */
+export const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
   phases: z
     .string()

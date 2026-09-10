@@ -2364,6 +2364,7 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
   function scriptExecResumeThenQaFailOnce() {
     let execSeen = 0;
     let qaSeen = 0;
+    let loopSeen = 0;
     mockExecutePhase.mockReset();
     mockExecutePhase.mockImplementation((async (
       _issueNumber: number,
@@ -2388,6 +2389,16 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
             }
           : { phase: "qa", success: true, resumeHandle: `QA${qaSeen}` };
       }
+      if (phase === "loop") {
+        // Production: the loop phase returns a handle too, so the retried
+        // exec resumes the loop's session (exec → loop → exec chain).
+        loopSeen++;
+        return {
+          phase: "loop",
+          success: true,
+          resumeHandle: `LOOP${loopSeen}`,
+        };
+      }
       return { phase, success: true };
     }) as never);
   }
@@ -2410,9 +2421,16 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
       .filter((c) => c[1] === "exec")
       .map((c) => c[3]);
     // First exec dispatch has no prior handle; the retried (post-loop) exec
-    // dispatch carries forward the handle exec itself produced last time —
-    // NOT the handle qa produced in between (that would be "QA1").
-    expect(execResumeHandles).toEqual([undefined, "H1"]);
+    // dispatch resumes the loop's session — the exec → loop → exec chain
+    // production runs — never qa's fresh one.
+    expect(execResumeHandles).toEqual([undefined, "LOOP1"]);
+
+    // The loop phase resumes exec's session (the implementer's context), NOT
+    // qa's fresh session ("QA1"): that is what the capture guard protects.
+    const loopResumeHandles = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "loop")
+      .map((c) => c[3]);
+    expect(loopResumeHandles).toEqual(["H1"]);
 
     const qaResumeHandles = mockExecutePhase.mock.calls
       .filter((c) => c[1] === "qa")

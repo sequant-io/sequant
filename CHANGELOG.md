@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`sequant run` no longer resumes the implementer's session into `qa`** — the qa phase dispatch (first pass and any post-loop re-QA) now always starts fresh instead of resuming exec's session; exec/loop resume is unaffected. New opt-in `--full-qa` flag / `run.fullQa` setting / MCP `sequant_run` `fullQa` param force full-weight (standalone) QA on every dispatch, the same pre-flight `sequant ready` already runs unconditionally (#982).
+- **`sequant run` no longer resumes the implementer's session into `qa`** — the qa phase dispatch (first pass and any post-loop re-QA) now always starts fresh instead of resuming exec's session; exec/loop resume is unaffected. New opt-in `--full-qa` flag / `run.fullQa` setting / MCP `sequant_run` `fullQa` param force full-weight (standalone) QA on every dispatch, the same pre-flight `sequant ready` already runs unconditionally. Consequence worth knowing: because qa's fresh-session handle is never captured, a quality-loop `loop` phase (and through it the retried exec) now resumes the exec session rather than the former exec+qa session; loop still receives the verdict via `SEQUANT_LAST_VERDICT`/`SEQUANT_FAILED_ACS` (#982).
 
 ## [2.14.0] - 2026-09-09
 
