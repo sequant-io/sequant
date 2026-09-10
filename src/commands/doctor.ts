@@ -5,10 +5,16 @@
 import chalk from "chalk";
 import { execSync } from "child_process";
 import { existsSync } from "fs";
-import { join as pathJoin } from "path";
+import { readdir } from "fs/promises";
+import { join as pathJoin, dirname, relative, isAbsolute } from "path";
 import { ui, colors } from "../lib/cli-ui.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
-import { fileExists, isExecutable } from "../lib/fs.js";
+import {
+  fileExists,
+  isExecutable,
+  isSymlink,
+  getSymlinkTarget,
+} from "../lib/fs.js";
 import { checkSkillsInstalled } from "../lib/skills-check.js";
 import { getManifest } from "../lib/manifest.js";
 import {
@@ -30,10 +36,9 @@ import {
 import { areSkillsOutdated } from "./sync.js";
 import {
   readAgentsMd,
-  checkAgentsMdConsistency,
+  isAgentsMdSequantOwned,
   AGENTS_MD_PATH,
 } from "../lib/agents-md.js";
-import { readFile } from "../lib/fs.js";
 
 interface Check {
   name: string;
@@ -46,6 +51,65 @@ export interface DoctorOptions {
   skipIssueCheck?: boolean;
   /** Suppress informational warnings (e.g., upstream subagent routing notice) */
   quiet?: boolean;
+}
+
+/**
+ * Warn on any `scripts/dev/*.sh` symlink whose target is missing, or resolves
+ * outside both `node_modules/sequant` and the project tree — either shape
+ * only worked on the machine that ran `sync` (#990).
+ */
+async function checkScriptsDevLinks(): Promise<Check[]> {
+  const results: Check[] = [];
+  const scriptsDevDir = "scripts/dev";
+  if (!(await fileExists(scriptsDevDir))) return results;
+
+  let entries: string[];
+  try {
+    entries = await readdir(scriptsDevDir);
+  } catch {
+    return results;
+  }
+
+  const projectRoot = process.cwd();
+  const nodeModulesSequant = pathJoin(projectRoot, "node_modules", "sequant");
+
+  for (const name of entries) {
+    if (!name.endsWith(".sh")) continue;
+    const linkPath = pathJoin(scriptsDevDir, name);
+    if (!(await isSymlink(linkPath))) continue;
+
+    const target = await getSymlinkTarget(linkPath);
+    if (!target) continue;
+    const resolvedTarget = isAbsolute(target)
+      ? target
+      : pathJoin(dirname(linkPath), target);
+
+    if (!existsSync(resolvedTarget)) {
+      results.push({
+        name: "scripts/dev links",
+        status: "warn",
+        message: `${linkPath} is a dead symlink (target missing) - run: sequant sync --force`,
+      });
+      continue;
+    }
+
+    const insideNodeModulesSequant = !relative(
+      nodeModulesSequant,
+      resolvedTarget,
+    ).startsWith("..");
+    const insideProjectTree = !relative(projectRoot, resolvedTarget).startsWith(
+      "..",
+    );
+    if (!insideNodeModulesSequant && !insideProjectTree) {
+      results.push({
+        name: "scripts/dev links",
+        status: "warn",
+        message: `${linkPath} points outside the project (machine-specific target) - run: sequant sync --force`,
+      });
+    }
+  }
+
+  return results;
 }
 
 // TODO: remove when anthropics/claude-code#43869 closes
@@ -317,42 +381,23 @@ export async function doctorCommand(
     });
   }
 
-  // Check: AGENTS.md presence and consistency
+  // Check: AGENTS.md presence and ownership (#990). Ownership is determined
+  // by the marker `generateAgentsMd` writes, not by diffing against
+  // CLAUDE.md — see agents-md.ts's `decideAgentsMdSync` design note.
   const agentsMdContent = await readAgentsMd();
   if (agentsMdContent) {
-    // Check consistency with CLAUDE.md if both exist
-    if (await fileExists("CLAUDE.md")) {
-      try {
-        const claudeMdContent = await readFile("CLAUDE.md");
-        const inconsistency = checkAgentsMdConsistency(
-          agentsMdContent,
-          claudeMdContent,
-        );
-        if (inconsistency) {
-          checks.push({
-            name: "AGENTS.md",
-            status: "warn",
-            message: `Out of sync with CLAUDE.md: ${inconsistency}. Run: sequant sync --force`,
-          });
-        } else {
-          checks.push({
-            name: "AGENTS.md",
-            status: "pass",
-            message: "Present and consistent with CLAUDE.md",
-          });
-        }
-      } catch {
-        checks.push({
-          name: "AGENTS.md",
-          status: "pass",
-          message: "Present (could not verify consistency)",
-        });
-      }
-    } else {
+    if (isAgentsMdSequantOwned(agentsMdContent)) {
       checks.push({
         name: "AGENTS.md",
         status: "pass",
-        message: "Present",
+        message: "Present and up to date",
+      });
+    } else {
+      checks.push({
+        name: "AGENTS.md",
+        status: "warn",
+        message:
+          "user-owned (preserved by sync) - customized or predates the ownership marker",
       });
     }
   } else if (manifest) {
@@ -396,6 +441,13 @@ export async function doctorCommand(
           "Hook scripts not executable - run: chmod +x .claude/hooks/*.sh",
       });
     }
+  }
+
+  // Check 5.5: scripts/dev symlink health (#990) - a link whose target is
+  // missing or resolves outside both node_modules/sequant and the project
+  // tree only worked on the machine that ran `sync`.
+  for (const linkCheck of await checkScriptsDevLinks()) {
+    checks.push(linkCheck);
   }
 
   // Check 6: Settings.json

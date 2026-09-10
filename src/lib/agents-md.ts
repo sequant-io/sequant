@@ -5,9 +5,11 @@
  * AGENTS.md contains the portable subset of CLAUDE.md instructions.
  */
 
+import { createHash } from "crypto";
 import { readFile, writeFile, fileExists } from "./fs.js";
 import { processTemplate } from "./templates.js";
 import { getStackConfig } from "./stacks.js";
+import { getPackageVersion } from "./manifest.js";
 import {
   loadConventions,
   type ConventionsFile,
@@ -25,6 +27,86 @@ const CLAUDE_SPECIFIC_PATTERNS = [
 
 /** Path to AGENTS.md in project root */
 export const AGENTS_MD_PATH = "AGENTS.md";
+
+/**
+ * Marker line prepended to every sequant-generated AGENTS.md (#990). `h` is
+ * the sha1 of everything after the marker line's own newline — recomputing it
+ * from the current body and comparing to the recorded hash tells sync whether
+ * the file is still exactly what sequant generated (safe to regenerate) or was
+ * hand-edited / pre-existing (must be preserved, like `CUSTOMIZABLE_FILES`).
+ */
+const AGENTS_MD_MARKER_PATTERN =
+  /^<!-- sequant:agents-md v=(\S+) h=([0-9a-f]{40}) -->$/;
+
+export interface AgentsMdMarker {
+  version: string;
+  hash: string;
+}
+
+/** sha1 of the AGENTS.md body (everything after the marker line). */
+export function hashAgentsMdBody(body: string): string {
+  return createHash("sha1").update(body).digest("hex");
+}
+
+/** Build the marker line for a given body, defaulting to the installed package version. */
+export function buildAgentsMdMarker(
+  body: string,
+  version: string = getPackageVersion(),
+): string {
+  return `<!-- sequant:agents-md v=${version} h=${hashAgentsMdBody(body)} -->`;
+}
+
+/** Parse the marker from an AGENTS.md file's first line, or `null` if absent/malformed. */
+export function parseAgentsMdMarker(content: string): AgentsMdMarker | null {
+  const firstLineEnd = content.indexOf("\n");
+  const firstLine =
+    firstLineEnd === -1 ? content : content.slice(0, firstLineEnd);
+  const match = firstLine.match(AGENTS_MD_MARKER_PATTERN);
+  if (!match) return null;
+  return { version: match[1], hash: match[2] };
+}
+
+/** Everything after the marker line, or the whole content if there is no marker. */
+export function stripAgentsMdMarker(content: string): string {
+  const firstLineEnd = content.indexOf("\n");
+  if (firstLineEnd === -1) return content;
+  const firstLine = content.slice(0, firstLineEnd);
+  if (!AGENTS_MD_MARKER_PATTERN.test(firstLine)) return content;
+  return content.slice(firstLineEnd + 1);
+}
+
+/**
+ * Whether an on-disk AGENTS.md is unmodified sequant output: it carries a
+ * marker whose recorded hash matches the current body. A missing marker or a
+ * hash mismatch means the file was hand-edited or predates the marker, so it
+ * is user-owned and must not be silently regenerated (#990).
+ */
+export function isAgentsMdSequantOwned(content: string): boolean {
+  const marker = parseAgentsMdMarker(content);
+  if (!marker) return false;
+  return hashAgentsMdBody(stripAgentsMdMarker(content)) === marker.hash;
+}
+
+/**
+ * Decide what `sync`/`doctor` should do with an existing (or absent) AGENTS.md.
+ *
+ * - `"skipped (--no-agents-md)"`: the caller opted out of AGENTS.md entirely.
+ * - `"none"`: no file exists — sync never creates one from scratch.
+ * - `"regenerate"`: `--force`, or the file is unmodified sequant output.
+ * - `"preserved"`: the file is user-owned (unmarked or hash-mismatched).
+ */
+export function decideAgentsMdSync(params: {
+  enabled: boolean;
+  existingContent: string | null;
+  force: boolean;
+}): "skipped (--no-agents-md)" | "none" | "regenerate" | "preserved" {
+  if (!params.enabled) return "skipped (--no-agents-md)";
+  if (params.existingContent === null) return "none";
+  if (params.force) return "regenerate";
+  return isAgentsMdSequantOwned(params.existingContent)
+    ? "regenerate"
+    : "preserved";
+}
 
 /** Configuration for generating AGENTS.md */
 export interface AgentsMdConfig {
@@ -113,7 +195,11 @@ export async function generateAgentsMd(
 
   // Clean up empty sections
   content = content.replace(/\n{3,}/g, "\n\n");
-  return content.trimEnd() + "\n";
+  const body = content.trimEnd() + "\n";
+
+  // Prepend the ownership marker (#990) so a future sync can tell this exact
+  // output apart from a user-edited or pre-existing AGENTS.md.
+  return `${buildAgentsMdMarker(body)}\n${body}`;
 }
 
 /**

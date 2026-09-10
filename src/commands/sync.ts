@@ -20,6 +20,7 @@ import {
   getTemplatesDir,
   assertTemplatesDirExists,
   isCustomizableFile,
+  previewScriptsSymlinkTargets,
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
@@ -29,6 +30,8 @@ import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
 import {
   generateAgentsMd,
   writeAgentsMd,
+  readAgentsMd,
+  decideAgentsMdSync,
   AGENTS_MD_PATH,
 } from "../lib/agents-md.js";
 import { getProjectName } from "../lib/project-name.js";
@@ -48,6 +51,8 @@ interface SyncOptions {
   force?: boolean;
   quiet?: boolean;
   dryRun?: boolean;
+  /** `false` when `--no-agents-md` is passed; otherwise AGENTS.md is eligible for regeneration. */
+  agentsMd?: boolean;
 }
 
 interface DriftCache {
@@ -253,7 +258,8 @@ async function updateSkillsVersion(): Promise<void> {
 }
 
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
-  const { force = false, quiet = false, dryRun = false } = options;
+  const { force = false, quiet = false, dryRun = false, agentsMd } = options;
+  const agentsMdEnabled = agentsMd !== false;
 
   if (!quiet) {
     console.log(chalk.blue("\nSyncing templates...\n"));
@@ -376,7 +382,31 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     );
     const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
 
+    // #990 AC-6: preview both file-ownership decisions before any write.
+    const existingAgentsMd = agentsMdEnabled ? await readAgentsMd() : null;
+    const agentsMdDecision = decideAgentsMdSync({
+      enabled: agentsMdEnabled,
+      existingContent: existingAgentsMd,
+      force,
+    });
+    const scriptsPreview = (await previewScriptsSymlinkTargets()).filter(
+      (e) => e.changed,
+    );
+
     if (!quiet) {
+      if (agentsMdDecision !== "none") {
+        console.log(chalk.bold(`AGENTS.md: ${agentsMdDecision}`));
+      }
+      if (scriptsPreview.length > 0) {
+        console.log(chalk.bold("scripts/dev link targets:"));
+        for (const entry of scriptsPreview) {
+          console.log(
+            chalk.yellow(
+              `  ${entry.path}: ${entry.oldTarget ?? "(none)"} → ${entry.newTarget}`,
+            ),
+          );
+        }
+      }
       console.log(chalk.bold("Summary (dry-run):"));
       console.log(chalk.green(`  New files: ${newFiles.length}`));
       console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
@@ -495,28 +525,46 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   await updateSkillsVersion();
   await updateManifest();
 
-  // Regenerate AGENTS.md if it exists
-  if (await fileExists(AGENTS_MD_PATH)) {
-    try {
-      const stackConfig = getStackConfig(manifest.stack);
-      const projectName = await getProjectName();
-      const agentsMdContent = await generateAgentsMd({
-        projectName,
-        stack: manifest.stack,
-        buildCommand: stackConfig.variables.BUILD_COMMAND,
-        testCommand: stackConfig.variables.TEST_COMMAND,
-        lintCommand: stackConfig.variables.LINT_COMMAND,
-      });
-      await writeAgentsMd(agentsMdContent);
-      if (!quiet) {
-        console.log(chalk.blue("Regenerated AGENTS.md"));
+  // Regenerate AGENTS.md if it exists and is eligible: unmodified sequant
+  // output, or --force. A user-owned file (unmarked or hash-mismatched) is
+  // left byte-identical and reported, mirroring the CUSTOMIZABLE_FILES
+  // preserve/report pattern above (#990).
+  if (agentsMdEnabled) {
+    const existingAgentsMd = await readAgentsMd();
+    const decision = decideAgentsMdSync({
+      enabled: true,
+      existingContent: existingAgentsMd,
+      force,
+    });
+
+    if (decision === "regenerate") {
+      try {
+        const stackConfig = getStackConfig(manifest.stack);
+        const projectName = await getProjectName();
+        const agentsMdContent = await generateAgentsMd({
+          projectName,
+          stack: manifest.stack,
+          buildCommand: stackConfig.variables.BUILD_COMMAND,
+          testCommand: stackConfig.variables.TEST_COMMAND,
+          lintCommand: stackConfig.variables.LINT_COMMAND,
+        });
+        await writeAgentsMd(agentsMdContent);
+        if (!quiet) {
+          console.log(chalk.blue("Regenerated AGENTS.md"));
+        }
+      } catch {
+        if (!quiet) {
+          console.log(
+            chalk.yellow("!  Could not regenerate AGENTS.md (non-blocking)"),
+          );
+        }
       }
-    } catch {
-      if (!quiet) {
-        console.log(
-          chalk.yellow("!  Could not regenerate AGENTS.md (non-blocking)"),
-        );
-      }
+    } else if (decision === "preserved" && !quiet) {
+      console.log(
+        chalk.blue(
+          `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`sync --force\` to replace)`,
+        ),
+      );
     }
   }
 

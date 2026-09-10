@@ -4,6 +4,11 @@ import {
   checkAgentsMdConsistency,
   formatConventionsAsAgentsMd,
   generateAgentsMd,
+  parseAgentsMdMarker,
+  stripAgentsMdMarker,
+  hashAgentsMdBody,
+  isAgentsMdSequantOwned,
+  decideAgentsMdSync,
 } from "./agents-md.js";
 import type { ConventionsFile } from "./conventions-detector.js";
 
@@ -222,6 +227,76 @@ describe("agents-md", () => {
           expect(content).toMatchSnapshot();
         });
       }
+    });
+
+    it("begins with a self-verifying marker whose hash recomputes from the body (AC-1)", async () => {
+      const content = await generateAgentsMd({
+        projectName: "test-project",
+        stack: "generic",
+      });
+
+      const firstLine = content.split("\n")[0];
+      expect(firstLine).toMatch(
+        /^<!-- sequant:agents-md v=\S+ h=[0-9a-f]{40} -->$/,
+      );
+
+      const marker = parseAgentsMdMarker(content);
+      expect(marker).not.toBeNull();
+      const body = stripAgentsMdMarker(content);
+      expect(hashAgentsMdBody(body)).toBe(marker!.hash);
+    });
+  });
+
+  describe("isAgentsMdSequantOwned / decideAgentsMdSync (AC-2)", () => {
+    it("is not owned when there is no marker", () => {
+      expect(
+        isAgentsMdSequantOwned("# AGENTS.md\n\nHand-written content\n"),
+      ).toBe(false);
+    });
+
+    it("is not owned when the marker's hash doesn't match the body", () => {
+      const content =
+        "<!-- sequant:agents-md v=1.0.0 h=0000000000000000000000000000000000000000 -->\n# AGENTS.md\nEdited after generation\n";
+      expect(isAgentsMdSequantOwned(content)).toBe(false);
+    });
+
+    it("is owned when the marker's hash matches the recomputed body hash", async () => {
+      const content = await generateAgentsMd({
+        projectName: "test-project",
+        stack: "generic",
+      });
+      expect(isAgentsMdSequantOwned(content)).toBe(true);
+    });
+
+    it("decides skipped when disabled, none when absent, preserved when unowned, regenerate when owned or forced", () => {
+      expect(
+        decideAgentsMdSync({
+          enabled: false,
+          existingContent: null,
+          force: false,
+        }),
+      ).toBe("skipped (--no-agents-md)");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: null,
+          force: false,
+        }),
+      ).toBe("none");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: "# AGENTS.md\nhand-written\n",
+          force: false,
+        }),
+      ).toBe("preserved");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: "# AGENTS.md\nhand-written\n",
+          force: true,
+        }),
+      ).toBe("regenerate");
     });
   });
 });

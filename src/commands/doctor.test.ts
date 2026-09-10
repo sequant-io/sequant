@@ -15,6 +15,8 @@ vi.mock("../lib/fs.js", () => ({
   fileExists: vi.fn(),
   isExecutable: vi.fn(),
   readFile: vi.fn(),
+  isSymlink: vi.fn().mockResolvedValue(false),
+  getSymlinkTarget: vi.fn().mockResolvedValue(null),
 }));
 
 // Mock manifest
@@ -26,7 +28,7 @@ vi.mock("../lib/manifest.js", () => ({
 // Mock agents-md module
 vi.mock("../lib/agents-md.js", () => ({
   readAgentsMd: vi.fn(),
-  checkAgentsMdConsistency: vi.fn(),
+  isAgentsMdSequantOwned: vi.fn(),
   AGENTS_MD_PATH: "AGENTS.md",
 }));
 
@@ -138,7 +140,7 @@ import {
   checkOptionalMcpServers,
 } from "../lib/system.js";
 import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
-import { readAgentsMd, checkAgentsMdConsistency } from "../lib/agents-md.js";
+import { readAgentsMd, isAgentsMdSequantOwned } from "../lib/agents-md.js";
 import { getSettings } from "../lib/settings.js";
 
 const mockGetSettings = vi.mocked(getSettings);
@@ -156,7 +158,7 @@ const mockGetPhaseMcpServersConfig = vi.mocked(getPhaseMcpServersConfig);
 const mockExecSync = vi.mocked(childProcess.execSync);
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
-const mockCheckAgentsMdConsistency = vi.mocked(checkAgentsMdConsistency);
+const mockIsAgentsMdSequantOwned = vi.mocked(isAgentsMdSequantOwned);
 
 /** Settings shaped like the default mock but with an agent override. */
 function settingsWithAgentForPlugin(agent: string) {
@@ -223,9 +225,9 @@ describe("doctor command", () => {
       sequant: { command: "npx", args: ["-y", "sequant@1.0.0", "serve"] },
       context7: { command: "npx", args: ["@context7/mcp"] },
     });
-    // Default: AGENTS.md exists and is consistent
+    // Default: AGENTS.md exists and is sequant-owned (unmodified generated output)
     mockReadAgentsMd.mockResolvedValue("# AGENTS.md\n\nSome content");
-    mockCheckAgentsMdConsistency.mockReturnValue(null);
+    mockIsAgentsMdSequantOwned.mockReturnValue(true);
     // Default: no closed issues (empty array from gh issue list via spawnSync)
     mockSpawnSync.mockReturnValue({
       status: 0,
@@ -509,10 +511,15 @@ describe("doctor command", () => {
         expect(findOpencodeShim(dir)).toBeUndefined();
 
         mkdirSync(join(dir, ".opencode/plugins"), { recursive: true });
-        writeFileSync(join(dir, ".opencode/plugins/sequant-hooks.ts"), "// x\n");
+        writeFileSync(
+          join(dir, ".opencode/plugins/sequant-hooks.ts"),
+          "// x\n",
+        );
         // The plural dir also loads on 1.18.27, so a hand-placed copy there is
         // accepted rather than reported missing.
-        expect(findOpencodeShim(dir)).toBe(".opencode/plugins/sequant-hooks.ts");
+        expect(findOpencodeShim(dir)).toBe(
+          ".opencode/plugins/sequant-hooks.ts",
+        );
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

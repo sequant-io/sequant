@@ -17,6 +17,7 @@ import {
   templateDestination,
   copyTemplates,
   resolveTemplatesDirFrom,
+  resolveScriptsSymlinkTarget,
   getTemplatesDir,
   assertTemplatesDirExists,
   CUSTOMIZABLE_FILES,
@@ -761,6 +762,136 @@ describe("templates", () => {
       expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
         RENDERED,
       );
+    });
+  });
+
+  describe("scripts/dev symlink target routing (#990)", () => {
+    let prevCwd: string;
+    let cwdDir: string;
+    let templatesDir: string;
+
+    beforeEach(async () => {
+      prevCwd = process.cwd();
+      cwdDir = await mkdtemp(join(tmpdir(), "sequant-scripts-cwd-"));
+      templatesDir = await mkdtemp(join(tmpdir(), "sequant-scripts-tpl-"));
+      process.chdir(cwdDir);
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      await fsWriteFile(
+        join(cwdDir, "package.json"),
+        JSON.stringify({ name: "my-project" }),
+      );
+      await mkdir(join(templatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/bash\necho tpl\n",
+      );
+    });
+
+    afterEach(async () => {
+      process.chdir(prevCwd);
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      await rm(cwdDir, { recursive: true, force: true });
+      await rm(templatesDir, { recursive: true, force: true });
+    });
+
+    it("prefers a local node_modules/sequant/templates/scripts target regardless of which templates dir produced the copy (AC-4)", async () => {
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+      await fsWriteFile(
+        join(localScripts, "new-feature.sh"),
+        "#!/bin/bash\necho local\n",
+      );
+
+      await copyTemplates("generic");
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(true);
+      const target = await getSymlinkTarget(linkPath);
+      const resolved = join(join(cwdDir, "scripts", "dev"), target!);
+      expect(resolved.startsWith(join(cwdDir, "node_modules", "sequant"))).toBe(
+        true,
+      );
+    });
+
+    it("resolveScriptsSymlinkTarget prefers node_modules/sequant over the bundled dir", async () => {
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+
+      const result = resolveScriptsSymlinkTarget(join(templatesDir));
+      expect(result.mode).toBe("symlink");
+      expect(result.scriptsDir.replace(/^\/private/, "")).toBe(
+        localScripts.replace(/^\/private/, ""),
+      );
+    });
+
+    it("falls back to copies (not links) for a templates dir under an npx cache path, and prints exactly one --no-symlinks line (AC-5)", async () => {
+      // Verbatim shape observed in the wild (PLAN D13).
+      const npxTemplatesDir = join(
+        tmpdir(),
+        ".npm",
+        "_npx",
+        "38ae72183b73fa32",
+        "node_modules",
+        "sequant",
+        "templates",
+      );
+      await mkdir(join(npxTemplatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(npxTemplatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/bash\necho npx\n",
+      );
+      process.env.SEQUANT_TEMPLATES_DIR = npxTemplatesDir;
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (msg?: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        await copyTemplates("generic");
+      } finally {
+        console.log = originalLog;
+        await rm(npxTemplatesDir, { recursive: true, force: true });
+      }
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(false);
+      expect(await fileExists(linkPath)).toBe(true);
+      const warnLines = logs.filter((l) => l.includes("--no-symlinks"));
+      expect(warnLines).toHaveLength(1);
+    });
+
+    it("falls back to copies (not links) for a templates dir outside the project tree, and prints exactly one --no-symlinks line (AC-5)", async () => {
+      // templatesDir is a sibling temp dir — outside cwdDir by construction.
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (msg?: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        await copyTemplates("generic");
+      } finally {
+        console.log = originalLog;
+      }
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(false);
+      expect(await fileExists(linkPath)).toBe(true);
+      const warnLines = logs.filter((l) => l.includes("--no-symlinks"));
+      expect(warnLines).toHaveLength(1);
     });
   });
 });
