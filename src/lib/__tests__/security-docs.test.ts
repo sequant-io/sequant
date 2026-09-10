@@ -1,3 +1,18 @@
+// @tautology-skip: every test here asserts on the *text* of `SECURITY.md`,
+// `docs/THREAT-MODEL.md` and `README.md`. There is no production function to
+// call, by design — the gate deliberately ships as one `fs`-only vitest file
+// rather than a second lint script plus a CI job (#980 design review). The
+// detector reads "no imported production symbol in the block body" as
+// asserting on a local value, which is the right default and the wrong call
+// for a prose gate.
+//
+// Claiming the exemption obliges proving the gate bites, so AC-1..AC-5 were
+// each mutation-tested against this file: deleting SECURITY.md's contact line,
+// pointing a defenses row at a nonexistent path, blanking an OWASP
+// disposition cell, editing the `<!-- guards:count -->` number, and inserting
+// an immunity claim each failed exactly the corresponding `-t "AC-N"` block
+// and nothing else. Records are in the #980 PR body.
+
 /**
  * CI gate for the public trust contract (issue #980).
  *
