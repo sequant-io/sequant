@@ -58,7 +58,7 @@ Each row names its enforcer and classifies it:
   but a sufficiently persuaded model can step around it.
 
 The deterministic layer is a PreToolUse hook carrying
-<!-- guards:count -->16 distinct `HOOK_BLOCKED:` refusals. That number is
+<!-- guards:count -->17 distinct `HOOK_BLOCKED:` refusals. That number is
 recomputed from the hook source by CI rather than typed here, so it cannot
 drift (`src/lib/__tests__/security-docs.test.ts`, AC-4).
 
