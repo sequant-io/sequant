@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Public trust contract: `SECURITY.md` and `docs/THREAT-MODEL.md` (#980).**
+  The threat model enumerates the untrusted-input surfaces phase agents read
+  and classifies every defense as `deterministic` (holds even if the model is
+  compromised) or `model-dependent`, naming the hook, skill section, CI job or
+  settings key that enforces it, with an OWASP Top 10 for Agentic Applications
+  (2026) mapping and explicit residual risks. Claims are CI-gated
+  (`src/lib/__tests__/security-docs.test.ts`): cited paths, skill anchors and
+  settings keys must resolve on disk, and the stated guard count is recomputed
+  from `templates/hooks/pre-tool.sh` rather than typed.
 ### Fixed
 
 - **Phase agents can no longer park on a background task** — `pre-tool.sh` now blocks `Monitor` and Bash `run_in_background` calls whenever `SEQUANT_ORCHESTRATOR` is set, and `/exec` states the foreground-with-`timeout` rule for the test suite. Every stranded-exec transcript found (ad-motion #226/#233, sequant #933/#990) ended with the agent "waiting for the notification" that never arrives inside a phase. When an exec phase still ends with uncommitted work, sequant now commits it as `chore(#N): wip checkpoint …` before reporting the #879 failure, so the work is on the branch instead of loose in the worktree (#1032).
