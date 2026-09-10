@@ -49,6 +49,7 @@ See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CH
 - **`--auto-wait <minutes>` rides out a rate-limit window** — opt in and a run whose limit window is hours out sleeps until it reopens and continues, instead of halting for a manual restart (#804). **Off by default**; the value is a *total* budget per issue, capped at 2 waits. Never waits on out-of-credits failures (credits are purchased, not waited out). The wait is in-process — for waits that must survive closing the terminal or a reboot, see halt-and-resume below; an exhausted `--auto-wait` budget still writes the halt record so `sequant resume` can pick up where it gave up. See [run-command.md](docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
 - **Durable halt-and-resume + `sequant resume`** — a run that fails on an exhausted rate-limit window now writes a durable halt record (with its `resumeAt` time) and exits cleanly, releasing the per-issue lock. `sequant resume` re-enters after the window reopens, skipping completed phases and issues — safe to invoke from cron/launchd for unattended machines (recipes in [halt-and-resume.md](docs/reference/halt-and-resume.md)) (#892).
 - **`--ready-gate` runs the post-QA ready gate inside `sequant run`** — opt in and, once an issue's standard phases succeed, `run` drives it through the same full-weight `qa → loop → qa` gate as `sequant ready` (to the configured `ready.policy`) **before** opening the PR, so the gate's fixes land in it. It automates the manual any-gaps/fix-gaps second look and **still stops at the human merge gate — it never merges** (#817). **Off by default**; without the flag the run path is unchanged (an `AC_MET_BUT_NOT_A_PLUS` verdict still breaks to PR per #749). Reuses `ready`'s policy, iteration cap, and stagnation guard — no new settings. See [run-command.md](docs/reference/run-command.md#ready-gate-post-qa-second-look).
+- **QA never resumes the implementer's session** — a fresh-session QA study found 44% of fresh second-look passes caught a real would-ship bug, versus a QA reviewer that resumes anchored to ~142k tokens of the author's own transcript. `sequant run` no longer offers a resume handle when dispatching `qa` (first pass or a post-loop re-QA) — exec/loop resume is unaffected (#982). **`--full-qa`** (or `run.fullQa: true` in `.sequant/settings.json`) goes further and forces full-weight (standalone) QA on every dispatch, the same pre-flight `sequant ready` always runs — **off by default**, since it adds visible pre-flight work to every QA pass.
 - **`sequant merge --watch` waits for CI, then reports** — instead of polling checks by hand, `merge --watch` waits for each PR's CI checks to finish, then runs the merge-check and reports the result. It never merges (#818).
 - **Stricter CLI contract for scripting** — malformed numeric flags (`--timeout 30m`, `--timeout abc`) are rejected with a clear error instead of silently coerced (#833, #845), and pre-flight rejections (uninitialized project, missing prerequisites) exit non-zero across `run`/`update`/`state`/`status`/`init` (#848). Runs terminated by a signal exit `128+signum` instead of `0` (#856).
 
@@ -364,6 +365,8 @@ Multi-issue runs are parallel by default, and a per-issue lock (`.sequant/locks/
 
 See [Customization Guide](docs/guides/customization.md) for all options, [Per-Phase Model & Effort](docs/reference/run-command.md#per-phase-model--effort) for the `run.phases` shape, the `--models`/`--efforts` flags, and precedence, [Effort Escalation on Retries](docs/reference/run-command.md#effort-escalation-on-retries) for `run.effortEscalation`/`--escalate-effort`, and [Model Escalation Ladder](docs/reference/model-ladder.md) for `run.modelLadder`/`--model-ladder` and the three ladder halts.
 
+`fullQa` under `run` in `.sequant/settings.json` (default `false`) mirrors `--full-qa` above — CLI flag beats the setting.
+
 ---
 
 ## Platform Support
@@ -392,6 +395,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Threat Model](docs/THREAT-MODEL.md) — untrusted-input surfaces, which defenses hold when the model is compromised, OWASP Agentic Top 10 mapping · [Security Policy](SECURITY.md) — reporting a vulnerability
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)
 

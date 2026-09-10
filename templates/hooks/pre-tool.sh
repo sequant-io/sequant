@@ -27,6 +27,9 @@ if command -v jq &>/dev/null; then
     # which stays pinned to the main checkout even while the agent works in a
     # worktree — see the checkout-lock guard (#901).
     HOOK_CWD=$(echo "$INPUT_JSON" | jq -r '.cwd // empty')
+    # Bash's `run_in_background` flag — read by the background-task guard
+    # (#1032). `// false` keeps it a plain "true"/"false" string.
+    RUN_IN_BACKGROUND=$(echo "$INPUT_JSON" | jq -r '.tool_input.run_in_background // false')
     # For Bash tool, extract .command from tool_input; for others, stringify the whole object
     if [[ "$(echo "$INPUT_JSON" | jq -r '.tool_name // empty')" == "Bash" ]]; then
         TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input.command // empty')
@@ -37,6 +40,11 @@ else
     TOOL_NAME=$(echo "$INPUT_JSON" | grep -oE '"tool_name"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     SESSION_ID=$(echo "$INPUT_JSON" | grep -oE '"session_id"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
     HOOK_CWD=$(echo "$INPUT_JSON" | grep -oE '"cwd"\s*:\s*"[^"]+"' | head -1 | cut -d'"' -f4)
+    if echo "$INPUT_JSON" | grep -qE '"run_in_background"\s*:\s*true'; then
+        RUN_IN_BACKGROUND=true
+    else
+        RUN_IN_BACKGROUND=false
+    fi
     # For Bash tool, extract command from tool_input; for others, extract the whole object
     if [[ "$TOOL_NAME" == "Bash" ]]; then
         # Escape-aware extraction (#963 gap B): the naive `grep -oE '"[^"]+"'`
@@ -599,6 +607,34 @@ _co_binding_path() {
     printf '%s/.sequant/locks/session-%s.issue' \
         "$1" "$(printf '%s' "$2" | tr -c 'A-Za-z0-9_-' '_')"
 }
+
+# --- Background-task guard under the orchestrator (#1032) ---
+# A phase agent that starts the test suite as a Monitor or a backgrounded Bash
+# command and then "waits for the notification" ends its turn — and under
+# `sequant run` the end of the turn IS the end of the phase (the driver
+# returns on the first `result` message). In every stranded transcript found
+# (ad-motion #226/#233, sequant #933/#990, the vid-gen bench) zero task
+# notifications were ever delivered, the #879 guard fired with the work
+# uncommitted, and a human had to rescue the worktree. When the agent polls
+# instead of ending its turn, the phase idles until the orchestrator's
+# 30-minute no-progress kill (#980). Either way the background task never
+# helps, so it is refused outright. Interactive sessions (no
+# SEQUANT_ORCHESTRATOR) are untouched — background tasks work fine there.
+if [[ -n "${SEQUANT_ORCHESTRATOR:-}" ]]; then
+    if [[ "$TOOL_NAME" == "Monitor" ]] \
+       || [[ "$TOOL_NAME" == "Bash" && "${RUN_IN_BACKGROUND:-false}" == "true" ]]; then
+        log_block "background-task"
+        {
+            echo "HOOK_BLOCKED: Background tasks never notify a phase agent (#1032)."
+            echo "Under sequant run the phase ends the moment your turn ends, the completion"
+            echo "notification never arrives, and any uncommitted work is stranded."
+            echo "Run it in the foreground with a timeout instead, e.g.:"
+            echo "  timeout 600 npm test 2>&1 | tail -80"
+            echo "Commit a WIP first if the run is long."
+        } >&2
+        exit 2
+    fi
+fi
 
 # Precompute the segment list once, for Bash commands only.
 SEGMENTS=""

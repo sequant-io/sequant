@@ -20,6 +20,8 @@ import {
   createRunIdCapture,
   formatProgressMessage,
   spawnAsync,
+  buildRunArgs,
+  runToolInputSchema,
   PHASE_TIMEOUT,
   MAX_TOTAL_TIMEOUT,
 } from "./run.js";
@@ -701,6 +703,55 @@ describe("formatProgressMessage", () => {
     expect(formatProgressMessage(event)).toBe(
       "#860: exec auto-wait complete \u2014 resuming",
     );
+  });
+});
+
+describe("buildRunArgs (#982 AC-3): fullQa param forwards to --full-qa", () => {
+  it("pushes --full-qa when fullQa is true", () => {
+    const args = buildRunArgs({ issues: [123], fullQa: true }, []);
+    expect(args).toEqual(["run", "123", "--full-qa", "--log-json"]);
+  });
+
+  it("omits --full-qa when fullQa is false or absent", () => {
+    expect(buildRunArgs({ issues: [123], fullQa: false }, [])).toEqual([
+      "run",
+      "123",
+      "--log-json",
+    ]);
+    expect(buildRunArgs({ issues: [123] }, [])).toEqual([
+      "run",
+      "123",
+      "--log-json",
+    ]);
+  });
+
+  it("combines with other forwarded flags", () => {
+    const args = buildRunArgs(
+      { issues: [1, 2], phases: "spec,exec", force: true, fullQa: true },
+      ["-y", "sequant"],
+    );
+    expect(args).toEqual([
+      "-y",
+      "sequant",
+      "run",
+      "1",
+      "2",
+      "--phases",
+      "spec,exec",
+      "--force",
+      "--full-qa",
+      "--log-json",
+    ]);
+  });
+});
+
+describe("sequant_run fullQa live-surface tripwire (#982 AC-3)", () => {
+  // The zod schema is what the MCP client sees; if the key is dropped from it
+  // the param goes inert without TypeScript, the build, or buildRunArgs
+  // noticing — the #795 inert-flag class on the MCP surface.
+  it("declares fullQa in runToolInputSchema with the minimum server version", () => {
+    expect(Object.keys(runToolInputSchema)).toContain("fullQa");
+    expect(runToolInputSchema.fullQa.description).toMatch(/2\.15\.0/);
   });
 });
 

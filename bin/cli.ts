@@ -387,6 +387,12 @@ program
     "--ready-gate",
     "After phases succeed, run the post-QA ready gate (qa→loop→qa to the configured policy) — never merges, stops at the human merge gate",
   )
+  // #982: opt-in full-weight QA. Mirrors --ready-gate's opt-in shape above —
+  // adds visible pre-flight work to every qa dispatch, so off by default.
+  .option(
+    "--full-qa",
+    "Force full-weight (standalone) QA regardless of resume/context state (default: off)",
+  )
   // #914: per-phase model/effort override for the claude-code driver. Bare
   // value applies to every phase; comma list of phase=value pairs applies
   // per phase. CLI > settings.run.phases > absent (resolvePhasePolicies).

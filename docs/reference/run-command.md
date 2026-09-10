@@ -66,6 +66,7 @@ Shows what would be executed without actually running any phases. Useful for ver
 | `--no-mcp` | Disable MCP servers for faster/cheaper runs | `false` |
 | `--auto-wait <minutes>` | Total minutes willing to wait for an exhausted rate-limit window to reopen instead of halting. See [Auto-wait](#auto-wait-for-a-rate-limit-window) | `0` (off) |
 | `--ready-gate` | After an issue's standard phases succeed, run the post-QA ready gate (`qa → loop → qa` to `ready.policy`) before opening the PR. **Never merges** — stops at the human merge gate. See [Ready Gate](#ready-gate-post-qa-second-look) | `false` (off) |
+| `--full-qa` | Force full-weight (standalone) QA on every `qa` dispatch — the same pre-flight `sequant ready` always runs. Setting: `run.fullQa` (#982) | `false` (off) |
 | `--models <spec>` | Per-phase Claude model override — a bare value (`sonnet`) applies to every phase, or a comma list of `phase=model` pairs (`spec=fable,exec=sonnet`). See [Per-Phase Model & Effort](#per-phase-model--effort) | none (CLI default model) |
 | `--efforts <spec>` | Per-phase reasoning-effort override (`low\|medium\|high\|xhigh\|max`), same grammar as `--models`. See [Per-Phase Model & Effort](#per-phase-model--effort) | none (SDK default) |
 | `--escalate-effort` | On a quality-loop retry (loop iteration ≥ 2), run every phase dispatched in that iteration one reasoning-effort tier above its resolved base. See [Effort Escalation on Retries](#effort-escalation-on-retries) | `false` (off) |
@@ -755,6 +756,7 @@ You can configure defaults in `.sequant/settings.json`:
     "qualityLoop": false,
     "maxIterations": 3,
     "autoMerge": false,
+    "fullQa": false,
     "smartTests": true,
     "mcp": true,
     "autoWaitMinutes": 0,
@@ -770,6 +772,8 @@ Settings hierarchy (highest priority wins):
 2. Environment variables (`SEQUANT_QUALITY_LOOP`)
 3. Project settings (`.sequant/settings.json`)
 4. Package defaults
+
+`run.fullQa` (default `false`, #982) mirrors `--full-qa`: force full-weight (standalone) QA on every `qa` dispatch; the CLI flag beats the setting. Independently of this setting, `sequant run` never resumes the implementer's session into `qa` — qa always starts fresh, while exec and loop keep resuming (#982).
 
 `run.autoMerge` (default `false`, #958) governs whether `/fullsolve` merges the PR it creates. With the default, `/fullsolve` stops at PR creation and leaves the merge to you — the same human merge gate `sequant run` and `sequant ready` always enforce. Set it to `true` (or pass `/fullsolve <issue> --auto-merge`) to opt back into end-to-end merging.
 

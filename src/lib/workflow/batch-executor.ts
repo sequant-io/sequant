@@ -1635,11 +1635,16 @@ export async function runIssueWithLogging(
       }
 
       const phaseStartTime = new Date();
+      // #982: qa never resumes the implementer's session (first pass and
+      // any post-loop re-QA alike) — the fresh-session QA study found the
+      // resumed reviewer starts anchored to the author's transcript. This is
+      // the only site that can dispatch qa; see #982 spec for the sibling-site
+      // scan (:913 ready-gate already undefined, :1122 spec-only, :1957 loop).
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
         dispatchConfig,
-        resumeHandle,
+        phase === "qa" ? undefined : resumeHandle,
         worktreePath,
         shutdownManager,
         phasePauseHandle,
@@ -1649,8 +1654,18 @@ export async function runIssueWithLogging(
       );
       const phaseEndTime = new Date();
 
-      // Capture resume handle for subsequent phases (#674).
-      if (result.resumeHandle) {
+      // Capture resume handle for subsequent phases (#674). qa's own handle
+      // is never captured (#982): the driver builds a handle for the fresh
+      // qa session too, and whatever phase runs next resumes the LAST
+      // captured handle. Without this guard that next phase — `loop` on a
+      // quality-loop retry, or the retried exec when no loop runs — would
+      // resume qa's fresh session, which holds the reviewer's transcript
+      // and none of the implementer's. With it, loop (and through loop, the
+      // retried exec) resume exec's session as before #982; loop still gets
+      // the verdict via SEQUANT_LAST_VERDICT/SEQUANT_FAILED_ACS (#488).
+      // Disclosed in the CHANGELOG: pre-#982 loop resumed the exec+qa
+      // session; now it resumes the exec session only.
+      if (result.resumeHandle && phase !== "qa") {
         resumeHandle = result.resumeHandle;
         if (stateManager) {
           try {
