@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   extractPortableInstructions,
-  checkAgentsMdConsistency,
   formatConventionsAsAgentsMd,
   generateAgentsMd,
+  parseAgentsMdMarker,
+  stripAgentsMdMarker,
+  hashAgentsMdBody,
+  isAgentsMdSequantOwned,
+  decideAgentsMdSync,
 } from "./agents-md.js";
 import type { ConventionsFile } from "./conventions-detector.js";
 
@@ -111,27 +115,6 @@ describe("agents-md", () => {
     });
   });
 
-  describe("checkAgentsMdConsistency", () => {
-    it("returns null when consistent", () => {
-      const agentsMd = "Contains Co-Authored-By reference and commit rules";
-      const claudeMd = `# Project\n\n## Commit Rules\n\n- No Co-Authored-By`;
-      expect(checkAgentsMdConsistency(agentsMd, claudeMd)).toBeNull();
-    });
-
-    it("detects missing Co-Authored-By reference", () => {
-      const agentsMd = "Some generic AGENTS.md content";
-      const claudeMd = `# Project\n\n## Commit Rules\n\n- Do NOT add Co-Authored-By lines`;
-      const result = checkAgentsMdConsistency(agentsMd, claudeMd);
-      expect(result).toContain("Co-Authored-By");
-    });
-
-    it("returns null when CLAUDE.md has no portable commit rules", () => {
-      const agentsMd = "AGENTS.md content";
-      const claudeMd = `# Project\n\n## Slash Commands\n\n- /spec`;
-      expect(checkAgentsMdConsistency(agentsMd, claudeMd)).toBeNull();
-    });
-  });
-
   describe("formatConventionsAsAgentsMd", () => {
     it("formats detected conventions", () => {
       const conventions: ConventionsFile = {
@@ -222,6 +205,76 @@ describe("agents-md", () => {
           expect(content).toMatchSnapshot();
         });
       }
+    });
+
+    it("begins with a self-verifying marker whose hash recomputes from the body (AC-1)", async () => {
+      const content = await generateAgentsMd({
+        projectName: "test-project",
+        stack: "generic",
+      });
+
+      const firstLine = content.split("\n")[0];
+      expect(firstLine).toMatch(
+        /^<!-- sequant:agents-md v=\S+ h=[0-9a-f]{40} -->$/,
+      );
+
+      const marker = parseAgentsMdMarker(content);
+      expect(marker).not.toBeNull();
+      const body = stripAgentsMdMarker(content);
+      expect(hashAgentsMdBody(body)).toBe(marker!.hash);
+    });
+  });
+
+  describe("isAgentsMdSequantOwned / decideAgentsMdSync (AC-2)", () => {
+    it("is not owned when there is no marker", () => {
+      expect(
+        isAgentsMdSequantOwned("# AGENTS.md\n\nHand-written content\n"),
+      ).toBe(false);
+    });
+
+    it("is not owned when the marker's hash doesn't match the body", () => {
+      const content =
+        "<!-- sequant:agents-md v=1.0.0 h=0000000000000000000000000000000000000000 -->\n# AGENTS.md\nEdited after generation\n";
+      expect(isAgentsMdSequantOwned(content)).toBe(false);
+    });
+
+    it("is owned when the marker's hash matches the recomputed body hash", async () => {
+      const content = await generateAgentsMd({
+        projectName: "test-project",
+        stack: "generic",
+      });
+      expect(isAgentsMdSequantOwned(content)).toBe(true);
+    });
+
+    it("decides skipped when disabled, none when absent, preserved when unowned, regenerate when owned or forced", () => {
+      expect(
+        decideAgentsMdSync({
+          enabled: false,
+          existingContent: null,
+          force: false,
+        }),
+      ).toBe("skipped (--no-agents-md)");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: null,
+          force: false,
+        }),
+      ).toBe("none");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: "# AGENTS.md\nhand-written\n",
+          force: false,
+        }),
+      ).toBe("preserved");
+      expect(
+        decideAgentsMdSync({
+          enabled: true,
+          existingContent: "# AGENTS.md\nhand-written\n",
+          force: true,
+        }),
+      ).toBe("regenerate");
     });
   });
 });

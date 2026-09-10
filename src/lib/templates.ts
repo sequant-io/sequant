@@ -13,6 +13,7 @@ import {
   ensureDir,
   fileExists,
   isSymlink,
+  getSymlinkTarget,
   createSymlink,
   removeFileOrSymlink,
 } from "./fs.js";
@@ -573,6 +574,128 @@ export async function symlinkDir(
 }
 
 /**
+ * Where `scripts/dev/*.sh` symlinks should point, and whether they should be
+ * symlinks at all (#990).
+ *
+ * A symlink target must survive `git clone && npm install` on any machine —
+ * it cannot be an npx cache path (evicted between runs → dead links) or an
+ * `npm link`/global-prefix sibling (only valid on the machine that ran the
+ * command). Preference order:
+ *
+ * 1. `<project>/node_modules/sequant/templates/scripts` — a real, installed
+ *    devDependency, if present, regardless of which `sequant` binary actually
+ *    ran the command (AC-4).
+ * 2. The resolved bundled templates dir, *unless* it sits under an npx cache
+ *    (`_npx` path segment) or outside the project tree — those cases fall
+ *    back to copies instead of links (AC-5).
+ */
+export interface ScriptsSymlinkTarget {
+  mode: "symlink" | "copy";
+  /** Directory containing the scripts to link/copy from. */
+  scriptsDir: string;
+  /** Set when `mode === "copy"` because of npx-cache/outside-tree detection. */
+  reason?: string;
+}
+
+function isUnderNpxCache(dirPath: string): boolean {
+  return dirPath.split(/[\\/]/).includes("_npx");
+}
+
+function isOutsideProjectTree(dirPath: string): boolean {
+  const rel = relative(process.cwd(), dirPath);
+  // `..` alone or `../...`/`..\...` (either separator, so this holds on
+  // Windows too — relative() itself picks the platform separator).
+  return rel.startsWith("..") || isAbsolute(rel);
+}
+
+export function resolveScriptsSymlinkTarget(
+  bundledTemplatesDir: string,
+): ScriptsSymlinkTarget {
+  const localNodeModulesScripts = join(
+    process.cwd(),
+    "node_modules",
+    "sequant",
+    "templates",
+    "scripts",
+  );
+  if (existsSync(localNodeModulesScripts)) {
+    return { mode: "symlink", scriptsDir: localNodeModulesScripts };
+  }
+
+  const bundledScriptsDir = join(bundledTemplatesDir, "scripts");
+  if (
+    isUnderNpxCache(bundledTemplatesDir) ||
+    isOutsideProjectTree(bundledTemplatesDir)
+  ) {
+    return {
+      mode: "copy",
+      scriptsDir: bundledScriptsDir,
+      reason:
+        "scripts/dev templates dir is outside the project tree (npx cache or a sibling checkout) — copying instead of symlinking; pass --no-symlinks to silence this",
+    };
+  }
+
+  return { mode: "symlink", scriptsDir: bundledScriptsDir };
+}
+
+/**
+ * Preview what each `scripts/dev/*.sh` symlink's target would become without
+ * writing anything (#990 AC-6). Returns an empty list when the resolved
+ * target says to copy rather than symlink — there is no "target" to preview.
+ */
+export interface ScriptsSymlinkPreviewEntry {
+  path: string;
+  oldTarget: string | null;
+  newTarget: string;
+  changed: boolean;
+}
+
+export async function previewScriptsSymlinkTargets(): Promise<
+  ScriptsSymlinkPreviewEntry[]
+> {
+  const target = resolveScriptsSymlinkTarget(getTemplatesDir());
+  if (target.mode !== "symlink") return [];
+
+  const entries: ScriptsSymlinkPreviewEntry[] = [];
+
+  async function walk(srcDir: string, destDir: string): Promise<void> {
+    let dirEntries;
+    try {
+      dirEntries = await readdir(srcDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of dirEntries) {
+      const srcPath = join(srcDir, entry.name);
+      const destPath = join(destDir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(srcPath, destPath);
+        continue;
+      }
+      const absoluteDest = isAbsolute(destPath)
+        ? destPath
+        : join(process.cwd(), destPath);
+      const absoluteSrc = isAbsolute(srcPath)
+        ? srcPath
+        : join(process.cwd(), srcPath);
+      const newTarget = relative(dirname(absoluteDest), absoluteSrc);
+      const oldTarget = (await isSymlink(destPath))
+        ? await getSymlinkTarget(destPath)
+        : null;
+      entries.push({
+        path: destPath,
+        oldTarget,
+        newTarget,
+        changed: oldTarget !== newTarget,
+      });
+    }
+  }
+
+  await walk(target.scriptsDir, "scripts/dev");
+  return entries;
+}
+
+/**
  * Copy all templates to .claude/ directory
  */
 export async function copyTemplates(
@@ -659,26 +782,37 @@ export async function copyTemplates(
   // Copy memory (constitution, etc.)
   await copyDir(join(templatesDir, "memory"), ".claude/memory");
 
-  // Handle scripts directory - use symlinks unless disabled
-  const useSymlinks = !options.noSymlinks && !isNativeWindows();
+  // Handle scripts directory - use symlinks unless disabled, or unless the
+  // resolved target isn't safe to link on every machine (#990 AC-4/AC-5).
+  const symlinkTarget = resolveScriptsSymlinkTarget(templatesDir);
+  const useSymlinks =
+    !options.noSymlinks &&
+    !isNativeWindows() &&
+    symlinkTarget.mode === "symlink";
   let scriptsSymlinked = false;
   let symlinkResults: SymlinkResult[] | undefined;
 
+  if (
+    symlinkTarget.mode === "copy" &&
+    !options.noSymlinks &&
+    !isNativeWindows()
+  ) {
+    console.log(`!  ${symlinkTarget.reason}`);
+  }
+
   if (useSymlinks) {
     // Use symlinks for scripts - they don't need template variable processing
-    symlinkResults = await symlinkDir(
-      join(templatesDir, "scripts"),
-      "scripts/dev",
-      { force: options.force },
-    );
+    symlinkResults = await symlinkDir(symlinkTarget.scriptsDir, "scripts/dev", {
+      force: options.force,
+    });
 
     // Check if any symlinks were actually created (not all fell back to copy)
     scriptsSymlinked = symlinkResults.some(
       (r) => r.created && !r.fallbackToCopy,
     );
   } else {
-    // Fall back to copies (Windows or --no-symlinks flag)
-    await copyDir(join(templatesDir, "scripts"), "scripts/dev");
+    // Fall back to copies (Windows, --no-symlinks, or an unsafe target)
+    await copyDir(symlinkTarget.scriptsDir, "scripts/dev");
   }
 
   // Copy settings.json

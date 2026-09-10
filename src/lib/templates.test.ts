@@ -6,6 +6,7 @@ import {
   writeFile as fsWriteFile,
   mkdir,
   readFile as fsReadFile,
+  symlink,
 } from "fs/promises";
 import { tmpdir } from "os";
 import {
@@ -17,10 +18,12 @@ import {
   templateDestination,
   copyTemplates,
   resolveTemplatesDirFrom,
+  resolveScriptsSymlinkTarget,
   getTemplatesDir,
   assertTemplatesDirExists,
   CUSTOMIZABLE_FILES,
   type TemplatesCandidateRank,
+  previewScriptsSymlinkTargets,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
 
@@ -761,6 +764,186 @@ describe("templates", () => {
       expect(await fsReadFile(join(cwdDir, CONSTITUTION_LOCAL), "utf-8")).toBe(
         RENDERED,
       );
+    });
+  });
+
+  describe("scripts/dev symlink target routing (#990)", () => {
+    let prevCwd: string;
+    let cwdDir: string;
+    let templatesDir: string;
+
+    beforeEach(async () => {
+      prevCwd = process.cwd();
+      cwdDir = await mkdtemp(join(tmpdir(), "sequant-scripts-cwd-"));
+      templatesDir = await mkdtemp(join(tmpdir(), "sequant-scripts-tpl-"));
+      process.chdir(cwdDir);
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      await fsWriteFile(
+        join(cwdDir, "package.json"),
+        JSON.stringify({ name: "my-project" }),
+      );
+      await mkdir(join(templatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/bash\necho tpl\n",
+      );
+    });
+
+    afterEach(async () => {
+      process.chdir(prevCwd);
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      await rm(cwdDir, { recursive: true, force: true });
+      await rm(templatesDir, { recursive: true, force: true });
+    });
+
+    it("prefers a local node_modules/sequant/templates/scripts target regardless of which templates dir produced the copy (AC-4)", async () => {
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+      await fsWriteFile(
+        join(localScripts, "new-feature.sh"),
+        "#!/bin/bash\necho local\n",
+      );
+
+      await copyTemplates("generic");
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(true);
+      const target = await getSymlinkTarget(linkPath);
+      const resolved = join(join(cwdDir, "scripts", "dev"), target!);
+      expect(resolved.startsWith(join(cwdDir, "node_modules", "sequant"))).toBe(
+        true,
+      );
+    });
+
+    it("previewScriptsSymlinkTargets reports old → new for each link, against the real filesystem (AC-6)", async () => {
+      // QA F2 on #990: the function backing the dry-run preview had only
+      // mocked references. Same fixture as AC-4: a local node_modules/sequant
+      // scripts dir is the target, so the resolver is in symlink mode.
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+      await fsWriteFile(
+        join(localScripts, "new-feature.sh"),
+        "#!/bin/bash\necho local\n",
+      );
+
+      // (1) No link yet: one entry, no old target, flagged as a change.
+      const before = await previewScriptsSymlinkTargets();
+      expect(before).toHaveLength(1);
+      expect(before[0].path).toBe(join("scripts", "dev", "new-feature.sh"));
+      expect(before[0].oldTarget).toBeNull();
+      expect(before[0].changed).toBe(true);
+      expect(
+        join(join(cwdDir, "scripts", "dev"), before[0].newTarget).replace(
+          /^\/private/,
+          "",
+        ),
+      ).toBe(join(localScripts, "new-feature.sh").replace(/^\/private/, ""));
+
+      // (2) A stale link (the npx-cache / sibling-dir shape) → old → new.
+      await mkdir(join(cwdDir, "scripts", "dev"), { recursive: true });
+      await symlink(
+        "../../../../.npm/_npx/deadbeef/node_modules/sequant/templates/scripts/new-feature.sh",
+        join(cwdDir, "scripts", "dev", "new-feature.sh"),
+      );
+      const stale = await previewScriptsSymlinkTargets();
+      expect(stale).toHaveLength(1);
+      expect(stale[0].oldTarget).toContain("_npx/deadbeef");
+      expect(stale[0].changed).toBe(true);
+      expect(stale[0].newTarget).toBe(before[0].newTarget);
+
+      // (3) After the real copy the link matches → nothing to report.
+      await copyTemplates("generic");
+      const after = await previewScriptsSymlinkTargets();
+      expect(after).toHaveLength(1);
+      expect(after[0].oldTarget).toBe(after[0].newTarget);
+      expect(after[0].changed).toBe(false);
+    });
+
+    it("resolveScriptsSymlinkTarget prefers node_modules/sequant over the bundled dir", async () => {
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+
+      const result = resolveScriptsSymlinkTarget(join(templatesDir));
+      expect(result.mode).toBe("symlink");
+      expect(result.scriptsDir.replace(/^\/private/, "")).toBe(
+        localScripts.replace(/^\/private/, ""),
+      );
+    });
+
+    it("falls back to copies (not links) for a templates dir under an npx cache path, and prints exactly one --no-symlinks line (AC-5)", async () => {
+      // Verbatim shape observed in the wild (PLAN D13).
+      const npxTemplatesDir = join(
+        tmpdir(),
+        ".npm",
+        "_npx",
+        "38ae72183b73fa32",
+        "node_modules",
+        "sequant",
+        "templates",
+      );
+      await mkdir(join(npxTemplatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(npxTemplatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/bash\necho npx\n",
+      );
+      process.env.SEQUANT_TEMPLATES_DIR = npxTemplatesDir;
+
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (msg?: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        await copyTemplates("generic");
+      } finally {
+        console.log = originalLog;
+        await rm(npxTemplatesDir, { recursive: true, force: true });
+      }
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(false);
+      expect(await fileExists(linkPath)).toBe(true);
+      const warnLines = logs.filter((l) => l.includes("--no-symlinks"));
+      expect(warnLines).toHaveLength(1);
+    });
+
+    it("falls back to copies (not links) for a templates dir outside the project tree, and prints exactly one --no-symlinks line (AC-5)", async () => {
+      // templatesDir is a sibling temp dir — outside cwdDir by construction.
+      const logs: string[] = [];
+      const originalLog = console.log;
+      console.log = (msg?: unknown) => {
+        logs.push(String(msg));
+      };
+      try {
+        await copyTemplates("generic");
+      } finally {
+        console.log = originalLog;
+      }
+
+      const linkPath = join(cwdDir, "scripts", "dev", "new-feature.sh");
+      expect(await isSymlink(linkPath)).toBe(false);
+      expect(await fileExists(linkPath)).toBe(true);
+      const warnLines = logs.filter((l) => l.includes("--no-symlinks"));
+      expect(warnLines).toHaveLength(1);
     });
   });
 });

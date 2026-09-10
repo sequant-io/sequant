@@ -226,6 +226,7 @@ program
     "-d, --dry-run",
     "Show what sync would write without making changes (exits non-zero if work is pending)",
   )
+  .option("--no-agents-md", "Skip AGENTS.md regeneration")
   .action(syncCommand);
 
 program

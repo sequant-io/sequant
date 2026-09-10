@@ -17,19 +17,27 @@ vi.mock("../lib/manifest.js", () => ({
 
 // Mock templates. `isCustomizableFile` is a pure allow-list check, so mirror
 // the real implementation rather than a bare vi.fn() (sync.ts calls it to
-// classify the write-set).
-vi.mock("../lib/templates.js", () => ({
-  copyTemplates: vi.fn(),
-  computeTemplateChanges: vi.fn(),
-  listTemplateFiles: vi.fn(),
-  getTemplatesDir: vi.fn(() => "/pkg/templates"),
-  // Templates-root guard (#822). Defaults to "present" so the existing suite
-  // exercises the paths past the guard; the guard's own failure branch is
-  // covered by its dedicated test below.
-  assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
-  isCustomizableFile: (localPath: string): boolean =>
-    [".claude/memory/constitution.md"].includes(localPath.replace(/\\/g, "/")),
-}));
+// classify the write-set). `processTemplate` is kept real (via importOriginal)
+// since generateAgentsMd (also real/unmocked in this file) depends on it.
+vi.mock("../lib/templates.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    copyTemplates: vi.fn(),
+    computeTemplateChanges: vi.fn(),
+    listTemplateFiles: vi.fn(),
+    getTemplatesDir: vi.fn(() => "/pkg/templates"),
+    // Templates-root guard (#822). Defaults to "present" so the existing suite
+    // exercises the paths past the guard; the guard's own failure branch is
+    // covered by its dedicated test below.
+    assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
+    isCustomizableFile: (localPath: string): boolean =>
+      [".claude/memory/constitution.md"].includes(
+        localPath.replace(/\\/g, "/"),
+      ),
+    previewScriptsSymlinkTargets: vi.fn(() => Promise.resolve([])),
+  };
+});
 
 // Mock config
 vi.mock("../lib/config.js", () => ({
@@ -58,9 +66,11 @@ import {
   copyTemplates,
   computeTemplateChanges,
   listTemplateFiles,
+  previewScriptsSymlinkTargets,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
+import { generateAgentsMd } from "../lib/agents-md.js";
 
 const mockSyncMcpPin = vi.mocked(syncSequantMcpPin);
 const mockFileExists = vi.mocked(fileExists);
@@ -72,6 +82,9 @@ const mockGetPackageVersion = vi.mocked(getPackageVersion);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockComputeTemplateChanges = vi.mocked(computeTemplateChanges);
 const mockListTemplateFiles = vi.mocked(listTemplateFiles);
+const mockPreviewScriptsSymlinkTargets = vi.mocked(
+  previewScriptsSymlinkTargets,
+);
 const mockGetConfig = vi.mocked(getConfig);
 
 describe("sync command", () => {
@@ -691,6 +704,50 @@ describe("sync command", () => {
         expect(process.exitCode).toBe(1);
       });
 
+      it("previews both the AGENTS.md decision and scripts/dev link changes, writing nothing (AC-6)", async () => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.0.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        const files: Record<string, string> = {
+          ".claude/skills/.sequant-version": "1.0.0",
+          "AGENTS.md": "# AGENTS.md\n\nHand-written.\n",
+        };
+        mockFileExists.mockImplementation(async (p: string) => p in files);
+        mockReadFile.mockImplementation(async (p: string) => {
+          if (p in files) return files[p];
+          throw new Error(`unexpected read: ${p}`);
+        });
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([]);
+        mockPreviewScriptsSymlinkTargets.mockResolvedValue([
+          {
+            path: "scripts/dev/new-feature.sh",
+            oldTarget:
+              "../../../../.npm/_npx/abc/node_modules/sequant/templates/scripts/new-feature.sh",
+            newTarget:
+              "../../node_modules/sequant/templates/scripts/new-feature.sh",
+            changed: true,
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("AGENTS.md: preserved");
+        expect(output).toContain("scripts/dev/new-feature.sh");
+        expect(output).toContain(
+          "../../node_modules/sequant/templates/scripts/new-feature.sh",
+        );
+        // Preview only: nothing written.
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+        expect(mockWriteFile).not.toHaveBeenCalled();
+      });
+
       it("reports a customizable file as preserved, not written, under a plain dry-run (#814 AC-4)", async () => {
         // Since #814 the apply path PRESERVES CUSTOMIZABLE_FILES under a plain
         // sync, so the preview must show them as preserved — not "will be
@@ -933,6 +990,92 @@ describe("sync command", () => {
           overwriteCustomizable: false,
         },
       );
+    });
+
+    describe("AGENTS.md ownership (AC-2, AC-3)", () => {
+      const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
+
+      function mockFilesByPath(map: Record<string, string>) {
+        mockFileExists.mockImplementation(async (p: string) => p in map);
+        mockReadFile.mockImplementation(async (p: string) => {
+          if (p in map) return map[p];
+          throw new Error(`unexpected read: ${p}`);
+        });
+      }
+
+      beforeEach(() => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.1.0",
+          stack: "generic",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockCopyTemplates.mockResolvedValue({
+          scriptsSymlinked: false,
+          preservedCustomizable: [],
+        });
+      });
+
+      it("leaves an unmarked AGENTS.md byte-identical and reports it preserved", async () => {
+        mockFilesByPath({
+          [SKILLS_VERSION_PATH]: "1.0.0", // mismatch → apply path
+          "AGENTS.md": "# AGENTS.md\n\nHand-written by a human.\n",
+        });
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand();
+
+        expect(mockWriteFile.mock.calls.some((c) => c[0] === "AGENTS.md")).toBe(
+          false,
+        );
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain("preserved: AGENTS.md — user-owned");
+      });
+
+      it("regenerates a marked AGENTS.md whose hash matches the body", async () => {
+        const owned = await generateAgentsMd({
+          projectName: "p",
+          stack: "generic",
+        });
+        mockFilesByPath({
+          [SKILLS_VERSION_PATH]: "1.0.0",
+          "AGENTS.md": owned,
+        });
+
+        await syncCommand({ quiet: true });
+
+        expect(mockWriteFile.mock.calls.some((c) => c[0] === "AGENTS.md")).toBe(
+          true,
+        );
+      });
+
+      it("--force rewrites an unmarked AGENTS.md too", async () => {
+        mockFilesByPath({
+          [SKILLS_VERSION_PATH]: "1.1.0", // matches package; only --force applies
+          "AGENTS.md": "# AGENTS.md\n\nHand-written.\n",
+        });
+
+        await syncCommand({ force: true, quiet: true });
+
+        expect(mockWriteFile.mock.calls.some((c) => c[0] === "AGENTS.md")).toBe(
+          true,
+        );
+      });
+
+      it("--no-agents-md skips generation entirely and leaves the file untouched (AC-3)", async () => {
+        mockFilesByPath({
+          [SKILLS_VERSION_PATH]: "1.0.0",
+          "AGENTS.md": "# AGENTS.md\n\nHand-written.\n",
+        });
+
+        await syncCommand({ agentsMd: false, quiet: true });
+
+        expect(mockWriteFile.mock.calls.some((c) => c[0] === "AGENTS.md")).toBe(
+          false,
+        );
+      });
     });
   });
 });
