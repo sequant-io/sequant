@@ -280,7 +280,10 @@ export async function writeOpencodeAgents(targetDir = "."): Promise<string[]> {
   const written: string[] = [];
   for (const name of OPENCODE_AGENT_NAMES) {
     const source = await getTemplateContent(`templates/agents/${name}.md`);
-    await writeFile(join(agentsDir, `${name}.md`), translateAgentDefinition(source));
+    await writeFile(
+      join(agentsDir, `${name}.md`),
+      translateAgentDefinition(source),
+    );
     written.push(name);
   }
 
@@ -320,9 +323,7 @@ export async function writeOpencodePlugin(targetDir = "."): Promise<string> {
     "sequant-hooks.ts",
     "lib/sequant-hooks-core.ts",
   ] as const) {
-    const body = await getTemplateContent(
-      `templates/opencode/plugins/${rel}`,
-    );
+    const body = await getTemplateContent(`templates/opencode/plugins/${rel}`);
     await writeFile(join(pluginDir, rel), body);
   }
 
@@ -357,6 +358,39 @@ export async function writeOpencodeMcpConfig(targetDir = "."): Promise<string> {
 
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
   return configPath;
+}
+
+/**
+ * Decide what `sync`/`update` should do with the opencode shim (#1030).
+ *
+ * `templateDestination` excludes `templates/opencode/**` from the generic
+ * copy/diff engine — this is the shim's other half, letting `sync`/`update`
+ * preview and apply the same refresh `init --agent opencode` performs,
+ * without a second hand-written renderer. `init` is the only *creator* of
+ * `.opencode/` (a project opts in via `--agent opencode`); `sync`/`update`
+ * only *refresh* a shim that already exists, detected by the directory's
+ * presence rather than by re-reading the project's driver choice.
+ *
+ * - `"none"`: no `.opencode/` directory — sync/update write nothing there.
+ * - `"refresh"`: `.opencode/` exists — re-render commands/agents/plugin/MCP.
+ */
+export async function decideOpencodeShimSync(
+  targetDir = ".",
+): Promise<"none" | "refresh"> {
+  return (await fileExists(join(targetDir, ".opencode"))) ? "refresh" : "none";
+}
+
+/**
+ * Refresh the opencode shim in place, reusing `init`'s own writers so the
+ * shim has exactly one producer (#1030 AC-3). Callers must gate on
+ * `decideOpencodeShimSync` first — these writers unconditionally `ensureDir`
+ * and would otherwise create `.opencode/` on a project that never opted in.
+ */
+export async function refreshOpencodeShim(targetDir = "."): Promise<void> {
+  await writeOpencodeCommands(targetDir);
+  await writeOpencodeAgents(targetDir);
+  await writeOpencodePlugin(targetDir);
+  await writeOpencodeMcpConfig(targetDir);
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -768,7 +802,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(
       chalk.yellow(
         "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
-          "    git add .opencode && git commit -m \"chore: add opencode provisioning\"",
+          '    git add .opencode && git commit -m "chore: add opencode provisioning"',
       ),
     );
   }

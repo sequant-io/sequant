@@ -311,6 +311,11 @@ export interface TemplateChange {
  * - `templates/mcp.json` → `null`: the project `.mcp.json` is generated and
  *   version-pinned by `mcp-config.ts` (`syncSequantMcpPin`), never copied.
  * - `templates/relay/` → `null`: not installed by `copyTemplates`.
+ * - `templates/opencode/` → `null`: not a flat copy target. `command.md`
+ *   needs per-phase `{{PHASE}}` substitution (one template, N output files)
+ *   and the plugin/agents/MCP files live under `.opencode/`, not `.claude/` —
+ *   `init.ts`'s `writeOpencode*` functions are the one renderer for this
+ *   tree, reused by `sync`/`update` via `decideOpencodeShimSync` (#1030).
  * - `templates/scripts/` → `scripts/dev/`: symlinked on POSIX, copied on
  *   Windows / `--no-symlinks`.
  * - everything else → `.claude/<relpath>`.
@@ -319,6 +324,7 @@ export function templateDestination(templatePath: string): string | null {
   const normalized = templatePath.replace(/\\/g, "/");
   if (normalized === "templates/mcp.json") return null;
   if (normalized.startsWith("templates/relay/")) return null;
+  if (normalized.startsWith("templates/opencode/")) return null;
   if (normalized.startsWith("templates/scripts/")) {
     return normalized.replace("templates/scripts/", "scripts/dev/");
   }

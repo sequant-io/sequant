@@ -43,11 +43,20 @@ vi.mock("../lib/mcp-config.js", () => ({
   syncSequantMcpPin: vi.fn(() => ({ changed: false })),
 }));
 
+// Mock the opencode shim refresh (#1030), same as sync.test.ts — without this,
+// `decideOpencodeShimSync` would stat the real repo's `.opencode/` (absent, so
+// every existing test still resolves "none" by luck, not by design).
+vi.mock("./init.js", () => ({
+  decideOpencodeShimSync: vi.fn(async () => "none" as const),
+  refreshOpencodeShim: vi.fn(),
+}));
+
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
 import { computeTemplateChanges } from "../lib/templates.js";
 import { getConfig, saveConfig } from "../lib/config.js";
 import { resolvePackageManager } from "../lib/stacks.js";
 import { updateCommand } from "./update.js";
+import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
 
 const mockGetManifest = vi.mocked(getManifest);
 const mockGetPackageVersion = vi.mocked(getPackageVersion);
@@ -55,6 +64,8 @@ const mockComputeTemplateChanges = vi.mocked(computeTemplateChanges);
 const mockGetConfig = vi.mocked(getConfig);
 const mockSaveConfig = vi.mocked(saveConfig);
 const mockResolvePackageManager = vi.mocked(resolvePackageManager);
+const mockDecideOpencodeShimSync = vi.mocked(decideOpencodeShimSync);
+const mockRefreshOpencodeShim = vi.mocked(refreshOpencodeShim);
 
 const INITIALIZED_MANIFEST = {
   version: "2.6.1",
@@ -264,5 +275,63 @@ describe("update resolves the package manager when the manifest omits it (#870)"
       "bun",
       process.cwd(),
     );
+  });
+});
+
+// #1030 AC-3: the opencode shim has one producer (init.ts's writers, reached
+// via decideOpencodeShimSync/refreshOpencodeShim) — `update` refreshes it on
+// a project that already has `.opencode/`, same as `sync`.
+describe("update command — opencode shim (AC-3)", () => {
+  let prevExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    prevExitCode = process.exitCode;
+    process.exitCode = undefined;
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    mockGetManifest.mockResolvedValue(INITIALIZED_MANIFEST);
+    mockGetPackageVersion.mockReturnValue("2.6.1");
+    mockGetConfig.mockResolvedValue(CONFIG);
+    // Nothing else pending, so only the opencode decision drives behavior.
+    mockComputeTemplateChanges.mockResolvedValue([
+      {
+        path: ".claude/skills/qa/SKILL.md",
+        templatePath: "templates/skills/qa/SKILL.md",
+        status: "unchanged",
+        rendered: "same",
+      },
+    ]);
+  });
+
+  afterEach(() => {
+    process.exitCode = prevExitCode;
+    vi.restoreAllMocks();
+    mockDecideOpencodeShimSync.mockReset();
+    mockDecideOpencodeShimSync.mockResolvedValue("none");
+    mockRefreshOpencodeShim.mockReset();
+  });
+
+  it("dry-run previews 'refresh' and apply actually refreshes it, on a project with .opencode/", async () => {
+    mockDecideOpencodeShimSync.mockResolvedValue("refresh");
+
+    const logSpy = vi.spyOn(console, "log");
+    await updateCommand({ dryRun: true });
+    const dryRunOutput = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(dryRunOutput).toContain("opencode shim: refresh");
+    expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+    // Refresh pending → non-zero exit, matching `sync --dry-run`.
+    expect(process.exitCode).toBe(1);
+
+    await updateCommand({ yes: true });
+    expect(mockRefreshOpencodeShim).toHaveBeenCalledTimes(1);
+  });
+
+  it("never refreshes or previews anything on a project without .opencode/", async () => {
+    mockDecideOpencodeShimSync.mockResolvedValue("none");
+
+    await updateCommand({ dryRun: true });
+    expect(process.exitCode ?? 0).toBe(0);
+
+    await updateCommand({ yes: true });
+    expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
   });
 });

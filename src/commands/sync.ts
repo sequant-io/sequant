@@ -36,6 +36,7 @@ import {
 } from "../lib/agents-md.js";
 import { getProjectName } from "../lib/project-name.js";
 import { getStackConfig } from "../lib/stacks.js";
+import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
@@ -392,10 +393,14 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const scriptsPreview = (await previewScriptsSymlinkTargets()).filter(
       (e) => e.changed,
     );
+    const opencodeShimDecision = await decideOpencodeShimSync();
 
     if (!quiet) {
       if (agentsMdDecision !== "none") {
         console.log(chalk.bold(`AGENTS.md: ${agentsMdDecision}`));
+      }
+      if (opencodeShimDecision !== "none") {
+        console.log(chalk.bold(`opencode shim: ${opencodeShimDecision}`));
       }
       if (scriptsPreview.length > 0) {
         console.log(chalk.bold("scripts/dev link targets:"));
@@ -454,7 +459,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         }
       }
 
-      if (toWrite.length === 0) {
+      if (toWrite.length === 0 && opencodeShimDecision === "none") {
         console.log(chalk.green("\n✔ Skills are already up to date!"));
       } else {
         console.log(chalk.gray("\n(dry-run mode - no changes made)"));
@@ -465,7 +470,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // gate CI/automation (the #709 intent): a dry-run reporting nothing must
     // mean nothing to do. The matching-version short-circuit signals drift the
     // same way.
-    if (toWrite.length > 0) {
+    if (toWrite.length > 0 || opencodeShimDecision === "refresh") {
       process.exitCode = 1;
     }
     return;
@@ -565,6 +570,17 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
           `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`sync --force\` to replace)`,
         ),
       );
+    }
+  }
+
+  // Refresh the opencode shim when the project already has one (#1030). Gated
+  // on decideOpencodeShimSync so a plain sync never creates `.opencode/` on a
+  // project that hasn't opted in — the writers themselves unconditionally
+  // ensureDir.
+  if ((await decideOpencodeShimSync()) === "refresh") {
+    await refreshOpencodeShim();
+    if (!quiet) {
+      console.log(chalk.blue("Refreshed opencode shim"));
     }
   }
 
