@@ -24,7 +24,9 @@ LEDGER (as of filing)
     #982  node 02  mechanical  fresh-session QA + run.fullQa
     #980  node 03  judgment    SECURITY.md + THREAT-MODEL.md, citation-gated
 - Blocked: #1024, #1025, gate #1026 (by #980); #1028 (by #1026, #1025);
-  gate #1027 (by #990, #982); #944 (by #1027 — edge only, not a wave node).
+  gate #1027 (by #990, #982); #1030 (by #990 — field finding, D14; shares
+  templates.ts/sync.ts with node 01, so it never runs beside it);
+  #944 (by #1027 — edge only, not a wave node).
 - In-flight PRs awaiting decision: #1029 (docs, this plan).
 - Excluded on purpose (D10): #929 (reserved #997 dogfood sample — do not
   implement), #941, #919 (file collisions with 01/02).

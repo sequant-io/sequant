@@ -17,6 +17,7 @@ Conventions: `PLAN.md` §8. Merge consent: stop-at-PR. Plan approved and filed
 | 06 | #1026 — GATE security decisions | human | 2 |
 | 07 | #1028 — #980-P2 provenance + trust copy | mechanical | 3 |
 | 08 | #1027 — GATE field verification on landing + #944 baseline | human | 2 |
+| 09 | #1030 — dry-run ≠ apply: phantom `.claude/opencode/**` drift (field finding, D14) | mechanical | 2 |
 | — | #944 carries `Blocked by #1027` (not re-planned) | — | after 08 |
 
 All nodes carry the label `graph-2026-09-w2`.
@@ -35,6 +36,7 @@ flowchart TD
         N05[#980-P1b Scorecard]
         N06{{GATE 06: security decisions}}
         N08{{GATE 08: field verification + #944 baseline}}
+        N09[#1030 dry-run ≠ apply: phantom opencode drift]
     end
     subgraph W3[Wave 3]
         N07[#980-P2 provenance + trust copy]
@@ -46,6 +48,7 @@ flowchart TD
     N06 --> N07
     N05 --> N07
     N01 --> N08
+    N01 --> N09
     N02 --> N08
     N08 --> N944
 ```
