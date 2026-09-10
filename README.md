@@ -204,7 +204,7 @@ Every project gets `.claude/memory/constitution.md` — the machine-enforceable 
 
 The file is a `CUSTOMIZABLE_FILES` entry: plain `sequant update` and `sync` preserve your edits. Only `--force` replaces it.
 
-**`AGENTS.md` ownership.** Every `AGENTS.md` sequant generates starts with a marker line, `<!-- sequant:agents-md v=<version> h=<sha1> -->`, whose hash covers the rest of the file. `sync`/`update` only regenerate the file when that marker is present and its hash still matches the body — otherwise the file is treated as user-owned (hand-edited, or written before the marker existed) and is left byte-identical, reported as preserved, and only replaced with `sync --force`. Use `sync --no-agents-md` to skip `AGENTS.md` entirely.
+**`AGENTS.md` ownership.** Every `AGENTS.md` sequant generates starts with a marker line, `<!-- sequant:agents-md v=<version> h=<sha1> -->`, whose hash covers the rest of the file. `sync` only regenerates the file when that marker is present and its hash still matches the body — otherwise the file is treated as user-owned (hand-edited, or written before the marker existed) and is left byte-identical, reported as preserved, and only replaced with `sync --force`. Use `sync --no-agents-md` to skip `AGENTS.md` entirely. (`update` has no `AGENTS.md` awareness — unaffected.)
 
 ### Quality Gates
 
