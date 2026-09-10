@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`src/lib/__tests__/security-docs.test.ts`): cited paths, skill anchors and
   settings keys must resolve on disk, and the stated guard count is recomputed
   from `templates/hooks/pre-tool.sh` rather than typed.
+### Fixed
+
+- **Phase agents can no longer park on a background task** — `pre-tool.sh` now blocks `Monitor` and Bash `run_in_background` calls whenever `SEQUANT_ORCHESTRATOR` is set, and `/exec` states the foreground-with-`timeout` rule for the test suite. Every stranded-exec transcript found (ad-motion #226/#233, sequant #933/#990) ended with the agent "waiting for the notification" that never arrives inside a phase. When an exec phase still ends with uncommitted work, sequant now commits it as `chore(#N): wip checkpoint …` before reporting the #879 failure, so the work is on the branch instead of loose in the worktree (#1032).
 
 ## [2.14.0] - 2026-09-09
 

@@ -17,6 +17,7 @@ Conventions: `PLAN.md` §8. Merge consent: stop-at-PR. Plan approved and filed
 | 06 | #1026 — GATE security decisions | human | 2 |
 | 07 | #1028 — #980-P2 provenance + trust copy | mechanical | 3 |
 | 08 | #1027 — GATE field verification on landing + #944 baseline | human | 2 |
+| 09 | #1030 — dry-run ≠ apply: phantom `.claude/opencode/**` drift (field finding, D14) | mechanical | 2 |
 | — | #944 carries `Blocked by #1027` (not re-planned) | — | after 08 |
 
 All nodes carry the label `graph-2026-09-w2`.
@@ -35,6 +36,7 @@ flowchart TD
         N05[#980-P1b Scorecard]
         N06{{GATE 06: security decisions}}
         N08{{GATE 08: field verification + #944 baseline}}
+        N09[#1030 dry-run ≠ apply: phantom opencode drift]
     end
     subgraph W3[Wave 3]
         N07[#980-P2 provenance + trust copy]
@@ -46,6 +48,7 @@ flowchart TD
     N06 --> N07
     N05 --> N07
     N01 --> N08
+    N01 --> N09
     N02 --> N08
     N08 --> N944
 ```
@@ -59,6 +62,19 @@ flowchart TD
 - Budget: ≈ $30–70 for the wave at the Lab §2 rates; 03 at the top of the range.
 - Stop at PR on every node (I-1). Gate 08 cannot be presented until 01 and 02
   are on `main` and a build is available to the downstream project (OQ-7).
+
+## Wave 1 execution record (2026-09-10)
+
+| Node | PR | First QA | Runner action | Second QA |
+|---|---|---|---|---|
+| 01 #990 | #1036 | AC_NOT_MET (AC-6 `update` clause; `--force` hint at sibling lines; untested preview fn; dead helper) | D16 + fixes in `ee1e54d3` | AC_MET_BUT_NOT_A_PLUS |
+| 02 #982 | #1033 | AC_NOT_MET (qa handle overwrote exec's; non-gating test; `KNOWN_KEYS`; 40% uncommitted; AC-3 grep unsatisfiable) | D15 + fixes in `a361ed31`, notes in `2facf50e` | AC_MET_BUT_NOT_A_PLUS |
+| 03 #980 | #1035 | AC_NOT_MET (mutation-marker format only) | records re-derived by re-running all five mutations; two doc cells in `9fbf55e7` | AC_MET_BUT_NOT_A_PLUS |
+
+Exec-phase cost of the wave: five dispatches for three nodes — two exec
+phases killed at the MCP 30-minute wall, two ended stranded on a
+backgrounded test run (D17 → #1032 / PR #1034). Every PR waits for the owner
+(I-1); nothing merged.
 
 ## Critical path
 
