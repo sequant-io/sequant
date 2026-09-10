@@ -88,7 +88,9 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
       results.push({
         name: "scripts/dev links",
         status: "warn",
-        message: `${linkPath} is a dead symlink (target missing) - run: sequant sync --force`,
+        // #990 F4: plain `sync` already replaces an existing symlink; `--force`
+        // would also overwrite a user-owned AGENTS.md — the issue's motivating bug.
+        message: `${linkPath} is a dead symlink (target missing) - run: sequant sync (re-links scripts/dev without touching a user-owned AGENTS.md)`,
       });
       continue;
     }
@@ -104,7 +106,7 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
       results.push({
         name: "scripts/dev links",
         status: "warn",
-        message: `${linkPath} points outside the project (machine-specific target) - run: sequant sync --force`,
+        message: `${linkPath} points outside the project (machine-specific target) - run: sequant sync (re-links scripts/dev without touching a user-owned AGENTS.md)`,
       });
     }
   }
@@ -404,7 +406,9 @@ export async function doctorCommand(
     checks.push({
       name: "AGENTS.md",
       status: "warn",
-      message: `Missing ${AGENTS_MD_PATH} - run: sequant init --force (or sequant sync --force)`,
+      // `sync` never creates a missing AGENTS.md (decideAgentsMdSync → "none"), so
+      // only init can restore it.
+      message: `Missing ${AGENTS_MD_PATH} - run: sequant init --force (sync never creates a missing AGENTS.md)`,
     });
   }
 

@@ -232,36 +232,6 @@ export function extractPortableInstructions(claudeMdContent: string): string {
 }
 
 /**
- * Check if AGENTS.md is consistent with CLAUDE.md content.
- * Returns a description of inconsistencies, or null if consistent.
- */
-export function checkAgentsMdConsistency(
-  agentsMdContent: string,
-  claudeMdContent: string,
-): string | null {
-  const issues: string[] = [];
-
-  // Extract portable instructions from current CLAUDE.md
-  const portable = extractPortableInstructions(claudeMdContent);
-
-  // Check if key sections from CLAUDE.md portable content appear in AGENTS.md
-  // We check for commit rules and other conventions that should be shared
-  const commitRulePatterns = [/Co-Authored-By/i, /commit rules?/i];
-
-  for (const pattern of commitRulePatterns) {
-    const inClaude = pattern.test(portable);
-    const inAgents = pattern.test(agentsMdContent);
-    if (inClaude && !inAgents) {
-      issues.push(
-        `CLAUDE.md contains "${pattern.source}" but AGENTS.md does not`,
-      );
-    }
-  }
-
-  return issues.length > 0 ? issues.join("; ") : null;
-}
-
-/**
  * Format conventions for AGENTS.md output
  */
 export function formatConventionsAsAgentsMd(

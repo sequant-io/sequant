@@ -6,6 +6,7 @@ import {
   writeFile as fsWriteFile,
   mkdir,
   readFile as fsReadFile,
+  symlink,
 } from "fs/promises";
 import { tmpdir } from "os";
 import {
@@ -22,6 +23,7 @@ import {
   assertTemplatesDirExists,
   CUSTOMIZABLE_FILES,
   type TemplatesCandidateRank,
+  previewScriptsSymlinkTargets,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
 
@@ -818,6 +820,56 @@ describe("templates", () => {
       expect(resolved.startsWith(join(cwdDir, "node_modules", "sequant"))).toBe(
         true,
       );
+    });
+
+    it("previewScriptsSymlinkTargets reports old → new for each link, against the real filesystem (AC-6)", async () => {
+      // QA F2 on #990: the function backing the dry-run preview had only
+      // mocked references. Same fixture as AC-4: a local node_modules/sequant
+      // scripts dir is the target, so the resolver is in symlink mode.
+      const localScripts = join(
+        cwdDir,
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      await mkdir(localScripts, { recursive: true });
+      await fsWriteFile(
+        join(localScripts, "new-feature.sh"),
+        "#!/bin/bash\necho local\n",
+      );
+
+      // (1) No link yet: one entry, no old target, flagged as a change.
+      const before = await previewScriptsSymlinkTargets();
+      expect(before).toHaveLength(1);
+      expect(before[0].path).toBe(join("scripts", "dev", "new-feature.sh"));
+      expect(before[0].oldTarget).toBeNull();
+      expect(before[0].changed).toBe(true);
+      expect(
+        join(join(cwdDir, "scripts", "dev"), before[0].newTarget).replace(
+          /^\/private/,
+          "",
+        ),
+      ).toBe(join(localScripts, "new-feature.sh").replace(/^\/private/, ""));
+
+      // (2) A stale link (the npx-cache / sibling-dir shape) → old → new.
+      await mkdir(join(cwdDir, "scripts", "dev"), { recursive: true });
+      await symlink(
+        "../../../../.npm/_npx/deadbeef/node_modules/sequant/templates/scripts/new-feature.sh",
+        join(cwdDir, "scripts", "dev", "new-feature.sh"),
+      );
+      const stale = await previewScriptsSymlinkTargets();
+      expect(stale).toHaveLength(1);
+      expect(stale[0].oldTarget).toContain("_npx/deadbeef");
+      expect(stale[0].changed).toBe(true);
+      expect(stale[0].newTarget).toBe(before[0].newTarget);
+
+      // (3) After the real copy the link matches → nothing to report.
+      await copyTemplates("generic");
+      const after = await previewScriptsSymlinkTargets();
+      expect(after).toHaveLength(1);
+      expect(after[0].oldTarget).toBe(after[0].newTarget);
+      expect(after[0].changed).toBe(false);
     });
 
     it("resolveScriptsSymlinkTarget prefers node_modules/sequant over the bundled dir", async () => {

@@ -1030,7 +1030,10 @@ describe("doctor command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("dead symlink");
-      expect(output).toContain("sequant sync --force");
+      // #990 F4: the repair is plain `sync`; a `--force` hint would clobber a
+      // user-owned AGENTS.md — the issue's own motivating incident.
+      expect(output).toContain("run: sequant sync");
+      expect(output).not.toContain("sync --force");
     });
 
     it("warns on a scripts/dev symlink pointing outside the project tree", async () => {
@@ -1045,7 +1048,8 @@ describe("doctor command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("machine-specific target");
-      expect(output).toContain("sequant sync --force");
+      expect(output).toContain("run: sequant sync");
+      expect(output).not.toContain("sync --force");
     });
 
     it("reports an unmarked/hash-mismatched AGENTS.md as user-owned, with no --force hint", async () => {

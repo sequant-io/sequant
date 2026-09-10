@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   extractPortableInstructions,
-  checkAgentsMdConsistency,
   formatConventionsAsAgentsMd,
   generateAgentsMd,
   parseAgentsMdMarker,
@@ -113,27 +112,6 @@ describe("agents-md", () => {
       const result = extractPortableInstructions(claudeMd);
       // Should only have empty string (top heading removed, all sections stripped)
       expect(result.trim()).toBe("");
-    });
-  });
-
-  describe("checkAgentsMdConsistency", () => {
-    it("returns null when consistent", () => {
-      const agentsMd = "Contains Co-Authored-By reference and commit rules";
-      const claudeMd = `# Project\n\n## Commit Rules\n\n- No Co-Authored-By`;
-      expect(checkAgentsMdConsistency(agentsMd, claudeMd)).toBeNull();
-    });
-
-    it("detects missing Co-Authored-By reference", () => {
-      const agentsMd = "Some generic AGENTS.md content";
-      const claudeMd = `# Project\n\n## Commit Rules\n\n- Do NOT add Co-Authored-By lines`;
-      const result = checkAgentsMdConsistency(agentsMd, claudeMd);
-      expect(result).toContain("Co-Authored-By");
-    });
-
-    it("returns null when CLAUDE.md has no portable commit rules", () => {
-      const agentsMd = "AGENTS.md content";
-      const claudeMd = `# Project\n\n## Slash Commands\n\n- /spec`;
-      expect(checkAgentsMdConsistency(agentsMd, claudeMd)).toBeNull();
     });
   });
 
