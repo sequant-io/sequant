@@ -393,6 +393,7 @@ See [Customization Guide](docs/guides/customization.md) for all options, [Per-Ph
 - [Git Workflows](docs/guides/git-workflows.md)
 - [Customization](docs/guides/customization.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Threat Model](docs/THREAT-MODEL.md) — untrusted-input surfaces, which defenses hold when the model is compromised, OWASP Agentic Top 10 mapping · [Security Policy](SECURITY.md) — reporting a vulnerability
 
 Stack guides: [Next.js](docs/stacks/nextjs.md) · [Rust](docs/stacks/rust.md) · [Python](docs/stacks/python.md) · [Go](docs/stacks/go.md)
 
