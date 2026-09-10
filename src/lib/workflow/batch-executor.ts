@@ -1654,8 +1654,12 @@ export async function runIssueWithLogging(
       );
       const phaseEndTime = new Date();
 
-      // Capture resume handle for subsequent phases (#674).
-      if (result.resumeHandle) {
+      // Capture resume handle for subsequent phases (#674). qa's own handle
+      // is never captured (#982): the driver builds a handle for fresh
+      // sessions too, so without this guard the qa session would overwrite
+      // exec's handle and sever exec continuity across quality-loop
+      // iterations — a second behavior change AC-4 does not license.
+      if (result.resumeHandle && phase !== "qa") {
         resumeHandle = result.resumeHandle;
         if (stateManager) {
           try {

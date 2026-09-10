@@ -536,6 +536,39 @@ const runToolInputSchema = {
     ),
 };
 
+/** @internal Exported for testing only — the CLI arg-forwarding logic for `sequant_run` (#982). */
+export function buildRunArgs(
+  options: {
+    issues: number[];
+    phases?: string;
+    qualityLoop?: boolean;
+    force?: boolean;
+    agent?: string;
+    fullQa?: boolean;
+  },
+  prefixArgs: string[],
+): string[] {
+  const { issues, phases, qualityLoop, force, agent, fullQa } = options;
+  const args = [...prefixArgs, "run", ...issues.map(String)];
+  if (phases) {
+    args.push("--phases", phases);
+  }
+  if (qualityLoop) {
+    args.push("--quality-loop");
+  }
+  if (force) {
+    args.push("--force");
+  }
+  if (agent) {
+    args.push("--agent", agent);
+  }
+  if (fullQa) {
+    args.push("--full-qa");
+  }
+  args.push("--log-json");
+  return args;
+}
+
 export function registerRunTool(server: McpServer): void {
   server.registerTool(
     "sequant_run",
@@ -592,23 +625,10 @@ export function registerRunTool(server: McpServer): void {
       const [command, prefixArgs] = resolveCliBinary();
 
       // Build command arguments
-      const args = [...prefixArgs, "run", ...issues.map(String)];
-      if (phases) {
-        args.push("--phases", phases);
-      }
-      if (qualityLoop) {
-        args.push("--quality-loop");
-      }
-      if (force) {
-        args.push("--force");
-      }
-      if (agent) {
-        args.push("--agent", agent);
-      }
-      if (fullQa) {
-        args.push("--full-qa");
-      }
-      args.push("--log-json");
+      const args = buildRunArgs(
+        { issues, phases, qualityLoop, force, agent, fullQa },
+        prefixArgs,
+      );
 
       const phasesStr = phases || "spec,exec,qa";
       const phaseList = phasesStr.split(",");

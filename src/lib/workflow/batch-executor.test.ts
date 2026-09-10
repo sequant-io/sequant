@@ -2356,7 +2356,10 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
    * exec always succeeds and hands back a fresh resumeHandle each time it's
    * dispatched (mirrors #674's capture-and-carry-forward). qa fails once
    * (triggering a quality-loop retry that re-dispatches exec too) then
-   * succeeds.
+   * succeeds. qa ALSO returns a handle each time — the real driver builds
+   * one for fresh sessions too (claude-code.ts) — so the exec-continuity
+   * assertion below is genuinely gated: if the executor captured qa's
+   * handle, the retried exec would receive "QA1" instead of "H1".
    */
   function scriptExecResumeThenQaFailOnce() {
     let execSeen = 0;
@@ -2377,8 +2380,13 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
       if (phase === "qa") {
         qaSeen++;
         return qaSeen === 1
-          ? { phase: "qa", success: false, error: "AC not met" }
-          : { phase: "qa", success: true };
+          ? {
+              phase: "qa",
+              success: false,
+              error: "AC not met",
+              resumeHandle: `QA${qaSeen}`,
+            }
+          : { phase: "qa", success: true, resumeHandle: `QA${qaSeen}` };
       }
       return { phase, success: true };
     }) as never);
@@ -2402,7 +2410,8 @@ describe("runIssueWithLogging — #982: qa never resumes the implementer's sessi
       .filter((c) => c[1] === "exec")
       .map((c) => c[3]);
     // First exec dispatch has no prior handle; the retried (post-loop) exec
-    // dispatch carries forward the handle exec itself produced last time.
+    // dispatch carries forward the handle exec itself produced last time —
+    // NOT the handle qa produced in between (that would be "QA1").
     expect(execResumeHandles).toEqual([undefined, "H1"]);
 
     const qaResumeHandles = mockExecutePhase.mock.calls

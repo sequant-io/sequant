@@ -740,6 +740,7 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "phases",
     "modelRoles",
     "modelLadder",
+    "fullQa", // #982
   ]),
   // #914: keyed by real phase name so a typo (`run.phases.exce`) warns
   // instead of silently resolving to nothing. Computed from the registry

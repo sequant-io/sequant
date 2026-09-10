@@ -20,6 +20,7 @@ import {
   createRunIdCapture,
   formatProgressMessage,
   spawnAsync,
+  buildRunArgs,
   PHASE_TIMEOUT,
   MAX_TOTAL_TIMEOUT,
 } from "./run.js";
@@ -701,6 +702,45 @@ describe("formatProgressMessage", () => {
     expect(formatProgressMessage(event)).toBe(
       "#860: exec auto-wait complete \u2014 resuming",
     );
+  });
+});
+
+describe("buildRunArgs (#982 AC-3): fullQa param forwards to --full-qa", () => {
+  it("pushes --full-qa when fullQa is true", () => {
+    const args = buildRunArgs({ issues: [123], fullQa: true }, []);
+    expect(args).toEqual(["run", "123", "--full-qa", "--log-json"]);
+  });
+
+  it("omits --full-qa when fullQa is false or absent", () => {
+    expect(buildRunArgs({ issues: [123], fullQa: false }, [])).toEqual([
+      "run",
+      "123",
+      "--log-json",
+    ]);
+    expect(buildRunArgs({ issues: [123] }, [])).toEqual([
+      "run",
+      "123",
+      "--log-json",
+    ]);
+  });
+
+  it("combines with other forwarded flags", () => {
+    const args = buildRunArgs(
+      { issues: [1, 2], phases: "spec,exec", force: true, fullQa: true },
+      ["-y", "sequant"],
+    );
+    expect(args).toEqual([
+      "-y",
+      "sequant",
+      "run",
+      "1",
+      "2",
+      "--phases",
+      "spec,exec",
+      "--force",
+      "--full-qa",
+      "--log-json",
+    ]);
   });
 });
 
