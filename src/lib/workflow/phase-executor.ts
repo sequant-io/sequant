@@ -825,8 +825,10 @@ function parsePorcelainPaths(porcelain: string): string[] {
  * worktrees (e.g. those created with `--base feature/epic`).
  *
  * Read-only: runs only `git rev-list` and `git status --porcelain`, so it never
- * mutates the worktree — an exec phase that fails on an `uncommitted` result
- * leaves the dirty files exactly where the agent left them (#879 AC-3).
+ * mutates the worktree itself (#879 AC-3). The exec guard that consumes an
+ * `uncommitted` result does commit those paths as WIP before failing the
+ * phase (#1032, `autoCommitUncommittedWork`) — the files stay exactly where
+ * the agent left them, now also recorded on the branch.
  *
  * @internal Exported for testing only.
  */
@@ -899,6 +901,47 @@ function formatUncommittedExecError(paths: string[], cwd: string): string {
 }
 
 /**
+ * Rescue an `uncommitted`-only exec tree by committing it as WIP (#1032).
+ *
+ * The #879 guard used to fail the phase and leave the dirty files where the
+ * agent left them. That preserved the work in place but nowhere else: a
+ * `git checkout`, a stale-worktree cleanup or a re-dispatch's rebase could
+ * still lose it, and every stranded run needed a human to commit by hand
+ * before anything could continue. Committing exactly the dirty paths puts the
+ * work on the branch; the phase still fails, so no PR is built from it.
+ *
+ * `--no-verify` skips the project's own git hooks: this is a checkpoint of
+ * whatever the agent had, not a reviewed commit, and a failing pre-commit
+ * lint must not turn a rescue into a second loss. Any git error falls back to
+ * the pre-#1032 behaviour (work left in place) and is named in the result.
+ */
+function autoCommitUncommittedWork(
+  cwd: string,
+  paths: string[],
+  issueNumber?: number,
+): { sha: string; subject: string } | { failure: string } {
+  const scope = issueNumber === undefined ? "exec" : `#${issueNumber}`;
+  const subject = `wip(${scope}): exec ended with uncommitted work (auto-committed by sequant)`;
+  try {
+    execFileSync("git", ["add", "-A", "--", ...paths], { cwd, stdio: "pipe" });
+    execFileSync("git", ["commit", "-q", "--no-verify", "-m", subject], {
+      cwd,
+      stdio: "pipe",
+    });
+    const sha = execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd,
+      stdio: "pipe",
+    })
+      .toString()
+      .trim();
+    return { sha, subject };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { failure: message.split("\n")[0] };
+  }
+}
+
+/**
  * Scrape the `SPEC_DIVERGENCE` escape hatch out of a phase's own output
  * (#995 / #971 AC-4).
  *
@@ -948,8 +991,15 @@ export function mapAgentSuccessToPhaseResult(
   agentResult: AgentPhaseResult,
   durationSeconds: number,
   cwd: string,
+  issueNumber?: number,
 ): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
-  const base = mapAgentSuccessCore(phase, agentResult, durationSeconds, cwd);
+  const base = mapAgentSuccessCore(
+    phase,
+    agentResult,
+    durationSeconds,
+    cwd,
+    issueNumber,
+  );
   // #995: attached here rather than at each of the guards' seven returns, so a
   // future guard cannot be added that silently drops the escape hatch. The
   // scrape is independent of every one of those verdicts — an agent that
@@ -967,6 +1017,7 @@ function mapAgentSuccessCore(
   agentResult: AgentPhaseResult,
   durationSeconds: number,
   cwd: string,
+  issueNumber?: number,
 ): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
   const tails = {
     stderrTail: agentResult.stderrTail,
@@ -1041,9 +1092,11 @@ function mapAgentSuccessCore(
     // success. Two distinct non-deliverable states, each with its own message:
     //   - `none`: literally nothing (#534's empty-branch class).
     //   - `uncommitted`: a dirty tree with no commits — used to be counted as
-    //     success (#879), but it cannot rebase, push, or become a PR. Failing
-    //     here (rather than auto-committing) preserves the work in place; the
-    //     message names the paths so it is discoverable from the run log alone.
+    //     success (#879), but it cannot rebase, push, or become a PR. The phase
+    //     fails; since #1032 the dirty paths are first committed as WIP so the
+    //     work is on the branch (every stranded run before that needed a human
+    //     to commit by hand), and the message names both the paths and the
+    //     rescue commit so it is discoverable from the run log alone.
     // `commits`/`unknown` fall through to success (unknown fails open).
     const changes = classifyExecChanges(cwd);
     if (changes.kind === "none") {
@@ -1058,11 +1111,17 @@ function mapAgentSuccessCore(
       };
     }
     if (changes.kind === "uncommitted") {
+      const base = formatUncommittedExecError(changes.paths, cwd);
+      const rescue = autoCommitUncommittedWork(cwd, changes.paths, issueNumber);
+      const error =
+        "sha" in rescue
+          ? `${base}; auto-committed as ${rescue.sha} ("${rescue.subject}") — re-dispatch exec to continue from it`
+          : `${base} (auto-commit failed: ${rescue.failure})`;
       return {
         phase,
         success: false,
         durationSeconds,
-        error: formatUncommittedExecError(changes.paths, cwd),
+        error,
         ...resume,
         output: agentResult.output,
         ...tails,
@@ -1520,7 +1579,13 @@ async function executePhase(
 
   if (agentResult.success) {
     return enrich(
-      mapAgentSuccessToPhaseResult(phase, agentResult, durationSeconds, cwd),
+      mapAgentSuccessToPhaseResult(
+        phase,
+        agentResult,
+        durationSeconds,
+        cwd,
+        issueNumber,
+      ),
     );
   }
 
