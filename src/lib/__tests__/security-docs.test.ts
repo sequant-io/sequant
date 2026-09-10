@@ -96,9 +96,15 @@ function delimitedRows(md: string, begin: string, end: string): string[][] {
 const backticked = (cell: string): string[] =>
   [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
 
-/** A token is path-ish when it has a slash and only path-safe characters. */
+/**
+ * A token is path-ish when it uses only path-safe characters and either
+ * contains a separator or carries a file extension. The extension arm matters:
+ * a root-level citation like `package-lock.json` has no slash, and treating it
+ * as a symbol would demand it appear *inside* one of the row's other files.
+ */
 const isPathish = (token: string): boolean =>
-  /^[\w.@-]+(?:\/[\w.@-]+)+$/.test(token);
+  /^[\w.@-]+(?:\/[\w.@-]+)*\/?$/.test(token) &&
+  (token.includes("/") || /\.[A-Za-z0-9]{1,5}$/.test(token));
 
 const DEFENSES = ["<!-- defenses:begin -->", "<!-- defenses:end -->"] as const;
 const OWASP = ["<!-- owasp:begin -->", "<!-- owasp:end -->"] as const;

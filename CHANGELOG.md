@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Public trust contract: `SECURITY.md` and `docs/THREAT-MODEL.md` (#980).**
+  The threat model enumerates the untrusted-input surfaces phase agents read
+  and classifies every defense as `deterministic` (holds even if the model is
+  compromised) or `model-dependent`, naming the hook, skill section, CI job or
+  settings key that enforces it, with an OWASP Top 10 for Agentic Applications
+  (2026) mapping and explicit residual risks. Claims are CI-gated
+  (`src/lib/__tests__/security-docs.test.ts`): cited paths, skill anchors and
+  settings keys must resolve on disk, and the stated guard count is recomputed
+  from `templates/hooks/pre-tool.sh` rather than typed.
+
 ## [2.14.0] - 2026-09-09
 
 ### Security
