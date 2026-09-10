@@ -266,7 +266,9 @@ describe("AC-2: threat model surfaces and citation-resolving defenses table", ()
     )) {
       const [defense, enforcer] = row;
       const tokens = backticked(enforcer);
-      const paths = tokens.filter(isPathish);
+      // A path that does not exist is already reported by the path-existence
+      // test above; reading it here would throw ENOENT and bury that message.
+      const paths = tokens.filter(isPathish).filter(exists);
       const sources = paths.map((p) => read(p));
       for (const token of tokens.filter((t) => !isPathish(t))) {
         expect(
