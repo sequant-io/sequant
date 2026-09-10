@@ -921,7 +921,9 @@ function autoCommitUncommittedWork(
   issueNumber?: number,
 ): { sha: string; subject: string } | { failure: string } {
   const scope = issueNumber === undefined ? "exec" : `#${issueNumber}`;
-  const subject = `wip(${scope}): exec ended with uncommitted work (auto-committed by sequant)`;
+  // A conventional type: the pre-tool hook (and most commitlint setups) reject
+  // `wip` as a type, and a downstream re-dispatch may rebase this commit.
+  const subject = `chore(${scope}): wip checkpoint — exec ended with uncommitted work (auto-committed by sequant)`;
   try {
     execFileSync("git", ["add", "-A", "--", ...paths], { cwd, stdio: "pipe" });
     execFileSync("git", ["commit", "-q", "--no-verify", "-m", subject], {

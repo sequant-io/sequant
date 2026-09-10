@@ -1209,7 +1209,7 @@ Do NOT silently skip checks. Always state which commands you intend to run and w
 foreground with a `timeout`, after committing a WIP:
 
 ```bash
-git add -A && git commit -q -m "wip(#<issue>): checkpoint before the full suite"
+git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full suite"
 timeout 600 npm test 2>&1 | tail -80
 ```
 

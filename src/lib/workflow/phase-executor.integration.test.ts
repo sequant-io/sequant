@@ -299,7 +299,8 @@ describe("hasExecChanges via real git worktree add (integration, #537 AC-6 end-t
 /**
  * #879 exec-guard end-to-end: a worktree with uncommitted changes and no
  * commits must fail the exec phase (AC-6), and that failure must leave the
- * worktree and its dirty files byte-identical (AC-3) — the uncommitted work is
+ * worktree and its dirty files byte-identical (AC-3; since #1032 they are also
+ * checkpointed on the branch as a WIP commit) — the uncommitted work is
  * the only copy, so the guard must never mutate it.
  *
  * Uses `git init` (no origin) so `resolveBaseRef` falls back to origin/main;
@@ -358,13 +359,11 @@ describe("exec guard on an uncommitted-only worktree (integration, #879 AC-3/AC-
     expect(result.error).toContain("middleware.ts");
   });
 
-  it("leaves the worktree and its dirty files untouched when it fails (AC-3)", () => {
+  it("keeps the dirty files byte-identical and checkpoints them on the branch when it fails (AC-3, #1032)", () => {
     mkdirSync(join(work, "src"), { recursive: true });
     const dirtyPath = join(work, "src/host-gate.ts");
     const dirtyContent = "export const g = 1;\n// real, complete work\n";
     writeFileSync(dirtyPath, dirtyContent);
-
-    const statusBefore = git(work, "status", "--porcelain");
 
     const result = mapAgentSuccessToPhaseResult(
       "exec",
@@ -377,7 +376,14 @@ describe("exec guard on an uncommitted-only worktree (integration, #879 AC-3/AC-
     // The worktree and the dirty file survive, byte-identical.
     expect(existsSync(dirtyPath)).toBe(true);
     expect(readFileSync(dirtyPath, "utf-8")).toBe(dirtyContent);
-    // git status is unchanged — the guard mutated nothing.
-    expect(git(work, "status", "--porcelain")).toBe(statusBefore);
+    // #1032 supersedes #879's "mutates nothing": the guard now commits the
+    // dirty paths as a WIP checkpoint so the work is on the branch, and the
+    // tree is clean afterwards. Nothing else about the tree changes.
+    expect(git(work, "status", "--porcelain")).toBe("");
+    expect(git(work, "rev-list", "--count", "origin/main..HEAD")).toBe("1");
+    expect(git(work, "log", "-1", "--format=%s")).toMatch(
+      /^chore\(exec\): wip checkpoint/,
+    );
+    expect(result.error).toMatch(/auto-committed as [0-9a-f]{7}/);
   });
 });

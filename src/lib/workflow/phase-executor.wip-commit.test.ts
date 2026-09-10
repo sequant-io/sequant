@@ -69,7 +69,7 @@ describe("AC-4: an uncommitted exec tree is committed as WIP before the phase fa
     expect(git(["status", "--porcelain", "--untracked-files=all"])).toBe("");
     const subject = git(["log", "-1", "--format=%s"]);
     expect(subject).toBe(
-      "wip(#1032): exec ended with uncommitted work (auto-committed by sequant)",
+      "chore(#1032): wip checkpoint — exec ended with uncommitted work (auto-committed by sequant)",
     );
     expect(result.error).toMatch(/auto-committed as [0-9a-f]{7}/);
     // The original #879 prefix survives for anything that greps for it.
