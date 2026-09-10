@@ -500,7 +500,8 @@ export function createLineBuffer(
 /** Type alias for the tool handler's extra parameter */
 type ToolHandlerExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 
-const runToolInputSchema = {
+/** @internal Exported for the live-surface tripwire in run.test.ts (#982). */
+export const runToolInputSchema = {
   issues: z.array(z.number()).describe("GitHub issue numbers to process"),
   phases: z
     .string()
@@ -526,7 +527,48 @@ const runToolInputSchema = {
     .string()
     .optional()
     .describe("Agent driver for phase execution (default: configured default)"),
+  fullQa: z
+    .boolean()
+    .optional()
+    .describe(
+      "Force full-weight (standalone) QA regardless of resume/context state " +
+        "(mirrors CLI --full-qa). Requires sequant >= 2.15.0 — older servers " +
+        "silently drop this param (#972 precedent).",
+    ),
 };
+
+/** @internal Exported for testing only — the CLI arg-forwarding logic for `sequant_run` (#982). */
+export function buildRunArgs(
+  options: {
+    issues: number[];
+    phases?: string;
+    qualityLoop?: boolean;
+    force?: boolean;
+    agent?: string;
+    fullQa?: boolean;
+  },
+  prefixArgs: string[],
+): string[] {
+  const { issues, phases, qualityLoop, force, agent, fullQa } = options;
+  const args = [...prefixArgs, "run", ...issues.map(String)];
+  if (phases) {
+    args.push("--phases", phases);
+  }
+  if (qualityLoop) {
+    args.push("--quality-loop");
+  }
+  if (force) {
+    args.push("--force");
+  }
+  if (agent) {
+    args.push("--agent", agent);
+  }
+  if (fullQa) {
+    args.push("--full-qa");
+  }
+  args.push("--log-json");
+  return args;
+}
 
 export function registerRunTool(server: McpServer): void {
   server.registerTool(
@@ -554,12 +596,14 @@ export function registerRunTool(server: McpServer): void {
         qualityLoop,
         force,
         agent,
+        fullQa,
       }: {
         issues: number[];
         phases?: string;
         qualityLoop?: boolean;
         force?: boolean;
         agent?: string;
+        fullQa?: boolean;
       },
       extra: ToolHandlerExtra,
     ) => {
@@ -582,20 +626,10 @@ export function registerRunTool(server: McpServer): void {
       const [command, prefixArgs] = resolveCliBinary();
 
       // Build command arguments
-      const args = [...prefixArgs, "run", ...issues.map(String)];
-      if (phases) {
-        args.push("--phases", phases);
-      }
-      if (qualityLoop) {
-        args.push("--quality-loop");
-      }
-      if (force) {
-        args.push("--force");
-      }
-      if (agent) {
-        args.push("--agent", agent);
-      }
-      args.push("--log-json");
+      const args = buildRunArgs(
+        { issues, phases, qualityLoop, force, agent, fullQa },
+        prefixArgs,
+      );
 
       const phasesStr = phases || "spec,exec,qa";
       const phaseList = phasesStr.split(",");

@@ -33,19 +33,12 @@ import {
   type RunReadyGateOptions,
   type ReadyResult,
 } from "./ready-gate.js";
-import type {
-  PhaseResult,
-  ProgressCallback,
-  RunOptions,
-} from "./types.js";
+import type { PhaseResult, ProgressCallback, RunOptions } from "./types.js";
 import { DEFAULT_CONFIG } from "./types.js";
 import { executePhaseWithRetry } from "./phase-executor.js";
 import { getDriver } from "./drivers/index.js";
 import type { AgentDriver } from "./drivers/agent-driver.js";
-import {
-  buildExecutionConfig,
-  resolveRunOptions,
-} from "./config-resolver.js";
+import { buildExecutionConfig, resolveRunOptions } from "./config-resolver.js";
 import { DEFAULT_SETTINGS } from "../settings.js";
 import type { SequantSettings } from "../settings.js";
 import type { QaVerdict, GapFinding } from "./run-log-schema.js";
@@ -241,6 +234,33 @@ describe("runReadyGate — AC-1 phase sequence", () => {
     // The loop phase is NOT full-QA (it has no git-trust skip to override).
     for (const c of calls.filter((x) => x.phase === "loop")) {
       expect(c.fullQa).toBeFalsy();
+    }
+  });
+
+  // #982 AC-5: `run.fullQa` (resolved into `opts.config.fullQa`) must never
+  // downgrade the gate's own unconditional force — `buildPhaseConfig` spreads
+  // `extra` last specifically so this can't drift.
+  it("still forces fullQa:true on every qa call when opts.config.fullQa is false", async () => {
+    const { runPhase, calls } = scriptedRunner([
+      qaResult("AC_NOT_MET", ["bug"]),
+      loopResult(),
+      qaResult("READY_FOR_MERGE"),
+    ]);
+    await runReadyGate(
+      baseOpts({
+        runPhase,
+        policy: "a-plus",
+        config: {
+          ...DEFAULT_CONFIG,
+          maxIterations: 3,
+          mcp: false,
+          fullQa: false,
+        },
+      }),
+    );
+
+    for (const c of calls.filter((x) => x.phase === "qa")) {
+      expect(c.fullQa).toBe(true);
     }
   });
 });

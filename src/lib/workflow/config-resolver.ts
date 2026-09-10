@@ -613,6 +613,11 @@ export function buildExecutionConfig(
     // this config instead of producing its own (#833 class).
     effortEscalation:
       mergedOptions.escalateEffort ?? settings.run.effortEscalation ?? false,
+    // #982: CLI > settings > default `false`, mirrors `effortEscalation`
+    // above. `ready-gate.ts` still overrides this per-dispatch with its own
+    // `buildPhaseConfig(opts, { fullQa: true })` (AC-5) — this resolver only
+    // sets the base value `sequant run` uses.
+    fullQa: mergedOptions.fullQa ?? settings.run.fullQa ?? false,
     // #971: CLI > settings > absent, resolved here only (AC-11). Spread
     // conditionally rather than assigned: with no ladder configured the keys
     // must be ABSENT, not `undefined`, so `ExecutionConfig` is byte-identical

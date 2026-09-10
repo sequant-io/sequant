@@ -237,6 +237,50 @@ describe("readyGate live-surface guard (#817)", () => {
 });
 
 /**
+ * Live-surface guard for `fullQa` (#982) — same shape as the `readyGate`
+ * guard above. `--full-qa` is a boolean opt-in wired bin/cli → RunOptions →
+ * config-resolver → ExecutionConfig.fullQa → phase-executor env
+ * (`SEQUANT_FULL_QA=1`, #683). If any link drops, the flag goes inert — the
+ * #795 failure class. Behavioral proof lives in `full-qa.test.ts`; this is
+ * the source-level tripwire that survives deletion of that suite.
+ */
+describe("fullQa live-surface guard (#982)", () => {
+  const read = (rel: string): string => readFileSync(join(here, rel), "utf8");
+
+  it("declares fullQa on both RunOptions and ExecutionConfig", () => {
+    const code = typesSource
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    const decls = code.match(/\bfullQa\b["']?\s*\??\s*:/g) ?? [];
+    expect(decls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("registers --full-qa as an option on the `run` command in bin/cli.ts", () => {
+    const cliSource = readFileSync(join(here, "../../../bin/cli.ts"), "utf8");
+    const runSection = cliSource.match(
+      /\.command\("run"\)[\s\S]*?(?=\n\s*program\n|\nprogram\.parse)/,
+    );
+    expect(runSection).not.toBeNull();
+    const longFlags = [
+      ...runSection![0].matchAll(/\.option\(\s*"([^"]+)"/g),
+    ].flatMap((m) => m[1].match(/--([a-z][a-z-]*)/g) ?? []);
+    expect(longFlags).toContain("--full-qa");
+  });
+
+  it("maps RunOptions.fullQa into ExecutionConfig in the config resolver", () => {
+    // Source-shape tripwire only (same caveat as readyGate); the binding
+    // assertion is full-qa.test.ts AC-2, which runs the real resolver.
+    expect(read("config-resolver.ts")).toMatch(
+      /fullQa:\s*mergedOptions\.fullQa/,
+    );
+  });
+
+  it("has a runtime consumer that reads config.fullQa in phase-executor", () => {
+    expect(read("phase-executor.ts")).toMatch(/config\.fullQa/);
+  });
+});
+
+/**
  * Test stub for #914 AC-8 — `--models`/`--efforts` must be registered via
  * `.option()` in `bin/cli.ts` and have a live consumer, mirroring the
  * `readyGate` live-surface guard above. RED until /exec wires both flags.

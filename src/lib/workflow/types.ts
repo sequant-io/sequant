@@ -733,6 +733,15 @@ export interface RunOptions {
    * Beats `settings.run.modelLadder`; absent leaves the feature fully off.
    */
   modelLadder?: string;
+  /**
+   * Force full-weight (standalone) QA regardless of resume/context state
+   * (#982). Set via `--full-qa`. Mirrors the existing `ExecutionConfig.fullQa`
+   * (#683) already honored by `phase-executor.ts` and forced unconditionally
+   * by `sequant ready` — this just exposes the same knob on `sequant run`.
+   * CLI > `settings.run.fullQa` > default `false`, resolved by
+   * `buildExecutionConfig`.
+   */
+  fullQa?: boolean;
 }
 
 /**
