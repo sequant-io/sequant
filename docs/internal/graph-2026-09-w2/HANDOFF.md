@@ -18,16 +18,29 @@ GRAPH SOURCE
 - Fallback source: `Blocked by:` metadata line on every issue labelled
   graph-2026-09-w2 (line-anchored; prose #N mentions are not edges).
 
-LEDGER (as of filing)
-- Frontier / wave 1 (all Blocked by: —, scopes pairwise disjoint):
-    #990  node 01  mechanical  sync ownership (absorbed #991, closed)
-    #982  node 02  mechanical  fresh-session QA + run.fullQa
-    #980  node 03  judgment    SECURITY.md + THREAT-MODEL.md, citation-gated
-- Blocked: #1024, #1025, gate #1026 (by #980); #1028 (by #1026, #1025);
-  gate #1027 (by #990, #982); #1030 (by #990 — field finding, D14; shares
-  templates.ts/sync.ts with node 01, so it never runs beside it);
-  #944 (by #1027 — edge only, not a wave node).
-- In-flight PRs awaiting decision: #1029 (docs, this plan).
+LEDGER (as of 2026-09-10, after the wave-1 run — re-query with `gh`)
+- Wave 1 ran 2026-09-10 (three parallel MCP dispatches; tiering by
+  settings flip). Every node stopped at PR per I-1; the owner decides.
+    #990  node 01  PR #1036  QA: AC_NOT_MET → fixes applied by the runner
+          (doctor never hints `sync --force`; real-fs preview test; dead
+          helper removed; AC-6 scoped per D16) → QA re-run: AC_MET_BUT_NOT_A_PLUS
+    #982  node 02  PR #1033  QA: AC_NOT_MET → runner fixed the capture
+          regression, the non-gating test, KNOWN_KEYS, live-surface guard →
+          QA re-run: AC_MET_BUT_NOT_A_PLUS; the five notes folded in place
+    #980  node 03  PR #1035  QA: AC_NOT_MET (marker format only) → records
+          rewritten after the runner re-ran all five mutations → QA re-run:
+          AC_MET_BUT_NOT_A_PLUS; two doc cells corrected (merge gate is a
+          human control; the eval is evidence, not containment)
+- Also open: PR #1034 (#1032, D17 — the background-task guard; not a node),
+  PR #1031 (this docs branch: node 09 + D14–D17).
+- Blocked, unchanged: #1024, #1025, gate #1026 (by #980); #1028 (by #1026,
+  #1025); gate #1027 (by #990, #982); #1030 (by #990; now also carries
+  #990's `update --dry-run` clause, D16); #944 (by #1027 — edge only).
+- Owner actions surfaced by the wave: enable GitHub private vulnerability
+  reporting (SECURITY.md names it as the primary channel; it is disabled);
+  the hand-maintained AGENTS.md on sequant-landing before gate 08; decide
+  the three `runner amendment` notes (D15, D16) — revert on the issue if
+  you disagree.
 - Excluded on purpose (D10): #929 (reserved #997 dogfood sample — do not
   implement), #941, #919 (file collisions with 01/02).
 
@@ -37,8 +50,13 @@ LAUNCH CONSTRAINTS
   (mechanical). #980 is judgment: flip run.phases to all-strong for that
   launch, set run.timeout ≥ 3600, restore the mechanical policy afterwards.
 - Foreground `sequant run` only (#856 kills backgrounded runs at ~106s).
-  If launching via MCP, the 30-min no-progress kill applies — agents must
-  commit a WIP every ~10 min.
+  MCP `sequant_run` works but every phase has a hard 30-minute wall
+  (`PHASE_TIMEOUT`), reset only at phase boundaries; in wave 1 two exec
+  phases died at it and two more ended stranded on a backgrounded test run
+  (D17, #1032). Until PR #1034 is on `main` and in the worktree's hooks,
+  post the foreground-with-`timeout` rule as a context comment before every
+  dispatch. Tiering via MCP = flip `.sequant/settings.json`, spawn, wait for
+  the CLI's phase agent, restore (the CLI reads settings once at start).
 - Merge-point files with declared rules (PLAN §8): bin/cli.ts (one .option()
   line each for 01 and 02), README.md (01 sync lines / 02 one flags row /
   03 one link line — 03→05→07 serialize later), CHANGELOG.md append-only.

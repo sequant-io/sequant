@@ -63,6 +63,19 @@ flowchart TD
 - Stop at PR on every node (I-1). Gate 08 cannot be presented until 01 and 02
   are on `main` and a build is available to the downstream project (OQ-7).
 
+## Wave 1 execution record (2026-09-10)
+
+| Node | PR | First QA | Runner action | Second QA |
+|---|---|---|---|---|
+| 01 #990 | #1036 | AC_NOT_MET (AC-6 `update` clause; `--force` hint at sibling lines; untested preview fn; dead helper) | D16 + fixes in `ee1e54d3` | AC_MET_BUT_NOT_A_PLUS |
+| 02 #982 | #1033 | AC_NOT_MET (qa handle overwrote exec's; non-gating test; `KNOWN_KEYS`; 40% uncommitted; AC-3 grep unsatisfiable) | D15 + fixes in `a361ed31`, notes in `2facf50e` | AC_MET_BUT_NOT_A_PLUS |
+| 03 #980 | #1035 | AC_NOT_MET (mutation-marker format only) | records re-derived by re-running all five mutations; two doc cells in `9fbf55e7` | AC_MET_BUT_NOT_A_PLUS |
+
+Exec-phase cost of the wave: five dispatches for three nodes — two exec
+phases killed at the MCP 30-minute wall, two ended stranded on a
+backgrounded test run (D17 → #1032 / PR #1034). Every PR waits for the owner
+(I-1); nothing merged.
+
 ## Critical path
 
 03 → 06 → 07 (three sequential handoffs, one human). The #944 path is
