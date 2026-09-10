@@ -1635,11 +1635,16 @@ export async function runIssueWithLogging(
       }
 
       const phaseStartTime = new Date();
+      // #982: qa never resumes the implementer's session (first pass and
+      // any post-loop re-QA alike) — the fresh-session QA study found the
+      // resumed reviewer starts anchored to the author's transcript. This is
+      // the only site that can dispatch qa; see #982 spec for the sibling-site
+      // scan (:913 ready-gate already undefined, :1122 spec-only, :1957 loop).
       const result = await executePhaseWithRetry(
         issueNumber,
         phase,
         dispatchConfig,
-        resumeHandle,
+        phase === "qa" ? undefined : resumeHandle,
         worktreePath,
         shutdownManager,
         phasePauseHandle,

@@ -526,6 +526,14 @@ const runToolInputSchema = {
     .string()
     .optional()
     .describe("Agent driver for phase execution (default: configured default)"),
+  fullQa: z
+    .boolean()
+    .optional()
+    .describe(
+      "Force full-weight (standalone) QA regardless of resume/context state " +
+        "(mirrors CLI --full-qa). Requires sequant >= 2.15.0 — older servers " +
+        "silently drop this param (#972 precedent).",
+    ),
 };
 
 export function registerRunTool(server: McpServer): void {
@@ -554,12 +562,14 @@ export function registerRunTool(server: McpServer): void {
         qualityLoop,
         force,
         agent,
+        fullQa,
       }: {
         issues: number[];
         phases?: string;
         qualityLoop?: boolean;
         force?: boolean;
         agent?: string;
+        fullQa?: boolean;
       },
       extra: ToolHandlerExtra,
     ) => {
@@ -594,6 +604,9 @@ export function registerRunTool(server: McpServer): void {
       }
       if (agent) {
         args.push("--agent", agent);
+      }
+      if (fullQa) {
+        args.push("--full-qa");
       }
       args.push("--log-json");
 

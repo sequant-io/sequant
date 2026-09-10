@@ -313,6 +313,15 @@ export interface RunSettings {
    */
   autoMerge: boolean;
   /**
+   * Force full-weight (standalone) QA on every `qa` dispatch, regardless of
+   * resume/context state (#982). Default `false` — opt-in, since it adds
+   * visible pre-flight work to every QA pass. Mirrors the existing
+   * `ExecutionConfig.fullQa` (#683), already forced unconditionally by
+   * `sequant ready`; this setting just exposes the same knob to `sequant run`.
+   * Overridable per-invocation with `--full-qa` (CLI > settings > default).
+   */
+  fullQa: boolean;
+  /**
    * Map of semantic role names to model strings (#975).
    *
    * Config expresses **roles**; this map resolves roles to concrete model
@@ -558,6 +567,11 @@ export const RunSettingsSchema = z.object({
    * #817–#819. Overridable per-invocation with `--auto-merge`.
    */
   autoMerge: z.boolean().default(false),
+  /**
+   * Force full-weight (standalone) QA on every `qa` dispatch (#982). Default
+   * `false` — opt-in. Overridable per-invocation with `--full-qa`.
+   */
+  fullQa: z.boolean().default(false),
   /**
    * Semantic role → model string map (#975). See `ModelRolesSchema` and
    * `DEFAULT_MODEL_ROLES` for the shipped defaults. Absent from generated
@@ -988,6 +1002,7 @@ export const DEFAULT_SETTINGS: SequantSettings = {
     relay: true, // Enable interactive relay (#383) by default
     effortEscalation: false, // #915: off by default — raises token spend
     autoMerge: false, // #958: off by default — preserves the human merge gate
+    fullQa: false, // #982: off by default — adds visible pre-flight work
     modelRoles: DEFAULT_MODEL_ROLES, // #975: shipped defaults; absent key → these
   },
   agents: DEFAULT_AGENT_SETTINGS,

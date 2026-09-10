@@ -2351,6 +2351,67 @@ describe("withActivityHook (#860): auto-wait visibility on the orchestrator chan
   });
 });
 
+describe("runIssueWithLogging — #982: qa never resumes the implementer's session", () => {
+  /**
+   * exec always succeeds and hands back a fresh resumeHandle each time it's
+   * dispatched (mirrors #674's capture-and-carry-forward). qa fails once
+   * (triggering a quality-loop retry that re-dispatches exec too) then
+   * succeeds.
+   */
+  function scriptExecResumeThenQaFailOnce() {
+    let execSeen = 0;
+    let qaSeen = 0;
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockImplementation((async (
+      _issueNumber: number,
+      phase: string,
+    ) => {
+      if (phase === "exec") {
+        execSeen++;
+        return {
+          phase: "exec",
+          success: true,
+          resumeHandle: `H${execSeen}`,
+        };
+      }
+      if (phase === "qa") {
+        qaSeen++;
+        return qaSeen === 1
+          ? { phase: "qa", success: false, error: "AC not met" }
+          : { phase: "qa", success: true };
+      }
+      return { phase, success: true };
+    }) as never);
+  }
+
+  it("AC-1: exec dispatch carries the resume handle, every qa dispatch (first pass and post-loop re-qa) does not", async () => {
+    scriptExecResumeThenQaFailOnce();
+    await runIssueWithLogging(
+      makeCtx({
+        issueNumber: 982,
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+        },
+        options: { autoDetectPhases: false },
+      }),
+    );
+
+    const execResumeHandles = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "exec")
+      .map((c) => c[3]);
+    // First exec dispatch has no prior handle; the retried (post-loop) exec
+    // dispatch carries forward the handle exec itself produced last time.
+    expect(execResumeHandles).toEqual([undefined, "H1"]);
+
+    const qaResumeHandles = mockExecutePhase.mock.calls
+      .filter((c) => c[1] === "qa")
+      .map((c) => c[3]);
+    expect(qaResumeHandles).toEqual([undefined, undefined]);
+  });
+});
+
 describe("runIssueWithLogging — #915: effort escalation on quality-loop retries", () => {
   /** exec always passes; qa fails until `qaFailures` is exhausted. */
   function scriptFailThenRecover(qaFailures: number) {
