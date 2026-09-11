@@ -26,9 +26,10 @@ function stepRegion(skill: string): string {
 }
 
 describe.each(COPIES)("%s", (rel) => {
-  const region = stepRegion(readFileSync(join(REPO_ROOT, rel), "utf8"));
-
   it("updates the SECURITY.md supported-versions table to the released minor", () => {
+    // Region lookup happens inside the test, so a missing step is a failing
+    // test rather than a collection error.
+    const region = stepRegion(readFileSync(join(REPO_ROOT, rel), "utf8"));
     expect(region).toMatch(/SECURITY\.md/);
     expect(region).toMatch(/Supported versions/);
     expect(region).toMatch(/new_minor/);
