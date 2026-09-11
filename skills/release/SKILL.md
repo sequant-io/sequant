@@ -441,6 +441,22 @@ if [ -f "README.md" ]; then
 fi
 ```
 
+### Step 4.67: Update SECURITY.md Supported Versions
+
+**IMPORTANT:** Runs after Step 4 so `package.json` holds the *new* version.
+
+`SECURITY.md` states that only the latest minor series receives security fixes and lists it in the `## Supported versions` table. That row is typed, so every minor release must move it — otherwise the public policy points at the previous line (QA on #980 flagged exactly this rot).
+
+Use the **Edit tool** on `SECURITY.md`: in the table under `## Supported versions`, replace the supported row's minor (e.g. `2.14.x`) with the new minor (e.g. `2.15.x`) and the `< 2.14` row with `< 2.15`. On a patch release the minor is unchanged and this step is a no-op.
+
+```bash
+# Verify: the supported row names the minor line being released.
+new_minor=$(node -p "require('./package.json').version" | grep -oE '^[0-9]+\.[0-9]+')
+if [ -f SECURITY.md ] && ! grep -qE "^\| ${new_minor}\.x \|" SECURITY.md; then
+  echo "SECURITY.md supported-versions table does not list ${new_minor}.x — update it before releasing"
+fi
+```
+
 ### Step 4.7: Regenerate Marketplace Artifact
 
 **IMPORTANT:** The marketplace plugin artifact under `dist/marketplace/` is bundled into the published tgz via `files: ["dist", ...]` in package.json — even though `dist/` is gitignored. Regenerate it from current sources **before** packing/publishing so the bundled README always matches; otherwise a stale artifact ships (root cause of #684 — the v2.4.0 tgz carried a "Node.js 20+" README after the floor moved to 22.12).
