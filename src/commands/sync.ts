@@ -459,7 +459,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         }
       }
 
-      if (toWrite.length === 0 && opencodeShimDecision === "none") {
+      if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
         console.log(chalk.green("\n✔ Skills are already up to date!"));
       } else {
         console.log(chalk.gray("\n(dry-run mode - no changes made)"));
@@ -573,10 +573,10 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     }
   }
 
-  // Refresh the opencode shim when the project already has one (#1030). Gated
+  // #1030 AC-3: refresh the opencode shim through init's own writers, gated
   // on decideOpencodeShimSync so a plain sync never creates `.opencode/` on a
-  // project that hasn't opted in — the writers themselves unconditionally
-  // ensureDir.
+  // project that never opted in, and never rewrites a shim that already
+  // matches what the writers would produce ("current").
   if ((await decideOpencodeShimSync()) === "refresh") {
     await refreshOpencodeShim();
     if (!quiet) {

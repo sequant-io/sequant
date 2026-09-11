@@ -6,7 +6,8 @@ import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { join, dirname } from "path";
-import { readdir } from "fs/promises";
+import { readdir, mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
 import { ui, colors } from "../lib/cli-ui.js";
 import {
   detectStack,
@@ -360,6 +361,22 @@ export async function writeOpencodeMcpConfig(targetDir = "."): Promise<string> {
   return configPath;
 }
 
+export type OpencodeShimDecision = "none" | "current" | "refresh";
+
+/** Relative paths of every regular file under `dir`, sorted, `/`-separated. */
+async function listFilesRecursive(dir: string, prefix = ""): Promise<string[]> {
+  const out: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...(await listFilesRecursive(join(dir, entry.name), rel)));
+    } else {
+      out.push(rel);
+    }
+  }
+  return out.sort();
+}
+
 /**
  * Decide what `sync`/`update` should do with the opencode shim (#1030).
  *
@@ -368,16 +385,72 @@ export async function writeOpencodeMcpConfig(targetDir = "."): Promise<string> {
  * preview and apply the same refresh `init --agent opencode` performs,
  * without a second hand-written renderer. `init` is the only *creator* of
  * `.opencode/` (a project opts in via `--agent opencode`); `sync`/`update`
- * only *refresh* a shim that already exists, detected by the directory's
- * presence rather than by re-reading the project's driver choice.
+ * only *refresh* a shim that already exists.
+ *
+ * The decision is content-aware, not presence-based: the shim is rendered by
+ * the same writers into a scratch directory and compared file-by-file with
+ * what the project has. A presence-only check made every opencode project
+ * permanently "pending" — `sync --dry-run` exited non-zero forever and a
+ * non-interactive `update` refused to run with nothing to do (first-pass QA
+ * on #1030) — which is the same dry-run ≠ apply class this issue fixes.
  *
  * - `"none"`: no `.opencode/` directory — sync/update write nothing there.
- * - `"refresh"`: `.opencode/` exists — re-render commands/agents/plugin/MCP.
+ * - `"current"`: `.opencode/` matches what the writers would produce — nothing
+ *   to do, and no exit-code drift signal.
+ * - `"refresh"`: at least one rendered file is missing or differs, or the MCP
+ *   config lacks sequant's entry — re-render commands/agents/plugin/MCP.
  */
 export async function decideOpencodeShimSync(
   targetDir = ".",
-): Promise<"none" | "refresh"> {
-  return (await fileExists(join(targetDir, ".opencode"))) ? "refresh" : "none";
+): Promise<OpencodeShimDecision> {
+  const shimDir = join(targetDir, ".opencode");
+  if (!(await fileExists(shimDir))) return "none";
+
+  const scratch = await mkdtemp(join(tmpdir(), "sequant-opencode-shim-"));
+  try {
+    // Same producer as `init` and `refreshOpencodeShim` (AC-3): whatever these
+    // write is, by definition, what "current" means.
+    await writeOpencodeCommands(scratch);
+    await writeOpencodeAgents(scratch);
+    await writeOpencodePlugin(scratch);
+    const renderedRoot = join(scratch, ".opencode");
+    for (const rel of await listFilesRecursive(renderedRoot)) {
+      const installed = join(shimDir, rel);
+      if (!(await fileExists(installed))) return "refresh";
+      if (
+        (await readFile(installed)) !==
+        (await readFile(join(renderedRoot, rel)))
+      ) {
+        return "refresh";
+      }
+    }
+
+    // The MCP config is merged, not rendered (an existing config is
+    // preserved), so "current" means every sequant entry is present and equal.
+    const configPath = join(shimDir, "opencode.json");
+    if (!(await fileExists(configPath))) return "refresh";
+    let mcp: Record<string, unknown> = {};
+    try {
+      const config = JSON.parse(await readFile(configPath)) as Record<
+        string,
+        unknown
+      >;
+      mcp =
+        config.mcp &&
+        typeof config.mcp === "object" &&
+        !Array.isArray(config.mcp)
+          ? (config.mcp as Record<string, unknown>)
+          : {};
+    } catch {
+      return "refresh";
+    }
+    for (const [key, value] of Object.entries(buildOpencodeMcpConfig())) {
+      if (JSON.stringify(mcp[key]) !== JSON.stringify(value)) return "refresh";
+    }
+    return "current";
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
 }
 
 /**

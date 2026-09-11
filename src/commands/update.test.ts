@@ -139,6 +139,25 @@ describe("update command — dry-run exit code (#724)", () => {
     expect(process.exitCode ?? 0).toBe(0);
   });
 
+  it("stays exit 0 and reports up to date when the opencode shim is 'current' (#1030 second pass)", async () => {
+    mockComputeTemplateChanges.mockResolvedValue([]);
+    mockDecideOpencodeShimSync.mockResolvedValueOnce("current");
+
+    await updateCommand({ dryRun: true });
+
+    expect(process.exitCode).not.toBe(1);
+    expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+  });
+
+  it("sets exit code 1 when only the opencode shim needs a refresh (#1030)", async () => {
+    mockComputeTemplateChanges.mockResolvedValue([]);
+    mockDecideOpencodeShimSync.mockResolvedValueOnce("refresh");
+
+    await updateCommand({ dryRun: true });
+
+    expect(process.exitCode).toBe(1);
+  });
+
   it("stays exit 0 when only local overrides are protected (no --force)", async () => {
     // Without --force, local overrides are protected and excluded from applySet,
     // so there is nothing to apply — the preview must not signal drift.

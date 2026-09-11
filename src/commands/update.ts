@@ -213,11 +213,11 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
 
   // Preview the opencode shim refresh decision (#1030) alongside the template
   // diff, same as `sync --dry-run` — `update` does not manage AGENTS.md or
-  // scripts/dev (those stay `sync`-only), but the shim has the same "refresh
-  // when present" contract on both commands (AC-3).
+  // scripts/dev (those stay `sync`-only), but the shim has the same content-aware
+  // refresh-when-drifted contract on both commands (AC-3).
   const opencodeShimDecision = await decideOpencodeShimSync();
 
-  if (applySet.length === 0 && opencodeShimDecision === "none") {
+  if (applySet.length === 0 && opencodeShimDecision !== "refresh") {
     if (localOverrides.length > 0) {
       console.log(
         chalk.blue(

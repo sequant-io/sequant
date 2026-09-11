@@ -1128,6 +1128,32 @@ describe("sync command", () => {
         expect(mockRefreshOpencodeShim).toHaveBeenCalledTimes(1);
       });
 
+      it("treats a shim that already matches ('current') as nothing to do: exit 0, no refresh", async () => {
+        // Second-pass QA on #1030: a presence-based decision made every
+        // opencode project permanently pending. 'current' must read like
+        // 'none' for the exit code and the apply path, while still being
+        // visible in the preview.
+        mockDecideOpencodeShimSync.mockResolvedValue("current");
+        const prevExitCode = process.exitCode;
+        process.exitCode = undefined;
+        try {
+          const logSpy = vi.spyOn(console, "log");
+          await syncCommand({ dryRun: true });
+          const dryRunOutput = logSpy.mock.calls
+            .map((c) => String(c[0]))
+            .join("\n");
+          expect(dryRunOutput).toContain("opencode shim: current");
+          expect(dryRunOutput).toContain("already up to date");
+          expect(process.exitCode).not.toBe(1);
+
+          await syncCommand();
+          expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+        } finally {
+          process.exitCode = prevExitCode;
+          mockDecideOpencodeShimSync.mockResolvedValue("none");
+        }
+      });
+
       it("never refreshes or previews anything on a project without .opencode/", async () => {
         mockDecideOpencodeShimSync.mockResolvedValue("none");
 
