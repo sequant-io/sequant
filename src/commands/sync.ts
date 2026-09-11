@@ -333,7 +333,15 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       (c) => c.status === "new" || c.status === "modified",
     );
 
-    if (drifted.length === 0) {
+    // #1030 second pass: the opencode shim is part of "content" too. This
+    // fast path is report-only by design (#708), so a stale shim is reported
+    // with the same exit-code signal and the same repair hint as any other
+    // drift — `update` (or `sync --force`) refreshes it — rather than being
+    // silently skipped, which left a drifted shim invisible to a
+    // version-current `sync` and `sync --dry-run`.
+    const fastPathShim = await decideOpencodeShimSync();
+
+    if (drifted.length === 0 && fastPathShim !== "refresh") {
       // Truthful no-op: content is actually identical.
       if (!quiet) {
         console.log(chalk.green("✔ Skills are already up to date!"));
@@ -344,9 +352,16 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Version current but content differs — report, don't mutate (report-only
     // keeps the fast path from silently overwriting in-place customizations).
     if (!quiet) {
+      if (fastPathShim !== "none") {
+        console.log(chalk.bold(`opencode shim: ${fastPathShim}`));
+      }
+      const what = [
+        ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
+        ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
+      ].join(" and ");
       console.log(
         chalk.yellow(
-          `!  Version current, but ${drifted.length} file(s) differ — run \`update\` or \`sync --force\``,
+          `!  Version current, but ${what} — run \`update\` or \`sync --force\``,
         ),
       );
     }

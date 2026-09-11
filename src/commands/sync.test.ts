@@ -1154,6 +1154,48 @@ describe("sync command", () => {
         }
       });
 
+      it("version-current fast path: a stale shim is reported with exit 1 and the repair hint, never silently skipped (second-pass QA)", async () => {
+        // The fast path returned before the shim decision, so `sync` and
+        // `sync --dry-run` on a version-current project never saw a drifted
+        // shim; only `update` / `sync --force` repaired it.
+        mockReadFile.mockResolvedValue("1.1.0"); // version match → fast path
+        mockDecideOpencodeShimSync.mockResolvedValue("refresh");
+        const prevExitCode = process.exitCode;
+        process.exitCode = undefined;
+        try {
+          const logSpy = vi.spyOn(console, "log");
+          await syncCommand({ dryRun: true });
+          const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+          expect(output).toContain("opencode shim: refresh");
+          expect(output).toContain("the opencode shim is stale");
+          expect(output).not.toContain("already up to date");
+          expect(process.exitCode).toBe(1);
+          // Report-only, like every other drift on this path (#708).
+          expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+        } finally {
+          process.exitCode = prevExitCode;
+          mockDecideOpencodeShimSync.mockResolvedValue("none");
+        }
+      });
+
+      it("version-current fast path: a matching shim still reads 'already up to date' with exit 0", async () => {
+        mockReadFile.mockResolvedValue("1.1.0");
+        mockDecideOpencodeShimSync.mockResolvedValue("current");
+        const prevExitCode = process.exitCode;
+        process.exitCode = undefined;
+        try {
+          const logSpy = vi.spyOn(console, "log");
+          await syncCommand();
+          const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+          expect(output).toContain("already up to date");
+          expect(process.exitCode).not.toBe(1);
+          expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+        } finally {
+          process.exitCode = prevExitCode;
+          mockDecideOpencodeShimSync.mockResolvedValue("none");
+        }
+      });
+
       it("never refreshes or previews anything on a project without .opencode/", async () => {
         mockDecideOpencodeShimSync.mockResolvedValue("none");
 
