@@ -18,31 +18,24 @@ GRAPH SOURCE
 - Fallback source: `Blocked by:` metadata line on every issue labelled
   graph-2026-09-w2 (line-anchored; prose #N mentions are not edges).
 
-LEDGER (as of 2026-09-10, after the wave-1 run — re-query with `gh`)
-- Wave 1 ran 2026-09-10 (three parallel MCP dispatches; tiering by
-  settings flip). Every node stopped at PR per I-1; the owner decides.
-    #990  node 01  PR #1036  QA: AC_NOT_MET → fixes applied by the runner
-          (doctor never hints `sync --force`; real-fs preview test; dead
-          helper removed; AC-6 scoped per D16) → QA re-run: AC_MET_BUT_NOT_A_PLUS
-    #982  node 02  PR #1033  QA: AC_NOT_MET → runner fixed the capture
-          regression, the non-gating test, KNOWN_KEYS, live-surface guard →
-          QA re-run: AC_MET_BUT_NOT_A_PLUS; the five notes folded in place
-    #980  node 03  PR #1035  QA: AC_NOT_MET (marker format only) → records
-          rewritten after the runner re-ran all five mutations → QA re-run:
-          AC_MET_BUT_NOT_A_PLUS; two doc cells corrected (merge gate is a
-          human control; the eval is evidence, not containment)
-- Also open: PR #1034 (#1032, D17 — the background-task guard; not a node),
-  PR #1031 (this docs branch: node 09 + D14–D17).
-- Blocked, unchanged: #1024, #1025, gate #1026 (by #980); #1028 (by #1026,
-  #1025); gate #1027 (by #990, #982); #1030 (by #990; now also carries
-  #990's `update --dry-run` clause, D16); #944 (by #1027 — edge only).
-- Owner actions surfaced by the wave: enable GitHub private vulnerability
-  reporting (SECURITY.md names it as the primary channel; it is disabled);
-  the hand-maintained AGENTS.md on sequant-landing before gate 08; decide
-  the three `runner amendment` notes (D15, D16) — revert on the issue if
-  you disagree.
-- Excluded on purpose (D10): #929 (reserved #997 dogfood sample — do not
-  implement), #941, #919 (file collisions with 01/02).
+LEDGER (as of 2026-09-11 01:15Z — re-query with `gh`)
+- Wave 1 MERGED 2026-09-10 22:30Z on the owner's timed consent: #1031, #1034,
+  #1035, #1033, #1036 → main 6783356a (squash; main merged into each branch
+  first; CI polled by head SHA). #980/#982/#990/#1032 closed.
+- Wave 2 RAN 2026-09-10 23:30Z → 09-11 01:07Z, stop-at-PR — the owner decides:
+    #1025  node 05  PR #1041  NEEDS_VERIFICATION — post-merge checks only
+           (first scorecard.yml run; then the AC-3 `Score:` comment on #1025)
+    #1024  node 04  PR #1043  AC_MET_BUT_NOT_A_PLUS — MERGE WITH A MERGE
+           COMMIT (D19: fixture_commit anchors a branch commit)
+    #1030  node 09  PR #1042  AC_MET_BUT_NOT_A_PLUS after three QA passes
+- Gate #1026 presented (OQ-4 trusted publishing, OQ-5 standards phrase,
+  landing ride-along) — unanswered. Gate #1027 still needs the owner's
+  hand-maintained AGENTS.md on sequant-io/sequant-landing.
+- Filed from field findings: #1044 (reconciler false "merged" on `(#N)` in a
+  squash title — dangerous next-action), #1045 (duplicated templates→.claude
+  mapping). Owner still owes: enable GitHub private vulnerability reporting.
+- Remaining nodes: #1028 (node 07) after gate #1026 + #1025 merge; #944 after
+  gate #1027. Excluded on purpose (D10): #929, #941, #919.
 
 LAUNCH CONSTRAINTS
 - Consent: stop-at-PR (I-1). Never `gh pr merge`; every PR waits for the owner.

@@ -76,6 +76,18 @@ phases killed at the MCP 30-minute wall, two ended stranded on a
 backgrounded test run (D17 → #1032 / PR #1034). Every PR waits for the owner
 (I-1); nothing merged.
 
+## Wave 2 execution record (2026-09-10 → 11)
+
+| Node | PR | QA passes | Runner action | Final |
+|---|---|---|---|---|
+| 04 #1024 | #1043 | 2 (first exec died at the 30-min wall running `npm test` twice; 5 commits survived the reaped worktree) | residual-risks paragraph + vector-count gate enumerates case dirs (4522110a); **merge with a merge commit** (D19) | AC_MET_BUT_NOT_A_PLUS |
+| 05 #1025 | #1041 | 1 | NEEDS_VERIFICATION discharged as far as a PR allows (pins == tags, triggers, perms, badge); AC-2 amended (D18); post-merge checklist on the issue | NEEDS_VERIFICATION (post-merge: first `scorecard.yml` run, `Score:` comment) |
+| 09 #1030 | #1042 | 3 (presence-based shim decision → opencode projects permanently pending; then the version-current fast path skipped the shim) | content-aware `decideOpencodeShimSync` (3fce8813); fast path reports a stale shim, exit 1 (48047fbe) | AC_MET_BUT_NOT_A_PLUS |
+| 06 gate #1026 | — | — | presented to the owner with the three questions | awaiting answers |
+| 08 gate #1027 | — | — | blocked on the owner's hand-maintained `AGENTS.md` in sequant-landing | not presentable yet |
+
+Consent for wave 2: stop-at-PR (the 5:30 PM CT consent covered wave 1 only). Field findings filed: #1044, #1045 (D20).
+
 ## Critical path
 
 03 → 06 → 07 (three sequential handoffs, one human). The #944 path is
