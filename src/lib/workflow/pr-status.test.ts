@@ -77,7 +77,25 @@ describe("pr-status.ts (#1044)", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  describe("isIssueMergedIntoMain", () => {
+  // Real git subprocesses: give these room beyond the unit project's 5s default.
+  describe("isIssueMergedIntoMain", { timeout: 15000 }, () => {
+    it("AC-1b: returns false when a merge commit's PR number merely starts with the issue number (numeric-prefix collision)", () => {
+      // Second-pass QA on #1044: `Merge.*#104` matched `#1043` by prefix.
+      git(
+        tempDir,
+        "commit",
+        "--quiet",
+        "--allow-empty",
+        "-m",
+        "Merge pull request #1043 from sequant-io/feature/1024-evals",
+      );
+      git(tempDir, "branch", "feature/104-something-open");
+
+      expect(isIssueMergedIntoMain(104)).toBe(false);
+      // The full number still matches its own merge commit.
+      expect(isIssueMergedIntoMain(1043)).toBe(true);
+    });
+
     it("AC-1: returns false when main has a squash commit that merely mentions (#N) and the issue's branch is unmerged", () => {
       // Reproduces #1030's false positive: an unrelated PR's squash-merge
       // subject cites issue 1030 in prose, but nothing was actually merged

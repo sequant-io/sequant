@@ -152,10 +152,14 @@ export function isIssueMergedIntoMain(
         baseBranch,
         "--oneline",
         "-20",
+        // Extended regex with the number end-anchored (#1044 second pass):
+        // without it `#104` matched `Merge pull request #1043 …` by numeric
+        // prefix — the same PR-vs-issue confusion as the removed `(#N)` form.
+        "-E",
         "--grep",
-        `Merge #${issueNumber}`,
+        `Merge #${issueNumber}([^0-9]|$)`,
         "--grep",
-        `Merge.*#${issueNumber}`,
+        `Merge.*#${issueNumber}([^0-9]|$)`,
       ],
       {
         stdio: "pipe",
