@@ -42,6 +42,10 @@ sequant doctor              # Verify installation health
 > without a terminal. In CI or piped shells, pass `--yes` to apply updates
 > non-interactively. Use `sequant sync` for a fast content-drift check.
 
+> **Known limitation:** `sync`'s drift check walks the bundled templates, so a
+> template file retired from the bundle leaves its previously-installed copy
+> in place and invisible to drift detection.
+
 ---
 
 ## Quick Start

@@ -374,6 +374,46 @@ describe("sync command", () => {
       // Fingerprint null → nothing cached.
       expect(store.value).toBeNull();
     });
+
+    it("an excluded template (templates/opencode/**) contributes nothing to the fingerprint (AC-1, #1045)", async () => {
+      setup(1000);
+      mockListTemplateFiles.mockResolvedValue([
+        "templates/opencode/foo.json",
+        "templates/skills/a/SKILL.md",
+      ]);
+      const statedPaths: string[] = [];
+      mockGetFileStats.mockImplementation(async (p: string) => {
+        statedPaths.push(p);
+        return { mtimeMs: 1000 } as unknown as Awaited<
+          ReturnType<typeof getFileStats>
+        >;
+      });
+
+      await areSkillsOutdated({ cache: true });
+      expect(mockComputeTemplateChanges).toHaveBeenCalledTimes(1);
+
+      // Excluded template must not be stat'd under its own path or a mapped
+      // `.claude/opencode/...` ghost path — templateDestination returns null
+      // for it, so the loop skips it entirely (mirrors computeTemplateChanges).
+      expect(statedPaths.some((p) => p.includes("opencode"))).toBe(false);
+
+      mockComputeTemplateChanges.mockClear();
+
+      // Mutating the excluded file's mtime must not flip the fingerprint —
+      // simulate by making stats fail (mtime "changes") only for opencode.
+      mockGetFileStats.mockImplementation(async (p: string) => {
+        if (p.includes("opencode")) throw new Error("changed");
+        return { mtimeMs: 1000 } as unknown as Awaited<
+          ReturnType<typeof getFileStats>
+        >;
+      });
+
+      const second = await areSkillsOutdated({ cache: true });
+
+      expect(second.contentDrift).toBe(1);
+      // Same fingerprint (excluded file never contributed) → cache hit, no rescan.
+      expect(mockComputeTemplateChanges).not.toHaveBeenCalled();
+    });
   });
 
   describe("checkAndWarnSkillsOutdated", () => {

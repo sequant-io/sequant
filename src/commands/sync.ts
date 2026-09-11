@@ -21,6 +21,7 @@ import {
   assertTemplatesDirExists,
   isCustomizableFile,
   previewScriptsSymlinkTargets,
+  templateDestination,
   type CopyTemplatesOptions,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
@@ -127,16 +128,19 @@ async function computeDriftFingerprint(
 
     for (const templatePath of templateFiles) {
       const normalized = templatePath.replace(/\\/g, "/");
-      const localPath = normalized.replace("templates/", ".claude/");
+      const localPath = templateDestination(normalized);
+      if (localPath === null) continue;
       if (localPath.includes(".local/")) continue;
       const templateFsPath = join(
         templatesDir,
         normalized.replace("templates/", ""),
       );
-      const overridePath = localPath.replace(".claude/", ".claude/.local/");
       await addPath(templateFsPath, `t:${normalized}`);
       await addPath(localPath, `l:${localPath}`);
-      await addPath(overridePath, `o:${overridePath}`);
+      if (localPath.startsWith(".claude/")) {
+        const overridePath = localPath.replace(".claude/", ".claude/.local/");
+        await addPath(overridePath, `o:${overridePath}`);
+      }
     }
     await addPath(CONFIG_FILE_PATH, "config");
     await addPath(MANIFEST_FILE_PATH, "manifest");
