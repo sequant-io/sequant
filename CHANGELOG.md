@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`src/lib/__tests__/security-docs.test.ts`): cited paths, skill anchors and
   settings keys must resolve on disk, and the stated guard count is recomputed
   from `templates/hooks/pre-tool.sh` rather than typed.
+- **OpenSSF Scorecard workflow + README badge (#1025).** `.github/workflows/scorecard.yml`
+  runs the Scorecard analysis on push to `main` and weekly, publishing results
+  and uploading the SARIF to code scanning; a badge on the README links to the
+  live score. Findings are recorded, not remediated or gated on, here.
 
 - **Two more injection vectors in the behavioural eval suite (#1024).** The
   `qa-trust-boundary` case set now grades three prompt-injection vectors

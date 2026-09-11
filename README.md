@@ -10,6 +10,7 @@ For developers who won't merge what they can't trust — solo or on a team. Solv
 [![npm downloads](https://img.shields.io/npm/dm/sequant.svg)](https://www.npmjs.com/package/sequant)
 [![GitHub stars](https://img.shields.io/github/stars/sequant-io/sequant.svg)](https://github.com/sequant-io/sequant/stargazers)
 [![CI](https://github.com/sequant-io/sequant/actions/workflows/ci.yml/badge.svg)](https://github.com/sequant-io/sequant/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sequant-io/sequant/badge)](https://scorecard.dev/viewer/?uri=github.com/sequant-io/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step. The PR arrives with evidence — each acceptance criterion checked against the code — and the merge is always yours.
