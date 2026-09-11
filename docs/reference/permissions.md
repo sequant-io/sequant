@@ -108,6 +108,12 @@ Skill `allowed-tools` restrict which tools a skill can use. They do not override
 }
 ```
 
+## Orchestrator-only guards
+
+Some `pre-tool.sh` refusals apply only when a phase agent runs under `sequant run` (the `SEQUANT_ORCHESTRATOR` environment variable is set); interactive sessions are untouched.
+
+- **Background tasks are refused** — a `Monitor` tool call, or a Bash call with `run_in_background: true`, is blocked with `HOOK_BLOCKED: Background tasks never notify a phase agent`. Inside a phase the completion notification never arrives: the phase ends the moment the agent's turn ends, and any work still uncommitted is stranded. Run long commands in the foreground with a timeout instead (`timeout 600 npm test 2>&1 | tail -80`), after a WIP commit. If an exec phase still ends with uncommitted changes, sequant commits them as `chore(#N): wip checkpoint …` before reporting the failure.
+
 ## See Also
 
 - [Customization Guide](../guides/customization.md) -- overriding settings safely

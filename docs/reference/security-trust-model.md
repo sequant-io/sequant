@@ -4,6 +4,8 @@
 `/qa`, `/loop`, `/assess`) against a **public** repository, where anyone can file
 an issue or comment on a PR.
 
+> **Start with the public contract.** [`SECURITY.md`](../../SECURITY.md) is the disclosure policy; [`docs/THREAT-MODEL.md`](../THREAT-MODEL.md) lists every untrusted-input surface, classifies each defense as deterministic or model-dependent, and maps the OWASP Top 10 for Agentic Applications. This page is the operator's guide to the in-skill trust-model block those documents cite.
+
 ## The threat
 
 Sequant's phase agents run in Claude Code's `permissionMode: "bypassPermissions"`

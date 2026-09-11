@@ -54,6 +54,8 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Telemetry](reference/telemetry.md) — Telemetry settings
 - [Permissions](reference/permissions.md) — Permission precedence and configuration
 - [Security: Trust Model](reference/security-trust-model.md) — Untrusted issue/PR text and prompt-injection hardening for public-repo runs
+- [Threat Model](THREAT-MODEL.md) — Untrusted-input surfaces, deterministic vs model-dependent defenses, OWASP Agentic Top 10 mapping (CI-checked citations)
+- [Security Policy](../SECURITY.md) — Vulnerability disclosure, response expectations, supported versions
 - [Platform Requirements](reference/platform-requirements.md) — GitHub dependency and alternatives
 
 ### Stack-Specific Guides
