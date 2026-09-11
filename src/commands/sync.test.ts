@@ -414,6 +414,36 @@ describe("sync command", () => {
       // Same fingerprint (excluded file never contributed) → cache hit, no rescan.
       expect(mockComputeTemplateChanges).not.toHaveBeenCalled();
     });
+
+    it("a scripts template contributes its scripts/dev install path and no .claude/.local override line (#1045 QA)", async () => {
+      // templateDestination maps templates/scripts/* to scripts/dev/*, which
+      // has no `.local/` twin. Before #1045 the fingerprint derived a ghost
+      // `.claude/.local/...` override path for it via string replacement.
+      setup(1000);
+      mockListTemplateFiles.mockResolvedValue(["templates/scripts/x.sh"]);
+      const statedPaths: string[] = [];
+      mockGetFileStats.mockImplementation(async (p: string) => {
+        statedPaths.push(p);
+        return { mtimeMs: 1000 } as unknown as Awaited<
+          ReturnType<typeof getFileStats>
+        >;
+      });
+
+      await areSkillsOutdated({ cache: true });
+
+      // Exactly one stat for the install path: the `l:` line. The pre-#1045
+      // code derived an "override" path with a `.claude/` → `.claude/.local/`
+      // replacement that is a no-op on `scripts/dev/...`, so the same path was
+      // stat'd a second time as a bogus `o:` line.
+      const installStats = statedPaths.filter((p) =>
+        p.endsWith("scripts/dev/x.sh"),
+      );
+      expect(installStats).toHaveLength(1);
+      expect(statedPaths.some((p) => p.includes(".local"))).toBe(false);
+      expect(statedPaths.some((p) => p.includes(".claude/scripts"))).toBe(
+        false,
+      );
+    });
   });
 
   describe("checkAndWarnSkillsOutdated", () => {
