@@ -104,7 +104,12 @@ export function isBranchMergedIntoMain(
  *
  * Tries multiple detection methods:
  * 1. Find `feature/<N>-*` branches with `git branch -a` and check via {@link isBranchMergedIntoMain}
- * 2. Check for merge commits mentioning the issue
+ * 2. Check for merge-commit subjects that actually record a merge of the issue
+ *    (`Merge #N` / `Merge ...#N` forms only). This deliberately does NOT match
+ *    any commit that merely mentions `(#N)` in its title — that form is used by
+ *    squash-merge commits for the *PR* number, which is unrelated to the issue
+ *    number and produces false positives when another PR's title happens to
+ *    reference this issue in prose (see #1044).
  *
  * @param issueNumber - The issue number to check
  * @param baseBranch - The base branch to check against (default: "main")
@@ -151,8 +156,6 @@ export function isIssueMergedIntoMain(
         `Merge #${issueNumber}`,
         "--grep",
         `Merge.*#${issueNumber}`,
-        "--grep",
-        `(#${issueNumber})`,
       ],
       {
         stdio: "pipe",

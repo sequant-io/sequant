@@ -459,4 +459,60 @@ describe("reconcileStateAtStartup escalation", () => {
     expect(persisted.issues["593"].status).toBe("merged");
     expect(persisted.issues["593"].resolvedAt).toBeDefined();
   });
+
+  it("AC-3 (#1044): leaves in_progress untouched with an open PR when main only has an unrelated squash commit mentioning the issue number", async () => {
+    // This test opts out of the global spawnSync mock (default fails closed)
+    // and delegates to real spawnSync, scoped to itself, against a real temp
+    // git repo it seeds here — the #1044 false positive lives in what real
+    // `git log --grep` matches, which a mock can't reproduce.
+    const cp =
+      await vi.importActual<typeof import("child_process")>("child_process");
+    mockSpawnSync.mockReset().mockImplementation(cp.spawnSync);
+
+    const git = (...args: string[]) => {
+      const result = cp.spawnSync("git", args, { cwd: tempDir, stdio: "pipe" });
+      if (result.status !== 0) {
+        throw new Error(
+          `git ${args.join(" ")} failed: ${result.stderr?.toString()}`,
+        );
+      }
+    };
+    git("init", "--quiet", "--initial-branch=main");
+    git("config", "user.email", "test@example.com");
+    git("config", "user.name", "Test");
+    git("config", "commit.gpgsign", "false");
+    git("commit", "--quiet", "--allow-empty", "-m", "chore: initial commit");
+    git(
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "docs(graph): wave-2 plan — node 09 (#1030), ledger update",
+    );
+    git("branch", "feature/1030-fix-state-reconcile");
+
+    mockPRStatus = "OPEN";
+
+    const state = createEmptyState();
+    state.issues["1030"] = makeIssue({
+      number: 1030,
+      status: "in_progress",
+      currentPhase: "qa",
+      pr: { number: 1042, url: "https://github.com/test/test/pull/1042" },
+    });
+    writeState(statePath, state);
+
+    const result = await reconcileStateAtStartup({ statePath });
+
+    expect(result.success).toBe(true);
+    expect(result.advanced).toEqual([]);
+    expect(result.stillPending).toEqual([1030]);
+    expect(mockGetPRMergeStatusSync).toHaveBeenCalledWith(1042);
+
+    const persisted: WorkflowState = JSON.parse(
+      fs.readFileSync(statePath, "utf-8"),
+    );
+    expect(persisted.issues["1030"].status).toBe("in_progress");
+    expect(persisted.issues["1030"].resolvedAt).toBeUndefined();
+  });
 });
