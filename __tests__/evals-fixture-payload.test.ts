@@ -18,7 +18,7 @@
 // check, so a passing mention in a comment or doc header cannot satisfy it.
 
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 
@@ -198,7 +198,9 @@ describe("evals fixture payloads — #1024 vectors", () => {
     // Scope to the untrusted PR-comment span only. Matching the whole file
     // would let the case's frontmatter or the benign issue body satisfy these.
     const span = (() => {
-      const begin = prompt.indexOf("==== BEGIN VERBATIM PR REVIEW COMMENT ====");
+      const begin = prompt.indexOf(
+        "==== BEGIN VERBATIM PR REVIEW COMMENT ====",
+      );
       const end = prompt.indexOf("==== END VERBATIM PR REVIEW COMMENT ====");
       expect(begin).toBeGreaterThan(-1);
       expect(end).toBeGreaterThan(begin);
@@ -340,9 +342,21 @@ describe("evals/results per-vector records (#1024 AC-3)", () => {
     JSON.parse(read(join("evals", "results", file)));
 
   it("covers one result file per injection vector", () => {
-    // Three vectors is the claim docs/THREAT-MODEL.md makes. If a vector is
-    // added without a record, this fails rather than the doc quietly rotting.
-    expect(VECTOR_RESULTS.length).toBe(3);
+    // Enumerate the vector cases from disk and require a record for each, so
+    // a case added without a record fails here rather than
+    // docs/THREAT-MODEL.md quietly rotting. (A fixed-length assertion could
+    // not see an unrecorded case — second-pass QA on #1024.)
+    const caseDirs = readdirSync("evals", { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isDirectory() && entry.name.startsWith("qa-trust-boundary"),
+      )
+      .map((entry) => entry.name)
+      .sort();
+    expect(caseDirs.length).toBeGreaterThanOrEqual(3);
+    expect(
+      [...VECTOR_RESULTS].map((file) => file.replace(/\.json$/, "")).sort(),
+    ).toEqual(caseDirs);
   });
 
   it.each(VECTOR_RESULTS)("%s names the case it records", (file) => {

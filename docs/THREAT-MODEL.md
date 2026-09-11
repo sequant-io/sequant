@@ -158,9 +158,9 @@ the same intent is not refused. Their value is that they hold against an agent
 that wants to proceed — not that the pattern set is complete.
 
 **The behavioural evidence is narrow and manually triggered.** The injection
-eval covers the issue-body vector, is dispatched by hand, and produces one
-recorded run rather than a continuous signal. The PR-comment and tool-output
-vectors are tracked in #1024.
+eval covers three vectors — issue body, PR comment, and tool output
+(`evals/qa-trust-boundary*`, #1024) — but it is dispatched by hand and produces
+one recorded run per vector rather than a continuous signal.
 
 **CI checks that citations resolve, not that classifications are correct.** The
 gate behind this document verifies that every path, skill anchor, and settings
