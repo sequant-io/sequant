@@ -6,7 +6,8 @@ import chalk from "chalk";
 import { diffLines } from "diff";
 import inquirer from "inquirer";
 import { join, dirname } from "path";
-import { readdir } from "fs/promises";
+import { readdir, mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
 import { ui, colors } from "../lib/cli-ui.js";
 import {
   detectStack,
@@ -280,7 +281,10 @@ export async function writeOpencodeAgents(targetDir = "."): Promise<string[]> {
   const written: string[] = [];
   for (const name of OPENCODE_AGENT_NAMES) {
     const source = await getTemplateContent(`templates/agents/${name}.md`);
-    await writeFile(join(agentsDir, `${name}.md`), translateAgentDefinition(source));
+    await writeFile(
+      join(agentsDir, `${name}.md`),
+      translateAgentDefinition(source),
+    );
     written.push(name);
   }
 
@@ -320,9 +324,7 @@ export async function writeOpencodePlugin(targetDir = "."): Promise<string> {
     "sequant-hooks.ts",
     "lib/sequant-hooks-core.ts",
   ] as const) {
-    const body = await getTemplateContent(
-      `templates/opencode/plugins/${rel}`,
-    );
+    const body = await getTemplateContent(`templates/opencode/plugins/${rel}`);
     await writeFile(join(pluginDir, rel), body);
   }
 
@@ -357,6 +359,111 @@ export async function writeOpencodeMcpConfig(targetDir = "."): Promise<string> {
 
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
   return configPath;
+}
+
+export type OpencodeShimDecision = "none" | "current" | "refresh";
+
+/** Relative paths of every regular file under `dir`, sorted, `/`-separated. */
+async function listFilesRecursive(dir: string, prefix = ""): Promise<string[]> {
+  const out: string[] = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...(await listFilesRecursive(join(dir, entry.name), rel)));
+    } else {
+      out.push(rel);
+    }
+  }
+  return out.sort();
+}
+
+/**
+ * Decide what `sync`/`update` should do with the opencode shim (#1030).
+ *
+ * `templateDestination` excludes `templates/opencode/**` from the generic
+ * copy/diff engine — this is the shim's other half, letting `sync`/`update`
+ * preview and apply the same refresh `init --agent opencode` performs,
+ * without a second hand-written renderer. `init` is the only *creator* of
+ * `.opencode/` (a project opts in via `--agent opencode`); `sync`/`update`
+ * only *refresh* a shim that already exists.
+ *
+ * The decision is content-aware, not presence-based: the shim is rendered by
+ * the same writers into a scratch directory and compared file-by-file with
+ * what the project has. A presence-only check made every opencode project
+ * permanently "pending" — `sync --dry-run` exited non-zero forever and a
+ * non-interactive `update` refused to run with nothing to do (first-pass QA
+ * on #1030) — which is the same dry-run ≠ apply class this issue fixes.
+ *
+ * - `"none"`: no `.opencode/` directory — sync/update write nothing there.
+ * - `"current"`: `.opencode/` matches what the writers would produce — nothing
+ *   to do, and no exit-code drift signal.
+ * - `"refresh"`: at least one rendered file is missing or differs, or the MCP
+ *   config lacks sequant's entry — re-render commands/agents/plugin/MCP.
+ */
+export async function decideOpencodeShimSync(
+  targetDir = ".",
+): Promise<OpencodeShimDecision> {
+  const shimDir = join(targetDir, ".opencode");
+  if (!(await fileExists(shimDir))) return "none";
+
+  const scratch = await mkdtemp(join(tmpdir(), "sequant-opencode-shim-"));
+  try {
+    // Same producer as `init` and `refreshOpencodeShim` (AC-3): whatever these
+    // write is, by definition, what "current" means.
+    await writeOpencodeCommands(scratch);
+    await writeOpencodeAgents(scratch);
+    await writeOpencodePlugin(scratch);
+    const renderedRoot = join(scratch, ".opencode");
+    for (const rel of await listFilesRecursive(renderedRoot)) {
+      const installed = join(shimDir, rel);
+      if (!(await fileExists(installed))) return "refresh";
+      if (
+        (await readFile(installed)) !==
+        (await readFile(join(renderedRoot, rel)))
+      ) {
+        return "refresh";
+      }
+    }
+
+    // The MCP config is merged, not rendered (an existing config is
+    // preserved), so "current" means every sequant entry is present and equal.
+    const configPath = join(shimDir, "opencode.json");
+    if (!(await fileExists(configPath))) return "refresh";
+    let mcp: Record<string, unknown> = {};
+    try {
+      const config = JSON.parse(await readFile(configPath)) as Record<
+        string,
+        unknown
+      >;
+      mcp =
+        config.mcp &&
+        typeof config.mcp === "object" &&
+        !Array.isArray(config.mcp)
+          ? (config.mcp as Record<string, unknown>)
+          : {};
+    } catch {
+      return "refresh";
+    }
+    for (const [key, value] of Object.entries(buildOpencodeMcpConfig())) {
+      if (JSON.stringify(mcp[key]) !== JSON.stringify(value)) return "refresh";
+    }
+    return "current";
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Refresh the opencode shim in place, reusing `init`'s own writers so the
+ * shim has exactly one producer (#1030 AC-3). Callers must gate on
+ * `decideOpencodeShimSync` first — these writers unconditionally `ensureDir`
+ * and would otherwise create `.opencode/` on a project that never opted in.
+ */
+export async function refreshOpencodeShim(targetDir = "."): Promise<void> {
+  await writeOpencodeCommands(targetDir);
+  await writeOpencodeAgents(targetDir);
+  await writeOpencodePlugin(targetDir);
+  await writeOpencodeMcpConfig(targetDir);
 }
 
 export async function initCommand(options: InitOptions): Promise<void> {
@@ -768,7 +875,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(
       chalk.yellow(
         "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
-          "    git add .opencode && git commit -m \"chore: add opencode provisioning\"",
+          '    git add .opencode && git commit -m "chore: add opencode provisioning"',
       ),
     );
   }

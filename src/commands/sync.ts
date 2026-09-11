@@ -36,6 +36,7 @@ import {
 } from "../lib/agents-md.js";
 import { getProjectName } from "../lib/project-name.js";
 import { getStackConfig } from "../lib/stacks.js";
+import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
 
 const SKILLS_VERSION_PATH = ".claude/skills/.sequant-version";
 
@@ -332,7 +333,15 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       (c) => c.status === "new" || c.status === "modified",
     );
 
-    if (drifted.length === 0) {
+    // #1030 second pass: the opencode shim is part of "content" too. This
+    // fast path is report-only by design (#708), so a stale shim is reported
+    // with the same exit-code signal and the same repair hint as any other
+    // drift — `update` (or `sync --force`) refreshes it — rather than being
+    // silently skipped, which left a drifted shim invisible to a
+    // version-current `sync` and `sync --dry-run`.
+    const fastPathShim = await decideOpencodeShimSync();
+
+    if (drifted.length === 0 && fastPathShim !== "refresh") {
       // Truthful no-op: content is actually identical.
       if (!quiet) {
         console.log(chalk.green("✔ Skills are already up to date!"));
@@ -343,9 +352,16 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // Version current but content differs — report, don't mutate (report-only
     // keeps the fast path from silently overwriting in-place customizations).
     if (!quiet) {
+      if (fastPathShim !== "none") {
+        console.log(chalk.bold(`opencode shim: ${fastPathShim}`));
+      }
+      const what = [
+        ...(drifted.length > 0 ? [`${drifted.length} file(s) differ`] : []),
+        ...(fastPathShim === "refresh" ? ["the opencode shim is stale"] : []),
+      ].join(" and ");
       console.log(
         chalk.yellow(
-          `!  Version current, but ${drifted.length} file(s) differ — run \`update\` or \`sync --force\``,
+          `!  Version current, but ${what} — run \`update\` or \`sync --force\``,
         ),
       );
     }
@@ -392,10 +408,14 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const scriptsPreview = (await previewScriptsSymlinkTargets()).filter(
       (e) => e.changed,
     );
+    const opencodeShimDecision = await decideOpencodeShimSync();
 
     if (!quiet) {
       if (agentsMdDecision !== "none") {
         console.log(chalk.bold(`AGENTS.md: ${agentsMdDecision}`));
+      }
+      if (opencodeShimDecision !== "none") {
+        console.log(chalk.bold(`opencode shim: ${opencodeShimDecision}`));
       }
       if (scriptsPreview.length > 0) {
         console.log(chalk.bold("scripts/dev link targets:"));
@@ -454,7 +474,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         }
       }
 
-      if (toWrite.length === 0) {
+      if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
         console.log(chalk.green("\n✔ Skills are already up to date!"));
       } else {
         console.log(chalk.gray("\n(dry-run mode - no changes made)"));
@@ -465,7 +485,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // gate CI/automation (the #709 intent): a dry-run reporting nothing must
     // mean nothing to do. The matching-version short-circuit signals drift the
     // same way.
-    if (toWrite.length > 0) {
+    if (toWrite.length > 0 || opencodeShimDecision === "refresh") {
       process.exitCode = 1;
     }
     return;
@@ -565,6 +585,17 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
           `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`sync --force\` to replace)`,
         ),
       );
+    }
+  }
+
+  // #1030 AC-3: refresh the opencode shim through init's own writers, gated
+  // on decideOpencodeShimSync so a plain sync never creates `.opencode/` on a
+  // project that never opted in, and never rewrites a shim that already
+  // matches what the writers would produce ("current").
+  if ((await decideOpencodeShimSync()) === "refresh") {
+    await refreshOpencodeShim();
+    if (!quiet) {
+      console.log(chalk.blue("Refreshed opencode shim"));
     }
   }
 

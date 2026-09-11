@@ -153,3 +153,52 @@ describe(
     });
   },
 );
+
+/**
+ * #1030 AC-4 — a fresh `init` project without the opencode driver must never
+ * report phantom drift on `templates/opencode/**`. Before the fix,
+ * `computeTemplateChanges` mapped that tree 1:1 to `.claude/opencode/**`,
+ * which nothing ever writes, so every such project permanently saw "N
+ * file(s) differ from bundled content" on the version pre-flight (e.g. via
+ * `sequant status`, which is not on the pre-flight exempt list).
+ */
+describe(
+  "no phantom opencode drift after a plain init (#1030)",
+  { timeout: TEST_TIMEOUT_MS },
+  () => {
+    let projectDir: string;
+
+    beforeEach(async () => {
+      projectDir = await mkdtemp(join(tmpdir(), "sequant-opencode-drift-"));
+    });
+
+    afterEach(async () => {
+      await rm(projectDir, { recursive: true, force: true });
+    });
+
+    function runCli(args: string[]) {
+      const env = { ...process.env, NO_COLOR: "1" };
+      delete env.SEQUANT_TEMPLATES_DIR;
+      return spawnSync(tsxBin, [cliSource, ...args], {
+        cwd: projectDir,
+        encoding: "utf-8",
+        env,
+        timeout: CHILD_TIMEOUT_MS,
+      });
+    }
+
+    it("reports no phantom drift on a plain (no --agent opencode) project", async () => {
+      const init = runCli(["init", "--yes", "--skip-setup"]);
+      expect(init.status).toBe(0);
+      expect(await fileExists(join(projectDir, ".claude", "opencode"))).toBe(
+        false,
+      );
+
+      // `status` is not on PREFLIGHT_EXEMPT_COMMANDS (unlike init/sync/update/
+      // serve), so it runs the same content-drift check `serve` feeds from.
+      const result = runCli(["status", "--offline"]);
+      const output = `${result.stdout}${result.stderr}`;
+      expect(output).not.toContain("differ from bundled content");
+    });
+  },
+);

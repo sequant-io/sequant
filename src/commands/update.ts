@@ -22,6 +22,7 @@ import { writeFile } from "../lib/fs.js";
 import { chmod } from "fs/promises";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
+import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
 
 interface UpdateOptions {
   dryRun?: boolean;
@@ -210,7 +211,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     ? [...newFiles, ...modifiedFiles, ...localOverrides]
     : [...newFiles, ...modifiedFiles];
 
-  if (applySet.length === 0) {
+  // Preview the opencode shim refresh decision (#1030) alongside the template
+  // diff, same as `sync --dry-run` — `update` does not manage AGENTS.md or
+  // scripts/dev (those stay `sync`-only), but the shim has the same content-aware
+  // refresh-when-drifted contract on both commands (AC-3).
+  const opencodeShimDecision = await decideOpencodeShimSync();
+
+  if (applySet.length === 0 && opencodeShimDecision !== "refresh") {
     if (localOverrides.length > 0) {
       console.log(
         chalk.blue(
@@ -221,6 +228,17 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       console.log(chalk.green("\n✔ Everything is up to date!"));
     }
     return;
+  }
+
+  if (opencodeShimDecision === "refresh") {
+    console.log(chalk.bold(`opencode shim: ${opencodeShimDecision}`));
+  }
+  if (options.dryRun) {
+    console.log(
+      chalk.gray(
+        "(update does not manage AGENTS.md or scripts/dev link targets — use `sequant sync` for those)",
+      ),
+    );
   }
 
   // Show changes
@@ -254,7 +272,7 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
     // preview, matching `sync --dry-run` (#724 / #709 intent): a dry-run that
     // reports nothing must mean nothing to do. The no-op case short-circuits at
     // the "Everything is up to date!" return above, so it correctly stays 0.
-    if (applySet.length > 0) {
+    if (applySet.length > 0 || opencodeShimDecision === "refresh") {
       process.exitCode = 1;
     }
     return;
@@ -294,6 +312,14 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
       await chmod(file.path, 0o755);
     }
     updated++;
+  }
+
+  // Refresh the opencode shim when the project already has one (#1030),
+  // mirroring `sync`'s apply path — gated so `update` never creates
+  // `.opencode/` on a project that hasn't opted in.
+  if (opencodeShimDecision === "refresh") {
+    await refreshOpencodeShim();
+    console.log(chalk.blue("Refreshed opencode shim"));
   }
 
   // Update manifest

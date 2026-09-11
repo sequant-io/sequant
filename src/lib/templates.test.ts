@@ -26,6 +26,7 @@ import {
   previewScriptsSymlinkTargets,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
+import { writeOpencodeCommands } from "../commands/init.js";
 
 describe("templates", () => {
   let testDir: string;
@@ -539,6 +540,54 @@ describe("templates", () => {
       ).toBe("unchanged");
     });
 
+    // #1030 AC-2: the motivating bug — templates/opencode/command.md has
+    // {{PHASE}} substituted per-phase by init.ts's writeOpencodeCommands, so
+    // the generic single-pass diff must never see it (it would report a
+    // permanent "new" .claude/opencode/command.md with {{PHASE}} unrendered).
+    it("excludes templates/opencode/** from the opencode-shim diff entirely (#1030)", async () => {
+      await mkdir(join(templatesDir, "opencode", "plugins", "lib"), {
+        recursive: true,
+      });
+      await fsWriteFile(
+        join(templatesDir, "opencode", "command.md"),
+        "Run the {{PHASE}} skill.\n",
+      );
+      await fsWriteFile(
+        join(templatesDir, "opencode", "plugins", "sequant-hooks.ts"),
+        "export default {};\n",
+      );
+
+      const changes = await computeTemplateChanges("generic");
+
+      expect(changes.some((c) => c.path.includes(".claude/opencode"))).toBe(
+        false,
+      );
+    });
+
+    // #1030 AC-5: writeOpencodeCommands is the one renderer for
+    // templates/opencode/command.md — it must fully substitute {{PHASE}} per
+    // phase, since the generic engine that renders every other template now
+    // skips this file entirely (it would otherwise reach disk untouched).
+    it("writeOpencodeCommands leaves no unrendered placeholders (#1030)", async () => {
+      await mkdir(join(templatesDir, "opencode"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "opencode", "command.md"),
+        "Load and run the {{PHASE}} skill against $ARGUMENTS.\n",
+      );
+
+      const phases = await writeOpencodeCommands(cwdDir);
+      expect(phases.length).toBeGreaterThan(0);
+
+      for (const phase of phases) {
+        const written = await fsReadFile(
+          join(cwdDir, ".opencode", "commands", `${phase}.md`),
+          "utf-8",
+        );
+        expect(written).not.toMatch(/\{\{[A-Z_]+\}\}/);
+        expect(written).toContain(phase);
+      }
+    });
+
     it("classifies a diverged scripts/dev copy as modified, not its own local-override", async () => {
       await mkdir(join(templatesDir, "scripts"), { recursive: true });
       await fsWriteFile(
@@ -571,6 +620,16 @@ describe("templates", () => {
     it("returns null for templates copyTemplates never installs", () => {
       expect(templateDestination("templates/mcp.json")).toBeNull();
       expect(templateDestination("templates/relay/frame.txt")).toBeNull();
+    });
+
+    // #1030 AC-2: templates/opencode/** is a second renderer's input
+    // (init.ts's writeOpencode* functions), not a flat-copy target — the
+    // generic engine must never route it to .claude/opencode/.
+    it("returns null for templates/opencode/** (#1030)", () => {
+      expect(templateDestination("templates/opencode/command.md")).toBeNull();
+      expect(
+        templateDestination("templates/opencode/plugins/sequant-hooks.ts"),
+      ).toBeNull();
     });
 
     it("normalizes Windows separators before routing (#708)", () => {
