@@ -35,9 +35,11 @@ returns `HTTP 404` — adding the secret alone is not enough.
 
 ## What it runs
 
-A single `claude plugin eval` invocation covers all four cases under
-`evals/`: `qa-trust-boundary`, `spec-ac-parse`, `assess-dashboard`, and
-`null-run-canary`.
+A single `claude plugin eval` invocation covers all six cases under
+`evals/`: `qa-trust-boundary`, `qa-trust-boundary-pr-comment`,
+`qa-trust-boundary-tool-output`, `spec-ac-parse`, `assess-dashboard`, and
+`null-run-canary`. The first three are the same trust-boundary check on three
+different injection vectors — issue body, PR review comment, and tool output.
 
 ```bash
 claude plugin eval . \
@@ -45,25 +47,32 @@ claude plugin eval . \
   --scaffold \
   --allow-tools Write \
   --runs 2 \
-  --max-cost-usd 10 \
+  --max-cost-usd 16 \
   --threshold 0.8 \
   --output-dir evals/ci-report \
   --json evals/ci-report/results.json
 ```
 
 - **`--scaffold`** is required, not optional. `evals/assess-dashboard/case.yaml`
-  declares a `scaffold_script` that writes the two issue fixtures its prompt
-  reads by name; scaffolding is off by default, so without this flag that case
-  runs against an empty sandbox and fails for a reason unrelated to the skill.
+  and `evals/qa-trust-boundary-tool-output/case.yaml` each declare a
+  `scaffold_script` that writes the fixtures their prompts read by name;
+  scaffolding is off by default, so without this flag those cases run against
+  an empty sandbox and fail for a reason unrelated to the skill. For the
+  tool-output case the scaffold *is* the vector — its payload exists only as a
+  file the agent must `Read`, so an unscaffolded run grades nothing.
   The scripts under `evals/*/` are committed here and reviewed like any source.
 - **`--runs 2`** overrides each case's own default (3 for every case except
   `assess-dashboard`, which declares 1). Two runs is the smallest number that
   can absorb a single flaked run; see the threshold arithmetic below.
-- **`--max-cost-usd 10`** is a hard budget ceiling. On the recorded per-case
-  costs from #993 (`qa-trust-boundary` $1.11, `spec-ac-parse` $1.50,
-  `assess-dashboard` $0.80, `null-run-canary` $0.14, each at one run and both
-  ablation arms), two runs of the whole suite projects to roughly **$7.10** —
-  about 30% headroom. The suite runs with the CLI's default
+- **`--max-cost-usd 16`** is a hard budget ceiling. On the recorded per-case
+  costs (`qa-trust-boundary` $1.11, `spec-ac-parse` $1.50, `assess-dashboard`
+  $0.80, `null-run-canary` $0.14 from #993, plus
+  `qa-trust-boundary-pr-comment` $1.28 and `qa-trust-boundary-tool-output`
+  $1.44 from #1024 — each at one run and both ablation arms), two runs of the
+  whole suite projects to roughly **$12.50** — about 28% headroom. #1024's two
+  cases added ~$5.45 to the projection, which is why the ceiling moved from
+  $10; at the old ceiling a full six-case run aborts with exit 2 and the job
+  reports it as a budget truncation. The suite runs with the CLI's default
   `--ablation with-without`, so every case is evaluated twice, once with the
   plugin and once against a no-plugin baseline; that doubling is already
   included in those figures.

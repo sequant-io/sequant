@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and uploading the SARIF to code scanning; a badge on the README links to the
   live score. Findings are recorded, not remediated or gated on, here.
 
+- **Two more injection vectors in the behavioural eval suite (#1024).** The
+  `qa-trust-boundary` case set now grades three prompt-injection vectors
+  instead of one: the existing issue body, a new PR review comment
+  (`evals/qa-trust-boundary-pr-comment/`), and a new tool-output vector
+  (`evals/qa-trust-boundary-tool-output/`) whose payload reaches the agent
+  only as a `Read` result from a scaffolded vendored dependency. Both new
+  cases grant `Write` so the "never acted on" grader is a behavioural
+  assertion rather than a structural one, and the tool-output case gates
+  payload delivery itself so it cannot pass vacuously. Each recorded run
+  under `evals/results/` now carries a per-vector
+  `{vector, decision, reason_code, fixture_commit}` record that
+  `__tests__/evals-fixture-payload.test.ts` derives from the run's own grader
+  outcomes rather than trusting as typed.
+
 
 ## [2.14.0] - 2026-09-09
 
