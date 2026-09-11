@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-09-11
+
 ### Fixed
 
 - **`sync`'s drift-fingerprint cache key now derives install paths from the same `templateDestination` mapping `sync`/`update` use to write files (#1045)**, instead of a private `templates/`→`.claude/` string replace — an excluded template (e.g. `templates/opencode/**`) can no longer silently diverge between the two. The retired-file blind spot (a template dropped from the bundle leaves its installed copy invisible to drift detection, since the walk is template-driven) is now documented in `docs/reference/cheat-sheet.md`.

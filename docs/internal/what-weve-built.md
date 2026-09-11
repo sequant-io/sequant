@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.14.0
+# What We've Built: Sequant v2.15.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,14 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.15.0)
+
+- **Fresh-Session QA** - the qa phase never resumes the implementer's session (a 27-transcript study: 44% of fresh second looks caught a would-ship bug); `--full-qa` / `run.fullQa` / MCP `fullQa` force full-weight QA on demand
+- **User-Owned Files Survive sync** - a marker-less `AGENTS.md` is preserved, `scripts/dev` links target the project's own `node_modules/sequant`, `sync --dry-run` lists exactly what `sync` writes, and the opencode shim has one producer that refreshes only when drifted
+- **Public Trust Contract** - `SECURITY.md`, `docs/THREAT-MODEL.md` (deterministic vs model-dependent defenses, OWASP Agentic Top 10 mapping, CI-checked citations), OpenSSF Scorecard workflow + badge, three injection-eval vectors with per-vector records
+- **No Stranded Phase Work** - the pre-tool hook refuses background tasks under the orchestrator, `/exec` runs the suite once in the foreground, and an exec that still ends uncommitted gets a `chore(#N): wip checkpoint` commit before the failure is reported
+- **Honest State Reconcile** - an issue is no longer marked merged because an unrelated squash title mentions `(#N)`; `/release` moves the SECURITY.md supported-versions row with every minor
+
 ### Recent Additions (v2.14.0)
 
 - **Model Escalation Ladder** - `run.modelLadder` escalates a churning phase one model rung at a time, but only on capability-bound churn; spec-bound churn halts with an evidence bundle instead (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`)
@@ -1197,7 +1205,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.14.0
+**Current Version:** 2.15.0
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1207,7 +1215,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.14.0                               │
+│                              SEQUANT v2.15.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

@@ -67,8 +67,8 @@ receives security fixes. There are no long-term-support branches.
 
 | Version | Supported |
 |---------|-----------|
-| 2.14.x | ✅ Security fixes |
-| < 2.14 | ❌ Upgrade to the latest release |
+| 2.15.x | ✅ Security fixes |
+| < 2.15 | ❌ Upgrade to the latest release |
 
 Fixes ship in a new patch release rather than as backports. Because sequant is
 a developer tool installed per-machine, upgrading is `npm install -g sequant`
