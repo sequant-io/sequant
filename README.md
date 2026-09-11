@@ -17,6 +17,16 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.15
+
+- **QA no longer inherits the implementer's blind spots** — the `qa` phase always starts a fresh session instead of resuming exec's. A study of 27 second-look reviews found 44% caught a would-ship bug the anchored reviewer had missed; cost is roughly neutral. Opt into full-weight QA on every dispatch with `--full-qa`, `run.fullQa: true`, or the MCP `fullQa` param (#982).
+- **`sync` never touches what you own** — a hand-maintained `AGENTS.md` (anything without sequant's marker) is preserved, `scripts/dev` links target your project's own `node_modules/sequant` instead of whichever binary ran the command, `sync --dry-run` prints exactly what `sync` will write, and `doctor` names the repair without ever recommending `--force` on your files (#990, #1030).
+- **A security model you can read** — [`SECURITY.md`](SECURITY.md) and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) say which defenses hold when the model is compromised and which don't, mapped to the OWASP Top 10 for Agentic Applications, with every citation CI-checked; an OpenSSF Scorecard badge above (#980, #1025).
+- **Phase agents can't strand your work** — background tasks are refused inside a phase (the notification never arrived; the work sat uncommitted), and an exec that still ends with uncommitted changes gets a `chore(#N): wip checkpoint` commit before the failure is reported (#1032).
+- **Injection evals cover three vectors** — issue body, PR comment, and tool output, each with a recorded per-vector verdict (#1024).
+
+> **Upgrade note.** Because `qa` no longer resumes exec's session, a quality-loop `loop` phase now resumes the exec session rather than the former exec+qa one; it still receives the verdict via `SEQUANT_LAST_VERDICT` / `SEQUANT_FAILED_ACS`. Nothing else changes by default — `run.fullQa` stays off.
+
 ### What's new in 2.14
 
 - **Model escalation ladder, and the halts that keep it honest** — `run.modelLadder` / `--model-ladder sonnet,opus` escalates a churning phase one model rung at a time, but only on *capability-bound* churn: iterations that produced nothing. The opposite fingerprint — a new diff every iteration that QA keeps rejecting — is spec-bound, and a stronger model there only rediscovers the contradiction more expensively, so the ladder refuses to climb and halts instead. Three halts (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) each print an evidence bundle whose escalation history proves what the halt cost. Agents that find an AC impossible as written declare `SPEC_DIVERGENCE` and stop rather than guessing (#971, #995). Off unless configured. See [model-ladder.md](docs/reference/model-ladder.md).
@@ -208,6 +218,8 @@ The file is a `CUSTOMIZABLE_FILES` entry: plain `sequant update` and `sync` pres
 
 **`AGENTS.md` ownership.** Every `AGENTS.md` sequant generates starts with a marker line, `<!-- sequant:agents-md v=<version> h=<sha1> -->`, whose hash covers the rest of the file. `sync` only regenerates the file when that marker is present and its hash still matches the body — otherwise the file is treated as user-owned (hand-edited, or written before the marker existed) and is left byte-identical, reported as preserved, and only replaced with `sync --force`. Use `sync --no-agents-md` to skip `AGENTS.md` entirely. (`update` has no `AGENTS.md` awareness — unaffected.)
 
+**`scripts/dev` links and `--dry-run`.** The `scripts/dev/*.sh` links point at your project's own `node_modules/sequant/templates/scripts/` whenever it exists, so a fresh clone plus `npm install` keeps them working; a templates directory under an npx cache or outside the project tree yields copies instead, with one line saying why. `sync --dry-run` and `update --dry-run` list exactly the paths the apply step writes — the `AGENTS.md` decision, each link whose target would change, and the opencode shim (refreshed only on projects that opted in with `--agent opencode`, and only when it drifted).
+
 ### Quality Gates
 
 Every `/qa` runs automated checks:
@@ -249,9 +261,10 @@ In Claude Code:
 /fullsolve 123
 ```
 
-Headless (`-Q` runs the quality loop):
+Headless (`-Q` runs the quality loop; `--full-qa` makes the reviewer come in cold with the full standalone pre-flight):
 ```bash
 npx sequant run 123 -Q
+npx sequant run 123 --full-qa
 ```
 
 > `sequant run --help` is the authoritative flag list. There is **no** `--skip-spec` — to skip the plan phase, use `--phases exec,qa`.
@@ -284,6 +297,22 @@ Re-verify a resolved issue or PR. Findings land as **issue comments**, with each
 123 any gaps?     # re-QA issue #123
 /qa pr488         # re-QA a PR
 ```
+
+### Upgrade without surprises
+
+You keep your own `AGENTS.md` and a customized constitution. A new sequant version should not eat either — so look before it writes:
+
+```
+$ npx sequant sync --dry-run
+AGENTS.md: preserved
+Summary (dry-run):
+  New files: 1
+  Modified: 3
+  Customizable (preserved): 1
+(dry-run mode - no changes made)
+```
+
+`preserved` means user-owned: `sync` leaves it byte-identical until you run `sync --force` once. Exit code 1 means there is work to apply, so a CI job can gate on the preview.
 
 ### Merge
 
