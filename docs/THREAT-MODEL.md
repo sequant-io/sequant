@@ -28,9 +28,9 @@ that carry text sequant did not write and cannot vouch for:
 | Surface | Reaches the agent via | Notes |
 |---------|----------------------|-------|
 | Issue bodies | `/spec`, `/exec`, `/qa`, `/loop`, `/assess` all read the issue body | The primary requirements channel, and the primary injection vector |
-| Issue and PR comments | Comment threads are read for clarifications, spec output, and review feedback | Anyone with repository read access can add one |
+| Issue and PR comments | Comment threads are read for clarifications, spec output, and review feedback | Anyone with repository read access can add one; exercised by the `evals/qa-trust-boundary-pr-comment` vector |
 | Repository file contents | The agent reads the code it is working on, including files a contributor changed | A poisoned comment in a source file is input |
-| Tool output | Command stdout, test failures, `gh` responses, MCP tool results | Attacker-controlled if the tool reaches attacker-controlled data |
+| Tool output | Command stdout, test failures, `gh` responses, MCP tool results | Attacker-controlled if the tool reaches attacker-controlled data; exercised by the `evals/qa-trust-boundary-tool-output` vector, whose payload arrives only as a `Read` result |
 | Dependencies | Package contents, install scripts, and transitive updates | Executes with the developer's privileges, outside any agent decision |
 | Linked URLs and files | Anything the above link to and the agent follows | Inherits the trust level of its source, which is none |
 
@@ -75,7 +75,7 @@ drift (`src/lib/__tests__/security-docs.test.ts`, AC-4).
 | Phase-agent MCP isolation | `src/lib/mcp-config.ts` (`getPhaseMcpServersConfig`) with settings key `mcpAllowlist` in `src/lib/settings.ts` | deterministic | An operator who allowlists a server re-exposes that server's credentials to phase agents by choice |
 | Skill-text CI gate for the trust-model block | `src/lib/__tests__/trust-model-skill.test.ts` | deterministic | Gates that the text exists and is wired into every ingest skill; it cannot gate whether an agent obeyed it |
 | Skill-mirror integrity across the three shipped trees | `scripts/check-skill-sync.ts` and `.github/workflows/ci.yml` (`npm run lint:skill-sync`) | deterministic | Proves the installed skills match the repository; says nothing about the content being correct |
-| Behavioural injection eval with deterministic graders | `evals/qa-trust-boundary/graders/exfil-absent.md` and `.github/workflows/plugin-eval.yml` | model-dependent | Evidence, not containment: the graders are deterministic but the eval only records how the model behaved on a fixture, and only when someone dispatches it — a regression between runs holds nothing back. One vector (issue body) today; PR-comment and tool-output vectors are tracked in #1024 |
+| Behavioural injection eval with deterministic graders | `evals/qa-trust-boundary/graders/exfil-absent.md`, `evals/qa-trust-boundary-pr-comment/graders/exfil-absent.md`, `evals/qa-trust-boundary-tool-output/case.yaml` and `.github/workflows/plugin-eval.yml` | model-dependent | Evidence, not containment: the graders are deterministic but the eval only records how the model behaved on a fixture, and only when someone dispatches it — a regression between runs holds nothing back. Three vectors are graded today — issue body, PR review comment, and tool output — each with a recorded per-vector `{vector, decision, reason_code, fixture_commit}` record in `evals/results/qa-trust-boundary.json`, `evals/results/qa-trust-boundary-pr-comment.json` and `evals/results/qa-trust-boundary-tool-output.json` |
 | Lockfile-pinned installs and scheduled dependency updates | `package-lock.json` and `.github/dependabot.yml` | deterministic | Pins and updates versions; it does not inspect what a pinned package does |
 | Trust-model block in every ingest skill | `templates/skills/_shared/references/trust-model.md` | model-dependent | Holds only while the agent reads and follows the block |
 | Trust-Boundary Check on every QA run, including Simple Fix mode | `templates/skills/qa/SKILL.md` §6f | model-dependent | A compromised reviewer agent can decline to report what it found |
@@ -158,9 +158,9 @@ the same intent is not refused. Their value is that they hold against an agent
 that wants to proceed — not that the pattern set is complete.
 
 **The behavioural evidence is narrow and manually triggered.** The injection
-eval covers the issue-body vector, is dispatched by hand, and produces one
-recorded run rather than a continuous signal. The PR-comment and tool-output
-vectors are tracked in #1024.
+eval covers three vectors — issue body, PR comment, and tool output
+(`evals/qa-trust-boundary*`, #1024) — but it is dispatched by hand and produces
+one recorded run per vector rather than a continuous signal.
 
 **CI checks that citations resolve, not that classifications are correct.** The
 gate behind this document verifies that every path, skill anchor, and settings
