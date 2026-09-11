@@ -36,6 +36,12 @@ describe.each(COPIES)("%s", (rel) => {
     expect(region).toMatch(/\btimeout\b/);
   });
 
+  it("states that the full suite runs exactly once per phase", () => {
+    // #1024's first exec ran `npm test` twice in the foreground and died at
+    // the 30-minute wall; the background guard cannot catch that.
+    expect(region).toMatch(/exactly once per phase/);
+  });
+
   it("names the hook that enforces it and the stranded-work failure it prevents", () => {
     expect(region).toMatch(/run_in_background/);
     expect(region).toMatch(/uncommitted and made no commits/);

@@ -1213,6 +1213,11 @@ git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full 
 timeout 600 npm test 2>&1 | tail -80
 ```
 
+Run the full suite **exactly once per phase**, as the last check before the PR — not
+once before the mutation probes and again after them. Two full runs in one exec phase
+is how #1024's first attempt hit the orchestrator's 30-minute wall with everything else
+already done; targeted `npx vitest run <file>` is the right tool while iterating.
+
 Never start the suite (or any long command) as a background task or a `Monitor` and
 then wait for its notification. Under `sequant run` the phase ends the moment your
 turn ends, the notification never arrives, and the run fails with
