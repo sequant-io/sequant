@@ -1,7 +1,7 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for generic 1`] = `
-"<!-- sequant:agents-md v=2.14.0 h=b1cbbf2af3816f36b48810bf30606127f3ad4c2c -->
+"<!-- sequant:agents-md v=0.0.0-test h=b1cbbf2af3816f36b48810bf30606127f3ad4c2c -->
 # AGENTS.md
 
 ## Project Overview
@@ -39,7 +39,7 @@ This runs a structured workflow: spec → exec → qa.
 `;
 
 exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for go 1`] = `
-"<!-- sequant:agents-md v=2.14.0 h=4c8a568fd7a4216d59a06d2fd25e0350539edae5 -->
+"<!-- sequant:agents-md v=0.0.0-test h=4c8a568fd7a4216d59a06d2fd25e0350539edae5 -->
 # AGENTS.md
 
 ## Project Overview
@@ -77,7 +77,7 @@ This runs a structured workflow: spec → exec → qa.
 `;
 
 exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for nextjs 1`] = `
-"<!-- sequant:agents-md v=2.14.0 h=95d2034de14641d279e2f7e3a9583842ef2dfd1a -->
+"<!-- sequant:agents-md v=0.0.0-test h=95d2034de14641d279e2f7e3a9583842ef2dfd1a -->
 # AGENTS.md
 
 ## Project Overview
@@ -115,7 +115,7 @@ This runs a structured workflow: spec → exec → qa.
 `;
 
 exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for python 1`] = `
-"<!-- sequant:agents-md v=2.14.0 h=43da0c8f26b852a1a1641b0e65fb31c2cdd2aa75 -->
+"<!-- sequant:agents-md v=0.0.0-test h=43da0c8f26b852a1a1641b0e65fb31c2cdd2aa75 -->
 # AGENTS.md
 
 ## Project Overview
@@ -153,7 +153,7 @@ This runs a structured workflow: spec → exec → qa.
 `;
 
 exports[`agents-md > generateAgentsMd > snapshot per stack > generates expected output for rust 1`] = `
-"<!-- sequant:agents-md v=2.14.0 h=aaccbcf1b8fd7b4222a44e4b16989fda916c450f -->
+"<!-- sequant:agents-md v=0.0.0-test h=aaccbcf1b8fd7b4222a44e4b16989fda916c450f -->
 # AGENTS.md
 
 ## Project Overview
