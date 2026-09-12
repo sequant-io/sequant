@@ -36,6 +36,11 @@ describe.each(COPIES)("%s", (rel) => {
     expect(region).toMatch(/\btimeout\b/);
   });
 
+  it("names the macOS install and the portable fallback for timeout (#1054)", () => {
+    expect(region).toMatch(/coreutils/);
+    expect(region).toMatch(/alarm shift; exec @ARGV/);
+  });
+
   it("states that the full suite runs exactly once per phase", () => {
     // #1024's first exec ran `npm test` twice in the foreground and died at
     // the 30-minute wall; the background guard cannot catch that.
