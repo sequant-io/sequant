@@ -1213,6 +1213,10 @@ git add -A && git commit -q -m "chore(#<issue>): wip checkpoint before the full 
 timeout 600 npm test 2>&1 | tail -80
 ```
 
+`timeout` is GNU coreutils and stock macOS does not ship it (`brew install coreutils`); the
+portable equivalent is `perl -e 'alarm shift; exec @ARGV' 600 npm test 2>&1 | tail -80`
+(`alarm` survives `exec`; perl is on every macOS and Linux box). Never drop the limit.
+
 Run the full suite **exactly once per phase**, as the last check before the PR — not
 once before the mutation probes and again after them. Two full runs in one exec phase
 is how #1024's first attempt hit the orchestrator's 30-minute wall with everything else

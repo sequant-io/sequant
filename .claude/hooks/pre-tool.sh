@@ -630,6 +630,8 @@ if [[ -n "${SEQUANT_ORCHESTRATOR:-}" ]]; then
             echo "notification never arrives, and any uncommitted work is stranded."
             echo "Run it in the foreground with a timeout instead, e.g.:"
             echo "  timeout 600 npm test 2>&1 | tail -80"
+            echo "(timeout is GNU coreutils — macOS: brew install coreutils; portable:"
+            echo "  perl -e 'alarm shift; exec @ARGV' 600 npm test 2>&1 | tail -80)"
             echo "Commit a WIP first if the run is long."
         } >&2
         exit 2

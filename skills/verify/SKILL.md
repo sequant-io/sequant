@@ -85,6 +85,9 @@ Run the specified command with a timeout:
 timeout 120 <command> 2>&1
 ```
 
+`timeout` is GNU coreutils (macOS: `brew install coreutils`). Portable fallback when it is
+absent: `perl -e 'alarm shift; exec @ARGV' 120 <command> 2>&1`.
+
 **Timeout handling:**
 - Default: 2 minutes (120 seconds)
 - If command exceeds timeout, capture partial output and note timeout
