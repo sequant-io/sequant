@@ -21,6 +21,14 @@ vi.mock("./fs.js", async (importOriginal) => {
   };
 });
 
+// The AGENTS.md marker embeds the package version (#990 AC-1). Pin it so the
+// per-stack snapshots do not rot on every release — they broke on the
+// 2.15.0 bump because the recorded marker said v=2.14.0.
+vi.mock("./manifest.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, getPackageVersion: () => "0.0.0-test" };
+});
+
 vi.mock("./conventions-detector.js", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
