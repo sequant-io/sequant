@@ -87,15 +87,23 @@ describe("497 AC-7: codex live smoke", () => {
     "497 AC-7 spawns a real run and receives at least one agent_message",
     async () => {
       const workDir = mkdtempSync(join(tmpdir(), "sequant-codex-live-"));
+      // `codex exec` refuses a cwd that is not inside a git repository
+      // ("Not inside a trusted directory and --skip-git-repo-check was not
+      // specified", exit 1, zero events). Sequant only ever hands the driver
+      // a worktree, so the driver does not pass `--skip-git-repo-check`;
+      // this test must therefore give it a git repo too.
+      execFileSync("git", ["init", "-q", workDir], { stdio: "pipe" });
       try {
         const driver = new CodexDriver();
+        const rawChunks: string[] = [];
         const result = await driver.executePhase(
           "Reply with exactly the word: pong. Do not use any tools.",
           {
             cwd: workDir,
             env: {},
             phaseTimeout: 180,
-            verbose: false,
+            verbose: true,
+            onOutput: (chunk) => rawChunks.push(chunk),
             mcp: false,
           },
         );
@@ -106,24 +114,19 @@ describe("497 AC-7: codex live smoke", () => {
         ).toBeGreaterThan(0);
         expect(result.resumeHandle?.driver).toBe("codex");
         expect(result.resumeHandle?.originCwd).toBe(workDir);
+
+        // The same raw stream, re-parsed from scratch, must agree with what
+        // the driver extracted — a real-stream check, not a synthetic line.
+        const reparsed = new CodexStreamParser();
+        for (const chunk of rawChunks) reparsed.feed(chunk);
+        const stream = reparsed.end();
+        expect(stream.output).toBe(result.output);
+        expect(stream.threadId).toBe(result.resumeHandle?.token);
+        expect(stream.sawTurnCompleted).toBe(true);
       } finally {
         rmSync(workDir, { recursive: true, force: true });
       }
     },
     200_000,
-  );
-
-  it.skipIf(SKIP)(
-    "497 AC-7 parses a real stream through the same parser the driver uses",
-    () => {
-      const parser = new CodexStreamParser();
-      parser.feed(
-        `${JSON.stringify({
-          type: "item.completed",
-          item: { id: "item_0", type: "agent_message", text: "pong" },
-        })}\n`,
-      );
-      expect(parser.end().output).toBe("pong");
-    },
   );
 });

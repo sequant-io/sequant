@@ -189,11 +189,11 @@ describe("497 AC-1: CodexStreamParser against the recorded fixture", () => {
     expect(entry.inputTokens).toBe(28271);
     expect(entry.cacheReadInputTokens).toBe(18816);
     expect(entry.cacheCreationInputTokens).toBe(0);
-    // The fifth counter, `reasoning_output_tokens` (3200), has no dedicated
-    // ModelUsageEntry field and is folded into outputTokens rather than
-    // dropped (#1058 AC-11 / Open Question 1). Dropping it would under-report
-    // codex generation by 49% on this fixture alone.
-    expect(entry.outputTokens).toBe(3306 + 3200);
+    // The fifth counter, `reasoning_output_tokens` (3200), is a breakdown of
+    // `output_tokens` (3306), not an addition to it: 3306 - 3200 = 106 is the
+    // visible agent text (#1058 AC-11). outputTokens must be output_tokens
+    // as-is — summing the two would double-count reasoning.
+    expect(entry.outputTokens).toBe(3306);
     // codex reports no cost figure — fabricating a zero would read as "free".
     expect(entry.costUSD).toBeUndefined();
   });

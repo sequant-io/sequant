@@ -252,17 +252,20 @@ export class CodexStreamParser {
 /**
  * Map codex's per-turn `usage` onto the shared `ModelUsageEntry` (#986).
  *
- * `reasoning_output_tokens` has no dedicated field on `ModelUsageEntry`, which
- * every driver shares. It is **folded into `outputTokens`** rather than
- * dropped or given a sixth field: `sequant stats` treats "output" as billable
- * generation, and reasoning tokens bill as output. Dropping them would
- * under-report codex generation by the ~49% this fixture shows (3200 of 6506).
+ * `reasoning_output_tokens` is a **breakdown of** `output_tokens`, not an
+ * addition to it — the same shape as the Responses API's
+ * `output_tokens_details.reasoning_tokens`. Every run the #497 probe recorded
+ * shows it: `output_tokens - reasoning_output_tokens` equals the visible
+ * agent text (fixture: 3306 - 3200 = 106 tokens for ~165 chars; a `PONG`
+ * reply reports 6 output / 0 reasoning). So `outputTokens` takes
+ * `output_tokens` as-is; summing the two would double-count reasoning and
+ * roughly double the output figure `sequant stats` reports for codex.
  * `costUSD` is left undefined — codex reports no cost figure.
  */
 function toModelUsage(usage: Usage): ModelUsageEntry {
   return {
     inputTokens: usage.input_tokens,
-    outputTokens: usage.output_tokens + usage.reasoning_output_tokens,
+    outputTokens: usage.output_tokens,
     cacheReadInputTokens: usage.cached_input_tokens,
     cacheCreationInputTokens: usage.cache_write_input_tokens,
   };
