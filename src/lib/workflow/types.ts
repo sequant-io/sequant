@@ -3,7 +3,11 @@
  */
 
 import { z } from "zod";
-import type { AiderSettings, OpencodeSettings } from "../settings.js";
+import type {
+  AiderSettings,
+  CodexSettings,
+  OpencodeSettings,
+} from "../settings.js";
 import type { LogWriter } from "./log-writer.js";
 import type { StateManager } from "./state-manager.js";
 import type { ShutdownManager } from "../shutdown.js";
@@ -153,6 +157,11 @@ export interface ExecutionConfig {
    * "opencode" (#862).
    */
   opencodeSettings?: OpencodeSettings;
+  /**
+   * Codex-specific configuration. Passed to CodexDriver when agent is
+   * "codex" (#497).
+   */
+  codexSettings?: CodexSettings;
   /**
    * Issue type detected from labels (e.g., "docs").
    * Propagated as SEQUANT_ISSUE_TYPE env var to skills.

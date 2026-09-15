@@ -6,10 +6,15 @@
  */
 
 import type { AgentDriver } from "./agent-driver.js";
-import type { AiderSettings, OpencodeSettings } from "../../settings.js";
+import type {
+  AiderSettings,
+  CodexSettings,
+  OpencodeSettings,
+} from "../../settings.js";
 import { ClaudeCodeDriver } from "./claude-code.js";
 import { AiderDriver } from "./aider.js";
 import { OpencodeDriver } from "./opencode.js";
+import { CodexDriver } from "./codex.js";
 
 export type {
   AgentDriver,
@@ -23,11 +28,13 @@ const DRIVERS: Record<string, (opts?: DriverOptions) => AgentDriver> = {
   "claude-code": () => new ClaudeCodeDriver(),
   aider: (opts) => new AiderDriver(opts?.aiderSettings),
   opencode: (opts) => new OpencodeDriver(opts?.opencodeSettings),
+  codex: (opts) => new CodexDriver(opts?.codexSettings),
 };
 
 export interface DriverOptions {
   aiderSettings?: AiderSettings;
   opencodeSettings?: OpencodeSettings;
+  codexSettings?: CodexSettings;
 }
 
 /**

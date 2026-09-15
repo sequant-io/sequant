@@ -4,16 +4,22 @@
  * Per-behavior status is annotated as one of:
  *   - PRESERVED — assertion is the source of truth; failure means a behavior change.
  *   - ADVISORY  — behavior is correct now but not load-bearing for this PR.
- *   - SKIPPED   — gated on another issue (e.g. #497 CodexDriver landing).
+ *   - SKIPPED   — gated on another issue (none remain).
  *
  * The annotations make harness drift visible: if a SKIPPED test is converted
- * to PRESERVED without #497 landing, that's a review signal.
+ * to PRESERVED without the issue it was gated on landing, that's a review
+ * signal. The two CodexDriver placeholders were converted when #497's driver
+ * node landed — legitimately, and only for the behaviour that node implements.
+ * The second one had proposed AGENTS.md stack parity as a resume precondition;
+ * #497's probe superseded that, so it became the ADVISORY below rather than an
+ * assertion about code that does not exist.
  */
 
 import { describe, it, expect, vi } from "vitest";
 import { ClaudeCodeDriver } from "./claude-code.js";
 import { AiderDriver } from "./aider.js";
 import { OpencodeDriver, buildOpencodeArgs } from "./opencode.js";
+import { CodexDriver, buildCodexArgs } from "./codex.js";
 import type { ResumeHandle } from "./agent-driver.js";
 
 // Mock the SDK so we can inspect the options passed to query() without
@@ -228,18 +234,109 @@ describe("Resume semantics fixture (#674, AC-8)", () => {
     });
   });
 
-  describe("CodexDriver (deferred to #497)", () => {
-    // SKIPPED — CodexDriver does not exist yet. When #497 lands, drop `.skip`
-    // and assert: cross-worktree resume is refused (Codex SDK is cwd-
-    // independent so the driver must enforce); AGENTS.md parity is a
-    // precondition for resume.
-    it.skip("rejects cross-worktree resume (gated on #497)", () => {
-      // Intentionally empty — see #497 for the implementation.
+  describe("codex resume semantics (#497 AC-4)", () => {
+    // PRESERVED — the #674 originCwd binding, and the only guard that exists.
+    // `codex exec resume` accepts no `-C` and silently adopts the caller's cwd
+    // (openai/codex#4791), so nothing upstream refuses a cross-worktree
+    // resume; this check is the whole defence.
+    it("codex rejects its own handle from a different cwd", () => {
+      const driver = new CodexDriver();
+      expect(
+        driver.canResume(makeHandle("codex", WORKTREE_A), WORKTREE_B),
+      ).toBe(false);
     });
 
-    // SKIPPED — see #497.
-    it.skip("requires AGENTS.md stack parity (gated on #497)", () => {
-      // Intentionally empty — see #497 for the implementation.
+    // PRESERVED — same-cwd handle is accepted.
+    it("codex accepts its own handle from the originating cwd", () => {
+      const driver = new CodexDriver();
+      expect(
+        driver.canResume(makeHandle("codex", WORKTREE_A), WORKTREE_A),
+      ).toBe(true);
+    });
+
+    // PRESERVED — the #674 driver tag.
+    it("codex rejects a foreign-driver handle even from the same cwd", () => {
+      const driver = new CodexDriver();
+      expect(
+        driver.canResume(makeHandle("claude-code", WORKTREE_A), WORKTREE_A),
+      ).toBe(false);
+      expect(
+        driver.canResume(makeHandle("opencode", WORKTREE_A), WORKTREE_A),
+      ).toBe(false);
+    });
+
+    // PRESERVED — an eligible handle becomes `exec resume <token>` and,
+    // critically, drops `-C`: `exec resume` does not accept it.
+    it("codex turns an eligible handle into exec resume <token> with no -C", () => {
+      const args = buildCodexArgs(
+        "$qa 497",
+        { cwd: WORKTREE_A, phase: "qa" },
+        undefined,
+        makeHandle("codex", WORKTREE_A).token,
+      );
+      expect(args.slice(0, 4)).toEqual([
+        "exec",
+        "resume",
+        "session-token-xyz",
+        "--json",
+      ]);
+      expect(args).toContain("--dangerously-bypass-hook-trust");
+      expect(args).not.toContain("-C");
+      expect(args).not.toContain(WORKTREE_A);
+    });
+
+    // PRESERVED — an ineligible handle contributes no resume subcommand.
+    it("codex omits the resume subcommand when no token is eligible", () => {
+      const args = buildCodexArgs("$qa 497", {
+        cwd: WORKTREE_A,
+        phase: "qa",
+      });
+      expect(args).not.toContain("resume");
+      expect(args.slice(0, 4)).toEqual(["exec", "--json", "-C", WORKTREE_A]);
+    });
+
+    // PRESERVED — the round trip: a handle shaped as the driver emits one is
+    // accepted back for the same cwd and dispatches as a resume. That the
+    // driver really emits this shape off a live stream is asserted against the
+    // recorded fixture in codex.test.ts ("surfaces the fixture's thread id as
+    // a cwd-bound resumeHandle"); this file mocks only the Claude SDK, so
+    // spawning a driver here would run the real codex binary.
+    it("codex round-trips an emitted handle back into a resume dispatch", () => {
+      const driver = new CodexDriver();
+      const emitted: ResumeHandle = {
+        driver: driver.name,
+        token: "01a09759-a395-71f1-8082-2877a06a36fc",
+        originCwd: WORKTREE_A,
+      };
+
+      expect(driver.canResume(emitted, WORKTREE_A)).toBe(true);
+      expect(
+        buildCodexArgs(
+          "$qa 497",
+          { cwd: WORKTREE_A, phase: "qa" },
+          undefined,
+          emitted.token,
+        ).slice(0, 3),
+      ).toEqual(["exec", "resume", emitted.token]);
+    });
+
+    // ADVISORY — records a decision, not a behaviour: the #674-era placeholder
+    // here proposed AGENTS.md stack parity as a second resume precondition.
+    // The #497 probe superseded that — it found cwd adoption to be the actual
+    // failure mode and named originCwd equality "the only guard [that] stays
+    // mandatory". No AGENTS.md check exists, deliberately; this asserts that
+    // resume is gated on the cwd alone so a future reader does not mistake the
+    // absence for an oversight.
+    it("codex gates resume on originCwd alone, with no AGENTS.md precondition", () => {
+      const driver = new CodexDriver();
+      // Same cwd, same driver — accepted with no other precondition consulted.
+      expect(
+        driver.canResume(makeHandle("codex", WORKTREE_A), WORKTREE_A),
+      ).toBe(true);
+      // Differing only in cwd flips it, which is the whole decision surface.
+      expect(
+        driver.canResume(makeHandle("codex", WORKTREE_A), WORKTREE_B),
+      ).toBe(false);
     });
   });
 });

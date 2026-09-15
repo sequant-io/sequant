@@ -122,6 +122,14 @@ const SCENARIOS: Array<{
     },
   },
   {
+    name: "codex configured (#497 AC-9)",
+    options: {},
+    run: {
+      agent: "codex",
+      codex: { model: "gpt-5-codex", sandboxMode: "workspace-write" },
+    },
+  },
+  {
     name: "retry disabled + verification skipped (OQ-12 siblings)",
     options: { noRetry: true, noSmartTests: true },
     run: {},
@@ -200,6 +208,26 @@ describe("#863 AC-4: ExecutionConfig producer parity", () => {
     });
     expect(gate.agent).toBe("opencode");
     expect(gate.opencodeSettings).toEqual(resolved.opencodeSettings);
+  });
+
+  it("497 AC-9 inherits codexSettings, the fourth instance of the #863 class", () => {
+    const settings = settingsWith({
+      agent: "codex",
+      codex: { model: "gpt-5-codex", sandboxMode: "workspace-write" },
+    });
+    const resolved = buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+    const gate = buildPhaseConfig(gateOpts(resolved), {});
+
+    expect(resolved.codexSettings).toEqual({
+      model: "gpt-5-codex",
+      sandboxMode: "workspace-write",
+    });
+    expect(gate.agent).toBe("codex");
+    expect(gate.codexSettings).toEqual(resolved.codexSettings);
   });
 
   it("inherits the OQ-12 sibling fields rather than hardcoding them", () => {

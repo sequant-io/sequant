@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getDriver } from "./index.js";
 import { OpencodeDriver } from "./opencode.js";
+import { CodexDriver } from "./codex.js";
 
 describe("driver registry", () => {
   it("returns ClaudeCodeDriver for 'claude-code'", () => {
@@ -42,5 +43,23 @@ describe("driver registry", () => {
       opencodeSettings: { model: "openrouter/anthropic/claude-sonnet-5" },
     });
     expect(driver).toBeInstanceOf(OpencodeDriver);
+  });
+
+  it("497 AC-5 returns CodexDriver for 'codex'", () => {
+    const driver = getDriver("codex");
+    expect(driver).toBeInstanceOf(CodexDriver);
+    expect(driver.name).toBe("codex");
+  });
+
+  it("497 AC-5 codex resolves skills, so the #813 preflight stays active", () => {
+    expect(getDriver("codex").resolvesSkills).toBe(true);
+    expect(getDriver("codex").usesSdkMcp).toBe(false);
+  });
+
+  it("497 AC-5 accepts codexSettings without falling back to a default driver", () => {
+    const driver = getDriver("codex", {
+      codexSettings: { model: "gpt-5-codex" },
+    });
+    expect(driver).toBeInstanceOf(CodexDriver);
   });
 });
