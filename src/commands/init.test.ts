@@ -855,4 +855,25 @@ describe("init command", () => {
       expect(process.exitCode).toBe(1);
     });
   });
+
+  // 497 AC-5: codex only loads project-layer hooks once the project is
+  // marked trusted in the USER config (~/.codex/config.toml, not the
+  // project one init writes). Init's completion output must state the exact
+  // `trust_level = "trusted"` TOML requirement so a user cannot miss it.
+  describe("497 AC-5: codex trust requirement in init output", () => {
+    it('prints the exact `trust_level = "trusted"` TOML requirement when --agent codex', async () => {
+      await initCommand({ yes: true, stack: "generic", agent: "codex" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain('trust_level = "trusted"');
+      expect(output).toContain("~/.codex/config.toml");
+    });
+
+    it("prints no codex trust message for another agent", async () => {
+      await initCommand({ yes: true, stack: "generic", agent: "opencode" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain('trust_level = "trusted"');
+    });
+  });
 });
