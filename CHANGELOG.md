@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-09-15
+
 ### Fixed
 
 - **Agents are no longer told to run a `timeout` that stock macOS does not ship (#1054).** The `/exec` §3 foreground rule, the `/verify` example, and the #1032 `HOOK_BLOCKED` message all prescribed `timeout N …` with no note, so an agent on a machine without GNU coreutils got `command not found` and either dropped the limit or looped. Every such site now names the coreutils install alongside the portable `perl -e 'alarm N; exec @ARGV'` fallback the QA quality-checks script already used. A behavioural test pins the fallback and the skill gate asserts the note is present.
