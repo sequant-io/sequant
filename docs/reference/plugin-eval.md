@@ -13,11 +13,13 @@ not yet cheap or stable enough to gate every pull request.
    ```bash
    gh secret set ANTHROPIC_API_KEY
    ```
-2. **Early access to `claude plugin eval`.** The workflow sets
-   `CLAUDE_CODE_WALNUT_SPIRE=1` in its own `env:` block — never in
+2. **Early access to `claude plugin eval`.** The workflow sets the feature's
+   early-access environment flag in its own `env:` block — never in
    `.claude/settings.json` or `.claude/settings.local.json` — because the
    runner's account needs early access to the feature, not this repository's
-   configuration.
+   configuration. `<EARLY_ACCESS_FLAG>` stands in for that variable throughout
+   these docs: it gates an unannounced Anthropic feature, so it is not named
+   here. The workflow at `.github/workflows/plugin-eval.yml` sets the real one.
 
 ## Dispatching a run
 

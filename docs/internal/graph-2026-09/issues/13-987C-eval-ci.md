@@ -11,7 +11,7 @@ P0.5 decided per-PR vs. manual; this graph ships manual-dispatch only.
 - not in scope: per-PR triggers; any case; repo `.claude/settings.json` (the env var must not live there — Lab §1 / memory).
 
 ## Preconditions
-- `CLAUDE_CODE_WALNUT_SPIRE=1` is set in the workflow's `env`, and the runner's account has the org early access (OQ-14). The API credential comes from a repository secret named in the workflow.
+- `<EARLY_ACCESS_FLAG>=1` is set in the workflow's `env`, and the runner's account has the org early access (OQ-14). The API credential comes from a repository secret named in the workflow.
 
 ## Acceptance criteria
 - [ ] AC-1: workflow exists, manual-dispatch only — Verify: `grep -c 'workflow_dispatch' .github/workflows/plugin-eval.yml` → `1` and `grep -c 'pull_request\|push:' .github/workflows/plugin-eval.yml` → `0`.

@@ -72,7 +72,7 @@ Observed (Lab §1):
 - The tautology detector is purely textual; `#966` added `describe.each` param
   tracking; segment-built and `__dirname`-built paths remain invisible.
 - `claude plugin eval` is enabled for this account when
-  `CLAUDE_CODE_WALNUT_SPIRE=1` is in the process environment; the plugin root
+  `<EARLY_ACCESS_FLAG>=1` is in the process environment; the plugin root
   is the repo root and skills resolve from `skills/`.
 - opencode 1.18.27 is installed; transport through it is proven by the 09-03→06
   field run; skill loading through `--command` wrappers is not.
