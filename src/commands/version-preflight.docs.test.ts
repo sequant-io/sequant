@@ -11,6 +11,10 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
+// Static, not `await import()` inside the test: the module pulls in the
+// manifest/version-check graph, and that cold import alone brushed the unit
+// project's 5 s testTimeout under full-suite load. Paid at collection time here.
+import { PREFLIGHT_EXEMPT_COMMANDS } from "./version-preflight.js";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 
@@ -53,8 +57,7 @@ describe("#988 AC-5: warn-only contract is documented and enforced", () => {
     expect(body).not.toContain("copyTemplates(");
   });
 
-  it("the exempt list documented for the hook includes serve", async () => {
-    const { PREFLIGHT_EXEMPT_COMMANDS } = await import("./version-preflight.js");
+  it("the exempt list documented for the hook includes serve", () => {
     expect([...PREFLIGHT_EXEMPT_COMMANDS].sort()).toEqual(["init", "serve", "sync", "update"]);
     const doc = fs.readFileSync(path.join(ROOT, "docs", "internal", "plugin-updates.md"), "utf8");
     const skipIdx = doc.indexOf("The `preAction` hook is **skipped entirely**");

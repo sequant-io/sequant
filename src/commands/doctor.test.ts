@@ -91,6 +91,22 @@ vi.mock("../mcp/server.js", () => ({
 }));
 
 // Mock version module (used by MCP server health check)
+// Pin the version-freshness check (#1062 follow-up). doctor's "Check 0" calls
+// checkVersionThorough(), which reaches the live npm registry; left unmocked,
+// the two scenario assertions below flip to "Warnings: 1" / lose "All N checks
+// passed" on the day a new sequant version is published (observed on
+// 2.15.0 → 2.15.1). Same class as #1056's snapshot pin. Everything else from
+// the module (getVersionWarning, resolveCliInvocation, ...) is the original.
+vi.mock("../lib/version-check.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/version-check.js")>()),
+  checkVersionThorough: vi.fn(async () => ({
+    currentVersion: "0.0.0-test",
+    latestVersion: "0.0.0-test",
+    isOutdated: false,
+    isLocalInstall: false,
+  })),
+}));
+
 vi.mock("../lib/version.js", () => ({
   getVersion: vi.fn(() => "1.0.0"),
 }));
