@@ -316,6 +316,9 @@ export interface TemplateChange {
  *   and the plugin/agents/MCP files live under `.opencode/`, not `.claude/` —
  *   `init.ts`'s `writeOpencode*` functions are the one renderer for this
  *   tree, reused by `sync`/`update` via `decideOpencodeShimSync` (#1030).
+ * - `templates/codex/` → `null`: same reasoning as opencode above.
+ *   `config.toml` renders to `.codex/config.toml`, not `.claude/` —
+ *   `init.ts`'s `writeCodexProvisioning` is the one renderer (#1059).
  * - `templates/scripts/` → `scripts/dev/`: symlinked on POSIX, copied on
  *   Windows / `--no-symlinks`.
  * - everything else → `.claude/<relpath>`.
@@ -325,6 +328,7 @@ export function templateDestination(templatePath: string): string | null {
   if (normalized === "templates/mcp.json") return null;
   if (normalized.startsWith("templates/relay/")) return null;
   if (normalized.startsWith("templates/opencode/")) return null;
+  if (normalized.startsWith("templates/codex/")) return null;
   if (normalized.startsWith("templates/scripts/")) {
     return normalized.replace("templates/scripts/", "scripts/dev/");
   }

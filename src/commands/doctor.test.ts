@@ -563,6 +563,129 @@ describe("doctor command", () => {
     });
   });
 
+  describe("1059 AC-4: codex CLI checks", () => {
+    /** Settings with the codex agent configured. */
+    function codexSettings() {
+      return settingsWithAgentForPlugin("codex");
+    }
+
+    let prevApiKey: string | undefined;
+
+    beforeEach(() => {
+      prevApiKey = process.env.CODEX_API_KEY;
+      delete process.env.CODEX_API_KEY;
+    });
+
+    afterEach(() => {
+      if (prevApiKey === undefined) delete process.env.CODEX_API_KEY;
+      else process.env.CODEX_API_KEY = prevApiKey;
+    });
+
+    it("1059 AC-4a fails with an install hint when codex is configured but absent", async () => {
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "codex");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex CLI");
+      expect(output).toContain("npm i -g @openai/codex");
+    });
+
+    it("1059 AC-4b fails when the installed codex is below the pinned floor", async () => {
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd === "codex --version") return "0.100.0\n";
+        if (cmd === "codex login status") return "Logged in\n";
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("0.100.0");
+      expect(output).toContain("below the minimum supported 0.154.0");
+    });
+
+    it("1059 AC-4b passes on the verified version", async () => {
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd === "codex --version") return "0.154.0\n";
+        if (cmd === "codex login status") return "Logged in\n";
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex 0.154.0 is installed");
+    });
+
+    it("1059 AC-4c passes auth via CODEX_API_KEY without ever printing its value", async () => {
+      process.env.CODEX_API_KEY = "sk-super-secret-value-should-not-appear";
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) =>
+        cmd === "codex --version" ? "0.154.0\n" : "") as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex auth");
+      expect(output).toContain("codex is authenticated");
+      expect(output).not.toContain("sk-super-secret-value-should-not-appear");
+    });
+
+    it("1059 AC-4c passes auth via `codex login status` when CODEX_API_KEY is unset", async () => {
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd === "codex --version") return "0.154.0\n";
+        if (cmd === "codex login status")
+          return "Logged in as user@example.com\n";
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex auth");
+      expect(output).toContain("codex is authenticated");
+    });
+
+    it("1059 AC-4c fails auth with an install/login hint when neither CODEX_API_KEY nor codex login is present", async () => {
+      mockGetSettings.mockResolvedValue(codexSettings() as never);
+      mockCommandExists.mockReturnValue(true);
+      mockExecSync.mockImplementation(((cmd: string) => {
+        if (cmd === "codex --version") return "0.154.0\n";
+        if (cmd === "codex login status") return "Not logged in\n";
+        return "";
+      }) as never);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex auth");
+      expect(output).toContain("codex is not authenticated");
+      expect(output).toContain("codex login");
+    });
+
+    it("1059 AC-4 runs no codex check when another agent is configured", async () => {
+      mockGetSettings.mockResolvedValue(
+        settingsWithAgentForPlugin("claude-code") as never,
+      );
+      mockCommandExists.mockReturnValue(true);
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).not.toContain("codex CLI");
+      expect(output).not.toContain("codex auth");
+    });
+  });
+
   describe("jq checks", () => {
     it("passes when jq is installed", async () => {
       mockCommandExists.mockReturnValue(true);

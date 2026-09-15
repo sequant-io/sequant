@@ -1,0 +1,34 @@
+# Sequant hook wrapper for Codex (#497, #1059 AC-2).
+#
+# These entries wrap the SAME force-push/no-changes/worktree guard scripts
+# Claude Code uses — `.claude/hooks/pre-tool.sh` / `post-tool.sh` — unchanged.
+# The #497 driver probe (docs/investigations/codex-driver-probe-2026-09.md
+# §AC-4) recorded a real `codex exec` PreToolUse payload and found it a
+# superset of Claude Code's hook envelope, so the existing scripts run here
+# without modification; only this config wrapper is new.
+#
+# IMPORTANT — trust requirement (read before relying on these hooks):
+# Codex only loads PROJECT-layer hooks (this file) when the project is marked
+# trusted in the USER config (`~/.codex/config.toml`, NOT this file):
+#
+#   [projects."<absolute path to this project>"]
+#   trust_level = "trusted"
+#
+# Without that entry in the user config, codex silently skips the hooks below
+# — no error, no warning. `sequant init --agent codex` prints this same
+# requirement; see the README's Codex section for the full explanation of why
+# sequant's CodexDriver also passes `--dangerously-bypass-hook-trust`.
+
+[[hooks.PreToolUse]]
+matcher = ".*"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "./.claude/hooks/pre-tool.sh"
+timeout = 10
+
+[[hooks.PostToolUse]]
+matcher = ".*"
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "./.claude/hooks/post-tool.sh"
+timeout = 10

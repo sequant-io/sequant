@@ -344,3 +344,38 @@ describe("run command flag surface (#705)", () => {
     });
   });
 });
+
+// #1059 AC-8: `run --agent codex --dry-run`, in a temp repo that has gone
+// through a real `sequant init --agent codex`, resolves the already-registered
+// CodexDriver and prints the phase prompt — proving the provisioning this
+// issue adds (the .agents/skills symlink + .codex/config.toml) does not
+// break the ordinary dry-run path once codex is the configured agent.
+describe("1059 AC-8: run --agent codex --dry-run resolves CodexDriver", () => {
+  it("prints Driver: codex and the /spec 1 prompt without error", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sequant-ac8-codex-"));
+    try {
+      execSync("git init -q", { cwd: dir });
+      execSync('git config user.email "test@test"', { cwd: dir });
+      execSync('git config user.name "test"', { cwd: dir });
+
+      execSync(
+        `node ${cliPath} init --yes --skip-setup --agent codex --stack generic --no-agents-md`,
+        { cwd: dir, encoding: "utf-8" },
+      );
+
+      const result = spawnSync(
+        process.execPath,
+        [cliPath, "run", "1", "--agent", "codex", "--dry-run", "--verbose"],
+        { cwd: dir, encoding: "utf-8" },
+      );
+
+      const output = (result.stdout ?? "") + (result.stderr ?? "");
+      expect(result.status).toBe(0);
+      expect(output).toContain("Driver: codex");
+      expect(output).toContain("/spec 1");
+      expect(output).not.toMatch(/unknown driver/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

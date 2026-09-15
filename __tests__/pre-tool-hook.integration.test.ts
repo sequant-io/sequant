@@ -2336,3 +2336,79 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// === #497 AC-3 (part of epic #497, issue #1059): codex's PreToolUse payload
+// is compatible with the existing hook, unmodified ===
+//
+// The #497 driver probe recorded a real `codex exec` PreToolUse payload
+// (docs/investigations/codex-driver-probe-2026-09.md §AC-4) and found it a
+// superset of Claude Code's hook envelope — same `tool_name`/`tool_input`
+// shape, plus extra fields (`turn_id`, `model`, `permission_mode`,
+// `tool_use_id`) the hook never reads. This gate feeds that fixture verbatim
+// (only `tool_input.command` swapped) into the real hook script to prove
+// codex needs no hook changes, not just that the theory sounds right.
+describe.each(HOOK_COPIES)(
+  "497 AC-3: codex PreToolUse payload compatibility [%s]",
+  (_label, hookPath) => {
+    let cleanRepo: string;
+
+    // Verbatim from docs/investigations/codex-driver-probe-2026-09.md §AC-4
+    // ("The hook payload is a superset of Claude Code's"), with only
+    // `tool_input.command` replaced per test case below.
+    function codexPayload(command: string): string {
+      return JSON.stringify({
+        session_id: "01a09759-a395-71f1-8082-2877a06a36fc",
+        turn_id: "01a09759-a469-7f11-9b96-d8aa0e9aaa48",
+        transcript_path:
+          "<CODEX_HOME>/sessions/2026/09/12/rollout-2026-09-12T15-40-29-fixture.jsonl",
+        cwd: cleanRepo,
+        hook_event_name: "PreToolUse",
+        model: "openai/gpt-5-mini",
+        permission_mode: "bypassPermissions",
+        tool_name: "Bash",
+        tool_input: { command },
+        tool_use_id: "call_2k3qbXWQAvAnZlBcexx1f778",
+      });
+    }
+
+    function runCodexPayload(command: string): {
+      code: number;
+      stderr: string;
+    } {
+      const result = spawnSync("bash", [hookPath], {
+        input: codexPayload(command),
+        cwd: cleanRepo,
+        env: cleanEnv(),
+        encoding: "utf8",
+      });
+      return { code: result.status ?? -1, stderr: result.stderr ?? "" };
+    }
+
+    beforeAll(() => {
+      cleanRepo = mkdtempSync(join(tmpdir(), "pre-tool-497ac3-"));
+      spawnSync("git", ["init", "-q"], { cwd: cleanRepo });
+      spawnSync("git", ["config", "user.email", "test@test"], {
+        cwd: cleanRepo,
+      });
+      spawnSync("git", ["config", "user.name", "test"], { cwd: cleanRepo });
+      spawnSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: cleanRepo,
+      });
+    });
+
+    afterAll(() => {
+      rmSync(cleanRepo, { recursive: true, force: true });
+    });
+
+    it("497 AC-3: blocks git push --force via the codex PreToolUse payload shape (exit 2, HOOK_BLOCKED)", () => {
+      const { code, stderr } = runCodexPayload("git push --force");
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Force push/);
+    });
+
+    it("497 AC-3: allows echo ok via the codex PreToolUse payload shape (exit 0)", () => {
+      const { code } = runCodexPayload("echo ok");
+      expect(code).toBe(0);
+    });
+  },
+);
