@@ -11,13 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Codex is now a selectable agent driver: `--agent codex` / `run.agent: "codex"` (#497).** `CodexDriver` spawns `codex exec --json -C <cwd> -s workspace-write --dangerously-bypass-hook-trust [-m <model>] <prompt>` as a subprocess and parses its JSONL stream, typed against the Codex TypeScript SDK's exported event types (a devDependency — nothing from it reaches `dist/`). Deliberately not the SDK's `Codex`/`Thread` classes: the hook-trust flag is CLI-only, `Thread._exec` is private (no `stderrTail`/`exitCode`), and the SDK pins the binary version exactly. Three notable behaviours the #497 probe established: `item.completed` items of type `error` are **warnings** (the hook-trust banner and model-metadata notice are forwarded to `onStderr`, not treated as failures) while only `turn.failed` and a top-level `error` event are fatal; stdin is spawned as `"ignore"`, because `codex exec` reads a non-TTY pipe as prompt input and blocks until EOF (which presents as a full phase timeout with zero events); and resume refuses to run when `originCwd` differs from the target cwd, since `codex exec resume` accepts no `-C` and silently adopts the caller's directory (openai/codex#4791). New `run.codex` settings (`model`, `sandboxMode`, `extraArgs`), token metrics synthesized from `turn.completed.usage`, and a `CODEX_MIN_VERSION` floor of 0.154.0 enforced by `isAvailable()`.
 
-### Changed
-
-- **The `claude plugin eval` early-access environment flag is no longer named in prose (#987).** Twenty references across the reference page, the phase-0 investigation, and the graph-2026-09 planning docs spelled out the variable that gates an unannounced Anthropic feature — including copy-pasteable enable commands, on a docs page that syncs to the public site and into `llms.txt`. The literal is replaced by `<EARLY_ACCESS_FLAG>`, explained where a reader meets it first. `.github/workflows/plugin-eval.yml` still sets the real variable in its own `env:` block (it is functional), and the shipped 2.14.0 entry below is left as published history — so the name remains findable, just not indexed on the docs site.
+## [2.15.1] - 2026-09-15
 
 ### Fixed
 
 - **Agents are no longer told to run a `timeout` that stock macOS does not ship (#1054).** The `/exec` §3 foreground rule, the `/verify` example, and the #1032 `HOOK_BLOCKED` message all prescribed `timeout N …` with no note, so an agent on a machine without GNU coreutils got `command not found` and either dropped the limit or looped. Every such site now names the coreutils install alongside the portable `perl -e 'alarm N; exec @ARGV'` fallback the QA quality-checks script already used. A behavioural test pins the fallback and the skill gate asserts the note is present.
+
+### Changed
+
+- **The `claude plugin eval` early-access environment flag is no longer named in prose (#987).** Twenty references across the reference page, the phase-0 investigation, and the graph-2026-09 planning docs spelled out the variable that gates an unannounced Anthropic feature — including copy-pasteable enable commands, on a docs page that syncs to the public site and into `llms.txt`. The literal is replaced by `<EARLY_ACCESS_FLAG>`, explained where a reader meets it first. `.github/workflows/plugin-eval.yml` still sets the real variable in its own `env:` block (it is functional), and the shipped 2.14.0 entry below is left as published history — so the name remains findable, just not indexed on the docs site.
+
 ## [2.15.0] - 2026-09-11
 
 ### Fixed

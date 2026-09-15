@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.15.0
+# What We've Built: Sequant v2.15.1
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,7 +740,7 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
-### Recent Additions (v2.15.0)
+### Recent Additions (v2.15.1)
 
 - **Fresh-Session QA** - the qa phase never resumes the implementer's session (a 27-transcript study: 44% of fresh second looks caught a would-ship bug); `--full-qa` / `run.fullQa` / MCP `fullQa` force full-weight QA on demand
 - **User-Owned Files Survive sync** - a marker-less `AGENTS.md` is preserved, `scripts/dev` links target the project's own `node_modules/sequant`, `sync --dry-run` lists exactly what `sync` writes, and the opencode shim has one producer that refreshes only when drifted
@@ -748,7 +748,7 @@ Shell scripts in `templates/scripts/`:
 - **No Stranded Phase Work** - the pre-tool hook refuses background tasks under the orchestrator, `/exec` runs the suite once in the foreground, and an exec that still ends uncommitted gets a `chore(#N): wip checkpoint` commit before the failure is reported
 - **Honest State Reconcile** - an issue is no longer marked merged because an unrelated squash title mentions `(#N)`; `/release` moves the SECURITY.md supported-versions row with every minor
 
-### Recent Additions (v2.14.0)
+### Recent Additions (v2.15.1)
 
 - **Model Escalation Ladder** - `run.modelLadder` escalates a churning phase one model rung at a time, but only on capability-bound churn; spec-bound churn halts with an evidence bundle instead (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`)
 - **Working Token & Cost Metrics** - per-phase usage sourced from the SDK `modelUsage` map, `metrics.phaseUsage[]` rows, and a `sequant stats` phase x model cost table (SDK estimate)
@@ -756,20 +756,20 @@ Shell scripts in `templates/scripts/`:
 - **Skill Regression Evals** - four `claude plugin eval` cases graded on skill-emitted surfaces only, two canaries that must fail, a `fixture_commit` provenance gate, and a manual-dispatch CI workflow under a budget cap
 - **Single ExecutionConfig Producer** - the ready gate inherits the caller's resolved config, so gate phases run on the configured driver; a parity test fails if the two producers drift
 
-### Recent Additions (v2.13.1)
+### Recent Additions (v2.15.1)
 
 - **Warn-only skills pre-flight** - A stale or drifted `.claude/` tree is reported before commands and names `sequant update`; nothing is rewritten on startup any more (#988)
 - **Side-effect-free `sequant serve`** - Install status goes to stderr and the new `sequant://install` MCP resource (`filesModified: false`); `sequant://config` stays the settings file verbatim (#988)
 - **Pinned plugin MCP config** - The `.mcp.json` plugin users actually install is stamped to the release version by `prepare-marketplace` (#988, closes the #793 regression)
 
-### Recent Additions (v2.13.0)
+### Recent Additions (v2.15.1)
 
 - **Awaiting-Verification State** - NEEDS_VERIFICATION verdicts map to `awaiting_verification`; qa re-runs proceed without `--force`, MCP `sequant_run` gains a `force` param (#972)
 - **Loud Driver Failures** - API-errored turns (e.g. bad model names) fail the phase with structured error context instead of zero-work success (#973)
 - **Constitution With Teeth** - generated Definition of Done table drift-gated in CI, AC authoring standard, enforcer-cited Boundaries/Budgets (#943)
 - **Model Roles** - `run.modelRoles` semantic role→model map with `role:` references, loud missing-role failures, resolved-model recording in metrics (#975)
 
-### Recent Additions (v2.12.0)
+### Recent Additions (v2.15.1)
 
 - **Structured Gap Findings** - `/qa` closes every review with a six-category findings taxonomy marker that `/loop` and `sequant ready` parse; non-blocking findings are never burned as fix iterations (#937)
 - **Mutation-Verification Gate** - Gate-test ACs must record a parseable `SEQUANT_MUTATION` marker in the PR body, enforced by `/qa` §6i (#939)
@@ -779,14 +779,14 @@ Shell scripts in `templates/scripts/`:
 - **Human Merge Gate for `/fullsolve`** - Stops at PR creation by default; `--auto-merge`/`run.autoMerge` opts into end-to-end merging (#958)
 - **`/merger` Named-Set Boundary** - Never merges a PR whose issue wasn't named in the invocation; out-of-set dependencies halt with a report (#961)
 
-### Recent Additions (v2.11.0)
+### Recent Additions (v2.15.1)
 
 - **Per-Phase Model & Effort** - `--models`/`--efforts` flags (and matching `.sequant/settings.json` config) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default (#914)
 - **Effort Escalation on Retries** - `--escalate-effort` raises a retried phase execution's reasoning effort one tier above its resolved base, only on observed quality-loop/QA-pass retries, never speculatively (#915)
 - **Checkout-Scoped Lock** - `sequant locks checkout <acquire|release|check|clear>` gives mutual exclusion on the shared working tree itself, enforced by the `pre-tool.sh` hook against branch-mutating git in the main checkout (#901)
 - **`sequant worktree resolve/verify`** - Resolves and verifies this repository's issue worktrees by branch rather than directory slug, closing a shared-namespace collision across `/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger` and `/assess` (#899/#904)
 
-### Recent Additions (v2.10.0)
+### Recent Additions (v2.15.1)
 
 - **Durable halt-and-resume + `sequant resume`** - A run failing on an exhausted rate-limit window writes a durable halt record and exits, releasing the per-issue lock; `sequant resume` re-enters after the window reopens — cron/launchd-safe, survives reboots (#892)
 - **`sequant run --ready-gate`** - Drives each issue through the full `qa → loop → qa` ready gate before opening the PR; never merges (#817)
@@ -796,7 +796,7 @@ Shell scripts in `templates/scripts/`:
 - **Shared trust-model block** - Issue/PR text is data, not agent instructions, across spec/exec/qa/loop/assess (#819)
 - **Stricter CLI contract** - Malformed numeric flags rejected (#833/#845), non-zero pre-flight exits (#848), signal exits `128+signum` (#856), `engines.node >=22.13.0`
 
-### Recent Additions (v2.9.0)
+### Recent Additions (v2.15.1)
 
 - **`--chain` resumes from its last good link** - Re-running a partially-completed chain skips the contiguous prefix of completed links and rebases onto the last good tip, instead of redoing hours of finished work (#760)
 - **`--chain` content pre-flight** - A warn-by-default check runs before the first worktree is provisioned, flagging missing ACs, mis-ordered dependency markers, predicted file overlaps, and closed issues; `--strict-preflight` turns any warning into a hard stop (#762)
@@ -804,7 +804,7 @@ Shell scripts in `templates/scripts/`:
 - **`sequant stats` failure-category breakdown** - Surfaces the bounded-enum `failureCategory` recorded in `.sequant/metrics.json`, counting failure causes across failed and partial runs alongside the outcome bars (#783)
 - **Mid-phase rate-limit classification** - A rate limit inside a phase now skips doomed cold-start retries and the run summary labels the chain halt with its cause and resume affordance, instead of burning ~2h of retry ladder (#761)
 
-### Recent Additions (v2.8.0)
+### Recent Additions (v2.15.1)
 
 - **`/assess` picks `sequant run` vs `npx sequant run`** - Probes for a global install and emits the invocation that matches the environment, avoiding npx version-skew in copy-pasted commands (#740)
 - **Runtime Node-version preflight guard** - The CLI checks the running Node against the `engines.node` floor (`>=22.13.0`) at startup and exits with a friendly upgrade message instead of a later opaque crash (#734)
@@ -812,31 +812,31 @@ Shell scripts in `templates/scripts/`:
 - **Partial output preserved on turn caps** - Turn-capped phases (orchestrator level #739, subagents #733) preserve partial work and halt cleanly for resume instead of discarding it as a hard failure
 - **Skill-mirror sync gate** - Reconciled drift across the three skill roots and added a `lint:skill-sync` CI gate so downstream installs never receive stale skill content (#738)
 
-### Recent Additions (v2.7.0)
+### Recent Additions (v2.15.1)
 
 - **`sequant sync --dry-run` / `-d`** - Trustworthy preview of the sync surface: reports the exact set the apply would write (new + modified + local-override), mutates nothing, and exits non-zero when work is pending so CI can gate on it (#722)
 - **`sequant update --dry-run` exit-code parity** - `update --dry-run` now exits non-zero when work is pending (mirroring `sync --dry-run`), so automation can gate on the exit code instead of parsing stdout (#724)
 
-### Recent Additions (v2.6.2)
+### Recent Additions (v2.15.1)
 
 - **Brand-colored run dashboard** - Active/live phase spinners use brand orange and success states use brand green in the boxed run TUI; non-truecolor terminals auto-downsample and `NO_COLOR` still strips (#712)
 - **Run dashboard stability** - Fixes a `perf_hooks` buffer leak (`ink`/`react-reconciler` dev bundle) that corrupted the redraw, and width corruption on terminal resize (#718)
 - **`.claude/.local` skill overrides now functional** - Runtime overlay loads `overrides.md` deltas that survive `update`/`sync`; pre-flight skill check is now content-aware, and `update`/`sync` use content-truth and protect in-place customizations (#711, #713, #708)
 - **Corrupt lockfile fixed** - Regenerated `package-lock.json` after PR #716 committed unresolved git-stash conflict markers (#720)
 
-### Recent Additions (v2.6.0)
+### Recent Additions (v2.15.1)
 
 - **Boxed Ink TUI is the default for `sequant run`** - On a TTY, `sequant run` now renders the boxed Ink dashboard by default (matching `sequant ready`); opt out with `--no-tui`, and non-TTY/piped output auto-degrades to the line-based phase-matrix renderer (#705)
 - **`-q`/`-Q` flag collision fixed** - `--quiet` moved to `-s` (silent); `-q` is now a hidden alias for `-Q, --quality-loop`, so `sequant run … -q` enables the quality loop as intended instead of silently suppressing the renderer. `--experimental-tui` kept as a hidden no-op alias for script compatibility (#705)
 
-### Recent Additions (v2.5.0)
+### Recent Additions (v2.15.1)
 
 - **`sequant ready <issue>`** - Post-resolve A+ QA gate that drives a resolved issue's worktree through a full-weight `qa → loop → qa` pipeline and stops at the human merge gate (never merges); configurable `ready.policy` (`ac`/`a-plus`), bounded by `--max-iterations`/`--budget`, with a #534 regression guard against empty/unparseable verdicts (#683)
 - **`sequant ready` Live Phase-Matrix + Boxed TUI** - Reuses the `sequant run` renderer for in-place phase/loop liveness instead of going silent; on a TTY renders the boxed Ink dashboard with row-cap/frame-height clamp and durable teardown summary (`--json`/non-TTY fall back to the static report) (#697, #699)
 - **`/release` Doc-Freshness Hardening** - Regenerates the marketplace artifact before pack/publish and warns when CHANGELOG omits the version being released, closing the stale-doc surfaces from v2.4.0 (#684, #701)
 - **Top-Funnel Positioning & SEO Pass** - Differentiated README subhead, social-proof badges, "What's new in 2.5" block, reconciled npm/plugin/marketplace taglines, and tuned repo topics/keywords (#694, #702)
 
-### Recent Additions (v2.4.0)
+### Recent Additions (v2.15.1)
 
 - **Unified Run Renderer** - Two-zone live grid + events log replaces dual-output regression; experimental ink-based TUI dashboard variant via `--experimental-tui` (#618, #620, #624, #540, #542, #543)
 - **Interactive Relay** - `sequant prompt <issue> "..."` and `sequant watch <issue>` send messages into and tail replies from a running run, without killing it (#383)
@@ -1205,7 +1205,7 @@ npm run build
 | Dashboard Lines | 1000+ |
 | TypeScript LOC | ~36,600 |
 
-**Current Version:** 2.15.0
+**Current Version:** 2.15.1
 **Status:** Production-ready
 **Philosophy:** Quantize your workflow
 
@@ -1215,7 +1215,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.15.0                               │
+│                              SEQUANT v2.15.1                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │
