@@ -1,5 +1,9 @@
 # `claude plugin eval` — Phase 0 empirical validation (#987)
 
+> `<EARLY_ACCESS_FLAG>` below stands in for the environment variable that gates
+> `claude plugin eval` while the feature is in early access. It is an unannounced
+> Anthropic surface, so this document does not name it.
+
 **Status:** complete — see [Phase 0 verdict](#phase-0-verdict).
 **Measured:** 2026-09-06 / 2026-09-07, Claude Code **2.1.263**, macOS 25.5.0.
 **Plugin under test:** `sequant` 2.13.1, path target `.` from the `#987` worktree at base `20e2a867` (v2.13.1).
@@ -16,7 +20,7 @@ throwaway `evals-phase0/` (via `--eval-dir evals-phase0`), deleted before the PR
 
 | Question | Verdict | One-line answer |
 |---|---|---|
-| P0.1 Enablement | ✅ **PASS** | `CLAUDE_CODE_WALNUT_SPIRE=1` in the process env reaches case discovery; without it the command prints `` `plugin eval` is currently in early access `` and does nothing. |
+| P0.1 Enablement | ✅ **PASS** | `<EARLY_ACCESS_FLAG>=1` in the process env reaches case discovery; without it the command prints `` `plugin eval` is currently in early access `` and does nothing. |
 | P0.2 Target resolution + ablation | ✅ **PASS** | Path target `.` resolves to **the worktree**, not the marketplace cache (#784 answered). Both arms run; `tool_used: Skill` fires on the with arm only. |
 | P0.3 Grader vocabulary | ✅ **PASS** | Six accepted types, enumerated from the CLI's own validation message; **four are deterministic** (`regex`, `file_exists`, `tool_used`, `tool_order`). A deterministic grader asserts on `SEQUANT_QA_VERDICT` marker fields. |
 | P0.4 Scaffold + hooks | ⚠️ **SPLIT — scaffold PASS, hooks KILL** | `--scaffold` stands the repo up and `/qa` reaches a verdict marker. **A sequant `PreToolUse` guard does not take effect in the sandbox**: an operation the host hook blocks unconditionally completed inside it. Whether the hook is uninstalled or merely env-starved is not separated — the consequence is identical. |
@@ -36,7 +40,7 @@ throwaway `evals-phase0/` (via `--eval-dir evals-phase0`), deleted before the PR
 claude plugin eval . --case __nonexistent__ \
   --eval-dir evals-phase0 --max-cost-usd 1 --no-publish
 # B — enabled
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --case __nonexistent__ \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . --case __nonexistent__ \
   --eval-dir evals-phase0 --max-cost-usd 1 --no-publish
 ```
 
@@ -77,7 +81,7 @@ installed marketplace copy (#784 cache skew), and does the with-without arm fire
 **Command (verbatim from AC-2, plus the safety flags of AC-9/AC-10/AC-11):**
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . \
   --eval-dir evals-phase0 --ablation with-without --runs 1 --max-cost-usd 5 \
   --json /tmp/p0-987/ac2.json --case phase0-qa \
   --no-publish --output-dir /tmp/p0-987/ac2 --allow-tools Write
@@ -131,7 +135,7 @@ probe was written, the ablation arm costs 2× and measures nothing.
 and can a deterministic grader assert on our verdict marker's fields?
 
 **Enumeration sources ($0):** `claude plugin eval --help`, and
-`CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval init --bare p0tmpl --eval-dir evals-phase0`.
+`<EARLY_ACCESS_FLAG>=1 claude plugin eval init --bare p0tmpl --eval-dir evals-phase0`.
 
 `init --bare` emits **one** grader, and it is an LLM grader:
 
@@ -233,7 +237,7 @@ something to review, and does sequant's `pre-tool.sh` fire inside the sandbox?
 **Command:**
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . \
   --eval-dir evals-phase0 --ablation with-without --runs 1 --max-cost-usd 5 \
   --scaffold --keep-temp --json /tmp/p0-987/ac4.json --case phase0-qa \
   --no-publish --output-dir /tmp/p0-987/ac4 --allow-tools Write
@@ -287,7 +291,7 @@ by the hook:
 
 ```bash
 SEQUANT_WORKTREE=/nonexistent-987-hookfire-probe \
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . \
   --eval-dir evals-phase0 --case phase0-hookfire --runs 1 --ablation none \
   --max-cost-usd 2 --no-publish --keep-temp \
   --output-dir /tmp/p0-987/hookfire --json hookfire.json --allow-tools Write
@@ -379,7 +383,7 @@ restricted to hook-independent assertions.
 **Command** (one case, `--runs 3`, both arms, with scaffold):
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . \
   --eval-dir evals-phase0 --case phase0-qa --ablation with-without --runs 3 \
   --scaffold --max-cost-usd 8 --no-publish \
   --output-dir /tmp/p0-987/ac5 --json /tmp/p0-987/ac5.json --allow-tools Write
@@ -423,7 +427,7 @@ against a prompt that does nothing: *"Reply with exactly the word: ok. Do not us
 any tools. Do not create any files."*, `allowed_tools: []`.
 
 ```bash
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --eval-dir evals-phase0 \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . --eval-dir evals-phase0 \
   --case phase0-null --runs 1 --threshold 1.0 --max-cost-usd 2 --no-publish \
   --output-dir /tmp/p0-987/null --json /tmp/p0-987/null.json
 ```
@@ -450,7 +454,7 @@ whether it looks fine."* — leaving every other file untouched.
 
 ```bash
 # baseline, then break skills/qa/SKILL.md, then re-run
-CLAUDE_CODE_WALNUT_SPIRE=1 claude plugin eval . --eval-dir evals-phase0 \
+<EARLY_ACCESS_FLAG>=1 claude plugin eval . --eval-dir evals-phase0 \
   --case phase0-qa --ablation none --runs 1 --scaffold --threshold 1.0 \
   --max-cost-usd 4 --no-publish --output-dir /tmp/p0-987/<run> \
   --json <run>.json --allow-tools Write
