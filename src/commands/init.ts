@@ -41,6 +41,7 @@ import {
   getSymlinkTarget,
   removeFileOrSymlink,
   createSymlink,
+  getFileStats,
 } from "../lib/fs.js";
 import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
 import {
@@ -534,6 +535,13 @@ export async function writeCodexSkillsSymlink(
     if (!force) {
       return "skipped-foreign";
     }
+    // `--force` may replace a stray file, but never a populated directory:
+    // `removeFileOrSymlink` is a bare unlink (it would throw and abort init
+    // before `.codex/config.toml` is written), and recursively deleting a
+    // directory the user created is not a cost `--force` should imply.
+    if ((await getFileStats(linkPath)).isDirectory()) {
+      return "skipped-foreign";
+    }
     await removeFileOrSymlink(linkPath);
   }
 
@@ -999,7 +1007,13 @@ export async function initCommand(options: InitOptions): Promise<void> {
       );
       if (symlinkStatus === "skipped-foreign") {
         codexSpinner.warn(
-          `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite). Wrote ${configPath}`,
+          `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite; a real directory is never replaced). Wrote ${configPath}`,
+        );
+      } else if (symlinkStatus === "already-correct") {
+        // Report the no-op as a no-op: claiming "Symlinked ..." on an
+        // idempotent re-run tells the user work happened that did not.
+        codexSpinner.succeed(
+          `.agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} already in place; wrote ${configPath}`,
         );
       } else {
         codexSpinner.succeed(

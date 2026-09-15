@@ -85,6 +85,45 @@ describe("1059 AC-1/AC-2: codex provisioning", () => {
     }
   });
 
+  it("AC-1: --force replaces a stray file but never a real directory", async () => {
+    const dirTarget = mkdtempSync(join(tmpdir(), "sequant-init-codex-dir-"));
+    try {
+      const { mkdirSync, writeFileSync } = await import("node:fs");
+      mkdirSync(join(dirTarget, ".agents/skills"), { recursive: true });
+      writeFileSync(join(dirTarget, ".agents/skills/mine.md"), "user content");
+
+      // A bare unlink on a directory throws, which would abort init before
+      // .codex/config.toml is written; the directory must be left intact and
+      // provisioning must continue.
+      const { symlinkStatus, configPath } = await writeCodexProvisioning(
+        dirTarget,
+        true,
+      );
+      expect(symlinkStatus).toBe("skipped-foreign");
+      expect(
+        readFileSync(join(dirTarget, ".agents/skills/mine.md"), "utf-8"),
+      ).toBe("user content");
+      expect(existsSync(configPath)).toBe(true);
+
+      // A stray *file* is still replaced under --force.
+      const fileTarget = mkdtempSync(
+        join(tmpdir(), "sequant-init-codex-file-"),
+      );
+      try {
+        mkdirSync(join(fileTarget, ".agents"), { recursive: true });
+        writeFileSync(join(fileTarget, ".agents/skills"), "not a symlink");
+        expect(await writeCodexSkillsSymlink(fileTarget, true)).toBe("created");
+        expect(readlinkSync(join(fileTarget, ".agents/skills"))).toBe(
+          CODEX_SKILLS_SYMLINK_TARGET,
+        );
+      } finally {
+        rmSync(fileTarget, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dirTarget, { recursive: true, force: true });
+    }
+  });
+
   it("AC-2: writes .codex/config.toml with hooks.PreToolUse and hooks.PostToolUse pointing at the existing guard scripts", async () => {
     const configPath = join(target, ".codex/config.toml");
     expect(existsSync(configPath)).toBe(true);
