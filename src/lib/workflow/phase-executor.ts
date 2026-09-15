@@ -1257,6 +1257,7 @@ function resolveDriverName(config: ExecutionConfig): string {
     return getDriver(config.agent, {
       aiderSettings: config.aiderSettings,
       opencodeSettings: config.opencodeSettings,
+      codexSettings: config.codexSettings,
     }).name;
   } catch {
     return `${config.agent} (unknown driver)`;
@@ -1474,6 +1475,7 @@ async function executePhase(
   const driver: AgentDriver = getDriver(config.agent, {
     aiderSettings: config.aiderSettings,
     opencodeSettings: config.opencodeSettings,
+    codexSettings: config.codexSettings,
   });
 
   const eligibleHandle =
@@ -1925,6 +1927,7 @@ export async function executePhaseWithRetry(
   const driverUsesSdkMcp = getDriver(config.agent, {
     aiderSettings: config.aiderSettings,
     opencodeSettings: config.opencodeSettings,
+    codexSettings: config.codexSettings,
   }).usesSdkMcp;
   if (
     config.mcp &&
