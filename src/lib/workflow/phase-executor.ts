@@ -25,6 +25,7 @@ import { parseQaGapsMarker } from "./qa-gaps-marker.js";
 import { parsePhaseMarkers } from "./phase-detection.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
+import type { DriverOptions } from "./drivers/index.js";
 import type {
   AgentDriver,
   AgentExecutionConfig,
@@ -1216,6 +1217,7 @@ export async function getPhasePrompt(
   issueNumber: number,
   agent?: string,
   promptContext?: string,
+  driverOptions?: DriverOptions,
 ): Promise<string> {
   const definition = phaseRegistry.get(phase);
   // Non-claude drivers consult driverOverrides[<driver>] first; fall back to
@@ -1227,9 +1229,13 @@ export async function getPhasePrompt(
   // A driver that invokes skills by name (codex: `$spec 1`) builds the prompt
   // itself — the prose template names Claude Code's slash form, which such a
   // driver never resolves (#1059 AC-8).
+  // Constructed with the caller's driver settings (#863: every getDriver call
+  // on a phase path carries them), and never allowed to throw: an unknown
+  // driver name must still yield a dry-run plan (#862 AC-3), with the real
+  // error raised where the phase actually executes.
   const skillPrompt =
     agent && agent !== "claude-code"
-      ? getDriver(agent).buildSkillPrompt?.(definition.skill, issueNumber)
+      ? tryBuildSkillPrompt(agent, definition.skill, issueNumber, driverOptions)
       : undefined;
   const template = driverPrompt ?? definition.promptTemplate;
   let basePrompt =
@@ -1268,11 +1274,33 @@ export async function getPhasePrompt(
  * execution path reports the unknown-driver error.
  */
 /**
+ * A driver's own skill invocation (codex: `$spec 1`), or undefined when the
+ * driver does not invoke skills by name — or cannot be constructed at all.
+ *
+ * Never throws: an unknown driver name still has to produce a dry-run plan
+ * (#862 AC-3), and the execution path raises the real error moments later.
+ */
+function tryBuildSkillPrompt(
+  agent: string,
+  skill: string,
+  issueNumber: number,
+  driverOptions?: DriverOptions,
+): string | undefined {
+  try {
+    return getDriver(agent, driverOptions).buildSkillPrompt?.(
+      skill,
+      issueNumber,
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The invocation a dry run would send, in the configured driver's own syntax.
  *
  * codex invokes skills by name (`$spec 1`); every other driver takes the
- * Claude Code slash form. Falls back to the slash form when the driver cannot
- * be constructed, matching {@link resolveDriverName}'s never-throw contract.
+ * Claude Code slash form.
  */
 function resolvePhaseInvocation(
   phase: Phase,
@@ -1281,18 +1309,18 @@ function resolvePhaseInvocation(
 ): string {
   const fallback = `/${phase} ${issueNumber}`;
   if (!config.agent || config.agent === "claude-code") return fallback;
-  try {
-    const skill = phaseRegistry.get(phase).skill;
-    return (
-      getDriver(config.agent, {
+  return (
+    tryBuildSkillPrompt(
+      config.agent,
+      phaseRegistry.get(phase).skill,
+      issueNumber,
+      {
         aiderSettings: config.aiderSettings,
         opencodeSettings: config.opencodeSettings,
         codexSettings: config.codexSettings,
-      }).buildSkillPrompt?.(skill, issueNumber) ?? fallback
-    );
-  } catch {
-    return fallback;
-  }
+      },
+    ) ?? fallback
+  );
 }
 
 function resolveDriverName(config: ExecutionConfig): string {
@@ -1326,6 +1354,11 @@ async function executePhase(
     issueNumber,
     config.agent,
     config.promptContext,
+    {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+      codexSettings: config.codexSettings,
+    },
   );
 
   if (config.dryRun) {
