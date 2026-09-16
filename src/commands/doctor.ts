@@ -27,6 +27,7 @@ import {
 } from "../lib/system.js";
 import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
 import { OPENCODE_MIN_VERSION } from "../lib/workflow/drivers/opencode.js";
+import { CODEX_MIN_VERSION } from "../lib/workflow/drivers/codex.js";
 import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
@@ -259,6 +260,43 @@ export function getOpencodeVersion(): string | undefined {
     return match?.[0];
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Read `codex --version`, returning the bare semver or undefined (#1059 AC-4).
+ * Mirrors `getOpencodeVersion`'s shape: a parse failure warns rather than
+ * blocking a working install.
+ */
+export function getCodexVersion(): string | undefined {
+  try {
+    const raw = execSync("codex --version", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const match = /(\d+)\.(\d+)\.(\d+)/.exec(raw);
+    return match?.[0];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Is codex authenticated, per #1059 AC-4(c)?
+ *
+ * Either `CODEX_API_KEY` is set, or `codex login status` reports a logged-in
+ * session. Never logs the key's value — only whether it is set.
+ */
+export function isCodexAuthenticated(): boolean {
+  if (process.env.CODEX_API_KEY) return true;
+  try {
+    const raw = execSync("codex login status", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return !/not logged in/i.test(raw);
+  } catch {
+    return false;
   }
 }
 
@@ -621,6 +659,58 @@ export async function doctorCommand(
           "run.opencode.extraArgs contains --pure, which runs opencode without external " +
           "plugins. The sequant hook shim would not load and every guard would be off. " +
           "Remove --pure from extraArgs.",
+      });
+    }
+  }
+
+  // Check: codex CLI + pinned minimum version + auth (when configured as
+  // agent) (#1059 AC-4). Mirrors the opencode block above in structure.
+  if (settings.run.agent === "codex") {
+    if (!commandExists("codex")) {
+      checks.push({
+        name: "codex CLI",
+        status: "fail",
+        message:
+          "codex CLI not installed but configured as default agent - install: npm i -g @openai/codex",
+      });
+    } else {
+      const version = getCodexVersion();
+      if (!version) {
+        checks.push({
+          name: "codex CLI",
+          status: "warn",
+          message: `codex is installed but its version could not be read (sequant verified against ${CODEX_MIN_VERSION})`,
+        });
+      } else if (isVersionBelow(version, CODEX_MIN_VERSION)) {
+        checks.push({
+          name: "codex CLI",
+          status: "fail",
+          message: `codex ${version} is below the minimum supported ${CODEX_MIN_VERSION} - upgrade: npm i -g @openai/codex`,
+        });
+      } else {
+        checks.push({
+          name: "codex CLI",
+          status: "pass",
+          message: `codex ${version} is installed (configured as default agent, minimum ${CODEX_MIN_VERSION})`,
+        });
+      }
+    }
+
+    // Never log CODEX_API_KEY's value — only whether an authenticated path
+    // was found at all.
+    if (isCodexAuthenticated()) {
+      checks.push({
+        name: "codex auth",
+        status: "pass",
+        message:
+          "codex is authenticated (CODEX_API_KEY set or codex login status reports logged in)",
+      });
+    } else {
+      checks.push({
+        name: "codex auth",
+        status: "fail",
+        message:
+          "codex is not authenticated - set CODEX_API_KEY, or run: codex login",
       });
     }
   }

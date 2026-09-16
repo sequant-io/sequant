@@ -660,6 +660,31 @@ describe("getPhasePrompt", () => {
     expect(result).toContain("/exec 10");
   });
 
+  // #1059 AC-8: codex invokes a skill by name (`$spec 1`), so its prompt comes
+  // from the driver, not from the registry's Claude-shaped prose template.
+  it("1059 AC-8 sends codex the `$<skill> <issue>` invocation, not the prose template", async () => {
+    mockReadAgentsMd.mockResolvedValue(null);
+    const result = await getPhasePrompt("spec", 7, "codex");
+    expect(result).toBe("$spec 7");
+    expect(result).not.toContain("/spec 7");
+  });
+
+  it("1059 AC-8 keeps AGENTS.md out of a codex skill invocation", async () => {
+    // codex reads AGENTS.md from the repo itself; inlining it here would bury
+    // the invocation under thousands of words of context.
+    mockReadAgentsMd.mockResolvedValue("# Project\n\nUse npm test.");
+    const result = await getPhasePrompt("exec", 3, "codex");
+    expect(result).toBe("$exec 3");
+    expect(result).not.toContain("AGENTS.md");
+  });
+
+  it("1059 AC-8 leaves other drivers on the prose template", async () => {
+    mockReadAgentsMd.mockResolvedValue(null);
+    const result = await getPhasePrompt("spec", 42, "opencode");
+    expect(result).toContain("/spec 42");
+    expect(result).not.toContain("$spec 42");
+  });
+
   it("uses AIDER_PHASE_PROMPTS for non-claude agents", async () => {
     mockReadAgentsMd.mockResolvedValue(null);
     const result = await getPhasePrompt("exec", 5, "aider");

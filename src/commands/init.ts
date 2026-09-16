@@ -32,7 +32,17 @@ import {
 } from "../lib/settings.js";
 import { detectAndSaveConventions } from "../lib/conventions-detector.js";
 import { getPhaseNames } from "../lib/workflow/phase-registry.js";
-import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
+import {
+  fileExists,
+  ensureDir,
+  readFile,
+  writeFile,
+  isSymlink,
+  getSymlinkTarget,
+  removeFileOrSymlink,
+  createSymlink,
+  getFileStats,
+} from "../lib/fs.js";
 import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
 import {
   commandExists,
@@ -466,6 +476,124 @@ export async function refreshOpencodeShim(targetDir = "."): Promise<void> {
   await writeOpencodeMcpConfig(targetDir);
 }
 
+/**
+ * The exact relative symlink target codex's skill discovery requires (#1059
+ * AC-1). Codex reads skills from `.agents/skills`; sequant's canonical skill
+ * tree lives at `.claude/skills`. Must be a real symlink, not a copy — a copy
+ * would drift from `.claude/skills` on the next `sync`/`update`, and codex's
+ * discovery does not follow anything else. Relative (not absolute) so the
+ * symlink is portable across clones/worktrees.
+ */
+export const CODEX_SKILLS_SYMLINK_TARGET = "../.claude/skills";
+
+/**
+ * The exact TOML requirement codex needs to load project-layer hooks (#1059
+ * AC-5). Lives in the USER config (`~/.codex/config.toml`), not the project
+ * one this function writes — codex silently skips project hooks without it.
+ * Both init's completion output and the README state this string verbatim.
+ */
+export const CODEX_TRUST_LEVEL_TOML = 'trust_level = "trusted"';
+
+export type CodexSkillsSymlinkStatus =
+  "created" | "already-correct" | "skipped-foreign" | "unsupported";
+
+/**
+ * Create (or verify) the `.agents/skills` → `../.claude/skills` symlink codex
+ * needs to discover sequant's skills (#1059 AC-1).
+ *
+ * Idempotent: re-running with the correct symlink already in place is a
+ * no-op. If `.agents/skills` exists but is not that exact symlink, this
+ * warns and skips rather than silently overwriting unknown state — the same
+ * foreign-file precedent `copyTemplates` follows — unless `force` is set.
+ *
+ * Unconditional regardless of `--no-symlinks`: there is no valid copy
+ * fallback for a skill-discovery symlink codex requires, so `--no-symlinks`
+ * (which only affects `scripts/dev/`) must not touch this.
+ *
+ * **Windows:** creating a symlink needs elevated privileges or Developer
+ * Mode. Where it is refused this returns `"unsupported"` and the caller warns;
+ * codex will not discover sequant's skills until the link exists. Making
+ * Windows work is a Non-goal of #1059 — this only declines to report a
+ * success that did not happen.
+ */
+export async function writeCodexSkillsSymlink(
+  targetDir = ".",
+  force = false,
+): Promise<CodexSkillsSymlinkStatus> {
+  const agentsDir = join(targetDir, ".agents");
+  const linkPath = join(agentsDir, "skills");
+
+  // Checked via lstat (isSymlink), not fileExists (which follows the link
+  // and reports false on a dangling target — e.g. before .claude/skills has
+  // ever been populated) — a dangling-but-correct symlink must still read as
+  // idempotent, not as "missing".
+  if (await isSymlink(linkPath)) {
+    const target = await getSymlinkTarget(linkPath);
+    if (target === CODEX_SKILLS_SYMLINK_TARGET) {
+      return "already-correct";
+    }
+    if (!force) {
+      return "skipped-foreign";
+    }
+    await removeFileOrSymlink(linkPath);
+  } else if (await fileExists(linkPath)) {
+    // A real file/directory at this path, not a symlink at all.
+    if (!force) {
+      return "skipped-foreign";
+    }
+    // `--force` may replace a stray file, but never a populated directory:
+    // `removeFileOrSymlink` is a bare unlink (it would throw and abort init
+    // before `.codex/config.toml` is written), and recursively deleting a
+    // directory the user created is not a cost `--force` should imply.
+    if ((await getFileStats(linkPath)).isDirectory()) {
+      return "skipped-foreign";
+    }
+    await removeFileOrSymlink(linkPath);
+  }
+
+  await ensureDir(agentsDir);
+  // `createSymlink` returns false rather than throwing on EPERM/EACCES — the
+  // Windows-without-privileges case its other consumer (`copyTemplates`)
+  // answers by falling back to a copy. There is no such fallback here: a copy
+  // of the skill tree would go stale the moment `.claude/skills` changes, and
+  // codex resolves skills through the link itself. Report the failure instead
+  // of printing a success for a symlink that is not on disk. Solving Windows
+  // symlink semantics is a Non-goal of #1059; declining to claim success is not.
+  if (!(await createSymlink(CODEX_SKILLS_SYMLINK_TARGET, linkPath))) {
+    return "unsupported";
+  }
+  return "created";
+}
+
+/**
+ * Render `.codex/config.toml` from the single template under
+ * `templates/codex/` (#1059 AC-2). One template, not a hand-authored string
+ * here, so `grep -c 'hooks.PreToolUse'` across `src`+`templates` finds
+ * exactly one templates/ location, as the AC requires.
+ */
+export async function writeCodexConfig(targetDir = "."): Promise<string> {
+  const codexDir = join(targetDir, ".codex");
+  await ensureDir(codexDir);
+  const content = await getTemplateContent("templates/codex/config.toml");
+  const configPath = join(codexDir, "config.toml");
+  await writeFile(configPath, content);
+  return configPath;
+}
+
+/**
+ * Provision everything `sequant init --agent codex` needs to reach sequant's
+ * skills and hook guards (#1059): the `.agents/skills` symlink plus
+ * `.codex/config.toml`'s hook wrapper.
+ */
+export async function writeCodexProvisioning(
+  targetDir = ".",
+  force = false,
+): Promise<{ symlinkStatus: CodexSkillsSymlinkStatus; configPath: string }> {
+  const symlinkStatus = await writeCodexSkillsSymlink(targetDir, force);
+  const configPath = await writeCodexConfig(targetDir);
+  return { symlinkStatus, configPath };
+}
+
 export async function initCommand(options: InitOptions): Promise<void> {
   // Fail loudly on a missing templates root before any prompt or write, so a
   // broken install can never half-provision a project. Placed ahead of the
@@ -818,7 +946,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Create default settings + reference doc (AC-4)
   const settingsSpinner = ui.spinner("Creating default settings...");
   settingsSpinner.start();
-  await createDefaultSettings();
+  await createDefaultSettings(options.agent);
   await writeFile(
     ".sequant/settings.reference.md",
     generateSettingsReference(),
@@ -876,6 +1004,62 @@ export async function initCommand(options: InitOptions): Promise<void> {
       chalk.yellow(
         "\n⚠️  Commit .opencode/ so worktree phases inherit the hook guards:\n" +
           '    git add .opencode && git commit -m "chore: add opencode provisioning"',
+      ),
+    );
+  }
+
+  // #1059: codex reaches sequant's skills through a real `.agents/skills`
+  // symlink (codex has no per-phase command-wrapper mechanism, unlike
+  // opencode) and its hooks through a `.codex/config.toml` wrapper around
+  // the same guard scripts Claude Code uses.
+  if (options.agent === "codex") {
+    const codexSpinner = ui.spinner("Writing codex provisioning...");
+    codexSpinner.start();
+    try {
+      const { symlinkStatus, configPath } = await writeCodexProvisioning(
+        ".",
+        options.force,
+      );
+      if (symlinkStatus === "unsupported") {
+        codexSpinner.warn(
+          `Could not create the .agents/skills symlink (symlinks need elevated privileges or Developer Mode on Windows) - codex will not discover sequant's skills until it exists. Wrote ${configPath}`,
+        );
+      } else if (symlinkStatus === "skipped-foreign") {
+        codexSpinner.warn(
+          `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite; a real directory is never replaced). Wrote ${configPath}`,
+        );
+      } else if (symlinkStatus === "already-correct") {
+        // Report the no-op as a no-op: claiming "Symlinked ..." on an
+        // idempotent re-run tells the user work happened that did not.
+        codexSpinner.succeed(
+          `.agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} already in place; wrote ${configPath}`,
+        );
+      } else {
+        codexSpinner.succeed(
+          `Symlinked .agents/skills -> ${CODEX_SKILLS_SYMLINK_TARGET} and wrote ${configPath}`,
+        );
+      }
+    } catch (err) {
+      codexSpinner.fail(
+        `Could not write codex provisioning: ${(err as Error).message}`,
+      );
+    }
+
+    // #1059 AC-5: codex only loads project-layer hooks (.codex/config.toml)
+    // when the project is marked trusted in the USER config
+    // (~/.codex/config.toml) — silently skipped otherwise, no error.
+    console.log(
+      chalk.yellow(
+        "\n⚠️  Codex only loads these hooks once the project is trusted in " +
+          "~/.codex/config.toml:\n" +
+          `    [projects."${process.cwd()}"]\n` +
+          `    ${CODEX_TRUST_LEVEL_TOML}\n`,
+      ),
+    );
+    console.log(
+      chalk.yellow(
+        "⚠️  Commit .codex/ and .agents/ so worktree phases inherit the hook guards:\n" +
+          '    git add .codex .agents && git commit -m "chore: add codex provisioning"',
       ),
     );
   }

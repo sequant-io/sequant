@@ -197,7 +197,7 @@ program
   )
   .option(
     "--agent <name>",
-    "Agent driver to provision for (claude-code, aider, opencode). opencode also writes .opencode/ command wrappers",
+    "Agent driver to provision for (claude-code, aider, opencode, codex). opencode also writes .opencode/ command wrappers; codex writes the .agents/skills symlink and .codex/config.toml",
   )
   .action(initCommand);
 

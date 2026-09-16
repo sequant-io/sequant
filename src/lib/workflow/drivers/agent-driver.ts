@@ -171,6 +171,26 @@ export interface AgentDriver {
   resolvesSkills: boolean;
 
   /**
+   * Build the prompt for a phase as a direct skill invocation, for drivers
+   * that resolve skills by *name* rather than by reading a prose instruction.
+   *
+   * codex invokes a skill as `$<name> <args>` and discovers the skill tree
+   * through `.agents/skills` (#1059); the default prose template names the
+   * Claude Code slash form (`Run the /spec 1 workflow.`), which codex never
+   * resolves — so the symlink would go unused and the phase would improvise.
+   * The #497 probe settled this at the driver layer rather than as per-phase
+   * `driverOverrides.codex` entries, since the invocation is one syntax rule
+   * for every phase, not eight rewritten prompts.
+   *
+   * Drivers that leave this undefined keep the registry's `promptTemplate`.
+   *
+   * @param skill - The phase's skill name (e.g. `"spec"`)
+   * @param issue - The issue number the phase runs against
+   * @returns The prompt to send, or undefined to use the default template
+   */
+  buildSkillPrompt?(skill: string, issue: number): string;
+
+  /**
    * True when this driver runs phases through the Claude Agent SDK's own MCP
    * plumbing, so a cold-start MCP failure is a real possibility and the
    * "retry without MCP" fallback is meaningful.
