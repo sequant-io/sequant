@@ -860,6 +860,24 @@ describe("init command", () => {
   // marked trusted in the USER config (~/.codex/config.toml, not the
   // project one init writes). Init's completion output must state the exact
   // `trust_level = "trusted"` TOML requirement so a user cannot miss it.
+  // #1059 F4: `init --agent <name>` provisions for that driver, so the driver
+  // has to reach settings — otherwise `run.agent` stays unset, every later run
+  // falls back to claude-code, and `doctor` runs none of that driver's checks
+  // while the README says it does.
+  describe("1059 F4: init persists the selected agent", () => {
+    it("forwards --agent codex to createDefaultSettings", async () => {
+      await initCommand({ yes: true, stack: "generic", agent: "codex" });
+
+      expect(mockCreateDefaultSettings).toHaveBeenCalledWith("codex");
+    });
+
+    it("passes no agent when the flag is absent", async () => {
+      await initCommand({ yes: true, stack: "generic" });
+
+      expect(mockCreateDefaultSettings).toHaveBeenCalledWith(undefined);
+    });
+  });
+
   describe("497 AC-5: codex trust requirement in init output", () => {
     it('prints the exact `trust_level = "trusted"` TOML requirement when --agent codex', async () => {
       await initCommand({ yes: true, stack: "generic", agent: "codex" });

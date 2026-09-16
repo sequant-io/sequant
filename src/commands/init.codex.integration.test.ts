@@ -18,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   CODEX_SKILLS_SYMLINK_TARGET,
@@ -121,6 +121,25 @@ describe("1059 AC-1/AC-2: codex provisioning", () => {
       }
     } finally {
       rmSync(dirTarget, { recursive: true, force: true });
+    }
+  });
+
+  // createSymlink answers EPERM/EACCES (Windows without privileges) with
+  // `false` rather than throwing. Reporting "created" there would print a
+  // success for a symlink that is not on disk, and codex skill discovery would
+  // fail silently — the same defect as the idempotent-re-run message, one
+  // branch over.
+  it("AC-1: reports `unsupported` rather than success when the OS refuses the symlink", async () => {
+    const fs = await import("../lib/fs.js");
+    const spy = vi.spyOn(fs, "createSymlink").mockResolvedValue(false);
+    const denied = mkdtempSync(join(tmpdir(), "sequant-init-codex-eperm-"));
+    try {
+      const status = await writeCodexSkillsSymlink(denied);
+      expect(status).toBe("unsupported");
+      expect(existsSync(join(denied, ".agents/skills"))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      rmSync(denied, { recursive: true, force: true });
     }
   });
 

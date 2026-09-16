@@ -1267,13 +1267,6 @@ export async function getPhasePrompt(
 }
 
 /**
- * Resolve the driver name for display, without spawning anything (#862 AC-3).
- *
- * Falls back to the configured string when the name is unknown so a dry run
- * still prints a plan rather than throwing — the real `getDriver` call on the
- * execution path reports the unknown-driver error.
- */
-/**
  * A driver's own skill invocation (codex: `$spec 1`), or undefined when the
  * driver does not invoke skills by name — or cannot be constructed at all.
  *
@@ -1323,6 +1316,13 @@ function resolvePhaseInvocation(
   );
 }
 
+/**
+ * Resolve the driver name for display, without spawning anything (#862 AC-3).
+ *
+ * Falls back to the configured string when the name is unknown so a dry run
+ * still prints a plan rather than throwing — the real `getDriver` call on the
+ * execution path reports the unknown-driver error.
+ */
 function resolveDriverName(config: ExecutionConfig): string {
   try {
     return getDriver(config.agent, {

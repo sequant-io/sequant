@@ -495,7 +495,7 @@ export const CODEX_SKILLS_SYMLINK_TARGET = "../.claude/skills";
 export const CODEX_TRUST_LEVEL_TOML = 'trust_level = "trusted"';
 
 export type CodexSkillsSymlinkStatus =
-  "created" | "already-correct" | "skipped-foreign";
+  "created" | "already-correct" | "skipped-foreign" | "unsupported";
 
 /**
  * Create (or verify) the `.agents/skills` → `../.claude/skills` symlink codex
@@ -509,6 +509,12 @@ export type CodexSkillsSymlinkStatus =
  * Unconditional regardless of `--no-symlinks`: there is no valid copy
  * fallback for a skill-discovery symlink codex requires, so `--no-symlinks`
  * (which only affects `scripts/dev/`) must not touch this.
+ *
+ * **Windows:** creating a symlink needs elevated privileges or Developer
+ * Mode. Where it is refused this returns `"unsupported"` and the caller warns;
+ * codex will not discover sequant's skills until the link exists. Making
+ * Windows work is a Non-goal of #1059 — this only declines to report a
+ * success that did not happen.
  */
 export async function writeCodexSkillsSymlink(
   targetDir = ".",
@@ -546,7 +552,16 @@ export async function writeCodexSkillsSymlink(
   }
 
   await ensureDir(agentsDir);
-  await createSymlink(CODEX_SKILLS_SYMLINK_TARGET, linkPath);
+  // `createSymlink` returns false rather than throwing on EPERM/EACCES — the
+  // Windows-without-privileges case its other consumer (`copyTemplates`)
+  // answers by falling back to a copy. There is no such fallback here: a copy
+  // of the skill tree would go stale the moment `.claude/skills` changes, and
+  // codex resolves skills through the link itself. Report the failure instead
+  // of printing a success for a symlink that is not on disk. Solving Windows
+  // symlink semantics is a Non-goal of #1059; declining to claim success is not.
+  if (!(await createSymlink(CODEX_SKILLS_SYMLINK_TARGET, linkPath))) {
+    return "unsupported";
+  }
   return "created";
 }
 
@@ -1005,7 +1020,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
         ".",
         options.force,
       );
-      if (symlinkStatus === "skipped-foreign") {
+      if (symlinkStatus === "unsupported") {
+        codexSpinner.warn(
+          `Could not create the .agents/skills symlink (symlinks need elevated privileges or Developer Mode on Windows) - codex will not discover sequant's skills until it exists. Wrote ${configPath}`,
+        );
+      } else if (symlinkStatus === "skipped-foreign") {
         codexSpinner.warn(
           `.agents/skills exists and is not the expected symlink - skipped (use --force to overwrite; a real directory is never replaced). Wrote ${configPath}`,
         );
