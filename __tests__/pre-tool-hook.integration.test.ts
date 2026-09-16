@@ -944,6 +944,23 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("1064: preserves # characters in a heredoc commit subject", () => {
+      const repo = makeStagedRepo("pre-tool-1064-heredoc-hash-");
+      try {
+        const cmd = [
+          `git commit -m "$(cat <<'EOF'`,
+          `updated stuff # keep this detail`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: updated stuff # keep this detail/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     // Scoping extraction to a segment must not create the inverse defect —
     // a segment that holds no `-m` yields an empty MSG, and an empty MSG
     // skips validation entirely (fail-open). Both shapes below were blocked

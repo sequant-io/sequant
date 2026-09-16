@@ -1244,10 +1244,13 @@ commit_message_from() {
         sub(/^[ \t]+/, "", line)
         return line
     }
-    # message_at(s, j, n) — the quoted argument starting at or after j (after
-    # optional blanks): prints it and exits; returns silently when the
-    # argument is unquoted (not validated, as before).
-    function message_at(s, j, n,    q, msg, k, d, line) {
+    # message_at(s, raw, j, n) — the quoted argument starting at or after j
+    # (after optional blanks): prints it and exits; returns silently when the
+    # argument is unquoted (not validated, as before). `s` has shell comments
+    # blanked so its flag scan cannot match data, while `raw` preserves a
+    # heredoc subject verbatim: its `#` characters are commit-message data,
+    # not shell comments (#1064).
+    function message_at(s, raw, j, n,    q, msg, k, d, line) {
         while (j <= n && substr(s, j, 1) ~ /[ \t]/) j++
         q = substr(s, j, 1)
         # `-m "$( … <<DELIM … )"` — any spacing, any command path: the
@@ -1255,7 +1258,7 @@ commit_message_from() {
         # substitution (or a `<<<` herestring): fall through to the generic
         # quoted reader below.
         if (q == dq && substr(s, j + 1, 2) == "$(") {
-            line = heredoc_first_line(s, j)
+            line = heredoc_first_line(raw, j)
             if (line != "") { print line; exit }
         }
         if (q == dq || q == sq) {
@@ -1270,7 +1273,7 @@ commit_message_from() {
         }
     }
     {
-        s = strip_comments($0); n = length(s)
+        raw = $0; s = strip_comments(raw); n = length(s)
         start = index(s, "git commit"); if (start == 0) exit
         i = start + 10
         while (i <= n) {
@@ -1289,8 +1292,8 @@ commit_message_from() {
             if (c == "-" && prev ~ /[ \t]/) {
                 if (substr(s, i, 9) == "--message") {
                     e = i + 9; a = substr(s, e, 1)
-                    if (a == "=") { message_at(s, e + 1, n); i = e + 1; continue }
-                    if (a == "" || a ~ /[ \t]/ || a == dq || a == sq) { message_at(s, e, n); i = e; continue }
+                    if (a == "=") { message_at(s, raw, e + 1, n); i = e + 1; continue }
+                    if (a == "" || a ~ /[ \t]/ || a == dq || a == sq) { message_at(s, raw, e, n); i = e; continue }
                     i = e; continue
                 }
                 if (substr(s, i + 1, 1) ~ /[A-Za-z]/) {
@@ -1298,14 +1301,14 @@ commit_message_from() {
                     while (e <= n && substr(s, e, 1) ~ /[A-Za-z]/) e++
                     a = substr(s, e, 1)
                     if (substr(s, e - 1, 1) == "m" && (a == "" || a ~ /[ \t]/ || a == dq || a == sq)) {
-                        message_at(s, e, n); i = e; continue
+                        message_at(s, raw, e, n); i = e; continue
                     }
                     i = e; continue
                 }
             }
             i++
         }
-        line = heredoc_first_line(s, start)
+        line = heredoc_first_line(raw, start)
         if (line != "") print line
     }'
 }

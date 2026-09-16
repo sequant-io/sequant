@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve `#` characters in heredoc commit subjects during conventional-commit validation (#1064).
+
 ### Added
 
 - **Codex is now a selectable agent driver: `--agent codex` / `run.agent: "codex"` (#497).** `CodexDriver` spawns `codex exec --json -C <cwd> -s workspace-write --dangerously-bypass-hook-trust [-m <model>] <prompt>` as a subprocess and parses its JSONL stream, typed against the Codex TypeScript SDK's exported event types (a devDependency — nothing from it reaches `dist/`). Deliberately not the SDK's `Codex`/`Thread` classes: the hook-trust flag is CLI-only, `Thread._exec` is private (no `stderrTail`/`exitCode`), and the SDK pins the binary version exactly. Three notable behaviours the #497 probe established: `item.completed` items of type `error` are **warnings** (the hook-trust banner and model-metadata notice are forwarded to `onStderr`, not treated as failures) while only `turn.failed` and a top-level `error` event are fatal; stdin is spawned as `"ignore"`, because `codex exec` reads a non-TTY pipe as prompt input and blocks until EOF (which presents as a full phase timeout with zero events); and resume refuses to run when `originCwd` differs from the target cwd, since `codex exec resume` accepts no `-C` and silently adopts the caller's directory (openai/codex#4791). New `run.codex` settings (`model`, `sandboxMode`, `extraArgs`), token metrics synthesized from `turn.completed.usage`, and a `CODEX_MIN_VERSION` floor of 0.154.0 enforced by `isAvailable()`.
