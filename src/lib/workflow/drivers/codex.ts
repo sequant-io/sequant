@@ -58,6 +58,7 @@
  */
 
 import { spawn, execFileSync } from "child_process";
+import { isAbsolute, resolve as resolvePath } from "path";
 import { RingBuffer } from "../ring-buffer.js";
 import { SequantError, SubprocessError } from "../../errors.js";
 import { compareVersions } from "../../version-check.js";
@@ -376,22 +377,67 @@ export function evaluateCodexRun(
  *
  * @internal Exported for testing.
  */
+/**
+ * Absolute path to the git directory that owns `cwd`'s index, or null when
+ * `cwd` is not a git repository (or git is unavailable).
+ *
+ * `--git-common-dir` rather than `--git-dir`: in a worktree the index lives
+ * under the *main* repo's `.git/worktrees/<name>/`, and that whole tree is
+ * what the sandbox must be able to write. It resolves to the ordinary `.git`
+ * for a normal checkout, so one command covers both.
+ *
+ * Never throws — a driver that cannot answer this still runs the phase, it
+ * just leaves the sandbox as codex configured it.
+ *
+ * @internal Exported for testing.
+ */
+export function resolveGitCommonDir(cwd: string): string | null {
+  try {
+    const out = execFileSync("git", ["rev-parse", "--git-common-dir"], {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!out) return null;
+    // `--git-common-dir` answers relatively (".git") from the repo root, so
+    // it is resolved against cwd before it reaches a sandbox policy that has
+    // no notion of the phase's working directory.
+    return isAbsolute(out) ? out : resolvePath(cwd, out);
+  } catch {
+    return null;
+  }
+}
+
 export function buildCodexArgs(
   prompt: string,
   config: Pick<AgentExecutionConfig, "cwd" | "phase">,
   settings?: CodexSettings,
   resumeToken?: string,
 ): string[] {
+  const sandboxMode = settings?.sandboxMode ?? DEFAULT_SANDBOX_MODE;
   const args = resumeToken
     ? ["exec", "resume", resumeToken, "--json"]
-    : [
-        "exec",
-        "--json",
-        "-C",
-        config.cwd,
-        "-s",
-        settings?.sandboxMode ?? DEFAULT_SANDBOX_MODE,
-      ];
+    : ["exec", "--json", "-C", config.cwd, "-s", sandboxMode];
+
+  // #1076: `workspace-write` makes the workspace writable but excludes
+  // `.git/`, so every `git add`/`git commit` a phase runs is denied with
+  // `Unable to create '…/index.lock': Operation not permitted` — measured on
+  // the #1060 gate run, where exec produced correct edits it could not commit.
+  // The exclusion is not worktree-specific: a plain clone whose `.git` sits
+  // inside the workspace fails identically. Naming the git dir as a writable
+  // root keeps the sandbox otherwise intact, which `danger-full-access` would
+  // not — sequant's guard hooks are meant to run inside a sandbox, not instead
+  // of one. `read-only` has nothing to write and `danger-full-access` is
+  // already unrestricted, so neither needs it.
+  if (sandboxMode === "workspace-write") {
+    const gitDir = resolveGitCommonDir(config.cwd);
+    if (gitDir) {
+      args.push(
+        "-c",
+        `sandbox_workspace_write.writable_roots=${JSON.stringify([gitDir])}`,
+      );
+    }
+  }
 
   args.push("--dangerously-bypass-hook-trust");
   if (settings?.model) args.push("-m", settings.model);
