@@ -2427,6 +2427,21 @@ npx tsx -e '
 
 For each AC returned, **execute the exact backtick-quoted command** — or verify a captured run of it from earlier in this session's tool output — and record its exit code / pass-fail result before marking that AC `MET`. Do not mark a declared-evidence AC `MET` on reasoning alone; that is precisely the #853 gap this section closes.
 
+**Unchecked test-plan boxes are declared evidence too.** Read the PR body's
+`## Test plan` (or `## Verification`) section. Any **unchecked** `- [ ]` item
+whose text names a backtick-quoted command (`npx vitest run …`,
+`CODEX_LIVE=1 …`, `npm run …`) is a test the author declared and did not run
+— typically annotated "not run here", "needs a real binary/key", or
+"reports SKIPPED". Treat it exactly like an unexecuted declared-evidence AC:
+attempt the command now if this environment can (binary on PATH, credentials
+present); if it cannot, list it in the table below as `Executed? No` and
+emit a §6j `test_gap` finding with `recommendedAction: "pause_for_human"`
+naming what the human must supply. Never let it pass as a note. On #1062
+the one unchecked box (`CODEX_LIVE=1 npx vitest run …codex.live…`) hid a
+test that could not pass in any environment — it spawned in a non-git temp
+dir the CLI refuses — and QA marked the AC `MET` from the box's own
+"reports SKIPPED rather than passing" wording.
+
 **Status outcomes:**
 
 | Status | Criteria |
@@ -2449,6 +2464,7 @@ For each AC returned, **execute the exact backtick-quoted command** — or verif
 |----|----------|-----------|--------|
 | AC-N | `npm test -- reset-expiry` | Yes | ✅ 4 passed |
 | AC-M | `npx sequant doctor --help` | No | ⚠️ Not run — AC marked PENDING |
+| PR test plan | `CODEX_LIVE=1 npx vitest run …live…` | No | ⚠️ Unchecked box; needs a key — §6j test_gap, pause_for_human |
 
 **Status:** Complete / Incomplete / N/A
 ```
@@ -3675,6 +3691,7 @@ You MUST include these sections:
 |----|----------|-----------|--------|
 | AC-N | `npm test -- reset-expiry` | Yes | ✅ 4 passed |
 | AC-M | `npx sequant doctor --help` | No | ⚠️ Not run — AC marked PENDING |
+| PR test plan | `CODEX_LIVE=1 npx vitest run …live…` | No | ⚠️ Unchecked box; needs a key — §6j test_gap, pause_for_human |
 | AC-P | — | — | N/A (no declared evidence) |
 
 **Status:** Complete / Incomplete / N/A
