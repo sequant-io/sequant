@@ -351,7 +351,7 @@ describe("run command flag surface (#705)", () => {
 // issue adds (the .agents/skills symlink + .codex/config.toml) does not
 // break the ordinary dry-run path once codex is the configured agent.
 describe("1059 AC-8: run --agent codex --dry-run resolves CodexDriver", () => {
-  it("prints Driver: codex and the /spec 1 prompt without error", () => {
+  it("prints Driver: codex and the $spec 1 prompt without error", () => {
     const dir = mkdtempSync(join(tmpdir(), "sequant-ac8-codex-"));
     try {
       execSync("git init -q", { cwd: dir });
@@ -363,17 +363,28 @@ describe("1059 AC-8: run --agent codex --dry-run resolves CodexDriver", () => {
         { cwd: dir, encoding: "utf-8" },
       );
 
+      // The AC's command verbatim — no --verbose. codex resolves a skill as
+      // `$spec 1`; the Claude Code slash form it used to print is a command
+      // codex would never run, so asserting it would encode the divergence
+      // rather than catch it.
       const result = spawnSync(
         process.execPath,
-        [cliPath, "run", "1", "--agent", "codex", "--dry-run", "--verbose"],
+        [cliPath, "run", "1", "--agent", "codex", "--dry-run"],
         { cwd: dir, encoding: "utf-8" },
       );
 
       const output = (result.stdout ?? "") + (result.stderr ?? "");
       expect(result.status).toBe(0);
       expect(output).toContain("Driver: codex");
-      expect(output).toContain("/spec 1");
+      expect(output).toContain("$spec 1");
+      expect(output).not.toContain("/spec 1");
       expect(output).not.toMatch(/unknown driver/);
+
+      // The provisioning path persists the driver, so a bare `sequant run`
+      // in this repo reaches codex too (not just an explicit --agent flag).
+      expect(
+        readFileSync(join(dir, ".sequant/settings.json"), "utf-8"),
+      ).toMatch(/"agent":\s*"codex"/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

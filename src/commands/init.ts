@@ -931,7 +931,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Create default settings + reference doc (AC-4)
   const settingsSpinner = ui.spinner("Creating default settings...");
   settingsSpinner.start();
-  await createDefaultSettings();
+  await createDefaultSettings(options.agent);
   await writeFile(
     ".sequant/settings.reference.md",
     generateSettingsReference(),

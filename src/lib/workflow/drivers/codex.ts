@@ -451,6 +451,19 @@ export class CodexDriver implements AgentDriver {
   }
 
   /**
+   * codex invokes a skill by name: `$spec 1`, not `Run the /spec 1 workflow.`
+   *
+   * The #497 probe verified explicit `$skill` resolution in headless
+   * `codex exec` (probe §AC-1) and recorded the prompt shape as
+   * `$<phase> <issue>` — "the skill name, not a rewritten prompt". The
+   * argument is passed positionally exactly as the Claude Code skills expect
+   * it, so the same SKILL.md serves both drivers unchanged.
+   */
+  buildSkillPrompt(skill: string, issue: number): string {
+    return `$${skill} ${issue}`;
+  }
+
+  /**
    * `codex exec resume` accepts no `-C` and silently adopts the caller's cwd
    * (openai/codex#4791), so resuming a thread from a different worktree would
    * replay it against the wrong tree with nothing upstream refusing. The #674

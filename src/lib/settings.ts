@@ -1235,9 +1235,17 @@ export async function settingsExist(): Promise<boolean> {
  * Generates a JSONC file (.json with // comments) documenting each field
  * and its default value. The loadSettings path strips comments before parsing.
  */
-export async function createDefaultSettings(): Promise<void> {
+export async function createDefaultSettings(agent?: string): Promise<void> {
   await ensureDir(dirname(SETTINGS_PATH));
-  const jsonc = generateSettingsJsonc(DEFAULT_SETTINGS);
+  // `init --agent <name>` provisions for that driver, so the driver belongs in
+  // the settings it writes: without it `run.agent` stays unset, every later
+  // `sequant run` falls back to claude-code, and `doctor` runs none of that
+  // driver's checks — while the README tells the user it does (#1059).
+  const settings =
+    agent && agent !== "claude-code"
+      ? { ...DEFAULT_SETTINGS, run: { ...DEFAULT_SETTINGS.run, agent } }
+      : DEFAULT_SETTINGS;
+  const jsonc = generateSettingsJsonc(settings);
   await writeFile(SETTINGS_PATH, jsonc);
 }
 
@@ -1274,6 +1282,10 @@ export function generateSettingsJsonc(settings: SequantSettings): string {
   );
   lines.push(`    // Enable smart test detection`);
   lines.push(`    "smartTests": ${JSON.stringify(settings.run.smartTests)},`);
+  if (settings.run.agent !== undefined) {
+    lines.push(`    // Agent driver phases run through`);
+    lines.push(`    "agent": ${JSON.stringify(settings.run.agent)},`);
+  }
   lines.push(`    // Enable MCP servers in headless mode`);
   lines.push(`    "mcp": ${JSON.stringify(settings.run.mcp)},`);
   if (settings.run.mcpAllowlist !== undefined) {
