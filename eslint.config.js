@@ -100,6 +100,9 @@ export default tseslint.config(
       // the directory saw the parser error.
       "scripts/dev/",
       "**/*.js",
+      // #1084: mcp-launch.mjs ships raw (not built by tsc) and must stay
+      // dependency-free — no tsconfig project covers it, same as **/*.js.
+      "**/*.mjs",
       "**/*.test.ts",
       "**/*.test.tsx",
       "**/*.d.ts",
