@@ -64,7 +64,7 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
   });
 });
 
-describe("#1084 AC-2: shipped .mcp.json launches through mcp-launch.mjs, not npx directly", () => {
+describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no placeholders", () => {
   const shipped = JSON.parse(
     readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
   ) as {
@@ -78,19 +78,37 @@ describe("#1084 AC-2: shipped .mcp.json launches through mcp-launch.mjs, not npx
   };
   const sequant = shipped.mcpServers?.sequant;
 
-  it("invokes node on the plugin-root-relative launcher, not npx", () => {
+  it("invokes node -e with the inline launcher source, not a file path", () => {
     expect(
       sequant,
       "shipped .mcp.json must declare mcpServers.sequant",
     ).toBeDefined();
     expect(sequant!.command).toBe("node");
-    expect(sequant!.args?.[0]).toBe(
-      "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-launch.mjs",
-    );
+    expect(sequant!.args?.[0]).toBe("-e");
+    expect(typeof sequant!.args?.[1]).toBe("string");
   });
 
-  it("passes the real project dir through SEQUANT_PROJECT_DIR", () => {
-    expect(sequant!.env?.SEQUANT_PROJECT_DIR).toBe("${CLAUDE_PROJECT_DIR}");
+  it(
+    "carries no Claude Code path placeholder in command, args, or env " +
+      "(${CLAUDE_PLUGIN_ROOT} resolves to the open project here, not the " +
+      "plugin root — see the #1084 QA probe); the inline launcher source " +
+      "itself legitimately contains JS template-literal ${...} expressions, " +
+      "so this checks for the specific placeholder tokens, not any ${",
+    () => {
+      expect(sequant!.command).not.toMatch(/\$\{CLAUDE_/);
+      for (const arg of sequant!.args ?? []) {
+        expect(typeof arg === "string" ? arg : "").not.toMatch(
+          /\$\{CLAUDE_(PLUGIN_ROOT|PROJECT_DIR)\b/,
+        );
+      }
+      expect(sequant!.env).toBeUndefined();
+    },
+  );
+
+  it("the inline launcher source (args[1]) is byte-identical to the generated form of scripts/mcp-launch.mjs", async () => {
+    const { generateInlineLauncherSource } =
+      await import("./generate-mcp-launch-inline.mjs");
+    expect(sequant!.args?.[1]).toBe(generateInlineLauncherSource());
   });
 
   it("still carries the concrete sequant@<version> pin as the launcher's argument", () => {
@@ -100,4 +118,19 @@ describe("#1084 AC-2: shipped .mcp.json launches through mcp-launch.mjs, not npx
     ) as { version: string };
     expect(pin).toBe(`sequant@${pkg.version}`);
   });
+
+  it(
+    "mcp-launch.mjs's own comments never spell out a literal sequant@<version> " +
+      "example (prepare-marketplace.ts stamps .mcp.json's args with a global " +
+      "sequant@\\S+ replace on release; a literal example version in the " +
+      "source would drift from that stamp on the next release and break the " +
+      "byte-identical check above)",
+    () => {
+      const launcherSource = readFileSync(
+        join(PROJECT_ROOT, "scripts", "mcp-launch.mjs"),
+        "utf8",
+      );
+      expect(launcherSource.match(/sequant@\d/)).toBeNull();
+    },
+  );
 });

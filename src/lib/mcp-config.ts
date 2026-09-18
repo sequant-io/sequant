@@ -364,25 +364,6 @@ export interface SyncMcpPinResult {
 }
 
 /**
- * Re-pin an existing project `.mcp.json` sequant entry to the installed version (#793).
- *
- * Unlike {@link createProjectMcpJson} (which skips when a sequant entry already
- * exists), this is the `update`/`sync` path: it refreshes the version pin so the
- * MCP server tracks the release the user just updated to. It only rewrites the
- * `sequant@<version>` token inside `args` and leaves everything else untouched.
- *
- * No-ops (returns `updated: false`) when:
- * - `.mcp.json` doesn't exist (`no-file`) — we never create it here; that's init's job
- * - there's no sequant server entry (`no-entry`)
- * - the entry uses a local-binary form with no `sequant@…` arg (`no-pin`) — a
- *   deliberate contributor override we must not clobber
- * - the pin already matches the installed version (`already-current`)
- *
- * With `opts.dryRun`, computes `from`/`to` and returns `updated: true` for a
- * pending change but does not write the file — the caller reports it as a preview.
- */
-
-/**
  * Read the `sequant@<version>` pin from a project's own `.mcp.json`, if
  * present (#1084 AC-5). Read-only counterpart to {@link syncSequantMcpPin} —
  * used to compare a shadowing local `node_modules/sequant` against the pin
@@ -418,6 +399,24 @@ export function readProjectMcpPin(projectDir?: string): string | undefined {
   return pin?.slice("sequant@".length);
 }
 
+/**
+ * Re-pin an existing project `.mcp.json` sequant entry to the installed version (#793).
+ *
+ * Unlike {@link createProjectMcpJson} (which skips when a sequant entry already
+ * exists), this is the `update`/`sync` path: it refreshes the version pin so the
+ * MCP server tracks the release the user just updated to. It only rewrites the
+ * `sequant@<version>` token inside `args` and leaves everything else untouched.
+ *
+ * No-ops (returns `updated: false`) when:
+ * - `.mcp.json` doesn't exist (`no-file`) — we never create it here; that's init's job
+ * - there's no sequant server entry (`no-entry`)
+ * - the entry uses a local-binary form with no `sequant@…` arg (`no-pin`) — a
+ *   deliberate contributor override we must not clobber
+ * - the pin already matches the installed version (`already-current`)
+ *
+ * With `opts.dryRun`, computes `from`/`to` and returns `updated: true` for a
+ * pending change but does not write the file — the caller reports it as a preview.
+ */
 export function syncSequantMcpPin(
   projectDir?: string,
   opts?: { dryRun?: boolean },

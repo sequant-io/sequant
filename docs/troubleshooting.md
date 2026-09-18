@@ -446,7 +446,7 @@ npm uninstall sequant   # if it's not actually used by the project
 npm install sequant@latest   # to match the plugin's pin
 ```
 
-The plugin itself (v2.16.0+) launches through `scripts/mcp-launch.mjs`, which spawns `npx` from an isolated temp directory precisely so this shadowing can't happen for plugin-managed connections — this failure mode is now specific to older plugin versions or manually-configured `.mcp.json`/client configs that still invoke `npx` directly from the project directory. See [MCP Server → `SEQUANT_PROJECT_DIR`](features/mcp-server.md#how-the-plugin-avoids-shadowing) for how the launcher separates "where npx resolves packages from" (an isolated temp dir) from "which project sequant operates on" (`SEQUANT_PROJECT_DIR`).
+The plugin itself (v2.16.0+) ships `scripts/mcp-launch.mjs` inline in `.mcp.json` (no file path, no `${...}` placeholder) and spawns `npx` from an isolated temp directory precisely so this shadowing can't happen for plugin-managed connections — this failure mode is now specific to older plugin versions or manually-configured `.mcp.json`/client configs that still invoke `npx` directly from the project directory. See [MCP Server → How the plugin avoids shadowing](features/mcp-server.md#how-the-plugin-avoids-shadowing) for how the launcher separates "where npx resolves packages from" (an isolated temp dir) from "which project sequant operates on" (`SEQUANT_PROJECT_DIR`).
 
 ### MCP server won't (re)connect — `Failed to reconnect: -32000`
 

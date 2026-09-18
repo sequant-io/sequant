@@ -5,7 +5,16 @@
 // Runs before `npm install`, so this file must import only `node:` builtins.
 //
 // Usage: node mcp-launch.mjs <package-spec>
-//   e.g. node mcp-launch.mjs sequant@2.15.1
+//   e.g. node mcp-launch.mjs <package-name>@<version>
+//
+// Note for maintainers: this file's comments must never spell out this
+// package's own name immediately followed by "@" and a version number. The
+// inline copy shipped in .mcp.json is generated verbatim from this file
+// (scripts/generate-mcp-launch-inline.mjs), and the marketplace prep script
+// stamps .mcp.json's args with a global find-and-replace of that exact
+// pattern on release — an example version spelled out here would drift from
+// that stamp and fail the byte-identical check in
+// scripts/plugin-mcp-pin.test.ts on the next release.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -29,8 +38,11 @@ function main() {
     process.exit(1);
   }
 
-  // ${CLAUDE_PROJECT_DIR} is substituted by Claude Code before this process
-  // starts; an unset or empty placeholder falls back to our own cwd.
+  // Claude Code spawns this launcher with cwd = the open project (the same
+  // fact that lets a local node_modules/sequant shadow npx in the first
+  // place — see the module comment above). SEQUANT_PROJECT_DIR is normally
+  // unset; it exists only so a caller invoking this file directly (tests,
+  // manual debugging) can override the project dir without changing cwd.
   const projectDir = process.env.SEQUANT_PROJECT_DIR || process.cwd();
 
   let launchCwd;

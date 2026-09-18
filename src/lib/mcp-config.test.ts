@@ -14,6 +14,7 @@ import {
   isSequantInProjectMcpJson,
   createProjectMcpJson,
   syncSequantMcpPin,
+  readProjectMcpPin,
   getPhaseMcpServersConfig,
   buildOpencodeMcpConfig,
 } from "./mcp-config.js";
@@ -676,6 +677,87 @@ describe("mcp-config", () => {
       expect(result.to).toBe(getSequantPackageSpec());
       // File must be untouched on a dry run.
       expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(before);
+    });
+  });
+
+  describe("readProjectMcpPin (#1084 AC-5)", () => {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      "sequant-mcp-readpin-test-" + Date.now(),
+    );
+    const mcpPath = () => path.join(tmpDir, ".mcp.json");
+
+    beforeEach(() => {
+      fs.mkdirSync(tmpDir, { recursive: true });
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("reads the pin from a wrapped mcpServers.sequant entry", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({
+          mcpServers: {
+            sequant: { command: "npx", args: ["-y", "sequant@2.9.0", "serve"] },
+          },
+        }),
+      );
+
+      expect(readProjectMcpPin(tmpDir)).toBe("2.9.0");
+    });
+
+    it("reads the pin from a flat sequant entry (no mcpServers wrapper)", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({
+          sequant: { command: "npx", args: ["-y", "sequant@2.9.0", "serve"] },
+        }),
+      );
+
+      expect(readProjectMcpPin(tmpDir)).toBe("2.9.0");
+    });
+
+    it("returns undefined when the file does not exist", () => {
+      expect(readProjectMcpPin(tmpDir)).toBeUndefined();
+    });
+
+    it("returns undefined when the file has invalid JSON", () => {
+      fs.writeFileSync(mcpPath(), "{not valid json");
+
+      expect(readProjectMcpPin(tmpDir)).toBeUndefined();
+    });
+
+    it("returns undefined when there is no sequant entry", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({ mcpServers: { other: { command: "node" } } }),
+      );
+
+      expect(readProjectMcpPin(tmpDir)).toBeUndefined();
+    });
+
+    it("returns undefined for a local-binary override with no sequant@ arg", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({
+          mcpServers: { sequant: { command: "sequant", args: ["serve"] } },
+        }),
+      );
+
+      expect(readProjectMcpPin(tmpDir)).toBeUndefined();
+    });
+
+    it("returns undefined when args is not an array", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({
+          mcpServers: { sequant: { command: "node", args: "not-an-array" } },
+        }),
+      );
+
+      expect(readProjectMcpPin(tmpDir)).toBeUndefined();
     });
   });
 });
