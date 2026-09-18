@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "sequant": {
-      "command": "npx",
-      "args": ["-y", "sequant@2.15.1", "serve"]
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-launch.mjs", "sequant@2.15.1"],
+      "env": { "SEQUANT_PROJECT_DIR": "${CLAUDE_PROJECT_DIR}" }
     }
   }
 }

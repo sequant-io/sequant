@@ -31,12 +31,18 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
     readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
   ) as { version: string };
   const marketplace = JSON.parse(
-    readFileSync(join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"), "utf8"),
+    readFileSync(
+      join(PROJECT_ROOT, ".claude-plugin", "marketplace.json"),
+      "utf8",
+    ),
   ) as { plugins: Array<{ name: string; source: string }> };
 
   it("resolves the shipped .mcp.json from marketplace.json `source` and finds the exact pin", () => {
     const entry = marketplace.plugins.find((p) => p.name === "sequant");
-    expect(entry, "marketplace.json must list the sequant plugin").toBeDefined();
+    expect(
+      entry,
+      "marketplace.json must list the sequant plugin",
+    ).toBeDefined();
 
     const shipped = join(PROJECT_ROOT, entry!.source, ".mcp.json");
     const pin = readSequantPin(JSON.parse(readFileSync(shipped, "utf8")));
@@ -52,6 +58,46 @@ describe("#988 AC-4: shipped plugin .mcp.json is pinned to the package version",
     );
     // Both halves must reference the marketplace-resolved path helper.
     expect(script).toContain("function shippedMcpJsonPath()");
-    expect(script.match(/shippedMcpJsonPath\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
+    expect(
+      script.match(/shippedMcpJsonPath\(\)/g)?.length ?? 0,
+    ).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("#1084 AC-2: shipped .mcp.json launches through mcp-launch.mjs, not npx directly", () => {
+  const shipped = JSON.parse(
+    readFileSync(join(PROJECT_ROOT, ".mcp.json"), "utf8"),
+  ) as {
+    mcpServers?: {
+      sequant?: {
+        command?: string;
+        args?: unknown[];
+        env?: Record<string, string>;
+      };
+    };
+  };
+  const sequant = shipped.mcpServers?.sequant;
+
+  it("invokes node on the plugin-root-relative launcher, not npx", () => {
+    expect(
+      sequant,
+      "shipped .mcp.json must declare mcpServers.sequant",
+    ).toBeDefined();
+    expect(sequant!.command).toBe("node");
+    expect(sequant!.args?.[0]).toBe(
+      "${CLAUDE_PLUGIN_ROOT:-.}/scripts/mcp-launch.mjs",
+    );
+  });
+
+  it("passes the real project dir through SEQUANT_PROJECT_DIR", () => {
+    expect(sequant!.env?.SEQUANT_PROJECT_DIR).toBe("${CLAUDE_PROJECT_DIR}");
+  });
+
+  it("still carries the concrete sequant@<version> pin as the launcher's argument", () => {
+    const pin = readSequantPin(shipped);
+    const pkg = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
+    ) as { version: string };
+    expect(pin).toBe(`sequant@${pkg.version}`);
   });
 });

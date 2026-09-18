@@ -419,6 +419,35 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
 
 ## MCP Server Issues
 
+### MCP server dies with `CONNECTION_CLOSED` — a local `sequant` shadows the pin
+
+**Problem:** `/mcp` reports:
+
+```
+Failed to reconnect to plugin:sequant:sequant: CONNECTION_CLOSED
+```
+
+**Cause:** The plugin launches the server with `npx -y sequant@<pin> serve`, and `npx` resolves packages by walking **up from the launch cwd** looking for a `node_modules/sequant` before it ever considers the pinned spec. If the open project has *any* `sequant` in its own `node_modules` — commonly a stale `"sequant": "^1.x"` devDependency nobody imports — `npx` silently runs that local copy instead of the pin. A pre-`serve` version prints `unknown command 'serve'` and exits, so the MCP handshake never completes and Claude Code reports only the generic `CONNECTION_CLOSED`. No `--prefix` or other npx flag defeats this; only the working directory does.
+
+**Diagnosis:** From the project root, compare what actually runs against the pinned version:
+
+```bash
+cd <project> && npx -y sequant@<pin> --version
+# Prints the shadowed local version, not <pin>, if this is the cause
+```
+
+`sequant doctor` also flags this: a **Local sequant shadow** warning names the shadowing path and both versions.
+
+**Fix:** Remove or upgrade the shadowing local copy:
+
+```bash
+npm uninstall sequant   # if it's not actually used by the project
+# or
+npm install sequant@latest   # to match the plugin's pin
+```
+
+The plugin itself (v2.16.0+) launches through `scripts/mcp-launch.mjs`, which spawns `npx` from an isolated temp directory precisely so this shadowing can't happen for plugin-managed connections — this failure mode is now specific to older plugin versions or manually-configured `.mcp.json`/client configs that still invoke `npx` directly from the project directory. See [MCP Server → `SEQUANT_PROJECT_DIR`](features/mcp-server.md#how-the-plugin-avoids-shadowing) for how the launcher separates "where npx resolves packages from" (an isolated temp dir) from "which project sequant operates on" (`SEQUANT_PROJECT_DIR`).
+
 ### MCP server won't (re)connect — `Failed to reconnect: -32000`
 
 **Problem:** Claude Code fails to start or reconnect the `sequant` MCP server, most often reported through `/plugin` or `/mcp` as `Failed to reconnect to sequant: -32000`. The `-32000` is a generic JSON-RPC transport error — it means the server process never came up, not that sequant itself crashed.

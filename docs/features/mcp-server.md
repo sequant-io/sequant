@@ -106,6 +106,12 @@ Cursor runs from the workspace root, so no `cwd` needed:
 
 **Restart your client after adding the config.**
 
+### How the plugin avoids shadowing
+
+The Claude Code plugin doesn't invoke `npx` directly. It launches through `scripts/mcp-launch.mjs`, which spawns `npx -y sequant@<pin> serve` from a fresh, isolated temp directory instead of the project directory (#1084). This matters because `npx` resolves packages by walking up from its launch cwd looking for a local install — if the open project has any `sequant` in its own `node_modules` (a stale, unused devDependency, for example), a plain `npx ... serve` run from the project directory would silently run that local copy instead of the pinned version, and a pre-`serve` version fails the MCP handshake with `CONNECTION_CLOSED`. See [Troubleshooting → CONNECTION_CLOSED](../troubleshooting.md#mcp-server-dies-with-connection_closed--a-local-sequant-shadows-the-pin).
+
+Since `npx` no longer runs from the project, the launcher passes the real project path through the `SEQUANT_PROJECT_DIR` environment variable, and `sequant serve` `chdir`s there before doing anything else — every MCP tool and resource still operates on your project exactly as before. You should never need to set `SEQUANT_PROJECT_DIR` by hand; it's wired automatically by the plugin's `.mcp.json` (`${CLAUDE_PROJECT_DIR}`).
+
 ### Verify it works
 
 Run `sequant doctor` — look for the MCP Server check:
