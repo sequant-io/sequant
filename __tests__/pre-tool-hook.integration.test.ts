@@ -944,6 +944,77 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    // #1064: shell comments must be stripped for command recognition, but a
+    // heredoc reached through a real git-commit command is commit-message
+    // data. All five cases run against every mirrored hook through this
+    // describe.each matrix.
+    it("1064: allows a -F - heredoc subject containing #", () => {
+      const repo = makeStagedRepo("pre-tool-1064-form-a-");
+      try {
+        const cmd = [
+          `git commit -q -F - <<'EOF'`,
+          `fix(#497): subject`,
+          `EOF`,
+        ].join("\n");
+        expect(runHook(hookPath, cmd, repo).code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("1064 blocks a non-conventional -F - heredoc subject", () => {
+      const repo = makeStagedRepo("pre-tool-1064-form-a-bad-");
+      try {
+        const cmd = [`git commit -q -F - <<'EOF'`, `wip`, `EOF`].join("\n");
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/Got: wip/);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("1064 pins -F - heredocs without #", () => {
+      const repo = makeStagedRepo("pre-tool-1064-form-b-");
+      try {
+        const cmd = [
+          `git commit -q -F - <<'EOF'`,
+          `fix: stdin subject`,
+          `EOF`,
+        ].join("\n");
+        expect(runHook(hookPath, cmd, repo).code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("1064 pins -m command-substitution heredocs with #", () => {
+      const repo = makeStagedRepo("pre-tool-1064-form-c-");
+      try {
+        const cmd = [
+          `git commit -q -m "$(cat <<'EOF'`,
+          `fix(#497): heredoc subject`,
+          `EOF`,
+          `)"`,
+        ].join("\n");
+        expect(runHook(hookPath, cmd, repo).code).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    it("1064 pins literal -m subjects with #", () => {
+      const repo = makeStagedRepo("pre-tool-1064-form-d-");
+      try {
+        expect(
+          runHook(hookPath, 'git commit -q -m "fix(#497): literal subject"', repo)
+            .code,
+        ).toBe(0);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     // Scoping extraction to a segment must not create the inverse defect —
     // a segment that holds no `-m` yields an empty MSG, and an empty MSG
     // skips validation entirely (fail-open). Both shapes below were blocked
