@@ -149,6 +149,7 @@ vi.mock("../lib/system.js", () => ({
 import {
   doctorCommand,
   checkClosedIssues,
+  checkShadowingLocalSequant,
   isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
   findOpencodeShim,
@@ -1203,6 +1204,64 @@ describe("doctor command", () => {
         .find((line) => line.includes("user-owned (preserved by sync)"));
       expect(userOwnedLine).toBeDefined();
       expect(userOwnedLine).not.toContain("--force");
+    });
+  });
+
+  describe("1084 AC-5: checkShadowingLocalSequant warns on a version-mismatched local sequant", () => {
+    let cwd: string;
+    let home: string;
+
+    beforeEach(() => {
+      cwd = mkdtempSync(join(tmpdir(), "sequant-shadow-cwd-"));
+      home = mkdtempSync(join(tmpdir(), "sequant-shadow-home-"));
+    });
+
+    afterEach(() => {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    });
+
+    function writeShadow(root: string, version: string): void {
+      mkdirSync(join(root, "node_modules", "sequant"), { recursive: true });
+      writeFileSync(
+        join(root, "node_modules", "sequant", "package.json"),
+        JSON.stringify({ name: "sequant", version }),
+      );
+    }
+
+    it("warns with the path and both versions when cwd carries a differing local sequant", async () => {
+      // Mocked ../lib/version.js reports the running version as "1.0.0".
+      writeShadow(cwd, "1.20.1");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe("warn");
+      expect(results[0].message).toContain(
+        join(cwd, "node_modules", "sequant"),
+      );
+      expect(results[0].message).toContain("sequant@1.20.1");
+      expect(results[0].message).toContain("sequant@1.0.0");
+    });
+
+    it("warns on a shadowing sequant under $HOME even when cwd is clean", async () => {
+      writeShadow(home, "1.20.1");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].message).toContain(
+        join(home, "node_modules", "sequant"),
+      );
+    });
+
+    it("does not warn when no local sequant shadows, or it matches the running version", async () => {
+      const clean = await checkShadowingLocalSequant(cwd, home);
+      expect(clean).toHaveLength(0);
+
+      writeShadow(cwd, "1.0.0"); // matches the mocked running version
+      const matching = await checkShadowingLocalSequant(cwd, home);
+      expect(matching).toHaveLength(0);
     });
   });
 });

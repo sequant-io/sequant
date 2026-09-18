@@ -93,8 +93,14 @@ describe("#1084 AC-4: mcp-launch.mjs isolates npx from a shadowing local sequant
       argv: string[];
     };
 
-    expect(recorded.cwd).not.toBe(projectDir);
-    expect(recorded.cwd.startsWith(projectDir + path.sep)).toBe(false);
+    // macOS resolves /tmp -> /private/tmp for a child's reported cwd
+    // (process.cwd() inside the fake npx already reflects this), so compare
+    // against the project dir's realpath rather than the raw mkdtemp string.
+    // The launcher cleans up its own launch dir on exit, so only resolve the
+    // side that's still guaranteed to exist.
+    const realProjectDir = fs.realpathSync(projectDir);
+    expect(recorded.cwd).not.toBe(realProjectDir);
+    expect(recorded.cwd.startsWith(realProjectDir + path.sep)).toBe(false);
     expect(recorded.argv).toEqual(["-y", "sequant@2.15.1", "serve"]);
   });
 });
