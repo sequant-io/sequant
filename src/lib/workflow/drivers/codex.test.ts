@@ -361,6 +361,10 @@ describe("497 AC-2: buildCodexArgs and the spawn contract", () => {
       "/wt",
       "-s",
       "workspace-write",
+      // #1079: network access is on by default under workspace-write. `/wt`
+      // is not a git repo, so no writable_roots override appears here.
+      "-c",
+      "sandbox_workspace_write.network_access=true",
       "--dangerously-bypass-hook-trust",
       "$qa 497",
     ]);
@@ -380,6 +384,8 @@ describe("497 AC-2: buildCodexArgs and the spawn contract", () => {
       "/wt",
       "-s",
       "workspace-write",
+      "-c",
+      "sandbox_workspace_write.network_access=true",
       "--dangerously-bypass-hook-trust",
       "-m",
       "gpt-5-codex",

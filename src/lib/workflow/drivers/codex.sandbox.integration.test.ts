@@ -22,10 +22,25 @@ import { join } from "path";
 
 import { buildCodexArgs, resolveGitCommonDir } from "./codex.js";
 
-/** The `-c` value the driver passes, or undefined when it passed none. */
+/**
+ * The `writable_roots` override the driver passed, or undefined.
+ *
+ * Matched on the full `sandbox_workspace_write.writable_roots=` prefix, not
+ * the `sandbox_workspace_write.` namespace: #1079 added a second `-c` under
+ * that same namespace, and a prefix match would silently start reporting the
+ * network flag here.
+ */
 function writableRootsArg(args: string[]): string | undefined {
-  const i = args.findIndex((a) => a.startsWith("sandbox_workspace_write."));
-  return i === -1 ? undefined : args[i];
+  return args.find((a) =>
+    a.startsWith("sandbox_workspace_write.writable_roots="),
+  );
+}
+
+/** The `network_access` override the driver passed, or undefined (#1079). */
+function networkAccessArg(args: string[]): string | undefined {
+  return args.find((a) =>
+    a.startsWith("sandbox_workspace_write.network_access="),
+  );
 }
 
 describe("1076: .git is a writable root under workspace-write", () => {
@@ -119,6 +134,48 @@ describe("1076: .git is a writable root under workspace-write", () => {
       rmSync(bare, { recursive: true, force: true });
     }
   });
+
+  // #1079 — `workspace-write` also disables network access, leaving a phase
+  // unable to read its own issue, comment, or push. The #1060 gate run left no
+  // `/spec` comment and logged "Could not parse spec recommendation" for this
+  // reason; its exec agent reconstructed the task by grepping for the issue
+  // number, never having read the issue.
+  it("1079 enables network access under workspace-write by default", () => {
+    const args = buildCodexArgs("$exec 1", { cwd: repo, phase: "exec" });
+
+    expect(networkAccessArg(args)).toBe(
+      "sandbox_workspace_write.network_access=true",
+    );
+    expect(args[args.indexOf(networkAccessArg(args)!) - 1]).toBe("-c");
+  });
+
+  it("1079 honours networkAccess: false for anyone who wants phases sealed off", () => {
+    const args = buildCodexArgs(
+      "$exec 1",
+      { cwd: repo, phase: "exec" },
+      { networkAccess: false },
+    );
+
+    expect(networkAccessArg(args)).toBeUndefined();
+    // The writable root is independent — a sealed phase must still commit.
+    expect(writableRootsArg(args)).toBeDefined();
+  });
+
+  it.each([
+    ["read-only", "read-only"],
+    ["danger-full-access", "danger-full-access"],
+  ] as const)(
+    "1079 adds no network override under %s — codex governs those itself",
+    (_label, sandboxMode) => {
+      const args = buildCodexArgs(
+        "$exec 1",
+        { cwd: repo, phase: "exec" },
+        { sandboxMode },
+      );
+
+      expect(networkAccessArg(args)).toBeUndefined();
+    },
+  );
 
   it("1076 keeps the prompt last, after the injected override", () => {
     const args = buildCodexArgs("$exec 1", { cwd: repo, phase: "exec" });
