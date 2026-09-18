@@ -294,10 +294,7 @@ export function buildOpencodeMcpConfig(): Record<
   OpencodeMcpLocalConfig
 > {
   const base = getSequantMcpConfig(); // No clientType → no cwd/env, no secrets
-  const command = [
-    base.command as string,
-    ...(base.args as string[]),
-  ];
+  const command = [base.command as string, ...(base.args as string[])];
 
   return { sequant: { type: "local", command, enabled: true } };
 }
@@ -384,6 +381,43 @@ export interface SyncMcpPinResult {
  * With `opts.dryRun`, computes `from`/`to` and returns `updated: true` for a
  * pending change but does not write the file — the caller reports it as a preview.
  */
+
+/**
+ * Read the `sequant@<version>` pin from a project's own `.mcp.json`, if
+ * present (#1084 AC-5). Read-only counterpart to {@link syncSequantMcpPin} —
+ * used to compare a shadowing local `node_modules/sequant` against the pin
+ * itself, not just the CLI version that happens to be running `doctor`.
+ * That distinction matters because the shadow and the running CLI can be
+ * the *same* version by construction (running `sequant doctor` from inside
+ * a shadowed project runs the shadow), while still differing from the pin.
+ *
+ * Returns undefined when the file doesn't exist, has no sequant entry, or
+ * the entry has no `sequant@…` arg (e.g. a local-binary override) — every
+ * case where there's no pin to compare against.
+ */
+export function readProjectMcpPin(projectDir?: string): string | undefined {
+  const mcpJsonPath = path.resolve(projectDir ?? ".", PROJECT_MCP_JSON);
+  if (!fs.existsSync(mcpJsonPath)) return undefined;
+
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(fs.readFileSync(mcpJsonPath, "utf-8"));
+  } catch {
+    return undefined;
+  }
+
+  const servers =
+    (config?.mcpServers as Record<string, unknown> | undefined) ?? config;
+  const sequant = servers?.sequant as { args?: unknown } | undefined;
+  const args = sequant?.args;
+  if (!Array.isArray(args)) return undefined;
+
+  const pin = args.find(
+    (a) => typeof a === "string" && a.startsWith("sequant@"),
+  ) as string | undefined;
+  return pin?.slice("sequant@".length);
+}
+
 export function syncSequantMcpPin(
   projectDir?: string,
   opts?: { dryRun?: boolean },

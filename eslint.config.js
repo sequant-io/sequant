@@ -87,6 +87,21 @@ export default tseslint.config(
       },
     },
   },
+  // #1084 QA follow-up: `.mjs` files (e.g. `scripts/mcp-launch.mjs`, the
+  // plugin's new process entry point) ship raw — no tsconfig project covers
+  // them, same reasoning as `**/*.js`. Unlike `**/*.js`, they aren't excluded
+  // from lint entirely: this block drops `parserOptions.project` so
+  // type-aware rules no-op instead of erroring "file not found in any of the
+  // provided project(s)", while eslint.configs.recommended and the plain
+  // no-restricted-syntax rule (require() ban) still apply.
+  {
+    files: ["**/*.mjs"],
+    languageOptions: {
+      parserOptions: {
+        project: null,
+      },
+    },
+  },
   {
     ignores: [
       "dist/",
@@ -100,9 +115,6 @@ export default tseslint.config(
       // the directory saw the parser error.
       "scripts/dev/",
       "**/*.js",
-      // #1084: mcp-launch.mjs ships raw (not built by tsc) and must stay
-      // dependency-free — no tsconfig project covers it, same as **/*.js.
-      "**/*.mjs",
       "**/*.test.ts",
       "**/*.test.tsx",
       "**/*.d.ts",

@@ -119,11 +119,22 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
 /**
  * Warn when a `node_modules/sequant` sits in cwd's ancestor chain (npm's own
  * `npx` resolution order) or under `$HOME`, at a version that differs from
- * the running CLI. That local copy silently shadows the plugin's pinned
- * `npx -y sequant@<pin> serve` — `npx` resolves the project-local install and
+ * either comparator below. That local copy silently shadows an `npx -y
+ * sequant@<pin> serve` launch — `npx` resolves the project-local install and
  * ignores the pin entirely, which is exactly the failure mode in #1084 (the
  * plugin's MCP server dies with `CONNECTION_CLOSED` because the shadowed
  * copy doesn't have a `serve` command).
+ *
+ * Two comparators, not one:
+ * - **The project's own `.mcp.json` pin** (`readProjectMcpPin`), when
+ *   present — the authoritative "what should run" reference. This is the
+ *   only reliable comparator for the self-shadowing case: running `sequant
+ *   doctor` *from inside* the shadowed project runs the shadow itself, so
+ *   `getVersion()` reports the shadow's own version and can never disagree
+ *   with it by construction, even though the shadow still defeats the pin.
+ * - **The running CLI's version**, as a fallback when there's no local
+ *   `.mcp.json` to read a pin from (e.g. the plugin-only case, or the
+ *   `$HOME` candidate, which isn't tied to any one project's pin).
  */
 export async function checkShadowingLocalSequant(
   cwd: string = process.cwd(),
@@ -131,7 +142,9 @@ export async function checkShadowingLocalSequant(
 ): Promise<Check[]> {
   const results: Check[] = [];
   const { getVersion } = await import("../lib/version.js");
+  const { readProjectMcpPin } = await import("../lib/mcp-config.js");
   const runningVersion = getVersion();
+  const pinVersion = readProjectMcpPin(cwd);
 
   const candidates = new Set<string>();
   let dir = cwd;
@@ -153,12 +166,18 @@ export async function checkShadowingLocalSequant(
     } catch {
       continue;
     }
-    if (!shadowVersion || shadowVersion === runningVersion) continue;
+    if (!shadowVersion) continue;
+
+    const expected = pinVersion ?? runningVersion;
+    const expectedLabel = pinVersion
+      ? `sequant@${pinVersion} (the .mcp.json pin)`
+      : `sequant@${runningVersion} (the running CLI)`;
+    if (shadowVersion === expected) continue;
 
     results.push({
       name: "Local sequant shadow",
       status: "warn",
-      message: `${candidate} has sequant@${shadowVersion}, which shadows sequant@${runningVersion} for any npx launch with cwd under this tree (e.g. the MCP plugin) - run: npm uninstall sequant (in that project) or bump it to match`,
+      message: `${candidate} has sequant@${shadowVersion}, which shadows ${expectedLabel} for any npx launch with cwd under this tree (e.g. the MCP plugin) - run: npm uninstall sequant (in that project) or bump it to match`,
     });
   }
 

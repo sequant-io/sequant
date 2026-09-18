@@ -112,6 +112,8 @@ The Claude Code plugin doesn't invoke `npx` directly. It launches through `scrip
 
 Since `npx` no longer runs from the project, the launcher passes the real project path through the `SEQUANT_PROJECT_DIR` environment variable, and `sequant serve` `chdir`s there before doing anything else — every MCP tool and resource still operates on your project exactly as before. You should never need to set `SEQUANT_PROJECT_DIR` by hand; it's wired automatically by the plugin's `.mcp.json` (`${CLAUDE_PROJECT_DIR}`).
 
+> **If you're contributing to sequant itself:** the sequant checkout's own root `.mcp.json` is dual-use — it's both the dev repo's project config and (via `marketplace.json`'s `source: "./"`) the file plugin users install. Before #1084, loading it as a plain project config happened to run the checkout's own build (`npx` resolved the repo's `package.json` `bin` entry, the same shadowing this fix removes for everyone else). Now it always fetches the pinned **published** `sequant@<pin>` through `npx`, like any other project. If you're iterating on MCP-server code (`src/mcp/`, `src/commands/serve.ts`), invoke `dist/bin/cli.js serve` directly instead of relying on `.mcp.json` to pick up local changes.
+
 ### Verify it works
 
 Run `sequant doctor` — look for the MCP Server check:

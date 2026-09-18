@@ -104,3 +104,126 @@ describe("#1084 AC-4: mcp-launch.mjs isolates npx from a shadowing local sequant
     expect(recorded.argv).toEqual(["-y", "sequant@2.15.1", "serve"]);
   });
 });
+
+describe("#1084 AC-1: mcp-launch.mjs forwards the child's exit code and signals", () => {
+  let launchDir: string;
+  let fakeNpxDir: string;
+
+  beforeEach(() => {
+    launchDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-launch-dir-"));
+    fakeNpxDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-fake-npx-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(launchDir, { recursive: true, force: true });
+    fs.rmSync(fakeNpxDir, { recursive: true, force: true });
+  });
+
+  function writeFakeNpx(script: string): void {
+    fs.writeFileSync(path.join(fakeNpxDir, "npx"), script, { mode: 0o755 });
+  }
+
+  function spawnLauncher() {
+    return spawn(process.execPath, [LAUNCHER, "sequant@2.15.1"], {
+      cwd: launchDir,
+      env: {
+        ...process.env,
+        PATH: `${fakeNpxDir}${path.delimiter}${process.env.PATH}`,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
+
+  it("exits with the child's exit code when it exits normally", async () => {
+    writeFakeNpx("#!/usr/bin/env node\nprocess.exit(7);\n");
+
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolvePromise, reject) => {
+      const child = spawnLauncher();
+      let stderr = "";
+      child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`launcher did not exit in time; stderr:\n${stderr}`),
+          ),
+        10_000,
+      );
+      child.on("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolvePromise({ code, signal });
+      });
+      child.on("error", reject);
+    });
+
+    expect(result).toEqual({ code: 7, signal: null });
+  });
+
+  it("forwards SIGTERM to the child and re-raises it on exit, instead of swallowing it into exit 0", async () => {
+    // No signal handler of its own — the OS default (terminate) applies, so
+    // the parent observes { code: null, signal: "SIGTERM" }, exactly like a
+    // real `sequant serve` process killed by the forwarded signal. Without
+    // the removeAllListeners() fix, the launcher's own re-raised SIGTERM
+    // routes back into its still-attached listener (a no-op once the child
+    // has already exited) and the process falls through to a plain `exit
+    // 0` — silently reporting success for a server that was actually killed.
+    writeFakeNpx(
+      "#!/usr/bin/env node\n" +
+        "process.stdout.write('started\\n');\n" +
+        "setInterval(() => {}, 1000);\n",
+    );
+
+    const child = spawnLauncher();
+    let stdout = "";
+    let stderr = "";
+    child.stdout!.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+
+    const launchCwdMatch = await new Promise<string>(
+      (resolvePromise, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`fake npx never started; stderr:\n${stderr}`)),
+          10_000,
+        );
+        const check = setInterval(() => {
+          if (stdout.includes("started")) {
+            clearInterval(check);
+            clearTimeout(timer);
+            const match = /launching npx from (\S+)/.exec(stderr);
+            resolvePromise(match ? match[1] : "");
+          }
+        }, 20);
+      },
+    );
+
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolvePromise, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `launcher did not exit within 10s of SIGTERM; stderr:\n${stderr}`,
+            ),
+          ),
+        10_000,
+      );
+      child.on("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolvePromise({ code, signal });
+      });
+      child.kill("SIGTERM");
+    });
+
+    expect(result).toEqual({ code: null, signal: "SIGTERM" });
+    if (launchCwdMatch) {
+      expect(
+        fs.existsSync(launchCwdMatch),
+        "launcher must clean up its launch dir on exit",
+      ).toBe(false);
+    }
+  });
+});

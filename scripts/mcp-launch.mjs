@@ -11,69 +11,99 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const spec = process.argv[2];
-if (!spec) {
-  process.stderr.write("mcp-launch: missing package spec argument\n");
-  process.exit(1);
+// npm ships `npx` as `npx.cmd` on Windows. With `shell: false`, Node's spawn
+// uses the OS's own exec (no PATHEXT resolution), so plain "npx" raises
+// ENOENT there — a regression versus the previous shell-resolved `"command":
+// "npx"` config Claude Code used to run. Naming the .cmd explicitly keeps
+// shell: false (no shell-interpolation of the spec/SEQUANT_PROJECT_DIR).
+export function resolveNpxCommand(platform = process.platform) {
+  return platform === "win32" ? "npx.cmd" : "npx";
 }
 
-// ${CLAUDE_PROJECT_DIR} is substituted by Claude Code before this process
-// starts; an unset or empty placeholder falls back to our own cwd.
-const projectDir = process.env.SEQUANT_PROJECT_DIR || process.cwd();
-
-let launchCwd;
-try {
-  // A cwd with no package.json/node_modules ancestor forces npx to resolve
-  // from its cache/registry instead of a locally shadowing install.
-  launchCwd = mkdtempSync(join(tmpdir(), "sequant-mcp-launch-"));
-} catch (err) {
-  process.stderr.write(
-    `mcp-launch: failed to create an isolated launch directory: ${err.message}\n`,
-  );
-  process.exit(1);
-}
-
-process.stderr.write(
-  `mcp-launch: project dir ${projectDir}; launching npx from ${launchCwd}\n`,
-);
-
-function cleanup() {
-  try {
-    rmSync(launchCwd, { recursive: true, force: true });
-  } catch {
-    // best-effort
+function main() {
+  const spec = process.argv[2];
+  if (!spec) {
+    process.stderr.write("mcp-launch: missing package spec argument\n");
+    process.exit(1);
   }
-}
 
-const child = spawn("npx", ["-y", spec, "serve"], {
-  cwd: launchCwd,
-  stdio: "inherit",
-  shell: false,
-  env: { ...process.env, SEQUANT_PROJECT_DIR: projectDir },
-});
+  // ${CLAUDE_PROJECT_DIR} is substituted by Claude Code before this process
+  // starts; an unset or empty placeholder falls back to our own cwd.
+  const projectDir = process.env.SEQUANT_PROJECT_DIR || process.cwd();
 
-for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    if (child.exitCode === null && child.signalCode === null) {
-      child.kill(signal);
+  let launchCwd;
+  try {
+    // A cwd with no package.json/node_modules ancestor forces npx to resolve
+    // from its cache/registry instead of a locally shadowing install.
+    launchCwd = mkdtempSync(join(tmpdir(), "sequant-mcp-launch-"));
+  } catch (err) {
+    process.stderr.write(
+      `mcp-launch: failed to create an isolated launch directory: ${err.message}\n`,
+    );
+    process.exit(1);
+  }
+
+  process.stderr.write(
+    `mcp-launch: project dir ${projectDir}; launching npx from ${launchCwd}\n`,
+  );
+
+  function cleanup() {
+    try {
+      rmSync(launchCwd, { recursive: true, force: true });
+    } catch {
+      // best-effort
     }
+  }
+
+  const child = spawn(resolveNpxCommand(), ["-y", spec, "serve"], {
+    cwd: launchCwd,
+    stdio: "inherit",
+    shell: false,
+    env: { ...process.env, SEQUANT_PROJECT_DIR: projectDir },
+  });
+
+  for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, () => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill(signal);
+      }
+    });
+  }
+
+  child.on("error", (err) => {
+    process.stderr.write(`mcp-launch: failed to spawn npx: ${err.message}\n`);
+    cleanup();
+    process.exit(1);
+  });
+
+  child.on("exit", (code, signal) => {
+    cleanup();
+    if (signal) {
+      // Re-raise the same signal so our own exit reflects the child's cause,
+      // rather than translating it into an opaque exit code. Must drop our
+      // own SIGINT/SIGTERM listeners first: a process with an active listener
+      // for a signal never applies that signal's default (terminate) action,
+      // so self-killing while the listener above is still attached routes
+      // back into it instead — observed to swallow the signal and fall
+      // through to a plain `exit 0` (silently reporting success for a
+      // process that was actually killed), rather than reporting the real
+      // signal exit our caller needs to see.
+      process.removeAllListeners("SIGINT");
+      process.removeAllListeners("SIGTERM");
+      process.kill(process.pid, signal);
+      return;
+    }
+    process.exit(code ?? 1);
   });
 }
 
-child.on("error", (err) => {
-  process.stderr.write(`mcp-launch: failed to spawn npx: ${err.message}\n`);
-  cleanup();
-  process.exit(1);
-});
-
-child.on("exit", (code, signal) => {
-  cleanup();
-  if (signal) {
-    // Re-raise the same signal so our own exit reflects the child's cause,
-    // rather than translating it into an opaque exit code.
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exit(code ?? 1);
-});
+// Only run when invoked directly (`node mcp-launch.mjs ...`), not when
+// imported — lets tests exercise resolveNpxCommand() without triggering the
+// spawn side effects above.
+const isMain =
+  process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  main();
+}
