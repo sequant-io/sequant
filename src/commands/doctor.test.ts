@@ -152,6 +152,7 @@ import {
   isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
   findOpencodeShim,
+  isCodexAuthenticated,
 } from "./doctor.js";
 import {
   fileExists,
@@ -636,6 +637,37 @@ describe("doctor command", () => {
       expect(output).toContain("codex auth");
       expect(output).toContain("codex is authenticated");
       expect(output).not.toContain("sk-super-secret-value-should-not-appear");
+    });
+
+    // #1075 AC-6: the key short-circuits before any subprocess. The unset
+    // control in the same case is what keeps `not.toHaveBeenCalled()` from
+    // being vacuous — it proves this code path does spawn when the key is
+    // absent, so the set-key assertion is measuring the short-circuit and not
+    // a mock that was never going to fire.
+    it("1075 AC-6: CODEX_API_KEY short-circuits before any subprocess and is never logged", () => {
+      const secret = "sk-1075-super-secret-value-should-not-appear";
+
+      // Control: no key set — the probe must actually shell out.
+      mockExecSync.mockClear();
+      mockExecSync.mockImplementation((() => "Logged in\n") as never);
+      expect(isCodexAuthenticated()).toBe(true);
+      expect(mockExecSync).toHaveBeenCalledWith(
+        "codex login status",
+        expect.anything(),
+      );
+
+      // Key set — same call, no subprocess at all.
+      process.env.CODEX_API_KEY = secret;
+      mockExecSync.mockClear();
+      expect(isCodexAuthenticated()).toBe(true);
+      expect(mockExecSync).not.toHaveBeenCalled();
+
+      // The value never reaches any captured output stream.
+      const output = [...consoleLogSpy.mock.calls, ...mockExecSync.mock.calls]
+        .flat()
+        .map((arg) => String(arg))
+        .join("\n");
+      expect(output).not.toContain(secret);
     });
 
     it("1059 AC-4c passes auth via `codex login status` when CODEX_API_KEY is unset", async () => {

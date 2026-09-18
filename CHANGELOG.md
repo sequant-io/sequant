@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Preserve `#` characters in stdin-heredoc commit subjects during conventional-commit validation (#1064).
+- **`sequant doctor`'s CLI probes can no longer hang the command (#1075).** `opencode --version`, `codex --version` and `codex login status` each shelled out with `execSync` and no `timeout`, so a hung binary — or, for the login probe, a stalled network request — hung `doctor` with no output and no way out but Ctrl-C. The three now pass a bound (5s for the `--version` pair, 10s for the network-reaching login check, which must not misreport a slow-but-working link as unauthenticated), as does the per-issue `git log --grep` probe. No new error handling was needed: Node kills the child and throws into each probe's existing `catch`, which already reports "not installed"/"not authenticated" with its hint. Covered by integration cases that put a sleeping stub on `PATH` and assert bounded wall time, not just the fallback value.
 - **A codex phase can reach GitHub again (#1079).** Codex's `workspace-write` sandbox disables network access by default, so every codex phase ran offline: it could not `gh issue view` the issue it was working on, could not post a `/spec` plan or a QA verdict comment, and could not `git push`. The first #1060 gate run showed exactly this — no `/spec` comment was ever posted and the orchestrator logged `Could not parse spec recommendation`, while the exec agent reconstructed its task by grepping the repo for the issue number, never having read the issue. `CodexDriver` now passes `-c sandbox_workspace_write.network_access=true` whenever the resolved sandbox mode is `workspace-write`. This does widen the sandbox: a codex phase can reach the network, as a Claude Code phase already can. The alternative is a driver whose phases cannot participate in the workflow at all, so it is on by default, and the new `run.codex.networkAccess: false` seals phases off for anyone who prefers that. `read-only` and `danger-full-access` are untouched, as with the writable-root override.
-- **A codex phase can commit its own work again (#1076).** Codex's `workspace-write` sandbox makes the workspace writable but **excludes `.git/`**, so every `git add` / `git commit` a phase ran was denied with `Unable to create '…/index.lock': Operation not permitted` — the first #1060 gate run produced correct edits across four files and ended with "made no commits". The exclusion is not worktree-specific: a plain clone whose `.git` sits inside the workspace fails identically. `CodexDriver` now resolves the repo's git dir (`git rev-parse --git-common-dir`, which gives the *main* `.git` from inside a worktree, where the index actually lives) and passes it as `-c sandbox_workspace_write.writable_roots=[…]` whenever the resolved sandbox mode is `workspace-write`. `read-only` has nothing to write and `danger-full-access` is already unrestricted, so neither is touched, and a non-git cwd leaves the sandbox exactly as codex configured it. This keeps the sandbox otherwise intact rather than retreating to `danger-full-access` — sequant's guard hooks are designed to run inside a sandbox, not instead of one.
+- **A codex phase can commit its own work again (#1076).** Codex's `workspace-write` sandbox makes the workspace writable but **excludes `.git/`**, so every `git add` / `git commit` a phase ran was denied with `Unable to create '…/index.lock': Operation not permitted` — the first #1060 gate run produced correct edits across four files and ended with "made no commits". The exclusion is not worktree-specific: a plain clone whose `.git` sits inside the workspace fails identically. `CodexDriver` now resolves the repo's git dir (`git rev-parse --git-common-dir`, which gives the _main_ `.git` from inside a worktree, where the index actually lives) and passes it as `-c sandbox_workspace_write.writable_roots=[…]` whenever the resolved sandbox mode is `workspace-write`. `read-only` has nothing to write and `danger-full-access` is already unrestricted, so neither is touched, and a non-git cwd leaves the sandbox exactly as codex configured it. This keeps the sandbox otherwise intact rather than retreating to `danger-full-access` — sequant's guard hooks are designed to run inside a sandbox, not instead of one.
 
 ### Added
 
@@ -33,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`sync`'s drift-fingerprint cache key now derives install paths from the same `templateDestination` mapping `sync`/`update` use to write files (#1045)**, instead of a private `templates/`→`.claude/` string replace — an excluded template (e.g. `templates/opencode/**`) can no longer silently diverge between the two. The retired-file blind spot (a template dropped from the bundle leaves its installed copy invisible to drift detection, since the walk is template-driven) is now documented in `docs/reference/cheat-sheet.md`.
-- **State reconcile no longer marks an open issue merged because an unrelated commit's title mentions its number (#1044).** `isIssueMergedIntoMain`'s merge-commit fallback matched any commit subject containing `(#N)` — a squash-merge form that records the *PR* number, not the issue number — so a different PR's title that happened to reference an issue in prose (e.g. `docs: ... (#1030)`) was read as proof issue 1030 was merged, even with its own feature branch still unmerged and its PR still open. The fallback now only matches actual merge-commit subjects (`Merge #N` / `Merge ...#N`); `reconcileStateAtStartup` correctly leaves such issues `in_progress` instead of advancing them to `merged` (and thence to `status --cleanup`, which would delete a live worktree).
+- **State reconcile no longer marks an open issue merged because an unrelated commit's title mentions its number (#1044).** `isIssueMergedIntoMain`'s merge-commit fallback matched any commit subject containing `(#N)` — a squash-merge form that records the _PR_ number, not the issue number — so a different PR's title that happened to reference an issue in prose (e.g. `docs: ... (#1030)`) was read as proof issue 1030 was merged, even with its own feature branch still unmerged and its PR still open. The fallback now only matches actual merge-commit subjects (`Merge #N` / `Merge ...#N`); `reconcileStateAtStartup` correctly leaves such issues `in_progress` instead of advancing them to `merged` (and thence to `status --cleanup`, which would delete a live worktree).
 - **`sequant sync` no longer rewrites a user-owned `AGENTS.md` or writes a machine-specific `scripts/dev` symlink (#990).** Every generated `AGENTS.md` now starts with a `<!-- sequant:agents-md v=<version> h=<sha1> -->` marker; `sync` only regenerates the file when the marker is present and its hash still matches the body, otherwise the file is preserved and reported (only `sync --force` replaces it). A new `sync --no-agents-md` flag skips it entirely, matching `init`. `scripts/dev/*.sh` links now prefer a local `node_modules/sequant/templates/scripts` target over whichever binary ran the command, and fall back to copies (not symlinks) when the resolved templates dir is under an npx cache or outside the project tree — both previously produced dead or machine-specific links. `sync --dry-run` previews both decisions before writing, and `doctor` warns on a dead or outside-tree `scripts/dev` link and reports a user-owned `AGENTS.md` without recommending `sync --force`. (`update` has no `AGENTS.md`/`scripts/dev` awareness — out of scope here, unchanged.)
 - **`sync --dry-run` no longer lists files `sync` never writes, and the opencode shim has one producer (#1030).** `templates/opencode/**` mapped 1:1 to `.claude/opencode/**` in the generic diff/copy engine, which never wrote there — every project that had run `init` before the opencode shim existed saw a permanent "N file(s) differ from bundled content" warning on `serve`/pre-flight, and `update` "fixed" it by planting unrendered `{{PHASE}}` placeholder files nobody reads. `templates/opencode/**` is now excluded from the generic engine entirely; `sync`/`update` instead detect an existing `.opencode/` directory and refresh it through `init`'s own renderers (`writeOpencodeCommands`/`Agents`/`Plugin`/`McpConfig`), previewed under `--dry-run` as `opencode shim: refresh`. Projects without `.opencode/` are untouched by both commands. `update --dry-run` now states explicitly that it still doesn't manage `AGENTS.md`/`scripts/dev` — those stay `sync`-only.
 - **Phase agents can no longer park on a background task** — `pre-tool.sh` now blocks `Monitor` and Bash `run_in_background` calls whenever `SEQUANT_ORCHESTRATOR` is set, and `/exec` states the foreground-with-`timeout` rule for the test suite. Every stranded-exec transcript found (ad-motion #226/#233, sequant #933/#990) ended with the agent "waiting for the notification" that never arrives inside a phase. When an exec phase still ends with uncommitted work, sequant now commits it as `chore(#N): wip checkpoint …` before reporting the #879 failure, so the work is on the branch instead of loose in the worktree (#1032).
@@ -71,7 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{vector, decision, reason_code, fixture_commit}` record that
   `__tests__/evals-fixture-payload.test.ts` derives from the run's own grader
   outcomes rather than trusting as typed.
-
 
 ## [2.14.0] - 2026-09-09
 
@@ -166,9 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   prior attempt made **no progress**, that phase is re-dispatched one rung up.
   Absent by default — with no ladder configured, retried phases behave exactly
   as #914/#915 ship them and the run issues no extra `git` calls.
-  - Routes on *why* the loop is churning, not on iteration count. Only the
+  - Routes on _why_ the loop is churning, not on iteration count. Only the
     deterministic no-progress signals (`LOOP_NO_DIFF`, `SAME_SHA_NO_PROGRESS`)
-    escalate. Repeated QA failure at *advancing* SHAs is divergence-suspect and
+    escalate. Repeated QA failure at _advancing_ SHAs is divergence-suspect and
     never escalates — a stronger model would only rediscover the contradiction
     more expensively.
   - Composes with #915 rather than stacking on it, in that order: retry 1
@@ -218,7 +218,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sequant init --agent <name>` selects the agent driver to provision for
   (#862). `opencode` additionally writes the `.opencode/` command wrappers.
 
-
 - **`sequant stats` shows cost and usage by phase × model (#986).** Rendered by
   default beside the token panel and labeled "SDK estimate, not a billing
   statement". Quality-loop retries are recorded as separate `metrics.phaseUsage`
@@ -230,7 +229,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `sequant run --dry-run` now names the resolved agent driver in its plan
   unconditionally (#862). It was previously printed only under `--verbose`, so a
   dry run with `--agent opencode` was indistinguishable from a claude-code one.
-
 
 - **`ExecutionConfig` has a single producer again.** The ready gate now
   inherits the caller's fully-resolved config and overrides only six
@@ -310,7 +308,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the most common unit-test shape in the repo — was invisible too, because the
   handle is declared bare (`let manager;`) and only assigned inside the hook.
   Such a handle now counts as production when the hook itself reaches
-  production *and* the handle is used in call position, so a block that merely
+  production _and_ the handle is used in call position, so a block that merely
   reads a value the hook computed stays flagged. Repo-wide flags fall from 600
   to 201 across 288 test files, with no test block newly flagged.
 - **Commit-message validation no longer reads text outside the `git commit` segment (#981).** `pre-tool.sh` extracted the commit message by scanning the whole compound command, so an earlier quoted string or an unrelated later heredoc could be mistaken for the message and block a valid conventional commit. Now:

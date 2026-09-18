@@ -632,6 +632,18 @@ describe("templates", () => {
       ).toBeNull();
     });
 
+    // #1075 AC-5: templates/codex/** is likewise a renderer's input —
+    // init.ts's writeCodexProvisioning renders config.toml to .codex/, so the
+    // generic engine must never flat-copy it into .claude/codex/. Mirrors the
+    // opencode case above; until #1075 this routing had no direct test and a
+    // regression would only have surfaced indirectly.
+    it("returns null for templates/codex/** (#1075)", () => {
+      expect(templateDestination("templates/codex/config.toml")).toBeNull();
+      expect(
+        templateDestination("templates/codex/nested/anything.toml"),
+      ).toBeNull();
+    });
+
     it("normalizes Windows separators before routing (#708)", () => {
       expect(templateDestination("templates\\scripts\\new-feature.sh")).toBe(
         "scripts/dev/new-feature.sh",
