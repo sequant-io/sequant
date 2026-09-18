@@ -439,6 +439,21 @@ export function buildCodexArgs(
     }
   }
 
+  // #1079: `workspace-write` also disables *network* access by default, which
+  // leaves a phase unable to `gh issue view` the issue it is working on, post
+  // a spec plan or QA verdict comment, or `git push`. The #1060 gate run left
+  // no `/spec` comment and logged `Could not parse spec recommendation` for
+  // exactly this reason; its exec agent reconstructed the task by grepping the
+  // repo for the issue number, never having read the issue.
+  //
+  // This does widen the sandbox — a codex phase can reach the network, as a
+  // Claude Code phase already can. The alternative is a driver whose phases
+  // cannot participate in the workflow at all, so it is on by default and
+  // `run.codex.networkAccess: false` seals it off for anyone who wants that.
+  if (sandboxMode === "workspace-write" && (settings?.networkAccess ?? true)) {
+    args.push("-c", "sandbox_workspace_write.network_access=true");
+  }
+
   args.push("--dangerously-bypass-hook-trust");
   if (settings?.model) args.push("-m", settings.model);
   if (settings?.extraArgs) args.push(...settings.extraArgs);

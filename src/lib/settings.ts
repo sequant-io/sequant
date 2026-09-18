@@ -159,6 +159,16 @@ export interface CodexSettings {
    * structurally identical.
    */
   sandboxMode?: "read-only" | "workspace-write" | "danger-full-access";
+  /**
+   * Whether a `workspace-write` phase may reach the network (default: true).
+   *
+   * codex disables network access under `workspace-write`, which leaves a
+   * phase unable to read its own issue, post a comment, or push (#1079). Set
+   * `false` to keep phases sealed off, accepting that they cannot participate
+   * in the GitHub side of the workflow. Ignored under the other two sandbox
+   * modes, which codex governs on its own.
+   */
+  networkAccess?: boolean;
   /** Extra CLI arguments passed to codex, inserted before the prompt */
   extraArgs?: string[];
 }
@@ -510,6 +520,7 @@ export const CodexSettingsSchema = z.object({
   sandboxMode: z
     .enum(["read-only", "workspace-write", "danger-full-access"])
     .optional(),
+  networkAccess: z.boolean().optional(),
   extraArgs: z.array(z.string()).optional(),
 });
 
@@ -1150,6 +1161,12 @@ export function validateCodexSettings(
     throw new Error(
       `settings.run.codex.sandboxMode must be one of ${CODEX_SANDBOX_MODES.join(", ")}`,
     );
+  }
+  if (
+    obj.networkAccess !== undefined &&
+    typeof obj.networkAccess !== "boolean"
+  ) {
+    throw new Error("settings.run.codex.networkAccess must be a boolean");
   }
   if (obj.extraArgs !== undefined) {
     if (
