@@ -89,17 +89,16 @@ describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no 
   });
 
   it(
-    "carries no Claude Code path placeholder in command, args, or env " +
-      "(${CLAUDE_PLUGIN_ROOT} resolves to the open project here, not the " +
-      "plugin root — see the #1084 QA probe); the inline launcher source " +
-      "itself legitimately contains JS template-literal ${...} expressions, " +
-      "so this checks for the specific placeholder tokens, not any ${",
+    "carries no ${...} anywhere in command, args, or env: Claude Code's " +
+      "plugin substituter mis-resolves ${CLAUDE_PLUGIN_ROOT:-x} (see the " +
+      "#1084 QA probe) and its generic env expander runs over every arg, " +
+      "so even a JS template literal inside the inline launcher source " +
+      "would be rewritten or fail config parsing — mcp-launch.mjs uses " +
+      "string concatenation for that reason",
     () => {
-      expect(sequant!.command).not.toMatch(/\$\{CLAUDE_/);
+      expect(sequant!.command).not.toContain("${");
       for (const arg of sequant!.args ?? []) {
-        expect(typeof arg === "string" ? arg : "").not.toMatch(
-          /\$\{CLAUDE_(PLUGIN_ROOT|PROJECT_DIR)\b/,
-        );
+        expect(typeof arg === "string" ? arg : "").not.toContain("${");
       }
       expect(sequant!.env).toBeUndefined();
     },
