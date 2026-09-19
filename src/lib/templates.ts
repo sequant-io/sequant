@@ -454,39 +454,145 @@ export interface TemplateChange {
 }
 
 /**
+ * A declared route from a bundled template prefix to its install destination.
+ * `destination: null` means the copy/diff cycle deliberately does not manage
+ * the tree — a different renderer owns it.
+ */
+interface TemplateRoute {
+  /** Template path or prefix under `templates/`, forward slashes. */
+  readonly match: string;
+  readonly kind: "exact" | "prefix";
+  /** Destination path or prefix, or `null` when unmanaged by copy/diff. */
+  readonly destination: string | null;
+  readonly reason: string;
+}
+
+/**
+ * Every declared route out of `templates/`. Order matters: exact rules precede
+ * the prefixes they sit inside.
+ *
+ * A new top-level tree under `templates/` that is not listed here has no
+ * declared route, and the AC-2 gate test fails naming it (#1090). That is the
+ * whole point: before this table, a new template inherited `.claude/<relpath>`
+ * and overwrite silently, and nobody was ever asked to declare otherwise.
+ */
+const TEMPLATE_ROUTES: readonly TemplateRoute[] = [
+  {
+    match: "templates/mcp.json",
+    kind: "exact",
+    destination: null,
+    reason:
+      "The project `.mcp.json` is generated and version-pinned by " +
+      "`mcp-config.ts` (`syncSequantMcpPin`), never copied.",
+  },
+  {
+    match: "templates/settings.json",
+    kind: "exact",
+    destination: ".claude/settings.json",
+    reason:
+      "Written by `copyTemplates` after the tree copies. Declared " +
+      "`sequant-owned`; `.claude/settings.local.json` is the extension point.",
+  },
+  {
+    match: "templates/relay/",
+    kind: "prefix",
+    destination: null,
+    reason: "Not installed by `copyTemplates`.",
+  },
+  {
+    match: "templates/opencode/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Not a flat copy target. `command.md` needs per-phase `{{PHASE}}` " +
+      "substitution (one template, N output files) and the plugin/agents/MCP " +
+      "files live under `.opencode/`, not `.claude/` — `init.ts`'s " +
+      "`writeOpencode*` functions are the one renderer for this tree, reused " +
+      "by `sync`/`update` via `decideOpencodeShimSync` (#1030).",
+  },
+  {
+    match: "templates/codex/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Same reasoning as opencode above. `config.toml` renders to " +
+      "`.codex/config.toml`, not `.claude/` — `init.ts`'s " +
+      "`writeCodexProvisioning` is the one renderer (#1059).",
+  },
+  {
+    match: "templates/scripts/",
+    kind: "prefix",
+    destination: "scripts/dev/",
+    reason: "Symlinked on POSIX, copied on Windows / `--no-symlinks`.",
+  },
+  {
+    match: "templates/skills/",
+    kind: "prefix",
+    destination: ".claude/skills/",
+    reason: "Managed skill tree, refreshed wholesale on every sync.",
+  },
+  {
+    match: "templates/agents/",
+    kind: "prefix",
+    destination: ".claude/agents/",
+    reason: "Managed subagent definitions, refreshed wholesale.",
+  },
+  {
+    match: "templates/hooks/",
+    kind: "prefix",
+    destination: ".claude/hooks/",
+    reason: "Managed hook scripts, refreshed wholesale.",
+  },
+  {
+    match: "templates/memory/",
+    kind: "prefix",
+    destination: ".claude/memory/",
+    reason:
+      "Holds the constitution, which is declared `user-owned` and preserved " +
+      "unless the user passes `--force` (#814).",
+  },
+];
+
+/**
+ * The declared route for a bundled template, or `undefined` when none is
+ * declared. `undefined` is the gate's failure signal, not a runtime error —
+ * see {@link templateDestination} for what actually happens at runtime.
+ */
+export function resolveTemplateRoute(
+  templatePath: string,
+): TemplateRoute | undefined {
+  const normalized = templatePath.replace(/\\/g, "/");
+  return TEMPLATE_ROUTES.find((route) =>
+    route.kind === "exact"
+      ? normalized === route.match
+      : normalized.startsWith(route.match),
+  );
+}
+
+/**
  * Map a bundled template path to the location `copyTemplates` installs it to,
  * or `null` for templates the copy/diff cycle does not manage.
  *
- * This mirrors the routing in `copyTemplates` (write time) so
- * `computeTemplateChanges` (diff time) can never report drift on a file init
- * deliberately places elsewhere — `.claude/mcp.json`, `.claude/relay/*`, and
- * `.claude/scripts/*` read as phantom "new" files on every fresh install when
- * the diff assumed a flat `.claude/<relpath>` layout. #708 gives the same
- * guarantee for the template *variables*; this covers the *destinations*.
+ * Reads {@link TEMPLATE_ROUTES}, which `copyTemplates` (write time) and
+ * `computeTemplateChanges` (diff time) both consult, so the two routers can
+ * never drift — `.claude/mcp.json`, `.claude/relay/*` and `.claude/scripts/*`
+ * read as phantom "new" files on every fresh install when the diff assumed a
+ * flat `.claude/<relpath>` layout. #708 gives the same guarantee for the
+ * template *variables*; this covers the *destinations*, and #1090 adds the
+ * ownership policy per destination.
  *
- * - `templates/mcp.json` → `null`: the project `.mcp.json` is generated and
- *   version-pinned by `mcp-config.ts` (`syncSequantMcpPin`), never copied.
- * - `templates/relay/` → `null`: not installed by `copyTemplates`.
- * - `templates/opencode/` → `null`: not a flat copy target. `command.md`
- *   needs per-phase `{{PHASE}}` substitution (one template, N output files)
- *   and the plugin/agents/MCP files live under `.opencode/`, not `.claude/` —
- *   `init.ts`'s `writeOpencode*` functions are the one renderer for this
- *   tree, reused by `sync`/`update` via `decideOpencodeShimSync` (#1030).
- * - `templates/codex/` → `null`: same reasoning as opencode above.
- *   `config.toml` renders to `.codex/config.toml`, not `.claude/` —
- *   `init.ts`'s `writeCodexProvisioning` is the one renderer (#1059).
- * - `templates/scripts/` → `scripts/dev/`: symlinked on POSIX, copied on
- *   Windows / `--no-symlinks`.
- * - everything else → `.claude/<relpath>`.
+ * An unrouted path still falls back to `.claude/<relpath>` so behaviour is
+ * unchanged for anything already shipping; the AC-2 gate test is what forces a
+ * new tree onto the table before it can reach a release.
  */
 export function templateDestination(templatePath: string): string | null {
   const normalized = templatePath.replace(/\\/g, "/");
-  if (normalized === "templates/mcp.json") return null;
-  if (normalized.startsWith("templates/relay/")) return null;
-  if (normalized.startsWith("templates/opencode/")) return null;
-  if (normalized.startsWith("templates/codex/")) return null;
-  if (normalized.startsWith("templates/scripts/")) {
-    return normalized.replace("templates/scripts/", "scripts/dev/");
+  const route = resolveTemplateRoute(normalized);
+  if (route) {
+    if (route.destination === null) return null;
+    return route.kind === "exact"
+      ? route.destination
+      : normalized.replace(route.match, route.destination);
   }
   return normalized.replace("templates/", ".claude/");
 }
