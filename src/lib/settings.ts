@@ -1358,13 +1358,101 @@ async function preserveExistingSettings(
   const current = typeof run.agent === "string" ? run.agent : "claude-code";
   if (current === agent) return preserved;
 
+  const rawUpdated = updateAgentInRawContent(content, agent);
+  // The raw-string edit only fails when the file doesn't actually have a
+  // `"run": {...}` block to locate — content that already parsed above, so
+  // this is a defensive fallback, not the expected path; it loses comments,
+  // same as the pre-#1100 behavior.
   const merged = { ...parsed, run: { ...run, agent } };
-  await writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
+  await writeFile(SETTINGS_PATH, rawUpdated ?? JSON.stringify(merged, null, 2));
   return {
     action: "updated",
     path: SETTINGS_PATH,
     updatedKeys: ["run.agent"],
   };
+}
+
+/**
+ * Find the index of the `}` matching the `{` at `openIdx`, scanning the raw
+ * JSONC text char-by-char so string contents and `//` comments (which may
+ * contain literal braces) never perturb the depth count. Mirrors the
+ * inString/escaped scan `stripJsoncComments` already uses per line.
+ */
+function findMatchingBrace(content: string, openIdx: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = openIdx; i < content.length; i++) {
+    const ch = content[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === "/" && content[i + 1] === "/") {
+      const nl = content.indexOf("\n", i);
+      i = nl === -1 ? content.length : nl;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Edit only the `run.agent` line of the raw JSONC text, leaving every other
+ * byte — including `//` comments elsewhere in the file — untouched (#1100).
+ * Returns `null` when the `"run": {...}` block can't be located, so the
+ * caller can fall back to the comment-losing whole-file rewrite.
+ */
+function updateAgentInRawContent(
+  content: string,
+  agent: string,
+): string | null {
+  const runMatch = /"run"\s*:\s*\{/.exec(content);
+  if (!runMatch) return null;
+
+  const openIdx = runMatch.index + runMatch[0].length - 1;
+  const closeIdx = findMatchingBrace(content, openIdx);
+  if (closeIdx === -1) return null;
+
+  const before = content.slice(0, openIdx + 1);
+  const block = content.slice(openIdx + 1, closeIdx);
+  const after = content.slice(closeIdx);
+
+  const agentLineRegex = /^([ \t]*"agent"\s*:\s*)"[^"]*"/m;
+  if (agentLineRegex.test(block)) {
+    const newBlock = block.replace(
+      agentLineRegex,
+      (_m, prefix: string) => `${prefix}${JSON.stringify(agent)}`,
+    );
+    return before + newBlock + after;
+  }
+
+  // No existing `agent` key in the run block — insert one as the first line,
+  // matching the indentation of the block's first sibling key.
+  let indent = "  ";
+  for (const line of block.split("\n")) {
+    const m = /^([ \t]+)\S/.exec(line);
+    if (m) {
+      indent = m[1];
+      break;
+    }
+  }
+  const newBlock = `\n${indent}"agent": ${JSON.stringify(agent)},${block}`;
+  return before + newBlock + after;
 }
 
 /**
