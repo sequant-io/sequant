@@ -322,7 +322,10 @@ function resolveOwnershipDecisions(
  * The #1030 I-2 invariant: a dry-run must show the decision, and the apply
  * path must show the same decision, so a clobber is never silent.
  */
-function printOwnershipDecisions(decisions: OwnershipDecision[]): void {
+function printOwnershipDecisions(
+  decisions: OwnershipDecision[],
+  options: { preservedHint?: boolean } = {},
+): void {
   if (decisions.length === 0) return;
   console.log(chalk.bold("\nFile ownership decisions:"));
   for (const decision of decisions) {
@@ -332,7 +335,14 @@ function printOwnershipDecisions(decisions: OwnershipDecision[]): void {
         : decision.verb === "merged"
           ? chalk.cyan
           : chalk.yellow;
-    console.log(color(`  ${decision.verb}: ${decision.path}`));
+    // On the apply path the preserved line carries the repair hint (#814
+    // AC-4), so a preserved file is announced exactly once instead of once
+    // here and again after the copy.
+    const hint =
+      decision.verb === "preserved" && options.preservedHint
+        ? " — run `sync --force` to replace"
+        : "";
+    console.log(color(`  ${decision.verb}: ${decision.path}${hint}`));
   }
 }
 
@@ -592,10 +602,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const applyChanges = quiet
     ? []
     : await computeTemplateChanges(manifest.stack, tokens);
+  const applyDecisions = resolveOwnershipDecisions(
+    applyChanges,
+    force,
+    mcpPin.updated,
+  );
   if (!quiet) {
-    printOwnershipDecisions(
-      resolveOwnershipDecisions(applyChanges, force, mcpPin.updated),
-    );
+    printOwnershipDecisions(applyDecisions, { preservedHint: true });
   }
 
   // AC-3: under --force, announce which user-owned files are about to be
@@ -630,12 +643,24 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     copyOptions,
   );
 
-  // AC-4: on a plain sync, report each user-owned file that was preserved so
-  // the apply path's output matches what --dry-run already promises (#722).
-  if (!quiet && preservedCustomizable.length > 0) {
+  // #814 AC-4's report is now the `preserved:` line in the decisions block
+  // above, printed once with the repair hint. What is left here is the parity
+  // check that block cannot make for itself: the decisions come from the diff
+  // pass, `preservedCustomizable` comes from the write path that actually ran.
+  // A file the writer preserved but the preview never predicted is precisely
+  // the dry-run/apply divergence #722 exists to prevent, so it is reported
+  // loudly rather than printed as a silent duplicate.
+  if (!quiet) {
+    const announced = new Set(
+      applyDecisions.filter((d) => d.verb === "preserved").map((d) => d.path),
+    );
     for (const file of preservedCustomizable) {
+      if (announced.has(file)) continue;
       console.log(
-        chalk.blue(`  preserved: ${file} — run \`sync --force\` to replace`),
+        chalk.yellow(
+          `  !  preserved: ${file} — run \`sync --force\` to replace ` +
+            `(not shown in the ownership decisions above — please report this)`,
+        ),
       );
     }
   }

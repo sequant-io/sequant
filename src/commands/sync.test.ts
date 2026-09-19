@@ -1317,18 +1317,38 @@ describe("sync command", () => {
       },
     ];
 
-    /** Parse the `  <verb>: <path>` decision block off captured stdout. */
+    /**
+     * Parse the `  <verb>: <path>` lines out of the `File ownership
+     * decisions:` block, and only that block.
+     *
+     * Scoped to the delimited region on purpose: `sync` prints other
+     * `preserved: <path>` lines outside it (the #990 `AGENTS.md` report, for
+     * one), and a whole-output grep would silently fold those into the
+     * decision set and make the parity assertion mean something else. A
+     * decision line may carry a trailing `— <hint>`; the verb and the path
+     * are what the decision is.
+     */
     function decisions(output: string): Record<string, string[]> {
       const parsed: Record<string, string[]> = {
         overwrite: [],
         preserved: [],
         merged: [],
       };
+      let inBlock = false;
       for (const line of output.split("\n")) {
-        // The trailing-hint line (`preserved: X — run ...`) is deliberately
-        // excluded by the `$` anchor: it is the #814 report, not a decision.
-        const match = /^\s+(overwrite|preserved|merged): (\S+)$/.exec(line);
-        if (match) parsed[match[1]].push(match[2]);
+        if (line.trim() === "File ownership decisions:") {
+          inBlock = true;
+          continue;
+        }
+        if (!inBlock) continue;
+        const match = /^\s+(overwrite|preserved|merged): (\S+)(?: — .*)?$/.exec(
+          line,
+        );
+        if (!match) {
+          inBlock = false;
+          continue;
+        }
+        parsed[match[1]].push(match[2]);
       }
       return parsed;
     }
@@ -1419,6 +1439,17 @@ describe("sync command", () => {
       expect(applied.overwrite.sort()).toEqual(preview.overwrite.sort());
       expect(applied.preserved).toEqual(preview.preserved);
       expect(applied.merged).toEqual(preview.merged);
+
+      // ...each exactly once. The decision block and the post-copy report are
+      // fed by two different sources (the diff pass and copyTemplates' own
+      // return), and printing both would announce every preserved file twice.
+      const preservedLines = logSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((line) =>
+          line.includes("preserved: .claude/memory/constitution.md"),
+        );
+      expect(preservedLines).toHaveLength(1);
+      expect(preservedLines[0]).toContain("run `sync --force` to replace");
 
       // ...and the set it actually writes is exactly the printed
       // `overwrite` + `merged` set. `writtenByCopy` comes from the modeled
