@@ -17,7 +17,7 @@
 // scripts/plugin-mcp-pin.test.ts on the next release.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,6 +29,43 @@ import { fileURLToPath } from "node:url";
 // shell: false (no shell-interpolation of the spec/SEQUANT_PROJECT_DIR).
 export function resolveNpxCommand(platform = process.platform) {
   return platform === "win32" ? "npx.cmd" : "npx";
+}
+
+/**
+ * Remove leftover `sequant-mcp-launch-*` directories that an earlier launcher
+ * could not clean up itself. cleanup() below runs on the child's exit, but a
+ * SIGKILL of the launcher (Claude Code tearing a session down hard, an OOM
+ * kill) skips it and leaks the empty directory. Only directories older than
+ * `maxAgeMs` are touched, so a sibling launcher that created its directory a
+ * moment ago and has not spawned yet is never pulled out from under it, and
+ * only empty directories are removed (rmdirSync refuses anything else).
+ * Best-effort throughout: a failure here must never block the launch.
+ */
+export function sweepStaleLaunchDirs(
+  base = tmpdir(),
+  maxAgeMs = 60 * 60 * 1000,
+  now = Date.now(),
+) {
+  let removed = 0;
+  let names;
+  try {
+    names = readdirSync(base);
+  } catch {
+    return removed;
+  }
+  for (const name of names) {
+    if (!name.startsWith("sequant-mcp-launch-")) continue;
+    const full = join(base, name);
+    try {
+      const st = statSync(full);
+      if (!st.isDirectory() || now - st.mtimeMs < maxAgeMs) continue;
+      rmdirSync(full);
+      removed += 1;
+    } catch {
+      // not ours to force: non-empty, vanished, or permission-denied
+    }
+  }
+  return removed;
 }
 
 function main() {
@@ -52,14 +89,22 @@ function main() {
     launchCwd = mkdtempSync(join(tmpdir(), "sequant-mcp-launch-"));
   } catch (err) {
     process.stderr.write(
-      "mcp-launch: failed to create an isolated launch directory: " + err.message + "\n",
+      "mcp-launch: failed to create an isolated launch directory: " +
+        err.message +
+        "\n",
     );
     process.exit(1);
   }
 
   process.stderr.write(
-    "mcp-launch: project dir " + projectDir + "; launching npx from " + launchCwd + "\n",
+    "mcp-launch: project dir " +
+      projectDir +
+      "; launching npx from " +
+      launchCwd +
+      "\n",
   );
+
+  sweepStaleLaunchDirs();
 
   function cleanup() {
     try {
@@ -85,7 +130,9 @@ function main() {
   }
 
   child.on("error", (err) => {
-    process.stderr.write("mcp-launch: failed to spawn npx: " + err.message + "\n");
+    process.stderr.write(
+      "mcp-launch: failed to spawn npx: " + err.message + "\n",
+    );
     cleanup();
     process.exit(1);
   });

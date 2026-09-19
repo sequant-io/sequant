@@ -6,6 +6,8 @@
 // with cwd = the open repo, against a `.sequant-version` two releases behind.
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -209,6 +211,49 @@ describe("#1084 AC-3: `sequant serve` operates on SEQUANT_PROJECT_DIR, not cwd",
     );
 
     child.kill("SIGTERM");
+  });
+
+  it("serves sequant://install for SEQUANT_PROJECT_DIR's manifest over real stdio, not cwd's", async () => {
+    expect(
+      fs.existsSync(CLI),
+      "dist/bin/cli.js must be built (vitest.global-setup)",
+    ).toBe(true);
+
+    // The launcher's exact shape: the server process starts in an unrelated
+    // directory (launchCwd has no manifest at all) and learns the project
+    // only from SEQUANT_PROJECT_DIR. Reading the install resource through an
+    // MCP client is what the issue's AC-3 names as the artifact.
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [CLI, "serve"],
+      cwd: launchCwd,
+      env: {
+        ...(process.env as Record<string, string>),
+        SEQUANT_ORCHESTRATOR: "",
+        NO_COLOR: "1",
+        SEQUANT_PROJECT_DIR: projectDir,
+      },
+      stderr: "pipe",
+    });
+    const client = new Client({ name: "ac3-install-probe", version: "0" });
+    try {
+      await client.connect(transport);
+      const result = await client.readResource({ uri: "sequant://install" });
+      const install = JSON.parse(result.contents[0].text as string) as {
+        installed: boolean;
+        currentVersion: string | null;
+        outdated: boolean;
+        filesModified: boolean;
+      };
+      expect(install).toMatchObject({
+        installed: true,
+        currentVersion: "0.0.1",
+        outdated: true,
+        filesModified: false,
+      });
+    } finally {
+      await client.close().catch(() => {});
+    }
   });
 
   it("rejects a non-directory SEQUANT_PROJECT_DIR with a stderr message naming the path and a non-zero exit", async () => {

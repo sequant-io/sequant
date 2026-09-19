@@ -116,6 +116,11 @@ describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no 
       readFileSync(join(PROJECT_ROOT, "package.json"), "utf8"),
     ) as { version: string };
     expect(pin).toBe(`sequant@${pkg.version}`);
+    // The inline launcher reads the spec from process.argv[1], which for
+    // `node -e <source> <spec>` is args[2] — pin the position, not just the
+    // presence, so a reordering cannot pass this test and break the launch.
+    expect(sequant!.args?.[2]).toBe(`sequant@${pkg.version}`);
+    expect(sequant!.args).toHaveLength(3);
   });
 
   it(

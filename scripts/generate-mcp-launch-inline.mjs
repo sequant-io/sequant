@@ -10,7 +10,7 @@
 // `import`/`export`, no `import.meta`) and never sets argv[0] to a script
 // path (so the pinned spec lands at argv[1], not argv[2]).
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -18,13 +18,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SOURCE = join(__dirname, "mcp-launch.mjs");
 
 const IMPORT_BLOCK = `import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";`;
 
 const REQUIRE_BLOCK = `const { spawn } = require("node:child_process");
-const { mkdtempSync, rmSync } = require("node:fs");
+const { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");`;
 
@@ -54,15 +54,15 @@ export function generateInlineLauncherSource(sourcePath = DEFAULT_SOURCE) {
   }
   src = src.replace(IMPORT_BLOCK, REQUIRE_BLOCK);
 
-  if (!src.includes("export function resolveNpxCommand")) {
+  // `node -e` runs CommonJS: every `export function` becomes a plain
+  // function. Anything else exported (const, default, re-exports) is a shape
+  // this generator does not know how to inline, so refuse rather than ship it.
+  src = src.replace(/^export function /gm, "function ");
+  if (/^export\b/m.test(src)) {
     throw new Error(
-      "generate-mcp-launch-inline: resolveNpxCommand export shape changed in mcp-launch.mjs; update this generator",
+      "generate-mcp-launch-inline: mcp-launch.mjs exports something other than `export function`; update this generator",
     );
   }
-  src = src.replace(
-    "export function resolveNpxCommand",
-    "function resolveNpxCommand",
-  );
 
   if (!src.includes(MAIN_GUARD_BLOCK)) {
     throw new Error(
@@ -84,5 +84,27 @@ export function generateInlineLauncherSource(sourcePath = DEFAULT_SOURCE) {
 const isMain =
   process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
-  process.stdout.write(generateInlineLauncherSource() + "\n");
+  const source = generateInlineLauncherSource();
+  if (process.argv.includes("--write")) {
+    // Rewrite the shipped .mcp.json's inline launcher (args[1]) in place.
+    // `npm run mcp-launch:inline` — also the first step of prepare:marketplace,
+    // so a release can never ship a launcher that drifted from mcp-launch.mjs.
+    const mcpJsonPath = join(__dirname, "..", ".mcp.json");
+    const config = JSON.parse(readFileSync(mcpJsonPath, "utf8"));
+    const entry = config.mcpServers?.sequant;
+    if (!entry || entry.command !== "node" || entry.args?.[0] !== "-e") {
+      throw new Error(
+        "generate-mcp-launch-inline: .mcp.json mcpServers.sequant is not the inline `node -e` shape",
+      );
+    }
+    if (entry.args[1] === source) {
+      process.stderr.write("mcp-launch:inline: .mcp.json already up to date\n");
+    } else {
+      entry.args[1] = source;
+      writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+      process.stderr.write("mcp-launch:inline: rewrote .mcp.json args[1]\n");
+    }
+  } else {
+    process.stdout.write(source + "\n");
+  }
 }
