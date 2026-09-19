@@ -1239,21 +1239,54 @@ export async function saveSettings(settings: SequantSettings): Promise<void> {
 /**
  * Check if settings file exists
  */
-export async function settingsExist(): Promise<boolean> {
+async function settingsExist(): Promise<boolean> {
   return fileExists(SETTINGS_PATH);
 }
 
 /**
- * Create default settings file
+ * What `createDefaultSettings` did, so the caller can say so (#1071 AC-4).
+ *
+ * An init that leaves an existing file alone must not announce "Created
+ * default settings" over it — the original report's worst property was that
+ * the overwrite happened under a success banner, with no diff and no mention.
  */
+export interface CreateSettingsResult {
+  /** `created` = defaults written; `preserved` = untouched; `updated` = only the flag's keys merged in. */
+  action: "created" | "preserved" | "updated";
+  /** The file the decision applies to. */
+  path: string;
+  /** Dotted keys the flags actually set on the `updated` path (today: `run.agent`). */
+  updatedKeys: string[];
+  /** Set when the existing file could not be parsed and was therefore left alone. */
+  warning?: string;
+}
+
 /**
  * Create default settings file with JSONC inline comments (AC-4).
  *
  * Generates a JSONC file (.json with // comments) documenting each field
  * and its default value. The loadSettings path strips comments before parsing.
+ *
+ * On a repo that already has a settings file, the defaults are NOT written:
+ * only the keys the flags set are merged in, and everything the user tuned
+ * survives (#1071). `force` restores the unconditional overwrite — the same
+ * single-override contract #814 and #990 established for their own files.
  */
-export async function createDefaultSettings(agent?: string): Promise<void> {
+export async function createDefaultSettings(
+  agent?: string,
+  force = false,
+): Promise<CreateSettingsResult> {
   await ensureDir(dirname(SETTINGS_PATH));
+
+  // Key the guard off SETTINGS_PATH — the file this function writes — and not
+  // off `.claude/settings.json`, which is what initCommand's "already
+  // initialized" warning checks. A repo with tuned sequant settings and no
+  // `.claude/settings.json` gets no warning at all, so the file's own
+  // existence is the only reliable signal (#1071 AC-5).
+  if (!force && (await settingsExist())) {
+    return preserveExistingSettings(agent);
+  }
+
   // `init --agent <name>` provisions for that driver, so the driver belongs in
   // the settings it writes: without it `run.agent` stays unset, every later
   // `sequant run` falls back to claude-code, and `doctor` runs none of that
@@ -1264,6 +1297,74 @@ export async function createDefaultSettings(agent?: string): Promise<void> {
       : DEFAULT_SETTINGS;
   const jsonc = generateSettingsJsonc(settings);
   await writeFile(SETTINGS_PATH, jsonc);
+  return { action: "created", path: SETTINGS_PATH, updatedKeys: [] };
+}
+
+/**
+ * Merge only the flag-set keys into an existing settings file (#1071).
+ *
+ * Deliberately merges onto the **raw parsed object** rather than round-tripping
+ * through `generateSettingsJsonc` or `validateSettings`: the generator emits
+ * neither `run.phases` nor `run.modelRoles` nor `scopeAssessment`, and the
+ * nested Zod schemas strip unknown keys — either route would reproduce the
+ * exact data loss this fixes. When no flag key needs changing, nothing is
+ * written at all, so the file stays byte-identical, JSONC comments included.
+ */
+async function preserveExistingSettings(
+  agent?: string,
+): Promise<CreateSettingsResult> {
+  const preserved: CreateSettingsResult = {
+    action: "preserved",
+    path: SETTINGS_PATH,
+    updatedKeys: [],
+  };
+
+  const content = await readFile(SETTINGS_PATH);
+  if (!content.trim()) {
+    // A blank file holds nothing to preserve — treat it as absent.
+    const jsonc = generateSettingsJsonc(
+      agent && agent !== "claude-code"
+        ? { ...DEFAULT_SETTINGS, run: { ...DEFAULT_SETTINGS.run, agent } }
+        : DEFAULT_SETTINGS,
+    );
+    await writeFile(SETTINGS_PATH, jsonc);
+    return { action: "created", path: SETTINGS_PATH, updatedKeys: [] };
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(stripJsoncComments(content)) as Record<string, unknown>;
+  } catch (err) {
+    // An unparseable file is still the user's file. Replacing it with defaults
+    // is the clobber this issue is about, only harder to notice.
+    return {
+      ...preserved,
+      warning:
+        `${SETTINGS_PATH} is not valid JSON ` +
+        `(${err instanceof Error ? err.message : String(err)}) — left untouched. ` +
+        `Fix the syntax, or use --force to replace it with defaults.`,
+    };
+  }
+
+  if (!agent) return preserved;
+
+  const run =
+    typeof parsed.run === "object" && parsed.run !== null
+      ? (parsed.run as Record<string, unknown>)
+      : {};
+  // An absent `run.agent` means claude-code, so an explicit `--agent
+  // claude-code` over a recorded `codex` is a real change and must land —
+  // otherwise switching back would be a silent no-op.
+  const current = typeof run.agent === "string" ? run.agent : "claude-code";
+  if (current === agent) return preserved;
+
+  const merged = { ...parsed, run: { ...run, agent } };
+  await writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
+  return {
+    action: "updated",
+    path: SETTINGS_PATH,
+    updatedKeys: ["run.agent"],
+  };
 }
 
 /**

@@ -946,12 +946,36 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Create default settings + reference doc (AC-4)
   const settingsSpinner = ui.spinner("Creating default settings...");
   settingsSpinner.start();
-  await createDefaultSettings(options.agent);
+  const settingsResult = await createDefaultSettings(
+    options.agent,
+    options.force,
+  );
   await writeFile(
     ".sequant/settings.reference.md",
     generateSettingsReference(),
   );
-  settingsSpinner.succeed("Created default settings + reference doc");
+  settingsSpinner.succeed(
+    settingsResult.action === "created"
+      ? "Created default settings + reference doc"
+      : "Preserved existing settings + wrote reference doc",
+  );
+  // Report the decision rather than succeeding silently over the user's file
+  // (#1071 AC-4). The spinner text is not enough — it is swallowed under
+  // --json and in non-TTY runs, and the whole point of the bug was that the
+  // overwrite happened with no mention anywhere.
+  if (settingsResult.action !== "created") {
+    const changed = settingsResult.updatedKeys.length
+      ? ` (updated only ${settingsResult.updatedKeys.join(", ")})`
+      : "";
+    console.log(
+      chalk.blue(
+        `📋 Preserved existing ${settingsResult.path}${changed} — use --force to replace it with defaults`,
+      ),
+    );
+  }
+  if (settingsResult.warning) {
+    console.log(chalk.yellow(`⚠  ${settingsResult.warning}`));
+  }
 
   // Detect codebase conventions
   const conventionsSpinner = ui.spinner("Detecting codebase conventions...");
