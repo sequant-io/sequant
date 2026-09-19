@@ -21,6 +21,16 @@ import type {
 import type { AnnotatedCheck } from "../../qa/infra-blocked-ci.js";
 
 /**
+ * Wall-clock bound for `gh auth status` (#1099, following #1075's precedent).
+ *
+ * This probe reaches the network, so it gets the longer of the two #1075
+ * bounds: a stalled request must not hang every caller (`doctor`, upstream
+ * assessment) with no way out but Ctrl-C, but a legitimately slow check over
+ * a poor link must not be misreported as unauthenticated too eagerly.
+ */
+const AUTH_PROBE_TIMEOUT_MS = 10_000;
+
+/**
  * PR merge status values (matches the casing returned by `gh pr view`).
  */
 export type PRMergeStatus = "MERGED" | "CLOSED" | "OPEN" | null;
@@ -133,7 +143,10 @@ export class GitHubProvider implements PlatformProvider {
    */
   checkAuthSync(): boolean {
     try {
-      execSync("gh auth status", { stdio: "ignore" });
+      execSync("gh auth status", {
+        stdio: "ignore",
+        timeout: AUTH_PROBE_TIMEOUT_MS,
+      });
       return true;
     } catch {
       return false;

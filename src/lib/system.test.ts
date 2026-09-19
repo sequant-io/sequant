@@ -73,6 +73,7 @@ describe("system utilities", () => {
       expect(isGhAuthenticated()).toBe(true);
       expect(mockExecSync).toHaveBeenCalledWith("gh auth status", {
         stdio: "ignore",
+        timeout: 10_000,
       });
     });
 

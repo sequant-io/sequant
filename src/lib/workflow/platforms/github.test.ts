@@ -42,6 +42,7 @@ describe("GitHubProvider", () => {
       expect(result).toBe(true);
       expect(mockExecSync).toHaveBeenCalledWith("gh auth status", {
         stdio: "ignore",
+        timeout: 10_000,
       });
     });
 
