@@ -115,6 +115,10 @@ vi.mock("../lib/version.js", () => ({
 // reports on this instead of the desktop-config passthrough.
 vi.mock("../lib/mcp-config.js", () => ({
   getPhaseMcpServersConfig: vi.fn(),
+  // #1084 AC-5: defaults to "no pin found" so existing checkShadowingLocalSequant
+  // assertions (running-CLI-version comparator) are unaffected; overridden
+  // per-test where the pin comparator itself is under test.
+  readProjectMcpPin: vi.fn(() => undefined),
 }));
 
 // Mock system functions
@@ -149,6 +153,7 @@ vi.mock("../lib/system.js", () => ({
 import {
   doctorCommand,
   checkClosedIssues,
+  checkShadowingLocalSequant,
   isVersionBelow,
   UPSTREAM_SUBAGENT_WARNING,
   findOpencodeShim,
@@ -170,7 +175,10 @@ import {
   isWSL,
   checkOptionalMcpServers,
 } from "../lib/system.js";
-import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
+import {
+  getPhaseMcpServersConfig,
+  readProjectMcpPin,
+} from "../lib/mcp-config.js";
 import { readAgentsMd, isAgentsMdSequantOwned } from "../lib/agents-md.js";
 import { getSettings } from "../lib/settings.js";
 
@@ -186,6 +194,7 @@ const mockIsNativeWindows = vi.mocked(isNativeWindows);
 const mockIsWSL = vi.mocked(isWSL);
 const mockCheckOptionalMcpServers = vi.mocked(checkOptionalMcpServers);
 const mockGetPhaseMcpServersConfig = vi.mocked(getPhaseMcpServersConfig);
+const mockReadProjectMcpPin = vi.mocked(readProjectMcpPin);
 const mockExecSync = vi.mocked(childProcess.execSync);
 const mockSpawnSync = vi.mocked(childProcess.spawnSync);
 const mockReadAgentsMd = vi.mocked(readAgentsMd);
@@ -1235,6 +1244,102 @@ describe("doctor command", () => {
         .find((line) => line.includes("user-owned (preserved by sync)"));
       expect(userOwnedLine).toBeDefined();
       expect(userOwnedLine).not.toContain("--force");
+    });
+  });
+
+  describe("1084 AC-5: checkShadowingLocalSequant warns on a version-mismatched local sequant", () => {
+    let cwd: string;
+    let home: string;
+
+    beforeEach(() => {
+      cwd = mkdtempSync(join(tmpdir(), "sequant-shadow-cwd-"));
+      home = mkdtempSync(join(tmpdir(), "sequant-shadow-home-"));
+      mockReadProjectMcpPin.mockReturnValue(undefined);
+    });
+
+    afterEach(() => {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    });
+
+    function writeShadow(root: string, version: string): void {
+      mkdirSync(join(root, "node_modules", "sequant"), { recursive: true });
+      writeFileSync(
+        join(root, "node_modules", "sequant", "package.json"),
+        JSON.stringify({ name: "sequant", version }),
+      );
+    }
+
+    it("warns with the path and both versions when cwd carries a differing local sequant", async () => {
+      // Mocked ../lib/version.js reports the running version as "1.0.0".
+      writeShadow(cwd, "1.20.1");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe("warn");
+      expect(results[0].message).toContain(
+        join(cwd, "node_modules", "sequant"),
+      );
+      expect(results[0].message).toContain("sequant@1.20.1");
+      expect(results[0].message).toContain("sequant@1.0.0");
+    });
+
+    it("warns on a shadowing sequant under $HOME even when cwd is clean", async () => {
+      writeShadow(home, "1.20.1");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].message).toContain(
+        join(home, "node_modules", "sequant"),
+      );
+    });
+
+    it("does not warn when no local sequant shadows, or it matches the running version", async () => {
+      const clean = await checkShadowingLocalSequant(cwd, home);
+      expect(clean).toHaveLength(0);
+
+      writeShadow(cwd, "1.0.0"); // matches the mocked running version
+      const matching = await checkShadowingLocalSequant(cwd, home);
+      expect(matching).toHaveLength(0);
+    });
+
+    it("compares against the project's .mcp.json pin, not just the running CLI version, when a pin exists", async () => {
+      // Shadow matches the running CLI (mocked "1.0.0") but not the pin —
+      // must still warn, since the pin is what npx would actually try to run.
+      mockReadProjectMcpPin.mockReturnValue("2.16.0");
+      writeShadow(cwd, "1.0.0");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].message).toContain("sequant@1.0.0");
+      expect(results[0].message).toContain("sequant@2.16.0");
+      expect(results[0].message).toContain(".mcp.json pin");
+    });
+
+    it("catches the self-shadowing case: shadow equals the running CLI version by construction, but differs from the pin", async () => {
+      // Reproduces running `npx sequant doctor` from inside the shadowed
+      // project itself: getVersion() reports the shadow's own version
+      // ("1.0.0", the mocked running version), so the two can never disagree
+      // — only the independent .mcp.json pin can catch this.
+      mockReadProjectMcpPin.mockReturnValue("2.16.0");
+      writeShadow(cwd, "1.0.0");
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].status).toBe("warn");
+    });
+
+    it("does not warn when the shadow matches the pin, even if it differs from the running CLI version", async () => {
+      mockReadProjectMcpPin.mockReturnValue("1.20.1");
+      writeShadow(cwd, "1.20.1"); // differs from mocked running version "1.0.0"
+
+      const results = await checkShadowingLocalSequant(cwd, home);
+
+      expect(results).toHaveLength(0);
     });
   });
 });

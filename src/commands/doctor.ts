@@ -4,8 +4,9 @@
 
 import chalk from "chalk";
 import { execSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { readdir } from "fs/promises";
+import { homedir } from "os";
 import { join as pathJoin, dirname, relative, isAbsolute } from "path";
 import { ui, colors } from "../lib/cli-ui.js";
 import { GitHubProvider } from "../lib/workflow/platforms/github.js";
@@ -129,6 +130,74 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
         message: `${linkPath} points outside the project (machine-specific target) - run: sequant sync (re-links scripts/dev without touching a user-owned AGENTS.md)`,
       });
     }
+  }
+
+  return results;
+}
+
+/**
+ * Warn when a `node_modules/sequant` sits in cwd's ancestor chain (npm's own
+ * `npx` resolution order) or under `$HOME`, at a version that differs from
+ * either comparator below. That local copy silently shadows an `npx -y
+ * sequant@<pin> serve` launch — `npx` resolves the project-local install and
+ * ignores the pin entirely, which is exactly the failure mode in #1084 (the
+ * plugin's MCP server dies with `CONNECTION_CLOSED` because the shadowed
+ * copy doesn't have a `serve` command).
+ *
+ * Two comparators, not one:
+ * - **The project's own `.mcp.json` pin** (`readProjectMcpPin`), when
+ *   present — the authoritative "what should run" reference. This is the
+ *   only reliable comparator for the self-shadowing case: running `sequant
+ *   doctor` *from inside* the shadowed project runs the shadow itself, so
+ *   `getVersion()` reports the shadow's own version and can never disagree
+ *   with it by construction, even though the shadow still defeats the pin.
+ * - **The running CLI's version**, as a fallback when there's no local
+ *   `.mcp.json` to read a pin from (e.g. the plugin-only case, or the
+ *   `$HOME` candidate, which isn't tied to any one project's pin).
+ */
+export async function checkShadowingLocalSequant(
+  cwd: string = process.cwd(),
+  home: string | undefined = homedir(),
+): Promise<Check[]> {
+  const results: Check[] = [];
+  const { getVersion } = await import("../lib/version.js");
+  const { readProjectMcpPin } = await import("../lib/mcp-config.js");
+  const runningVersion = getVersion();
+  const pinVersion = readProjectMcpPin(cwd);
+
+  const candidates = new Set<string>();
+  let dir = cwd;
+  for (;;) {
+    candidates.add(pathJoin(dir, "node_modules", "sequant"));
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (home) candidates.add(pathJoin(home, "node_modules", "sequant"));
+
+  for (const candidate of candidates) {
+    const pkgPath = pathJoin(candidate, "package.json");
+    if (!existsSync(pkgPath)) continue;
+
+    let shadowVersion: string | undefined;
+    try {
+      shadowVersion = JSON.parse(readFileSync(pkgPath, "utf8"))?.version;
+    } catch {
+      continue;
+    }
+    if (!shadowVersion) continue;
+
+    const expected = pinVersion ?? runningVersion;
+    const expectedLabel = pinVersion
+      ? `sequant@${pinVersion} (the .mcp.json pin)`
+      : `sequant@${runningVersion} (the running CLI)`;
+    if (shadowVersion === expected) continue;
+
+    results.push({
+      name: "Local sequant shadow",
+      status: "warn",
+      message: `${candidate} has sequant@${shadowVersion}, which shadows ${expectedLabel} for any npx launch with cwd under this tree (e.g. the MCP plugin) - run: npm uninstall sequant (in that project) or bump it to match`,
+    });
   }
 
   return results;
@@ -513,6 +582,11 @@ export async function doctorCommand(
   // tree only worked on the machine that ran `sync`.
   for (const linkCheck of await checkScriptsDevLinks()) {
     checks.push(linkCheck);
+  }
+
+  // Check 5.6: local sequant shadowing the pinned MCP launch (#1084).
+  for (const shadowCheck of await checkShadowingLocalSequant()) {
+    checks.push(shadowCheck);
   }
 
   // Check 6: Settings.json

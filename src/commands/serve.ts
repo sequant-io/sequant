@@ -14,6 +14,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "http";
+import { existsSync, statSync } from "fs";
 import { createServer } from "../mcp/server.js";
 import { getVersion } from "../lib/version.js";
 import {
@@ -27,7 +28,30 @@ export interface ServeOptions {
   port?: number;
 }
 
+/**
+ * #1084 AC-3: the plugin's launcher runs `npx` from an isolated temp cwd
+ * (so it can't resolve a shadowing local `sequant`) and passes the real
+ * project directory through `SEQUANT_PROJECT_DIR` instead. Every tool and
+ * resource keys off `process.cwd()`, so this chdir is the only place that
+ * needs to know about the launcher's indirection.
+ */
+function applyProjectDir(): void {
+  const projectDir = process.env.SEQUANT_PROJECT_DIR;
+  if (!projectDir) return;
+
+  if (!existsSync(projectDir) || !statSync(projectDir).isDirectory()) {
+    process.stderr.write(
+      `sequant serve: SEQUANT_PROJECT_DIR is not a directory: ${projectDir}\n`,
+    );
+    process.exit(1);
+  }
+
+  process.chdir(projectDir);
+}
+
 export async function serveCommand(options: ServeOptions): Promise<void> {
+  applyProjectDir();
+
   const version = getVersion();
 
   // Install status is read-only and reported, never acted on (#988): a

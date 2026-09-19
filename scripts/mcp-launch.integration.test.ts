@@ -1,0 +1,231 @@
+// #1084 AC-4: reproduces the exact shadow from the issue's measured table —
+// a project with a stale `node_modules/sequant` that doesn't implement
+// `serve` — and proves mcp-launch.mjs spawns `npx` from a cwd where that
+// shadowing package can't be resolved.
+//
+// Mutation-verified: pointing the launcher's spawn `cwd` at `projectDir`
+// (instead of an mkdtemp dir) fails the cwd assertion below.
+
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { spawn } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+
+const REPO_ROOT = path.resolve(__dirname, "..");
+const LAUNCHER = path.join(REPO_ROOT, "scripts", "mcp-launch.mjs");
+
+describe("#1084 AC-4: mcp-launch.mjs isolates npx from a shadowing local sequant", () => {
+  let projectDir: string;
+  let fakeNpxDir: string;
+  let recordPath: string;
+
+  beforeEach(() => {
+    // Reproduce the issue's own repro: a pre-`serve` sequant shadowing the
+    // project's node_modules.
+    projectDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "sequant-shadow-project-"),
+    );
+    fs.mkdirSync(path.join(projectDir, "node_modules", "sequant", "bin"), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      path.join(projectDir, "node_modules", "sequant", "package.json"),
+      JSON.stringify({ name: "sequant", version: "1.20.1", bin: "bin/cli.js" }),
+    );
+    fs.writeFileSync(
+      path.join(projectDir, "node_modules", "sequant", "bin", "cli.js"),
+      "#!/usr/bin/env node\n" +
+        "process.stderr.write(\"error: unknown command 'serve'\\n\");\n" +
+        "process.exit(0);\n",
+      { mode: 0o755 },
+    );
+
+    // A fake `npx` placed first on PATH. It doesn't simulate real resolution
+    // — it only records its own invocation cwd/args, which is all the
+    // launcher's contract (an isolated cwd, the pinned spec) can be judged on.
+    fakeNpxDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-fake-npx-"));
+    recordPath = path.join(fakeNpxDir, "npx-invocation.json");
+    fs.writeFileSync(
+      path.join(fakeNpxDir, "npx"),
+      "#!/usr/bin/env node\n" +
+        "const fs = require('fs');\n" +
+        `fs.writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ cwd: process.cwd(), argv: process.argv.slice(2) }));\n` +
+        "process.exit(0);\n",
+      { mode: 0o755 },
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    fs.rmSync(fakeNpxDir, { recursive: true, force: true });
+  });
+
+  it("spawns npx from a dir outside the shadowing project, with the pinned spec", async () => {
+    await new Promise<void>((resolvePromise, reject) => {
+      const child = spawn(process.execPath, [LAUNCHER, "sequant@2.15.1"], {
+        cwd: projectDir,
+        env: {
+          ...process.env,
+          PATH: `${fakeNpxDir}${path.delimiter}${process.env.PATH}`,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stderr = "";
+      child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`launcher did not exit in time; stderr:\n${stderr}`),
+          ),
+        10_000,
+      );
+      child.on("exit", () => {
+        clearTimeout(timer);
+        resolvePromise();
+      });
+      child.on("error", reject);
+    });
+
+    expect(fs.existsSync(recordPath), "fake npx was never invoked").toBe(true);
+    const recorded = JSON.parse(fs.readFileSync(recordPath, "utf8")) as {
+      cwd: string;
+      argv: string[];
+    };
+
+    // macOS resolves /tmp -> /private/tmp for a child's reported cwd
+    // (process.cwd() inside the fake npx already reflects this), so compare
+    // against the project dir's realpath rather than the raw mkdtemp string.
+    // The launcher cleans up its own launch dir on exit, so only resolve the
+    // side that's still guaranteed to exist.
+    const realProjectDir = fs.realpathSync(projectDir);
+    expect(recorded.cwd).not.toBe(realProjectDir);
+    expect(recorded.cwd.startsWith(realProjectDir + path.sep)).toBe(false);
+    expect(recorded.argv).toEqual(["-y", "sequant@2.15.1", "serve"]);
+  });
+});
+
+describe("#1084 AC-1: mcp-launch.mjs forwards the child's exit code and signals", () => {
+  let launchDir: string;
+  let fakeNpxDir: string;
+
+  beforeEach(() => {
+    launchDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-launch-dir-"));
+    fakeNpxDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-fake-npx-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(launchDir, { recursive: true, force: true });
+    fs.rmSync(fakeNpxDir, { recursive: true, force: true });
+  });
+
+  function writeFakeNpx(script: string): void {
+    fs.writeFileSync(path.join(fakeNpxDir, "npx"), script, { mode: 0o755 });
+  }
+
+  function spawnLauncher() {
+    return spawn(process.execPath, [LAUNCHER, "sequant@2.15.1"], {
+      cwd: launchDir,
+      env: {
+        ...process.env,
+        PATH: `${fakeNpxDir}${path.delimiter}${process.env.PATH}`,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  }
+
+  it("exits with the child's exit code when it exits normally", async () => {
+    writeFakeNpx("#!/usr/bin/env node\nprocess.exit(7);\n");
+
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolvePromise, reject) => {
+      const child = spawnLauncher();
+      let stderr = "";
+      child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`launcher did not exit in time; stderr:\n${stderr}`),
+          ),
+        10_000,
+      );
+      child.on("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolvePromise({ code, signal });
+      });
+      child.on("error", reject);
+    });
+
+    expect(result).toEqual({ code: 7, signal: null });
+  });
+
+  it("forwards SIGTERM to the child and re-raises it on exit, instead of swallowing it into exit 0", async () => {
+    // No signal handler of its own — the OS default (terminate) applies, so
+    // the parent observes { code: null, signal: "SIGTERM" }, exactly like a
+    // real `sequant serve` process killed by the forwarded signal. Without
+    // the removeAllListeners() fix, the launcher's own re-raised SIGTERM
+    // routes back into its still-attached listener (a no-op once the child
+    // has already exited) and the process falls through to a plain `exit
+    // 0` — silently reporting success for a server that was actually killed.
+    writeFakeNpx(
+      "#!/usr/bin/env node\n" +
+        "process.stdout.write('started\\n');\n" +
+        "setInterval(() => {}, 1000);\n",
+    );
+
+    const child = spawnLauncher();
+    let stdout = "";
+    let stderr = "";
+    child.stdout!.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+
+    const launchCwdMatch = await new Promise<string>(
+      (resolvePromise, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error(`fake npx never started; stderr:\n${stderr}`)),
+          10_000,
+        );
+        const check = setInterval(() => {
+          if (stdout.includes("started")) {
+            clearInterval(check);
+            clearTimeout(timer);
+            const match = /launching npx from (\S+)/.exec(stderr);
+            resolvePromise(match ? match[1] : "");
+          }
+        }, 20);
+      },
+    );
+
+    const result = await new Promise<{
+      code: number | null;
+      signal: NodeJS.Signals | null;
+    }>((resolvePromise, reject) => {
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `launcher did not exit within 10s of SIGTERM; stderr:\n${stderr}`,
+            ),
+          ),
+        10_000,
+      );
+      child.on("exit", (code, signal) => {
+        clearTimeout(timer);
+        resolvePromise({ code, signal });
+      });
+      child.kill("SIGTERM");
+    });
+
+    expect(result).toEqual({ code: null, signal: "SIGTERM" });
+    expect(
+      launchCwdMatch,
+      "launcher must log its launch dir on stderr",
+    ).toBeTruthy();
+    expect(
+      fs.existsSync(launchCwdMatch),
+      "launcher must clean up its launch dir on exit",
+    ).toBe(false);
+  });
+});

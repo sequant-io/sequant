@@ -33,9 +33,10 @@
     "lint:skill-gates": "npx tsx scripts/lint-skill-gates.ts",
     "lint:constitution-dod": "npx tsx scripts/check-constitution-dod.ts",
     "lint:skill-sync": "npx tsx scripts/check-skill-sync.ts",
-    "prepare:marketplace": "npx tsx scripts/prepare-marketplace.ts",
+    "prepare:marketplace": "npm run mcp-launch:inline && npx tsx scripts/prepare-marketplace.ts",
     "validate:marketplace": "npx tsx scripts/prepare-marketplace.ts --validate-only",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "mcp-launch:inline": "node scripts/generate-mcp-launch-inline.mjs --write"
   },
   "keywords": [
     "claude",
