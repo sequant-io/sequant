@@ -49,15 +49,23 @@ vi.mock("../lib/config.js", () => ({
 }));
 
 // Mock templates
-vi.mock("../lib/templates.js", () => ({
-  copyTemplates: vi.fn(() =>
-    Promise.resolve({ scriptsSymlinked: true, symlinkResults: [] }),
-  ),
-  // Templates-root guard (#822). Defaults to "present" so this suite exercises
-  // the paths past the guard; the guard's own failure branch is covered in
-  // templates.test.ts and sync-source-invocation.integration.test.ts.
-  assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
-}));
+// `ownershipPolicy` is deliberately NOT stubbed: `createDefaultSettings` reads
+// it to decide preserve-vs-overwrite (#1090 AC-3), and a stub would make the
+// #1071 preservation cases assert against the stub rather than the declared
+// ownership table. `importOriginal` keeps it (and the rest of the module) real.
+vi.mock("../lib/templates.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    copyTemplates: vi.fn(() =>
+      Promise.resolve({ scriptsSymlinked: true, symlinkResults: [] }),
+    ),
+    // Templates-root guard (#822). Defaults to "present" so this suite exercises
+    // the paths past the guard; the guard's own failure branch is covered in
+    // templates.test.ts and sync-source-invocation.integration.test.ts.
+    assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
+  };
+});
 
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({

@@ -354,3 +354,71 @@ describe("update command — opencode shim (AC-3)", () => {
     expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
   });
 });
+
+describe("update — protected set characterization (#1090 AC-7)", () => {
+  // #1090 moved `computeTemplateChanges`'s in-place-customization check from
+  // the `CUSTOMIZABLE_FILES` allow-list onto the declared ownership table.
+  // `update` reads that classification through the `local-override` status, so
+  // these cases pin the protected set across the refactor: the set `--force`
+  // reports as overwritten, and the set a plain `update` reports as protected,
+  // must both be exactly the user-owned destinations — no more, no less.
+  let prevExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    prevExitCode = process.exitCode;
+    process.exitCode = undefined;
+    mockGetManifest.mockResolvedValue(INITIALIZED_MANIFEST);
+    mockGetPackageVersion.mockReturnValue("2.6.1");
+    mockGetConfig.mockResolvedValue(CONFIG);
+    mockDecideOpencodeShimSync.mockResolvedValue("none");
+  });
+
+  afterEach(() => {
+    process.exitCode = prevExitCode;
+    vi.restoreAllMocks();
+  });
+
+  it("reports the constitution protected on a plain update (#1090 AC-7)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockComputeTemplateChanges.mockResolvedValue([LOCAL_OVERRIDE]);
+
+    await updateCommand({ dryRun: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("1 local override(s) protected");
+    // Nothing to apply, so the preview must not signal pending work.
+    expect(process.exitCode).toBeUndefined();
+    expect(output).not.toContain("Local overrides (forced overwrite)");
+  });
+
+  it("reports exactly the user-owned set as forced overwrites under --force (#1090 AC-7)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    // A sequant-owned file that also changed. It is applied either way and must
+    // never appear in the protected/forced-overwrite set — that separation is
+    // what the ownership table declares.
+    const SEQUANT_OWNED_MODIFIED = {
+      path: ".claude/settings.json",
+      templatePath: "templates/settings.json",
+      status: "modified" as const,
+      rendered: "{}",
+    };
+    mockComputeTemplateChanges.mockResolvedValue([
+      LOCAL_OVERRIDE,
+      SEQUANT_OWNED_MODIFIED,
+    ]);
+
+    await updateCommand({ dryRun: true, force: true });
+
+    const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    const forcedSection = output.slice(
+      output.indexOf("Local overrides (forced overwrite):"),
+    );
+    expect(output).toContain("Local overrides (forced overwrite):");
+    expect(forcedSection).toContain(".claude/memory/constitution.md");
+    expect(forcedSection).not.toContain(".claude/settings.json");
+    // The sequant-owned file is reported as an ordinary modification.
+    expect(output).toContain("Modified files:");
+    // Both are pending work, so the preview signals it.
+    expect(process.exitCode).toBe(1);
+  });
+});
