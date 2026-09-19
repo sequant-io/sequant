@@ -48,6 +48,25 @@ interface Check {
   fix?: () => Promise<void>;
 }
 
+/**
+ * Wall-clock bound for the `--version` probes (#1075).
+ *
+ * These shell out to a local binary that should answer immediately; a probe
+ * still running after this long is hung, not slow. On timeout Node kills the
+ * child and throws into each probe's existing `catch`, which already reports
+ * "not installed" with its install hint — so the bound needs no new handling.
+ */
+const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Wall-clock bound for `codex login status` (#1075).
+ *
+ * Longer than PROBE_TIMEOUT_MS because this probe reaches the network: a
+ * legitimately slow login check over a poor link must not be misreported as
+ * unauthenticated. 10s bounds the hang while leaving real headroom.
+ */
+const AUTH_PROBE_TIMEOUT_MS = 10_000;
+
 export interface DoctorOptions {
   skipIssueCheck?: boolean;
   /** Suppress informational warnings (e.g., upstream subagent routing notice) */
@@ -209,6 +228,7 @@ export function checkClosedIssues(): ClosedIssue[] {
         {
           encoding: "utf-8",
           stdio: ["pipe", "pipe", "pipe"],
+          timeout: PROBE_TIMEOUT_MS,
         },
       );
       // If no output, no commit found
@@ -255,6 +275,7 @@ export function getOpencodeVersion(): string | undefined {
     const raw = execSync("opencode --version", {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      timeout: PROBE_TIMEOUT_MS,
     });
     const match = /(\d+)\.(\d+)\.(\d+)/.exec(raw);
     return match?.[0];
@@ -273,6 +294,7 @@ export function getCodexVersion(): string | undefined {
     const raw = execSync("codex --version", {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      timeout: PROBE_TIMEOUT_MS,
     });
     const match = /(\d+)\.(\d+)\.(\d+)/.exec(raw);
     return match?.[0];
@@ -293,6 +315,7 @@ export function isCodexAuthenticated(): boolean {
     const raw = execSync("codex login status", {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      timeout: AUTH_PROBE_TIMEOUT_MS,
     });
     return !/not logged in/i.test(raw);
   } catch {
