@@ -26,6 +26,7 @@ import {
   assertTemplatesDirExists,
   NON_TEMPLATE_DESTINATIONS,
   type TemplatesCandidateRank,
+  type OwnershipPolicy,
   previewScriptsSymlinkTargets,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
@@ -240,7 +241,11 @@ describe("templates", () => {
         "init.ts#writeOpencodeCommands": ".opencode/",
         "init.ts#writeOpencodeAgents": ".opencode/",
         "init.ts#writeOpencodePlugin": ".opencode/",
-        "init.ts#writeOpencodeMcpConfig": ".opencode/",
+        // The exact path, not the `.opencode/` prefix: this site MERGES
+        // (it keeps every non-sequant `mcp` entry), so mapping it to the
+        // prefix would assert the tree's `sequant-owned` rule and leave the
+        // `merge` rule that describes it untested.
+        "init.ts#writeOpencodeMcpConfig": ".opencode/opencode.json",
         "init.ts#writeCodexConfig": ".codex/config.toml",
         "init.ts#initCommand": ".sequant/settings.reference.md",
         // Rewrites installed skills in place — a `templates/skills/` route
@@ -311,6 +316,7 @@ describe("templates", () => {
         "AGENTS.md",
         ".mcp.json",
         ".opencode/",
+        ".opencode/opencode.json",
         ".codex/config.toml",
       ]) {
         expect(
@@ -318,6 +324,32 @@ describe("templates", () => {
           `${required} must stay declared — it is one of the six defects in the class`,
         ).toContain(required);
         expect(POLICIES).toContain(ownershipPolicy(required));
+      }
+
+      // (b4) For the destinations whose defect was decided, assert the policy
+      // VALUE, not merely that some policy resolves. `POLICIES.toContain(...)`
+      // above passes for all three values, so a silent re-classification —
+      // exactly what reopens this class — would sail through it.
+      const DECIDED: Record<string, OwnershipPolicy> = {
+        // #814 — edited in place; plain sync/update preserve it.
+        ".claude/memory/constitution.md": "user-owned",
+        // #1071 — init merges only the keys its flags set.
+        ".sequant/settings.json": "user-owned",
+        // #990 — regenerated only while its marker still matches the body.
+        "AGENTS.md": "user-owned",
+        // #793 — syncSequantMcpPin re-pins the sequant entry and keeps the rest.
+        ".mcp.json": "merge",
+        // #996 — writeOpencodeMcpConfig keeps every non-sequant `mcp` entry.
+        // A prefix match on `.opencode/` would call this sequant-owned.
+        ".opencode/opencode.json": "merge",
+        // #1078 ruling — settings.local.json is the extension point.
+        ".claude/settings.json": "sequant-owned",
+      };
+      for (const [destination, policy] of Object.entries(DECIDED)) {
+        expect(
+          ownershipPolicy(destination),
+          `${destination} is declared ${policy}; changing it reopens the defect it closed`,
+        ).toBe(policy);
       }
     });
   });

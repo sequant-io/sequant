@@ -399,6 +399,11 @@ export const NON_TEMPLATE_DESTINATIONS: readonly string[] = [
   ".claude/.sequant/.skills-drift-cache.json",
   "AGENTS.md",
   ".mcp.json",
+  // The exact path, not just the `.opencode/` prefix: it is the one file under
+  // that tree sequant merges rather than overwrites, and the gate maps
+  // `writeOpencodeMcpConfig` to it so the `merge` rule is actually enforced
+  // instead of shadowed by the prefix entry below.
+  ".opencode/opencode.json",
   ".opencode/",
   ".codex/config.toml",
 ];
