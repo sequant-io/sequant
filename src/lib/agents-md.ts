@@ -33,7 +33,8 @@ export const AGENTS_MD_PATH = "AGENTS.md";
  * the sha1 of everything after the marker line's own newline — recomputing it
  * from the current body and comparing to the recorded hash tells sync whether
  * the file is still exactly what sequant generated (safe to regenerate) or was
- * hand-edited / pre-existing (must be preserved, like `CUSTOMIZABLE_FILES`).
+ * hand-edited / pre-existing (must be preserved — `AGENTS.md` is declared
+ * `user-owned` in the ownership table in `templates.ts`).
  */
 const AGENTS_MD_MARKER_PATTERN =
   /^<!-- sequant:agents-md v=(\S+) h=([0-9a-f]{40}) -->$/;
