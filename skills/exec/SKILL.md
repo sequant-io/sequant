@@ -1203,6 +1203,18 @@ Before creating a PR, run ALL checks in this order:
 
 If any check fails, fix the issues before creating the PR.
 
+**A red test you did not cause still needs an issue number (#1086).** When a test fails in
+a file your diff never touched, do not write "pre-existing, unrelated" in the PR body and
+move on. First rule out the orchestrator's own env leaking into the suite: under `sequant
+run` every phase has `SEQUANT_ORCHESTRATOR`, `SEQUANT_WORKTREE` and (with relay)
+`SEQUANT_RELAY` set, and the suite is not hermetic against them — re-run the failing file
+with `env -u SEQUANT_ORCHESTRATOR -u SEQUANT_WORKTREE -u SEQUANT_RELAY npx vitest run <file>`;
+green means #1086, not your change. Then settle it against base in the same worktree.
+Whatever the cause, the PR body names an issue for it: link the existing one
+(`gh issue list --search "<test name>"`) or file one. Three PRs on 2026-09-10/11 each wrote
+"3 pre-existing failures, unrelated" for the same three tests; none filed an issue, and the
+same failures stopped a gate run a week later.
+
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
 **Foreground only (#1032).** Run every check — the full `npm test` above all — in the
