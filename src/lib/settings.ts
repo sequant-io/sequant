@@ -1358,13 +1358,213 @@ async function preserveExistingSettings(
   const current = typeof run.agent === "string" ? run.agent : "claude-code";
   if (current === agent) return preserved;
 
+  const rawUpdated = updateAgentInRawContent(content, agent);
+  // The raw-string edit only fails when the file doesn't actually have a
+  // `"run": {...}` block to locate — content that already parsed above, so
+  // this is a defensive fallback, not the expected path; it loses comments,
+  // same as the pre-#1100 behavior.
   const merged = { ...parsed, run: { ...run, agent } };
-  await writeFile(SETTINGS_PATH, JSON.stringify(merged, null, 2));
+  await writeFile(SETTINGS_PATH, rawUpdated ?? JSON.stringify(merged, null, 2));
   return {
     action: "updated",
     path: SETTINGS_PATH,
     updatedKeys: ["run.agent"],
   };
+}
+
+/**
+ * Find the index of the `}` matching the `{` at `openIdx`, scanning the raw
+ * JSONC text char-by-char so string contents and `//` comments (which may
+ * contain literal braces) never perturb the depth count. Mirrors the
+ * inString/escaped scan `stripJsoncComments` already uses per line.
+ */
+function findMatchingBrace(content: string, openIdx: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = openIdx; i < content.length; i++) {
+    const ch = content[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (!inString && ch === "/" && content[i + 1] === "/") {
+      const nl = content.indexOf("\n", i);
+      i = nl === -1 ? content.length : nl;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Find where the value of `key` starts, for a `key` that sits at exactly
+ * `targetDepth` object levels below the start of `text` (1 for a root-object
+ * key in a whole file, 0 for a key inside an already-extracted `{...}` body).
+ * Scans the raw JSONC char-by-char with the same string/comment awareness as
+ * `findMatchingBrace`, so a `//` comment that quotes `"run": {`, a string
+ * value that happens to equal the key, or a nested object carrying the same
+ * key name can never capture the edit (#1100 QA). Returns -1 when absent.
+ */
+function findValueStartOfKey(
+  text: string,
+  key: string,
+  targetDepth: number,
+): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let token = "";
+  let pendingKey: string | null = null; // string completed at targetDepth
+  let awaitingValue = false; // saw `pendingKey:` — next value char starts it
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        token += ch;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+        if (awaitingValue) {
+          // That string was a value, not a key.
+          awaitingValue = false;
+          pendingKey = null;
+        } else if (depth === targetDepth) {
+          pendingKey = token;
+        }
+      } else {
+        token += ch;
+      }
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      const nl = text.indexOf("\n", i);
+      i = nl === -1 ? text.length : nl;
+      continue;
+    }
+    if (ch === '"') {
+      if (awaitingValue && pendingKey === key) return i;
+      inString = true;
+      token = "";
+      continue;
+    }
+    if (ch === ":") {
+      if (pendingKey !== null && depth === targetDepth) awaitingValue = true;
+      continue;
+    }
+    if (ch === "{" || ch === "[") {
+      if (awaitingValue && pendingKey === key) return i;
+      depth++;
+      pendingKey = null;
+      awaitingValue = false;
+      continue;
+    }
+    if (ch === "}" || ch === "]") {
+      depth--;
+      pendingKey = null;
+      awaitingValue = false;
+      continue;
+    }
+    if (ch === ",") {
+      pendingKey = null;
+      awaitingValue = false;
+      continue;
+    }
+    if (/\s/.test(ch)) continue;
+    // Any other char (digit, `t`/`f`/`n`) begins a scalar value.
+    if (awaitingValue) {
+      if (pendingKey === key) return i;
+      awaitingValue = false;
+      pendingKey = null;
+    }
+  }
+  return -1;
+}
+
+/** Index of the `"` closing the string literal that opens at `openQuote`, or -1. */
+function findStringEnd(text: string, openQuote: number): number {
+  let escaped = false;
+  for (let i = openQuote + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') return i;
+  }
+  return -1;
+}
+
+/** Indentation of the first indented line in `block`, defaulting to two spaces. */
+function firstIndent(block: string): string {
+  for (const line of block.split("\n")) {
+    const m = /^([ \t]+)\S/.exec(line);
+    if (m) return m[1];
+  }
+  return "  ";
+}
+
+/**
+ * Set `run.agent` in raw JSONC text, touching only that one value so every
+ * comment and every other line survive (#1100). Returns null when the file
+ * has no top-level `"run": {...}` object or its `agent` value is not a
+ * string — the caller then falls back to a structural rewrite.
+ */
+function updateAgentInRawContent(
+  content: string,
+  agent: string,
+): string | null {
+  const openIdx = findValueStartOfKey(content, "run", 1);
+  if (openIdx === -1 || content[openIdx] !== "{") return null;
+  const closeIdx = findMatchingBrace(content, openIdx);
+  if (closeIdx === -1) return null;
+
+  const before = content.slice(0, openIdx + 1);
+  const block = content.slice(openIdx + 1, closeIdx);
+  const after = content.slice(closeIdx);
+  const value = JSON.stringify(agent);
+
+  // Replace path: an existing direct `agent` key inside the run block.
+  const agentIdx = findValueStartOfKey(block, "agent", 0);
+  if (agentIdx !== -1) {
+    if (block[agentIdx] !== '"') return null;
+    const end = findStringEnd(block, agentIdx);
+    if (end === -1) return null;
+    return before + block.slice(0, agentIdx) + value + block.slice(end + 1) + after;
+  }
+
+  // Insert path. A trailing comma is only legal when another member follows,
+  // and comments are not members — `"run": {}` and a comment-only block both
+  // produced `{ "agent": "codex", }` before this guard (#1100 QA).
+  const hasMembers = stripJsoncComments(block).trim() !== "";
+  if (!hasMembers) {
+    if (block.trim() === "") {
+      // Keep `"run": {}` on its one line so the edit stays a single changed line.
+      return `${before} "agent": ${value} ${after}`;
+    }
+    return `${before}\n${firstIndent(block)}"agent": ${value}${block}${after}`;
+  }
+  return `${before}\n${firstIndent(block)}"agent": ${value},${block}${after}`;
 }
 
 /**

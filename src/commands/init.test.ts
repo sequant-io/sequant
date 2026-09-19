@@ -933,11 +933,13 @@ describe("init command", () => {
 
     type SettingsModule = typeof import("../lib/settings.js");
     let realCreateDefaultSettings: SettingsModule["createDefaultSettings"];
+    let realStripJsoncComments: SettingsModule["stripJsoncComments"];
 
     beforeEach(async () => {
       const actual =
         await vi.importActual<SettingsModule>("../lib/settings.js");
       realCreateDefaultSettings = actual.createDefaultSettings;
+      realStripJsoncComments = actual.stripJsoncComments;
       mockWriteFile.mockResolvedValue(undefined);
       mockReadFile.mockResolvedValue(TUNED);
     });
@@ -955,6 +957,12 @@ describe("init command", () => {
       return JSON.parse(stripped) as Record<string, unknown>;
     }
 
+    /** The raw string passed to `writeFile`, unparsed — for comment/byte checks. */
+    function writtenRaw(): string | null {
+      const call = mockWriteFile.mock.calls.find((c) => c[0] === SETTINGS);
+      return call ? String(call[1]) : null;
+    }
+
     it("AC-1: preserves run.timeout and run.phases instead of writing defaults", async () => {
       // Both files present — the fully-initialized repo from the report.
       mockFileExists.mockResolvedValue(true);
@@ -964,16 +972,6 @@ describe("init command", () => {
       expect(result.action).toBe("preserved");
       // Nothing written at all: the file stays byte-identical, comments and all.
       expect(writtenSettings()).toBeNull();
-      // And the tuned values the report watched disappear are still there.
-      const onDisk = JSON.parse(TUNED) as {
-        run: { timeout: number; phases: Record<string, string> };
-      };
-      expect(onDisk.run.timeout).toBe(5400);
-      expect(onDisk.run.phases).toEqual({
-        spec: "sonnet",
-        exec: "sonnet",
-        qa: "opus",
-      });
     });
 
     it("AC-2: --agent codex still records run.agent while preserving the rest", async () => {
@@ -1074,6 +1072,176 @@ describe("init command", () => {
       expect(result.action).toBe("updated");
       const written = writtenSettings() as { run: { agent: string } };
       expect(written.run.agent).toBe("claude-code");
+    });
+
+    // #1100: the update path used to round-trip through
+    // JSON.stringify(merged, null, 2), which silently dropped every `//`
+    // comment in the JSONC file `init --yes` generates. These cases exercise
+    // the targeted raw-string edit that replaces only the `run.agent` line.
+    const JSONC_FIXTURE = [
+      "{",
+      "  // Schema version for migration support",
+      '  "version": "1.0",',
+      "",
+      "  // Run command settings",
+      '  "run": {',
+      "    // Default timeout per phase in seconds",
+      '    "timeout": 5400',
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+
+    /** Length of the longest common subsequence of two line arrays. */
+    function lcsLength(a: string[], b: string[]): number {
+      const dp: number[][] = Array.from({ length: a.length + 1 }, () =>
+        new Array<number>(b.length + 1).fill(0),
+      );
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          dp[i][j] =
+            a[i - 1] === b[j - 1]
+              ? dp[i - 1][j - 1] + 1
+              : Math.max(dp[i - 1][j], dp[i][j - 1]);
+        }
+      }
+      return dp[a.length][b.length];
+    }
+
+    /** Lines in `after` not part of the LCS with `before` — insertions and changes both count once, and insertion doesn't inflate it. */
+    function countChangedOrInsertedLines(
+      before: string[],
+      after: string[],
+    ): number {
+      return after.length - lcsLength(before, after);
+    }
+
+    it("1100 AC-1: preserves JSONC comments on the run.agent update", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(JSONC_FIXTURE);
+
+      const result = await realCreateDefaultSettings("codex");
+
+      expect(result.action).toBe("updated");
+      const raw = writtenRaw();
+      expect(raw).not.toBeNull();
+      expect(raw).toContain("// Schema version for migration support");
+      expect(raw).toContain("// Run command settings");
+      expect(raw).toContain("// Default timeout per phase in seconds");
+
+      const parsed = JSON.parse(realStripJsoncComments(raw as string)) as {
+        run: { agent: string; timeout: number };
+      };
+      expect(parsed.run.agent).toBe("codex");
+      expect(parsed.run.timeout).toBe(5400);
+    });
+
+    it("1100 AC-2: touches only the run.agent line", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(JSONC_FIXTURE);
+
+      await realCreateDefaultSettings("codex");
+
+      const raw = writtenRaw() as string;
+      const changedOrInserted = countChangedOrInsertedLines(
+        JSONC_FIXTURE.split("\n"),
+        raw.split("\n"),
+      );
+      expect(changedOrInserted).toBe(1);
+    });
+
+    it("1100 AC-3: a blank settings file gets defaults with run.agent set, action created", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("   \n");
+
+      const result = await realCreateDefaultSettings("codex");
+
+      expect(result.action).toBe("created");
+      const written = writtenSettings() as { run: { agent: string } };
+      expect(written.run.agent).toBe("codex");
+    });
+
+    /** AC-5: the written file must round-trip through the real loader path. */
+    function parseWritten(raw: string): {
+      run: Record<string, unknown>;
+      scopeAssessment?: { run?: Record<string, unknown> };
+    } {
+      return JSON.parse(realStripJsoncComments(raw)) as ReturnType<
+        typeof parseWritten
+      >;
+    }
+
+    async function updateFixture(fixture: string): Promise<string> {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(fixture);
+      const result = await realCreateDefaultSettings("codex");
+      expect(result.action).toBe("updated");
+      return writtenRaw() as string;
+    }
+
+    it("1100 AC-5: an empty run block gets a single-line insert that still parses", async () => {
+      const fixture = [
+        "{",
+        '  "version": "1.0",',
+        "  // nothing tuned yet",
+        '  "run": {}',
+        "}",
+        "",
+      ].join("\n");
+      const raw = await updateFixture(fixture);
+      expect(parseWritten(raw).run.agent).toBe("codex");
+      expect(raw).toContain("// nothing tuned yet");
+      expect(
+        countChangedOrInsertedLines(fixture.split("\n"), raw.split("\n")),
+      ).toBe(1);
+    });
+
+    it("1100 AC-5: a whitespace-only run block is treated like an empty one", async () => {
+      const fixture = ["{", '  "run": {   }', "}", ""].join("\n");
+      const raw = await updateFixture(fixture);
+      expect(parseWritten(raw).run.agent).toBe("codex");
+      expect(
+        countChangedOrInsertedLines(fixture.split("\n"), raw.split("\n")),
+      ).toBe(1);
+    });
+
+    it("1100 AC-5: a comment-only run block is inserted without a trailing comma", async () => {
+      const fixture = [
+        "{",
+        '  "run": {',
+        "    // per-phase models go here",
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const raw = await updateFixture(fixture);
+      expect(parseWritten(raw).run.agent).toBe("codex");
+      expect(raw).toContain("    // per-phase models go here");
+      expect(
+        countChangedOrInsertedLines(fixture.split("\n"), raw.split("\n")),
+      ).toBe(1);
+    });
+
+    it('1100 AC-5: a comment quoting "run": { and a nested run key do not capture the edit', async () => {
+      const fixture = [
+        "{",
+        '  // Example: "run": { "agent": "codex" }',
+        '  "scopeAssessment": { "run": { "enabled": true } },',
+        '  "run": {',
+        '    "timeout": 5400',
+        "  }",
+        "}",
+        "",
+      ].join("\n");
+      const raw = await updateFixture(fixture);
+      expect(raw).toContain('  // Example: "run": { "agent": "codex" }');
+      const parsed = parseWritten(raw);
+      expect(parsed.run.agent).toBe("codex");
+      expect(parsed.run.timeout).toBe(5400);
+      expect(parsed.scopeAssessment?.run?.agent).toBeUndefined();
+      expect(
+        countChangedOrInsertedLines(fixture.split("\n"), raw.split("\n")),
+      ).toBe(1);
     });
   });
 });
