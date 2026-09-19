@@ -599,6 +599,15 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // write, from the same resolver `--dry-run` used, and print it. One diff
   // pass serves both this report and the --force announcement below, and it
   // is skipped entirely under `--quiet`, where neither is printed.
+  //
+  // On cost: pre-#1090 this pass ran only under `force && !quiet`. It is only
+  // reached at all when `force` is set or the version marker mismatches — a
+  // version-current plain `sync` returns at the report-only fast path above,
+  // which runs its own diff and never gets here. So the added pass lands only
+  // on runs that go on to render and write the entire tree, where it measured
+  // ~36 ms against 63 templates. Printing after the copy instead would cost
+  // nothing but would break the invariant this report exists for: the
+  // decision has to be visible *before* the write, not after it (#1030 I-2).
   const applyChanges = quiet
     ? []
     : await computeTemplateChanges(manifest.stack, tokens);
