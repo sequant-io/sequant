@@ -212,7 +212,7 @@ vi.mock("../lib/cli-ui.js", () => ({
 }));
 
 import { initCommand } from "./init.js";
-import { fileExists, ensureDir } from "../lib/fs.js";
+import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
 import { detectStack, detectAllStacks } from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
 import { createManifest } from "../lib/manifest.js";
@@ -232,6 +232,8 @@ import {
 
 const mockFileExists = vi.mocked(fileExists);
 const mockEnsureDir = vi.mocked(ensureDir);
+const mockReadFile = vi.mocked(readFile);
+const mockWriteFile = vi.mocked(writeFile);
 const mockDetectStack = vi.mocked(detectStack);
 const mockDetectAllStacks = vi.mocked(detectAllStacks);
 const mockCopyTemplates = vi.mocked(copyTemplates);
@@ -264,7 +266,13 @@ describe("init command", () => {
     });
     mockCreateManifest.mockResolvedValue(undefined);
     mockSaveConfig.mockResolvedValue(undefined);
-    mockCreateDefaultSettings.mockResolvedValue(undefined);
+    // createDefaultSettings now reports what it did (#1071) — the default
+    // here is the fresh-repo outcome the rest of this suite assumes.
+    mockCreateDefaultSettings.mockResolvedValue({
+      action: "created",
+      path: ".sequant/settings.json",
+      updatedKeys: [],
+    });
     mockCommandExists.mockReturnValue(true);
     mockIsGhAuthenticated.mockReturnValue(true);
     // Default: interactive mode enabled (TTY detected)
@@ -868,13 +876,19 @@ describe("init command", () => {
     it("forwards --agent codex to createDefaultSettings", async () => {
       await initCommand({ yes: true, stack: "generic", agent: "codex" });
 
-      expect(mockCreateDefaultSettings).toHaveBeenCalledWith("codex");
+      expect(mockCreateDefaultSettings).toHaveBeenCalledWith(
+        "codex",
+        undefined,
+      );
     });
 
     it("passes no agent when the flag is absent", async () => {
       await initCommand({ yes: true, stack: "generic" });
 
-      expect(mockCreateDefaultSettings).toHaveBeenCalledWith(undefined);
+      expect(mockCreateDefaultSettings).toHaveBeenCalledWith(
+        undefined,
+        undefined,
+      );
     });
   });
 
@@ -892,6 +906,174 @@ describe("init command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).not.toContain('trust_level = "trusted"');
+    });
+  });
+
+  // #1071: `init --agent <name>` on an already-initialized repo overwrote
+  // `.sequant/settings.json` with defaults — `run.timeout` reset, the whole
+  // `run.phases` block deleted, under a success banner. These cases drive the
+  // REAL `createDefaultSettings` via importActual (the module is mocked
+  // file-wide above); `../lib/fs.js` stays mocked, so the assertions are on
+  // the readFile/writeFile calls the guard makes.
+  describe("1071: init preserves an existing .sequant/settings.json", () => {
+    const SETTINGS = ".sequant/settings.json";
+
+    /** A tuned file: the exact keys the bug report saw destroyed. */
+    const TUNED = JSON.stringify(
+      {
+        version: "1.0",
+        run: {
+          timeout: 5400,
+          phases: { spec: "sonnet", exec: "sonnet", qa: "opus" },
+        },
+      },
+      null,
+      2,
+    );
+
+    type SettingsModule = typeof import("../lib/settings.js");
+    let realCreateDefaultSettings: SettingsModule["createDefaultSettings"];
+
+    beforeEach(async () => {
+      const actual =
+        await vi.importActual<SettingsModule>("../lib/settings.js");
+      realCreateDefaultSettings = actual.createDefaultSettings;
+      mockWriteFile.mockResolvedValue(undefined);
+      mockReadFile.mockResolvedValue(TUNED);
+    });
+
+    /** What the guard wrote to the settings file, parsed. `null` = never written. */
+    function writtenSettings(): Record<string, unknown> | null {
+      const call = mockWriteFile.mock.calls.find((c) => c[0] === SETTINGS);
+      if (!call) return null;
+      // Strip // comments so this works for both the JSONC default file and
+      // the plain-JSON merge output.
+      const stripped = String(call[1])
+        .split("\n")
+        .filter((line) => !line.trim().startsWith("//"))
+        .join("\n");
+      return JSON.parse(stripped) as Record<string, unknown>;
+    }
+
+    it("AC-1: preserves run.timeout and run.phases instead of writing defaults", async () => {
+      // Both files present — the fully-initialized repo from the report.
+      mockFileExists.mockResolvedValue(true);
+
+      const result = await realCreateDefaultSettings();
+
+      expect(result.action).toBe("preserved");
+      // Nothing written at all: the file stays byte-identical, comments and all.
+      expect(writtenSettings()).toBeNull();
+      // And the tuned values the report watched disappear are still there.
+      const onDisk = JSON.parse(TUNED) as {
+        run: { timeout: number; phases: Record<string, string> };
+      };
+      expect(onDisk.run.timeout).toBe(5400);
+      expect(onDisk.run.phases).toEqual({
+        spec: "sonnet",
+        exec: "sonnet",
+        qa: "opus",
+      });
+    });
+
+    it("AC-2: --agent codex still records run.agent while preserving the rest", async () => {
+      mockFileExists.mockResolvedValue(true);
+
+      const result = await realCreateDefaultSettings("codex");
+
+      expect(result.action).toBe("updated");
+      expect(result.updatedKeys).toEqual(["run.agent"]);
+      const written = writtenSettings() as {
+        run: { agent: string; timeout: number; phases: Record<string, string> };
+      };
+      // #1059 behavior kept…
+      expect(written.run.agent).toBe("codex");
+      // …without taking the tuned keys down with it.
+      expect(written.run.timeout).toBe(5400);
+      expect(written.run.phases).toEqual({
+        spec: "sonnet",
+        exec: "sonnet",
+        qa: "opus",
+      });
+    });
+
+    it("AC-3: --force still overwrites with defaults", async () => {
+      mockFileExists.mockResolvedValue(true);
+
+      const result = await realCreateDefaultSettings(undefined, true);
+
+      expect(result.action).toBe("created");
+      const written = writtenSettings() as {
+        run: { timeout: number; phases?: unknown };
+      };
+      expect(written.run.timeout).toBe(1800);
+      expect(written.run.phases).toBeUndefined();
+    });
+
+    it("AC-4: init reports the preserved file instead of succeeding silently", async () => {
+      // init-level: createDefaultSettings is the file-wide mock here, so this
+      // asserts initCommand renders the decision it is handed. The spinner is
+      // mocked out in this suite, so the line has to go through console.log.
+      mockCreateDefaultSettings.mockResolvedValue({
+        action: "preserved",
+        path: SETTINGS,
+        updatedKeys: [],
+      });
+
+      await initCommand({ yes: true, stack: "generic" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain(SETTINGS);
+      expect(output).toMatch(/preserved/i);
+    });
+
+    it("AC-5: preserves even with no .claude/settings.json present", async () => {
+      // The "already initialized" warning keys off `.claude/settings.json`;
+      // the file destroyed is `.sequant/settings.json`. With only the latter
+      // present the old code clobbered with no warning at all, so the guard
+      // must key off the file it writes.
+      mockFileExists.mockImplementation(async (path: string) =>
+        path.includes(".sequant/settings.json"),
+      );
+
+      const result = await realCreateDefaultSettings("codex");
+
+      expect(result.action).toBe("updated");
+      const written = writtenSettings() as {
+        run: { agent: string; timeout: number; phases: unknown };
+      };
+      expect(written.run.agent).toBe("codex");
+      expect(written.run.timeout).toBe(5400);
+      expect(written.run.phases).toEqual({
+        spec: "sonnet",
+        exec: "sonnet",
+        qa: "opus",
+      });
+    });
+
+    it("derived: leaves an unparseable settings file untouched and warns", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue('{ "run": { "timeout": 5400 ');
+
+      const result = await realCreateDefaultSettings("codex");
+
+      expect(result.action).toBe("preserved");
+      expect(writtenSettings()).toBeNull();
+      expect(result.warning).toContain(SETTINGS);
+      expect(result.warning).toContain("--force");
+    });
+
+    it("1071: an explicit --agent claude-code switches back off a recorded driver", async () => {
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue(
+        JSON.stringify({ run: { agent: "codex", timeout: 5400 } }),
+      );
+
+      const result = await realCreateDefaultSettings("claude-code");
+
+      expect(result.action).toBe("updated");
+      const written = writtenSettings() as { run: { agent: string } };
+      expect(written.run.agent).toBe("claude-code");
     });
   });
 });
