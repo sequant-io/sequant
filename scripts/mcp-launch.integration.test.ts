@@ -219,11 +219,13 @@ describe("#1084 AC-1: mcp-launch.mjs forwards the child's exit code and signals"
     });
 
     expect(result).toEqual({ code: null, signal: "SIGTERM" });
-    if (launchCwdMatch) {
-      expect(
-        fs.existsSync(launchCwdMatch),
-        "launcher must clean up its launch dir on exit",
-      ).toBe(false);
-    }
+    expect(
+      launchCwdMatch,
+      "launcher must log its launch dir on stderr",
+    ).toBeTruthy();
+    expect(
+      fs.existsSync(launchCwdMatch),
+      "launcher must clean up its launch dir on exit",
+    ).toBe(false);
   });
 });

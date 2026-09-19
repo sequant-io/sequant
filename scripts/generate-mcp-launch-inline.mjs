@@ -18,13 +18,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SOURCE = join(__dirname, "mcp-launch.mjs");
 
 const IMPORT_BLOCK = `import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";`;
 
 const REQUIRE_BLOCK = `const { spawn } = require("node:child_process");
-const { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } = require("node:fs");
+const {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} = require("node:fs");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");`;
 
@@ -76,7 +92,7 @@ export function generateInlineLauncherSource(sourcePath = DEFAULT_SOURCE) {
       "generate-mcp-launch-inline: spec argv index changed in mcp-launch.mjs; update this generator",
     );
   }
-  src = src.replace("process.argv[2]", "process.argv[1]");
+  src = src.replaceAll("process.argv[2]", "process.argv[1]");
 
   return src.trim();
 }

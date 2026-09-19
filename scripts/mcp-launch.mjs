@@ -17,34 +17,77 @@
 // scripts/plugin-mcp-pin.test.ts on the next release.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, rmdirSync, rmSync, statSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// npm ships `npx` as `npx.cmd` on Windows. With `shell: false`, Node's spawn
-// uses the OS's own exec (no PATHEXT resolution), so plain "npx" raises
-// ENOENT there — a regression versus the previous shell-resolved `"command":
-// "npx"` config Claude Code used to run. Naming the .cmd explicitly keeps
-// shell: false (no shell-interpolation of the spec/SEQUANT_PROJECT_DIR).
+// npm ships `npx` as `npx.cmd` on Windows, and Node refuses to spawn a
+// .cmd/.bat file without a shell (CVE-2024-27980 hardening, every release
+// inside our engine floor): `shell: false` raises EINVAL, and plain "npx"
+// raises ENOENT because the OS exec does no PATHEXT lookup. So on Windows the
+// launch goes through cmd.exe. That reintroduces shell interpolation of the
+// argv, which is why isSafeSpec() gates the only untrusted-looking argument
+// (the package spec from .mcp.json) before anything is spawned; the other
+// two args are fixed literals.
 export function resolveNpxCommand(platform = process.platform) {
   return platform === "win32" ? "npx.cmd" : "npx";
+}
+
+export function spawnShellFor(platform = process.platform) {
+  return platform === "win32";
+}
+
+// npm package specs we are willing to hand to a shell: name, optional scope,
+// exact-or-tag version. No whitespace, quotes, `$`, `&`, `|`, `;`, `<`, `>`.
+export function isSafeSpec(spec) {
+  return typeof spec === "string" && /^[A-Za-z0-9@._/-]+$/.test(spec);
+}
+
+// Each launch dir carries the launcher's pid so a later sweep can tell a live
+// session's directory from a leaked one. Not exported: the inline generator
+// only knows how to inline `export function`.
+const LAUNCH_PID_FILE = "launcher.pid";
+
+export function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    // EPERM: the process exists but belongs to someone else — still alive.
+    return Boolean(err) && err.code === "EPERM";
+  }
 }
 
 /**
  * Remove leftover `sequant-mcp-launch-*` directories that an earlier launcher
  * could not clean up itself. cleanup() below runs on the child's exit, but a
  * SIGKILL of the launcher (Claude Code tearing a session down hard, an OOM
- * kill) skips it and leaks the empty directory. Only directories older than
- * `maxAgeMs` are touched, so a sibling launcher that created its directory a
- * moment ago and has not spawned yet is never pulled out from under it, and
- * only empty directories are removed (rmdirSync refuses anything else).
+ * kill) skips it and leaks the directory.
+ *
+ * Ownership is decided by the `launcher.pid` file each launcher writes right
+ * after mkdtemp: a directory whose recorded launcher is still running is never
+ * touched, however old — a session open for hours keeps its launch dir, and
+ * with a pre-2.16 `serve` pinned that dir is still the server's cwd. A dead
+ * pid means a leak, removed outright. A directory with no pid file is either
+ * a sibling launcher between mkdtemp and its pid write (fresh — protected by
+ * `maxAgeMs`) or a leftover from a launcher that predates the pid file; those
+ * are removed only when old and empty (rmdirSync refuses anything else).
  * Best-effort throughout: a failure here must never block the launch.
  */
 export function sweepStaleLaunchDirs(
   base = tmpdir(),
   maxAgeMs = 60 * 60 * 1000,
   now = Date.now(),
+  alive = isProcessAlive,
 ) {
   let removed = 0;
   let names;
@@ -58,7 +101,23 @@ export function sweepStaleLaunchDirs(
     const full = join(base, name);
     try {
       const st = statSync(full);
-      if (!st.isDirectory() || now - st.mtimeMs < maxAgeMs) continue;
+      if (!st.isDirectory()) continue;
+      let pid = NaN;
+      try {
+        pid = Number.parseInt(
+          readFileSync(join(full, LAUNCH_PID_FILE), "utf8"),
+          10,
+        );
+      } catch {
+        // no pid file — handled below
+      }
+      if (Number.isInteger(pid) && pid > 0) {
+        if (alive(pid)) continue;
+        rmSync(full, { recursive: true, force: true });
+        removed += 1;
+        continue;
+      }
+      if (now - st.mtimeMs < maxAgeMs) continue;
       rmdirSync(full);
       removed += 1;
     } catch {
@@ -74,6 +133,14 @@ function main() {
     process.stderr.write("mcp-launch: missing package spec argument\n");
     process.exit(1);
   }
+  if (!isSafeSpec(spec)) {
+    process.stderr.write(
+      "mcp-launch: refusing package spec with shell-significant characters: " +
+        spec +
+        "\n",
+    );
+    process.exit(1);
+  }
 
   // Claude Code spawns this launcher with cwd = the open project (the same
   // fact that lets a local node_modules/sequant shadow npx in the first
@@ -87,6 +154,7 @@ function main() {
     // A cwd with no package.json/node_modules ancestor forces npx to resolve
     // from its cache/registry instead of a locally shadowing install.
     launchCwd = mkdtempSync(join(tmpdir(), "sequant-mcp-launch-"));
+    writeFileSync(join(launchCwd, LAUNCH_PID_FILE), String(process.pid));
   } catch (err) {
     process.stderr.write(
       "mcp-launch: failed to create an isolated launch directory: " +
@@ -117,7 +185,8 @@ function main() {
   const child = spawn(resolveNpxCommand(), ["-y", spec, "serve"], {
     cwd: launchCwd,
     stdio: "inherit",
-    shell: false,
+    // cmd.exe on Windows (see spawnShellFor); a real exec everywhere else.
+    shell: spawnShellFor(),
     env: { ...process.env, SEQUANT_PROJECT_DIR: projectDir },
   });
 
