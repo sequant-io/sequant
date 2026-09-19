@@ -52,13 +52,13 @@ function main() {
     launchCwd = mkdtempSync(join(tmpdir(), "sequant-mcp-launch-"));
   } catch (err) {
     process.stderr.write(
-      `mcp-launch: failed to create an isolated launch directory: ${err.message}\n`,
+      "mcp-launch: failed to create an isolated launch directory: " + err.message + "\n",
     );
     process.exit(1);
   }
 
   process.stderr.write(
-    `mcp-launch: project dir ${projectDir}; launching npx from ${launchCwd}\n`,
+    "mcp-launch: project dir " + projectDir + "; launching npx from " + launchCwd + "\n",
   );
 
   function cleanup() {
@@ -85,7 +85,7 @@ function main() {
   }
 
   child.on("error", (err) => {
-    process.stderr.write(`mcp-launch: failed to spawn npx: ${err.message}\n`);
+    process.stderr.write("mcp-launch: failed to spawn npx: " + err.message + "\n");
     cleanup();
     process.exit(1);
   });
