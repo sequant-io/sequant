@@ -587,8 +587,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
   // #1090 AC-5: resolve the ownership decision for every file *before* the
   // write, from the same resolver `--dry-run` used, and print it. One diff
-  // pass serves both this report and the --force announcement below.
-  const applyChanges = await computeTemplateChanges(manifest.stack, tokens);
+  // pass serves both this report and the --force announcement below, and it
+  // is skipped entirely under `--quiet`, where neither is printed.
+  const applyChanges = quiet
+    ? []
+    : await computeTemplateChanges(manifest.stack, tokens);
   if (!quiet) {
     printOwnershipDecisions(
       resolveOwnershipDecisions(applyChanges, force, mcpPin.updated),

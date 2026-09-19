@@ -15,10 +15,11 @@ vi.mock("../lib/manifest.js", () => ({
   getPackageVersion: vi.fn(() => "1.1.0"),
 }));
 
-// Mock templates. `isCustomizableFile` is a pure allow-list check, so mirror
-// the real implementation rather than a bare vi.fn() (sync.ts calls it to
-// classify the write-set). `processTemplate` is kept real (via importOriginal)
-// since generateAgentsMd (also real/unmocked in this file) depends on it.
+// Mock templates. `ownershipPolicy` is a pure table lookup and comes through
+// `importOriginal` unmocked on purpose — sync.ts calls it to classify the
+// write-set, and a stubbed policy would make the parity assertions test the
+// stub instead of the declared table (#1090). `processTemplate` is kept real
+// for the same reason: generateAgentsMd (also real here) depends on it.
 vi.mock("../lib/templates.js", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
@@ -31,10 +32,6 @@ vi.mock("../lib/templates.js", async (importOriginal) => {
     // exercises the paths past the guard; the guard's own failure branch is
     // covered by its dedicated test below.
     assertTemplatesDirExists: vi.fn(async () => "/pkg/templates"),
-    isCustomizableFile: (localPath: string): boolean =>
-      [".claude/memory/constitution.md"].includes(
-        localPath.replace(/\\/g, "/"),
-      ),
     previewScriptsSymlinkTargets: vi.fn(() => Promise.resolve([])),
   };
 });
@@ -61,6 +58,7 @@ vi.mock("./init.js", () => ({
 // leaves ` M .mcp.json` behind.
 vi.mock("../lib/mcp-config.js", () => ({
   syncSequantMcpPin: vi.fn(() => ({ updated: false, reason: "no-file" })),
+  PROJECT_MCP_JSON: ".mcp.json",
 }));
 
 import {
@@ -75,6 +73,7 @@ import {
   copyTemplates,
   computeTemplateChanges,
   listTemplateFiles,
+  ownershipPolicy,
   previewScriptsSymlinkTargets,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
@@ -107,6 +106,10 @@ describe("sync command", () => {
     // resetAllMocks strips the factory implementation, so restore a valid
     // SyncMcpPinResult — sync.ts reads `.updated` off the return value.
     mockSyncMcpPin.mockReturnValue({ updated: false, reason: "no-file" });
+    // Same reason: the apply path resolves an ownership decision per file
+    // (#1090 AC-5) and iterates the result, so an unstubbed `undefined` would
+    // throw in any test that does not set its own change list.
+    mockComputeTemplateChanges.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -832,7 +835,7 @@ describe("sync command", () => {
       });
 
       it("reports a customizable file as preserved, not written, under a plain dry-run (#814 AC-4)", async () => {
-        // Since #814 the apply path PRESERVES CUSTOMIZABLE_FILES under a plain
+        // Since #814 the apply path PRESERVES user-owned files under a plain
         // sync, so the preview must show them as preserved — not "will be
         // overwritten" — and must not count them as pending write-set work.
         mockGetManifest.mockResolvedValue({
@@ -992,7 +995,7 @@ describe("sync command", () => {
     });
 
     it("announces customizable overwrites on stdout before copying under --force (#814 AC-3)", async () => {
-      // AC-3: an explicit --force still overwrites CUSTOMIZABLE_FILES, but must
+      // AC-3: an explicit --force still overwrites user-owned files, but must
       // say so on stdout *before* the copy runs — no silent clobber.
       mockGetManifest.mockResolvedValue({
         version: "1.1.0",
@@ -1040,7 +1043,7 @@ describe("sync command", () => {
     });
 
     it("reports preserved customizable files on stdout under a plain sync (#814 AC-4)", async () => {
-      // AC-4: plain sync preserves CUSTOMIZABLE_FILES and reports each one, so
+      // AC-4: plain sync preserves user-owned files and reports each one, so
       // the apply path's output matches the --dry-run promise (#722).
       mockGetManifest.mockResolvedValue({
         version: "1.0.0",
@@ -1279,6 +1282,180 @@ describe("sync command", () => {
         await syncCommand();
         expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
       });
+    });
+  });
+  // #1090 AC-5: the dry-run preview and the apply path must agree, stated in
+  // ownership-policy terms. The fixture is the one the AC names — a repo with a
+  // modified constitution (user-owned) and a modified skill (sequant-owned) —
+  // plus `.claude/settings.json` (AC-4: sequant-owned, must print `overwrite`)
+  // and an `unchanged` file that must appear in neither list.
+  describe("ownership decision parity between --dry-run and apply (#1090)", () => {
+    const CHANGES = [
+      {
+        path: ".claude/memory/constitution.md",
+        templatePath: "templates/memory/constitution.md",
+        status: "local-override" as const,
+        rendered: "constitution template",
+      },
+      {
+        path: ".claude/skills/exec/SKILL.md",
+        templatePath: "templates/skills/exec/SKILL.md",
+        status: "modified" as const,
+        rendered: "skill template",
+      },
+      {
+        path: ".claude/settings.json",
+        templatePath: "templates/settings.json",
+        status: "modified" as const,
+        rendered: "{}",
+      },
+      {
+        path: ".claude/agents/sequant-implementer.md",
+        templatePath: "templates/agents/sequant-implementer.md",
+        status: "unchanged" as const,
+        rendered: "agent template",
+      },
+    ];
+
+    /** Parse the `  <verb>: <path>` decision block off captured stdout. */
+    function decisions(output: string): Record<string, string[]> {
+      const parsed: Record<string, string[]> = {
+        overwrite: [],
+        preserved: [],
+        merged: [],
+      };
+      for (const line of output.split("\n")) {
+        // The trailing-hint line (`preserved: X — run ...`) is deliberately
+        // excluded by the `$` anchor: it is the #814 report, not a decision.
+        const match = /^\s+(overwrite|preserved|merged): (\S+)$/.exec(line);
+        if (match) parsed[match[1]].push(match[2]);
+      }
+      return parsed;
+    }
+
+    let writtenByCopy: string[];
+
+    beforeEach(() => {
+      writtenByCopy = [];
+      mockGetManifest.mockResolvedValue({
+        version: "1.0.0",
+        stack: "nextjs",
+        installedAt: "2024-01-01",
+        files: {},
+      });
+      mockFileExists.mockResolvedValue(true);
+      mockReadFile.mockResolvedValue("1.0.0"); // marker < package → apply path
+      mockGetPackageVersion.mockReturnValue("1.1.0");
+      mockGetConfig.mockResolvedValue(null);
+      mockComputeTemplateChanges.mockResolvedValue(CHANGES);
+      // `.mcp.json` is the one `merge` destination a sync touches, so the
+      // `merged` verb is exercised rather than left vacuous.
+      mockSyncMcpPin.mockReturnValue({
+        updated: true,
+        from: "1.0.0",
+        to: "1.1.0",
+      } as ReturnType<typeof syncSequantMcpPin>);
+
+      // Model copyTemplates' OWN write-path guard (templates.ts): a user-owned
+      // destination that exists and differs is preserved unless the caller
+      // opted in. Deriving the applied set from the write path — not from
+      // sync's printer — is what keeps the parity assertion non-circular.
+      mockCopyTemplates.mockImplementation(
+        async (
+          _stack: string,
+          _tokens: Record<string, string> | undefined,
+          opts?: { overwriteCustomizable?: boolean },
+        ) => {
+          const preservedCustomizable: string[] = [];
+          for (const change of CHANGES) {
+            if (change.status === "unchanged") continue;
+            if (
+              !opts?.overwriteCustomizable &&
+              change.status === "local-override" &&
+              ownershipPolicy(change.path) === "user-owned"
+            ) {
+              preservedCustomizable.push(change.path);
+              continue;
+            }
+            writtenByCopy.push(change.path);
+          }
+          return { scriptsSymlinked: false, preservedCustomizable };
+        },
+      );
+    });
+
+    it("prints a policy decision per file and applies exactly that set (#1090 AC-5)", async () => {
+      const logSpy = vi.spyOn(console, "log");
+
+      await syncCommand({ dryRun: true });
+      const preview = decisions(
+        logSpy.mock.calls.map((c) => String(c[0])).join("\n"),
+      );
+
+      // The preview states a decision for every changed file, and none for the
+      // unchanged one.
+      expect(preview.overwrite.sort()).toEqual([
+        ".claude/settings.json",
+        ".claude/skills/exec/SKILL.md",
+      ]);
+      expect(preview.preserved).toEqual([".claude/memory/constitution.md"]);
+      expect(preview.merged).toEqual([".mcp.json"]);
+      expect(preview.overwrite).not.toContain(
+        ".claude/agents/sequant-implementer.md",
+      );
+      // A dry-run states the decision without taking it.
+      expect(mockSyncMcpPin).toHaveBeenCalledWith(expect.anything(), {
+        dryRun: true,
+      });
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+
+      logSpy.mockClear();
+      await syncCommand();
+      const applied = decisions(
+        logSpy.mock.calls.map((c) => String(c[0])).join("\n"),
+      );
+
+      // The apply path states the same decisions...
+      expect(applied.overwrite.sort()).toEqual(preview.overwrite.sort());
+      expect(applied.preserved).toEqual(preview.preserved);
+      expect(applied.merged).toEqual(preview.merged);
+
+      // ...and the set it actually writes is exactly the printed
+      // `overwrite` + `merged` set. `writtenByCopy` comes from the modeled
+      // write-path guard; `.mcp.json` is re-pinned in place for real.
+      expect(mockSyncMcpPin).toHaveBeenLastCalledWith(expect.anything(), {
+        dryRun: false,
+      });
+      expect([...writtenByCopy, ".mcp.json"].sort()).toEqual(
+        [...preview.overwrite, ...preview.merged].sort(),
+      );
+      // And the preserved file was genuinely left alone.
+      expect(writtenByCopy).not.toContain(".claude/memory/constitution.md");
+
+      logSpy.mockRestore();
+    });
+
+    it("moves the constitution from preserved to overwrite under --force (#1090 AC-5)", async () => {
+      const logSpy = vi.spyOn(console, "log");
+
+      await syncCommand({ dryRun: true, force: true });
+      const preview = decisions(
+        logSpy.mock.calls.map((c) => String(c[0])).join("\n"),
+      );
+      expect(preview.preserved).toEqual([]);
+      expect(preview.overwrite).toContain(".claude/memory/constitution.md");
+
+      logSpy.mockClear();
+      await syncCommand({ force: true });
+
+      // The single-override contract: --force is the one thing that turns a
+      // user-owned preserve into a write, and the apply path honours it.
+      expect(writtenByCopy).toContain(".claude/memory/constitution.md");
+      expect([...writtenByCopy, ".mcp.json"].sort()).toEqual(
+        [...preview.overwrite, ...preview.merged].sort(),
+      );
+
+      logSpy.mockRestore();
     });
   });
 });
