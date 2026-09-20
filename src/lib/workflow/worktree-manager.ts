@@ -1526,6 +1526,13 @@ export function rebaseBeforePR(
       };
     } else {
       console.log(chalk.yellow(`    !  ${verb} failed: ${opError.trim()}`));
+      // A merge that fails after staging (e.g. no git identity) leaves
+      // MERGE_HEAD set; abort so createPR never runs against a mid-merge tree.
+      if (pushed) {
+        spawnSync("git", ["-C", worktreePath, "merge", "--abort"], {
+          stdio: "pipe",
+        });
+      }
       console.log(
         chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
       );
