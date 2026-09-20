@@ -69,6 +69,7 @@ const GATE_LABELS: Record<string, string> = {
   skill_verification: "Skill verification (§6a)",
   execution_evidence: "Script execution evidence",
   declared_evidence_status: "Declared evidence (§6h)",
+  settle_evidence_status: "Settled against base (§2a)",
   script_verification_status: "Script verification (§11)",
   changelog_required: "CHANGELOG entry (§10a)",
   quality_plan_status: "Quality plan (Phase 0b)",

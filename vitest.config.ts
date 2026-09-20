@@ -23,6 +23,7 @@ export default defineConfig({
             "!**/*.integration.test.ts",
             // Subprocess-heavy tests run in the integration project
             "!scripts/qa/tautology-detector-cli.test.ts",
+            "!scripts/settle-against-base.test.ts",
             "!src/lib/semgrep.test.ts",
           ],
           pool: "forks",
@@ -36,6 +37,9 @@ export default defineConfig({
           include: [
             "**/*.integration.test.ts",
             "scripts/qa/tautology-detector-cli.test.ts",
+            // Builds a real git repo (init, remote, commits, checkout, stash)
+            // per case, so it cannot finish inside `unit`'s 5s default (#1093).
+            "scripts/settle-against-base.test.ts",
             "src/lib/semgrep.test.ts",
           ],
           pool: "forks",
