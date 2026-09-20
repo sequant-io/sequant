@@ -38,7 +38,7 @@ Automates the full release workflow: version bump, git tag, GitHub release, and 
 ## Usage
 
 ```
-/release [patch|minor|major] [--prerelease <tag>] [--dry-run]
+/release [patch|minor|major] [--prerelease <tag>] [--soaked] [--dry-run]
 ```
 
 - `/release` - Interactive, asks for version type
@@ -47,6 +47,7 @@ Automates the full release workflow: version bump, git tag, GitHub release, and 
 - `/release major` - Major release (1.3.1 → 2.0.0)
 - `/release minor --prerelease beta` - Pre-release (1.3.1 → 1.4.0-beta.0)
 - `/release --dry-run` - Preview without publishing
+- `/release --soaked` - Promote an already-published `next` version to `latest` (Step 9b); refused without this flag
 
 ## Pre-flight Checks
 
@@ -545,13 +546,15 @@ For the title, use a short summary:
 
 ### Step 9: Publish to npm
 
-Attempt to publish:
+<!-- BEGIN: next-tag-publish (#1098) -->
+
+A regular release publishes to the `next` dist-tag, **never straight to `latest`** (#1098). `latest` moves only in Step 9b, after the canary job has passed against the published tarball and a manual soak. Downstream projects run `npx sequant@latest`, so a defect that only shows up in a real install must be found on `next` first.
 
 ```bash
-# Regular release
-npm publish
+# Regular release: `next` first
+npm publish --tag next
 
-# Pre-release with tag (prevents becoming "latest")
+# Pre-release with its own tag (also never becomes "latest")
 npm publish --tag beta
 ```
 
@@ -560,10 +563,33 @@ npm publish --tag beta
 Non-interactive environments cannot handle the OTP prompt. Ask the user to publish manually:
 
 ```
-npm publish --otp=<code>
+npm publish --tag next --otp=<code>
 ```
 
 Do NOT attempt to pass OTP codes programmatically or retry `npm publish` in a loop. Hand off to the user and continue with post-release verification once they confirm.
+
+### Step 9b: Promote `next` to `latest` (requires `--soaked`)
+
+Print this soak checklist, then stop unless `--soaked` was passed:
+
+```
+Soak checklist for {new_version} on the next tag
+  [ ] CI `canary` job green against the published tarball
+  [ ] npx sequant@next sync --dry-run, run in each local repo of the maintainer's own projects, lists only expected decisions
+  [ ] npx sequant@next doctor exits 0 in those repos
+```
+
+**Without `--soaked`: refuse.** Do not run `npm dist-tag add ... latest`. Report "Published to next; latest unchanged. Re-run `/release --soaked` after the soak checklist passes." and finish. Never infer `--soaked` from context or pass it yourself.
+
+**With `--soaked`:**
+
+```bash
+npm dist-tag add sequant@${new_version} latest
+```
+
+If npm returns `EOTP`, hand off to the user with `npm dist-tag add sequant@${new_version} latest --otp=<code>`; same no-retry rule as Step 9.
+
+<!-- END: next-tag-publish (#1098) -->
 
 ## Post-Release Verification
 
@@ -572,8 +598,7 @@ Verify both platforms show the new version:
 ```bash
 # npm verification (may take 1-2 minutes to propagate)
 sleep 5
-npm view sequant version
-npm view sequant dist-tags
+npm view sequant dist-tags   # next = new version; latest only after Step 9b
 
 # GitHub verification
 gh release view "v${new_version}"
