@@ -43,6 +43,27 @@ describe("hook corpus fixture", () => {
   });
 });
 
+describe("hook corpus redaction", () => {
+  // The repository is public: no home path, email or token-shaped string may
+  // reach the committed corpus. `/Users/dev` and `test@test` are fixtures from
+  // the hook suite itself, not harvested data.
+  const leaks = (command: string): string[] =>
+    [
+      ...(command.match(/\/(?:Users|home)\/[A-Za-z0-9._-]+/g) ?? []).filter(
+        (m) => m !== "/Users/user" && m !== "/Users/dev",
+      ),
+      ...(command.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) ?? []),
+      ...(command.match(
+        /\bgh[pousr]_[A-Za-z0-9]{20,}|\bxox[abposr]-[A-Za-z0-9-]{10,}|\bsk-[A-Za-z0-9_-]{20,}|\bAKIA[A-Z0-9]{16}|Bearer\s+[A-Za-z0-9._~+/=-]{16,}/g,
+      ) ?? []),
+    ];
+
+  it("no committed command carries a home path, email or token", () => {
+    const found = corpus.flatMap((c) => leaks(c.command));
+    expect(found).toEqual([]);
+  });
+});
+
 describe.each(HOOK_COPIES)("hook corpus replay [%s]", (_label, hookPath) => {
   let env: ReplayEnv;
 
