@@ -1215,5 +1215,91 @@ describe("templates", () => {
       const warnLines = logs.filter((l) => l.includes("--no-symlinks"));
       expect(warnLines).toHaveLength(1);
     });
+
+    // #1053: copy mode used to write *through* an existing scripts/dev link.
+    describe("copy mode over existing scripts/dev entries (#1053)", () => {
+      const TPL = "#!/bin/bash\necho tpl\n";
+      let devDir: string;
+      let fakeNpx: string;
+
+      beforeEach(async () => {
+        devDir = join(cwdDir, "scripts", "dev");
+        await mkdir(devDir, { recursive: true });
+        fakeNpx = join(
+          templatesDir,
+          "..",
+          `fake-npx-${process.pid}-${Date.now()}.sh`,
+        );
+        await fsWriteFile(fakeNpx, "#!/bin/bash\necho stale-cache\n");
+      });
+
+      afterEach(async () => {
+        await rm(fakeNpx, { force: true });
+      });
+
+      it("replaces a foreign symlink", async () => {
+        await symlink(fakeNpx, join(devDir, "new-feature.sh"));
+
+        await copyTemplates("generic", undefined, { force: true });
+
+        const dest = join(devDir, "new-feature.sh");
+        expect(await isSymlink(dest)).toBe(false);
+        expect(await fsReadFile(dest, "utf-8")).toBe(TPL);
+        // Write-through guard: the link's old target is untouched.
+        expect(await fsReadFile(fakeNpx, "utf-8")).toBe(
+          "#!/bin/bash\necho stale-cache\n",
+        );
+
+        // Idempotent: a second run leaves a regular file.
+        await copyTemplates("generic", undefined, { force: true });
+        expect(await isSymlink(dest)).toBe(false);
+      });
+
+      it("replaces a foreign symlink even without --force", async () => {
+        await symlink(fakeNpx, join(devDir, "new-feature.sh"));
+
+        await copyTemplates("generic");
+
+        expect(await isSymlink(join(devDir, "new-feature.sh"))).toBe(false);
+      });
+
+      it("replaces a broken symlink", async () => {
+        await symlink(
+          join(cwdDir, "gone", "new-feature.sh"),
+          join(devDir, "new-feature.sh"),
+        );
+
+        await copyTemplates("generic", undefined, { force: true });
+
+        const dest = join(devDir, "new-feature.sh");
+        expect(await isSymlink(dest)).toBe(false);
+        expect(await fsReadFile(dest, "utf-8")).toBe(TPL);
+      });
+
+      it("leaves an existing regular file alone without --force, refreshes it with --force", async () => {
+        const dest = join(devDir, "new-feature.sh");
+        await fsWriteFile(dest, "# hand-edited\n");
+
+        await copyTemplates("generic");
+        expect(await fsReadFile(dest, "utf-8")).toBe("# hand-edited\n");
+
+        await copyTemplates("generic", undefined, { force: true });
+        expect(await fsReadFile(dest, "utf-8")).toBe(TPL);
+      });
+
+      it("previewScriptsSymlinkTargets reports old → (copy) for a foreign link and nothing for a regular file", async () => {
+        await symlink(fakeNpx, join(devDir, "new-feature.sh"));
+
+        const withLink = await previewScriptsSymlinkTargets();
+        expect(withLink).toHaveLength(1);
+        expect(withLink[0].oldTarget).toBe(fakeNpx);
+        expect(withLink[0].newTarget).toBe("(copy)");
+        expect(withLink[0].changed).toBe(true);
+
+        await rm(join(devDir, "new-feature.sh"));
+        await fsWriteFile(join(devDir, "new-feature.sh"), "# regular\n");
+        expect(await previewScriptsSymlinkTargets()).toEqual([]);
+      });
+    });
   });
 });

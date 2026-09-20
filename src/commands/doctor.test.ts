@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as childProcess from "child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -1228,8 +1228,66 @@ describe("doctor command", () => {
 
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("machine-specific target");
-      expect(output).toContain("run: sequant sync");
+      // No local node_modules/sequant: plain sync would only copy, so the
+      // hint names the install that keeps it a link (#1053).
+      expect(output).toContain("sequant sync");
       expect(output).not.toContain("sync --force");
+    });
+
+    describe("machine-specific link fix hint (#1053)", () => {
+      const localScripts = join(
+        process.cwd(),
+        "node_modules",
+        "sequant",
+        "templates",
+        "scripts",
+      );
+      let createdNodeModulesSequant = false;
+
+      beforeEach(() => {
+        mockReaddir.mockResolvedValue(["new-feature.sh"] as never);
+        mockIsSymlink.mockResolvedValue(true);
+        mockGetSymlinkTarget.mockResolvedValue(tmpdir());
+      });
+
+      afterEach(() => {
+        if (createdNodeModulesSequant) {
+          rmSync(join(process.cwd(), "node_modules", "sequant"), {
+            recursive: true,
+            force: true,
+          });
+          createdNodeModulesSequant = false;
+        }
+      });
+
+      it("machine-specific link without a local install names npm install && sync", async () => {
+        await doctorCommand();
+
+        const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+        expect(output).toContain("machine-specific target");
+        expect(output).toContain(
+          "npm install sequant --save-dev && sequant sync",
+        );
+        expect(output).not.toContain("--force");
+      });
+
+      it("machine-specific link with a local install says plain sync", async () => {
+        // Only create (and later remove) the install when none exists: a
+        // contributor's real or npm-linked node_modules/sequant must survive
+        // this test, and it already satisfies the doctor's existence check.
+        if (!existsSync(join(process.cwd(), "node_modules", "sequant"))) {
+          mkdirSync(localScripts, { recursive: true });
+          createdNodeModulesSequant = true;
+        }
+
+        await doctorCommand();
+
+        const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+        expect(output).toContain("machine-specific target");
+        expect(output).toContain("run: sequant sync");
+        expect(output).not.toContain("npm install sequant");
+        expect(output).not.toContain("--force");
+      });
     });
 
     it("reports an unmarked/hash-mismatched AGENTS.md as user-owned, with no --force hint", async () => {
