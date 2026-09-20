@@ -769,7 +769,17 @@ export function buildQaVerdictComment(
 ): string {
   const lines: string[] = [`## QA Verdict: ${verdict}`];
   if (summary) {
-    lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
+    // #1073: a `0/N met` line under an AC_MET* verdict contradicts the verdict
+    // and reads as a failure; when the parser found no counts (or counts that
+    // cannot be reconciled with a passing verdict) omit the line rather than
+    // print a wrong one.
+    const passing =
+      verdict === "READY_FOR_MERGE" || verdict.startsWith("AC_MET");
+    const countsUsable =
+      summary.acTotal > 0 && !(passing && summary.acMet === 0);
+    if (countsUsable) {
+      lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
+    }
     if (summary.gaps.length > 0) {
       lines.push("", "**Gaps:**", ...summary.gaps.map((g) => `- ${g}`));
     }
