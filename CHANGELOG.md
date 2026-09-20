@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The exec skill and `CLAUDE.md` now state the `SEQUANT_MUTATION` marker contract (#1104).** `failedTest` must start with the test file path (`<file> > <describe> > <case>`) and the payload must stay flat; `/qa` §6i already enforced both without telling authors, which tripped two of the four gate PRs before 2.16.0. A gate test in `scripts/exec-skill-marker.test.ts` pins the section.
+
 ### Fixed
 
 - **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
