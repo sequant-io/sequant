@@ -124,10 +124,19 @@ async function checkScriptsDevLinks(): Promise<Check[]> {
       "..",
     );
     if (!insideNodeModulesSequant && !insideProjectTree) {
+      // Name the fix that will actually change the link (#1053): `sync` re-links
+      // only when a local node_modules/sequant exists; otherwise it replaces the
+      // link with a copy, and a local install is what keeps it a link.
+      const hasLocalSequant = existsSync(
+        pathJoin(nodeModulesSequant, "templates", "scripts"),
+      );
+      const fix = hasLocalSequant
+        ? "run: sequant sync (re-links scripts/dev without touching a user-owned AGENTS.md)"
+        : "run: npm install sequant --save-dev && sequant sync (keeps scripts/dev linked; plain `sequant sync` replaces the link with a copy)";
       results.push({
         name: "scripts/dev links",
         status: "warn",
-        message: `${linkPath} points outside the project (machine-specific target) - run: sequant sync (re-links scripts/dev without touching a user-owned AGENTS.md)`,
+        message: `${linkPath} points outside the project (machine-specific target) - ${fix}`,
       });
     }
   }
