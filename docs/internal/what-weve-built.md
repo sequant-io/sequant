@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.15.1
+# What We've Built: Sequant v2.16.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -739,6 +739,14 @@ Shell scripts in `templates/scripts/`:
 - VS Code extension
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
+
+### Recent Additions (v2.16.0)
+
+- **Codex Agent Driver** - `--agent codex` / `run.agent: "codex"` runs phases via `codex exec --json` with an SDK-typed event parser, three-level outcome evaluator, `run.codex` settings (model, sandboxMode, networkAccess, extraArgs), token metrics from `turn.completed.usage`, and a `CODEX_MIN_VERSION` floor (#497)
+- **`sequant init --agent codex`** - relative `.agents/skills` symlink, `.codex/config.toml` wrapping the existing guard hooks unmodified, matching `doctor` checks, symlink preserved by `update`; git dir passed as a writable root and network enabled for `workspace-write` phases so codex can commit and reach GitHub (#1059, #1076, #1079)
+- **One Ownership Rule** - `ownershipPolicy()` + `TEMPLATE_ROUTES` in `templates.ts` is the only source `init`/`sync`/`update` consult; two-sided gate test covers undeclared templates and undeclared write sites; `.sequant/settings.json` preserved on re-init with JSONC comments intact (#1090, #1071, #1100)
+- **Unshadowable Plugin MCP Launcher** - `.mcp.json` embeds an inline launcher that spawns `npx` from an isolated cwd so a stale local `sequant` can't hijack the pin; `doctor` gains a local-shadow check (#1084)
+- **Bounded Probes** - `doctor`'s codex/opencode probes and `GitHubProvider.checkAuthSync()` carry timeouts; heredoc commit subjects keep their `#` (#1075, #1099, #1064)
 
 ### Recent Additions (v2.15.1)
 

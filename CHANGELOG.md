@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-09-19
+
 ### Fixed
 
 - **Importing `sequant`'s settings module no longer reads `package.json` as a side effect (#1090).** `src/lib/settings.ts` gained an import of `src/lib/templates.ts`, which imports `src/lib/manifest.ts`, whose top level ran `JSON.parse(findPackageJson())` — a synchronous `fs` read at module scope. Any consumer that stubs `fs` before importing the settings module threw `Could not find sequant package.json` at import time. The read is now lazy and memoized behind `getPackageVersion()`, removing a module-level side effect of the kind that broke ESM import order in #734.

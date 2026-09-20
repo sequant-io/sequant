@@ -17,6 +17,14 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.16
+
+- **Codex is a second agent driver** — `--agent codex` / `run.agent: "codex"` runs every phase through `codex exec --json` as a subprocess, with sequant's guard hooks wrapped into `.codex/config.toml` and the same `.claude/skills/` tree reached through a relative `.agents/skills` symlink. `sequant init --agent codex` provisions all of it and `doctor` checks the binary, version floor and login. Codex phases can commit and reach GitHub inside the `workspace-write` sandbox; `run.codex.networkAccess: false` seals them off (#497, #1076, #1079).
+- **One ownership rule for the files sequant writes** — every destination `init`, `sync` and `update` touch is declared `sequant-owned`, `user-owned` or `merge` in one table, and a two-sided gate test fails when a template or a new writer has no declaration. `.sequant/settings.json` survives a re-init byte-for-byte, comments included (#1090, #1071, #1100).
+- **The plugin's MCP server can't be shadowed** — a stale `sequant` in your project's `node_modules` used to hijack the pinned `npx sequant@<version> serve` and surface only `CONNECTION_CLOSED`; the launcher now spawns from an isolated directory, and `doctor` warns about a local shadow (#1084).
+- **`doctor` and auth probes can't hang** — the codex/opencode `--version` probes, `codex login status` and `gh auth status` all carry timeouts (#1075, #1099).
+- **`/qa` reads unchecked test-plan boxes as unexecuted evidence** — a PR test-plan checkbox that names a command but is left unchecked is treated as declared-but-not-run, not ignored (#1065).
+
 ### What's new in 2.15
 
 - **QA no longer inherits the implementer's blind spots** — the `qa` phase always starts a fresh session instead of resuming exec's. A study of 27 second-look reviews found 44% caught a would-ship bug the anchored reviewer had missed; cost is roughly neutral. Opt into full-weight QA on every dispatch with `--full-qa`, `run.fullQa: true`, or the MCP `fullQa` param (#982).
