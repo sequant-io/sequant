@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`parseQaSummary` counts checklist- and bold-prefixed AC lines, and the QA verdict comment no longer prints `AC coverage: 0/N met` under a passing verdict (#1073, #1095).** A checklist-shaped report (`- [x] **AC-1**: …`) matched no table row and parsed as `0/1 met` under an `AC_MET` verdict. Checklist lines now count (checkbox = MET; a table row wins on a duplicate id), and `buildQaVerdictComment` omits the count line when the parser found no counts or `acMet === 0` under `READY_FOR_MERGE`/`AC_MET*`.
+
+### Added
+
+- `fast-check` dev dependency and property/metamorphic tests for `parseAcceptanceCriteria`, `parseQaSummary`, and the `SEQUANT_MUTATION` / `SEQUANT_QA_GAPS` marker parsers (#1095). Set `FC_SEED` to replay a run.
+
 ## [2.16.0] - 2026-09-19
 
 ### Fixed
