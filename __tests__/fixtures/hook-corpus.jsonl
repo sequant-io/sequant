@@ -1,0 +1,157 @@
+{ "command": "gh issue create --title \"x\" --body \"Use git push --force only when...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh pr comment 1 --body \"see git push --force-with-lease docs\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue comment 564 --body \"Run git commit -m 'msg' to finish\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh pr create --title \"x\" --body \"Squash with git commit --amend\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "git push --force", "tool": "Bash", "exit": 2, "block": "Force push", "source": "manual", "state": "clean" }
+{ "command": "git push -f origin main", "tool": "Bash", "exit": 2, "block": "Force push", "source": "manual", "state": "clean" }
+{ "command": "git commit -m 'msg'", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "manual", "state": "clean" }
+{ "command": "git commit -m 'mention gh issue 1 in body'", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "manual", "state": "clean" }
+{ "command": "echo gh issue && git push --force", "tool": "Bash", "exit": 2, "block": "Force push", "source": "manual", "state": "clean" }
+{ "command": "gh issue create --title \"x\" --body \"WARNING: never run rm -rf / on production\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh pr comment 1 --body \"Don't sudo on shared boxes\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue create --title \"x\" --body \"release notes: deployed via vercel deploy\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh pr create --title \"x\" --body \"uses kubectl apply -f manifest.yaml\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue comment 1 --body \"if conflicted, run git reset --hard origin/main\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue create --title \"x\" --body \"trigger via gh workflow run release.yml\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh pr comment 1 --body \"kicked off via gh workflow run ci.yml\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "sudo rm -rf /tmp/x", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "manual", "state": "clean" }
+{ "command": "vercel deploy --prod", "tool": "Bash", "exit": 2, "block": "Deployment command", "source": "manual", "state": "clean" }
+{ "command": "git reset --hard origin/main", "tool": "Bash", "exit": 2, "block": "git reset --hard would lose local work:", "source": "manual", "state": "dirty" }
+{ "command": "gh workflow run release.yml", "tool": "Bash", "exit": 2, "block": "Workflow trigger", "source": "manual", "state": "clean" }
+{ "command": "echo gh issue && sudo rm -rf /tmp/x", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "manual", "state": "clean" }
+{ "command": "echo gh issue && vercel deploy --prod", "tool": "Bash", "exit": 2, "block": "Deployment command", "source": "manual", "state": "clean" }
+{ "command": "echo gh issue && gh workflow run release.yml", "tool": "Bash", "exit": 2, "block": "Workflow trigger", "source": "manual", "state": "clean" }
+{ "command": "gh issue create --body \"WARNING: never run `rm -rf /`...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue create --body \"release notes: deployed via `vercel deploy`...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue comment --body \"if conflicted, run `git reset --hard origin/main`...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue create --body \"trigger via `gh workflow run release.yml`...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "gh issue create --title \"x\" --body \"Don't run `rm -rf /` because...\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "git commit -m 'feat: x'", "tool": "Bash", "exit": 0, "block": null, "source": "manual" }
+{ "command": "gh issue list && git push --force", "tool": "Bash", "exit": 2, "block": "Force push", "source": "#763", "state": "clean" }
+{ "command": "gh pr view 1 && vercel deploy --prod", "tool": "Bash", "exit": 2, "block": "Deployment command", "source": "#763", "state": "clean" }
+{ "command": "gh issue list && gh workflow run release.yml", "tool": "Bash", "exit": 2, "block": "Workflow trigger", "source": "#763", "state": "clean" }
+{ "command": "gh issue list && sudo rm -rf /var/lib", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "gh issue list && git reset --hard origin/main", "tool": "Bash", "exit": 2, "block": "git reset --hard would lose local work:", "source": "#763", "state": "dirty" }
+{ "command": "gh issue list && git commit -m 'feat: x'", "tool": "Bash", "exit": 0, "block": null, "source": "#763" }
+{ "command": "gh issue create --title \"x\" --body \"run git push --force only when rebasing\"", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "cd /var/folders/2_/fy3vqfl529g4x00jb57j3vth0000gp/T/pre-tool-763-hdKIsP && gh issue create --title \"fix: git push --force disarms guard\" --body \"details\"", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "cd /var/folders/2_/fy3vqfl529g4x00jb57j3vth0000gp/T/pre-tool-763-hdKIsP && gh pr comment 1 --body \"never run sudo rm -rf / on prod\"", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "rm -rf /tmp/scratch/build", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "rm -rf /Users/dev/Projects/worktrees/feature/38-cell-protocol", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "echo 'never use sudo here'", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "grep -r sudoku src/", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "git commit -m \"docs: sudo policy\"", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "#763", "state": "clean" }
+{ "command": "sudo rm -rf /var/lib", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "( sudo apt install evil )", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "echo $(sudo apt install evil)", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "echo \"$(sudo apt install evil)\"", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "echo \"$( ( sudo apt install evil ) )\"", "tool": "Bash", "exit": 2, "block": "sudo command", "source": "#763", "state": "clean" }
+{ "command": "gh pr create --body \"$(cat .env)\"", "tool": "Bash", "exit": 2, "block": "Reading secret file", "source": "#763", "state": "clean" }
+{ "command": "echo pkg | xargs sudo apt install", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "bash -c \"sudo apt install evil\"", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "git commit -m \"$(cat <<'EOF'\ndocs: explain that git push --force is blocked\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "#763", "state": "clean" }
+{ "command": "git commit -m \"$(cat <<'EOF'\nchore: document that sudo and vercel deploy --prod are blocked\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "#763", "state": "clean" }
+{ "command": "git commit -m \"$(cat <<EOF\nfix: mention git push --force here\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "#763", "state": "clean" }
+{ "command": "git commit -m \"$(cat <<-EOF\n\tfeat: git push --force inside an indented heredoc\n\tEOF\n)\"", "tool": "Bash", "exit": 2, "block": "No changes to commit. Stage files with 'git add' first.", "source": "#763", "state": "clean" }
+{ "command": "gh pr create --body \"$(cat <<EOF\nThis PR explains why git push --force and vercel deploy --prod are blocked.\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#763", "state": "clean" }
+{ "command": "grep x <<< \"text\" && git push --force", "tool": "Bash", "exit": 2, "block": "Force push", "source": "#763", "state": "clean" }
+{ "command": "diff /dev/null /dev/null; echo \"mirrors byte-identical\"; git add -A && git commit -m \"fix(#943): cite only real enforcers\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git add -A && git commit -m \"test(#975): pin metrics call-site wiring\" && python3 - <<'PYEOF'\np = \"src/lib/workflow/run-orchestrator.ts\"\nPYEOF", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git add -A && git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(cat <<'EOF'\nfix: conventional first line\nnon-conventional trailing stuff\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(cat <<'EOF'\nupdated stuff\nmore detail\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -q -F - <<'EOF'\nfix(#497): subject\nEOF", "tool": "Bash", "exit": 0, "block": null, "source": "#1064" }
+{ "command": "git commit -q -F - <<'EOF'\nwip\nEOF", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#1064" }
+{ "command": "git commit -q -F - <<'EOF'\nfix: stdin subject\nEOF", "tool": "Bash", "exit": 0, "block": null, "source": "#1064" }
+{ "command": "git commit -q -m \"$(cat <<'EOF'\nfix(#497): heredoc subject\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#1064" }
+{ "command": "git commit -q -m \"fix(#497): literal subject\"", "tool": "Bash", "exit": 0, "block": null, "source": "#1064" }
+{ "command": "git commit \\\n  -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git add -A && git commit \\\n  -m \"fix(#981): scope extraction\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"mirrors byte-identical\"; (cd . && git commit -m \"fix(#943): cite only real enforcers\")", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"mirrors byte-identical\"; $( git commit -m \"fix: real message\" )", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"mirrors byte-identical\"; ( git commit -m \"updated stuff\" )", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "python3 -c \"$(cat <<'EOF'\nfix: this is heredoc data not a commit\nrun git commit now\nEOF\n)\"; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "echo \"not a message\"; (cat <<'EOF'\nfix: heredoc data\nEOF\ngit commit -m \"updated stuff\")", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "(cat <<'EOF'\nupdated stuff\nEOF\ngit commit -m \"fix: ok\")", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "(cat <<-EOF\n\tdata\n\tEOF\ngit commit -m \"fix: ok\")", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"not a message\"; (grep -q x <<< \"$y\"; git commit -m \"fix: ok\")", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit --author=\"A B <a@b>\" -m \"fix: with author\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit --author=\"A B <a@b>\" -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -F- <<'EOF'\nupdated stuff\nEOF", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit --file=- <<'EOF'\nupdated stuff\nEOF", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -F- <<'EOF'\nfix: ok\nEOF", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit --author=\"uses -m flag\" -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit --author=\"uses -m flag\" -m \"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"wip\n\nfix: sneaky\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"fix: ok\n\nupdated stuff in the body\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "# stage and git commit the fix\ngit add -A\ngit commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit --amend --no-edit && git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit-tree -h; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "echo about to git commit now; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "# stage and git commit the fix\ngit add -A\ngit commit -m \"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit --amend --no-edit", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit --message=\"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit --message \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -am \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -sm 'updated stuff'", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -a -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit --message=\"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -am \"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -a -m \"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"fix: ok\" ; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"updated stuff\" && git commit -m \"fix: ok\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "echo \"$(git commit -m \"fix: decoy\")\"; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"fix: a\" && git commit -m \"fix: b\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "# git commit -m \"wip stuff\"\ngit add -A && git commit -m \"fix: real conventional commit\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git add -A # git commit -m \"wip stuff\"\ngit commit -m \"fix: ok\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "( # git commit -m \"wip\"\ngit commit -m \"fix: ok\" )", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"fix: ok # not a comment\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "# git commit -m \"fix: example\"\ngit commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "( # git commit -m \"fix: decoy\"\ngit commit -m \"updated stuff\" )", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"updated stuff\" # trailing comment", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$( cat <<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$( cat <<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(  cat <<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(  cat <<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(\tcat <<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(\tcat <<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(cat<<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(cat<<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(/bin/cat <<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(/bin/cat <<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$(\ncat <<'EOF'\nfix: ok\nEOF\n)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$(\ncat <<'EOF'\nupdated stuff\nEOF\n)\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"fix: ok $(date)\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "cd /var/folders/2_/fy3vqfl529g4x00jb57j3vth0000gp/T/pre-tool-981-ac1-cd-18NzKy && diff a.md b.md && echo \"mirrors byte-identical\"; git add -A && git commit -m \"fix(#943): cite only real enforcers\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"fix: ok\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "export MSG='fix: ok'; git commit -m \"${MSG}\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$UNSET_VAR\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"updated stuff\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "MSG='updated stuff' && git commit -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "MSG=wip; git commit -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$MSG updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "# set MSG=updated to override\nMSG=\"fix: real\"; git add -A && git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo 'usage: MSG=updated ./s.sh'; MSG=\"fix: real\"; git add -A && git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"usage: MSG=updated ./s.sh\"; MSG=\"fix: real\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "cat <<'EOF'\nMSG=updated\nEOF\nMSG=\"fix: real\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"updated stuff\"; MSG=\"fix: ok\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"fix: ok\"; git commit -m \"$MSG\"; MSG=\"updated\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"fix: a\"; MSG=\"updated stuff\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "git commit -m \"$MSG\" && MSG=\"wip notes for later\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "true && git commit -m \"$MSG\" && MSG=\"wip notes for later\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"fix: ok\"; git commit \\\n  -m \"$MSG\"; MSG=\"updated stuff\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"updated stuff\"; git commit \\\n  -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "MSG=$(echo \"fix: generated\"); git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=`date`; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "MSG=\"fix: $X\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "git commit -m \"$MSG\"; MSG=\"updated stuff\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "MSG=\"fix: ok\"; git commit -m \"$MSG\"; git commit -m \"$MSG\"", "tool": "Bash", "exit": 0, "block": null, "source": "#981" }
+{ "command": "echo \"run git commit later\"; git commit -m \"updated stuff\"", "tool": "Bash", "exit": 2, "block": "Commit must follow conventional commits format", "source": "#981" }
+{ "command": "env", "tool": "Bash", "exit": 2, "block": "Environment dump", "source": "manual", "state": "clean" }
+{ "command": "printenv", "tool": "Bash", "exit": 2, "block": "Environment dump", "source": "manual", "state": "clean" }
+{ "command": "export", "tool": "Bash", "exit": 2, "block": "Environment dump", "source": "manual", "state": "clean" }
+{ "command": "env | grep SEQUANT", "tool": "Bash", "exit": 2, "block": "Environment dump", "source": "manual", "state": "clean" }
+{ "command": "env | grep '^SEQUANT_'", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "printenv | grep -E '^(SEQUANT|CLAUDE)_'", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "env | grep -i \"^sequant_\" | sort", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
+{ "command": "ls; env | grep \"^X\"", "tool": "Bash", "exit": 0, "block": null, "source": "manual", "state": "clean" }
