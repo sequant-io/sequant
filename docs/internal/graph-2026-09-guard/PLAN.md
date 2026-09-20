@@ -194,6 +194,25 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
   one-box, Kayenta) → #1098; diff-scoped mutation (Google TSE'21) → the
   mutation-marker gate already in CLAUDE.md, documented by #1104.
 
+- **D-13** (exec, 2026-09-20) An AC that names a nonexistent command is edited by
+  the runner on the issue, with a comment, when the intent is unambiguous —
+  #1104 AC-4 `lint:skills` → the three real `lint:skill-*` gates. Rejected:
+  bouncing to the owner for a script name.
+- **D-14** (exec) A doc-gate test in `scripts/` must call a production
+  function, or the tautology detector's CLI test fails the full suite; regex
+  literals with braces inside `it()` truncate the detector's block. #1104's
+  gate test runs the documented example through `parseMutationMarkers`.
+- **D-15** (exec) Fixtures never `rmSync` a real-repo path they did not
+  create (#1053 doctor fixture guarded with `existsSync`).
+- **D-16** (exec) Once failing verdicts post (#1070), every test context that
+  reaches `runIssueWithLogging` carries a mocked poster by default.
+- **D-17** (exec) #1096 AC-3's mutation is recorded as not applicable while
+  the usage-limit cases are `it.fails`; #1087 flips them and owns the record.
+- **D-18** (exec) A recorded qa verdict with empty gaps/findings that
+  contradicts the transcript's final `### Verdict:` heading is a parser
+  artifact (#1119), not a bounce; the runner reads
+  `errorContext.stdoutTail` before any re-dispatch.
+
 ## §8 Issue conventions
 
 - Stamp: `## Release-graph plan — guard-2026-09` with
@@ -212,7 +231,7 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
 
 ## §9 Open-questions register
 
-- **OQ-1** Why do `SEQUANT_ORCHESTRATOR` / `SEQUANT_WORKTREE` alone not
+- ~~**OQ-1**~~ **Resolved 2026-09-20** — #1086 AC-5 record on PR #1113: in the worktree both single vars reproduce (`ORCHESTRATOR` alone breaks batch-executor, `WORKTREE` alone breaks prompt-wait — the reverse of the issue's table; Phase 0 saw 1 passed each). The prefix scrub is correct either way; `main` is unchanged. Original: Why do `SEQUANT_ORCHESTRATOR` / `SEQUANT_WORKTREE` alone not
   reproduce in a clean shell when the issue says they do? → #1086 records
   the combined-env result; the prefix scrub is correct either way.
 - **OQ-2** Canary wall time under the 6-minute budget on ubuntu? → #1098
