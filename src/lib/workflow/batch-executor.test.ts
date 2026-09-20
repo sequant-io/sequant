@@ -150,7 +150,9 @@ function makeCtx(
       logWriter: null,
       stateManager: null,
     },
-    ...(overrides.postComment ? { postComment: overrides.postComment } : {}),
+    // #1070: a failing qa verdict now posts, so every ctx carries a mocked
+    // poster by default — no fixture can reach the real `gh issue comment`.
+    postComment: overrides.postComment ?? mockPostComment,
   };
 }
 
