@@ -121,6 +121,11 @@ export function caseKey(c: Pick<CorpusCase, "command" | "state">): string {
 const REDACTED = "<redacted>";
 
 const REDACTION_RULES: Array<[RegExp, string]> = [
+  // Claude Code session links, unrelated local projects and foreign repos.
+  [/https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/g, "<redacted-session>"],
+  [/\/Users\/[^/\s"']+\/Projects\/(?!sequant\b)[^/\s"']+/g, "/Users/user/Projects/<project>"],
+  [/-Users-[^/\s"'-]+-Projects-(?!sequant\b)[^/\s"']+/g, "-Users-user-Projects-<project>"],
+  [/(--repo\s+)(?!sequant-io\/)[^\s"']+\/[^\s"']+/g, "$1<owner>/<repo>"],
   // Header forms keep the header name and drop the value (and the scheme).
   [
     /(Authorization:\s*)(?:Bearer|Basic|token)?\s*[^\s"'\\]+/gi,
@@ -395,6 +400,20 @@ export function extractTranscriptCommands(jsonl: string): string[] {
 }
 
 
+
+/**
+ * A syntactically complete first line can still be a fragment: the log's
+ * rule names what the *whole* command did, so a `commit-format` or
+ * `no-changes` block whose recorded line has no `git commit`, or an
+ * `env-dump` block with no env-reading token, is the head of a longer command.
+ */
+export function isRuleMismatch(rule: string, command: string): boolean {
+  if ((rule === "commit-format" || rule === "no-changes") && !/git\s+commit\b/.test(command))
+    return true;
+  if (rule === "env-dump" && !/\b(env|printenv|export|set)\b/.test(command)) return true;
+  return false;
+}
+
 /**
  * The hook log keeps only the first line of a multi-line command, so an
  * entry that opens a heredoc, ends on a shell operator or a line
@@ -425,7 +444,7 @@ export function extractHookLogCommands(log: string): string[] {
     if (!m) continue;
     const command = m[2];
     if (m[1] === "worktree-boundary" || command.startsWith("{")) continue;
-    if (isCommandFragment(command)) continue;
+    if (isCommandFragment(command) || isRuleMismatch(m[1], command)) continue;
     out.push(command);
   }
   return out;
@@ -519,6 +538,10 @@ export async function harvest(
       // A verdict that changes between two identical replays depends on time or
       // locks, not on the command, and would make the snapshot flaky.
       if (first.exit !== second.exit || first.block !== second.block) continue;
+      // The hook log says the real command was blocked; a replay that allows it
+      // is the harness's blind spot (state, background flag, env), not a
+      // verdict worth pinning. Only reproduced blocks enter from the log.
+      if (item.source === "hook-log" && first.exit === 0) continue;
       (first.exit === 0 ? allowed : blocked).push({
         ...c,
         exit: first.exit,

@@ -13,6 +13,7 @@ import {
   serializeCase,
   type CorpusCase,
   isCommandFragment,
+  isRuleMismatch,
 } from "./hook-corpus.ts";
 
 const FAKE_GHP = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
@@ -149,5 +150,38 @@ describe("hook-log fragments (#1094)", () => {
     ]);
     expect(isCommandFragment("git push --force origin main")).toBe(false);
     expect(isCommandFragment("python3 - <<'EOF'")).toBe(true);
+  });
+});
+
+describe("hook-log complete-line fragments (#1094)", () => {
+  it("drops a first line whose text cannot have earned the log's rule", () => {
+    // Verbatim shapes from ~/.sequant/logs/claude-hook.log: the first line of
+    // a multi-line commit heredoc, and a bare cd ahead of a commit.
+    expect(isRuleMismatch("commit-format", "set -e")).toBe(true);
+    expect(isRuleMismatch("no-changes", "cd /Users/user/Projects/sequant-landing")).toBe(true);
+    expect(isRuleMismatch("env-dump", "W=/Users/user/Projects/worktrees/feature/x")).toBe(true);
+    expect(isRuleMismatch("commit-format", "git commit -m 'x'")).toBe(false);
+    expect(isRuleMismatch("force-push", "set -e")).toBe(false);
+    const log = "1.0 BLOCKED [commit-format] set -e\n2.0 BLOCKED [force-push] git push --force origin main";
+    expect(extractHookLogCommands(log)).toEqual(["git push --force origin main"]);
+  });
+});
+
+describe("redaction of session ids and foreign project paths (#1094)", () => {
+  it("replaces Claude Code session URLs and non-sequant project names", () => {
+    expect(redactCommand("open https://claude.ai/code/session_012sf9ybMc6ahtTPZbb6TLyX now")).toBe(
+      "open <redacted-session> now",
+    );
+    expect(redactCommand("cd /Users/tony/Projects/ad-motion && ls")).toBe(
+      "cd /Users/user/Projects/<project> && ls",
+    );
+    expect(redactCommand("cd /Users/tony/Projects/sequant && ls")).toContain("/Projects/sequant");
+    expect(redactCommand("S=/private/tmp/claude-502/-Users-tony-Projects-ad-motion/abc/scratchpad")).toBe(
+      "S=/private/tmp/claude-502/-Users-user-Projects-<project>/abc/scratchpad",
+    );
+    expect(redactCommand("gh issue view 225 --repo admarble/ad-motion --json comments")).toBe(
+      "gh issue view 225 --repo <owner>/<repo> --json comments",
+    );
+    expect(redactCommand("gh pr view 1 --repo sequant-io/sequant")).toContain("sequant-io/sequant");
   });
 });
