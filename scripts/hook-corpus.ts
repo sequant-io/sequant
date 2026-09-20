@@ -394,6 +394,24 @@ export function extractTranscriptCommands(jsonl: string): string[] {
   return out;
 }
 
+
+/**
+ * The hook log keeps only the first line of a multi-line command, so an
+ * entry that opens a heredoc, ends on a shell operator or a line
+ * continuation, or leaves a quote or paren open is a fragment: replaying it
+ * pins a verdict the hook never gave to the real command.
+ */
+export function isCommandFragment(command: string): boolean {
+  if (/<<-?\s*['"]?[A-Za-z_][A-Za-z0-9_]*['"]?/.test(command)) return true;
+  if (/(\\|&&|\|\||\||\(|\{|;)\s*$/.test(command)) return true;
+  const opens = (command.match(/\(/g) ?? []).length;
+  const closes = (command.match(/\)/g) ?? []).length;
+  if (opens !== closes) return true;
+  const single = (command.match(/'/g) ?? []).length;
+  const double = (command.match(/"/g) ?? []).length;
+  return single % 2 === 1 || double % 2 === 1;
+}
+
 /**
  * Bash commands from the hook's own log. Each `BLOCKED` line carries one
  * command already run through the hook's redactor; non-Bash payloads (JSON
@@ -407,6 +425,7 @@ export function extractHookLogCommands(log: string): string[] {
     if (!m) continue;
     const command = m[2];
     if (m[1] === "worktree-boundary" || command.startsWith("{")) continue;
+    if (isCommandFragment(command)) continue;
     out.push(command);
   }
   return out;
@@ -414,7 +433,7 @@ export function extractHookLogCommands(log: string): string[] {
 
 /** Tokens the guards care about; exit-0 commands without one add replay time, not coverage. */
 export const GUARD_RELEVANT =
-  /git\s+(commit|push|reset|checkout|switch|add|stash|clean)|gh\s|\benv\b|printenv|\bsudo\b|<<|\.env|secret|credential|\brm\b|deploy|workflow|&\s*$|run_in_background|--force|npm\s+(test|run)/;
+  /git\s+(commit|push|reset|checkout|switch|add|stash|clean)|gh\s|\benv\b|printenv|\bsudo\b|<<|\.env|secret|credential|\brm\b|deploy|workflow|&\s*$|run_in_background|--force|npm\s+(test|run)/m;
 
 export function normalizeCandidate(command: string): string | null {
   if (command.length === 0 || command.length > MAX_COMMAND_LENGTH) return null;

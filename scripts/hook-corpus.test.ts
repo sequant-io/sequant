@@ -12,6 +12,7 @@ import {
   redactCommand,
   serializeCase,
   type CorpusCase,
+  isCommandFragment,
 } from "./hook-corpus.ts";
 
 const FAKE_GHP = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8";
@@ -129,5 +130,24 @@ describe("hook-corpus diff formatting", () => {
     expect(out).toContain("1 verdict change");
     expect(out).toContain("[#1064] allow -> block");
     expect(out).toContain("git commit -F -");
+  });
+});
+
+describe("hook-log fragments (#1094)", () => {
+  it("skips heredoc openers, trailing operators and unbalanced quotes from the hook log", () => {
+    const log = [
+      "1.0 BLOCKED [commit-format] git commit -q -F - <<'EOF'",
+      "2.0 BLOCKED [env-dump] python3 - <<'EOF'",
+      "3.0 BLOCKED [force-push] cd /tmp && \\",
+      "4.0 BLOCKED [force-push] (npx tsx scripts/x.ts > /tmp/out 2>&1; echo \"EXIT=$",
+      "5.0 BLOCKED [force-push] git push --force origin main",
+      "6.0 BLOCKED [staged-secret] git commit -m 'x' && git push -f",
+    ].join("\n");
+    expect(extractHookLogCommands(log)).toEqual([
+      "git push --force origin main",
+      "git commit -m 'x' && git push -f",
+    ]);
+    expect(isCommandFragment("git push --force origin main")).toBe(false);
+    expect(isCommandFragment("python3 - <<'EOF'")).toBe(true);
   });
 });
