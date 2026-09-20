@@ -31,6 +31,12 @@ import {
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
 import { writeOpencodeCommands } from "../commands/init.js";
+import {
+  scanWriteSites,
+  checkWriteSites,
+  formatWriteSiteFailures,
+  type WriteSite,
+} from "./ownership-gate.js";
 
 describe("templates", () => {
   let testDir: string;
@@ -230,81 +236,70 @@ describe("templates", () => {
     });
 
     it("ownership policy covers every non-template destination (side b)", async () => {
-      // Every `await writeFile(` call site in the three writers, keyed by the
-      // enclosing function so the mapping survives line drift. The value is the
-      // destination the site writes, which must be either a `templates/` route
-      // destination (already covered by side a) or a declared entry in
-      // NON_TEMPLATE_DESTINATIONS. A NEW write site is absent from this map and
-      // fails below, naming the file and function — that is the gate.
+      // Every `writeFile(` call site in the three writers (awaited or not, in
+      // any function form), keyed `file#function#destination-expression`. The
+      // value is the destination the site writes, which must be either a
+      // `templates/` route destination (already covered by side a) or a
+      // declared entry in NON_TEMPLATE_DESTINATIONS. A NEW write site — or a
+      // new destination inside an already-registered function — has no key
+      // here and fails below, naming the file, function and expression.
       const WRITE_SITES: Record<string, string> = {
-        "init.ts#updateGitignore": ".gitignore",
-        "init.ts#writeOpencodeCommands": ".opencode/",
-        "init.ts#writeOpencodeAgents": ".opencode/",
-        "init.ts#writeOpencodePlugin": ".opencode/",
+        "init.ts#updateGitignore#gitignorePath": ".gitignore",
+        "init.ts#writeOpencodeCommands#join(commandsDir, `${phase}.md`)":
+          ".opencode/",
+        "init.ts#writeOpencodeAgents#join(agentsDir, `${name}.md`)":
+          ".opencode/",
+        "init.ts#writeOpencodePlugin#join(pluginDir, rel)": ".opencode/",
         // The exact path, not the `.opencode/` prefix: this site MERGES
         // (it keeps every non-sequant `mcp` entry), so mapping it to the
         // prefix would assert the tree's `sequant-owned` rule and leave the
         // `merge` rule that describes it untested.
-        "init.ts#writeOpencodeMcpConfig": ".opencode/opencode.json",
-        "init.ts#writeCodexConfig": ".codex/config.toml",
-        "init.ts#initCommand": ".sequant/settings.reference.md",
-        // Rewrites installed skills in place — a `templates/skills/` route
-        // destination, so side (a) already covers its policy.
-        "init.ts#upgradeSkills": ".claude/skills/",
-        "sync.ts#writeDriftCache": ".claude/.sequant/.skills-drift-cache.json",
-        "sync.ts#updateSkillsVersion": ".claude/skills/.sequant-version",
+        "init.ts#writeOpencodeMcpConfig#configPath": ".opencode/opencode.json",
+        "init.ts#writeCodexConfig#configPath": ".codex/config.toml",
+        'init.ts#initCommand#".sequant/settings.reference.md"':
+          ".sequant/settings.reference.md",
+        // Rewrite installed skills in place — `templates/skills/` route
+        // destinations, so side (a) already covers their policy.
+        "init.ts#upgradeSkills#join(installedDir, change.path)":
+          ".claude/skills/",
+        "init.ts#upgradeSkills#join(installedDir, file.path)":
+          ".claude/skills/",
+        "sync.ts#writeDriftCache#DRIFT_CACHE_PATH":
+          ".claude/.sequant/.skills-drift-cache.json",
+        "sync.ts#updateSkillsVersion#SKILLS_VERSION_PATH":
+          ".claude/skills/.sequant-version",
         // Writes back the `computeTemplateChanges` apply set, every member of
         // which is a routed `templates/` destination.
-        "update.ts#updateCommand": ".claude/",
+        "update.ts#updateCommand#file.path": ".claude/",
       };
 
-      // Static scan: attribute each `await writeFile(` to its enclosing
-      // top-level function. Reading the sources (not a hardcoded list) is what
-      // lets a newly added writer fail this test.
-      const sources = ["init.ts", "sync.ts", "update.ts"];
-      const found: { site: string; line: number }[] = [];
-      for (const file of sources) {
+      // Static scan (src/lib/ownership-gate.ts): reading the sources, not a
+      // hardcoded list, is what lets a newly added writer fail this test.
+      const found: WriteSite[] = [];
+      for (const file of ["init.ts", "sync.ts", "update.ts"]) {
         const content = await fsReadFile(
           fileURLToPath(new URL(`../commands/${file}`, import.meta.url)),
           "utf-8",
         );
-        let enclosing = "(top-level)";
-        content.split("\n").forEach((line, index) => {
-          const declaration =
-            /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/.exec(line);
-          if (declaration) enclosing = declaration[1];
-          if (line.includes("await writeFile(")) {
-            found.push({ site: `${file}#${enclosing}`, line: index + 1 });
-          }
-        });
+        const sites = scanWriteSites(content, file);
+        // Guard the guard: a tokenizer slip must not silently drop a site.
+        expect(sites.length, `${file}: scan missed a writeFile( call`).toBe(
+          (content.match(/\bwriteFile\s*\(/g) ?? []).length,
+        );
+        found.push(...sites);
       }
       expect(found.length).toBeGreaterThan(0);
 
-      // (b1) No write site is unaccounted for.
-      const unregistered = found.filter((f) => !(f.site in WRITE_SITES));
-      expect(
-        unregistered,
-        `unregistered writeFile site(s) — declare the destination's ownership policy, then add it here: ${unregistered
-          .map((f) => `${f.site} (line ${f.line})`)
-          .join(", ")}`,
-      ).toEqual([]);
-
-      // (b2) Every non-template destination those sites write is declared in
-      // NON_TEMPLATE_DESTINATIONS, and resolves to a policy.
+      // (b1)+(b2) No write site is unaccounted for, and every non-template
+      // destination those sites write is declared in NON_TEMPLATE_DESTINATIONS.
       const declared = new Set(NON_TEMPLATE_DESTINATIONS);
-      const templateRouteDestinations = [".claude/", "scripts/dev/"];
-      for (const site of new Set(found.map((f) => f.site))) {
-        const destination = WRITE_SITES[site];
-        const viaTemplateRoute = templateRouteDestinations.some(
-          (prefix) =>
-            destination.startsWith(prefix) && !declared.has(destination),
-        );
-        if (viaTemplateRoute) continue;
-        expect(
-          declared,
-          `${site} writes ${destination}, which is not in NON_TEMPLATE_DESTINATIONS`,
-        ).toContain(destination);
-        expect(POLICIES).toContain(ownershipPolicy(destination));
+      const check = checkWriteSites(found, WRITE_SITES, declared, [
+        ".claude/",
+        "scripts/dev/",
+      ]);
+      expect(formatWriteSiteFailures(check)).toBe("");
+      for (const site of found) {
+        expect(POLICIES).toContain(ownershipPolicy(WRITE_SITES[site.key]));
       }
 
       // (b3) The destinations the clobbering class actually hit must all be
