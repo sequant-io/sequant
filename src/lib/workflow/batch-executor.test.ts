@@ -1861,6 +1861,7 @@ describe("#1070: failing qa verdict is posted", () => {
             acMet: 1,
             acTotal: 3,
             gaps: ["createSymlink failure return discarded"],
+            suggestions: [],
           },
         } as PhaseResult;
       }
