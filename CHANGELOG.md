@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The ownership gate's side (b) now registers every `writeFile(` site individually (#1106).** #1090's scan keyed sites by enclosing function and matched `await writeFile(` only, so a second write to a _new_ destination inside an already-registered function, a `void writeFile(...)`, or a writer declared as `const foo = async () => {…}` (which inherited the previous function's key) all passed silently. `src/lib/ownership-gate.ts` scans every `writeFile(` call, attributes it to its innermost named function by brace scope, and keys the registry by `file#function#destination-expression`; a test cross-checks the site count against a naive count so a scanner slip fails loudly. Test-only: the three real writers are unchanged.
+- **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
 
 ## [2.16.0] - 2026-09-19
 
