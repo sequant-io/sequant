@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failing QA verdict (`AC_NOT_MET`) is now posted to the issue (#1070).** `postQaVerdictComment` was gated on `result.success`, but `AC_NOT_MET` is reported as a phase failure, so the one review that blocks a merge left no comment — its findings lived only in the rotating, gitignored `.sequant/logs`. The gate is now `result.verdict` alone: a verdict is only set once one parsed, so turn-capped and unparseable-verdict phases still post nothing (#964 AC-4). Each `AC_NOT_MET` round in a quality loop now posts its own comment.
+
 ## [2.16.0] - 2026-09-19
 
 ### Fixed
