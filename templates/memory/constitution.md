@@ -24,6 +24,7 @@ Every PR must pass all gates below before merge. Verified by `/qa` §7 — the t
 | Script execution evidence | `Incomplete` | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
 | Declared evidence (§6h) | `Incomplete` | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
 | Mutation verification (§6i) | `Missing` | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
+| Settled against base (§2a) | `Unbacked` | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
 | Script verification (§11) | `Not Verified` | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
 | CHANGELOG entry (§10a) | both conditions true | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |
 | Quality plan (Phase 0b) | both conditions true | `AC_MET_BUT_NOT_A_PLUS` — cannot be A+ |

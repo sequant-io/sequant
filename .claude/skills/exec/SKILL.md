@@ -1222,11 +1222,23 @@ run` every phase has `SEQUANT_ORCHESTRATOR`, `SEQUANT_WORKTREE` and other `SEQUA
 set, and the suite is not hermetic against them — re-run the failing file with every one of
 them unset:
 `env $(printenv | grep -o '^SEQUANT_[A-Z_]*' | sed 's/^/-u /') npx vitest run <file>`;
-green means #1086, not your change. Then settle it against base in the same worktree.
-Whatever the cause, the PR body names an issue for it: link the existing one
-(`gh issue list --search "<test name>"`) or file one. Three PRs on 2026-09-10/11 each wrote
-"3 pre-existing failures, unrelated" for the same three tests; none filed an issue, and the
-same failures stopped a gate run a week later.
+green means #1086, not your change.
+
+Then settle it against base in the same worktree, mechanically — run
+`scripts/settle-against-base.sh <test-file> [-t <name>]` for **every** red test outside the
+diff, and paste its `### Settled against base` block into the PR body. The script runs the
+named test at HEAD and again at the base commit with every `SEQUANT_*` var unset, and
+restores your branch and any uncommitted work on every exit path; it commits nothing. It
+also distinguishes *"the test file does not exist at base"* from *"the test failed at
+base"* — a brand-new test errors at base, and without that distinction the error reads as
+proof of the very thing you are claiming.
+
+A "pre-existing" claim with no such block is not a claim, it is an assertion: `/qa` §2a
+treats it as `settle_evidence_status = Unbacked` and §7 step 4 floors the verdict at
+`AC_MET_BUT_NOT_A_PLUS`. Whatever the cause, the PR body names an issue for it: link the
+existing one (`gh issue list --search "<test name>"`) or file one. Three PRs on
+2026-09-10/11 each wrote "3 pre-existing failures, unrelated" for the same three tests;
+none filed an issue, and the same failures stopped a gate run a week later.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 

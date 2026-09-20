@@ -64,7 +64,19 @@ Run ALL checks before proceeding. **STOP if any fails.**
 # 3. In sync with remote
 git fetch origin
 [ -z "$(git log HEAD..origin/main)" ] || { echo "Behind origin - pull first"; exit 1; }
+
+# 4. The latest `push` run on main is green (red-main rule, below)
+gh run list --branch main --event push --limit 1 \
+  --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"'
 ```
+
+**Red main — revert first, debug second (#1093).** A failing `push` run on `main`
+is reverted first and debugged second: the next change that lands is the revert
+of the commit that broke it, not a forward fix and not an investigation branch,
+and the revert PR references the failing run by URL. Do not release off a red
+`main`, and do not release a forward fix "that will also make it green" — revert,
+let CI go green, then release. Investigate afterwards on a branch off a green
+`main`. This mirrors the rule in `CLAUDE.md` § Red main.
 
 ### Quality Checks
 
