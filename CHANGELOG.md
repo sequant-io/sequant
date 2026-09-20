@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The exec skill and `CLAUDE.md` now state the `SEQUANT_MUTATION` marker contract (#1104).** `failedTest` must start with the test file path (`<file> > <describe> > <case>`) and the payload must stay flat; `/qa` §6i already enforced both without telling authors, which tripped two of the four gate PRs before 2.16.0. A gate test in `scripts/exec-skill-marker.test.ts` pins the section.
+
 ### Fixed
 
 - **The ownership gate's side (b) now registers every `writeFile(` site individually (#1106).** #1090's scan keyed sites by enclosing function and matched `await writeFile(` only, so a second write to a _new_ destination inside an already-registered function, a `void writeFile(...)`, or a writer declared as `const foo = async () => {…}` (which inherited the previous function's key) all passed silently. `src/lib/ownership-gate.ts` scans every `writeFile(` call, attributes it to its innermost named function by brace scope, and keys the registry by `file#function#destination-expression`; a test cross-checks the site count against a naive count so a scanner slip fails loudly. Test-only: the three real writers are unchanged.
+- **Copy-mode `sync` now replaces an existing `scripts/dev` symlink instead of writing through it (#1053).** With no local `node_modules/sequant`, `sync` left foreign links (an npx cache, a sibling checkout) in place and overwrote their targets. Symlinks are now unlinked and replaced by a copy; regular files are left alone without `--force`. `sync --dry-run` lists each replacement as `old → (copy)`, and `doctor` names the fix that will actually change a machine-specific link.
 - **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
 
 ## [2.16.0] - 2026-09-19
