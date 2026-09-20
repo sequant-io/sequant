@@ -917,8 +917,8 @@ export function resolveScriptsSymlinkTarget(
 
 /**
  * Preview what each `scripts/dev/*.sh` symlink's target would become without
- * writing anything (#990 AC-6). Returns an empty list when the resolved
- * target says to copy rather than symlink — there is no "target" to preview.
+ * writing anything (#990 AC-6). In copy mode the only change is an existing
+ * symlink being replaced by a copy, reported as `newTarget: "(copy)"` (#1053).
  */
 export interface ScriptsSymlinkPreviewEntry {
   path: string;
@@ -931,7 +931,7 @@ export async function previewScriptsSymlinkTargets(): Promise<
   ScriptsSymlinkPreviewEntry[]
 > {
   const target = resolveScriptsSymlinkTarget(getTemplatesDir());
-  if (target.mode !== "symlink") return [];
+  const copyMode = target.mode !== "symlink" || isNativeWindows();
 
   const entries: ScriptsSymlinkPreviewEntry[] = [];
 
@@ -955,10 +955,21 @@ export async function previewScriptsSymlinkTargets(): Promise<
       const absoluteSrc = isAbsolute(srcPath)
         ? srcPath
         : join(process.cwd(), srcPath);
-      const newTarget = relative(dirname(absoluteDest), absoluteSrc);
       const oldTarget = (await isSymlink(destPath))
         ? await getSymlinkTarget(destPath)
         : null;
+      if (copyMode) {
+        if (oldTarget !== null) {
+          entries.push({
+            path: destPath,
+            oldTarget,
+            newTarget: "(copy)",
+            changed: true,
+          });
+        }
+        continue;
+      }
+      const newTarget = relative(dirname(absoluteDest), absoluteSrc);
       entries.push({
         path: destPath,
         oldTarget,
@@ -999,7 +1010,11 @@ export async function copyTemplates(
   // (#814).
   const preservedCustomizable: string[] = [];
 
-  async function copyDir(srcDir: string, destDir: string): Promise<void> {
+  async function copyDir(
+    srcDir: string,
+    destDir: string,
+    copyOptions: { keepExistingFiles?: boolean } = {},
+  ): Promise<void> {
     try {
       const entries = await readdir(srcDir, { withFileTypes: true });
       await ensureDir(destDir);
@@ -1009,7 +1024,7 @@ export async function copyTemplates(
         const destPath = join(destDir, entry.name);
 
         if (entry.isDirectory()) {
-          await copyDir(srcPath, destPath);
+          await copyDir(srcPath, destPath, copyOptions);
         } else {
           // Read, process, and write
           let content = await readFile(srcPath);
@@ -1031,6 +1046,18 @@ export async function copyTemplates(
               preservedCustomizable.push(destPath.replace(/\\/g, "/"));
               continue;
             }
+          }
+
+          // An existing symlink is replaced, never written through: writeFile
+          // follows links, so a foreign link would leave itself in place and
+          // overwrite its target (an npx cache or a sibling checkout) (#1053).
+          if (await isSymlink(destPath)) {
+            await removeFileOrSymlink(destPath);
+          } else if (
+            copyOptions.keepExistingFiles &&
+            (await fileExists(destPath))
+          ) {
+            continue;
           }
 
           await writeFile(destPath, content);
@@ -1091,7 +1118,11 @@ export async function copyTemplates(
     );
   } else {
     // Fall back to copies (Windows, --no-symlinks, or an unsafe target)
-    await copyDir(symlinkTarget.scriptsDir, "scripts/dev");
+    // Regular files are left alone unless `force` (sync passes it); symlinks
+    // are always replaced with a copy (#1053).
+    await copyDir(symlinkTarget.scriptsDir, "scripts/dev", {
+      keepExistingFiles: !options.force,
+    });
   }
 
   // Copy settings.json
