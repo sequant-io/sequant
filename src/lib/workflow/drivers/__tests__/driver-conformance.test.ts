@@ -45,7 +45,7 @@
  *   `unavailable: <what>` the environment cannot run the probe (no binary/key)
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 import type { Mock } from "vitest";
 import { spawnSync, execFileSync } from "child_process";
 import {
@@ -58,7 +58,7 @@ import {
   realpathSync,
 } from "fs";
 import { tmpdir, homedir } from "os";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 import { fileURLToPath } from "url";
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -179,7 +179,7 @@ function gitFixture(): { repo: string; worktree: string } {
   git("config", "commit.gpgsign", "false");
   git("commit", "-q", "--allow-empty", "-m", "root");
 
-  const worktree = join(repo, "..", `sequant-conf-wt-${process.pid}`);
+  const worktree = join(repo, "..", `${basename(repo)}-wt`);
   TEMP_DIRS.push(worktree);
   git("worktree", "add", "-q", "--detach", worktree);
   return { repo, worktree };
@@ -835,7 +835,11 @@ describe("driver conformance", () => {
       // Guards against someone "fixing" a failing guard above by inlining the
       // names: the suite's enumeration must be the registry's own.
       expect(listDriverNames().length).toBeGreaterThan(1);
-      expect(listDriverNames()).toEqual(Object.keys(ADAPTERS));
+      // Set equality, not array equality: the registry's insertion order is
+      // not part of the contract, its membership is.
+      expect([...listDriverNames()].sort()).toEqual(
+        Object.keys(ADAPTERS).sort(),
+      );
     });
   });
 
@@ -1034,15 +1038,12 @@ describe("driver conformance", () => {
 
 // Temp dirs are created lazily per case; one sweep at file teardown keeps the
 // worktrees registered with their throwaway parent repos from leaking.
-afterAllCleanup();
-function afterAllCleanup(): void {
-  process.on("exit", () => {
-    for (const dir of TEMP_DIRS) {
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // A temp dir we cannot remove is noise, not a test failure.
-      }
+afterAll(() => {
+  for (const dir of TEMP_DIRS) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // A temp dir we cannot remove is noise, not a test failure.
     }
-  });
-}
+  }
+});
