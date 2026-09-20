@@ -65,9 +65,12 @@ Run ALL checks before proceeding. **STOP if any fails.**
 git fetch origin
 [ -z "$(git log HEAD..origin/main)" ] || { echo "Behind origin - pull first"; exit 1; }
 
-# 4. The latest `push` run on main is green (red-main rule, below)
-gh run list --branch main --event push --limit 1 \
-  --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"'
+# 4. The latest CI `push` run on main is green (red-main rule, below).
+#    Filter to the CI workflow: without --workflow the newest push run can be
+#    Scorecard or another workflow, and a red CI would read as green.
+ci_run=$(gh run list --branch main --event push --workflow ci.yml --limit 1 \
+  --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"')
+case "$ci_run" in success*) ;; *) echo "Red main: latest CI push run is '$ci_run' - revert first (#1093)"; exit 1;; esac
 ```
 
 **Red main — revert first, debug second (#1093).** A failing `push` run on `main`

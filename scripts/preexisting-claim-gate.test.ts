@@ -167,6 +167,10 @@ describe("preexisting claim gate", () => {
       const section = sectionText(read(path), "### Git Checks");
       expect(section, path).not.toBe("");
       expect(section, path).toContain("reverted first and debugged second");
+      // The rule is enforced, not just stated: the pre-flight reads the CI
+      // workflow's run (not whichever push run is newest) and stops on red.
+      expect(section, path).toContain("--workflow ci.yml");
+      expect(section, path).toContain("exit 1");
       expect(section, path).toContain("revert PR references the failing run");
     }
   });
