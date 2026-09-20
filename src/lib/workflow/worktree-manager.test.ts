@@ -31,11 +31,12 @@ describe("#1069 rebaseBeforePR merges pushed branches", () => {
     wt = join(root, "wt");
     git(root, "init", "-q", "--bare", "-b", "main", remote);
     git(root, "clone", "-q", remote, clone);
-    git(clone, "checkout", "-q", "-b", "main");
-    commitFile(clone, "base.txt", "base");
-    // CI runners have no git identity; the merge commit under test needs one.
+    // CI runners have no deducible git identity (macOS fills one from GECOS,
+    // the Linux runner does not); every commit below needs it, so set it first.
     git(clone, "config", "user.name", "sequant-test");
     git(clone, "config", "user.email", "sequant-test@example.com");
+    git(clone, "checkout", "-q", "-b", "main");
+    commitFile(clone, "base.txt", "base");
     git(clone, "push", "-q", "origin", "main");
     // Same shape as ensureWorktree: branch off origin/main (sets upstream).
     git(clone, "worktree", "add", "-q", "-b", "feat", wt, "origin/main");
