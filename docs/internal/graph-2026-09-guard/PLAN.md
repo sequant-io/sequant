@@ -213,6 +213,19 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
   artifact (#1119), not a bounce; the runner reads
   `errorContext.stdoutTail` before any re-dispatch.
 
+- **D-19** (exec, wave 2) The release skill's red-main pre-flight names the
+  CI workflow (`--workflow ci.yml`) and exits non-zero on anything but
+  `success`; the AC-7 gate asserts both strings. Rejected: a prose-only rule
+  (the first exec shipped one that read Scorecard's run and printed).
+- **D-20** (exec, wave 2) Real-git test fixtures configure `user.name` /
+  `user.email` immediately after `git init`/`clone`, before any commit.
+  macOS deduces an identity from GECOS, the Linux runner does not; emulate
+  CI locally with `GIT_CONFIG_GLOBAL=<file with user.useConfigOnly=true>`.
+- **D-21** (exec, wave 2) Push detection stays `@{u}`-based (#1069 AC-1/AC-2
+  are literal about it; the exec skill pushes with `-u`). Widening to
+  `origin/<branch>` was tried and reverted: it contradicts AC-2 and the
+  mocked `run.test.ts` call shape.
+
 ## §8 Issue conventions
 
 - Stamp: `## Release-graph plan — guard-2026-09` with

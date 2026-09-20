@@ -188,3 +188,16 @@ Trial merges (`git merge-tree --write-tree`) of the three shared-file pairs — 
 
 **Merged 2026-09-20 (owner consent: "merge any whose ACs are met").** Squash order and SHAs: #1113→`a07e1aca`, #1112→`b5088c7c`, #1111→`5c839830`, #1117→`bec13456`, #1114→`08afa29d`, #1116→`40384475`, #1118→`88588262`. Every head re-merged `origin/main` before its merge (CHANGELOG conflicts on every round, resolved by keeping both sides and folding duplicate `###` headings); CI green on each re-merged head; the last head (`918ef86c`) contained all six earlier merges, so its build is the combined proof. Issues #1104/#1086/#1095/#1053/#1106/#1070/#1096 and #1073 closed. Wave 2 is unblocked: #1093, #1097, #1069, and #1087 (wave 3, blocked only by #1096).
 
+## Execution record — wave 2 (2026-09-20)
+
+Launched from `bef0ac98`; #1097/#1069/#1087 in one mechanical run, #1093 on the strong policy via the settings flip (verified `--model opus`, restored). Stop-at-PR; awaiting owner consent.
+
+| Node | PR | qa verdicts (recorded) | Runner-verified | Full suite (clean shell) | Runner work beyond the agent |
+|---|---|---|---|---|---|
+| #1093 | #1126 | AC_NOT_MET → AC_MET_BUT_NOT_A_PLUS | AC-1..5, AC-7; skill-sync 44/44 | 331 files green | release pre-flight read the wrong workflow and never stopped → `--workflow ci.yml` + `exit 1` in three mirrors, gated (D-19) |
+| #1097 | #1125 | AC_MET_BUT_NOT_A_PLUS | 645 matrix cells, named cases | 330 files green | — (agent filed #1122, #1123, #1124 from the matrix) |
+| #1069 | #1120 | AC_NOT_MET ×2 → AC_MET_BUT_NOT_A_PLUS | both files 148, CI-emulated identity-less run 5/5 | 330 files green | git identity for the real-git fixtures, set before the first commit (D-20); merge-abort on a mid-way failure; push-detection widening tried and reverted (AC literal) |
+| #1087 | #1121 | AC_MET_BUT_NOT_A_PLUS | codex 45, conformance codex 8 (former `it.fails` now plain), batch-executor case | 329 files green | — |
+
+Phase deaths: 0 (the qa-addressed no-full-suite note held). Recorded-verdict artifacts: 0 this wave; both #1069 AC_NOT_MET rounds and the #1093 round were real. Frontier after merge: wave 3 = #1094 (needs #1093), #1098 (needs #1093), then gate #1109 (owner applies the ruleset; the CI context is now `test`).
+
