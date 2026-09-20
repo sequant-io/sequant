@@ -773,9 +773,10 @@ export function buildQaVerdictComment(
     // and reads as a failure; when the parser found no counts (or counts that
     // cannot be reconciled with a passing verdict) omit the line rather than
     // print a wrong one.
+    const passing =
+      verdict === "READY_FOR_MERGE" || verdict.startsWith("AC_MET");
     const countsUsable =
-      summary.acTotal > 0 &&
-      !(verdict.startsWith("AC_MET") && summary.acMet === 0);
+      summary.acTotal > 0 && !(passing && summary.acMet === 0);
     if (countsUsable) {
       lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
     }
