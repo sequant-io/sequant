@@ -146,6 +146,17 @@ describe("preexisting claim gate", () => {
     expect(section).toContain("reverted first and debugged second");
     // And the revert is traceable back to the run that justified it.
     expect(section).toContain("revert PR references the failing run");
+    // The rule names the gate that makes a red main everyone's problem.
+    expect(section).toContain("scripts/ruleset-main.sh");
+
+    // The release skill must repeat CLAUDE.md's own wording, not an
+    // independently hardcoded paraphrase — reword the rule in one place and
+    // this fails, which is the drift a two-sided literal assertion misses.
+    for (const path of skillCopies("release")) {
+      const git = sectionText(read(path), "### Git Checks");
+      expect(git, path).not.toBe("");
+      expect(git, path).toContain("reverted first and debugged second");
+    }
   });
 
   it("red-main rule is repeated by the release skill in all three copies", () => {
