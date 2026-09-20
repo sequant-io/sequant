@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **A failing QA verdict (`AC_NOT_MET`) is now posted to the issue (#1070).** `postQaVerdictComment` was gated on `result.success`, but `AC_NOT_MET` is reported as a phase failure, so the one review that blocks a merge left no comment — its findings lived only in the rotating, gitignored `.sequant/logs`. The gate is now `result.verdict` alone: a verdict is only set once one parsed, so turn-capped and unparseable-verdict phases still post nothing (#964 AC-4). Each `AC_NOT_MET` round in a quality loop now posts its own comment.
+- **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
 
 ## [2.16.0] - 2026-09-19
 
