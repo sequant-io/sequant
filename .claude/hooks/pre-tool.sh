@@ -762,8 +762,13 @@ if seg_match '^(cat|less) .*~/\.(ssh|aws|gnupg|config/gh)'; then
     exit 2
 fi
 
-# Bare environment dump
-if seg_match '^(env|printenv|export)$'; then
+# Bare environment dump. Carve-out: `env`/`printenv` piped straight into a
+# grep whose pattern is `^`-anchored (`env | grep '^SEQUANT_'`) is a
+# prefix-scoped listing, not a dump — it is how a phase checks for the
+# orchestrator's own SEQUANT_* vars leaking into the suite (#1086). An
+# unanchored `env | grep TOKEN` still blocks.
+if seg_match '^(env|printenv|export)$' \
+   && ! grep -qE '(^|[;&|(])[[:space:]]*(env|printenv)[[:space:]]*\|[[:space:]]*(grep|egrep|rg)([[:space:]]+-[A-Za-z]+)*[[:space:]]+['"'"'"]?\^' <<< "$TOOL_INPUT"; then
     log_block "env-dump"
     echo "HOOK_BLOCKED: Environment dump" >&2
     exit 2

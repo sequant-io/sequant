@@ -2483,3 +2483,49 @@ describe.each(HOOK_COPIES)(
     });
   },
 );
+
+// Env-dump guard carve-out: a prefix-anchored `env | grep '^X_'` is a scoped
+// listing, not a dump — it is how a phase checks for the orchestrator's own
+// SEQUANT_* vars leaking into the suite (#1086). Bare `env`/`printenv`/`export`
+// and an unanchored `env | grep TOKEN` still block.
+describe.each(HOOK_COPIES)(
+  "pre-tool.sh env-dump guard: anchored-grep carve-out [%s]",
+  (_label, hookPath) => {
+    let repo: string;
+
+    beforeAll(() => {
+      repo = mkdtempSync(join(tmpdir(), "pre-tool-envdump-"));
+      spawnSync("git", ["init", "-q"], { cwd: repo });
+    });
+
+    afterAll(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+
+    it.each(["env", "printenv", "export"])(
+      "still blocks a bare `%s` (exit 2, Environment dump)",
+      (cmd) => {
+        const { code, stderr } = runHook(hookPath, cmd, repo);
+        expect(code).toBe(2);
+        expect(stderr).toMatch(/HOOK_BLOCKED: Environment dump/);
+      },
+    );
+
+    it("still blocks an unanchored `env | grep SEQUANT`", () => {
+      const { code, stderr } = runHook(hookPath, "env | grep SEQUANT", repo);
+      expect(code).toBe(2);
+      expect(stderr).toMatch(/HOOK_BLOCKED: Environment dump/);
+    });
+
+    it.each([
+      "env | grep '^SEQUANT_'",
+      `printenv | grep -E '^(SEQUANT|CLAUDE)_'`,
+      `env | grep -i "^sequant_" | sort`,
+      `ls; env | grep "^X"`,
+    ])("allows the prefix-anchored listing `%s` (exit 0)", (cmd) => {
+      const { code, stderr } = runHook(hookPath, cmd, repo);
+      expect(stderr).not.toMatch(/Environment dump/);
+      expect(code).toBe(0);
+    });
+  },
+);

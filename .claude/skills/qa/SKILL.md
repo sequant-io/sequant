@@ -1346,7 +1346,7 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 | Build Verification Result | Verdict Impact |
 |---------------------------|----------------|
 | Regression detected | `AC_NOT_MET` - must fix before merge |
-| Pre-existing failure | No impact - document and proceed |
+| Pre-existing failure | No impact - document it **with a linked issue** (find one or file one; #1086 went a week unfiled as "pre-existing, unrelated" in three PRs) and proceed |
 | Unknown (different errors) | `AC_MET_BUT_NOT_A_PLUS` - manual review |
 | Build passes | No impact |
 
@@ -1362,7 +1362,7 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 | Error match | ✅ Same error |
 | Regression | **No** (pre-existing) |
 
-**Note:** Build failure is pre-existing on main branch. Not blocking this PR.
+**Note:** Build failure is pre-existing on main branch (tracked in #<issue>). Not blocking this PR.
 ```
 
 ### 2b. Test Coverage Transparency (REQUIRED)
