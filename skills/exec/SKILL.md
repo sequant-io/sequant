@@ -729,6 +729,18 @@ worktree).
 
 **Do NOT skip this step.** This single checkpoint addresses the most common first-pass QA failure patterns.
 
+### Recording the mutation result (gate-test ACs)
+
+When an AC is a gate test (a fixture exists, a skill section is present, a flag is wired), mutation-verify it before the PR: delete the thing it asserts, confirm exactly that test fails, restore. Then put this marker in the PR body, one per gate-test AC:
+
+```
+<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"deleted the section","failedTest":"scripts/exec-skill-marker.test.ts > exec skill documents the marker > shows the file form"} -->
+```
+
+- **`failedTest` starts with the test file path**, then ` > <describe> > <case>`. `/qa` §6i resolves only the segment before the first `>` against the diff's test files. A describe title, bare test name, or issue number first classifies `test_not_in_diff`, which reads as fabricated and floors the verdict at `AC_NOT_MET`.
+- **Keep the payload flat: no `}` inside `mutation` or `failedTest`.** The parser reads up to the first `}`, so a brace silently truncates the JSON.
+- **Before opening the PR**, run the `parseMutationMarkers` check from `/qa` §6i and confirm each marker prints `valid`.
+
 ### 3f. CHANGELOG Update (REQUIRED for user-facing changes)
 
 **Purpose:** Ensure all user-facing changes are documented in the CHANGELOG before PR creation. This prevents documentation gaps and reduces release overhead.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The exec skill and `CLAUDE.md` now state the `SEQUANT_MUTATION` marker contract (#1104).** `failedTest` must start with the test file path (`<file> > <describe> > <case>`) and the payload must stay flat; `/qa` §6i already enforced both without telling authors, which tripped two of the four gate PRs before 2.16.0. A gate test in `scripts/exec-skill-marker.test.ts` pins the section.
+
 ### Fixed
 
 - **`parseQaSummary` counts checklist- and bold-prefixed AC lines, and the QA verdict comment no longer prints `AC coverage: 0/N met` under a passing verdict (#1073, #1095).** A checklist-shaped report (`- [x] **AC-1**: …`) matched no table row and parsed as `0/1 met` under an `AC_MET` verdict. Checklist lines now count (checkbox = MET; a table row wins on a duplicate id), and `buildQaVerdictComment` omits the count line when the parser found no counts or `acMet === 0` under `READY_FOR_MERGE`/`AC_MET*`.
@@ -14,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `fast-check` dev dependency and property/metamorphic tests for `parseAcceptanceCriteria`, `parseQaSummary`, and the `SEQUANT_MUTATION` / `SEQUANT_QA_GAPS` marker parsers (#1095). Set `FC_SEED` to replay a run.
+- **Copy-mode `sync` now replaces an existing `scripts/dev` symlink instead of writing through it (#1053).** With no local `node_modules/sequant`, `sync` left foreign links (an npx cache, a sibling checkout) in place and overwrote their targets. Symlinks are now unlinked and replaced by a copy; regular files are left alone without `--force`. `sync --dry-run` lists each replacement as `old → (copy)`, and `doctor` names the fix that will actually change a machine-specific link.
 - **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
 
 ## [2.16.0] - 2026-09-19

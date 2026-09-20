@@ -834,6 +834,43 @@ describe("sync command", () => {
         expect(mockWriteFile).not.toHaveBeenCalled();
       });
 
+      it("copy mode preview lists each foreign link it will replace as old → (copy) (#1053)", async () => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.0.0",
+          stack: "nextjs",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        const files: Record<string, string> = {
+          ".claude/skills/.sequant-version": "1.0.0",
+        };
+        mockFileExists.mockImplementation(async (p: string) => p in files);
+        mockReadFile.mockImplementation(async (p: string) => {
+          if (p in files) return files[p];
+          throw new Error(`unexpected read: ${p}`);
+        });
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockGetConfig.mockResolvedValue(null);
+        mockComputeTemplateChanges.mockResolvedValue([]);
+        mockPreviewScriptsSymlinkTargets.mockResolvedValue([
+          {
+            path: "scripts/dev/new-feature.sh",
+            oldTarget: "../../../../.npm/_npx/abc/templates/scripts/x.sh",
+            newTarget: "(copy)",
+            changed: true,
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+        await syncCommand({ dryRun: true });
+
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain(
+          "scripts/dev/new-feature.sh: ../../../../.npm/_npx/abc/templates/scripts/x.sh → (copy)",
+        );
+        expect(mockCopyTemplates).not.toHaveBeenCalled();
+      });
+
       it("reports a customizable file as preserved, not written, under a plain dry-run (#814 AC-4)", async () => {
         // Since #814 the apply path PRESERVES user-owned files under a plain
         // sync, so the preview must show them as preserved — not "will be
