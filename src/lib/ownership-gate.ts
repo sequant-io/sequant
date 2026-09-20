@@ -73,9 +73,10 @@ function mask(src: string): string {
       let inClass = false;
       while (j < src.length && src[j] !== "\n") {
         if (src[j] === "\\") j += 2;
-        else if (src[j] === "[") ((inClass = true), j++);
-        else if (src[j] === "]") ((inClass = false), j++);
-        else if (src[j] === "/" && !inClass) break;
+        else if (src[j] === "[" || src[j] === "]") {
+          inClass = src[j] === "[";
+          j++;
+        } else if (src[j] === "/" && !inClass) break;
         else j++;
       }
       blank(i + 1, j);
