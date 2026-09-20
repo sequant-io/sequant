@@ -9,10 +9,13 @@ import {
   symlink,
 } from "fs/promises";
 import { tmpdir } from "os";
+import { fileURLToPath } from "url";
 import {
   symlinkDir,
   processTemplate,
-  isCustomizableFile,
+  ownershipPolicy,
+  resolveTemplateRoute,
+  listTemplateFiles,
   buildTemplateVariables,
   computeTemplateChanges,
   templateDestination,
@@ -21,8 +24,9 @@ import {
   resolveScriptsSymlinkTarget,
   getTemplatesDir,
   assertTemplatesDirExists,
-  CUSTOMIZABLE_FILES,
+  NON_TEMPLATE_DESTINATIONS,
   type TemplatesCandidateRank,
+  type OwnershipPolicy,
   previewScriptsSymlinkTargets,
 } from "./templates.js";
 import { isSymlink, getSymlinkTarget, fileExists } from "./fs.js";
@@ -178,25 +182,220 @@ describe("templates", () => {
     });
   });
 
-  describe("isCustomizableFile", () => {
-    it("treats the constitution as customizable", () => {
-      expect(isCustomizableFile(".claude/memory/constitution.md")).toBe(true);
-    });
+  // --- AC-2 gate (#1090): the ownership rule must be declared, not defaulted.
+  //
+  // Six defects in nine months were the same bug — a writer defaulted to
+  // overwrite and nobody was asked to declare otherwise. The gate is
+  // deliberately TWO-SIDED because four of those six (#990 AGENTS.md,
+  // #1030/#1042 .opencode/**, #1071 .sequant/settings.json, #1053 scripts/dev)
+  // clobbered destinations that are NOT reachable by walking `templates/`.
+  // A one-sided gate would have caught #814 and #1078 and missed the rest.
+  describe("ownership policy covers every destination sequant writes", () => {
+    const POLICIES = ["sequant-owned", "user-owned", "merge"];
 
-    it("does not treat ordinary skill files as customizable", () => {
-      expect(isCustomizableFile(".claude/skills/exec/SKILL.md")).toBe(false);
-    });
+    it("ownership policy covers every bundled template (side a)", async () => {
+      const templateFiles = await listTemplateFiles();
+      // Guard the guard: an empty walk would make every assertion below vacuous.
+      expect(templateFiles.length).toBeGreaterThan(0);
 
-    it("matches the exported allow-list", () => {
-      for (const file of CUSTOMIZABLE_FILES) {
-        expect(isCustomizableFile(file)).toBe(true);
+      // (a1) Every file on disk under `templates/` has a declared route.
+      const undeclared = templateFiles.filter(
+        (f) => resolveTemplateRoute(f) === undefined,
+      );
+      expect(
+        undeclared,
+        `undeclared template route(s) — add them to TEMPLATE_ROUTES in src/lib/templates.ts: ${undeclared.join(", ")}`,
+      ).toEqual([]);
+
+      // (a2) Every routed destination resolves to one of the three policies.
+      for (const templatePath of templateFiles) {
+        const destination = templateDestination(templatePath);
+        if (destination === null) continue; // deliberately unmanaged tree
+        expect(
+          POLICIES,
+          `no ownership policy for ${destination} (from ${templatePath})`,
+        ).toContain(ownershipPolicy(destination));
+      }
+
+      // (a3) AC-6: a backslash destination resolves identically to its
+      // forward-slash form, so the table still holds on Windows (#708).
+      for (const templatePath of templateFiles) {
+        const destination = templateDestination(templatePath);
+        if (destination === null) continue;
+        expect(
+          ownershipPolicy(destination.replace(/\//g, "\\")),
+          `backslash form of ${destination} resolved differently`,
+        ).toBe(ownershipPolicy(destination));
       }
     });
 
+    it("ownership policy covers every non-template destination (side b)", async () => {
+      // Every `await writeFile(` call site in the three writers, keyed by the
+      // enclosing function so the mapping survives line drift. The value is the
+      // destination the site writes, which must be either a `templates/` route
+      // destination (already covered by side a) or a declared entry in
+      // NON_TEMPLATE_DESTINATIONS. A NEW write site is absent from this map and
+      // fails below, naming the file and function — that is the gate.
+      const WRITE_SITES: Record<string, string> = {
+        "init.ts#updateGitignore": ".gitignore",
+        "init.ts#writeOpencodeCommands": ".opencode/",
+        "init.ts#writeOpencodeAgents": ".opencode/",
+        "init.ts#writeOpencodePlugin": ".opencode/",
+        // The exact path, not the `.opencode/` prefix: this site MERGES
+        // (it keeps every non-sequant `mcp` entry), so mapping it to the
+        // prefix would assert the tree's `sequant-owned` rule and leave the
+        // `merge` rule that describes it untested.
+        "init.ts#writeOpencodeMcpConfig": ".opencode/opencode.json",
+        "init.ts#writeCodexConfig": ".codex/config.toml",
+        "init.ts#initCommand": ".sequant/settings.reference.md",
+        // Rewrites installed skills in place — a `templates/skills/` route
+        // destination, so side (a) already covers its policy.
+        "init.ts#upgradeSkills": ".claude/skills/",
+        "sync.ts#writeDriftCache": ".claude/.sequant/.skills-drift-cache.json",
+        "sync.ts#updateSkillsVersion": ".claude/skills/.sequant-version",
+        // Writes back the `computeTemplateChanges` apply set, every member of
+        // which is a routed `templates/` destination.
+        "update.ts#updateCommand": ".claude/",
+      };
+
+      // Static scan: attribute each `await writeFile(` to its enclosing
+      // top-level function. Reading the sources (not a hardcoded list) is what
+      // lets a newly added writer fail this test.
+      const sources = ["init.ts", "sync.ts", "update.ts"];
+      const found: { site: string; line: number }[] = [];
+      for (const file of sources) {
+        const content = await fsReadFile(
+          fileURLToPath(new URL(`../commands/${file}`, import.meta.url)),
+          "utf-8",
+        );
+        let enclosing = "(top-level)";
+        content.split("\n").forEach((line, index) => {
+          const declaration =
+            /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/.exec(line);
+          if (declaration) enclosing = declaration[1];
+          if (line.includes("await writeFile(")) {
+            found.push({ site: `${file}#${enclosing}`, line: index + 1 });
+          }
+        });
+      }
+      expect(found.length).toBeGreaterThan(0);
+
+      // (b1) No write site is unaccounted for.
+      const unregistered = found.filter((f) => !(f.site in WRITE_SITES));
+      expect(
+        unregistered,
+        `unregistered writeFile site(s) — declare the destination's ownership policy, then add it here: ${unregistered
+          .map((f) => `${f.site} (line ${f.line})`)
+          .join(", ")}`,
+      ).toEqual([]);
+
+      // (b2) Every non-template destination those sites write is declared in
+      // NON_TEMPLATE_DESTINATIONS, and resolves to a policy.
+      const declared = new Set(NON_TEMPLATE_DESTINATIONS);
+      const templateRouteDestinations = [".claude/", "scripts/dev/"];
+      for (const site of new Set(found.map((f) => f.site))) {
+        const destination = WRITE_SITES[site];
+        const viaTemplateRoute = templateRouteDestinations.some(
+          (prefix) =>
+            destination.startsWith(prefix) && !declared.has(destination),
+        );
+        if (viaTemplateRoute) continue;
+        expect(
+          declared,
+          `${site} writes ${destination}, which is not in NON_TEMPLATE_DESTINATIONS`,
+        ).toContain(destination);
+        expect(POLICIES).toContain(ownershipPolicy(destination));
+      }
+
+      // (b3) The destinations the clobbering class actually hit must all be
+      // declared, including the two written outside these three files
+      // (`AGENTS.md` by agents-md.ts, `.mcp.json` by mcp-config.ts). Removing
+      // any one of them from NON_TEMPLATE_DESTINATIONS fails here.
+      for (const required of [
+        ".sequant/settings.json",
+        "AGENTS.md",
+        ".mcp.json",
+        ".opencode/",
+        ".opencode/opencode.json",
+        ".codex/config.toml",
+      ]) {
+        expect(
+          declared,
+          `${required} must stay declared — it is one of the six defects in the class`,
+        ).toContain(required);
+        expect(POLICIES).toContain(ownershipPolicy(required));
+      }
+
+      // (b4) For the destinations whose defect was decided, assert the policy
+      // VALUE, not merely that some policy resolves. `POLICIES.toContain(...)`
+      // above passes for all three values, so a silent re-classification —
+      // exactly what reopens this class — would sail through it.
+      const DECIDED: Record<string, OwnershipPolicy> = {
+        // #814 — edited in place; plain sync/update preserve it.
+        ".claude/memory/constitution.md": "user-owned",
+        // #1071 — init merges only the keys its flags set.
+        ".sequant/settings.json": "user-owned",
+        // #990 — regenerated only while its marker still matches the body.
+        "AGENTS.md": "user-owned",
+        // #793 — syncSequantMcpPin re-pins the sequant entry and keeps the rest.
+        ".mcp.json": "merge",
+        // #996 — writeOpencodeMcpConfig keeps every non-sequant `mcp` entry.
+        // A prefix match on `.opencode/` would call this sequant-owned.
+        ".opencode/opencode.json": "merge",
+        // #1078 ruling — settings.local.json is the extension point.
+        ".claude/settings.json": "sequant-owned",
+      };
+      for (const [destination, policy] of Object.entries(DECIDED)) {
+        expect(
+          ownershipPolicy(destination),
+          `${destination} is declared ${policy}; changing it reopens the defect it closed`,
+        ).toBe(policy);
+      }
+    });
+  });
+
+  describe("ownershipPolicy", () => {
+    it("declares the constitution user-owned", () => {
+      expect(ownershipPolicy(".claude/memory/constitution.md")).toBe(
+        "user-owned",
+      );
+    });
+
+    it("declares ordinary skill files sequant-owned", () => {
+      expect(ownershipPolicy(".claude/skills/exec/SKILL.md")).toBe(
+        "sequant-owned",
+      );
+    });
+
+    it("declares .sequant/settings.json user-owned (#1071)", () => {
+      expect(ownershipPolicy(".sequant/settings.json")).toBe("user-owned");
+    });
+
+    it("declares .claude/settings.json sequant-owned (#1078 ruling)", () => {
+      // settings.local.json is the update-safe extension point, so this file
+      // is deliberately overwritten rather than merged.
+      expect(ownershipPolicy(".claude/settings.json")).toBe("sequant-owned");
+    });
+
+    it("declares the shared MCP configs merge", () => {
+      expect(ownershipPolicy(".mcp.json")).toBe("merge");
+      expect(ownershipPolicy(".opencode/opencode.json")).toBe("merge");
+    });
+
+    it("prefers the exact rule over the prefix it sits inside", () => {
+      // `.opencode/opencode.json` is `merge`; everything else under
+      // `.opencode/` is regenerated wholesale.
+      expect(ownershipPolicy(".opencode/agents/sequant-implementer.md")).toBe(
+        "sequant-owned",
+      );
+    });
+
     it("normalizes Windows-style separators before matching (#708)", () => {
-      // On Windows template paths are assembled with backslashes; the
+      // On Windows destinations are assembled with backslashes; the
       // protection must still recognize the constitution.
-      expect(isCustomizableFile(".claude\\memory\\constitution.md")).toBe(true);
+      expect(ownershipPolicy(".claude\\memory\\constitution.md")).toBe(
+        "user-owned",
+      );
     });
   });
 
@@ -652,9 +851,9 @@ describe("templates", () => {
     });
   });
 
-  // Write-path protection for CUSTOMIZABLE_FILES (#814). Hermetic: a temp
+  // Write-path protection for `user-owned` destinations (#814). Hermetic: a temp
   // templates tree + temp cwd, so copyTemplates writes into a throwaway
-  // `.claude/`. The one CUSTOMIZABLE_FILES entry (constitution) is exercised
+  // `.claude/`. The one user-owned template destination (constitution) is exercised
   // through the real copy — not the diff path.
   describe("copyTemplates customizable-file preservation (#814)", () => {
     const CONSTITUTION_LOCAL = ".claude/memory/constitution.md";
@@ -801,7 +1000,7 @@ describe("templates", () => {
 
     // #943 AC-4: the rewritten multi-section constitution (DoD + boundaries +
     // budgets) is preserved unchanged when a project has customized it — the
-    // CUSTOMIZABLE_FILES guard must work regardless of template content shape.
+    // The user-owned guard must work regardless of template content shape.
     it("preserves a multi-section constitution customized for the project (#943 AC-4)", async () => {
       const custom =
         "# my-project Agent Contract\n\n" +

@@ -230,22 +230,183 @@ export async function getTemplateContent(
 }
 
 /**
- * Files that are meant to be edited in place per project (e.g. the
- * constitution). When one of these diverges from the rendered template
- * without a parallel `.claude/.local/` file, it is treated as a protected
- * local override rather than a stale "modified" file — so the default
- * (non-`--force`) update/sync path never silently overwrites it.
+ * How a destination sequant writes is *owned* — the one rule every writer
+ * (`init`, `sync`, `update`) consults before it touches a project file.
+ *
+ * - `sequant-owned` — sequant's own output. Overwrite freely (skills, agents,
+ *   hooks, `scripts/dev`). Reported as `overwrite`.
+ * - `user-owned` — the project's file. Never written over once it exists and
+ *   diverges, unless the user passes an explicit `--force`. Reported as
+ *   `preserved`.
+ * - `merge` — a file shared with other tools. sequant's own entries are
+ *   ensured and everything else in it is kept. Reported as `merged`.
+ *
+ * Six separate defects (#708, #814, #990, #1030/#1042, #1071, #1078) were the
+ * same bug: a writer defaulted to overwrite and nobody was asked to declare
+ * otherwise. The policy lives here, next to the routing table, so that
+ * `templateDestination` (diff path) and `copyTemplates` (write path) — the two
+ * routers whose drift caused #708 and #1030 — read the same declaration.
  */
-export const CUSTOMIZABLE_FILES = [".claude/memory/constitution.md"];
+export type OwnershipPolicy = "sequant-owned" | "user-owned" | "merge";
+
+interface OwnershipRule {
+  /** Destination path, forward slashes. */
+  readonly match: string;
+  /** `exact` matches the whole path; `prefix` matches anything beneath it. */
+  readonly kind: "exact" | "prefix";
+  readonly policy: OwnershipPolicy;
+  /** Why this destination carries this policy. The declaration is the point. */
+  readonly reason: string;
+}
 
 /**
- * Whether a local path is a customizable file edited in place per project.
+ * The ownership table. Order matters: the first matching rule wins, so exact
+ * rules precede the prefix rules they sit inside. Anything unmatched falls
+ * through to `sequant-owned` — the safe default *only* because the AC-2 gate
+ * test forces every real destination onto this table before it can ship.
  */
-export function isCustomizableFile(localPath: string): boolean {
-  // Normalize OS path separators so the allow-list match holds on Windows,
-  // where template paths are assembled with backslashes (#708).
-  return CUSTOMIZABLE_FILES.includes(localPath.replace(/\\/g, "/"));
+const OWNERSHIP_RULES: readonly OwnershipRule[] = [
+  {
+    match: ".claude/memory/constitution.md",
+    kind: "exact",
+    policy: "user-owned",
+    reason:
+      "Edited in place per project. Silently overwriting it is #814; the " +
+      "preserve/report pattern the other user-owned entries follow started here.",
+  },
+  {
+    match: ".sequant/settings.json",
+    kind: "exact",
+    policy: "user-owned",
+    reason:
+      "The project's tuned run/phase/model configuration. `init` on an " +
+      "already-initialized repo merges in only the keys its flags set and " +
+      "leaves everything else byte-identical (#1071).",
+  },
+  {
+    match: "AGENTS.md",
+    kind: "exact",
+    policy: "user-owned",
+    reason:
+      "Regenerated only while it still carries an unmodified " +
+      "`<!-- sequant:agents-md v= h= -->` marker. An unmarked or hand-edited " +
+      "file belongs to the project and is left alone and reported (#990).",
+  },
+  {
+    match: ".mcp.json",
+    kind: "exact",
+    policy: "merge",
+    reason:
+      "Shared with every other MCP server the project registers. " +
+      "`syncSequantMcpPin` re-pins only the `sequant` entry and keeps the " +
+      "rest of the file (#793).",
+  },
+  {
+    match: ".opencode/opencode.json",
+    kind: "exact",
+    policy: "merge",
+    reason:
+      "opencode's own config, shared the same way `.mcp.json` is: " +
+      "`writeOpencodeMcpConfig` merges in only the `mcp.sequant` entry (#996).",
+  },
+  {
+    match: ".claude/settings.json",
+    kind: "exact",
+    policy: "sequant-owned",
+    reason:
+      "Overwritten by design. `.claude/settings.local.json` is the supported, " +
+      "update-safe extension point — Claude Code merges it over this file, so " +
+      "project hooks and permissions belong there, not here. Ruled on when " +
+      "#1078 was closed; see docs/guides/customization.md. Do not make this " +
+      "`merge` without reopening that ruling.",
+  },
+  {
+    match: ".opencode/",
+    kind: "prefix",
+    policy: "sequant-owned",
+    reason:
+      "Commands, agent defs and the hook plugin are translated from sequant's " +
+      "own templates by `init`'s `writeOpencode*` renderers and refreshed " +
+      "wholesale (#1030/#1042). The MCP config above is the one exception.",
+  },
+  {
+    match: ".codex/",
+    kind: "prefix",
+    policy: "sequant-owned",
+    reason:
+      "`.codex/config.toml` is rendered from `templates/codex/config.toml` by " +
+      "`writeCodexConfig` and refreshed wholesale (#1059).",
+  },
+  {
+    match: ".sequant/settings.reference.md",
+    kind: "exact",
+    policy: "sequant-owned",
+    reason:
+      "Generated documentation of the settings schema, not configuration. " +
+      "Regenerated on every `init` so it cannot drift from the schema.",
+  },
+  {
+    match: ".gitignore",
+    kind: "exact",
+    policy: "merge",
+    reason:
+      "The project's file. `init` appends its `.sequant/` entries only when " +
+      "they are absent and never rewrites existing lines.",
+  },
+];
+
+/**
+ * The ownership policy declared for a destination sequant writes.
+ *
+ * `init`, `sync` and `update` all route their preserve-vs-overwrite decision
+ * through this function — it is the only source. Adding a new destination
+ * without adding it to {@link OWNERSHIP_RULES} or
+ * {@link NON_TEMPLATE_DESTINATIONS} fails the AC-2 gate test.
+ */
+export function ownershipPolicy(destinationPath: string): OwnershipPolicy {
+  // Normalize OS path separators so the table matches on Windows too, where
+  // destinations are assembled with backslashes (#708).
+  const normalized = destinationPath.replace(/\\/g, "/");
+  for (const rule of OWNERSHIP_RULES) {
+    const hit =
+      rule.kind === "exact"
+        ? normalized === rule.match
+        : normalized.startsWith(rule.match);
+    if (hit) return rule.policy;
+  }
+  return "sequant-owned";
 }
+
+/**
+ * Destinations sequant writes that do **not** come from the
+ * `templates/** ` → `.claude/**` copy route, and therefore cannot be reached by
+ * walking the templates tree.
+ *
+ * This list exists because four of the six defects in the clobbering class
+ * (#990 `AGENTS.md`, #1030/#1042 `.opencode/**`, #1071 `.sequant/settings.json`,
+ * #1053 `scripts/dev` symlinks) live *outside* `templates/`. A gate that walked
+ * only the templates tree would have caught #814 and #1078 and missed the rest,
+ * so the AC-2 gate asserts this list exhaustive against the `writeFile(` targets
+ * in `init.ts`, `sync.ts` and `update.ts`.
+ *
+ * Prefix entries end in `/`.
+ */
+export const NON_TEMPLATE_DESTINATIONS: readonly string[] = [
+  ".gitignore",
+  ".sequant/settings.json",
+  ".sequant/settings.reference.md",
+  ".claude/skills/.sequant-version",
+  ".claude/.sequant/.skills-drift-cache.json",
+  "AGENTS.md",
+  ".mcp.json",
+  // The exact path, not just the `.opencode/` prefix: it is the one file under
+  // that tree sequant merges rather than overwrites, and the gate maps
+  // `writeOpencodeMcpConfig` to it so the `merge` rule is actually enforced
+  // instead of shadowed by the prefix entry below.
+  ".opencode/opencode.json",
+  ".opencode/",
+  ".codex/config.toml",
+];
 
 /**
  * Build the full set of template variables used when rendering templates.
@@ -298,39 +459,145 @@ export interface TemplateChange {
 }
 
 /**
+ * A declared route from a bundled template prefix to its install destination.
+ * `destination: null` means the copy/diff cycle deliberately does not manage
+ * the tree — a different renderer owns it.
+ */
+interface TemplateRoute {
+  /** Template path or prefix under `templates/`, forward slashes. */
+  readonly match: string;
+  readonly kind: "exact" | "prefix";
+  /** Destination path or prefix, or `null` when unmanaged by copy/diff. */
+  readonly destination: string | null;
+  readonly reason: string;
+}
+
+/**
+ * Every declared route out of `templates/`. Order matters: exact rules precede
+ * the prefixes they sit inside.
+ *
+ * A new top-level tree under `templates/` that is not listed here has no
+ * declared route, and the AC-2 gate test fails naming it (#1090). That is the
+ * whole point: before this table, a new template inherited `.claude/<relpath>`
+ * and overwrite silently, and nobody was ever asked to declare otherwise.
+ */
+const TEMPLATE_ROUTES: readonly TemplateRoute[] = [
+  {
+    match: "templates/mcp.json",
+    kind: "exact",
+    destination: null,
+    reason:
+      "The project `.mcp.json` is generated and version-pinned by " +
+      "`mcp-config.ts` (`syncSequantMcpPin`), never copied.",
+  },
+  {
+    match: "templates/settings.json",
+    kind: "exact",
+    destination: ".claude/settings.json",
+    reason:
+      "Written by `copyTemplates` after the tree copies. Declared " +
+      "`sequant-owned`; `.claude/settings.local.json` is the extension point.",
+  },
+  {
+    match: "templates/relay/",
+    kind: "prefix",
+    destination: null,
+    reason: "Not installed by `copyTemplates`.",
+  },
+  {
+    match: "templates/opencode/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Not a flat copy target. `command.md` needs per-phase `{{PHASE}}` " +
+      "substitution (one template, N output files) and the plugin/agents/MCP " +
+      "files live under `.opencode/`, not `.claude/` — `init.ts`'s " +
+      "`writeOpencode*` functions are the one renderer for this tree, reused " +
+      "by `sync`/`update` via `decideOpencodeShimSync` (#1030).",
+  },
+  {
+    match: "templates/codex/",
+    kind: "prefix",
+    destination: null,
+    reason:
+      "Same reasoning as opencode above. `config.toml` renders to " +
+      "`.codex/config.toml`, not `.claude/` — `init.ts`'s " +
+      "`writeCodexProvisioning` is the one renderer (#1059).",
+  },
+  {
+    match: "templates/scripts/",
+    kind: "prefix",
+    destination: "scripts/dev/",
+    reason: "Symlinked on POSIX, copied on Windows / `--no-symlinks`.",
+  },
+  {
+    match: "templates/skills/",
+    kind: "prefix",
+    destination: ".claude/skills/",
+    reason: "Managed skill tree, refreshed wholesale on every sync.",
+  },
+  {
+    match: "templates/agents/",
+    kind: "prefix",
+    destination: ".claude/agents/",
+    reason: "Managed subagent definitions, refreshed wholesale.",
+  },
+  {
+    match: "templates/hooks/",
+    kind: "prefix",
+    destination: ".claude/hooks/",
+    reason: "Managed hook scripts, refreshed wholesale.",
+  },
+  {
+    match: "templates/memory/",
+    kind: "prefix",
+    destination: ".claude/memory/",
+    reason:
+      "Holds the constitution, which is declared `user-owned` and preserved " +
+      "unless the user passes `--force` (#814).",
+  },
+];
+
+/**
+ * The declared route for a bundled template, or `undefined` when none is
+ * declared. `undefined` is the gate's failure signal, not a runtime error —
+ * see {@link templateDestination} for what actually happens at runtime.
+ */
+export function resolveTemplateRoute(
+  templatePath: string,
+): TemplateRoute | undefined {
+  const normalized = templatePath.replace(/\\/g, "/");
+  return TEMPLATE_ROUTES.find((route) =>
+    route.kind === "exact"
+      ? normalized === route.match
+      : normalized.startsWith(route.match),
+  );
+}
+
+/**
  * Map a bundled template path to the location `copyTemplates` installs it to,
  * or `null` for templates the copy/diff cycle does not manage.
  *
- * This mirrors the routing in `copyTemplates` (write time) so
- * `computeTemplateChanges` (diff time) can never report drift on a file init
- * deliberately places elsewhere — `.claude/mcp.json`, `.claude/relay/*`, and
- * `.claude/scripts/*` read as phantom "new" files on every fresh install when
- * the diff assumed a flat `.claude/<relpath>` layout. #708 gives the same
- * guarantee for the template *variables*; this covers the *destinations*.
+ * Reads {@link TEMPLATE_ROUTES}, which `copyTemplates` (write time) and
+ * `computeTemplateChanges` (diff time) both consult, so the two routers can
+ * never drift — `.claude/mcp.json`, `.claude/relay/*` and `.claude/scripts/*`
+ * read as phantom "new" files on every fresh install when the diff assumed a
+ * flat `.claude/<relpath>` layout. #708 gives the same guarantee for the
+ * template *variables*; this covers the *destinations*, and #1090 adds the
+ * ownership policy per destination.
  *
- * - `templates/mcp.json` → `null`: the project `.mcp.json` is generated and
- *   version-pinned by `mcp-config.ts` (`syncSequantMcpPin`), never copied.
- * - `templates/relay/` → `null`: not installed by `copyTemplates`.
- * - `templates/opencode/` → `null`: not a flat copy target. `command.md`
- *   needs per-phase `{{PHASE}}` substitution (one template, N output files)
- *   and the plugin/agents/MCP files live under `.opencode/`, not `.claude/` —
- *   `init.ts`'s `writeOpencode*` functions are the one renderer for this
- *   tree, reused by `sync`/`update` via `decideOpencodeShimSync` (#1030).
- * - `templates/codex/` → `null`: same reasoning as opencode above.
- *   `config.toml` renders to `.codex/config.toml`, not `.claude/` —
- *   `init.ts`'s `writeCodexProvisioning` is the one renderer (#1059).
- * - `templates/scripts/` → `scripts/dev/`: symlinked on POSIX, copied on
- *   Windows / `--no-symlinks`.
- * - everything else → `.claude/<relpath>`.
+ * An unrouted path still falls back to `.claude/<relpath>` so behaviour is
+ * unchanged for anything already shipping; the AC-2 gate test is what forces a
+ * new tree onto the table before it can reach a release.
  */
 export function templateDestination(templatePath: string): string | null {
   const normalized = templatePath.replace(/\\/g, "/");
-  if (normalized === "templates/mcp.json") return null;
-  if (normalized.startsWith("templates/relay/")) return null;
-  if (normalized.startsWith("templates/opencode/")) return null;
-  if (normalized.startsWith("templates/codex/")) return null;
-  if (normalized.startsWith("templates/scripts/")) {
-    return normalized.replace("templates/scripts/", "scripts/dev/");
+  const route = resolveTemplateRoute(normalized);
+  if (route) {
+    if (route.destination === null) return null;
+    return route.kind === "exact"
+      ? route.destination
+      : normalized.replace(route.match, route.destination);
   }
   return normalized.replace("templates/", ".claude/");
 }
@@ -409,7 +676,7 @@ export async function computeTemplateChanges(
       localPath.startsWith(".claude/") &&
       (await fileExists(localPath.replace(".claude/", ".claude/.local/")));
 
-    if (hasLocalOverride || isCustomizableFile(localPath)) {
+    if (hasLocalOverride || ownershipPolicy(localPath) === "user-owned") {
       changes.push({
         path: localPath,
         templatePath,
@@ -462,12 +729,12 @@ export interface CopyTemplatesOptions {
   /** Force replacement of existing files/symlinks */
   force?: boolean;
   /**
-   * Opt in to overwriting in-place customizations (files in `CUSTOMIZABLE_FILES`,
-   * e.g. the constitution) that already exist and differ from the rendered
-   * template. Deliberately separate from `force`: `force` refreshes the managed
-   * skills/agents/hooks trees, but that always-on tree overwrite must NOT imply
-   * consent to clobber user-owned files. Only an explicit user `--force` sets
-   * this. A missing or identical customizable file is written regardless (#814).
+   * Opt in to overwriting `user-owned` destinations (e.g. the constitution)
+   * that already exist and differ from the rendered template. Deliberately
+   * separate from `force`: `force` refreshes the managed skills/agents/hooks
+   * trees, but that always-on tree overwrite must NOT imply consent to clobber
+   * user-owned files. Only an explicit user `--force` sets this. A missing or
+   * identical user-owned file is written regardless (#814).
    */
   overwriteCustomizable?: boolean;
   /** Additional stacks to include in constitution notes (for multi-stack projects) */
@@ -727,8 +994,9 @@ export async function copyTemplates(
   // Single source of truth for template variables (shared with the diff path)
   const variables = await buildTemplateVariables(stack, tokens, options);
 
-  // Customizable files skipped on the write path (see copyDir), surfaced to the
-  // caller so it can report them without a second diff pass (#814).
+  // `user-owned` destinations skipped on the write path (see copyDir),
+  // surfaced to the caller so it can report them without a second diff pass
+  // (#814).
   const preservedCustomizable: string[] = [];
 
   async function copyDir(srcDir: string, destDir: string): Promise<void> {
@@ -747,14 +1015,15 @@ export async function copyTemplates(
           let content = await readFile(srcPath);
           content = processTemplate(content, variables);
 
-          // Protect in-place customizations on the write path. A file in
-          // CUSTOMIZABLE_FILES that already exists and differs from the
-          // rendered template is preserved unless the caller explicitly opted
-          // in via `overwriteCustomizable`. A missing file (fresh install) or
-          // an identical one falls through and is written as usual (#814).
+          // Protect in-place customizations on the write path, reading the
+          // one declared policy rather than a local allow-list. A `user-owned`
+          // destination that already exists and differs from the rendered
+          // template is preserved unless the caller explicitly opted in via
+          // `overwriteCustomizable`. A missing file (fresh install) or an
+          // identical one falls through and is written as usual (#814).
           if (
             !options.overwriteCustomizable &&
-            isCustomizableFile(destPath) &&
+            ownershipPolicy(destPath) === "user-owned" &&
             (await fileExists(destPath))
           ) {
             const existing = await readFile(destPath);

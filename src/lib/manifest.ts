@@ -31,11 +31,14 @@ function findPackageJson(): string {
   }
   throw new Error("Could not find sequant package.json");
 }
-const pkg = JSON.parse(findPackageJson());
-const PACKAGE_VERSION = pkg.version as string;
+// Read lazily and memoize: a module-level `fs` read makes importing this module
+// (or anything that transitively imports it) throw under a stubbed `fs`, and ESM
+// import order has bitten this package before (#734).
+let cachedPackageVersion: string | undefined;
 
 export function getPackageVersion(): string {
-  return PACKAGE_VERSION;
+  return (cachedPackageVersion ??= JSON.parse(findPackageJson())
+    .version as string);
 }
 
 export interface Manifest {
@@ -65,7 +68,7 @@ export async function createManifest(
   packageManager?: PackageManager,
 ): Promise<void> {
   const manifest: Manifest = {
-    version: PACKAGE_VERSION,
+    version: getPackageVersion(),
     stack,
     ...(packageManager && { packageManager }),
     installedAt: new Date().toISOString(),
@@ -83,8 +86,9 @@ export async function updateManifest(): Promise<void> {
 
   // Only update version if package version is >= manifest version
   // This prevents older cached CLI versions from downgrading the manifest
-  if (compareVersions(PACKAGE_VERSION, manifest.version) >= 0) {
-    manifest.version = PACKAGE_VERSION;
+  const packageVersion = getPackageVersion();
+  if (compareVersions(packageVersion, manifest.version) >= 0) {
+    manifest.version = packageVersion;
   }
   manifest.updatedAt = new Date().toISOString();
 

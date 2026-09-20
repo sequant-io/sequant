@@ -19,14 +19,15 @@ import {
   listTemplateFiles,
   getTemplatesDir,
   assertTemplatesDirExists,
-  isCustomizableFile,
+  ownershipPolicy,
   previewScriptsSymlinkTargets,
   templateDestination,
   type CopyTemplatesOptions,
+  type TemplateChange,
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 import { resolveCliInvocation } from "../lib/version-check.js";
-import { syncSequantMcpPin } from "../lib/mcp-config.js";
+import { syncSequantMcpPin, PROJECT_MCP_JSON } from "../lib/mcp-config.js";
 import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
 import {
   generateAgentsMd,
@@ -262,6 +263,89 @@ async function updateSkillsVersion(): Promise<void> {
   await writeFile(SKILLS_VERSION_PATH, getPackageVersion());
 }
 
+/**
+ * What sync will do to one destination, in the vocabulary of the ownership
+ * policy: `overwrite` (sequant-owned), `preserved` (user-owned, kept) or
+ * `merged` (shared file, sequant's entry ensured).
+ */
+interface OwnershipDecision {
+  verb: "overwrite" | "preserved" | "merged";
+  path: string;
+}
+
+/**
+ * Resolve the per-file ownership decision for a sync run (#1090 AC-5).
+ *
+ * The single source both the `--dry-run` preview and the apply path read, so
+ * the preview cannot promise one thing and the write do another — the #722
+ * parity contract, now stated in policy terms. The `overwrite` + `merged`
+ * entries are exactly the set the apply path writes; `preserved` entries are
+ * exactly the set it leaves byte-identical.
+ */
+function resolveOwnershipDecisions(
+  changes: TemplateChange[],
+  force: boolean,
+  mcpPinUpdated: boolean,
+): OwnershipDecision[] {
+  const decisions: OwnershipDecision[] = [];
+
+  for (const change of changes) {
+    if (change.status === "unchanged") continue;
+    if (change.status === "local-override") {
+      // A user-owned destination is kept unless the user passed --force. A
+      // sequant-owned `.local`-twin override is still rewritten by the tree
+      // copy, so it reports as `overwrite` — the pre-#1090 behaviour, now
+      // read off the declared policy instead of an allow-list.
+      const preserved = !force && ownershipPolicy(change.path) === "user-owned";
+      decisions.push({
+        verb: preserved ? "preserved" : "overwrite",
+        path: change.path,
+      });
+      continue;
+    }
+    // `new` and `modified` are both sequant-owned writes.
+    decisions.push({ verb: "overwrite", path: change.path });
+  }
+
+  // `.mcp.json` is the one `merge` destination a sync actually touches: the
+  // pin is rewritten in place and every other MCP server in the file is kept.
+  if (mcpPinUpdated) {
+    decisions.push({ verb: "merged", path: PROJECT_MCP_JSON });
+  }
+
+  return decisions;
+}
+
+/**
+ * Print the ownership decision for every file before anything is written.
+ *
+ * The #1030 I-2 invariant: a dry-run must show the decision, and the apply
+ * path must show the same decision, so a clobber is never silent.
+ */
+function printOwnershipDecisions(
+  decisions: OwnershipDecision[],
+  options: { preservedHint?: boolean } = {},
+): void {
+  if (decisions.length === 0) return;
+  console.log(chalk.bold("\nFile ownership decisions:"));
+  for (const decision of decisions) {
+    const color =
+      decision.verb === "preserved"
+        ? chalk.blue
+        : decision.verb === "merged"
+          ? chalk.cyan
+          : chalk.yellow;
+    // On the apply path the preserved line carries the repair hint (#814
+    // AC-4), so a preserved file is announced exactly once instead of once
+    // here and again after the copy.
+    const hint =
+      decision.verb === "preserved" && options.preservedHint
+        ? " — run `sync --force` to replace"
+        : "";
+    console.log(color(`  ${decision.verb}: ${decision.path}${hint}`));
+  }
+}
+
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const { force = false, quiet = false, dryRun = false, agentsMd } = options;
   const agentsMdEnabled = agentsMd !== false;
@@ -383,12 +467,12 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // rewrites the whole tree. (A matching-version, non-force dry-run already
   // returned at the report-only short-circuit above, which never mutates.)
   //
-  // Since #814 the apply path PRESERVES in-place customizations (files in
-  // CUSTOMIZABLE_FILES) under a plain sync and only overwrites them under an
-  // explicit `--force`. The preview must mirror that split exactly, or it would
-  // re-introduce the dry-run/apply divergence #722 is about: partition the
-  // `local-override` set into preserved (plain sync) vs overwritten (--force,
-  // or a non-customizable `.local`-twin the tree copy still rewrites).
+  // Since #814 the apply path PRESERVES `user-owned` destinations under a
+  // plain sync and only overwrites them under an explicit `--force`. The
+  // preview must mirror that split exactly, or it would re-introduce the
+  // dry-run/apply divergence #722 is about: partition the `local-override` set
+  // into preserved (plain sync) vs overwritten (--force, or a `sequant-owned`
+  // `.local`-twin the tree copy still rewrites).
   if (dryRun) {
     const changes = await computeTemplateChanges(manifest.stack, tokens);
     const newFiles = changes.filter((c) => c.status === "new");
@@ -396,9 +480,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const localOverrides = changes.filter((c) => c.status === "local-override");
     const preservedOverrides = force
       ? []
-      : localOverrides.filter((c) => isCustomizableFile(c.path));
+      : localOverrides.filter((c) => ownershipPolicy(c.path) === "user-owned");
     const overwrittenOverrides = localOverrides.filter(
-      (c) => force || !isCustomizableFile(c.path),
+      (c) => force || ownershipPolicy(c.path) !== "user-owned",
     );
     const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
 
@@ -478,6 +562,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
         }
       }
 
+      // #1090 AC-5: the per-file policy decision, printed before any write
+      // would happen. The apply path prints the same list from the same
+      // resolver, so the preview and the write can never disagree.
+      printOwnershipDecisions(
+        resolveOwnershipDecisions(changes, force, mcpPin.updated),
+      );
+
       if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
         console.log(chalk.green("\n✔ Skills are already up to date!"));
       } else {
@@ -496,7 +587,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   }
 
   // Copy templates: always refresh the managed trees, but only overwrite
-  // user-owned CUSTOMIZABLE_FILES (e.g. the constitution) when the user
+  // `user-owned` destinations (e.g. the constitution) when the user
   // explicitly passed --force. These are two distinct notions of "force" and
   // conflating them is what silently ate the constitution (#814).
   const copyOptions: CopyTemplatesOptions = {
@@ -504,14 +595,40 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     overwriteCustomizable: force, // Clobber user-owned files only on explicit --force
   };
 
-  // AC-3: under --force, announce which customizable files are about to be
+  // #1090 AC-5: resolve the ownership decision for every file *before* the
+  // write, from the same resolver `--dry-run` used, and print it. One diff
+  // pass serves both this report and the --force announcement below, and it
+  // is skipped entirely under `--quiet`, where neither is printed.
+  //
+  // On cost: pre-#1090 this pass ran only under `force && !quiet`. It is only
+  // reached at all when `force` is set or the version marker mismatches — a
+  // version-current plain `sync` returns at the report-only fast path above,
+  // which runs its own diff and never gets here. So the added pass lands only
+  // on runs that go on to render and write the entire tree, where it measured
+  // ~36 ms against 63 templates. Printing after the copy instead would cost
+  // nothing but would break the invariant this report exists for: the
+  // decision has to be visible *before* the write, not after it (#1030 I-2).
+  const applyChanges = quiet
+    ? []
+    : await computeTemplateChanges(manifest.stack, tokens);
+  const applyDecisions = resolveOwnershipDecisions(
+    applyChanges,
+    force,
+    mcpPin.updated,
+  );
+  if (!quiet) {
+    printOwnershipDecisions(applyDecisions, { preservedHint: true });
+  }
+
+  // AC-3: under --force, announce which user-owned files are about to be
   // overwritten *before* writing them, so the destructive action is never
   // silent. Reuse the diff path's `local-override` classification (the same
-  // set --dry-run reports), narrowed to CUSTOMIZABLE_FILES.
+  // set --dry-run reports), narrowed to `user-owned` destinations.
   if (force && !quiet) {
-    const changes = await computeTemplateChanges(manifest.stack, tokens);
-    const overwrites = changes.filter(
-      (c) => c.status === "local-override" && isCustomizableFile(c.path),
+    const overwrites = applyChanges.filter(
+      (c) =>
+        c.status === "local-override" &&
+        ownershipPolicy(c.path) === "user-owned",
     );
     if (overwrites.length > 0) {
       console.log(
@@ -535,12 +652,24 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     copyOptions,
   );
 
-  // AC-4: on a plain sync, report each customizable file that was preserved so
-  // the apply path's output matches what --dry-run already promises (#722).
-  if (!quiet && preservedCustomizable.length > 0) {
+  // #814 AC-4's report is now the `preserved:` line in the decisions block
+  // above, printed once with the repair hint. What is left here is the parity
+  // check that block cannot make for itself: the decisions come from the diff
+  // pass, `preservedCustomizable` comes from the write path that actually ran.
+  // A file the writer preserved but the preview never predicted is precisely
+  // the dry-run/apply divergence #722 exists to prevent, so it is reported
+  // loudly rather than printed as a silent duplicate.
+  if (!quiet) {
+    const announced = new Set(
+      applyDecisions.filter((d) => d.verb === "preserved").map((d) => d.path),
+    );
     for (const file of preservedCustomizable) {
+      if (announced.has(file)) continue;
       console.log(
-        chalk.blue(`  preserved: ${file} — run \`sync --force\` to replace`),
+        chalk.yellow(
+          `  !  preserved: ${file} — run \`sync --force\` to replace ` +
+            `(not shown in the ownership decisions above — please report this)`,
+        ),
       );
     }
   }
@@ -551,7 +680,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
 
   // Regenerate AGENTS.md if it exists and is eligible: unmodified sequant
   // output, or --force. A user-owned file (unmarked or hash-mismatched) is
-  // left byte-identical and reported, mirroring the CUSTOMIZABLE_FILES
+  // left byte-identical and reported, mirroring the `user-owned`
   // preserve/report pattern above (#990).
   if (agentsMdEnabled) {
     const existingAgentsMd = await readAgentsMd();

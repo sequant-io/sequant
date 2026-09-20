@@ -15,6 +15,7 @@ import { readFile, writeFile, fileExists, ensureDir } from "./fs.js";
 import { dirname } from "path";
 import { z } from "zod";
 import { getPhaseNames } from "./workflow/phase-registry.js";
+import { ownershipPolicy } from "./templates.js";
 
 /** Path to project-level settings file */
 export const SETTINGS_PATH = ".sequant/settings.json";
@@ -1278,12 +1279,19 @@ export async function createDefaultSettings(
 ): Promise<CreateSettingsResult> {
   await ensureDir(dirname(SETTINGS_PATH));
 
-  // Key the guard off SETTINGS_PATH — the file this function writes — and not
-  // off `.claude/settings.json`, which is what initCommand's "already
+  // Read the one declared ownership policy rather than a preserve rule local
+  // to this module — being the fifth undeclared ownership location is what
+  // made `.sequant/settings.json` the sixth instance of the clobbering class
+  // (#1090). `.sequant/settings.json` is declared `user-owned`, so an existing
+  // file is preserved and only `force` overwrites it.
+  //
+  // The guard still keys off SETTINGS_PATH — the file this function writes —
+  // and not off `.claude/settings.json`, which is what initCommand's "already
   // initialized" warning checks. A repo with tuned sequant settings and no
   // `.claude/settings.json` gets no warning at all, so the file's own
   // existence is the only reliable signal (#1071 AC-5).
-  if (!force && (await settingsExist())) {
+  const userOwned = ownershipPolicy(SETTINGS_PATH) === "user-owned";
+  if (!force && userOwned && (await settingsExist())) {
     return preserveExistingSettings(agent);
   }
 
@@ -1550,7 +1558,9 @@ function updateAgentInRawContent(
     if (block[agentIdx] !== '"') return null;
     const end = findStringEnd(block, agentIdx);
     if (end === -1) return null;
-    return before + block.slice(0, agentIdx) + value + block.slice(end + 1) + after;
+    return (
+      before + block.slice(0, agentIdx) + value + block.slice(end + 1) + after
+    );
   }
 
   // Insert path. A trailing comma is only legal when another member follows,

@@ -128,4 +128,5 @@ When QA returns gaps: run a diagnostic first ("which gap is the most blocking?")
 
 <!-- Add your project-specific guidelines below this line.
      This section is preserved across `sequant update` and `sync` runs
-     (it is in CUSTOMIZABLE_FILES). Everything above is updated automatically. -->
+     (its declared ownership policy is `user-owned`). Everything above is
+     updated automatically. -->
