@@ -594,10 +594,9 @@ export function parseQaSummary(output: string): QaSummary | null {
   const lines = output.split("\n");
   const acRows = lines.filter((line) => /^\s*\|\s*\*?\*?AC-\d+/.test(line));
 
-  if (acRows.length === 0) return null;
-
   let acMet = 0;
   let acTotal = 0;
+  const tableIds = new Set<string>();
 
   for (const row of acRows) {
     const cells = row
@@ -606,19 +605,45 @@ export function parseQaSummary(output: string): QaSummary | null {
       .filter(Boolean);
 
     // Scan cells right-to-left to find the status cell
-    let found = false;
     for (let i = cells.length - 1; i >= 1; i--) {
       const match = cells[i].match(STATUS_CELL);
       if (match) {
         const status = match[1].toUpperCase();
         acTotal++;
         if (status === "MET") acMet++;
-        found = true;
+        const id = cells[0].match(/AC-\d+/i);
+        if (id) tableIds.add(id[0].toUpperCase());
         break;
       }
     }
     // Row with AC-N but no parseable status is skipped
-    if (!found) continue;
+  }
+
+  // #1073: checklist / bold-prefixed reports (`- [x] **AC-1**: …`,
+  // `- **AC-1**: MET`) carry no table row, so a table-only count reported
+  // `0/1 met` under an AC_MET verdict. A checkbox is the MET signal; without
+  // one the status keyword follows the id. A table row wins on a duplicate id,
+  // and each checklist id is counted once.
+  const listIds = new Set<string>();
+  for (const line of lines) {
+    const item = line.match(
+      /^\s*[-*]\s+(?:\[([xX ])\]\s*)?\*\*(AC-\d+)\b([^\n]*)$/i,
+    );
+    if (!item) continue;
+    const id = item[2].toUpperCase();
+    if (tableIds.has(id) || listIds.has(id)) continue;
+    let met: boolean;
+    if (item[1] !== undefined) {
+      met = item[1].toLowerCase() === "x";
+    } else {
+      const rest = item[3].replace(/^[\s:*.\-\u2014]+/, "");
+      const status = rest.match(STATUS_CELL);
+      if (!status) continue;
+      met = status[1].toUpperCase() === "MET";
+    }
+    listIds.add(id);
+    acTotal++;
+    if (met) acMet++;
   }
 
   if (acTotal === 0) return null;
