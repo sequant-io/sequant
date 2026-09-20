@@ -12,9 +12,10 @@
  *   writers        init, sync, update — each with and without --force. `sync`
  *                  and `update` also run with --dry-run. `init` has no dry-run.
  *   destinations   one representative per ownership policy in
- *                  `OWNERSHIP_RULES` (read through `ownershipPolicy()`, never
- *                  restated), plus `scripts/dev/<x>.sh` on both routes
- *                  (copy: templates dir outside the project; link: a local
+ *                  `OWNERSHIP_RULES`, as landed by #1090 (the matrix-shape test
+ *                  checks each against `ownershipPolicy()`), plus
+ *                  `scripts/dev/<x>.sh` on both routes (copy: templates dir
+ *                  outside the project; link: a local
  *                  `node_modules/sequant/templates/scripts`).
  *   states         absent · sequant-owned (byte-identical) · user-modified ·
  *                  marker + changed body · local symlink · foreign symlink ·
@@ -33,9 +34,10 @@
  *   V  replaced, but the symlink's old target was modified on the way
  *
  * Cells that pin a defect rather than the intended behaviour are listed in
- * `KNOWN_DEFECTS`, and a test asserts that list is exactly the set of cells
- * that break a policy invariant: fixing a defect fails that test until the
- * entry is removed, so the list cannot go stale. The fixes are out of scope
+ * `KNOWN_DEFECTS`, and a test asserts the count of grid cells that break each
+ * policy invariant equals the declared count: fixing a defect changes its
+ * cells, and the counts fail until the entry is updated, so the list cannot go
+ * stale. The fixes are out of scope
  * here (#1090 owns the policy); each defect has its own issue.
  */
 
