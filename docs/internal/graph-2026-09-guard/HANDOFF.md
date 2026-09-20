@@ -1,17 +1,17 @@
 # Handoff — guard-2026-09, wave 2
 
-Wave 1 + #1096 ran 2026-09-20 (record in `issue-graph.md` §Execution record). Seven PRs are open and verified; **nothing merges without the owner's consent per PR.** Merge order: #1113 (#1086, makes the suite hermetic) first, then any order; #1111 before #1117 if both are ready (shared `templates.test.ts`, trial merge clean). Do not merge #1082.
+Wave 1 + #1096 ran and **merged** 2026-09-20 (record in `issue-graph.md` §Execution record; main at `88588262`). All wave-2 blockers are on main. Do not merge #1082.
 
-Paste into a fresh session once the wave-1 PRs it depends on have merged:
+Paste into a fresh session:
 
 ```
 /graph-run
 
 Graph `guard-2026-09`. Plan: `docs/internal/graph-2026-09-guard/PLAN.md` (§5 invariants, §7 D-13..D-18, §8 conventions), graph: `issue-graph.md` (read the wave-1 execution record), Phase 0: `lab-notes-phase0.md`. Base: `origin/main` after the wave-1 merges. Read main via `git show origin/main:<file>`, never the checkout.
 
-## Wave 2 — frontier as of the merges
+## Wave 2 — four nodes, all unblocked on main `88588262`
 
-#1093 (judgment — strong policy flip; blocked by #1104 = PR #1112), #1097 (mechanical; blocked by #1053 = PR #1111 and #1106 = PR #1117), #1069 (mechanical; after #1070 = PR #1118 merges, same `batch-executor.ts`). #1096 is already merged-or-open (PR #1116) so #1087 (wave 3, blocked by #1096) can join this wave once #1116 merges. Every node's `## Release-graph plan — guard-2026-09` section has the file scope.
+#1093 (judgment — strong policy flip; `settle-against-base.sh`, ruleset payload, skill lines ×3 mirrors), #1097 (mechanical; writer state matrix, read-only on the writers), #1069 (mechanical; `rebaseBeforePR` → merge, `batch-executor.ts` call site), #1087 (mechanical, wave 3 pulled forward: codex usage-limit mapping — flip #1096's two `it.fails` cases to `it` and own the AC-3 mutation record, D-17). No shared files among the four except #1093 and nothing else touching skills this wave. Every node's `## Release-graph plan — guard-2026-09` section has the file scope.
 
 ## Runner rules (PLAN §5, §8; constitution "Graph-run rules" incl. the 2026-09-20 additions)
 

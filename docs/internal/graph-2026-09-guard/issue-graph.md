@@ -186,3 +186,5 @@ Trial merges (`git merge-tree --write-tree`) of the three shared-file pairs — 
 
 **Frontier after the owner merges:** #1093 (judgment, needs #1104), #1097 (needs #1053 + #1106), #1069 (needs #1070). #1096 is done, so #1087 (wave 3) unblocks with it.
 
+**Merged 2026-09-20 (owner consent: "merge any whose ACs are met").** Squash order and SHAs: #1113→`a07e1aca`, #1112→`b5088c7c`, #1111→`5c839830`, #1117→`bec13456`, #1114→`08afa29d`, #1116→`40384475`, #1118→`88588262`. Every head re-merged `origin/main` before its merge (CHANGELOG conflicts on every round, resolved by keeping both sides and folding duplicate `###` headings); CI green on each re-merged head; the last head (`918ef86c`) contained all six earlier merges, so its build is the combined proof. Issues #1104/#1086/#1095/#1053/#1106/#1070/#1096 and #1073 closed. Wave 2 is unblocked: #1093, #1097, #1069, and #1087 (wave 3, blocked only by #1096).
+
