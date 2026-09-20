@@ -234,7 +234,19 @@ describe("downstream canary", () => {
     expect(stray).toEqual([]);
 
     const doctor = cli(["doctor", "--skip-issue-check"]);
-    expect(doctor.status, doctor.out).toBe(0);
+    // `doctor` also probes the machine (gh/claude/codex auth), which a CI
+    // runner lacks and no project state can fix. The project-shape checks
+    // must all pass: any failure outside the ambient-tooling set is a defect
+    // (and a nonzero exit with no failure listed is too).
+    const failed = [...doctor.out.matchAll(/^\s*✖ ([^:]+):/gm)].map(
+      (m) => m[1],
+    );
+    const AMBIENT = new Set(["GitHub Auth", "Claude Code CLI", "codex auth"]);
+    expect(
+      failed.filter((name) => !AMBIENT.has(name)),
+      doctor.out,
+    ).toEqual([]);
+    if (failed.length === 0) expect(doctor.status, doctor.out).toBe(0);
   });
 
   it("mcp handshake reports the PR's version despite a stale local install", async () => {
