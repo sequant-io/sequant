@@ -39,6 +39,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 - [Customization](guides/customization.md) — Override templates safely
 - [MCP Integrations](guides/mcp-integrations.md) — Optional MCP server setup
 - [Git Workflows](guides/git-workflows.md) — Worktree and merge workflows
+- [Writing an Agent Driver](guides/writing-an-agent-driver.md) — The driver contract and the conformance suite that enforces it
 
 ### Reference
 

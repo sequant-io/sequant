@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Driver conformance suite (#1096).** `src/lib/workflow/drivers/__tests__/driver-conformance.test.ts` enumerates every registered driver from the registry (`listDriverNames()`) and checks six contract items per driver: commit inside the sandbox, network, typed error mapping, env injection, structured outcome, and skill loading. The Codex probes run the real `codex sandbox` with the driver's own writable roots; the #1087 usage-limit mapping runs as an expected failure until it lands. `docs/guides/writing-an-agent-driver.md` states the contract for new drivers. Gaps in the aider and opencode drivers are tracked in #1115.
+
 ### Changed
 
 - **The exec skill and `CLAUDE.md` now state the `SEQUANT_MUTATION` marker contract (#1104).** `failedTest` must start with the test file path (`<file> > <describe> > <case>`) and the payload must stay flat; `/qa` §6i already enforced both without telling authors, which tripped two of the four gate PRs before 2.16.0. A gate test in `scripts/exec-skill-marker.test.ts` pins the section.

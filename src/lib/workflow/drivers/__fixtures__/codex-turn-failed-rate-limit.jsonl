@@ -1,0 +1,3 @@
+{"type":"thread.started","thread_id":"a1b2c3d4-0000-4000-8000-000000000001"}
+{"type":"turn.started"}
+{"type":"turn.failed","error":{"message":"rate limit exceeded: Rate limit reached for gpt-5-codex on tokens per min (TPM): Limit 30000, Used 30000, Requested 1000. Please try again in 2.4s."}}
