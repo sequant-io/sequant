@@ -7,20 +7,31 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  # The check-run context required by the `main` ruleset (#1093,
+  # scripts/ruleset-main.sh). Two properties of this job are load-bearing and
+  # must not be changed casually:
+  #
+  #   1. The job id is `test`, so the context GitHub reports is exactly `test`
+  #      — the context named in the ruleset payload.
+  #   2. It carries NO `strategy.matrix`. A matrix — even a single-entry one,
+  #      which is what this job had until #1093 — suffixes the context
+  #      (`build (22.x)`). Under `strict_required_status_checks_policy` a
+  #      required context that never reports blocks EVERY merge to `main`, so
+  #      bumping `node-version` under a matrix would brick the branch silently.
+  #
+  # Renaming this job, or adding a matrix to it, requires updating
+  # REQUIRED_CHECK_CONTEXT in scripts/ruleset-main.sh and re-applying the
+  # ruleset by hand.
+  test:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Use Node.js ${{ matrix.node-version }}
+      - name: Use Node.js 22.x
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22.x
           cache: 'npm'
 
       - name: Install dependencies
