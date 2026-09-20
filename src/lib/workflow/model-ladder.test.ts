@@ -966,6 +966,9 @@ function haltCtx(
     } as ExecutionConfig,
     options: { autoDetectPhases: false } as RunOptions,
     services: { logWriter: null, stateManager: null },
+    // #1070: a failing qa verdict now posts a comment; keep this ctx off the
+    // real `gh issue comment` even though no test here runs a qa phase today.
+    postComment: async () => {},
     worktree: { path: "/tmp/worktree-995", branch: "feature/995" },
     snapshotProgressFn,
   } as IssueExecutionContext;

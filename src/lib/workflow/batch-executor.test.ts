@@ -150,7 +150,9 @@ function makeCtx(
       logWriter: null,
       stateManager: null,
     },
-    ...(overrides.postComment ? { postComment: overrides.postComment } : {}),
+    // #1070: a failing qa verdict now posts, so every ctx carries a mocked
+    // poster by default — no fixture can reach the real `gh issue comment`.
+    postComment: overrides.postComment ?? mockPostComment,
   };
 }
 
@@ -607,6 +609,9 @@ describe("runIssueWithLogging — label-based phase shortcuts", () => {
           title: "Loop forward",
           labels: ["bug"],
           config: { qualityLoop: true, maxIterations: 2 },
+          // #1070: AC_NOT_MET now posts a verdict comment; inject so the
+          // test never reaches the real `gh issue comment`.
+          postComment: mockPostComment,
         }),
         phasePauseHandle: handle,
       });
@@ -1829,6 +1834,90 @@ describe("#964: qa-verdict comment on the standard (non-ready-gate) run path", (
       }),
       worktree: { path: "/tmp/wt-967", branch: "feature/967" },
     });
+
+    expect(mockPostComment).not.toHaveBeenCalled();
+  });
+});
+
+describe("#1070: failing qa verdict is posted", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockPostComment.mockResolvedValue(undefined);
+    mockCreatePR.mockReturnValue({
+      attempted: true,
+      success: true,
+      prNumber: 1070,
+      prUrl: "https://example.test/pr/1070",
+    });
+  });
+
+  it("posts AC_NOT_MET verdict with its gaps even though the phase failed", async () => {
+    mockExecutePhase.mockImplementation(async (_i, phase) => {
+      if (phase === "qa") {
+        return {
+          phase: "qa",
+          success: false,
+          durationSeconds: 5,
+          verdict: "AC_NOT_MET",
+          summary: {
+            acMet: 1,
+            acTotal: 3,
+            gaps: ["createSymlink failure return discarded"],
+            suggestions: [],
+          },
+        } as PhaseResult;
+      }
+      return successResult(phase as string);
+    });
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1070,
+        config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+        options: { autoDetectPhases: false },
+        postComment: mockPostComment,
+      }),
+      worktree: { path: "/tmp/wt-1070", branch: "feature/1070" },
+    });
+
+    expect(mockPostComment).toHaveBeenCalledTimes(1);
+    const [issueArg, body] = mockPostComment.mock.calls[0];
+    expect(issueArg).toBe(1070);
+    expect(body).toContain("AC_NOT_MET");
+    expect(body).toContain("createSymlink failure return discarded");
+    expect(body).toMatch(/<!-- SEQUANT_QA_VERDICT: \{"verdict":"AC_NOT_MET"/);
+  });
+
+  it("no verdict posts nothing (unparseable or turn-capped qa)", async () => {
+    for (const [issueNumber, partial] of [
+      [1071, { error: "QA completed without a parseable verdict" }],
+      [1072, { capped: true }],
+    ] as const) {
+      mockExecutePhase.mockImplementation(async (_i, phase) => {
+        if (phase === "qa") {
+          return {
+            phase: "qa",
+            success: false,
+            durationSeconds: 5,
+            ...partial,
+          } as PhaseResult;
+        }
+        return successResult(phase as string);
+      });
+
+      await runIssueWithLogging({
+        ...makeCtx({
+          issueNumber,
+          config: { phases: ["qa"], qualityLoop: false, maxIterations: 1 },
+          options: { autoDetectPhases: false },
+          postComment: mockPostComment,
+        }),
+        worktree: {
+          path: `/tmp/wt-${issueNumber}`,
+          branch: `feature/${issueNumber}`,
+        },
+      });
+    }
 
     expect(mockPostComment).not.toHaveBeenCalled();
   });

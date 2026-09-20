@@ -1761,11 +1761,12 @@ export async function runIssueWithLogging(
       // qa/SKILL.md §9 promises "the orchestrator handles aggregated summary"
       // under SEQUANT_ORCHESTRATOR, but nothing backed that promise — a
       // re-run producing a fresh, different verdict left the stale prior
-      // comment as the only externally-visible one. Gating on
-      // `result.success && result.verdict` also excludes turn-capped and
-      // unparseable-verdict phases (AC-4) without extra bookkeeping, since
-      // both already flow through the `else` branch above.
-      if (phase === "qa" && result.success && result.verdict) {
+      // comment as the only externally-visible one. Gating on `result.verdict`
+      // alone excludes turn-capped and unparseable-verdict phases (AC-4),
+      // since a verdict is only set once one parsed. `result.success` is
+      // deliberately absent (#1070): AC_NOT_MET is a failed phase carrying a
+      // full findings payload, and it is the review that most needs posting.
+      if (phase === "qa" && result.verdict) {
         const verdictDiffBase = worktreePath
           ? resolveDiffBase(worktreePath, baseBranch ?? "main")
           : undefined;
