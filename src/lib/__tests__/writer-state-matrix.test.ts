@@ -314,10 +314,10 @@ const GRID: Record<DestId, Record<StateId, string>> = {
   agentsMd: {
     absent: "T T = = = =",
     owned: "= = = = = =",
-    userModified: "T T = T = =",
-    markerChanged: "T T = T = =",
-    localSymlink: "W W = W = =",
-    foreignSymlink: "W W = W = =",
+    userModified: "= T = T = =",
+    markerChanged: "= T = T = =",
+    localSymlink: "= W = W = =",
+    foreignSymlink: "= W = W = =",
     directory: "= = = = = =",
   },
   mcpJson: {
