@@ -167,3 +167,22 @@ deliberate: #1069 (D-6, a runner-hygiene fix, not a guard) and #1070
   touch` loses the qa skill and `mutation-marker.ts`.
 - **#1106** — re-stamp (w1, mechanical, no blocker). `May touch` per D-9.
 - **G-1, G-2** — filed 2026-09-20 as #1109 and #1110 (the only new issues). All edits above applied the same day; #1073 commented.
+
+## Execution record — wave 1 + #1096 (2026-09-20)
+
+Launched by `/graph-run` from `origin/main` `da9ed6e8`; consent mode stop-at-PR; nothing merged. #1104 first, then #1086/#1095/#1053/#1106/#1070 in one `sequant_run` (concurrency 3 → #1106 and #1070 queued), #1096 on the strong policy via the timed settings flip (verified `--model opus`, restored byte-equal).
+
+| Node | PR | qa verdict as recorded | Runner-verified | Full suite (clean shell) | Runner work beyond the agent |
+|---|---|---|---|---|---|
+| #1104 | #1112 | READY_FOR_MERGE (2nd run; 1st AC_NOT_MET) | AC-1..4 + 3 lint gates; mutation ×2 | 323 files green on `c94e16b6` | exec never pushed; AC-4 named `lint:skills` (nonexistent) → AC edited (D-13); gate test tripped the tautology detector → now calls `parseMutationMarkers` (D-14) |
+| #1086 | #1113 | AC_MET_BUT_NOT_A_PLUS | exact AC-1 cmd with/without scrub: 106 pass / 3 fail | 322 files green | changelog entry; **merge first** |
+| #1053 | #1111 | AC_MET_BUT_NOT_A_PLUS | AC-1..3 | 322 files green | doctor fixture `rmSync`'d `node_modules/sequant` → guarded (D-15) |
+| #1095 | #1114 | AC_MET_BUT_NOT_A_PLUS | AC-1..6, AC-8; scope confined | 326 files green | — |
+| #1106 | #1117 | AC_MET_BUT_NOT_A_PLUS | AC-1, AC-4; hunks disjoint from #1053 | 323 files green | — |
+| #1070 | #1118 | AC_NOT_MET ×3 — **parser artifact**, transcript says READY_FOR_MERGE (#1119) | AC-1, AC-2 cases; 96/96 | 322 files green | `makeCtx` default mocked poster; model-ladder ctx no-op poster (D-16) |
+| #1096 | #1116 | AC_MET_BUT_NOT_A_PLUS (opus) | full file 32 pass / 2 expected fail; codex sandbox probes ran real; AC-1 mutation | 323 files green | exec died on the 30-min wall after a WIP commit; runner finished, PR, changelog, docs index; AC-3 mutation N/A while `it.fails` (D-17) |
+
+Trial merges (`git merge-tree --write-tree`) of the three shared-file pairs — #1053+#1106, #1095+#1070, #1086+#1104 — are clean. New issues: #1115 (aider/opencode driver gaps, filed by the #1096 exec), #1119 (verdict parser first-match). Phase deaths: 3 (two qa, one exec), all the full-suite-under-load wall (lab note → constitution).
+
+**Frontier after the owner merges:** #1093 (judgment, needs #1104), #1097 (needs #1053 + #1106), #1069 (needs #1070). #1096 is done, so #1087 (wave 3) unblocks with it.
+

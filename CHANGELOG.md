@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `fast-check` dev dependency and property/metamorphic tests for `parseAcceptanceCriteria`, `parseQaSummary`, and the `SEQUANT_MUTATION` / `SEQUANT_QA_GAPS` marker parsers (#1095). Set `FC_SEED` to replay a run.
+- **The test suite is hermetic against the orchestrator's environment (#1086).** `vitest.global-setup.ts` scrubs every `SEQUANT_*` variable by prefix before any worker starts, so a phase agent running a test file under `sequant run` sees the same result as a clean shell. Before this, `SEQUANT_ORCHESTRATOR` and `SEQUANT_WORKTREE` turned three unrelated files red inside every exec phase.
 
 ## [2.16.0] - 2026-09-19
 
