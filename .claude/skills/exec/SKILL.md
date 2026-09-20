@@ -1206,9 +1206,10 @@ If any check fails, fix the issues before creating the PR.
 **A red test you did not cause still needs an issue number (#1086).** When a test fails in
 a file your diff never touched, do not write "pre-existing, unrelated" in the PR body and
 move on. First rule out the orchestrator's own env leaking into the suite: under `sequant
-run` every phase has `SEQUANT_ORCHESTRATOR`, `SEQUANT_WORKTREE` and (with relay)
-`SEQUANT_RELAY` set, and the suite is not hermetic against them — re-run the failing file
-with `env -u SEQUANT_ORCHESTRATOR -u SEQUANT_WORKTREE -u SEQUANT_RELAY npx vitest run <file>`;
+run` every phase has `SEQUANT_ORCHESTRATOR`, `SEQUANT_WORKTREE` and other `SEQUANT_*` vars
+set, and the suite is not hermetic against them — re-run the failing file with every one of
+them unset:
+`env $(printenv | grep -o '^SEQUANT_[A-Z_]*' | sed 's/^/-u /') npx vitest run <file>`;
 green means #1086, not your change. Then settle it against base in the same worktree.
 Whatever the cause, the PR body names an issue for it: link the existing one
 (`gh issue list --search "<test name>"`) or file one. Three PRs on 2026-09-10/11 each wrote
