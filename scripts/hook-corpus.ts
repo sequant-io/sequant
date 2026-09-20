@@ -13,7 +13,7 @@
  * Replays run against a pinned git state (see `ReplayState`) because verdicts
  * for commit guards depend on what is staged.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -268,6 +268,32 @@ export function replayCase(
   };
 }
 
+/** Async twin of `replayCase`, so a harvest can replay many commands concurrently. */
+export function replayCaseAsync(
+  hookPath: string,
+  c: Pick<CorpusCase, "command" | "state" | "tool">,
+  env: ReplayEnv,
+): Promise<Verdict> {
+  return new Promise((resolveVerdict) => {
+    const child = spawn("bash", [hookPath], {
+      cwd: env.repos[c.state],
+      env: replayProcessEnv(env),
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (d) => (stderr += d));
+    const timer = setTimeout(() => child.kill("SIGKILL"), 20_000);
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolveVerdict({ exit: code ?? -1, block: extractBlockReason(stderr, env) });
+    });
+    child.stdin.on("error", () => undefined);
+    child.stdin.end(
+      JSON.stringify({ tool_name: c.tool, tool_input: { command: c.command } }),
+    );
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Diff
 // ---------------------------------------------------------------------------
@@ -411,6 +437,8 @@ function stableHash(s: string): number {
   return h >>> 0;
 }
 
+const HARVEST_CONCURRENCY = 8;
+
 export interface HarvestOptions {
   transcripts?: string;
   hookLog?: string;
@@ -418,12 +446,12 @@ export interface HarvestOptions {
   maxAllow?: number;
 }
 
-export function harvest(
+export async function harvest(
   existing: CorpusCase[],
   opts: HarvestOptions,
   hookPath: string,
   env: ReplayEnv,
-): { added: CorpusCase[]; sources: string[] } {
+): Promise<{ added: CorpusCase[]; sources: string[] }> {
   const seen = new Set(existing.map(caseKey));
   const candidates: Array<{ command: string; source: string }> = [];
   const sources: string[] = [];
@@ -454,25 +482,34 @@ export function harvest(
 
   const blocked: CorpusCase[] = [];
   const allowed: CorpusCase[] = [];
-  for (const { command, source } of fresh.values()) {
-    if (source === "transcript" && !GUARD_RELEVANT.test(command)) continue;
-    const c: CorpusCase = {
-      command,
-      tool: "Bash",
-      exit: 0,
-      block: null,
-      source,
-      state: "staged",
-    };
-    const first = replayCase(hookPath, c, env);
-    const second = replayCase(hookPath, c, env);
-    // A verdict that changes between two identical replays depends on time or
-    // locks, not on the command, and would make the snapshot flaky.
-    if (first.exit !== second.exit || first.block !== second.block) continue;
-    const settled = { ...c, exit: first.exit, block: first.block };
-    (first.exit === 0 ? allowed : blocked).push(settled);
-  }
+  const queue = [...fresh.values()].filter(
+    ({ command, source }) => source !== "transcript" || GUARD_RELEVANT.test(command),
+  );
+  const worker = async (): Promise<void> => {
+    for (let item = queue.shift(); item; item = queue.shift()) {
+      const c: CorpusCase = {
+        command: item.command,
+        tool: "Bash",
+        exit: 0,
+        block: null,
+        source: item.source,
+        state: "staged",
+      };
+      const first = await replayCaseAsync(hookPath, c, env);
+      const second = await replayCaseAsync(hookPath, c, env);
+      // A verdict that changes between two identical replays depends on time or
+      // locks, not on the command, and would make the snapshot flaky.
+      if (first.exit !== second.exit || first.block !== second.block) continue;
+      (first.exit === 0 ? allowed : blocked).push({
+        ...c,
+        exit: first.exit,
+        block: first.block,
+      });
+    }
+  };
+  await Promise.all(Array.from({ length: HARVEST_CONCURRENCY }, worker));
 
+  blocked.sort((a, b) => a.command.localeCompare(b.command));
   allowed.sort((a, b) => stableHash(a.command) - stableHash(b.command));
   const kept = allowed.slice(0, opts.maxAllow ?? 150);
   return { added: [...blocked, ...kept], sources };
@@ -487,7 +524,7 @@ function flagValue(args: string[], flag: string): string | undefined {
   return i >= 0 ? args[i + 1] : undefined;
 }
 
-export function main(args: string[]): number {
+export async function main(args: string[]): Promise<number> {
   const hookPath = join(REPO_ROOT, "hooks", "pre-tool.sh");
 
   if (args.includes("--diff")) {
@@ -514,7 +551,7 @@ export function main(args: string[]): number {
     try {
       const existing = loadCorpus();
       const maxAllow = flagValue(args, "--max-allow");
-      const { added, sources } = harvest(
+      const { added, sources } = await harvest(
         existing,
         {
           transcripts: flagValue(args, "--transcripts"),
@@ -545,5 +582,5 @@ if (
   process.argv[1] &&
   resolve(process.argv[1]) === fileURLToPath(import.meta.url)
 ) {
-  process.exit(main(process.argv.slice(2)));
+  process.exit(await main(process.argv.slice(2)));
 }
