@@ -94,6 +94,7 @@ interface Writer {
   family: "init" | "sync" | "update";
   force: boolean;
   dryRun: boolean;
+  agent?: string;
 }
 
 function writer(
@@ -270,15 +271,188 @@ function destTitle(d: Dest): string {
 // Expectations
 // ---------------------------------------------------------------------------
 
-// Filled from observation and reviewed row by row; see the header for letters.
-const GRID: Record<DestId, Record<StateId, string>> = {} as never;
+// Filled from observation and reviewed row by row; letters are in the header.
+const GRID: Record<DestId, Record<StateId, string>> = {
+  settings: {
+    absent: "T T T T T T",
+    owned: "= = = = = =",
+    userModified: "T T T T T T",
+    markerChanged: "T T T T T T",
+    localSymlink: "W W W W W W",
+    foreignSymlink: "W W W W W W",
+    directory: "X X X X X X",
+  },
+  skill: {
+    absent: "T T T T T T",
+    owned: "= = = = = =",
+    userModified: "T T T T T T",
+    markerChanged: "T T T T T T",
+    localSymlink: "T T T T W W",
+    foreignSymlink: "T T T T W W",
+    directory: "X X X X X X",
+  },
+  constitution: {
+    absent: "T T T T T T",
+    owned: "= = = = = =",
+    userModified: "= = = T = T",
+    markerChanged: "= = = T = T",
+    localSymlink: "= = = T = W",
+    foreignSymlink: "= = = T = W",
+    directory: "X X X X X X",
+  },
+  sequantSettings: {
+    absent: "T T = = = =",
+    owned: "= = = = = =",
+    userModified: "= T = = = =",
+    markerChanged: "= T = = = =",
+    localSymlink: "= W = = = =",
+    foreignSymlink: "= W = = = =",
+    directory: "X X = = = =",
+  },
+  agentsMd: {
+    absent: "T T = = = =",
+    owned: "= = = = = =",
+    userModified: "T T = T = =",
+    markerChanged: "T T = T = =",
+    localSymlink: "W W = W = =",
+    foreignSymlink: "W W = W = =",
+    directory: "= = = = = =",
+  },
+  mcpJson: {
+    absent: "T T = = = =",
+    owned: "= = = = = =",
+    userModified: "M M = = = =",
+    markerChanged: "= = M M M M",
+    localSymlink: "M M = = = =",
+    foreignSymlink: "M M = = = =",
+    directory: "X X = = = =",
+  },
+  gitignore: {
+    absent: "T T = = = =",
+    owned: "= = = = = =",
+    userModified: "M M = = = =",
+    markerChanged: "= = = = = =",
+    localSymlink: "M M = = = =",
+    foreignSymlink: "M M = = = =",
+    directory: "X X = = = =",
+  },
+  scriptsCopy: {
+    absent: "T T T T T T",
+    owned: "= = = = = =",
+    userModified: "= T T T T T",
+    markerChanged: "= T T T T T",
+    localSymlink: "T T T T W W",
+    foreignSymlink: "T T T T W W",
+    directory: "= X X X X X",
+  },
+  scriptsLink: {
+    absent: "L L L L T T",
+    owned: "= = = = = =",
+    userModified: "= L L L T T",
+    markerChanged: "= L L L T T",
+    localSymlink: "L L L L W W",
+    foreignSymlink: "L L L L W W",
+    directory: "= X X X X X",
+  },
+};
 
-// Printed decision for [sync, sync --force, update, update --force]:
+// Printed decision for [sync, sync --force, update, update --force], the same
+// for the dry-run and the apply run:
 //   o overwrite · p preserved · m merged · - nothing printed for this path
-const DECISIONS: Record<DestId, Record<StateId, string>> = {} as never;
+const DECISIONS: Record<DestId, Record<StateId, string>> = {
+  settings: {
+    absent: "o o o o",
+    owned: "- - - -",
+    userModified: "o o o o",
+    markerChanged: "o o o o",
+    localSymlink: "o o o o",
+    foreignSymlink: "o o o o",
+    directory: "- - - -",
+  },
+  skill: {
+    absent: "o o o o",
+    owned: "- - - -",
+    userModified: "o o o o",
+    markerChanged: "o o o o",
+    localSymlink: "o o o o",
+    foreignSymlink: "o o o o",
+    directory: "- - - -",
+  },
+  constitution: {
+    absent: "o o o o",
+    owned: "- - - -",
+    userModified: "p o - o",
+    markerChanged: "p o - o",
+    localSymlink: "p o - o",
+    foreignSymlink: "p o - o",
+    directory: "- - - -",
+  },
+  sequantSettings: {
+    absent: "- - - -",
+    owned: "- - - -",
+    userModified: "- - - -",
+    markerChanged: "- - - -",
+    localSymlink: "- - - -",
+    foreignSymlink: "- - - -",
+    directory: "- - - -",
+  },
+  agentsMd: {
+    absent: "- - - -",
+    owned: "o o - -",
+    userModified: "p o - -",
+    markerChanged: "p o - -",
+    localSymlink: "p o - -",
+    foreignSymlink: "p o - -",
+    directory: "- - - -",
+  },
+  mcpJson: {
+    absent: "- - - -",
+    owned: "- - - -",
+    userModified: "- - - -",
+    markerChanged: "m m m m",
+    localSymlink: "- - - -",
+    foreignSymlink: "- - - -",
+    directory: "- - - -",
+  },
+  gitignore: {
+    absent: "- - - -",
+    owned: "- - - -",
+    userModified: "- - - -",
+    markerChanged: "- - - -",
+    localSymlink: "- - - -",
+    foreignSymlink: "- - - -",
+    directory: "- - - -",
+  },
+  scriptsCopy: {
+    absent: "o o o o",
+    owned: "- - - -",
+    userModified: "o o o o",
+    markerChanged: "o o o o",
+    localSymlink: "o o o o",
+    foreignSymlink: "o o o o",
+    directory: "- - - -",
+  },
+  scriptsLink: {
+    absent: "o o o o",
+    owned: "- - - -",
+    userModified: "o o o o",
+    markerChanged: "o o o o",
+    localSymlink: "o o o o",
+    foreignSymlink: "o o o o",
+    directory: "- - - -",
+  },
+};
 
-/** Cells whose observed behaviour breaks a policy invariant; issue per entry. */
-const KNOWN_DEFECTS: Record<string, string> = {};
+/**
+ * Invariant violations that are pinned, not endorsed. Each is a defect in a
+ * writer, tracked in its own issue; `cells` is how many grid cells exhibit it.
+ * The two ownership invariants read the policy through `ownershipPolicy()`.
+ */
+const KNOWN_DEFECTS: Record<string, { issue: string; cells: number }> = {
+  "symlink-written-through-at-sequant-owned": { issue: "#1122", cells: 24 },
+  "user-owned-not-preserved-without-force": { issue: "#1123", cells: 4 },
+  "directory-crashes-writer": { issue: "#1124", cells: 34 },
+};
 
 // ---------------------------------------------------------------------------
 // Harness
@@ -338,7 +512,12 @@ async function run(cwd: string, w: Writer): Promise<RunResult> {
   process.chdir(cwd);
   try {
     if (w.family === "init") {
-      await initCommand({ yes: true, skipSetup: true, force: w.force });
+      await initCommand({
+        yes: true,
+        skipSetup: true,
+        force: w.force,
+        agent: w.agent,
+      });
     } else if (w.family === "sync") {
       await syncCommand({ dryRun: w.dryRun, force: w.force });
     } else {
@@ -582,52 +761,374 @@ afterAll(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Generation (temporary)
+// Tests
 // ---------------------------------------------------------------------------
 
-if (process.env.WRITER_MATRIX_DUMP) {
-  it("dump", async () => {
-    const grid: string[] = [];
-    const dec: string[] = [];
-    for (const dest of DESTS) {
-      for (const s of STATES) {
-        const codes: string[] = [];
-        for (const w of APPLY_WRITERS) {
-          const cell = prepare(dest, s.id);
-          const r = await run(cell.dir, w);
-          codes.push(classify(dest, cell, snap(cell.path), r.threw));
-          dispose(cell);
-        }
-        grid.push(`${dest.id} ${s.id} ${codes.join(" ")}`);
-        const ds: string[] = [];
-        for (const w of PAIRED_WRITERS) {
-          const cell = prepare(dest, s.id);
-          const dry = await run(cell.dir, { ...w, dryRun: true });
-          const app = await run(cell.dir, w);
-          ds.push(
-            `${printedDecision(dry.lines, dest.path)}${printedDecision(app.lines, dest.path)}`,
-          );
-          dispose(cell);
-        }
-        dec.push(`${dest.id} ${s.id} ${ds.join(" ")}`);
-      }
-    }
-    writeFileSync(
-      process.env.WRITER_MATRIX_DUMP as string,
-      grid.join("\n") + "\n\n" + dec.join("\n"),
-    );
-  }, 900_000);
+const LETTERS = new Set(["=", "T", "M", "L", "W", "X", "V"]);
+
+function row(
+  grid: Record<DestId, Record<StateId, string>>,
+  d: Dest,
+  s: StateId,
+): string[] {
+  return grid[d.id][s].split(" ");
 }
 
-describe("placeholder", () => {
-  it("has destinations", () => {
-    expect(DESTS.length).toBeGreaterThan(0);
-    expect(destOf("settings").id).toBe("settings");
-    expect(destTitle(DESTS[0])).toContain("sequant-owned");
-    expect(CELL_TIMEOUT_MS).toBeGreaterThan(0);
-    expect(GRID).toBeDefined();
-    expect(DECISIONS).toBeDefined();
-    expect(KNOWN_DEFECTS).toBeDefined();
-    expect(PAIRED_WRITERS.length).toBe(4);
+describe("matrix shape", () => {
+  it("uses the ownership policies #1090 landed, one destination per policy", () => {
+    const policies = Object.fromEntries(
+      DESTS.map((d) => [d.id, ownershipPolicy(d.path)]),
+    );
+    expect(policies).toEqual({
+      settings: "sequant-owned",
+      skill: "sequant-owned",
+      constitution: "user-owned",
+      sequantSettings: "user-owned",
+      agentsMd: "user-owned",
+      mcpJson: "merge",
+      gitignore: "merge",
+      scriptsCopy: "sequant-owned",
+      scriptsLink: "sequant-owned",
+    });
   });
+
+  it("has a grid entry for every destination, state and writer", () => {
+    let cells = 0;
+    for (const d of DESTS) {
+      for (const s of STATES) {
+        const letters = row(GRID, d, s.id);
+        expect(letters).toHaveLength(APPLY_WRITERS.length);
+        for (const l of letters) expect(LETTERS.has(l)).toBe(true);
+        expect(row(DECISIONS, d, s.id)).toHaveLength(PAIRED_WRITERS.length);
+        cells += letters.length;
+      }
+    }
+    expect(cells).toBe(DESTS.length * STATES.length * APPLY_WRITERS.length);
+  });
+});
+
+describe("writer × state: post-state", () => {
+  for (const dest of DESTS) {
+    describe(destTitle(dest), () => {
+      for (const state of STATES) {
+        describe(state.label, () => {
+          APPLY_WRITERS.forEach((w, col) => {
+            it(
+              `${w.id} → ${row(GRID, dest, state.id)[col]}`,
+              async () => {
+                const cell = prepare(dest, state.id);
+                try {
+                  const result = await run(cell.dir, w);
+                  const after = snap(cell.path);
+                  expect(classify(dest, cell, after, result.threw)).toBe(
+                    row(GRID, dest, state.id)[col],
+                  );
+                  // The writer's own parity tripwire: sync prints this when the
+                  // write path preserved a file the preview never predicted.
+                  expect(result.lines.join("\n")).not.toContain(
+                    "please report this",
+                  );
+                } finally {
+                  dispose(cell);
+                }
+              },
+              CELL_TIMEOUT_MS,
+            );
+          });
+        });
+      }
+    });
+  }
+});
+
+describe("writer × state: dry-run matches apply", () => {
+  for (const dest of DESTS) {
+    describe(destTitle(dest), () => {
+      for (const state of STATES) {
+        describe(state.label, () => {
+          PAIRED_WRITERS.forEach((w, col) => {
+            it(
+              `dry-run matches apply: ${w.id} → ${row(DECISIONS, dest, state.id)[col]}`,
+              async () => {
+                const cell = prepare(dest, state.id);
+                try {
+                  const expected = row(DECISIONS, dest, state.id)[col];
+                  const dry = await run(cell.dir, { ...w, dryRun: true });
+                  // A preview writes nothing, not even through a symlink.
+                  expect(snap(cell.path)).toEqual(cell.before);
+
+                  const apply = await run(cell.dir, w);
+                  const dryVerb = printedDecision(dry.lines, dest.path);
+                  const applyVerb = printedDecision(apply.lines, dest.path);
+
+                  expect(dry.threw === null).toBe(apply.threw === null);
+                  expect(dryVerb).toBe(applyVerb);
+                  expect(dryVerb).toBe(expected);
+
+                  // The verb must describe what the write did.
+                  const code = classify(
+                    dest,
+                    cell,
+                    snap(cell.path),
+                    apply.threw,
+                  );
+                  if (applyVerb === "p") expect(code).toBe("=");
+                  if (applyVerb === "m") expect(code).toBe("M");
+                } finally {
+                  dispose(cell);
+                }
+              },
+              CELL_TIMEOUT_MS,
+            );
+          });
+        });
+      }
+    });
+  }
+});
+
+describe("policy invariants over the grid", () => {
+  const PRESERVED_STATES: StateId[] = [
+    "userModified",
+    "markerChanged",
+    "localSymlink",
+    "foreignSymlink",
+  ];
+
+  function violations(): Record<string, number> {
+    const counts: Record<string, number> = {
+      "user-owned-not-preserved-without-force": 0,
+      "symlink-written-through-at-sequant-owned": 0,
+      "directory-crashes-writer": 0,
+    };
+    for (const d of DESTS) {
+      const policy = ownershipPolicy(d.path);
+      for (const s of STATES) {
+        row(GRID, d, s.id).forEach((letter, col) => {
+          const force = APPLY_WRITERS[col].force;
+          if (
+            policy === "user-owned" &&
+            !force &&
+            PRESERVED_STATES.includes(s.id) &&
+            letter !== "="
+          ) {
+            counts["user-owned-not-preserved-without-force"]++;
+          }
+          if (
+            policy === "sequant-owned" &&
+            (s.id === "localSymlink" || s.id === "foreignSymlink") &&
+            (letter === "W" || letter === "V")
+          ) {
+            counts["symlink-written-through-at-sequant-owned"]++;
+          }
+          if (s.id === "directory" && letter === "X") {
+            counts["directory-crashes-writer"]++;
+          }
+        });
+      }
+    }
+    return counts;
+  }
+
+  it("the only cells that break an ownership invariant are the tracked defects", () => {
+    const expected = Object.fromEntries(
+      Object.entries(KNOWN_DEFECTS).map(([k, v]) => [k, v.cells]),
+    );
+    expect(violations()).toEqual(expected);
+  });
+
+  it("every tracked defect names an open issue", () => {
+    for (const v of Object.values(KNOWN_DEFECTS)) {
+      expect(v.issue).toMatch(/^#\d+$/);
+    }
+  });
+
+  it("never lets a merge destination lose the user's content", () => {
+    for (const d of DESTS.filter((x) => ownershipPolicy(x.path) === "merge")) {
+      for (const s of [
+        "userModified",
+        "localSymlink",
+        "foreignSymlink",
+      ] as const) {
+        for (const letter of row(GRID, d, s)) {
+          expect(["=", "M"]).toContain(letter);
+        }
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Named cells: the bugs that motivated the matrix
+// ---------------------------------------------------------------------------
+
+describe("#1053: foreign symlink in copy mode", () => {
+  const dest = destOf("scriptsCopy");
+
+  for (const w of [
+    writer("init", false),
+    writer("init", true),
+    writer("sync", false),
+    writer("sync", true),
+  ]) {
+    it(
+      `${w.id}: a foreign symlink at scripts/dev/<x>.sh ends as a regular file with template content`,
+      async () => {
+        const cell = prepare(dest, "foreignSymlink");
+        try {
+          expect(cell.before.kind).toBe("symlink");
+          const result = await run(cell.dir, w);
+          expect(result.threw).toBeNull();
+
+          const st = lstatSync(cell.path);
+          expect(st.isSymbolicLink()).toBe(false);
+          expect(st.isFile()).toBe(true);
+          expect(readFileSync(cell.path, "utf-8")).toBe(
+            readFileSync(
+              join(TEMPLATES_DIR, "scripts/new-feature.sh"),
+              "utf-8",
+            ),
+          );
+          // What the link pointed at (an npx cache, a sibling checkout) is untouched.
+          expect(readFileSync(join(cell.foreign, "target"), "utf-8")).toBe(
+            dest.userModified,
+          );
+        } finally {
+          dispose(cell);
+        }
+      },
+      CELL_TIMEOUT_MS,
+    );
+  }
+});
+
+describe("#1071: init on initialized repo", () => {
+  it(
+    "init on initialized repo: --agent codex preserves every tuned key and sets only run.agent",
+    async () => {
+      const tuned = {
+        version: "1.0",
+        run: {
+          timeout: 999,
+          concurrency: 7,
+          sequential: true,
+          phases: ["spec", "exec", "qa"],
+          modelRoles: { plan: "opus", build: "sonnet" },
+        },
+        scopeAssessment: { enabled: false, tuned: [1, 2, 3] },
+        customBlock: { keep: "me" },
+      };
+      const cell = prepare(destOf("sequantSettings"), "owned");
+      try {
+        const settingsPath = join(cell.dir, ".sequant/settings.json");
+        writeFileSync(settingsPath, JSON.stringify(tuned, null, 2));
+
+        const result = await run(cell.dir, {
+          id: "init --agent codex",
+          family: "init",
+          force: false,
+          dryRun: false,
+          agent: "codex",
+        });
+        expect(result.threw).toBeNull();
+
+        expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({
+          ...tuned,
+          run: { ...tuned.run, agent: "codex" },
+        });
+        expect(result.lines.join("\n")).toContain(
+          "Preserved existing .sequant/settings.json (updated only run.agent)",
+        );
+      } finally {
+        dispose(cell);
+      }
+    },
+    CELL_TIMEOUT_MS,
+  );
+});
+
+describe("#1078: settings.local.json survives", () => {
+  const LOCAL_SETTINGS = JSON.stringify(
+    {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash",
+            hooks: [
+              {
+                type: "command",
+                command: "$CLAUDE_PROJECT_DIR/.claude/hooks/mine.sh",
+              },
+            ],
+          },
+        ],
+      },
+      permissions: { allow: ["Bash(npm test)"] },
+    },
+    null,
+    2,
+  );
+
+  function project(): Cell {
+    const cell = prepare(destOf("settings"), "userModified");
+    writeFileSync(
+      join(cell.dir, ".claude/settings.local.json"),
+      LOCAL_SETTINGS,
+    );
+    return cell;
+  }
+
+  for (const w of [
+    writer("sync", false),
+    writer("sync", true),
+    writer("update", false),
+    writer("update", true),
+  ]) {
+    it(
+      `settings.local.json survives ${w.id}; settings.json is overwritten with the template`,
+      async () => {
+        const cell = project();
+        try {
+          const result = await run(cell.dir, w);
+          expect(result.threw).toBeNull();
+
+          expect(
+            readFileSync(
+              join(cell.dir, ".claude/settings.local.json"),
+              "utf-8",
+            ),
+          ).toBe(LOCAL_SETTINGS);
+          expect(readFileSync(cell.path, "utf-8")).toBe(ownedBytes.settings);
+        } finally {
+          dispose(cell);
+        }
+      },
+      CELL_TIMEOUT_MS,
+    );
+  }
+
+  it(
+    "settings.local.json survives sync --dry-run, which lists .claude/settings.json as overwrite",
+    async () => {
+      const cell = project();
+      try {
+        const result = await run(cell.dir, writer("sync", false, true));
+        expect(result.threw).toBeNull();
+
+        expect(printedDecision(result.lines, ".claude/settings.json")).toBe(
+          "o",
+        );
+        expect(
+          printedDecision(result.lines, ".claude/settings.local.json"),
+        ).toBe("-");
+        expect(
+          readFileSync(join(cell.dir, ".claude/settings.local.json"), "utf-8"),
+        ).toBe(LOCAL_SETTINGS);
+        expect(snap(cell.path)).toEqual(cell.before);
+      } finally {
+        dispose(cell);
+      }
+    },
+    CELL_TIMEOUT_MS,
+  );
 });
