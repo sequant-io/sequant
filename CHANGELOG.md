@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Writer state-matrix tests (#1097).** `src/lib/__tests__/writer-state-matrix.test.ts` runs `init`, `sync` and `update` (each with and without `--force`, plus `--dry-run` for the latter two) against nine destinations in seven starting states (absent, sequant-owned, user-modified, marker + changed body, local symlink, foreign symlink, directory) on a real temp project, and asserts every dry-run prints the decision its apply run acts on. It pins three writer defects instead of fixing them: symlink write-through (#1122), `init` replacing a user-modified `AGENTS.md` (#1123), and a raw `EISDIR` crash on a directory at a template path (#1124).
+
 - **Driver conformance suite (#1096).** `src/lib/workflow/drivers/__tests__/driver-conformance.test.ts` enumerates every registered driver from the registry (`listDriverNames()`) and checks six contract items per driver: commit inside the sandbox, network, typed error mapping, env injection, structured outcome, and skill loading. The Codex probes run the real `codex sandbox` with the driver's own writable roots; the #1087 usage-limit mapping runs as an expected failure until it lands. `docs/guides/writing-an-agent-driver.md` states the contract for new drivers. Gaps in the aider and opencode drivers are tracked in #1115.
 
 
