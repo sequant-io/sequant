@@ -1428,6 +1428,23 @@ describe("pre-PR rebase", () => {
           signal: null,
           output: [],
         })
+        // Mock upstream probe (none) and pre-op HEAD capture (#1069)
+        .mockReturnValueOnce({
+          status: 128,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("abc123\n"),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
         // Mock rebase (conflict)
         .mockReturnValueOnce({
           status: 1,
@@ -1460,6 +1477,23 @@ describe("pre-PR rebase", () => {
         .mockReturnValueOnce({
           status: 0,
           stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        // Mock upstream probe (none) and pre-op HEAD capture (#1069)
+        .mockReturnValueOnce({
+          status: 128,
+          stdout: Buffer.from(""),
+          stderr: Buffer.from(""),
+          pid: 1234,
+          signal: null,
+          output: [],
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: Buffer.from("abc123\n"),
           stderr: Buffer.from(""),
           pid: 1234,
           signal: null,

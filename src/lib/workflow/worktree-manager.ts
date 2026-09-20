@@ -58,6 +58,8 @@ export interface RebaseResult {
   reinstalled: boolean;
   /** Error message if rebase failed */
   error?: string;
+  /** How the base branch was brought in: merge (pushed branch) or rebase (#1069) */
+  strategy?: "merge" | "rebase";
 }
 
 /**
@@ -1404,6 +1406,30 @@ export function rebaseOntoLocalBranch(
 }
 
 /**
+ * True iff the worktree's branch has been pushed: it has an upstream that is
+ * not the base ref. A fresh `git worktree add -b <branch> origin/main` sets the
+ * upstream to `origin/main` for a never-pushed branch, so a bare `@{u}` check
+ * would merge on every first run (#1069).
+ */
+function branchIsPushed(worktreePath: string, baseRef: string): boolean {
+  const upstream = spawnSync(
+    "git",
+    [
+      "-C",
+      worktreePath,
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{u}",
+    ],
+    { stdio: "pipe" },
+  );
+  if (upstream.status !== 0) return false;
+  const name = upstream.stdout?.toString().trim();
+  return !!name && name !== baseRef;
+}
+
+/**
  * Rebase the worktree branch onto the base branch before PR creation.
  * This ensures the branch is up-to-date and prevents lockfile drift.
  *
@@ -1447,34 +1473,47 @@ export function rebaseBeforePR(
     // Continue anyway - might work with local state
   }
 
-  // Perform the rebase
-  const rebaseResult = spawnSync(
+  // #1069: rebasing a branch that exists on the remote rewrites pushed SHAs and
+  // can only be landed by force-push. Merge instead; rebase only unpushed work.
+  const pushed = branchIsPushed(worktreePath, baseRef);
+  const strategy = pushed ? "merge" : "rebase";
+  const verb = pushed ? "Merge" : "Rebase";
+  const preOpHead = spawnSync(
     "git",
-    ["-C", worktreePath, "rebase", baseRef],
+    ["-C", worktreePath, "rev-parse", "HEAD"],
+    {
+      stdio: "pipe",
+    },
+  )
+    .stdout?.toString()
+    .trim();
+
+  const opResult = spawnSync(
+    "git",
+    pushed
+      ? ["-C", worktreePath, "merge", "--no-edit", baseRef]
+      : ["-C", worktreePath, "rebase", baseRef],
     { stdio: "pipe" },
   );
 
-  if (rebaseResult.status !== 0) {
-    const rebaseError = rebaseResult.stderr.toString();
+  if (opResult.status !== 0) {
+    const opError = `${opResult.stderr.toString()}${opResult.stdout?.toString() ?? ""}`;
 
     // Check if it's a conflict
-    if (
-      rebaseError.includes("CONFLICT") ||
-      rebaseError.includes("could not apply")
-    ) {
+    if (opError.includes("CONFLICT") || opError.includes("could not apply")) {
       console.log(
         chalk.yellow(
-          `    !  Rebase conflict detected. Aborting rebase and keeping original branch state.`,
+          `    !  ${verb} conflict detected. Aborting ${strategy} and keeping original branch state.`,
         ),
       );
       console.log(
         chalk.yellow(
-          `    ℹ️  PR will be created without rebase. Manual rebase may be required before merge.`,
+          `    ℹ️  PR will be created without ${strategy}. Manual ${strategy} may be required before merge.`,
         ),
       );
 
-      // Abort the rebase to restore branch state
-      spawnSync("git", ["-C", worktreePath, "rebase", "--abort"], {
+      // Abort to restore branch state
+      spawnSync("git", ["-C", worktreePath, strategy, "--abort"], {
         stdio: "pipe",
       });
 
@@ -1482,10 +1521,18 @@ export function rebaseBeforePR(
         performed: true,
         success: false,
         reinstalled: false,
-        error: "Rebase conflict - manual resolution required",
+        strategy,
+        error: `${verb} conflict - manual resolution required`,
       };
     } else {
-      console.log(chalk.yellow(`    !  Rebase failed: ${rebaseError.trim()}`));
+      console.log(chalk.yellow(`    !  ${verb} failed: ${opError.trim()}`));
+      // A merge that fails after staging (e.g. no git identity) leaves
+      // MERGE_HEAD set; abort so createPR never runs against a mid-merge tree.
+      if (pushed) {
+        spawnSync("git", ["-C", worktreePath, "merge", "--abort"], {
+          stdio: "pipe",
+        });
+      }
       console.log(
         chalk.yellow(`    ℹ️  Continuing with branch in its original state.`),
       );
@@ -1494,24 +1541,34 @@ export function rebaseBeforePR(
         performed: true,
         success: false,
         reinstalled: false,
-        error: rebaseError.trim(),
+        strategy,
+        error: opError.trim(),
       };
     }
   }
 
-  console.log(chalk.green(`    ✔ Branch rebased onto ${baseRef}`));
+  console.log(
+    chalk.green(
+      pushed
+        ? `    ✔ Branch merged ${baseRef}`
+        : `    ✔ Branch rebased onto ${baseRef}`,
+    ),
+  );
 
   // Check if lockfile changed and reinstall if needed
+  // A merge does not reliably set ORIG_HEAD, so diff from the captured HEAD.
   const reinstalled = reinstallIfLockfileChanged(
     worktreePath,
     packageManager,
     verbose,
+    preOpHead || undefined,
   );
 
   return {
     performed: true,
     success: true,
     reinstalled,
+    strategy,
   };
 }
 

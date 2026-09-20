@@ -1311,11 +1311,11 @@ Perform a code review focusing on:
 
 See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps.
 
-### 2a. Build Verification (When Build Fails)
+### 2a. Build & Red-Test Verification (When the build fails or a test is red)
 
-**When to apply:** `npm run build` fails on the feature branch.
+**When to apply:** `npm run build` fails on the feature branch, OR the PR body describes any test failure as "pre-existing" / "unrelated to this diff".
 
-**Purpose:** Distinguish between pre-existing build failures (already on main) and regressions introduced by this PR.
+**Purpose:** Distinguish between pre-existing failures (already on main) and regressions introduced by this PR — and require that the distinction be *shown*, not asserted.
 
 **Detection:**
 ```bash
@@ -1346,9 +1346,35 @@ The quality-checks.sh script includes `run_build_with_verification()` which:
 | Build Verification Result | Verdict Impact |
 |---------------------------|----------------|
 | Regression detected | `AC_NOT_MET` - must fix before merge |
-| Pre-existing failure | No impact - document it **with a linked issue** (find one or file one; #1086 went a week unfiled as "pre-existing, unrelated" in three PRs) and proceed |
+| Pre-existing failure | No impact **once settled** - document it with a linked issue (find one or file one; #1086 went a week unfiled as "pre-existing, unrelated" in three PRs) and attach the settlement block below |
 | Unknown (different errors) | `AC_MET_BUT_NOT_A_PLUS` - manual review |
 | Build passes | No impact |
+
+**Pre-existing claims must be settled against base (#1093):**
+
+A "pre-existing failure, unrelated to this diff" claim is unverifiable from the
+claim alone. The mechanical proof is the same test's result at the base commit,
+produced in the same worktree by `scripts/settle-against-base.sh <test-file>` and
+pasted into the PR body as its `### Settled against base` block.
+
+Set `settle_evidence_status` from what the PR body actually contains:
+
+| Condition | `settle_evidence_status` |
+|-----------|--------------------------|
+| The PR body describes no failure as pre-existing/unrelated | `N/A` |
+| Every such claim has a `### Settled against base` block naming that test, and the block's base result supports the claim | `Backed` |
+| Any such claim has no block, or the block's base result contradicts it (green at base, or the test file is absent at base) | `Unbacked` |
+
+When `settle_evidence_status` is `Unbacked`, floor the verdict at
+`AC_MET_BUT_NOT_A_PLUS` and name each unsettled test. This floor is enforced by
+§7 step 4's `settle_evidence_status == "Unbacked"` branch — the status is a real
+§7 gate, not prose. Do not accept the claim on the strength of the author's
+description of it; three PRs on 2026-09-10/11 carried the identical sentence for
+the same three tests and all three were wrong about what it meant.
+
+A block whose base result reads `ABSENT AT BASE` is *not* support for a
+pre-existing claim — it means the test is new in this diff, so its failure
+belongs to this diff.
 
 **Output Format:**
 
@@ -2627,6 +2653,7 @@ Provide an overall verdict:
    - declared_evidence_status = status from Section 6h (Complete/Incomplete/N/A) — REQUIRED when any AC declares evidence naming a runnable command, `N/A` otherwise
    - mutation_verification_status = status from Section 6i (Verified/Missing/Failed/Not-Applicable) — REQUIRED when any AC is a gate-test AC per `isGateTestEvidence`, `Not-Applicable` otherwise
    - cli_registration_status = status from Section 2h (Passed/Failed/N/A) — REQUIRED when option interfaces are modified, `N/A` otherwise; omitted in Simple Fix mode along with the rest of §2h
+   - settle_evidence_status = status from Section 2a (Backed/Unbacked/N/A) — REQUIRED whenever the PR body describes any test failure as pre-existing or unrelated to the diff, `N/A` otherwise
    - script_verification_status = status from Section 11 (Verified/Overridden/Not Verified/Not Required) — REQUIRED when `scripts/` or `templates/scripts/` files are modified, `Not Required` otherwise
    - changelog_required = true IFF Section 10a's `CHANGELOG.md` exists AND Section 10a's `user_facing` count is >0 (single source of truth — see §10a for the conventional-commit detection regex, which accepts unscoped, scoped, and breaking variants of `feat`/`fix`/`perf`/`refactor`/`docs`); false otherwise
    - changelog_missing = true IFF `changelog_required` AND Section 10a's `[Unreleased]` entry check finds no entry for the issue/PR; false otherwise
@@ -2672,6 +2699,8 @@ Provide an overall verdict:
        → AC_MET_BUT_NOT_A_PLUS (a declared `Evidence:` command was not executed/verified for one or more ACs - see Section 6h; the #853 "marked MET by construction" path)
    - ELSE IF mutation_verification_status == "Missing":
        → AC_MET_BUT_NOT_A_PLUS (a gate-test AC has no recorded `SEQUANT_MUTATION` marker - see Section 6i; the honor-system-prose gap #939 closes)
+   - ELSE IF settle_evidence_status == "Unbacked":
+       → AC_MET_BUT_NOT_A_PLUS (a test failure is called "pre-existing"/"unrelated" with no `### Settled against base` block backing it, or with a block that contradicts it — see Section 2a and #1093. Name each unsettled test; `scripts/settle-against-base.sh <test-file>` produces the block.)
    - ELSE IF script_verification_status == "Not Verified":
        → AC_MET_BUT_NOT_A_PLUS (`scripts/` changed with no `/verify` evidence and no approved §11a override — code review and unit tests miss integration failures; see Section 11)
    - ELSE IF changelog_required AND changelog_missing:
