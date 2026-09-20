@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copy-mode `sync` now replaces an existing `scripts/dev` symlink instead of writing through it (#1053).** With no local `node_modules/sequant`, `sync` left foreign links (an npx cache, a sibling checkout) in place and overwrote their targets. Symlinks are now unlinked and replaced by a copy; regular files are left alone without `--force`. `sync --dry-run` lists each replacement as `old → (copy)`, and `doctor` names the fix that will actually change a machine-specific link.
+
 ## [2.16.0] - 2026-09-19
 
 ### Fixed
