@@ -38,6 +38,19 @@ export interface DriverOptions {
 }
 
 /**
+ * Every registered driver name (#1096).
+ *
+ * `DRIVERS` stays module-private and stays the single enumeration source: the
+ * conformance suite builds its `describe.each` from this, so adding a driver
+ * to the map without adding a conformance adapter fails the suite. Reading the
+ * names out of `getDriver`'s "Available drivers: …" error string would work
+ * too, and is rejected — it couples the suite to a message format.
+ */
+export function listDriverNames(): string[] {
+  return Object.keys(DRIVERS);
+}
+
+/**
  * Get an agent driver by name.
  *
  * @param name - Driver name (default: "claude-code")
