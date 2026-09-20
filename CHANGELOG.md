@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex usage-limit `turn.failed` is now a typed error (#1087).** `CodexDriver` classified every `turn.failed` as a generic `SequantError`, so a quota-exhausted phase looked like any other failure: the `-Q` quality loop re-ran into the same limit and `--auto-wait` could not engage. `classifyCodexTurnFailure` maps the usage-limit text to `BillingError` (reset beyond a fixed 7-day horizon, past, or unparseable; `resetsAtText` and `resetsAt` in metadata), to a `RateLimitError` with `resetsAt` when the reset is within the horizon, and throttle wording (`rate limit exceeded`, `429`, `too many requests`) to a retryable `RateLimitError`. Anything else keeps `SequantError` with code `turn-failed`.
+
 ### Added
 
-- **Driver conformance suite (#1096).** `src/lib/workflow/drivers/__tests__/driver-conformance.test.ts` enumerates every registered driver from the registry (`listDriverNames()`) and checks six contract items per driver: commit inside the sandbox, network, typed error mapping, env injection, structured outcome, and skill loading. The Codex probes run the real `codex sandbox` with the driver's own writable roots; the #1087 usage-limit mapping runs as an expected failure until it lands. `docs/guides/writing-an-agent-driver.md` states the contract for new drivers. Gaps in the aider and opencode drivers are tracked in #1115.
+- **Driver conformance suite (#1096).** `src/lib/workflow/drivers/__tests__/driver-conformance.test.ts` enumerates every registered driver from the registry (`listDriverNames()`) and checks six contract items per driver: commit inside the sandbox, network, typed error mapping, env injection, structured outcome, and skill loading. The Codex probes run the real `codex sandbox` with the driver's own writable roots. `docs/guides/writing-an-agent-driver.md` states the contract for new drivers. Gaps in the aider and opencode drivers are tracked in #1115.
 
 
 - `fast-check` dev dependency and property/metamorphic tests for `parseAcceptanceCriteria`, `parseQaSummary`, and the `SEQUANT_MUTATION` / `SEQUANT_QA_GAPS` marker parsers (#1095). Set `FC_SEED` to replay a run.

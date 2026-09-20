@@ -18,6 +18,7 @@ import {
 import { AUTO_WAIT_BUFFER_MS } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
+import { CodexStreamParser, evaluateCodexRun } from "./drivers/codex.js";
 import {
   BillingError,
   RateLimitError,
@@ -2701,5 +2702,67 @@ describe("#972: NEEDS_VERIFICATION maps to awaiting_verification state", () => {
     const finalStatuses = updateIssueStatus.mock.calls.map((c) => c[1]);
     expect(finalStatuses).toContain("ready_for_merge");
     expect(finalStatuses).not.toContain("awaiting_verification");
+  });
+});
+
+describe("#1087 Codex usage-limit turn failure under -Q", () => {
+  it("does not start a quality-loop iteration after the real Codex-mapped BillingError", async () => {
+    const parser = new CodexStreamParser();
+    parser.feed(
+      readFileSync(
+        new URL(
+          "./drivers/__fixtures__/codex-turn-failed-usage-limit.jsonl",
+          import.meta.url,
+        ),
+        "utf-8",
+      ),
+    );
+    const mapped = evaluateCodexRun(parser.end(), {
+      exitCode: 1,
+      signal: null,
+      phaseTimeout: 600,
+      stderrTail: [],
+      stdoutTail: [],
+    });
+    expect(mapped.structuredError).toBeInstanceOf(BillingError);
+
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: false,
+      durationSeconds: 5,
+      error: mapped.error,
+      structuredError: mapped.structuredError,
+    } as PhaseResult);
+
+    const result = await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1087,
+        title: "Codex usage limit under -Q",
+        config: {
+          phases: ["exec", "qa"],
+          qualityLoop: true,
+          maxIterations: 3,
+        },
+        options: { autoDetectPhases: false },
+      }),
+      services: {
+        logWriter: null,
+        stateManager: {
+          getIssueState: vi.fn(),
+          initializeIssue: vi.fn(),
+          updateIssueStatus: vi.fn(),
+          updatePRInfo: vi.fn(),
+          updatePhaseStatus: vi.fn(),
+          updateResumeHandle: vi.fn(),
+          updateWorktreeInfo: vi.fn(),
+        } as never,
+      },
+    });
+
+    const calledPhases = mockExecutePhase.mock.calls.map((c) => c[1]);
+    expect(calledPhases).toEqual(["exec"]);
+    expect(calledPhases).not.toContain("loop");
+    expect(result.success).toBe(false);
   });
 });

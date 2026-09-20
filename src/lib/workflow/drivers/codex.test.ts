@@ -21,9 +21,12 @@ import {
   CODEX_MIN_VERSION,
   buildCodexArgs,
   evaluateCodexRun,
+  classifyCodexTurnFailure,
+  CODEX_WAIT_HORIZON_MS,
   getCodexVersionError,
   type CodexParsedStream,
 } from "./codex.js";
+import { BillingError, RateLimitError, SequantError } from "../../errors.js";
 import type { SandboxMode } from "@openai/codex-sdk";
 import type { CodexSettings } from "../../settings.js";
 import type { AgentExecutionConfig } from "./agent-driver.js";
@@ -656,5 +659,75 @@ describe("497 CodexDriver declarations", () => {
     // CLI and never reads config.mcp, so the retry would re-run an identical
     // command (#592).
     expect(driver.usesSdkMcp).toBe(false);
+  });
+});
+
+describe("1087: classifyCodexTurnFailure", () => {
+  // Verbatim from the #1060 gate run 2 record.
+  const RUN2 =
+    "You've hit your usage limit. Upgrade to Plus to continue using Codex (https://chatgpt.com/explore/plus), or try again at Oct 16th, 2026 1:04 AM.";
+  const at = (d: Date) => {
+    const h = d.getHours() % 12 || 12;
+    const mon = d.toLocaleString("en-US", { month: "short" });
+    const ampm = d.getHours() >= 12 ? "PM" : "AM";
+    return `You've hit your usage limit. try again at ${mon} ${d.getDate()}, ${d.getFullYear()} ${h}:${String(d.getMinutes()).padStart(2, "0")} ${ampm}.`;
+  };
+  const NOW = new Date(2026, 9, 1, 12, 0).getTime();
+
+  it("maps the run-2 message to BillingError with the reset text and epoch", () => {
+    const err = classifyCodexTurnFailure(RUN2, NOW);
+    expect(err).toBeInstanceOf(BillingError);
+    expect(err.isRetryable).toBe(false);
+    expect(err.metadata.code).toBe(CODEX_ERROR_CODES.turnFailed);
+    expect(err.metadata.resetsAtText).toBe("Oct 16th, 2026 1:04 AM");
+    expect(err.metadata.resetsAt).toBe(new Date(2026, 9, 16, 1, 4).getTime());
+  });
+
+  it("maps a reset just inside the horizon to a RateLimitError with resetsAt", () => {
+    const reset = new Date(NOW + CODEX_WAIT_HORIZON_MS - 60 * 60 * 1000);
+    const err = classifyCodexTurnFailure(at(reset), NOW);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.metadata.resetsAt).toBe(reset.getTime());
+  });
+
+  it("maps a reset just beyond the horizon to BillingError", () => {
+    const reset = new Date(NOW + CODEX_WAIT_HORIZON_MS + 60 * 60 * 1000);
+    expect(classifyCodexTurnFailure(at(reset), NOW)).toBeInstanceOf(
+      BillingError,
+    );
+  });
+
+  it("fails closed to BillingError for a past, unparseable, or absent reset", () => {
+    const past = classifyCodexTurnFailure(at(new Date(NOW - 3600_000)), NOW);
+    expect(past).toBeInstanceOf(BillingError);
+    const junk = classifyCodexTurnFailure(
+      "You've hit your usage limit. try again at sometime soon.",
+      NOW,
+    );
+    expect(junk).toBeInstanceOf(BillingError);
+    expect(junk.metadata.resetsAt).toBeUndefined();
+    const none = classifyCodexTurnFailure("You've hit your usage limit.", NOW);
+    expect(none).toBeInstanceOf(BillingError);
+    expect(none.metadata.resetsAtText).toBeUndefined();
+  });
+
+  it.each([
+    "rate limit exceeded: try later",
+    "Rate limit reached for gpt-5-codex",
+    "HTTP 429 from upstream",
+    "Too Many Requests",
+  ])("maps throttle wording %j to a retryable RateLimitError", (msg) => {
+    const err = classifyCodexTurnFailure(msg, NOW);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect(err.isRetryable).toBe(true);
+    expect(err.metadata.resetsAt).toBeUndefined();
+  });
+
+  it("leaves other failures as a generic SequantError with code turn-failed", () => {
+    const err = classifyCodexTurnFailure("model refused the request", NOW);
+    expect(err).not.toBeInstanceOf(BillingError);
+    expect(err).not.toBeInstanceOf(RateLimitError);
+    expect(err).toBeInstanceOf(SequantError);
+    expect(err.metadata.code).toBe(CODEX_ERROR_CODES.turnFailed);
   });
 });

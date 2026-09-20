@@ -625,14 +625,12 @@ const ADAPTERS: Record<string, ConformanceAdapter> = {
             expect(
               err.metadata.resetsAt ?? err.metadata.resetsAtText,
             ).toBeDefined(),
-          pending: "#1087",
         },
         {
           label:
             "map a transient throttle turn failure to a retryable RateLimitError",
           expected: "RateLimitError",
           classify: () => codexOutcome("codex-turn-failed-rate-limit.jsonl"),
-          pending: "#1087",
         },
         {
           label:
