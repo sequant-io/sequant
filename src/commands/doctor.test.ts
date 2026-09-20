@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as childProcess from "child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -1272,8 +1272,13 @@ describe("doctor command", () => {
       });
 
       it("machine-specific link with a local install says plain sync", async () => {
-        mkdirSync(localScripts, { recursive: true });
-        createdNodeModulesSequant = true;
+        // Only create (and later remove) the install when none exists: a
+        // contributor's real or npm-linked node_modules/sequant must survive
+        // this test, and it already satisfies the doctor's existence check.
+        if (!existsSync(join(process.cwd(), "node_modules", "sequant"))) {
+          mkdirSync(localScripts, { recursive: true });
+          createdNodeModulesSequant = true;
+        }
 
         await doctorCommand();
 
