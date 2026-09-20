@@ -815,7 +815,7 @@ const KNOWN_KEYS: Record<string, Set<string>> = {
     "extraArgs",
     "reasoningMaxTokens",
   ]),
-  "run.codex": new Set(["model", "sandboxMode", "extraArgs"]),
+  "run.codex": new Set(["model", "sandboxMode", "networkAccess", "extraArgs"]),
   "scopeAssessment.trivialThresholds": new Set([
     "maxACItems",
     "maxDirectories",
