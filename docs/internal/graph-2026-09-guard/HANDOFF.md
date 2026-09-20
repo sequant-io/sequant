@@ -1,13 +1,13 @@
 # Handoff — guard-2026-09, wave 3
 
-Wave 2 ran 2026-09-20 (record in `issue-graph.md`). Four PRs are open and verified, stop-at-PR: #1126 (#1093), #1125 (#1097), #1120 (#1069), #1121 (#1087). Merge order once consented: any; each squash re-conflicts the next PR's CHANGELOG (keep both sides, fold duplicate `###` headings, re-run CI). Do not merge #1082.
+Wave 2 ran and **merged** 2026-09-20 (record in `issue-graph.md`; main at `5917cf8c`). Wave 3 is unblocked. Do not merge #1082.
 
-Paste into a fresh session once #1126 (#1093) has merged:
+Paste into a fresh session:
 
 ```
 /graph-run
 
-Graph `guard-2026-09`. Plan: `docs/internal/graph-2026-09-guard/PLAN.md` (§5 invariants, §7 D-13..D-21, §8 conventions), graph: `issue-graph.md` (read both execution records), Phase 0: `lab-notes-phase0.md`. Base: `origin/main` after the wave-2 merges. Read main via `git show origin/main:<file>`, never the checkout.
+Graph `guard-2026-09`. Plan: `docs/internal/graph-2026-09-guard/PLAN.md` (§5 invariants, §7 D-13..D-21, §8 conventions), graph: `issue-graph.md` (read both execution records), Phase 0: `lab-notes-phase0.md`. Base: `origin/main` at or after `5917cf8c`. Read main via `git show origin/main:<file>`, never the checkout.
 
 ## Wave 3 — two nodes, then the owner gate
 

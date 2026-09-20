@@ -201,3 +201,5 @@ Launched from `bef0ac98`; #1097/#1069/#1087 in one mechanical run, #1093 on the 
 
 Phase deaths: 0 (the qa-addressed no-full-suite note held). Recorded-verdict artifacts: 0 this wave; both #1069 AC_NOT_MET rounds and the #1093 round were real. Frontier after merge: wave 3 = #1094 (needs #1093), #1098 (needs #1093), then gate #1109 (owner applies the ruleset; the CI context is now `test`).
 
+**Merged 2026-09-20 (owner: "merge if all ACs met and verified").** #1126→`391eb5d7`, #1125→`c666b4c6`, #1120→`67529237`, #1121→`5917cf8c` (one CHANGELOG re-merge round for #1121; CI context on the last head is already `test`). Issues #1093/#1097/#1069/#1087 closed. Frontier: wave 3 = #1094, #1098 (both unblocked), then gate #1109 — the owner applies `scripts/ruleset-main.sh --print` by hand; until then `main` is still unprotected.
+
