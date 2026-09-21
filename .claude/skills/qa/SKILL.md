@@ -435,7 +435,12 @@ Once verify passes, skip step 1 below (worktree location provided by orchestrato
 3. **Review in the worktree:**
    - Navigate to the worktree directory to review the implementation
    - Use `git diff origin/main...HEAD` to see all changes made in the feature branch
-   - Run `npm test` and `npm run build` in the worktree to verify everything works
+   - Run `npm test` and `npm run build` in the worktree to verify everything works.
+     Under `sequant run` (`SEQUANT_ORCHESTRATOR` set) wrap the suite in a hard cap —
+     `timeout 600 npm test` — and skip it when the issue's runner note says the runner
+     owns the full suite: an uncapped suite on a loaded machine exceeds the phase's
+     30-minute no-progress wall and the whole qa phase is killed (three phases died
+     this way on 2026-09-20). Verify each AC by its own command either way.
    - Review the code changes against the AC checklist
 
 4. **Pre-merge cleanup check:**

@@ -4,6 +4,10 @@
 
 - Do NOT add `Co-Authored-By` lines to any commits in this repository.
 
+## Branch protection
+
+- `main` rejects direct pushes (ruleset `CC`, #1109: required `test` + `canary`, strict up-to-date — `GH013`). Every commit, docs included, lands through a PR; `/release` Step 6 does the same (#1131).
+
 ## Hooks
 
 - **`HOOK_BLOCKED: Force push`** — see [.claude/skills/_shared/references/force-push.md](.claude/skills/_shared/references/force-push.md) for the user-handoff pattern. Do not attempt `CLAUDE_HOOKS_DISABLED=true` bypasses; they don't work.

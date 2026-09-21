@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+- **`pre-tool.sh` honors a `cd` that starts any command segment.** `X=…; cd /path && git commit …` and `cd $W && git commit …` used to be read as "no cd line" and the no-changes guard checked the payload cwd; the first now resolves the literal target, the second fails open. Gate-tested against all three hook copies.
+- **`/qa` caps the full suite under the orchestrator** (`timeout 600 npm test`) and skips it when the issue's runner note owns the suite: an uncapped suite on a loaded machine exceeded the 30-minute phase wall three times on 2026-09-20.
+- **`/release` Step 9 hands the human the full `npm publish --tag next` line and verifies `dist-tags` before continuing;** `main` rejects direct pushes (#1109), stated in `CLAUDE.md`; `CHANGELOG.md` carries `merge=union` for local merges.
+
 ## [2.17.0] - 2026-09-20
 
 ### Fixed

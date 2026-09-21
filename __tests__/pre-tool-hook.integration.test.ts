@@ -2038,6 +2038,34 @@ describe.each(HOOK_COPIES)(
       }
     });
 
+    it("mid-line literal `cd` (after `X=…;`) resolves the commit target (2026-09-20 runner rounds)", () => {
+      const target = makeRepo("pre-tool-midcd-target-", true);
+      const elsewhere = makeRepo("pre-tool-midcd-elsewhere-", false);
+      try {
+        const cmd = `S=/tmp/scratch; cd ${target} && git commit -q -m 'test: mid-line cd'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
+    it("mid-line DYNAMIC `cd $W` fails open instead of checking the payload cwd", () => {
+      const target = makeRepo("pre-tool-midcd-dyn-", true);
+      const elsewhere = makeRepo("pre-tool-midcd-dynelse-", false);
+      try {
+        const cmd = `W=${target}; cd $W && git commit -q -m 'test: dynamic cd'`;
+        const { code, stderr } = runHookVaried(cmd, elsewhere);
+        expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
+        expect(code).toBe(0);
+      } finally {
+        rmSync(target, { recursive: true, force: true });
+        rmSync(elsewhere, { recursive: true, force: true });
+      }
+    });
+
     it("AC-1: two `cd` lines — uses the LAST one, not the first", () => {
       // First cd points at a dirty repo, second (real target) at a clean
       // one. A first-cd-wins bug would see staged changes and allow the
