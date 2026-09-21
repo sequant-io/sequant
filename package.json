@@ -116,7 +116,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@openai/codex-sdk": "0.154.0",
+    "@openai/codex-sdk": "0.155.0",
     "@types/inquirer": "^9.0.7",
     "@types/node": "^26.3.0",
     "@types/react": "^19.2.14",
