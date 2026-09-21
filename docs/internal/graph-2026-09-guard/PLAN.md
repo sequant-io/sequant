@@ -226,6 +226,17 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
   `origin/<branch>` was tried and reverted: it contradicts AC-2 and the
   mocked `run.test.ts` call shape.
 
+- **D-22** (exec, wave 3) A corpus snapshot never pins the side the harness
+  cannot reproduce: hook-log candidates enter only when the replay blocks;
+  the unreproducible classes (background-task, orchestrator-env, state) are
+  a tracked gap (#1129), not `allow` cases. #1094 AC-1's per-source floor is
+  "≥ 10 reproduced blocks, zero allow-pinned" (was 50, unreachable; host
+  ceiling 42, reproducible 13).
+- **D-23** (exec, wave 3) Harvested fixtures are scanned for identifiers
+  before commit: Claude Code session links, non-sequant project paths (slash
+  and scratchpad forms) and foreign `--repo` names are redaction rules with
+  gate tests. The repo is public.
+
 ## §8 Issue conventions
 
 - Stamp: `## Release-graph plan — guard-2026-09` with
@@ -247,11 +258,11 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
 - ~~**OQ-1**~~ **Resolved 2026-09-20** — #1086 AC-5 record on PR #1113: in the worktree both single vars reproduce (`ORCHESTRATOR` alone breaks batch-executor, `WORKTREE` alone breaks prompt-wait — the reverse of the issue's table; Phase 0 saw 1 passed each). The prefix scrub is correct either way; `main` is unchanged. Original: Why do `SEQUANT_ORCHESTRATOR` / `SEQUANT_WORKTREE` alone not
   reproduce in a clean shell when the issue says they do? → #1086 records
   the combined-env result; the prefix scrub is correct either way.
-- **OQ-2** Canary wall time under the 6-minute budget on ubuntu? → #1098
+- ~~**OQ-2**~~ **Resolved 2026-09-20** — #1098 AC-6: the `canary` job ran in 47 s on ubuntu-latest (budget 360 s), PR #1127. Original: Canary wall time under the 6-minute budget on ubuntu? → #1098
   AC-6 measures; full local suite wall time in Lab §5.
 - **OQ-3** Does the `codex exec --json` stream carry `rate_limits`? → #1087
   (message-text mapping does not depend on it).
-- **OQ-4** Corpus refresh cadence when the sources are machine-local? →
+- ~~**OQ-4**~~ **Resolved 2026-09-20** — as planned: `--harvest` is a maintainer step (PR #1128), `--diff` needs only the committed corpus; but the harvest reproduces 13 of 42 logged blocks, so refresh cadence is bounded by #1129, not by the sources. Original: Corpus refresh cadence when the sources are machine-local? →
   #1094 documents `--harvest` as a maintainer step; the exec-skill `--diff`
   step needs only the committed file.
 - **OQ-5** fast-check under vitest 5 after #1082? → parked; #1082's own PR.

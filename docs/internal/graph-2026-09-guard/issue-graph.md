@@ -203,3 +203,14 @@ Phase deaths: 0 (the qa-addressed no-full-suite note held). Recorded-verdict art
 
 **Merged 2026-09-20 (owner: "merge if all ACs met and verified").** #1126→`391eb5d7`, #1125→`c666b4c6`, #1120→`67529237`, #1121→`5917cf8c` (one CHANGELOG re-merge round for #1121; CI context on the last head is already `test`). Issues #1093/#1097/#1069/#1087 closed. Frontier: wave 3 = #1094, #1098 (both unblocked), then gate #1109 — the owner applies `scripts/ruleset-main.sh --print` by hand; until then `main` is still unprotected.
 
+## Execution record — wave 3 (2026-09-20)
+
+Launched from `138d12ac`; #1094 and #1098 in one mechanical run. Stop-at-PR; awaiting owner consent, then gate #1109.
+
+| Node | PR | qa verdicts (recorded) | Runner-verified | Full suite (clean shell) | Runner work beyond the agent |
+|---|---|---|---|---|---|
+| #1098 | #1127 | AC_MET_BUT_NOT_A_PLUS | canary project locally against the real previous minor (4, 35 s); soak gate; CI `canary` 47 s, `test` 6 m 23 s | 334 files green | soak gate enumerates copies through `collectFiles` (tautology detector had blocked the suite at 52.6 %); canary found and the PR fixes `init --yes` overwriting a hand-written AGENTS.md (half of #1123) |
+| #1094 | #1128 | AC_NOT_MET ×2 (real) → AC_MET_BUT_NOT_A_PLUS | snapshot 1019 replays × 3 copies; `--diff origin/main` = 0; redaction cases; skill greps | 335 files green, 579 s | harvester keeps only reproduced blocks, skips first-line fragments (two gates, mutation-verified), redacts session links / foreign projects / `--repo`; corpus rewritten (339, 13 hook-log, 0 leaks); AC-1 rewritten twice (D-22); #1129 filed for the 29 unreproducible blocks |
+
+Phase deaths: 0. The corpus snapshot adds ~3 minutes to `npm test` (579 s vs ~390 s); owner may move it to the canary project. New issues: #1129. Frontier after merge: gate #1109 (owner applies the ruleset), then wave 4 gate #1110.
+

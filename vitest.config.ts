@@ -36,6 +36,8 @@ export default defineConfig({
           name: "integration",
           include: [
             "**/*.integration.test.ts",
+            // Registry-dependent; runs in the `canary` project (#1098).
+            "!__tests__/canary/**",
             "scripts/qa/tautology-detector-cli.test.ts",
             // Builds a real git repo (init, remote, commits, checkout, stash)
             // per case, so it cannot finish inside `unit`'s 5s default (#1093).
@@ -56,6 +58,21 @@ export default defineConfig({
           testTimeout: 30_000,
           // Run integration tests sequentially to avoid port conflicts
           // and CPU contention from concurrent subprocess spawning
+          fileParallelism: false,
+        },
+      },
+      {
+        // Downstream canary (#1098): real `npm install` of the previous minor
+        // and a real `npx` MCP launch, so it needs the registry. Kept out of
+        // `unit`/`integration` so the required `test` job (`npm test`) never
+        // depends on npm being up; CI runs it as its own `canary` job.
+        test: {
+          name: "canary",
+          include: ["__tests__/canary/**/*.integration.test.ts"],
+          pool: "forks",
+          hookTimeout: 300_000,
+          teardownTimeout: 10000,
+          testTimeout: 240_000,
           fileParallelism: false,
         },
       },

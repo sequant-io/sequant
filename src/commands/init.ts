@@ -43,7 +43,13 @@ import {
   createSymlink,
   getFileStats,
 } from "../lib/fs.js";
-import { generateAgentsMd, writeAgentsMd } from "../lib/agents-md.js";
+import {
+  AGENTS_MD_PATH,
+  decideAgentsMdSync,
+  generateAgentsMd,
+  readAgentsMd,
+  writeAgentsMd,
+} from "../lib/agents-md.js";
 import {
   commandExists,
   isGhAuthenticated,
@@ -1120,7 +1126,24 @@ export async function initCommand(options: InitOptions): Promise<void> {
   manifestSpinner.succeed("Created manifest");
 
   // Generate AGENTS.md (unless --no-agents-md)
-  if (options.agentsMd !== false) {
+  // A hand-written (unmarked or hash-mismatched) AGENTS.md is user-owned:
+  // re-running init must not replace it, the same rule `sync` applies (#990).
+  // Only `--force` overrides. Found by the downstream canary (#1098).
+  const agentsDecision =
+    options.agentsMd !== false
+      ? decideAgentsMdSync({
+          enabled: true,
+          existingContent: await readAgentsMd(),
+          force: options.force === true,
+        })
+      : "skipped (--no-agents-md)";
+  if (agentsDecision === "preserved") {
+    console.log(
+      chalk.blue(
+        `  preserved: ${AGENTS_MD_PATH} — user-owned (run \`init --force\` to replace)`,
+      ),
+    );
+  } else if (options.agentsMd !== false) {
     const agentsSpinner = ui.spinner("Generating AGENTS.md...");
     agentsSpinner.start();
     try {

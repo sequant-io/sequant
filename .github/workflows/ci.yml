@@ -51,6 +51,30 @@ jobs:
           npm run dev -- --help
           npm run dev -- status 2>/dev/null || true
 
+  # Downstream canary (#1098): a fixture project on the previous minor release,
+  # customized like a real one, driven by this PR's build. Needs the npm
+  # registry, so it is its own job and NOT part of `test` (the required check).
+  canary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Downstream canary
+        run: npm run test:canary
+
   # Real sub-floor Node coverage for the runtime preflight guard (#734).
   # CI otherwise runs Node 22 only, so the guard's fail path — the scenario the
   # feature exists for — would never execute on the old Node it targets. We

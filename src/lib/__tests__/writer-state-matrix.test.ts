@@ -314,10 +314,10 @@ const GRID: Record<DestId, Record<StateId, string>> = {
   agentsMd: {
     absent: "T T = = = =",
     owned: "= = = = = =",
-    userModified: "T T = T = =",
-    markerChanged: "T T = T = =",
-    localSymlink: "W W = W = =",
-    foreignSymlink: "W W = W = =",
+    userModified: "= T = T = =",
+    markerChanged: "= T = T = =",
+    localSymlink: "= W = W = =",
+    foreignSymlink: "= W = W = =",
     directory: "= = = = = =",
   },
   mcpJson: {
@@ -452,7 +452,9 @@ const DECISIONS: Record<DestId, Record<StateId, string>> = {
  */
 const KNOWN_DEFECTS: Record<string, { issue: string; cells: number }> = {
   "symlink-written-through-at-sequant-owned": { issue: "#1122", cells: 24 },
-  "user-owned-not-preserved-without-force": { issue: "#1123", cells: 4 },
+  // The 4 AGENTS.md cells were fixed by #1098; #1123's unparseable-.mcp.json
+  // half is not a grid state, so the entry stays until that is closed.
+  "user-owned-not-preserved-without-force": { issue: "#1123", cells: 0 },
   "directory-crashes-writer": { issue: "#1124", cells: 34 },
 };
 
