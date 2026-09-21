@@ -177,6 +177,15 @@ Note: had it been Verdict: AC_NOT_MET we would loop.`;
     ).toBe("NEEDS_VERIFICATION");
   });
 
+  it("a heading with extra spaces after the hashes still counts as a heading (#1119)", () => {
+    const output = [
+      "###   Verdict: READY_FOR_MERGE",
+      "",
+      "Note: the orchestrator posts `Verdict: AC_NOT_MET` comments on failure.",
+    ].join("\n");
+    expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+  });
+
   describe("run 6ee4ad05 fixture (#1119)", () => {
     const tail = readFileSync(
       new URL(

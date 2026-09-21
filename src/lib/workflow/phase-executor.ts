@@ -517,7 +517,9 @@ export function parseQaVerdict(output: string): QaVerdict | null {
   const isHeadingForm = (m: RegExpMatchArray): boolean => {
     const lineStart = output.lastIndexOf("\n", (m.index ?? 0) - 1) + 1;
     return /^[ \t]*(?:#{1,6}[ \t]*|\*\*)Verdict/i.test(
-      output.slice(lineStart, (m.index ?? 0) + 12),
+      // Slice through the whole match, not a fixed window: `###   Verdict:` with
+      // extra spaces is longer than 12 characters and was read as a bare mention.
+      output.slice(lineStart, (m.index ?? 0) + m[0].length),
     );
   };
   const verdictMatch =
