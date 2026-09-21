@@ -579,11 +579,19 @@ npm publish --tag beta
 
 **If npm returns `EOTP` (2FA required):**
 
-Non-interactive environments cannot handle the OTP prompt. Ask the user to publish manually:
+Non-interactive environments cannot handle the OTP prompt. Hand the user this exact
+line and say what the flag prevents — `--tag next` keeps `latest` where it is until
+the soak passes; a bare `npm publish` moves `latest` immediately (it happened on
+2.17.0). With npm web auth the `--otp` part may be omitted, the `--tag next` part may not:
 
 ```
 npm publish --tag next --otp=<code>
 ```
+
+When the user reports done, verify before continuing: `npm view sequant dist-tags`
+must show `next: <new_version>` and an unchanged `latest`. If `latest` moved, run the
+Step 9b soak checklist immediately and keep `npm dist-tag add sequant@<previous> latest`
+ready as the rollback.
 
 Do NOT attempt to pass OTP codes programmatically or retry `npm publish` in a loop. Hand off to the user and continue with post-release verification once they confirm.
 

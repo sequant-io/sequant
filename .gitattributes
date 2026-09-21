@@ -1,0 +1,2 @@
+# Append-only: keep both sides when two branches add [Unreleased] entries (GitHub still conflicts; this covers local merges).
+CHANGELOG.md merge=union
