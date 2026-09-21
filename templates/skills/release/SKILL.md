@@ -506,16 +506,35 @@ size=$(npm pack --dry-run 2>&1 | grep "total files" -A1 | tail -1 || true)
 echo "Package size: ${size}"
 ```
 
-### Step 6: Commit and Push
+### Step 6: Commit and Land Through a PR
+
+`main` is protected by a ruleset (#1109): it requires the `test` and `canary`
+checks, strict up-to-date, and rejects every direct push with `GH013`. The
+release commit lands the same way every other commit does — through a PR that
+passes the same checks (#1131). Do not push `main`; do not add a bypass.
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md
+git switch -c "chore/release-v${new_version}"
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
 # The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
 git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
-git push origin main
+git push -u origin "chore/release-v${new_version}"
+gh pr create --base main --head "chore/release-v${new_version}" \
+  --title "chore: release v${new_version}" \
+  --body "Release v${new_version}. Lands through a PR because the main ruleset rejects direct pushes (#1109, #1131)."
 ```
+
+Wait for `test` and `canary` on the PR head (poll `commits/<sha>/check-runs`,
+not `gh pr checks --watch`, which can report the previous head), then:
+
+```bash
+gh pr merge --squash --delete-branch --subject "chore: release v${new_version}"
+git switch main && git pull --ff-only origin main
+```
+
+Step 7 tags the squash commit on `main`; tags are outside the branch rule.
 
 ### Step 7: Create and Push Tag
 
