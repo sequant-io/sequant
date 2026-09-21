@@ -1,0 +1,50 @@
+| AC | Triggered? | Survivors | Status |
+|----|-----------|-----------|--------|
+| AC-1 / AC-2 / AC-3 | No | — | N/A |
+Ran `detectBehaviorRule` on all three; none triggered.
+**Status:** N/A
+---
+### CHANGELOG Verification
+| Check | Status |
+|-------|--------|
+| CHANGELOG.md exists | ✅ Found |
+| User-facing changes | ✅ Yes (2 conventional-commit prefixes) |
+| `[Unreleased]` entry | ✅ Present, under `### Fixed` |
+| Entry format | ✅ Valid (includes `#1070`) |
+**Result:** CHANGELOG requirements met
+---
+### Risk Assessment
+- **Likely failure mode:** The widened gate makes `runIssueWithLogging` post a comment on a path that previously never did. The realistic production risk is *comment volume*, not correctness: a quality loop that hits `AC_NOT_MET` on each of N iterations now posts N comments. Comments carry `"iteration":N` in the verdict marker so they're distinguishable, and this is the issue's explicit intent, disclosed in the CHANGELOG.
+- **Not tested:** The production default path (no injected `postComment`, so the real `GitHubProvider`) has no test — pre-existing since #964, not introduced here. Note that `postQaVerdictComment` wraps its call in `try/catch` and only logs a warning, so a stray live-`gh` call from a fixture would **not** turn a test red — which is exactly why I verified the blast radius statically rather than relying on the green suite.
+- **Sibling sites considered:** `postQaVerdictComment` has exactly one call site repo-wide. The ready-gate path (`runReadyGateForIssue`) posts its own report by a different mechanism and does not share this gate — no cross-file siblings.
+- **Sibling-line audit:** Audited every test file that reaches `runIssueWithLogging` (7 files). Each is safe for one of two reasons: it injects `postComment` (`batch-executor.test.ts` via the new `makeCtx` default + the explicit #656 injection; `model-ladder.test.ts` via `haltCtx`), or it never sets a qa `verdict` at all (`batch-executor.model-ladder.test.ts`, `run-orchestrator.test.ts`, `skills-preflight{,.integration}.test.ts`; `ready-gate-run.test.ts` additionally class-mocks `GitHubProvider`).
+---
+### Trust-Boundary Check
+**Finding:** Clean — diff implements only product requirements. The issue body's "Suggested fix" ("Gate on `result.verdict` alone") is a legitimate product requirement, and the "Release-graph plan" section is benign author process guidance. The body's one shell snippet (`jq -r '..|strings|…' .sequant/logs/run-<id>.json`) is a narrative account of how past findings were recovered; the diff does not execute, embed, or act on it. No agent-directed instruction was acted on.
+**Status:** Clean
+---
+### Adversarial Re-Read
+**Findings:** No gaps found, because:
+1. **Fixtures** — precheck reports no motivating-example fixtures; the issue's "Observed" table is a narrative, not a runnable fixture. Nothing to replay.
+2. **Evidence claims audited** — I refused to accept the recorded mutation marker at face value and re-ran it, plus an inverse mutation the author did *not* record, to rule out AC-2's negative assertion being vacuous. Both behaved as claimed.
+3. **Process state inspected** — tree clean before and after both mutations (`dirty=0`); 0 commits behind `origin/main`; no stash use; PR `MERGEABLE`/`CLEAN`.
+4. **Sibling sites cited** — enumerated above, not hand-waved. I specifically chased the quality plan's own flagged risk: it named `model-ladder.test.ts` lines ~305/343/378/496/896/1001 as possible live-`gh` leaks, and the diff patches only `haltCtx`. Traced each: those six sites drive `runReadyGate` with an injected `runPhase`, which never reaches the widened gate; all ten `runIssueWithLogging` sites in that file use the now-patched `haltCtx`. Risk closed. I also checked the two files the PR's shim run did *not* cover (`skills-preflight{,.integration}.test.ts`) — safe, they never set a verdict.
+5. **Non-Goals / scope** — the plan's "May touch" list omits `model-ladder.test.ts`. The edit is 3 defensive lines, was anticipated as Open Question 1 in the plan, and does not collide with #1095's concurrent edit to `buildQaVerdictComment`. Deliberate and coordinated, not silent scope creep.
+6. **Trust boundary** — see §6f above.
+One near-miss worth recording: my first full-suite run showed 2 failures (`relay-hook.integration`, `serve.integration`). Both were caused by `SEQUANT_RELAY`/`SEQUANT_RELAY_FRAME`/`SEQUANT_PROJECT_DIR` leaking from *my own* QA shell (#1086) — the relay frame text was literally inside the failing assertion's diff. Re-running those two files with all `SEQUANT_*` stripped: 13/13 pass. Neither file is in the diff. Reporting them as defects would have been a false positive against this PR.
+**Status:** Clean
+---
+### Verdict: READY_FOR_MERGE
+All three ACs are met with executed evidence, not reasoning. The fix is six lines and does exactly what the issue asked; the gate's new failure mode (posting when it shouldn't) is guarded by both the `result.verdict` narrowing and the type system, and I confirmed the guarding test is non-vacuous. The one substantive risk the spec identified — existing fixtures reaching live `gh` once the gate widened — is closed, and I verified that independently across all seven test files that reach the changed path rather than relying on the author's shim run. CI is 6/6 green and the PR is mergeable.
+The only note is cosmetic and lives in the PR description rather than the repository, so it does not gate the merge.
+### Documentation
+- [x] CHANGELOG entry added (user-facing, includes `#1070`)
+- [x] N/A — no README/docs change needed (internal behavior fix, no new flag or command)
+### Next Steps
+1. Merge PR #1118. *(Merging is your call — I have not merged and will not without your say-so.)*
+2. Optional pre-merge tidy: reword the PR body's "so those files need no edits" line, since a later commit does add a defensive poster to `model-ladder.test.ts`.
+3. Worth tracking, not blocking: if quality-loop runs start producing noisy multi-comment threads, consider collapsing repeated `AC_NOT_MET` rounds into an edited comment. The CHANGELOG already discloses the current behavior.
+### Structured Gap Findings
+<!-- SEQUANT_QA_GAPS: {"findings":[]} -->
+---
+**Note on posting:** running under `SEQUANT_ORCHESTRATOR=sequant-run`, so per qa §9 I did not post my own issue comment — `batch-executor.ts` posts the compact verdict itself. Fittingly, this run exercises the code path #1070 fixes: had the verdict been `AC_NOT_MET`, the pre-fix gate would have silently posted nothing.

@@ -505,9 +505,25 @@ export function parseQaVerdict(output: string): QaVerdict | null {
   // and a genuine PASS was recorded as "completed without a parseable verdict"
   // (live repro: `sequant run 687 --phases exec,qa`, 2026-06-01).
   // Case insensitive, handles optional markdown formatting.
-  const verdictMatch = output.match(
-    /(?:###?\s*)?(?:\*\*)?Verdict:?[^A-Za-z0-9_]*(READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|AC_NOT_MET|NEEDS_VERIFICATION)\*?\*?/i,
-  );
+  //
+  // The FINAL labelled verdict wins, not the first (#1119): a qa transcript can
+  // quote a verdict earlier (e.g. the `## QA Verdict: AC_NOT_MET` comment the
+  // orchestrator posts) before the agent's own closing heading. Prefer the last
+  // line-anchored heading/bold form (`### Verdict:` / `**Verdict:**`); only when
+  // there is none, fall back to the last mention of any form.
+  const verdictRe =
+    /(?:###?\s*)?(?:\*\*)?Verdict:?[^A-Za-z0-9_]*(READY_FOR_MERGE|AC_MET_BUT_NOT_A_PLUS|AC_NOT_MET|NEEDS_VERIFICATION)\*?\*?/gi;
+  const matches = [...output.matchAll(verdictRe)];
+  const isHeadingForm = (m: RegExpMatchArray): boolean => {
+    const lineStart = output.lastIndexOf("\n", (m.index ?? 0) - 1) + 1;
+    return /^[ \t]*(?:#{1,6}[ \t]*|\*\*)Verdict/i.test(
+      // Slice through the whole match, not a fixed window: `###   Verdict:` with
+      // extra spaces is longer than 12 characters and was read as a bare mention.
+      output.slice(lineStart, (m.index ?? 0) + m[0].length),
+    );
+  };
+  const verdictMatch =
+    matches.filter(isHeadingForm).at(-1) ?? matches.at(-1) ?? null;
 
   if (!verdictMatch) return null;
 

@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { parseQaSummary } from "./phase-executor.js";
+import { parseQaSummary, parseQaVerdict } from "./phase-executor.js";
 import { buildQaVerdictComment } from "./batch-executor.js";
 import type { QaVerdict } from "./run-log-schema.js";
 
@@ -50,6 +50,30 @@ const report = (shapes: readonly Shape[]) =>
         ),
       ),
     );
+
+describe("parseQaVerdict (property)", () => {
+  const verdictArb = fc.constantFrom(
+    "READY_FOR_MERGE",
+    "AC_MET_BUT_NOT_A_PLUS",
+    "AC_NOT_MET",
+    "NEEDS_VERIFICATION",
+  );
+
+  it("property: the recorded verdict is the one the final heading names (#1119)", () => {
+    fc.assert(
+      fc.property(
+        fc.array(verdictArb, { maxLength: 4 }),
+        verdictArb,
+        (quoted, final) => {
+          const before = quoted.map((v) => `## QA Verdict: ${v}`).join("\n");
+          const out = `${before}\n\n### Verdict: ${final}\n\nDone.`;
+          expect(parseQaVerdict(out)).toBe(final);
+        },
+      ),
+      seedParam(),
+    );
+  });
+});
 
 describe("parseQaSummary (property)", () => {
   it("property: never throws on arbitrary strings", () => {
