@@ -1,16 +1,7 @@
-# Handoff — guard-2026-09, gates
+# Handoff — guard-2026-09: closed
 
-Wave 3 ran and merged 2026-09-20 (record in `issue-graph.md`; main at `9dd00ca4`). Every exec node of the graph is on main. Do not merge #1082.
+The graph is complete (2026-09-20/21): 14 exec nodes merged in three waves, gate #1109 applied, gate #1110 completed, 2.17.0 released (`ad499b52`, npm `latest`). Records: `issue-graph.md` (three execution records + gates), `PLAN.md` §7 D-13..D-23 and §9.
 
-## What is left is the owner's
+Follow-ups outside the graph, in priority order: #1119 (verdict parser first-match — dispatched), #1122/#1123/#1124 (writer defects the state matrix exposed), #1129 (corpus replay coverage), #1115 (opencode/aider typed errors), PR #1133 (post-release action items).
 
-- **Gate #1109** (after #1126 is already on main): apply the `main` ruleset by hand — `scripts/ruleset-main.sh --print` emits the payload (target `~DEFAULT_BRANCH`, block deletion and non-fast-forward, required check `test`, strict up-to-date). Until it is applied, `main` is unprotected.
-- **Gate #1110** (after #1109 is applied): require the `canary` check, publish the next release to `next`, run the soak checklist across the local repo set (`npx sequant@next sync --dry-run` in each), then promote with `--soaked`.
-
-## If a runner session continues
-
-```
-/graph-run
-
-Graph `guard-2026-09`. Plan: `docs/internal/graph-2026-09-guard/PLAN.md` (§7 D-13..D-23), graph: `issue-graph.md` (three execution records). No exec nodes remain; #1129 (replay-harness coverage) is a follow-up outside the graph. Verify #1109 and #1110 as human gates: check the ruleset via `gh api repos/{owner}/{repo}/rulesets` and the npm dist-tags via `npm view sequant dist-tags`; record both in `issue-graph.md` and close the graph with a final ledger.
-```
+Rules that now bind every session in this repo: `main` rejects direct pushes — everything lands through a PR with `test` + `canary` green; releases go to `next` first and are promoted after the soak; a red `main` is reverted before it is debugged.

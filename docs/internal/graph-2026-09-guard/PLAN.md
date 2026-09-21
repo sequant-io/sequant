@@ -266,11 +266,11 @@ Inputs → outputs → failure mode → done-when. Full ACs live on the issues.
   #1094 documents `--harvest` as a maintainer step; the exec-skill `--diff`
   step needs only the committed file.
 - **OQ-5** fast-check under vitest 5 after #1082? → parked; #1082's own PR.
-- **OQ-6** Strict up-to-date vs merge queue for a solo maintainer? → G-1
+- ~~**OQ-6**~~ **Resolved 2026-09-20** — strict, applied in #1109 (`strict_required_status_checks_policy: true`); cost observed: one CHANGELOG re-merge round per squash, no queue. Original: Strict up-to-date vs merge queue for a solo maintainer? → G-1
   decides; recommendation strict (no queue latency, no extra runners).
 - **OQ-7** Does documenting the marker prefix stop the malformed markers?
   → measured on the first three gate PRs after #1104; trigger for D-8.
-- **OQ-8** Does the previous-minor npm install in #1098 need a network
+- ~~**OQ-8**~~ **Resolved 2026-09-20** — no: the canary's real `npm install sequant@2.15.x` ran under the default runner network in 47–65 s (PR #1127, `main` `93adc8f6`/`9dd00ca4`). Original: Does the previous-minor npm install in #1098 need a network
   allowance in CI beyond what `npm ci` already has? → #1098 fixture.
 
 ## §10 Parked

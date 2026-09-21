@@ -216,3 +216,9 @@ Phase deaths: 0. The corpus snapshot adds ~3 minutes to `npm test` (579 s vs ~39
 
 **Merged 2026-09-20 (owner: "merge wave 3 if ready").** #1127→`93adc8f6`, #1128→`9dd00ca4` (one CHANGELOG re-merge round; CI on the last head ran the new `canary` job green). Issues #1098 and #1094 closed. Every exec node of `guard-2026-09` is on main. Remaining: gate #1109 (owner applies the ruleset — `main` is still unprotected), then gate #1110 (require `canary`, `next` soak, promote).
 
+## Gates and release — graph closed (2026-09-20/21)
+
+- **#1109 applied** by the runner on the owner's instruction: `PUT repos/sequant-io/sequant/rulesets/12393605` with the printed payload; verified `["~DEFAULT_BRANCH"]`, `deletion` + `non_fast_forward` + `required_status_checks`, strict. Consequence measured the same hour: a docs push to `main` fails `GH013`; the release skill's Step 6 could not land → #1131, fixed in the release PR.
+- **#1110 completed:** `canary` required alongside `test` (61–65 s on `main`, budget 360 s — OQ-2 resolved); 2.17.0 released through PR #1130 → `ad499b52`, tag `v2.17.0`, GitHub release; published to npm. Deviation: the human-typed `npm publish` lacked `--tag next`, so `latest` moved on publish; the soak (12 repos, `sync --dry-run` + `doctor`, all exit 0, only sequant-owned overwrites) ran immediately after and passed, so `latest` stood. Recorded on #1110; the release skill's Step 9 handoff is tightened in PR #1133.
+- **Ledger:** 14 exec nodes + 2 gates done in one day; 12 issues closed by the graph plus #1073 and #1131; 7 filed (#1115, #1119, #1122–#1124, #1129, #1131), 5 of them defects the new guards found. Post-release: #1119 dispatched as the first follow-up node; PR #1133 carries the /reflect action items.
+
