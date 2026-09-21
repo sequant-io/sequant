@@ -17,6 +17,14 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.17
+
+- **`main` is gated** — a GitHub ruleset requires the `test` and `canary` checks and strict up-to-date on every merge; a "pre-existing failure" claim needs a `settle-against-base` proof, and a red `main` is reverted before it is debugged.
+- **A downstream canary on every PR** — the previous minor is installed into a fixture project, customized, and driven through `sync`, `init`, `update`, `doctor` and a real MCP handshake by the PR's build. Releases go to the `next` tag first and are promoted only after a soak.
+- **Every agent driver passes one conformance suite** — six contract items per driver, enumerated from the registry; Codex usage-limit failures are typed so the quality loop stops instead of re-running into the same quota.
+- **The guard hook has a golden corpus** — 339 real command forms with their pinned verdicts, replayed against all three hook copies on every change.
+- **Writers are tested cell by cell** — `init`, `sync` and `update` against every destination and state on a real filesystem; `init` no longer replaces a hand-written `AGENTS.md`.
+
 ### What's new in 2.16
 
 - **Codex is a second agent driver** — `--agent codex` / `run.agent: "codex"` runs every phase through `codex exec --json` as a subprocess, with sequant's guard hooks wrapped into `.codex/config.toml` and the same `.claude/skills/` tree reached through a relative `.agents/skills` symlink. `sequant init --agent codex` provisions all of it and `doctor` checks the binary, version floor and login. Codex phases can commit and reach GitHub inside the `workspace-write` sandbox; `run.codex.networkAccess: false` seals them off (#497, #1076, #1079).

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+## [2.17.0] - 2026-09-20
+
 ### Fixed
 
 - **`sequant init` on an initialized project no longer replaces a hand-written `AGENTS.md` (#1098).** `init` wrote the generated file unconditionally, so `init --agent codex --yes` erased a user-owned `AGENTS.md` that `sync` would have preserved (#990). It now applies the same rule as `sync` — only an unmodified sequant-marked file is regenerated, anything else is reported `preserved` and replaced only by `--force`. Found by the new downstream canary; the writer-state matrix (#1097) had pinned the four cells as tracked defect #1123 and now expects them preserved.
