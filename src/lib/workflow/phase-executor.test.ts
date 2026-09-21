@@ -152,6 +152,50 @@ Some analysis here.
 All acceptance criteria met.`;
     expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
   });
+
+  it("last verdict heading wins over an earlier quoted verdict (#1119)", () => {
+    const output = `## QA Verdict: AC_NOT_MET
+
+Quoted from the orchestrator comment above.
+
+### Verdict: READY_FOR_MERGE
+
+All acceptance criteria met.`;
+    expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+  });
+
+  it("last verdict heading wins over a later bare mention (#1119)", () => {
+    const output = `### Verdict: READY_FOR_MERGE
+
+Note: had it been Verdict: AC_NOT_MET we would loop.`;
+    expect(parseQaVerdict(output)).toBe("READY_FOR_MERGE");
+  });
+
+  it("takes the last of several bare mentions when no heading exists", () => {
+    expect(
+      parseQaVerdict("Verdict: AC_NOT_MET\nlater\nVerdict: NEEDS_VERIFICATION"),
+    ).toBe("NEEDS_VERIFICATION");
+  });
+
+  describe("run 6ee4ad05 fixture (#1119)", () => {
+    const tail = readFileSync(
+      new URL(
+        "./__fixtures__/qa-stdout-tail-1070-run-6ee4ad05.txt",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    it("run 6ee4ad05 fixture: bare tail parses READY_FOR_MERGE", () => {
+      expect(parseQaVerdict(tail)).toBe("READY_FOR_MERGE");
+    });
+
+    it("run 6ee4ad05 fixture: preceded by the posted comment line still parses READY_FOR_MERGE", () => {
+      expect(parseQaVerdict(`## QA Verdict: AC_NOT_MET\n${tail}`)).toBe(
+        "READY_FOR_MERGE",
+      );
+    });
+  });
 });
 
 describe("endedWithoutVerdict (#853)", () => {
