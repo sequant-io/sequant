@@ -214,3 +214,5 @@ Launched from `138d12ac`; #1094 and #1098 in one mechanical run. Stop-at-PR; awa
 
 Phase deaths: 0. The corpus snapshot adds ~3 minutes to `npm test` (579 s vs ~390 s); owner may move it to the canary project. New issues: #1129. Frontier after merge: gate #1109 (owner applies the ruleset), then wave 4 gate #1110.
 
+**Merged 2026-09-20 (owner: "merge wave 3 if ready").** #1127→`93adc8f6`, #1128→`9dd00ca4` (one CHANGELOG re-merge round; CI on the last head ran the new `canary` job green). Issues #1098 and #1094 closed. Every exec node of `guard-2026-09` is on main. Remaining: gate #1109 (owner applies the ruleset — `main` is still unprotected), then gate #1110 (require `canary`, `next` soak, promote).
+
