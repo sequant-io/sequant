@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+
 ### Fixed
 
 - **`parseQaVerdict` records the final verdict heading, not the first mention** — a qa transcript that quoted `## QA Verdict: AC_NOT_MET` earlier was recorded `AC_NOT_MET` even when its closing `### Verdict:` said `READY_FOR_MERGE` (#1070 passed qa three times and was recorded failing each time). The last line-anchored heading/bold verdict now wins; with none, the last mention of any form. (#1119)
+
+### Changed
+
+- **`pre-tool.sh` honors a `cd` that starts any command segment.** `X=…; cd /path && git commit …` and `cd $W && git commit …` used to be read as "no cd line" and the no-changes guard checked the payload cwd; the first now resolves the literal target, the second fails open. Gate-tested against all three hook copies.
+- **`/qa` caps the full suite under the orchestrator** (`timeout 600 npm test`) and skips it when the issue's runner note owns the suite: an uncapped suite on a loaded machine exceeded the 30-minute phase wall three times on 2026-09-20.
+- **`/release` Step 9 hands the human the full `npm publish --tag next` line and verifies `dist-tags` before continuing;** `main` rejects direct pushes (#1109), stated in `CLAUDE.md`; `CHANGELOG.md` carries `merge=union` for local merges.
 
 ## [2.17.0] - 2026-09-20
 
