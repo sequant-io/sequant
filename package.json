@@ -23,7 +23,8 @@
   "scripts": {
     "build": "rm -rf dist/src dist/bin dist/dashboard && tsc && chmod +x dist/bin/cli.js",
     "dev": "tsx bin/cli.ts",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project integration",
+    "test:canary": "vitest run --project canary",
     "lint": "eslint src/ bin/ scripts/ --max-warnings 0",
     "sync:skills": "npx tsx scripts/check-skill-sync.ts --fix",
     "sync:hooks": "bash scripts/sync-hooks.sh",
