@@ -1386,6 +1386,18 @@ done
 | `quality-checks.sh` | ✅ OK | ⚠️ 2 warnings | ✅ All used | ✅ OK |
 ```
 
+### 3c2. Hook Verdict Corpus (When `pre-tool.sh` is modified)
+
+**Purpose:** `pre-tool.sh` is a bash/awk parser whose fixes have repeatedly broken forms an earlier fix protected. `__tests__/fixtures/hook-corpus.jsonl` records the verdict the hook gives every command form it has been asked to judge; a changed verdict is a review item, not a surprise.
+
+**When any of the three `pre-tool.sh` copies changes**, run the diff against base and list every changed verdict in the PR body:
+
+```bash
+npx tsx scripts/hook-corpus.ts --diff origin/main
+```
+
+It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the PR body under a `Hook verdicts changed:` heading, one line per command with `allow -> block` or `block -> allow`, then update the matching corpus lines so `npx vitest run __tests__/hook-corpus.integration.test.ts` passes. An intended fix that flips no verdict writes `Hook verdicts changed: none`.
+
 ### 3d. Lint Check (REQUIRED before PR)
 
 **Purpose:** Catch ESLint errors locally before they fail CI. This prevents wasted quality loop iterations from lint failures.
