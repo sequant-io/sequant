@@ -1,6 +1,6 @@
 {
   "name": "sequant",
-  "version": "2.15.1",
+  "version": "2.17.0",
   "description": "AI coding agent orchestrator that proves its work — GitHub issues to merge-ready PRs with every acceptance criterion verified, isolated git worktrees, quality gates, an MCP server, and a human merge gate. Works with Claude Code or Aider.",
   "type": "module",
   "bin": {
@@ -23,7 +23,8 @@
   "scripts": {
     "build": "rm -rf dist/src dist/bin dist/dashboard && tsc && chmod +x dist/bin/cli.js",
     "dev": "tsx bin/cli.ts",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project integration",
+    "test:canary": "vitest run --project canary",
     "lint": "eslint src/ bin/ scripts/ --max-warnings 0",
     "sync:skills": "npx tsx scripts/check-skill-sync.ts --fix",
     "sync:hooks": "bash scripts/sync-hooks.sh",
@@ -122,6 +123,7 @@
     "@typescript-eslint/eslint-plugin": "^8.68.0",
     "@typescript-eslint/parser": "^8.68.0",
     "eslint": "^10.9.1",
+    "fast-check": "^4.10.2",
     "globals": "^17.0.0",
     "ink-testing-library": "^4.0.0",
     "tsx": "^4.19.2",

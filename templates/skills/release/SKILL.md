@@ -38,7 +38,7 @@ Automates the full release workflow: version bump, git tag, GitHub release, and 
 ## Usage
 
 ```
-/release [patch|minor|major] [--prerelease <tag>] [--dry-run]
+/release [patch|minor|major] [--prerelease <tag>] [--soaked] [--dry-run]
 ```
 
 - `/release` - Interactive, asks for version type
@@ -47,6 +47,7 @@ Automates the full release workflow: version bump, git tag, GitHub release, and 
 - `/release major` - Major release (1.3.1 → 2.0.0)
 - `/release minor --prerelease beta` - Pre-release (1.3.1 → 1.4.0-beta.0)
 - `/release --dry-run` - Preview without publishing
+- `/release --soaked` - Promote an already-published `next` version to `latest` (Step 9b); refused without this flag
 
 ## Pre-flight Checks
 
@@ -64,7 +65,22 @@ Run ALL checks before proceeding. **STOP if any fails.**
 # 3. In sync with remote
 git fetch origin
 [ -z "$(git log HEAD..origin/main)" ] || { echo "Behind origin - pull first"; exit 1; }
+
+# 4. The latest CI `push` run on main is green (red-main rule, below).
+#    Filter to the CI workflow: without --workflow the newest push run can be
+#    Scorecard or another workflow, and a red CI would read as green.
+ci_run=$(gh run list --branch main --event push --workflow ci.yml --limit 1 \
+  --json conclusion,url --jq '.[0] | "\(.conclusion) \(.url)"')
+case "$ci_run" in success*) ;; *) echo "Red main: latest CI push run is '$ci_run' - revert first (#1093)"; exit 1;; esac
 ```
+
+**Red main — revert first, debug second (#1093).** A failing `push` run on `main`
+is reverted first and debugged second: the next change that lands is the revert
+of the commit that broke it, not a forward fix and not an investigation branch,
+and the revert PR references the failing run by URL. Do not release off a red
+`main`, and do not release a forward fix "that will also make it green" — revert,
+let CI go green, then release. Investigate afterwards on a branch off a green
+`main`. This mirrors the rule in `CLAUDE.md` § Red main.
 
 ### Quality Checks
 
@@ -490,16 +506,35 @@ size=$(npm pack --dry-run 2>&1 | grep "total files" -A1 | tail -1 || true)
 echo "Package size: ${size}"
 ```
 
-### Step 6: Commit and Push
+### Step 6: Commit and Land Through a PR
+
+`main` is protected by a ruleset (#1109): it requires the `test` and `canary`
+checks, strict up-to-date, and rejects every direct push with `GH013`. The
+release commit lands the same way every other commit does — through a PR that
+passes the same checks (#1131). Do not push `main`; do not add a bypass.
 
 ```bash
 new_version=$(node -p "require('./package.json').version")
-git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md
+git switch -c "chore/release-v${new_version}"
+git add package.json package-lock.json CHANGELOG.md .claude-plugin/plugin.json .claude-plugin/marketplace.json docs/internal/what-weve-built.md SECURITY.md README.md
 # The shipped MCP config is gitignored-but-tracked; Step 4.7 re-pinned it to this version (#988), so force-add it into the release commit.
 git add -f .mcp.json
 git commit -m "chore: release v${new_version}"
-git push origin main
+git push -u origin "chore/release-v${new_version}"
+gh pr create --base main --head "chore/release-v${new_version}" \
+  --title "chore: release v${new_version}" \
+  --body "Release v${new_version}. Lands through a PR because the main ruleset rejects direct pushes (#1109, #1131)."
 ```
+
+Wait for `test` and `canary` on the PR head (poll `commits/<sha>/check-runs`,
+not `gh pr checks --watch`, which can report the previous head), then:
+
+```bash
+gh pr merge --squash --delete-branch --subject "chore: release v${new_version}"
+git switch main && git pull --ff-only origin main
+```
+
+Step 7 tags the squash commit on `main`; tags are outside the branch rule.
 
 ### Step 7: Create and Push Tag
 
@@ -530,25 +565,58 @@ For the title, use a short summary:
 
 ### Step 9: Publish to npm
 
-Attempt to publish:
+<!-- BEGIN: next-tag-publish (#1098) -->
+
+A regular release publishes to the `next` dist-tag, **never straight to `latest`** (#1098). `latest` moves only in Step 9b, after the canary job has passed against the published tarball and a manual soak. Downstream projects run `npx sequant@latest`, so a defect that only shows up in a real install must be found on `next` first.
 
 ```bash
-# Regular release
-npm publish
+# Regular release: `next` first
+npm publish --tag next
 
-# Pre-release with tag (prevents becoming "latest")
+# Pre-release with its own tag (also never becomes "latest")
 npm publish --tag beta
 ```
 
 **If npm returns `EOTP` (2FA required):**
 
-Non-interactive environments cannot handle the OTP prompt. Ask the user to publish manually:
+Non-interactive environments cannot handle the OTP prompt. Hand the user this exact
+line and say what the flag prevents — `--tag next` keeps `latest` where it is until
+the soak passes; a bare `npm publish` moves `latest` immediately (it happened on
+2.17.0). With npm web auth the `--otp` part may be omitted, the `--tag next` part may not:
 
 ```
-npm publish --otp=<code>
+npm publish --tag next --otp=<code>
 ```
+
+When the user reports done, verify before continuing: `npm view sequant dist-tags`
+must show `next: <new_version>` and an unchanged `latest`. If `latest` moved, run the
+Step 9b soak checklist immediately and keep `npm dist-tag add sequant@<previous> latest`
+ready as the rollback.
 
 Do NOT attempt to pass OTP codes programmatically or retry `npm publish` in a loop. Hand off to the user and continue with post-release verification once they confirm.
+
+### Step 9b: Promote `next` to `latest` (requires `--soaked`)
+
+Print this soak checklist, then stop unless `--soaked` was passed:
+
+```
+Soak checklist for {new_version} on the next tag
+  [ ] CI `canary` job green against the published tarball
+  [ ] npx sequant@next sync --dry-run, run in each local repo of the maintainer's own projects, lists only expected decisions
+  [ ] npx sequant@next doctor exits 0 in those repos
+```
+
+**Without `--soaked`: refuse.** Do not run `npm dist-tag add ... latest`. Report "Published to next; latest unchanged. Re-run `/release --soaked` after the soak checklist passes." and finish. Never infer `--soaked` from context or pass it yourself.
+
+**With `--soaked`:**
+
+```bash
+npm dist-tag add sequant@${new_version} latest
+```
+
+If npm returns `EOTP`, hand off to the user with `npm dist-tag add sequant@${new_version} latest --otp=<code>`; same no-retry rule as Step 9.
+
+<!-- END: next-tag-publish (#1098) -->
 
 ## Post-Release Verification
 
@@ -557,8 +625,7 @@ Verify both platforms show the new version:
 ```bash
 # npm verification (may take 1-2 minutes to propagate)
 sleep 5
-npm view sequant version
-npm view sequant dist-tags
+npm view sequant dist-tags   # next = new version; latest only after Step 9b
 
 # GitHub verification
 gh release view "v${new_version}"

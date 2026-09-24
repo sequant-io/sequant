@@ -17,13 +17,21 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.17
+
+- **`main` is gated** — a GitHub ruleset requires the `test` and `canary` checks and strict up-to-date on every merge; a "pre-existing failure" claim needs a `settle-against-base` proof, and a red `main` is reverted before it is debugged.
+- **A downstream canary on every PR** — the previous minor is installed into a fixture project, customized, and driven through `sync`, `init`, `update`, `doctor` and a real MCP handshake by the PR's build. Releases go to the `next` tag first and are promoted only after a soak.
+- **Every agent driver passes one conformance suite** — six contract items per driver, enumerated from the registry; Codex usage-limit failures are typed so the quality loop stops instead of re-running into the same quota.
+- **The guard hook has a golden corpus** — 339 real command forms with their pinned verdicts, replayed against all three hook copies on every change.
+- **Writers are tested cell by cell** — `init`, `sync` and `update` against every destination and state on a real filesystem; `init` no longer replaces a hand-written `AGENTS.md`.
+
 ### What's new in 2.16
 
-- **Codex as an agent driver, experimental** — `--agent codex` / `run.agent: "codex"` runs every phase through `codex exec` with the same skill tree and guard hooks Claude Code uses. `sequant init --agent codex` provisions what Codex needs to find them (a relative `.agents/skills` symlink and a `.codex/config.toml` hook wrapper), `sequant doctor` checks the CLI version and authentication, and two sandbox fixes make phases able to commit and reach GitHub (#497, #1059, #1076, #1079). Read the [Codex reference](docs/features/codex-agent-backend.md) and the experimental note below before relying on it.
-- **The plugin's MCP server survives a stale local `sequant`** — a project with an older `sequant` in its own `node_modules` used to make `npx` run that copy instead of the pinned version, and `/mcp` reported only `CONNECTION_CLOSED`. The plugin now launches through an inline launcher that spawns `npx` from an isolated directory, and `sequant doctor` names a shadowing install when it finds one (#1084).
-- **One ownership rule for the files sequant writes** — `init`, `sync` and `update` now share a single declared policy per file, so a tuned `.sequant/settings.json` survives `init --agent <name>`, comments included, and a hand-maintained `AGENTS.md` is never regenerated without `--force` (#1071, #1090, #1100).
-- **Nothing in `doctor` can hang** — the `codex`, `opencode` and `gh auth status` probes are all bounded by a timeout, so a stalled CLI reports as unavailable instead of freezing the command (#1075, #1099).
-- **QA reads your test plan literally** — an unchecked box that names a command is now treated as evidence you declared but did not run, and a failing test outside the diff needs an issue number before it can be set aside (#1065, #1101). Commit subjects containing `#` also pass the conventional-commit hook again when supplied through a heredoc (#1064).
+- **Codex is a second agent driver** — `--agent codex` / `run.agent: "codex"` runs every phase through `codex exec --json` as a subprocess, with sequant's guard hooks wrapped into `.codex/config.toml` and the same `.claude/skills/` tree reached through a relative `.agents/skills` symlink. `sequant init --agent codex` provisions all of it and `doctor` checks the binary, version floor and login. Codex phases can commit and reach GitHub inside the `workspace-write` sandbox; `run.codex.networkAccess: false` seals them off (#497, #1076, #1079).
+- **One ownership rule for the files sequant writes** — every destination `init`, `sync` and `update` touch is declared `sequant-owned`, `user-owned` or `merge` in one table, and a two-sided gate test fails when a template or a new writer has no declaration. `.sequant/settings.json` survives a re-init byte-for-byte, comments included (#1090, #1071, #1100).
+- **The plugin's MCP server can't be shadowed** — a stale `sequant` in your project's `node_modules` used to hijack the pinned `npx sequant@<version> serve` and surface only `CONNECTION_CLOSED`; the launcher now spawns from an isolated directory, and `doctor` warns about a local shadow (#1084).
+- **`doctor` and auth probes can't hang** — the codex/opencode `--version` probes, `codex login status` and `gh auth status` all carry timeouts (#1075, #1099).
+- **`/qa` reads unchecked test-plan boxes as unexecuted evidence** — a PR test-plan checkbox that names a command but is left unchecked is treated as declared-but-not-run, not ignored (#1065).
 
 ### What's new in 2.15
 

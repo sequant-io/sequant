@@ -60,7 +60,12 @@
 import { spawn, execFileSync } from "child_process";
 import { isAbsolute, resolve as resolvePath } from "path";
 import { RingBuffer } from "../ring-buffer.js";
-import { SequantError, SubprocessError } from "../../errors.js";
+import {
+  BillingError,
+  RateLimitError,
+  SequantError,
+  SubprocessError,
+} from "../../errors.js";
 import { compareVersions } from "../../version-check.js";
 import type {
   AgentDriver,
@@ -283,6 +288,94 @@ export interface CodexRunOutcome {
 }
 
 /**
+ * A usage-limit reset further out than this is a wallet state, not a pause
+ * (#1087). Mirrors the `seven_day` window allowlist in `errors.ts`; the driver
+ * cannot see the run's `autoWaitMinutes`, so the horizon is fixed here.
+ */
+export const CODEX_WAIT_HORIZON_MS = 7 * 24 * 60 * 60 * 1000;
+
+const USAGE_LIMIT_RE = /hit your usage limit/i;
+const THROTTLE_RE =
+  /rate limit (?:exceeded|reached)|\b429\b|too many requests/i;
+const MONTHS = [
+  "jan",
+  "feb",
+  "mar",
+  "apr",
+  "may",
+  "jun",
+  "jul",
+  "aug",
+  "sep",
+  "oct",
+  "nov",
+  "dec",
+];
+
+/** Parse `Oct 16th, 2026 1:04 AM` (local time) to epoch ms; undefined if not parseable. */
+function parseCodexResetText(text: string): number | undefined {
+  const m =
+    /^([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\s+(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/.exec(
+      text.trim(),
+    );
+  if (!m) return undefined;
+  const month = MONTHS.indexOf(m[1].toLowerCase());
+  if (month < 0) return undefined;
+  let hour = Number(m[4]) % 12;
+  if (m[6].toLowerCase() === "pm") hour += 12;
+  const ms = new Date(
+    Number(m[3]),
+    month,
+    Number(m[2]),
+    hour,
+    Number(m[5]),
+  ).getTime();
+  return Number.isNaN(ms) ? undefined : ms;
+}
+
+/**
+ * Classify a Codex `turn.failed` message into a typed error (#1087).
+ *
+ * - Usage limit, reset within {@link CODEX_WAIT_HORIZON_MS} → `RateLimitError`
+ *   with `resetsAt`, so `--auto-wait` can engage.
+ * - Usage limit otherwise (beyond horizon, past, unparseable, absent) →
+ *   `BillingError`, failing closed as #860 does.
+ * - Transient throttle → `RateLimitError` without `resetsAt`.
+ * - Anything else → generic `SequantError`.
+ *
+ * Every branch keeps `metadata.code = "turn-failed"`.
+ *
+ * @internal Exported for testing.
+ */
+export function classifyCodexTurnFailure(
+  message: string,
+  now: number = Date.now(),
+): SequantError {
+  const code = CODEX_ERROR_CODES.turnFailed;
+  if (USAGE_LIMIT_RE.test(message)) {
+    const text = /try again at\s+(.+?)\.?\s*$/i.exec(message)?.[1]?.trim();
+    const resetsAt = text ? parseCodexResetText(text) : undefined;
+    const metadata = {
+      code,
+      ...(text ? { resetsAtText: text } : {}),
+      ...(resetsAt !== undefined ? { resetsAt } : {}),
+    };
+    if (
+      resetsAt !== undefined &&
+      resetsAt > now &&
+      resetsAt - now <= CODEX_WAIT_HORIZON_MS
+    ) {
+      return new RateLimitError(message, metadata);
+    }
+    return new BillingError(message, metadata);
+  }
+  if (THROTTLE_RE.test(message)) {
+    return new RateLimitError(message, { code });
+  }
+  return new SequantError(message, { metadata: { code } });
+}
+
+/**
  * Map a completed run to an `AgentPhaseResult` (#497 AC-3).
  *
  * Three fatal levels, each with its own code so a caller can tell a failed
@@ -323,9 +416,7 @@ export function evaluateCodexRun(
   if (parsed.turnFailure !== undefined) {
     return fail(
       `codex turn failed: ${parsed.turnFailure}`,
-      new SequantError(parsed.turnFailure, {
-        metadata: { code: CODEX_ERROR_CODES.turnFailed },
-      }),
+      classifyCodexTurnFailure(parsed.turnFailure),
     );
   }
 

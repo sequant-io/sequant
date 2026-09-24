@@ -574,10 +574,13 @@ raw_commit_segment() {
 # directory (#963).
 resolve_cd_target() {
     local input="$1" line target
-    line=$(printf '%s\n' "$input" | grep -E '^[[:space:]]*cd[[:space:]]+' | tail -1)
+    # A `cd` that starts any command segment counts — `W=…; cd $W && …` and
+    # `S=…; cd /abs && git commit` were read as "no cd line" and checked the
+    # payload cwd instead (guard-2026-09 wave runs, 2026-09-20).
+    line=$(printf '%s\n' "$input" | grep -E '(^|[;&|][[:space:]]*)cd[[:space:]]+' | tail -1)
     [[ -z "$line" ]] && return 0
 
-    target=$(printf '%s' "$line" | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*[;&|].*$//; s/[[:space:]]+$//')
+    target=$(printf '%s' "$line" | sed -E 's/^.*[;&|][[:space:]]*cd[[:space:]]+//; s/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]*[;&|].*$//; s/[[:space:]]+$//')
 
     # Strip one layer of surrounding matching quotes.
     case "$target" in
@@ -1164,7 +1167,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && seg_match 'git commit'; then
         # this hook process's own cwd, which need not match).
         TARGET_DIR=$(resolve_cd_target "$TOOL_INPUT")
         HAS_CD_LINE=false
-        echo "$TOOL_INPUT" | grep -qE '^[[:space:]]*cd[[:space:]]+' && HAS_CD_LINE=true
+        echo "$TOOL_INPUT" | grep -qE '(^|[;&|][[:space:]]*)cd[[:space:]]+' && HAS_CD_LINE=true
 
         if [[ -n "$TARGET_DIR" ]]; then
             CHANGES=$(git -C "$TARGET_DIR" status --porcelain 2>/dev/null | wc -l | tr -d ' ')

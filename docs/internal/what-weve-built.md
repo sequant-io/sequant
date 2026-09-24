@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.15.1
+# What We've Built: Sequant v2.17.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -740,6 +740,23 @@ Shell scripts in `templates/scripts/`:
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
 
+### Recent Additions (v2.17.0)
+
+- **Merge Gate on `main`** - the `CC` ruleset targets the default branch, blocks deletion and non-fast-forward pushes and requires the `test` and `canary` checks, strict up-to-date; `scripts/settle-against-base.sh` is the mechanical proof any "pre-existing failure" claim must carry; a red `main` is reverted first (#1093, #1109)
+- **Downstream Canary** - every PR installs the previous minor into a fixture project, customizes it, drives `sync`/`init --agent codex --yes`/`update`/`doctor` with the PR's build and sends a real MCP `initialize`; `/release` publishes to `next` first and refuses `latest` without `--soaked` (#1098)
+- **Driver Conformance Suite** - every registered driver passes the same six contract items (sandbox commit, network, typed errors, env, structured outcome, skill loading); the Codex probes run the real `codex sandbox` (#1096, #1087)
+- **Golden Corpus for the Guard Hook** - `__tests__/fixtures/hook-corpus.jsonl` pins the verdict of 339 real command forms against all three `pre-tool.sh` copies; `scripts/hook-corpus.ts --diff` reports every verdict change (#1094)
+- **Writer State Matrix** - `init`, `sync` and `update` are exercised against every destination × state × policy cell on a real filesystem; three writer defects found and filed (#1097)
+- **Hermetic Suite, Honest Verdicts** - `SEQUANT_*` is scrubbed before any worker starts (#1086); a failing QA verdict is posted to the issue (#1070); the pre-PR sync merges instead of rebasing a pushed branch (#1069); property tests cover the AC and marker parsers (#1095)
+
+### Recent Additions (v2.16.0)
+
+- **Codex Agent Driver** - `--agent codex` / `run.agent: "codex"` runs phases via `codex exec --json` with an SDK-typed event parser, three-level outcome evaluator, `run.codex` settings (model, sandboxMode, networkAccess, extraArgs), token metrics from `turn.completed.usage`, and a `CODEX_MIN_VERSION` floor (#497)
+- **`sequant init --agent codex`** - relative `.agents/skills` symlink, `.codex/config.toml` wrapping the existing guard hooks unmodified, matching `doctor` checks, symlink preserved by `update`; git dir passed as a writable root and network enabled for `workspace-write` phases so codex can commit and reach GitHub (#1059, #1076, #1079)
+- **One Ownership Rule** - `ownershipPolicy()` + `TEMPLATE_ROUTES` in `templates.ts` is the only source `init`/`sync`/`update` consult; two-sided gate test covers undeclared templates and undeclared write sites; `.sequant/settings.json` preserved on re-init with JSONC comments intact (#1090, #1071, #1100)
+- **Unshadowable Plugin MCP Launcher** - `.mcp.json` embeds an inline launcher that spawns `npx` from an isolated cwd so a stale local `sequant` can't hijack the pin; `doctor` gains a local-shadow check (#1084)
+- **Bounded Probes** - `doctor`'s codex/opencode probes and `GitHubProvider.checkAuthSync()` carry timeouts; heredoc commit subjects keep their `#` (#1075, #1099, #1064)
+
 ### Recent Additions (v2.15.1)
 
 - **Fresh-Session QA** - the qa phase never resumes the implementer's session (a 27-transcript study: 44% of fresh second looks caught a would-ship bug); `--full-qa` / `run.fullQa` / MCP `fullQa` force full-weight QA on demand
@@ -1215,7 +1232,7 @@ npm run build
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              SEQUANT v2.15.1                               │
+│                              SEQUANT v2.17.0                               │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  SKILLS (18)              CLI (11)                LIBRARIES (45)            │

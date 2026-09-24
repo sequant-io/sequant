@@ -13,5 +13,12 @@ export default function setup() {
   process.env.GIT_CONFIG_GLOBAL = "/dev/null";
   process.env.GIT_CONFIG_SYSTEM = "/dev/null";
 
+  // Hermetic against the orchestrator: every phase runs with injected
+  // variables (#1086) that change what the code under test does. Scrub by
+  // prefix so a new phase variable can't reintroduce the leak.
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("SEQUANT_")) delete process.env[key];
+  }
+
   execSync("npm run build", { stdio: "ignore" });
 }

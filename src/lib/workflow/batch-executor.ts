@@ -769,7 +769,17 @@ export function buildQaVerdictComment(
 ): string {
   const lines: string[] = [`## QA Verdict: ${verdict}`];
   if (summary) {
-    lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
+    // #1073: a `0/N met` line under an AC_MET* verdict contradicts the verdict
+    // and reads as a failure; when the parser found no counts (or counts that
+    // cannot be reconciled with a passing verdict) omit the line rather than
+    // print a wrong one.
+    const passing =
+      verdict === "READY_FOR_MERGE" || verdict.startsWith("AC_MET");
+    const countsUsable =
+      summary.acTotal > 0 && !(passing && summary.acMet === 0);
+    if (countsUsable) {
+      lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
+    }
     if (summary.gaps.length > 0) {
       lines.push("", "**Gaps:**", ...summary.gaps.map((g) => `- ${g}`));
     }
@@ -1751,11 +1761,12 @@ export async function runIssueWithLogging(
       // qa/SKILL.md §9 promises "the orchestrator handles aggregated summary"
       // under SEQUANT_ORCHESTRATOR, but nothing backed that promise — a
       // re-run producing a fresh, different verdict left the stale prior
-      // comment as the only externally-visible one. Gating on
-      // `result.success && result.verdict` also excludes turn-capped and
-      // unparseable-verdict phases (AC-4) without extra bookkeeping, since
-      // both already flow through the `else` branch above.
-      if (phase === "qa" && result.success && result.verdict) {
+      // comment as the only externally-visible one. Gating on `result.verdict`
+      // alone excludes turn-capped and unparseable-verdict phases (AC-4),
+      // since a verdict is only set once one parsed. `result.success` is
+      // deliberately absent (#1070): AC_NOT_MET is a failed phase carrying a
+      // full findings payload, and it is the review that most needs posting.
+      if (phase === "qa" && result.verdict) {
         const verdictDiffBase = worktreePath
           ? resolveDiffBase(worktreePath, baseBranch ?? "main")
           : undefined;

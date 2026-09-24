@@ -729,6 +729,18 @@ worktree).
 
 **Do NOT skip this step.** This single checkpoint addresses the most common first-pass QA failure patterns.
 
+### Recording the mutation result (gate-test ACs)
+
+When an AC is a gate test (a fixture exists, a skill section is present, a flag is wired), mutation-verify it before the PR: delete the thing it asserts, confirm exactly that test fails, restore. Then put this marker in the PR body, one per gate-test AC:
+
+```
+<!-- SEQUANT_MUTATION: {"ac":"AC-3","mutation":"deleted the section","failedTest":"scripts/exec-skill-marker.test.ts > exec skill documents the marker > shows the file form"} -->
+```
+
+- **`failedTest` starts with the test file path**, then ` > <describe> > <case>`. `/qa` §6i resolves only the segment before the first `>` against the diff's test files. A describe title, bare test name, or issue number first classifies `test_not_in_diff`, which reads as fabricated and floors the verdict at `AC_NOT_MET`.
+- **Keep the payload flat: no `}` inside `mutation` or `failedTest`.** The parser reads up to the first `}`, so a brace silently truncates the JSON.
+- **Before opening the PR**, run the `parseMutationMarkers` check from `/qa` §6i and confirm each marker prints `valid`.
+
 ### 3f. CHANGELOG Update (REQUIRED for user-facing changes)
 
 **Purpose:** Ensure all user-facing changes are documented in the CHANGELOG before PR creation. This prevents documentation gaps and reduces release overhead.
@@ -1210,11 +1222,23 @@ run` every phase has `SEQUANT_ORCHESTRATOR`, `SEQUANT_WORKTREE` and other `SEQUA
 set, and the suite is not hermetic against them — re-run the failing file with every one of
 them unset:
 `env $(printenv | grep -o '^SEQUANT_[A-Z_]*' | sed 's/^/-u /') npx vitest run <file>`;
-green means #1086, not your change. Then settle it against base in the same worktree.
-Whatever the cause, the PR body names an issue for it: link the existing one
-(`gh issue list --search "<test name>"`) or file one. Three PRs on 2026-09-10/11 each wrote
-"3 pre-existing failures, unrelated" for the same three tests; none filed an issue, and the
-same failures stopped a gate run a week later.
+green means #1086, not your change.
+
+Then settle it against base in the same worktree, mechanically — run
+`scripts/settle-against-base.sh <test-file> [-t <name>]` for **every** red test outside the
+diff, and paste its `### Settled against base` block into the PR body. The script runs the
+named test at HEAD and again at the base commit with every `SEQUANT_*` var unset, and
+restores your branch and any uncommitted work on every exit path; it commits nothing. It
+also distinguishes *"the test file does not exist at base"* from *"the test failed at
+base"* — a brand-new test errors at base, and without that distinction the error reads as
+proof of the very thing you are claiming.
+
+A "pre-existing" claim with no such block is not a claim, it is an assertion: `/qa` §2a
+treats it as `settle_evidence_status = Unbacked` and §7 step 4 floors the verdict at
+`AC_MET_BUT_NOT_A_PLUS`. Whatever the cause, the PR body names an issue for it: link the
+existing one (`gh issue list --search "<test name>"`) or file one. Three PRs on
+2026-09-10/11 each wrote "3 pre-existing failures, unrelated" for the same three tests;
+none filed an issue, and the same failures stopped a gate run a week later.
 
 Do NOT silently skip checks. Always state which commands you intend to run and why.
 
@@ -1361,6 +1385,18 @@ done
 |--------|--------|------------|-----------|------------|
 | `quality-checks.sh` | ✅ OK | ⚠️ 2 warnings | ✅ All used | ✅ OK |
 ```
+
+### 3c2. Hook Verdict Corpus (When `pre-tool.sh` is modified)
+
+**Purpose:** `pre-tool.sh` is a bash/awk parser whose fixes have repeatedly broken forms an earlier fix protected. `__tests__/fixtures/hook-corpus.jsonl` records the verdict the hook gives every command form it has been asked to judge; a changed verdict is a review item, not a surprise.
+
+**When any of the three `pre-tool.sh` copies changes**, run the diff against base and list every changed verdict in the PR body:
+
+```bash
+npx tsx scripts/hook-corpus.ts --diff origin/main
+```
+
+It prints `N verdict changes` (exit 0 only when N is 0). Put each change in the PR body under a `Hook verdicts changed:` heading, one line per command with `allow -> block` or `block -> allow`, then update the matching corpus lines so `npx vitest run __tests__/hook-corpus.integration.test.ts` passes. An intended fix that flips no verdict writes `Hook verdicts changed: none`.
 
 ### 3d. Lint Check (REQUIRED before PR)
 
