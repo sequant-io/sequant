@@ -533,6 +533,45 @@ If an AC has verification method "N/A - Trivial", skip test generation and note 
 
 If generating file-based tests (Unit Test, Integration Test), find the worktree.
 
+<!-- BEGIN: in-place-checkout (#1136) -->
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`).** The mode is entered only by
+this flag, which the launcher sets; it is never inferred from git state (#899).
+With the flag unset, skip this block and follow the instructions below exactly
+as written.
+
+With the flag set, the current clone **is** the worktree: write test files in
+`$PWD`. Run this check first, and treat every failure as a halt:
+
+```bash
+if [[ -n "${SEQUANT_CHECKOUT:-}" ]]; then
+  if [[ "$SEQUANT_CHECKOUT" != "in-place" ]]; then
+    echo "❌ HALT: unrecognized SEQUANT_CHECKOUT='$SEQUANT_CHECKOUT' (the only value is 'in-place')."
+    exit 1
+  fi
+  if [[ -n "${SEQUANT_WORKTREE:-}" ]]; then
+    echo "❌ HALT: SEQUANT_CHECKOUT=in-place and SEQUANT_WORKTREE are mutually exclusive."
+    exit 1
+  fi
+  BASE="${SEQUANT_BASE_BRANCH:-main}"
+  CURRENT="$(git branch --show-current)"
+  if [[ -z "$CURRENT" || "$CURRENT" == "$BASE" ]]; then
+    echo "❌ HALT: in-place checkout is on '${CURRENT:-detached HEAD}', not a feature branch."
+    exit 1
+  fi
+  WORKTREE="$PWD"
+fi
+```
+
+- The base-branch halt is unconditional. Never write test files on the base branch
+  or a detached HEAD, and never create a branch here: only `/exec` creates one.
+- Skip the orchestrated existence guard and the standalone lookup below. Never
+  run `npx sequant worktree resolve`, `npx sequant worktree verify`,
+  `git worktree add` or `new-feature.sh` in this mode.
+- Continue with Step 5 from `$PWD`.
+
+<!-- END: in-place-checkout (#1136) -->
+
 <!-- BEGIN: worktree-standalone-lookup (#899) -->
 
 Resolve it through git, not the filesystem:

@@ -186,6 +186,80 @@ When running as part of an orchestrated workflow (e.g., `sequant run` or `/fulls
 - Post progress updates to GitHub
 - Fetch fresh issue context
 
+<!-- BEGIN: in-place-checkout (#1136) -->
+
+### Checkout Modes
+
+`/exec` runs in exactly one of three checkout modes. The mode is chosen **only**
+by environment variables the launcher sets. It is never inferred from git
+state: a fresh clone sitting on `main` with no `../worktrees/` directory is
+still **standalone** unless the flag below is set (#899).
+
+| Mode | Entry condition | Where the work happens | What it skips |
+|------|-----------------|------------------------|---------------|
+| orchestrated | `SEQUANT_ORCHESTRATOR` set, `SEQUANT_CHECKOUT` unset | `SEQUANT_WORKTREE`, verified by the #899 existence guard | pre-flight git checks, worktree creation |
+| standalone | `SEQUANT_ORCHESTRATOR` and `SEQUANT_CHECKOUT` unset | a worktree found by `sequant worktree resolve` or created by `new-feature.sh` | nothing |
+| in-place | `SEQUANT_CHECKOUT=in-place` | a feature branch in the current clone (`$PWD`) | worktree creation and lookup, the dev-server smoke test (unless `SEQUANT_SMOKE=1`), `/test` |
+
+With `SEQUANT_CHECKOUT` unset, ignore this section entirely: the orchestrated
+and standalone instructions below apply exactly as written.
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`).** This is the mode for a
+checkout that has no worktree to use, such as a claude.ai cloud session: a
+fresh clone with no sibling `../worktrees/` and no `sequant` binary. The work
+happens on a feature branch in the current clone. Run this entry check before
+anything else:
+
+```bash
+if [[ -n "${SEQUANT_CHECKOUT:-}" && "$SEQUANT_CHECKOUT" != "in-place" ]]; then
+  echo "❌ HALT: unrecognized SEQUANT_CHECKOUT='$SEQUANT_CHECKOUT' (the only value is 'in-place')."
+  exit 1
+fi
+if [[ "${SEQUANT_CHECKOUT:-}" == "in-place" ]]; then
+  if [[ -n "${SEQUANT_WORKTREE:-}" ]]; then
+    echo "❌ HALT: SEQUANT_CHECKOUT=in-place and SEQUANT_WORKTREE are mutually exclusive."
+    exit 1
+  fi
+  BASE="${SEQUANT_BASE_BRANCH:-main}"
+  CURRENT="$(git branch --show-current)"
+  if [[ -z "$CURRENT" || "$CURRENT" == "$BASE" ]]; then
+    # The branch name the standalone worktree script derives, so a later
+    # local worktree lookup finds this branch once it is fetched.
+    TITLE="$(gh issue view <issue-number> --json title -q .title)"
+    SLUG="$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')"
+    if [[ -z "$SLUG" ]]; then
+      echo "❌ HALT: could not read the title of #<issue-number> to name the branch."
+      exit 1
+    fi
+    BRANCH="$(echo "feature/<issue-number>-${SLUG}" | cut -c1-58)"
+    git fetch origin "$BASE"
+    git checkout -b "$BRANCH" "origin/$BASE"
+  fi
+  echo "In-place checkout on branch: $(git branch --show-current)"
+fi
+```
+
+- **Already on a non-base branch:** keep it. Do not create a second branch.
+- **The current clone is the worktree.** Everywhere below that says "the
+  worktree" or "the worktree path", read `$PWD`. Run `npm test`, `npm run build`,
+  commits, `git push -u origin <branch>` and `gh pr create` from here.
+- **Never** run `./scripts/new-feature.sh` or `./scripts/dev/new-feature.sh`,
+  never run `git worktree add`, and never run `npx sequant worktree resolve` or
+  `npx sequant worktree verify`. The sections that call them are marked below
+  and are skipped in this mode.
+- **Skip the dev-server smoke test** (section 2.1a) unless `SEQUANT_SMOKE=1`.
+- **Never invoke `/test`.** Its local overrides live under `.claude/.local/`,
+  which is gitignored and absent from a fresh clone.
+- **Parallel groups:** use `$PWD` as the issue worktree path. Sub-worktree
+  isolation (`isolateParallel`) is off in this mode, because it runs
+  `git worktree add`.
+- Everything else is unchanged: the AC loop, the quality gates, the mutation
+  record, PR creation and the progress comment. If `SEQUANT_ORCHESTRATOR` is
+  also set, its non-worktree behaviors (fewer GitHub comments, trusted issue
+  context) still apply.
+
+<!-- END: in-place-checkout (#1136) -->
+
 ### 0. Pre-flight Check (After Context Restoration)
 
 **Skip this section if `SEQUANT_ORCHESTRATOR` is set** - the orchestrator has already performed these checks.
@@ -297,6 +371,14 @@ Default: 5 commits
 **Performance Optimization:** When creating a new worktree, gather context in parallel with worktree creation to reduce setup time by ~5-10 seconds.
 
 #### Parallel Context Gathering Pattern
+
+<!-- BEGIN: in-place-checkout-skip: context-gathering (#1136) -->
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`):** there is no worktree to create.
+Skip steps 1 and 3 below (start and wait for `new-feature.sh`) and gather the
+context of step 2 directly.
+
+<!-- END: in-place-checkout-skip: context-gathering (#1136) -->
 
 When worktree creation is needed (standalone mode, no existing worktree):
 
@@ -460,6 +542,13 @@ Once extracted, derived ACs should be:
 
 **Skip if:** Issue has none of these labels (backend-only, CLI, docs, etc.).
 
+<!-- BEGIN: in-place-checkout-skip: smoke-test (#1136) -->
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`):** skip this section unless
+`SEQUANT_SMOKE=1` is set. A cloud clone has no dev server or browser to check.
+
+<!-- END: in-place-checkout-skip: smoke-test (#1136) -->
+
 **Quick verification (< 30 seconds):**
 
 1. Start dev server in background:
@@ -491,6 +580,15 @@ Once extracted, derived ACs should be:
 ### Feature Worktree Workflow
 
 **Execution Phase:** Create and work in a feature worktree.
+
+<!-- BEGIN: in-place-checkout-skip: worktree-workflow (#1136) -->
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`):** skip this whole section — the
+main-branch safeguard, the existence guard, the standalone lookup and worktree
+creation. The entry check in "Checkout Modes" has already put you on a feature
+branch in the current clone; work, commit and push from `$PWD`.
+
+<!-- END: in-place-checkout-skip: worktree-workflow (#1136) -->
 
 **CRITICAL: Main Branch Safeguard (Issue #85)**
 
@@ -1666,6 +1764,13 @@ Look in the issue comments (especially from `/spec`) for:
 ```
 
 **If Parallel Groups exist:**
+
+<!-- BEGIN: in-place-checkout-skip: parallel-isolation (#1136) -->
+
+**In-place mode (`SEQUANT_CHECKOUT=in-place`):** isolation is off regardless of
+the settings below. The issue worktree path is `$PWD`.
+
+<!-- END: in-place-checkout-skip: parallel-isolation (#1136) -->
 
 0. **Check isolation mode (AC-20):**
    ```bash
