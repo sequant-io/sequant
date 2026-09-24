@@ -350,17 +350,22 @@ describe("mcp-config", () => {
       }
     });
 
-    it("should handle corrupt .mcp.json gracefully", () => {
-      fs.writeFileSync(path.join(tmpDir, ".mcp.json"), "not valid json{{{");
+    it("should leave an unparseable .mcp.json untouched and report it (#1123)", () => {
+      const original = "not valid json{{{";
+      fs.writeFileSync(path.join(tmpDir, ".mcp.json"), original);
 
       const result = createProjectMcpJson(tmpDir);
 
-      expect(result).toEqual({ created: false, merged: true, skipped: false });
+      expect(result).toEqual({
+        created: false,
+        merged: false,
+        skipped: false,
+        corrupt: true,
+      });
 
-      const content = JSON.parse(
-        fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
-      );
-      expect(content.mcpServers.sequant.command).toBe("npx");
+      // File is left byte-for-byte as it was — not replaced with a fresh config.
+      const content = fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8");
+      expect(content).toBe(original);
     });
 
     it("should handle mcpServers being an array instead of object", () => {

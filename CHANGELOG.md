@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`sequant init --yes` no longer replaces an unparseable `.mcp.json` (#1123).** `createProjectMcpJson` caught the JSON parse failure and silently started fresh, overwriting the file and reporting "Added Sequant to existing .mcp.json" — even though `.mcp.json` is a merge destination that `syncSequantMcpPin` already leaves alone on the same failure. It now returns `corrupt: true` without writing, and `init` reports the file was left untouched. (The `AGENTS.md` half of this issue was already fixed by #1098.)
 - **`parseQaVerdict` records the final verdict heading, not the first mention** — a qa transcript that quoted `## QA Verdict: AC_NOT_MET` earlier was recorded `AC_NOT_MET` even when its closing `### Verdict:` said `READY_FOR_MERGE` (#1070 passed qa three times and was recorded failing each time). The last line-anchored heading/bold verdict now wins; with none, the last mention of any form. (#1119)
 - **`run.codex.networkAccess` is a recognised settings key.** #1079 added the setting but not its entry in the validator's known-key list, so setting it produced a spurious "unknown key" warning while still taking effect.
 

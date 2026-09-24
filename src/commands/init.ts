@@ -501,7 +501,10 @@ export const CODEX_SKILLS_SYMLINK_TARGET = "../.claude/skills";
 export const CODEX_TRUST_LEVEL_TOML = 'trust_level = "trusted"';
 
 export type CodexSkillsSymlinkStatus =
-  "created" | "already-correct" | "skipped-foreign" | "unsupported";
+  | "created"
+  | "already-correct"
+  | "skipped-foreign"
+  | "unsupported";
 
 /**
  * Create (or verify) the `.agents/skills` → `../.claude/skills` symlink codex
@@ -1174,6 +1177,14 @@ export async function initCommand(options: InitOptions): Promise<void> {
     ui.printStatus("success", "Created .mcp.json (Claude Code MCP config)");
   } else if (mcpJsonResult.merged) {
     ui.printStatus("success", "Added Sequant to existing .mcp.json");
+  } else if (mcpJsonResult.corrupt) {
+    // Report the skip rather than silently replacing the user's file (#1123)
+    // — the same "report the decision" precedent as the AGENTS.md skip above.
+    console.log(
+      chalk.yellow(
+        "⚠  .mcp.json is not valid JSON — left untouched. Fix it manually, then re-run init to add Sequant.",
+      ),
+    );
   } else {
     console.log(
       chalk.gray("   .mcp.json: sequant already configured (skipped)"),

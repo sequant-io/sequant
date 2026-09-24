@@ -262,6 +262,12 @@ export interface ProjectMcpJsonResult {
   created: boolean;
   merged: boolean;
   skipped: boolean;
+  /**
+   * True when `.mcp.json` exists but is not valid JSON. The file is left
+   * untouched rather than replaced (#1123) — `.mcp.json` is a merge
+   * destination, the same as `syncSequantMcpPin` already treats it.
+   */
+  corrupt?: boolean;
 }
 
 /**
@@ -323,8 +329,10 @@ export function createProjectMcpJson(
     try {
       config = JSON.parse(fs.readFileSync(mcpJsonPath, "utf-8"));
     } catch {
-      // Corrupt or empty file — start fresh
-      config = {};
+      // Unparseable — leave the user's file alone rather than replacing it
+      // (#1123). `.mcp.json` is a merge destination; an empty-file fallback
+      // here would silently discard whatever was there.
+      return { created: false, merged: false, skipped: false, corrupt: true };
     }
   }
 
