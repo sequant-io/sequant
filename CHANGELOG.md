@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Explicit in-place checkout mode for phase skills.** With `SEQUANT_CHECKOUT=in-place`, `/exec` works on a `feature/<N>-<slug>` branch in the current clone instead of creating a worktree, and `/qa`, `/loop` and `/testgen` treat `$PWD` as the worktree and halt on the base branch. The mode is opt-in only and never inferred from git state, so the #899 worktree guards are unchanged when the flag is unset. This is what a claude.ai cloud session needs: a fresh clone with no `../worktrees/` and no `sequant` binary. See `docs/reference/checkout-modes.md`. (#1136)
 
 ### Fixed
 
