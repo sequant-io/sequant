@@ -7,72 +7,36 @@
 // Shallow-clone handling (#993 QA finding, #1140): the CI `build` job checks
 // out with the default `fetch-depth: 1` (see .github/workflows/ci.yml — only
 // the job at the bottom sets `fetch-depth: 0`), and claude.ai cloud sessions
-// clone 51 commits deep. In a shallow clone `git merge-base --is-ancestor`
-// cannot walk past the shallow boundary, so it fails for a *valid* commit
-// exactly as it does for a bogus one. The first guard keyed this on object
-// presence, which is not the same thing: fetching other branches pulls the
-// fixture commits into the object database while HEAD's history is still cut
-// above them (#1140 — present, yet not reachable). The ancestry assertion is
-// therefore guarded on `--is-shallow-repository`: a non-ancestor result is
-// unevaluable in a shallow clone and a failure in a full one. Presence and
-// well-formedness of `fixture_commit` are still asserted everywhere.
+// clone 51 commits deep. There a non-ancestor answer is unevaluable rather
+// than false, whether or not the fixture commit object is present — see
+// scripts/evals/commit-ancestry.ts. Enforcement runs in any full-history clone;
+// presence and well-formedness of `fixture_commit` are asserted everywhere.
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  commitObjectPresent,
+  fixtureCommitAncestry,
+  isShallowRepository,
+  listResultFiles,
+  readFixtureCommit,
+} from "../scripts/evals/commit-ancestry.ts";
 
 const RESULTS_DIR = join(process.cwd(), "evals", "results");
 
-type Ancestry = "ancestor" | "not-ancestor" | "unevaluable";
-
-function git(args: string[], cwd: string) {
-  return spawnSync("git", args, { cwd, encoding: "utf-8" });
-}
-
-/** True iff `sha` is present in this clone's object database as a commit. */
-function commitObjectPresent(sha: string, cwd = process.cwd()): boolean {
-  return git(["cat-file", "-e", `${sha}^{commit}`], cwd).status === 0;
-}
-
-function isShallow(cwd: string): boolean {
-  return (
-    git(["rev-parse", "--is-shallow-repository"], cwd).stdout.trim() === "true"
-  );
-}
-
-function ancestry(sha: string, cwd = process.cwd()): Ancestry {
-  if (git(["merge-base", "--is-ancestor", sha, "HEAD"], cwd).status === 0) {
-    return "ancestor";
-  }
-  // Keyed on shallowness, not presence: a present commit can still sit
-  // beyond HEAD's shallow boundary (#1140).
-  if (isShallow(cwd)) return "unevaluable";
-  return "not-ancestor";
-}
-
-function listResultFiles(): string[] {
-  return readdirSync(RESULTS_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => entry.name);
-}
-
-function readFixtureCommit(file: string): unknown {
-  return JSON.parse(readFileSync(join(RESULTS_DIR, file), "utf-8"))
-    .fixture_commit;
-}
-
 describe("evals/results fixture_commit gate (#993 AC-4)", () => {
-  const files = listResultFiles();
+  const files = listResultFiles(RESULTS_DIR);
 
   it("finds at least one recorded eval result", () => {
-    expect(files.length).toBeGreaterThan(0);
+    expect(listResultFiles(RESULTS_DIR).length).toBeGreaterThan(0);
   });
 
   // Asserted unconditionally — needs no git history.
   it.each(files)("%s carries a well-formed fixture_commit", (file) => {
-    const sha = readFixtureCommit(file);
+    const sha = readFixtureCommit(RESULTS_DIR, file);
     expect(typeof sha).toBe("string");
     expect(sha as string).toMatch(/^[0-9a-f]{40}$/);
   });
@@ -80,7 +44,9 @@ describe("evals/results fixture_commit gate (#993 AC-4)", () => {
   it.each(files)(
     "%s's fixture_commit is an ancestor of HEAD (where history allows)",
     (file) => {
-      const verdict = ancestry(readFixtureCommit(file) as string);
+      const verdict = fixtureCommitAncestry(
+        readFixtureCommit(RESULTS_DIR, file) as string,
+      );
       // Shallow clone: unevaluable rather than false. Enforcement still runs
       // in any full-history clone.
       if (verdict === "unevaluable") return;
@@ -169,18 +135,18 @@ describe("fixture_commit ancestry guard (#1140)", () => {
     // Negative control: the orphan is a real commit object never linked into
     // HEAD's history, so it is present and genuinely not an ancestor.
     expect(commitObjectPresent(sha.orphan, origin)).toBe(true);
-    expect(ancestry(sha.orphan, origin)).toBe("not-ancestor");
-    expect(ancestry(sha.F, origin)).toBe("ancestor");
+    expect(fixtureCommitAncestry(sha.orphan, origin)).toBe("not-ancestor");
+    expect(fixtureCommitAncestry(sha.F, origin)).toBe("ancestor");
   });
 
   it("treats a present commit beyond the shallow boundary as unevaluable", () => {
-    expect(isShallow(shallow)).toBe(true);
+    expect(isShallowRepository(shallow)).toBe(true);
     expect(commitObjectPresent(sha.F, shallow)).toBe(true);
-    expect(ancestry(sha.F, shallow)).toBe("unevaluable");
+    expect(fixtureCommitAncestry(sha.F, shallow)).toBe("unevaluable");
   });
 
   it("treats an absent commit in a shallow clone as unevaluable", () => {
     expect(commitObjectPresent(sha.G, shallow)).toBe(false);
-    expect(ancestry(sha.G, shallow)).toBe("unevaluable");
+    expect(fixtureCommitAncestry(sha.G, shallow)).toBe("unevaluable");
   });
 });
