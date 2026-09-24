@@ -327,7 +327,10 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     markerChanged: "= = M M M M",
     localSymlink: "M M = = = =",
     foreignSymlink: "M M = = = =",
-    directory: "X X = = = =",
+    // #1123: init no longer crashes when .mcp.json is a directory — the same
+    // unparseable/unreadable guard that leaves corrupt JSON alone leaves a
+    // directory alone too, rather than letting the write throw EISDIR.
+    directory: "= = = = = =",
   },
   gitignore: {
     absent: "T T = = = =",
@@ -452,10 +455,7 @@ const DECISIONS: Record<DestId, Record<StateId, string>> = {
  */
 const KNOWN_DEFECTS: Record<string, { issue: string; cells: number }> = {
   "symlink-written-through-at-sequant-owned": { issue: "#1122", cells: 24 },
-  // The 4 AGENTS.md cells were fixed by #1098; #1123's unparseable-.mcp.json
-  // half is not a grid state, so the entry stays until that is closed.
-  "user-owned-not-preserved-without-force": { issue: "#1123", cells: 0 },
-  "directory-crashes-writer": { issue: "#1124", cells: 34 },
+  "directory-crashes-writer": { issue: "#1124", cells: 32 },
 };
 
 // ---------------------------------------------------------------------------
@@ -901,7 +901,6 @@ describe("policy invariants over the grid", () => {
 
   function violations(): Record<string, number> {
     const counts: Record<string, number> = {
-      "user-owned-not-preserved-without-force": 0,
       "symlink-written-through-at-sequant-owned": 0,
       "directory-crashes-writer": 0,
     };

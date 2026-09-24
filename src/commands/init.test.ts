@@ -845,6 +845,21 @@ describe("init command", () => {
       expect(output).toContain(".mcp.json");
       expect(output).toContain("Claude Code MCP server config");
     });
+
+    it("reports an unparseable .mcp.json rather than claiming it was updated (#1123)", async () => {
+      mockCreateProjectMcpJson.mockReturnValueOnce({
+        created: false,
+        merged: false,
+        skipped: false,
+        corrupt: true,
+      });
+
+      await initCommand({ yes: true, stack: "generic" });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("not valid JSON");
+      expect(output).not.toContain("Added Sequant to existing .mcp.json");
+    });
   });
 
   // #848 (AC-3 audit): `--upgrade-skills` with no installed skills directory
