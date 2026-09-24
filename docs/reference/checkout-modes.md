@@ -49,6 +49,11 @@ The AC loop, quality gates, mutation record, PR creation and verdict comment
 are unchanged. If `SEQUANT_ORCHESTRATOR` is also set, its non-worktree
 behaviours still apply, such as fewer GitHub comments.
 
+**Do not export `SEQUANT_CHECKOUT` in a shell you run `sequant run` from.**
+`sequant run` passes its own environment through to every phase and sets
+`SEQUANT_WORKTREE`. With both set, every phase halts on the mutual-exclusion
+check. Set the flag per session, in the launcher that starts the cloud session.
+
 No hook change is needed. The `pre-tool.sh` commit guard already allows commits
 on a non-base branch in the main checkout.
 
