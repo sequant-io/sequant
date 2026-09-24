@@ -85,6 +85,8 @@ Neither override touches `read-only` or `danger-full-access`. The point is to ke
 
 The JSONL stream is parsed against the Codex TypeScript SDK's exported event types (a devDependency; nothing from it reaches `dist/`). `item.completed` items of type `error` are forwarded to stderr as warnings — the hook-trust banner and the model-metadata notice arrive that way — and only `turn.failed` or a top-level `error` event fails the phase.
 
+A `turn.failed` is classified before it is reported (#1087). Codex's usage-limit message becomes a `RateLimitError` carrying the parsed reset time when that reset is within seven days, so `--auto-wait` can hold the run until the window reopens; a reset further out, in the past, or unparseable becomes a `BillingError`, which stops the quality loop instead of re-running into the same quota. Throttle wording (`rate limit exceeded`, `429`, `too many requests`) is a retryable `RateLimitError`. Any other failure stays a generic error with code `turn-failed`. The [driver conformance suite](../guides/writing-an-agent-driver.md#3-typed-error-mapping) pins this mapping.
+
 ## What `sequant doctor` checks
 
 When `run.agent` is `"codex"`, `doctor` adds:
@@ -104,4 +106,5 @@ It does not inspect `.agents/skills` or `.codex/config.toml`; check those with `
 
 - [Aider Agent Backend](aider-agent-backend.md) — the other alternative driver, and how backends are implemented
 - [Troubleshooting → Codex Issues](../troubleshooting.md#codex-issues)
+- [Writing an agent driver](../guides/writing-an-agent-driver.md) — the driver interface and the conformance contract every backend passes
 - [Run Orchestrator](run-orchestrator.md)

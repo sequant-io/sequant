@@ -731,6 +731,14 @@ Commit `.codex/` and `.agents/` so worktree phases inherit the same hook wrapper
 
 **Solution:** Upgrade to 2.16 or later. `CodexDriver` now passes the repo's git dir as a writable root (#1076) and enables network access under `workspace-write` (#1079). If you have set `run.codex.networkAccess: false`, phases are sealed off deliberately and cannot read issues, post comments or push; that is the trade-off that setting makes.
 
+### Codex phase fails with "You've hit your usage limit"
+
+**Problem:** A codex phase ends with `turn.failed` and a usage-limit message, and the run stops rather than retrying.
+
+**Cause:** Your Codex plan's quota is exhausted. Since 2.17 the driver types this failure (#1087): a reset within seven days is reported as a rate limit with the reset time, anything later or unparseable as a billing failure, so the quality loop does not re-run into the same wall.
+
+**Solution:** Run with `--auto-wait <minutes>` to have sequant resume when the window reopens, or wait for the reset time printed in the error and re-run. A billing failure means the reset is too far out to wait for; check your plan at the Codex side.
+
 ### `doctor` reports codex unavailable or unauthenticated
 
 **Problem:** `sequant doctor` says codex is missing, below `0.154.0`, or not authenticated.
