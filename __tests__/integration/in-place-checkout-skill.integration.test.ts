@@ -172,8 +172,8 @@ interface Scratch {
 
 /**
  * A fresh clone of a one-commit `main`, as a cloud session starts. `gh` is
- * shimmed to print a fixed issue title; `npx` is shimmed to log its argv and
- * fail, so any `npx sequant worktree …` call is both recorded and fatal.
+ * and `npx` are shimmed to log their argv and fail, so any `gh` or
+ * `npx sequant worktree …` call inside a block is both recorded and fatal.
  * Every `SEQUANT_*` var is scrubbed from the inherited env (#1086).
  */
 function scratchClone(): Scratch {
@@ -189,9 +189,10 @@ function scratchClone(): Scratch {
 
   const npxLog = path.join(root, "npx.log");
   writeFileSync(npxLog, "");
+  // No `gh` in a cloud sandbox: the shim logs and fails like a missing binary.
   writeFileSync(
     path.join(bin, "gh"),
-    `#!/bin/sh\necho ${JSON.stringify(TITLE)}\n`,
+    `#!/bin/sh\necho "gh $@" >> ${JSON.stringify(npxLog)}\necho "gh: command not found" >&2\nexit 127\n`,
   );
   writeFileSync(
     path.join(bin, "npx"),
@@ -208,7 +209,12 @@ function scratchClone(): Scratch {
   return { clone, npxLog, env };
 }
 
-/** The single bash block of a skill's main in-place region, for `ISSUE`. */
+/**
+ * The single bash block of a skill's main in-place region, with the
+ * `<issue-number>` and `<issue-title>` placeholders filled in as the agent
+ * fills them. The title is a placeholder, not a `gh` call: a cloud sandbox has
+ * no `gh`, and the first dogfood session halted on exactly that.
+ */
 function entryBlock(root: string, skill: string): string {
   const blocks = [
     ...region(readSkill(root, skill), MAIN_REGION).body.matchAll(
@@ -216,7 +222,11 @@ function entryBlock(root: string, skill: string): string {
     ),
   ];
   expect(blocks.length).toBe(1);
-  return blocks[0][1].split("<issue-number>").join(String(ISSUE));
+  return blocks[0][1]
+    .split("<issue-number>")
+    .join(String(ISSUE))
+    .split("<issue-title>")
+    .join(TITLE);
 }
 
 /** Run a skill's entry block in the scratch clone; report exit, output, branch. */
@@ -245,6 +255,10 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
 
       // Entered only by the explicit flag.
       expect(code).toContain('"${SEQUANT_CHECKOUT:-}" == "in-place"');
+      // The title is a placeholder the agent fills, never a gh call: cloud
+      // sandboxes have no gh (dogfood session cse_01W6MSXo6CpVP1WmyNMwxWVz).
+      expect(code).toContain('TITLE="<issue-title>"');
+      expect(code).not.toMatch(/\bgh\b/);
       // On the base branch (or detached), branch from the remote base.
       expect(code).toContain('"$CURRENT" == "$BASE"');
       expect(code).toContain('feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)');
@@ -290,6 +304,7 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
       const run = runEntry(s, root, "exec", { SEQUANT_CHECKOUT: "in-place" });
       expect(run.status, run.out).toBe(0);
       expect(listWorktrees(s.clone)).toHaveLength(1);
+      // Neither npx nor gh was reached.
       expect(readFileSync(s.npxLog, "utf8")).toBe("");
     });
 

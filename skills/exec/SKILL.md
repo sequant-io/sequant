@@ -225,10 +225,10 @@ if [[ "${SEQUANT_CHECKOUT:-}" == "in-place" ]]; then
   if [[ -z "$CURRENT" || "$CURRENT" == "$BASE" ]]; then
     # The branch name `sequant run` derives (slug cut at 50 characters), so a
     # later local `sequant run` phase reuses this branch instead of forking one.
-    TITLE="$(gh issue view <issue-number> --json title -q .title)"
+    TITLE="<issue-title>"
     SLUG="$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')"
     if [[ -z "$SLUG" ]]; then
-      echo "❌ HALT: could not read the title of #<issue-number> to name the branch."
+      echo "❌ HALT: no title for #<issue-number>, so the branch cannot be named."
       exit 1
     fi
     BRANCH="feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)"
@@ -239,6 +239,13 @@ if [[ "${SEQUANT_CHECKOUT:-}" == "in-place" ]]; then
 fi
 ```
 
+- **`<issue-title>` is the issue's title, which you substitute before running
+  the block**, exactly as you substitute `<issue-number>`. Read it with
+  `gh issue view <issue-number> --json title -q .title` when `gh` is installed.
+  A claude.ai cloud sandbox has no `gh`: read it with the GitHub MCP
+  `issue_read` tool instead, and open the PR at the end with the MCP
+  pull-request tool in place of `gh pr create`. The block never calls `gh`
+  itself, so it runs the same way in both places.
 - **Already on a non-base branch:** keep it. Do not create a second branch.
 - **The current clone is the worktree.** Everywhere below that says "the
   worktree" or "the worktree path", read `$PWD`. Run `npm test`, `npm run build`,

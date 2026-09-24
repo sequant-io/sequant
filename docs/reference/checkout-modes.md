@@ -45,6 +45,11 @@ session is the motivating case: a fresh clone of `main`, with no sibling
   branch is the base branch or HEAD is detached. They never create a branch.
 - **All of them.** They never invoke `/test`. Its local overrides live under
   `.claude/.local/`, which is gitignored and absent from a fresh clone.
+- **No `gh` needed.** A cloud sandbox has no `gh` CLI. The `/exec` entry block
+  takes the issue title as a placeholder the agent fills in, from `gh` where
+  it exists and from the GitHub MCP `issue_read` tool where it does not, and
+  the PR is opened the same way. The first dogfood session halted on exactly
+  this: `gh: command not found` inside the block.
 
 The AC loop, quality gates, mutation record, PR creation and verdict comment
 are unchanged. If `SEQUANT_ORCHESTRATOR` is also set, its non-worktree
