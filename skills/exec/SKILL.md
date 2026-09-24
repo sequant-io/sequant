@@ -223,15 +223,15 @@ if [[ "${SEQUANT_CHECKOUT:-}" == "in-place" ]]; then
   BASE="${SEQUANT_BASE_BRANCH:-main}"
   CURRENT="$(git branch --show-current)"
   if [[ -z "$CURRENT" || "$CURRENT" == "$BASE" ]]; then
-    # The branch name the standalone worktree script derives, so a later
-    # local worktree lookup finds this branch once it is fetched.
+    # The branch name `sequant run` derives (slug cut at 50 characters), so a
+    # later local `sequant run` phase reuses this branch instead of forking one.
     TITLE="$(gh issue view <issue-number> --json title -q .title)"
     SLUG="$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')"
     if [[ -z "$SLUG" ]]; then
       echo "❌ HALT: could not read the title of #<issue-number> to name the branch."
       exit 1
     fi
-    BRANCH="$(echo "feature/<issue-number>-${SLUG}" | cut -c1-58)"
+    BRANCH="feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)"
     git fetch origin "$BASE"
     git checkout -b "$BRANCH" "origin/$BASE"
   fi

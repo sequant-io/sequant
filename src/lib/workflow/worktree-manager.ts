@@ -103,9 +103,13 @@ const LOCKFILES = [
 ];
 
 /**
- * Slugify a title for branch naming
+ * Slugify a title for branch naming.
+ *
+ * @internal Exported so the in-place checkout gate (#1136) can assert that
+ * `/exec`'s shell slug matches this rule; a mismatch makes `sequant run` miss
+ * a branch a cloud session pushed and create a second one.
  */
-function slugify(title: string): string {
+export function slugify(title: string): string {
   return title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")

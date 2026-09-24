@@ -35,8 +35,9 @@ session is the motivating case: a fresh clone of `main`, with no sibling
 
 - **`/exec`.** On the base branch or a detached HEAD, it creates
   `feature/<N>-<slug>` from `origin/<base>` and checks it out. It derives the
-  slug the same way `new-feature.sh` does, so `sequant worktree resolve` finds
-  the branch once it is fetched into a local worktree. On any other branch it
+  branch name the way `sequant run` does, with the slug cut at 50 characters.
+  A later local `sequant run` phase therefore reuses the branch once it is
+  fetched, instead of creating a second one. On any other branch it
   keeps that branch. It never runs `new-feature.sh`, `git worktree add`, or
   `sequant worktree resolve`, and it turns parallel-group isolation off.
 - **`/qa`, `/loop`, `/testgen`.** They treat `$PWD` as the worktree and skip

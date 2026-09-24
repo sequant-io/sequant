@@ -35,7 +35,10 @@ import {
 import { tmpdir } from "os";
 import path from "path";
 import { collectFiles } from "../../scripts/check-skill-sync.js";
-import { listWorktrees } from "../../src/lib/workflow/worktree-manager.js";
+import {
+  listWorktrees,
+  slugify,
+} from "../../src/lib/workflow/worktree-manager.js";
 import {
   resolveIssueWorktree,
   verifyWorktreePath,
@@ -130,9 +133,11 @@ function prose(text: string): string {
 // ---------------------------------------------------------------------------
 
 const ISSUE = 1136;
-const TITLE = "Explicit in-place checkout: mode (for cloud sessions)";
-const EXPECTED_BRANCH =
-  "feature/1136-explicit-in-place-checkout-mode-for-cloud-sessions".slice(0, 58);
+// Long enough that the slug exceeds 50 characters: the shell rule must cut
+// where `sequant run`'s slugify cuts, or a local run forks a second branch.
+const TITLE =
+  "Explicit in-place checkout: mode (for cloud sessions) — run a phase on a branch";
+const EXPECTED_BRANCH = `feature/${1136}-${slugify(TITLE)}`;
 
 const SCRATCH = mkdtempSync(path.join(tmpdir(), "in-place-1136-"));
 afterAll(() => rmSync(SCRATCH, { recursive: true, force: true }));
@@ -242,7 +247,7 @@ describe.each(SKILL_ROOTS)("in-place checkout mode in %s", (root) => {
       expect(code).toContain('"${SEQUANT_CHECKOUT:-}" == "in-place"');
       // On the base branch (or detached), branch from the remote base.
       expect(code).toContain('"$CURRENT" == "$BASE"');
-      expect(code).toContain("feature/<issue-number>-${SLUG}");
+      expect(code).toContain('feature/<issue-number>-$(echo "$SLUG" | cut -c1-50)');
       expect(code).toContain('git checkout -b "$BRANCH" "origin/$BASE"');
 
       // Run it: a fresh clone on main ends on the new-feature.sh branch name,
