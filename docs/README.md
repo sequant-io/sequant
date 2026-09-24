@@ -45,6 +45,7 @@ From GitHub issue to merge-ready PR — verified at every step.
 
 - [Cheat Sheet](reference/cheat-sheet.md) — Quick reference for all commands, flags, and workflows
 - [Run Command](reference/run-command.md) — Batch execution and CLI options
+- [Checkout Modes](reference/checkout-modes.md) — Orchestrated, standalone and in-place (`SEQUANT_CHECKOUT=in-place`) checkouts for phase skills
 - [Ready Command](reference/ready-command.md) — Post-resolve A+ QA gate (`sequant ready`)
 - [Merge Command](reference/merge-command.md) — Post-QA integration and merge
 - [Halt and Resume](reference/halt-and-resume.md) — Durable rate-limit recovery (`sequant resume`)
