@@ -1627,6 +1627,18 @@ Function needs tests but is not exported?
 >
 > If you cannot test a function directly, escalate to integration testing or export with `@internal` — **do not fake the test**.
 
+> **Doc-gate tests are the other tautology.** A test that reads a `SKILL.md`,
+> a fixture or a reference page and asserts substrings calls no production
+> function, so `scripts/qa/tautology-detector-cli.ts` scores it 100%
+> tautological and its own CLI test (`scripts/qa/tautology-detector-cli.test.ts`)
+> fails in the full suite — the gate test itself stays green, so you only see
+> it minutes later (#1104, #1136). Call the real thing inside the `it`: execute
+> the bash block the section documents in a scratch repo and judge the result
+> with the module the guard uses (`worktree-resolver.ts`), run the parser the
+> marker feeds (`parseMutationMarkers`), or walk the mirrored files with
+> `collectFiles`. Keep regex literals with braces out of the `it` body; the
+> detector counts braces textually and truncates the block.
+
 **Pattern 1: Export with @internal**
 
 When the function can be safely exported without breaking encapsulation:
