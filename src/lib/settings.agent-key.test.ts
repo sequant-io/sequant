@@ -9,7 +9,11 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { DEFAULT_SETTINGS, generateSettingsJsonc } from "./settings.js";
+import {
+  DEFAULT_SETTINGS,
+  generateSettingsJsonc,
+  validateSettings,
+} from "./settings.js";
 
 describe("1059 F4: run.agent in generated settings", () => {
   it("emits the agent key when one is configured", () => {
@@ -39,3 +43,29 @@ function stripComments(jsonc: string): string {
     .filter((line) => !line.trim().startsWith("//"))
     .join("\n");
 }
+
+// `run.codex.networkAccess` was added by #1079 without an entry in the
+// validator's KNOWN_KEYS, so the documented setting produced a spurious
+// "unknown key" warning while still taking effect. Every documented
+// run.codex key must validate warning-free.
+//
+// Mutation-verified: removing "networkAccess" from KNOWN_KEYS["run.codex"]
+// fails the first case below.
+describe("run.codex settings keys are all recognised by the validator", () => {
+  it("accepts networkAccess without an unknown-key warning", () => {
+    const { warnings } = validateSettings({
+      run: { agent: "codex", codex: { networkAccess: false } },
+    });
+    expect(
+      warnings.filter((w) => w.path.includes("networkAccess")),
+      "networkAccess is documented; it must not be reported as unknown",
+    ).toEqual([]);
+  });
+
+  it("still warns on a key that really is unknown", () => {
+    const { warnings } = validateSettings({
+      run: { agent: "codex", codex: { bogusKey: true } },
+    });
+    expect(warnings.some((w) => w.path.includes("bogusKey"))).toBe(true);
+  });
+});

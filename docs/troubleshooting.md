@@ -696,6 +696,55 @@ The `.sequant-manifest.json` file is missing. Reinitialize:
 sequant init --force
 ```
 
+## Codex Issues
+
+The Codex driver (`--agent codex`) is experimental; see [Codex Agent Backend](features/codex-agent-backend.md) for setup.
+
+### Codex phases run without sequant's guard hooks
+
+**Problem:** A codex phase runs but never hits `pre-tool.sh` — a `git push --force` or a commit on `main` goes through unchallenged, and nothing in the phase output mentions hooks.
+
+**Cause:** Codex loads project-layer hooks only once the project is marked trusted in your **user** config (`~/.codex/config.toml`). `sequant init --agent codex` writes the project-side `.codex/config.toml`, but cannot write your user config. Without the trust entry Codex skips the hooks silently.
+
+**Solution:** Add the block `init` printed to `~/.codex/config.toml`:
+
+```toml
+[projects."/absolute/path/to/your/project"]
+trust_level = "trusted"
+```
+
+Commit `.codex/` and `.agents/` so worktree phases inherit the same hook wrapper and skills (#1072).
+
+### Codex does not find sequant's skills (`$spec`, `$exec` unknown)
+
+**Problem:** The phase prompt invokes a skill and Codex reports it unknown, or lists skills namespaced as `<repo-dir>:<name>`.
+
+**Cause:** `.agents/skills` is missing, is a copy rather than a symlink, or is an absolute symlink into another checkout.
+
+**Solution:** Re-run `sequant init --agent codex`; it creates `.agents/skills` as a relative symlink to `../.claude/skills`. On Windows the symlink needs elevated privileges or Developer Mode, and `init` warns when it cannot create it. Check with `ls -l .agents/skills` (expect `-> ../.claude/skills`) and `sequant doctor`.
+
+### Codex phase edits files but "made no commits", or cannot reach GitHub
+
+**Problem:** On sequant < 2.16, a codex phase produced correct edits and ended with no commit (`Unable to create '…/index.lock': Operation not permitted`), or never posted a `/spec` comment and the orchestrator logged `Could not parse spec recommendation`.
+
+**Cause:** Codex's `workspace-write` sandbox excludes `.git/` and disables network access by default.
+
+**Solution:** Upgrade to 2.16 or later. `CodexDriver` now passes the repo's git dir as a writable root (#1076) and enables network access under `workspace-write` (#1079). If you have set `run.codex.networkAccess: false`, phases are sealed off deliberately and cannot read issues, post comments or push; that is the trade-off that setting makes.
+
+### Codex phase fails with "You've hit your usage limit"
+
+**Problem:** A codex phase ends with `turn.failed` and a usage-limit message, and the run stops rather than retrying.
+
+**Cause:** Your Codex plan's quota is exhausted. Since 2.17 the driver types this failure (#1087): a reset within seven days is reported as a rate limit with the reset time, anything later or unparseable as a billing failure, so the quality loop does not re-run into the same wall.
+
+**Solution:** Run with `--auto-wait <minutes>` to have sequant resume when the window reopens, or wait for the reset time printed in the error and re-run. A billing failure means the reset is too far out to wait for; check your plan at the Codex side.
+
+### `doctor` reports codex unavailable or unauthenticated
+
+**Problem:** `sequant doctor` says codex is missing, below `0.154.0`, or not authenticated.
+
+**Solution:** `npm i -g @openai/codex` and confirm `codex --version`; then either export `CODEX_API_KEY` or run `codex login`. `doctor` bounds each probe with a timeout (#1075), so a hung `codex` binary reports as unavailable rather than freezing the command; if that is what you see, run `codex --version` by hand.
+
 ## Getting Help
 
 1. Run diagnostics:

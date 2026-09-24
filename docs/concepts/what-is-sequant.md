@@ -340,7 +340,7 @@ methodically — plan first, build in isolation, review before merging.
 | **Aider** | `npx sequant run 123 --agent aider` | Model-agnostic — use Claude, GPT-4o, Gemini, or local models |
 | **Any MCP client** | `npx sequant serve` | Claude Desktop, Cursor, VS Code, etc. |
 
-The agent interface is extensible — see [Aider Agent Backend](../features/aider-agent-backend.md) for how backends are implemented.
+The agent interface is extensible — see [Aider Agent Backend](../features/aider-agent-backend.md) for how backends are implemented, and [Codex Agent Backend](../features/codex-agent-backend.md) for the experimental Codex driver.
 
 ---
 
