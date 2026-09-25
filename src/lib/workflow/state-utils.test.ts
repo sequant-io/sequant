@@ -61,7 +61,10 @@ describe("state-utils", () => {
 
     it("should return error when directory does not exist", async () => {
       const result = await rebuildStateFromLogs({
-        logPath: "/nonexistent/path",
+        logPath: path.join(
+          os.tmpdir(),
+          `sequant-absent-${process.pid}-${Date.now()}`,
+        ),
       });
 
       expect(result.success).toBe(false);

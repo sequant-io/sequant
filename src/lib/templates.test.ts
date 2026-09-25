@@ -796,6 +796,136 @@ describe("templates", () => {
         changes.find((c) => c.path === "scripts/dev/new-feature.sh")?.status,
       ).toBe("modified");
     });
+
+    // #1159: `copyTemplates` installs `scripts/dev` from
+    // `resolveScriptsSymlinkTarget()` — `node_modules/sequant/templates/
+    // scripts` when a real install is there (#991) — while the diff walked the
+    // running CLI's bundle. With an older sequant installed the two never
+    // agree, so `sync` exited 1 with `N file(s) differ from bundled content`
+    // forever and `--dry-run` predicted an `overwrite:` the apply never made.
+    describe("scripts/dev is diffed against the install target, not the bundle (#1159)", () => {
+      const SCRIPT_LOCAL = "scripts/dev/new-feature.sh";
+      const BUNDLED = "#!/bin/bash\necho bundled-v2\n";
+      const INSTALLED = "#!/bin/bash\necho installed-v1\n";
+
+      /** Seed the running CLI's bundle with a script template. */
+      async function seedBundledScript(
+        name = "new-feature.sh",
+        content = BUNDLED,
+      ): Promise<void> {
+        await mkdir(join(templatesDir, "scripts"), { recursive: true });
+        await fsWriteFile(join(templatesDir, "scripts", name), content);
+      }
+
+      /** Seed an older `sequant` install in the project's node_modules. */
+      async function seedInstalledScript(
+        name = "new-feature.sh",
+        content = INSTALLED,
+      ): Promise<string> {
+        const dir = join(
+          cwdDir,
+          "node_modules",
+          "sequant",
+          "templates",
+          "scripts",
+        );
+        await mkdir(dir, { recursive: true });
+        await fsWriteFile(join(dir, name), content);
+        return dir;
+      }
+
+      function scriptsDevChanges(
+        changes: Awaited<ReturnType<typeof computeTemplateChanges>>,
+      ): Array<{ path: string; status: string }> {
+        return changes
+          .filter((c) => c.path.startsWith("scripts/dev/"))
+          .map((c) => ({ path: c.path, status: c.status }));
+      }
+
+      it("converges: a link into an older node_modules install is unchanged, and stays linked there (AC-3, AC-4)", async () => {
+        await seedBundledScript();
+        const installed = await seedInstalledScript();
+
+        await copyTemplates("generic");
+
+        // #991 targeting is untouched — the link still points into the
+        // installed copy, not at the running bundle (AC-3).
+        expect(await isSymlink(SCRIPT_LOCAL)).toBe(true);
+        const target = await getSymlinkTarget(SCRIPT_LOCAL);
+        expect(join(cwdDir, "scripts", "dev", target!)).toBe(
+          join(installed, "new-feature.sh"),
+        );
+        // The installed bytes really do differ from the bundle — without that
+        // this fixture would pass for the wrong reason.
+        expect(await fsReadFile(SCRIPT_LOCAL, "utf-8")).toBe(INSTALLED);
+
+        // …and a second `sync` finds nothing to do: this is the exact
+        // predicate `sync`'s version-current fast path counts as drift.
+        expect(
+          scriptsDevChanges(await computeTemplateChanges("generic")),
+        ).toEqual([{ path: SCRIPT_LOCAL, status: "unchanged" }]);
+      });
+
+      it("still reports a link pointing anywhere else as modified, even when its bytes match the bundle (AC-5)", async () => {
+        // The #1053 npx-cache shape: the link resolves to the running CLI's
+        // own bundle, so its *content* is byte-identical to the template.
+        // Only the target path can tell it apart from a correct link — and
+        // `symlinkDir` does relink it, so the preview must say so.
+        await seedBundledScript();
+        await seedInstalledScript();
+        await mkdir(join(cwdDir, "scripts", "dev"), { recursive: true });
+        await symlink(
+          join(templatesDir, "scripts", "new-feature.sh"),
+          join(cwdDir, "scripts", "dev", "new-feature.sh"),
+        );
+        expect(await fsReadFile(SCRIPT_LOCAL, "utf-8")).toBe(BUNDLED);
+
+        expect(
+          scriptsDevChanges(await computeTemplateChanges("generic")),
+        ).toEqual([{ path: SCRIPT_LOCAL, status: "modified" }]);
+      });
+
+      it("reports a symlink as modified in copy mode, where the apply replaces it with a file (#1053)", async () => {
+        // No node_modules install → the resolver falls back to the bundled
+        // dir, which sits outside the project tree here, so copy mode. The
+        // link's bytes are identical by construction; `copyDir` still unlinks
+        // it and writes a regular file, so the preview must predict that.
+        await seedBundledScript();
+        await mkdir(join(cwdDir, "scripts", "dev"), { recursive: true });
+        await symlink(
+          join(templatesDir, "scripts", "new-feature.sh"),
+          join(cwdDir, "scripts", "dev", "new-feature.sh"),
+        );
+
+        expect(resolveScriptsSymlinkTarget(getTemplatesDir()).mode).toBe(
+          "copy",
+        );
+        expect(
+          scriptsDevChanges(await computeTemplateChanges("generic")),
+        ).toEqual([{ path: SCRIPT_LOCAL, status: "modified" }]);
+      });
+
+      it("does not report a bundled script the installed copy lacks (AC-4)", async () => {
+        // Both writers walk the install target, so a script only the newer
+        // bundle ships is never written — reporting it `new` would be drift
+        // that no `sync --force` could clear.
+        await seedBundledScript();
+        await seedBundledScript("brand-new.sh", "#!/bin/bash\necho new\n");
+        await seedInstalledScript();
+
+        await copyTemplates("generic");
+
+        expect(await fileExists("scripts/dev/brand-new.sh")).toBe(false);
+        expect(
+          scriptsDevChanges(await computeTemplateChanges("generic")).sort(
+            (a, b) => a.path.localeCompare(b.path),
+          ),
+        ).toEqual([
+          { path: "scripts/dev/brand-new.sh", status: "unchanged" },
+          { path: SCRIPT_LOCAL, status: "unchanged" },
+        ]);
+      });
+    });
   });
 
   describe("templateDestination", () => {

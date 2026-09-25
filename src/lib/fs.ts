@@ -48,9 +48,51 @@ export async function readFile(path: string): Promise<string> {
   return fsReadFile(path, "utf-8");
 }
 
+/**
+ * Write `content` to `path`, replacing an existing symlink rather than
+ * following it (#1122).
+ *
+ * `fs.writeFile` follows a symlink: the link survives and its *target* is
+ * overwritten. At a destination sequant owns that is silent data loss — the
+ * target is an npx cache, a sibling checkout or a file outside the project
+ * entirely. #1053 fixed this for one writer (`copyDir`); the rule lives here
+ * so a new call site cannot reintroduce the class.
+ *
+ * A regular file is still overwritten in place, so nothing else changes for
+ * the 30+ call sites that never see a link.
+ */
 export async function writeFile(path: string, content: string): Promise<void> {
   await ensureDir(dirname(path));
+  if (await isSymlink(path)) {
+    await removeFileOrSymlink(path);
+  }
   await fsWriteFile(path, content, "utf-8");
+}
+
+/**
+ * True when `path` is a directory, without following a symlink to one.
+ *
+ * `fileExists` uses `access`, which answers true for a directory too, so every
+ * guard written on it falls through into a `readFile`/`writeFile` that throws a
+ * raw `EISDIR`. Writers use this to skip a colliding destination with a named
+ * message instead (#1122).
+ */
+export async function isDirectory(path: string): Promise<boolean> {
+  try {
+    const stats = await lstat(path);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The one message every writer prints when a directory sits where a template
+ * file goes (#1122). Single source so the string cannot drift between `init`,
+ * `sync` and `update`.
+ */
+export function directoryCollisionMessage(path: string): string {
+  return `${path.replace(/\\/g, "/")} is a directory; move it aside`;
 }
 
 export async function getFileStats(path: string) {
