@@ -2,6 +2,8 @@
 // AC-17a (--type validation), AC-17b (auto-resolve single run).
 
 import { describe, it, expect } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { IssueState } from "../src/lib/workflow/state-schema.js";
 import {
   parseRelayPromptArgs,
@@ -134,7 +136,7 @@ describe("Relay CLI — prompt command argument validation", () => {
         issues,
         (pid) => aliveFor.has(pid),
         // Use a non-existent cwd so readPidFile returns null universally.
-        "/nonexistent/path",
+        join(tmpdir(), `sequant-absent-${process.pid}-${Date.now()}`),
       );
       expect(active).toEqual([]);
     });
