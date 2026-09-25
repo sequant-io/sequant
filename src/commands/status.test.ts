@@ -251,7 +251,7 @@ describe("status command", () => {
       // Create state with an orphaned issue
       const manager = new StateManager({ statePath });
       await manager.initializeIssue(42, "Will Be Abandoned", {
-        worktree: "/nonexistent/path",
+        worktree: path.join(os.tmpdir(), `sequant-absent-${process.pid}-${Date.now()}`),
         branch: "feature/42-test",
       });
 
