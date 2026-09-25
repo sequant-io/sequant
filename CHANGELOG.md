@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **No writer follows a symlink at a template destination, and a directory there is named instead of crashing the run (#1122).** `writeFile` now replaces an existing symlink rather than overwriting what it points at (an npx cache, a sibling checkout, a file outside the project) — `init`, `sync` and `update`, with and without `--force`, all inherited the #1053 bug at `.claude/settings.json`, `.claude/memory/constitution.md`, `.sequant/settings.json`, `AGENTS.md`, every skill file and `scripts/dev/*.sh`. A directory sitting where a template file goes is now reported as `<path> is a directory; move it aside` and skipped, instead of aborting the writer partway with a raw `EISDIR`/`EEXIST` — including `sync --dry-run` and `update --dry-run`, which crashed before printing anything.
 - **`run.codex.networkAccess` is a recognised settings key.** #1079 added the setting but not its entry in the validator's known-key list, so setting it produced a spurious "unknown key" warning while still taking effect.
 
+### Removed
+
+- **The unused `release.yml` workflow is gone.** It had never run: every release ships through `/release`. It would also have failed at its bare `git push` to `main`, which the #1109 ruleset rejects. (#1162)
+
 ### Changed
 
 - **Skill guidance from the #1150 session (#1165).** `/spec` now states inline the AC rules the tooling enforces: one line per AC, an `Evidence:` clause (the only verification field the parser reads; `Verify:` is not enforced) and a `## Non-Goals` section. They hold even when a project's user-owned constitution predates its §2. `/verify` shows the command output in the message before asking for confirmation. `/exec` limits formatting to the files in your diff and checks `git status --short` before `git add -A`.
