@@ -162,9 +162,9 @@ jobs:
           fi
           BRANCH="upstream/$VERSION"
 
-          # porcelain, not `git diff`: a new report is untracked, and `git diff`
-          # only sees the modified baseline.json.
-          if [ -z "$(git status --porcelain .sequant/upstream/)" ]; then
+          # --ignored: `**/.sequant/` in .gitignore hides a new report from plain
+          # `git status` and `git diff`, which would only see baseline.json.
+          if [ -z "$(git status --porcelain --ignored .sequant/upstream/)" ]; then
             echo "No changes to commit"
           elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
             echo "Branch $BRANCH already exists on origin; skipping"
