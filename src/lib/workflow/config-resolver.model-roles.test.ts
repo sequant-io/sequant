@@ -380,3 +380,48 @@ describe("#1150 AC-5: roles and ladder rungs resolve against the phase's own age
     ).toThrow(/Model ladder for phase "exec" \(agent "codex"\)/);
   });
 });
+
+describe("#1150: role: references follow --agent, not settings.run.agent", () => {
+  function resolve(
+    cli: Partial<RunOptions>,
+    run: Partial<SequantSettings["run"]>,
+  ) {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, ...run },
+    } as SequantSettings;
+    return buildExecutionConfig(
+      resolveRunOptions(cli as RunOptions, settings),
+      settings,
+      1,
+    );
+  }
+
+  it("--agent codex resolves a driver-keyed role for codex even when run.agent is claude-code", () => {
+    const config = resolve(
+      { agent: "codex" },
+      {
+        agent: "claude-code",
+        modelRoles: { strong: { "claude-code": "opus", codex: "gpt-5-codex" } },
+        phases: { qa: { model: "role:strong" } },
+      },
+    );
+    expect(config.agent).toBe("codex");
+    expect(config.phasePolicies?.qa?.model).toBe("gpt-5-codex");
+  });
+
+  it("--agent codex with a claude-code-only string role now fails at config time instead of dispatching a claude model to codex", () => {
+    expect(() =>
+      resolve(
+        { agent: "codex" },
+        {
+          agent: "claude-code",
+          modelRoles: { strong: "opus" },
+          phases: { qa: { model: "role:strong" } },
+        },
+      ),
+    ).toThrow(
+      /string shorthand \(claude-code only\) but the active driver is "codex"/,
+    );
+  });
+});

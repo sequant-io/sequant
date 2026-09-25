@@ -420,6 +420,29 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(failure?.abortReason).toContain("was removed");
   });
 
+  it("1150 AC-2: an unknown per-phase agent rejects the run before any worktree or phase", async () => {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      run: {
+        ...DEFAULT_SETTINGS.run,
+        phases: { exec: { agent: "no-such-driver" } },
+      },
+    };
+
+    await expect(
+      RunOrchestrator.run(
+        { ...initRun({ phases: "spec,exec,qa", noLog: true }), settings },
+        ["1150"],
+      ),
+    ).rejects.toThrow(
+      /^Unknown agent driver "no-such-driver"\. Available drivers: /,
+    );
+
+    expect(spies933.runIssue).not.toHaveBeenCalled();
+    expect(spies933.preflightCwds).toEqual([]);
+    expect(existsSync(join(base, "wt-1150"))).toBe(false);
+  });
+
   it("933 AC-2: committed skills pass, and the pre-flight was invoked with cwd = the worktree path", async () => {
     commitSkill("spec");
     commitSkill("exec");
