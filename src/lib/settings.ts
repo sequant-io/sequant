@@ -109,10 +109,15 @@ export const DEFAULT_MODEL_ROLES: ModelRoles = {
 };
 
 /**
- * A single phase's `model`/`effort` override for the claude-code driver
- * (#914). See `RunSettings.phases`.
+ * A single phase's overrides (#914, #1150): which agent driver runs it, and
+ * the `model`/`effort` handed to that driver. See `RunSettings.phases`.
  */
 export interface PhasePolicy {
+  /**
+   * Agent driver for this phase (#1150), overriding `run.agent`. Validated
+   * against the driver registry when the run's config is resolved.
+   */
+  agent?: string;
   /** Model alias/ID, passed through unvalidated to the Agent SDK. */
   model?: string;
   /** Reasoning effort — validated against the SDK's closed enum. */
@@ -313,8 +318,9 @@ export interface RunSettings {
    */
   relay?: boolean;
   /**
-   * Per-phase `model`/`effort` overrides for the claude-code driver (#914),
-   * keyed by phase name. Absent by default — zero behavior change until
+   * Per-phase `agent`/`model`/`effort` overrides (#914, #1150), keyed by
+   * phase name. `agent` overrides `run.agent` for that phase; `model` and
+   * `effort` go to whichever driver the phase resolves to. Absent by default — zero behavior change until
    * opted in. Overridable per-invocation with `--models`/`--efforts`
    * (CLI > settings > absent, resolved by `resolvePhasePolicies` in
    * `config-resolver.ts`).
@@ -549,6 +555,7 @@ export const AgentSettingsSchema = z.object({
  * fall through to the SDK default.
  */
 export const PhasePolicySchema = z.object({
+  agent: z.string().optional(),
   model: z.string().optional(),
   effort: z.enum(EFFORT_LEVELS).optional(),
 });
@@ -589,7 +596,7 @@ export const RunSettingsSchema = z.object({
   codex: CodexSettingsSchema.optional(),
   relay: z.boolean().default(true),
   /**
-   * Per-phase `model`/`effort` overrides for the claude-code driver (#914).
+   * Per-phase `agent`/`model`/`effort` overrides (#914, #1150).
    * Absent by default — zero behavior change until opted in. Keyed by phase
    * name (validated against `getPhaseNames()` via `KNOWN_KEYS["run.phases"]`
    * as a non-fatal warning, not a schema-level rejection — a typo'd phase

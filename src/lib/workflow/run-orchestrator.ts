@@ -119,10 +119,8 @@ import {
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { runChainPreflight } from "./chain-preflight.js";
-import {
-  driverResolvesSkills,
-  runSkillsPreflight,
-} from "./skills-preflight.js";
+import { runResolvesSkills, runSkillsPreflight } from "./skills-preflight.js";
+import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { formatEscalationTriggerLabel } from "./model-ladder.js";
 import {
@@ -1146,12 +1144,13 @@ export class RunOrchestrator {
     // passes a check against the main checkout while every worktree has
     // none. Skipped entirely (zero calls) for non-skill drivers (aider) and
     // for --dry-run, where no worktree was provisioned.
-    if (
-      !config.dryRun &&
-      driverResolvesSkills(config.agent, config.aiderSettings)
-    ) {
+    // #1150: gated on ANY phase's driver, and each phase is checked against
+    // its own driver — an aider run with a claude-code exec phase still needs
+    // the exec skill.
+    if (!config.dryRun && runResolvesSkills(config)) {
       const preflightBase = {
-        agent: config.agent,
+        agent: resolveRunAgent(config),
+        phasePolicies: config.phasePolicies,
         aiderSettings: config.aiderSettings,
         phases: config.phases,
         autoDetectPhases: resolved.autoDetectPhases,

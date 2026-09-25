@@ -24,18 +24,24 @@
  */
 
 import type { AiderSettings } from "../settings.js";
-import type { Phase } from "./types.js";
+import type { ExecutionConfig, Phase } from "./types.js";
 import { getDriver } from "./drivers/index.js";
 import {
   detectPhasesFromLabels,
   determinePhasesForIssue,
 } from "./phase-mapper.js";
 import { phaseRegistry } from "./phase-registry.js";
+import { resolvePhaseAgent, resolvePhaseAgents } from "./phase-agent.js";
 import { checkSkillsInstalled, SKILLS_DIR } from "../skills-check.js";
 
 export interface SkillsPreflightInput {
   /** Agent driver name (default claude-code). */
   agent?: string;
+  /**
+   * Resolved per-phase policies (#1150). A phase whose `agent` overrides the
+   * run-level one is checked against its own driver.
+   */
+  phasePolicies?: ExecutionConfig["phasePolicies"];
   /** Aider settings, forwarded to the driver factory. */
   aiderSettings?: AiderSettings;
   /** Base pipeline for explicit-phase runs (`config.phases`). */
@@ -96,18 +102,25 @@ export type SkillsPreflightResult =
  *
  * Exported for direct unit testing (AC-2).
  */
-export function resolveRequiredSkills(
-  input: Pick<
-    SkillsPreflightInput,
-    | "phases"
-    | "autoDetectPhases"
-    | "qualityLoop"
-    | "testgen"
-    | "securityReview"
-    | "issueNumbers"
-    | "issueInfoMap"
-  >,
-): string[] {
+export function resolveRequiredSkills(input: RequiredPhasesInput): string[] {
+  return resolveRequiredPhases(input).map(
+    (phase) => phaseRegistry.get(phase).skill,
+  );
+}
+
+type RequiredPhasesInput = Pick<
+  SkillsPreflightInput,
+  | "phases"
+  | "autoDetectPhases"
+  | "qualityLoop"
+  | "testgen"
+  | "securityReview"
+  | "issueNumbers"
+  | "issueInfoMap"
+>;
+
+/** The phases behind {@link resolveRequiredSkills}, in required order. */
+function resolveRequiredPhases(input: RequiredPhasesInput): string[] {
   const additiveFlags = {
     testgen: input.testgen,
     securityReview: input.securityReview,
@@ -133,7 +146,7 @@ export function resolveRequiredSkills(
   if (input.securityReview) requiredPhases.add("security-review");
   if (qualityLoop) requiredPhases.add("loop");
 
-  return [...requiredPhases].map((phase) => phaseRegistry.get(phase).skill);
+  return [...requiredPhases];
 }
 
 /**
@@ -155,6 +168,20 @@ export function driverResolvesSkills(
 }
 
 /**
+ * True when ANY driver the run's phases resolve to reads `.claude/skills/`
+ * (#1150): an aider run whose exec phase is overridden to claude-code still
+ * needs the exec skill installed.
+ */
+export function runResolvesSkills(
+  config: Pick<ExecutionConfig, "agent" | "phasePolicies" | "aiderSettings">,
+): boolean {
+  const phases = Object.keys(config.phasePolicies ?? {});
+  return resolvePhaseAgents(config, phases).some((agent) =>
+    driverResolvesSkills(agent, config.aiderSettings),
+  );
+}
+
+/**
  * Run the skills pre-flight. Returns `{ok: true}` when the run may proceed:
  * either every required skill is installed, or the selected driver does not
  * resolve skills at all (AC-3).
@@ -162,27 +189,44 @@ export function driverResolvesSkills(
 export async function runSkillsPreflight(
   input: SkillsPreflightInput,
 ): Promise<SkillsPreflightResult> {
-  let driver;
-  try {
-    driver = getDriver(input.agent, {
-      aiderSettings: input.aiderSettings,
+  // #1150: each required phase is checked against the driver IT runs on.
+  // Only phases on a skill-resolving driver need their skill installed. A
+  // phase whose driver name is unknown is skipped — phase-executor surfaces
+  // the unknown-driver error through its normal per-issue failure path, and
+  // the pre-flight must not be what crashes the run with a raw throw.
+  const policyConfig = {
+    agent: input.agent,
+    phasePolicies: input.phasePolicies,
+  };
+  const required: { skill: string; driverName: string }[] = [];
+  for (const phase of resolveRequiredPhases(input)) {
+    let driver;
+    try {
+      driver = getDriver(resolvePhaseAgent(policyConfig, phase), {
+        aiderSettings: input.aiderSettings,
+      });
+    } catch {
+      continue;
+    }
+    if (!driver.resolvesSkills) continue;
+    required.push({
+      skill: phaseRegistry.get(phase).skill,
+      driverName: driver.name,
     });
-  } catch {
-    // Unknown driver name (bad `settings.run.agent`). Don't let the
-    // pre-flight be the thing that crashes the run with a raw throw —
-    // skip it and let phase-executor surface the unknown-driver error
-    // through its normal per-issue failure path.
-    return { ok: true };
   }
-  if (!driver.resolvesSkills) return { ok: true };
+  if (required.length === 0) return { ok: true };
 
-  const requiredSkills = resolveRequiredSkills(input);
   const { skillsDirExists, missingSkills } = await checkSkillsInstalled(
-    requiredSkills,
+    required.map((r) => r.skill),
     input.cwd,
   );
   if (missingSkills.length === 0) return { ok: true };
 
+  // Name the driver of the first phase whose skill is missing, so a mixed
+  // run reports the driver that actually needs it.
+  const driverName =
+    required.find((r) => missingSkills.includes(r.skill))?.driverName ??
+    required[0].driverName;
   const cause = skillsDirExists
     ? `missing skills: ${missingSkills.join(", ")}`
     : `missing ${SKILLS_DIR}/ directory (needs: ${missingSkills.join(", ")})`;
@@ -190,9 +234,9 @@ export async function runSkillsPreflight(
     ok: false,
     cause,
     missingSkills,
-    driverName: driver.name,
+    driverName,
     remedy:
-      `The ${driver.name} driver resolves phases from ${SKILLS_DIR}/ — ` +
+      `The ${driverName} driver resolves phases from ${SKILLS_DIR}/ — ` +
       `run \`sequant sync\` to install them, then re-run.`,
   };
 }

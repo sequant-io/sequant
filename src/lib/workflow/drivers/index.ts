@@ -61,12 +61,23 @@ export function getDriver(
   name: string = "claude-code",
   options?: DriverOptions,
 ): AgentDriver {
-  const factory = DRIVERS[name];
-  if (!factory) {
+  assertKnownDriver(name);
+  return DRIVERS[name](options);
+}
+
+/**
+ * Throw the "Unknown agent driver" error for a name the registry does not
+ * know, without constructing a driver.
+ *
+ * `getDriver` calls it, and so does config resolution (#1150), so a bad
+ * `run.phases.<phase>.agent` fails before any phase runs with exactly the
+ * message a bad `run.agent` produces at dispatch.
+ */
+export function assertKnownDriver(name: string): void {
+  if (!Object.hasOwn(DRIVERS, name)) {
     const available = Object.keys(DRIVERS).join(", ");
     throw new Error(
       `Unknown agent driver "${name}". Available drivers: ${available}`,
     );
   }
-  return factory(options);
 }

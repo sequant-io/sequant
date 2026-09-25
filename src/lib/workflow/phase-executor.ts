@@ -26,6 +26,7 @@ import { parsePhaseMarkers } from "./phase-detection.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type { DriverOptions } from "./drivers/index.js";
+import { resolvePhaseAgent } from "./phase-agent.js";
 import type {
   AgentDriver,
   AgentExecutionConfig,
@@ -1342,18 +1343,14 @@ function resolvePhaseInvocation(
   config: ExecutionConfig,
 ): string {
   const fallback = `/${phase} ${issueNumber}`;
-  if (!config.agent || config.agent === "claude-code") return fallback;
+  const agent = resolvePhaseAgent(config, phase);
+  if (agent === "claude-code") return fallback;
   return (
-    tryBuildSkillPrompt(
-      config.agent,
-      phaseRegistry.get(phase).skill,
-      issueNumber,
-      {
-        aiderSettings: config.aiderSettings,
-        opencodeSettings: config.opencodeSettings,
-        codexSettings: config.codexSettings,
-      },
-    ) ?? fallback
+    tryBuildSkillPrompt(agent, phaseRegistry.get(phase).skill, issueNumber, {
+      aiderSettings: config.aiderSettings,
+      opencodeSettings: config.opencodeSettings,
+      codexSettings: config.codexSettings,
+    }) ?? fallback
   );
 }
 
@@ -1364,15 +1361,16 @@ function resolvePhaseInvocation(
  * still prints a plan rather than throwing — the real `getDriver` call on the
  * execution path reports the unknown-driver error.
  */
-function resolveDriverName(config: ExecutionConfig): string {
+function resolveDriverName(config: ExecutionConfig, phase: Phase): string {
+  const agent = resolvePhaseAgent(config, phase);
   try {
-    return getDriver(config.agent, {
+    return getDriver(agent, {
       aiderSettings: config.aiderSettings,
       opencodeSettings: config.opencodeSettings,
       codexSettings: config.codexSettings,
     }).name;
   } catch {
-    return `${config.agent} (unknown driver)`;
+    return `${agent} (unknown driver)`;
   }
 }
 
@@ -1389,11 +1387,14 @@ async function executePhase(
   spinner?: PhasePauseHandle,
 ): Promise<PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle }> {
   const startTime = Date.now();
+  // #1150: the driver for THIS phase — `run.phases.<phase>.agent` wins over
+  // the run-level agent. Every driver decision below uses it.
+  const agent = resolvePhaseAgent(config, phase);
 
   const prompt = await getPhasePrompt(
     phase,
     issueNumber,
-    config.agent,
+    agent,
     config.promptContext,
     {
       aiderSettings: config.aiderSettings,
@@ -1409,7 +1410,7 @@ async function executePhase(
     // plan indistinguishable from a claude-code one.
     bracketedConsoleLog(
       spinner,
-      chalk.gray(`    Driver: ${resolveDriverName(config)}`),
+      chalk.gray(`    Driver: ${resolveDriverName(config, phase)}`),
     );
     // The invocation is part of the plan for the same reason the driver name
     // is (#862 AC-3), and it is not always the Claude Code slash form: codex
@@ -1446,7 +1447,7 @@ async function executePhase(
 
   // Resolve file context for file-oriented drivers (e.g., Aider --file)
   let files: string[] | undefined;
-  if (config.agent && config.agent !== "claude-code") {
+  if (agent !== "claude-code") {
     try {
       const diffBase = resolveDiffBase(cwd, "main");
       const output = execFileSync(
@@ -1595,7 +1596,7 @@ async function executePhase(
   // (when added in #497) folds in AGENTS.md parity. Replacing the prior
   // `sessionId && !worktreePath` heuristic also unblocks same-worktree resume
   // across phases.
-  const driver: AgentDriver = getDriver(config.agent, {
+  const driver: AgentDriver = getDriver(agent, {
     aiderSettings: config.aiderSettings,
     opencodeSettings: config.opencodeSettings,
     codexSettings: config.codexSettings,
@@ -2047,7 +2048,7 @@ export async function executePhaseWithRetry(
   // #996 AC-5: only drivers that actually consume `config.mcp` can fail
   // *because* of it. For opencode/aider the retry would re-run an identical
   // command under a second full phaseTimeout and mislabel the cause.
-  const driverUsesSdkMcp = getDriver(config.agent, {
+  const driverUsesSdkMcp = getDriver(resolvePhaseAgent(config, phase), {
     aiderSettings: config.aiderSettings,
     opencodeSettings: config.opencodeSettings,
     codexSettings: config.codexSettings,
