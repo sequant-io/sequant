@@ -14,10 +14,10 @@ import { execFileSync } from "child_process";
 const BANNED = ["/non", "existent/path"].join("");
 
 describe("#1141: hardcoded absent-path fixture gate", () => {
-  it("1141: no file under src or __tests__ hardcodes the absent-path literal", () => {
+  it("1141: no test tree (src, __tests__, scripts, bin) hardcodes the absent-path literal", () => {
     let output = "";
     try {
-      output = execFileSync("grep", ["-rnF", BANNED, "src", "__tests__"], {
+      output = execFileSync("grep", ["-rnF", BANNED, "src", "__tests__", "scripts", "bin"], {
         encoding: "utf-8",
       });
     } catch (err) {
