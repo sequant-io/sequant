@@ -225,3 +225,81 @@ describe("update command — non-interactive path (AC-1, AC-2)", () => {
     ).rejects.toThrow(); // nothing applied
   });
 });
+
+// #1159: in symlink mode a scripts/dev entry's status compares the link
+// target, which only `sync` installs. `update` writing the bytes as a regular
+// file left the entry `modified` forever — `Updated 1 files` on every run.
+describe("update command — scripts/dev link targets stay sync-only (#1159)", () => {
+  const SCRIPT_LOCAL = "scripts/dev/new-feature.sh";
+  let prevCwd: string;
+  let cwdDir: string;
+  let templatesDir: string;
+
+  beforeEach(async () => {
+    prevCwd = process.cwd();
+    cwdDir = await mkdtemp(join(tmpdir(), "sequant-update-1159-cwd-"));
+    templatesDir = await mkdtemp(join(tmpdir(), "sequant-update-1159-tpl-"));
+    process.chdir(cwdDir);
+    process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await fsWriteFile(
+      join(cwdDir, "package.json"),
+      JSON.stringify({ name: "my-project" }),
+    );
+    // The running CLI's bundle and an older install in node_modules — the
+    // install is what `resolveScriptsSymlinkTarget` links to (#991).
+    await mkdir(join(templatesDir, "scripts"), { recursive: true });
+    await fsWriteFile(
+      join(templatesDir, "scripts", "new-feature.sh"),
+      "#!/bin/bash\necho bundled-v2\n",
+    );
+    const installed = join(
+      cwdDir,
+      "node_modules",
+      "sequant",
+      "templates",
+      "scripts",
+    );
+    await mkdir(installed, { recursive: true });
+    await fsWriteFile(
+      join(installed, "new-feature.sh"),
+      "#!/bin/bash\necho installed-v1\n",
+    );
+  });
+
+  afterEach(async () => {
+    process.chdir(prevCwd);
+    delete process.env.SEQUANT_TEMPLATES_DIR;
+    await rm(cwdDir, { recursive: true, force: true });
+    await rm(templatesDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function logged(): string {
+    return vi
+      .mocked(console.log)
+      .mock.calls.map((c) => c.join(" "))
+      .join("\n");
+  }
+
+  it("1159: a second update over a regular-file scripts/dev script reports nothing to do", async () => {
+    // The shape `update` itself left behind before #1159: a regular file
+    // where `sync` would put a link.
+    await mkdir(join(cwdDir, "scripts", "dev"), { recursive: true });
+    await fsWriteFile(
+      join(cwdDir, SCRIPT_LOCAL),
+      "#!/bin/bash\necho bundled-v2\n",
+    );
+
+    await updateCommand({ yes: true });
+    vi.mocked(console.log).mockClear();
+    await updateCommand({ yes: true });
+
+    expect(logged()).toContain("Everything is up to date!");
+    // Left for `sync` to relink; `update` never rewrites it.
+    expect(await fsReadFile(join(cwdDir, SCRIPT_LOCAL), "utf-8")).toBe(
+      "#!/bin/bash\necho bundled-v2\n",
+    );
+  });
+});

@@ -463,6 +463,13 @@ export interface TemplateChange {
   rendered: string;
   /** Unified-ish diff (installed → rendered), only set for `modified` */
   diff?: string;
+  /**
+   * Set for a `scripts/dev` entry in symlink mode: the relative link target
+   * `symlinkDir` installs. Its status compares the link, not bytes, so only
+   * `sync` can apply it — a writer that writes `rendered` as a regular file
+   * leaves it `modified` forever (#1159).
+   */
+  linkTarget?: string;
 }
 
 /**
@@ -696,8 +703,21 @@ async function classifyScriptsDevChange(
   // lstat first, or a dangling link reads as a missing file (`new`) while the
   // apply replaces it in place.
   const destIsSymlink = await isSymlink(localPath);
+  const absoluteDest = isAbsolute(localPath)
+    ? localPath
+    : join(process.cwd(), localPath);
+  const absoluteSrc = isAbsolute(expectedSource)
+    ? expectedSource
+    : join(process.cwd(), expectedSource);
+  const expectedLink = relative(dirname(absoluteDest), absoluteSrc);
   if (!destIsSymlink && !(await fileExists(localPath))) {
-    return { path: localPath, templatePath, status: "new", rendered };
+    return {
+      path: localPath,
+      templatePath,
+      status: "new",
+      rendered,
+      ...(copyMode ? {} : { linkTarget: expectedLink }),
+    };
   }
 
   if (copyMode) {
@@ -717,20 +737,26 @@ async function classifyScriptsDevChange(
         };
   }
 
-  const absoluteDest = isAbsolute(localPath)
-    ? localPath
-    : join(process.cwd(), localPath);
-  const absoluteSrc = isAbsolute(expectedSource)
-    ? expectedSource
-    : join(process.cwd(), expectedSource);
-  const expectedLink = relative(dirname(absoluteDest), absoluteSrc);
   if (destIsSymlink && (await getSymlinkTarget(localPath)) === expectedLink) {
-    return { path: localPath, templatePath, status: "unchanged", rendered };
+    return {
+      path: localPath,
+      templatePath,
+      status: "unchanged",
+      rendered,
+      linkTarget: expectedLink,
+    };
   }
 
-  // A regular file here, or a link pointing anywhere else, is a real write:
-  // `symlinkDir` unlinks it and puts `expectedLink` in its place.
-  return { path: localPath, templatePath, status: "modified", rendered };
+  // A link pointing anywhere else is relinked by `symlinkDir`. A regular file
+  // is only replaced under `force`, which `sync` always passes (sync.ts); a
+  // caller without `force` would leave it in place.
+  return {
+    path: localPath,
+    templatePath,
+    status: "modified",
+    rendered,
+    linkTarget: expectedLink,
+  };
 }
 
 /**

@@ -192,7 +192,12 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   // Compute changes using the shared, variable-aware comparison.
   // Templates are rendered (PROJECT_NAME, STACK_NOTES, etc.) before diffing,
   // and in-place-customizable files (constitution) are protected as overrides.
-  const changes = await computeTemplateChanges(manifest.stack, tokens);
+  // Symlink-mode scripts/dev entries are `sync`-only: their status compares
+  // the link target, and writing `rendered` here as a regular file would
+  // leave them `modified` on every later run (#1159).
+  const changes = (await computeTemplateChanges(manifest.stack, tokens)).filter(
+    (c) => c.linkTarget === undefined,
+  );
 
   // Show summary
   const newFiles = changes.filter((c) => c.status === "new");
