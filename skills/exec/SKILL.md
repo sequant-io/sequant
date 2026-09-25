@@ -1562,6 +1562,8 @@ fi
 4. **Re-run lint** - verify all errors are resolved
 5. **Then continue** - to `npm test`
 
+**Scope formatting to your own diff (#1165).** Run formatters only on files in `git diff --name-only origin/main...HEAD` (plus new files you created), never on a directory glob. Before any `git add -A`, including the WIP checkpoint above, read `git status --short` and check that every path listed is one you meant to change. A glob-wide `prettier --write` reformats files you never touched, and `git add -A` then commits them into your PR.
+
 **Auto-fix consideration:**
 
 Some projects support `npm run lint -- --fix`. However, auto-fix should be used cautiously:
