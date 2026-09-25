@@ -9,7 +9,7 @@ Planned 2026-09-24. The owner approved the plan on 2026-09-25, and the AC blocks
 
 | # | Item | Tier | May touch | Blocked by |
 |---|---|---|---|---|
-| A | #1145 branch-name divergence | mechanical | `templates/scripts/new-feature.sh` (`scripts/new-feature.sh` is a symlink to it, so there is no second copy), a new gate test | C (#1122), found during execution |
+| A | #1145 branch-name divergence | mechanical | `templates/scripts/new-feature.sh` (`scripts/new-feature.sh` is a symlink to it, so there is no second copy), a new gate test | #1159 (found during execution; the earlier edge to C was wrong) |
 | B | #1153 Upstream Assessment push to `main` (label already created 09-25) | mechanical | repo label (no PR); `.github/workflows/upstream-assessment.yml` | — |
 | C | #1122 writers follow symlinks / crash on directories | judgment | `src/lib/templates.ts`, `src/commands/{init,update,sync}.ts`, `src/lib/__tests__/writer-state-matrix.test.ts` | — |
 | D | #1141 root creates `/nonexistent/path` | mechanical | `src/lib/workflow/state-hook.test.ts`, the 5 test files that use `/nonexistent/path` | — |
@@ -57,6 +57,8 @@ The issue's current verify command (`sudo -E npx vitest …`) can't be run verba
 
 - 2026-09-25: the plan missed an edge. A (#1145, PR #1156) passes all 3 of its ACs, but it turns the required `canary` check red. The canary fixture's `scripts/dev/new-feature.sh` is a symlink, and `sync` won't write through it. That is C's bug (#1122). So A merges after C, then merges `main` in and re-runs `npx vitest run --project canary`. Lesson for the file-scope pass: a node that changes a template file shares scope with any node that changes the template *writers*.
 - 2026-09-25: B (#1153, PR #1155) is held for an owner decision. QA found three blockers, and the runner reproduced each one. (1) `.gitignore:52` `**/.sequant/` overrides the `!.sequant/upstream/` exception, so `git add` rejects new reports. (2) The repo doesn't allow Actions to create PRs, so `gh pr create` returns 403. (3) A PR opened with `GITHUB_TOKEN` starts no runs of the required checks. Items 2 and 3 mean the PR route needs a PAT or GitHub App token, or else a return to the not-committed option.
+- 2026-09-25 (correction): A is **not** blocked by C. With C's branch merged into A, the canary still fails 2/4. The real cause is a new issue, #1159. `resolveScriptsSymlinkTarget` points `scripts/dev` at the project's own `node_modules` copy (older version, the #991 design), while the dry-run and drift check compare it against the running CLI's bundled template. It's reproduced against a real `sequant@2.16` project. A is now blocked by #1159, and every future `templates/scripts/*.sh` change is blocked the same way.
+- 2026-09-25: C's QA found `.mcp.json` writes (`mcp-config.ts`) bypass the new symlink guard, so C is not the last path in the #1053 class. Filed as #1160.
 
 ## Anti-gap passes
 
