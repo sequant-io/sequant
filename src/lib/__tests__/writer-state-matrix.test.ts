@@ -327,6 +327,8 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     owned: "= = = = = =",
     userModified: "M M = = = =",
     markerChanged: "= = M M M M",
+    // #1160: `M` is now a replaced link (file arm of classify, target
+    // byte-identical, else `V`), no longer the write-through symlink arm.
     localSymlink: "M M = = = =",
     foreignSymlink: "M M = = = =",
     // #1123: init no longer crashes when .mcp.json is a directory — the same

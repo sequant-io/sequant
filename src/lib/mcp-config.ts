@@ -8,6 +8,7 @@
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { writeFileSync } from "./fs.js";
 import { getVersion } from "./version.js";
 import { getMcpServersConfig, type McpServerConfig } from "./system.js";
 
@@ -240,7 +241,7 @@ export function addSequantToMcpConfig(
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+  writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
   return true;
 }
 
@@ -353,7 +354,7 @@ export function createProjectMcpJson(
   }
 
   servers.sequant = sequantConfig;
-  fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+  writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
 
   if (fileExisted) {
     return { created: false, merged: true, skipped: false };
@@ -468,7 +469,7 @@ export function syncSequantMcpPin(
 
   if (!opts?.dryRun) {
     args[pinIndex] = to;
-    fs.writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+    writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
   }
   return { updated: true, from, to };
 }
