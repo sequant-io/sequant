@@ -18,7 +18,7 @@ import {
   getPackageManagerCommands,
   resolvePackageManager,
 } from "../lib/stacks.js";
-import { writeFile } from "../lib/fs.js";
+import { writeFile, directoryCollisionMessage } from "../lib/fs.js";
 import { chmod } from "fs/promises";
 import { isStdinTTY, isCI, getNonInteractiveReason } from "../lib/tty.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
@@ -199,12 +199,28 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   const modifiedFiles = changes.filter((c) => c.status === "modified");
   const unchangedFiles = changes.filter((c) => c.status === "unchanged");
   const localOverrides = changes.filter((c) => c.status === "local-override");
+  // Destinations a directory occupies. They are never part of `applySet`:
+  // writing one throws a raw EISDIR and abandons every file after it (#1122).
+  const directoryCollisions = changes.filter(
+    (c) => c.status === "directory-collision",
+  );
 
   console.log(chalk.bold("Summary:"));
   console.log(chalk.green(`  New files: ${newFiles.length}`));
   console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
   console.log(chalk.gray(`  ✓ Unchanged: ${unchangedFiles.length}`));
   console.log(chalk.blue(`  Local overrides: ${localOverrides.length}`));
+
+  // Printed before the "nothing to do" short-circuit below — a collision is
+  // precisely the case where there is nothing to apply and something to fix.
+  if (directoryCollisions.length > 0) {
+    console.log(
+      chalk.yellow("\nSkipped — a directory sits where a template file goes:"),
+    );
+    for (const file of directoryCollisions) {
+      console.log(chalk.yellow(`  ${directoryCollisionMessage(file.path)}`));
+    }
+  }
 
   // Local overrides are protected by default — only --force overwrites them.
   const applySet = options.force
@@ -218,7 +234,13 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   const opencodeShimDecision = await decideOpencodeShimSync();
 
   if (applySet.length === 0 && opencodeShimDecision !== "refresh") {
-    if (localOverrides.length > 0) {
+    if (directoryCollisions.length > 0) {
+      console.log(
+        chalk.yellow(
+          `\n!  No updates to apply. ${directoryCollisions.length} destination(s) blocked by a directory (listed above).`,
+        ),
+      );
+    } else if (localOverrides.length > 0) {
       console.log(
         chalk.blue(
           `\n✔ No updates to apply. ${localOverrides.length} local override(s) protected (use --force to overwrite).`,

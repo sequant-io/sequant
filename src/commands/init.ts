@@ -38,6 +38,8 @@ import {
   readFile,
   writeFile,
   isSymlink,
+  isDirectory,
+  directoryCollisionMessage,
   getSymlinkTarget,
   removeFileOrSymlink,
   createSymlink,
@@ -127,6 +129,13 @@ const GITIGNORE_ENTRIES = [
 async function updateGitignore(): Promise<boolean> {
   const gitignorePath = ".gitignore";
   let content = "";
+
+  // `fileExists` is true for a directory, and the `readFile` below would throw
+  // EISDIR and abort the rest of `init` (#1122).
+  if (await isDirectory(gitignorePath)) {
+    console.log(chalk.yellow(`!  ${directoryCollisionMessage(gitignorePath)}`));
+    return false;
+  }
 
   if (await fileExists(gitignorePath)) {
     content = await readFile(gitignorePath);
@@ -501,10 +510,7 @@ export const CODEX_SKILLS_SYMLINK_TARGET = "../.claude/skills";
 export const CODEX_TRUST_LEVEL_TOML = 'trust_level = "trusted"';
 
 export type CodexSkillsSymlinkStatus =
-  | "created"
-  | "already-correct"
-  | "skipped-foreign"
-  | "unsupported";
+  "created" | "already-correct" | "skipped-foreign" | "unsupported";
 
 /**
  * Create (or verify) the `.agents/skills` → `../.claude/skills` symlink codex
@@ -1000,17 +1006,25 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Copy templates (with symlinks for scripts unless --no-symlinks)
   const templatesSpinner = ui.spinner("Copying templates...");
   templatesSpinner.start();
-  const { scriptsSymlinked, symlinkResults } = await copyTemplates(
-    stack!,
-    tokens,
-    {
+  const { scriptsSymlinked, symlinkResults, directoryCollisions } =
+    await copyTemplates(stack!, tokens, {
       noSymlinks: options.noSymlinks,
       force: options.force,
       additionalStacks,
-    },
-  );
+    });
 
   templatesSpinner.succeed("Copied templates");
+
+  // A directory where a template file goes is skipped, not written; say which
+  // ones and what to do about it (#1122).
+  if (directoryCollisions.length > 0) {
+    console.log(
+      chalk.yellow("!  Skipped — a directory sits where a template file goes:"),
+    );
+    for (const dest of directoryCollisions) {
+      console.log(chalk.yellow(`   ${directoryCollisionMessage(dest)}`));
+    }
+  }
 
   // #862: opencode reaches sequant's skills through per-phase command
   // wrappers, so provision them when the user initialises for that driver.
@@ -1111,7 +1125,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
         console.log(chalk.gray(`   ${fb.path}: ${fb.reason}`));
       }
     }
-    const skipped = symlinkResults.filter((r) => r.skipped);
+    // Directory collisions are announced above with their own message.
+    const skipped = symlinkResults.filter(
+      (r) => r.skipped && !r.directoryCollision,
+    );
     if (skipped.length > 0) {
       console.log(
         chalk.yellow("!  Some scripts were skipped (existing files found):"),

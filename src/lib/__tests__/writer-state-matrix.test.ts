@@ -37,8 +37,10 @@
  * `KNOWN_DEFECTS`, and a test asserts the count of grid cells that break each
  * policy invariant equals the declared count: fixing a defect changes its
  * cells, and the counts fail until the entry is updated, so the list cannot go
- * stale. The fixes are out of scope
- * here (#1090 owns the policy); each defect has its own issue.
+ * stale. That list is empty as of #1122, which fixed the last two entries —
+ * `W` and `X` stay in the legend because `classify` still reports them, and a
+ * regression that reintroduces either fails the invariant test rather than
+ * quietly re-pinning itself.
  */
 
 import {
@@ -280,44 +282,44 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     owned: "= = = = = =",
     userModified: "T T T T T T",
     markerChanged: "T T T T T T",
-    localSymlink: "W W W W W W",
-    foreignSymlink: "W W W W W W",
-    directory: "X X X X X X",
+    localSymlink: "T T T T T T",
+    foreignSymlink: "T T T T T T",
+    directory: "= = = = = =",
   },
   skill: {
     absent: "T T T T T T",
     owned: "= = = = = =",
     userModified: "T T T T T T",
     markerChanged: "T T T T T T",
-    localSymlink: "T T T T W W",
-    foreignSymlink: "T T T T W W",
-    directory: "X X X X X X",
+    localSymlink: "T T T T T T",
+    foreignSymlink: "T T T T T T",
+    directory: "= = = = = =",
   },
   constitution: {
     absent: "T T T T T T",
     owned: "= = = = = =",
     userModified: "= = = T = T",
     markerChanged: "= = = T = T",
-    localSymlink: "= = = T = W",
-    foreignSymlink: "= = = T = W",
-    directory: "X X X X X X",
+    localSymlink: "= = = T = T",
+    foreignSymlink: "= = = T = T",
+    directory: "= = = = = =",
   },
   sequantSettings: {
     absent: "T T = = = =",
     owned: "= = = = = =",
     userModified: "= T = = = =",
     markerChanged: "= T = = = =",
-    localSymlink: "= W = = = =",
-    foreignSymlink: "= W = = = =",
-    directory: "X X = = = =",
+    localSymlink: "= T = = = =",
+    foreignSymlink: "= T = = = =",
+    directory: "= = = = = =",
   },
   agentsMd: {
     absent: "T T = = = =",
     owned: "= = = = = =",
     userModified: "= T = T = =",
     markerChanged: "= T = T = =",
-    localSymlink: "= W = W = =",
-    foreignSymlink: "= W = W = =",
+    localSymlink: "= T = T = =",
+    foreignSymlink: "= T = T = =",
     directory: "= = = = = =",
   },
   mcpJson: {
@@ -339,25 +341,25 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     markerChanged: "= = = = = =",
     localSymlink: "M M = = = =",
     foreignSymlink: "M M = = = =",
-    directory: "X X = = = =",
+    directory: "= = = = = =",
   },
   scriptsCopy: {
     absent: "T T T T T T",
     owned: "= = = = = =",
     userModified: "= T T T T T",
     markerChanged: "= T T T T T",
-    localSymlink: "T T T T W W",
-    foreignSymlink: "T T T T W W",
-    directory: "= X X X X X",
+    localSymlink: "T T T T T T",
+    foreignSymlink: "T T T T T T",
+    directory: "= = = = = =",
   },
   scriptsLink: {
     absent: "L L L L T T",
     owned: "= = = = = =",
     userModified: "= L L L T T",
     markerChanged: "= L L L T T",
-    localSymlink: "L L L L W W",
-    foreignSymlink: "L L L L W W",
-    directory: "= X X X X X",
+    localSymlink: "L L L L T T",
+    foreignSymlink: "L L L L T T",
+    directory: "= = = = = =",
   },
 };
 
@@ -454,8 +456,12 @@ const DECISIONS: Record<DestId, Record<StateId, string>> = {
  * The two ownership invariants read the policy through `ownershipPolicy()`.
  */
 const KNOWN_DEFECTS: Record<string, { issue: string; cells: number }> = {
-  "symlink-written-through-at-sequant-owned": { issue: "#1122", cells: 24 },
-  "directory-crashes-writer": { issue: "#1124", cells: 32 },
+  // Empty since #1122: the 24 `W` cells and the 32 `X` cells it names were
+  // the last two entries. `writeFile` now replaces a symlink instead of
+  // following it, and every writer skips a directory at a destination with a
+  // named message. A new entry here needs an issue and a cell count; the
+  // invariant test below fails while the two disagree, so the list cannot go
+  // stale in either direction.
 };
 
 // ---------------------------------------------------------------------------
@@ -899,10 +905,14 @@ describe("policy invariants over the grid", () => {
     "foreignSymlink",
   ];
 
+  // Only non-zero counts are reported, so the expectation below is exactly
+  // `KNOWN_DEFECTS` — including when that list is empty. (Pre-#1122 the
+  // initializer had to name every key in advance, and a key it missed
+  // incremented `undefined` into `NaN` instead of failing legibly.)
   function violations(): Record<string, number> {
-    const counts: Record<string, number> = {
-      "symlink-written-through-at-sequant-owned": 0,
-      "directory-crashes-writer": 0,
+    const counts: Record<string, number> = {};
+    const bump = (key: string): void => {
+      counts[key] = (counts[key] ?? 0) + 1;
     };
     for (const d of DESTS) {
       const policy = ownershipPolicy(d.path);
@@ -915,17 +925,17 @@ describe("policy invariants over the grid", () => {
             PRESERVED_STATES.includes(s.id) &&
             letter !== "="
           ) {
-            counts["user-owned-not-preserved-without-force"]++;
+            bump("user-owned-not-preserved-without-force");
           }
           if (
             policy === "sequant-owned" &&
             (s.id === "localSymlink" || s.id === "foreignSymlink") &&
             (letter === "W" || letter === "V")
           ) {
-            counts["symlink-written-through-at-sequant-owned"]++;
+            bump("symlink-written-through-at-sequant-owned");
           }
           if (s.id === "directory" && letter === "X") {
-            counts["directory-crashes-writer"]++;
+            bump("directory-crashes-writer");
           }
         });
       }
@@ -996,6 +1006,47 @@ describe("#1053: foreign symlink in copy mode", () => {
           expect(readFileSync(join(cell.foreign, "target"), "utf-8")).toBe(
             dest.userModified,
           );
+        } finally {
+          dispose(cell);
+        }
+      },
+      CELL_TIMEOUT_MS,
+    );
+  }
+});
+
+describe("#1122: foreign symlink at .claude/settings.json", () => {
+  const dest = destOf("settings");
+
+  // The issue's own repro: `ln -s <outside file> .claude/settings.json && sequant sync`.
+  // `writeFile` used to follow the link, so the outside file — an npx cache,
+  // a sibling checkout, anything — silently took the template's bytes while
+  // `.claude/settings.json` stayed a link to it.
+  for (const w of [
+    writer("sync", false),
+    writer("sync", true),
+    writer("update", false),
+    writer("update", true),
+  ]) {
+    it(
+      `${w.id}: the link is replaced and the outside file it pointed at keeps its bytes`,
+      async () => {
+        const cell = prepare(dest, "foreignSymlink");
+        const foreignFile = join(cell.foreign, "target");
+        try {
+          expect(cell.before.kind).toBe("symlink");
+          expect(realpathSync(cell.path)).toBe(realpathSync(foreignFile));
+
+          const result = await run(cell.dir, w);
+          expect(result.threw).toBeNull();
+
+          // What the link pointed at is byte-identical, and still outside the project.
+          expect(readFileSync(foreignFile, "utf-8")).toBe(dest.userModified);
+
+          const st = lstatSync(cell.path);
+          expect(st.isSymbolicLink()).toBe(false);
+          expect(st.isFile()).toBe(true);
+          expect(readFileSync(cell.path, "utf-8")).toBe(ownedBytes.settings);
         } finally {
           dispose(cell);
         }
