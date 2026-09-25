@@ -13,6 +13,7 @@ import {
   ensureDir,
   fileExists,
   isSymlink,
+  isDirectory,
   getSymlinkTarget,
   createSymlink,
   removeFileOrSymlink,
@@ -451,7 +452,13 @@ export interface TemplateChange {
   path: string;
   /** Source template path under `templates/` */
   templatePath: string;
-  status: "new" | "modified" | "unchanged" | "local-override";
+  /**
+   * `directory-collision` means a directory sits where this file goes. It is
+   * reported and skipped, never written — reading or writing the path would
+   * throw a raw `EISDIR` and abort the run partway, dry-runs included (#1122).
+   */
+  status:
+    "new" | "modified" | "unchanged" | "local-override" | "directory-collision";
   /** Template content rendered with the project's variables */
   rendered: string;
   /** Unified-ish diff (installed → rendered), only set for `modified` */
@@ -638,6 +645,19 @@ export async function computeTemplateChanges(
       await getTemplateContent(templatePath),
       variables,
     );
+    // `fileExists` answers true for a directory, so this has to come first:
+    // the `readFile` below would throw EISDIR and take the whole preview with
+    // it, before a single line was printed (#1122).
+    if (await isDirectory(localPath)) {
+      changes.push({
+        path: localPath,
+        templatePath,
+        status: "directory-collision",
+        rendered,
+      });
+      continue;
+    }
+
     const exists = await fileExists(localPath);
 
     if (!exists) {
@@ -718,6 +738,8 @@ export interface SymlinkResult {
   fallbackToCopy: boolean;
   skipped: boolean;
   reason?: string;
+  /** Skipped because a directory sits at the destination (#1122). */
+  directoryCollision?: boolean;
 }
 
 /**
@@ -783,6 +805,22 @@ export async function symlinkDir(
         ? srcPath
         : join(process.cwd(), srcPath);
       const relativeTarget = relative(dirname(absoluteDest), absoluteSrc);
+
+      // A directory at the destination is reported and skipped. Without this
+      // the `--force` path unlinks nothing (unlink refuses a directory) and
+      // `createSymlink` aborts the whole run with a raw EEXIST (#1122).
+      if (await isDirectory(destPath)) {
+        results.push({
+          created: false,
+          path: destPath,
+          target: relativeTarget,
+          fallbackToCopy: false,
+          skipped: true,
+          directoryCollision: true,
+          reason: "destination is a directory",
+        });
+        continue;
+      }
 
       // Check if destination already exists
       // Note: isSymlink uses lstat and works on broken symlinks,
@@ -994,6 +1032,11 @@ export async function copyTemplates(
   scriptsSymlinked: boolean;
   symlinkResults?: SymlinkResult[];
   /**
+   * Destinations skipped because a directory sits in the file's place (#1122).
+   * Reported by the caller; nothing was written to them.
+   */
+  directoryCollisions: string[];
+  /**
    * Customizable files that already existed, differed from the rendered
    * template, and were left untouched because `overwriteCustomizable` was not
    * set. Normalized to forward slashes so callers can report them verbatim.
@@ -1009,6 +1052,10 @@ export async function copyTemplates(
   // surfaced to the caller so it can report them without a second diff pass
   // (#814).
   const preservedCustomizable: string[] = [];
+
+  // Destinations a directory occupies. Skipped, not written, and surfaced to
+  // the caller so `init` can name them (#1122).
+  const directoryCollisions: string[] = [];
 
   async function copyDir(
     srcDir: string,
@@ -1026,6 +1073,14 @@ export async function copyTemplates(
         if (entry.isDirectory()) {
           await copyDir(srcPath, destPath, copyOptions);
         } else {
+          // A directory in the file's place is skipped, not written: every
+          // branch below ends in a `readFile`/`writeFile` that would throw a
+          // raw EISDIR and abandon the rest of the tree (#1122).
+          if (await isDirectory(destPath)) {
+            directoryCollisions.push(destPath.replace(/\\/g, "/"));
+            continue;
+          }
+
           // Read, process, and write
           let content = await readFile(srcPath);
           content = processTemplate(content, variables);
@@ -1048,9 +1103,10 @@ export async function copyTemplates(
             }
           }
 
-          // An existing symlink is replaced, never written through: writeFile
-          // follows links, so a foreign link would leave itself in place and
-          // overwrite its target (an npx cache or a sibling checkout) (#1053).
+          // An existing symlink is replaced, never written through (#1053).
+          // `writeFile` now enforces that on its own (#1122), but the branch
+          // stays: it is what stops `keepExistingFiles` below from treating a
+          // link as "an existing file" and leaving it in place.
           if (await isSymlink(destPath)) {
             await removeFileOrSymlink(destPath);
           } else if (
@@ -1116,6 +1172,12 @@ export async function copyTemplates(
     scriptsSymlinked = symlinkResults.some(
       (r) => r.created && !r.fallbackToCopy,
     );
+
+    for (const result of symlinkResults) {
+      if (result.directoryCollision) {
+        directoryCollisions.push(result.path.replace(/\\/g, "/"));
+      }
+    }
   } else {
     // Fall back to copies (Windows, --no-symlinks, or an unsafe target)
     // Regular files are left alone unless `force` (sync passes it); symlinks
@@ -1128,15 +1190,26 @@ export async function copyTemplates(
   // Copy settings.json
   const settingsPath = join(templatesDir, "settings.json");
   if (await fileExists(settingsPath)) {
-    const content = await readFile(settingsPath);
-    await writeFile(
-      ".claude/settings.json",
-      processTemplate(content, variables),
-    );
+    // Written here rather than through `copyDir`, so it needs the same
+    // directory guard `copyDir` has (#1122).
+    if (await isDirectory(".claude/settings.json")) {
+      directoryCollisions.push(".claude/settings.json");
+    } else {
+      const content = await readFile(settingsPath);
+      await writeFile(
+        ".claude/settings.json",
+        processTemplate(content, variables),
+      );
+    }
   }
 
   // Write skills version marker for sync detection
   await writeFile(SKILLS_VERSION_PATH, getPackageVersion());
 
-  return { scriptsSymlinked, symlinkResults, preservedCustomizable };
+  return {
+    scriptsSymlinked,
+    symlinkResults,
+    preservedCustomizable,
+    directoryCollisions,
+  };
 }

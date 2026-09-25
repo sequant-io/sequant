@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock fs functions
-vi.mock("../lib/fs.js", () => ({
+vi.mock("../lib/fs.js", async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
   fileExists: vi.fn(),
   readFile: vi.fn(),
   writeFile: vi.fn(),
   getFileStats: vi.fn(),
+  isDirectory: vi.fn().mockResolvedValue(false),
 }));
 
 // Mock manifest

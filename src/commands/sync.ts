@@ -28,7 +28,13 @@ import {
 import { getConfig } from "../lib/config.js";
 import { resolveCliInvocation } from "../lib/version-check.js";
 import { syncSequantMcpPin, PROJECT_MCP_JSON } from "../lib/mcp-config.js";
-import { writeFile, readFile, fileExists, getFileStats } from "../lib/fs.js";
+import {
+  writeFile,
+  readFile,
+  fileExists,
+  getFileStats,
+  directoryCollisionMessage,
+} from "../lib/fs.js";
 import {
   generateAgentsMd,
   writeAgentsMd,
@@ -291,6 +297,10 @@ function resolveOwnershipDecisions(
 
   for (const change of changes) {
     if (change.status === "unchanged") continue;
+    // A directory at the destination is skipped, not written; it gets its own
+    // report (see `printDirectoryCollisions`) rather than an ownership verb
+    // that would describe a write that never happens (#1122).
+    if (change.status === "directory-collision") continue;
     if (change.status === "local-override") {
       // A user-owned destination is kept unless the user passed --force. A
       // sequant-owned `.local`-twin override is still rewritten by the tree
@@ -314,6 +324,26 @@ function resolveOwnershipDecisions(
   }
 
   return decisions;
+}
+
+/**
+ * Report every destination a directory occupies, with the one action that
+ * resolves it (#1122).
+ *
+ * Deliberately its own block rather than a row in the ownership decisions:
+ * nothing is overwritten, preserved or merged at these paths — the writer does
+ * not touch them at all — and listing them under `overwrite:` would promise a
+ * write that never happens.
+ */
+function printDirectoryCollisions(changes: TemplateChange[]): void {
+  const collisions = changes.filter((c) => c.status === "directory-collision");
+  if (collisions.length === 0) return;
+  console.log(
+    chalk.yellow("\nSkipped — a directory sits where a template file goes:"),
+  );
+  for (const change of collisions) {
+    console.log(chalk.yellow(`  ${directoryCollisionMessage(change.path)}`));
+  }
 }
 
 /**
@@ -428,6 +458,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // silently skipped, which left a drifted shim invisible to a
     // version-current `sync` and `sync --dry-run`.
     const fastPathShim = await decideOpencodeShimSync();
+
+    // A directory at a destination is not drift — nothing would be written to
+    // it either way — but it is the reason a file sequant owns is missing, so
+    // the report-only path names it rather than claiming "up to date" (#1122).
+    if (!quiet) {
+      printDirectoryCollisions(changes);
+    }
 
     if (drifted.length === 0 && fastPathShim !== "refresh") {
       // Truthful no-op: content is actually identical.
@@ -568,6 +605,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
       printOwnershipDecisions(
         resolveOwnershipDecisions(changes, force, mcpPin.updated),
       );
+      printDirectoryCollisions(changes);
 
       if (toWrite.length === 0 && opencodeShimDecision !== "refresh") {
         console.log(chalk.green("\n✔ Skills are already up to date!"));
@@ -618,6 +656,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   );
   if (!quiet) {
     printOwnershipDecisions(applyDecisions, { preservedHint: true });
+    printDirectoryCollisions(applyChanges);
   }
 
   // AC-3: under --force, announce which user-owned files are about to be

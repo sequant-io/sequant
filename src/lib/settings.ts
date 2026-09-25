@@ -11,7 +11,14 @@
  * 4. CLI flags (highest priority)
  */
 
-import { readFile, writeFile, fileExists, ensureDir } from "./fs.js";
+import {
+  readFile,
+  writeFile,
+  fileExists,
+  ensureDir,
+  isDirectory,
+  directoryCollisionMessage,
+} from "./fs.js";
 import { dirname } from "path";
 import { z } from "zod";
 import { getPhaseNames } from "./workflow/phase-registry.js";
@@ -1278,6 +1285,18 @@ export async function createDefaultSettings(
   force = false,
 ): Promise<CreateSettingsResult> {
   await ensureDir(dirname(SETTINGS_PATH));
+
+  // A directory in the file's place is reported and left alone — on both the
+  // preserve and the `--force` path. Without this the read below (or the
+  // forced write further down) throws a raw EISDIR and aborts `init` (#1122).
+  if (await isDirectory(SETTINGS_PATH)) {
+    return {
+      action: "preserved",
+      path: SETTINGS_PATH,
+      updatedKeys: [],
+      warning: directoryCollisionMessage(SETTINGS_PATH),
+    };
+  }
 
   // Read the one declared ownership policy rather than a preserve rule local
   // to this module — being the fifth undeclared ownership location is what
