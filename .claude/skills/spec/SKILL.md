@@ -109,6 +109,11 @@ Mark tier in HTML comment for downstream parsing: `<!-- SEQUANT_SPEC_TIER: [tier
 
    > For the house AC format rules (single-line constraint, `Evidence:`/`Risk:`/`Human decision` fields, Non-Goals section), see the constitution's §2 AC Authoring Standard (`.claude/memory/constitution.md`).
 
+   > The rules the tooling enforces hold even when that file predates §2. It is user-owned and never updated after `sequant init`, so an older project's copy may not have the section at all (#1165):
+   > - **One line per AC.** The parser is line-anchored and truncates a wrapped AC at the first newline.
+   > - **An `Evidence:` clause** naming the command or artifact that proves the AC. It is the only verification field the parser reads, so a `Verify:` clause is invisible to it, and `/qa` §6h/§6i never enforce that AC.
+   > - **A `## Non-Goals` section** in the issue. The scope assessment reads that heading.
+
 3. **Scope Assessment** (unless `--skip-scope-check`): Use `performScopeAssessment` from `./src/lib/scope/index.ts` with settings from `getSettings()`. Verdicts: SCOPE_OK (green), SCOPE_WARNING (yellow, auto-enables quality loop), SCOPE_SPLIT_RECOMMENDED (red). Store results in state.
 
 ### If guard fails (consumer projects):

@@ -120,6 +120,8 @@ Present the captured output to the user:
 
 ### 5. Prompt for Confirmation
 
+**Show the output in your message text before asking.** Tool output is not displayed to the user, so a confirmation request without it asks them to judge something they cannot see (#1165). Put the command, the exit code and the key output lines (or a short excerpt) in the message, then ask.
+
 Use AskUserQuestion to get human confirmation:
 
 ```
