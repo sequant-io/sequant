@@ -140,7 +140,13 @@ describe("state-utils", () => {
         JSON.stringify({ foo: "bar" }),
       );
 
-      const result = await rebuildStateFromLogs({ logPath, verbose: false });
+      // `statePath` is load-bearing: without it the rebuilt (empty) state is
+      // written to the real checkout's .sequant/state.json (#1150).
+      const result = await rebuildStateFromLogs({
+        logPath,
+        statePath,
+        verbose: false,
+      });
 
       expect(result.success).toBe(true);
       expect(result.logsProcessed).toBe(2);
