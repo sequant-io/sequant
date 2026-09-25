@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as os from "os";
+import * as path from "path";
 import { getExitCode } from "../../commands/merge.js";
 import { getChecksToRun, findMostRecentLog } from "./index.js";
 import { buildResult } from "./combined-branch-test.js";
@@ -329,7 +331,9 @@ describe("rangesOverlap", () => {
 
 describe("findMostRecentLog", () => {
   it("should return null for nonexistent directory", () => {
-    const result = findMostRecentLog("/nonexistent/path/that/does/not/exist");
+    const result = findMostRecentLog(
+      path.join(os.tmpdir(), `sequant-absent-${process.pid}-${Date.now()}`),
+    );
     expect(result).toBeNull();
   });
 

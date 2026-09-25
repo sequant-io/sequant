@@ -271,13 +271,12 @@ describe("behavior-rule-detector", () => {
         "AC-1",
         "Default rule becomes: always include spec; never skip",
       );
-      expect(() =>
-        findTouchpoints(ac, "/nonexistent/path/for/test/" + Date.now()),
-      ).not.toThrow();
-      const hits = findTouchpoints(
-        ac,
-        "/nonexistent/path/for/test/" + Date.now(),
+      const absentRoot = path.join(
+        os.tmpdir(),
+        `sequant-absent-${process.pid}-${Date.now()}`,
       );
+      expect(() => findTouchpoints(ac, absentRoot)).not.toThrow();
+      const hits = findTouchpoints(ac, absentRoot);
       expect(hits).toEqual([]);
     });
 
