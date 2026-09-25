@@ -12,6 +12,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import {
   driverResolvesSkills,
+  runResolvesSkills,
   resolveRequiredSkills,
   runSkillsPreflight,
 } from "./skills-preflight.js";
@@ -297,6 +298,40 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
     const result = await runSkillsPreflight({
       ...EXPLICIT_BASE,
       agent: "no-such-driver",
+      cwd: root,
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("#1150 AC-6: runs for an aider run whose exec phase is overridden to claude-code", async () => {
+    const config = {
+      agent: "aider",
+      phasePolicies: { exec: { agent: "claude-code" } },
+    };
+    // The run-level driver alone would skip the pre-flight entirely.
+    expect(driverResolvesSkills("aider", undefined)).toBe(false);
+    expect(runResolvesSkills(config)).toBe(true);
+
+    const result = await runSkillsPreflight({
+      ...EXPLICIT_BASE,
+      ...config,
+      cwd: root,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Only exec runs on a skill-resolving driver; spec and qa stay on aider.
+      expect(result.missingSkills).toEqual(["exec"]);
+      expect(result.driverName).toBe("claude-code");
+    }
+  });
+
+  it("#1150 AC-6: a claude-code run with an aider phase does not require that phase's skill", async () => {
+    installSkill("spec");
+    installSkill("exec");
+    const result = await runSkillsPreflight({
+      ...EXPLICIT_BASE,
+      agent: "claude-code",
+      phasePolicies: { qa: { agent: "aider" } },
       cwd: root,
     });
     expect(result).toEqual({ ok: true });

@@ -325,3 +325,58 @@ describe("#975 AC-4: resolvePhasePolicies captures requestedModel for role: refe
     expect(result.qa?.requestedModel).toBeUndefined(); // raw string: no requestedModel
   });
 });
+
+describe("#1150 AC-5: roles and ladder rungs resolve against the phase's own agent", () => {
+  const ROLES: ModelRoles = {
+    fast: { "claude-code": "sonnet", codex: "gpt-5-mini" },
+    strong: { "claude-code": "opus", codex: "gpt-5-codex" },
+  };
+  function resolve(run: Partial<SequantSettings["run"]>) {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, modelRoles: ROLES, ...run },
+    } as SequantSettings;
+    return buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+  }
+
+  it("a role: model resolves for the phase's agent, other phases for run.agent", () => {
+    const config = resolve({
+      phases: {
+        exec: { agent: "codex", model: "role:strong" },
+        qa: { model: "role:strong" },
+      },
+    });
+    expect(config.phasePolicies?.exec?.model).toBe("gpt-5-codex");
+    expect(config.phasePolicies?.qa?.model).toBe("opus");
+  });
+
+  it("the ladder is also resolved per overriding agent, keyed by driver", () => {
+    const config = resolve({
+      modelLadder: ["role:fast", "role:strong"],
+      phases: { exec: { agent: "codex" } },
+    });
+    expect(config.modelLadder).toEqual(["sonnet", "opus"]);
+    expect(config.modelLadderByAgent).toEqual({
+      codex: ["gpt-5-mini", "gpt-5-codex"],
+    });
+  });
+
+  it("no per-agent ladder when no phase overrides its agent", () => {
+    const config = resolve({ modelLadder: ["role:fast", "role:strong"] });
+    expect("modelLadderByAgent" in config).toBe(false);
+  });
+
+  it("a rung the phase's driver has no model for fails at config time, naming the phase", () => {
+    expect(() =>
+      resolve({
+        modelLadder: ["role:fast"],
+        modelRoles: { fast: { "claude-code": "sonnet" } },
+        phases: { exec: { agent: "codex" } },
+      }),
+    ).toThrow(/Model ladder for phase "exec" \(agent "codex"\)/);
+  });
+});

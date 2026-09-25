@@ -725,6 +725,22 @@ describe("doctor command", () => {
       expect(output).not.toContain("codex CLI");
       expect(output).not.toContain("codex auth");
     });
+
+    it("1150 AC-8 checks codex when only a phase names it (run.phases.exec.agent)", async () => {
+      const settings = settingsWithAgentForPlugin("claude-code");
+      mockGetSettings.mockResolvedValue({
+        ...settings,
+        run: { ...settings.run, phases: { exec: { agent: "codex" } } },
+      } as never);
+      mockCommandExists.mockImplementation((cmd: string) => cmd !== "codex");
+
+      await doctorCommand();
+
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("codex CLI");
+      expect(output).toContain("configured as agent for phase exec");
+      expect(output).toContain("npm i -g @openai/codex");
+    });
   });
 
   describe("jq checks", () => {

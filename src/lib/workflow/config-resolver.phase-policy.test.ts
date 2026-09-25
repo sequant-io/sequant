@@ -151,3 +151,53 @@ describe("#915 AC-1: buildExecutionConfig resolves effortEscalation", () => {
     expect(resolve(cli, settings).effortEscalation).toBe(true);
   });
 });
+
+describe("#1150: buildExecutionConfig resolves per-phase agents", () => {
+  function resolve(cli: Partial<RunOptions>, settings: SequantSettings) {
+    return buildExecutionConfig(
+      resolveRunOptions(cli as RunOptions, settings),
+      settings,
+      1,
+    );
+  }
+  function withPhases(
+    phases: SequantSettings["run"]["phases"],
+    agent?: string,
+  ): SequantSettings {
+    return {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, agent, phases },
+    };
+  }
+
+  it("AC-1: carries run.phases.<phase>.agent onto ExecutionConfig.phasePolicies", () => {
+    const config = resolve(
+      {},
+      withPhases({ qa: { agent: "claude-code" } }, "codex"),
+    );
+    expect(config.agent).toBe("codex");
+    expect(config.phasePolicies?.qa).toEqual({ agent: "claude-code" });
+  });
+
+  it("AC-2: an unknown per-phase agent fails at config resolution with the registry's message", () => {
+    // buildExecutionConfig runs before worktrees are provisioned or any phase
+    // is dispatched, so a throw here means no phase ran.
+    expect(() =>
+      resolve({}, withPhases({ exec: { agent: "claude-cloudd" } })),
+    ).toThrow(/^Unknown agent driver "claude-cloudd"\. Available drivers: /);
+  });
+
+  it("AC-2: the message is the one getDriver gives a bad run.agent", async () => {
+    const { getDriver } = await import("./drivers/index.js");
+    let expected = "";
+    try {
+      getDriver("claude-cloudd");
+    } catch (err) {
+      expected = (err as Error).message;
+    }
+    expect(expected).not.toBe("");
+    expect(() =>
+      resolve({}, withPhases({ exec: { agent: "claude-cloudd" } })),
+    ).toThrow(expected);
+  });
+});

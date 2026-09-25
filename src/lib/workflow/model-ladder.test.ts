@@ -1413,3 +1413,31 @@ describe("971 AC-D2: the marker schema append is backward-compatible", () => {
     ).toHaveLength(0);
   });
 });
+
+describe("#1150 AC-5: a phase escalates through its own driver's ladder", () => {
+  const perAgent = (): ExecutionConfig =>
+    configWith({
+      agent: "claude-code",
+      modelLadder: ["sonnet", "opus"],
+      modelLadderByAgent: { codex: ["gpt-5-mini", "gpt-5-codex"] },
+      phasePolicies: { exec: { agent: "codex" } },
+    });
+
+  it("exec (codex) escalates through codex models; qa (claude-code) through claude-code models", () => {
+    const state = createLadderState();
+    const exec = withEscalatedModel(perAgent(), "exec", "LOOP_NO_DIFF", state);
+    const qa = withEscalatedModel(perAgent(), "qa", "LOOP_NO_DIFF", state);
+
+    expect(dispatchedModel(exec.config, "exec")).toBe("gpt-5-codex");
+    expect(exec.record).toMatchObject({ base: "gpt-5-mini" });
+    expect(dispatchedModel(qa.config, "qa")).toBe("opus");
+  });
+
+  it("a pin on the phase's own ladder is its starting rung, not an off-ladder pin", () => {
+    const config = perAgent();
+    config.phasePolicies = { exec: { agent: "codex", model: "gpt-5-mini" } };
+
+    expect(startingRungFor("exec", config)).toBe(0);
+    expect(canEscalateFurther(config, "exec", createLadderState())).toBe(true);
+  });
+});

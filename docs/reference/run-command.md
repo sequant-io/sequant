@@ -383,6 +383,33 @@ A malformed spec (empty value, mixing a bare value with `phase=value` pairs, or 
 
 **Subagent inheritance:** because of an upstream limitation ([anthropics/claude-code#43869](https://github.com/anthropics/claude-code/issues/43869), tracked internally as #632), a subagent spawned during a phase inherits the *parent session's* model rather than its own `model:` frontmatter declaration. In practice this means setting a phase's model also governs every sub-agent that phase spawns (e.g. `sequant-implementer`, `sequant-qa-checker`) — one knob controls the whole phase tree, not just the top-level agent.
 
+### Per-Phase Agent
+
+**Default: off** (#1150). `run.agent` (or `--agent`) picks the driver for every phase. `run.phases.<phase>.agent` overrides it for one phase, for example to implement with codex and review with Claude Code:
+
+```json
+{
+  "run": {
+    "agent": "codex",
+    "phases": {
+      "qa": { "agent": "claude-code", "model": "sonnet" }
+    }
+  }
+}
+```
+
+**Precedence:** `run.phases.<phase>.agent` > `run.agent` / `--agent` > `claude-code`. There is no CLI flag for per-phase agents; set them in `.sequant/settings.json`.
+
+**What follows the phase's agent:**
+
+- `model` and `effort` in the same phase entry go to that phase's driver, not the run-level one.
+- A `role:` model reference (see `run.modelRoles`) resolves against the phase's agent, so a driver-keyed role such as `{ "claude-code": "opus", "codex": "gpt-5-codex" }` gives each phase its own driver's model. The model escalation ladder does the same: a codex phase escalates through the ladder's codex models.
+- The skills pre-flight checks each phase against its own driver, so an aider run with a Claude Code `exec` phase still needs the `exec` skill installed.
+- `sequant doctor` runs the driver checks for every agent the run can use, including ones named only by a phase.
+- A phase never resumes a session another driver created: each driver's `canResume` rejects foreign handles.
+
+**Validation:** an unknown driver name in `run.phases.<phase>.agent` fails when the run's config is resolved, before any phase runs, with the same `Unknown agent driver "<name>". Available drivers: …` message a bad `run.agent` gives. A role or ladder rung that has no entry for a phase's driver also fails at that point, naming the phase.
+
 ### Effort Escalation on Retries
 
 **Default: off** (#915) — raising effort raises token spend, which is a cost decision the user should opt into explicitly, not one sequant makes on your behalf.
