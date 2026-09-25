@@ -194,13 +194,26 @@ describe("state-hook", () => {
     });
 
     it("should not throw on state errors", async () => {
-      // Create hook with invalid path that can't be written to
-      const hook = createStateHook(42, "Test Issue", {
-        statePath: "/nonexistent/path/state.json",
-      });
+      // Absent parent under tmp; mkdirSync is stubbed to succeed without
+      // creating anything, which is what a root user's mkdir does for an
+      // unwritable path — the write then fails and must be swallowed.
+      const absentDir = path.join(
+        os.tmpdir(),
+        `sequant-absent-${process.pid}-${Date.now()}`,
+      );
+      const mkdirSpy = vi.spyOn(fs, "mkdirSync").mockReturnValue(undefined);
+      try {
+        const hook = createStateHook(42, "Test Issue", {
+          statePath: path.join(absentDir, "state.json"),
+        });
 
-      // These should not throw even though state can't be written
-      await expect(hook.startPhase("exec")).resolves.toBeUndefined();
+        // These should not throw even though state can't be written
+        await expect(hook.startPhase("exec")).resolves.toBeUndefined();
+        expect(mkdirSpy).toHaveBeenCalled();
+      } finally {
+        mkdirSpy.mockRestore();
+      }
+      expect(fs.existsSync(absentDir)).toBe(false);
     });
   });
 });
