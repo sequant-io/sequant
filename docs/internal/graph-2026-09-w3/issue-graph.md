@@ -59,6 +59,11 @@ The issue's current verify command (`sudo -E npx vitest …`) can't be run verba
 - 2026-09-25: B (#1153, PR #1155) is held for an owner decision. QA found three blockers, and the runner reproduced each one. (1) `.gitignore:52` `**/.sequant/` overrides the `!.sequant/upstream/` exception, so `git add` rejects new reports. (2) The repo doesn't allow Actions to create PRs, so `gh pr create` returns 403. (3) A PR opened with `GITHUB_TOKEN` starts no runs of the required checks. Items 2 and 3 mean the PR route needs a PAT or GitHub App token, or else a return to the not-committed option.
 - 2026-09-25 (correction): A is **not** blocked by C. With C's branch merged into A, the canary still fails 2/4. The real cause is a new issue, #1159. `resolveScriptsSymlinkTarget` points `scripts/dev` at the project's own `node_modules` copy (older version, the #991 design), while the dry-run and drift check compare it against the running CLI's bundled template. It's reproduced against a real `sequant@2.16` project. A is now blocked by #1159, and every future `templates/scripts/*.sh` change is blocked the same way.
 - 2026-09-25: C's QA found `.mcp.json` writes (`mcp-config.ts`) bypass the new symlink guard, so C is not the last path in the #1053 class. Filed as #1160.
+- 2026-09-25 (close): merged #1122 (PR #1157, `104f324e`), #1141 (PR #1158, `8d76da8c`), #1159 (PR #1161, `702105ba`) and #1145 (PR #1156, `9e435b14`). `main` shows `test` and `canary` green after each merge. The runner fixed several QA findings itself instead of re-running exec:
+  - #1141: the AC-2 verify command only covered `src`. The runner converted the two remaining `__tests__` sites and widened the gate to cover `src`, `__tests__`, `scripts` and `bin`.
+  - #1159: the first fix moved the non-convergence loop from `sync` into `update`. `update` now drops symlink-mode `scripts/dev` entries, the writer matrix was re-pinned, and `update` names the links still pending instead of printing a silent "up to date".
+  - Two phases hit the 30-minute MCP wall: #1122 exec and #1159 qa. Both resumed cleanly.
+- Still open: B (#1153), waiting for the owner to choose between a GitHub App/PAT token and not committing the report. It needs to merge before the Monday 09-28 09:00 UTC cron. #1160 (`.mcp.json` symlink writes) is filed and not scheduled.
 
 ## Anti-gap passes
 
