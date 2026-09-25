@@ -242,14 +242,18 @@ export interface ExecutionConfig {
    */
   autoWaitMinutes?: number;
   /**
-   * Resolved per-phase `model`/`effort` overrides (#914), keyed by phase
-   * name. Merged from `settings.run.phases` and the CLI's `--models`/
+   * Resolved per-phase `agent`/`model`/`effort` overrides (#914, #1150),
+   * keyed by phase name. A phase's `agent` is read only through
+   * `resolvePhaseAgent` (`phase-agent.ts`), never directly. Merged from `settings.run.phases` and the CLI's `--models`/
    * `--efforts` flags via `resolvePhasePolicies` (CLI > settings > absent) —
    * see `config-resolver.ts`. Absent/empty by default: `phase-executor.ts`
    * only sets `AgentExecutionConfig.model`/`.effort` when a phase has an
    * entry here, so an unconfigured run reaches the SDK unchanged.
    */
-  phasePolicies?: Record<string, { model?: string; effort?: string }>;
+  phasePolicies?: Record<
+    string,
+    { agent?: string; model?: string; effort?: string }
+  >;
   /**
    * Evidence-based effort escalation on quality-loop retries (#915). CLI >
    * settings > absent (`false`), resolved by `buildExecutionConfig`
@@ -285,6 +289,16 @@ export interface ExecutionConfig {
    * was configured and what was dispatched (#971 AC-10).
    */
   modelLadderRequested?: string[];
+  /**
+   * The same ladder resolved for each phase agent that differs from the
+   * run-level agent (#1150), keyed by driver name. A `role:` rung can map to
+   * different models per driver, so a phase running on codex must escalate
+   * through codex's models, not claude-code's. Omitted entirely unless a
+   * ladder is configured AND some phase overrides its agent, so every other
+   * run's `ExecutionConfig` is unchanged. Read only through
+   * `ladderForPhase` (`model-ladder.ts`).
+   */
+  modelLadderByAgent?: Record<string, string[]>;
   /**
    * Set by `withEscalatedModel` on the per-dispatch config copy when THIS
    * execution escalated a rung (#971 AC-10). Never set by a producer and

@@ -44,6 +44,7 @@
 
 import type { ExecutionConfig, ModelEscalationFacts } from "./types.js";
 import type { PhaseMarker } from "./state-schema.js";
+import { resolvePhaseAgent } from "./phase-agent.js";
 import {
   detectStagnation,
   type LoopProgressDecision,
@@ -92,6 +93,24 @@ export function isLadderConfigured(config: ExecutionConfig): boolean {
   return (config.modelLadder?.length ?? 0) > 0;
 }
 
+/**
+ * The ladder `phase` escalates through (#1150): the one resolved for the
+ * phase's own driver when it differs from the run-level agent, else the
+ * run-level ladder. A `role:` rung names a model per driver, so a codex phase
+ * must not be handed claude-code's models. Every per-phase ladder read goes
+ * through here; `isLadderConfigured` stays on the run-level ladder because
+ * per-agent ladders exist only alongside it.
+ */
+export function ladderForPhase(
+  config: ExecutionConfig,
+  phase: string,
+): string[] | undefined {
+  return (
+    config.modelLadderByAgent?.[resolvePhaseAgent(config, phase)] ??
+    config.modelLadder
+  );
+}
+
 /** Fresh per-run ladder state. One per issue/gate invocation. */
 export function createLadderState(): LadderState {
   return { rungByPhase: new Map(), topOfLadder: new Set() };
@@ -131,7 +150,7 @@ export function startingRungFor(
   phase: string,
   config: ExecutionConfig,
 ): number | null {
-  const ladder = config.modelLadder;
+  const ladder = ladderForPhase(config, phase);
   if (!ladder || ladder.length === 0) return null;
 
   const pinned = config.phasePolicies?.[phase]?.model;
@@ -155,7 +174,7 @@ export function canEscalateFurther(
   phase: string,
   state: LadderState,
 ): boolean {
-  const ladder = config.modelLadder;
+  const ladder = ladderForPhase(config, phase);
   if (!ladder || ladder.length === 0) return false;
   const start = startingRungFor(phase, config);
   if (start === null) return false;
@@ -455,7 +474,7 @@ export function withEscalatedModel(
   trigger: EscalationTrigger | null,
   state: LadderState,
 ): ModelEscalationOutcome {
-  const ladder = config.modelLadder;
+  const ladder = ladderForPhase(config, phase);
   if (!ladder || ladder.length === 0) return { config };
 
   const start = startingRungFor(phase, config);

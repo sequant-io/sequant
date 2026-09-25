@@ -325,3 +325,103 @@ describe("#975 AC-4: resolvePhasePolicies captures requestedModel for role: refe
     expect(result.qa?.requestedModel).toBeUndefined(); // raw string: no requestedModel
   });
 });
+
+describe("#1150 AC-5: roles and ladder rungs resolve against the phase's own agent", () => {
+  const ROLES: ModelRoles = {
+    fast: { "claude-code": "sonnet", codex: "gpt-5-mini" },
+    strong: { "claude-code": "opus", codex: "gpt-5-codex" },
+  };
+  function resolve(run: Partial<SequantSettings["run"]>) {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, modelRoles: ROLES, ...run },
+    } as SequantSettings;
+    return buildExecutionConfig(
+      resolveRunOptions({} as RunOptions, settings),
+      settings,
+      1,
+    );
+  }
+
+  it("a role: model resolves for the phase's agent, other phases for run.agent", () => {
+    const config = resolve({
+      phases: {
+        exec: { agent: "codex", model: "role:strong" },
+        qa: { model: "role:strong" },
+      },
+    });
+    expect(config.phasePolicies?.exec?.model).toBe("gpt-5-codex");
+    expect(config.phasePolicies?.qa?.model).toBe("opus");
+  });
+
+  it("the ladder is also resolved per overriding agent, keyed by driver", () => {
+    const config = resolve({
+      modelLadder: ["role:fast", "role:strong"],
+      phases: { exec: { agent: "codex" } },
+    });
+    expect(config.modelLadder).toEqual(["sonnet", "opus"]);
+    expect(config.modelLadderByAgent).toEqual({
+      codex: ["gpt-5-mini", "gpt-5-codex"],
+    });
+  });
+
+  it("no per-agent ladder when no phase overrides its agent", () => {
+    const config = resolve({ modelLadder: ["role:fast", "role:strong"] });
+    expect("modelLadderByAgent" in config).toBe(false);
+  });
+
+  it("a rung the phase's driver has no model for fails at config time, naming the phase", () => {
+    expect(() =>
+      resolve({
+        modelLadder: ["role:fast"],
+        modelRoles: { fast: { "claude-code": "sonnet" } },
+        phases: { exec: { agent: "codex" } },
+      }),
+    ).toThrow(/Model ladder for phase "exec" \(agent "codex"\)/);
+  });
+});
+
+describe("#1150: role: references follow --agent, not settings.run.agent", () => {
+  function resolve(
+    cli: Partial<RunOptions>,
+    run: Partial<SequantSettings["run"]>,
+  ) {
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      run: { ...DEFAULT_SETTINGS.run, ...run },
+    } as SequantSettings;
+    return buildExecutionConfig(
+      resolveRunOptions(cli as RunOptions, settings),
+      settings,
+      1,
+    );
+  }
+
+  it("--agent codex resolves a driver-keyed role for codex even when run.agent is claude-code", () => {
+    const config = resolve(
+      { agent: "codex" },
+      {
+        agent: "claude-code",
+        modelRoles: { strong: { "claude-code": "opus", codex: "gpt-5-codex" } },
+        phases: { qa: { model: "role:strong" } },
+      },
+    );
+    expect(config.agent).toBe("codex");
+    expect(config.phasePolicies?.qa?.model).toBe("gpt-5-codex");
+  });
+
+  it("--agent codex with a claude-code-only string role now fails at config time instead of dispatching a claude model to codex", () => {
+    expect(() =>
+      resolve(
+        { agent: "codex" },
+        {
+          agent: "claude-code",
+          modelRoles: { strong: "opus" },
+          phases: { qa: { model: "role:strong" } },
+        },
+      ),
+    ).toThrow(
+      /string shorthand \(claude-code only\) but the active driver is "codex"/,
+    );
+  });
+});

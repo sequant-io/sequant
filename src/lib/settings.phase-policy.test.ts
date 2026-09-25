@@ -118,3 +118,21 @@ describe("#958 AC-4: run.autoMerge settings", () => {
     expect(() => RunSettingsSchema.parse({ autoMerge: "yes" })).toThrow();
   });
 });
+
+describe("#1150 AC-1: run.phases.<phase>.agent", () => {
+  it("keeps `agent` through RunSettingsSchema instead of stripping it", () => {
+    const result = RunSettingsSchema.parse({
+      phases: { exec: { agent: "codex", model: "gpt-5-codex" } },
+    });
+    expect(result.phases).toEqual({
+      exec: { agent: "codex", model: "gpt-5-codex" },
+    });
+  });
+
+  it("raises no unknown-key warning for a per-phase agent", () => {
+    const { warnings } = validateSettings({
+      run: { phases: { qa: { agent: "claude-code" } } },
+    });
+    expect(warnings.filter((w) => w.path.includes("agent"))).toEqual([]);
+  });
+});

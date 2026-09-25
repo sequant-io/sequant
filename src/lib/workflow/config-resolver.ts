@@ -18,6 +18,8 @@ import type { SequantSettings, ModelRoles } from "../settings.js";
 import { DEFAULT_MODEL_ROLES } from "../settings.js";
 import { getEnvConfig } from "./batch-executor.js";
 import { getPhaseNames } from "./phase-registry.js";
+import { assertKnownDriver } from "./drivers/index.js";
+import { resolvePhaseAgent, resolveRunAgent } from "./phase-agent.js";
 
 /**
  * Layers for config resolution.
@@ -239,8 +241,10 @@ export function positiveOr(
     : fallback;
 }
 
-/** A single phase's resolved model/effort override (#914). */
+/** A single phase's resolved agent/model/effort override (#914, #1150). */
 export interface PhasePolicy {
+  /** Agent driver for this phase, overriding the run-level agent (#1150). */
+  agent?: string;
   model?: string;
   effort?: string;
   /**
@@ -430,16 +434,28 @@ export function resolvePhasePolicies(
     );
   }
 
+  // #1150: a phase's own `agent` must name a registered driver. Checked here,
+  // at config resolution, so a typo fails before any phase runs — with the
+  // same "Unknown agent driver" message `getDriver` gives a bad `run.agent`.
+  for (const policy of Object.values(result)) {
+    if (policy.agent !== undefined) assertKnownDriver(policy.agent);
+  }
+
   // Role resolution (#975): resolve any `role:<name>` model references to
   // concrete model strings. Raw strings (no `role:` prefix) pass through
-  // verbatim — this is AC-3 backward compat.
+  // verbatim — this is AC-3 backward compat. A phase that names its own agent
+  // resolves against that agent, not the run-level one (#1150).
   if (modelRoles) {
     for (const [phase, policy] of Object.entries(result)) {
       if (policy.model && policy.model.startsWith("role:")) {
         result[phase] = {
           ...policy,
           requestedModel: policy.model, // capture pre-resolution value (AC-4)
-          model: resolveRoleToModel(policy.model, modelRoles, activeDriver),
+          model: resolveRoleToModel(
+            policy.model,
+            modelRoles,
+            policy.agent ?? activeDriver,
+          ),
         };
       }
     }
@@ -464,6 +480,12 @@ export interface ResolvedModelLadder {
    * nothing redundant (#975 AC-3 / #971 AC-10).
    */
   modelLadderRequested?: string[];
+  /**
+   * The ladder resolved for each phase agent that differs from the run-level
+   * one (#1150). Present only when a ladder is configured and some phase
+   * overrides its agent.
+   */
+  modelLadderByAgent?: Record<string, string[]>;
 }
 
 /**
@@ -490,6 +512,7 @@ export function resolveModelLadder(
   settingsLadder: string[] | undefined,
   modelRoles?: ModelRoles,
   activeDriver?: string,
+  phaseAgents: Record<string, string> = {},
 ): ResolvedModelLadder {
   let requested: string[] | undefined;
 
@@ -516,9 +539,28 @@ export function resolveModelLadder(
   );
   const usedRole = requested.some((entry) => entry.startsWith("role:"));
 
+  // #1150: a phase whose agent differs from the run-level one escalates
+  // through the ladder resolved for ITS driver — a `role:` rung can name a
+  // different model per driver. Keyed by driver; a failure names the phase.
+  const byAgent: Record<string, string[]> = {};
+  for (const [phase, agent] of Object.entries(phaseAgents)) {
+    if (agent === (activeDriver ?? "claude-code") || byAgent[agent]) continue;
+    try {
+      byAgent[agent] = requested.map((entry) =>
+        resolveRoleToModel(entry, modelRoles, agent),
+      );
+    } catch (err) {
+      throw new Error(
+        `Model ladder for phase "${phase}" (agent "${agent}"): ${(err as Error).message}`,
+        { cause: err },
+      );
+    }
+  }
+
   return {
     modelLadder: resolved,
     ...(usedRole ? { modelLadderRequested: requested } : {}),
+    ...(Object.keys(byAgent).length > 0 ? { modelLadderByAgent: byAgent } : {}),
   };
 }
 
@@ -551,6 +593,31 @@ export function buildExecutionConfig(
   // explicit `false` overrides settings, otherwise settings/default win.
   const relayEnabled =
     mergedOptions.relay === false ? false : (settings.run.relay ?? true);
+
+  // #1150: the run-level agent is what `--agent` / `run.agent` name, and what
+  // `role:` references resolve against unless a phase names its own agent.
+  // (Before #1150 roles resolved against `settings.run.agent` even when
+  // `--agent` overrode it.)
+  const agent = mergedOptions.agent ?? settings.run.agent;
+  const runAgent = resolveRunAgent({ agent });
+  // #914: CLI > settings > absent, via the shared resolver (see
+  // `resolvePhasePolicies`'s doc comment for the #833 drift this guards
+  // against; since #863 this is its only call site).
+  // #975: pass modelRoles + active driver so `role:` prefixes resolve.
+  const phasePolicies = resolvePhasePolicies(
+    mergedOptions.models,
+    mergedOptions.efforts,
+    settings.run.phases,
+    getPhaseNames(),
+    settings.run.modelRoles,
+    runAgent,
+  );
+  // Phases that run on a driver other than the run-level one (#1150).
+  const phaseAgents: Record<string, string> = {};
+  for (const phase of Object.keys(phasePolicies)) {
+    const phaseAgent = resolvePhaseAgent({ agent, phasePolicies }, phase);
+    if (phaseAgent !== runAgent) phaseAgents[phase] = phaseAgent;
+  }
 
   return {
     ...DEFAULT_CONFIG,
@@ -586,7 +653,7 @@ export function buildExecutionConfig(
       mergedOptions.autoWaitMinutes ??
       settings.run.autoWaitMinutes ??
       DEFAULT_CONFIG.autoWaitMinutes,
-    agent: mergedOptions.agent ?? settings.run.agent,
+    agent,
     aiderSettings: settings.run.aider,
     opencodeSettings: settings.run.opencode,
     codexSettings: settings.run.codex,
@@ -597,18 +664,7 @@ export function buildExecutionConfig(
     // load-bearing wire the #795 inert-flag class guards against — the flag is
     // useless if it stops reaching the executor here.
     readyGate: mergedOptions.readyGate ?? false,
-    // #914: CLI > settings > absent, via the shared resolver (see
-    // `resolvePhasePolicies`'s doc comment for the #833 drift this guards
-    // against; since #863 this is its only call site).
-    // #975: pass modelRoles + active driver so `role:` prefixes resolve.
-    phasePolicies: resolvePhasePolicies(
-      mergedOptions.models,
-      mergedOptions.efforts,
-      settings.run.phases,
-      getPhaseNames(),
-      settings.run.modelRoles,
-      settings.run.agent ?? "claude-code",
-    ),
+    phasePolicies,
     // #915: CLI > settings > default `false` — mirrors the `readyGate`
     // precedent above. Resolved here only; since #863 `ready-gate.ts` receives
     // this config instead of producing its own (#833 class).
@@ -628,7 +684,8 @@ export function buildExecutionConfig(
       mergedOptions.modelLadder,
       settings.run.modelLadder,
       settings.run.modelRoles,
-      settings.run.agent ?? "claude-code",
+      runAgent,
+      phaseAgents,
     ),
   };
 }

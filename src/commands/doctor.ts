@@ -29,6 +29,11 @@ import {
 import { getPhaseMcpServersConfig } from "../lib/mcp-config.js";
 import { OPENCODE_MIN_VERSION } from "../lib/workflow/drivers/opencode.js";
 import { CODEX_MIN_VERSION } from "../lib/workflow/drivers/codex.js";
+import {
+  resolvePhaseAgent,
+  resolvePhaseAgents,
+  resolveRunAgent,
+} from "../lib/workflow/phase-agent.js";
 import { getSettings, DEFAULT_AGENT_SETTINGS } from "../lib/settings.js";
 import {
   checkVersionThorough,
@@ -680,19 +685,35 @@ export async function doctorCommand(
 
   // Check: Aider CLI (when configured as agent)
   const settings = await getSettings();
-  if (settings.run.agent === "aider") {
+  // #1150: every driver the run can dispatch to — `run.agent` plus any
+  // `run.phases.<phase>.agent` — gets its checks, not only the run-level one.
+  const agentConfig = {
+    agent: settings.run.agent,
+    phasePolicies: settings.run.phases,
+  };
+  const configuredAgents = new Set(
+    resolvePhaseAgents(agentConfig, Object.keys(settings.run.phases ?? {})),
+  );
+  /** How an agent is configured, for check messages. */
+  const agentRole = (agent: string): string => {
+    if (agent === resolveRunAgent(agentConfig)) return "default agent";
+    const phases = Object.keys(settings.run.phases ?? {}).filter(
+      (phase) => resolvePhaseAgent(agentConfig, phase) === agent,
+    );
+    return `agent for phase${phases.length === 1 ? "" : "s"} ${phases.join(", ")}`;
+  };
+  if (configuredAgents.has("aider")) {
     if (commandExists("aider")) {
       checks.push({
         name: "Aider CLI",
         status: "pass",
-        message: "aider CLI is installed (configured as default agent)",
+        message: `aider CLI is installed (configured as ${agentRole("aider")})`,
       });
     } else {
       checks.push({
         name: "Aider CLI",
         status: "fail",
-        message:
-          "aider CLI not installed but configured as default agent - install: pip install aider-chat",
+        message: `aider CLI not installed but configured as ${agentRole("aider")} - install: pip install aider-chat`,
       });
     }
   }
@@ -702,13 +723,12 @@ export async function doctorCommand(
   // load-bearing surfaces this driver depends on (`run --command`, the skill
   // tool's `state.metadata`) were undocumented at the version it was verified
   // against (#862, #992).
-  if (settings.run.agent === "opencode") {
+  if (configuredAgents.has("opencode")) {
     if (!commandExists("opencode")) {
       checks.push({
         name: "opencode CLI",
         status: "fail",
-        message:
-          "opencode CLI not installed but configured as default agent - install: npm i -g opencode-ai",
+        message: `opencode CLI not installed but configured as ${agentRole("opencode")} - install: npm i -g opencode-ai`,
       });
     } else {
       const version = getOpencodeVersion();
@@ -728,7 +748,7 @@ export async function doctorCommand(
         checks.push({
           name: "opencode CLI",
           status: "pass",
-          message: `opencode ${version} is installed (configured as default agent, minimum ${OPENCODE_MIN_VERSION})`,
+          message: `opencode ${version} is installed (configured as ${agentRole("opencode")}, minimum ${OPENCODE_MIN_VERSION})`,
         });
       }
     }
@@ -771,13 +791,12 @@ export async function doctorCommand(
 
   // Check: codex CLI + pinned minimum version + auth (when configured as
   // agent) (#1059 AC-4). Mirrors the opencode block above in structure.
-  if (settings.run.agent === "codex") {
+  if (configuredAgents.has("codex")) {
     if (!commandExists("codex")) {
       checks.push({
         name: "codex CLI",
         status: "fail",
-        message:
-          "codex CLI not installed but configured as default agent - install: npm i -g @openai/codex",
+        message: `codex CLI not installed but configured as ${agentRole("codex")} - install: npm i -g @openai/codex`,
       });
     } else {
       const version = getCodexVersion();
@@ -797,7 +816,7 @@ export async function doctorCommand(
         checks.push({
           name: "codex CLI",
           status: "pass",
-          message: `codex ${version} is installed (configured as default agent, minimum ${CODEX_MIN_VERSION})`,
+          message: `codex ${version} is installed (configured as ${agentRole("codex")}, minimum ${CODEX_MIN_VERSION})`,
         });
       }
     }
