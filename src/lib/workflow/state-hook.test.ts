@@ -12,6 +12,14 @@ import {
   getOrchestrationContext,
 } from "./state-hook.js";
 
+// `fs` namespace exports are not spy-able under ESM; wrap mkdirSync so the
+// error-path test can stub it while every other test gets the real one.
+vi.mock("fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("fs")>();
+  const mkdirSync = vi.fn(actual.mkdirSync);
+  return { ...actual, mkdirSync, default: { ...actual, mkdirSync } };
+});
+
 describe("state-hook", () => {
   let tempDir: string;
   let statePath: string;
@@ -194,13 +202,30 @@ describe("state-hook", () => {
     });
 
     it("should not throw on state errors", async () => {
-      // Create hook with invalid path that can't be written to
-      const hook = createStateHook(42, "Test Issue", {
-        statePath: "/nonexistent/path/state.json",
-      });
+      // Absent parent under tmp; mkdirSync is stubbed to succeed without
+      // creating anything, which is what a root user's mkdir does for an
+      // unwritable path — the write then fails and must be swallowed.
+      const absentDir = path.join(
+        os.tmpdir(),
+        `sequant-absent-${process.pid}-${Date.now()}`,
+      );
+      const mkdirSpy = vi
+        .mocked(fs.mkdirSync)
+        .mockImplementation(() => undefined);
+      try {
+        const hook = createStateHook(42, "Test Issue", {
+          statePath: path.join(absentDir, "state.json"),
+        });
 
-      // These should not throw even though state can't be written
-      await expect(hook.startPhase("exec")).resolves.toBeUndefined();
+        // These should not throw even though state can't be written
+        await expect(hook.startPhase("exec")).resolves.toBeUndefined();
+        expect(mkdirSpy).toHaveBeenCalled();
+      } finally {
+        mkdirSpy.mockReset();
+        const actualFs = await vi.importActual<typeof import("fs")>("fs");
+        mkdirSpy.mockImplementation(actualFs.mkdirSync);
+      }
+      expect(fs.existsSync(absentDir)).toBe(false);
     });
   });
 });

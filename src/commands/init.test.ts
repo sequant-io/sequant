@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock fs functions
-vi.mock("../lib/fs.js", () => ({
+// Spread the real module so an export added to `fs.js` later (e.g. #1122's
+// `isDirectory`) does not break every case in this file; only the four the
+// assertions read are replaced. `isDirectory` is stubbed rather than inherited
+// so no case reaches the real filesystem through it.
+vi.mock("../lib/fs.js", async (importOriginal) => ({
+  ...((await importOriginal()) as Record<string, unknown>),
   fileExists: vi.fn(),
   ensureDir: vi.fn(),
   writeFile: vi.fn(),
   readFile: vi.fn(),
+  isDirectory: vi.fn().mockResolvedValue(false),
 }));
 
 // Mock settings
@@ -58,7 +64,11 @@ vi.mock("../lib/templates.js", async (importOriginal) => {
   return {
     ...actual,
     copyTemplates: vi.fn(() =>
-      Promise.resolve({ scriptsSymlinked: true, symlinkResults: [] }),
+      Promise.resolve({
+        scriptsSymlinked: true,
+        symlinkResults: [],
+        directoryCollisions: [],
+      }),
     ),
     // Templates-root guard (#822). Defaults to "present" so this suite exercises
     // the paths past the guard; the guard's own failure branch is covered in
@@ -271,6 +281,7 @@ describe("init command", () => {
     mockCopyTemplates.mockResolvedValue({
       scriptsSymlinked: true,
       symlinkResults: [],
+      directoryCollisions: [],
     });
     mockCreateManifest.mockResolvedValue(undefined);
     mockSaveConfig.mockResolvedValue(undefined);

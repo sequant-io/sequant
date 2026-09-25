@@ -516,6 +516,28 @@ Because this happens **inside npx, before `sequant serve` runs**, sequant cannot
    The overlay directive in `spec/SKILL.md` makes `overrides.md` authoritative at
    invocation. See the [Customization Guide](guides/customization.md#modifying-an-existing-skill).
 
+### `<path> is a directory; move it aside`
+
+**Problem:** `sequant init`, `sync` or `update` reports one or more destinations under
+`Skipped — a directory sits where a template file goes:` and those files are never
+written. `sync --dry-run` and `update --dry-run` report the same list.
+
+**Cause:** A directory occupies the path a template file installs to — e.g. a
+`.claude/settings.json/` directory instead of the file. Sequant will not delete a
+directory to make room for a file, so it skips the destination and names it (#1122).
+Before 2.18.0 the writer aborted there with a raw `EISDIR` and left the rest of the
+tree unwritten.
+
+**Solution:** Move or remove the directory, then re-run the command:
+
+```bash
+mv .claude/settings.json .claude/settings.json.bak
+sequant sync
+```
+
+Every other destination is written normally in the meantime — the run is not aborted,
+only that path is skipped.
+
 ### `update` crashes or exits in CI / scripts
 
 **Problem:** `sequant update` is interactive by default. When run without a

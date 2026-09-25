@@ -2120,7 +2120,8 @@ describe.each(HOOK_COPIES)(
     it("AC-2: `cd` to a nonexistent directory fails open rather than checking cwd", () => {
       const clean = makeRepo("pre-tool-963-nonexistent-", false);
       try {
-        const cmd = `cd /nonexistent/path/for-963-xyz\ngit commit -m 'test: 963'`;
+        const absent = join(tmpdir(), `sequant-absent-963-${process.pid}-${Date.now()}`);
+        const cmd = `cd ${absent}\ngit commit -m 'test: 963'`;
         const { code, stderr } = runHookVaried(cmd, clean);
         expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
         expect(code).toBe(0);
