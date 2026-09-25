@@ -352,13 +352,15 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     foreignSymlink: "T T T T T T",
     directory: "= = = = = =",
   },
+  // `update` leaves link-route scripts/dev to `sync` (#1159): writing a
+  // regular file there left the entry `modified` on every later run.
   scriptsLink: {
-    absent: "L L L L T T",
+    absent: "L L L L = =",
     owned: "= = = = = =",
-    userModified: "= L L L T T",
-    markerChanged: "= L L L T T",
-    localSymlink: "L L L L T T",
-    foreignSymlink: "L L L L T T",
+    userModified: "= L L L = =",
+    markerChanged: "= L L L = =",
+    localSymlink: "L L L L = =",
+    foreignSymlink: "L L L L = =",
     directory: "= = = = = =",
   },
 };
@@ -440,12 +442,12 @@ const DECISIONS: Record<DestId, Record<StateId, string>> = {
     directory: "- - - -",
   },
   scriptsLink: {
-    absent: "o o o o",
+    absent: "o o - -",
     owned: "- - - -",
-    userModified: "o o o o",
-    markerChanged: "o o o o",
-    localSymlink: "o o o o",
-    foreignSymlink: "o o o o",
+    userModified: "o o - -",
+    markerChanged: "o o - -",
+    localSymlink: "o o - -",
+    foreignSymlink: "o o - -",
     directory: "- - - -",
   },
 };
