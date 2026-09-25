@@ -28,6 +28,7 @@ jobs:
     permissions:
       contents: write
       issues: write
+      pull-requests: write
 
     steps:
       - name: Checkout
@@ -128,21 +129,34 @@ jobs:
       - name: Commit report and baseline
         if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_VERSION: ${{ inputs.version }}
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Check if there are changes to commit
-          if git diff --quiet .sequant/upstream/; then
+          VERSION="${INPUT_VERSION:-$LATEST_VERSION}"
+          if ! echo "$VERSION" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Refusing to use '$VERSION' as a branch name"
+            exit 1
+          fi
+          BRANCH="upstream/$VERSION"
+
+          # Check if there are changes to commit (porcelain sees untracked new reports; git diff does not)
+          if [ -z "$(git status --porcelain .sequant/upstream/)" ]; then
             echo "No changes to commit"
+          elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "Branch $BRANCH already exists on origin; skipping"
           else
+            git switch -c "$BRANCH"
             git add .sequant/upstream/
-            VERSION="${INPUT_VERSION:-$LATEST_VERSION}"
             git commit -m "docs: Upstream assessment for $VERSION"
-            git push
-            echo "Committed and pushed assessment report"
+            git push origin "$BRANCH"
+            gh pr create --base main --head "$BRANCH" \
+              --title "docs: Upstream assessment for $VERSION" \
+              --body "Automated upstream assessment report and baseline for Claude Code $VERSION."
+            echo "Pushed $BRANCH and opened a PR"
           fi
 
       - name: Summary
