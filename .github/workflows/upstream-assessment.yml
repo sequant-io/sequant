@@ -25,14 +25,33 @@ on:
 jobs:
   assess:
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN only reads the repo and files issues. The report lands
+    # through a PR opened with a GitHub App token (#1153): `main` rejects direct
+    # pushes (#1109), and a PR opened by GITHUB_TOKEN never starts the required
+    # `test`/`canary` checks, so it could never merge.
     permissions:
-      contents: write
+      contents: read
       issues: write
-      pull-requests: write
 
     steps:
+      # Needs repo variable UPSTREAM_APP_CLIENT_ID and secret
+      # UPSTREAM_APP_PRIVATE_KEY (an App with contents + pull-requests write on
+      # this repo). Without them the report is uploaded as an artifact instead.
+      - name: Mint App token
+        id: app
+        if: vars.UPSTREAM_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.UPSTREAM_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UPSTREAM_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Pushes authenticate as the App when it is configured.
+          token: ${{ steps.app.outputs.token || github.token }}
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -127,9 +146,9 @@ jobs:
           fi
 
       - name: Commit report and baseline
-        if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true'
+        if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true' && steps.app.outputs.token != ''
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
           INPUT_VERSION: ${{ inputs.version }}
           LATEST_VERSION: ${{ steps.latest.outputs.version }}
         run: |
@@ -143,14 +162,17 @@ jobs:
           fi
           BRANCH="upstream/$VERSION"
 
-          # Check if there are changes to commit (porcelain sees untracked new reports; git diff does not)
+          # porcelain, not `git diff`: a new report is untracked, and `git diff`
+          # only sees the modified baseline.json.
           if [ -z "$(git status --porcelain .sequant/upstream/)" ]; then
             echo "No changes to commit"
           elif git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
             echo "Branch $BRANCH already exists on origin; skipping"
           else
             git switch -c "$BRANCH"
-            git add .sequant/upstream/
+            # -f: `**/.sequant/` in .gitignore overrides the `!.sequant/upstream/`
+            # negation, so a plain `git add` rejects a new report.
+            git add -f .sequant/upstream/
             git commit -m "docs: Upstream assessment for $VERSION"
             git push origin "$BRANCH"
             gh pr create --base main --head "$BRANCH" \
@@ -158,6 +180,19 @@ jobs:
               --body "Automated upstream assessment report and baseline for Claude Code $VERSION."
             echo "Pushed $BRANCH and opened a PR"
           fi
+
+      - name: Upload report (no App token configured)
+        if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true' && steps.app.outputs.token == ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: upstream-assessment
+          path: .sequant/upstream/
+          if-no-files-found: ignore
+
+      - name: Warn when the report was not committed
+        if: steps.check.outputs.skip == 'false' && inputs.dry_run != 'true' && steps.app.outputs.token == ''
+        run: |
+          echo "::warning::UPSTREAM_APP_CLIENT_ID is not set, so the report was uploaded as the 'upstream-assessment' artifact instead of opened as a PR (#1153)."
 
       - name: Summary
         env:
