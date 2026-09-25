@@ -15,6 +15,21 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Branch name for an issue: feature/<N>-<slug>. The slug rule must match
+# slugify() in src/lib/workflow/worktree-manager.ts (what `sequant run` uses):
+# strip leading/trailing "-", then cut the slug at 50 with no re-strip (#1145).
+branch_name_for() {
+    local slug
+    slug=$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//' | cut -c1-50)
+    printf 'feature/%s-%s\n' "$1" "$slug"
+}
+
+# Network-free entry point: print the branch name and exit (used by the parity test)
+if [ "$1" = "--print-branch" ]; then
+    branch_name_for "$2" "$3"
+    exit 0
+fi
+
 # Parse arguments (flexible position for flags)
 STASH_FLAG=false
 ISSUE_NUMBER=""
@@ -81,13 +96,7 @@ rm -f "$ISSUE_ERROR"
 
 # Extract issue title and create branch name
 ISSUE_TITLE=$(echo "$ISSUE_DATA" | jq -r '.title')
-BRANCH_NAME=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
-BRANCH_NAME="feature/${ISSUE_NUMBER}-${BRANCH_NAME}"
-
-# Truncate branch name if too long (max 50 chars after feature/)
-if [ ${#BRANCH_NAME} -gt 58 ]; then
-    BRANCH_NAME=$(echo "$BRANCH_NAME" | cut -c1-58)
-fi
+BRANCH_NAME=$(branch_name_for "$ISSUE_NUMBER" "$ISSUE_TITLE")
 
 # Get the git repo root (works even if run from subdirectory)
 MAIN_REPO_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"
