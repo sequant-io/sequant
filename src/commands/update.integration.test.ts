@@ -297,6 +297,10 @@ describe("update command — scripts/dev link targets stay sync-only (#1159)", (
     await updateCommand({ yes: true });
 
     expect(logged()).toContain("Everything is up to date!");
+    // …but not silently: the link only `sync` installs is still pending.
+    expect(logged()).toContain(
+      "1 scripts/dev link(s) out of date — run `sequant sync`",
+    );
     // Left for `sync` to relink; `update` never rewrites it.
     expect(await fsReadFile(join(cwdDir, SCRIPT_LOCAL), "utf-8")).toBe(
       "#!/bin/bash\necho bundled-v2\n",

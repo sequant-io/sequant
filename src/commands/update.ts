@@ -195,8 +195,10 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   // Symlink-mode scripts/dev entries are `sync`-only: their status compares
   // the link target, and writing `rendered` here as a regular file would
   // leave them `modified` on every later run (#1159).
-  const changes = (await computeTemplateChanges(manifest.stack, tokens)).filter(
-    (c) => c.linkTarget === undefined,
+  const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+  const changes = allChanges.filter((c) => c.linkTarget === undefined);
+  const pendingLinks = allChanges.filter(
+    (c) => c.linkTarget !== undefined && c.status !== "unchanged",
   );
 
   // Show summary
@@ -215,6 +217,16 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   console.log(chalk.yellow(`  Modified: ${modifiedFiles.length}`));
   console.log(chalk.gray(`  ✓ Unchanged: ${unchangedFiles.length}`));
   console.log(chalk.blue(`  Local overrides: ${localOverrides.length}`));
+
+  // Printed before the "nothing to do" short-circuit below, so an
+  // "up to date" never hides a scripts/dev link only `sync` can fix (#1159).
+  if (pendingLinks.length > 0) {
+    console.log(
+      chalk.yellow(
+        `\n!  ${pendingLinks.length} scripts/dev link(s) out of date — run \`sequant sync\` (update does not manage them)`,
+      ),
+    );
+  }
 
   // Printed before the "nothing to do" short-circuit below — a collision is
   // precisely the case where there is nothing to apply and something to fix.
