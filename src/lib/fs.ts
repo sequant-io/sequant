@@ -14,6 +14,7 @@ import {
   unlink,
   readlink,
 } from "fs/promises";
+import { lstatSync, unlinkSync, writeFileSync as fsWriteFileSync } from "fs";
 import { dirname } from "path";
 
 export async function fileExists(path: string): Promise<boolean> {
@@ -67,6 +68,24 @@ export async function writeFile(path: string, content: string): Promise<void> {
     await removeFileOrSymlink(path);
   }
   await fsWriteFile(path, content, "utf-8");
+}
+
+/**
+ * Sync twin of `writeFile` for the sync writers in `mcp-config.ts` (#1160).
+ * Same rule: an existing symlink is replaced, never written through. It does
+ * not create the parent directory; callers own that.
+ */
+export function writeFileSync(path: string, content: string): void {
+  let isLink = false;
+  try {
+    isLink = lstatSync(path).isSymbolicLink();
+  } catch {
+    // missing path: nothing to replace
+  }
+  if (isLink) {
+    unlinkSync(path);
+  }
+  fsWriteFileSync(path, content, "utf-8");
 }
 
 /**

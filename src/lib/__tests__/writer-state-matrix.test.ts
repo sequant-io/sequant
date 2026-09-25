@@ -30,6 +30,7 @@
  *   M  merged: the user's content kept, sequant's entry added or re-pinned
  *   L  symlink to the local scripts fixture
  *   W  written THROUGH an existing symlink; the link stays, its target changed
+ *      (to the template bytes, or to merged content — #1160)
  *   X  writer rejected (raw fs error) and the directory is untouched
  *   V  replaced, but the symlink's old target was modified on the way
  *
@@ -327,6 +328,9 @@ const GRID: Record<DestId, Record<StateId, string>> = {
     owned: "= = = = = =",
     userModified: "M M = = = =",
     markerChanged: "= = M M M M",
+    // #1160: `M` here is a replaced link (file arm of classify, target
+    // byte-identical, else `V`). A merge written through the link is `W`, so
+    // reintroducing the write-through fails these rows.
     localSymlink: "M M = = = =",
     foreignSymlink: "M M = = = =",
     // #1123: init no longer crashes when .mcp.json is a directory — the same
@@ -723,8 +727,11 @@ function classify(
     }
     if (before.kind === "symlink" && before.target === after.target) {
       if (after.bytes === owned) return "W";
+      // A merge into a link's target is still a write-through. Reporting it as
+      // `M` made it indistinguishable from the file arm's replaced-link merge,
+      // so the `.mcp.json` symlink rows passed with the #1160 fix reverted.
       if (dest.merged && dest.merged(before.bytes ?? "", after.bytes ?? ""))
-        return "M";
+        return "W";
     }
     return "?symlink";
   }

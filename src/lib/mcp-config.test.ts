@@ -587,6 +587,42 @@ describe("mcp-config", () => {
     });
   });
 
+  describe("symlinked .mcp.json (#1160)", () => {
+    const tmpDir = path.join(
+      os.tmpdir(),
+      "sequant-mcp-1160-test-" + Date.now(),
+    );
+    const outsideDir = path.join(tmpDir, "outside");
+    const projectDir = path.join(tmpDir, "project");
+    const outside = path.join(outsideDir, "shared.json");
+    const outsideBytes = JSON.stringify({
+      mcpServers: { other: { command: "x" } },
+    });
+
+    beforeEach(() => {
+      fs.mkdirSync(outsideDir, { recursive: true });
+      fs.mkdirSync(projectDir, { recursive: true });
+      fs.writeFileSync(outside, outsideBytes);
+      fs.symlinkSync(outside, path.join(projectDir, ".mcp.json"));
+    });
+
+    afterEach(() => {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("1160: createProjectMcpJson and syncSequantMcpPin replace the link, not its target", () => {
+      const link = path.join(projectDir, ".mcp.json");
+      createProjectMcpJson(projectDir);
+      expect(fs.readFileSync(outside, "utf-8")).toBe(outsideBytes);
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(false);
+
+      fs.rmSync(link);
+      fs.symlinkSync(outside, link);
+      syncSequantMcpPin(projectDir);
+      expect(fs.readFileSync(outside, "utf-8")).toBe(outsideBytes);
+    });
+  });
+
   describe("syncSequantMcpPin (#793)", () => {
     const tmpDir = path.join(os.tmpdir(), "sequant-mcp-pin-test-" + Date.now());
     const mcpPath = () => path.join(tmpDir, ".mcp.json");
