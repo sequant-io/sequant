@@ -18,6 +18,7 @@ import {
   createSymlink,
   fileExists,
   writeFile,
+  writeFileSync,
 } from "./fs.js";
 
 describe("symlink utilities", () => {
@@ -202,6 +203,34 @@ describe("writeFile (#1122)", () => {
     await writeFile(filePath, "nested");
 
     expect(await fsReadFile(filePath, "utf-8")).toBe("nested");
+  });
+});
+
+describe("writeFileSync (#1160)", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "fs-sync-1160-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("replaces a symlink and leaves its target untouched", async () => {
+    const target = join(dir, "target.json");
+    const link = join(dir, "link.json");
+    await fsWriteFile(target, "original");
+    await symlink(target, link);
+    writeFileSync(link, "new");
+    expect(await isSymlink(link)).toBe(false);
+    expect(await fsReadFile(link, "utf-8")).toBe("new");
+    expect(await fsReadFile(target, "utf-8")).toBe("original");
+  });
+
+  it("creates a missing file and overwrites a regular one", async () => {
+    const file = join(dir, "f.json");
+    writeFileSync(file, "a");
+    writeFileSync(file, "b");
+    expect(await fsReadFile(file, "utf-8")).toBe("b");
   });
 });
 
