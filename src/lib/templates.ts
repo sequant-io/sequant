@@ -463,6 +463,13 @@ export interface TemplateChange {
   rendered: string;
   /** Unified-ish diff (installed → rendered), only set for `modified` */
   diff?: string;
+  /**
+   * Set for a `scripts/dev` entry in symlink mode: the relative link target
+   * `symlinkDir` installs. Its status compares the link, not bytes, so only
+   * `sync` can apply it — a writer that writes `rendered` as a regular file
+   * leaves it `modified` forever (#1159).
+   */
+  linkTarget?: string;
 }
 
 /**
@@ -610,6 +617,149 @@ export function templateDestination(templatePath: string): string | null {
 }
 
 /**
+ * The `templates/scripts/` → `scripts/dev/` route, as its source prefix (see
+ * `TEMPLATE_ROUTES`). Named here because the diff has to re-derive the source
+ * file a `scripts/dev` destination is installed from, which is *not* the
+ * bundled template it was routed from (#1159).
+ */
+const SCRIPTS_TEMPLATE_PREFIX = "templates/scripts/";
+
+/** Unified-ish diff (installed → rendered), attached to every `modified`. */
+function renderDiff(installed: string, rendered: string): string {
+  return diffLines(installed, rendered)
+    .map((part) => {
+      const prefix = part.added ? "+" : part.removed ? "-" : " ";
+      return part.value
+        .split("\n")
+        .filter((l) => l)
+        .map((l) => `${prefix} ${l}`)
+        .join("\n");
+    })
+    .join("\n");
+}
+
+/**
+ * Classify one `scripts/dev/<name>` destination against the source the writers
+ * actually install from (#1159).
+ *
+ * `copyTemplates` links (or copies) `scripts/dev` from
+ * `resolveScriptsSymlinkTarget().scriptsDir`, which prefers
+ * `<project>/node_modules/sequant/templates/scripts` over the running CLI's
+ * bundle (#991). Diffing this destination against the running bundle instead
+ * reports drift no apply can ever clear: with an older `sequant` installed in
+ * `node_modules`, every `sync` exits 1 with `N file(s) differ from bundled
+ * content` and `--dry-run` predicts an `overwrite:` the apply never makes.
+ *
+ * The rule is "compare against what the writer reads":
+ *
+ * - **symlink mode** — the exact relative target string `symlinkDir` would
+ *   write. Content cannot tell a correct link from a stale one (a link into an
+ *   evicted npx cache resolves to identical bytes, #1053), and `symlinkDir`
+ *   replaces every link whose target differs, so the target string is the only
+ *   signal that keeps the preview and the apply in step.
+ * - **copy mode** (Windows / `--no-symlinks` / an unlinkable target) — the
+ *   bytes `copyDir` would write: the *target* file rendered with the project's
+ *   variables. `copyDir` runs `processTemplate` on every file it copies,
+ *   scripts included, so the rendering belongs on this arm too — omitting it
+ *   would re-open this exact loop the moment a `.sh` template grows a token.
+ *
+ * `rendered` is likewise the target's content, not the running bundle's, so
+ * `update`'s write path (`update.ts`, which writes `change.rendered` verbatim)
+ * cannot push bundled bytes onto a destination `sync` sources elsewhere.
+ */
+async function classifyScriptsDevChange(
+  localPath: string,
+  templatePath: string,
+  scriptsSuffix: string,
+  scriptsTarget: ScriptsSymlinkTarget,
+  copyMode: boolean,
+  variables: Record<string, string>,
+  bundledRendered: string,
+): Promise<TemplateChange> {
+  const expectedSource = join(
+    scriptsTarget.scriptsDir,
+    ...scriptsSuffix.split("/"),
+  );
+
+  // Both writers walk `scriptsTarget.scriptsDir`, never the bundle's file
+  // list. A script the running CLI ships but the installed copy lacks is
+  // therefore never written, and reporting it as `new` would be drift that
+  // `sync --force` could not clear either (#1159).
+  if (!existsSync(expectedSource)) {
+    return {
+      path: localPath,
+      templatePath,
+      status: "unchanged",
+      rendered: bundledRendered,
+    };
+  }
+
+  const sourceContent = await readFile(expectedSource);
+  const rendered = copyMode
+    ? processTemplate(sourceContent, variables)
+    : sourceContent;
+
+  // `fileExists` uses access(), which is false for a broken symlink — ask
+  // lstat first, or a dangling link reads as a missing file (`new`) while the
+  // apply replaces it in place.
+  const destIsSymlink = await isSymlink(localPath);
+  const absoluteDest = isAbsolute(localPath)
+    ? localPath
+    : join(process.cwd(), localPath);
+  const absoluteSrc = isAbsolute(expectedSource)
+    ? expectedSource
+    : join(process.cwd(), expectedSource);
+  const expectedLink = relative(dirname(absoluteDest), absoluteSrc);
+  if (!destIsSymlink && !(await fileExists(localPath))) {
+    return {
+      path: localPath,
+      templatePath,
+      status: "new",
+      rendered,
+      ...(copyMode ? {} : { linkTarget: expectedLink }),
+    };
+  }
+
+  if (copyMode) {
+    // `copyDir` always replaces a symlink with a regular file (#1053).
+    if (destIsSymlink) {
+      return { path: localPath, templatePath, status: "modified", rendered };
+    }
+    const localContent = await readFile(localPath);
+    return localContent === rendered
+      ? { path: localPath, templatePath, status: "unchanged", rendered }
+      : {
+          path: localPath,
+          templatePath,
+          status: "modified",
+          rendered,
+          diff: renderDiff(localContent, rendered),
+        };
+  }
+
+  if (destIsSymlink && (await getSymlinkTarget(localPath)) === expectedLink) {
+    return {
+      path: localPath,
+      templatePath,
+      status: "unchanged",
+      rendered,
+      linkTarget: expectedLink,
+    };
+  }
+
+  // A link pointing anywhere else is relinked by `symlinkDir`. A regular file
+  // is only replaced under `force`, which `sync` always passes (sync.ts); a
+  // caller without `force` would leave it in place.
+  return {
+    path: localPath,
+    templatePath,
+    status: "modified",
+    rendered,
+    linkTarget: expectedLink,
+  };
+}
+
+/**
  * Compare bundled template content against what's installed under `.claude/`.
  *
  * Templates are rendered with the project's variables *before* comparison, so
@@ -617,6 +767,9 @@ export function templateDestination(templatePath: string): string | null {
  * reads as `unchanged` rather than `modified`. A file that diverges in place is
  * `local-override` (skip-by-default) when it has a parallel `.claude/.local/`
  * file or is in the customizable allow-list; otherwise it is `modified`.
+ *
+ * `scripts/dev/` is the one destination the bundle is *not* the source for —
+ * see `classifyScriptsDevChange` (#1159).
  */
 export async function computeTemplateChanges(
   stack: string,
@@ -626,6 +779,11 @@ export async function computeTemplateChanges(
   const variables = await buildTemplateVariables(stack, tokens, options);
   const templateFiles = await listTemplateFiles();
   const changes: TemplateChange[] = [];
+
+  // Resolved once per diff rather than once per script: `existsSync` on the
+  // project's `node_modules/sequant` is the same answer for every entry.
+  const scriptsTarget = resolveScriptsSymlinkTarget(getTemplatesDir());
+  const scriptsCopyMode = scriptsTarget.mode !== "symlink" || isNativeWindows();
 
   for (const templatePath of templateFiles) {
     // templateDestination normalizes separators (listTemplateFiles builds
@@ -655,6 +813,24 @@ export async function computeTemplateChanges(
         status: "directory-collision",
         rendered,
       });
+      continue;
+    }
+
+    // `scripts/dev/` is installed from `resolveScriptsSymlinkTarget()`, not
+    // from the bundle this loop walks, so it gets its own comparison (#1159).
+    const normalizedTemplate = templatePath.replace(/\\/g, "/");
+    if (normalizedTemplate.startsWith(SCRIPTS_TEMPLATE_PREFIX)) {
+      changes.push(
+        await classifyScriptsDevChange(
+          localPath,
+          templatePath,
+          normalizedTemplate.slice(SCRIPTS_TEMPLATE_PREFIX.length),
+          scriptsTarget,
+          scriptsCopyMode,
+          variables,
+          rendered,
+        ),
+      );
       continue;
     }
 
@@ -706,16 +882,7 @@ export async function computeTemplateChanges(
       continue;
     }
 
-    const diff = diffLines(localContent, rendered)
-      .map((part) => {
-        const prefix = part.added ? "+" : part.removed ? "-" : " ";
-        return part.value
-          .split("\n")
-          .filter((l) => l)
-          .map((l) => `${prefix} ${l}`)
-          .join("\n");
-      })
-      .join("\n");
+    const diff = renderDiff(localContent, rendered);
     changes.push({
       path: localPath,
       templatePath,
