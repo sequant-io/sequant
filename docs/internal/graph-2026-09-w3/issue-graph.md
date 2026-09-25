@@ -9,7 +9,7 @@ Planned 2026-09-24. The owner approved the plan on 2026-09-25, and the AC blocks
 
 | # | Item | Tier | May touch | Blocked by |
 |---|---|---|---|---|
-| A | #1145 branch-name divergence | mechanical | `templates/scripts/new-feature.sh` (`scripts/new-feature.sh` is a symlink to it, so there is no second copy), a new gate test | — |
+| A | #1145 branch-name divergence | mechanical | `templates/scripts/new-feature.sh` (`scripts/new-feature.sh` is a symlink to it, so there is no second copy), a new gate test | C (#1122), found during execution |
 | B | #1153 Upstream Assessment push to `main` (label already created 09-25) | mechanical | repo label (no PR); `.github/workflows/upstream-assessment.yml` | — |
 | C | #1122 writers follow symlinks / crash on directories | judgment | `src/lib/templates.ts`, `src/commands/{init,update,sync}.ts`, `src/lib/__tests__/writer-state-matrix.test.ts` | — |
 | D | #1141 root creates `/nonexistent/path` | mechanical | `src/lib/workflow/state-hook.test.ts`, the 5 test files that use `/nonexistent/path` | — |
@@ -52,6 +52,11 @@ The issue's current verify command (`sudo -E npx vitest …`) can't be run verba
 - [ ] AC-1: the "should not throw on state errors" test has no filesystem side effect whatever the user. It simulates the root case by making `fs.mkdirSync` succeed (mocked) and asserts that nothing is written outside a temp dir. — Verify: `npx vitest run src/lib/workflow/state-hook.test.ts`
 - [ ] AC-2: no test file hardcodes `/nonexistent/path`. Assumed-absent paths come from `path.join(os.tmpdir(), <unique>)` and are never created. — Verify: `grep -rn "/nonexistent/path" src` produces no output
 - [ ] AC-3: a gate test enforces AC-2 and is mutation-verified. Mutation: re-add the literal to one test file. — Verify: `/qa` §6i marker
+
+## Execution log
+
+- 2026-09-25: the plan missed an edge. A (#1145, PR #1156) passes all 3 of its ACs, but it turns the required `canary` check red. The canary fixture's `scripts/dev/new-feature.sh` is a symlink, and `sync` won't write through it. That is C's bug (#1122). So A merges after C, then merges `main` in and re-runs `npx vitest run --project canary`. Lesson for the file-scope pass: a node that changes a template file shares scope with any node that changes the template *writers*.
+- 2026-09-25: B (#1153, PR #1155) is held for an owner decision. QA found three blockers, and the runner reproduced each one. (1) `.gitignore:52` `**/.sequant/` overrides the `!.sequant/upstream/` exception, so `git add` rejects new reports. (2) The repo doesn't allow Actions to create PRs, so `gh pr create` returns 403. (3) A PR opened with `GITHUB_TOKEN` starts no runs of the required checks. Items 2 and 3 mean the PR route needs a PAT or GitHub App token, or else a return to the not-committed option.
 
 ## Anti-gap passes
 
