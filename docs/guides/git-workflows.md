@@ -16,6 +16,12 @@ git worktree add ../worktrees/feature/<N>-<slug> -b feature/<N>-<slug>
 ./scripts/new-feature.sh <N>
 ```
 
+The helper names the branch `feature/<N>-<slug>` with the same rule `sequant run` uses (the title lowercased, non-alphanumeric runs collapsed to `-`, the slug cut at 50 characters), so a worktree made either way is found by the other. To see the name without creating anything or calling GitHub:
+
+```bash
+./scripts/new-feature.sh --print-branch <N> "<issue title>"
+```
+
 ### Worktree Locations
 
 By convention, worktrees live in a sibling directory:
