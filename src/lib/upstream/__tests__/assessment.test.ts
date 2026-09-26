@@ -327,15 +327,15 @@ describe("getReleasesSince", () => {
     expect(result).toEqual(["v2.1.30"]);
   });
 
-  it("returns all versions if target not found", async () => {
+  it("throws when baseline not found among the fetched releases", async () => {
     mockListReleasesSync.mockReturnValue([
       { tagName: "v2.1.30", publishedAt: "2026-02-01" },
       { tagName: "v2.1.29", publishedAt: "2026-01-15" },
     ]);
 
-    const result = await getReleasesSince("v1.0.0");
-
-    expect(result).toEqual(["v2.1.29", "v2.1.30"]);
+    await expect(getReleasesSince("v1.0.0")).rejects.toThrow(
+      /v1\.0\.0 not found among the 2 most recent releases/,
+    );
   });
 
   it("returns empty when no releases", async () => {

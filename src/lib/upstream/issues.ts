@@ -16,7 +16,12 @@ import type {
   IssueParams,
   IssueResult,
 } from "./types.js";
-import { generateFindingIssue } from "./report.js";
+import {
+  ASSESSMENT_LABELS,
+  FINDING_BASE_LABELS,
+  FINDING_EXTRA_LABELS,
+  generateFindingIssue,
+} from "./report.js";
 
 /**
  * Regex pattern for valid GitHub owner/repo names
@@ -38,6 +43,33 @@ function validateRepoParams(owner: string, repo: string): void {
 
 /** Shared GitHubProvider instance for upstream gh CLI calls. */
 const ghProvider = new GitHubProvider();
+
+/** Every label the upstream code can apply to an issue. */
+export const REQUIRED_LABELS: readonly string[] = [
+  ...new Set([
+    ...ASSESSMENT_LABELS,
+    ...FINDING_BASE_LABELS,
+    ...FINDING_EXTRA_LABELS,
+  ]),
+];
+
+/**
+ * Fail before any issue is filed when a required label is missing (#1179).
+ * Labels are never created from code; a human creates them.
+ */
+export function assertLabelsExist(owner: string, repo: string): void {
+  validateRepoParams(owner, repo);
+  const existing = ghProvider.listLabelsSync(`${owner}/${repo}`);
+  if (existing === null) {
+    throw new Error(`Could not list labels for ${owner}/${repo}`);
+  }
+  const missing = REQUIRED_LABELS.filter((l) => !existing.includes(l));
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing labels in ${owner}/${repo}: ${missing.join(", ")}. Create them, then re-run.`,
+    );
+  }
+}
 
 /**
  * Check if a similar upstream issue already exists
@@ -289,11 +321,31 @@ export async function createAssessmentIssue(
     return undefined;
   }
 
+  assertLabelsExist(owner, repo);
+
+  // Reuse an open assessment issue with the exact title (#1179). A failed
+  // lookup is not "no match": filing anyway is the duplicate this prevents.
+  const candidates = ghProvider.searchIssuesOrNullSync(
+    `${owner}/${repo}`,
+    [...ASSESSMENT_LABELS],
+    title,
+    10,
+  );
+  if (candidates === null) {
+    throw new Error(
+      `Could not check ${owner}/${repo} for an existing "${title}" issue`,
+    );
+  }
+  const existing = candidates.find((i) => i.title === title);
+  if (existing) {
+    return existing.number;
+  }
+
   const result = await createIssue(
     {
       title,
       body,
-      labels: ["upstream", "assessment"],
+      labels: [...ASSESSMENT_LABELS],
     },
     owner,
     repo,

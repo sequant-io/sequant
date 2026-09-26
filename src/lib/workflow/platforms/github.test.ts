@@ -302,6 +302,64 @@ describe("GitHubProvider", () => {
       } as never);
       expect(provider.searchIssuesSync("owner/repo", [], "q")).toEqual([]);
     });
+
+    it("searchIssuesOrNullSync returns null on failure (#1179)", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      expect(provider.searchIssuesOrNullSync("owner/repo", [], "q")).toBeNull();
+    });
+  });
+
+  describe("listLabelsSync", () => {
+    it("returns label names on success", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 0,
+        stdout: JSON.stringify([
+          { name: "upstream" },
+          { name: "needs-triage" },
+        ]),
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      expect(provider.listLabelsSync("owner/repo")).toEqual([
+        "upstream",
+        "needs-triage",
+      ]);
+      expect(mockSpawnSync).toHaveBeenCalledWith(
+        "gh",
+        [
+          "label",
+          "list",
+          "--repo",
+          "owner/repo",
+          "--json",
+          "name",
+          "--limit",
+          "200",
+        ],
+        expect.objectContaining({ encoding: "utf-8" }),
+      );
+    });
+
+    it("returns null on failure, not an empty list", () => {
+      mockSpawnSync.mockReturnValue({
+        status: 1,
+        stdout: "",
+        stderr: "",
+        pid: 0,
+        output: [],
+        signal: null,
+      } as never);
+      expect(provider.listLabelsSync("owner/repo")).toBeNull();
+    });
   });
 
   describe("createIssueWithBodyFileSync", () => {
