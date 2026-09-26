@@ -1,8 +1,10 @@
 # Sequant
 
-**AI coding agents that prove their work — every acceptance criterion verified, and you hold the merge button.**
+**AI coding agents that prove their work — each acceptance criterion checked, and you hold the merge button.**
 
-For developers who won't merge what they can't trust — solo or on a team. Solve GitHub issues with structured phases and quality gates, from issue to merge-ready PR.
+For developers who won't merge what they can't trust — solo or on a team.
+
+Sequant takes a GitHub issue to a merge-ready PR through three phases — plan, implement, review — each in its own git worktree, with quality gates between them. The PR arrives with evidence: every acceptance criterion re-checked against the code and posted to the issue. The merge is always yours.
 
 **[sequant.io](https://sequant.io)** — docs, guides, and getting started.
 
@@ -13,139 +15,27 @@ For developers who won't merge what they can't trust — solo or on a team. Solv
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/sequant-io/sequant/badge)](https://scorecard.dev/viewer/?uri=github.com/sequant-io/sequant)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-AI coding agents write code well, but leave you to run the workflow around it — planning, isolation, review, and merge safety. Sequant wraps an agent in a structured **spec → exec → qa** pipeline with isolated git worktrees and quality gates, taking a GitHub issue from triage to a merge-ready PR without babysitting each step. The PR arrives with evidence — each acceptance criterion checked against the code — and the merge is always yours.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/sequant-io/sequant/main/docs/assets/run-grid.gif" alt="Sequant run grid: the live boxed TUI driving issue #64 through spec, exec, and qa to a green success rollup" width="760">
+</p>
 
-See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
+**Why Sequant**
 
-### What's new in 2.18
+- **Stop babysitting the agent.** AI coding agents write code well and leave the workflow to you — planning, isolation, review, merge safety. One command runs the whole issue → PR path, not just the coding step.
+- **You stay in control.** The pipeline stops at the PR and never merges. That is an invariant, not a setting.
 
-- **Per-phase agents** — `run.phases.<phase>.agent` runs one phase on a different driver, e.g. codex for `exec` and Claude Code for `qa`; model roles and ladder rungs resolve per phase, and `doctor` checks every driver the run uses.
-- **In-place checkout mode** — `SEQUANT_CHECKOUT=in-place` lets `/exec`, `/qa`, `/loop` and `/testgen` work on a branch in the current clone instead of a worktree, which is what a fresh cloud clone needs. Opt-in only; the worktree guards are unchanged when it is unset.
-- **Writers never follow a symlink** — `init`, `sync` and `update` replace a link at any destination they write, `.mcp.json` included, instead of overwriting the file it points at; a directory in a file's place is named and skipped instead of crashing the run.
-- **`sync` and `update` settle** — with an older sequant in `node_modules`, `sync` no longer reports the same `scripts/dev` drift forever, and `update` no longer rewrites those links on every run.
-- **One branch name per issue** — `new-feature.sh` now derives `feature/<N>-<slug>` exactly as `sequant run` does, so mixing the two no longer leaves two branches for a long-titled issue.
-
-### What's new in 2.17
-
-- **`main` is gated** — a GitHub ruleset requires the `test` and `canary` checks and strict up-to-date on every merge; a "pre-existing failure" claim needs a `settle-against-base` proof, and a red `main` is reverted before it is debugged.
-- **A downstream canary on every PR** — the previous minor is installed into a fixture project, customized, and driven through `sync`, `init`, `update`, `doctor` and a real MCP handshake by the PR's build. Releases go to the `next` tag first and are promoted only after a soak.
-- **Every agent driver passes one conformance suite** — six contract items per driver, enumerated from the registry; Codex usage-limit failures are typed so the quality loop stops instead of re-running into the same quota.
-- **The guard hook has a golden corpus** — 339 real command forms with their pinned verdicts, replayed against all three hook copies on every change.
-- **Writers are tested cell by cell** — `init`, `sync` and `update` against every destination and state on a real filesystem; `init` no longer replaces a hand-written `AGENTS.md`.
-
-### What's new in 2.16
-
-- **Codex is a second agent driver** — `--agent codex` / `run.agent: "codex"` runs every phase through `codex exec --json` as a subprocess, with sequant's guard hooks wrapped into `.codex/config.toml` and the same `.claude/skills/` tree reached through a relative `.agents/skills` symlink. `sequant init --agent codex` provisions all of it and `doctor` checks the binary, version floor and login. Codex phases can commit and reach GitHub inside the `workspace-write` sandbox; `run.codex.networkAccess: false` seals them off (#497, #1076, #1079).
-- **One ownership rule for the files sequant writes** — every destination `init`, `sync` and `update` touch is declared `sequant-owned`, `user-owned` or `merge` in one table, and a two-sided gate test fails when a template or a new writer has no declaration. `.sequant/settings.json` survives a re-init byte-for-byte, comments included (#1090, #1071, #1100).
-- **The plugin's MCP server can't be shadowed** — a stale `sequant` in your project's `node_modules` used to hijack the pinned `npx sequant@<version> serve` and surface only `CONNECTION_CLOSED`; the launcher now spawns from an isolated directory, and `doctor` warns about a local shadow (#1084).
-- **`doctor` and auth probes can't hang** — the codex/opencode `--version` probes, `codex login status` and `gh auth status` all carry timeouts (#1075, #1099).
-- **`/qa` reads unchecked test-plan boxes as unexecuted evidence** — a PR test-plan checkbox that names a command but is left unchecked is treated as declared-but-not-run, not ignored (#1065).
-
-### What's new in 2.15
-
-- **QA no longer inherits the implementer's blind spots** — the `qa` phase always starts a fresh session instead of resuming exec's. A study of 27 second-look reviews found 44% caught a would-ship bug the anchored reviewer had missed; cost is roughly neutral. Opt into full-weight QA on every dispatch with `--full-qa`, `run.fullQa: true`, or the MCP `fullQa` param (#982).
-- **`sync` never touches what you own** — a hand-maintained `AGENTS.md` (anything without sequant's marker) is preserved, `scripts/dev` links target your project's own `node_modules/sequant` instead of whichever binary ran the command, `sync --dry-run` prints exactly what `sync` will write, and `doctor` names the repair without ever recommending `--force` on your files (#990, #1030).
-- **A security model you can read** — a vulnerability disclosure policy and a public threat model (linked under Documentation below) say which defenses hold when the model is compromised and which don't, mapped to the OWASP Top 10 for Agentic Applications, with every citation CI-checked; an OpenSSF Scorecard badge above (#980, #1025).
-- **Phase agents can't strand your work** — background tasks are refused inside a phase (the notification never arrived; the work sat uncommitted), and an exec that still ends with uncommitted changes gets a `chore(#N): wip checkpoint` commit before the failure is reported (#1032).
-- **Injection evals cover three vectors** — issue body, PR comment, and tool output, each with a recorded per-vector verdict (#1024).
-
-> **Upgrade note.** Because `qa` no longer resumes exec's session, a quality-loop `loop` phase now resumes the exec session rather than the former exec+qa one; it still receives the verdict via `SEQUANT_LAST_VERDICT` / `SEQUANT_FAILED_ACS`. Nothing else changes by default — `run.fullQa` stays off.
-
-### What's new in 2.14
-
-- **Model escalation ladder, and the halts that keep it honest** — `run.modelLadder` / `--model-ladder sonnet,opus` escalates a churning phase one model rung at a time, but only on *capability-bound* churn: iterations that produced nothing. The opposite fingerprint — a new diff every iteration that QA keeps rejecting — is spec-bound, and a stronger model there only rediscovers the contradiction more expensively, so the ladder refuses to climb and halts instead. Three halts (`SPEC_DIVERGENCE`, `DIVERGENCE_SUSPECT`, `TOP_OF_LADDER`) each print an evidence bundle whose escalation history proves what the halt cost. Agents that find an AC impossible as written declare `SPEC_DIVERGENCE` and stop rather than guessing (#971, #995). Off unless configured. See [model-ladder.md](docs/reference/model-ladder.md).
-- **Token and cost accounting that works** — `tokensUsed` was 0 on every recorded run. Per-phase usage now comes from the SDK's `modelUsage` map, `metrics.phaseUsage[]` carries input/output/cache tokens and an SDK cost estimate per phase execution, and `sequant stats` prints a phase × model table. The transcript hook stays as a fallback (#986).
-- **A second agent backend, experimental** — `--agent opencode` dispatches every phase through the same `.claude/skills/` tree Claude Code reads, via generated `.opencode/` command wrappers and a fail-closed hook shim. Not a supported backend yet: its promotion gate (#997) is deferred, so read the note under Prerequisites before using it (#862, #996).
-- **Regression evals for the skills themselves** — four `claude plugin eval` cases graded only on surfaces the real skill emits unprompted, a null-run canary and a stub-skill canary that must both fail, and a `fixture_commit` provenance gate so no result can be credited to a fixture that is not in HEAD's history. A manual-dispatch CI workflow runs the suite under a budget cap (#993, #994).
-- **The ready gate runs on the driver you configured** — with `run.agent` set, the post-QA gate silently ran its phases on claude-code while the rest of the run used your driver. `ExecutionConfig` has a single producer again, and a parity test fails if the two ever drift (#863).
-
-### What's new in 2.13
-
-- **NEEDS_VERIFICATION verdicts stop blocking their own follow-up** — a QA verdict of NEEDS_VERIFICATION now maps to a dedicated `awaiting_verification` state instead of `ready_for_merge`, so after you execute the ACs the qa re-run just runs — no `--force`, no editing `state.json` by hand. The state shows up in `sequant status` and the dashboard with a re-run hint, and an issue whose PR you merge directly still sweeps to `merged`. MCP `sequant_run` also gains a real `force` parameter (previously silently ignored). The full verdict→state contract is documented in [qa-verdict-workflow-states.md](docs/features/qa-verdict-workflow-states.md) (#972).
-- **A bad model name is now a loud failure, not a silent no-op** — when a phase's session ends on an API error (e.g. a typo'd or roster-stale model string), the driver now fails the phase with the API error text and structured `terminal_reason`/`api_error_status` context, instead of reporting a zero-work "success" that only surfaced downstream as an empty diff entering QA (#973).
-- **Model roles: name the tier, not the model** — `run.modelRoles` maps semantic roles (defaults: `fast`, `strong`, `frontier`) to model strings, and phase policy or `--models` can reference them as `role:fast`. Raw model strings still pass through verbatim, a missing role fails loudly at config-resolution before any session spawns, and run metrics record both the requested value and the concrete model ID actually dispatched — so a roster change means editing one map, not every settings file (#975). `agents.model` now accepts any model string instead of a stale three-model enum.
-- **A constitution with teeth** — the constitution template is now the enforceable agent contract: its Definition of Done table is *generated* from `/qa`'s real gate list and drift-gated in CI (`lint:constitution-dod`), an AC authoring standard is cross-linked from `/spec`'s lint output, and every Boundaries/Budgets rule names its actual enforcing mechanism — a gate test asserts every cited settings key and hook path resolves. Customized constitutions are preserved by `update`/`sync`; the new template reaches fresh `init` projects only (#943).
-
-### What's new in 2.12
-
-- **QA gates you can parse, not just read** — `/qa` now closes every review with a structured findings marker (six-category taxonomy, evidence, recommended action) that `/loop` and `sequant ready` consume directly, so a finding QA itself called non-blocking is never burned as a fix iteration (#937). Gate-test ACs must ship a machine-checkable `SEQUANT_MUTATION` record in the PR body, enforced by `/qa` (#939), and an AC can declare its own verification command via a trailing `Evidence:` clause that QA must actually execute (#938). A new advisory CI job annotates PRs with likely-vacuous tests (#940).
-- **`/fullsolve` stops at the PR** — it no longer merges the PR it creates; pass `--auto-merge` (or set `run.autoMerge: true`) for the previous end-to-end behavior (#958). `/merger` gains a Named-Set Boundary: it merges only the issues you name, halting with a report if a dependency outside that set turns up (#961).
-- **Phase agents get an MCP allowlist, not your desktop config** — headless phase agents now receive the sequant MCP server plus the project's own `.mcp.json`, never a passthrough of Claude Desktop config (which can carry literal secrets into process argv). `run.mcpAllowlist` opts specific desktop-only servers back in deliberately (#936). See [run-command.md](docs/reference/run-command.md#allowlisting-a-desktop-only-server).
-
-### What's new in 2.11
-
-- **Per-phase `model`/`effort` configuration** — the new `sequant run`/`sequant ready` flags `--models`/`--efforts` (bare value applies to every phase, or a comma list of `phase=model` pairs) let a phase's Agent SDK session use a different Claude model or reasoning effort than the CLI default — e.g. planning with a stronger model and delegating implementation to a cheaper one. Absent by default: nothing changes unless configured. See [run-command.md](docs/reference/run-command.md#per-phase-model--effort).
-- **Evidence-based effort escalation on retries** — `--escalate-effort` raises a retried phase execution's reasoning effort one tier above its resolved base, built on the per-phase effort resolver above. Escalates only on *observed* retry (an outer quality-loop iteration ≥ 2, or a `sequant ready` QA-pass ≥ 2) — never speculatively — so it can only trade cost for quality, never the reverse. See [run-command.md](docs/reference/run-command.md#effort-escalation-on-retries).
-- **Checkout-scoped lock for the shared working tree** — the per-issue lock never protected the *checkout itself*: two sessions on different issues could still interleave `git checkout`/`reset`/`rebase`/`merge` in the same main working tree. `sequant locks checkout <acquire|release|check|clear>` and a `pre-tool.sh` hook now guard branch-mutating git in the main checkout directly, refusing a foreign session with the holder's identity and how to proceed (#901).
-- **`sequant worktree resolve/verify`** — resolves and verifies an issue's worktree by the branch git reports rather than a directory-name glob, closing a shared-namespace collision that could point `/fullsolve`, `/exec`, `/qa`, `/loop`, `/testgen`, `/merger` or `/assess` at the wrong worktree (#899, #904).
-
-### What's new in 2.10
-
-- **`--auto-wait <minutes>` rides out a rate-limit window** — opt in and a run whose limit window is hours out sleeps until it reopens and continues, instead of halting for a manual restart (#804). **Off by default**; the value is a *total* budget per issue, capped at 2 waits. Never waits on out-of-credits failures (credits are purchased, not waited out). The wait is in-process — for waits that must survive closing the terminal or a reboot, see halt-and-resume below; an exhausted `--auto-wait` budget still writes the halt record so `sequant resume` can pick up where it gave up. See [run-command.md](docs/reference/run-command.md#auto-wait-for-a-rate-limit-window).
-- **Durable halt-and-resume + `sequant resume`** — a run that fails on an exhausted rate-limit window now writes a durable halt record (with its `resumeAt` time) and exits cleanly, releasing the per-issue lock. `sequant resume` re-enters after the window reopens, skipping completed phases and issues — safe to invoke from cron/launchd for unattended machines (recipes in [halt-and-resume.md](docs/reference/halt-and-resume.md)) (#892).
-- **`--ready-gate` runs the post-QA ready gate inside `sequant run`** — opt in and, once an issue's standard phases succeed, `run` drives it through the same full-weight `qa → loop → qa` gate as `sequant ready` (to the configured `ready.policy`) **before** opening the PR, so the gate's fixes land in it. It automates the manual any-gaps/fix-gaps second look and **still stops at the human merge gate — it never merges** (#817). **Off by default**; without the flag the run path is unchanged (an `AC_MET_BUT_NOT_A_PLUS` verdict still breaks to PR per #749). Reuses `ready`'s policy, iteration cap, and stagnation guard — no new settings. See [run-command.md](docs/reference/run-command.md#ready-gate-post-qa-second-look).
-- **QA never resumes the implementer's session** — a fresh-session QA study found 44% of fresh second-look passes caught a real would-ship bug, versus a QA reviewer that resumes anchored to ~142k tokens of the author's own transcript. `sequant run` no longer offers a resume handle when dispatching `qa` (first pass or a post-loop re-QA) — exec/loop resume is unaffected (#982). **`--full-qa`** (or `run.fullQa: true` in `.sequant/settings.json`) goes further and forces full-weight (standalone) QA on every dispatch, the same pre-flight `sequant ready` always runs — **off by default**, since it adds visible pre-flight work to every QA pass.
-- **`sequant merge --watch` waits for CI, then reports** — instead of polling checks by hand, `merge --watch` waits for each PR's CI checks to finish, then runs the merge-check and reports the result. It never merges (#818).
-- **Stricter CLI contract for scripting** — malformed numeric flags (`--timeout 30m`, `--timeout abc`) are rejected with a clear error instead of silently coerced (#833, #845), and pre-flight rejections (uninitialized project, missing prerequisites) exit non-zero across `run`/`update`/`state`/`status`/`init` (#848). Runs terminated by a signal exit `128+signum` instead of `0` (#856).
-
-### What's new in 2.9
-
-- **`--chain` survives a failed link** — re-running a partially-completed chain resumes from its last good link, skipping the completed prefix and rebasing onto that committed tip instead of redoing hours of finished work (#760). A warn-by-default content pre-flight also runs before the first worktree is provisioned, flagging missing ACs, mis-ordered dependencies, predicted file overlaps, and closed issues; `--strict-preflight` makes any warning a hard stop (#762).
-- **Rate limits stop burning hours** — a rate limit hit inside a phase now skips doomed cold-start retries, and the run summary labels the chain halt with its cause and how to resume, instead of cascading into a ~2h retry ladder (#761).
-- **Stale plugin-cache warning** — `pre-tool.sh` now prints a once-per-day, network-free reminder (`claude plugin update sequant@sequant`) when a plugin-channel install has drifted behind the marketplace (#784, #788).
-
-### What's new in 2.8
-
-- **Clearer failures when an agent stops early** — phases that hit a turn cap now preserve their partial work and halt cleanly for resume instead of discarding it (#739, #733), and rate-limit/out-of-credits failures are named for what they are (with reset time and credit-purchase hints) rather than buried under generic retry noise (#732).
-- **Runtime Node-version guard** — `sequant` checks the running Node against its `engines.node` floor (`>=22.13.0`) at startup and exits with a friendly upgrade message instead of crashing later on a Node-22-only API (#734).
-- **`/assess` avoids npx version skew** — it now emits `sequant run …` when a global install is on `PATH` (and the unchanged `npx sequant run …` otherwise), so copy-pasted commands don't silently run a stale binary (#740).
-
-### What's new in 2.7
-
-- **Trustworthy `--dry-run` previews for `sync` and `update`** — `sequant sync --dry-run` (`-d`) previews the exact set the apply would write (`new` + `modified` + `local-override`) and mutates nothing. Both `sync --dry-run` and `update --dry-run` now exit non-zero when work is pending, so a CI/automation job can gate on the exit code instead of parsing stdout. (`update` is the interactive command; `sync` is the documented non-interactive/CI surface.)
-
-### What's new in 2.6
-
-- **Boxed Ink TUI is the default for `sequant run`** — on a TTY, `run` now renders the boxed dashboard by default (matching `sequant ready`). Opt out with `--no-tui` (line renderer) or `-s`/`--quiet` (heartbeat-only); non-TTY output auto-degrades.
-- **Flag change:** `--quiet` moved from `-q` to **`-s`** (silent). `-q` is now an alias for `-Q, --quality-loop`, so `sequant run … -q` enables the quality loop as intended. (`--experimental-tui` is kept as a hidden no-op alias.)
-
-### What's new in 2.5
-
-- **`sequant ready <issue>`** — a post-resolve A+ QA gate that drives a resolved issue through a full-weight `qa → loop → qa` pass and **stops at the human merge gate — it never merges**.
-- **Live phase-matrix TUI** — `sequant ready` and `sequant run` render the active phase and quality-loop iteration in place (boxed Ink dashboard on a TTY by default), so a long run is never indistinguishable from a hang. Opt out with `--no-tui` (line renderer) or `-s`/`--quiet` (heartbeat-only); non-TTY output auto-degrades.
-- **Per-issue concurrency locks** — a second session on the same issue is skipped with a clear message instead of clobbering the first; `sequant locks` inspects and clears them.
+**Works with** [Claude Code](https://claude.ai/code) (default) or [Aider](https://aider.chat/), on any git repository with GitHub issues. Tuned for Node.js/TypeScript projects; the worktree workflow is language-agnostic.
 
 ## Quick Start
 
 ### Prerequisites
 
-**An AI coding agent — one of:**
-- [Claude Code](https://claude.ai/code) — default agent. **Recommended: Claude Code ≥ 2.1.208.** The pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer (which fires even under `bypassPermissions`) instead of re-implementing catastrophic-delete detection; that analyzer's command-substitution coverage landed in 2.1.208. This is a recommendation, not an enforced floor — plugins cannot declare a minimum Claude Code version, so nothing gates install, and the pre-2.1.208 command-substitution gap (e.g. `echo "$(rm -rf ~)"`) is accepted rather than guarded.
-- [Aider](https://aider.chat/) — alternative, via `--agent aider`
-- [opencode](https://opencode.ai/) — **experimental**, via `--agent opencode`. Ships in this release but is not a supported backend yet; read the note below before using it.
-- [Codex](https://github.com/openai/codex) — **experimental**, via `--agent codex`. Ships in this release but is not a supported backend yet; read the note below before using it.
+- **An AI coding agent:** [Claude Code](https://claude.ai/code) (recommended ≥ 2.1.208) or [Aider](https://aider.chat/) via `--agent aider`. Experimental: [Codex](docs/features/codex-agent-backend.md) via `--agent codex`, [opencode](docs/troubleshooting.md#opencode-issues) via `--agent opencode` — read their notes before relying on either.
+- **[GitHub CLI](https://cli.github.com/)** (`gh auth login`) and **Git**.
+- **Node.js 22.13+** — for the npm/CLI install path only.
+- Optional MCP servers: `chrome-devtools` (browser tests via `/test`), `sequential-thinking`, `context7`.
 
-> **opencode is experimental.** The driver works and reads the same skill tree Claude Code does, but its promotion gate ([#997](https://github.com/sequant-io/sequant/issues/997)) is deferred, so it has no reference page and no support commitment. Three limitations measured in the 2026-09 dogfood: `sequant init --agent opencode` must also be run in the **main checkout**, because the spec phase executes there and the hook-shim check aborts the run without it; a failed spec currently dispatches the quality loop instead of stopping; and no `/spec` plan comment is posted to the issue. Claude Code remains the supported default.
-
-> **Codex is experimental** (#497; reference: [docs/features/codex-agent-backend.md](docs/features/codex-agent-backend.md)). Install the CLI with `npm i -g @openai/codex` (sequant verifies against `codex >= 0.154.0`). Authenticate either by setting `CODEX_API_KEY` in the environment, or by running `codex login` interactively — `sequant doctor` checks for either, never logging the key's value. `sequant init --agent codex` creates `.agents/skills` as a **relative symlink** to `../.claude/skills` (codex discovers skills there; it must be a real symlink, not a copy, or discovery breaks) and writes `.codex/config.toml`, which wraps the same `.claude/hooks/pre-tool.sh` / `post-tool.sh` guard scripts Claude Code uses, unmodified — the #497 driver probe found codex's `PreToolUse` payload a superset of Claude Code's. **Codex only loads those project-layer hooks once the project is marked trusted in your USER config** (`~/.codex/config.toml`, not the project one init writes):
-> ```toml
-> [projects."/absolute/path/to/your/project"]
-> trust_level = "trusted"
-> ```
-> Without that entry, codex silently skips the hooks — no error, no warning. Separately, sequant's `CodexDriver` always passes `--dangerously-bypass-hook-trust` on the `codex exec` command line it spawns — that flag is what lets a **headless** `codex exec` run apply hooks at all (codex's normal trust flow needs an interactive `/hooks` review, which a headless run never gets); sequant passes it because sequant itself generates and vets `.codex/config.toml` and the hook scripts it points to, so there is no untrusted third-party hook being smuggled through. Commit `.codex/` and `.agents/` so worktree phases inherit the same guards. On **Windows**, creating that symlink needs elevated privileges or Developer Mode; without them init warns and codex will not discover sequant's skills until the link exists (there is no copy fallback — a copied skill tree goes stale the moment `.claude/skills` changes). Claude Code remains the supported default.
-
-**Always required (both):**
-- [GitHub CLI](https://cli.github.com/) — run `gh auth login`
-- Git — for worktree-based isolation
-
-**For the npm/CLI install path:** Node.js 22.13+
-
-**Optional MCP (Model Context Protocol) servers — enhanced features:**
-- `chrome-devtools` — enables `/test` for browser-based UI testing
-- `sequential-thinking` — enhanced reasoning for complex decisions
-- `context7` — library documentation lookup
-
-> **Note:** Sequant is optimized for Node.js/TypeScript projects. The worktree workflow works with any git repository.
+> **Why Claude Code ≥ 2.1.208?** Sequant's pre-tool hooks lean on Claude Code's native dangerous-`rm` analyzer, which fires even under `bypassPermissions`; its command-substitution coverage (e.g. `echo "$(rm -rf ~)"`) landed in 2.1.208. Plugins cannot declare a minimum Claude Code version, so this is a recommendation, not an enforced floor.
 
 ### Install
 
@@ -198,9 +88,15 @@ SEQUANT WORKFLOW · #683
 
 QA findings post back to the issue as comments, with each acceptance criterion re-checked independently.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/sequant-io/sequant/main/docs/assets/run-grid.gif" alt="Sequant run grid: the live boxed TUI driving issue #64 through spec, exec, and qa to a green success rollup" width="760">
-</p>
+### What's new in 2.18
+
+- **Per-phase agents** — `run.phases.<phase>.agent` runs one phase on a different driver, e.g. codex for `exec` and Claude Code for `qa`.
+- **In-place checkout mode** — `SEQUANT_CHECKOUT=in-place` lets the phase skills work on a branch in the current clone when a worktree is not an option (a fresh cloud clone, for one). Opt-in only.
+- **Safer writes** — `init`, `sync` and `update` never overwrite what a symlink points at, and `sync`/`update` settle on the first run even with an older sequant in `node_modules`.
+
+Since 2.17, every release soaks on the `next` tag against a downstream canary — a real install of the previous minor, driven through `sync`, `init`, `update` and `doctor` by the new build — before it is promoted to `latest`.
+
+Full history: [CHANGELOG](CHANGELOG.md) · [Migrating from v1.x](CHANGELOG.md#migration-from-v1x)
 
 ---
 

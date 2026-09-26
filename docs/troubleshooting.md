@@ -718,6 +718,16 @@ The `.sequant-manifest.json` file is missing. Reinitialize:
 sequant init --force
 ```
 
+## opencode Issues
+
+opencode is an **experimental** driver (`--agent opencode`). It works and reads the same skill tree Claude Code does, but its promotion gate ([#997](https://github.com/sequant-io/sequant/issues/997)) is deferred, so it has no reference page and no support commitment. Three limitations measured in the 2026-09 dogfood:
+
+- **`sequant init --agent opencode` must also run in the main checkout.** The spec phase executes there, and the hook-shim check aborts the run when `.opencode/` is missing from it.
+- **A failed spec dispatches the quality loop instead of stopping.**
+- **No `/spec` plan comment is posted to the issue.**
+
+Claude Code remains the supported default.
+
 ## Codex Issues
 
 The Codex driver (`--agent codex`) is experimental; see [Codex Agent Backend](features/codex-agent-backend.md) for setup.
