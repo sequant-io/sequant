@@ -17,6 +17,14 @@ AI coding agents write code well, but leave you to run the workflow around it �
 
 See the [CHANGELOG](CHANGELOG.md) for release notes, or the [migration guide](CHANGELOG.md#migration-from-v1x) if upgrading from v1.x.
 
+### What's new in 2.18
+
+- **Per-phase agents** — `run.phases.<phase>.agent` runs one phase on a different driver, e.g. codex for `exec` and Claude Code for `qa`; model roles and ladder rungs resolve per phase, and `doctor` checks every driver the run uses.
+- **In-place checkout mode** — `SEQUANT_CHECKOUT=in-place` lets `/exec`, `/qa`, `/loop` and `/testgen` work on a branch in the current clone instead of a worktree, which is what a fresh cloud clone needs. Opt-in only; the worktree guards are unchanged when it is unset.
+- **Writers never follow a symlink** — `init`, `sync` and `update` replace a link at any destination they write, `.mcp.json` included, instead of overwriting the file it points at; a directory in a file's place is named and skipped instead of crashing the run.
+- **`sync` and `update` settle** — with an older sequant in `node_modules`, `sync` no longer reports the same `scripts/dev` drift forever, and `update` no longer rewrites those links on every run.
+- **One branch name per issue** — `new-feature.sh` now derives `feature/<N>-<slug>` exactly as `sequant run` does, so mixing the two no longer leaves two branches for a long-titled issue.
+
 ### What's new in 2.17
 
 - **`main` is gated** — a GitHub ruleset requires the `test` and `canary` checks and strict up-to-date on every merge; a "pre-existing failure" claim needs a `settle-against-base` proof, and a red `main` is reverted before it is debugged.
@@ -242,7 +250,7 @@ The file's declared ownership policy is `user-owned`: plain `sequant update` and
 
 **`AGENTS.md` ownership.** Every `AGENTS.md` sequant generates starts with a marker line, `<!-- sequant:agents-md v=<version> h=<sha1> -->`, whose hash covers the rest of the file. `sync` only regenerates the file when that marker is present and its hash still matches the body — otherwise the file is treated as user-owned (hand-edited, or written before the marker existed) and is left byte-identical, reported as preserved, and only replaced with `sync --force`. Use `sync --no-agents-md` to skip `AGENTS.md` entirely. (`update` has no `AGENTS.md` awareness — unaffected.)
 
-**`scripts/dev` links and `--dry-run`.** The `scripts/dev/*.sh` links point at your project's own `node_modules/sequant/templates/scripts/` whenever it exists, so a fresh clone plus `npm install` keeps them working; a templates directory under an npx cache or outside the project tree yields copies instead, with one line saying why. `sync --dry-run` and `update --dry-run` list exactly the paths the apply step writes — the `AGENTS.md` decision, each link whose target would change, and the opencode shim (refreshed only on projects that opted in with `--agent opencode`, and only when it drifted).
+**`scripts/dev` links and `--dry-run`.** The `scripts/dev/*.sh` links point at your project's own `node_modules/sequant/templates/scripts/` whenever it exists, so a fresh clone plus `npm install` keeps them working; a templates directory under an npx cache or outside the project tree yields copies instead, with one line saying why. `sync --dry-run` and `update --dry-run` list exactly the paths the apply step writes — the `AGENTS.md` decision, each link whose target would change (`sync` only: `update` leaves `scripts/dev` links to `sync` and names any that are out of date), and the opencode shim (refreshed only on projects that opted in with `--agent opencode`, and only when it drifted). No writer follows a symlink: a link at any sequant-written destination, `.mcp.json` included, is replaced and its target left untouched, and a directory where a file belongs is reported as `<path> is a directory; move it aside` and skipped.
 
 ### Quality Gates
 
