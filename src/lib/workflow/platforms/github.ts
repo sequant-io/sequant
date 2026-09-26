@@ -553,6 +553,26 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   /**
+   * List label names defined in a repo. Returns null when the listing fails,
+   * so callers can tell "no labels" from "could not check".
+   */
+  listLabelsSync(repo: string): string[] | null {
+    try {
+      const result = spawnSync(
+        "gh",
+        ["label", "list", "--repo", repo, "--json", "name", "--limit", "200"],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      if (result.status !== 0 || !result.stdout) return null;
+      return (JSON.parse(result.stdout) as Array<{ name: string }>).map(
+        (l) => l.name,
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Create an issue in a specific repo using a body file.
    * Used by upstream/issues.ts.
    */

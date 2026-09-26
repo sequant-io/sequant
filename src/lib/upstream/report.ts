@@ -11,6 +11,16 @@ import type {
   BatchedAssessment,
 } from "./types.js";
 
+/** Labels every finding issue carries (#1179). */
+export const FINDING_BASE_LABELS = ["upstream", "needs-triage"] as const;
+/** Labels applied by finding category; `assessment` is for the summary issue. */
+export const FINDING_EXTRA_LABELS = [
+  "bug",
+  "priority:high",
+  "enhancement",
+] as const;
+export const ASSESSMENT_LABELS = ["upstream", "assessment"] as const;
+
 /**
  * Calculate summary counts from findings
  */
@@ -299,7 +309,7 @@ export function generateFindingIssue(
   }
 
   // Labels
-  const labels = ["upstream", "needs-triage"];
+  const labels: string[] = [...FINDING_BASE_LABELS];
   switch (finding.category) {
     case "breaking":
       labels.push("bug", "priority:high");

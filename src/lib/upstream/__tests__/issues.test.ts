@@ -21,14 +21,23 @@ const {
   mockSearchIssuesSync,
   mockCreateIssueWithBodyFileSync,
   mockCommentOnIssueWithBodyFileSync,
+  mockListLabelsSync,
 } = vi.hoisted(() => ({
-  mockSearchIssuesSync: vi.fn().mockReturnValue([]),
-  mockCreateIssueWithBodyFileSync: vi
+  mockListLabelsSync: vi
     .fn()
-    .mockReturnValue({
-      number: 42,
-      url: "https://github.com/test/repo/issues/42",
-    }),
+    .mockReturnValue([
+      "upstream",
+      "assessment",
+      "needs-triage",
+      "priority:high",
+      "bug",
+      "enhancement",
+    ]),
+  mockSearchIssuesSync: vi.fn().mockReturnValue([]),
+  mockCreateIssueWithBodyFileSync: vi.fn().mockReturnValue({
+    number: 42,
+    url: "https://github.com/test/repo/issues/42",
+  }),
   mockCommentOnIssueWithBodyFileSync: vi.fn().mockReturnValue(true),
 }));
 
@@ -36,6 +45,7 @@ vi.mock("../../workflow/platforms/github.js", () => {
   function MockGitHubProvider() {
     return {
       searchIssuesSync: mockSearchIssuesSync,
+      listLabelsSync: mockListLabelsSync,
       createIssueWithBodyFileSync: mockCreateIssueWithBodyFileSync,
       commentOnIssueWithBodyFileSync: mockCommentOnIssueWithBodyFileSync,
     };
@@ -61,7 +71,8 @@ const { mockGenerateFindingIssue } = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("../report.js", () => ({
+vi.mock("../report.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../report.js")>()),
   generateFindingIssue: mockGenerateFindingIssue,
 }));
 
@@ -69,6 +80,14 @@ beforeEach(() => {
   vi.clearAllMocks();
   // Restore defaults after clearAllMocks resets return values
   mockSearchIssuesSync.mockReturnValue([]);
+  mockListLabelsSync.mockReturnValue([
+    "upstream",
+    "assessment",
+    "needs-triage",
+    "priority:high",
+    "bug",
+    "enhancement",
+  ]);
   mockCreateIssueWithBodyFileSync.mockReturnValue({
     number: 42,
     url: "https://github.com/test/repo/issues/42",
@@ -527,5 +546,48 @@ describe("createAssessmentIssue", () => {
       expect.any(String),
       ["upstream", "assessment"],
     );
+  });
+
+  describe("labels", () => {
+    it("throws naming the missing labels before filing anything", async () => {
+      mockListLabelsSync.mockReturnValueOnce(["upstream", "assessment", "bug"]);
+
+      await expect(createAssessmentIssue("T", "B")).rejects.toThrow(
+        /needs-triage, priority:high, enhancement/,
+      );
+      expect(mockCreateIssueWithBodyFileSync).not.toHaveBeenCalled();
+    });
+
+    it("throws when the label listing fails", async () => {
+      mockListLabelsSync.mockReturnValueOnce(null);
+
+      await expect(createAssessmentIssue("T", "B")).rejects.toThrow(
+        /Could not list labels/,
+      );
+      expect(mockCreateIssueWithBodyFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("existing assessment", () => {
+    const title = "Upstream: Claude Code v2.1.283 Assessment";
+
+    it("reuses an open issue with the exact title", async () => {
+      mockSearchIssuesSync.mockReturnValueOnce([{ number: 1170, title }]);
+
+      const result = await createAssessmentIssue(title, "B");
+
+      expect(result).toBe(1170);
+      expect(mockCreateIssueWithBodyFileSync).not.toHaveBeenCalled();
+    });
+
+    it("files a new issue when only a different title matches", async () => {
+      mockSearchIssuesSync.mockReturnValueOnce([
+        { number: 1, title: "Upstream: Claude Code v2.1.28 Assessment" },
+      ]);
+
+      const result = await createAssessmentIssue(title, "B");
+
+      expect(result).toBe(42);
+    });
   });
 });

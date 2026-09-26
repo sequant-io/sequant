@@ -416,3 +416,25 @@ describe("getActionableFindings", () => {
     expect(actionable.every((f) => f.category !== "no-action")).toBe(true);
   });
 });
+
+describe("1179 fix notes are not deprecations", () => {
+  const fixes = [
+    "Fixed `claude plugin marketplace remove` not saying which installed plugins it uninstalled with the marketplace; it now lists them",
+    "Fixed `claude plugin uninstall` removing the other of two installed plugins whose ids differ only in case, with its options and secrets, when the one named had no `enabledPlugins` entry at that scope",
+    "Fixed `claude mcp add`, `add-json`, and `remove` reporting success when the user or local config file could not be written, for example inside a sandbox",
+    "Windows: Fixed the PowerShell tool letting `cmd /c rd`, `rmdir`, `del` or `erase` delete drive roots, the home folder and other folders that `Remove-Item` refuses",
+  ];
+
+  it.each(fixes)("not deprecation: %s", (note) => {
+    expect(matchPatterns(note)).not.toContain("deprecation");
+  });
+
+  it.each([
+    "Deprecated the /foo command",
+    "Removed support for the legacy flag",
+    "Removed the /foo command",
+    "Windows: no longer supports Node 18",
+  ])("still deprecation: %s", (note) => {
+    expect(matchPatterns(note)).toContain("deprecation");
+  });
+});

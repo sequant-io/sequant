@@ -126,11 +126,19 @@ export async function getReleasesSince(
   const releases = await listReleases();
 
   const versions: string[] = [];
+  let found = false;
   for (const release of releases) {
     if (release.tagName === sinceVersion) {
+      found = true;
       break;
     }
     versions.push(release.tagName);
+  }
+
+  if (!found && releases.length > 0) {
+    throw new Error(
+      `Baseline tag ${sinceVersion} not found among the ${releases.length} most recent releases searched`,
+    );
   }
 
   return versions.reverse(); // Oldest first
