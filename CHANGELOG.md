@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-09-26
+
 ### Added
 
 - **Per-phase agent selection: `run.phases.<phase>.agent`.** A phase can run on a different driver from the rest of the run, for example codex for `exec` and Claude Code for `qa`. The phase's `model`/`effort`, `role:` references and model-ladder rungs resolve for that phase's driver; the skills pre-flight and `sequant doctor` cover every driver the run uses; an unknown per-phase driver fails before any phase runs. See `docs/reference/run-command.md`. (#1150)

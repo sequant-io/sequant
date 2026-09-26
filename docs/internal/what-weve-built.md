@@ -1,4 +1,4 @@
-# What We've Built: Sequant v2.17.0
+# What We've Built: Sequant v2.18.0
 
 > **Quantize your development workflow** — Sequential AI phases with quality gates
 
@@ -739,6 +739,14 @@ Shell scripts in `templates/scripts/`:
 - VS Code extension
 - Dashboard for workflow visualization
 - **Claude Code Plugin** marketplace listing
+
+### Recent Additions (v2.18.0)
+
+- **Per-Phase Agent Selection** - `run.phases.<phase>.agent` runs one phase on a different driver (codex for `exec`, Claude Code for `qa`); model roles and ladder rungs resolve per phase, the skills pre-flight and `doctor` cover every driver the run uses, and an unknown per-phase driver fails before any phase starts (#1150)
+- **In-Place Checkout Mode** - `SEQUANT_CHECKOUT=in-place` lets `/exec`, `/qa`, `/loop` and `/testgen` work on a `feature/<N>-<slug>` branch in the current clone; opt-in only, worktree guards unchanged when unset — what a claude.ai cloud clone needs (#1136)
+- **Writers Never Follow a Symlink** - `writeFile` replaces a link at any sequant-written destination, `.mcp.json` included, and a directory in a file's place is named and skipped instead of aborting the run (#1122, #1160); `sync` and `update` converge with an older sequant in `node_modules` (#1159)
+- **One Branch Name per Issue** - `new-feature.sh` uses the `slugify()` rule and gains `--print-branch` (#1145); `init --yes` leaves an unparseable `.mcp.json` alone (#1123); `parseQaVerdict` records the final verdict heading (#1119)
+- **Upstream Assessment Hardened** - the weekly report lands through a GitHub App PR so the required checks run; labels are pre-flighted, assessment issues deduped, a stale baseline fails loudly, fix notes are no longer filed as deprecations (#1153, #1179); the never-run `release.yml` is gone (#1162)
 
 ### Recent Additions (v2.17.0)
 
