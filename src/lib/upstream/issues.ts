@@ -323,10 +323,20 @@ export async function createAssessmentIssue(
 
   assertLabelsExist(owner, repo);
 
-  // Reuse an open assessment issue with the exact title (#1179)
-  const existing = ghProvider
-    .searchIssuesSync(`${owner}/${repo}`, [...ASSESSMENT_LABELS], title, 10)
-    .find((i) => i.title === title);
+  // Reuse an open assessment issue with the exact title (#1179). A failed
+  // lookup is not "no match": filing anyway is the duplicate this prevents.
+  const candidates = ghProvider.searchIssuesOrNullSync(
+    `${owner}/${repo}`,
+    [...ASSESSMENT_LABELS],
+    title,
+    10,
+  );
+  if (candidates === null) {
+    throw new Error(
+      `Could not check ${owner}/${repo} for an existing "${title}" issue`,
+    );
+  }
+  const existing = candidates.find((i) => i.title === title);
   if (existing) {
     return existing.number;
   }

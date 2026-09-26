@@ -45,6 +45,7 @@ vi.mock("../../workflow/platforms/github.js", () => {
   function MockGitHubProvider() {
     return {
       searchIssuesSync: mockSearchIssuesSync,
+      searchIssuesOrNullSync: mockSearchIssuesSync,
       listLabelsSync: mockListLabelsSync,
       createIssueWithBodyFileSync: mockCreateIssueWithBodyFileSync,
       commentOnIssueWithBodyFileSync: mockCommentOnIssueWithBodyFileSync,
@@ -577,6 +578,15 @@ describe("createAssessmentIssue", () => {
       const result = await createAssessmentIssue(title, "B");
 
       expect(result).toBe(1170);
+      expect(mockCreateIssueWithBodyFileSync).not.toHaveBeenCalled();
+    });
+
+    it("throws instead of filing when the lookup fails", async () => {
+      mockSearchIssuesSync.mockReturnValueOnce(null);
+
+      await expect(createAssessmentIssue(title, "B")).rejects.toThrow(
+        /Could not check .* for an existing/,
+      );
       expect(mockCreateIssueWithBodyFileSync).not.toHaveBeenCalled();
     });
 

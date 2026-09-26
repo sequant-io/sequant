@@ -516,7 +516,8 @@ export class GitHubProvider implements PlatformProvider {
 
   /**
    * Search issues in a specific repo by labels and search query.
-   * Used by upstream/issues.ts for duplicate detection.
+   * Used by upstream/issues.ts for duplicate detection. Returns `[]` when the
+   * search fails; use {@link searchIssuesOrNullSync} to tell the two apart.
    */
   searchIssuesSync(
     repo: string,
@@ -524,6 +525,20 @@ export class GitHubProvider implements PlatformProvider {
     search: string,
     limit: number = 10,
   ): Array<{ number: number; title: string }> {
+    return this.searchIssuesOrNullSync(repo, labels, search, limit) ?? [];
+  }
+
+  /**
+   * Like {@link searchIssuesSync}, but returns null when the search fails
+   * (gh error, rate limit), so a caller can refuse to act on "no match" it
+   * could not actually establish (#1179).
+   */
+  searchIssuesOrNullSync(
+    repo: string,
+    labels: string[],
+    search: string,
+    limit: number = 10,
+  ): Array<{ number: number; title: string }> | null {
     try {
       const args = ["issue", "list", "--repo", repo];
       for (const label of labels) {
@@ -542,13 +557,13 @@ export class GitHubProvider implements PlatformProvider {
         stdio: ["pipe", "pipe", "pipe"],
         timeout: 15000,
       });
-      if (result.status !== 0 || !result.stdout) return [];
+      if (result.status !== 0 || !result.stdout) return null;
       return JSON.parse(result.stdout) as Array<{
         number: number;
         title: string;
       }>;
     } catch {
-      return [];
+      return null;
     }
   }
 

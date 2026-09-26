@@ -16,10 +16,11 @@ import type {
  */
 export const DEFAULT_PATTERNS: DetectionPatterns = {
   newTool: /\b(added?|new|introduc(e|ing|ed))\b.*\btool\b/i,
-  // A note that starts "Fixed" (optionally after a "Platform:" prefix) fixes
-  // something; mentioning a removal there is not a deprecation (#1179).
+  // A note that starts "Fixed" (optionally after a "Platform:" or "[Product]"
+  // prefix) fixes something; mentioning a removal there is not a
+  // deprecation (#1179).
   deprecation:
-    /\b(deprecat(e|ed|ing|ion)|no longer support)|^(?!(?:[A-Za-z]+:\s*)?Fixed\b).*\bremov(e|ed|ing)/i,
+    /\b(deprecat(e|ed|ing|ion)|no longer support)|^(?!(?:(?:[A-Za-z]+:|\[[^\]]*\])\s*)?Fixed\b).*\bremov(e|ed|ing)/i,
   breaking: /\b(breaking|incompatible|must update|require(s|d) migration)/i,
   hook: /\b(hook|PreToolUse|PostToolUse|pre-tool|post-tool)\b/i,
   permission:
