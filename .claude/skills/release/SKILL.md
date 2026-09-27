@@ -580,9 +580,11 @@ npm publish --tag beta
 **If npm returns `EOTP` (2FA required):**
 
 Non-interactive environments cannot handle the OTP prompt. Hand the user this exact
-line and say what the flag prevents — `--tag next` keeps `latest` where it is until
-the soak passes; a bare `npm publish` moves `latest` immediately (it happened on
-2.17.0). With npm web auth the `--otp` part may be omitted, the `--tag next` part may not:
+line. `package.json` sets `"publishConfig": { "tag": "next" }` (#1184), so a bare
+`npm publish` also lands on `next` — before that, a bare publish moved `latest`
+immediately, on both 2.17.0 and 2.18.0. Keep `--tag next` in the handoff line anyway:
+it is explicit and harmless. An explicit `--tag` still overrides `publishConfig`
+(pre-releases use `--tag beta`). With npm web auth the `--otp` part may be omitted:
 
 ```
 npm publish --tag next --otp=<code>
