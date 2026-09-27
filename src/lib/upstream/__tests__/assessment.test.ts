@@ -12,7 +12,16 @@ import {
   loadBaseline,
   isAlreadyAssessed,
 } from "../assessment.js";
+import {
+  analyzeChange,
+  mappedPathExists,
+  selectIssueWorthy,
+} from "../relevance.js";
+import type { Baseline, Finding } from "../types.js";
 import { readFile, access } from "node:fs/promises";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Mock GitHubProvider as a class constructor — required because both assessment.ts
 // and issues.ts call `new GitHubProvider()` at module scope.
@@ -344,5 +353,108 @@ describe("getReleasesSince", () => {
     const result = await getReleasesSince("v2.1.29");
 
     expect(result).toEqual([]);
+  });
+});
+
+// #1186: per-finding issues only for changes that touch something sequant uses.
+// Reads the real baseline with node:fs (only node:fs/promises is mocked).
+const repoRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../..",
+);
+const realBaseline = (): Baseline =>
+  JSON.parse(
+    readFileSync(resolve(repoRoot, ".sequant/upstream/baseline.json"), "utf8"),
+  ) as Baseline;
+const existsInRepo = (p: string) => existsSync(resolve(repoRoot, p));
+
+describe("issue filing relevance (#1186)", () => {
+  // The six v2.1.283 notes behind #1172–#1177, all closed not-planned.
+  const v2_1_283_notes = [
+    "Added MCP tool, WebFetch and WebSearch outputs to the `tool.output` OpenTelemetry span event when `OTEL_LOG_TOOL_CONTENT=1`",
+    "Fixed `claude plugin marketplace remove` not saying which installed plugins it uninstalled with the marketplace; it now lists them",
+    "Fixed `claude plugin uninstall` removing the other of two installed plugins whose ids differ only in case, with its options and secrets, when the one named had no `enabledPlugins` entry at that scope",
+    "Fixed `claude mcp add`, `add-json`, and `remove` reporting success when the user or local config file could not be written, for example inside a sandbox",
+    "Windows: Fixed the PowerShell tool letting `cmd /c rd`, `rmdir`, `del` or `erase` delete drive roots, the home folder and other folders that `Remove-Item` refuses",
+    "Self-hosted runner: Changed lifecycle hooks' git to skip a repository's Git LFS `pre-push` hook, ignore a writable system `core.hooksPath`, and not sign commits without `--configure-git`",
+  ];
+
+  it("relevance: the six v2.1.283 notes behind #1172–#1177 file no issue", () => {
+    const baseline = realBaseline();
+    const findings = v2_1_283_notes.map((n) => analyzeChange(n, baseline));
+
+    // Non-vacuous: a category-only filter would still file some of these.
+    expect(
+      findings.filter(
+        (f) => f.category !== "opportunity" && f.category !== "no-action",
+      ).length,
+    ).toBeGreaterThan(0);
+
+    expect(selectIssueWorthy(findings, baseline, existsInRepo)).toEqual([]);
+  });
+
+  it("relevance: a hook change naming a hook event sequant uses files an issue", () => {
+    const baseline = realBaseline();
+    const finding = analyzeChange(
+      "Changed PreToolUse hooks to receive the tool input as a file path",
+      baseline,
+    );
+    expect(finding.category).toBe("hook-change");
+    expect(selectIssueWorthy([finding], baseline, existsInRepo)).toEqual([
+      finding,
+    ]);
+  });
+
+  it("relevance: a hook change naming a command sequant documents files an issue", () => {
+    const baseline = realBaseline();
+    const finding = analyzeChange(
+      "Fixed `claude plugin update` not reloading a plugin's hook config",
+      baseline,
+    );
+    expect(finding.category).toBe("hook-change");
+    expect(selectIssueWorthy([finding], baseline, existsInRepo)).toHaveLength(
+      1,
+    );
+  });
+
+  it("relevance: lowercase words don't match tool names", () => {
+    const baseline = realBaseline();
+    const finding = analyzeChange(
+      "Changed hook output so a background task can read and edit its log",
+      baseline,
+    );
+    expect(finding.category).toBe("hook-change");
+    expect(finding.sequantFiles).toEqual([]);
+    expect(selectIssueWorthy([finding], baseline, existsInRepo)).toEqual([]);
+  });
+
+  it("breaking always gets an issue, even when it names nothing sequant uses", () => {
+    const finding: Finding = {
+      category: "breaking",
+      title: "BREAKING: Removed the legacy telemetry exporter",
+      description: "Breaking: removed the legacy telemetry exporter",
+      impact: "high",
+      matchedKeywords: [],
+      matchedPatterns: ["breaking"],
+      sequantFiles: [],
+    };
+    expect(selectIssueWorthy([finding], realBaseline(), () => false)).toEqual([
+      finding,
+    ]);
+  });
+
+  it("dependency map paths exist", () => {
+    const baseline = realBaseline();
+    const paths = [
+      ...Object.values(baseline.dependencyMap).flat(),
+      ...baseline.hooks.files,
+    ];
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.filter((p) => !mappedPathExists(p, existsInRepo))).toEqual([]);
+  });
+
+  it("dependency map paths exist: a glob counts by its directory prefix", () => {
+    expect(mappedPathExists(".claude/skills/**/*.md", existsInRepo)).toBe(true);
+    expect(mappedPathExists("src/hooks/**/*.ts", existsInRepo)).toBe(false);
   });
 });
