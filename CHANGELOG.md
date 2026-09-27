@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A bare `npm publish` now lands on the `next` dist-tag (#1184).** `package.json` sets `publishConfig.tag: next`, so `latest` moves only through the deliberate `/release --soaked` promotion. A bare publish moved `latest` straight past the soak on both 2.17.0 and 2.18.0. An explicit `--tag` (e.g. `--tag beta`) still wins. Gate-tested by running the real `npm publish` against a local registry.
+
 ## [2.18.0] - 2026-09-26
 
 ### Added
