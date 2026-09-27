@@ -13,13 +13,15 @@ journey through planning, implementation, testing, and review
 
 | Metric | Count |
 |--------|-------|
-| Slash Commands | 18 |
-| CLI Commands | 11 |
-| Core Library Modules | 46 |
-| Test Files | 57 |
-| Documentation Files | 39 |
+| Slash Commands | 20 |
+| CLI Commands | 20 |
+| Core Library Modules | 144 |
+| Test Files | 343 |
+| Documentation Files | 110 |
 | Stack Configurations | 9 |
-| Lines of TypeScript | ~36,600 |
+| Lines of TypeScript | ~68,500 |
+
+*Counted 2026-09-27 (v2.18.0) with the commands in `/release` Step 4.6.*
 
 **License:** MIT
 **Platforms:** macOS, Linux, Windows WSL (full), Windows Native (CLI only)

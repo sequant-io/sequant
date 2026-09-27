@@ -364,10 +364,16 @@ fi
    - **CHANGELOG Automation** - Automatic CHANGELOG entry requirements in /exec and /qa
    ```
 
-3. **Update counts in "At a Glance" table** if applicable:
-   - New skill added → increment skill count
-   - New command added → increment command count
-   - New MCP integration → increment integration count
+3. **Recount the "At a Glance" table** on every minor release — incrementing by hand let it drift to a third of the real numbers (it listed 57 test files when there were 343). Run after `npm run build`, write the results into the table, and update its "Counted …" line:
+   ```bash
+   echo "Slash Commands:        $(ls -d templates/skills/*/ | grep -vc _shared)"
+   echo "CLI Commands:          $(node dist/bin/cli.js --help | awk '/^Commands:/{f=1;next} f && /^  [a-z]/ && $1!="help"{n++} END{print n}')"
+   echo "Core Library Modules:  $(git ls-files 'src/lib/*.ts' 'src/lib/**/*.ts' | grep -vE '\.test\.ts$|__tests__|__fixtures__|\.d\.ts$' | wc -l | tr -d ' ')"
+   echo "Test Files:            $(git ls-files '*.test.ts' '*.test.tsx' | wc -l | tr -d ' ')"
+   echo "Documentation Files:   $(git ls-files 'docs/*.md' 'docs/**/*.md' | grep -v '^docs/internal/' | wc -l | tr -d ' ')"
+   echo "Stack Configurations:  $(node --input-type=module -e 'import("./dist/src/lib/stacks.js").then(m=>console.log(Object.keys(m.STACKS).length))')"
+   echo "Lines of TypeScript:   $(git ls-files 'src/*.ts' 'src/**/*.ts' 'bin/*.ts' | grep -vE '\.test\.ts$|__tests__|__fixtures__' | xargs cat | wc -l | tr -d ' ')"
+   ```
 
 **Fallback to commit-based detection:**
 
@@ -595,6 +601,14 @@ must show `next: <new_version>` and an unchanged `latest`. If `latest` moved, ru
 Step 9b soak checklist immediately and keep `npm dist-tag add sequant@<previous> latest`
 ready as the rollback.
 
+A publish that npm accepted can take several minutes to appear: the registry answers
+`PUT … 202` ("being processed"), and until then `npm view sequant@<new_version>` returns
+404 and `dist-tags` looks unchanged. That is lag, not failure (seen on 2.18.0). Before
+concluding the publish failed, read the newest `~/.npm/_logs/*-debug-0.log`: find the
+`argv` (was it a bare `npm publish`?), the `Publishing to … with tag …` line, and the
+`PUT` status. Then poll the registry directly, bypassing npm's cache:
+`curl -s https://registry.npmjs.org/sequant | jq '."dist-tags"'`.
+
 Do NOT attempt to pass OTP codes programmatically or retry `npm publish` in a loop. Hand off to the user and continue with post-release verification once they confirm.
 
 ### Step 9b: Promote `next` to `latest` (requires `--soaked`)
@@ -625,9 +639,9 @@ If npm returns `EOTP`, hand off to the user with `npm dist-tag add sequant@${new
 Verify both platforms show the new version:
 
 ```bash
-# npm verification (may take 1-2 minutes to propagate)
-sleep 5
-npm view sequant dist-tags   # next = new version; latest only after Step 9b
+# npm verification — a 202 publish can take several minutes to appear (see Step 9);
+# poll the registry directly rather than trusting one `npm view`
+curl -s https://registry.npmjs.org/sequant | jq '."dist-tags"'   # next = new version; latest only after Step 9b
 
 # GitHub verification
 gh release view "v${new_version}"
