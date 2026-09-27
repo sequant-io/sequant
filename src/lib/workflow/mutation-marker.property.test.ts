@@ -32,8 +32,8 @@ describe("SEQUANT_MUTATION marker (property)", () => {
   it("property: parse(format(x)) round-trips", () => {
     fc.assert(
       fc.property(payload, fc.string({ maxLength: 40 }), (x, noise) => {
-        // Noise must not swallow the marker: keep it free of fences/backticks.
-        const clean = noise.replace(/`/g, "");
+        // Noise must not swallow the marker: keep it free of fences (backtick or tilde).
+        const clean = noise.replace(/[`~]/g, "");
         const parsed = parseMutationMarkers(`${clean}\n${format(x)}\n${clean}`);
         expect(parsed).toEqual([x]);
       }),
