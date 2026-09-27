@@ -13,7 +13,7 @@ import type {
   ReleaseData,
   UpstreamAssessment,
 } from "./types.js";
-import { analyzeRelease, getActionableFindings } from "./relevance.js";
+import { analyzeRelease, selectIssueWorthy } from "./relevance.js";
 import {
   calculateSummary,
   generateAssessmentReport,
@@ -238,7 +238,6 @@ export async function assessVersion(
 
   // Analyze
   const findings = analyzeRelease(release.body, baseline);
-  const actionableFindings = getActionableFindings(findings);
 
   // Create assessment object
   const assessment: UpstreamAssessment = {
@@ -260,11 +259,9 @@ export async function assessVersion(
     dryRun,
   );
 
-  // Create issues for actionable findings (excluding opportunities —
-  // opportunities are listed in the assessment but don't get individual issues)
-  const issueWorthy = actionableFindings.filter(
-    (f) => f.category !== "opportunity",
-  );
+  // Create issues for breaking changes and for relevant non-opportunity
+  // findings; everything else is listed in the assessment issue only (#1186)
+  const issueWorthy = selectIssueWorthy(findings, baseline);
   for (let i = 0; i < issueWorthy.length; i++) {
     const updatedFinding = await createOrLinkFinding(
       issueWorthy[i],
@@ -408,8 +405,13 @@ function getDefaultBaseline(): Baseline {
       optional: ["WebFetch", "WebSearch", "NotebookEdit", "AskUserQuestion"],
     },
     hooks: {
-      used: ["PreToolUse"],
-      files: ["src/hooks/pre-tool-hook.ts"],
+      used: ["PreToolUse", "PostToolUse", "SessionEnd"],
+      files: [
+        "templates/hooks/pre-tool.sh",
+        "templates/hooks/post-tool.sh",
+        "templates/hooks/capture-tokens.sh",
+        "hooks/hooks.json",
+      ],
     },
     mcpServers: {
       required: [],
@@ -425,6 +427,7 @@ function getDefaultBaseline(): Baseline {
       "hook",
       "PreToolUse",
       "PostToolUse",
+      "SessionEnd",
       "MCP",
       "permission",
       "allow",
@@ -436,12 +439,19 @@ function getDefaultBaseline(): Baseline {
       "subagent",
     ],
     dependencyMap: {
-      permission: [".claude/settings.json"],
-      hook: ["src/hooks/pre-tool-hook.ts"],
+      PreToolUse: ["templates/hooks/pre-tool.sh", "hooks/hooks.json"],
+      PostToolUse: ["templates/hooks/post-tool.sh", "hooks/hooks.json"],
+      SessionEnd: ["templates/hooks/capture-tokens.sh", "hooks/hooks.json"],
       Task: [".claude/skills/**/*.md"],
-      MCP: [".claude/settings.json"],
     },
-    outOfScope: [],
+    commands: [
+      "claude plugin install",
+      "claude plugin update",
+      "claude plugin eval",
+    ],
+    outOfScope: [
+      "OpenTelemetry - sequant emits and consumes no OpenTelemetry output",
+    ],
   };
 }
 

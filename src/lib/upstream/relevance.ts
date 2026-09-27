@@ -3,6 +3,7 @@
  * Matches changes against sequant's baseline to identify relevant items
  */
 
+import { existsSync } from "node:fs";
 import type {
   Baseline,
   DetectionPatterns,
@@ -258,8 +259,12 @@ export function analyzeChange(change: string, baseline: Baseline): Finding {
   // Determine impact
   const impact = determineImpact(category, matchedKeywords);
 
-  // Get affected files
-  const sequantFiles = getImpactFiles(matchedKeywords, baseline.dependencyMap);
+  // Get affected files from identifiers the change names verbatim, so a
+  // lowercase "task" doesn't pull in the `Task` mapping (#1186)
+  const sequantFiles = getImpactFiles(
+    namesUsedIdentifiers(change, baseline),
+    baseline.dependencyMap,
+  );
 
   // Generate title
   const title = generateTitle(category, change);
@@ -291,6 +296,81 @@ export function analyzeRelease(
  */
 export function getActionableFindings(findings: Finding[]): Finding[] {
   return findings.filter((f) => f.category !== "no-action");
+}
+
+/**
+ * Identifiers sequant actually uses: tools, hook events, dependency-map keys
+ * and Claude Code commands. Generic keywords ("hook", "MCP", "tool", "plugin")
+ * are deliberately absent — they drive categorization, not relevance (#1186).
+ */
+function usedIdentifiers(baseline: Baseline): string[] {
+  return [
+    ...baseline.tools.core,
+    ...baseline.tools.optional,
+    ...baseline.hooks.used,
+    ...Object.keys(baseline.dependencyMap),
+    ...(baseline.commands ?? []),
+  ];
+}
+
+/**
+ * Which used identifiers a change names. Case-sensitive, so `Read` the tool
+ * matches and "read" the verb does not.
+ */
+export function namesUsedIdentifiers(
+  change: string,
+  baseline: Baseline,
+): string[] {
+  return [...new Set(usedIdentifiers(baseline))].filter((id) =>
+    new RegExp(`\\b${escapeRegex(id)}\\b`).test(change),
+  );
+}
+
+/**
+ * Whether a dependency-map path exists. A glob counts when the directory
+ * before its first `*` exists.
+ */
+export function mappedPathExists(
+  path: string,
+  exists: (p: string) => boolean = existsSync,
+): boolean {
+  const star = path.indexOf("*");
+  const literal = star === -1 ? path : path.slice(0, star);
+  return exists(literal.replace(/\/$/, "") || ".");
+}
+
+/**
+ * A finding is relevant when it names something sequant uses, or when its
+ * affected files include a path that exists.
+ */
+export function isRelevant(
+  finding: Finding,
+  baseline: Baseline,
+  exists: (p: string) => boolean = existsSync,
+): boolean {
+  return (
+    namesUsedIdentifiers(finding.description, baseline).length > 0 ||
+    finding.sequantFiles.some((f) => mappedPathExists(f, exists))
+  );
+}
+
+/**
+ * Findings that get their own issue: every breaking change, plus other
+ * actionable, non-opportunity findings that are relevant to sequant. The rest
+ * are listed in the assessment issue only (#1186).
+ */
+export function selectIssueWorthy(
+  findings: Finding[],
+  baseline: Baseline,
+  exists: (p: string) => boolean = existsSync,
+): Finding[] {
+  return findings.filter(
+    (f) =>
+      f.category === "breaking" ||
+      (f.category !== "no-action" &&
+        f.category !== "opportunity" &&
+        isRelevant(f, baseline, exists)),
+  );
 }
 
 /**

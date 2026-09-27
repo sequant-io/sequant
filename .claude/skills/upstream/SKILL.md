@@ -33,7 +33,7 @@ When invoked as `/upstream`, your job is to:
 3. Detect relevant changes using keyword matching and regex patterns
 4. Skip out-of-scope changes (configured in baseline.json `outOfScope`)
 5. Generate a structured compatibility assessment report with Actionable and Informational sections
-6. Auto-create GitHub issues for breaking changes, deprecations, new tools, and hook changes
+6. Auto-create GitHub issues for breaking changes, and for deprecations, new tools and hook changes that name something sequant uses (a tool, hook event, dependency-map key or `commands` entry in baseline.json)
 7. List opportunities in the assessment report for human triage (no individual issues created)
 
 ## Invocation
@@ -93,31 +93,33 @@ Load the sequant capabilities baseline from `.sequant/upstream/baseline.json`:
     "optional": ["WebFetch", "WebSearch", "NotebookEdit"]
   },
   "hooks": {
-    "used": ["PreToolUse"],
-    "files": ["src/hooks/pre-tool-hook.ts"]
+    "used": ["PreToolUse", "PostToolUse", "SessionEnd"],
+    "files": ["templates/hooks/pre-tool.sh", "templates/hooks/post-tool.sh", "templates/hooks/capture-tokens.sh", "hooks/hooks.json"]
   },
   "mcpServers": {
     "required": [],
     "optional": ["chrome-devtools", "context7", "sequential-thinking"]
   },
   "keywords": [
-    "Task", "Bash", "hook", "PreToolUse", "PostToolUse",
+    "Task", "Bash", "hook", "PreToolUse", "PostToolUse", "SessionEnd",
     "MCP", "permission", "allow", "deny", "tool",
     "background", "parallel", "agent", "subagent",
     "settings", "config", "plugin"
   ],
   "dependencyMap": {
-    "permission": ["src/hooks/pre-tool-hook.ts", ".claude/settings.json"],
-    "hook": ["src/hooks/pre-tool-hook.ts"],
-    "Task": [".claude/skills/**/*.md", "src/lib/workflow/*.ts"],
-    "MCP": ["docs/mcp-integrations.md", ".claude/settings.json"]
+    "PreToolUse": ["templates/hooks/pre-tool.sh", "hooks/hooks.json", "templates/settings.json"],
+    "PostToolUse": ["templates/hooks/post-tool.sh", "hooks/hooks.json", "templates/settings.json"],
+    "SessionEnd": ["templates/hooks/capture-tokens.sh", "hooks/hooks.json", "templates/settings.json"],
+    "Task": [".claude/skills/**/*.md", "src/lib/workflow/*.ts"]
   },
+  "commands": ["claude plugin install", "claude plugin update", "claude plugin eval"],
   "outOfScope": [
     "PDF/document processing - users work with code and GitHub issues",
     "Slack/OAuth integrations - workflow is GitHub-centric",
     "Notebook editing - not a data science tool",
     "IDE-specific features (VSCode, JetBrains) - sequant is CLI/terminal focused",
-    "Windows-specific fixes - sequant targets macOS/Linux"
+    "Windows-specific fixes - sequant targets macOS/Linux",
+    "OpenTelemetry - sequant emits and consumes no OpenTelemetry output"
   ]
 }
 ```
@@ -168,10 +170,10 @@ Categorize each relevant change:
 
 **Step 4: Impact Mapping**
 
-For relevant changes, map to affected sequant files using `dependencyMap`:
+For relevant changes, map to affected sequant files using `dependencyMap`. Its keys are specific identifiers (tools, hook events) matched case-sensitively in the change text, never generic keywords:
 
 ```typescript
-const impactFiles = baseline.dependencyMap[matchedKeyword] || [];
+const impactFiles = baseline.dependencyMap[namedIdentifier] || [];
 ```
 
 ### 5. Check for Duplicates
@@ -232,8 +234,8 @@ Create a summary issue with the full assessment:
 
 **Output 2: Individual Issues (Actionable Findings)**
 
-For each actionable finding (breaking, deprecation, new-tool, hook-change), create an issue.
-**Note:** Opportunities do NOT get individual issues — they are listed in the assessment report's Informational section for human triage.
+Create an issue for every breaking change, and for each deprecation, new-tool or hook-change finding that is relevant: it names a tool, hook event, dependency-map key or `commands` entry from baseline.json (case-sensitive), or its affected files include a path that exists. Generic keywords (`hook`, `MCP`, `tool`, `plugin`) don't count.
+**Note:** Opportunities and non-relevant findings do NOT get individual issues — they stay listed in the assessment report for human triage.
 
 ```markdown
 ## feat: Leverage <feature> from Claude Code <version>
@@ -324,7 +326,7 @@ When `--dry-run` is specified:
 - [ ] Each change categorized
 - [ ] Duplicates checked before issue creation
 - [ ] Assessment report created (or dry-run output shown)
-- [ ] Individual issues created for actionable findings (not opportunities)
+- [ ] Individual issues created for breaking changes and relevant actionable findings (not opportunities)
 - [ ] Local report saved
 - [ ] Baseline updated with new version
 
@@ -352,11 +354,11 @@ Findings:
 
 2. [hook-change] Permissions now respect content-level ask
    Matched keywords: permission
-   Impact files: src/hooks/pre-tool-hook.ts
+   Impact files: (none — "permission" is a generic keyword; listed, no issue)
 
-3. [deprecation] oldHookName deprecated
+3. [deprecation] PreToolUse field oldHookName deprecated
    Matched pattern: deprecat
-   Impact files: src/hooks/pre-tool-hook.ts
+   Impact files: templates/hooks/pre-tool.sh, hooks/hooks.json, templates/settings.json
 
 Creating assessment issue...
 Created: #250 - Upstream: Claude Code v2.1.29 Assessment

@@ -75,7 +75,7 @@ function getActionStatus(count: number, category: FindingCategory): string {
       return "Review needed";
     case "new-tool":
     case "hook-change":
-      return "Issues created";
+      return "Issue if it touches sequant";
     case "opportunity":
       return "Noted for review";
     default:

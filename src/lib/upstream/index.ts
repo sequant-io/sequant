@@ -35,6 +35,10 @@ export {
   analyzeChange,
   analyzeRelease,
   getActionableFindings,
+  namesUsedIdentifiers,
+  mappedPathExists,
+  isRelevant,
+  selectIssueWorthy,
   DEFAULT_PATTERNS,
 } from "./relevance.js";
 

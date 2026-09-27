@@ -149,8 +149,10 @@ export interface Baseline {
   permissions: PermissionsConfig;
   /** Keywords to match in release notes */
   keywords: string[];
-  /** Map of keywords to affected sequant files */
+  /** Map of specific identifiers (tools, hook events) to affected sequant files */
   dependencyMap: Record<string, string[]>;
+  /** Claude Code commands sequant's docs and skills tell users to run */
+  commands?: string[];
   /** Patterns for changes that are out of scope for sequant (skipped during analysis) */
   outOfScope?: string[];
 }

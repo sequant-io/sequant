@@ -207,6 +207,41 @@ describe("generateAssessmentReport", () => {
   });
 });
 
+describe("generateAssessmentReport: findings without their own issue (#1186)", () => {
+  it("lists a hook change that got no issue under Actionable", () => {
+    const unfiled: Finding = {
+      category: "hook-change",
+      title: "Hook change: Self-hosted runner lifecycle hooks skip Git LFS",
+      description:
+        "Self-hosted runner: Changed lifecycle hooks' git to skip a repository's Git LFS `pre-push` hook",
+      impact: "medium",
+      matchedKeywords: ["hook"],
+      matchedPatterns: ["hook"],
+      sequantFiles: [],
+    };
+    const report = generateAssessmentReport({
+      version: "v2.1.283",
+      releaseDate: "2026-09-26",
+      assessmentDate: "2026-09-27",
+      previousVersion: "v2.1.282",
+      findings: [unfiled],
+      issuesCreated: [],
+      summary: calculateSummary([unfiled]),
+      dryRun: false,
+    });
+
+    const actionable = report.slice(
+      report.indexOf("### Actionable"),
+      report.indexOf("### Informational"),
+    );
+    expect(actionable).toContain(unfiled.title);
+    expect(actionable).not.toContain("Issue created:");
+    expect(report).toContain(
+      "| Hook Changes | 1 | Issue if it touches sequant |",
+    );
+  });
+});
+
 describe("generateFindingIssue", () => {
   it("generates issue for breaking change", () => {
     const finding: Finding = {

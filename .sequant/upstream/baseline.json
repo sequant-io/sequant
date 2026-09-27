@@ -21,10 +21,15 @@
   },
   "hooks": {
     "used": [
-      "PreToolUse"
+      "PreToolUse",
+      "PostToolUse",
+      "SessionEnd"
     ],
     "files": [
-      "src/hooks/pre-tool-hook.ts"
+      "templates/hooks/pre-tool.sh",
+      "templates/hooks/post-tool.sh",
+      "templates/hooks/capture-tokens.sh",
+      "hooks/hooks.json"
     ]
   },
   "mcpServers": {
@@ -59,6 +64,7 @@
     "hook",
     "PreToolUse",
     "PostToolUse",
+    "SessionEnd",
     "MCP",
     "permission",
     "allow",
@@ -80,56 +86,37 @@
     "NotebookEdit"
   ],
   "dependencyMap": {
-    "permission": [
-      ".claude/settings.json",
-      "docs/permissions.md"
-    ],
-    "hook": [
-      "src/hooks/pre-tool-hook.ts"
-    ],
     "PreToolUse": [
-      "src/hooks/pre-tool-hook.ts"
+      "templates/hooks/pre-tool.sh",
+      "hooks/hooks.json",
+      "templates/settings.json"
     ],
     "PostToolUse": [
-      "src/hooks/post-tool-hook.ts"
+      "templates/hooks/post-tool.sh",
+      "hooks/hooks.json",
+      "templates/settings.json"
+    ],
+    "SessionEnd": [
+      "templates/hooks/capture-tokens.sh",
+      "hooks/hooks.json",
+      "templates/settings.json"
     ],
     "Task": [
       ".claude/skills/**/*.md",
       "src/lib/workflow/*.ts"
-    ],
-    "MCP": [
-      "docs/mcp-integrations.md",
-      ".claude/settings.json"
-    ],
-    "skill": [
-      ".claude/skills/**/*.md"
-    ],
-    "agent": [
-      ".claude/skills/**/*.md",
-      "src/lib/workflow/*.ts"
-    ],
-    "subagent": [
-      ".claude/skills/**/*.md"
-    ],
-    "background": [
-      ".claude/skills/**/*.md"
-    ],
-    "parallel": [
-      ".claude/skills/**/*.md"
-    ],
-    "settings": [
-      ".claude/settings.json",
-      ".claude/settings.local.json"
-    ],
-    "config": [
-      ".claude/settings.json"
     ]
   },
+  "commands": [
+    "claude plugin install",
+    "claude plugin update",
+    "claude plugin eval"
+  ],
   "outOfScope": [
     "PDF/document processing - users work with code and GitHub issues",
     "Slack/OAuth integrations - workflow is GitHub-centric",
     "Notebook editing - not a data science tool",
     "IDE-specific features (VSCode, JetBrains) - sequant is CLI/terminal focused",
-    "Windows-specific fixes - sequant targets macOS/Linux"
+    "Windows-specific fixes - sequant targets macOS/Linux",
+    "OpenTelemetry - sequant emits and consumes no OpenTelemetry output"
   ]
 }
