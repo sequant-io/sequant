@@ -106,7 +106,9 @@ function spawnServe(args: string[]): ChildProcess {
   const binPath = path.resolve(__dirname, "../../bin/cli.ts");
   const child = spawn("npx", ["tsx", binPath, "serve", ...args], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env },
+    // #1164: `serve` chdirs into SEQUANT_PROJECT_DIR, so sequant_status reads
+    // TEST_DIR's (absent) state — never the checkout's `.sequant/state.json`.
+    env: { ...process.env, SEQUANT_PROJECT_DIR: TEST_DIR },
     detached: true,
   });
   spawnedProcesses.push(child);
@@ -175,7 +177,9 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — E2E (#414)", () => {
     const transport = new StdioClientTransport({
       command: "npx",
       args: ["tsx", binPath, "serve", "--transport", "stdio"],
-      env: { ...process.env, HOME: TEST_DIR },
+      // #1164: see spawnServe — the server runs against TEST_DIR, not the
+      // checkout, so sequant_status never rewrites the real state file.
+      env: { ...process.env, HOME: TEST_DIR, SEQUANT_PROJECT_DIR: TEST_DIR },
     });
 
     const client = new Client({ name: "e2e-stdio", version: "1.0.0" });

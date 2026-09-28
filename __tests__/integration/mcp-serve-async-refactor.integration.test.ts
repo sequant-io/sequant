@@ -14,6 +14,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 // Mock child_process
 vi.mock("child_process", async (importOriginal) => {
@@ -73,6 +76,7 @@ describe.skipIf(!mcpSdkAvailable)(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let client: any;
     let cleanup: () => Promise<void>;
+    let tmpDir: string;
 
     beforeEach(async () => {
       vi.clearAllMocks();
@@ -83,7 +87,15 @@ describe.skipIf(!mcpSdkAvailable)(
       const { InMemoryTransport } =
         await import("@modelcontextprotocol/sdk/inMemory.js");
 
-      const server = createServer("1.0.0-test");
+      // #1164: sequant_status reads a state file this test owns (absent, so
+      // nothing is tracked and reconcile makes no GitHub call) — never the
+      // checkout's `.sequant/state.json`.
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-mcp-async-"));
+      const server = createServer(
+        "1.0.0-test",
+        {},
+        { status: { statePath: path.join(tmpDir, ".sequant", "state.json") } },
+      );
       const clientInstance = new Client({
         name: "test-client",
         version: "1.0.0",
@@ -105,6 +117,7 @@ describe.skipIf(!mcpSdkAvailable)(
 
     afterEach(async () => {
       await cleanup();
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     });
 
     // AC-2: status/logs responsive during run

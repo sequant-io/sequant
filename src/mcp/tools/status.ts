@@ -15,7 +15,22 @@ import {
 import { isExpired } from "../../lib/workflow/state-schema.js";
 import { getSettings } from "../../lib/settings.js";
 
-export function registerStatusTool(server: McpServer): void {
+/**
+ * Options for the `sequant_status` tool.
+ */
+export interface StatusToolOptions {
+  /**
+   * Test-only override for the state file the tool reads and reconciles
+   * (#1164). Production callers leave it unset, which keeps the default
+   * `StateManager` path (`.sequant/state.json` under the process cwd).
+   */
+  statePath?: string;
+}
+
+export function registerStatusTool(
+  server: McpServer,
+  options: StatusToolOptions = {},
+): void {
   server.registerTool(
     "sequant_status",
     {
@@ -51,7 +66,9 @@ export function registerStatusTool(server: McpServer): void {
       }
 
       try {
-        const stateManager = new StateManager();
+        const stateManager = new StateManager({
+          statePath: options.statePath,
+        });
 
         // Reconcile state with GitHub before reading
         const reconcileResult = await reconcileState({ stateManager });
