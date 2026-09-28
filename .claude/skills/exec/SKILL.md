@@ -41,7 +41,6 @@ allowed-tools:
   - mcp__sequential-thinking__*  # Complex reasoning - falls back to standard analysis if unavailable
   # Task management
   - Agent(sequant-implementer)
-  - TodoWrite
 ---
 
 <!-- sequant:local-override -->

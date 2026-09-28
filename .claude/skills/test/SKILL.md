@@ -11,7 +11,6 @@ allowed-tools:
   - mcp__chrome-devtools__*  # Optional: falls back to manual checklist if unavailable
   - Glob
   - Grep
-  - TodoWrite
   - Bash(gh issue view:*)
   - Bash(gh issue comment:*)
   - Bash({{PM_RUN}} dev:*)
@@ -355,7 +354,7 @@ At this point, you've checked if the feature exists (section 1.2). Based on that
 **Continue to Phase 2** - Execute full test suite with browser automation.
 
 **Workflow:**
-1. Create test plan with TodoWrite (all test cases)
+1. Create test plan as a markdown checklist (all test cases)
 2. Execute tests systematically using Chrome DevTools MCP
 3. Generate test results report
 4. Post results to GitHub issue
@@ -393,14 +392,12 @@ At this point, you've checked if the feature exists (section 1.2). Based on that
 
 ### 2.1 Create Test Plan
 
-Use TodoWrite to create a todo list with all test cases found:
+Write a markdown checklist with all test cases found, one status per line:
 
-```javascript
-[
-  { content: "Test 1: Basic functionality", status: "pending", activeForm: "Testing basic functionality" },
-  { content: "Test 2: Edge cases", status: "pending", activeForm: "Testing edge cases" },
-  // ... etc
-]
+```markdown
+- [ ] Test 1: Basic functionality — pending
+- [ ] Test 2: Edge cases — pending
+<!-- ... etc -->
 ```
 
 ### 2.2 Execute Tests Systematically
@@ -409,7 +406,7 @@ For each test case:
 
 **Step 1: Display Test**
 - Show test number, description, and steps
-- Mark test as "in_progress" in todo list
+- Mark test as "in_progress" in the checklist
 
 **Step 2: Browser Automation**
 
@@ -451,9 +448,9 @@ Mark test status:
 - **FAIL**: Expected behavior not working
 - **BLOCKED**: Cannot complete test (prerequisite failed, bug blocking)
 
-Update todo list:
-- PASS → status: "completed"
-- FAIL/BLOCKED → keep status: "in_progress", document issue
+Update the checklist:
+- PASS → check the box, status "completed"
+- FAIL/BLOCKED → keep status "in_progress", document issue
 
 ### 2.3 Bug-Fix-Resume Pattern
 

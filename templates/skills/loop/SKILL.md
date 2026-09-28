@@ -12,7 +12,6 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
-  - TodoWrite
   # Optional MCP tools (enhanced functionality if available)
   - mcp__chrome-devtools__*  # Browser testing - falls back to manual verification if unavailable
   - mcp__sequential-thinking__*  # Complex debugging - falls back to standard analysis if unavailable
