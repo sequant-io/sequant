@@ -12,7 +12,6 @@ allowed-tools:
   - Glob
   - Grep
   - Bash
-  - TodoWrite
   - Skill  # For invoking child skills (/spec, /exec, /test, /qa)
   # Optional MCP tools (enhanced functionality if available)
   - mcp__chrome-devtools__*  # Browser testing - falls back to manual checklist if unavailable

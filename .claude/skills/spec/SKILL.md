@@ -298,6 +298,7 @@ See [verification-criteria.md](references/verification-criteria.md) for detailed
 4. **What would a senior reviewer challenge?** [Anticipated "why didn't you just...?" pushback]
 
 <!-- Simple tier: Q1 and Q3 only. Standard/Complex: all four. -->
+<!-- ADR: when the recommended plan chooses between designs (Q2 names a rejected alternative, or the plan presents options), say so here and require the exec PR to include an ADR in docs/adr/ (next NNNN, shape per docs/adr/README.md). -->
 
 ---
 

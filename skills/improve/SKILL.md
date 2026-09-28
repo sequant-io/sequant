@@ -287,13 +287,21 @@ Keep findings that:
 
 ### 3.1 Effort Classification
 
-Categorize each finding by estimated effort:
+Group each finding by estimated effort:
 
-| Category | Description | Typical Items |
+| Group | Description | Typical Items |
 |----------|-------------|---------------|
 | **Quick Wins** | < 1 hour | Add missing types, fix linting, add JSDoc |
 | **Medium Effort** | 1-4 hours | Add tests, refactor function, improve error handling |
 | **Larger Refactors** | 4+ hours | Split large file, redesign module, add feature |
+
+### 3.1a Priority Scoring — REQUIRED
+
+Rank candidates with [tech-debt-scoring.md](references/tech-debt-scoring.md), not prose priority. For every finding:
+
+1. Assign one of the 6 categories: Code, Architecture, Test, Dependency, Documentation, or Infrastructure debt.
+2. Rate Impact, Risk, and Effort 1–5 and compute `Score = (Impact + Risk) × (6 − Effort)`.
+3. Sort rows by Score, highest first, within each effort group, and name the highest-scoring finding overall as **Top priority**.
 
 ### 3.2 Output Format
 
@@ -304,32 +312,33 @@ Present findings in a structured, actionable format:
 
 **Scope:** `src/` (or specified area)
 **Files Analyzed:** 47
-**Issues Found:** 12
+**Issues Found:** 8
+**Top priority:** #1 (score 30)
 
 ---
 
 ### Quick Wins (< 1 hour)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 1 | Type Safety | `src/lib/api.ts:45` | Replace `any` with proper type |
-| 2 | Documentation | `src/utils/format.ts` | Add JSDoc to exported functions |
-| 3 | Code Quality | `src/components/Button.tsx` | Remove unused import |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 1 | Code debt | `src/lib/api.ts:45` | Replace `any` with proper type | 3/3/1 | 30 |
+| 2 | Documentation debt | `src/utils/format.ts` | Add JSDoc to exported functions | 2/1/1 | 15 |
+| 3 | Code debt | `src/components/Button.tsx` | Remove unused import | 1/1/1 | 10 |
 
 ### Medium Effort (1-4 hours)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 4 | Tests | `src/lib/validation.ts` | Add unit tests (0% coverage) |
-| 5 | Error Handling | `src/api/client.ts` | Add retry logic for network errors |
-| 6 | Performance | `src/hooks/useData.ts` | Add memoization to prevent re-fetches |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 4 | Test debt | `src/lib/validation.ts` | Add unit tests (0% coverage) | 3/4/2 | 28 |
+| 5 | Code debt | `src/api/client.ts` | Add retry logic for network errors | 2/4/3 | 18 |
+| 6 | Code debt | `src/hooks/useData.ts` | Add memoization to prevent re-fetches | 3/2/3 | 15 |
 
 ### Larger Refactors (4+ hours)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 7 | Architecture | `src/lib/legacy.ts` | Split 800-line file into modules |
-| 8 | Refactor | `src/components/Dashboard/` | Extract shared logic to hooks |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 7 | Architecture debt | `src/lib/legacy.ts` | Split 800-line file into modules | 4/2/4 | 12 |
+| 8 | Architecture debt | `src/components/Dashboard/` | Extract shared logic to hooks | 3/2/4 | 10 |
 
 ---
 
@@ -497,29 +506,30 @@ Agent: Analyzing codebase for improvement opportunities...
 
 **Scope:** `src/`
 **Files Analyzed:** 47
-**Issues Found:** 8
+**Issues Found:** 5
+**Top priority:** #1 (score 30)
 
 ---
 
 ### Quick Wins (< 1 hour)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 1 | Type Safety | `src/lib/api.ts:45` | Replace `any` with `ApiResponse` type |
-| 2 | Code Quality | `src/utils/index.ts` | Remove unused `formatDate` export |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 1 | Code debt | `src/lib/api.ts:45` | Replace `any` with `ApiResponse` type | 3/3/1 | 30 |
+| 2 | Code debt | `src/utils/index.ts` | Remove unused `formatDate` export | 1/1/1 | 10 |
 
 ### Medium Effort (1-4 hours)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 3 | Tests | `src/lib/validation.ts` | Add unit tests (currently 0% coverage) |
-| 4 | Documentation | `src/hooks/` | Add JSDoc to custom hooks |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 3 | Test debt | `src/lib/validation.ts` | Add unit tests (currently 0% coverage) | 3/4/2 | 28 |
+| 4 | Documentation debt | `src/hooks/` | Add JSDoc to custom hooks | 2/1/2 | 12 |
 
 ### Larger Refactors (4+ hours)
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 5 | Architecture | `src/lib/legacy.ts` | Split 800-line file into modules |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 5 | Architecture debt | `src/lib/legacy.ts` | Split 800-line file into modules | 4/2/4 | 12 |
 
 ---
 
@@ -560,22 +570,23 @@ Agent: Analyzing `src/lib/api.ts` for improvement opportunities...
 **File:** `src/lib/api.ts`
 **Lines:** 245
 **Issues Found:** 4
+**Top priority:** #1 (score 25)
 
 ---
 
 ### Quick Wins
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 1 | Type Safety | Line 45 | Replace `data: any` with proper type |
-| 2 | Type Safety | Line 78 | Replace `options?: any` with `RequestOptions` |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 1 | Code debt | Line 45 | Replace `data: any` with proper type | 3/2/1 | 25 |
+| 2 | Code debt | Line 78 | Replace `options?: any` with `RequestOptions` | 2/2/1 | 20 |
 
 ### Medium Effort
 
-| # | Type | Location | Description |
-|---|------|----------|-------------|
-| 3 | Error Handling | Lines 89-120 | Add retry logic for transient errors |
-| 4 | Tests | - | Add integration tests for API client |
+| # | Category | Location | Description | I/R/E | Score |
+|---|----------|----------|-------------|-------|-------|
+| 3 | Code debt | Lines 89-120 | Add retry logic for transient errors | 3/5/3 | 24 |
+| 4 | Test debt | - | Add integration tests for API client | 3/3/3 | 18 |
 
 ---
 
@@ -661,7 +672,7 @@ Error: Path `src/nonexistent/` not found.
 **Before responding, verify your output includes ALL of these:**
 
 - [ ] **Analysis Summary** - Scope, files analyzed, issues found
-- [ ] **Categorized Findings** - Quick Wins, Medium Effort, Larger Refactors tables
+- [ ] **Categorized Findings** - Quick Wins, Medium Effort, Larger Refactors tables, each row carrying a tech-debt category and `(Impact + Risk) × (6 − Effort)` score, sorted by score
 - [ ] **Selection Prompt** - Ask user which items to create issues for
 - [ ] **Issues Created** - Table with issue numbers, titles, and labels (after selection)
 - [ ] **Execution Command** - `npx sequant run <issue-numbers>` command

@@ -1363,7 +1363,7 @@ Perform a code review focusing on:
 - TypeScript strictness and type safety
 - **Duplicate utility check:** Verify new utilities don't duplicate existing ones in `docs/patterns/`
 
-See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps.
+See [code-review-checklist.md](references/code-review-checklist.md) for integration verification steps, and [review-dimensions.md](references/review-dimensions.md) for the security and performance items §2e does not pattern-match — read it when the diff handles untrusted input, touches network/filesystem/datastore, or changes a hot path.
 
 ### 2a. Build & Red-Test Verification (When the build fails or a test is red)
 
