@@ -130,8 +130,11 @@ for (const root of SKILL_ROOTS) {
     it("stops the release when validation fails", () => {
       const r = runBlock(validateBlock(root), 1);
       expect(r.status).not.toBe(0);
-      expect(r.calls[0]).toBe(`plugin validate ${PLUGIN_MANIFEST}`);
-      expect(r.stdout).toMatch(/invalid/i);
+      // Stops AT the plugin manifest: nothing after it runs. Without this, a
+      // swallowed plugin.json failure (`|| true`) would still exit non-zero
+      // via the marketplace line and pass.
+      expect(r.calls).toEqual([`plugin validate ${PLUGIN_MANIFEST}`]);
+      expect(r.stdout).toContain(PLUGIN_MANIFEST);
     });
 
     it("proceeds when both manifests validate", () => {
