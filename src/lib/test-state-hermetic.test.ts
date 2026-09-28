@@ -104,15 +104,19 @@ describe("#1164 AC-1: MCP tests leave the checkout's state.json untouched", () =
       );
       const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
 
-      // The child must actually have run all three files, green.
-      expect(result.status, output).toBe(0);
-      expect(output, output).toMatch(/Test Files\s+3 passed \(3\)/);
-
+      // Hermeticity first, so a write is reported as such even if the child
+      // suite also failed for an unrelated reason.
       expect(fs.existsSync(STATE_FILE), output).toBe(true);
       const afterBytes = fs.readFileSync(STATE_FILE, "utf-8");
       expect(sha256(afterBytes), `state.json changed:\n${afterBytes}`).toBe(
         before,
       );
+
+      // Then the child must actually have run all three files, green —
+      // otherwise an unchanged file proves nothing.
+      const childFailed = `child suite failed (not a hermeticity finding):\n${output}`;
+      expect(result.status, childFailed).toBe(0);
+      expect(output, childFailed).toMatch(/Test Files\s+3 passed \(3\)/);
     } finally {
       if (original !== null) {
         fs.writeFileSync(STATE_FILE, original);
