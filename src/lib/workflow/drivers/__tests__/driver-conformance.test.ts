@@ -741,7 +741,20 @@ const ADAPTERS: Record<string, ConformanceAdapter> = {
     },
 
     outcome: {
-      skip: `gap: #${GAP_ISSUE} opencode accumulates costUsd only and never sets modelUsage, so no token total can be derived`,
+      // The #992 recorded `opencode run --command qa`: 29 real `step_finish`
+      // events carrying `part.tokens` (#1115).
+      complete: async () => {
+        const parser = new OpencodeStreamParser("qa");
+        parser.feed(loadFixture("opencode-run-qa.ndjson"));
+        return evaluateOpencodeRun(parser.end(), {
+          exitCode: 0,
+          signal: null,
+          phase: "qa",
+          phaseTimeout: 600,
+          stderrTail: [],
+          stdoutTail: [],
+        });
+      },
     },
 
     skillLoad: {
