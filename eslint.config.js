@@ -80,7 +80,7 @@ export default tseslint.config(
   // `scripts/`, which is how `scripts/qa/precheck.ts` and the #922 grounding
   // scripts came to sit outside lint coverage entirely.
   {
-    files: ["scripts/**/*.ts"],
+    files: ["scripts/**/*.ts", "scripts/**/*.mts"],
     languageOptions: {
       parserOptions: {
         project: "./tsconfig.scripts.json",
