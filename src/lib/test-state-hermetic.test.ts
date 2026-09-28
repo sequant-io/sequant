@@ -59,8 +59,12 @@ function childEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (key.startsWith("VITEST") || key.startsWith("SEQUANT_")) continue;
+    // CI sets FORCE_COLOR; colored output splits "Test Files  3 passed (3)"
+    // with escape codes and the summary match below never fires.
+    if (key === "FORCE_COLOR") continue;
     env[key] = value;
   }
+  env.NO_COLOR = "1";
   return env;
 }
 
@@ -113,7 +117,9 @@ describe("#1164 AC-1: MCP tests leave the checkout's state.json untouched", () =
           maxBuffer: 64 * 1024 * 1024,
         },
       );
-      const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
+      const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`
+        // eslint-disable-next-line no-control-regex
+        .replace(/\x1b\[[0-9;]*m/g, "");
 
       // Hermeticity first, so a write is reported as such even if the child
       // suite also failed for an unrelated reason.
