@@ -9,9 +9,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerOptions } from "@modelcontextprotocol/sdk/server/index.js";
 import { registerRunTool } from "./tools/run.js";
-import { registerStatusTool } from "./tools/status.js";
+import { registerStatusTool, type StatusToolOptions } from "./tools/status.js";
 import { registerLogsTool } from "./tools/logs.js";
 import { registerResources, type ResourceContext } from "./resources.js";
+
+/**
+ * Per-tool options for `createServer`. Test-only (#1164): tests point
+ * `sequant_status` at a state file they own so they never read or rewrite
+ * the checkout's `.sequant/state.json`. `serve` passes none.
+ */
+export interface CreateServerOptions {
+  status?: StatusToolOptions;
+}
 
 /**
  * Create and configure the Sequant MCP server instance.
@@ -19,6 +28,7 @@ import { registerResources, type ResourceContext } from "./resources.js";
 export function createServer(
   version: string,
   context: ResourceContext = {},
+  serverOptions: CreateServerOptions = {},
 ): McpServer {
   const options: ServerOptions = {
     instructions: [
@@ -54,7 +64,7 @@ export function createServer(
 
   // Register tools
   registerRunTool(server);
-  registerStatusTool(server);
+  registerStatusTool(server, serverOptions.status);
   registerLogsTool(server);
 
   // Register resources

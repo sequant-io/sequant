@@ -15,7 +15,12 @@
  * Guarded: Skips if @modelcontextprotocol/sdk is not installed (#396)
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import { StateManager } from "../lib/workflow/state-manager.js";
+import { GitHubProvider } from "../lib/workflow/platforms/github.js";
 
 // Check if MCP SDK is available (dynamic import to avoid hard failure)
 const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
@@ -26,15 +31,22 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let client: any;
   let cleanup: () => Promise<void>;
+  // #1164: sequant_status reads and reconciles a state file this test owns,
+  // never the checkout's `.sequant/state.json`.
+  let tmpDir: string;
+  let statePath: string;
 
   beforeEach(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-mcp-server-"));
+    statePath = path.join(tmpDir, ".sequant", "state.json");
+
     const { createServer } = await import("./server.js");
     const { Client } =
       await import("@modelcontextprotocol/sdk/client/index.js");
     const { InMemoryTransport } =
       await import("@modelcontextprotocol/sdk/inMemory.js");
 
-    const server = createServer("1.0.0-test");
+    const server = createServer("1.0.0-test", {}, { status: { statePath } });
     const clientInstance = new Client({
       name: "test-client",
       version: "1.0.0",
@@ -56,6 +68,8 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
 
   afterEach(async () => {
     await cleanup();
+    vi.restoreAllMocks();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   // #420 AC-1: Server instructions
@@ -330,6 +344,36 @@ describe.skipIf(!mcpSdkAvailable)("Sequant MCP Server", () => {
       );
       expect(data.status).toBe("not_tracked");
       expect(data.issue).toBe(99999);
+      // Nothing tracked → reconcile never writes the (absent) temp state.
+      expect(fs.existsSync(statePath)).toBe(false);
+    });
+
+    // #1164 AC-2/AC-3: status comes from the temp state the test seeded, and
+    // reconcile's GitHub lookup goes through a stub, never `gh`.
+    it("returns status for an issue seeded in the test's own state file", async () => {
+      await new StateManager({ statePath }).initializeIssue(42, "Seeded title");
+      const batchSpy = vi
+        .spyOn(GitHubProvider.prototype, "batchFetchIssueAndPRStatus")
+        .mockReturnValue({
+          issues: { 42: { number: 42, title: "Seeded title", state: "OPEN" } },
+          pullRequests: {},
+          error: undefined,
+        });
+
+      const result = await client.callTool({
+        name: "sequant_status",
+        arguments: { issue: 42 },
+      });
+
+      const data = JSON.parse(
+        (result.content as Array<{ type: string; text: string }>)[0].text,
+      );
+      expect(data.issue).toBe(42);
+      expect(data.title).toBe("Seeded title");
+      expect(data.status).toBe("not_started");
+      expect(data.githubReachable).toBe(true);
+      expect(batchSpy).toHaveBeenCalledTimes(1);
+      expect(batchSpy).toHaveBeenCalledWith([42], []);
     });
   });
 
