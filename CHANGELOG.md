@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`sequant init --mcp`, project `.mcp.json`, opencode's MCP entry, phase agents and the plugin-directory `.mcp.json` launch the MCP server through the inline `node -e` launcher (#1089).** They ran `npx -y sequant@<pin> serve` from the project directory, so a stale `sequant` in the project's own `node_modules` could shadow the pin and kill the handshake with `CONNECTION_CLOSED` (the #1084 failure, which only the plugin's own `.mcp.json` had fixed). `sequant update` and `sync` migrate an existing `npx -y sequant@<pin> serve` entry to the launcher; other hand-edited entries only get their pin refreshed. A committed `.mcp.json` now carries the ~8 KB launcher source.
 - **`/upstream` files a finding issue only when the change touches something sequant uses (#1186).** Breaking changes still always get an issue. Other actionable findings now need a case-sensitive mention of a tool, hook event, dependency-map key or documented `claude` command (`claude plugin install`/`update`/`eval`), or an affected path that exists in the repo. Everything else is listed in the assessment issue only, so a lowercase "task" or "read" in a release note no longer files an issue. The dependency map drops the generic `permission`/`hook`/`MCP` keys and paths that no longer exist, maps `PreToolUse`, `PostToolUse` and `SessionEnd` to the shipped hook scripts, and OpenTelemetry joins `outOfScope`.
 
 ## [2.18.0] - 2026-09-26
