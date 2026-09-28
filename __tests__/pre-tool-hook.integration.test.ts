@@ -1007,8 +1007,11 @@ describe.each(HOOK_COPIES)(
       const repo = makeStagedRepo("pre-tool-1064-form-d-");
       try {
         expect(
-          runHook(hookPath, 'git commit -q -m "fix(#497): literal subject"', repo)
-            .code,
+          runHook(
+            hookPath,
+            'git commit -q -m "fix(#497): literal subject"',
+            repo,
+          ).code,
         ).toBe(0);
       } finally {
         rmSync(repo, { recursive: true, force: true });
@@ -1754,6 +1757,90 @@ describe.each(HOOK_PAIRS)(
   },
 );
 
+// === Issue #1135 AC-9: post-tool.sh never hard-blocks ===
+//
+// Claude Code 2.1.139 added `continueOnBlock` ("feed the rejection reason back
+// to Claude and continue the turn"). In the installed 2.1.283 it is a config
+// field of `type: "prompt"` hooks only; sequant registers post-tool.sh as a
+// `type: "command"` hook, and the script reports its findings to a log instead
+// of blocking — so there is no hard block for `continueOnBlock` to soften. This
+// pins that premise: the two sites that flag a problem (a security pattern in a
+// written file, a failing test run) must log it, exit 0, and print no
+// `decision` JSON. If one ever starts blocking, this fails and the
+// `continueOnBlock` question reopens.
+describe.each(HOOK_PAIRS)(
+  "post-tool.sh never hard-blocks (#1135 AC-9) [%s]",
+  (_label, _preHook, postHook) => {
+    let work: string;
+    let dataDir: string;
+    let stubBin: string;
+
+    function env(): NodeJS.ProcessEnv {
+      const e = { ...process.env };
+      delete e.SEQUANT_WORKTREE;
+      delete e.SEQUANT_ISSUE;
+      delete e.SEQUANT_RELAY;
+      delete e.CLAUDE_HOOKS_DISABLED;
+      delete e.CLAUDE_HOOKS_SECURITY;
+      e.CLAUDE_PLUGIN_DATA = dataDir;
+      e.TMPDIR = work; // no parallel-group marker is visible
+      // The .ts write triggers `npx prettier --write`; stub npx so the case
+      // never reaches the network or a real formatter.
+      e.PATH = `${stubBin}:${e.PATH ?? ""}`;
+      return e;
+    }
+
+    function run(payload: object) {
+      return spawnSync("bash", [postHook], {
+        input: JSON.stringify(payload),
+        cwd: work,
+        env: env(),
+        encoding: "utf8",
+      });
+    }
+
+    beforeAll(() => {
+      work = mkdtempSync(join(tmpdir(), "post-tool-noblock-"));
+      dataDir = join(work, "data");
+      stubBin = join(work, "bin");
+      mkdirSync(stubBin, { recursive: true });
+      writeFileSync(join(stubBin, "npx"), "#!/bin/sh\nexit 1\n", {
+        mode: 0o755,
+      });
+    });
+
+    afterAll(() => {
+      rmSync(work, { recursive: true, force: true });
+    });
+
+    it("logs a flagged write and a failing test run, exits 0, emits no block decision", () => {
+      const file = join(work, "danger.ts");
+      writeFileSync(file, "export const run = (s: string) => eval(s);\n");
+      const write = run({
+        tool_name: "Write",
+        tool_input: { file_path: file, content: "" },
+        tool_response: { success: true },
+      });
+      const tests = run({
+        tool_name: "Bash",
+        tool_input: { command: "npm test" },
+        tool_response: { stdout: "FAIL src/x.test.ts\n1 failed" },
+      });
+
+      for (const r of [write, tests]) {
+        expect(r.status).toBe(0);
+        expect(r.stdout).not.toMatch(/"decision"/);
+      }
+      const log = readFileSync(
+        join(dataDir, "logs", "claude-quality.log"),
+        "utf8",
+      );
+      expect(log).toMatch(/SECURITY_WARNING: eval\(\) usage/);
+      expect(log).toMatch(/TEST_FAILURE detected/);
+    });
+  },
+);
+
 // === Issue #881: parallel-group marker is project-scoped ===
 //
 // The marker filename used to be a global constant, so a parallel group in one
@@ -2120,7 +2207,10 @@ describe.each(HOOK_COPIES)(
     it("AC-2: `cd` to a nonexistent directory fails open rather than checking cwd", () => {
       const clean = makeRepo("pre-tool-963-nonexistent-", false);
       try {
-        const absent = join(tmpdir(), `sequant-absent-963-${process.pid}-${Date.now()}`);
+        const absent = join(
+          tmpdir(),
+          `sequant-absent-963-${process.pid}-${Date.now()}`,
+        );
         const cmd = `cd ${absent}\ngit commit -m 'test: 963'`;
         const { code, stderr } = runHookVaried(cmd, clean);
         expect(stderr).not.toMatch(/HOOK_BLOCKED: No changes to commit/);
