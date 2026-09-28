@@ -18,17 +18,52 @@ import {
   getPhaseMcpServersConfig,
   buildOpencodeMcpConfig,
 } from "./mcp-config.js";
+import { MCP_LAUNCHER_INLINE_SOURCE } from "./mcp-launch-inline.generated.js";
+
+/** The entry getSequantMcpConfig() writes for the installed version (#1089). */
+function inlineArgs(): string[] {
+  return ["-e", MCP_LAUNCHER_INLINE_SOURCE, getSequantPackageSpec()];
+}
 
 describe("mcp-config", () => {
   describe("getSequantMcpConfig", () => {
-    it("should return config with npx command pinned to the installed version", () => {
+    it("should return the inline node -e launcher pinned to the installed version", () => {
       const config = getSequantMcpConfig();
-      expect(config.command).toBe("npx");
+      expect(config.command).toBe("node");
       // Pinned to the installed version, not @latest (#793).
-      expect(config.args).toEqual(["-y", getSequantPackageSpec(), "serve"]);
+      expect(config.args).toEqual([
+        "-e",
+        MCP_LAUNCHER_INLINE_SOURCE,
+        getSequantPackageSpec(),
+      ]);
       expect(config.args).not.toContain("sequant@latest");
       expect(getSequantPackageSpec()).toMatch(/^sequant@\d+\.\d+\.\d+/);
     });
+
+    // #1089 AC-1: every consumer and every client type gets the inline
+    // launcher — none of them may fall back to a bare `npx`, which resolves
+    // `sequant` from the project in its cwd and lets a stale local copy
+    // shadow the pin.
+    it.each([
+      undefined,
+      "claude-desktop",
+      "cursor",
+      "vscode-continue",
+    ] as const)(
+      "1089 AC-1: uses node -e <inline launcher> <pin> for clientType %s",
+      (clientType) => {
+        const config = getSequantMcpConfig({
+          projectDir: "/my/project",
+          clientType,
+        });
+        const args = config.args as string[];
+        expect(config.command).toBe("node");
+        expect(args[0]).toBe("-e");
+        expect(args[1]).toBe(MCP_LAUNCHER_INLINE_SOURCE);
+        expect(args[args.length - 1]).toBe(getSequantPackageSpec());
+        expect(args).toHaveLength(3);
+      },
+    );
 
     it("should include cwd for claude-desktop", () => {
       const config = getSequantMcpConfig({
@@ -146,7 +181,8 @@ describe("mcp-config", () => {
 
       const content = JSON.parse(fs.readFileSync(testConfig, "utf-8"));
       expect(content.mcpServers.sequant).toBeDefined();
-      expect(content.mcpServers.sequant.command).toBe("npx");
+      expect(content.mcpServers.sequant.command).toBe("node");
+      expect(content.mcpServers.sequant.args).toEqual(inlineArgs());
     });
 
     it("should add to existing config without overwriting", () => {
@@ -269,12 +305,8 @@ describe("mcp-config", () => {
       const content = JSON.parse(
         fs.readFileSync(path.join(tmpDir, ".mcp.json"), "utf-8"),
       );
-      expect(content.mcpServers.sequant.command).toBe("npx");
-      expect(content.mcpServers.sequant.args).toEqual([
-        "-y",
-        getSequantPackageSpec(),
-        "serve",
-      ]);
+      expect(content.mcpServers.sequant.command).toBe("node");
+      expect(content.mcpServers.sequant.args).toEqual(inlineArgs());
     });
 
     it("should NOT include cwd or env in .mcp.json config", () => {
@@ -327,7 +359,7 @@ describe("mcp-config", () => {
         args: ["server.js"],
       });
       // Sequant added
-      expect(content.mcpServers.sequant.command).toBe("npx");
+      expect(content.mcpServers.sequant.command).toBe("node");
     });
 
     it("should NOT leak ANTHROPIC_API_KEY into .mcp.json", () => {
@@ -384,7 +416,7 @@ describe("mcp-config", () => {
       );
       // Array replaced with proper object
       expect(Array.isArray(content.mcpServers)).toBe(false);
-      expect(content.mcpServers.sequant.command).toBe("npx");
+      expect(content.mcpServers.sequant.command).toBe("node");
     });
   });
 
@@ -471,7 +503,9 @@ describe("mcp-config", () => {
         args: ["-y", "context7-mcp"],
       });
       expect(result.sequant).toBeDefined();
-      expect(result.sequant.command).toBe("npx");
+      // #1089: the phase agent's sequant server uses the inline launcher too.
+      expect(result.sequant.command).toBe("node");
+      expect(result.sequant.args).toEqual(inlineArgs());
     });
 
     it("returns only the sequant entry when .mcp.json does not exist", () => {
@@ -492,7 +526,7 @@ describe("mcp-config", () => {
 
       const result = getPhaseMcpServersConfig(projectDir);
 
-      expect(result.sequant.command).toBe("npx");
+      expect(result.sequant.args).toEqual(inlineArgs());
     });
 
     it("handles corrupt .mcp.json gracefully", () => {
@@ -582,7 +616,7 @@ describe("mcp-config", () => {
           desktopAllowlist: ["sequant"],
         });
 
-        expect(result.sequant.command).toBe("npx");
+        expect(result.sequant.args).toEqual(inlineArgs());
       });
     });
   });
@@ -639,24 +673,28 @@ describe("mcp-config", () => {
       fs.writeFileSync(mcpPath(), JSON.stringify({ mcpServers: { sequant } }));
     }
 
-    it("rewrites a stale pin to the installed version", () => {
-      writeMcp({ command: "npx", args: ["-y", "sequant@0.0.1", "serve"] });
+    it("rewrites a stale pin on an inline entry to the installed version", () => {
+      writeMcp({
+        command: "node",
+        args: ["-e", MCP_LAUNCHER_INLINE_SOURCE, "sequant@0.0.1"],
+      });
 
       const result = syncSequantMcpPin(tmpDir);
 
-      expect(result.updated).toBe(true);
-      expect(result.from).toBe("sequant@0.0.1");
-      expect(result.to).toBe(getSequantPackageSpec());
+      expect(result).toEqual({
+        updated: true,
+        from: "sequant@0.0.1",
+        to: getSequantPackageSpec(),
+      });
       const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
-      expect(content.mcpServers.sequant.args).toEqual([
-        "-y",
-        getSequantPackageSpec(),
-        "serve",
-      ]);
+      expect(content.mcpServers.sequant.args).toEqual(inlineArgs());
     });
 
     it("rewrites an @latest pin to the installed version", () => {
-      writeMcp({ command: "npx", args: ["-y", "sequant@latest", "serve"] });
+      writeMcp({
+        command: "node",
+        args: ["-e", MCP_LAUNCHER_INLINE_SOURCE, "sequant@latest"],
+      });
 
       const result = syncSequantMcpPin(tmpDir);
 
@@ -665,11 +703,129 @@ describe("mcp-config", () => {
       expect(result.to).toBe(getSequantPackageSpec());
     });
 
-    it("is a no-op when the pin already matches the installed version", () => {
+    it("still re-pins a hand-edited pinned shape it does not migrate", () => {
+      // Not the exact legacy generated shape (extra flag), so no migration —
+      // but the #793 pin refresh still applies.
+      writeMcp({
+        command: "npx",
+        args: ["--prefer-online", "-y", "sequant@0.0.1", "serve"],
+      });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({
+        updated: true,
+        from: "sequant@0.0.1",
+        to: getSequantPackageSpec(),
+      });
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant.command).toBe("npx");
+      expect(content.mcpServers.sequant.args).toEqual([
+        "--prefer-online",
+        "-y",
+        getSequantPackageSpec(),
+        "serve",
+      ]);
+    });
+
+    it("1089 AC-4: migrates a legacy npx -y sequant@X serve entry to the inline launcher", () => {
+      fs.writeFileSync(
+        mcpPath(),
+        JSON.stringify({
+          mcpServers: {
+            other: { command: "other-server" },
+            sequant: {
+              command: "npx",
+              args: ["-y", "sequant@2.18.0", "serve"],
+            },
+          },
+        }),
+      );
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({
+        updated: true,
+        reason: "migrated",
+        from: "sequant@2.18.0",
+        to: getSequantPackageSpec(),
+      });
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant).toEqual({
+        command: "node",
+        args: inlineArgs(),
+      });
+      expect(content.mcpServers.other).toEqual({ command: "other-server" });
+    });
+
+    it("1089 AC-4: migrates a legacy entry already on the installed pin", () => {
       writeMcp({
         command: "npx",
         args: ["-y", getSequantPackageSpec(), "serve"],
       });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result.reason).toBe("migrated");
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant.args).toEqual(inlineArgs());
+    });
+
+    it("1089 AC-4: refreshes a stale inline launcher source", () => {
+      writeMcp({
+        command: "node",
+        args: ["-e", "/* launcher from an older release */", "sequant@0.0.1"],
+      });
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({
+        updated: true,
+        reason: "migrated",
+        from: "sequant@0.0.1",
+        to: getSequantPackageSpec(),
+      });
+      const content = JSON.parse(fs.readFileSync(mcpPath(), "utf-8"));
+      expect(content.mcpServers.sequant).toEqual({
+        command: "node",
+        args: inlineArgs(),
+      });
+    });
+
+    it("1089 AC-4: leaves a local-binary entry byte-identical", () => {
+      const original =
+        JSON.stringify(
+          {
+            mcpServers: {
+              sequant: {
+                command: "node",
+                args: ["/Users/dev/sequant/dist/bin/cli.js", "serve"],
+              },
+            },
+          },
+          null,
+          4,
+        ) + "\n";
+      fs.writeFileSync(mcpPath(), original);
+
+      const result = syncSequantMcpPin(tmpDir);
+
+      expect(result).toEqual({ updated: false, reason: "no-pin" });
+      expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(original);
+    });
+
+    it("1089 AC-4: dryRun reports a migration without writing", () => {
+      writeMcp({ command: "npx", args: ["-y", "sequant@0.0.1", "serve"] });
+      const before = fs.readFileSync(mcpPath(), "utf-8");
+
+      const result = syncSequantMcpPin(tmpDir, { dryRun: true });
+
+      expect(result.reason).toBe("migrated");
+      expect(fs.readFileSync(mcpPath(), "utf-8")).toBe(before);
+    });
+
+    it("is a no-op when the pin already matches the installed version", () => {
+      writeMcp({ command: "node", args: inlineArgs() });
 
       const before = fs.readFileSync(mcpPath(), "utf-8");
       const result = syncSequantMcpPin(tmpDir);
@@ -812,11 +968,13 @@ describe("996 AC-4: opencode mcp translation", () => {
     // opencode's McpLocalConfig takes command as string[], not the single
     // string Claude Code's mcpServers uses. The two are not interchangeable.
     expect(Array.isArray(config.sequant.command)).toBe(true);
-    expect(config.sequant.command[0]).toBe("npx");
-    expect(config.sequant.command).toContain("-y");
-    expect(config.sequant.command[config.sequant.command.length - 1]).toBe(
-      "serve",
-    );
+    // #1089 AC-6: the inline launcher, not a bare npx.
+    expect(config.sequant.command).toEqual([
+      "node",
+      "-e",
+      MCP_LAUNCHER_INLINE_SOURCE,
+      getSequantPackageSpec(),
+    ]);
   });
 
   it("carries the pinned sequant package spec through (#793/#988)", () => {

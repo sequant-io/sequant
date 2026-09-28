@@ -105,6 +105,106 @@ describe("#1084 AC-4: mcp-launch.mjs isolates npx from a shadowing local sequant
   });
 });
 
+describe("#1089 AC-2: getSequantMcpConfig() output isolates npx from a shadowing local sequant", () => {
+  let projectDir: string;
+  let fakeNpxDir: string;
+  let recordPath: string;
+
+  beforeEach(() => {
+    // Same shadow as #1084 AC-4, but through the bin link npx actually
+    // resolves: node_modules/.bin/sequant -> a pre-`serve` sequant.
+    projectDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "sequant-1089-shadow-project-"),
+    );
+    const pkgDir = path.join(projectDir, "node_modules", "sequant");
+    fs.mkdirSync(path.join(pkgDir, "bin"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkgDir, "package.json"),
+      JSON.stringify({ name: "sequant", version: "1.20.1", bin: "bin/cli.js" }),
+    );
+    fs.writeFileSync(
+      path.join(pkgDir, "bin", "cli.js"),
+      "#!/usr/bin/env node\n" +
+        "process.stderr.write(\"error: unknown command 'serve'\\n\");\n" +
+        "process.exit(0);\n",
+      { mode: 0o755 },
+    );
+    fs.mkdirSync(path.join(projectDir, "node_modules", ".bin"), {
+      recursive: true,
+    });
+    fs.symlinkSync(
+      path.join("..", "sequant", "bin", "cli.js"),
+      path.join(projectDir, "node_modules", ".bin", "sequant"),
+    );
+
+    fakeNpxDir = fs.mkdtempSync(path.join(os.tmpdir(), "sequant-fake-npx-"));
+    recordPath = path.join(fakeNpxDir, "npx-invocation.json");
+    fs.writeFileSync(
+      path.join(fakeNpxDir, "npx"),
+      "#!/usr/bin/env node\n" +
+        "const fs = require('fs');\n" +
+        `fs.writeFileSync(${JSON.stringify(recordPath)}, JSON.stringify({ cwd: process.cwd(), argv: process.argv.slice(2) }));\n` +
+        "process.exit(0);\n",
+      { mode: 0o755 },
+    );
+  });
+
+  afterEach(() => {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+    fs.rmSync(fakeNpxDir, { recursive: true, force: true });
+  });
+
+  it("running the returned command/args spawns npx outside the project with the pinned spec", async () => {
+    const { getSequantMcpConfig, getSequantPackageSpec } =
+      await import("../src/lib/mcp-config.js");
+    const config = getSequantMcpConfig();
+    const command = config.command as string;
+    const args = config.args as string[];
+
+    // Spawn exactly what an MCP client would, from the project dir. `node`
+    // resolves via PATH (the fake npx dir first, then the running node's
+    // dir), as it would for a client.
+    await new Promise<void>((resolvePromise, reject) => {
+      const child = spawn(command, args, {
+        cwd: projectDir,
+        env: {
+          ...process.env,
+          PATH: [
+            fakeNpxDir,
+            path.dirname(process.execPath),
+            process.env.PATH,
+          ].join(path.delimiter),
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stderr = "";
+      child.stderr!.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      const timer = setTimeout(
+        () =>
+          reject(
+            new Error(`launcher did not exit in time; stderr:\n${stderr}`),
+          ),
+        10_000,
+      );
+      child.on("exit", () => {
+        clearTimeout(timer);
+        resolvePromise();
+      });
+      child.on("error", reject);
+    });
+
+    expect(fs.existsSync(recordPath), "fake npx was never invoked").toBe(true);
+    const recorded = JSON.parse(fs.readFileSync(recordPath, "utf8")) as {
+      cwd: string;
+      argv: string[];
+    };
+    const realProjectDir = fs.realpathSync(projectDir);
+    expect(recorded.cwd).not.toBe(realProjectDir);
+    expect(recorded.cwd.startsWith(realProjectDir + path.sep)).toBe(false);
+    expect(recorded.argv).toEqual(["-y", getSequantPackageSpec(), "serve"]);
+  });
+});
+
 describe("#1084 AC-1: mcp-launch.mjs forwards the child's exit code and signals", () => {
   let launchDir: string;
   let fakeNpxDir: string;

@@ -27,14 +27,16 @@ Use Sequant from Claude Desktop, Cursor, VS Code, or any MCP-compatible AI tool.
 {
   "mcpServers": {
     "sequant": {
-      "command": "npx",
-      "args": ["-y", "sequant@2.9.0", "serve"]
+      "command": "node",
+      "args": ["-e", "<inline launcher source, ~8 KB>", "sequant@2.9.0"]
     }
   }
 }
 ```
 
 No `cwd` or `env` needed — Claude Code runs from the project root and inherits your shell environment.
+
+> **Inline launcher (#1089).** `sequant init` (and `init --mcp` for every client below) writes the same inline `node -e` launcher the plugin ships, not a bare `npx -y sequant@<pin> serve`, so a stale `sequant` in the project's own `node_modules` can't shadow the pin — see [How the plugin avoids shadowing](#how-the-plugin-avoids-shadowing). `sequant update` / `sequant sync` migrate an existing `npx -y sequant@<pin> serve` entry to this form (reported as `migrated to the inline launcher`); any other hand-edited entry keeps its shape and only has its pin refreshed. The hand-written `npx` examples for other clients below still work, but they are exposed to that shadowing when the client launches them from a project that has `sequant` installed locally.
 
 > **Version pinning (#793).** `sequant init` writes a concrete version (`sequant@<your installed version>`), **not** `sequant@latest`. `@latest` forces `npx` to re-resolve and reinstall the package on the first MCP reconnect after every sequant release — the exact moment a corrupted npx cache turns into an opaque `Failed to reconnect to sequant: -32000`. Pinning removes that per-release reinstall; the MCP server then tracks new releases when you run **`sequant update`** (which rewrites the pin to the version you just installed), mirroring how the Claude Code plugin cache already pins. Plugin users get the release-pinned version automatically and pick up new versions when they update the plugin. If a reconnect ever fails with `-32000`, see [Troubleshooting → MCP Server Issues](../troubleshooting.md#mcp-server-issues). The examples below show `2.9.0` as a representative version — substitute your own (`sequant --version`).
 
