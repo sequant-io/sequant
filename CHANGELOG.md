@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`/release` recounts the "At a Glance" table and explains publish lag.** Step 4.6 now carries the exact commands for each count (the table had drifted to 57 test files against 343), and Step 9 says a publish npm answered with `202` can take minutes to appear, how to read `~/.npm/_logs` for the real `argv`, tag and `PUT` status, and how to poll the registry directly.
 - **A bare `npm publish` now lands on the `next` dist-tag (#1184).** `package.json` sets `publishConfig.tag: next`, so `latest` moves only through the deliberate `/release --soaked` promotion. A bare publish moved `latest` straight past the soak on both 2.17.0 and 2.18.0. An explicit `--tag` (e.g. `--tag beta`) still wins. Gate-tested by running the real `npm publish` against a local registry.
 
+### Fixed
+
+- **`/upstream` files a finding issue only when the change touches something sequant uses (#1186).** Breaking changes still always get an issue. Other actionable findings now need a case-sensitive mention of a tool, hook event, dependency-map key or documented `claude` command (`claude plugin install`/`update`/`eval`), or an affected path that exists in the repo. Everything else is listed in the assessment issue only, so a lowercase "task" or "read" in a release note no longer files an issue. The dependency map drops the generic `permission`/`hook`/`MCP` keys and paths that no longer exist, maps `PreToolUse`, `PostToolUse` and `SessionEnd` to the shipped hook scripts, and OpenTelemetry joins `outOfScope`.
+
 ## [2.18.0] - 2026-09-26
 
 ### Added
