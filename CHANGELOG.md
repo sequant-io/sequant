@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Native engineering rubrics as skill references (#1135).** `/qa` §2 points to `qa/references/review-dimensions.md` for the security and performance items §2e does not pattern-match (XSS, CSRF, command injection, authn/authz, insecure deserialization, path traversal, SSRF; allocations, hot-path complexity, missing indexes, unbounded queries/loops, non-timer resource leaks). `/improve` ranks candidates with `improve/references/tech-debt-scoring.md`, scored `(Impact + Risk) × (6 − Effort)`. `/testgen` consults `testgen/references/testing-pyramid.md` when the spec names no test level. `docs/adr/` adds an ADR convention, and `/spec` asks for an ADR in the exec PR when the plan chooses between designs. Plain markdown, portable to every driver; `qa/SKILL.md` and `exec/SKILL.md` did not grow.
+
 ### Changed
 
+- **`TodoWrite` is gone from the exec, fullsolve, loop and test skills (#1135).** Under the `sonnet`/`opus` pins, which resolve to Sonnet 5 and Opus 5.5, Claude Code no longer offers the tool, and `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` adds `TaskCreate`/`TaskUpdate` instead, not `TodoWrite`. `/test`'s plan is now a markdown checklist.
 - **`/release` recounts the "At a Glance" table and explains publish lag.** Step 4.6 now carries the exact commands for each count (the table had drifted to 57 test files against 343), and Step 9 says a publish npm answered with `202` can take minutes to appear, how to read `~/.npm/_logs` for the real `argv`, tag and `PUT` status, and how to poll the registry directly.
 - **A bare `npm publish` now lands on the `next` dist-tag (#1184).** `package.json` sets `publishConfig.tag: next`, so `latest` moves only through the deliberate `/release --soaked` promotion. A bare publish moved `latest` straight past the soak on both 2.17.0 and 2.18.0. An explicit `--tag` (e.g. `--tag beta`) still wins. Gate-tested by running the real `npm publish` against a local registry.
 
