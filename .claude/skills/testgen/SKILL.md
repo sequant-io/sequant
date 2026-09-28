@@ -197,6 +197,8 @@ For each AC, extract:
 - **Integration points**
 - **Assumptions to validate**
 
+**When the spec's verification section names no test level** for an AC (no **Verification Method**, or one that does not say Unit, Integration, Browser, or Manual), consult [testing-pyramid.md](references/testing-pyramid.md) to choose the level from the component type, and note in the stub header that the level was inferred. A level the spec does name always wins.
+
 ### Step 2.1: Identify Failure Scenarios from /spec
 
 Scan the `/spec` comment for failure scenarios to generate additional test stubs:
