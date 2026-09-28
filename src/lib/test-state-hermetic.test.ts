@@ -24,6 +24,11 @@ import * as path from "path";
 const REPO_ROOT = path.resolve(__dirname, "../..");
 const STATE_DIR = path.join(REPO_ROOT, ".sequant");
 const STATE_FILE = path.join(STATE_DIR, "state.json");
+// Crash-recovery copy of the developer's real state: `finally` never runs
+// when the process is killed mid-test (SIGKILL, the bg-pty group kill), so
+// the original is written here before the sentinel goes in, and the next run
+// restores it before doing anything else.
+const BACKUP_FILE = path.join(STATE_DIR, "state.json.hermetic-gate-backup");
 
 const FILES_UNDER_TEST = [
   "src/mcp/server.test.ts",
@@ -61,6 +66,11 @@ function childEnv(): NodeJS.ProcessEnv {
 
 describe("#1164 AC-1: MCP tests leave the checkout's state.json untouched", () => {
   it("running the three sequant_status test files keeps .sequant/state.json byte-identical", () => {
+    if (fs.existsSync(BACKUP_FILE)) {
+      // A previous run died between seeding and restoring.
+      fs.copyFileSync(BACKUP_FILE, STATE_FILE);
+      fs.rmSync(BACKUP_FILE);
+    }
     const hadDir = fs.existsSync(STATE_DIR);
     const original = fs.existsSync(STATE_FILE)
       ? fs.readFileSync(STATE_FILE)
@@ -88,6 +98,7 @@ describe("#1164 AC-1: MCP tests leave the checkout's state.json untouched", () =
 
     try {
       fs.mkdirSync(STATE_DIR, { recursive: true });
+      if (original !== null) fs.writeFileSync(BACKUP_FILE, original);
       fs.writeFileSync(STATE_FILE, SENTINEL);
       const before = sha256(fs.readFileSync(STATE_FILE));
 
@@ -131,6 +142,7 @@ describe("#1164 AC-1: MCP tests leave the checkout's state.json untouched", () =
           }
         }
       }
+      fs.rmSync(BACKUP_FILE, { force: true });
       fs.rmSync(configDir, { recursive: true, force: true });
     }
   }, 300_000);
