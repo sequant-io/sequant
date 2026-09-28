@@ -184,8 +184,14 @@ export async function updateCommand(options: UpdateOptions): Promise<void> {
   const mcpPin = syncSequantMcpPin(process.cwd(), { dryRun: options.dryRun });
   if (mcpPin.updated) {
     const verb = options.dryRun ? "Would update" : "Updated";
+    // #1089: a migration can keep the same pin (legacy npx shape, or a stale
+    // inline launcher source), so name it — `from → to` alone reads as a no-op.
+    const migrated =
+      mcpPin.reason === "migrated" ? " (migrated to the inline launcher)" : "";
     console.log(
-      chalk.blue(`${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}`),
+      chalk.blue(
+        `${verb} .mcp.json MCP pin: ${mcpPin.from} → ${mcpPin.to}${migrated}`,
+      ),
     );
   }
 

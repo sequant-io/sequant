@@ -20,6 +20,7 @@ import {
   getSequantPackageSpec,
   addSequantToMcpConfig,
 } from "../../src/lib/mcp-config.js";
+import { MCP_LAUNCHER_INLINE_SOURCE } from "../../src/lib/mcp-launch-inline.generated.js";
 
 // Check if MCP SDK is available — integration tests need the serve command to work (#396)
 const mcpSdkAvailable = await import("@modelcontextprotocol/sdk/server/mcp.js")
@@ -266,9 +267,14 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
     it("should generate valid sequant MCP config entry", () => {
       const config = getSequantMcpConfig();
 
-      expect(config.command).toBe("npx");
-      // Pinned to the installed version, not @latest (#793).
-      expect(config.args).toEqual(["-y", getSequantPackageSpec(), "serve"]);
+      // Inline launcher, not a bare npx from the project dir (#1089);
+      // pinned to the installed version, not @latest (#793).
+      expect(config.command).toBe("node");
+      expect(config.args).toEqual([
+        "-e",
+        MCP_LAUNCHER_INLINE_SOURCE,
+        getSequantPackageSpec(),
+      ]);
     });
 
     it("should add sequant config to an existing MCP config file", () => {
@@ -284,7 +290,7 @@ describe.skipIf(!mcpSdkAvailable)("MCP Server — Integration", () => {
       // Verify the config was written correctly
       const written = JSON.parse(fs.readFileSync(configPath, "utf-8"));
       expect(written.mcpServers.sequant).toBeDefined();
-      expect(written.mcpServers.sequant.command).toBe("npx");
+      expect(written.mcpServers.sequant.command).toBe("node");
 
       // Adding again should return false (already configured)
       const addedAgain = addSequantToMcpConfig(configPath);

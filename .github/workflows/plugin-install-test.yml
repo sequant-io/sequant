@@ -101,19 +101,26 @@ jobs:
               console.error('Missing sequant server entry');
               process.exit(1);
             }
-            if (server.command !== 'npx') {
-              console.error('MCP server must use npx command, got:', server.command);
+            // #1089: the inline node -e launcher (the #1084 shape), never a bare
+            // npx run from the project dir, where a local sequant shadows the pin.
+            const args = server.args || [];
+            if (server.command !== 'node' || args.length !== 3 || args[0] !== '-e') {
+              console.error('MCP server must be the inline launcher (node -e <source> <spec>), got:', server.command, args.length, 'args');
               process.exit(1);
             }
-            if (!server.args || !server.args.includes('serve')) {
-              console.error('MCP server args must include serve');
+            if (typeof args[1] !== 'string' || !args[1].includes('mcp-launch')) {
+              console.error('MCP server args[1] must be the inline launcher source');
+              process.exit(1);
+            }
+            if (typeof args[2] !== 'string' || !args[2].startsWith('sequant@')) {
+              console.error('MCP server args[2] must be the sequant package spec, got:', args[2]);
               process.exit(1);
             }
             if (server.cwd) {
               console.error('MCP server must NOT have hardcoded cwd');
               process.exit(1);
             }
-            console.log('MCP config: command=%s args=%s', server.command, JSON.stringify(server.args));
+            console.log('MCP config: command=%s launcher=%d chars spec=%s', server.command, args[1].length, args[2]);
           "
           echo "MCP server config validated!"
 
