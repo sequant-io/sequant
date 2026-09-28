@@ -126,8 +126,8 @@ export interface AgentPhaseResult {
   /**
    * Per-model usage totals from the SDK result (#975). Keys are concrete model
    * IDs (e.g. `"claude-sonnet-5"`); first key is the resolved model string used
-   * for this phase. Only set by SDK-based drivers (claude-code); undefined for
-   * subprocess drivers (aider).
+   * for this phase. Set by claude-code (SDK), codex (`turn.completed.usage`)
+   * and opencode (`step_finish.part.tokens`, #1115); undefined for aider.
    */
   modelUsage?: Record<string, ModelUsageEntry>;
 }
