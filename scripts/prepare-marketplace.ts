@@ -19,6 +19,7 @@ import {
 } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { generateInlineLauncherSource } from "./generate-mcp-launch-inline.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -79,9 +80,8 @@ function readSequantPin(mcpJsonPath: string): string | undefined {
   const sequant = servers?.sequant as { args?: unknown } | undefined;
   const args = sequant?.args;
   return Array.isArray(args)
-    ? (args.find(
-        (a) => typeof a === "string" && a.startsWith("sequant@"),
-      ) as string | undefined)
+    ? (args.find((a) => typeof a === "string" && a.startsWith("sequant@")) as
+        string | undefined)
     : undefined;
 }
 
@@ -284,9 +284,23 @@ function validate(): void {
     if (!sequantServer) {
       console.error("  ❌ .mcp.json missing sequant server entry");
       errors++;
-    } else if (sequantServer.command !== "npx") {
+    } else if (
+      sequantServer.command !== "node" ||
+      !Array.isArray(args) ||
+      args.length !== 3 ||
+      args[0] !== "-e" ||
+      args[2] !== pin
+    ) {
+      // #1089 D-4: the inline launcher shape, not a bare `npx` — npx resolves
+      // `sequant` from the open project first, so a stale local copy
+      // shadows the pin (#1084). The pin must be the launcher's argument.
       console.error(
-        '  ❌ .mcp.json must use "npx" command (not hardcoded paths)',
+        '  ❌ .mcp.json must use the inline launcher: "node" with ["-e", <launcher source>, <pin>]',
+      );
+      errors++;
+    } else if (args[1] !== generateInlineLauncherSource()) {
+      console.error(
+        "  ❌ .mcp.json inline launcher source drifted from scripts/mcp-launch.mjs (run `npm run mcp-launch:inline`)",
       );
       errors++;
     } else if (!pin || pin === "sequant@latest") {

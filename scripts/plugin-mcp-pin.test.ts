@@ -138,3 +138,31 @@ describe("#1084 AC-2: shipped .mcp.json launches an inline node -e launcher, no 
     },
   );
 });
+
+describe("#1089 AC-3: generated launcher module and templates/mcp.json match mcp-launch.mjs", () => {
+  it("src/lib/mcp-launch-inline.generated.ts and templates/mcp.json args[1] equal generateInlineLauncherSource()", async () => {
+    const { generateInlineLauncherSource } =
+      await import("./generate-mcp-launch-inline.mjs");
+    const { MCP_LAUNCHER_INLINE_SOURCE } =
+      await import("../src/lib/mcp-launch-inline.generated.js");
+    const expected = generateInlineLauncherSource();
+
+    expect(MCP_LAUNCHER_INLINE_SOURCE).toBe(expected);
+
+    const template = JSON.parse(
+      readFileSync(join(PROJECT_ROOT, "templates", "mcp.json"), "utf8"),
+    ) as { sequant?: { command?: string; args?: unknown[] } };
+    expect(template.sequant?.command).toBe("node");
+    expect(template.sequant?.args?.[0]).toBe("-e");
+    expect(template.sequant?.args?.[1]).toBe(expected);
+    // The template stays portable; prepare-marketplace stamps the dist copy.
+    expect(template.sequant?.args?.[2]).toBe("sequant@latest");
+    expect(template.sequant?.args).toHaveLength(3);
+  });
+
+  it("the inline source never contains the token the release stamp rewrites", async () => {
+    const { generateInlineLauncherSource } =
+      await import("./generate-mcp-launch-inline.mjs");
+    expect(generateInlineLauncherSource()).not.toContain("sequant@");
+  });
+});

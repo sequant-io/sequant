@@ -11,6 +11,7 @@ import * as path from "path";
 import { writeFileSync } from "./fs.js";
 import { getVersion } from "./version.js";
 import { getMcpServersConfig, type McpServerConfig } from "./system.js";
+import { MCP_LAUNCHER_INLINE_SOURCE } from "./mcp-launch-inline.generated.js";
 
 /** Path to the project-level MCP config file used by Claude Code */
 export const PROJECT_MCP_JSON = ".mcp.json";
@@ -56,6 +57,14 @@ const CLIENTS_NEEDING_CWD: ReadonlySet<McpClientType> = new Set([
 /**
  * Sequant MCP server configuration entry.
  *
+ * Launches through the inline `node -e` launcher (#1089, the same shape as
+ * the plugin's own `.mcp.json` from #1084) rather than a bare `npx`: npx
+ * resolves `sequant` from the project in its cwd first, so a stale `sequant`
+ * devDependency in the open project silently shadowed the pinned version and
+ * killed the MCP handshake. The launcher spawns npx from a throwaway temp dir
+ * and hands the project over through `SEQUANT_PROJECT_DIR` (its own
+ * `process.cwd()`), so the cwd/env handling below is unchanged.
+ *
  * @param options.projectDir - Absolute project path (used as cwd for clients that need it)
  * @param options.clientType - Target client; determines whether cwd/env are included
  */
@@ -64,8 +73,8 @@ export function getSequantMcpConfig(options?: {
   clientType?: McpClientType;
 }): Record<string, unknown> {
   const config: Record<string, unknown> = {
-    command: "npx",
-    args: ["-y", getSequantPackageSpec(), "serve"],
+    command: "node",
+    args: ["-e", MCP_LAUNCHER_INLINE_SOURCE, getSequantPackageSpec()],
   };
 
   // Add cwd for clients that don't run from the project directory
@@ -364,8 +373,13 @@ export function createProjectMcpJson(
 
 export interface SyncMcpPinResult {
   updated: boolean;
-  /** Why no rewrite happened, when updated === false. */
-  reason?: "no-file" | "no-entry" | "no-pin" | "already-current";
+  /**
+   * Why no rewrite happened, when updated === false — or, when updated ===
+   * true, `migrated` (#1089): the entry was rewritten to the current inline
+   * `node -e` launcher (a legacy `npx -y <pin> serve` entry, or an inline
+   * entry whose launcher source is stale), not merely re-pinned.
+   */
+  reason?: "no-file" | "no-entry" | "no-pin" | "already-current" | "migrated";
   /** Previous package spec, when updated === true (e.g. "sequant@latest"). */
   from?: string;
   /** New package spec, when updated === true (e.g. "sequant@2.9.0"). */
@@ -416,6 +430,13 @@ export function readProjectMcpPin(projectDir?: string): string | undefined {
  * MCP server tracks the release the user just updated to. It only rewrites the
  * `sequant@<version>` token inside `args` and leaves everything else untouched.
  *
+ * Shape migration (#1089, reason `migrated`): exactly the legacy generated
+ * shape (`npx` with `["-y", <pin>, "serve"]`) is rewritten to the inline
+ * `node -e` launcher that {@link getSequantMcpConfig} now emits, and an
+ * inline entry whose launcher source drifted from the current one is
+ * refreshed. Every other pinned shape keeps the pin-only rewrite; sibling
+ * keys on the entry are preserved.
+ *
  * No-ops (returns `updated: false`) when:
  * - `.mcp.json` doesn't exist (`no-file`) — we never create it here; that's init's job
  * - there's no sequant server entry (`no-entry`)
@@ -444,7 +465,8 @@ export function syncSequantMcpPin(
   }
 
   const servers = config?.mcpServers as Record<string, unknown> | undefined;
-  const sequant = servers?.sequant as { args?: unknown } | undefined;
+  const sequant = servers?.sequant as
+    { command?: unknown; args?: unknown } | undefined;
   if (!sequant) {
     return { updated: false, reason: "no-entry" };
   }
@@ -463,6 +485,30 @@ export function syncSequantMcpPin(
 
   const from = args[pinIndex] as string;
   const to = getSequantPackageSpec();
+
+  const isLegacyNpx =
+    sequant.command === "npx" &&
+    args.length === 3 &&
+    args[0] === "-y" &&
+    pinIndex === 1 &&
+    args[2] === "serve";
+  const isStaleInline =
+    sequant.command === "node" &&
+    args.length === 3 &&
+    args[0] === "-e" &&
+    typeof args[1] === "string" &&
+    pinIndex === 2 &&
+    args[1] !== MCP_LAUNCHER_INLINE_SOURCE;
+
+  if (isLegacyNpx || isStaleInline) {
+    if (!opts?.dryRun) {
+      sequant.command = "node";
+      sequant.args = ["-e", MCP_LAUNCHER_INLINE_SOURCE, to];
+      writeFileSync(mcpJsonPath, JSON.stringify(config, null, 2) + "\n");
+    }
+    return { updated: true, reason: "migrated", from, to };
+  }
+
   if (from === to) {
     return { updated: false, reason: "already-current" };
   }
