@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **opencode phases now report token usage (#1115).** The driver sums each `step_finish` event's `tokens` into `modelUsage`, so `sequant stats` and the token metrics count opencode runs instead of recording 0. Reasoning tokens count as output and cache reads/writes map to the cache counters, the same way claude-code reports them; a run with no pinned model is keyed `opencode-default`. aider usage and typed opencode quota errors still need a real captured run and stay open on #1115.
 - **`/upstream` files a finding issue only when the change touches something sequant uses (#1186).** Breaking changes still always get an issue. Other actionable findings now need a case-sensitive mention of a tool, hook event, dependency-map key or documented `claude` command (`claude plugin install`/`update`/`eval`), or an affected path that exists in the repo. Everything else is listed in the assessment issue only, so a lowercase "task" or "read" in a release note no longer files an issue. The dependency map drops the generic `permission`/`hook`/`MCP` keys and paths that no longer exist, maps `PreToolUse`, `PostToolUse` and `SessionEnd` to the shipped hook scripts, and OpenTelemetry joins `outOfScope`.
 
 ## [2.18.0] - 2026-09-26

@@ -27,7 +27,9 @@ import {
   buildOpencodeConfigContent,
   evaluateOpencodeRun,
   findShimIn,
+  OPENCODE_DEFAULT_MODEL_KEY,
   SHIM_LOADED_SENTINEL,
+  toOpencodeModelUsage,
   type OpencodeParsedStream,
 } from "./opencode.js";
 import { RateLimitError, SequantError } from "../../errors.js";
@@ -246,6 +248,7 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
     expect(result.parseFailures).toBe(0);
     expect(result.sessionId).toBe(single.sessionId);
     expect(result.costUsd).toBeCloseTo(single.costUsd, 10);
+    expect(result.tokens).toEqual(single.tokens);
   });
 
   it("862 AC-1 maps a synthetic error event to a structured failure", () => {
@@ -319,6 +322,124 @@ describe("862 OpencodeDriver — parser against the recorded fixture (AC-1)", ()
       token: "ses_f85b1aea3ffenqNLD1eXrjMF34",
       originCwd: SHIM_CWD,
     });
+  });
+});
+
+describe("1115 AC-1 — modelUsage from step_finish tokens", () => {
+  /** Raw `step_finish.part.tokens` objects, read straight off the fixture. */
+  function fixtureStepTokens() {
+    return readFixture()
+      .split("\n")
+      .filter((line) => line.includes('"step_finish"'))
+      .map(
+        (line) =>
+          (
+            JSON.parse(line) as {
+              part: {
+                tokens: {
+                  total: number;
+                  input: number;
+                  output: number;
+                  reasoning: number;
+                  cache: { read: number; write: number };
+                };
+              };
+            }
+          ).part.tokens,
+      );
+  }
+
+  it("1115 AC-1 sums every step's tokens from the recorded run", () => {
+    const steps = fixtureStepTokens();
+    expect(steps.length).toBe(29);
+
+    const parsed = parse(readFixture(), "qa");
+    expect(parsed.tokens).toEqual({
+      input: 58,
+      output: 7298,
+      reasoning: 13110,
+      cacheRead: 2875327,
+      cacheWrite: 136216,
+      total: 3032009,
+    });
+  });
+
+  it("1115 AC-1 opencode's per-step total is the sum of its five counters (the mapping's premise)", () => {
+    // If a future opencode folds reasoning into `output` or cache into
+    // `input`, this fails and toOpencodeModelUsage double-counts.
+    for (const t of fixtureStepTokens()) {
+      expect(t.total).toBe(
+        t.input + t.output + t.reasoning + t.cache.read + t.cache.write,
+      );
+    }
+  });
+
+  it("1115 AC-1 maps onto the SDK modelUsage shape, reasoning folded into output", () => {
+    const parsed = parse(readFixture(), "qa");
+    const usage = toOpencodeModelUsage(parsed);
+    const entry = usage?.[OPENCODE_DEFAULT_MODEL_KEY];
+
+    expect(Object.keys(usage ?? {})).toEqual([OPENCODE_DEFAULT_MODEL_KEY]);
+    expect(entry).toMatchObject({
+      inputTokens: 58,
+      outputTokens: 7298 + 13110,
+      cacheReadInputTokens: 2875327,
+      cacheCreationInputTokens: 136216,
+    });
+    expect(entry?.costUSD).toBeCloseTo(parsed.costUsd, 10);
+    // Nothing lost or double-counted against opencode's own total.
+    expect(
+      (entry?.inputTokens ?? 0) +
+        (entry?.outputTokens ?? 0) +
+        (entry?.cacheReadInputTokens ?? 0) +
+        (entry?.cacheCreationInputTokens ?? 0),
+    ).toBe(parsed.tokens?.total);
+  });
+
+  it("1115 AC-1 reports no modelUsage when no step carried tokens", () => {
+    // The fixture's first line is its opening `step_start` — no step closed.
+    const parsed = parse(readFixture().split("\n")[0], "qa");
+    expect(parsed.tokens).toBeUndefined();
+    expect(toOpencodeModelUsage(parsed)).toBeUndefined();
+    expect(evaluateOpencodeRun(parsed, outcome()).modelUsage).toBeUndefined();
+  });
+
+  it("1115 AC-1 executePhase returns non-zero input/output tokens for the completed run", async () => {
+    const proc = createMockProcess({ stdout: [readFixture()] });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver().executePhase(
+      "/qa 1115",
+      baseConfig(),
+    );
+
+    expect(result.success).toBe(true);
+    const entry = result.modelUsage?.[OPENCODE_DEFAULT_MODEL_KEY];
+    expect(entry?.inputTokens).toBeGreaterThan(0);
+    expect(entry?.outputTokens).toBeGreaterThan(0);
+  });
+
+  it("1115 AC-1 keys modelUsage by the pinned model when one is set", async () => {
+    const proc = createMockProcess({ stdout: [readFixture()] });
+    mockSpawn.mockReturnValue(proc as never);
+
+    const result = await new OpencodeDriver({
+      model: "openrouter/anthropic/claude-sonnet-5",
+    }).executePhase("/qa 1115", baseConfig());
+
+    expect(Object.keys(result.modelUsage ?? {})).toEqual([
+      "openrouter/anthropic/claude-sonnet-5",
+    ]);
+  });
+
+  it("1115 AC-1 a failed run still reports the tokens it spent", () => {
+    const parsed = parse(readFixture(), "qa");
+    const result = evaluateOpencodeRun(parsed, outcome({ exitCode: 1 }));
+
+    expect(result.success).toBe(false);
+    expect(result.modelUsage?.[OPENCODE_DEFAULT_MODEL_KEY]?.inputTokens).toBe(
+      58,
+    );
   });
 });
 
@@ -845,7 +966,9 @@ describe("996 AC-3 — fan-out disposition is documented on the driver", () => {
     // The honest disposition is "no branch exists"; asserting it keeps a later
     // edit from upgrading the prose to a guarantee the code does not make.
     const doc = headerDoc();
-    expect(doc).toMatch(/no implemented "sequential fallback"|arrived\s*\n?\s*\*?\s*at by absence/i);
+    expect(doc).toMatch(
+      /no implemented "sequential fallback"|arrived\s*\n?\s*\*?\s*at by absence/i,
+    );
     expect(/\bbranches on the active driver\b/.test(doc)).toBe(true);
   });
 });

@@ -21,6 +21,11 @@
  *    at all — so a run that exits 0 without a terminal `reason: "stop"` is a
  *    failure, not a success.
  *
+ * Token usage (#1115) rides on the same event: every `step_finish` carries
+ * `part.tokens` (`input`, `output`, `reasoning`, `cache.read`, `cache.write`,
+ * `total`), per step like `cost`, so it is summed. The stream never names the
+ * model that produced it — see {@link toOpencodeModelUsage} for the mapping.
+ *
  * ## Sub-agent fan-out: unverified, degrades to sequential (#996 AC-3)
  *
  * `init --agent opencode` writes three `mode: subagent` definitions to
@@ -62,6 +67,7 @@ import type {
   AgentDriver,
   AgentExecutionConfig,
   AgentPhaseResult,
+  ModelUsageEntry,
   ResumeHandle,
 } from "./agent-driver.js";
 import type { OpencodeSettings } from "../../settings.js";
@@ -80,6 +86,17 @@ const TAIL_LINES = 50;
  * line is 100 KB; 50 of those would pin 5 MB in memory for a diagnostic tail.
  */
 const TAIL_LINE_CHARS = 2000;
+
+/**
+ * `modelUsage` key when no model was pinned (#1115).
+ *
+ * opencode's NDJSON stream names no model anywhere (the recorded fixture has
+ * no model field on any event), so an unpinned run cannot know which model
+ * answered. Mirrors codex's `codex-default`: a placeholder keeps the counters
+ * attributable to this driver rather than merging into another backend's
+ * totals in `sequant stats`.
+ */
+export const OPENCODE_DEFAULT_MODEL_KEY = "opencode-default";
 
 /** Distinct failure codes this driver can report (#862 AC-4). */
 export const OPENCODE_ERROR_CODES = {
@@ -123,6 +140,13 @@ interface OpencodeEvent {
     text?: string;
     tool?: string;
     cost?: number;
+    tokens?: {
+      total?: number;
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: { read?: number; write?: number };
+    };
     reason?: string;
     state?: {
       input?: { filePath?: string };
@@ -138,6 +162,17 @@ interface OpencodeEvent {
   };
   error?: unknown;
   message?: string;
+}
+
+/** Summed `step_finish.part.tokens` counters (#1115). */
+export interface OpencodeTokenTotals {
+  input: number;
+  output: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  /** opencode's own per-step `total`, summed — the sum of the five above. */
+  total: number;
 }
 
 /** Everything the parser extracts from a run's NDJSON stream. */
@@ -159,6 +194,12 @@ export interface OpencodeParsedStream {
   skillFollowUpReads: number;
   /** Summed `step_finish.part.cost` (per step, so it must be summed). */
   costUsd: number;
+  /**
+   * Summed `step_finish.part.tokens`, raw opencode field names (#1115). Per
+   * step like `cost`, so summed. Undefined when no `step_finish` carried a
+   * `tokens` object — "no usage signal", not "zero tokens".
+   */
+  tokens?: OpencodeTokenTotals;
   /** True once a `step_finish` reported `reason: "stop"`. */
   sawTerminalStop: boolean;
   /** Messages from `error` events. */
@@ -241,6 +282,7 @@ export class OpencodeStreamParser {
 
       case "step_finish":
         if (typeof part?.cost === "number") this.state.costUsd += part.cost;
+        if (part?.tokens) this.addTokens(part.tokens);
         if (part?.reason === "stop") this.state.sawTerminalStop = true;
         break;
 
@@ -255,6 +297,25 @@ export class OpencodeStreamParser {
       default:
         break;
     }
+  }
+
+  private addTokens(
+    t: NonNullable<NonNullable<OpencodeEvent["part"]>["tokens"]>,
+  ) {
+    const acc = (this.state.tokens ??= {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    });
+    acc.input += num(t.input);
+    acc.output += num(t.output);
+    acc.reasoning += num(t.reasoning);
+    acc.cacheRead += num(t.cache?.read);
+    acc.cacheWrite += num(t.cache?.write);
+    acc.total += num(t.total);
   }
 
   private consumeToolUse(part: OpencodeEvent["part"]): void {
@@ -282,6 +343,58 @@ export class OpencodeStreamParser {
   }
 }
 
+/** A finite number, or 0 — opencode omits nothing today, but be defensive. */
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * Map opencode's summed token counters onto the SDK-shaped `modelUsage` map
+ * that `normalizeModelUsage` (#986), `sequant stats` and the token metrics
+ * consume (#1115).
+ *
+ * The mapping follows how the claude-code driver's `modelUsage` counts, as
+ * recorded in `__fixtures__/sdk-result-modelusage-986.json`:
+ *
+ * - **Cache is disjoint from input on both sides.** The SDK reports
+ *   `inputTokens: 326` beside `cacheReadInputTokens: 2000172` — uncached input
+ *   only. opencode reports `input: 2` beside `cache.read: 14016` on the same
+ *   footing. So `input → inputTokens`, `cache.read → cacheReadInputTokens`,
+ *   `cache.write → cacheCreationInputTokens`, with no subtraction.
+ * - **Reasoning folds into output.** The SDK map has no reasoning counter;
+ *   extended-thinking tokens are billed and reported as output. opencode
+ *   splits them out — on every one of the fixture's 29 steps,
+ *   `total == input + output + reasoning + cache.read + cache.write`, so
+ *   `output` excludes reasoning — hence `outputTokens = output + reasoning`.
+ *   Dropping reasoning would under-count this fixture's output by ~64%.
+ *
+ * Together these preserve opencode's own `total` exactly across the four
+ * counters. `costUSD` is opencode's summed per-step `cost`, the same kind of
+ * client-side estimate the SDK's `costUSD` is.
+ *
+ * @param model - The pinned `provider/model`, or undefined for the
+ *   {@link OPENCODE_DEFAULT_MODEL_KEY} placeholder.
+ * @returns undefined when the stream carried no token signal.
+ *
+ * @internal Exported for testing.
+ */
+export function toOpencodeModelUsage(
+  parsed: Pick<OpencodeParsedStream, "tokens" | "costUsd">,
+  model?: string,
+): Record<string, ModelUsageEntry> | undefined {
+  const t = parsed.tokens;
+  if (!t) return undefined;
+  return {
+    [model ?? OPENCODE_DEFAULT_MODEL_KEY]: {
+      inputTokens: t.input,
+      outputTokens: t.output + t.reasoning,
+      cacheReadInputTokens: t.cacheRead,
+      cacheCreationInputTokens: t.cacheWrite,
+      costUSD: parsed.costUsd,
+    },
+  };
+}
+
 /** Process outcome the evaluator needs alongside the parsed stream. */
 export interface OpencodeRunOutcome {
   exitCode: number | null;
@@ -297,6 +410,8 @@ export interface OpencodeRunOutcome {
    * existing fixtures and non-guarded callers are unaffected.
    */
   requireShimHandshake?: boolean;
+  /** Pinned `provider/model`, used as the `modelUsage` key (#1115). */
+  model?: string;
 }
 
 /**
@@ -313,12 +428,16 @@ export function evaluateOpencodeRun(
   parsed: OpencodeParsedStream,
   outcome: OpencodeRunOutcome,
 ): AgentPhaseResult {
+  // #1115: on `base`, not just the success branch — a failed run still spent
+  // its tokens (same convention as claude-code's #986 failure path).
+  const modelUsage = toOpencodeModelUsage(parsed, outcome.model);
   const base = {
     output: parsed.output,
     stderrTail: outcome.stderrTail,
     stdoutTail: outcome.stdoutTail,
     exitCode: outcome.exitCode ?? undefined,
     ...(parsed.sessionId ? { sessionId: parsed.sessionId } : {}),
+    ...(modelUsage ? { modelUsage } : {}),
   };
 
   const fail = (error: string, structuredError?: SequantError) => ({
@@ -635,6 +754,7 @@ export class OpencodeDriver implements AgentDriver {
           stderrTail: stderrBuffer.getLines(),
           stdoutTail: stdoutBuffer.getLines(),
           requireShimHandshake: true,
+          model: this.settings?.model,
         });
         finish(
           parsed.sessionId
