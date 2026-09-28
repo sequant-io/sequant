@@ -117,6 +117,18 @@ npm pack --dry-run 2>&1 | tail -20
 gh auth status || { echo "Not logged in - run: gh auth login"; exit 1; }
 ```
 
+### Plugin Checks
+
+```bash
+# 11. Plugin manifest is valid (#1135). Name each manifest explicitly:
+#     `claude plugin validate .` checks only marketplace.json and skips plugin.json.
+#     Warnings pass (non-strict); errors, or no `claude` on PATH, stop the release.
+claude plugin validate .claude-plugin/plugin.json || { echo "Plugin manifest invalid - fix .claude-plugin/plugin.json"; exit 1; }
+
+# 12. Marketplace manifest is valid
+claude plugin validate .claude-plugin/marketplace.json || { echo "Marketplace manifest invalid - fix .claude-plugin/marketplace.json"; exit 1; }
+```
+
 ### Documentation Checks
 
 > **Note:** Documentation freshness checks that compare against the version *being released* run **after** Step 4 (the version bump), not here in pre-flight:

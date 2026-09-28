@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`/release` pre-flight validates the plugin manifests (#1135).** It runs `claude plugin validate` on `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` separately, because `claude plugin validate .` checks only the marketplace manifest, and stops the release on an error. `docs/reference/run-command.md` lists what the `opus`/`sonnet`/`haiku`/`fable` aliases resolve to as of Claude Code 2.1.283.
 - **`/release` recounts the "At a Glance" table and explains publish lag.** Step 4.6 now carries the exact commands for each count (the table had drifted to 57 test files against 343), and Step 9 says a publish npm answered with `202` can take minutes to appear, how to read `~/.npm/_logs` for the real `argv`, tag and `PUT` status, and how to poll the registry directly.
 - **A bare `npm publish` now lands on the `next` dist-tag (#1184).** `package.json` sets `publishConfig.tag: next`, so `latest` moves only through the deliberate `/release --soaked` promotion. A bare publish moved `latest` straight past the soak on both 2.17.0 and 2.18.0. An explicit `--tag` (e.g. `--tag beta`) still wins. Gate-tested by running the real `npm publish` against a local registry.
 
