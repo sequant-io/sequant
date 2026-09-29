@@ -790,6 +790,29 @@ export function buildQaVerdictComment(
         ...summary.suggestions.map((s) => `- ${s}`),
       );
     }
+    // #1194 AC-4: NEEDS_VERIFICATION is the verdict where a human must act on
+    // exactly what's unresolved — name the PENDING ACs and surface the findings
+    // the model flagged as needing a human decision, distinct from the generic
+    // gaps list above (which already unions marker + prose text for every verdict).
+    if (verdict === "NEEDS_VERIFICATION") {
+      if (summary.pendingAcIds && summary.pendingAcIds.length > 0) {
+        lines.push(
+          "",
+          "**Pending ACs:**",
+          ...summary.pendingAcIds.map((id) => `- ${id}`),
+        );
+      }
+      const pauseForHuman = (summary.findings ?? []).filter(
+        (f) => f.recommendedAction === "pause_for_human",
+      );
+      if (pauseForHuman.length > 0) {
+        lines.push(
+          "",
+          "**Needs human review:**",
+          ...pauseForHuman.map((f) => `- ${f.description}`),
+        );
+      }
+    }
   }
   lines.push(
     "",
