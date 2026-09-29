@@ -224,6 +224,12 @@ export const QaSummarySchema = z.object({
    * marker-unaware consumers never regress.
    */
   findings: z.array(GapFindingSchema).optional(),
+  /**
+   * AC ids whose status cell resolved to PENDING (#1194 AC-4). Present only
+   * when at least one row parsed to PENDING, so `buildQaVerdictComment` can
+   * list them under a `NEEDS_VERIFICATION` verdict.
+   */
+  pendingAcIds: z.array(z.string()).optional(),
 });
 
 export type QaSummary = z.infer<typeof QaSummarySchema>;
