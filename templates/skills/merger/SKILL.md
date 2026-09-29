@@ -223,6 +223,68 @@ Validation checklist:
 - [ ] Changes have been committed
 - [ ] No uncommitted work
 
+### Step 1a: Closing-Reference Guard (#1197)
+
+Before merging, check which issues the PR will actually close on merge —
+GitHub parses closing keywords anywhere in the body, so this can diverge from
+what the PR is *supposed* to close (a tracker issue mentioned in an AC table,
+or a multi-PR issue where only the last PR should close it):
+
+```bash
+# `gh pr view --json closingIssuesReferences` is not a recognized field on
+# gh CLI ≤ 2.66 ("Unknown JSON field") — the REST PR payload doesn't carry
+# it either. Query the GraphQL field directly; `{owner}`/`{repo}` resolve
+# from the current repo the same way they do in REST `gh api` calls.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){closingIssuesReferences(first:10){nodes{number}}}
+    }
+  }' -F owner='{owner}' -F repo='{repo}' -F pr=<PR_NUMBER> \
+  --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
+```
+
+Work out which issues this PR is allowed to close. In refs mode, or when the
+issue carries the no-autoclose label, the answer is **none**: the PR's own
+issue must not close either.
+
+```bash
+# settings.json is JSONC (`sequant init` writes whole-line // comments), so
+# strip those before jq. Only whole-line comments: values such as devUrl
+# contain "//".
+settings_json='{}'
+if [ -f .sequant/settings.json ]; then
+  settings_json=$(sed -E 's#^[[:space:]]*//.*$##' .sequant/settings.json)
+fi
+if link=$(printf '%s' "$settings_json" | jq -er '.run.prIssueLink // "closes"') &&
+   no_close_label=$(printf '%s' "$settings_json" | jq -er '.run.prNoCloseLabel // "no-autoclose"'); then
+  labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
+  if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
+    expected=""                 # nothing may close
+  else
+    expected="<issue-number>"   # only the PR's own issue
+  fi
+else
+  # Fail closed: an unreadable settings file must not quietly mean "closes".
+  echo "⚠️ Could not parse .sequant/settings.json; treating every closing reference as unexpected." >&2
+  expected=""
+fi
+```
+
+**Stop and report, naming the issue,** if the list contains any number not in
+`$expected`. In refs/label mode that includes `<issue-number>` itself; that
+is the case this guard exists for:
+
+```text
+❌ PR #<PR_NUMBER> closes #<unexpected-number> on merge.
+   Allowed to close here: #<issue-number> (or nothing, in refs/no-autoclose mode).
+   Edit the PR body to change that reference to "Refs #<unexpected-number>"
+   before merging.
+```
+
+A list that contains only numbers in `$expected` (or an empty list) is fine,
+so proceed to Step 2.
+
 ### Step 2: Conflict Detection
 
 Get files changed in each worktree:

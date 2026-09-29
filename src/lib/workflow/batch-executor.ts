@@ -2338,6 +2338,10 @@ export async function runIssueWithLogging(
       // #817 AC-6: surface the ready-gate outcome in the PR body the same way
       // `sequant ready` reports it (threshold reached vs guard halt).
       readyGateResult?.report,
+      // #1197: closing-keyword mode + its label override, resolved once by
+      // buildExecutionConfig from settings.run.prIssueLink/prNoCloseLabel.
+      config.prIssueLink,
+      config.prNoCloseLabel,
     );
     if (prResult.success && prResult.prNumber && prResult.prUrl) {
       prNumber = prResult.prNumber;

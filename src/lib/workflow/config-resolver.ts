@@ -675,6 +675,11 @@ export function buildExecutionConfig(
     // `buildPhaseConfig(opts, { fullQa: true })` (AC-5) — this resolver only
     // sets the base value `sequant run` uses.
     fullQa: mergedOptions.fullQa ?? settings.run.fullQa ?? false,
+    // #1197: settings-only, no CLI flag. Threaded straight to `createPR` via
+    // `ExecutionConfig` so the automated PR path resolves the same mode
+    // `resolvePrLinkMode` would from raw settings.
+    prIssueLink: settings.run.prIssueLink ?? "closes",
+    prNoCloseLabel: settings.run.prNoCloseLabel ?? "no-autoclose",
     // #971: CLI > settings > absent, resolved here only (AC-11). Spread
     // conditionally rather than assigned: with no ladder configured the keys
     // must be ABSENT, not `undefined`, so `ExecutionConfig` is byte-identical

@@ -7,7 +7,12 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, rmSync, writeFileSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { rebaseBeforePR, installWorktreeDeps } from "./worktree-manager.js";
+import {
+  rebaseBeforePR,
+  installWorktreeDeps,
+  buildAutomatedPRBody,
+  resolvePrLinkMode,
+} from "./worktree-manager.js";
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -203,5 +208,40 @@ describe("installWorktreeDeps skips install with no manifest (#1196 AC-1)", () =
     expect(output).not.toContain("pip install -q\n"); // never the bare no-op
 
     logSpy.mockRestore();
+  });
+});
+
+// #1197: the issue's Evidence names this file for AC-1/2/4. The fuller cases
+// live in worktree-manager.build-pr-body.test.ts.
+describe("#1197 PR issue link: closes vs refs", () => {
+  it("AC-1: prIssueLink decides the keyword, default closes", () => {
+    const closes = resolvePrLinkMode([], undefined, undefined);
+    const refs = resolvePrLinkMode([], "refs", undefined);
+    expect(buildAutomatedPRBody(1197, { linkMode: closes })).toContain(
+      "Fixes #1197",
+    );
+    const body = buildAutomatedPRBody(1197, { linkMode: refs });
+    expect(body).toContain("Refs #1197");
+    expect(body).not.toContain("Fixes #1197");
+  });
+
+  it("AC-2: the no-autoclose label forces Refs #N under prIssueLink closes", () => {
+    const mode = resolvePrLinkMode(["no-autoclose"], "closes", undefined);
+    const body = buildAutomatedPRBody(1197, { linkMode: mode });
+    expect(body).toContain("Refs #1197");
+    expect(body).not.toContain("Fixes #1197");
+  });
+
+  it("AC-4: refs mode rewrites closing verbs in tables and the owner/repo#N form", () => {
+    const body = buildAutomatedPRBody(1197, {
+      linkMode: "refs",
+      stackManifest:
+        "| AC | Note |\n|----|----|\n| Closes #1197 | row |\nFixes sequant-io/sequant#1197",
+    });
+    expect(body).not.toMatch(
+      /(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+(?:[\w.-]+\/[\w.-]+)?#1197/i,
+    );
+    expect(body).toContain("| Refs #1197 | row |");
+    expect(body).toContain("Refs sequant-io/sequant#1197");
   });
 });

@@ -804,6 +804,57 @@ not a fallback.
 
 **IMPORTANT (once the gate above has fired):** Merge the PR first, then clean up the worktree.
 
+**Closing-reference guard (#1197):** before merging, check which issues the
+PR will actually close — GitHub parses closing keywords anywhere in the body,
+not just on the trailer line, so this can diverge from what the PR is
+supposed to close:
+
+```bash
+# `gh pr view --json closingIssuesReferences` is not a recognized field on
+# gh CLI ≤ 2.66 ("Unknown JSON field") — the REST PR payload doesn't carry
+# it either. Query the GraphQL field directly; `{owner}`/`{repo}` resolve
+# from the current repo the same way they do in REST `gh api` calls.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){closingIssuesReferences(first:10){nodes{number}}}
+    }
+  }' -F owner='{owner}' -F repo='{repo}' -F pr=<N> \
+  --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
+```
+
+Work out which issues this PR is allowed to close. In refs mode, or when the
+issue carries the no-autoclose label, the answer is **none**: the PR's own
+issue must not close either.
+
+```bash
+# settings.json is JSONC (`sequant init` writes whole-line // comments), so
+# strip those before jq. Only whole-line comments: values such as devUrl
+# contain "//".
+settings_json='{}'
+if [ -f .sequant/settings.json ]; then
+  settings_json=$(sed -E 's#^[[:space:]]*//.*$##' .sequant/settings.json)
+fi
+if link=$(printf '%s' "$settings_json" | jq -er '.run.prIssueLink // "closes"') &&
+   no_close_label=$(printf '%s' "$settings_json" | jq -er '.run.prNoCloseLabel // "no-autoclose"'); then
+  labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
+  if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
+    expected=""                 # nothing may close
+  else
+    expected="<issue-number>"   # only the PR's own issue
+  fi
+else
+  # Fail closed: an unreadable settings file must not quietly mean "closes".
+  echo "⚠️ Could not parse .sequant/settings.json; treating every closing reference as unexpected." >&2
+  expected=""
+fi
+```
+
+**Stop and report, naming the issue,** if the list contains any number not in
+`$expected`. In refs/label mode that includes `<issue-number>` itself. Do not
+run `gh pr merge` until the PR body is fixed (change the unexpected reference
+to `Refs #<number>`).
+
 ```bash
 # 1. Merge PR (without --delete-branch; cleanup happens after success)
 gh pr merge <N> --squash

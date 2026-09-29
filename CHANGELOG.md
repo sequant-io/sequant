@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Opt out of a PR auto-closing its issue (#1197).** `run.prIssueLink` (default `"closes"`) controls whether `sequant run`'s automated PR path emits `Fixes #N` or `Refs #N`; an issue carrying the configurable `run.prNoCloseLabel` (default `no-autoclose`) always gets `Refs #N` regardless of the setting. In `refs` mode the PR body is scrubbed for any other `<closing verb> #N` (or `owner/repo#N`) reference to the same issue, tables included, since GitHub parses a closing keyword anywhere in the body. `/exec`'s manual PR template and `/merger`/`/fullsolve`'s pre-merge checks (query `closingIssuesReferences`, halt naming the issue) follow the same rule.
 - **Native engineering rubrics as skill references (#1135).** `/qa` §2 points to `qa/references/review-dimensions.md` for the security and performance items §2e does not pattern-match (XSS, CSRF, command injection, authn/authz, insecure deserialization, path traversal, SSRF; allocations, hot-path complexity, missing indexes, unbounded queries/loops, non-timer resource leaks). `/improve` ranks candidates with `improve/references/tech-debt-scoring.md`, scored `(Impact + Risk) × (6 − Effort)`. `/testgen` consults `testgen/references/testing-pyramid.md` when the spec names no test level. `docs/adr/` adds an ADR convention, and `/spec` asks for an ADR in the exec PR when the plan chooses between designs. Plain markdown, portable to every driver; `qa/SKILL.md` and `exec/SKILL.md` did not grow.
 
 ### Changed
