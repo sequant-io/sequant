@@ -244,19 +244,34 @@ gh api graphql -f query='
   --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
 ```
 
-Compare the result against the single issue this PR is meant to close (the
-issue number you are merging for). **Stop and report, naming the issue,** if
-the list contains any number other than that one:
+Work out which issues this PR is allowed to close. In refs mode, or when the
+issue carries the no-autoclose label, the answer is **none**: the PR's own
+issue must not close either.
+
+```bash
+link=$(jq -r '.run.prIssueLink // "closes"' .sequant/settings.json 2>/dev/null || echo closes)
+no_close_label=$(jq -r '.run.prNoCloseLabel // "no-autoclose"' .sequant/settings.json 2>/dev/null || echo no-autoclose)
+labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
+if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
+  expected=""                 # nothing may close
+else
+  expected="<issue-number>"   # only the PR's own issue
+fi
+```
+
+**Stop and report, naming the issue,** if the list contains any number not in
+`$expected`. In refs/label mode that includes `<issue-number>` itself; that
+is the case this guard exists for:
 
 ```text
-❌ PR #<PR_NUMBER> closes #<issue-number> AND #<other-number> on merge.
-   Only #<issue-number> should close here.
-   Edit the PR body to change the unexpected reference to "Refs #<other-number>"
+❌ PR #<PR_NUMBER> closes #<unexpected-number> on merge.
+   Allowed to close here: #<issue-number> (or nothing, in refs/no-autoclose mode).
+   Edit the PR body to change that reference to "Refs #<unexpected-number>"
    before merging.
 ```
 
-An empty list, or a list containing only the expected issue number, is fine —
-proceed to Step 2.
+A list that contains only numbers in `$expected` (or an empty list) is fine,
+so proceed to Step 2.
 
 ### Step 2: Conflict Detection
 

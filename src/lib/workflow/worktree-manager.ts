@@ -1663,17 +1663,21 @@ const CLOSING_KEYWORDS = "close[sd]?|fix(?:e[sd])?|resolve[sd]?";
  * surely.
  *
  * Scoped to `issueNumber` only — other issue numbers mentioned in the body
- * (e.g. a tracker reference) are left untouched.
+ * (e.g. a tracker reference) are left untouched. The repo-prefixed form
+ * (`Fixes owner/repo#N`), which GitHub also documents as closing, is
+ * rewritten with its prefix kept. Other spellings (`Fixes: #N`,
+ * `**Fixes** #N`) are not rewritten; the merge-time guard in /merger and
+ * /fullsolve catches those.
  */
 function rewriteClosingKeywordsToRefs(
   body: string,
   issueNumber: number,
 ): string {
   const pattern = new RegExp(
-    `\\b(?:${CLOSING_KEYWORDS})\\s+#${issueNumber}(?!\\d)`,
+    `\\b(?:${CLOSING_KEYWORDS})\\s+((?:[\\w.-]+\\/[\\w.-]+)?)#${issueNumber}(?!\\d)`,
     "gi",
   );
-  return body.replace(pattern, `Refs #${issueNumber}`);
+  return body.replace(pattern, `Refs $1#${issueNumber}`);
 }
 
 /**

@@ -823,9 +823,25 @@ gh api graphql -f query='
   --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
 ```
 
-**Stop and report, naming the issue,** if the list contains any number other
-than `<issue-number>` — do not run `gh pr merge` until the PR body is fixed
-(change the unexpected reference to `Refs #<other-number>`).
+Work out which issues this PR is allowed to close. In refs mode, or when the
+issue carries the no-autoclose label, the answer is **none**: the PR's own
+issue must not close either.
+
+```bash
+link=$(jq -r '.run.prIssueLink // "closes"' .sequant/settings.json 2>/dev/null || echo closes)
+no_close_label=$(jq -r '.run.prNoCloseLabel // "no-autoclose"' .sequant/settings.json 2>/dev/null || echo no-autoclose)
+labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
+if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
+  expected=""                 # nothing may close
+else
+  expected="<issue-number>"   # only the PR's own issue
+fi
+```
+
+**Stop and report, naming the issue,** if the list contains any number not in
+`$expected`. In refs/label mode that includes `<issue-number>` itself. Do not
+run `gh pr merge` until the PR body is fixed (change the unexpected reference
+to `Refs #<number>`).
 
 ```bash
 # 1. Merge PR (without --delete-branch; cleanup happens after success)
