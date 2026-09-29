@@ -26,6 +26,13 @@ const mockSpawnSync = vi.mocked(spawnSync);
 // Since listWorktrees and getWorktreeChangedFiles are exported, we can test them
 import { getResumablePhasesForIssue } from "../lib/workflow/phase-detection.js";
 
+// #1209 AC-1: runCommand's manifest-missing pre-flight (run.ts:57-59) is
+// exercised directly, so getManifest needs to be controllable per test.
+vi.mock("../lib/manifest.js", () => ({
+  getManifest: vi.fn(),
+  getPackageVersion: vi.fn(() => "1.1.0"),
+}));
+
 import {
   listWorktrees,
   getWorktreeChangedFiles,
@@ -45,9 +52,12 @@ import {
   detectDefaultBranch,
   logNonFatalWarning,
   normalizeCommanderOptions,
+  runCommand,
 } from "./run.js";
+import { getManifest } from "../lib/manifest.js";
 
 const mockGetResumablePhasesForIssue = vi.mocked(getResumablePhasesForIssue);
+const mockGetManifest = vi.mocked(getManifest);
 
 describe("run command", () => {
   beforeEach(() => {
@@ -169,6 +179,60 @@ branch refs/heads/feature/456-another-feature
       const files = getWorktreeChangedFiles("/path/to/worktree");
 
       expect(files).toHaveLength(0);
+    });
+  });
+});
+
+// #1209 AC-1: `sequant run` with no manifest currently rejects with a bare
+// "Run `sequant init` first." — it must instead print the minimal manifest
+// shape and name `sequant init --manifest-only` as the one-file fix.
+describe("runCommand manifest pre-flight (#1209 AC-1)", () => {
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let prevExitCode: typeof process.exitCode;
+
+  beforeEach(() => {
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    prevExitCode = process.exitCode;
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
+    process.exitCode = prevExitCode;
+  });
+
+  it("prints the minimal manifest JSON shape and exits non-zero when no manifest exists", async () => {
+    // Given: no `.sequant-manifest.json` in cwd
+    mockGetManifest.mockResolvedValue(null);
+
+    // When: `sequant run <issue>` is invoked
+    await runCommand(["123"], { quiet: true });
+
+    // Then: exits non-zero and prints a minimal manifest JSON shape
+    // (`version`, `stack`, `installedAt`, `files: {}`), plus either "that file
+    // alone is sufficient" or that `sequant init --manifest-only` writes it.
+    expect(process.exitCode).toBe(1);
+    const output = consoleLogSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain('"version"');
+    expect(output).toContain('"stack"');
+    expect(output).toContain('"installedAt"');
+    expect(output).toContain('"files":{}');
+    expect(output).toContain("sequant init --manifest-only");
+    expect(output.toLowerCase()).toContain("that file alone is sufficient");
+  });
+
+  // === FAILURE PATHS ===
+  describe("error handling", () => {
+    it("still exits non-zero when the manifest lookup itself fails", async () => {
+      // Given: getManifest rejects (e.g. unreadable manifest file)
+      mockGetManifest.mockRejectedValue(new Error("EACCES: permission denied"));
+
+      // When: `sequant run <issue>` is invoked
+
+      // Then: the failure is surfaced, not swallowed silently
+      await expect(runCommand(["123"], { quiet: true })).rejects.toThrow(
+        "EACCES: permission denied",
+      );
     });
   });
 });

@@ -42,13 +42,12 @@ import { resolvePhaseAgent, resolvePhaseAgents } from "./phase-agent.js";
 import { checkSkillsInstalled, SKILLS_DIR } from "../skills-check.js";
 
 /**
- * What `sequant sync` rewrites besides the skills (#1201). Every message that
- * recommends sync includes it, so no remedy tells a user to run sync without
- * saying which tracked files it will overwrite.
+ * What `sequant sync --only skills` writes (#1209 AC-4). Every remedy that
+ * recommends the scoped sync includes it, so a reader isn't left assuming a
+ * plain, unscoped `sync` — which rewrites tracked hooks,
+ * `.claude/settings.json`, `scripts/dev`, and sequant-owned `AGENTS.md` too.
  */
-export const SYNC_REWRITES_NOTE =
-  `sync also rewrites tracked hooks, \`.claude/settings.json\`, ` +
-  `\`scripts/dev\`, and sequant-owned \`AGENTS.md\` — commit those too`;
+export const SYNC_ONLY_SKILLS_NOTE = `writes only \`.claude/skills/**\` and the manifest`;
 
 export interface SkillsPreflightInput {
   /** Agent driver name (default claude-code). */
@@ -290,13 +289,12 @@ export async function runSkillsPreflight(
     driverName,
     // #1201: named once here so the pre-flight message and the
     // run-orchestrator's worktree-missing-skills messages can't drift apart
-    // again — `sequant sync` does more than install the missing skill, and a
-    // reader who only sees "run sequant sync" has no idea it also rewrites
-    // tracked hooks, `.claude/settings.json`, `scripts/dev`, and
-    // sequant-owned `AGENTS.md`.
+    // again. #1209: the recommended command is the scoped `--only skills`,
+    // not a plain `sequant sync` — the note names what that scoped command
+    // actually writes, so a reader isn't left assuming the wider rewrite.
     remedy:
       `The ${driverName} driver resolves phases from ${SKILLS_DIR}/ — ` +
-      `run \`sequant sync\` to install them and commit .claude/skills ` +
-      `(${SYNC_REWRITES_NOTE}).`,
+      `run \`sequant sync --only skills\` to install them and commit ` +
+      `.claude/skills (${SYNC_ONLY_SKILLS_NOTE}).`,
   };
 }

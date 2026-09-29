@@ -928,6 +928,13 @@ export interface CopyTemplatesOptions {
   overwriteCustomizable?: boolean;
   /** Additional stacks to include in constitution notes (for multi-stack projects) */
   additionalStacks?: string[];
+  /**
+   * Scope the write-set to `.claude/skills/**` (plus the skills version
+   * marker) only — no agents/hooks/memory trees, no scripts/dev symlinks, no
+   * `.claude/settings.json` write (#1209 AC-3). The only recognized value is
+   * `"skills"`.
+   */
+  only?: "skills";
 }
 
 /**
@@ -1302,71 +1309,80 @@ export async function copyTemplates(
   // Copy skills
   await copyDir(join(templatesDir, "skills"), ".claude/skills");
 
-  // Copy agent definitions
-  await copyDir(join(templatesDir, "agents"), ".claude/agents");
+  if (options.only !== "skills") {
+    // Copy agent definitions
+    await copyDir(join(templatesDir, "agents"), ".claude/agents");
 
-  // Copy hooks
-  await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
+    // Copy hooks
+    await copyDir(join(templatesDir, "hooks"), ".claude/hooks");
 
-  // Copy memory (constitution, etc.)
-  await copyDir(join(templatesDir, "memory"), ".claude/memory");
+    // Copy memory (constitution, etc.)
+    await copyDir(join(templatesDir, "memory"), ".claude/memory");
+  }
 
-  // Handle scripts directory - use symlinks unless disabled, or unless the
-  // resolved target isn't safe to link on every machine (#990 AC-4/AC-5).
-  const symlinkTarget = resolveScriptsSymlinkTarget(templatesDir);
-  const useSymlinks =
-    !options.noSymlinks &&
-    !isNativeWindows() &&
-    symlinkTarget.mode === "symlink";
   let scriptsSymlinked = false;
   let symlinkResults: SymlinkResult[] | undefined;
 
-  if (
-    symlinkTarget.mode === "copy" &&
-    !options.noSymlinks &&
-    !isNativeWindows()
-  ) {
-    console.log(`!  ${symlinkTarget.reason}`);
-  }
+  if (options.only !== "skills") {
+    // Handle scripts directory - use symlinks unless disabled, or unless the
+    // resolved target isn't safe to link on every machine (#990 AC-4/AC-5).
+    const symlinkTarget = resolveScriptsSymlinkTarget(templatesDir);
+    const useSymlinks =
+      !options.noSymlinks &&
+      !isNativeWindows() &&
+      symlinkTarget.mode === "symlink";
 
-  if (useSymlinks) {
-    // Use symlinks for scripts - they don't need template variable processing
-    symlinkResults = await symlinkDir(symlinkTarget.scriptsDir, "scripts/dev", {
-      force: options.force,
-    });
-
-    // Check if any symlinks were actually created (not all fell back to copy)
-    scriptsSymlinked = symlinkResults.some(
-      (r) => r.created && !r.fallbackToCopy,
-    );
-
-    for (const result of symlinkResults) {
-      if (result.directoryCollision) {
-        directoryCollisions.push(result.path.replace(/\\/g, "/"));
-      }
+    if (
+      symlinkTarget.mode === "copy" &&
+      !options.noSymlinks &&
+      !isNativeWindows()
+    ) {
+      console.log(`!  ${symlinkTarget.reason}`);
     }
-  } else {
-    // Fall back to copies (Windows, --no-symlinks, or an unsafe target)
-    // Regular files are left alone unless `force` (sync passes it); symlinks
-    // are always replaced with a copy (#1053).
-    await copyDir(symlinkTarget.scriptsDir, "scripts/dev", {
-      keepExistingFiles: !options.force,
-    });
-  }
 
-  // Copy settings.json
-  const settingsPath = join(templatesDir, "settings.json");
-  if (await fileExists(settingsPath)) {
-    // Written here rather than through `copyDir`, so it needs the same
-    // directory guard `copyDir` has (#1122).
-    if (await isDirectory(".claude/settings.json")) {
-      directoryCollisions.push(".claude/settings.json");
-    } else {
-      const content = await readFile(settingsPath);
-      await writeFile(
-        ".claude/settings.json",
-        processTemplate(content, variables),
+    if (useSymlinks) {
+      // Use symlinks for scripts - they don't need template variable processing
+      symlinkResults = await symlinkDir(
+        symlinkTarget.scriptsDir,
+        "scripts/dev",
+        {
+          force: options.force,
+        },
       );
+
+      // Check if any symlinks were actually created (not all fell back to copy)
+      scriptsSymlinked = symlinkResults.some(
+        (r) => r.created && !r.fallbackToCopy,
+      );
+
+      for (const result of symlinkResults) {
+        if (result.directoryCollision) {
+          directoryCollisions.push(result.path.replace(/\\/g, "/"));
+        }
+      }
+    } else {
+      // Fall back to copies (Windows, --no-symlinks, or an unsafe target)
+      // Regular files are left alone unless `force` (sync passes it); symlinks
+      // are always replaced with a copy (#1053).
+      await copyDir(symlinkTarget.scriptsDir, "scripts/dev", {
+        keepExistingFiles: !options.force,
+      });
+    }
+
+    // Copy settings.json
+    const settingsPath = join(templatesDir, "settings.json");
+    if (await fileExists(settingsPath)) {
+      // Written here rather than through `copyDir`, so it needs the same
+      // directory guard `copyDir` has (#1122).
+      if (await isDirectory(".claude/settings.json")) {
+        directoryCollisions.push(".claude/settings.json");
+      } else {
+        const content = await readFile(settingsPath);
+        await writeFile(
+          ".claude/settings.json",
+          processTemplate(content, variables),
+        );
+      }
     }
   }
 

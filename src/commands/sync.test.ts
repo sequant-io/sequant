@@ -80,7 +80,7 @@ import {
 } from "../lib/templates.js";
 import { getConfig } from "../lib/config.js";
 import { syncSequantMcpPin } from "../lib/mcp-config.js";
-import { generateAgentsMd } from "../lib/agents-md.js";
+import { generateAgentsMd, AGENTS_MD_PATH } from "../lib/agents-md.js";
 import { decideOpencodeShimSync, refreshOpencodeShim } from "./init.js";
 
 const mockDecideOpencodeShimSync = vi.mocked(decideOpencodeShimSync);
@@ -1115,6 +1115,120 @@ describe("sync command", () => {
           overwriteCustomizable: false,
         },
       );
+    });
+
+    // #1209 AC-3: `sequant sync --only skills` restricts both the apply and
+    // `--dry-run` preview to `.claude/skills/**` plus the manifest — every
+    // other write path (`.mcp.json`, AGENTS.md, `.opencode/`, `scripts/dev/`,
+    // `.claude/settings.json`, `.claude/agents/`, `.claude/hooks/`,
+    // `.claude/memory/`) must be skipped entirely, not just left unmodified.
+    // Note: `only` is not yet on `SyncOptions` — Phase 1 of the implementation
+    // plan adds it; these stubs anticipate that shape.
+    describe("--only skills (#1209 AC-3)", () => {
+      beforeEach(() => {
+        mockGetManifest.mockResolvedValue({
+          version: "1.0.0",
+          stack: "generic",
+          installedAt: "2024-01-01",
+          files: {},
+        });
+        // No version marker / AGENTS.md on disk: forces the mismatch path
+        // (skipping the "already up to date" fast return) without needing to
+        // stub readFile's content for every path it might read.
+        mockFileExists.mockResolvedValue(false);
+        mockGetPackageVersion.mockReturnValue("1.1.0");
+        mockCopyTemplates.mockResolvedValue({
+          scriptsSymlinked: false,
+          preservedCustomizable: [],
+        });
+      });
+
+      it("writes only .claude/skills/** and the manifest, touching nothing else", async () => {
+        // Given: an initialized project
+        // When: `sequant sync --only skills` runs
+        await syncCommand({ only: "skills" });
+
+        // Then: only paths under .claude/skills/** and .sequant-manifest.json
+        // are written; .mcp.json, AGENTS.md, .opencode/, scripts/dev/,
+        // .claude/settings.json, .claude/agents/, .claude/hooks/,
+        // .claude/memory/ are untouched.
+        expect(mockCopyTemplates).toHaveBeenCalledWith(
+          "generic",
+          {},
+          expect.objectContaining({ only: "skills" }),
+        );
+        expect(mockSyncMcpPin).not.toHaveBeenCalled();
+        expect(mockDecideOpencodeShimSync).not.toHaveBeenCalled();
+        expect(mockRefreshOpencodeShim).not.toHaveBeenCalled();
+        expect(mockWriteFile).not.toHaveBeenCalledWith(
+          AGENTS_MD_PATH,
+          expect.anything(),
+        );
+        expect(mockPreviewScriptsSymlinkTargets).not.toHaveBeenCalled();
+      });
+
+      it("--dry-run --only skills previews the same restricted set as apply", async () => {
+        // Given: an initialized project, pending skills changes
+        mockComputeTemplateChanges.mockResolvedValue([
+          {
+            path: ".claude/skills/qa/SKILL.md",
+            templatePath: "templates/skills/qa/SKILL.md",
+            status: "modified",
+            rendered: "new",
+            diff: "diff",
+          },
+          {
+            path: "AGENTS.md",
+            templatePath: "templates/AGENTS.md",
+            status: "modified",
+            rendered: "new",
+            diff: "diff",
+          },
+        ]);
+
+        const logSpy = vi.spyOn(console, "log");
+
+        // When: `sequant sync --dry-run --only skills` runs
+        await syncCommand({ dryRun: true, only: "skills" });
+
+        // Then: the preview reports only the skills change set — parity with
+        // the existing dry-run/apply invariant (#722/#1030) — and nothing
+        // outside .claude/skills/** appears in the reported write-set.
+        const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+        expect(output).toContain(".claude/skills/qa/SKILL.md");
+        expect(output).not.toContain("AGENTS.md");
+        expect(output).not.toContain("opencode shim");
+        expect(output).not.toContain("scripts/dev link targets");
+        expect(mockWriteFile).not.toHaveBeenCalled();
+      });
+
+      // === FAILURE PATHS ===
+      describe("error handling", () => {
+        // The CLI-level `--only <group>` allow-list (mirroring
+        // validatePhasesFlag) rejects an unrecognized group before
+        // syncCommand is ever called — bin/cli.ts has no dedicated test file
+        // in this repo (same as validatePhasesFlag), so that rejection is
+        // verified manually, not here. What syncCommand itself must not do is
+        // silently apply a *partial* write-set for a value it doesn't
+        // recognize as "skills": an unrecognized `only` degrades to the full,
+        // unscoped sync rather than skipping work quietly.
+        it("treats a non-'skills' `only` value as a full, unscoped sync", async () => {
+          // Given: an initialized project
+          // When: syncCommand receives an `only` value other than "skills"
+          // (bypassing the CLI-level type/allow-list, e.g. a future caller)
+          await syncCommand({ only: "bogus-group" } as unknown as Parameters<
+            typeof syncCommand
+          >[0]);
+
+          // Then: the full copy runs (not scoped to skills-only) — no
+          // partial write-set is silently produced.
+          expect(mockCopyTemplates).toHaveBeenCalledWith(
+            "generic",
+            {},
+            expect.not.objectContaining({ only: "skills" }),
+          );
+        });
+      });
     });
 
     describe("AGENTS.md ownership (AC-2, AC-3)", () => {

@@ -62,6 +62,18 @@ interface SyncOptions {
   dryRun?: boolean;
   /** `false` when `--no-agents-md` is passed; otherwise AGENTS.md is eligible for regeneration. */
   agentsMd?: boolean;
+  /**
+   * Scope both the preview and the apply to `.claude/skills/**` plus the
+   * manifest — no `.mcp.json` pin, no AGENTS.md, no opencode shim, no
+   * scripts/dev, no `.claude/settings.json`/`agents`/`hooks`/`memory`
+   * (#1209 AC-3). The only recognized value is `"skills"`.
+   */
+  only?: "skills";
+}
+
+/** `changes` filtered to `.claude/skills/**` — the `--only skills` write-set (#1209 AC-3). */
+function filterToSkillsOnly(changes: TemplateChange[]): TemplateChange[] {
+  return changes.filter((c) => c.path.startsWith(".claude/skills/"));
 }
 
 interface DriftCache {
@@ -377,7 +389,14 @@ function printOwnershipDecisions(
 }
 
 export async function syncCommand(options: SyncOptions = {}): Promise<void> {
-  const { force = false, quiet = false, dryRun = false, agentsMd } = options;
+  const {
+    force = false,
+    quiet = false,
+    dryRun = false,
+    agentsMd,
+    only,
+  } = options;
+  const skillsOnly = only === "skills";
   const agentsMdEnabled = agentsMd !== false;
 
   if (!quiet) {
@@ -433,7 +452,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // "already up to date" fast path below, because a version-only upgrade
   // leaves every template byte-identical and returns early — and that is
   // exactly the case where the pin most needs refreshing.
-  const mcpPin = syncSequantMcpPin(process.cwd(), { dryRun });
+  const mcpPin = skillsOnly
+    ? { updated: false, reason: "no-file" as const }
+    : syncSequantMcpPin(process.cwd(), { dryRun });
   if (mcpPin.updated && !quiet) {
     const verb = dryRun ? "Would update" : "Updated";
     // #1089: a migration can keep the same pin (legacy npx shape, or a stale
@@ -452,7 +473,8 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // against installed content (rendered with the same variables) so we never
   // declare success while real drift sits in place (#708).
   if (!force && skillsVersion === packageVersion) {
-    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+    const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
     const drifted = changes.filter(
       (c) => c.status === "new" || c.status === "modified",
     );
@@ -462,8 +484,9 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     // with the same exit-code signal and the same repair hint as any other
     // drift — `update` (or `sync --force`) refreshes it — rather than being
     // silently skipped, which left a drifted shim invisible to a
-    // version-current `sync` and `sync --dry-run`.
-    const fastPathShim = await decideOpencodeShimSync();
+    // version-current `sync` and `sync --dry-run`. Skipped entirely under
+    // `--only skills` (#1209 AC-3): the shim isn't part of that write-set.
+    const fastPathShim = skillsOnly ? "none" : await decideOpencodeShimSync();
 
     // A directory at a destination is not drift — nothing would be written to
     // it either way — but it is the reason a file sequant owns is missing, so
@@ -517,7 +540,8 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // into preserved (plain sync) vs overwritten (--force, or a `sequant-owned`
   // `.local`-twin the tree copy still rewrites).
   if (dryRun) {
-    const changes = await computeTemplateChanges(manifest.stack, tokens);
+    const allChanges = await computeTemplateChanges(manifest.stack, tokens);
+    const changes = skillsOnly ? filterToSkillsOnly(allChanges) : allChanges;
     const newFiles = changes.filter((c) => c.status === "new");
     const modifiedFiles = changes.filter((c) => c.status === "modified");
     const localOverrides = changes.filter((c) => c.status === "local-override");
@@ -530,16 +554,24 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
     const toWrite = [...newFiles, ...modifiedFiles, ...overwrittenOverrides];
 
     // #990 AC-6: preview both file-ownership decisions before any write.
-    const existingAgentsMd = agentsMdEnabled ? await readAgentsMd() : null;
-    const agentsMdDecision = decideAgentsMdSync({
-      enabled: agentsMdEnabled,
-      existingContent: existingAgentsMd,
-      force,
-    });
-    const scriptsPreview = (await previewScriptsSymlinkTargets()).filter(
-      (e) => e.changed,
-    );
-    const opencodeShimDecision = await decideOpencodeShimSync();
+    // Under `--only skills` (#1209 AC-3), AGENTS.md, scripts/dev and the
+    // opencode shim are outside the write-set entirely — preview them as
+    // "none"/empty rather than computing a real decision.
+    const existingAgentsMd =
+      agentsMdEnabled && !skillsOnly ? await readAgentsMd() : null;
+    const agentsMdDecision = skillsOnly
+      ? "none"
+      : decideAgentsMdSync({
+          enabled: agentsMdEnabled,
+          existingContent: existingAgentsMd,
+          force,
+        });
+    const scriptsPreview = skillsOnly
+      ? []
+      : (await previewScriptsSymlinkTargets()).filter((e) => e.changed);
+    const opencodeShimDecision = skillsOnly
+      ? "none"
+      : await decideOpencodeShimSync();
 
     if (!quiet) {
       if (agentsMdDecision !== "none") {
@@ -637,6 +669,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   const copyOptions: CopyTemplatesOptions = {
     force: true, // Always overwrite the managed skills/agents/hooks trees
     overwriteCustomizable: force, // Clobber user-owned files only on explicit --force
+    only, // #1209 AC-3: restrict the write-set to .claude/skills/** when set
   };
 
   // #1090 AC-5: resolve the ownership decision for every file *before* the
@@ -652,9 +685,13 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // ~36 ms against 63 templates. Printing after the copy instead would cost
   // nothing but would break the invariant this report exists for: the
   // decision has to be visible *before* the write, not after it (#1030 I-2).
-  const applyChanges = quiet
-    ? []
-    : await computeTemplateChanges(manifest.stack, tokens);
+  let applyChanges: TemplateChange[] = [];
+  if (!quiet) {
+    applyChanges = await computeTemplateChanges(manifest.stack, tokens);
+    if (skillsOnly) {
+      applyChanges = filterToSkillsOnly(applyChanges);
+    }
+  }
   const applyDecisions = resolveOwnershipDecisions(
     applyChanges,
     force,
@@ -727,7 +764,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // output, or --force. A user-owned file (unmarked or hash-mismatched) is
   // left byte-identical and reported, mirroring the `user-owned`
   // preserve/report pattern above (#990).
-  if (agentsMdEnabled) {
+  if (agentsMdEnabled && !skillsOnly) {
     const existingAgentsMd = await readAgentsMd();
     const decision = decideAgentsMdSync({
       enabled: true,
@@ -770,7 +807,7 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   // on decideOpencodeShimSync so a plain sync never creates `.opencode/` on a
   // project that never opted in, and never rewrites a shim that already
   // matches what the writers would produce ("current").
-  if ((await decideOpencodeShimSync()) === "refresh") {
+  if (!skillsOnly && (await decideOpencodeShimSync()) === "refresh") {
     await refreshOpencodeShim();
     if (!quiet) {
       console.log(chalk.blue("Refreshed opencode shim"));

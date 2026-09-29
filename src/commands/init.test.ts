@@ -80,6 +80,8 @@ vi.mock("../lib/templates.js", async (importOriginal) => {
 // Mock manifest
 vi.mock("../lib/manifest.js", () => ({
   createManifest: vi.fn(),
+  // #1209 AC-2: `--manifest-only`'s existing-manifest branch reads this.
+  getManifest: vi.fn(),
 }));
 
 // Mock stack-config
@@ -231,9 +233,13 @@ vi.mock("../lib/cli-ui.js", () => ({
 
 import { initCommand } from "./init.js";
 import { fileExists, ensureDir, readFile, writeFile } from "../lib/fs.js";
-import { detectStack, detectAllStacks } from "../lib/stacks.js";
+import {
+  detectStack,
+  detectAllStacks,
+  detectPackageManager,
+} from "../lib/stacks.js";
 import { copyTemplates } from "../lib/templates.js";
-import { createManifest } from "../lib/manifest.js";
+import { createManifest, getManifest } from "../lib/manifest.js";
 import { saveConfig } from "../lib/config.js";
 import { createDefaultSettings } from "../lib/settings.js";
 import { commandExists, isGhAuthenticated } from "../lib/system.js";
@@ -253,9 +259,11 @@ const mockEnsureDir = vi.mocked(ensureDir);
 const mockReadFile = vi.mocked(readFile);
 const mockWriteFile = vi.mocked(writeFile);
 const mockDetectStack = vi.mocked(detectStack);
+const mockDetectPackageManager = vi.mocked(detectPackageManager);
 const mockDetectAllStacks = vi.mocked(detectAllStacks);
 const mockCopyTemplates = vi.mocked(copyTemplates);
 const mockCreateManifest = vi.mocked(createManifest);
+const mockGetManifest = vi.mocked(getManifest);
 const mockSaveConfig = vi.mocked(saveConfig);
 const mockCreateDefaultSettings = vi.mocked(createDefaultSettings);
 const mockCommandExists = vi.mocked(commandExists);
@@ -895,6 +903,67 @@ describe("init command", () => {
       const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(output).toContain("No skills directory found");
       expect(process.exitCode).toBe(1);
+    });
+  });
+
+  // #1209 AC-2: `sequant init --manifest-only` is a narrow early-return,
+  // mirroring the `--upgrade-skills` branch above — it must write only
+  // `.sequant-manifest.json` and touch nothing else (no `.claude/`,
+  // `.sequant/logs`, templates, settings).
+  describe("--manifest-only (#1209 AC-2)", () => {
+    it("creates only .sequant-manifest.json when no manifest exists", async () => {
+      // Given: a project with no manifest, stack auto-detected
+      mockGetManifest.mockResolvedValue(null);
+      mockFileExists.mockResolvedValue(false);
+      mockDetectStack.mockResolvedValue("nextjs");
+      mockDetectPackageManager.mockResolvedValue("npm");
+
+      // When: `sequant init --manifest-only` runs (early return — no --yes
+      // or --stack needed, it never reaches a prompt)
+      await initCommand({ manifestOnly: true });
+
+      // Then: only .sequant-manifest.json is created (no .claude/,
+      // .sequant/logs, templates, settings, etc.)
+      expect(mockCreateManifest).toHaveBeenCalledWith("nextjs", "npm");
+      expect(mockCopyTemplates).not.toHaveBeenCalled();
+      expect(mockCreateDefaultSettings).not.toHaveBeenCalled();
+      expect(mockEnsureDir).not.toHaveBeenCalled();
+    });
+
+    it("leaves an existing manifest byte-identical when run again", async () => {
+      // Given: a manifest already exists
+      mockGetManifest.mockResolvedValue({
+        version: "1.0.0",
+        stack: "generic",
+        installedAt: "2026-01-01T00:00:00.000Z",
+        files: {},
+      });
+
+      // When: `sequant init --manifest-only` runs again
+      await initCommand({ manifestOnly: true });
+
+      // Then: the manifest is left untouched (not re-created/re-written)
+      expect(mockCreateManifest).not.toHaveBeenCalled();
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      const output = consoleLogSpy.mock.calls.map((c) => c[0]).join("\n");
+      expect(output).toContain("already exists");
+    });
+
+    // === FAILURE PATHS ===
+    describe("error handling", () => {
+      it('falls back to "generic" stack when detection is inconclusive', async () => {
+        // Given: no manifest and stack auto-detection returns nothing
+        mockGetManifest.mockResolvedValue(null);
+        mockDetectStack.mockResolvedValue(null);
+        mockDetectPackageManager.mockResolvedValue("npm");
+
+        // When: `sequant init --manifest-only` runs with no --stack flag
+        await initCommand({ manifestOnly: true });
+
+        // Then: createManifest is called with stack "generic", not left
+        // undefined and not prompting interactively
+        expect(mockCreateManifest).toHaveBeenCalledWith("generic", "npm");
+      });
     });
   });
 
