@@ -364,6 +364,204 @@ describe("buildStructuredResponse", () => {
   });
 });
 
+// AC-1 (#1200): qa phase summary surfaces on every verdict
+describe("buildStructuredResponse — qa summary (#1200 AC-1)", () => {
+  function makeRunLogWithQaSummary(
+    verdict:
+      | "READY_FOR_MERGE"
+      | "AC_MET_BUT_NOT_A_PLUS"
+      | "AC_NOT_MET"
+      | "NEEDS_VERIFICATION",
+  ): RunLog {
+    return makeRunLog({
+      issues: [
+        {
+          issueNumber: 100,
+          title: "Test issue",
+          labels: [],
+          status: "success",
+          phases: [
+            {
+              phase: "qa",
+              issueNumber: 100,
+              startTime: "2026-03-23T10:03:00.000Z",
+              endTime: "2026-03-23T10:04:00.000Z",
+              durationSeconds: 60,
+              status: "success",
+              verdict,
+              summary: {
+                acMet: 2,
+                acTotal: 3,
+                gaps: ["AC-3 not addressed"],
+                suggestions: ["Consider adding a test"],
+                findings: [
+                  {
+                    category: "test_gap",
+                    evidence: "no test file found",
+                    description: "AC-3 lacks coverage",
+                    recommendedAction: "fix_now",
+                    affectedAcs: ["AC-3"],
+                  },
+                ],
+                pendingAcIds:
+                  verdict === "NEEDS_VERIFICATION" ? ["AC-3"] : undefined,
+              },
+            },
+          ],
+          totalDurationSeconds: 60,
+        },
+      ],
+      summary: {
+        totalIssues: 1,
+        passed: 1,
+        failed: 0,
+        totalDurationSeconds: 60,
+      },
+    });
+  }
+
+  it.each([
+    "READY_FOR_MERGE",
+    "AC_MET_BUT_NOT_A_PLUS",
+    "AC_NOT_MET",
+    "NEEDS_VERIFICATION",
+  ] as const)(
+    "surfaces acMet/acTotal/gaps/findings for verdict %s",
+    (verdict) => {
+      const runLog = makeRunLogWithQaSummary(verdict);
+      const response = buildStructuredResponse(runLog, "", "success");
+      const issue = response.issues[0];
+
+      expect(issue.acMet).toBe(2);
+      expect(issue.acTotal).toBe(3);
+      expect(issue.gaps).toEqual(["AC-3 not addressed"]);
+      expect(issue.findings).toEqual([
+        {
+          category: "test_gap",
+          evidence: "no test file found",
+          description: "AC-3 lacks coverage",
+          recommendedAction: "fix_now",
+          affectedAcs: ["AC-3"],
+        },
+      ]);
+
+      // AC-1: exactly these four qa-summary fields — never suggestions/pendingAcIds
+      expect(issue).not.toHaveProperty("suggestions");
+      expect(issue).not.toHaveProperty("pendingAcIds");
+    },
+  );
+
+  it("omits qa-summary fields when qa phase has no summary", () => {
+    const runLog = makeRunLog(); // default fixture's qa phase has no `summary`
+    const response = buildStructuredResponse(runLog, "", "success");
+    const issue = response.issues[0];
+
+    expect(issue.acMet).toBeUndefined();
+    expect(issue.acTotal).toBeUndefined();
+    expect(issue.gaps).toBeUndefined();
+    expect(issue.findings).toBeUndefined();
+  });
+});
+
+// AC-2 (#1200): findings capped by count and per-field length
+describe("buildStructuredResponse — findings capping (#1200 AC-2)", () => {
+  function makeRunLogWithFindings(
+    findings: Array<{
+      category: "test_gap";
+      evidence: string;
+      description: string;
+      recommendedAction: "fix_now";
+    }>,
+  ): RunLog {
+    return makeRunLog({
+      issues: [
+        {
+          issueNumber: 100,
+          title: "Test issue",
+          labels: [],
+          status: "success",
+          phases: [
+            {
+              phase: "qa",
+              issueNumber: 100,
+              startTime: "2026-03-23T10:03:00.000Z",
+              endTime: "2026-03-23T10:04:00.000Z",
+              durationSeconds: 60,
+              status: "success",
+              verdict: "AC_NOT_MET",
+              summary: {
+                acMet: 1,
+                acTotal: 5,
+                gaps: ["many gaps"],
+                suggestions: [],
+                findings,
+              },
+            },
+          ],
+          totalDurationSeconds: 60,
+        },
+      ],
+      summary: {
+        totalIssues: 1,
+        passed: 0,
+        failed: 1,
+        totalDurationSeconds: 60,
+      },
+    });
+  }
+
+  it("caps findings count and sets truncated: true when over the limit", () => {
+    const findings = Array.from({ length: 15 }, (_, i) => ({
+      category: "test_gap" as const,
+      evidence: `evidence ${i}`,
+      description: `finding ${i}`,
+      recommendedAction: "fix_now" as const,
+    }));
+    const runLog = makeRunLogWithFindings(findings);
+    const response = buildStructuredResponse(runLog, "", "success");
+    const issue = response.issues[0];
+
+    expect(issue.findings).toHaveLength(10);
+    expect(issue.truncated).toBe(true);
+  });
+
+  it("truncates oversized description/evidence fields and sets truncated: true", () => {
+    const findings = [
+      {
+        category: "test_gap" as const,
+        evidence: "e".repeat(1000),
+        description: "d".repeat(1000),
+        recommendedAction: "fix_now" as const,
+      },
+    ];
+    const runLog = makeRunLogWithFindings(findings);
+    const response = buildStructuredResponse(runLog, "", "success");
+    const issue = response.issues[0];
+
+    expect(issue.findings).toHaveLength(1);
+    expect(issue.findings![0].description.length).toBeLessThanOrEqual(300);
+    expect(issue.findings![0].evidence.length).toBeLessThanOrEqual(300);
+    expect(issue.truncated).toBe(true);
+  });
+
+  it("does not set truncated for a normal-sized findings array", () => {
+    const findings = [
+      {
+        category: "test_gap" as const,
+        evidence: "short evidence",
+        description: "short description",
+        recommendedAction: "fix_now" as const,
+      },
+    ];
+    const runLog = makeRunLogWithFindings(findings);
+    const response = buildStructuredResponse(runLog, "", "success");
+    const issue = response.issues[0];
+
+    expect(issue.findings).toHaveLength(1);
+    expect(issue.truncated).toBeUndefined();
+  });
+});
+
 // AC-5 (derived): Graceful fallback when log file unavailable
 describe("readLatestRunLog", () => {
   beforeEach(() => {
