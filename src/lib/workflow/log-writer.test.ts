@@ -152,6 +152,21 @@ describe("LogWriter", () => {
         recursive: true,
       });
     });
+
+    // #1198 AC-2 (supplementary): LogWriterOptions gains `driver`, threaded
+    // into the createEmptyRunLog call inside initialize().
+    it("threads options.driver into the run log (#1198 AC-2)", async () => {
+      // Given: a LogWriter constructed with a non-default driver option
+      // TODO: const writer = new LogWriter({ driver: "opencode" });
+
+      // When: initialize() runs
+      // TODO: await writer.initialize(mockConfig);
+
+      // Then: the persisted run log's top-level driver matches
+      // TODO: expect(writer.getRunLog()!.driver).toBe("opencode");
+
+      throw new Error("Test stub - implement this test");
+    });
   });
 
   describe("startIssue", () => {
@@ -259,6 +274,29 @@ describe("LogWriter", () => {
       const runLog = writer.getRunLog();
       expect(runLog!.issues[0].phases).toHaveLength(1);
       expect(runLog!.issues[0].phases[0]).toEqual(mockPhaseLog);
+    });
+
+    // #1198 AC-1 (supplementary — the AC's declared Evidence file is
+    // run-log-schema.test.ts; this exercises the same behavior through the
+    // real LogWriter.logPhase persistence path).
+    it("persists model and requestedModel on the phase entry (#1198 AC-1)", async () => {
+      const writer = new LogWriter();
+      await writer.initialize(mockConfig);
+      writer.startIssue(123, "Test Issue", []);
+
+      const phaseWithModel: PhaseLog = {
+        ...mockPhaseLog,
+        model: "claude-sonnet-5",
+        requestedModel: "role:fast",
+      };
+      writer.logPhase(phaseWithModel);
+      writer.completeIssue();
+
+      const runLog = writer.getRunLog();
+      // TODO: once PhaseLog gains model/requestedModel, this should pass:
+      // expect(runLog!.issues[0].phases[0].model).toBe("claude-sonnet-5");
+      // expect(runLog!.issues[0].phases[0].requestedModel).toBe("role:fast");
+      throw new Error("Test stub - implement this test");
     });
 
     it("should update issue status to failure when phase fails", async () => {
@@ -844,5 +882,30 @@ describe("createPhaseLogFromTiming", () => {
     );
 
     expect(log.iterations).toBe(3);
+  });
+
+  // #1198 AC-1 (supplementary): the options Pick that createPhaseLogFromTiming
+  // accepts needs model/requestedModel added alongside the existing fields.
+  it("should include model and requestedModel when provided (#1198 AC-1)", () => {
+    const startTime = new Date("2024-01-15T10:00:00.000Z");
+    const endTime = new Date("2024-01-15T10:01:00.000Z");
+
+    const log = createPhaseLogFromTiming(
+      "exec",
+      123,
+      startTime,
+      endTime,
+      "success",
+      {
+        // TODO: model/requestedModel aren't in the options Pick yet — this
+        // will be a type error until PhaseLogSchema/options add them.
+        model: "claude-sonnet-5",
+        requestedModel: "role:fast",
+      } as Partial<PhaseLog>,
+    );
+
+    // TODO: expect(log.model).toBe("claude-sonnet-5");
+    // TODO: expect(log.requestedModel).toBe("role:fast");
+    throw new Error("Test stub - implement this test");
   });
 });
