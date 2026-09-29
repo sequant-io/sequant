@@ -1272,7 +1272,7 @@ export async function runIssueWithLogging(
           // #1198 AC-1: resolved model (from modelUsage) and the pre-resolution
           // policy value, when a role: policy was configured for this phase.
           model: specResult.resolvedModel,
-          requestedModel: config.phasePolicies?.["spec"]?.model,
+          requestedModel: config.phasePolicies?.["spec"]?.requestedModel,
         },
       );
       logWriter.logPhase(phaseLog);
@@ -1891,7 +1891,7 @@ export async function runIssueWithLogging(
             // pre-resolution policy value, when a role: policy was
             // configured for this phase.
             model: result.resolvedModel,
-            requestedModel: config.phasePolicies?.[phase]?.model,
+            requestedModel: config.phasePolicies?.[phase]?.requestedModel,
           },
         );
         logWriter.logPhase(phaseLog);
@@ -2064,7 +2064,7 @@ export async function runIssueWithLogging(
                 // pre-resolution policy value, when a role: policy was
                 // configured for this phase.
                 model: loopResult.resolvedModel,
-                requestedModel: config.phasePolicies?.["loop"]?.model,
+                requestedModel: config.phasePolicies?.["loop"]?.requestedModel,
               },
             );
             logWriter.logPhase(loopPhaseLog);

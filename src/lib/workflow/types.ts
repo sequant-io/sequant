@@ -265,7 +265,14 @@ export interface ExecutionConfig {
    */
   phasePolicies?: Record<
     string,
-    { agent?: string; model?: string; effort?: string }
+    {
+      agent?: string;
+      /** Resolved model — a `role:` reference is already replaced here. */
+      model?: string;
+      effort?: string;
+      /** The pre-resolution `role:<name>` string, when one was configured (#975, #1198). */
+      requestedModel?: string;
+    }
   >;
   /**
    * Evidence-based effort escalation on quality-loop retries (#915). CLI >

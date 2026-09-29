@@ -2902,3 +2902,79 @@ describe("#1087 Codex usage-limit turn failure under -Q", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// #1198 AC-1: the run log records each phase's resolved model and, for a
+// `role:` policy, the pre-resolution role string. `resolvePhasePolicies`
+// overwrites `policy.model` with the resolved model and keeps the role in
+// `policy.requestedModel`, so the call site must read `.requestedModel`.
+describe("runIssueWithLogging — #1198: phase log model fields (AC-1)", () => {
+  function loggedOptionsFor(phase: string) {
+    const call = vi
+      .mocked(createPhaseLogFromTiming)
+      .mock.calls.find((c) => c[0] === phase);
+    expect(call, `phase log for ${phase}`).toBeDefined();
+    return call![5];
+  }
+
+  it("logs the role: string as requestedModel and the dispatched model as model", async () => {
+    vi.mocked(createPhaseLogFromTiming).mockClear();
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: true,
+      durationSeconds: 10,
+      resolvedModel: "claude-sonnet-5-20260901",
+    } as PhaseResult);
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1198,
+        config: {
+          phases: ["exec"],
+          phasePolicies: {
+            exec: { model: "claude-sonnet-5", requestedModel: "role:fast" },
+          },
+        },
+        options: { autoDetectPhases: false },
+      }),
+      services: {
+        logWriter: { logPhase: vi.fn() } as never,
+        stateManager: null,
+      },
+    });
+
+    const options = loggedOptionsFor("exec");
+    expect(options?.requestedModel).toBe("role:fast");
+    expect(options?.model).toBe("claude-sonnet-5-20260901");
+  });
+
+  it("leaves requestedModel absent for a raw (non-role) model policy", async () => {
+    vi.mocked(createPhaseLogFromTiming).mockClear();
+    mockExecutePhase.mockReset();
+    mockExecutePhase.mockResolvedValue({
+      phase: "exec",
+      success: true,
+      durationSeconds: 10,
+      resolvedModel: "claude-opus-5-5",
+    } as PhaseResult);
+
+    await runIssueWithLogging({
+      ...makeCtx({
+        issueNumber: 1198,
+        config: {
+          phases: ["exec"],
+          phasePolicies: { exec: { model: "claude-opus-5-5" } },
+        },
+        options: { autoDetectPhases: false },
+      }),
+      services: {
+        logWriter: { logPhase: vi.fn() } as never,
+        stateManager: null,
+      },
+    });
+
+    const options = loggedOptionsFor("exec");
+    expect(options?.requestedModel).toBeUndefined();
+    expect(options?.model).toBe("claude-opus-5-5");
+  });
+});
