@@ -2728,6 +2728,40 @@ describe("mapAgentSuccessToPhaseResult", () => {
       expect(result.success).toBe(false);
     });
 
+    it("passes a self-skip transcript that restates the prior marker", () => {
+      // #1213: spec's phase-detection self-skip must restate the prior
+      // SEQUANT_SPEC marker, not just post a skip message — the guard treats
+      // a self-skip the same as any other spec turn.
+      const postedSince = vi.fn().mockReturnValue(false);
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({
+          output: `⏭️ Spec already completed. Reusing prior plan.\n\n${MARKER}`,
+        }),
+        5,
+        "/repo",
+        1213,
+        { specMarkerPostedSince: postedSince },
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("fails a self-skip transcript that emits no marker", () => {
+      const postedSince = vi.fn().mockReturnValue(false);
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({
+          output: "⏭️ Spec already completed. Reusing prior plan.",
+        }),
+        5,
+        "/repo",
+        1213,
+        { specMarkerPostedSince: postedSince },
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("no SEQUANT_SPEC marker");
+    });
+
     it("is skipped for drivers that do not resolve skills (aider's prompt never asks for a marker)", () => {
       const result = mapAgentSuccessToPhaseResult(
         "spec",
