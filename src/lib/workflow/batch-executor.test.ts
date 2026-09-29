@@ -16,7 +16,7 @@ import {
   withActivityHook,
   AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS,
 } from "./batch-executor.js";
-import { AUTO_WAIT_BUFFER_MS } from "./phase-executor.js";
+import { AUTO_WAIT_BUFFER_MS, parseQaSummary } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
 import { CodexStreamParser, evaluateCodexRun } from "./drivers/codex.js";
@@ -1945,6 +1945,34 @@ describe("#1194 AC-4: buildQaVerdictComment lists PENDING ACs and pause_for_huma
 
     expect(body).not.toContain("**Pending ACs:**");
     expect(body).not.toContain("**Needs human review:**");
+  });
+
+  it("lists each pause_for_human finding once when the summary comes from parseQaSummary", () => {
+    // The field shape from the issue: bold statuses, a marker whose
+    // descriptions parseQaSummary also unions into `gaps`.
+    const output = `| AC-1 | Parser | **MET** | Done |
+| AC-2 | Comment | **PENDING** | Needs a live run |
+
+### Verdict: NEEDS_VERIFICATION
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"risk_gap","evidence":"src/a.ts:1","description":"Confirm the live verdict comment","recommendedAction":"pause_for_human"},{"category":"test_gap","evidence":"src/b.ts:2","description":"Add a fixture for the table form","recommendedAction":"fix_now"}]} -->`;
+
+    const summary = parseQaSummary(output);
+    expect(summary!.gaps).toContain("Confirm the live verdict comment");
+
+    const body = buildQaVerdictComment(
+      "NEEDS_VERIFICATION",
+      summary!,
+      "abc123",
+      1,
+    );
+
+    expect(body.split("Confirm the live verdict comment").length - 1).toBe(1);
+    expect(body).toContain(
+      "**Needs human review:**\n- Confirm the live verdict comment",
+    );
+    expect(body).toContain("**Gaps:**\n- Add a fixture for the table form");
+    expect(body).toContain("**Pending ACs:**\n- AC-2");
   });
 });
 

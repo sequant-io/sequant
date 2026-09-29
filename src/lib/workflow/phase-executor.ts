@@ -621,6 +621,16 @@ export function parseQaSummary(output: string): QaSummary | null {
   const STATUS_CELL =
     /^(?:\u2705|\u274C|\u26A0\uFE0F|\u2B50|\u2139\uFE0F|\u2753|\u2757|\u23F3|\uD83D\uDD04)?\s*\*{0,2}\s*(NOT[ _]MET|PARTIALLY_MET|PARTIAL|PENDING|OVERRIDDEN|MET|N\/A)\b/i;
 
+  // #1194: a table status cell holds the keyword alone (optionally bold, or
+  // followed by a separator and a short note). The right-to-left scan below
+  // would otherwise take a notes cell such as "Not met in first pass; fixed"
+  // as the status and undercount acMet. The checklist fallback keeps the
+  // prefix match, where prose after the keyword is the normal shape.
+  const STATUS_TABLE_CELL = new RegExp(
+    `${STATUS_CELL.source}\\*{0,2}\\s*(?:$|[\u2014\u2013(:;,.-])`,
+    "i",
+  );
+
   // A status normalizes to "MET" or counts as an approved override \u2014 both credit
   // acMet. Shared by the table loop and the checklist fallback loop below.
   const normalizeStatus = (raw: string): string =>
@@ -644,7 +654,7 @@ export function parseQaSummary(output: string): QaSummary | null {
 
     // Scan cells right-to-left to find the status cell
     for (let i = cells.length - 1; i >= 1; i--) {
-      const match = cells[i].match(STATUS_CELL);
+      const match = cells[i].match(STATUS_TABLE_CELL);
       if (match) {
         const status = normalizeStatus(match[1]);
         acTotal++;

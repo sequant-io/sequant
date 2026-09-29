@@ -780,8 +780,19 @@ export function buildQaVerdictComment(
     if (countsUsable) {
       lines.push("", `AC coverage: ${summary.acMet}/${summary.acTotal} met`);
     }
-    if (summary.gaps.length > 0) {
-      lines.push("", "**Gaps:**", ...summary.gaps.map((g) => `- ${g}`));
+    // #1194 AC-4: under NEEDS_VERIFICATION the pause_for_human findings get
+    // their own section below, so they are left out of the gaps list (which
+    // unions marker + prose text) instead of being printed twice.
+    const pauseForHuman =
+      verdict === "NEEDS_VERIFICATION"
+        ? (summary.findings ?? []).filter(
+            (f) => f.recommendedAction === "pause_for_human",
+          )
+        : [];
+    const humanReview = new Set(pauseForHuman.map((f) => f.description));
+    const gaps = summary.gaps.filter((g) => !humanReview.has(g));
+    if (gaps.length > 0) {
+      lines.push("", "**Gaps:**", ...gaps.map((g) => `- ${g}`));
     }
     if (summary.suggestions.length > 0) {
       lines.push(
@@ -792,8 +803,7 @@ export function buildQaVerdictComment(
     }
     // #1194 AC-4: NEEDS_VERIFICATION is the verdict where a human must act on
     // exactly what's unresolved — name the PENDING ACs and surface the findings
-    // the model flagged as needing a human decision, distinct from the generic
-    // gaps list above (which already unions marker + prose text for every verdict).
+    // the model flagged as needing a human decision.
     if (verdict === "NEEDS_VERIFICATION") {
       if (summary.pendingAcIds && summary.pendingAcIds.length > 0) {
         lines.push(
@@ -802,9 +812,6 @@ export function buildQaVerdictComment(
           ...summary.pendingAcIds.map((id) => `- ${id}`),
         );
       }
-      const pauseForHuman = (summary.findings ?? []).filter(
-        (f) => f.recommendedAction === "pause_for_human",
-      );
       if (pauseForHuman.length > 0) {
         lines.push(
           "",

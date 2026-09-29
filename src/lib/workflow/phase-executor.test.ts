@@ -624,6 +624,20 @@ describe("parseQaSummary", () => {
     ).toBeNull();
   });
 
+  it("#1194: a notes cell that starts with a status word does not override the status cell", () => {
+    const output = `| AC-1 | desc | ✅ MET | Not met in first pass; fixed |
+| AC-2 | desc | ❌ NOT_MET | Met the old contract only |
+| AC-3 | desc | ⚠️ PARTIALLY_MET (tests missing) | Pending a fixture |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 3,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
   it("#1194: OVERRIDDEN counts as MET-equivalent", () => {
     const output = `| AC-1 | Manual Test | Approved exception | 🔄 Overridden | See #830 |
 | AC-2 | Original | Normal case | MET | Done |`;
