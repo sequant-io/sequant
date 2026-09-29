@@ -7,6 +7,8 @@
  */
 
 import { spawnSync } from "child_process";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type {
   BranchInfo,
   CheckResult,
@@ -15,6 +17,7 @@ import type {
 } from "./types.js";
 import { getBranchRef } from "./types.js";
 import {
+  CI_INSTALL_SKIP,
   detectPackageManagerSync,
   resolvePackageManagerConfig,
 } from "../stacks.js";
@@ -121,6 +124,31 @@ export function lockfileChanged(repoRoot: string, baseRef: string): boolean {
     repoRoot,
   );
   return result.ok && result.stdout.length > 0;
+}
+
+/**
+ * Whether `root`'s package.json declares a script named `scriptName`.
+ *
+ * A missing package.json (a non-Node batch) and a package.json with no such
+ * script both mean "nothing to run here" — treated identically so a
+ * non-Node combined state does not get a `severity: error` BLOCKED from
+ * `npm run test`'s "Missing script" failure (#1196 AC-3).
+ *
+ * @internal Exported for testing
+ */
+export function hasScript(root: string, scriptName: string): boolean {
+  let raw: string;
+  try {
+    raw = readFileSync(join(root, "package.json"), "utf8");
+  } catch {
+    return false;
+  }
+  try {
+    const pkg = JSON.parse(raw) as { scripts?: Record<string, unknown> };
+    return typeof pkg.scripts?.[scriptName] === "string";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -332,7 +360,10 @@ function runChecks(
   // it will not rewrite the lockfile (which would dirty the temp branch and
   // break the checkout during cleanup), and it fails loudly on a lockfile that
   // is inconsistent with package.json.
-  if (lockfileChanged(repoRoot, BASE_REF)) {
+  if (
+    lockfileChanged(repoRoot, BASE_REF) &&
+    pmConfig.ciInstall !== CI_INSTALL_SKIP
+  ) {
     // Marked before the install runs, not after: a frozen install deletes
     // node_modules up front, so even a failed or interrupted one leaves the
     // caller's tree needing a restore.
@@ -362,47 +393,67 @@ function runChecks(
     });
   }
 
-  // Run the test suite
-  const testCommand = `${pmConfig.run} test`;
-  const testResult = runPackageManagerCommand(
-    testCommand,
-    repoRoot,
-    TEST_BUILD_TIMEOUT_MS,
-  );
-  batchFindings.push(
-    testResult.ok
-      ? {
-          check: "combined-branch-test",
-          severity: "info",
-          message: `\`${testCommand}\` passed on combined state`,
-        }
-      : {
-          check: "combined-branch-test",
-          severity: "error",
-          message: `\`${testCommand}\` failed on combined state: ${resolveFailureReason(testResult)}`,
-        },
-  );
+  // Run the test suite, unless the repo defines no `test` script (#1196
+  // AC-3): a non-Node batch has no package.json at all, and running
+  // `${pmConfig.run} test` there fails with npm's "Missing script" error,
+  // reported as a `severity: error` BLOCKED rather than the "nothing to
+  // check here" it actually is.
+  if (hasScript(repoRoot, "test")) {
+    const testCommand = `${pmConfig.run} test`;
+    const testResult = runPackageManagerCommand(
+      testCommand,
+      repoRoot,
+      TEST_BUILD_TIMEOUT_MS,
+    );
+    batchFindings.push(
+      testResult.ok
+        ? {
+            check: "combined-branch-test",
+            severity: "info",
+            message: `\`${testCommand}\` passed on combined state`,
+          }
+        : {
+            check: "combined-branch-test",
+            severity: "error",
+            message: `\`${testCommand}\` failed on combined state: ${resolveFailureReason(testResult)}`,
+          },
+    );
+  } else {
+    batchFindings.push({
+      check: "combined-branch-test",
+      severity: "info",
+      message: `No \`test\` script found in combined state — skipping test`,
+    });
+  }
 
-  // Run the build
-  const buildCommand = `${pmConfig.run} build`;
-  const buildOutcome = runPackageManagerCommand(
-    buildCommand,
-    repoRoot,
-    TEST_BUILD_TIMEOUT_MS,
-  );
-  batchFindings.push(
-    buildOutcome.ok
-      ? {
-          check: "combined-branch-test",
-          severity: "info",
-          message: `\`${buildCommand}\` passed on combined state`,
-        }
-      : {
-          check: "combined-branch-test",
-          severity: "error",
-          message: `\`${buildCommand}\` failed on combined state: ${resolveFailureReason(buildOutcome)}`,
-        },
-  );
+  // Run the build, same script-existence gate as the test step.
+  if (hasScript(repoRoot, "build")) {
+    const buildCommand = `${pmConfig.run} build`;
+    const buildOutcome = runPackageManagerCommand(
+      buildCommand,
+      repoRoot,
+      TEST_BUILD_TIMEOUT_MS,
+    );
+    batchFindings.push(
+      buildOutcome.ok
+        ? {
+            check: "combined-branch-test",
+            severity: "info",
+            message: `\`${buildCommand}\` passed on combined state`,
+          }
+        : {
+            check: "combined-branch-test",
+            severity: "error",
+            message: `\`${buildCommand}\` failed on combined state: ${resolveFailureReason(buildOutcome)}`,
+          },
+    );
+  } else {
+    batchFindings.push({
+      check: "combined-branch-test",
+      severity: "info",
+      message: `No \`build\` script found in combined state — skipping build`,
+    });
+  }
 }
 
 export function buildResult(

@@ -68,11 +68,18 @@ function baselineLockfile(): string {
   ].join("\n");
 }
 
-/** Baseline manifest, slotted the same way as the lockfile. */
+/**
+ * Baseline manifest, slotted the same way as the lockfile.
+ *
+ * Declares `test`/`build` scripts — required since #1196 (AC-3), which skips
+ * `npm run test`/`npm run build` on a combined state with no such script.
+ * Real values don't matter; the stubbed `npm` on PATH answers every argv.
+ */
 function baselineManifest(): string {
   return [
     "{",
     '  "name": "fixture",',
+    '  "scripts": { "test": "true", "build": "true" },',
     '  "dependencies": {',
     '    "SLOT_A": "0.0.0",',
     '    "_pad_a": "0.0.0",',
