@@ -810,8 +810,17 @@ not just on the trailer line, so this can diverge from what the PR is
 supposed to close:
 
 ```bash
-gh pr view <N> --json closingIssuesReferences \
-  --jq '.closingIssuesReferences[].number'
+# `gh pr view --json closingIssuesReferences` is not a recognized field on
+# gh CLI ≤ 2.66 ("Unknown JSON field") — the REST PR payload doesn't carry
+# it either. Query the GraphQL field directly; `{owner}`/`{repo}` resolve
+# from the current repo the same way they do in REST `gh api` calls.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){closingIssuesReferences(first:10){nodes{number}}}
+    }
+  }' -F owner='{owner}' -F repo='{repo}' -F pr=<N> \
+  --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
 ```
 
 **Stop and report, naming the issue,** if the list contains any number other

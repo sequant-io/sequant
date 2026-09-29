@@ -231,8 +231,17 @@ what the PR is *supposed* to close (a tracker issue mentioned in an AC table,
 or a multi-PR issue where only the last PR should close it):
 
 ```bash
-gh pr view <PR_NUMBER> --json closingIssuesReferences \
-  --jq '.closingIssuesReferences[].number'
+# `gh pr view --json closingIssuesReferences` is not a recognized field on
+# gh CLI ≤ 2.66 ("Unknown JSON field") — the REST PR payload doesn't carry
+# it either. Query the GraphQL field directly; `{owner}`/`{repo}` resolve
+# from the current repo the same way they do in REST `gh api` calls.
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){closingIssuesReferences(first:10){nodes{number}}}
+    }
+  }' -F owner='{owner}' -F repo='{repo}' -F pr=<PR_NUMBER> \
+  --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number'
 ```
 
 Compare the result against the single issue this PR is meant to close (the
