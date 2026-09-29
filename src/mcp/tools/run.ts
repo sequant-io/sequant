@@ -29,10 +29,10 @@ const MAX_RESPONSE_SIZE = 64 * 1024;
 /** Maximum raw output size before truncation */
 const MAX_RAW_OUTPUT = 2000;
 
-/** Maximum number of findings surfaced per issue (#1200 AC-2) */
+/** Maximum number of findings, and of gaps, surfaced per issue (#1200 AC-2) */
 const MAX_FINDINGS = 10;
 
-/** Maximum length of a finding's `description`/`evidence` field (#1200 AC-2) */
+/** Maximum length of a gap, or of a finding's `description`/`evidence` field (#1200 AC-2) */
 const MAX_FINDING_FIELD_LENGTH = 300;
 
 /** Maximum age of a log file to be considered for the current run (ms) */
@@ -51,11 +51,11 @@ interface RunToolIssueSummary {
   acMet?: number;
   /** Total number of acceptance criteria evaluated, from the qa phase's summary (#1200 AC-1) */
   acTotal?: number;
-  /** Gaps identified during QA, from the qa phase's summary (#1200 AC-1) */
+  /** Gaps identified during QA, from the qa phase's summary, capped like findings (#1200 AC-1/AC-2) */
   gaps?: string[];
   /** Structured gap findings, capped per MAX_FINDINGS/MAX_FINDING_FIELD_LENGTH (#1200 AC-1/AC-2) */
   findings?: GapFinding[];
-  /** Set when findings were capped by count or field length (#1200 AC-2) */
+  /** Set when gaps or findings were capped or dropped to fit the response (#1200 AC-2) */
   truncated?: boolean;
 }
 
@@ -258,13 +258,18 @@ export function buildStructuredResponse(
       "acMet" | "acTotal" | "gaps" | "findings" | "truncated"
     > = {};
     if (qaSummary) {
-      const { findings, truncated } = capFindings(qaSummary.findings ?? []);
+      const { findings, truncated: findingsTruncated } = capFindings(
+        qaSummary.findings ?? [],
+      );
+      // `gaps` repeats each finding's description, so it gets the same caps —
+      // otherwise the full text rides along uncapped and `truncated` lies.
+      const { gaps, truncated: gapsTruncated } = capGaps(qaSummary.gaps);
       summaryFields = {
         acMet: qaSummary.acMet,
         acTotal: qaSummary.acTotal,
-        gaps: qaSummary.gaps,
+        gaps,
         findings,
-        ...(truncated ? { truncated: true } : {}),
+        ...(findingsTruncated || gapsTruncated ? { truncated: true } : {}),
       };
     }
 
@@ -335,7 +340,22 @@ function capFindings(findings: GapFinding[]): {
 }
 
 /**
- * Enforce response size limit by progressively truncating rawOutput.
+ * Cap a qa phase's gaps by count and per-entry length, with the same limits
+ * as {@link capFindings} (#1200 AC-2).
+ */
+function capGaps(gaps: string[]): { gaps: string[]; truncated: boolean } {
+  let truncated = gaps.length > MAX_FINDINGS;
+  const capped = gaps.slice(0, MAX_FINDINGS).map((gap) => {
+    if (gap.length <= MAX_FINDING_FIELD_LENGTH) return gap;
+    truncated = true;
+    return gap.slice(0, MAX_FINDING_FIELD_LENGTH);
+  });
+  return { gaps: capped, truncated };
+}
+
+/**
+ * Enforce response size limit by progressively truncating rawOutput, then
+ * the error field, then per-issue findings and gaps.
  * Uses Buffer.byteLength for accurate UTF-8 byte measurement.
  */
 function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
@@ -366,6 +386,23 @@ function enforceResponseSizeLimit(response: RunToolResponse): RunToolResponse {
     const newLength = Math.max(0, response.error.length - excess - 200);
     response.error =
       newLength > 0 ? response.error.slice(-newLength) : undefined;
+    json = JSON.stringify(response);
+    byteLength = Buffer.byteLength(json, "utf-8");
+  }
+
+  // Per-issue caps bound each issue, not the run: a many-issue run can still
+  // exceed the limit. Drop findings, then gaps, from the last issue backward
+  // until it fits (#1200 AC-2). acMet/acTotal/verdict always survive.
+  for (const field of ["findings", "gaps"] as const) {
+    for (let i = response.issues.length - 1; i >= 0; i--) {
+      if (byteLength <= MAX_RESPONSE_SIZE) return response;
+      const issue = response.issues[i];
+      if (issue[field] === undefined) continue;
+      delete issue[field];
+      issue.truncated = true;
+      json = JSON.stringify(response);
+      byteLength = Buffer.byteLength(json, "utf-8");
+    }
   }
 
   return response;

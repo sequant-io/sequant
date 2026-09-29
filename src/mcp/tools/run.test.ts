@@ -560,6 +560,91 @@ describe("buildStructuredResponse — findings capping (#1200 AC-2)", () => {
     expect(issue.findings).toHaveLength(1);
     expect(issue.truncated).toBeUndefined();
   });
+
+  // QA's summary builds `gaps` from each finding's description, so a long
+  // finding reappears in full in `gaps` unless gaps get the same caps.
+  function makeLongSummaryIssue(issueNumber: number) {
+    const findings = Array.from({ length: 15 }, (_, i) => ({
+      category: "test_gap" as const,
+      evidence: `evidence ${i} `.repeat(100),
+      description: `finding ${i} `.repeat(100),
+      recommendedAction: "fix_now" as const,
+    }));
+    return {
+      issueNumber,
+      title: `Issue ${issueNumber}`,
+      labels: [],
+      status: "failure" as const,
+      phases: [
+        {
+          phase: "qa" as const,
+          issueNumber,
+          startTime: "2026-03-23T10:03:00.000Z",
+          endTime: "2026-03-23T10:04:00.000Z",
+          durationSeconds: 60,
+          status: "failure" as const,
+          verdict: "AC_NOT_MET" as const,
+          summary: {
+            acMet: 1,
+            acTotal: 5,
+            gaps: findings.map((f) => f.description),
+            suggestions: [],
+            findings,
+          },
+        },
+      ],
+      totalDurationSeconds: 60,
+    };
+  }
+
+  it("caps gaps by count and length and sets truncated: true", () => {
+    const runLog = makeRunLog({
+      issues: [makeLongSummaryIssue(100)],
+      summary: {
+        totalIssues: 1,
+        passed: 0,
+        failed: 1,
+        totalDurationSeconds: 60,
+      },
+    });
+    const issue = buildStructuredResponse(runLog, "", "failure").issues[0];
+
+    expect(issue.gaps).toHaveLength(10);
+    for (const gap of issue.gaps!) {
+      expect(gap.length).toBeLessThanOrEqual(300);
+    }
+    expect(issue.truncated).toBe(true);
+  });
+
+  it("keeps a many-issue run with long findings and gaps under the 64KB limit", () => {
+    const issues = Array.from({ length: 12 }, (_, i) =>
+      makeLongSummaryIssue(100 + i),
+    );
+    const runLog = makeRunLog({
+      issues,
+      summary: {
+        totalIssues: 12,
+        passed: 0,
+        failed: 12,
+        totalDurationSeconds: 720,
+      },
+    });
+    const response = buildStructuredResponse(
+      runLog,
+      "x".repeat(5000),
+      "failure",
+    );
+
+    expect(
+      Buffer.byteLength(JSON.stringify(response), "utf-8"),
+    ).toBeLessThanOrEqual(64 * 1024);
+    for (const issue of response.issues) {
+      expect(issue.acMet).toBe(1);
+      expect(issue.acTotal).toBe(5);
+      expect(issue.verdict).toBe("AC_NOT_MET");
+      expect(issue.truncated).toBe(true);
+    }
+  });
 });
 
 // AC-5 (derived): Graceful fallback when log file unavailable
