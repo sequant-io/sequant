@@ -59,3 +59,4 @@ Why the chosen option wins on the dimensions that matter here, and what it gives
 | ADR | Title | Status |
 |-----|-------|--------|
 | [0001](0001-adopt-adrs.md) | Adopt Architecture Decision Records | Accepted |
+| [0002](0002-spec-stays-in-main-checkout.md) | Spec stays in the main checkout; check it instead | Accepted |
