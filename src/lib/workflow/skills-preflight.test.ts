@@ -15,7 +15,7 @@ import {
   runResolvesSkills,
   resolveRequiredSkills,
   runSkillsPreflight,
-  SYNC_REWRITES_NOTE,
+  SYNC_ONLY_SKILLS_NOTE,
 } from "./skills-preflight.js";
 import { SKILLS_DIR } from "../skills-check.js";
 import type { Phase } from "./types.js";
@@ -263,14 +263,18 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
     }
   });
 
-  it("1201 AC-1: the remedy names the tracked files sequant sync rewrites", async () => {
+  // #1209 AC-4: the remedy recommends `sync --only skills`, whose note names
+  // what THAT command writes — not the wider hooks/settings/scripts-dev/
+  // AGENTS.md rewrite a plain `sequant sync` would (superseded from #1201).
+  it("1209 AC-4: the remedy names what `sequant sync --only skills` writes", async () => {
     const result = await runSkillsPreflight({ ...EXPLICIT_BASE, cwd: root });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.remedy).toContain("hooks");
-      expect(result.remedy).toContain(".claude/settings.json");
-      expect(result.remedy).toContain("scripts/dev");
-      expect(result.remedy).toContain("AGENTS.md");
+      expect(result.remedy).toContain(SYNC_ONLY_SKILLS_NOTE);
+      expect(result.remedy).not.toContain("hooks");
+      expect(result.remedy).not.toContain(".claude/settings.json");
+      expect(result.remedy).not.toContain("scripts/dev");
+      expect(result.remedy).not.toContain("AGENTS.md");
     }
   });
 
@@ -282,6 +286,19 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
     if (!result.ok) {
       expect(result.missingSkills).toEqual(["exec"]);
       expect(result.cause).toBe("missing skills: exec");
+    }
+  });
+
+  // #1209 AC-4: the remedy must recommend the scoped command, not bare
+  // `sequant sync` — `--only skills` is the one that writes only skills.
+  it("1209 AC-4: the remedy names `sequant sync --only skills`", async () => {
+    // Given: a missing skill triggers the pre-flight
+    const result = await runSkillsPreflight({ ...EXPLICIT_BASE, cwd: root });
+
+    // When/Then: the remedy field names the scoped sync command
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.remedy).toContain("sequant sync --only skills");
     }
   });
 
@@ -561,7 +578,7 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(reason).not.toContain("git worktree remove");
     expect(reason).not.toMatch(/re-run with --force/);
     // #1201: the shared remedy is followed by the instruction to re-run.
-    expect(reason).toContain(SYNC_REWRITES_NOTE);
+    expect(reason).toContain(SYNC_ONLY_SKILLS_NOTE);
     expect(reason).toMatch(/re-run\.$/i);
   });
   it("933: a multi-issue abort removes every worktree this run created and names them all", async () => {
@@ -589,7 +606,7 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(reason).toContain("was removed");
     expect(reason).toContain("Also removed (created for this run):");
     expect(reason).toContain(join(base, "wt-934")); // #1201 AC-1: the worktree message carries the shared remedy.
-    expect(reason).toContain(SYNC_REWRITES_NOTE);
+    expect(reason).toContain(SYNC_ONLY_SKILLS_NOTE);
   });
   it("1193 AC-1: a main checkout missing .claude/skills/spec/SKILL.md fails pre-flight before any worktree, naming the path", async () => {
     // The field case: the base branch has every skill, so a worktree cut
@@ -623,7 +640,32 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(reason).not.toContain("commit .claude/skills");
     // #1201 AC-1: where it recommends sync, it names what sync rewrites.
     expect(reason).toContain("sequant sync");
-    expect(reason).toContain(SYNC_REWRITES_NOTE);
+    expect(reason).toContain(SYNC_ONLY_SKILLS_NOTE);
+  });
+
+  // #1209 AC-4: the main-checkout abort message (run-orchestrator.ts's inline
+  // string, not skills-preflight's `remedy` field) must also name the scoped
+  // command — both sites are meant to stay consistent (#1201's fix).
+  it("1209 AC-4: the main-checkout abort message names `sequant sync --only skills`", async () => {
+    // Given: a missing skill triggers the pre-flight (main-checkout case)
+    commitSkill("spec");
+    commitSkill("exec");
+    commitSkill("qa");
+    rmSync(join(worktreeFixture.repo, SKILLS_DIR, "spec"), {
+      recursive: true,
+      force: true,
+    });
+
+    // When: the remedy is printed via RunOrchestrator.run()
+    const result = await RunOrchestrator.run(
+      initRun({ phases: "spec,exec,qa", noLog: true }),
+      ["1209"],
+    );
+
+    // Then: it names `sequant sync --only skills`
+    const reason =
+      result.results.find((r) => r.issueNumber === 1209)?.abortReason ?? "";
+    expect(reason).toContain("sequant sync --only skills");
   });
 
   it("1193: with worktree isolation disabled the main checkout is checked once, with the full phase set", async () => {

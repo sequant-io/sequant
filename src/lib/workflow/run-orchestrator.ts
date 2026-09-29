@@ -124,7 +124,7 @@ import {
   resolvePhasesForScope,
   runResolvesSkills,
   runSkillsPreflight,
-  SYNC_REWRITES_NOTE,
+  SYNC_ONLY_SKILLS_NOTE,
 } from "./skills-preflight.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
@@ -1171,9 +1171,10 @@ export class RunOrchestrator {
           `${phasesThere.join(", ")} ${phasesThere.length === 1 ? "runs" : "run"} there, not in a worktree. ` +
           // #1201: same sync caveat as preflight.remedy. The rest stays
           // specific to this site: updating the checkout comes first, since
-          // sync doesn't fix a stale checkout (ADR-0002).
-          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it ` +
-          `(${SYNC_REWRITES_NOTE}), then re-run. ` +
+          // sync doesn't fix a stale checkout (ADR-0002). #1209: the scoped
+          // `--only skills` command, not a plain `sequant sync`.
+          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync --only skills\` in it ` +
+          `(${SYNC_ONLY_SKILLS_NOTE}), then re-run. ` +
           `No worktree was provisioned.`;
         bracketedConsoleLog(
           phasePauseHandle,

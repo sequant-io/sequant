@@ -123,6 +123,18 @@ function validatePhasesFlag(value: string): string {
   return value;
 }
 
+/** Allow-list for `sync --only <group>` (#1209 AC-3). Currently just `skills`. */
+const SYNC_ONLY_GROUPS = ["skills"] as const;
+
+function validateOnlyFlag(value: string): "skills" {
+  if (!(SYNC_ONLY_GROUPS as readonly string[]).includes(value)) {
+    throw new InvalidArgumentError(
+      `Unknown group '${value}'. Available: ${SYNC_ONLY_GROUPS.join(", ")}`,
+    );
+  }
+  return value as "skills";
+}
+
 const program = new Command();
 
 // Handle --no-color before parsing
@@ -196,6 +208,10 @@ program
     "Upgrade skill files from installed package templates (with diff preview)",
   )
   .option(
+    "--manifest-only",
+    "Write only .sequant-manifest.json and exit (no directories, templates, or settings)",
+  )
+  .option(
     "--agent <name>",
     "Agent driver to provision for (claude-code, aider, opencode, codex). opencode also writes .opencode/ command wrappers; codex writes the .agents/skills symlink and .codex/config.toml",
   )
@@ -227,6 +243,11 @@ program
     "Show what sync would write without making changes (exits non-zero if work is pending)",
   )
   .option("--no-agents-md", "Skip AGENTS.md regeneration")
+  .option(
+    "--only <group>",
+    "Restrict sync to a write-set group (currently only: skills)",
+    validateOnlyFlag,
+  )
   .action(syncCommand);
 
 program

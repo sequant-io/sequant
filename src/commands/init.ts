@@ -23,7 +23,7 @@ import {
   getTemplateContent,
 } from "../lib/templates.js";
 import { parse as parseYaml } from "yaml";
-import { createManifest } from "../lib/manifest.js";
+import { createManifest, getManifest } from "../lib/manifest.js";
 import { buildOpencodeMcpConfig } from "../lib/mcp-config.js";
 import { saveConfig } from "../lib/config.js";
 import {
@@ -107,6 +107,12 @@ interface InitOptions {
   agentsMd?: boolean;
   mcp?: boolean;
   upgradeSkills?: boolean;
+  /**
+   * Write only `.sequant-manifest.json` and exit — the minimal file `sequant
+   * run` needs, with no directories, templates, or settings touched (#1209
+   * AC-2).
+   */
+  manifestOnly?: boolean;
   /**
    * Agent driver to provision for (#862). `opencode` additionally writes the
    * per-phase command wrappers opencode needs to reach sequant's skills.
@@ -624,6 +630,27 @@ export async function initCommand(options: InitOptions): Promise<void> {
   // Handle --upgrade-skills: update skill files from installed package templates
   if (options.upgradeSkills) {
     await upgradeSkills();
+    return;
+  }
+
+  // Handle --manifest-only: write just the manifest `sequant run` needs and
+  // stop — no directories, templates, or settings touched (#1209 AC-2).
+  if (options.manifestOnly) {
+    const existing = await getManifest();
+    if (existing) {
+      console.log(
+        chalk.yellow(
+          "Manifest already exists — left untouched: .sequant-manifest.json",
+        ),
+      );
+      return;
+    }
+    const stack = options.stack ?? (await detectStack()) ?? "generic";
+    const packageManager = await detectPackageManager();
+    await createManifest(stack, packageManager ?? undefined);
+    console.log(
+      chalk.green(`✔ Created .sequant-manifest.json (stack: ${stack})`),
+    );
     return;
   }
 

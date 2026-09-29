@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../lib/manifest.js", () => ({
   getManifest: vi.fn(),
+  getPackageVersion: vi.fn(() => "2.6.1"),
 }));
 
 vi.mock("../lib/settings.js", () => ({

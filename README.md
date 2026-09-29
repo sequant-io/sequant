@@ -58,7 +58,7 @@ npx sequant init             # install skills into your project
 npx sequant doctor           # verify setup
 ```
 
-> **Commit `.claude/skills/`.** It is a runtime dependency, not a cache: `sequant run` phase agents load skills from that directory only, so a checkout (or cleanup) that drops it breaks every run. `sequant run` pre-flights the directory and fails fast with the fix (`sequant sync`) if it is missing.
+> **Commit `.claude/skills/`.** It is a runtime dependency, not a cache: `sequant run` phase agents load skills from that directory only, so a checkout (or cleanup) that drops it breaks every run. `sequant run` pre-flights the directory and fails fast with the fix (`sequant sync --only skills`) if it is missing.
 
 ### Your first run
 

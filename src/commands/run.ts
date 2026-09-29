@@ -1,8 +1,8 @@
 /** sequant run — Thin CLI adapter that delegates to RunOrchestrator. */
 
 import chalk from "chalk";
-import { getManifest } from "../lib/manifest.js";
-import { manifestForRun } from "./run-manifest.js";
+import { getManifest, getPackageVersion } from "../lib/manifest.js";
+import { manifestForRun, manifestMissingMessage } from "./run-manifest.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
@@ -56,7 +56,8 @@ export async function runCommand(
 
   const manifest = await getManifest();
   if (!manifest) {
-    rejectPreflight("❌ Sequant is not initialized. Run `sequant init` first.");
+    // #1209 AC-1: name the minimal manifest shape and the one-file fix.
+    rejectPreflight(manifestMissingMessage(getPackageVersion()));
     return;
   }
   const settings = await getSettings();
