@@ -1298,7 +1298,7 @@ export class RunOrchestrator {
             // message below drifted apart in the first place.
             worktreeRemedy =
               `the checkout at ${cwd} is missing required skills (${preflight.cause}) — ` +
-              `${preflight.remedy}`;
+              `${preflight.remedy} Then re-run.`;
           } else {
             const worktreeState = removedWorktrees.includes(cwd)
               ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`

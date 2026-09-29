@@ -560,6 +560,9 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     );
     expect(reason).not.toContain("git worktree remove");
     expect(reason).not.toMatch(/re-run with --force/);
+    // #1201: the shared remedy is followed by the instruction to re-run.
+    expect(reason).toContain(SYNC_REWRITES_NOTE);
+    expect(reason).toMatch(/re-run\.$/i);
   });
   it("933: a multi-issue abort removes every worktree this run created and names them all", async () => {
     installSkillUntracked("spec");

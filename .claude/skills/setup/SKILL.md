@@ -396,7 +396,7 @@ After setup completes, print a summary:
 | Dev server | ✅ <DEV_URL> (or ℹ️ not detected) |
 | Manifest | ✅ .sequant-manifest.json |
 | Constitution | ✅ .claude/memory/constitution.md |
-| Phase skills | ✅ .claude/skills/spec, exec, qa (commit these) |
+| Phase skills | ✅ .claude/skills/spec, exec, qa, _shared (commit these) |
 
 ### MCP Tools Available
 
@@ -421,7 +421,7 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 
 ## Post-Setup
 
-1. **Commit `.claude/skills/spec`, `.claude/skills/exec`, and `.claude/skills/qa`** - `sequant run` phase agents cannot resolve skills that aren't committed
+1. **Commit `.claude/skills/spec`, `.claude/skills/exec`, `.claude/skills/qa`, and `.claude/skills/_shared`** - `sequant run` phase agents cannot resolve skills that aren't committed, and the phase skills link to `_shared/references/`
 2. Review `.claude/memory/constitution.md` - project name should be filled in
 3. Add any project-specific guidelines to the constitution
 4. Optionally edit `.sequant/settings.json` to customize:
