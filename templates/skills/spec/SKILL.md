@@ -114,6 +114,8 @@ Mark tier in HTML comment for downstream parsing: `<!-- SEQUANT_SPEC_TIER: [tier
    > - **An `Evidence:` clause** naming the command or artifact that proves the AC. It is the only verification field the parser reads, so a `Verify:` clause is invisible to it, and `/qa` §6h/§6i never enforce that AC.
    > - **A `## Non-Goals` section** in the issue. The scope assessment reads that heading.
 
+   > **Run each command-shaped `Evidence:` against the base branch before accepting the AC.** A check that already passes on unchanged code (a `grep` matching existing text, a test that exists today) gates nothing. Flag it as vacuous and tighten it until it fails today and can only pass once the work is done. This is the AC-level form of the mutation-verification rule in the constitution.
+
 3. **Scope Assessment** (unless `--skip-scope-check`): Use `performScopeAssessment` from `./src/lib/scope/index.ts` with settings from `getSettings()`. Verdicts: SCOPE_OK (green), SCOPE_WARNING (yellow, auto-enables quality loop), SCOPE_SPLIT_RECOMMENDED (red). Store results in state.
 
 ### If guard fails (consumer projects):
