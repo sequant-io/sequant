@@ -2,7 +2,7 @@
 
 import chalk from "chalk";
 import { getManifest, getPackageVersion } from "../lib/manifest.js";
-import { manifestForRun } from "./run-manifest.js";
+import { manifestForRun, manifestMissingMessage } from "./run-manifest.js";
 import { getSettings } from "../lib/settings.js";
 import type { RunOptions } from "../lib/workflow/types.js";
 import { checkVersionCached, getVersionWarning } from "../lib/version-check.js";
@@ -56,18 +56,8 @@ export async function runCommand(
 
   const manifest = await getManifest();
   if (!manifest) {
-    // #1209 AC-1: `run` only ever reads the manifest — name the minimal
-    // shape and the one-file fix, rather than sending the user through the
-    // full `init` flow for a file `init --manifest-only` alone produces.
-    const minimalManifest = JSON.stringify({
-      version: getPackageVersion(),
-      stack: "generic",
-      installedAt: new Date().toISOString(),
-      files: {},
-    });
-    rejectPreflight(
-      `❌ Sequant is not initialized. That file alone is sufficient: ${minimalManifest} — write it yourself, or run \`sequant init --manifest-only\`.`,
-    );
+    // #1209 AC-1: name the minimal manifest shape and the one-file fix.
+    rejectPreflight(manifestMissingMessage(getPackageVersion()));
     return;
   }
   const settings = await getSettings();

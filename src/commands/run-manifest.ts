@@ -18,3 +18,24 @@ export function manifestForRun(manifest: {
     packageManager: manifest.packageManager,
   };
 }
+
+/**
+ * #1209 AC-1: `run`'s manifest-missing pre-flight message. Names the minimal
+ * manifest shape and the one-file fix (`init --manifest-only`) rather than
+ * sending the user through the full `init` flow for a file that alone is
+ * sufficient. Takes `packageVersion` as a parameter (not `getPackageVersion()`
+ * internally) purely to keep this module free of the `../lib/manifest.js`
+ * import cycle `run.ts` already has.
+ */
+export function manifestMissingMessage(packageVersion: string): string {
+  const minimalManifest = JSON.stringify({
+    version: packageVersion,
+    stack: "generic",
+    installedAt: new Date().toISOString(),
+    files: {},
+  });
+  return (
+    `❌ Sequant is not initialized. That file alone is sufficient: ` +
+    `${minimalManifest} — write it yourself, or run \`sequant init --manifest-only\`.`
+  );
+}
