@@ -124,6 +124,7 @@ import {
   resolvePhasesForScope,
   runResolvesSkills,
   runSkillsPreflight,
+  SYNC_REWRITES_NOTE,
 } from "./skills-preflight.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
@@ -1165,7 +1166,11 @@ export class RunOrchestrator {
         const remedy =
           `the main checkout at ${mainCheckout} is missing ${preflight.missingPaths.join(", ")} — ` +
           `${phasesThere.join(", ")} ${phasesThere.length === 1 ? "runs" : "run"} there, not in a worktree. ` +
-          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it, then re-run. ` +
+          // #1201: same sync caveat as preflight.remedy. The rest stays
+          // specific to this site: updating the checkout comes first, since
+          // sync doesn't fix a stale checkout (ADR-0002).
+          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it ` +
+          `(${SYNC_REWRITES_NOTE}), then re-run. ` +
           `No worktree was provisioned.`;
         bracketedConsoleLog(
           phasePauseHandle,
@@ -1288,9 +1293,12 @@ export class RunOrchestrator {
           let worktreeRemedy: string;
           if (worktreeMap.size === 0) {
             // Isolation disabled: `cwd` is the main checkout, not a worktree.
+            // #1201: use preflight's own remedy instead of a hand-written
+            // string — that duplication is how this and the worktree
+            // message below drifted apart in the first place.
             worktreeRemedy =
               `the checkout at ${cwd} is missing required skills (${preflight.cause}) — ` +
-              `commit .claude/skills, then re-run.`;
+              `${preflight.remedy} Then re-run.`;
           } else {
             const worktreeState = removedWorktrees.includes(cwd)
               ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
@@ -1325,10 +1333,12 @@ export class RunOrchestrator {
               (otherPreexisting.length > 0
                 ? ` Left in place (pre-existing): ${otherPreexisting.join(", ")}.`
                 : "");
+            // #1201: same remedy as the isolation-disabled branch above,
+            // plus the worktree-specific reason the commit step matters here.
             worktreeRemedy =
               `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
-              `commit .claude/skills (worktrees only materialize tracked files), ` +
-              `then re-run. ${worktreeState}${othersNote}`;
+              `${preflight.remedy} Worktrees only materialize tracked files, ` +
+              `so re-run after committing. ${worktreeState}${othersNote}`;
           }
           bracketedConsoleLog(
             phasePauseHandle,
