@@ -249,13 +249,25 @@ issue carries the no-autoclose label, the answer is **none**: the PR's own
 issue must not close either.
 
 ```bash
-link=$(jq -r '.run.prIssueLink // "closes"' .sequant/settings.json 2>/dev/null || echo closes)
-no_close_label=$(jq -r '.run.prNoCloseLabel // "no-autoclose"' .sequant/settings.json 2>/dev/null || echo no-autoclose)
-labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
-if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
-  expected=""                 # nothing may close
+# settings.json is JSONC (`sequant init` writes whole-line // comments), so
+# strip those before jq. Only whole-line comments: values such as devUrl
+# contain "//".
+settings_json='{}'
+if [ -f .sequant/settings.json ]; then
+  settings_json=$(sed -E 's#^[[:space:]]*//.*$##' .sequant/settings.json)
+fi
+if link=$(printf '%s' "$settings_json" | jq -er '.run.prIssueLink // "closes"') &&
+   no_close_label=$(printf '%s' "$settings_json" | jq -er '.run.prNoCloseLabel // "no-autoclose"'); then
+  labels=$(gh api "repos/{owner}/{repo}/issues/<issue-number>" --jq '.labels[].name')
+  if [ "$link" = "refs" ] || printf '%s\n' "$labels" | grep -qxF "$no_close_label"; then
+    expected=""                 # nothing may close
+  else
+    expected="<issue-number>"   # only the PR's own issue
+  fi
 else
-  expected="<issue-number>"   # only the PR's own issue
+  # Fail closed: an unreadable settings file must not quietly mean "closes".
+  echo "⚠️ Could not parse .sequant/settings.json; treating every closing reference as unexpected." >&2
+  expected=""
 fi
 ```
 
