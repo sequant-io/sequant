@@ -116,9 +116,13 @@ describe("run skills pre-flight (#813 AC-5 integration)", () => {
     expect(result.results[0].success).toBe(false);
     expect(result.results[0].abortReason).toContain("skills pre-flight failed");
 
-    // #933: worktree provisioning now happens BEFORE the pre-flight, so
-    // ensureWorktrees is expected to run — the pre-flight stops the phase.
-    expect(spies.ensureWorktrees).toHaveBeenCalledTimes(1);
+    // #1193: spec runs in the main checkout, and this main checkout has no
+    // skills, so the main-checkout pre-flight stops the run BEFORE any
+    // worktree is provisioned (the per-worktree check of #933 never runs).
+    expect(spies.ensureWorktrees).not.toHaveBeenCalled();
+    expect(result.results[0].abortReason).toContain(
+      ".claude/skills/spec/SKILL.md",
+    );
     // No phase executed.
     expect(spies.runIssue).not.toHaveBeenCalled();
     // No state entry was written for the issue.

@@ -30,6 +30,7 @@ import {
   PROMPT_CONTEXT_SENTINEL,
 } from "./phase-executor.js";
 import type { ExecutionConfig, PhaseResult } from "./types.js";
+import { specMarkerPostedSince } from "./spec-recommendation.js";
 import type { AgentPhaseResult } from "./drivers/index.js";
 import { ShutdownManager } from "../shutdown.js";
 import {
@@ -2540,12 +2541,114 @@ describe("mapAgentSuccessToPhaseResult", () => {
     });
   });
 
-  describe("other phases", () => {
-    it("does not apply guards to non-qa, non-exec phases", () => {
-      // No subprocess calls expected — spec is a pure passthrough.
+  describe("spec phase (#1193)", () => {
+    const MARKER =
+      '<!-- SEQUANT_SPEC: {"phases":["exec","qa"],"qualityLoop":false} -->';
+    const NOW = Date.parse("2026-09-28T12:00:00Z");
+    let dateSpy: { mockRestore(): void } | undefined;
+
+    afterEach(() => {
+      dateSpy?.mockRestore();
+      dateSpy = undefined;
+    });
+
+    it("fails a spec that produced no SEQUANT_SPEC marker, naming the marker and the skill", () => {
+      // The field case: the skill never loaded, the agent wrote a plan by
+      // hand from the phase prompt, and the session ended successfully.
+      const postedSince = vi.fn().mockReturnValue(false);
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({ output: "## Implementation Plan\n1. do it" }),
+        30,
+        "/repo",
+        1193,
+        { specMarkerPostedSince: postedSince },
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("no SEQUANT_SPEC marker");
+      expect(result.error).toContain(".claude/skills/spec/SKILL.md in /repo");
+      expect(result.output).toContain("Implementation Plan");
+      expect(postedSince).toHaveBeenCalledTimes(1);
+    });
+
+    it("passes when the marker is in the output, without checking comments", () => {
+      const postedSince = vi.fn().mockReturnValue(false);
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({ output: `## Recommended Workflow\n\n${MARKER}` }),
+        30,
+        "/repo",
+        1193,
+        { specMarkerPostedSince: postedSince },
+      );
+      expect(result.success).toBe(true);
+      expect(postedSince).not.toHaveBeenCalled();
+      expect(mockExecSync).not.toHaveBeenCalled();
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    });
+
+    it("passes when the marker was posted to the issue during the phase (body-file post, #814)", () => {
+      dateSpy = vi.spyOn(Date, "now").mockReturnValue(NOW);
+      const comments = [
+        // An earlier spec's marker: before the phase started, must not count.
+        { body: MARKER, createdAt: "2026-09-28T11:00:00Z" },
+        { body: `plan\n${MARKER}`, createdAt: "2026-09-28T11:59:00Z" },
+      ];
+      const github = { fetchIssueCommentsSync: () => comments };
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({ output: "Posted the plan to the issue." }),
+        30,
+        "/repo",
+        1193,
+        {
+          specMarkerPostedSince: (issue, since) =>
+            specMarkerPostedSince(issue, since, github),
+        },
+      );
+      expect(result.success).toBe(true);
+    });
+
+    it("does not accept a marker left by an earlier spec", () => {
+      dateSpy = vi.spyOn(Date, "now").mockReturnValue(NOW);
+      const github = {
+        fetchIssueCommentsSync: () => [
+          { body: MARKER, createdAt: "2026-09-28T11:00:00Z" },
+        ],
+      };
       const result = mapAgentSuccessToPhaseResult(
         "spec",
         makeAgentResult({ output: "plan" }),
+        30,
+        "/repo",
+        1193,
+        {
+          specMarkerPostedSince: (issue, since) =>
+            specMarkerPostedSince(issue, since, github),
+        },
+      );
+      expect(result.success).toBe(false);
+    });
+
+    it("is skipped for drivers that do not resolve skills (aider's prompt never asks for a marker)", () => {
+      const result = mapAgentSuccessToPhaseResult(
+        "spec",
+        makeAgentResult({ output: "plan" }),
+        30,
+        "/repo",
+        1193,
+        { requireSpecMarker: false },
+      );
+      expect(result.success).toBe(true);
+    });
+  });
+
+  describe("other phases", () => {
+    it("does not apply guards to phases other than qa, exec and spec", () => {
+      // No subprocess calls expected — verify is a pure passthrough.
+      const result = mapAgentSuccessToPhaseResult(
+        "verify",
+        makeAgentResult({ output: "verified" }),
         30,
         "/tmp/wt",
       );

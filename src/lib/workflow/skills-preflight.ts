@@ -21,6 +21,13 @@
  * It calls `driverResolvesSkills` first to skip the per-worktree loop
  * entirely for drivers that never resolve skills, rather than looping and
  * relying on each call's internal `{ok: true}` short-circuit.
+ *
+ * #1193: the worktree loop does not cover the phases that never enter a
+ * worktree. Spec (and verify/merger) are `requiresWorktree: false` and run in
+ * the main checkout, which can be behind `origin/<base>` and missing a skill
+ * the worktrees have. The orchestrator therefore also runs this pre-flight
+ * against the main checkout with `scope: "main-checkout"`, before any worktree
+ * is provisioned.
  */
 
 import type { AiderSettings } from "../settings.js";
@@ -58,7 +65,17 @@ export interface SkillsPreflightInput {
   issueInfoMap: Map<number, { title: string; labels: string[] }>;
   /** Project root to check under (default: `process.cwd()`). */
   cwd?: string;
+  /**
+   * Which resolved phases to check (#1193). `"all"` (default) checks every
+   * phase — the right set for a worktree, or for the main checkout when
+   * isolation is off. `"main-checkout"` checks only the phases whose
+   * `requiresWorktree` is false, i.e. the ones that execute in the main
+   * checkout even when every other phase runs in a worktree.
+   */
+  scope?: PreflightScope;
 }
+
+export type PreflightScope = "all" | "main-checkout";
 
 export type SkillsPreflightResult =
   | { ok: true }
@@ -68,6 +85,11 @@ export type SkillsPreflightResult =
       cause: string;
       /** Missing skill names, in required order. */
       missingSkills: string[];
+      /**
+       * Missing files, relative to the checked root, in the same order
+       * (`.claude/skills/<skill>/SKILL.md`, #1193).
+       */
+      missingPaths: string[];
       /** Driver whose skill resolution triggered the check. */
       driverName: string;
       /** Remedy line for display. */
@@ -118,6 +140,22 @@ type RequiredPhasesInput = Pick<
   | "issueNumbers"
   | "issueInfoMap"
 >;
+
+/**
+ * The phases a run resolves to that execute in a given place (#1193):
+ * `"main-checkout"` keeps only the `requiresWorktree: false` phases (spec,
+ * verify, merger), which run in the main checkout even under worktree
+ * isolation; `"all"` keeps every phase.
+ */
+export function resolvePhasesForScope(
+  input: RequiredPhasesInput,
+  scope: PreflightScope = "all",
+): string[] {
+  const phases = resolveRequiredPhases(input);
+  return scope === "main-checkout"
+    ? phases.filter((phase) => !phaseRegistry.get(phase).requiresWorktree)
+    : phases;
+}
 
 /** The phases behind {@link resolveRequiredSkills}, in required order. */
 function resolveRequiredPhases(input: RequiredPhasesInput): string[] {
@@ -181,6 +219,11 @@ export function runResolvesSkills(
   );
 }
 
+/** `.claude/skills/<skill>/SKILL.md` — the file a phase agent loads. */
+function skillFilePath(skill: string): string {
+  return `${SKILLS_DIR}/${skill}/SKILL.md`;
+}
+
 /**
  * Run the skills pre-flight. Returns `{ok: true}` when the run may proceed:
  * either every required skill is installed, or the selected driver does not
@@ -199,7 +242,7 @@ export async function runSkillsPreflight(
     phasePolicies: input.phasePolicies,
   };
   const required: { skill: string; driverName: string }[] = [];
-  for (const phase of resolveRequiredPhases(input)) {
+  for (const phase of resolvePhasesForScope(input, input.scope)) {
     let driver;
     try {
       driver = getDriver(resolvePhaseAgent(policyConfig, phase), {
@@ -234,6 +277,7 @@ export async function runSkillsPreflight(
     ok: false,
     cause,
     missingSkills,
+    missingPaths: missingSkills.map((skill) => skillFilePath(skill)),
     driverName,
     remedy:
       `The ${driverName} driver resolves phases from ${SKILLS_DIR}/ — ` +

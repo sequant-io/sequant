@@ -909,6 +909,12 @@ Not all phases run in the worktree:
 | `test` | Worktree  | Tests run against implementation |
 | `qa`   | Worktree  | Review happens in context        |
 
+Because `spec` runs in the main repo, the main repo's working tree matters too:
+
+- **Skills.** Before any worktree is created, the skills pre-flight checks the main checkout for the skills of the phases that run there (`.claude/skills/spec/SKILL.md` for `spec`). A missing file stops the run and names the path. Worktrees are checked separately, after they are created.
+- **Freshness.** When the main checkout is behind `origin/<base>`, the run prints `⚠ main checkout is N commits behind origin/<base> — spec runs there` before spec starts. It is a warning only; `git pull` clears it.
+- **Spec output.** A spec that produces no `SEQUANT_SPEC` marker, in its output or in an issue comment posted during the phase, is recorded as failed. That usually means `/spec` never loaded. Aider runs are exempt, because aider's spec prompt does not ask for the marker.
+
 ## Troubleshooting
 
 ### "Sequant is not initialized"

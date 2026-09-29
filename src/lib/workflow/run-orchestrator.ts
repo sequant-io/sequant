@@ -29,6 +29,7 @@ import type {
 import { formatCoarseNowLine } from "./run-state.js";
 import type { WorktreeInfo } from "./worktree-manager.js";
 import {
+  countCommitsBehind,
   detectDefaultBranch,
   ensureWorktrees,
   ensureWorktreesChain,
@@ -119,7 +120,11 @@ import {
 } from "./batch-executor.js";
 import { reconcileStateAtStartup } from "./state-utils.js";
 import { runChainPreflight } from "./chain-preflight.js";
-import { runResolvesSkills, runSkillsPreflight } from "./skills-preflight.js";
+import {
+  resolvePhasesForScope,
+  runResolvesSkills,
+  runSkillsPreflight,
+} from "./skills-preflight.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
 import { formatEscalationTriggerLabel } from "./model-ladder.js";
@@ -1097,6 +1102,81 @@ export class RunOrchestrator {
       mergedOptions.worktreeIsolation !== false && issueNumbers.length > 0;
 
     let worktreeMap: Map<number, WorktreeInfo> = new Map();
+
+    // Skills pre-flight inputs, shared by the main-checkout check below and
+    // the per-worktree check after provisioning. Both are skipped entirely
+    // (zero calls) for non-skill drivers (aider) and for --dry-run.
+    // #1150: gated on ANY phase's driver, and each phase is checked against
+    // its own driver — an aider run with a claude-code exec phase still needs
+    // the exec skill.
+    const skillsPreflightActive = !config.dryRun && runResolvesSkills(config);
+    const preflightBase = {
+      agent: resolveRunAgent(config),
+      phasePolicies: config.phasePolicies,
+      aiderSettings: config.aiderSettings,
+      phases: config.phases,
+      autoDetectPhases: resolved.autoDetectPhases,
+      qualityLoop: config.qualityLoop,
+      testgen: mergedOptions.testgen,
+      securityReview: mergedOptions.securityReview,
+      issueNumbers,
+      issueInfoMap,
+    };
+    const skillsPreflightAbort = (reason: string): RunResult => ({
+      results: issueNumbers.map((issueNumber) => ({
+        issueNumber,
+        success: false,
+        phaseResults: [],
+        durationSeconds: 0,
+        loopTriggered: false,
+        abortReason: `skills pre-flight failed: ${reason}`,
+      })),
+      logPath: null,
+      exitCode: 1,
+      worktreeMap,
+      issueInfoMap,
+      config,
+      mergedOptions,
+      logWriter: null,
+      wallClockDurationSeconds: wallClock(),
+    });
+
+    // ── Main-checkout skills pre-flight (#1193) ────────────────────────
+    // Spec (and verify/merger) are `requiresWorktree: false`: they run in the
+    // main checkout even under worktree isolation, so the per-worktree check
+    // below never looks at the directory they load skills from. A checkout
+    // behind `origin/<base>` can lack a skill every freshly cut worktree has;
+    // spec then plans without its skill and still reports success. Checked
+    // BEFORE provisioning so a failure leaves no worktree behind. With
+    // isolation off the per-worktree loop already checks `process.cwd()` for
+    // every phase, so running this too would check the same tree twice.
+    if (skillsPreflightActive && useWorktreeIsolation) {
+      const mainCheckout = process.cwd();
+      const preflight = await runSkillsPreflight({
+        ...preflightBase,
+        cwd: mainCheckout,
+        scope: "main-checkout",
+      });
+      if (!preflight.ok) {
+        const phasesThere = resolvePhasesForScope(
+          preflightBase,
+          "main-checkout",
+        );
+        const remedy =
+          `the main checkout at ${mainCheckout} is missing ${preflight.missingPaths.join(", ")} — ` +
+          `${phasesThere.join(", ")} ${phasesThere.length === 1 ? "runs" : "run"} there, not in a worktree. ` +
+          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it, then re-run. ` +
+          `No worktree was provisioned.`;
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.red(`\n  ✖ Skills pre-flight failed: ${preflight.cause}`),
+        );
+        bracketedConsoleLog(phasePauseHandle, chalk.red(`    ${remedy}`));
+        shutdown.dispose();
+        return skillsPreflightAbort(remedy);
+      }
+    }
+
     if (useWorktreeIsolation && !config.dryRun) {
       const issueData = issueNumbers.map((num) => ({
         number: num,
@@ -1135,31 +1215,43 @@ export class RunOrchestrator {
       }
     }
 
+    // ── Main-checkout freshness warning (#1193) ────────────────────────
+    // The phases that run in the main checkout plan against whatever it has
+    // checked out. Behind `origin/<base>`, spec reads stale code (and, in the
+    // field case that filed #1193, lacked a skill the base branch had). Counts
+    // against the ref worktree provisioning just fetched — no second fetch;
+    // with isolation off nothing fetched, so the count is against the last
+    // fetch and can only under-report. Warn only, never fail.
+    if (!config.dryRun && issueNumbers.length > 0) {
+      const phasesThere = useWorktreeIsolation
+        ? resolvePhasesForScope(preflightBase, "main-checkout")
+        : resolvePhasesForScope(preflightBase);
+      const behind =
+        phasesThere.length > 0
+          ? countCommitsBehind(process.cwd(), baseBranch)
+          : null;
+      if (behind !== null && behind > 0) {
+        bracketedConsoleLog(
+          phasePauseHandle,
+          chalk.yellow(
+            `  ⚠ main checkout is ${behind} commit${behind === 1 ? "" : "s"} behind ` +
+              `origin/${baseBranch.replace(/^origin\//, "")} — ${phasesThere.join(", ")} ` +
+              `${phasesThere.length === 1 ? "runs" : "run"} there. ` +
+              `Update it (\`git pull\`) so ${phasesThere.length === 1 ? "it plans" : "they plan"} against current code.`,
+          ),
+        );
+      }
+    }
+
     // ── Skills pre-flight (#933, was #813) ──────────────────────────────
     // Fail fast when the driver resolves phases via `.claude/skills/` and a
     // required skill is missing — AFTER worktree provisioning, checked
-    // against each worktree the phase agents actually run in, not the main
-    // checkout. `git worktree add` only materializes tracked files, so an
-    // untracked `.claude/skills/` (the default post-`sequant sync` state)
-    // passes a check against the main checkout while every worktree has
-    // none. Skipped entirely (zero calls) for non-skill drivers (aider) and
-    // for --dry-run, where no worktree was provisioned.
-    // #1150: gated on ANY phase's driver, and each phase is checked against
-    // its own driver — an aider run with a claude-code exec phase still needs
-    // the exec skill.
-    if (!config.dryRun && runResolvesSkills(config)) {
-      const preflightBase = {
-        agent: resolveRunAgent(config),
-        phasePolicies: config.phasePolicies,
-        aiderSettings: config.aiderSettings,
-        phases: config.phases,
-        autoDetectPhases: resolved.autoDetectPhases,
-        qualityLoop: config.qualityLoop,
-        testgen: mergedOptions.testgen,
-        securityReview: mergedOptions.securityReview,
-        issueNumbers,
-        issueInfoMap,
-      };
+    // against each worktree the phase agents actually run in. `git worktree
+    // add` only materializes tracked files, so an untracked `.claude/skills/`
+    // (the default post-`sequant sync` state) passes a check against the main
+    // checkout while every worktree has none. The main checkout's own
+    // `requiresWorktree: false` phases were checked above (#1193).
+    if (skillsPreflightActive) {
       // Worktree isolation disabled: phases execute in the main checkout,
       // same as pre-#933 behavior, so that's what gets checked.
       const cwdsToCheck =
@@ -1247,24 +1339,7 @@ export class RunOrchestrator {
             chalk.red(`    ${worktreeRemedy}`),
           );
           shutdown.dispose();
-          return {
-            results: issueNumbers.map((issueNumber) => ({
-              issueNumber,
-              success: false,
-              phaseResults: [],
-              durationSeconds: 0,
-              loopTriggered: false,
-              abortReason: `skills pre-flight failed: ${worktreeRemedy}`,
-            })),
-            logPath: null,
-            exitCode: 1,
-            worktreeMap,
-            issueInfoMap,
-            config,
-            mergedOptions,
-            logWriter: null,
-            wallClockDurationSeconds: wallClock(),
-          };
+          return skillsPreflightAbort(worktreeRemedy);
         }
       }
     }

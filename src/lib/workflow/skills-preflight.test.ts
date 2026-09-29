@@ -32,6 +32,8 @@ const worktreeFixture = vi.hoisted(() => ({ base: "", repo: "" }));
 const spies933 = vi.hoisted(() => ({
   runIssue: vi.fn(),
   preflightCwds: [] as string[],
+  /** `cwd` of each call made with `scope: "main-checkout"` (#1193). */
+  mainCheckoutScopedCwds: [] as string[],
 }));
 
 vi.mock("./batch-executor.js", async (importOriginal) => {
@@ -109,6 +111,9 @@ vi.mock("./skills-preflight.js", async (importOriginal) => {
       // Record EVERY invocation (a cwd-less call is the pre-provisioning
       // shape #933 removed), so a zero-length assertion means zero calls.
       spies933.preflightCwds.push(input.cwd ?? "<no-cwd>");
+      if (input.scope === "main-checkout") {
+        spies933.mainCheckoutScopedCwds.push(input.cwd ?? "<no-cwd>");
+      }
       return actual.runSkillsPreflight(input);
     },
   };
@@ -325,6 +330,31 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
     }
   });
 
+  it("1193: scope main-checkout checks only the phases that run there, and names the missing file", async () => {
+    // exec and qa run in worktrees; their absence here is the worktree
+    // check's business. spec runs in the main checkout.
+    const specMissing = await runSkillsPreflight({
+      ...EXPLICIT_BASE,
+      cwd: root,
+      scope: "main-checkout",
+    });
+    expect(specMissing.ok).toBe(false);
+    if (!specMissing.ok) {
+      expect(specMissing.missingSkills).toEqual(["spec"]);
+      expect(specMissing.missingPaths).toEqual([
+        ".claude/skills/spec/SKILL.md",
+      ]);
+    }
+
+    installSkill("spec");
+    const result = await runSkillsPreflight({
+      ...EXPLICIT_BASE,
+      cwd: root,
+      scope: "main-checkout",
+    });
+    expect(result).toEqual({ ok: true });
+  });
+
   it("#1150 AC-6: a claude-code run with an aider phase does not require that phase's skill", async () => {
     installSkill("spec");
     installSkill("exec");
@@ -367,6 +397,7 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     process.chdir(worktreeFixture.repo);
     spies933.runIssue.mockClear();
     spies933.preflightCwds.length = 0;
+    spies933.mainCheckoutScopedCwds.length = 0;
   });
 
   afterEach(() => {
@@ -457,9 +488,13 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(spies933.runIssue).toHaveBeenCalledWith(933);
     const worktreePath = join(base, "wt-933");
     expect(spies933.preflightCwds).toContain(worktreePath);
-    expect(spies933.preflightCwds).not.toContain(
-      realpathSync(worktreeFixture.repo),
-    );
+    // The main checkout is checked too (#1193), but only for the phases that
+    // run there — never the full set, which is the worktree's check (#933).
+    const mainCheckout = realpathSync(worktreeFixture.repo);
+    expect(spies933.mainCheckoutScopedCwds).toEqual([mainCheckout]);
+    expect(
+      spies933.preflightCwds.filter((cwd) => cwd === mainCheckout),
+    ).toHaveLength(1);
   });
 
   it("933: a pre-existing (reused) worktree is kept on pre-flight failure and the remedy names git worktree remove, never --force", async () => {
@@ -540,6 +575,57 @@ describe("RunOrchestrator skills pre-flight targets worktrees, not the main chec
     expect(reason).toContain("Also removed (created for this run):");
     expect(reason).toContain(join(base, "wt-934"));
   });
+  it("1193 AC-1: a main checkout missing .claude/skills/spec/SKILL.md fails pre-flight before any worktree, naming the path", async () => {
+    // The field case: the base branch has every skill, so a worktree cut
+    // from it passes #933's check — but spec runs in the main checkout, whose
+    // working tree lacks the spec skill.
+    commitSkill("spec");
+    commitSkill("exec");
+    commitSkill("qa");
+    rmSync(join(worktreeFixture.repo, SKILLS_DIR, "spec"), {
+      recursive: true,
+      force: true,
+    });
+
+    const result = await RunOrchestrator.run(
+      initRun({ phases: "spec,exec,qa", noLog: true }),
+      ["1193"],
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(spies933.runIssue).not.toHaveBeenCalled();
+    // Checked before provisioning: no worktree to clean up.
+    expect(existsSync(join(base, "wt-1193"))).toBe(false);
+    const reason =
+      result.results.find((r) => r.issueNumber === 1193)?.abortReason ?? "";
+    expect(reason).toContain(".claude/skills/spec/SKILL.md");
+    expect(reason).toContain(
+      `the main checkout at ${realpathSync(worktreeFixture.repo)}`,
+    );
+    // The remedy fits what happened: update the checkout, not commit skills.
+    expect(reason).toContain("git pull");
+    expect(reason).not.toContain("commit .claude/skills");
+  });
+
+  it("1193: with worktree isolation disabled the main checkout is checked once, with the full phase set", async () => {
+    commitSkill("spec");
+    commitSkill("exec");
+    commitSkill("qa");
+    const result = await RunOrchestrator.run(
+      initRun({
+        phases: "spec,exec,qa",
+        noLog: true,
+        worktreeIsolation: false,
+      }),
+      ["1193"],
+    );
+    expect(result.exitCode).toBe(0);
+    expect(spies933.mainCheckoutScopedCwds).toEqual([]);
+    expect(spies933.preflightCwds).toEqual([
+      realpathSync(worktreeFixture.repo),
+    ]);
+  });
+
   it("933 AC-3: --dry-run makes zero pre-flight calls", async () => {
     // No skills anywhere — if the pre-flight ran at all it would fail.
     const result = await RunOrchestrator.run(
