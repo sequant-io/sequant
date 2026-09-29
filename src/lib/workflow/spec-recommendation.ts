@@ -125,6 +125,24 @@ export function parseSpecMarker(
 }
 
 /**
+ * True when a comment posted to the issue at or after `sinceMs` carries a
+ * valid `SEQUANT_SPEC` marker (#1193 spec output guard). Older comments are
+ * ignored: a marker left by an earlier spec must not vouch for this one.
+ * A fetch failure yields no comments, so the answer is `false`.
+ */
+export function specMarkerPostedSince(
+  issueNumber: number,
+  sinceMs: number,
+  github: Pick<GitHubProvider, "fetchIssueCommentsSync"> = new GitHubProvider(),
+): boolean {
+  const recent = github
+    .fetchIssueCommentsSync(String(issueNumber))
+    .filter((comment) => Date.parse(comment.createdAt) >= sinceMs)
+    .map((comment) => comment.body);
+  return parseSpecMarker(recent) !== null;
+}
+
+/**
  * Find the most recently posted comment containing a `## Recommended
  * Workflow` section and parse it with the existing prose regex.
  *

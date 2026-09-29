@@ -305,6 +305,16 @@ The warning only fires when the resolved install path is *exactly* `$HOME/node_m
 
 **Note:** The pre-flight only applies to drivers that resolve skills (the default `claude-code` driver). Aider runs are unaffected.
 
+**When the message names the main checkout** (`the main checkout at … is missing .claude/skills/spec/SKILL.md`): `spec` runs in your main checkout, not a worktree, so its skill must be present there. Committing the skills will not help if they are already committed. Update the checkout (`git pull` on the base branch) or run `sequant sync` in it, then re-run. No worktree was created, so there is nothing to clean up.
+
+### Spec fails with "spec produced no SEQUANT_SPEC marker"
+
+**Problem:** The spec phase ran to completion, but the run records it as failed with `spec produced no SEQUANT_SPEC marker … the /spec skill likely did not load`.
+
+**Cause:** The `/spec` skill ends by emitting a `<!-- SEQUANT_SPEC: {...} -->` marker, and `sequant run` reads it to pick the next phases. If the agent could not load the skill, it writes a plan by hand from the phase prompt and emits no marker. Sequant used to record that as success.
+
+**Solution:** Check that `.claude/skills/spec/SKILL.md` exists in the checkout named in the error. That is your main checkout, which may be behind `origin/<base>` (the run warns about this before spec starts). Run `git pull` there, or `sequant sync`, then re-run.
+
 ### Permission denied on hooks
 
 **Problem:** Hook scripts fail with permission errors.

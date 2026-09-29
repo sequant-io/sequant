@@ -223,6 +223,45 @@ export function detectDefaultBranch(verbose: boolean = false): string {
 }
 
 /**
+ * Count the commits `origin/<baseBranch>` has that `cwd`'s HEAD lacks:
+ * `merge-base(HEAD, origin/<base>)..origin/<base>`. Does NOT fetch — callers
+ * that need a fresh count fetch first (#1193: the run orchestrator reuses the
+ * fetch worktree provisioning already did).
+ *
+ * @returns the count, or `null` when it cannot be determined (no such ref,
+ *   no merge base, not a git repository)
+ */
+export function countCommitsBehind(
+  cwd: string,
+  baseBranch: string = "main",
+): number | null {
+  const baseRef = `origin/${baseBranch.replace(/^origin\//, "")}`;
+  const mergeBaseResult = spawnSync(
+    "git",
+    ["-C", cwd, "merge-base", "HEAD", baseRef],
+    { stdio: "pipe" },
+  );
+  if (mergeBaseResult.status !== 0) return null;
+  const mergeBase = mergeBaseResult.stdout.toString().trim();
+
+  const baseHeadResult = spawnSync("git", ["-C", cwd, "rev-parse", baseRef], {
+    stdio: "pipe",
+  });
+  if (baseHeadResult.status !== 0) return null;
+  const baseHead = baseHeadResult.stdout.toString().trim();
+
+  if (mergeBase === baseHead) return 0;
+  const countResult = spawnSync(
+    "git",
+    ["-C", cwd, "rev-list", "--count", `${mergeBase}..${baseHead}`],
+    { stdio: "pipe" },
+  );
+  if (countResult.status !== 0) return null;
+  const count = parseInt(countResult.stdout.toString().trim(), 10);
+  return Number.isNaN(count) ? null : count;
+}
+
+/**
  * Check if a worktree is stale (behind the base branch) and should be recreated
  *
  * @param worktreePath - Path to the worktree
@@ -242,8 +281,6 @@ export function checkWorktreeFreshness(
     hasUnpushedCommits: false,
   };
 
-  const baseRef = `origin/${baseBranch}`;
-
   // Fetch latest base branch to ensure accurate comparison
   spawnSync("git", ["-C", worktreePath, "fetch", "origin", baseBranch], {
     stdio: "pipe",
@@ -261,46 +298,19 @@ export function checkWorktreeFreshness(
       statusResult.stdout.toString().trim().length > 0;
   }
 
-  // Get merge base with the base branch
-  const mergeBaseResult = spawnSync(
-    "git",
-    ["-C", worktreePath, "merge-base", "HEAD", baseRef],
-    { stdio: "pipe" },
-  );
-  if (mergeBaseResult.status !== 0) {
+  // Count commits behind base branch (the fetch above refreshed the ref)
+  const commitsBehind = countCommitsBehind(worktreePath, baseBranch);
+  if (commitsBehind === null) {
     // Can't determine merge base - not stale
     return result;
   }
-  const mergeBase = mergeBaseResult.stdout.toString().trim();
-
-  // Get base branch HEAD
-  const baseHeadResult = spawnSync(
-    "git",
-    ["-C", worktreePath, "rev-parse", baseRef],
-    { stdio: "pipe" },
-  );
-  if (baseHeadResult.status !== 0) {
-    return result;
-  }
-  const baseHead = baseHeadResult.stdout.toString().trim();
-
-  // Count commits behind base branch
-  if (mergeBase !== baseHead) {
-    const countResult = spawnSync(
-      "git",
-      ["-C", worktreePath, "rev-list", "--count", `${mergeBase}..${baseHead}`],
-      { stdio: "pipe" },
-    );
-    if (countResult.status === 0) {
-      result.commitsBehind = parseInt(countResult.stdout.toString().trim(), 10);
-      // Consider stale if more than 5 commits behind. NOT configurable — the
-      // threshold is the literal below, and a stale-but-clean worktree is
-      // force-removed and rebuilt on the strength of it (see the recreate
-      // branch in `ensureWorktree`). Surfaced in #810; left as a literal here
-      // because making it configurable is a behavior change, not a comment fix.
-      result.isStale = result.commitsBehind > 5;
-    }
-  }
+  result.commitsBehind = commitsBehind;
+  // Consider stale if more than 5 commits behind. NOT configurable — the
+  // threshold is the literal below, and a stale-but-clean worktree is
+  // force-removed and rebuilt on the strength of it (see the recreate
+  // branch in `ensureWorktree`). Surfaced in #810; left as a literal here
+  // because making it configurable is a behavior change, not a comment fix.
+  result.isStale = result.commitsBehind > 5;
 
   // Check for unpushed commits (work in progress)
   const unpushedResult = spawnSync(
