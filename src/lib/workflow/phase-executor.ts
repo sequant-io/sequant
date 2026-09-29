@@ -608,10 +608,35 @@ export function endedWithoutVerdict(output: string | undefined): boolean {
 export function parseQaSummary(output: string): QaSummary | null {
   if (!output) return null;
 
-  // Anchored pattern: cell content starts with optional emoji, then status keyword
-  // Uses alternation (not character class) to avoid ESLint no-misleading-character-class
+  // Anchored pattern: cell content starts with optional emoji, then status keyword.
+  // Uses alternation (not character class) to avoid ESLint no-misleading-character-class.
+  // `\u23F3` (pending hourglass) and `\uD83D\uDD04` (overridden/cycle) are the
+  // skill's documented emoji (#1194 AC-3). `\*{0,2}` tolerates a bold-wrapped cell
+  // with no emoji at all (`**MET**`, #1194 AC-1) — no explicit trailing-`**` match
+  // is needed since `\b` after the keyword already stops before the non-word `*`.
+  // `NOT[ _]MET` normalizes the issue's own space-separated example to the
+  // codebase's underscore vocabulary (#1194 AC-1). `OVERRIDDEN` is the skill's
+  // §11a approved-exception status (#1194 AC-3) and, per spec Open Question 3,
+  // counts as MET-equivalent below.
   const STATUS_CELL =
-    /^(?:\u2705|\u274C|\u26A0\uFE0F|\u2B50|\u2139\uFE0F|\u2753|\u2757)?\s*(MET|NOT_MET|PARTIALLY_MET|PARTIAL|PENDING|N\/A)\b/i;
+    /^(?:\u2705|\u274C|\u26A0\uFE0F|\u2B50|\u2139\uFE0F|\u2753|\u2757|\u23F3|\uD83D\uDD04)?\s*\*{0,2}\s*(NOT[ _]MET|PARTIALLY_MET|PARTIAL|PENDING|OVERRIDDEN|MET|N\/A)\b/i;
+
+  // #1194: a table status cell holds the keyword alone (optionally bold, or
+  // followed by a separator and a short note). The right-to-left scan below
+  // would otherwise take a notes cell such as "Not met in first pass; fixed"
+  // as the status and undercount acMet. The checklist fallback keeps the
+  // prefix match, where prose after the keyword is the normal shape.
+  const STATUS_TABLE_CELL = new RegExp(
+    `${STATUS_CELL.source}\\*{0,2}\\s*(?:$|[\u2014\u2013(:;,.-])`,
+    "i",
+  );
+
+  // A status normalizes to "MET" or counts as an approved override — both credit
+  // acMet. Shared by the table loop and the checklist fallback loop below.
+  const normalizeStatus = (raw: string): string =>
+    raw.toUpperCase().replace(/\s+/g, "_");
+  const isMet = (status: string): boolean =>
+    status === "MET" || status === "OVERRIDDEN";
 
   const lines = output.split("\n");
   const acRows = lines.filter((line) => /^\s*\|\s*\*?\*?AC-\d+/.test(line));
@@ -619,6 +644,7 @@ export function parseQaSummary(output: string): QaSummary | null {
   let acMet = 0;
   let acTotal = 0;
   const tableIds = new Set<string>();
+  const pendingIds = new Set<string>();
 
   for (const row of acRows) {
     const cells = row
@@ -628,13 +654,22 @@ export function parseQaSummary(output: string): QaSummary | null {
 
     // Scan cells right-to-left to find the status cell
     for (let i = cells.length - 1; i >= 1; i--) {
-      const match = cells[i].match(STATUS_CELL);
+      const match = cells[i].match(STATUS_TABLE_CELL);
       if (match) {
-        const status = match[1].toUpperCase();
-        acTotal++;
-        if (status === "MET") acMet++;
+        const status = normalizeStatus(match[1]);
         const id = cells[0].match(/AC-\d+/i);
-        if (id) tableIds.add(id[0].toUpperCase());
+        const acId = id ? id[0].toUpperCase() : undefined;
+        // #1194: an AC that appears in more than one table (the coverage
+        // table and the Manual Test table) is counted once, from its first
+        // row, so a later 🔄 Overridden row can't credit an AC the coverage
+        // table marks PENDING.
+        if (acId && tableIds.has(acId)) break;
+        acTotal++;
+        if (isMet(status)) acMet++;
+        if (acId) {
+          tableIds.add(acId);
+          if (status === "PENDING") pendingIds.add(acId);
+        }
         break;
       }
     }
@@ -661,14 +696,21 @@ export function parseQaSummary(output: string): QaSummary | null {
       const rest = item[3].replace(/^[\s:*.\-\u2014]+/, "");
       const status = rest.match(STATUS_CELL);
       if (!status) continue;
-      met = status[1].toUpperCase() === "MET";
+      const normalized = normalizeStatus(status[1]);
+      met = isMet(normalized);
+      if (normalized === "PENDING") pendingIds.add(id);
     }
     listIds.add(id);
     acTotal++;
     if (met) acMet++;
   }
 
-  if (acTotal === 0) return null;
+  // #1194 AC-2: hoisted above the acTotal===0 guard so a valid marker (even an
+  // explicitly empty `{"findings":[]}`, the skill's documented clean-pass shape)
+  // still produces a summary when no AC row parsed at all.
+  const rawFindings = parseQaGapsMarker(output);
+
+  if (acTotal === 0 && rawFindings === null) return null;
 
   const proseGaps = parseListSection(output, /\*\*(?:Issues|Gaps)/);
   const suggestions = parseListSection(output, /\*\*Suggestions/);
@@ -677,7 +719,7 @@ export function parseQaSummary(output: string): QaSummary | null {
   // rather than replace it — a marker-carrying comment can still contain a
   // gap the model couldn't fit into the six categories (the fallback rule),
   // and that prose-only finding must not be silently dropped (AC-5).
-  const findings = parseQaGapsMarker(output) ?? undefined;
+  const findings = rawFindings ?? undefined;
   const seen = new Set<string>();
   const gaps: string[] = [];
   for (const gap of [
@@ -690,7 +732,14 @@ export function parseQaSummary(output: string): QaSummary | null {
     gaps.push(gap);
   }
 
-  return { acMet, acTotal, gaps, suggestions, ...(findings && { findings }) };
+  return {
+    acMet,
+    acTotal,
+    gaps,
+    suggestions,
+    ...(findings && { findings }),
+    ...(pendingIds.size > 0 && { pendingAcIds: [...pendingIds] }),
+  };
 }
 
 /**

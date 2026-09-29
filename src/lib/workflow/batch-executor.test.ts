@@ -8,6 +8,7 @@ import type { RunOptions } from "./batch-executor.js";
 import {
   billingHaltReason,
   buildLoopContext,
+  buildQaVerdictComment,
   deriveFailureCategory,
   emitProgressLine,
   isBillingOrWindowHalt,
@@ -15,7 +16,7 @@ import {
   withActivityHook,
   AUTO_WAIT_PROGRESS_LINE_INTERVAL_MS,
 } from "./batch-executor.js";
-import { AUTO_WAIT_BUFFER_MS } from "./phase-executor.js";
+import { AUTO_WAIT_BUFFER_MS, parseQaSummary } from "./phase-executor.js";
 import { classifyError } from "./error-classifier.js";
 import { readFileSync } from "node:fs";
 import { CodexStreamParser, evaluateCodexRun } from "./drivers/codex.js";
@@ -1837,6 +1838,141 @@ describe("#964: qa-verdict comment on the standard (non-ready-gate) run path", (
     });
 
     expect(mockPostComment).not.toHaveBeenCalled();
+  });
+});
+
+describe("#1194 AC-4: buildQaVerdictComment lists PENDING ACs and pause_for_human findings", () => {
+  it("lists pendingAcIds under a NEEDS_VERIFICATION verdict", () => {
+    const body = buildQaVerdictComment(
+      "NEEDS_VERIFICATION",
+      {
+        acMet: 1,
+        acTotal: 3,
+        gaps: [],
+        suggestions: [],
+        pendingAcIds: ["AC-2", "AC-3"],
+      },
+      "abc123",
+      1,
+    );
+
+    expect(body).toContain("**Pending ACs:**");
+    expect(body).toContain("- AC-2");
+    expect(body).toContain("- AC-3");
+  });
+
+  it("surfaces pause_for_human findings in a distinct block, not folded into Gaps", () => {
+    const body = buildQaVerdictComment(
+      "NEEDS_VERIFICATION",
+      {
+        acMet: 0,
+        acTotal: 1,
+        gaps: ["A generic gap"],
+        suggestions: [],
+        findings: [
+          {
+            category: "risk_gap",
+            evidence: "src/foo.ts:1",
+            description: "Needs a human call on the override",
+            recommendedAction: "pause_for_human",
+          },
+          {
+            category: "test_gap",
+            evidence: "src/bar.ts:1",
+            description: "Missing coverage, fixable directly",
+            recommendedAction: "fix_now",
+          },
+        ],
+      },
+      "abc123",
+      1,
+    );
+
+    expect(body).toContain("**Needs human review:**");
+    expect(body).toContain("- Needs a human call on the override");
+    expect(body).not.toContain("Missing coverage, fixable directly");
+    // The generic gap still appears in the ordinary Gaps section.
+    expect(body).toContain("**Gaps:**");
+    expect(body).toContain("- A generic gap");
+  });
+
+  it("a findings-only summary (acTotal === 0) under NEEDS_VERIFICATION never prints 0/0 met", () => {
+    const body = buildQaVerdictComment(
+      "NEEDS_VERIFICATION",
+      {
+        acMet: 0,
+        acTotal: 0,
+        gaps: [],
+        suggestions: [],
+        findings: [
+          {
+            category: "risk_gap",
+            evidence: "src/foo.ts:1",
+            description: "Needs review",
+            recommendedAction: "pause_for_human",
+          },
+        ],
+      },
+      "abc123",
+      1,
+    );
+
+    expect(body).not.toMatch(/AC coverage: 0\/0 met/);
+    expect(body).toContain("**Needs human review:**");
+  });
+
+  it("other verdicts do not render Pending ACs / Needs human review blocks", () => {
+    const body = buildQaVerdictComment(
+      "AC_MET_BUT_NOT_A_PLUS",
+      {
+        acMet: 2,
+        acTotal: 2,
+        gaps: [],
+        suggestions: [],
+        pendingAcIds: ["AC-1"],
+        findings: [
+          {
+            category: "risk_gap",
+            evidence: "src/foo.ts:1",
+            description: "Should not show up here",
+            recommendedAction: "pause_for_human",
+          },
+        ],
+      },
+      "abc123",
+      1,
+    );
+
+    expect(body).not.toContain("**Pending ACs:**");
+    expect(body).not.toContain("**Needs human review:**");
+  });
+
+  it("lists each pause_for_human finding once when the summary comes from parseQaSummary", () => {
+    // The field shape from the issue: bold statuses, a marker whose
+    // descriptions parseQaSummary also unions into `gaps`.
+    const output = `| AC-1 | Parser | **MET** | Done |
+| AC-2 | Comment | **PENDING** | Needs a live run |
+
+### Verdict: NEEDS_VERIFICATION
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"risk_gap","evidence":"src/a.ts:1","description":"Confirm the live verdict comment","recommendedAction":"pause_for_human"},{"category":"test_gap","evidence":"src/b.ts:2","description":"Add a fixture for the table form","recommendedAction":"fix_now"}]} -->`;
+
+    const summary = parseQaSummary(output);
+    expect(summary!.gaps).toContain("Confirm the live verdict comment");
+
+    const body = buildQaVerdictComment(
+      "NEEDS_VERIFICATION",
+      summary!,
+      "abc123",
+      1,
+    );
+
+    expect(body.split("Confirm the live verdict comment").length - 1).toBe(1);
+    expect(body).toContain(
+      "**Needs human review:**\n- Confirm the live verdict comment",
+    );
+    expect(body).toContain("**Gaps:**\n- Add a fixture for the table form");
+    expect(body).toContain("**Pending ACs:**\n- AC-2");
   });
 });
 

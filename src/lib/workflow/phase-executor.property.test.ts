@@ -117,6 +117,55 @@ describe("parseQaSummary (property)", () => {
       seedParam(),
     );
   });
+
+  // #1194 AC-3: the skill's documented `⏳ PENDING` and `🔄 Overridden` status
+  // cells (SKILL.md examples) are counted, not silently skipped. PENDING never
+  // credits acMet; Overridden always does (an approved §11a exception).
+  const pendingOrOverridden = fc
+    .uniqueArray(fc.integer({ min: 1, max: 99 }), {
+      minLength: 1,
+      maxLength: 10,
+    })
+    .chain((nums) =>
+      fc.tuple(
+        ...nums.map((n) =>
+          fc.record({
+            n: fc.constant(n),
+            status: fc.constantFrom("pending", "overridden"),
+            text: wordText,
+          }),
+        ),
+      ),
+    );
+
+  it("property: ⏳ PENDING and 🔄 Overridden table rows are counted, never skipped", () => {
+    fc.assert(
+      fc.property(pendingOrOverridden, (acs) => {
+        const out = acs
+          .map((a) =>
+            a.status === "pending"
+              ? `| AC-${a.n} | ${a.text} | ⏳ PENDING | notes |`
+              : `| AC-${a.n} | ${a.text} | 🔄 Overridden | notes |`,
+          )
+          .join("\n");
+        const summary = parseQaSummary(out);
+        expect(summary).not.toBeNull();
+        expect(summary?.acTotal).toBe(acs.length);
+        expect(summary?.acMet).toBe(
+          acs.filter((a) => a.status === "overridden").length,
+        );
+        const expectedPending = acs
+          .filter((a) => a.status === "pending")
+          .map((a) => `AC-${a.n}`);
+        if (expectedPending.length > 0) {
+          expect(summary?.pendingAcIds).toEqual(
+            expect.arrayContaining(expectedPending),
+          );
+        }
+      }),
+      seedParam(),
+    );
+  });
 });
 
 describe("buildQaVerdictComment (property)", () => {

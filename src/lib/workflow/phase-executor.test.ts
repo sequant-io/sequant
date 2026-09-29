@@ -357,6 +357,7 @@ describe("parseQaSummary", () => {
       acTotal: 4,
       gaps: [],
       suggestions: [],
+      pendingAcIds: ["AC-3"],
     });
   });
 
@@ -570,6 +571,103 @@ describe("parseQaSummary", () => {
 
     const result = parseQaSummary(output);
     expect(result!.gaps).toEqual(["Missing rate limit on the retry path"]);
+  });
+
+  it("#1194 AC-1: bold status words with no emoji parse to the correct acMet/acTotal", () => {
+    const output = `| AC-1 | Original | Feature works | **MET** | Done |
+| AC-2 | Original | Still pending | **PENDING** | Waiting |
+| AC-3 | Original | Broken | **NOT MET** | Missing |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 3,
+      gaps: [],
+      suggestions: [],
+      pendingAcIds: ["AC-2"],
+    });
+  });
+
+  it("#1194 AC-2: a valid SEQUANT_QA_GAPS marker survives acTotal === 0", () => {
+    const output = `QA review found no parseable AC table this run.
+
+<!-- SEQUANT_QA_GAPS: {"findings":[{"category":"test_gap","evidence":"src/foo.ts:1 has no coverage","description":"Missing test for foo","recommendedAction":"fix_now"}]} -->`;
+
+    const result = parseQaSummary(output);
+    expect(result).not.toBeNull();
+    expect(result!.acMet).toBe(0);
+    expect(result!.acTotal).toBe(0);
+    expect(result!.findings).toEqual([
+      {
+        category: "test_gap",
+        evidence: "src/foo.ts:1 has no coverage",
+        description: "Missing test for foo",
+        recommendedAction: "fix_now",
+      },
+    ]);
+  });
+
+  it("#1194 AC-2: an explicitly empty findings marker still survives acTotal === 0", () => {
+    const output = `No AC table this run — clean pass.
+
+<!-- SEQUANT_QA_GAPS: {"findings":[]} -->`;
+
+    const result = parseQaSummary(output);
+    expect(result).not.toBeNull();
+    expect(result!.acMet).toBe(0);
+    expect(result!.acTotal).toBe(0);
+  });
+
+  it("#1194: a marker-less, table-less output still returns null", () => {
+    expect(
+      parseQaSummary("Just some unstructured prose with no table or marker."),
+    ).toBeNull();
+  });
+
+  it("#1194: a notes cell that starts with a status word does not override the status cell", () => {
+    const output = `| AC-1 | desc | ✅ MET | Not met in first pass; fixed |
+| AC-2 | desc | ❌ NOT_MET | Met the old contract only |
+| AC-3 | desc | ⚠️ PARTIALLY_MET (tests missing) | Pending a fixture |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 3,
+      gaps: [],
+      suggestions: [],
+    });
+  });
+
+  it("#1194: an AC repeated in a second table is counted once, from its first row", () => {
+    const output = `| AC | Status |
+|----|--------|
+| AC-1 | ✅ MET |
+| AC-2 | ⏳ PENDING |
+
+### Manual Test ACs
+| AC-2 | Manual Test | 🔄 Overridden |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 1,
+      acTotal: 2,
+      gaps: [],
+      suggestions: [],
+      pendingAcIds: ["AC-2"],
+    });
+  });
+
+  it("#1194: OVERRIDDEN counts as MET-equivalent", () => {
+    const output = `| AC-1 | Manual Test | Approved exception | 🔄 Overridden | See #830 |
+| AC-2 | Original | Normal case | MET | Done |`;
+
+    const result = parseQaSummary(output);
+    expect(result).toEqual({
+      acMet: 2,
+      acTotal: 2,
+      gaps: [],
+      suggestions: [],
+    });
   });
 });
 
