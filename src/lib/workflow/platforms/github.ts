@@ -138,6 +138,36 @@ export class GitHubProvider implements PlatformProvider {
   }
 
   /**
+   * Fetch issue comments with their creation time (ISO-8601), oldest first.
+   * Used by the spec output guard (#1193) to accept only a marker posted
+   * during the phase. Returns `[]` on any failure, like
+   * {@link fetchIssueCommentBodiesSync}.
+   */
+  fetchIssueCommentsSync(
+    issueId: string,
+  ): { body: string; createdAt: string }[] {
+    try {
+      const result = spawnSync(
+        "gh",
+        [
+          "issue",
+          "view",
+          issueId,
+          "--json",
+          "comments",
+          "--jq",
+          "[.comments[] | {body, createdAt}]",
+        ],
+        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 15000 },
+      );
+      if (result.status !== 0 || !result.stdout) return [];
+      return JSON.parse(result.stdout) as { body: string; createdAt: string }[];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Check if `gh` CLI is authenticated.
    * Used by system.ts and doctor.ts.
    */

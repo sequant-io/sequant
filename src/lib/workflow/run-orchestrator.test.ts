@@ -15,7 +15,17 @@
  * anything derived from per-issue durations.
  */
 
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
+import { execSync } from "child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { RunOrchestrator } from "./run-orchestrator.js";
 import type { OrchestratorConfig, RunInit } from "./run-orchestrator.js";
 import { runIssueWithLogging } from "./batch-executor.js";
@@ -27,7 +37,15 @@ import type { ExecutionConfig, IssueResult, RunOptions } from "./types.js";
 // stays real, so the empty-issue #867 tests above are unaffected.
 vi.mock("./batch-executor.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./batch-executor.js")>();
-  return { ...actual, runIssueWithLogging: vi.fn() };
+  return {
+    ...actual,
+    runIssueWithLogging: vi.fn(),
+    // Hermetic: no `gh` call for issue titles/labels (#1193 tests below).
+    getIssueInfo: async (issueNumber: number) => ({
+      title: `Issue ${issueNumber}`,
+      labels: [],
+    }),
+  };
 });
 
 function runInit(options: Partial<RunOptions> = {}): RunInit {
@@ -210,5 +228,107 @@ describe("RunOrchestrator.executeOneIssue — live completion path (#879)", () =
     );
     expect(logWriter.markIssueFailed).not.toHaveBeenCalled();
     expect(logWriter.completeIssue).toHaveBeenCalledWith(766);
+  });
+});
+
+describe("RunOrchestrator.run — warns when the main checkout is behind origin/<base> (#1193)", () => {
+  // Spec runs in the main checkout (`requiresWorktree: false`). A checkout
+  // behind `origin/<base>` plans against stale code, so the run says so, with
+  // the count, before spec starts. Driven through the real `run()` against a
+  // real repo whose `origin/main` is ahead of its HEAD.
+  let base: string;
+  let repo: string;
+  let originalCwd: string;
+  const git = (cwd: string, args: string) =>
+    execSync(
+      `git -c user.email=t@t -c user.name=t -c commit.gpgsign=false ${args}`,
+      { cwd, stdio: "pipe" },
+    );
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    base = realpathSync(mkdtempSync(join(tmpdir(), "run-orch-behind-")));
+    const origin = join(base, "origin.git");
+    repo = join(base, "repo");
+    const upstream = join(base, "upstream");
+    execSync(`git init --bare -b main ${JSON.stringify(origin)}`, {
+      stdio: "pipe",
+    });
+    execSync(`git clone -q ${JSON.stringify(origin)} repo`, {
+      cwd: base,
+      stdio: "pipe",
+    });
+    git(repo, "checkout -q -b main");
+    // Every skill the run needs, so the skills pre-flight passes and the
+    // only thing under test is the warning.
+    for (const skill of ["spec", "exec", "qa"]) {
+      mkdirSync(join(repo, ".claude/skills", skill), { recursive: true });
+      writeFileSync(join(repo, ".claude/skills", skill, "SKILL.md"), "# s\n");
+    }
+    git(repo, "add .");
+    git(repo, "commit -q -m init");
+    git(repo, "push -q origin main");
+    execSync(`git clone -q ${JSON.stringify(origin)} upstream`, {
+      cwd: base,
+      stdio: "pipe",
+    });
+    process.chdir(repo);
+    vi.mocked(runIssueWithLogging).mockResolvedValue({
+      issueNumber: 1193,
+      success: true,
+      phaseResults: [],
+      durationSeconds: 0,
+      loopTriggered: false,
+    });
+
+    // Two commits land on origin/main after this checkout last pulled.
+    for (const n of [1, 2]) {
+      writeFileSync(join(upstream, `f${n}.txt`), `${n}\n`);
+      git(upstream, "add .");
+      git(upstream, `commit -q -m c${n}`);
+    }
+    git(upstream, "push -q origin main");
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(base, { recursive: true, force: true });
+    vi.mocked(runIssueWithLogging).mockReset();
+    vi.restoreAllMocks();
+  });
+
+  /** Run spec in the main checkout; return the printed lines and their order. */
+  async function runSpec() {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    await RunOrchestrator.run(
+      runInit({ phases: "spec", worktreeIsolation: false }),
+      ["1193"],
+    );
+    return {
+      lines: log.mock.calls.map((call) => String(call[0])),
+      order: log.mock.invocationCallOrder,
+    };
+  }
+
+  it("prints a warning naming the commit count before spec starts", async () => {
+    git(repo, "fetch -q origin");
+    const { lines, order } = await runSpec();
+    const index = lines.findIndex((line) =>
+      line.includes("main checkout is 2 commits behind origin/main"),
+    );
+    expect(index, lines.join("\n")).toBeGreaterThanOrEqual(0);
+    expect(lines[index]).toContain("spec runs there");
+    // Printed before the phase ran, not after.
+    expect(order[index]).toBeLessThan(
+      vi.mocked(runIssueWithLogging).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("prints no warning when the main checkout is current", async () => {
+    git(repo, "pull -q origin main");
+    const { lines } = await runSpec();
+    expect(vi.mocked(runIssueWithLogging)).toHaveBeenCalledTimes(1);
+    expect(lines.some((line) => line.includes("commits behind"))).toBe(false);
+    expect(lines.some((line) => line.includes("commit behind"))).toBe(false);
   });
 });

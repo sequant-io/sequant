@@ -23,6 +23,11 @@ import {
 import type { QaSummary } from "./run-log-schema.js";
 import { parseQaGapsMarker } from "./qa-gaps-marker.js";
 import { parsePhaseMarkers } from "./phase-detection.js";
+import {
+  parseSpecMarker,
+  specMarkerPostedSince,
+} from "./spec-recommendation.js";
+import { SKILLS_DIR } from "../skills-check.js";
 import { readAgentsMd } from "../agents-md.js";
 import { getDriver } from "./drivers/index.js";
 import type { DriverOptions } from "./drivers/index.js";
@@ -1028,6 +1033,7 @@ export function parseSpecDivergence(
  *
  * - `qa`: fails when no parseable verdict is found (empty or malformed output).
  * - `exec`: fails when no commits and no uncommitted changes exist.
+ * - `spec`: fails when no `SEQUANT_SPEC` marker was produced (#1193).
  *
  * @internal Exported for testing only.
  */
@@ -1037,6 +1043,7 @@ export function mapAgentSuccessToPhaseResult(
   durationSeconds: number,
   cwd: string,
   issueNumber?: number,
+  options: SuccessMappingOptions = {},
 ): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
   const base = mapAgentSuccessCore(
     phase,
@@ -1044,6 +1051,7 @@ export function mapAgentSuccessToPhaseResult(
     durationSeconds,
     cwd,
     issueNumber,
+    options,
   );
   // #995: attached here rather than at each of the guards' seven returns, so a
   // future guard cannot be added that silently drops the escape hatch. The
@@ -1055,6 +1063,48 @@ export function mapAgentSuccessToPhaseResult(
   return specDivergence ? { ...base, specDivergence } : base;
 }
 
+/** Options for {@link mapAgentSuccessToPhaseResult}. */
+export interface SuccessMappingOptions {
+  /**
+   * Apply the spec output guard (#1193). Default true. `executePhase` passes
+   * the driver's `resolvesSkills`: aider's inline spec prompt never asks for
+   * a marker, so the guard would fail every aider spec.
+   */
+  requireSpecMarker?: boolean;
+  /** Injectable for tests; defaults to a real GitHub comment fetch. */
+  specMarkerPostedSince?: (issueNumber: number, sinceMs: number) => boolean;
+}
+
+/**
+ * Allowance for the gap between this machine's clock and GitHub's
+ * `createdAt` when deciding whether a comment was posted during the phase.
+ */
+const SPEC_MARKER_CLOCK_SKEW_MS = 60_000;
+
+/**
+ * True when the spec phase produced its `SEQUANT_SPEC` marker (#1193): in the
+ * agent's own output, or — for a plan posted through a body file, whose text
+ * never reaches the output (#814) — in an issue comment posted during the
+ * phase. The comment check runs only when the output has no marker.
+ */
+function specProducedMarker(
+  agentResult: AgentPhaseResult,
+  durationSeconds: number,
+  issueNumber: number | undefined,
+  options: SuccessMappingOptions,
+): boolean {
+  if (agentResult.output && parseSpecMarker([agentResult.output]) !== null) {
+    return true;
+  }
+  if (issueNumber === undefined) return false;
+  const sinceMs =
+    Date.now() - durationSeconds * 1000 - SPEC_MARKER_CLOCK_SKEW_MS;
+  const postedSince =
+    options.specMarkerPostedSince ??
+    ((issue: number, since: number) => specMarkerPostedSince(issue, since));
+  return postedSince(issueNumber, sinceMs);
+}
+
 /** The guard chain itself. Split from the wrapper above purely so the #995
  * divergence scrape has exactly one attachment point. */
 function mapAgentSuccessCore(
@@ -1063,6 +1113,7 @@ function mapAgentSuccessCore(
   durationSeconds: number,
   cwd: string,
   issueNumber?: number,
+  options: SuccessMappingOptions = {},
 ): PhaseResult & { sessionId?: string; resumeHandle?: ResumeHandle } {
   const tails = {
     stderrTail: agentResult.stderrTail,
@@ -1128,6 +1179,29 @@ function mapAgentSuccessCore(
       output: agentResult.output,
       verdict,
       summary,
+      ...tails,
+    };
+  }
+
+  if (
+    phase === "spec" &&
+    options.requireSpecMarker !== false &&
+    !specProducedMarker(agentResult, durationSeconds, issueNumber, options)
+  ) {
+    // #1193: a spec that never emitted its marker most likely ran without
+    // the /spec skill (the main checkout it runs in lacked it) and planned
+    // by hand from the phase prompt. That is not a spec; recording it as
+    // success silently degrades every later phase's plan.
+    return {
+      phase,
+      success: false,
+      durationSeconds,
+      error:
+        `spec produced no SEQUANT_SPEC marker (none in its output, none in an issue comment ` +
+        `posted during the phase) — the /spec skill likely did not load; ` +
+        `check ${SKILLS_DIR}/spec/SKILL.md in ${cwd}`,
+      ...resume,
+      output: agentResult.output,
       ...tails,
     };
   }
@@ -1713,6 +1787,7 @@ async function executePhase(
         durationSeconds,
         cwd,
         issueNumber,
+        { requireSpecMarker: driver.resolvesSkills },
       ),
     );
   }
