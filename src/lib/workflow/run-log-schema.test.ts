@@ -165,28 +165,20 @@ describe("Zod Schemas", () => {
         requestedModel: "role:fast",
       };
 
-      // TODO: replace with real PhaseLogSchema.parse(withModel) assertions
-      // once `model`/`requestedModel` land on PhaseLogSchema.
-      throw new Error("Test stub - implement this test");
+      const parsed = PhaseLogSchema.parse(withModel);
+      expect(parsed.model).toBe("claude-sonnet-5");
+      expect(parsed.requestedModel).toBe("role:fast");
     });
 
     // #1198 AC-1: both fields are absent (not `null`/empty string) when the
     // driver reported no `modelUsage` and no role was configured.
     it("leaves model and requestedModel absent, not null, when the driver reports neither (#1198 AC-1)", () => {
-      // Given: a phase log with no model/requestedModel fields at all
-      // TODO: parse validPhaseLog (no model/requestedModel) through
-      // PhaseLogSchema once the fields exist
+      const parsed = PhaseLogSchema.parse(validPhaseLog);
 
-      // When: the schema parses it
-      // TODO: const parsed = PhaseLogSchema.parse(validPhaseLog);
-
-      // Then: model and requestedModel are undefined, never null or ""
-      // TODO: expect(parsed.model).toBeUndefined();
-      // TODO: expect(parsed.requestedModel).toBeUndefined();
-      // TODO: expect(parsed).not.toHaveProperty("model", null);
-      // TODO: expect(parsed).not.toHaveProperty("requestedModel", null);
-
-      throw new Error("Test stub - implement this test");
+      expect(parsed.model).toBeUndefined();
+      expect(parsed.requestedModel).toBeUndefined();
+      expect(parsed).not.toHaveProperty("model", null);
+      expect(parsed).not.toHaveProperty("requestedModel", null);
     });
   });
 
@@ -450,10 +442,11 @@ describe("Zod Schemas", () => {
         driver: "opencode",
       };
 
-      // TODO: replace with real RunLogSchema.parse(withDriverFields)
-      // assertions once `sequantVersion`/`driver` land on RunLogSchema, and
-      // assert they are NOT nested under `config`.
-      throw new Error("Test stub - implement this test");
+      const parsed = RunLogSchema.parse(withDriverFields);
+      expect(parsed.sequantVersion).toBe(getVersion());
+      expect(parsed.driver).toBe("opencode");
+      expect(parsed.config).not.toHaveProperty("driver");
+      expect(parsed.config).not.toHaveProperty("sequantVersion");
     });
   });
 
@@ -597,37 +590,24 @@ describe("createEmptyRunLog", () => {
   // #1198 AC-2: sequantVersion is set internally via getVersion() on every
   // call — no caller plumbing needed.
   it("sets sequantVersion via getVersion() (#1198 AC-2)", () => {
-    // Given: no sequantVersion-related option is passed
-    // When: createEmptyRunLog builds the log
-    // TODO: const log = createEmptyRunLog(config);
+    const log = createEmptyRunLog(config);
 
-    // Then: sequantVersion equals the real getVersion() output
-    // TODO: expect(log.sequantVersion).toBe(getVersion());
-
-    throw new Error("Test stub - implement this test");
+    expect(log.sequantVersion).toBe(getVersion());
   });
 
   // #1198 AC-2: driver is threaded through from options, for any driver name
   // — not just "claude-code".
   it("sets driver from options for a non-default driver (#1198 AC-2)", () => {
-    // Given: options.driver = "opencode" (a non-default agent)
-    // TODO: const log = createEmptyRunLog(config, { driver: "opencode" });
+    const log = createEmptyRunLog(config, { driver: "opencode" });
 
-    // When/Then: the top-level driver field reflects it
-    // TODO: expect(log.driver).toBe("opencode");
-
-    throw new Error("Test stub - implement this test");
+    expect(log.driver).toBe("opencode");
   });
 
   // === FAILURE / EDGE PATH ===
   it("leaves driver undefined when no driver option is passed (#1198 AC-2)", () => {
-    // Given: no driver option
-    // TODO: const log = createEmptyRunLog(config);
+    const log = createEmptyRunLog(config);
 
-    // Then: driver is absent, not defaulted to "claude-code" inside the schema
-    // TODO: expect(log.driver).toBeUndefined();
-
-    throw new Error("Test stub - implement this test");
+    expect(log.driver).toBeUndefined();
   });
 });
 

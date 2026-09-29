@@ -55,6 +55,8 @@ export interface LogWriterOptions {
    * start. Defaults to now when omitted.
    */
   startTime?: Date;
+  /** Resolved agent/driver name for this run (#1198 AC-2). */
+  driver?: string;
 }
 
 /**
@@ -80,6 +82,7 @@ export class LogWriter {
   private rotation: RotationSettings;
   private startCommit?: string;
   private startTime?: Date;
+  private driver?: string;
 
   constructor(options: LogWriterOptions = {}) {
     this.logPath = options.logPath ?? LOG_PATHS.project;
@@ -88,6 +91,7 @@ export class LogWriter {
     this.rotation = options.rotation ?? DEFAULT_ROTATION_SETTINGS;
     this.startCommit = options.startCommit;
     this.startTime = options.startTime;
+    this.driver = options.driver;
   }
 
   /**
@@ -99,6 +103,7 @@ export class LogWriter {
     this.runLog = createEmptyRunLog(config, {
       startCommit: this.startCommit,
       startTime: this.startTime,
+      driver: this.driver,
     });
 
     // Ensure log directory exists
@@ -456,6 +461,8 @@ export function createPhaseLogFromTiming(
       | "fileDiffStats"
       | "cacheMetrics"
       | "errorContext"
+      | "model"
+      | "requestedModel"
     >
   >,
 ): PhaseLog {

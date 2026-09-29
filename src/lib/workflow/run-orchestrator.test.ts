@@ -407,12 +407,9 @@ describe("RunOrchestrator.recordMetrics — metrics.json model derivation (#1198
       const recordRunMock = vi.mocked(MetricsWriter).mock.results[0]!.value
         .recordRun as ReturnType<typeof vi.fn>;
 
-      // TODO: once run-orchestrator.ts derives `model` from resolved phase
-      // models, this should read:
-      // expect(recordRunMock).toHaveBeenCalledWith(
-      //   expect.objectContaining({ model: "claude-sonnet-5" }),
-      // );
-      throw new Error("Test stub - implement this test");
+      expect(recordRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "claude-sonnet-5" }),
+      );
     } finally {
       process.env.ANTHROPIC_MODEL = originalEnv;
     }
@@ -447,10 +444,9 @@ describe("RunOrchestrator.recordMetrics — metrics.json model derivation (#1198
       const recordRunMock = vi.mocked(MetricsWriter).mock.results[0]!.value
         .recordRun as ReturnType<typeof vi.fn>;
 
-      // TODO: expect(recordRunMock).toHaveBeenCalledWith(
-      //   expect.objectContaining({ model: "opus" }),
-      // );
-      throw new Error("Test stub - implement this test");
+      expect(recordRunMock).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "opus" }),
+      );
     } finally {
       process.env.ANTHROPIC_MODEL = originalEnv;
     }

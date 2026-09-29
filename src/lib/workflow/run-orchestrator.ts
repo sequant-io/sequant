@@ -784,6 +784,9 @@ export class RunOrchestrator {
           // wall clock (finalizeRunLog: (end-start)/1000) is derived from the
           // same start as the summary — AC-2/AC-7 (one producer, two consumers).
           startTime: new Date(runStartedAt),
+          // #1198 AC-2: resolved driver name, for every driver — not just
+          // claude-code.
+          driver: resolveRunAgent(config),
         });
         await logWriter.initialize(runConfig);
         const runId = logWriter.getRunId();
@@ -2037,21 +2040,29 @@ export class RunOrchestrator {
         }
       }
     }
+    // #914: resolved per-phase model/effort, when any phase had one.
+    // #975: enriched with resolvedModel from execution (modelUsage) and
+    // requestedModel already flows through from resolvePhasePolicies.
+    const enrichedPhasePolicies = enrichPhasePoliciesFromResults(
+      config.phasePolicies,
+      results,
+    );
+    // #1198 AC-3: the top-level `model` is descriptive metadata, not a
+    // billing figure — first phase (in `config.phases` order) with a
+    // resolved model, falling back to the env guess only when no phase
+    // resolved one at all (e.g. a driver that reports no `modelUsage`).
+    const firstResolvedModel = config.phases
+      .map((phase) => enrichedPhasePolicies?.[phase]?.resolvedModel)
+      .find((resolvedModel): resolvedModel is string => Boolean(resolvedModel));
     await metricsWriter.recordRun({
       issues: issueNumbers,
       phases: Array.from(allPhases),
       outcome: determineOutcome(passed, results.length),
       duration: totalDuration,
-      model: process.env.ANTHROPIC_MODEL ?? "opus",
+      model: firstResolvedModel ?? process.env.ANTHROPIC_MODEL ?? "opus",
       flags: cliFlags,
       failureCategory,
-      // #914: resolved per-phase model/effort, when any phase had one.
-      // #975: enriched with resolvedModel from execution (modelUsage) and
-      // requestedModel already flows through from resolvePhasePolicies.
-      phasePolicies: enrichPhasePoliciesFromResults(
-        config.phasePolicies,
-        results,
-      ),
+      phasePolicies: enrichedPhasePolicies,
       // #915: escalated tiers, when any phase execution escalated.
       effortEscalations,
       // #971: escalated model rungs, from both retry paths.
