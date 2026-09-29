@@ -1162,6 +1162,92 @@ describe("templates", () => {
     });
   });
 
+  // #1209 AC-3: `copyTemplates({ only: "skills" })` is the write-set
+  // restriction `sync --only skills` relies on — verified at this level (not
+  // just through sync.ts's mocked call) so a regression here can't hide
+  // behind a mock that always returns success.
+  describe("copyTemplates only: 'skills' (#1209 AC-3)", () => {
+    let prevCwd: string;
+    let cwdDir: string;
+    let templatesDir: string;
+
+    beforeEach(async () => {
+      prevCwd = process.cwd();
+      cwdDir = await mkdtemp(join(tmpdir(), "sequant-only-skills-cwd-"));
+      templatesDir = await mkdtemp(join(tmpdir(), "sequant-only-skills-tpl-"));
+      process.chdir(cwdDir);
+      process.env.SEQUANT_TEMPLATES_DIR = templatesDir;
+
+      await fsWriteFile(
+        join(cwdDir, "package.json"),
+        JSON.stringify({ name: "my-project" }),
+      );
+
+      // Seed every tree copyTemplates can write, so a regression that copies
+      // one of them shows up as an unexpected file rather than a silent
+      // ENOENT skip.
+      await mkdir(join(templatesDir, "skills", "exec"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "skills", "exec", "SKILL.md"),
+        "exec skill\n",
+      );
+      await mkdir(join(templatesDir, "agents"), { recursive: true });
+      await fsWriteFile(join(templatesDir, "agents", "agent.md"), "an agent\n");
+      await mkdir(join(templatesDir, "hooks"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "hooks", "pre-tool.sh"),
+        "#!/bin/sh\n",
+      );
+      await mkdir(join(templatesDir, "memory"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "memory", "constitution.md"),
+        "# {{PROJECT_NAME}} Constitution\n",
+      );
+      await mkdir(join(templatesDir, "scripts"), { recursive: true });
+      await fsWriteFile(
+        join(templatesDir, "scripts", "new-feature.sh"),
+        "#!/bin/sh\necho hi\n",
+      );
+      await fsWriteFile(
+        join(templatesDir, "settings.json"),
+        JSON.stringify({ hooks: {} }),
+      );
+    });
+
+    afterEach(async () => {
+      process.chdir(prevCwd);
+      delete process.env.SEQUANT_TEMPLATES_DIR;
+      await rm(cwdDir, { recursive: true, force: true });
+      await rm(templatesDir, { recursive: true, force: true });
+    });
+
+    it("writes only .claude/skills/** and the version marker — nothing else", async () => {
+      const result = await copyTemplates("generic", undefined, {
+        only: "skills",
+      });
+
+      expect(
+        await fileExists(join(cwdDir, ".claude", "skills", "exec", "SKILL.md")),
+      ).toBe(true);
+      expect(await fileExists(join(cwdDir, ".claude", "agents"))).toBe(false);
+      expect(await fileExists(join(cwdDir, ".claude", "hooks"))).toBe(false);
+      expect(await fileExists(join(cwdDir, ".claude", "memory"))).toBe(false);
+      expect(await fileExists(join(cwdDir, ".claude", "settings.json"))).toBe(
+        false,
+      );
+      expect(await fileExists(join(cwdDir, "scripts", "dev"))).toBe(false);
+      expect(result.scriptsSymlinked).toBe(false);
+    });
+
+    it("still writes the skills version marker sync's fast path relies on", async () => {
+      await copyTemplates("generic", undefined, { only: "skills" });
+
+      expect(
+        await fileExists(join(cwdDir, ".claude", "skills", ".sequant-version")),
+      ).toBe(true);
+    });
+  });
+
   describe("scripts/dev symlink target routing (#990)", () => {
     let prevCwd: string;
     let cwdDir: string;
