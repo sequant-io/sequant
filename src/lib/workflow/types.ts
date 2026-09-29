@@ -216,6 +216,19 @@ export interface ExecutionConfig {
    */
   fullQa?: boolean;
   /**
+   * Closing keyword for the automated PR path's issue link (#1197), resolved
+   * from `settings.run.prIssueLink`. `"closes"` (default) emits `Fixes #N`;
+   * `"refs"` emits `Refs #N` so the PR does not auto-close the issue.
+   * Overridden to `"refs"` per-issue by `prNoCloseLabel` below, via
+   * `resolvePrLinkMode` in `worktree-manager.ts`.
+   */
+  prIssueLink?: "closes" | "refs";
+  /**
+   * Label that forces `Refs #N` regardless of `prIssueLink` (#1197 AC-2),
+   * resolved from `settings.run.prNoCloseLabel`. Default `"no-autoclose"`.
+   */
+  prNoCloseLabel?: string;
+  /**
    * Run the post-QA ready gate after the standard phases succeed (#817).
    *
    * When true, `runIssueWithLogging` invokes the existing `sequant ready`

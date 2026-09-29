@@ -985,7 +985,24 @@ After implementation is complete and all checks pass, create and verify the PR:
    git push -u origin <branch-name>
    ```
 
-2. **Create the PR with HEREDOC formatting:**
+2. **Resolve the closing keyword (#1197).** Default is `Closes #<issue>`,
+   which auto-closes the issue on merge. Use `Refs #<issue>` instead — never
+   a closing verb next to the issue number, anywhere in the body, tables
+   included — when either holds:
+   - The issue carries the configured no-autoclose label
+     (`.sequant/settings.json` `run.prNoCloseLabel`, default `no-autoclose`):
+     `gh issue view <issue> --json labels -q '.labels[].name'`.
+   - `.sequant/settings.json` sets `run.prIssueLink` to `"refs"` (default is
+     `"closes"`).
+
+   This also applies to any AC-verification table or summary bullet you write
+   into the body: a row that begins with a closing verb and the issue number
+   closes the issue just as surely as the trailer line does — GitHub parses a
+   closing keyword anywhere in the body, not just on its own line. If the PR
+   also references other issues (e.g. a tracker), only the *linked* issue's
+   number needs `Refs` — leave other issue references as written.
+
+3. **Create the PR with HEREDOC formatting:**
    ```bash
    gh pr create --title "feat(#<issue>): <title>" --body "$(cat <<'EOF'
    ## Summary
@@ -1000,21 +1017,22 @@ After implementation is complete and all checks pass, create and verify the PR:
    EOF
    )"
    ```
+   Substitute `Refs #<issue>` for `Closes #<issue>` above when step 2 applies.
 
-3. **Immediately verify PR was created:**
+4. **Immediately verify PR was created:**
    ```bash
    # Verify PR exists - this MUST succeed
    gh pr view --json number,url
    ```
 
-4. **If verification fails, retry once:**
+5. **If verification fails, retry once:**
    ```bash
    # Wait 2 seconds and retry
    sleep 2
    gh pr view --json number,url || echo "ERROR: PR verification failed after retry"
    ```
 
-5. **Capture PR URL for progress update:**
+6. **Capture PR URL for progress update:**
    - If PR exists: Record the URL from `gh pr view` output
    - If PR creation failed: Record the error and include manual creation instructions
 

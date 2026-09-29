@@ -804,6 +804,20 @@ not a fallback.
 
 **IMPORTANT (once the gate above has fired):** Merge the PR first, then clean up the worktree.
 
+**Closing-reference guard (#1197):** before merging, check which issues the
+PR will actually close — GitHub parses closing keywords anywhere in the body,
+not just on the trailer line, so this can diverge from what the PR is
+supposed to close:
+
+```bash
+gh pr view <N> --json closingIssuesReferences \
+  --jq '.closingIssuesReferences[].number'
+```
+
+**Stop and report, naming the issue,** if the list contains any number other
+than `<issue-number>` — do not run `gh pr merge` until the PR body is fixed
+(change the unexpected reference to `Refs #<other-number>`).
+
 ```bash
 # 1. Merge PR (without --delete-branch; cleanup happens after success)
 gh pr merge <N> --squash

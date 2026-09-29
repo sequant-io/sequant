@@ -223,6 +223,32 @@ Validation checklist:
 - [ ] Changes have been committed
 - [ ] No uncommitted work
 
+### Step 1a: Closing-Reference Guard (#1197)
+
+Before merging, check which issues the PR will actually close on merge —
+GitHub parses closing keywords anywhere in the body, so this can diverge from
+what the PR is *supposed* to close (a tracker issue mentioned in an AC table,
+or a multi-PR issue where only the last PR should close it):
+
+```bash
+gh pr view <PR_NUMBER> --json closingIssuesReferences \
+  --jq '.closingIssuesReferences[].number'
+```
+
+Compare the result against the single issue this PR is meant to close (the
+issue number you are merging for). **Stop and report, naming the issue,** if
+the list contains any number other than that one:
+
+```text
+❌ PR #<PR_NUMBER> closes #<issue-number> AND #<other-number> on merge.
+   Only #<issue-number> should close here.
+   Edit the PR body to change the unexpected reference to "Refs #<other-number>"
+   before merging.
+```
+
+An empty list, or a list containing only the expected issue number, is fine —
+proceed to Step 2.
+
 ### Step 2: Conflict Detection
 
 Get files changed in each worktree:
