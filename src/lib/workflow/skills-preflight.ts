@@ -41,6 +41,15 @@ import { phaseRegistry } from "./phase-registry.js";
 import { resolvePhaseAgent, resolvePhaseAgents } from "./phase-agent.js";
 import { checkSkillsInstalled, SKILLS_DIR } from "../skills-check.js";
 
+/**
+ * What `sequant sync` rewrites besides the skills (#1201). Every message that
+ * recommends sync includes it, so no remedy tells a user to run sync without
+ * saying which tracked files it will overwrite.
+ */
+export const SYNC_REWRITES_NOTE =
+  `sync also rewrites tracked hooks, \`.claude/settings.json\`, ` +
+  `\`scripts/dev\`, and sequant-owned \`AGENTS.md\` — commit those too`;
+
 export interface SkillsPreflightInput {
   /** Agent driver name (default claude-code). */
   agent?: string;
@@ -288,7 +297,6 @@ export async function runSkillsPreflight(
     remedy:
       `The ${driverName} driver resolves phases from ${SKILLS_DIR}/ — ` +
       `run \`sequant sync\` to install them and commit .claude/skills ` +
-      `(sync also rewrites tracked hooks, \`.claude/settings.json\`, ` +
-      `\`scripts/dev\`, and sequant-owned \`AGENTS.md\` — commit those too).`,
+      `(${SYNC_REWRITES_NOTE}).`,
   };
 }

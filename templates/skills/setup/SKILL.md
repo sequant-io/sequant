@@ -349,15 +349,32 @@ phase skills from the plugin, the same way step 8 copies the constitution
 template:
 
 ```bash
-mkdir -p .claude/skills
-for skill in spec exec qa; do
-  rm -rf ".claude/skills/$skill"
-  cp -R "${CLAUDE_PLUGIN_ROOT:-./templates}/skills/$skill" ".claude/skills/$skill"
+SKILLS_SRC="${CLAUDE_PLUGIN_ROOT:-./templates}/skills"
+# Check every source before deleting anything: outside a plugin install
+# CLAUDE_PLUGIN_ROOT is unset and ./templates usually doesn't exist, and an
+# rm before a failed cp would delete the project's committed skills.
+for dir in spec exec qa _shared; do
+  if [ ! -d "$SKILLS_SRC/$dir" ]; then
+    echo "Skipping phase-skill copy: $SKILLS_SRC/$dir not found. Run \`sequant sync\` instead." >&2
+    SKILLS_SRC=""
+    break
+  fi
 done
+if [ -n "$SKILLS_SRC" ]; then
+  mkdir -p .claude/skills
+  # _shared holds the references/ files the phase skills link to (../_shared/...).
+  for dir in spec exec qa _shared; do
+    rm -rf ".claude/skills/$dir"
+    cp -R "$SKILLS_SRC/$dir" ".claude/skills/$dir"
+  done
+fi
 ```
 
-**Tell the user to commit `.claude/skills/spec`, `.claude/skills/exec`, and
-`.claude/skills/qa`.** They are a runtime dependency, not a cache: `sequant
+If the copy was skipped, say so in the summary and don't report the phase
+skills as installed.
+
+**Tell the user to commit `.claude/skills/spec`, `.claude/skills/exec`,
+`.claude/skills/qa`, and `.claude/skills/_shared`.** They are a runtime dependency, not a cache: `sequant
 run` pre-flights the directory and fails fast if it is missing or uncommitted.
 
 ### 11. Print Summary

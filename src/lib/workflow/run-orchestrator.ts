@@ -124,6 +124,7 @@ import {
   resolvePhasesForScope,
   runResolvesSkills,
   runSkillsPreflight,
+  SYNC_REWRITES_NOTE,
 } from "./skills-preflight.js";
 import { resolveRunAgent } from "./phase-agent.js";
 import { getCommitHash } from "./git-diff-utils.js";
@@ -1165,7 +1166,11 @@ export class RunOrchestrator {
         const remedy =
           `the main checkout at ${mainCheckout} is missing ${preflight.missingPaths.join(", ")} — ` +
           `${phasesThere.join(", ")} ${phasesThere.length === 1 ? "runs" : "run"} there, not in a worktree. ` +
-          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it, then re-run. ` +
+          // #1201: same sync caveat as preflight.remedy. The rest stays
+          // specific to this site: updating the checkout comes first, since
+          // sync doesn't fix a stale checkout (ADR-0002).
+          `Update it (\`git pull\` on ${baseBranch}) or run \`sequant sync\` in it ` +
+          `(${SYNC_REWRITES_NOTE}), then re-run. ` +
           `No worktree was provisioned.`;
         bracketedConsoleLog(
           phasePauseHandle,
