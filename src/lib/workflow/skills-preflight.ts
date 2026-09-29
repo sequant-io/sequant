@@ -279,8 +279,16 @@ export async function runSkillsPreflight(
     missingSkills,
     missingPaths: missingSkills.map((skill) => skillFilePath(skill)),
     driverName,
+    // #1201: named once here so the pre-flight message and the
+    // run-orchestrator's worktree-missing-skills messages can't drift apart
+    // again — `sequant sync` does more than install the missing skill, and a
+    // reader who only sees "run sequant sync" has no idea it also rewrites
+    // tracked hooks, `.claude/settings.json`, `scripts/dev`, and
+    // sequant-owned `AGENTS.md`.
     remedy:
       `The ${driverName} driver resolves phases from ${SKILLS_DIR}/ — ` +
-      `run \`sequant sync\` to install them, then re-run.`,
+      `run \`sequant sync\` to install them and commit .claude/skills ` +
+      `(sync also rewrites tracked hooks, \`.claude/settings.json\`, ` +
+      `\`scripts/dev\`, and sequant-owned \`AGENTS.md\` — commit those too).`,
   };
 }

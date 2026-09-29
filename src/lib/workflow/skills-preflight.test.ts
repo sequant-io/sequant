@@ -262,6 +262,17 @@ describe("runSkillsPreflight (#813 AC-1/AC-3)", () => {
     }
   });
 
+  it("1201 AC-1: the remedy names the tracked files sequant sync rewrites", async () => {
+    const result = await runSkillsPreflight({ ...EXPLICIT_BASE, cwd: root });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.remedy).toContain("hooks");
+      expect(result.remedy).toContain(".claude/settings.json");
+      expect(result.remedy).toContain("scripts/dev");
+      expect(result.remedy).toContain("AGENTS.md");
+    }
+  });
+
   it("names only the missing skills when the directory exists", async () => {
     installSkill("spec");
     installSkill("qa");

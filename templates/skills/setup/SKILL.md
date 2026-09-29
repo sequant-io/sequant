@@ -341,7 +341,26 @@ sed -i.bak "s/{{PROJECT_NAME}}/$PROJECT_NAME/g" .claude/memory/constitution.md
 rm -f .claude/memory/constitution.md.bak
 ```
 
-### 10. Print Summary
+### 10. Copy Phase Skills
+
+`sequant run` phase agents load skills from `.claude/skills/` only (project
+scope, #813) — a plugin install alone leaves that directory empty. Copy the
+phase skills from the plugin, the same way step 8 copies the constitution
+template:
+
+```bash
+mkdir -p .claude/skills
+for skill in spec exec qa; do
+  rm -rf ".claude/skills/$skill"
+  cp -R "${CLAUDE_PLUGIN_ROOT:-./templates}/skills/$skill" ".claude/skills/$skill"
+done
+```
+
+**Tell the user to commit `.claude/skills/spec`, `.claude/skills/exec`, and
+`.claude/skills/qa`.** They are a runtime dependency, not a cache: `sequant
+run` pre-flights the directory and fails fast if it is missing or uncommitted.
+
+### 11. Print Summary
 
 After setup completes, print a summary:
 
@@ -360,6 +379,7 @@ After setup completes, print a summary:
 | Dev server | ✅ <DEV_URL> (or ℹ️ not detected) |
 | Manifest | ✅ .sequant-manifest.json |
 | Constitution | ✅ .claude/memory/constitution.md |
+| Phase skills | ✅ .claude/skills/spec, exec, qa (commit these) |
 
 ### MCP Tools Available
 
@@ -384,13 +404,14 @@ You're all set — run `/assess <issue>` to start working on a GitHub issue.
 
 ## Post-Setup
 
-1. Review `.claude/memory/constitution.md` - project name should be filled in
-2. Add any project-specific guidelines to the constitution
-3. Optionally edit `.sequant/settings.json` to customize:
+1. **Commit `.claude/skills/spec`, `.claude/skills/exec`, and `.claude/skills/qa`** - `sequant run` phase agents cannot resolve skills that aren't committed
+2. Review `.claude/memory/constitution.md` - project name should be filled in
+3. Add any project-specific guidelines to the constitution
+4. Optionally edit `.sequant/settings.json` to customize:
    - `devUrl` — if auto-detection picked the wrong port
    - `pmRun` — if using a non-standard package manager command
    - `agents.parallel` — set to `true` for faster but more token-expensive runs
-4. Run `/assess <issue>` to start working
+5. Run `/assess <issue>` to start working
 
 ## Troubleshooting
 

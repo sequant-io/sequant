@@ -1288,9 +1288,12 @@ export class RunOrchestrator {
           let worktreeRemedy: string;
           if (worktreeMap.size === 0) {
             // Isolation disabled: `cwd` is the main checkout, not a worktree.
+            // #1201: use preflight's own remedy instead of a hand-written
+            // string — that duplication is how this and the worktree
+            // message below drifted apart in the first place.
             worktreeRemedy =
               `the checkout at ${cwd} is missing required skills (${preflight.cause}) — ` +
-              `commit .claude/skills, then re-run.`;
+              `${preflight.remedy}`;
           } else {
             const worktreeState = removedWorktrees.includes(cwd)
               ? `The worktree created for this run was removed; the re-run will re-provision it from the new commit.`
@@ -1325,10 +1328,12 @@ export class RunOrchestrator {
               (otherPreexisting.length > 0
                 ? ` Left in place (pre-existing): ${otherPreexisting.join(", ")}.`
                 : "");
+            // #1201: same remedy as the isolation-disabled branch above,
+            // plus the worktree-specific reason the commit step matters here.
             worktreeRemedy =
               `worktree ${cwd} is missing required skills (${preflight.cause}) — ` +
-              `commit .claude/skills (worktrees only materialize tracked files), ` +
-              `then re-run. ${worktreeState}${othersNote}`;
+              `${preflight.remedy} Worktrees only materialize tracked files, ` +
+              `so re-run after committing. ${worktreeState}${othersNote}`;
           }
           bracketedConsoleLog(
             phasePauseHandle,

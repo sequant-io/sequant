@@ -49,6 +49,8 @@ Pick the path that matches **where you run Sequant**:
 
 > **Plugins do not auto-update.** Claude Code pins a plugin to the version you installed and never updates it on its own — even as new releases ship. To pick up a new version, run `claude plugin update sequant@sequant`, then restart Claude Code. Sequant's pre-tool hook warns once a day when your installed version falls behind the marketplace.
 
+> **`sequant run` also needs `.claude/skills/{spec,exec,qa}` committed to the repo.** `/sequant:setup` copies those phase skills from the plugin into `.claude/skills/` and prints a reminder to commit them — do that before your first `sequant run`. Without npm/npx available, `sequant sync` is not an option for a plugin-only setup; re-run `/sequant:setup` if the directory is ever missing.
+
 **Headless / CI (npm package)** — drive runs from the terminal or a CI job:
 ```bash
 npm install sequant          # or: pnpm add / yarn add / bun add sequant
