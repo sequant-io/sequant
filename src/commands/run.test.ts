@@ -219,6 +219,8 @@ describe("runCommand manifest pre-flight (#1209 AC-1)", () => {
     expect(output).toContain('"files":{}');
     expect(output).toContain("sequant init --manifest-only");
     expect(output.toLowerCase()).toContain("that file alone is sufficient");
+    // A user writing the file by hand must be told its name.
+    expect(output).toContain(".sequant-manifest.json");
   });
 
   // === FAILURE PATHS ===

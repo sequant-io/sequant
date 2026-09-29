@@ -1122,8 +1122,6 @@ describe("sync command", () => {
     // other write path (`.mcp.json`, AGENTS.md, `.opencode/`, `scripts/dev/`,
     // `.claude/settings.json`, `.claude/agents/`, `.claude/hooks/`,
     // `.claude/memory/`) must be skipped entirely, not just left unmodified.
-    // Note: `only` is not yet on `SyncOptions` — Phase 1 of the implementation
-    // plan adds it; these stubs anticipate that shape.
     describe("--only skills (#1209 AC-3)", () => {
       beforeEach(() => {
         mockGetManifest.mockResolvedValue({
@@ -1141,6 +1139,19 @@ describe("sync command", () => {
           scriptsSymlinked: false,
           preservedCustomizable: [],
         });
+      });
+
+      it("prints a completion summary that does not claim hooks or memory were updated", async () => {
+        const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+        try {
+          await syncCommand({ only: "skills" });
+          const output = logSpy.mock.calls.map((c) => String(c[0])).join("\n");
+          expect(output).toContain("Synced to v1.1.0");
+          expect(output).not.toMatch(/hooks, and memory/);
+          expect(output).toContain("--only skills");
+        } finally {
+          logSpy.mockRestore();
+        }
       });
 
       it("writes only .claude/skills/** and the manifest, touching nothing else", async () => {

@@ -35,7 +35,8 @@ export function manifestMissingMessage(packageVersion: string): string {
     files: {},
   });
   return (
-    `❌ Sequant is not initialized. That file alone is sufficient: ` +
+    `❌ Sequant is not initialized: no \`.sequant-manifest.json\` in this directory. ` +
+    `That file alone is sufficient: ` +
     `${minimalManifest} — write it yourself, or run \`sequant init --manifest-only\`.`
   );
 }

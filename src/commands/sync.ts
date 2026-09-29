@@ -817,7 +817,11 @@ export async function syncCommand(options: SyncOptions = {}): Promise<void> {
   if (!quiet) {
     console.log(chalk.green(`\n✔ Synced to v${packageVersion}`));
     console.log(
-      chalk.gray("\nSkills, hooks, and memory files have been updated."),
+      chalk.gray(
+        skillsOnly
+          ? "\nSkills have been updated (--only skills: nothing outside .claude/skills/ and the manifest was written)."
+          : "\nSkills, hooks, and memory files have been updated.",
+      ),
     );
   }
 }
