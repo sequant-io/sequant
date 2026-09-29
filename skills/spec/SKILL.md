@@ -59,7 +59,15 @@ phase_data=$(gh issue view <issue-number> --json comments --jq '[.comments[].bod
   grep -o '{[^}]*}' | grep '"phase"' | tail -1 || true)
 ```
 
-- `spec:completed` or later phase detected → Skip with message
+- `spec:completed` or later phase detected → Skip, but do not exit silently: fetch
+  the latest `SEQUANT_SPEC` marker comment (the same comments already read above)
+  and restate it **verbatim** in this turn's response, prefixed with a one-line
+  skip note (e.g. "⏭️ Spec already completed. Reusing prior plan."). The orchestrator's
+  guard (#1193) fails any spec phase — including a self-skip — that produces no
+  fresh `SEQUANT_SPEC` marker in its output; a bare skip message is not enough.
+  If no valid prior marker can be found, do not skip — fall through to normal
+  execution instead, since skipping with nothing to restate would fail the guard
+  anyway.
 - `spec:failed` → Re-run
 - No markers / API error → Normal execution
 
