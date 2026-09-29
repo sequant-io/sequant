@@ -10,6 +10,8 @@ import { spawnSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import path from "path";
 import {
+  CI_INSTALL_SKIP,
+  hasManifestForPackageManager,
   resolvePackageManager,
   resolvePackageManagerConfig,
 } from "../stacks.js";
@@ -634,9 +636,6 @@ export function installWorktreeDeps(
   packageManager: string | undefined,
   verbose: boolean,
 ): boolean {
-  if (verbose) {
-    console.log(chalk.gray(`    Installing dependencies...`));
-  }
   // Two independent questions, resolved in order against the worktree itself.
   //
   // WHICH manager: the manifest's packageManager is a snapshot and may be
@@ -649,10 +648,37 @@ export function installWorktreeDeps(
   //
   // The worktree is checked out by now, so its package.json / .yarnrc.yml /
   // yarn.lock are all readable here.
-  const pmConfig = resolvePackageManagerConfig(
-    resolvePackageManager(packageManager, worktreePath),
-    worktreePath,
-  );
+  const pm = resolvePackageManager(packageManager, worktreePath);
+
+  // A non-Node repo has no `node_modules` either, so the caller's
+  // `!existsSync(node_modules)` guard is always true there — without this
+  // check `pm` falls back to `"npm"` (JS-only detection) and always attempts
+  // `npm ci` against a tree with no package.json to install from (#1196).
+  if (!hasManifestForPackageManager(pm, worktreePath)) {
+    console.log(
+      chalk.gray(
+        `    Skipping dependency install — no manifest found for ${pm}`,
+      ),
+    );
+    return true;
+  }
+
+  if (verbose) {
+    console.log(chalk.gray(`    Installing dependencies...`));
+  }
+  const pmConfig = resolvePackageManagerConfig(pm, worktreePath);
+
+  // pip's ciInstall resolves to CI_INSTALL_SKIP when no requirements file
+  // exists (#1196 AC-2) — a bare `pip install -q` names no package and would
+  // fail as a no-op.
+  if (pmConfig.ciInstall === CI_INSTALL_SKIP) {
+    console.log(
+      chalk.gray(
+        `    Skipping dependency install — no requirements file found for ${pm}`,
+      ),
+    );
+    return true;
+  }
   // ciInstall, not installSilent: a plain `npm install` normalizes and
   // rewrites package-lock.json (observed: npm 10 strips the `libc` fields a
   // newer npm committed), so every provisioned worktree started dirty. That
@@ -1339,6 +1365,20 @@ export function reinstallIfLockfileChanged(
     resolvePackageManager(packageManager, worktreePath),
     worktreePath,
   );
+
+  // Defensive, not reachable in practice today: LOCKFILES above is JS-only,
+  // so `lockfileChanged` can only fire for a JS lockfile, never for a pip
+  // tree. Kept in step with installWorktreeDeps / combined-branch-test.ts
+  // anyway, in case a declared `packageManager` of "pip" ever reaches here
+  // (#1196).
+  if (pmConfig.ciInstall === CI_INSTALL_SKIP) {
+    console.log(
+      chalk.gray(
+        `    Skipping dependency reinstall — no install command applies`,
+      ),
+    );
+    return false;
+  }
   // ciInstall for the same reason as provisioning (see ensureWorktree): this
   // reinstall exists because a rebase pulled in a NEW lockfile, so installing
   // exactly what that lockfile says — never rewriting it — is the semantic

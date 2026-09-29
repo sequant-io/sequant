@@ -12,6 +12,8 @@ import {
   detectYarnMajor,
   getPackageManagerCommands,
   resolvePackageManagerConfig,
+  hasManifestForPackageManager,
+  CI_INSTALL_SKIP,
   PM_CONFIG,
   STACK_NOTES,
   YARN_CLASSIC_CI_INSTALL,
@@ -1244,14 +1246,76 @@ describe("resolvePackageManagerConfig", () => {
     );
   });
 
-  it("leaves every non-yarn package manager untouched", () => {
+  it("leaves every non-yarn, non-pip package manager untouched", () => {
     writeFileSync(join(root, "yarn.lock"), "# yarn lockfile v1\n");
 
-    for (const pm of ["npm", "pnpm", "bun", "pip", "poetry", "uv"] as const) {
+    // pip gets its own dedicated cases below — #1196 gives it a
+    // directory-dependent override too, so it no longer rides in this loop
+    // asserting untouched-by-identity.
+    for (const pm of ["npm", "pnpm", "bun", "poetry", "uv"] as const) {
       // Same object, not merely equal: nothing is resolved for these, so a
       // future edit that starts copying configs unconditionally is visible.
       expect(resolvePackageManagerConfig(pm, root)).toBe(PM_CONFIG[pm]);
     }
+  });
+
+  describe("pip (#1196 AC-2)", () => {
+    it("names the requirements file when one exists", () => {
+      writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+      expect(resolvePackageManagerConfig("pip", root).ciInstall).toBe(
+        "pip install -q -r requirements.txt",
+      );
+    });
+
+    it("prefers exact requirements.txt over other requirements*.txt files", () => {
+      writeFileSync(join(root, "requirements-dev.txt"), "pytest\n");
+      writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+      expect(resolvePackageManagerConfig("pip", root).ciInstall).toBe(
+        "pip install -q -r requirements.txt",
+      );
+    });
+
+    it("falls back to the first requirements*.txt match alphabetically", () => {
+      writeFileSync(join(root, "requirements-dev.txt"), "pytest\n");
+
+      expect(resolvePackageManagerConfig("pip", root).ciInstall).toBe(
+        "pip install -q -r requirements-dev.txt",
+      );
+    });
+
+    it("never runs a bare `pip install -q` — skips when no requirements file exists", () => {
+      // Only a pyproject.toml, no requirements*.txt.
+      writeFileSync(join(root, "pyproject.toml"), "[project]\nname = 'x'\n");
+
+      const config = resolvePackageManagerConfig("pip", root);
+      expect(config.ciInstall).toBe(CI_INSTALL_SKIP);
+      expect(config.ciInstall).not.toBe(PM_CONFIG.pip.ciInstall);
+    });
+
+    it("skips when the directory has no manifest at all", () => {
+      expect(resolvePackageManagerConfig("pip", root).ciInstall).toBe(
+        CI_INSTALL_SKIP,
+      );
+    });
+
+    it("leaves every other pip field untouched", () => {
+      writeFileSync(join(root, "requirements.txt"), "requests\n");
+      const config = resolvePackageManagerConfig("pip", root);
+
+      for (const field of [
+        "run",
+        "exec",
+        "install",
+        "installSilent",
+        "addPkg",
+        "removePkg",
+        "updatePkg",
+      ] as const) {
+        expect(config[field]).toBe(PM_CONFIG.pip[field]);
+      }
+    });
   });
 
   // Every field whose berry spelling is wrong on classic, and no others. The
@@ -1289,5 +1353,55 @@ describe("resolvePackageManagerConfig", () => {
     writeFileSync(join(root, "yarn.lock"), "__metadata:\n  version: 8\n");
 
     expect(resolvePackageManagerConfig("yarn", root)).toBe(PM_CONFIG.yarn);
+  });
+});
+
+describe("hasManifestForPackageManager (#1196 AC-1)", () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "sequant-manifest-"));
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("requires package.json for JS package managers", () => {
+    for (const pm of ["npm", "bun", "yarn", "pnpm"] as const) {
+      expect(hasManifestForPackageManager(pm, root)).toBe(false);
+    }
+
+    writeFileSync(join(root, "package.json"), "{}");
+
+    for (const pm of ["npm", "bun", "yarn", "pnpm"] as const) {
+      expect(hasManifestForPackageManager(pm, root)).toBe(true);
+    }
+  });
+
+  it("accepts pyproject.toml for Python package managers", () => {
+    for (const pm of ["pip", "poetry", "uv"] as const) {
+      expect(hasManifestForPackageManager(pm, root)).toBe(false);
+    }
+
+    writeFileSync(join(root, "pyproject.toml"), "[project]\nname = 'x'\n");
+
+    for (const pm of ["pip", "poetry", "uv"] as const) {
+      expect(hasManifestForPackageManager(pm, root)).toBe(true);
+    }
+  });
+
+  it("accepts a requirements*.txt file for Python package managers", () => {
+    writeFileSync(join(root, "requirements.txt"), "requests\n");
+
+    for (const pm of ["pip", "poetry", "uv"] as const) {
+      expect(hasManifestForPackageManager(pm, root)).toBe(true);
+    }
+  });
+
+  it("returns false for a directory with no manifest at all — the non-Node repo case", () => {
+    // resolvePackageManager's fallback for an unrecognized directory is
+    // "npm" — this is the exact tree that used to run a failing `npm ci`.
+    expect(hasManifestForPackageManager("npm", root)).toBe(false);
   });
 });

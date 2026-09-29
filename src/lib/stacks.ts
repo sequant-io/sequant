@@ -2,7 +2,14 @@
  * Stack detection and configuration
  */
 
-import { closeSync, existsSync, openSync, readFileSync, readSync } from "fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readSync,
+} from "fs";
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { fileExists, readFile } from "./fs.js";
@@ -292,6 +299,71 @@ export function resolvePackageManager(
 }
 
 /**
+ * Sentinel `ciInstall` value meaning "no install command applies here —
+ * skip the install rather than run a no-op or a failing one."
+ *
+ * Currently only pip resolves to this: `pip install -q` names no package
+ * without a `-r <file>` argument, so running it bare is a failing no-op
+ * (#1196). Every `ciInstall` consumer must check for this value before
+ * splitting/spawning it.
+ */
+export const CI_INSTALL_SKIP = "__sequant_skip_install__";
+
+/**
+ * Find a `requirements*.txt` file in `root` for pip's install command.
+ * Prefers the exact `requirements.txt`; otherwise the first match
+ * alphabetically (e.g. `requirements-dev.txt`). Low-impact tie-break — pip
+ * projects with multiple requirements files are rare, and either choice beats
+ * the bare `pip install -q` this replaces.
+ *
+ * @returns the matched filename (not a full path), or null if none exists
+ */
+function findRequirementsFile(root: string): string | null {
+  let entries: string[];
+  try {
+    entries = readdirSync(root);
+  } catch {
+    return null;
+  }
+  if (entries.includes("requirements.txt")) {
+    return "requirements.txt";
+  }
+  const match = entries
+    .filter((name) => /^requirements.*\.txt$/.test(name))
+    .sort()[0];
+  return match ?? null;
+}
+
+/**
+ * Whether a manifest exists for `pm` in `root` — the file that must be
+ * present for `pm`'s install command to do anything but fail or no-op.
+ *
+ * JS package managers all key off `package.json`; their `ciInstall` (`npm
+ * ci`, `pnpm install --frozen-lockfile`, ...) fails hard without one. Python
+ * managers accept either `pyproject.toml` (poetry/uv's primary manifest) or a
+ * `requirements*.txt` (pip's) — either is enough to justify attempting an
+ * install; {@link findRequirementsFile} refines "which requirements file" for
+ * pip's actual command.
+ *
+ * Used to skip worktree provisioning entirely in a repo with no manifest for
+ * the resolved package manager — most commonly a non-Node repo, where
+ * `resolvePackageManager` falls back to `"npm"` because its detection only
+ * ever looks at JS lockfiles (#1196).
+ */
+export function hasManifestForPackageManager(
+  pm: PackageManager,
+  root: string,
+): boolean {
+  if (pm === "pip" || pm === "poetry" || pm === "uv") {
+    return (
+      existsSync(join(root, "pyproject.toml")) ||
+      findRequirementsFile(root) !== null
+    );
+  }
+  return existsSync(join(root, "package.json"));
+}
+
+/**
  * Get package manager command configuration
  */
 export function getPackageManagerCommands(
@@ -467,6 +539,19 @@ export function resolvePackageManagerConfig(
   root: string,
 ): PackageManagerConfig {
   const config = PM_CONFIG[pm];
+  if (pm === "pip") {
+    // PM_CONFIG.pip.ciInstall ("pip install -q") names no package — bare pip
+    // has nothing to install without a target. Point it at whichever
+    // requirements file this directory actually has, or skip rather than run
+    // that failing no-op (#1196).
+    const requirementsFile = findRequirementsFile(root);
+    return {
+      ...config,
+      ciInstall: requirementsFile
+        ? `pip install -q -r ${requirementsFile}`
+        : CI_INSTALL_SKIP,
+    };
+  }
   if (pm !== "yarn" || detectYarnMajor(root) !== 1) {
     return config;
   }
